@@ -137,11 +137,24 @@ function escapeHtmlAttribute(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+// The Greatstone stone (traced master logo); keep in sync with
+// BRAND_STONE_SLABS in ui/src/components/BrandMark.tsx.
+const BRAND_STONE_SLABS = [
+  "209,295 223,298 253,333 252,337 225,374 217,392 204,398 201,388 144,420 132,419 86,399 73,406 22,355 112,300",
+  "262,216 265,216 265,223 259,317 223,277 123,281 26,338 0,249",
+  "30,149 218,208 10,235 13,174 24,153",
+  "98,69 116,71 155,114 264,116 284,179 202,189 40,137 36,127 42,116 85,77",
+  "179,0 189,0 246,28 265,92 154,91 143,84 106,41 121,26",
+];
+
 function createFaviconDataUrl(background: string, foreground: string): string {
+  // 284 x 420 stone scaled to 74% of a 64px tile, centred.
   const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">',
-    `<rect width="24" height="24" rx="6" fill="${background}"/>`,
-    `<path stroke="${foreground}" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.15" d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>`,
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">',
+    `<rect width="64" height="64" rx="14" fill="${background}"/>`,
+    `<g fill="${foreground}" transform="translate(15.991 8.32) scale(0.11276)">`,
+    ...BRAND_STONE_SLABS.map((points) => `<polygon points="${points}"/>`),
+    "</g>",
     "</svg>",
   ].join("");
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;

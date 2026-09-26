@@ -1,14 +1,14 @@
 {
   "id": "/",
-  "name": "Paperclip",
-  "short_name": "Paperclip",
-  "description": "AI-powered project management and agent coordination platform",
+  "name": "GS Agentic Manager",
+  "short_name": "GS Agents",
+  "description": "Greatstone's control plane for running teams of AI agents: goals, tasks, budgets and approvals in one place.",
   "start_url": "/",
   "scope": "/",
   "display": "browser",
   "orientation": "any",
-  "theme_color": "#18181b",
-  "background_color": "#18181b",
+  "theme_color": "#121212",
+  "background_color": "#121212",
   "icons": [
     {
       "src": "/android-chrome-192x192.png",

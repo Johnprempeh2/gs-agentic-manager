@@ -6,7 +6,7 @@ import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { queryKeys } from "@/lib/queryKeys";
 import { BootstrapPendingPage } from "@/components/BootstrapPendingPage";
-import { PaperclipLoading } from "@/components/AnimatedPaperclipIcon";
+import { BrandLoading } from "@/components/BrandLoading";
 import { Card } from "@/components/ui/card";
 
 function NoBoardAccessPage() {
@@ -75,7 +75,7 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
     (isAuthenticatedMode && sessionQuery.isLoading) ||
     (isAuthenticatedMode && !isBootstrapPending && !!sessionQuery.data && boardAccessQuery.isLoading)
   ) {
-    return <PaperclipLoading />;
+    return <BrandLoading />;
   }
 
   if (healthQuery.error || boardAccessQuery.error) {
@@ -93,7 +93,7 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
   if (isBootstrapPending) {
     const health = healthQuery.data;
     if (!health) {
-      return <PaperclipLoading />;
+      return <BrandLoading />;
     }
     const claimError = claimMutation.error instanceof ApiError
       ? { status: claimMutation.error.status, message: claimMutation.error.message }
