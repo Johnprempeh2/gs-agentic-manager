@@ -80,7 +80,7 @@ function loadReleaseManifest() {
   });
 }
 
-// Sections whose @paperclipai workspace deps are rewritten to the calver release
+// Sections whose @greatstone workspace deps are rewritten to the calver release
 // version by replaceWorkspaceDeps() and that consumers resolve at install time.
 const RESOLVED_DEP_SECTIONS = ["dependencies", "optionalDependencies", "peerDependencies"];
 

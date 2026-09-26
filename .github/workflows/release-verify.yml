@@ -262,7 +262,7 @@ jobs:
         run: pnpm test:runner-workflow-evals
 
   verify_paperclip_runner:
-    name: Verify Paperclip Runner (${{ matrix.lane }})
+    name: Verify GS Agentic Manager Runner (${{ matrix.lane }})
     runs-on: ${{ vars.AWS_POST_MERGE_CI_ENABLED == 'true' && github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.sha != '' && inputs.ref == github.sha && 'runs-on/fleet=paperclip-post-merge-x64/env=public-ci' || 'ubuntu-latest' }}
     timeout-minutes: 20
     permissions:
@@ -338,20 +338,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Verify Paperclip Runner
+      - name: Verify GS Agentic Manager Runner
         env:
           RUNNER_CHECKS: ${{ matrix.checks }}
         run: |
           set -euo pipefail
           for check in $RUNNER_CHECKS; do
-            pnpm --filter @paperclipai/paperclip-runner "$check"
+            pnpm --filter @greatstone/paperclip-runner "$check"
           done
 
       - name: Warm debug dependencies for the shared Runner cache
         # Protocol tests need debug binaries. Populate their dependencies in
         # the sole cache writer, so a cold save also serves the protocol lane.
         if: ${{ matrix.lane == 'rust' && github.repository == 'paperclipai/paperclip' && github.event_name == 'push' && github.ref == 'refs/heads/master' && inputs.ref == github.sha }}
-        run: pnpm --filter @paperclipai/paperclip-runner build:rust
+        run: pnpm --filter @greatstone/paperclip-runner build:rust
 
   build:
     name: Build

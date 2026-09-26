@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: 24
       - name: Install migrator build dependencies
-        run: pnpm install --ignore-scripts --no-frozen-lockfile --filter @paperclipai/db... --filter @paperclipai/shared...
+        run: pnpm install --ignore-scripts --no-frozen-lockfile --filter @greatstone/db... --filter @greatstone/shared...
       - name: Build exact-source packages and dependency lockfile
         env:
           SOURCE_SHA: ${{ github.sha }}

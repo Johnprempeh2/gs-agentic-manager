@@ -144,13 +144,13 @@ for (const journey of [
         .poll(
           () =>
             logs.match(
-              /GS Agentic Manager is ready at (http:\/\/127\.0\.0\.1:\d+)/,
+              /Paperclip is ready at (http:\/\/127\.0\.0\.1:\d+)/,
             )?.[1],
           { timeout: 100_000 },
         )
         .toBeTruthy();
       let base = logs.match(
-        /GS Agentic Manager is ready at (http:\/\/127\.0\.0\.1:\d+)/,
+        /Paperclip is ready at (http:\/\/127\.0\.0\.1:\d+)/,
       )![1]!;
       const api = async (path: string, method = "GET", data?: unknown) => {
         const response = await page.request.fetch(`${base}/api${path}`, {
@@ -276,7 +276,7 @@ for (const journey of [
         .toBe(true);
       await page.goto(base + prefix + `/agents/${agent.id}/configuration`);
       await page.getByRole("button", { name: "Codex", exact: true }).click();
-      await page.getByRole("button", { name: /GS Agentic Manager Runner/ }).click();
+      await page.getByRole("button", { name: /Paperclip Runner/ }).click();
       await page
         .getByRole("button", { name: /^Save(?: changes)?$/ })
         .first()
@@ -470,14 +470,14 @@ for (const journey of [
               logs
                 .slice(startOffset)
                 .match(
-                  /GS Agentic Manager is ready at (http:\/\/127\.0\.0\.1:\d+)/,
+                  /Paperclip is ready at (http:\/\/127\.0\.0\.1:\d+)/,
                 )?.[1],
             { timeout: 100_000 },
           )
           .toBeTruthy();
         base = logs
           .slice(startOffset)
-          .match(/GS Agentic Manager is ready at (http:\/\/127\.0\.0\.1:\d+)/)![1]!;
+          .match(/Paperclip is ready at (http:\/\/127\.0\.0\.1:\d+)/)![1]!;
         expect((await api("/health")).serverInfo.git.branchName).toBe(
           health.serverInfo.git.branchName,
         );

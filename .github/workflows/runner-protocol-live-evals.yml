@@ -90,7 +90,7 @@ jobs:
             fi
           done
 
-      - name: Resolve requested Paperclip branch to an immutable commit
+      - name: Resolve requested GS Agentic Manager branch to an immutable commit
         id: target
         env:
           GH_TOKEN: ${{ github.token }}
@@ -258,8 +258,8 @@ jobs:
       - name: Build the two bounded roster-plus-case matrices
         id: catalog
         env:
-          PAPERCLIP_PROTOCOL_EVAL_SOURCE_SHA: ${{ needs.authorize.outputs.target_sha }}
-          PAPERCLIP_PROTOCOL_EVALS_SHA: ${{ needs.authorize.outputs.evals_sha }}
+          GSAM_PROTOCOL_EVAL_SOURCE_SHA: ${{ needs.authorize.outputs.target_sha }}
+          GSAM_PROTOCOL_EVALS_SHA: ${{ needs.authorize.outputs.evals_sha }}
           MAX_PARALLEL: ${{ vars.RUNNER_E2E_MAX_PARALLEL || needs.authorize.outputs.max_parallel_default }}
           MAX_PARALLEL_LIMIT: ${{ needs.authorize.outputs.max_parallel_limit }}
           REQUESTED_MAX_PARALLEL: ${{ inputs.max_parallel }}
@@ -363,9 +363,9 @@ jobs:
       - name: Build runner CLI, daemon, and canonical attempt viewer
         run: |
           set -euo pipefail
-          pnpm --filter @paperclipai/paperclip-runner build:typescript
-          pnpm --filter @paperclipai/paperclip-runner build:runner-binaries
-          pnpm --filter @paperclipai/paperclip-runner build:issue-thread
+          pnpm --filter @greatstone/paperclip-runner build:typescript
+          pnpm --filter @greatstone/paperclip-runner build:runner-binaries
+          pnpm --filter @greatstone/paperclip-runner build:issue-thread
           # Older target refs must fail before paid cells, not publish an empty viewer.
           grep -q 'paperclip-eval-report' packages/paperclip-runner/dist-issue-thread/assets/*.js
           grep -q 'evalbook-site' packages/paperclip-runner/dist-issue-thread/assets/*.css
@@ -378,7 +378,7 @@ jobs:
             --pack-destination "$RUNNER_TEMP/runner-protocol-build/package"
           package="$(find "$RUNNER_TEMP/runner-protocol-build/package" -maxdepth 1 -type f -name '*.tgz' -print -quit)"
           test -f "$package"
-          pnpm --filter @paperclipai/paperclip-runner deploy --prod \
+          pnpm --filter @greatstone/paperclip-runner deploy --prod \
             "$RUNNER_TEMP/runner-protocol-build/portable"
           cp "$package" "$RUNNER_TEMP/runner-protocol-build/paperclip-runner.tgz"
           cp packages/paperclip-runner/runner/target/debug/paperclip-runnerd "$RUNNER_TEMP/runner-protocol-build/paperclip-runnerd"
@@ -521,7 +521,7 @@ jobs:
       - name: Prepare short-lived AgentCore web identity
         if: matrix.credentialName == 'AWS_AGENTCORE_OIDC'
         env:
-          AGENTCORE_ROLE_ARN: ${{ vars.PAPERCLIP_AWS_AGENTCORE_EXECUTION_ROLE_ARN }}
+          AGENTCORE_ROLE_ARN: ${{ vars.GSAM_AWS_AGENTCORE_EXECUTION_ROLE_ARN }}
         run: |
           set -euo pipefail
           test -n "$AGENTCORE_ROLE_ARN"
@@ -552,27 +552,27 @@ jobs:
           ANTHROPIC_API_KEY: ${{ matrix.credentialName == 'ANTHROPIC_API_KEY' && secrets.ANTHROPIC_API_KEY || '' }}
           OPENROUTER_API_KEY: ${{ matrix.credentialName == 'OPENROUTER_API_KEY' && secrets.OPENROUTER_API_KEY || '' }}
           XAI_API_KEY: ${{ matrix.credentialName == 'XAI_API_KEY' && secrets.XAI_API_KEY || '' }}
-          PAPERCLIP_ACPX_GROK_AUTH_JSON_SECRET: ${{ matrix.credentialName == 'PAPERCLIP_ACPX_GROK_AUTH_JSON_SECRET' && secrets.GROK_AUTH_JSON || '' }}
-          PAPERCLIP_CLAUDE_MANAGED_PROFILE_ID: ${{ vars.PAPERCLIP_CLAUDE_MANAGED_PROFILE_ID }}
-          PAPERCLIP_CLAUDE_MANAGED_AGENT_ID: ${{ vars.PAPERCLIP_CLAUDE_MANAGED_AGENT_ID }}
-          PAPERCLIP_CLAUDE_MANAGED_AGENT_VERSION: ${{ vars.PAPERCLIP_CLAUDE_MANAGED_AGENT_VERSION }}
-          PAPERCLIP_CLAUDE_MANAGED_ENVIRONMENT_ID: ${{ vars.PAPERCLIP_CLAUDE_MANAGED_ENVIRONMENT_ID }}
-          AWS_REGION: ${{ vars.PAPERCLIP_AWS_AGENTCORE_REGION }}
-          AWS_DEFAULT_REGION: ${{ vars.PAPERCLIP_AWS_AGENTCORE_REGION }}
-          PAPERCLIP_AWS_AGENTCORE_PROFILE_ID: ${{ vars.PAPERCLIP_AWS_AGENTCORE_PROFILE_ID }}
-          PAPERCLIP_AWS_AGENTCORE_ACCOUNT_ID: ${{ vars.PAPERCLIP_AWS_AGENTCORE_ACCOUNT_ID }}
-          PAPERCLIP_AWS_AGENTCORE_HARNESS_ARN: ${{ vars.PAPERCLIP_AWS_AGENTCORE_HARNESS_ARN }}
-          PAPERCLIP_AWS_AGENTCORE_HARNESS_VERSION: ${{ vars.PAPERCLIP_AWS_AGENTCORE_HARNESS_VERSION }}
-          PAPERCLIP_AWS_AGENTCORE_ENDPOINT_ARN: ${{ vars.PAPERCLIP_AWS_AGENTCORE_ENDPOINT_ARN }}
-          PAPERCLIP_AWS_AGENTCORE_ENDPOINT_QUALIFIER: ${{ vars.PAPERCLIP_AWS_AGENTCORE_ENDPOINT_QUALIFIER }}
-          PAPERCLIP_AWS_AGENTCORE_RUNTIME_ARN: ${{ vars.PAPERCLIP_AWS_AGENTCORE_RUNTIME_ARN }}
-          PAPERCLIP_AWS_AGENTCORE_MEMORY_ARN: ${{ vars.PAPERCLIP_AWS_AGENTCORE_MEMORY_ARN }}
-          PAPERCLIP_AWS_AGENTCORE_MEMORY_ID: ${{ vars.PAPERCLIP_AWS_AGENTCORE_MEMORY_ID }}
-          PAPERCLIP_AWS_AGENTCORE_INVOCATION_ROLE_ARN: ${{ vars.PAPERCLIP_AWS_AGENTCORE_INVOCATION_ROLE_ARN }}
-          PAPERCLIP_AWS_AGENTCORE_CONTEXT_BUCKET: ${{ vars.PAPERCLIP_AWS_AGENTCORE_CONTEXT_BUCKET }}
-          PAPERCLIP_AWS_AGENTCORE_CONTEXT_PREFIX: ${{ vars.PAPERCLIP_AWS_AGENTCORE_CONTEXT_PREFIX }}
-          PAPERCLIP_AWS_AGENTCORE_CONTEXT_KMS_KEY_ARN: ${{ vars.PAPERCLIP_AWS_AGENTCORE_CONTEXT_KMS_KEY_ARN }}
-          PAPERCLIP_AWS_AGENTCORE_QUALIFICATION_REVISION: ${{ vars.PAPERCLIP_AWS_AGENTCORE_QUALIFICATION_REVISION }}
+          GSAM_ACPX_GROK_AUTH_JSON_SECRET: ${{ matrix.credentialName == 'GSAM_ACPX_GROK_AUTH_JSON_SECRET' && secrets.GROK_AUTH_JSON || '' }}
+          GSAM_CLAUDE_MANAGED_PROFILE_ID: ${{ vars.GSAM_CLAUDE_MANAGED_PROFILE_ID }}
+          GSAM_CLAUDE_MANAGED_AGENT_ID: ${{ vars.GSAM_CLAUDE_MANAGED_AGENT_ID }}
+          GSAM_CLAUDE_MANAGED_AGENT_VERSION: ${{ vars.GSAM_CLAUDE_MANAGED_AGENT_VERSION }}
+          GSAM_CLAUDE_MANAGED_ENVIRONMENT_ID: ${{ vars.GSAM_CLAUDE_MANAGED_ENVIRONMENT_ID }}
+          AWS_REGION: ${{ vars.GSAM_AWS_AGENTCORE_REGION }}
+          AWS_DEFAULT_REGION: ${{ vars.GSAM_AWS_AGENTCORE_REGION }}
+          GSAM_AWS_AGENTCORE_PROFILE_ID: ${{ vars.GSAM_AWS_AGENTCORE_PROFILE_ID }}
+          GSAM_AWS_AGENTCORE_ACCOUNT_ID: ${{ vars.GSAM_AWS_AGENTCORE_ACCOUNT_ID }}
+          GSAM_AWS_AGENTCORE_HARNESS_ARN: ${{ vars.GSAM_AWS_AGENTCORE_HARNESS_ARN }}
+          GSAM_AWS_AGENTCORE_HARNESS_VERSION: ${{ vars.GSAM_AWS_AGENTCORE_HARNESS_VERSION }}
+          GSAM_AWS_AGENTCORE_ENDPOINT_ARN: ${{ vars.GSAM_AWS_AGENTCORE_ENDPOINT_ARN }}
+          GSAM_AWS_AGENTCORE_ENDPOINT_QUALIFIER: ${{ vars.GSAM_AWS_AGENTCORE_ENDPOINT_QUALIFIER }}
+          GSAM_AWS_AGENTCORE_RUNTIME_ARN: ${{ vars.GSAM_AWS_AGENTCORE_RUNTIME_ARN }}
+          GSAM_AWS_AGENTCORE_MEMORY_ARN: ${{ vars.GSAM_AWS_AGENTCORE_MEMORY_ARN }}
+          GSAM_AWS_AGENTCORE_MEMORY_ID: ${{ vars.GSAM_AWS_AGENTCORE_MEMORY_ID }}
+          GSAM_AWS_AGENTCORE_INVOCATION_ROLE_ARN: ${{ vars.GSAM_AWS_AGENTCORE_INVOCATION_ROLE_ARN }}
+          GSAM_AWS_AGENTCORE_CONTEXT_BUCKET: ${{ vars.GSAM_AWS_AGENTCORE_CONTEXT_BUCKET }}
+          GSAM_AWS_AGENTCORE_CONTEXT_PREFIX: ${{ vars.GSAM_AWS_AGENTCORE_CONTEXT_PREFIX }}
+          GSAM_AWS_AGENTCORE_CONTEXT_KMS_KEY_ARN: ${{ vars.GSAM_AWS_AGENTCORE_CONTEXT_KMS_KEY_ARN }}
+          GSAM_AWS_AGENTCORE_QUALIFICATION_REVISION: ${{ vars.GSAM_AWS_AGENTCORE_QUALIFICATION_REVISION }}
         run: |
           set -euo pipefail
           mkdir -p cell-output/runs
@@ -580,10 +580,10 @@ jobs:
             test -n "${!CREDENTIAL_NAME:-}"
           fi
           if [ "$PROVIDER" = "claude_managed" ]; then
-            test -n "$PAPERCLIP_CLAUDE_MANAGED_PROFILE_ID"
-            test -n "$PAPERCLIP_CLAUDE_MANAGED_AGENT_ID"
-            test -n "$PAPERCLIP_CLAUDE_MANAGED_AGENT_VERSION"
-            test -n "$PAPERCLIP_CLAUDE_MANAGED_ENVIRONMENT_ID"
+            test -n "$GSAM_CLAUDE_MANAGED_PROFILE_ID"
+            test -n "$GSAM_CLAUDE_MANAGED_AGENT_ID"
+            test -n "$GSAM_CLAUDE_MANAGED_AGENT_VERSION"
+            test -n "$GSAM_CLAUDE_MANAGED_ENVIRONMENT_ID"
           fi
           set +e
           python3 .paperclip-evals/evals/paperclip-runner/tools/run_live_roster.py run \
@@ -602,7 +602,7 @@ jobs:
           import { readFileSync, writeFileSync } from "node:fs";
           let authenticationMode;
           let authenticationEvidenceFailure;
-          if (["XAI_API_KEY", "PAPERCLIP_ACPX_GROK_AUTH_JSON_SECRET"].includes(process.env.CREDENTIAL_NAME)) {
+          if (["XAI_API_KEY", "GSAM_ACPX_GROK_AUTH_JSON_SECRET"].includes(process.env.CREDENTIAL_NAME)) {
             const expected = process.env.CREDENTIAL_NAME === "XAI_API_KEY" ? "api_key" : "subscription";
             try {
               const observed = JSON.parse(readFileSync("cell-output/roster-summary.json", "utf8")).authenticationMode;
@@ -755,10 +755,10 @@ jobs:
 
       - name: Aggregate every expected cell, including missing infrastructure cells
         env:
-          PAPERCLIP_PROTOCOL_EVAL_SOURCE_SHA: ${{ needs.authorize.outputs.target_sha }}
-          PAPERCLIP_PROTOCOL_EVAL_SOURCE_REF: ${{ needs.authorize.outputs.target_ref }}
-          PAPERCLIP_PROTOCOL_EVALS_SHA: ${{ needs.authorize.outputs.evals_sha }}
-          PAPERCLIP_PROTOCOL_EVAL_WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GSAM_PROTOCOL_EVAL_SOURCE_SHA: ${{ needs.authorize.outputs.target_sha }}
+          GSAM_PROTOCOL_EVAL_SOURCE_REF: ${{ needs.authorize.outputs.target_ref }}
+          GSAM_PROTOCOL_EVALS_SHA: ${{ needs.authorize.outputs.evals_sha }}
+          GSAM_PROTOCOL_EVAL_WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           node packages/paperclip-runner/scripts/runner-protocol-eval-campaign.mjs aggregate \
             --catalog runner-protocol-catalog/runner-protocol-eval-catalog.json \
@@ -799,7 +799,7 @@ jobs:
       - name: Verify the actual chat viewer before publication
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
-          pnpm --filter @paperclipai/paperclip-runner exec playwright install --with-deps chromium
+          pnpm --filter @greatstone/paperclip-runner exec playwright install --with-deps chromium
           node packages/paperclip-runner/scripts/verify-runner-evalbook-viewer.mjs --report-root runner-protocol-merged/public-report --screenshots runner-protocol-merged/viewer-proof
           node packages/paperclip-runner/scripts/verify-runner-evalbook-viewer.mjs --report-root runner-protocol-merged/report
 
@@ -814,7 +814,7 @@ jobs:
           {
             echo '## Runner direct live protocol evals'
             echo
-            jq -r '"- Cells: \(.totals.passed)/\(.totals.selected) passed\n- Behavior failures: \(.totals.behaviorFailures)\n- Infrastructure failures: \(.totals.infrastructureFailures)\n- Paperclip: `\(.source.paperclip.sha)`\n- Evals: `\(.source.evals.sha)`"' runner-protocol-merged/campaign.json
+            jq -r '"- Cells: \(.totals.passed)/\(.totals.selected) passed\n- Behavior failures: \(.totals.behaviorFailures)\n- Infrastructure failures: \(.totals.infrastructureFailures)\n- GS Agentic Manager: `\(.source.paperclip.sha)`\n- Evals: `\(.source.evals.sha)`"' runner-protocol-merged/campaign.json
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload access-controlled canonical Evalbook and raw attempts
@@ -886,8 +886,8 @@ jobs:
       - name: Publish versioned report and refresh the root index
         id: publish
         env:
-          PAPERCLIP_RUNNER_PROTOCOL_EVAL_PUBLIC_REPORT_DIR: ${{ github.workspace }}/runner-protocol-public-report
-          PAPERCLIP_RUNNER_PROTOCOL_EVAL_VIEWER_DIR: ${{ github.workspace }}/runner-protocol-trusted-viewer
+          GSAM_RUNNER_PROTOCOL_EVAL_PUBLIC_REPORT_DIR: ${{ github.workspace }}/runner-protocol-public-report
+          GSAM_RUNNER_PROTOCOL_EVAL_VIEWER_DIR: ${{ github.workspace }}/runner-protocol-trusted-viewer
           RUNNER_PROTOCOL_EVAL_HISTORY_S3_BUCKET: ${{ vars.RUNNER_PROTOCOL_EVAL_HISTORY_S3_BUCKET || vars.RUNNER_E2E_HISTORY_S3_BUCKET }}
           RUNNER_PROTOCOL_EVAL_HISTORY_PREFIX: ${{ vars.RUNNER_PROTOCOL_EVAL_HISTORY_PREFIX || 'runner-protocol-evals' }}
           RUNNER_PROTOCOL_EVAL_HISTORY_PUBLIC_BASE_URL: ${{ vars.RUNNER_PROTOCOL_EVAL_HISTORY_PUBLIC_BASE_URL || vars.RUNNER_E2E_HISTORY_PUBLIC_BASE_URL }}

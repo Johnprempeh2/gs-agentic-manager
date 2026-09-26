@@ -2027,7 +2027,7 @@ describeEmbeddedPostgres("secretService", () => {
         operation: "createSecret",
         message: "AWS Secrets Manager denied the request. Check IAM permissions for this provider vault.",
         rawMessage:
-          "AccessDeniedException: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager cannot create secret",
+          "AccessDeniedException: arn:aws:sts::123456789012:assumed-role/prod/Paperclip cannot create secret",
       }),
     );
     vi.spyOn(db, "delete").mockImplementationOnce(() => {
@@ -3510,7 +3510,7 @@ describeEmbeddedPostgres("secretService", () => {
       config: { region: "us-east-1", namespace: "prod-use1" },
     });
     const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager is not authorized to perform secretsmanager:ListSecrets";
+      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized to perform secretsmanager:ListSecrets";
 
     vi.spyOn(awsSecretsManagerProvider, "listRemoteSecrets").mockRejectedValueOnce(
       new SecretProviderClientError({
@@ -3548,7 +3548,7 @@ describeEmbeddedPostgres("secretService", () => {
       config: { region: "us-east-1", namespace: "prod-use1" },
     });
     const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager is not authorized to perform secretsmanager:CreateSecret on arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1";
+      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized to perform secretsmanager:CreateSecret on arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1";
 
     vi.spyOn(awsSecretsManagerProvider, "createSecret").mockRejectedValueOnce(
       new SecretProviderClientError({
@@ -3613,7 +3613,7 @@ describeEmbeddedPostgres("secretService", () => {
         operation: "createSecret",
         message: "AWS Secrets Manager denied the request. Check IAM permissions for this provider vault.",
         rawMessage:
-          "AccessDeniedException: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager cannot create secret",
+          "AccessDeniedException: arn:aws:sts::123456789012:assumed-role/prod/Paperclip cannot create secret",
       }),
     );
     vi.spyOn(db, "delete").mockImplementationOnce(() => {
@@ -3729,7 +3729,7 @@ describeEmbeddedPostgres("secretService", () => {
     const companyId = await seedCompany();
     const svc = secretService(db);
     const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager is not authorized to perform secretsmanager:ListSecrets";
+      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized to perform secretsmanager:ListSecrets";
 
     vi.spyOn(awsSecretsManagerProvider, "discoverProviderConfigs").mockRejectedValueOnce(
       new SecretProviderClientError({
@@ -4006,7 +4006,7 @@ describeEmbeddedPostgres("secretService", () => {
       config: { region: "us-east-1", namespace: "prod-use1" },
     });
     const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager is not authorized to perform secretsmanager:DescribeSecret on arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai";
+      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized to perform secretsmanager:DescribeSecret on arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai";
     vi.spyOn(awsSecretsManagerProvider, "linkExternalSecret").mockRejectedValueOnce(
       new SecretProviderClientError({
         code: "access_denied",

@@ -46,19 +46,19 @@ test('notices a new publishFromCi:true package that is missing from npm', async 
     'master',
     {
       fetchFromGitHub: stubGitHub({
-        base: [{ dir: 'a', name: '@paperclipai/existing', publishFromCi: true }],
+        base: [{ dir: 'a', name: '@greatstone/existing', publishFromCi: true }],
         head: [
-          { dir: 'a', name: '@paperclipai/existing', publishFromCi: true },
-          { dir: 'b', name: '@paperclipai/brand-new', publishFromCi: true },
+          { dir: 'a', name: '@greatstone/existing', publishFromCi: true },
+          { dir: 'b', name: '@greatstone/brand-new', publishFromCi: true },
         ],
       }),
-      registryPackageExists: async (name) => name !== '@paperclipai/brand-new',
+      registryPackageExists: async (name) => name !== '@greatstone/brand-new',
     }
   );
 
   assert.equal(result.informational.length, 1);
-  assert.match(result.informational[0], /@paperclipai\/brand-new/);
-  assert.match(result.informational[0], /release:bootstrap-package -- @paperclipai\/brand-new --publish/);
+  assert.match(result.informational[0], /@greatstone\/brand-new/);
+  assert.match(result.informational[0], /release:bootstrap-package -- @greatstone\/brand-new --publish/);
   assert.match(result.informational[0], /No contributor action/);
 });
 
@@ -72,7 +72,7 @@ test('stays quiet when the new package already exists on npm', async () => {
     {
       fetchFromGitHub: stubGitHub({
         base: [],
-        head: [{ dir: 'b', name: '@paperclipai/already-bootstrapped', publishFromCi: true }],
+        head: [{ dir: 'b', name: '@greatstone/already-bootstrapped', publishFromCi: true }],
       }),
       registryPackageExists: async () => true,
     }
@@ -90,15 +90,15 @@ test('notices a publishFromCi flip from false to true on a missing package', asy
     'master',
     {
       fetchFromGitHub: stubGitHub({
-        base: [{ dir: 'b', name: '@paperclipai/flipped', publishFromCi: false }],
-        head: [{ dir: 'b', name: '@paperclipai/flipped', publishFromCi: true }],
+        base: [{ dir: 'b', name: '@greatstone/flipped', publishFromCi: false }],
+        head: [{ dir: 'b', name: '@greatstone/flipped', publishFromCi: true }],
       }),
       registryPackageExists: async () => false,
     }
   );
 
   assert.equal(result.informational.length, 1);
-  assert.match(result.informational[0], /@paperclipai\/flipped/);
+  assert.match(result.informational[0], /@greatstone\/flipped/);
 });
 
 test('notices a publishFromCi:false package that published packages newly depend on', async () => {
@@ -107,7 +107,7 @@ test('notices a publishFromCi:false package that published packages newly depend
     {
       filename: 'server/package.json',
       status: 'modified',
-      patch: '@@ -1 +1 @@\n+    "@paperclipai/adapter-kimi-local": "workspace:*",',
+      patch: '@@ -1 +1 @@\n+    "@greatstone/adapter-kimi-local": "workspace:*",',
     },
   ];
 
@@ -120,7 +120,7 @@ test('notices a publishFromCi:false package that published packages newly depend
     {
       fetchFromGitHub: stubGitHub({
         base: [],
-        head: [{ dir: 'b', name: '@paperclipai/adapter-kimi-local', publishFromCi: false }],
+        head: [{ dir: 'b', name: '@greatstone/adapter-kimi-local', publishFromCi: false }],
       }),
       registryPackageExists: async () => false,
     }
@@ -137,11 +137,11 @@ test('notices a newly added dependency on an existing unpublished package even w
     {
       filename: 'server/package.json',
       status: 'modified',
-      patch: '@@ -1 +1 @@\n+    "@paperclipai/adapter-hermes-gateway": "workspace:*",',
+      patch: '@@ -1 +1 @@\n+    "@greatstone/adapter-hermes-gateway": "workspace:*",',
     },
   ];
 
-  const manifest = [{ dir: 'g', name: '@paperclipai/adapter-hermes-gateway', publishFromCi: false }];
+  const manifest = [{ dir: 'g', name: '@greatstone/adapter-hermes-gateway', publishFromCi: false }];
   const result = await checkReleaseBootstrap(
     files,
     'token',
@@ -155,7 +155,7 @@ test('notices a newly added dependency on an existing unpublished package even w
   );
 
   assert.equal(result.informational.length, 1);
-  assert.match(result.informational[0], /@paperclipai\/adapter-hermes-gateway/);
+  assert.match(result.informational[0], /@greatstone\/adapter-hermes-gateway/);
   assert.match(result.informational[0], /depend on it/);
 });
 
@@ -169,7 +169,7 @@ test('stays quiet for a publishFromCi:false package nothing depends on', async (
     {
       fetchFromGitHub: stubGitHub({
         base: [],
-        head: [{ dir: 'b', name: '@paperclipai/deliberately-private', publishFromCi: false }],
+        head: [{ dir: 'b', name: '@greatstone/deliberately-private', publishFromCi: false }],
       }),
       registryPackageExists: async () => { throw new Error('should not look up'); },
     }
@@ -178,7 +178,7 @@ test('stays quiet for a publishFromCi:false package nothing depends on', async (
   assert.deepEqual(result.informational, []);
 });
 
-test('never looks up names outside the @paperclipai scope', async () => {
+test('never looks up names outside the @greatstone scope', async () => {
   const lookedUp = [];
   const result = await checkReleaseBootstrap(
     [manifestChangedFile],
@@ -192,7 +192,7 @@ test('never looks up names outside the @paperclipai scope', async () => {
         head: [
           { dir: 'x', name: '@evil/probe', publishFromCi: true },
           { dir: 'y', name: 'unscoped-name', publishFromCi: true },
-          { dir: 'z', name: '@paperclipai/UPPER', publishFromCi: true },
+          { dir: 'z', name: '@greatstone/UPPER', publishFromCi: true },
         ],
       }),
       registryPackageExists: async (name) => {
@@ -216,7 +216,7 @@ test('stays quiet when the registry lookup fails', async () => {
     {
       fetchFromGitHub: stubGitHub({
         base: [],
-        head: [{ dir: 'b', name: '@paperclipai/brand-new', publishFromCi: true }],
+        head: [{ dir: 'b', name: '@greatstone/brand-new', publishFromCi: true }],
       }),
       registryPackageExists: async () => { throw new Error('registry down'); },
     }
@@ -235,7 +235,7 @@ test('treats a missing base manifest as empty (every head entry is new)', async 
     {
       fetchFromGitHub: async (path) => {
         if (path.includes('ref=refs%2Fpull%2F')) {
-          return encodeManifest([{ dir: 'b', name: '@paperclipai/brand-new', publishFromCi: true }]);
+          return encodeManifest([{ dir: 'b', name: '@greatstone/brand-new', publishFromCi: true }]);
         }
         throw new Error('404 base manifest');
       },
@@ -252,14 +252,14 @@ test('addedWorkspaceDependencyNames reads only added lines of package.json patch
       filename: 'server/package.json',
       patch: [
         '@@ -1,3 +1,4 @@',
-        '     "@paperclipai/context-line": "workspace:*",',
-        '-    "@paperclipai/removed-dep": "workspace:*",',
-        '+    "@paperclipai/added-dep": "workspace:*",',
+        '     "@greatstone/context-line": "workspace:*",',
+        '-    "@greatstone/removed-dep": "workspace:*",',
+        '+    "@greatstone/added-dep": "workspace:*",',
       ].join('\n'),
     },
-    { filename: 'ui/src/index.ts', patch: '+    "@paperclipai/not-a-pkg-json": "workspace:*",' },
-    { filename: 'node_modules/x/package.json', patch: '+    "@paperclipai/vendored": "workspace:*",' },
+    { filename: 'ui/src/index.ts', patch: '+    "@greatstone/not-a-pkg-json": "workspace:*",' },
+    { filename: 'node_modules/x/package.json', patch: '+    "@greatstone/vendored": "workspace:*",' },
   ]);
 
-  assert.deepEqual([...names], ['@paperclipai/added-dep']);
+  assert.deepEqual([...names], ['@greatstone/added-dep']);
 });

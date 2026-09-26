@@ -1231,13 +1231,14 @@ describe("MarkdownEditor", () => {
       },
     ],
     matchText = "GS Agentic Manager App",
+    query = "@GS",
   ): Promise<{ option: HTMLButtonElement; root: ReturnType<typeof createRoot>; menu: HTMLElement }> {
     const root = createRoot(container);
 
     await act(async () => {
       root.render(
         <MarkdownEditor
-          value="@Pap"
+          value={query}
           onChange={handleChange}
           mentions={mentions}
         />,
@@ -1253,7 +1254,7 @@ describe("MarkdownEditor", () => {
 
     const selection = window.getSelection();
     const range = document.createRange();
-    range.setStart(textNode!, "@Pap".length);
+    range.setStart(textNode!, query.length);
     range.collapse(true);
     selection?.removeAllRanges();
     selection?.addRange(range);
@@ -1306,6 +1307,7 @@ describe("MarkdownEditor", () => {
         },
       ],
       "PAP-102",
+      "@Pap",
     );
     const point = { clientX: 100, clientY: 50 };
 
@@ -1339,6 +1341,7 @@ describe("MarkdownEditor", () => {
         },
       ],
       "PAP-102",
+      "@Pap",
     );
 
     expect(option.textContent).toContain("PAP-102");
@@ -1423,7 +1426,7 @@ describe("MarkdownEditor", () => {
         <Dialog open>
           <DialogContent>
             <DialogTitle>Create task</DialogTitle>
-            <MarkdownEditor value="@Pap" onChange={() => {}} mentions={mentions} />
+            <MarkdownEditor value="@GS" onChange={() => {}} mentions={mentions} />
           </DialogContent>
         </Dialog>,
       );
@@ -1436,7 +1439,7 @@ describe("MarkdownEditor", () => {
 
     const selection = window.getSelection();
     const range = document.createRange();
-    range.setStart(textNode!, "@Pap".length);
+    range.setStart(textNode!, "@GS".length);
     range.collapse(true);
     selection?.removeAllRanges();
     selection?.addRange(range);

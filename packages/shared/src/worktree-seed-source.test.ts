@@ -128,7 +128,7 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
       expectedTargetInstanceId: target.instanceId,
       manifestSource: { configPath: source.configPath, instanceId: source.instanceId },
       manifestTargetInstanceId: target.instanceId,
-    })).toThrow(/cannot be inspected \(ENOENT on its \.paperclip symlink target\)/);
+    })).toThrow(/cannot be inspected \(ENOENT on its \.gsam symlink target\)/);
   });
 
   it("takes the named source when .gsam is a symlink to a directory with no config", () => {

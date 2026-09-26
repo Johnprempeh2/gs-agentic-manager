@@ -202,7 +202,7 @@ test("rejects a dangling base workspace .gsam symlink instead of falling back", 
   const { result } = runProvision(baseCwd);
 
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /\.paperclip is a broken symlink/);
+  assert.match(result.stderr, /\.gsam is a broken symlink/);
 });
 
 test("falls back to an isolated config when the base CLI cannot boot", () => {

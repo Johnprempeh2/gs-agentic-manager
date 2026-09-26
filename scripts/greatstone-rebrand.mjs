@@ -22,6 +22,9 @@
  *
  * and if check:capability-inventory reports moved skill-heading slugs, rename
  * `paperclip-*` slug ids in spec/capability/capabilities.yaml to match.
+ * Content-hash pins also move with the text: CORE_EXEC_TEAM_HASH in
+ * server/src/__tests__/teams-catalog-service.test.ts must equal the core exec
+ * team's contentHash in packages/teams-catalog/generated/catalog.json.
  *
  * What it renames (and deliberately does not):
  *   R0  lucide's `Paperclip` attachment ICON is re-imported as `PaperclipIcon`
@@ -79,7 +82,6 @@ const EXCLUDE = [
   /^releases\//,
   /^packages\/db\/src\/migrations\//,
   /^skills-releases\//, // frozen skill snapshots: servers refuse a seeded release whose hash changed
-  /^\.github\//, // upstream CI wired to paperclipai infrastructure; reworked separately
   /^scripts\/greatstone-rebrand\.mjs$/,
   /^README\.md$/, // hand-written for the fork; names Paperclip on purpose (attribution, bridge)
   /^packages\/shared\/src\/legacy-env(\.test)?\.ts$/, // the bridge must keep the old names
@@ -116,9 +118,15 @@ function sub(text, re, replacement, key) {
 }
 
 // R2 guards: a GitHub org login is data about upstream's repo, not our CLI.
-const GITHUB_LOGIN_LINE = /(login|owner|org|organization)\s*:\s*\{?\s*(login\s*:\s*)?["'`]paperclipai["'`]/;
+const GITHUB_LOGIN_LINE =
+  /(login|owner|org|organization|providerAccountId)s?["']?\s*:\s*[\[{]?\s*(login\s*:\s*)?["'`]paperclipai["'`]/i;
 
 const CODE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
+
+// ...and a comparison against it names a persisted namespace (skill keys are
+// `paperclipai/bundled/...`), not the CLI: `owner === "paperclipai"` stays.
+const NAMESPACE_COMPARISON =
+  /(owner|login|namespace|org|keyParts\[\d+\])\w*\s*[!=]==?\s*["'`]paperclipai["'`]/i;
 
 // R5 never renames these phrases: they name upstream's company and hosted service.
 const UPSTREAM_NAMES = /^ (Cloud|Enterprise|Labs|AI)\b/;
@@ -141,12 +149,18 @@ function rebrand(file, text) {
 
   // R1: workspace package scope.
   next = sub(next, /@paperclipai\//g, BRAND.scope, "R1");
+  // The same scope inside regex literals, where the slash is escaped.
+  next = sub(next, /@paperclipai\\\//g, "@greatstone\\/", "R1");
+  // The bare scope: node_modules/@paperclipai directories and `@paperclipai:registry=`
+  // npm config. Not a domain (`x@paperclipai.dev`), hence no `.` after it.
+  next = sub(next, /@paperclipai(?![\w.\\/-])/g, "@greatstone", "R1");
 
   // R2: CLI command / npm package name, line by line so GitHub-org lines are skipped.
   next = next
     .split("\n")
     .map((line) =>
-      GITHUB_LOGIN_LINE.test(line)
+      // Under .github/ every bare `paperclipai` is the GitHub org, not the CLI.
+      /^\.github\//.test(file) || GITHUB_LOGIN_LINE.test(line) || NAMESPACE_COMPARISON.test(line)
         ? line
         : sub(line, /(?<![@\w./-])paperclipai(?![\w/:.-])/g, BRAND.cli, "R2"),
     )
@@ -156,7 +170,9 @@ function rebrand(file, text) {
   next = sub(next, /PAPERCLIP_/g, BRAND.envPrefix, "R3");
 
   // R4: the data folder, only where it is a path segment on its own.
-  next = sub(next, /(?<=^|["'`~/\s(=:])\.paperclip(?=["'`/)\s,;]|$)/gm, BRAND.dataDir, "R4");
+  // `}` / `${` cover template literals such as `${path.sep}.paperclip${path.sep}`.
+  // A backslash before it is the escaped dot of a regex literal (/\.paperclip symlink/).
+  next = sub(next, /(?<=^|["'`~/\s(=:}\\])\.paperclip(?=["'`/)\s,;$]|$)/gm, BRAND.dataDir, "R4");
 
   // R5: the product name as a standalone word.
   next = next
@@ -170,6 +186,10 @@ function rebrand(file, text) {
         // Header names (X-Paperclip-Run-Id): wire protocol the server matches
         // case-insensitively as x-paperclip-*, and header names cannot hold spaces.
         if (/X-$/.test(before) || (/-$/.test(before) && /^-[A-Z]/.test(after))) return match;
+        // After a slash it is a path or repository segment (PaperclipAI/Paperclip), external data.
+        if (/\/$/.test(before)) return match;
+        // Names upstream's cloud generated for tenants ("stack-purple-rain Paperclip") are external data.
+        if (/stack-[a-z0-9-]+\s+$/i.test(before)) return match;
         counts.R5 += 1;
         // Product tokens (User-Agent "Paperclip/1.0") cannot contain spaces either.
         if (/^\/[A-Za-z0-9]/.test(after)) return BRAND.shortName;

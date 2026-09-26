@@ -30,7 +30,7 @@ The CLI is `gsam`. Inside this repo, run it through pnpm:
 ```sh
 pnpm gsam onboard
 pnpm gsam doctor
-pnpm gsam issue get <task-id>
+pnpm gsam configure --section server
 ```
 
 Instance data lives under `~/.gsam` by default (set `GSAM_HOME` to move it).

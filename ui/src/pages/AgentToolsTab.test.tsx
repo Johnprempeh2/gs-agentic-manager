@@ -322,7 +322,7 @@ describe("AgentToolsTab", () => {
             repositoryCount: 1,
             repositorySelection: "selected",
             installationIds: ["456"],
-            installationOwnerLogins: ["gsam"],
+            installationOwnerLogins: ["paperclipai"],
           },
         },
       }],

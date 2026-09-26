@@ -6,7 +6,7 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: /^@paperclipai\/paperclip-runner$/,
+        find: /^@greatstone\/paperclip-runner$/,
         replacement: fileURLToPath(
           new URL("../packages/paperclip-runner/src/index.ts", import.meta.url),
         ),

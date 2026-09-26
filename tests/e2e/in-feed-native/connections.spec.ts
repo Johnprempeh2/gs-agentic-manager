@@ -30,8 +30,8 @@ for (const journey of ['connect', 'decline', 'restart'] as const) test(`fresh na
     processHandle = spawn(process.execPath, ['cli/node_modules/tsx/dist/cli.mjs', 'cli/src/index.ts', 'test-drive', '--harness', 'codex', '--api-key-env', 'IN_FEED_FIXTURE_KEY', '--company-name', 'In-feed native fixture', '--no-browser'], { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     processHandle.stdout!.on('data', (chunk) => { logs += chunk.toString(); });
     processHandle.stderr!.on('data', (chunk) => { logs += chunk.toString(); });
-    await expect.poll(() => logs.match(/GS Agentic Manager is ready at (http:\/\/127\.0\.0\.1:\d+)/)?.[1], { timeout: 100_000 }).toBeTruthy();
-    let base = logs.match(/GS Agentic Manager is ready at (http:\/\/127\.0\.0\.1:\d+)/)![1]!;
+    await expect.poll(() => logs.match(/Paperclip is ready at (http:\/\/127\.0\.0\.1:\d+)/)?.[1], { timeout: 100_000 }).toBeTruthy();
+    let base = logs.match(/Paperclip is ready at (http:\/\/127\.0\.0\.1:\d+)/)![1]!;
     const api = async (path: string, method = 'GET', data?: unknown) => {
       const response = await page.request.fetch(`${base}/api${path}`, { method, data });
       expect(response.ok(), await response.text()).toBeTruthy(); return response.json();
@@ -59,7 +59,7 @@ for (const journey of ['connect', 'decline', 'restart'] as const) test(`fresh na
     await expect.poll(async () => (await api('/instance/settings/experimental')).enableNativeRunner).toBe(true);
     await page.goto(base + prefix + `/agents/${agent.id}/configuration`);
     await page.getByRole('button', { name: 'Codex', exact: true }).click();
-    await page.getByRole('button', { name: /GS Agentic Manager Runner/ }).click();
+    await page.getByRole('button', { name: /Paperclip Runner/ }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).first().click();
     await expect.poll(async () => (await api(`/agents/${agent.id}`)).adapterType).toBe('paperclip_runner');
     const nativeAgent = await api(`/agents/${agent.id}`);
@@ -130,8 +130,8 @@ for (const journey of ['connect', 'decline', 'restart'] as const) test(`fresh na
       processHandle = spawn(process.execPath, ['cli/node_modules/tsx/dist/cli.mjs', 'cli/src/index.ts', 'test-drive', '--harness', 'codex', '--api-key-env', 'IN_FEED_FIXTURE_KEY', '--data-dir', dataDir, '--no-browser'], { cwd: root, env: { ...env, GSAM_TEST_CONNECTION_DELIVERY_HOLD: '0' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
       processHandle.stdout!.on('data', (chunk) => { logs += chunk.toString(); });
       processHandle.stderr!.on('data', (chunk) => { logs += chunk.toString(); });
-      await expect.poll(() => logs.match(/GS Agentic Manager is ready at (http:\/\/127\.0\.0\.1:\d+)/)?.[1], { timeout: 100_000 }).toBeTruthy();
-      base = logs.match(/GS Agentic Manager is ready at (http:\/\/127\.0\.0\.1:\d+)/)![1]!;
+      await expect.poll(() => logs.match(/Paperclip is ready at (http:\/\/127\.0\.0\.1:\d+)/)?.[1], { timeout: 100_000 }).toBeTruthy();
+      base = logs.match(/Paperclip is ready at (http:\/\/127\.0\.0\.1:\d+)/)![1]!;
       expect((await api('/companies'))[0].id).toBe(company.id);
       const taskId = (await api(`/companies/${company.id}/issues`))[0].id;
       await page.goto(base + prefix + '/issues/' + taskId);

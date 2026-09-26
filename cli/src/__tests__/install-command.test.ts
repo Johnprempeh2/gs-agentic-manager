@@ -242,7 +242,7 @@ describe("managed install commands", () => {
     const installCall = runCommand.mock.calls.find(
       ([file, args]) => file === "npm" && args[0] === "install",
     );
-    expect(installCall?.[1]).toContain("--@paperclipai:registry=https://registry.npmjs.org");
+    expect(installCall?.[1]).toContain("--@greatstone:registry=https://registry.npmjs.org");
     const installOptions = installCall?.[2] as { env?: NodeJS.ProcessEnv } | undefined;
     expect(installOptions?.env?.npm_config_userconfig).toContain(".npmrc-");
     const entrypoint = path.join(manifest!.payloadPath, "node_modules", "gsam", "dist", "index.js");

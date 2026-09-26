@@ -35,15 +35,15 @@ test("parseArgs rejects unknown options", () => {
   assert.throws(() => parseArgs(["@greatstone/a", "--otp", "123456"]), /unknown option/);
 });
 
-test("validatePackageName accepts @paperclipai scoped names", () => {
+test("validatePackageName accepts @greatstone scoped names", () => {
   validatePackageName("@greatstone/adapter-kimi-local");
   validatePackageName("@greatstone/plugin-workspace-diff");
 });
 
-test("validatePackageName rejects names outside the @paperclipai scope", () => {
-  assert.throws(() => validatePackageName("left-pad"), /@paperclipai scope/);
-  assert.throws(() => validatePackageName("@evil/adapter-kimi-local"), /@paperclipai scope/);
-  assert.throws(() => validatePackageName("@greatstone/UPPER"), /@paperclipai scope/);
+test("validatePackageName rejects names outside the @greatstone scope", () => {
+  assert.throws(() => validatePackageName("left-pad"), /@greatstone scope/);
+  assert.throws(() => validatePackageName("@evil/adapter-kimi-local"), /@greatstone scope/);
+  assert.throws(() => validatePackageName("@greatstone/UPPER"), /@greatstone scope/);
 });
 
 test("buildPlaceholderFiles produces a publishable manifest at the placeholder version", () => {

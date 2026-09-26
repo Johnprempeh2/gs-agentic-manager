@@ -713,7 +713,7 @@ describe("awsSecretsManagerProvider", () => {
 
   it("redacts AWS provider exception text when remote listing fails", async () => {
     const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager is not authorized to perform secretsmanager:ListSecrets on arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai";
+      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized to perform secretsmanager:ListSecrets on arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai";
     const provider = createAwsSecretsManagerProvider({
       config: {
         region: "us-east-1",

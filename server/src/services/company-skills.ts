@@ -1002,7 +1002,7 @@ function deriveImportedSkillSource(
         : null);
     const [owner, repoName] = (repo ?? "").split("/");
     if (repo && owner && repoName) {
-      const sourceKind = owner === "gsam"
+      const sourceKind = owner === "paperclipai"
         && repoName === "paperclip"
         && canonicalKey?.startsWith("paperclipai/paperclip/")
         ? "paperclip_bundled"
@@ -1311,7 +1311,7 @@ function isPaperclipBundledSkillKey(key: string) {
 
 function paperclipBundledFolderCategory(key: string, metadata?: unknown) {
   const keyParts = key.split("/");
-  if (keyParts[0] === "gsam" && keyParts[1] === "bundled" && keyParts[2]) {
+  if (keyParts[0] === "paperclipai" && keyParts[1] === "bundled" && keyParts[2]) {
     return keyParts[2];
   }
   if (isPaperclipBundledSkillKey(key)) return "paperclip-core";
@@ -1327,6 +1327,12 @@ function bundledFolderLabel(category: string) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+// The core category keeps its persisted `paperclip-core` key (and so its
+// `bundled:paperclip-core` systemKey) but shows the product name.
+function bundledFolderDisplayName(category: string) {
+  return category === "paperclip-core" ? "GS Agentic Manager Core" : bundledFolderLabel(category);
 }
 
 function stripDerivedPaperclipBundledMetadata(key: string, metadata: unknown): unknown {
@@ -3082,7 +3088,7 @@ export function companySkillService(db: Db) {
     for (const skill of shippedSkills) {
       let folder = foldersByCategory.get(skill.category);
       if (!folder) {
-        folder = await folderSvc.ensureBundledCategory(companyId, bundledFolderLabel(skill.category));
+        folder = await folderSvc.ensureBundledCategory(companyId, bundledFolderLabel(skill.category), bundledFolderDisplayName(skill.category));
         foldersByCategory.set(skill.category, folder);
       }
       if (skill.folderId === folder.id) continue;
@@ -5709,7 +5715,7 @@ export function companySkillService(db: Db) {
     const metadata = buildCatalogSkillMetadata(catalogSkill, existingByKey, originSnapshotLocator);
     const bundledCategory = paperclipBundledFolderCategory(catalogSkill.key, metadata);
     const bundledFolder = bundledCategory
-      ? await folderSvc.ensureBundledCategory(companyId, bundledFolderLabel(bundledCategory))
+      ? await folderSvc.ensureBundledCategory(companyId, bundledFolderLabel(bundledCategory), bundledFolderDisplayName(bundledCategory))
       : null;
     const parsed = parseFrontmatterMarkdown(markdown);
     const storeMetadata = readSkillStoreMetadata(parsed.frontmatter, {
@@ -6166,7 +6172,7 @@ export function companySkillService(db: Db) {
         existing
         && existingMeta.sourceKind === "paperclip_bundled"
         && incomingKind === "github"
-        && incomingOwner === "gsam"
+        && incomingOwner === "paperclipai"
         && incomingRepo === "paperclip"
       ) {
         out.push(existing);
@@ -6181,7 +6187,7 @@ export function companySkillService(db: Db) {
       const storeMetadata = readSkillStoreMetadata(parsed.frontmatter, metadata);
       const bundledCategory = paperclipBundledFolderCategory(skill.key, incomingMeta);
       const bundledFolder = bundledCategory
-        ? await folderSvc.ensureBundledCategory(companyId, bundledFolderLabel(bundledCategory))
+        ? await folderSvc.ensureBundledCategory(companyId, bundledFolderLabel(bundledCategory), bundledFolderDisplayName(bundledCategory))
         : null;
       const projectId = asString(incomingMeta.projectId);
       const projectName = asString(incomingMeta.projectName);

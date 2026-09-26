@@ -204,7 +204,7 @@ export async function installNpmPayload(
   try {
     fs.writeFileSync(
       npmUserConfigPath,
-      `registry=${PUBLIC_NPM_REGISTRY}\n@paperclipai:registry=${PUBLIC_NPM_REGISTRY}\n`,
+      `registry=${PUBLIC_NPM_REGISTRY}\n@greatstone:registry=${PUBLIC_NPM_REGISTRY}\n`,
       { mode: 0o600 },
     );
     await runCommand(
@@ -215,7 +215,7 @@ export async function installNpmPayload(
         stagingPath,
         `gsam@${version}`,
         `--registry=${PUBLIC_NPM_REGISTRY}`,
-        `--@paperclipai:registry=${PUBLIC_NPM_REGISTRY}`,
+        `--@greatstone:registry=${PUBLIC_NPM_REGISTRY}`,
         "--no-audit",
         "--no-fund",
       ],

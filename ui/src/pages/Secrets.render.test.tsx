@@ -1030,7 +1030,7 @@ describe("Secrets page layout", () => {
 
   it("explains AWS managed secret creation failures with actionable safe details", async () => {
     const rawProviderMessage =
-      "AccessDeniedException: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager is not authorized";
+      "AccessDeniedException: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized";
     mockSecretsApi.create.mockRejectedValueOnce(
       new ApiError("AWS Secrets Manager denied the request. Check IAM permissions for this provider vault.", 403, {
         details: {
@@ -1233,7 +1233,7 @@ describe("Secrets page layout", () => {
 
   it("shows AWS discovery errors without replacing manual vault form values", async () => {
     const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager is not authorized";
+      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized";
     mockSecretsApi.providerConfigDiscoveryPreview.mockRejectedValueOnce(
       new ApiError("AWS Secrets Manager denied the request. Check IAM permissions for this provider vault.", 403, {
         details: {

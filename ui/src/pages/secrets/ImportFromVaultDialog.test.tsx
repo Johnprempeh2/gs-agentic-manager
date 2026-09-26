@@ -347,7 +347,7 @@ describe("ImportFromVaultDialog", () => {
     await flush();
 
     // Review step: error message visible, Import button disabled.
-    expect(document.body.textContent?.toLowerCase()).toContain("a paperclip secret already uses this");
+    expect(document.body.textContent?.toLowerCase()).toContain("a gs agentic manager secret already uses this");
 
     const importBtn = Array.from(document.querySelectorAll("button")).find(
       (btn) => btn.textContent?.startsWith("Import "),
@@ -728,7 +728,7 @@ describe("ImportFromVaultDialog", () => {
 
   it("renders sanitized preview provider errors without raw AWS exception text", async () => {
     const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/GS Agentic Manager is not authorized";
+      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized";
     mockSecretsApi.remoteImportPreview.mockRejectedValueOnce(
       new ApiError(
         "AWS Secrets Manager denied the request. Check IAM permissions for this provider vault.",

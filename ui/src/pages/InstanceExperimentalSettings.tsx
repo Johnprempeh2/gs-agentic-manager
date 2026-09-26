@@ -433,18 +433,6 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
-          title="Memory connectors"
-          description="Connect Mem0, Zep, Supermemory, Cognee, and Honcho for long-term memory and context."
-          footnote="Turning this off hides setup for these connectors. Existing connections keep running."
-          checked={experimentalQuery.data?.enableMemoryConnectors === true}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableMemoryConnectors: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableMemoryConnectors"
-          managed={managedKeys.enableMemoryConnectors}
-          ariaLabel="Toggle memory connectors experimental setting"
-        />
-
-        <ExperimentalToggleCard
           title="GS Agentic Manager Runner"
           description="Allow new Codex agents to select the experimental Rust GS Agentic Manager Runner, including authenticated runner ingress when a sandbox requires it. Onboarding continues to use legacy adapters. Turning this off hides the choice without affecting existing native runs."
           checked={enableNativeRunner}
@@ -455,6 +443,18 @@ export function InstanceExperimentalSettings() {
           settingKey="enableNativeRunner"
           managed={managedKeys.enableNativeRunner}
           ariaLabel="Toggle GS Agentic Manager Runner experimental setting"
+        />
+
+        <ExperimentalToggleCard
+          title="Memory connectors"
+          description="Connect Mem0, Zep, Supermemory, Cognee, and Honcho for long-term memory and context."
+          footnote="Turning this off hides setup for these connectors. Existing connections keep running."
+          checked={experimentalQuery.data?.enableMemoryConnectors === true}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableMemoryConnectors: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableMemoryConnectors"
+          managed={managedKeys.enableMemoryConnectors}
+          ariaLabel="Toggle memory connectors experimental setting"
         />
 
         <ExperimentalToggleCard
@@ -557,6 +557,19 @@ export function InstanceExperimentalSettings() {
             managed={managedKeys.autoRestartDevServerWhenIdle}
             ariaLabel="Toggle guarded dev-server auto-restart"
           />
+          <ExperimentalToggleCard
+            title="GS Agentic Manager Developer Mode"
+            description="Show internal GS Agentic Manager maintainer tools and observability links, including Honeycomb trace queries on run pages."
+            checked={enablePaperclipDeveloperMode}
+            onCheckedChange={(checked) =>
+              toggleMutation.mutate({ enablePaperclipDeveloperMode: checked })
+            }
+            disabled={toggleMutation.isPending}
+            settingKey="enablePaperclipDeveloperMode"
+            managed={managedKeys.enablePaperclipDeveloperMode}
+            ariaLabel="Toggle GS Agentic Manager developer mode experimental setting"
+          />
+
 
           <ExperimentalToggleCard
             title="Managed Environment Only"
@@ -569,19 +582,6 @@ export function InstanceExperimentalSettings() {
             settingKey="enableManagedSandboxOnly"
             managed={managedKeys.enableManagedSandboxOnly}
             ariaLabel="Toggle managed environment only experimental setting"
-          />
-
-          <ExperimentalToggleCard
-            title="GS Agentic Manager Developer Mode"
-            description="Show internal GS Agentic Manager maintainer tools and observability links, including Honeycomb trace queries on run pages."
-            checked={enablePaperclipDeveloperMode}
-            onCheckedChange={(checked) =>
-              toggleMutation.mutate({ enablePaperclipDeveloperMode: checked })
-            }
-            disabled={toggleMutation.isPending}
-            settingKey="enablePaperclipDeveloperMode"
-            managed={managedKeys.enablePaperclipDeveloperMode}
-            ariaLabel="Toggle GS Agentic Manager developer mode experimental setting"
           />
 
           {showWorktreeRunExecution ? (

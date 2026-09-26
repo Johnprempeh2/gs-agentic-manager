@@ -409,7 +409,7 @@ describe("Cloud tenant company naming", () => {
 
   it.each([
     "paperclip-stack-purple-rain",
-    "stack-purple-rain GS Agentic Manager",
+    "stack-purple-rain Paperclip",
     ids.companyId,
   ])("repairs the known-bad machine name %s", (name) => {
     expect(isKnownBadCloudCompanyName(name, ids)).toBe(true);

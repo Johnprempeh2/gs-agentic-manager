@@ -207,7 +207,7 @@ try {
       "node_modules",
       ".pnpm",
       "node_modules",
-      "@paperclipai",
+      "@greatstone",
       "paperclip-runner",
     ),
     { recursive: true, force: true },

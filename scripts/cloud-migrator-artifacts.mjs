@@ -49,7 +49,7 @@ export function assertLockfile(lock, manifest) {
   for (const [key, entry] of Object.entries(lock.packages)) {
     if (key === "") continue;
     if (!entry || typeof entry !== "object" || entry.link) throw new Error("Invalid migrator lockfile entry.");
-    if (/(?:^|\/)node_modules\/@paperclipai\/[^/]+$/.test(key) && !names.some((name) => key === `node_modules/@greatstone/${name}`)) throw new Error("Unexpected internal migrator dependency.");
+    if (/(?:^|\/)node_modules\/@greatstone\/[^/]+$/.test(key) && !names.some((name) => key === `node_modules/@greatstone/${name}`)) throw new Error("Unexpected internal migrator dependency.");
     if (entry.inBundle === true) {
       if (!key.startsWith("node_modules/@greatstone/db/node_modules/")) throw new Error("Unexpected bundled dependency.");
       continue;
@@ -127,7 +127,7 @@ export function verifyInstall(directory, sha, { exec = execFileSync } = {}) {
     writeFileSync(path.join(scratch, "package-lock.json"), JSON.stringify(lock));
     exec("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund", "--update-notifier=false", "--cache", path.join(scratch, "empty-cache"),
       "--registry=https://registry.npmjs.org"], { cwd: scratch, stdio: "inherit", timeout: 180_000 });
-    for (const name of names) assertMetadata(JSON.parse(readFileSync(path.join(scratch, "node_modules", "@paperclipai", name, "package.json"), "utf8")), `@greatstone/${name}`, sha);
+    for (const name of names) assertMetadata(JSON.parse(readFileSync(path.join(scratch, "node_modules", "@greatstone", name, "package.json"), "utf8")), `@greatstone/${name}`, sha);
     exec(process.execPath, ["--input-type=module", "--eval", "await import('@greatstone/db'); await import('@greatstone/shared');"], { cwd: scratch, stdio: "inherit", timeout: 30_000 });
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }

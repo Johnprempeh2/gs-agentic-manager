@@ -131,7 +131,7 @@ const K8S_IN_CLUSTER_ENV_PASSTHROUGH = [
  * manifest's declared driver key — but name and manifest are both
  * plugin-authored, so neither is proof of identity on its own. The gate
  * therefore also requires a trusted install origin: a registry install
- * (`packagePath` null — the `@paperclipai` scope is project-controlled at
+ * (`packagePath` null — the `@greatstone` scope is project-controlled at
  * the registry), or a local path inside the repo/bundled plugin catalog,
  * which ships inside the release image and is as trusted as the server
  * code itself. An operator-added local plugin directory can claim any

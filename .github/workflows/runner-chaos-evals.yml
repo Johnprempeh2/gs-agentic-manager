@@ -47,12 +47,12 @@ jobs:
 
       - name: Build eval and Runner contracts
         run: |
-          pnpm --filter @paperclipai/paperclip-eval-kernel build
-          pnpm --filter @paperclipai/paperclip-runner report:runner-chaos-evals
+          pnpm --filter @greatstone/paperclip-eval-kernel build
+          pnpm --filter @greatstone/paperclip-runner report:runner-chaos-evals
 
       - name: Run Runner fault and replay suites
         run: |
-          pnpm --filter @paperclipai/paperclip-runner exec vitest run \
+          pnpm --filter @greatstone/paperclip-runner exec vitest run \
             src/eval/workflow-evals.test.ts \
             src/native-session-runtime.test.ts \
             src/live/live-session.test.ts \
@@ -62,11 +62,11 @@ jobs:
             src/drivers/acpx/runtime-host.test.ts
 
       - name: Build server test dependencies
-        run: pnpm --filter @paperclipai/plugin-sdk ensure-build-deps
+        run: pnpm --filter @greatstone/plugin-sdk ensure-build-deps
 
       - name: Run server finalization and recovery suites
         run: |
-          pnpm --filter @paperclipai/server exec vitest run \
+          pnpm --filter @greatstone/server exec vitest run \
             src/__tests__/native-finalization-recovery.test.ts \
             src/__tests__/heartbeat-process-recovery.test.ts \
             src/__tests__/heartbeat-comment-wake-batching.test.ts \

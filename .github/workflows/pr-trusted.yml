@@ -339,7 +339,7 @@ jobs:
       - name: Verify release package bootstrap for changed manifests
         run: |
           mapfile -t changed_paths < <(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")
-          PAPERCLIP_RELEASE_BOOTSTRAP_BASE_SHA="${{ github.event.pull_request.base.sha }}" \
+          GSAM_RELEASE_BOOTSTRAP_BASE_SHA="${{ github.event.pull_request.base.sha }}" \
             node ./scripts/check-release-package-bootstrap.mjs "${changed_paths[@]}"
 
       # Each lane resolves a stale lockfile inline; this early check still
@@ -403,10 +403,10 @@ jobs:
             pnpm install --frozen-lockfile
           fi
 
-      # typecheck:build-gaps builds @paperclipai/server, whose build script
+      # typecheck:build-gaps builds @greatstone/server, whose build script
       # rebuilds the Runner release binary; without the shared Rust cache that
       # is a ~3m40s cold compile of all third-party crates (run 35036001734,
-      # 2026-09-15). Same restore-only contract as Verify Paperclip Runner.
+      # 2026-09-15). Same restore-only contract as Verify GS Agentic Manager Runner.
       - name: Select the pinned Runner Rust toolchain
         working-directory: packages/paperclip-runner
         run: |
@@ -542,7 +542,7 @@ jobs:
             shard_count: 3
           # workspaces-a was the slowest check in the fully-green PR run
           # 31371439296 (2026-08-10) at 319s, with the ui project's single
-          # vitest invocation accounting for ~224s and the paperclipai CLI
+          # vitest invocation accounting for ~224s and the gsam CLI
           # ~37s. Two shards use Vitest's native --shard on each project's
           # file list (ui: 439 files, cli: 54), bringing each job to roughly
           # half the suite time (~130s + setup) without a duration manifest.
@@ -686,7 +686,7 @@ jobs:
           esac
 
   verify_paperclip_runner:
-    name: Verify Paperclip Runner (${{ matrix.lane_label }})
+    name: Verify GS Agentic Manager Runner (${{ matrix.lane_label }})
     needs: [gate]
     if: ${{ needs.gate.outputs.full_ci == 'true' }}
     runs-on: ${{ needs.gate.outputs.runner }}
@@ -817,12 +817,12 @@ jobs:
           # Restore only. Never let a pull request evict master's entry.
           save-if: false
 
-      - name: Verify Paperclip Runner
+      - name: Verify GS Agentic Manager Runner
         # pnpm appends trailing args to the end of the script's shell chain,
         # so the vitest lanes' --shard lands on `vitest run`. Do not add a
         # `--` separator: pnpm forwards it literally and vitest would then
         # read the shard flag as a test filter.
-        run: pnpm --filter @paperclipai/paperclip-runner ${{ matrix.command }}
+        run: pnpm --filter @greatstone/paperclip-runner ${{ matrix.command }}
 
   build:
     name: Build
@@ -883,7 +883,7 @@ jobs:
       # pnpm build reaches the Runner package's build:binary step; without the
       # shared Rust cache that is a ~3m40s cold compile of all third-party
       # crates (run 35036001734, 2026-09-15). Same restore-only contract as
-      # Verify Paperclip Runner.
+      # Verify GS Agentic Manager Runner.
       - name: Select the pinned Runner Rust toolchain
         working-directory: packages/paperclip-runner
         run: |
@@ -931,7 +931,7 @@ jobs:
           save-if: false
 
       - name: Build Runner Evalbook viewer
-        run: pnpm --filter @paperclipai/paperclip-runner build:issue-thread
+        run: pnpm --filter @greatstone/paperclip-runner build:issue-thread
 
       - name: Build
         run: pnpm build
@@ -1093,7 +1093,7 @@ jobs:
       # release.sh's Step 2/7 workspace build reaches the Runner package's
       # build:binary step; without the shared Rust cache that is a ~3m40s cold
       # compile of all third-party crates (run 35036001734, 2026-09-15). Same
-      # restore-only contract as Verify Paperclip Runner.
+      # restore-only contract as Verify GS Agentic Manager Runner.
       - name: Select the pinned Runner Rust toolchain
         working-directory: packages/paperclip-runner
         run: |
@@ -1260,10 +1260,10 @@ jobs:
         # browser bundles inside the 30 minute job budget.
         run: google-chrome --version
 
-      - name: Generate Paperclip config
+      - name: Generate GS Agentic Manager config
         run: |
-          mkdir -p ~/.paperclip/instances/default
-          cat > ~/.paperclip/instances/default/config.json << 'CONF'
+          mkdir -p ~/.gsam/instances/default
+          cat > ~/.gsam/instances/default/config.json << 'CONF'
           {
             "$meta": { "version": 1, "updatedAt": "2026-01-01T00:00:00.000Z", "source": "onboard" },
             "database": { "mode": "embedded-postgres" },
@@ -1277,8 +1277,8 @@ jobs:
 
       - name: Run e2e tests
         env:
-          PAPERCLIP_E2E_SKIP_LLM: "true"
-          PAPERCLIP_PLAYWRIGHT_CHANNEL: "chrome"
+          GSAM_E2E_SKIP_LLM: "true"
+          GSAM_PLAYWRIGHT_CHANNEL: "chrome"
         run: |
           # Playwright's own --shard balances by test count, and one spec
           # (smoke-lab) is ~40% of the lane's wall clock. Partition by recorded

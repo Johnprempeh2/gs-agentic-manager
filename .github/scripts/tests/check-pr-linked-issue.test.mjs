@@ -61,7 +61,7 @@ test('fails with cross-repo issue reference', () => {
   assert.equal(result.passed, false);
 });
 
-test('fails when the Paperclip issue URL is embedded inside another host', () => {
+test('fails when the GS Agentic Manager issue URL is embedded inside another host', () => {
   const result = checkLinkedIssue(
     'See https://evil.example/https://github.com/paperclipai/paperclip/issues/123',
     'fix: bug'
@@ -69,7 +69,7 @@ test('fails when the Paperclip issue URL is embedded inside another host', () =>
   assert.equal(result.passed, false);
 });
 
-test('fails when the Paperclip issue URL continues into another host', () => {
+test('fails when the GS Agentic Manager issue URL continues into another host', () => {
   const result = checkLinkedIssue(
     'See https://github.com/paperclipai/paperclip/issues/123.evil.example',
     'fix: bug'
@@ -336,7 +336,7 @@ const STACKED_BUG_LABELS = `
 What happened?:
 Expected behavior:
 Steps to reproduce:
-Paperclip version:
+GS Agentic Manager version:
 `;
 
 const STACKED_ENHANCEMENT_LABELS = `

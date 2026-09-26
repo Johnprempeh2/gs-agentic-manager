@@ -544,12 +544,14 @@ export function folderService(db: Db, mutationLockHeld = false) {
     throw conflict("Could not create project skill folder");
   }
 
-  async function ensureBundledCategory(companyId: string, category: string): Promise<Folder> {
+  // `category` fixes the slug and systemKey (persisted, so it must stay stable);
+  // `displayName` lets the visible label differ from it.
+  async function ensureBundledCategory(companyId: string, category: string, displayName?: string): Promise<Folder> {
     if (!mutationLockHeld) {
-      return withCompanyFolderLock(companyId, (lockedDb) => folderService(lockedDb, true).ensureBundledCategory(companyId, category));
+      return withCompanyFolderLock(companyId, (lockedDb) => folderService(lockedDb, true).ensureBundledCategory(companyId, category, displayName));
     }
     const root = await ensureContainer(companyId, "bundled", "Bundled");
-    const name = normalizeName(category);
+    const name = normalizeName(displayName ?? category);
     const slug = normalizeFolderSlug(category);
     const systemKey = `bundled:${slug}`;
     for (let attempt = 0; attempt < 3; attempt += 1) {

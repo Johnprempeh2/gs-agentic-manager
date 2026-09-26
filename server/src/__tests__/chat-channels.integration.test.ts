@@ -5710,7 +5710,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(observedIssuer).toBe(appId);
     expect(configured).toMatchObject({
       status: "verifying",
-      providerAccountId: "gsam",
+      providerAccountId: "paperclipai",
       botExternalId: "789",
       botUsername: "maya-paperclip[bot]",
       setup: { step: "test", webhookVerifiedAt: expect.any(String) },
@@ -5783,8 +5783,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       endpointId: endpoint.id,
       provider: "github",
       thread: makeThread({
-        channelId: "PaperclipAI/GS Agentic Manager",
-        id: "github:PaperclipAI/GS Agentic Manager:issue:17",
+        channelId: "PaperclipAI/Paperclip",
+        id: "github:PaperclipAI/Paperclip:issue:17",
         name: "paperclipai/paperclip",
       }).thread,
       message: makeMessage({
@@ -6275,7 +6275,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       ),
     ).resolves.toMatchObject({
       status: "verifying",
-      providerAccountId: "gsam",
+      providerAccountId: "paperclipai",
       botExternalId: "991124",
       botUsername: "maya-selectable-events[bot]",
     });
@@ -10483,9 +10483,9 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       endpointId: endpoint.id,
       provider: "github",
       thread: makeThread({
-        channelId: "PaperclipAI/GS Agentic Manager",
-        id: "github:PaperclipAI/GS Agentic Manager:issue:77",
-        name: "PaperclipAI/GS Agentic Manager",
+        channelId: "PaperclipAI/Paperclip",
+        id: "github:PaperclipAI/Paperclip:issue:77",
+        name: "PaperclipAI/Paperclip",
       }).thread,
       message: makeMessage({
         id: "github-rename-root",

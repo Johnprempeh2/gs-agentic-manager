@@ -392,7 +392,7 @@ test("fetchRegistryJson times out hung requests", async () => {
 
   try {
     await assert.rejects(
-      fetchRegistryJson(new URL("https://registry.npmjs.org/@paperclipai%2Fui"), { timeoutMs: 1 }),
+      fetchRegistryJson(new URL("https://registry.npmjs.org/@greatstone%2Fui"), { timeoutMs: 1 }),
       /timed out/,
     );
   } finally {

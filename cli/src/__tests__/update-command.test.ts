@@ -173,7 +173,7 @@ describe("update command", () => {
     const runCommand = vi.fn<CommandRunner>(async (_file, args, commandOptions) => {
       if (args[0] === "view") return { stdout: '"2.0.0"\n', stderr: "" };
       expect(args).toContain("--registry=https://registry.npmjs.org");
-      expect(args).toContain("--@paperclipai:registry=https://registry.npmjs.org");
+      expect(args).toContain("--@greatstone:registry=https://registry.npmjs.org");
       expect(commandOptions?.env?.NPM_CONFIG_REGISTRY).toBe("https://registry.npmjs.org");
       expect(commandOptions?.env?.npm_config_registry).toBe("https://registry.npmjs.org");
       expect(commandOptions?.env?.NPM_CONFIG_USERCONFIG).toBe(commandOptions?.env?.npm_config_userconfig);

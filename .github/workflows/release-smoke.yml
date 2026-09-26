@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       paperclip_version:
-        description: Published Paperclip dist-tag to test
+        description: Published GS Agentic Manager dist-tag to test
         required: true
         default: canary
         type: choice
@@ -155,10 +155,10 @@ jobs:
 
       - name: Run release smoke Playwright suite
         env:
-          PAPERCLIP_RELEASE_SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
-          PAPERCLIP_RELEASE_SMOKE_EMAIL: ${{ env.SMOKE_ADMIN_EMAIL }}
-          PAPERCLIP_RELEASE_SMOKE_PASSWORD: ${{ env.SMOKE_ADMIN_PASSWORD }}
-          PAPERCLIP_PLAYWRIGHT_CHANNEL: "chrome"
+          GSAM_RELEASE_SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
+          GSAM_RELEASE_SMOKE_EMAIL: ${{ env.SMOKE_ADMIN_EMAIL }}
+          GSAM_RELEASE_SMOKE_PASSWORD: ${{ env.SMOKE_ADMIN_PASSWORD }}
+          GSAM_PLAYWRIGHT_CHANNEL: "chrome"
         run: pnpm run test:release-smoke
 
       - name: Capture Docker logs

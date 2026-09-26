@@ -395,8 +395,9 @@ export function toolActivityPresentation(input: ToolActivityPresentationInput): 
       : actionCopy(action, exact ? undefined : object);
   const semanticFamily = exact?.family ?? actionFamily(action);
   const family = transport === "mcp" ? "mcp" : semanticFamily;
+  // The built-in MCP server is still named `paperclip` on the wire; show the product name.
   const sourceLabel = namespace
-    ? humanizeToolName(namespace)
+    ? namespace.toLowerCase() === "paperclip" ? "GS Agentic Manager" : humanizeToolName(namespace)
     : transport === "mcp"
       ? "MCP"
       : undefined;

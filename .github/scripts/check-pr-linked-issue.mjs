@@ -33,7 +33,7 @@ const TEMPLATE_FIELDS = {
     ['What happened', 'What happened?'],
     ['Expected behavior', 'Expected behaviour'],
     ['Steps to reproduce', 'Reproduction steps', 'Repro steps'],
-    ['Paperclip version', 'Paperclip version or commit', 'Version or commit', 'Version/commit'],
+    ['GS Agentic Manager version', 'GS Agentic Manager version or commit', 'Version or commit', 'Version/commit'],
     ['Deployment mode'],
   ],
   feature: [

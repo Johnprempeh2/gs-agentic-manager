@@ -108,8 +108,8 @@ test("fetch prints a JSON version map and treats missing packages as empty", () 
     "2026.707.1-canary.4",
   ]);
   assert.deepEqual(map["@greatstone/missing"], []);
-  assert.match(result.calls, /^npm view @paperclipai\/present versions --json$/m);
-  assert.match(result.calls, /^npm view @paperclipai\/missing versions --json$/m);
+  assert.match(result.calls, /^npm view @greatstone\/present versions --json$/m);
+  assert.match(result.calls, /^npm view @greatstone\/missing versions --json$/m);
 });
 
 test("assert-absent succeeds when no package has the version", () => {
@@ -120,7 +120,7 @@ test("assert-absent succeeds when no package has the version", () => {
   );
 
   assert.equal(result.status, 0);
-  assert.match(result.calls, /^npm view @paperclipai\/absent@2026\.707\.2 version$/m);
+  assert.match(result.calls, /^npm view @greatstone\/absent@2026\.707\.2 version$/m);
 });
 
 test("assert-absent fails and names packages that already have the version", () => {
@@ -131,8 +131,8 @@ test("assert-absent fails and names packages that already have the version", () 
   );
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /npm version @paperclipai\/present@2026\.707\.2 already exists\./);
-  assert.doesNotMatch(result.stderr, /@paperclipai\/absent@/);
+  assert.match(result.stderr, /npm version @greatstone\/present@2026\.707\.2 already exists\./);
+  assert.doesNotMatch(result.stderr, /@greatstone\/absent@/);
 });
 
 test("invalid concurrency fails instead of skipping registry checks", () => {
@@ -193,7 +193,7 @@ test("next_stable_version falls back to npm view without a versions file", () =>
 
   assert.equal(result.status, 0);
   assert.equal(result.output, "2026.707.2");
-  assert.match(result.calls, /^npm view @paperclipai\/present versions --json$/m);
+  assert.match(result.calls, /^npm view @greatstone\/present versions --json$/m);
 });
 
 test("next_prerelease_version counts per channel so nightly numbering ignores canaries", () => {

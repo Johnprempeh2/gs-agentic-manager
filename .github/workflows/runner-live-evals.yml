@@ -157,22 +157,22 @@ jobs:
             runner-live-eval-history-${{ github.ref_name }}-
 
       - name: Build provider-neutral eval kernel
-        run: pnpm --filter @paperclipai/paperclip-eval-kernel build
+        run: pnpm --filter @greatstone/paperclip-eval-kernel build
 
       - name: Run trend-only live matrix
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PAPERCLIP_EVAL_BASELINE_READY: "true"
-          PAPERCLIP_EVAL_RUNNER_BUILD: ${{ github.sha }}
-          PAPERCLIP_EVAL_MAX_CAMPAIGN_COST_USD: "12"
-          PAPERCLIP_EVAL_SCHEDULE_SEED: runner-live-seven-week-v1
-          PAPERCLIP_EVAL_CANDIDATE: ${{ inputs.candidate }}
-          PAPERCLIP_EVAL_CASE: ${{ inputs.case }}
-          PAPERCLIP_EVAL_LIMIT: ${{ inputs.limit }}
-          PAPERCLIP_EVALBOOK_PROGRAM: ${{ github.workspace }}/.paperclip-evals/evals/paperclip-runner/tools/eval_program.py
-        run: pnpm --filter @paperclipai/paperclip-runner report:runner-live-evals
+          GSAM_EVAL_BASELINE_READY: "true"
+          GSAM_EVAL_RUNNER_BUILD: ${{ github.sha }}
+          GSAM_EVAL_MAX_CAMPAIGN_COST_USD: "12"
+          GSAM_EVAL_SCHEDULE_SEED: runner-live-seven-week-v1
+          GSAM_EVAL_CANDIDATE: ${{ inputs.candidate }}
+          GSAM_EVAL_CASE: ${{ inputs.case }}
+          GSAM_EVAL_LIMIT: ${{ inputs.limit }}
+          GSAM_EVALBOOK_PROGRAM: ${{ github.workspace }}/.paperclip-evals/evals/paperclip-runner/tools/eval_program.py
+        run: pnpm --filter @greatstone/paperclip-runner report:runner-live-evals
 
       - name: Publish job summary
         if: always()

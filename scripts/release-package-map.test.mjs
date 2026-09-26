@@ -76,8 +76,8 @@ test("guard flags a publishFromCi:true package depending on a publishFromCi:fals
   ]);
 
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /@paperclipai\/server/);
-  assert.match(problems[0], /@paperclipai\/skills-catalog/);
+  assert.match(problems[0], /@greatstone\/server/);
+  assert.match(problems[0], /@greatstone\/skills-catalog/);
 });
 
 test("guard inspects optional and peer dependency sections too", () => {
@@ -94,7 +94,7 @@ test("guard inspects optional and peer dependency sections too", () => {
   assert.equal(problems.length, 2);
 });
 
-test("guard treats a workspace dep on an unknown @paperclipai package as unpublishable", () => {
+test("guard treats a workspace dep on an unknown @greatstone package as unpublishable", () => {
   const problems = findUnpublishableWorkspaceEdges([
     pkg("@greatstone/server", {
       publishFromCi: true,

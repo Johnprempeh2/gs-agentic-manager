@@ -42,7 +42,7 @@ describe("GitHub grant metadata", () => {
       repositoryCount: 3,
       repositorySelection: "mixed",
       installationIds: ["101", "102"],
-      installationOwnerLogins: ["gsam", "octocat"],
+      installationOwnerLogins: ["paperclipai", "octocat"],
       repositories: [
         { id: "3", fullName: "octocat/c", installationId: "102" },
         { id: "1", fullName: "paperclipai/a", installationId: "101", private: false },

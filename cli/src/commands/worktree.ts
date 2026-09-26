@@ -588,7 +588,7 @@ async function findAvailablePort(preferredPort: number, reserved = new Set<numbe
 
 function resolveRepoManagedWorktreesRoot(cwd: string): string | null {
   const normalized = path.resolve(cwd);
-  const marker = `${path.sep}.paperclip${path.sep}worktrees${path.sep}`;
+  const marker = `${path.sep}.gsam${path.sep}worktrees${path.sep}`;
   const index = normalized.indexOf(marker);
   if (index === -1) return null;
   const repoRoot = normalized.slice(0, index);
