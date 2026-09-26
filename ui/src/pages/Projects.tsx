@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Project } from "@paperclipai/shared";
+import type { Project } from "@greatstone/shared";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
@@ -218,7 +218,7 @@ export function Projects() {
                         subtitle={project.description ?? undefined}
                         reserveSubtitleSpace
                         to={projectUrl(project)}
-                        className={state === "left" ? "group text-foreground/55" : "group"}
+                        className={state === "left" ? "group text-muted-foreground" : "group"}
                         trailing={
                           <div className="flex items-center gap-3">
                             <span

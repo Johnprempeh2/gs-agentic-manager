@@ -14,17 +14,17 @@ import {
   principalPermissionGrants,
   toolApplications,
   toolConnections,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 
 vi.hoisted(() => {
-  process.env.PAPERCLIP_HOME = "/tmp/paperclip-test-home";
-  process.env.PAPERCLIP_INSTANCE_ID = "vitest";
-  process.env.PAPERCLIP_LOG_DIR = "/tmp/paperclip-test-home/logs";
-  process.env.PAPERCLIP_IN_WORKTREE = "false";
+  process.env.GSAM_HOME = "/tmp/paperclip-test-home";
+  process.env.GSAM_INSTANCE_ID = "vitest";
+  process.env.GSAM_LOG_DIR = "/tmp/paperclip-test-home/logs";
+  process.env.GSAM_IN_WORKTREE = "false";
 });
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -33,8 +33,8 @@ const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : 
 type Db = ReturnType<typeof createDb>;
 
 async function createApp(db: Db, companyId: string, userId: string) {
-  process.env.PAPERCLIP_LOG_DIR = "/tmp/paperclip-test-home/logs";
-  process.env.PAPERCLIP_IN_WORKTREE = "false";
+  process.env.GSAM_LOG_DIR = "/tmp/paperclip-test-home/logs";
+  process.env.GSAM_IN_WORKTREE = "false";
   const { accessRoutes } = await import("../routes/access.js");
   const app = express();
   app.use(express.json());

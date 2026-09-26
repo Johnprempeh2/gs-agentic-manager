@@ -419,7 +419,7 @@ export async function runFirstTaskFlow(input: {
           o.id === (scenario.opening === "interview" ? "interview" : "task"),
       );
       await page
-        // Paperclip includes the option description in the accessible name.
+        // GS Agentic Manager includes the option description in the accessible name.
         .getByRole("radio", { name: option.label })
         .last()
         .click();

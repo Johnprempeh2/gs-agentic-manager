@@ -107,7 +107,7 @@ export function ConnectModelPreview({
           <OnboardingHeading
             center
             title="Connect a model"
-            lede="Paperclip works with your existing subscription or API keys."
+            lede="GS Agentic Manager works with your existing subscription or API keys."
           />
         </div>
 

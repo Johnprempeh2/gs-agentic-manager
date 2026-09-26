@@ -252,7 +252,7 @@ describe("joinFrontmatterBlock", () => {
       "---\ndescription: >\n  folded\n  text\n---\nBody with comment: value\n",
       "# just markdown, no frontmatter\n",
       "---\nunterminated frontmatter\nstill body",
-      "---\nmetadata:\n  author: Paperclip\n  # comment stays\n---\nbody\n",
+      "---\nmetadata:\n  author: GS Agentic Manager\n  # comment stays\n---\nbody\n",
     ];
     for (const raw of samples) {
       expect(joinFrontmatterBlock(splitFrontmatterBlock(raw))).toBe(raw);
@@ -293,7 +293,7 @@ describe("analyzeFrontmatterBlock", () => {
       "  - Read",
       "  - Grep",
       "metadata:",
-      "  author: Paperclip",
+      "  author: GS Agentic Manager",
       "  version: 2",
     ].join("\n");
     const result = analyzeFrontmatterBlock(raw);

@@ -1,7 +1,7 @@
 # Agent Artifact Upload Workflow
 
 Generated files that a board user or reviewer should inspect as deliverables
-must be attached to the Paperclip issue before the agent chooses a final
+must be attached to the GS Agentic Manager issue before the agent chooses a final
 disposition. A local workspace path is not enough, because cloud users and
 reviewers often cannot access the agent's disk.
 
@@ -16,14 +16,14 @@ binds it to the response. Generic API tools and a legacy API key are unnecessary
 Wait for the receipt. It includes `attachmentId`, `contentPath`, and
 `downloadPath`, along with the existing command, revision, entity references,
 and disposition. Reuse the original key after an ambiguous result. A receipt
-confirms storage and response binding in Paperclip; it does not confirm delivery
+confirms storage and response binding in GS Agentic Manager; it does not confirm delivery
 to an external chat provider. If registration fails, use the returned error to
 resolve the failure or explain the limitation; do not describe a workspace path
 as an uploaded file.
 
 ## Legacy adapters
 
-Use Bash to run the helper bundled with the Paperclip skill from the repo root; installed skill files may not retain executable permissions:
+Use Bash to run the helper bundled with the GS Agentic Manager skill from the repo root; installed skill files may not retain executable permissions:
 
 ```sh
 bash skills/paperclip/scripts/paperclip-upload-artifact.sh path/to/output.webm \
@@ -31,14 +31,14 @@ bash skills/paperclip/scripts/paperclip-upload-artifact.sh path/to/output.webm \
   --summary "Rendered walkthrough for review"
 ```
 
-The helper uses the authenticated Paperclip API from the current heartbeat
+The helper uses the authenticated GS Agentic Manager API from the current heartbeat
 environment:
 
-- `PAPERCLIP_API_URL`
-- `PAPERCLIP_API_KEY`
-- `PAPERCLIP_COMPANY_ID`
-- `PAPERCLIP_TASK_ID`
-- `PAPERCLIP_RUN_ID`
+- `GSAM_API_URL`
+- `GSAM_API_KEY`
+- `GSAM_COMPANY_ID`
+- `GSAM_TASK_ID`
+- `GSAM_RUN_ID`
 
 It uploads the file to
 `POST /api/companies/{companyId}/issues/{issueId}/attachments` and creates an
@@ -89,10 +89,10 @@ Expected work product metadata shape:
 `column` are optional. `relativePath` must be relative to that workspace root;
 do not store host-local absolute paths as workspace references.
 
-Workspace file links resolve only inside registered Paperclip workspaces. The
+Workspace file links resolve only inside registered GS Agentic Manager workspaces. The
 default target is the current issue's execution workspace first, then its
 project workspace. A link may target another same-company project workspace only
-when it carries both that `projectId` and `workspaceId`. Paperclip does not
+when it carries both that `projectId` and `workspaceId`. GS Agentic Manager does not
 resolve arbitrary machine-wide filesystem paths, absolute host paths, home
 paths, or relative paths that escape the selected workspace.
 
@@ -108,8 +108,8 @@ When a task produces a user-inspectable deliverable file:
 5. Then set the final issue status.
 
 For a response that is explicitly intended for an external chat conversation,
-also pass each intended file with `paperclipai issue comment --attachment-id
-<id>`. Paperclip binds only those exact uploaded files to that comment; other
+also pass each intended file with `gsam issue comment --attachment-id
+<id>`. GS Agentic Manager binds only those exact uploaded files to that comment; other
 task attachments remain internal.
 
 Final comments should name and link the uploaded artifact or work product, not
@@ -152,9 +152,9 @@ If the helper is unavailable, use the same API shape:
 
 ```sh
 curl -sS -X POST \
-  "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues/$PAPERCLIP_TASK_ID/attachments" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" \
+  "$GSAM_API_URL/api/companies/$GSAM_COMPANY_ID/issues/$GSAM_TASK_ID/attachments" \
+  -H "Authorization: Bearer $GSAM_API_KEY" \
+  -H "X-Paperclip-Run-Id: $GSAM_RUN_ID" \
   -F 'file=@"dist/demo.mp4";type=video/mp4'
 ```
 
@@ -162,9 +162,9 @@ Then create a work product when the uploaded file is the deliverable:
 
 ```sh
 curl -sS -X POST \
-  "$PAPERCLIP_API_URL/api/issues/$PAPERCLIP_TASK_ID/work-products" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" \
+  "$GSAM_API_URL/api/issues/$GSAM_TASK_ID/work-products" \
+  -H "Authorization: Bearer $GSAM_API_KEY" \
+  -H "X-Paperclip-Run-Id: $GSAM_RUN_ID" \
   -H "Content-Type: application/json" \
   --data-binary @artifact-work-product.json
 ```
@@ -195,8 +195,8 @@ To run the same suite on disposable Daytona sandboxes, install the standalone
 Daytona plugin's dependencies and set `DAYTONA_API_KEY` in the test process:
 
 ```sh
-PAPERCLIP_FILE_DELIVERY_DAYTONA=1 pnpm exec vitest run server/src/__tests__/file-delivery-bridges.test.ts
+GSAM_FILE_DELIVERY_DAYTONA=1 pnpm exec vitest run server/src/__tests__/file-delivery-bridges.test.ts
 ```
 
 The live fixture deletes each sandbox before checking that its attachments
-remain downloadable from Paperclip. It does not run unless explicitly enabled.
+remain downloadable from GS Agentic Manager. It does not run unless explicitly enabled.

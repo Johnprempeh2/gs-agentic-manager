@@ -9,7 +9,7 @@ import {
   createDb,
   heartbeatRuns,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 
 import {
   getEmbeddedPostgresTestSupport,

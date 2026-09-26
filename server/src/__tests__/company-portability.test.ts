@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompanyPortabilityFileEntry } from "@paperclipai/shared";
+import type { CompanyPortabilityFileEntry } from "@greatstone/shared";
 
 const companySvc = {
   getById: vi.fn(),
@@ -230,7 +230,7 @@ describe("company portability", () => {
     companySvc.list.mockResolvedValue([]);
     companySvc.getById.mockResolvedValue({
       id: "company-1",
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       description: null,
       issuePrefix: "PAP",
       logoAssetId: null,
@@ -239,7 +239,7 @@ describe("company portability", () => {
     });
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
       requireBoardApprovalForNewAgents: false,
     });
     agentSvc.list.mockResolvedValue([
@@ -393,8 +393,8 @@ describe("company portability", () => {
         key: paperclipKey,
         slug: "paperclip",
         name: "paperclip",
-        description: "Paperclip coordination skill",
-        markdown: "---\nname: paperclip\ndescription: Paperclip coordination skill\n---\n\n# Paperclip\n",
+        description: "GS Agentic Manager coordination skill",
+        markdown: "---\nname: paperclip\ndescription: GS Agentic Manager coordination skill\n---\n\n# GS Agentic Manager\n",
         sourceType: "github",
         sourceLocator: "https://github.com/paperclipai/paperclip/tree/master/skills/paperclip",
         sourceRef: "0123456789abcdef0123456789abcdef01234567",
@@ -457,7 +457,7 @@ describe("company portability", () => {
         path: relativePath,
         kind: relativePath === "SKILL.md" ? "skill" : "reference",
         content: relativePath === "SKILL.md"
-          ? "---\nname: paperclip\ndescription: Paperclip coordination skill\n---\n\n# Paperclip\n"
+          ? "---\nname: paperclip\ndescription: GS Agentic Manager coordination skill\n---\n\n# GS Agentic Manager\n"
           : "# API\n",
         language: "markdown",
         markdown: true,
@@ -551,7 +551,7 @@ describe("company portability", () => {
     });
   });
 
-  it("exports referenced skills as stubs by default with sanitized Paperclip extension data", async () => {
+  it("exports referenced skills as stubs by default with sanitized GS Agentic Manager extension data", async () => {
     const portability = companyPortabilityService({} as any);
 
     const exported = await portability.exportBundle("company-1", {
@@ -564,7 +564,7 @@ describe("company portability", () => {
       },
     });
 
-    expect(asTextFile(exported.files["COMPANY.md"])).toContain('name: "Paperclip"');
+    expect(asTextFile(exported.files["COMPANY.md"])).toContain('name: "GS Agentic Manager"');
     expect(asTextFile(exported.files["COMPANY.md"])).toContain('schema: "agentcompanies/v1"');
     expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain("You are ClaudeCoder.");
     expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain("skills:");
@@ -659,7 +659,7 @@ describe("company portability", () => {
     expect(agentInstructionsSvc.exportFiles).toHaveBeenCalledTimes(1);
   });
 
-  it("exports agent permission grants through the Paperclip extension and manifest", async () => {
+  it("exports agent permission grants through the GS Agentic Manager extension and manifest", async () => {
     const db = {
       select: vi.fn((selection: Record<string, unknown>) => ({
         from: vi.fn(() => ({
@@ -713,7 +713,7 @@ describe("company portability", () => {
 
     companySvc.getById.mockResolvedValueOnce({
       id: "company-1",
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       description: null,
       issuePrefix: "PAP",
       logoAssetId: null,
@@ -826,7 +826,7 @@ describe("company portability", () => {
     });
   });
 
-  it("exports default sidebar order into the Paperclip extension and manifest", async () => {
+  it("exports default sidebar order into the GS Agentic Manager extension and manifest", async () => {
     const portability = companyPortabilityService({} as any);
 
     projectSvc.list.mockResolvedValue([
@@ -898,12 +898,12 @@ describe("company portability", () => {
       expandReferencedSkills: true,
     });
 
-    expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"])).toContain("# Paperclip");
+    expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"])).toContain("# GS Agentic Manager");
     expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"])).toContain("metadata:");
     expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/references/api.md"])).toContain("# API");
   });
 
-  it("exports catalog skill provenance in portable Paperclip frontmatter", async () => {
+  it("exports catalog skill provenance in portable GS Agentic Manager frontmatter", async () => {
     const portability = companyPortabilityService({} as any);
     const catalogKey = "paperclipai/bundled/software-development/review";
     const originHash = "sha256:catalog-origin";
@@ -932,7 +932,7 @@ describe("company portability", () => {
         catalogKind: "bundled",
         catalogCategory: "software-development",
         catalogPath: "catalog/bundled/software-development/review",
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@greatstone/skills-catalog",
         packageVersion: "0.3.1",
         originHash,
         originVersion: "0.3.1",
@@ -978,7 +978,7 @@ describe("company portability", () => {
     expect(skillMarkdown).toContain(`catalogKey: "${catalogKey}"`);
     expect(skillMarkdown).toContain('catalogKind: "bundled"');
     expect(skillMarkdown).toContain('catalogPath: "catalog/bundled/software-development/review"');
-    expect(skillMarkdown).toContain('packageName: "@paperclipai/skills-catalog"');
+    expect(skillMarkdown).toContain('packageName: "@greatstone/skills-catalog"');
     expect(skillMarkdown).toContain('packageVersion: "0.3.1"');
     expect(skillMarkdown).toContain('installedHash: "sha256:installed"');
     expect(skillMarkdown).toContain('auditVerdict: "warning"');
@@ -995,7 +995,7 @@ describe("company portability", () => {
         catalogKey,
         catalogKind: "bundled",
         catalogPath: "catalog/bundled/software-development/review",
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@greatstone/skills-catalog",
         packageVersion: "0.3.1",
         installedHash: "sha256:installed",
         auditCodes: ["local_modifications"],
@@ -1047,7 +1047,7 @@ describe("company portability", () => {
     };
     companySvc.getById.mockResolvedValue({
       id: "company-1",
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       description: null,
       issuePrefix: "PAP",
       logoAssetId: "logo-1",
@@ -1400,7 +1400,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.list.mockResolvedValue([]);
@@ -1456,7 +1456,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       collisionStrategy: "rename",
     }, "user-1");
@@ -1493,7 +1493,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.list.mockResolvedValue([]);
@@ -1508,7 +1508,7 @@ describe("company portability", () => {
       "COMPANY.md": [
         "---",
         'schema: "agentcompanies/v1"',
-        'name: "Imported Paperclip"',
+        'name: "Imported GS Agentic Manager"',
         "---",
         "",
       ].join("\n"),
@@ -1530,7 +1530,7 @@ describe("company portability", () => {
     await portability.importBundle({
       source: { type: "inline", rootPath: "paperclip-demo", files },
       include: { company: true, agents: false, projects: true, issues: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported GS Agentic Manager" },
       collisionStrategy: "rename",
     }, "user-1");
 
@@ -1552,7 +1552,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([
       {
         id: "project-1",
-        name: "Paperclip App",
+        name: "GS Agentic Manager App",
         urlKey: "paperclip-app",
         description: "Ship it",
         leadAgentId: null,
@@ -1769,7 +1769,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -2192,7 +2192,7 @@ describe("company portability", () => {
           "COMPANY.md": [
             "---",
             'schema: "agentcompanies/v1"',
-            'name: "Imported Paperclip"',
+            'name: "Imported GS Agentic Manager"',
             "includes:",
             "  - agents/cto/AGENTS.md",
             "  - agents/qa/AGENTS.md",
@@ -2347,7 +2347,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -2366,7 +2366,7 @@ describe("company portability", () => {
     });
   });
 
-  it("exports routines as recurring task packages with Paperclip routine extensions", async () => {
+  it("exports routines as recurring task packages with GS Agentic Manager routine extensions", async () => {
     const portability = companyPortabilityService({} as any);
 
     projectSvc.list.mockResolvedValue([
@@ -2618,7 +2618,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2637,7 +2637,7 @@ describe("company portability", () => {
       "COMPANY.md": [
         "---",
         'schema: "agentcompanies/v1"',
-        'name: "Imported Paperclip"',
+        'name: "Imported GS Agentic Manager"',
         "---",
         "",
       ].join("\n"),
@@ -2689,7 +2689,7 @@ describe("company portability", () => {
     const preview = await portability.previewImport({
       source: { type: "inline", rootPath: "paperclip-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported GS Agentic Manager" },
       agents: "all",
       collisionStrategy: "rename",
     });
@@ -2705,7 +2705,7 @@ describe("company portability", () => {
     const result = await portability.importBundle({
       source: { type: "inline", rootPath: "paperclip-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported GS Agentic Manager" },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1");
@@ -2744,18 +2744,18 @@ describe("company portability", () => {
     const portability = companyPortabilityService({} as any);
 
     companySvc.list.mockResolvedValue([
-      { name: "Imported Paperclip" },
+      { name: "Imported GS Agentic Manager" },
       // Case-insensitive: an existing "(2)" in any casing blocks that suffix.
       { name: "imported paperclip (2)" },
     ]);
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip (3)",
+      name: "Imported GS Agentic Manager (3)",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
 
     const files = {
-      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported GS Agentic Manager"', "---", ""].join("\n"),
     };
 
     await portability.importBundle({
@@ -2767,23 +2767,23 @@ describe("company portability", () => {
     }, "user-1");
 
     expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Imported Paperclip (3)",
+      name: "Imported GS Agentic Manager (3)",
     }));
   });
 
   it("skips name de-duplication for agent-safe imports so collisions stay unobservable", async () => {
     const portability = companyPortabilityService({} as any);
 
-    companySvc.list.mockResolvedValue([{ name: "Imported Paperclip" }]);
+    companySvc.list.mockResolvedValue([{ name: "Imported GS Agentic Manager" }]);
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.listActiveUserMemberships.mockResolvedValue([{ userId: "user-1" }]);
     accessSvc.copyActiveUserMemberships.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported GS Agentic Manager"', "---", ""].join("\n"),
     };
 
     await portability.importBundle({
@@ -2797,33 +2797,33 @@ describe("company portability", () => {
     // company-scoped agent, and no suffix may reflect a collision back.
     expect(companySvc.list).not.toHaveBeenCalled();
     expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     }));
   });
 
   it("honors an explicitly typed company name even when it collides", async () => {
     const portability = companyPortabilityService({} as any);
 
-    companySvc.list.mockResolvedValue([{ name: "Imported Paperclip" }]);
+    companySvc.list.mockResolvedValue([{ name: "Imported GS Agentic Manager" }]);
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
 
     const files = {
-      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported GS Agentic Manager"', "---", ""].join("\n"),
     };
 
     await portability.importBundle({
       source: { type: "inline", rootPath: "paperclip-demo", files },
       include: { company: true, agents: false, projects: false, issues: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported GS Agentic Manager" },
       collisionStrategy: "rename",
     }, "user-1");
 
     expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     }));
   });
 
@@ -2832,7 +2832,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2849,7 +2849,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported GS Agentic Manager"', "---", ""].join("\n"),
       "agents/claudecoder/AGENTS.md": ['---', 'name: "ClaudeCoder"', "---", "", "You write code.", ""].join("\n"),
       "projects/launch/PROJECT.md": ['---', 'name: "Launch"', "---", ""].join("\n"),
       "tasks/monday-review/TASK.md": [
@@ -2878,7 +2878,7 @@ describe("company portability", () => {
     const result = await portability.importBundle({
       source: { type: "inline", rootPath: "paperclip-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported GS Agentic Manager" },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1", { pauseAutomations: true });
@@ -2904,7 +2904,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2920,7 +2920,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported GS Agentic Manager"', "---", ""].join("\n"),
       "agents/claudecoder/AGENTS.md": ['---', 'name: "ClaudeCoder"', "---", "", "You write code.", ""].join("\n"),
       "projects/launch/PROJECT.md": ['---', 'name: "Launch"', "---", ""].join("\n"),
       "tasks/monday-review/TASK.md": [
@@ -2949,7 +2949,7 @@ describe("company portability", () => {
     const result = await portability.importBundle({
       source: { type: "inline", rootPath: "paperclip-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported GS Agentic Manager" },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1");
@@ -2973,7 +2973,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2989,7 +2989,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported GS Agentic Manager"', "---", ""].join("\n"),
       "agents/claudecoder/AGENTS.md": ['---', 'name: "ClaudeCoder"', "---", "", "You write code.", ""].join("\n"),
       "projects/launch/PROJECT.md": ['---', 'name: "Launch"', "---", ""].join("\n"),
       "tasks/monday-review/TASK.md": [
@@ -3015,7 +3015,7 @@ describe("company portability", () => {
     const preview = await portability.previewImport({
       source: { type: "inline", rootPath: "paperclip-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported GS Agentic Manager" },
       agents: "all",
       collisionStrategy: "rename",
     });
@@ -3029,7 +3029,7 @@ describe("company portability", () => {
     await portability.importBundle({
       source: { type: "inline", rootPath: "paperclip-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported GS Agentic Manager" },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1");
@@ -3047,14 +3047,14 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.list.mockResolvedValue([]);
     projectSvc.list.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported GS Agentic Manager"', "---", ""].join("\n"),
       "tasks/monday-review/TASK.md": [
         "---",
         'name: "Monday Review"',
@@ -3068,7 +3068,7 @@ describe("company portability", () => {
     const request = {
       source: { type: "inline" as const, rootPath: "paperclip-demo", files },
       include: { company: true, agents: false, projects: false, issues: true, skills: false },
-      target: { mode: "new_company" as const, newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company" as const, newCompanyName: "Imported GS Agentic Manager" },
       collisionStrategy: "rename" as const,
     };
 
@@ -3094,7 +3094,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -3110,11 +3110,11 @@ describe("company portability", () => {
           "COMPANY.md": [
             "---",
             'schema: "agentcompanies/v1"',
-            'name: "Imported Paperclip"',
+            'name: "Imported GS Agentic Manager"',
             'description: "Portable company package"',
             "---",
             "",
-            "# Imported Paperclip",
+            "# Imported GS Agentic Manager",
             "",
           ].join("\n"),
           "agents/claudecoder/AGENTS.md": [
@@ -3138,14 +3138,14 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
     });
 
     expect(preview.errors).toEqual([]);
-    expect(preview.manifest.company?.name).toBe("Imported Paperclip");
+    expect(preview.manifest.company?.name).toBe("Imported GS Agentic Manager");
     expect(preview.manifest.agents).toEqual([
       expect.objectContaining({
         slug: "claudecoder",
@@ -3163,11 +3163,11 @@ describe("company portability", () => {
           "COMPANY.md": [
             "---",
             'schema: "agentcompanies/v1"',
-            'name: "Imported Paperclip"',
+            'name: "Imported GS Agentic Manager"',
             'description: "Portable company package"',
             "---",
             "",
-            "# Imported Paperclip",
+            "# Imported GS Agentic Manager",
             "",
           ].join("\n"),
           "agents/claudecoder/AGENTS.md": [
@@ -3191,14 +3191,14 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1");
 
     expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
       description: "Portable company package",
     }));
     expect(agentSvc.create).toHaveBeenCalledWith("company-imported", expect.objectContaining({
@@ -3313,7 +3313,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -3358,7 +3358,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3399,12 +3399,12 @@ describe("company portability", () => {
     };
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
       logoAssetId: null,
     });
     companySvc.update.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
       logoAssetId: "asset-created",
     });
     agentSvc.create.mockResolvedValue({
@@ -3451,7 +3451,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3479,7 +3479,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     agentSvc.create.mockResolvedValue({
       id: "agent-created",
@@ -3511,7 +3511,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3534,7 +3534,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
       id: `agent-${String(input.name).toLowerCase()}`,
@@ -3578,7 +3578,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3618,7 +3618,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([]);
     companySvc.getById.mockResolvedValue({
       id: "company-1",
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       description: "Existing company",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3695,7 +3695,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -3728,7 +3728,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3775,7 +3775,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
@@ -3810,7 +3810,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: ["claudecoder"],
       collisionStrategy: "rename",
@@ -3835,7 +3835,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: ["claudecoder"],
       collisionStrategy: "rename",
@@ -4840,8 +4840,8 @@ describe("company portability", () => {
   it("skips oversized and missing-blob attachments with warnings instead of failing", async () => {
     // The deployment-level cap is read once when the service module loads, so
     // this test re-imports the module under a 10-byte cap to reach the skip.
-    const previousCap = process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES;
-    process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES = "10";
+    const previousCap = process.env.GSAM_ATTACHMENT_MAX_BYTES;
+    process.env.GSAM_ATTACHMENT_MAX_BYTES = "10";
     vi.resetModules();
     try {
       const { companyPortabilityService: cappedPortabilityService } =
@@ -4895,9 +4895,9 @@ describe("company portability", () => {
       );
     } finally {
       if (previousCap === undefined) {
-        delete process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES;
+        delete process.env.GSAM_ATTACHMENT_MAX_BYTES;
       } else {
-        process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES = previousCap;
+        process.env.GSAM_ATTACHMENT_MAX_BYTES = previousCap;
       }
       vi.resetModules();
     }
@@ -5259,7 +5259,7 @@ describe("company portability", () => {
     );
   });
 
-  it("rejects packages produced by a newer Paperclip", async () => {
+  it("rejects packages produced by a newer GS Agentic Manager", async () => {
     const portability = companyPortabilityService({} as any);
 
     await expect(portability.importBundle({
@@ -5268,7 +5268,7 @@ describe("company portability", () => {
       target: { mode: "new_company", newCompanyName: "Future Import" },
       agents: "all",
       collisionStrategy: "rename",
-    }, "user-1")).rejects.toThrow(/newer Paperclip/);
+    }, "user-1")).rejects.toThrow(/newer GS Agentic Manager/);
     expect(issueSvc.importIssues).not.toHaveBeenCalled();
   });
 
@@ -5307,7 +5307,7 @@ describe("company portability", () => {
         authorType: "system",
         authorAgentId: null,
         authorUserId: null,
-        body: "Paperclip needs a disposition before this issue can continue.",
+        body: "GS Agentic Manager needs a disposition before this issue can continue.",
         presentation,
         metadata,
         createdAt: new Date("2026-05-04T12:00:00.000Z"),
@@ -5340,7 +5340,7 @@ describe("company portability", () => {
 
     expect(issueSvc.addImportedComments).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({
-        body: "Paperclip needs a disposition before this issue can continue.",
+        body: "GS Agentic Manager needs a disposition before this issue can continue.",
         authorType: "system",
         authorAgentId: null,
         authorUserId: null,
@@ -5475,7 +5475,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported GS Agentic Manager",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -5515,7 +5515,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: ["claudecoder"],
       collisionStrategy: "rename",
@@ -5768,7 +5768,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported GS Agentic Manager",
       },
       agents: ["claudecoder"],
       collisionStrategy: "rename",
@@ -6134,17 +6134,17 @@ describe("company portability", () => {
 
 describe("dedupeImportedCompanyName", () => {
   it("returns the base name when nothing collides", () => {
-    expect(dedupeImportedCompanyName("Paperclip", ["Other Co"])).toBe("Paperclip");
-    expect(dedupeImportedCompanyName("Paperclip", [])).toBe("Paperclip");
+    expect(dedupeImportedCompanyName("GS Agentic Manager", ["Other Co"])).toBe("GS Agentic Manager");
+    expect(dedupeImportedCompanyName("GS Agentic Manager", [])).toBe("GS Agentic Manager");
   });
 
   it("suffixes past every taken candidate, case-insensitively", () => {
-    expect(dedupeImportedCompanyName("Paperclip", ["paperclip"])).toBe("Paperclip (2)");
-    expect(dedupeImportedCompanyName("Paperclip", ["Paperclip", "Paperclip (2)"])).toBe("Paperclip (3)");
-    expect(dedupeImportedCompanyName("Paperclip", ["PAPERCLIP", "paperclip (2)"])).toBe("Paperclip (3)");
+    expect(dedupeImportedCompanyName("GS Agentic Manager", ["paperclip"])).toBe("GS Agentic Manager (2)");
+    expect(dedupeImportedCompanyName("GS Agentic Manager", ["GS Agentic Manager", "GS Agentic Manager (2)"])).toBe("GS Agentic Manager (3)");
+    expect(dedupeImportedCompanyName("GS Agentic Manager", ["PAPERCLIP", "paperclip (2)"])).toBe("GS Agentic Manager (3)");
   });
 
   it("ignores surrounding whitespace in existing names", () => {
-    expect(dedupeImportedCompanyName("Paperclip", ["  Paperclip  "])).toBe("Paperclip (2)");
+    expect(dedupeImportedCompanyName("GS Agentic Manager", ["  GS Agentic Manager  "])).toBe("GS Agentic Manager (2)");
   });
 });

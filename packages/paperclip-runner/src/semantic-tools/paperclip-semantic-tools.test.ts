@@ -9,7 +9,7 @@ import type {
   PaperclipSemanticStoredOutcome,
   PaperclipSemanticToolCall,
 } from "./types.js";
-import { PAPERCLIP_SEMANTIC_REDACTED } from "./redaction.js";
+import { GSAM_SEMANTIC_REDACTED } from "./redaction.js";
 import {
   validatePrpEvent,
   type PrpEvent,
@@ -135,7 +135,7 @@ describe("run-scoped semantic tool authority", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      value: { accessToken: PAPERCLIP_SEMANTIC_REDACTED },
+      value: { accessToken: GSAM_SEMANTIC_REDACTED },
       duplicate: false,
     });
     expect(JSON.stringify(result)).not.toContain("sk_should-never-cross");

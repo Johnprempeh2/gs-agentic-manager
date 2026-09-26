@@ -327,7 +327,7 @@ const descriptors: readonly PaperclipSemanticActionDescriptor[] = [
     operationId: "hire_agent",
     title: "Hire a native agent",
     description:
-      "Create one native Paperclip Runner teammate for the current company and task. The new agent reports to you, inherits your native runtime, and receives no provider, adapter, environment, or credential configuration from the tool. Reuse an existing teammate when appropriate and follow any approval returned by the API.",
+      "Create one native GS Agentic Manager Runner teammate for the current company and task. The new agent reports to you, inherits your native runtime, and receives no provider, adapter, environment, or credential configuration from the tool. Reuse an existing teammate when appropriate and follow any approval returned by the API.",
     placement: "optional",
     effect: "write",
     requiredClaims: ["delegation:agents:create"],
@@ -613,7 +613,7 @@ if (byId.size !== descriptors.length)
  * Canonical declarations only. Consumers must not treat membership as
  * permission to expose or invoke an action.
  */
-export const PAPERCLIP_SEMANTIC_ACTION_CATALOG = Object.freeze([
+export const GSAM_SEMANTIC_ACTION_CATALOG = Object.freeze([
   ...byId.values(),
 ]);
 
@@ -624,7 +624,7 @@ export function paperclipSemanticAction(
 }
 
 export function canonicalPaperclipSemanticActionCatalog(): string {
-  return `${JSON.stringify(sortKeys(PAPERCLIP_SEMANTIC_ACTION_CATALOG), null, 2)}\n`;
+  return `${JSON.stringify(sortKeys(GSAM_SEMANTIC_ACTION_CATALOG), null, 2)}\n`;
 }
 
 function deepFreeze<T>(value: T): T {

@@ -11,7 +11,7 @@ import {
 /**
  * Deterministic browser coverage for the native chat-connector UI.
  *
- * Provider APIs are deliberately not contacted here. The shared Paperclip
+ * Provider APIs are deliberately not contacted here. The shared GS Agentic Manager
  * server supplies the company, agent, and connector catalog, while a small
  * stateful route fixture emulates the chat-control-plane responses. Live
  * provider webhook and credential qualification belongs in the manual runbook
@@ -149,9 +149,9 @@ export const PROVIDER_LIFECYCLE_COPY: Record<
   },
   telegram: {
     reconnect:
-      "Reconnect verifies this same BotFather bot and automatically refreshes its Paperclip webhook and command menu.",
+      "Reconnect verifies this same BotFather bot and automatically refreshes its GS Agentic Manager webhook and command menu.",
     remove:
-      "queues durable removal of its Telegram webhook and command menu. After Telegram confirms that cleanup, Paperclip retires the saved token",
+      "queues durable removal of its Telegram webhook and command menu. After Telegram confirms that cleanup, GS Agentic Manager retires the saved token",
   },
 };
 
@@ -969,7 +969,7 @@ features:
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   agent_view:
-    agent_description: "Work with a Paperclip agent in a task-backed conversation."
+    agent_description: "Work with a GS Agentic Manager agent in a task-backed conversation."
   bot_user:
     display_name: "maya"
   slash_commands:

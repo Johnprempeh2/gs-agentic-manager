@@ -1,7 +1,7 @@
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
-import { createGoalSchema, updateGoalSchema } from "@paperclipai/shared";
-import { trackGoalCreated } from "@paperclipai/shared/telemetry";
+import type { Db } from "@greatstone/db";
+import { createGoalSchema, updateGoalSchema } from "@greatstone/shared";
+import { trackGoalCreated } from "@greatstone/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";

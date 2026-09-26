@@ -531,7 +531,7 @@ export async function writeHotRestartIntent(input: {
   };
   const instancePath = resolveHotRestartIntentPath(input.homeDir);
   const legacyPath = resolveLegacyHotRestartIntentPath(input.homeDir);
-  // The legacy location is shared by every instance under PAPERCLIP_HOME.
+  // The legacy location is shared by every instance under GSAM_HOME.
   // Claim it without replacement so concurrent staged restarts fail closed
   // instead of making the first old server consume another instance's PID.
   await withHotRestartPathLock(legacyPath, () => claimLegacyHotRestartIntent(legacyPath, intent));

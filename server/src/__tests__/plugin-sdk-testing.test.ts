@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
-import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
+import { createTestHarness } from "@greatstone/plugin-sdk/testing";
 
 describe("plugin SDK test harness", () => {
   it("returns scoped execution workspace metadata with the read capability", async () => {
@@ -10,7 +10,7 @@ describe("plugin SDK test harness", () => {
       version: "0.1.0",
       displayName: "Execution Workspace Metadata",
       description: "Test plugin",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: ["execution.workspaces.read"],
       entrypoints: { worker: "./dist/worker.js" },
@@ -48,7 +48,7 @@ describe("plugin SDK test harness", () => {
       version: "0.1.0",
       displayName: "Missing Workspace Read Capability",
       description: "Test plugin",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: [],
       entrypoints: { worker: "./dist/worker.js" },
@@ -67,7 +67,7 @@ describe("plugin SDK test harness", () => {
       version: "0.1.0",
       displayName: "Missing Managed Skill Capability",
       description: "Test plugin",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: [],
       entrypoints: { worker: "./dist/worker.js" },
@@ -90,7 +90,7 @@ describe("plugin SDK test harness", () => {
       version: "0.1.0",
       displayName: "Missing Access Capability",
       description: "Test plugin",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: [],
       entrypoints: { worker: "./dist/worker.js" },
@@ -115,7 +115,7 @@ describe("plugin SDK test harness", () => {
       version: "0.1.0",
       displayName: "Comment Redaction",
       description: "Test plugin",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: ["issue.comments.read"],
       entrypoints: { worker: "./dist/worker.js" },
@@ -168,7 +168,7 @@ describe("plugin SDK test harness", () => {
       version: "0.1.0",
       displayName: "Human-Attributed Comment (unverified)",
       description: "Test plugin",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: ["issue.comments.create", "issue.comments.create_human_attributed"],
       entrypoints: { worker: "./dist/worker.js" },
@@ -213,7 +213,7 @@ describe("plugin SDK test harness", () => {
       version: "0.1.0",
       displayName: "Human-Attributed Comment (viewer)",
       description: "Test plugin",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: ["issue.comments.create", "issue.comments.create_human_attributed"],
       entrypoints: { worker: "./dist/worker.js" },
@@ -252,7 +252,7 @@ describe("plugin SDK test harness", () => {
       version: "0.1.0",
       displayName: "Human-Attributed Comment (verified)",
       description: "Test plugin",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: ["issue.comments.create", "issue.comments.create_human_attributed"],
       entrypoints: { worker: "./dist/worker.js" },

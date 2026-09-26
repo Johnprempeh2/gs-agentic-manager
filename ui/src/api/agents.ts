@@ -28,8 +28,8 @@ import type {
   AgentConfigRevision,
   ClearAgentErrorResponse,
   AgentApiKeyScope,
-} from "@paperclipai/shared";
-import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
+} from "@greatstone/shared";
+import { isUuidLike, normalizeAgentUrlKey } from "@greatstone/shared";
 import { ApiError, api } from "./client";
 
 export interface AgentKey {
@@ -223,7 +223,7 @@ export const agentsApi = {
     type: string,
     data: {
       adapterConfig: Record<string, unknown>;
-      aiConnection?: import("@paperclipai/shared").AiConnectionBinding;
+      aiConnection?: import("@greatstone/shared").AiConnectionBinding;
       agentId?: string;
       testCredentials?: Record<string, string>;
       environmentId?: string | null;
@@ -284,7 +284,7 @@ export const agentsApi = {
   startAdapterAuthLogin: (
     companyId: string,
     type: string,
-    data: { environmentId: string; ttlSeconds?: number; aiConnection?: import("@paperclipai/shared").AiConnectionLoginIntent },
+    data: { environmentId: string; ttlSeconds?: number; aiConnection?: import("@greatstone/shared").AiConnectionLoginIntent },
   ) =>
     api.post<AdapterAuthSessionResponse>(
       `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/login-sessions`,
@@ -327,7 +327,7 @@ export const agentsApi = {
     ),
   startClaudeSetupTokenLogin: (
     companyId: string,
-    data: { environmentId: string; overwrite?: ClaudeSetupTokenOverwrite; aiConnection?: import("@paperclipai/shared").AiConnectionLoginIntent },
+    data: { environmentId: string; overwrite?: ClaudeSetupTokenOverwrite; aiConnection?: import("@greatstone/shared").AiConnectionLoginIntent },
   ) =>
     api.post<ClaudeSetupTokenSessionOwnerResponse>(
       `/companies/${encodeURIComponent(companyId)}/setup-token-login-sessions`,

@@ -1,6 +1,6 @@
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { useMemo, useState } from "react";
-import type { Agent, Issue } from "@paperclipai/shared";
+import type { Agent, Issue } from "@greatstone/shared";
 import { useQuery } from "@tanstack/react-query";
 import { accessApi } from "../api/access";
 import { formatAssigneeUserLabel } from "../lib/assignees";
@@ -115,7 +115,7 @@ export function ExecutionParticipantPicker({
       </PopoverTrigger>
       <PopoverContent className="p-1 w-56" align="start" collisionPadding={16}>
         <input
-          className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+          className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-subtle-foreground"
           placeholder={`Search ${label.toLowerCase()}...`}
           value={search}
           onChange={(e) => setSearch(e.target.value)}

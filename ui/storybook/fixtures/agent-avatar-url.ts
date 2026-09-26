@@ -1,4 +1,4 @@
-import { agentAvatarUrl as apiAvatarUrl } from "@paperclipai/shared";
+import { agentAvatarUrl as apiAvatarUrl } from "@greatstone/shared";
 
 /** Relative to iframe.html, including when a preview is hosted under a branch prefix. */
 export const agentAvatarUrl: typeof apiAvatarUrl = (...args) => {

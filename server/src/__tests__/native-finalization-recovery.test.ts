@@ -14,7 +14,7 @@ import {
   statusDecisions,
   workAssessments,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   CONTROL_PLANE_CONFORMANCE_OPEN,
   CONTROL_PLANE_CONFORMANCE_RESULT,

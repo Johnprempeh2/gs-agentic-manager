@@ -10,8 +10,8 @@ import {
   issues,
   projectWorkspaces,
   projects,
-} from "@paperclipai/db";
-import { LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
+} from "@greatstone/db";
+import { LOW_TRUST_REVIEW_PRESET } from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -57,7 +57,7 @@ describeEmbeddedPostgres("workspace runtime service authz helper", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `PAP-${companyId.slice(0, 8)}`,
       requireBoardApprovalForNewAgents: false,
     });

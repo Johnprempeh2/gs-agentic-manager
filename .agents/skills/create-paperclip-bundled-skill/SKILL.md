@@ -1,18 +1,18 @@
 ---
 name: create-paperclip-bundled-skill
 description: >
-  Turn an idea, tweet, or task into a skill in the Paperclip skills catalog
+  Turn an idea, tweet, or task into a skill in the GS Agentic Manager skills catalog
   (packages/skills-catalog). Use when asked to FIND or MAKE a skill and publish
   it as a bundled/optional catalog skill: research prior art, reference or
   author it, add examples, regenerate the manifest, open a PR.
 ---
 
-# Create a Paperclip Bundled Skill
+# Create a GS Agentic Manager Bundled Skill
 
 Take source material — a tweet, a task description, a blog post, "make a skill
-that does X" — and land it as a skill in the Paperclip skills catalog
+that does X" — and land it as a skill in the GS Agentic Manager skills catalog
 (`packages/skills-catalog/`), delivered as a reviewed PR. The catalog is the
-shelf every Paperclip company browses and installs from, so the bar is: correct
+shelf every GS Agentic Manager company browses and installs from, so the bar is: correct
 metadata, useful instructions, worked examples, and a clean validation run.
 
 The core rule is **FIND before MAKE**: if a good skill already exists (in the
@@ -21,7 +21,7 @@ of writing a duplicate from scratch.
 
 ## When to use
 
-- A human sends a tweet/link/idea and asks for it to become a Paperclip skill.
+- A human sends a tweet/link/idea and asks for it to become a GS Agentic Manager skill.
 - A task asks to bundle an existing repo skill into the catalog.
 - A task asks to add an external published skill to the catalog.
 
@@ -29,14 +29,14 @@ of writing a duplicate from scratch.
 
 - The skill is company-private (belongs in that company's library via the
   Skills UI/API, not the shipped catalog).
-- You only need a repo-internal agent skill for working on Paperclip itself —
+- You only need a repo-internal agent skill for working on GS Agentic Manager itself —
   that goes in `.agents/skills/` or `skills/`, with no catalog machinery.
 
 ## Step 0 — Capture the source material
 
 Understand exactly what the skill should teach before writing anything.
 
-**Tweets / X links.** Use the `xc` CLI (X API client). Paperclip engineering
+**Tweets / X links.** Use the `xc` CLI (X API client). GS Agentic Manager engineering
 agent environments ship it preinstalled and pre-authenticated; it is not a
 tool you install or mint credentials for yourself. Check availability before
 relying on it:
@@ -77,7 +77,7 @@ Search in this order; stop when you have a clear winner.
    ls packages/skills-catalog/catalog/{bundled,optional}/*/
    ```
 2. **Already in this repo?** Check `.agents/skills/`, `skills/`, and issue
-   history (`gh search issues` / Paperclip board) for prior work on the topic.
+   history (`gh search issues` / GS Agentic Manager board) for prior work on the topic.
 3. **Published on GitHub?** Skills are conventionally a directory with a
    `SKILL.md`:
    ```sh
@@ -100,7 +100,7 @@ Is the license compatible with redistribution? Then pick a path:
 ## Step 2 — Choose kind, category, and slug
 
 - **kind**: default to `optional`. Use `bundled` only when the skill should
-  ship to every Paperclip company by default — that needs explicit human/board
+  ship to every GS Agentic Manager company by default — that needs explicit human/board
   direction, not your judgment call.
 - **category**: reuse an existing directory when one fits (`browser`,
   `content`, `docs`, `finance`, `paperclip-operations`, `product`, `quality`,
@@ -214,8 +214,8 @@ Name them by scenario, e.g. `examples/rewrite-release-note.md`.
 Never hand-edit `generated/catalog.json`; it is deterministic build output.
 
 ```sh
-pnpm --filter @paperclipai/skills-catalog build:manifest   # regenerates generated/catalog.json
-pnpm --filter @paperclipai/skills-catalog validate         # must report no errors
+pnpm --filter @greatstone/skills-catalog build:manifest   # regenerates generated/catalog.json
+pnpm --filter @greatstone/skills-catalog validate         # must report no errors
 ```
 
 (External references need network access to GitHub during these steps.)
@@ -227,7 +227,7 @@ Then update `packages/skills-catalog/src/shipped-catalog.test.ts`:
 - if the skill bears scripts, add it to the `scriptBearing` expectation.
 
 ```sh
-pnpm --filter @paperclipai/skills-catalog test
+pnpm --filter @greatstone/skills-catalog test
 ```
 
 The test suite also enforces the ≤300-char frontmatter description budget

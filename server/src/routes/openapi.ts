@@ -289,11 +289,11 @@ import {
   resolveChatPublicationSchema,
   replaceChatEndpointResourcesSchema,
   updateChatEndpointSchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   COMPANY_IMPORT_TRANSFERS_API_PATH,
   companyImportTransferDeclarationSchema,
-} from "@paperclipai/shared/company-import-transfer";
+} from "@greatstone/shared/company-import-transfer";
 
 type JsonSchema = Record<string, unknown>;
 type OpenApiResponse = Record<string, unknown>;
@@ -1665,7 +1665,7 @@ function applyDocumentFixups(document: any): any {
       in: "cookie",
       name: "paperclip_session",
       description:
-        "Board session cookie in authenticated mode. Paperclip uses Better Auth; cookie transport may vary by deployment.",
+        "Board session cookie in authenticated mode. GS Agentic Manager uses Better Auth; cookie transport may vary by deployment.",
     },
     [BOARD_API_KEY_AUTH_SCHEME]: {
       type: "http",
@@ -1679,7 +1679,7 @@ function applyDocumentFixups(document: any): any {
       scheme: "bearer",
       bearerFormat: "Agent API Key or Agent JWT",
       description:
-        "Agent API key or Paperclip-issued local agent JWT presented in the Authorization bearer header.",
+        "Agent API key or GS Agentic Manager-issued local agent JWT presented in the Authorization bearer header.",
     },
     [RUNTIME_TOOLS_BEARER_AUTH_SCHEME]: {
       type: "http",
@@ -1692,7 +1692,7 @@ function applyDocumentFixups(document: any): any {
       type: "http",
       scheme: "bearer",
       bearerFormat: "Task-bound agent JWT",
-      description: "Paperclip-issued JWT bound to an active task run. Agent API keys, board sessions, and connection-only tokens are rejected.",
+      description: "GS Agentic Manager-issued JWT bound to an active task run. Agent API keys, board sessions, and connection-only tokens are rejected.",
     },
   };
   document.security = AUTHENTICATED_SECURITY;
@@ -2159,7 +2159,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "Create a chat endpoint",
   description:
-    "Creates one provider bot endpoint bound permanently to one Paperclip agent. Provider setup and verification happen in later calls.",
+    "Creates one provider bot endpoint bound permanently to one GS Agentic Manager agent. Provider setup and verification happen in later calls.",
   request: {
     params: z.object({ companyId: z.string().uuid() }),
     body: jsonBody(createChatEndpointSchema),
@@ -2230,8 +2230,8 @@ const githubBotOperations: Array<{
     response: chatEndpointResponseSchema,
   },
   {
-    method: "get", suffix: "reviews", summary: "List review evidence attached to Paperclip tasks",
-    description: "Returns up to 100 newest review records for this endpoint. Each review references ordinary Paperclip tasks and runs; it is not an independent scheduler.",
+    method: "get", suffix: "reviews", summary: "List review evidence attached to GS Agentic Manager tasks",
+    description: "Returns up to 100 newest review records for this endpoint. Each review references ordinary GS Agentic Manager tasks and runs; it is not an independent scheduler.",
     response: z.array(z.object({
       id: z.string().uuid(), companyId: z.string().uuid(), endpointId: z.string().uuid(),
       issueId: z.string().uuid(), runId: z.string().uuid().nullable(), repositoryId: z.string(),
@@ -2273,7 +2273,7 @@ const githubBotOperations: Array<{
   },
   {
     method: "post", suffix: "repositories/refresh", summary: "Refresh repositories available to the bot installation",
-    description: "Fetches current installation access from GitHub and reconciles resources while preserving Paperclip repository enablement. Return parameters alone never prove installation access.",
+    description: "Fetches current installation access from GitHub and reconciles resources while preserving GS Agentic Manager repository enablement. Return parameters alone never prove installation access.",
     response: z.array(chatEndpointResourceResponseSchema),
   },
 ];
@@ -2321,7 +2321,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "Configure or change chat endpoint lifecycle state",
   description:
-    "Runs a setup or lifecycle action. `configure` and `reconnect` accept provider credentials (Slack: `botToken`, `signingSecret`; GitHub: `appId`, `privateKey` after Paperclip generates the webhook secret; Discord: `applicationId`, `guildId`, `botToken`; Microsoft Teams: `clientId`, `tenantId`, `clientSecret`; Telegram: `botToken`; iMessage Photon: `projectSecret`, with nonsecret `photon.projectId` and `photon.lineId` configuration). Credentials are stored as Paperclip secret references and are never returned. Other actions do not require credentials.",
+    "Runs a setup or lifecycle action. `configure` and `reconnect` accept provider credentials (Slack: `botToken`, `signingSecret`; GitHub: `appId`, `privateKey` after GS Agentic Manager generates the webhook secret; Discord: `applicationId`, `guildId`, `botToken`; Microsoft Teams: `clientId`, `tenantId`, `clientSecret`; Telegram: `botToken`; iMessage Photon: `projectSecret`, with nonsecret `photon.projectId` and `photon.lineId` configuration). Credentials are stored as GS Agentic Manager secret references and are never returned. Other actions do not require credentials.",
   request: {
     params: z.object({ endpointId: z.string().uuid() }),
     body: jsonBody(configureChatEndpointSchema),
@@ -2420,7 +2420,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "Complete a chat endpoint setup test",
   description:
-    "Activates a verifying endpoint only after Paperclip has received a real provider event since the server-issued setup test boundary. iMessage Photon additionally requires a fresh linked sender's task and a successful outbound agent publication.",
+    "Activates a verifying endpoint only after GS Agentic Manager has received a real provider event since the server-issued setup test boundary. iMessage Photon additionally requires a fresh linked sender's task and a successful outbound agent publication.",
   request: { params: z.object({ endpointId: z.string().uuid() }) },
   responses: {
     200: r.ok(chatEndpointResponseSchema),
@@ -2475,7 +2475,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "List external identities seen by a chat endpoint",
   description:
-    "Lists provider identities and their explicit Paperclip identity-link status for this endpoint's provider account.",
+    "Lists provider identities and their explicit GS Agentic Manager identity-link status for this endpoint's provider account.",
   request: { params: z.object({ endpointId: z.string().uuid() }) },
   responses: {
     200: r.ok(z.array(chatPrincipalLinkResponseSchema)),
@@ -2491,7 +2491,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "Create an external identity-link intent",
   description:
-    "Creates a short-lived confirmation URL for a human external identity belonging to this endpoint. The signed-in Paperclip user must confirm the link separately.",
+    "Creates a short-lived confirmation URL for a human external identity belonging to this endpoint. The signed-in GS Agentic Manager user must confirm the link separately.",
   request: {
     params: z.object({
       endpointId: z.string().uuid(),
@@ -2556,7 +2556,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "Confirm an external identity link",
   description:
-    "Links the token's external identity to the currently signed-in Paperclip user after rechecking active company membership and canonical-link conflicts.",
+    "Links the token's external identity to the currently signed-in GS Agentic Manager user after rechecking active company membership and canonical-link conflicts.",
   request: { body: jsonBody(confirmChatIdentityLinkSchema) },
   responses: {
     200: r.ok(chatIdentityLinkConfirmationResponseSchema),
@@ -2574,7 +2574,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "List external conversations and bound tasks",
   description:
-    "Lists each durable provider conversation-to-Paperclip-task binding for the endpoint, including provider and task links and the latest publication state.",
+    "Lists each durable provider conversation-to-GS Agentic Manager-task binding for the endpoint, including provider and task links and the latest publication state.",
   request: { params: z.object({ endpointId: z.string().uuid() }) },
   responses: {
     200: r.ok(z.array(chatConversationResponseSchema)),
@@ -2676,7 +2676,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "Resolve an unconfirmed provider action",
   description:
-    "After checking the provider, an operator may mark an ambiguous durable provider reply delivered, retry it while accepting duplicate risk, or cancel it. Slack slash-command task starts support explicit retry or cancel only. Paperclip never replays an ambiguous provider action automatically, and every resolution is audited.",
+    "After checking the provider, an operator may mark an ambiguous durable provider reply delivered, retry it while accepting duplicate risk, or cancel it. Slack slash-command task starts support explicit retry or cancel only. GS Agentic Manager never replays an ambiguous provider action automatically, and every resolution is audited.",
   request: {
     params: z.object({
       endpointId: z.string().uuid(),
@@ -2699,9 +2699,9 @@ registry.registerPath({
   method: "post",
   path: "/api/chat-endpoints/{endpointId}/conversations/{conversationId}/publications",
   tags: ["chat-channels"],
-  summary: "Publish a Paperclip task comment to an external conversation",
+  summary: "Publish a GS Agentic Manager task comment to an external conversation",
   description:
-    "Explicitly projects an eligible comment from the bound Paperclip task into the provider conversation. The endpoint, conversation, and comment must belong to the same binding. A Board send with an already-bound attachment returns 409 with code chat_board_send_attachments_already_bound and request-scoped details (endpointId, conversationId, idempotencyKey, attachmentIds). This durable rejection queues no publication and is replayed for the same key even if the file later becomes unbound. Correcting it requires an explicit new send identity. Other errors do not establish non-delivery.",
+    "Explicitly projects an eligible comment from the bound GS Agentic Manager task into the provider conversation. The endpoint, conversation, and comment must belong to the same binding. A Board send with an already-bound attachment returns 409 with code chat_board_send_attachments_already_bound and request-scoped details (endpointId, conversationId, idempotencyKey, attachmentIds). This durable rejection queues no publication and is replayed for the same key even if the file later becomes unbound. Correcting it requires an explicit new send identity. Other errors do not establish non-delivery.",
   request: {
     params: z.object({
       endpointId: z.string().uuid(),
@@ -3609,7 +3609,7 @@ registry.registerPath({
   tags: ["agents"],
   summary: "Wake up an agent",
   description:
-    "Board failed-run retries supply failedRunId with reason retry_failed_run. Paperclip derives the exact request and current authorization; a chat retry may return a durable queued/deferred receipt before a run exists. Caller task/comment markers and fresh-session overrides do not authorize replay.",
+    "Board failed-run retries supply failedRunId with reason retry_failed_run. GS Agentic Manager derives the exact request and current authorization; a chat retry may return a durable queued/deferred receipt before a run exists. Caller task/comment markers and fresh-session overrides do not authorize replay.",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(wakeAgentSchema),
@@ -7003,7 +7003,7 @@ registry.registerPath({
   method: "post",
   path: "/api/heartbeat-runs/{runId}/runtime-requests/{requestId}/resolve",
   tags: ["runs"],
-  summary: "Resolve a pending Paperclip runner runtime request",
+  summary: "Resolve a pending GS Agentic Manager runner runtime request",
   request: {
     params: z.object({ runId: heartbeatRunIdParamSchema, requestId: z.string() }),
     body: jsonBody(
@@ -10702,7 +10702,7 @@ registerCurrentRoute({
   method: "get",
   path: "/api/tools/oauth/paperclip-id/callback",
   tags: ["tool-access"],
-  summary: "Handle a legacy brokered Paperclip ID OAuth callback",
+  summary: "Handle a legacy brokered GS Agentic Manager ID OAuth callback",
 });
 
 registerCurrentRoute({
@@ -11398,7 +11398,7 @@ export function buildOpenApiDocument(): any {
   return applyDocumentFixups({
     openapi: "3.0.0",
     info: {
-      title: "Paperclip API",
+      title: "GS Agentic Manager API",
       version: "1.0.0",
       description: "REST API for the Paperclip AI agent management platform",
     },

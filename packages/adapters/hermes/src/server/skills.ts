@@ -5,14 +5,14 @@ import type {
   AdapterSkillContext,
   AdapterSkillEntry,
   AdapterSkillSnapshot,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import {
   ensurePaperclipSkillSymlink,
   isPaperclipSkillSourceMissing,
   readInstalledSkillTargets,
   readPaperclipRuntimeSkillEntries,
   resolveLegacyPaperclipDesiredSkillNames,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 import { fileURLToPath } from "node:url";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -118,7 +118,7 @@ async function buildSkillEntry(
     origin: "user_installed",
     originLabel: "Hermes skill",
     locationLabel: `~/.hermes/skills/${categoryPath}`,
-    readOnly: true, // Hermes manages its own skills — Paperclip can't toggle them
+    readOnly: true, // Hermes manages its own skills — GS Agentic Manager can't toggle them
     sourcePath: skillMdPath,
     targetPath: null,
     detail: description,
@@ -133,7 +133,7 @@ async function buildHermesSkillSnapshot(config: Record<string, unknown>): Promis
   const home = resolveHermesHome(config);
   const hermesSkillsHome = path.join(home, ".hermes", "skills");
 
-  // 1. Scan Paperclip-managed skills (bundled with the adapter)
+  // 1. Scan GS Agentic Manager-managed skills (bundled with the adapter)
   const paperclipEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredSkills = resolveLegacyPaperclipDesiredSkillNames(config, paperclipEntries);
   const desiredSet = new Set(desiredSkills);
@@ -143,11 +143,11 @@ async function buildHermesSkillSnapshot(config: Record<string, unknown>): Promis
   const hermesSkillEntries = await scanHermesSkills(hermesSkillsHome);
   const hermesKeys = new Set(hermesSkillEntries.map((e) => e.key));
 
-  // 3. Merge: Paperclip skills first (ephemeral), then Hermes skills
+  // 3. Merge: GS Agentic Manager skills first (ephemeral), then Hermes skills
   const entries: AdapterSkillEntry[] = [];
   const warnings: string[] = [];
 
-  // Paperclip-managed skills
+  // GS Agentic Manager-managed skills
   for (const entry of paperclipEntries) {
     const desired = desiredSet.has(entry.key);
     entries.push({
@@ -157,7 +157,7 @@ async function buildHermesSkillSnapshot(config: Record<string, unknown>): Promis
       managed: true,
       state: desired ? "configured" : "available",
       origin: "company_managed",
-      originLabel: "Managed by Paperclip",
+      originLabel: "Managed by GS Agentic Manager",
       readOnly: false,
       sourcePath: entry.source,
       targetPath: null,
@@ -169,7 +169,7 @@ async function buildHermesSkillSnapshot(config: Record<string, unknown>): Promis
 
   // Hermes-installed skills (read-only, always loaded)
   for (const entry of hermesSkillEntries) {
-    // Skip if Paperclip already manages a skill with the same key
+    // Skip if GS Agentic Manager already manages a skill with the same key
     if (availableByKey.has(entry.key)) continue;
     entries.push(entry);
   }
@@ -178,7 +178,7 @@ async function buildHermesSkillSnapshot(config: Record<string, unknown>): Promis
   for (const desiredSkill of desiredSkills) {
     if (availableByKey.has(desiredSkill) || hermesKeys.has(desiredSkill)) continue;
     warnings.push(
-      `Desired skill "${desiredSkill}" is not available in Paperclip or Hermes skills.`,
+      `Desired skill "${desiredSkill}" is not available in GS Agentic Manager or Hermes skills.`,
     );
     entries.push({
       key: desiredSkill,
@@ -192,7 +192,7 @@ async function buildHermesSkillSnapshot(config: Record<string, unknown>): Promis
       sourcePath: null,
       targetPath: null,
       detail:
-        "Cannot find this skill in Paperclip or ~/.hermes/skills/.",
+        "Cannot find this skill in GS Agentic Manager or ~/.hermes/skills/.",
     });
   }
 

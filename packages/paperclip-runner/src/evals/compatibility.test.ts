@@ -3,8 +3,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
-  PAPERCLIP_RUNNER_BUILD_METADATA,
-  PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA,
+  GSAM_RUNNER_BUILD_METADATA,
+  GSAM_RUNNERD_BUILD_METADATA_SCHEMA,
 } from "./build-metadata.js";
 import {
   PaperclipRunnerEvalCompatibilityError,
@@ -15,13 +15,13 @@ import {
 function compatible(): PaperclipRunnerEvalCompatibilityRequirement {
   return {
     consumer: "paperclip-evals",
-    packageVersion: PAPERCLIP_RUNNER_BUILD_METADATA.package.version,
+    packageVersion: GSAM_RUNNER_BUILD_METADATA.package.version,
     runnerd: {
-      schema: PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA,
+      schema: GSAM_RUNNERD_BUILD_METADATA_SCHEMA,
       binaryName: "paperclip-runnerd",
-      packageName: "@paperclipai/paperclip-runner",
-      packageVersion: PAPERCLIP_RUNNER_BUILD_METADATA.package.version,
-      binaryContractVersion: PAPERCLIP_RUNNER_BUILD_METADATA.contracts.runnerdArtifact,
+      packageName: "@greatstone/paperclip-runner",
+      packageVersion: GSAM_RUNNER_BUILD_METADATA.package.version,
+      binaryContractVersion: GSAM_RUNNER_BUILD_METADATA.contracts.runnerdArtifact,
       nativeExecutionVersion: 1,
       harnessDriverVersion: 1,
       prp: { name: "paperclip.runner", minimumVersion: 1, maximumVersion: 1 },
@@ -29,8 +29,8 @@ function compatible(): PaperclipRunnerEvalCompatibilityRequirement {
     nativeExecutionVersion: 1,
     prp: { minimumVersion: 1, maximumVersion: 1 },
     catalog: {
-      version: PAPERCLIP_RUNNER_BUILD_METADATA.semanticCatalog.version,
-      sha256: PAPERCLIP_RUNNER_BUILD_METADATA.semanticCatalog.sha256,
+      version: GSAM_RUNNER_BUILD_METADATA.semanticCatalog.version,
+      sha256: GSAM_RUNNER_BUILD_METADATA.semanticCatalog.sha256,
     },
     driver: {
       contractVersion: 1,
@@ -54,13 +54,13 @@ function compatible(): PaperclipRunnerEvalCompatibilityRequirement {
   };
 }
 
-describe("Paperclip Evals integration compatibility", () => {
+describe("GS Agentic Manager Evals integration compatibility", () => {
   it("keeps build metadata synchronized with package semver", () => {
     const packageJson = JSON.parse(readFileSync(
       fileURLToPath(new URL("../../package.json", import.meta.url)),
       "utf8",
     ));
-    expect(PAPERCLIP_RUNNER_BUILD_METADATA.package.version).toBe(packageJson.version);
+    expect(GSAM_RUNNER_BUILD_METADATA.package.version).toBe(packageJson.version);
   });
 
   it("negotiates package, binary, PRP, catalog, and driver V1", () => {

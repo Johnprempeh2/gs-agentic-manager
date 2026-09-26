@@ -188,7 +188,7 @@ Fires a run immediately, bypassing the schedule. Concurrency policy still applie
 POST /api/routine-triggers/public/{publicId}/fire
 ```
 
-Fires a webhook trigger from an external system without a Paperclip login. Send
+Fires a webhook trigger from an external system without a GS Agentic Manager login. Send
 `Content-Type: application/json` and a JSON object. The trigger authenticates the
 request using its own secret; an agent or board API key is not a substitute.
 
@@ -244,7 +244,7 @@ required variables return `422`; non-JSON media types return `415` and invalid
 JSON objects return `400`. Rotating a secret immediately invalidates the old one.
 
 Cloud installations use their canonical public origin for generated URLs.
-Self-hosted installations should set `PAPERCLIP_PUBLIC_URL` to their HTTPS
+Self-hosted installations should set `GSAM_PUBLIC_URL` to their HTTPS
 origin. The reverse proxy must forward this POST endpoint and its authorization,
 signature, timestamp, and idempotency headers without requiring a browser login.
 For local HTTPS testing, proxy an isolated test instance through Tailscale Serve;

@@ -14,7 +14,7 @@ describe("working-directory environment loading", () => {
     expect(shouldLoadWorkingDirectoryEnv({
       cwdEnvExists: true,
       isPaperclipEnvFile: false,
-      env: { PAPERCLIP_DISABLE_CWD_ENV_FILE: "true" },
+      env: { GSAM_DISABLE_CWD_ENV_FILE: "true" },
     })).toBe(false);
   });
 

@@ -99,7 +99,7 @@ function reportRetainedAcpxCleanupFailure(
       errorName,
     }),
     {
-      code: "PAPERCLIP_ACPX_RETAINED_CLEANUP_FAILURE",
+      code: "GSAM_ACPX_RETAINED_CLEANUP_FAILURE",
       type: "PaperclipRunnerCleanupWarning",
     },
   );
@@ -353,7 +353,7 @@ async function dispatch(
     await requireHost().interruptActiveTurn(
       boundedOptionalText(
         request.params.reason,
-        "Paperclip cancellation",
+        "GS Agentic Manager cancellation",
         4_000,
       ),
     );
@@ -408,7 +408,7 @@ async function dispatch(
       pending.reject(
         new Error(
           safeText(
-            text(record(request.params.error).message, "Paperclip tool failed"),
+            text(record(request.params.error).message, "GS Agentic Manager tool failed"),
           ),
         ),
       );
@@ -487,7 +487,7 @@ async function dispatch(
     );
     await closeSidecarHostForCommand(
       activeHost,
-      boundedOptionalText(request.params.reason, "Paperclip suspension", 4_000),
+      boundedOptionalText(request.params.reason, "GS Agentic Manager suspension", 4_000),
       undefined,
       (cleanup) => retainActiveHostCleanup(activeHost, cleanup),
     );
@@ -508,7 +508,7 @@ async function dispatch(
       const activeHost = host;
       await closeSidecarHostForCommand(
         activeHost,
-        boundedOptionalText(request.params.reason, "Paperclip close", 4_000),
+        boundedOptionalText(request.params.reason, "GS Agentic Manager close", 4_000),
         undefined,
         (cleanup) => retainActiveHostCleanup(activeHost, cleanup),
       );

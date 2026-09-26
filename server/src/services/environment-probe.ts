@@ -1,6 +1,6 @@
-import type { Environment, EnvironmentProbeResult } from "@paperclipai/shared";
-import type { Db } from "@paperclipai/db";
-import { ensureSshWorkspaceReady } from "@paperclipai/adapter-utils/ssh";
+import type { Environment, EnvironmentProbeResult } from "@greatstone/shared";
+import type { Db } from "@greatstone/db";
+import { ensureSshWorkspaceReady } from "@greatstone/adapter-utils/ssh";
 import {
   parseEnvironmentDriverConfig,
   resolveEnvironmentDriverConfigForRuntime,
@@ -38,7 +38,7 @@ export async function probeEnvironment(
     return {
       ok: true,
       driver: "local",
-      summary: "Local environment is available on this Paperclip host.",
+      summary: "Local environment is available on this GS Agentic Manager host.",
       details: {
         hostname: os.hostname(),
         cwd: process.cwd(),

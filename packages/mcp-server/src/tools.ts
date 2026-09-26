@@ -16,7 +16,7 @@ import {
   updateIssueSchema,
   upsertIssueDocumentSchema,
   linkIssueApprovalSchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { PaperclipApiClient } from "./client.js";
 import { formatErrorResponse, formatTextResponse } from "./format.js";
 
@@ -56,13 +56,13 @@ function parseOptionalJson(raw: string | undefined | null): unknown {
 }
 
 async function callRuntimeConnectionTool(
-  endpointEnv: "PAPERCLIP_RUNTIME_TOOLS_CONNECTIONS_SEARCH_URL" | "PAPERCLIP_RUNTIME_TOOLS_CONNECTION_REQUEST_URL",
+  endpointEnv: "GSAM_RUNTIME_TOOLS_CONNECTIONS_SEARCH_URL" | "GSAM_RUNTIME_TOOLS_CONNECTION_REQUEST_URL",
   body: unknown,
 ) {
   const endpoint = process.env[endpointEnv]?.trim();
-  const token = process.env.PAPERCLIP_RUNTIME_TOOLS_TOKEN?.trim();
+  const token = process.env.GSAM_RUNTIME_TOOLS_TOKEN?.trim();
   if (!endpoint || !token) {
-    throw new Error("Connection intent tools are available only inside an active Paperclip heartbeat run");
+    throw new Error("Connection intent tools are available only inside an active GS Agentic Manager heartbeat run");
   }
   const response = await fetch(endpoint, {
     method: "POST",
@@ -274,7 +274,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       CONNECTIONS_SEARCH_TOOL_DESCRIPTION,
       connectionsSearchInputSchema,
       async (input) => callRuntimeConnectionTool(
-        "PAPERCLIP_RUNTIME_TOOLS_CONNECTIONS_SEARCH_URL",
+        "GSAM_RUNTIME_TOOLS_CONNECTIONS_SEARCH_URL",
         input,
       ),
     ),
@@ -283,13 +283,13 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       CONNECTION_REQUEST_TOOL_DESCRIPTION,
       connectionRequestInputSchema,
       async (input) => callRuntimeConnectionTool(
-        "PAPERCLIP_RUNTIME_TOOLS_CONNECTION_REQUEST_URL",
+        "GSAM_RUNTIME_TOOLS_CONNECTION_REQUEST_URL",
         input,
       ),
     ),
     makeTool(
       "paperclipMe",
-      "Get the current authenticated Paperclip actor details",
+      "Get the current authenticated GS Agentic Manager actor details",
       z.object({}),
       async () => client.requestJson("GET", "/agents/me"),
     ),
@@ -676,7 +676,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     ),
     makeTool(
       "paperclipApiRequest",
-      "Make a JSON request to an existing Paperclip /api endpoint for unsupported operations",
+      "Make a JSON request to an existing GS Agentic Manager /api endpoint for unsupported operations",
       apiRequestSchema,
       async ({ method, path, jsonBody }) => {
         if (!path.startsWith("/") || path.includes("..")) {

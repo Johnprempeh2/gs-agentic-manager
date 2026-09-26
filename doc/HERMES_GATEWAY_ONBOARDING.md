@@ -1,23 +1,23 @@
 # Hermes Gateway Onboarding
 
-Use this guide when a Hermes runtime should join Paperclip as an external
+Use this guide when a Hermes runtime should join GS Agentic Manager as an external
 `hermes_gateway` employee. This mirrors the OpenClaw gateway invite path, but
 Hermes uses the generic agent invite/onboarding flow instead of the
 OpenClaw-specific invite prompt endpoint.
 
 ## Choose The Adapter
 
-Paperclip ships both Hermes adapters as built-ins:
+GS Agentic Manager ships both Hermes adapters as built-ins:
 
 - `hermes_local` runs the local `hermes` CLI as a child process on the
-  Paperclip host.
+  GS Agentic Manager host.
 - `hermes_gateway` calls an already-running Hermes API server over HTTP/SSE.
 
 No Adapter manager installation is required for normal use. Adapter manager is
 only needed when you intentionally install an external
-`@paperclipai/hermes-paperclip-adapter` package to override or shadow a built-in
+`@greatstone/hermes-paperclip-adapter` package to override or shadow a built-in
 adapter while developing the Hermes package. If the external override is paused
-or removed, Paperclip restores the built-in `hermes_local` / `hermes_gateway`
+or removed, GS Agentic Manager restores the built-in `hermes_local` / `hermes_gateway`
 adapter.
 
 ## Required Credentials
@@ -27,15 +27,15 @@ Keep these credentials distinct:
 - Hermes inference provider key: set at least one provider key for Hermes, such
   as `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
   `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `MISTRAL_API_KEY`.
-- Hermes gateway key: set `API_SERVER_KEY` before starting Hermes. Paperclip
+- Hermes gateway key: set `API_SERVER_KEY` before starting Hermes. GS Agentic Manager
   stores the same value as `agentDefaultsPayload.apiKey` so it can call Hermes.
-- Paperclip agent key: created after the board approves the join request and
+- GS Agentic Manager agent key: created after the board approves the join request and
   claimed once by the Hermes agent. Hermes uses this key as
-  `PAPERCLIP_API_KEY` when it calls Paperclip.
+  `GSAM_API_KEY` when it calls GS Agentic Manager.
 
-Do not reuse the Hermes gateway key as the Paperclip agent key. The Hermes
-gateway key authenticates Paperclip-to-Hermes traffic; the claimed Paperclip key
-authenticates Hermes-to-Paperclip traffic.
+Do not reuse the Hermes gateway key as the GS Agentic Manager agent key. The Hermes
+gateway key authenticates GS Agentic Manager-to-Hermes traffic; the claimed GS Agentic Manager key
+authenticates Hermes-to-GS Agentic Manager traffic.
 
 ## Start Hermes Gateway
 
@@ -49,9 +49,9 @@ API_SERVER_ENABLED=true hermes gateway run --replace --accept-hooks
 ```
 
 The default Hermes API server port is `8642`. For local loopback testing,
-Paperclip can usually store `http://127.0.0.1:8642` as the gateway URL. For
+GS Agentic Manager can usually store `http://127.0.0.1:8642` as the gateway URL. For
 Docker, LAN, tailnet, or reverse-proxy setups, use a URL reachable by the
-Paperclip server process.
+GS Agentic Manager server process.
 
 Plain HTTP is accepted for loopback. Non-loopback HTTP is denied by default in
 the join flow; use HTTPS for real remote gateways. For private local
@@ -59,7 +59,7 @@ development only, the join payload can set
 `dangerouslyAllowInsecureRemoteHttp: true`, and the smoke scripts expose the
 same escape hatch as `HERMES_GATEWAY_ALLOW_INSECURE_HTTP=1`.
 
-## Invite From Paperclip
+## Invite From GS Agentic Manager
 
 In the board UI:
 
@@ -79,9 +79,9 @@ The UI prompt points Hermes at the same machine-readable onboarding endpoints:
 For CLI-driven setup, create and inspect the invite directly:
 
 ```sh
-npx paperclipai invite create --company-id <company-id> --payload-json '{"requestType":"agent"}'
-npx paperclipai invite show <token>
-npx paperclipai invite onboarding:text <token>
+npx gsam invite create --company-id <company-id> --payload-json '{"requestType":"agent"}'
+npx gsam invite show <token>
+npx gsam invite onboarding:text <token>
 ```
 
 Hermes should submit a join request with `requestType: "agent"` and
@@ -104,46 +104,46 @@ Hermes should submit a join request with `requestType: "agent"` and
 
 Important URL roles:
 
-- `agentDefaultsPayload.apiBaseUrl` is the Hermes gateway URL that Paperclip
+- `agentDefaultsPayload.apiBaseUrl` is the Hermes gateway URL that GS Agentic Manager
   calls.
-- `agentDefaultsPayload.paperclipApiUrl` is the Paperclip base URL that Hermes
+- `agentDefaultsPayload.paperclipApiUrl` is the GS Agentic Manager base URL that Hermes
   can call after approval and key claim.
-- `PAPERCLIP_API_URL` / `PAPERCLIP_API_KEY` are injected runtime values for
-  Hermes-originated Paperclip API calls after the agent is approved.
+- `GSAM_API_URL` / `GSAM_API_KEY` are injected runtime values for
+  Hermes-originated GS Agentic Manager API calls after the agent is approved.
 
 ## Approve And Claim
 
 After Hermes submits the join request:
 
-1. In Paperclip, review the pending agent join request.
+1. In GS Agentic Manager, review the pending agent join request.
 2. Approve it from the board UI, or use:
 
    ```sh
-   npx paperclipai join list --company-id <company-id> --status pending_approval
-   npx paperclipai join approve <request-id> --company-id <company-id>
+   npx gsam join list --company-id <company-id> --status pending_approval
+   npx gsam join approve <request-id> --company-id <company-id>
    ```
 
 3. Hermes claims the one-time agent API key:
 
    ```sh
-   npx paperclipai join claim-key <request-id> --claim-secret <secret>
+   npx gsam join claim-key <request-id> --claim-secret <secret>
    ```
 
-4. Store the claimed Paperclip key in Hermes runtime state or secrets. The claim
+4. Store the claimed GS Agentic Manager key in Hermes runtime state or secrets. The claim
    secret and claimed key are sensitive and should not be pasted into issue
    comments, logs, or prompt text.
 
 Once the key is claimed, create an issue assigned to the new Hermes gateway
-agent and wake it through the normal Paperclip heartbeat path.
+agent and wake it through the normal GS Agentic Manager heartbeat path.
 
 ## Local Fresh-State Smoke
 
-For a fresh Docker-backed Hermes gateway and end-to-end Paperclip join/run
+For a fresh Docker-backed Hermes gateway and end-to-end GS Agentic Manager join/run
 verification, use:
 
 ```sh
-PAPERCLIP_API_URL=http://127.0.0.1:3100 \
-PAPERCLIP_AUTH_HEADER='Bearer <board-token>' \
+GSAM_API_URL=http://127.0.0.1:3100 \
+GSAM_AUTH_HEADER='Bearer <board-token>' \
 pnpm smoke:hermes-gateway-e2e
 ```
 
@@ -153,10 +153,10 @@ The E2E smoke:
 - seeds a minimal non-secret Hermes model config
 - passes provider keys from the host environment without printing them
 - verifies Hermes `/health`, `/v1/capabilities`, `/v1/runs`, SSE, and stop
-- creates and approves a Paperclip agent-only invite
+- creates and approves a GS Agentic Manager agent-only invite
 - joins as `hermes_gateway`
 - wakes the agent on a smoke issue
-- removes Paperclip and Docker test state on success
+- removes GS Agentic Manager and Docker test state on success
 
 If a Hermes gateway is already running and you only need to validate the invite
 and stored adapter config, use the join-only helper:
@@ -164,8 +164,8 @@ and stored adapter config, use the join-only helper:
 ```sh
 API_SERVER_ENABLED=true API_SERVER_KEY='<gateway-key>' hermes gateway run --replace --accept-hooks
 
-PAPERCLIP_API_URL=http://127.0.0.1:3100 \
-PAPERCLIP_AUTH_HEADER='Bearer <board-token>' \
+GSAM_API_URL=http://127.0.0.1:3100 \
+GSAM_AUTH_HEADER='Bearer <board-token>' \
 HERMES_GATEWAY_API_BASE_URL=http://127.0.0.1:8642 \
 HERMES_GATEWAY_API_KEY='<gateway-key>' \
 pnpm smoke:hermes-gateway-join
@@ -182,12 +182,12 @@ Use these entry points depending on who is driving setup:
   onboarding prompt.
 - Invite API: `GET /api/invites/:token/onboarding.txt` for the generated
   llm.txt-style setup instructions.
-- CLI invite flow: `npx paperclipai invite create`, `invite show`,
+- CLI invite flow: `npx gsam invite create`, `invite show`,
   `invite onboarding:text`, `join approve`, and `join claim-key`.
 - Smoke helpers: `pnpm smoke:hermes-gateway-e2e` for fresh-state Docker
   verification and `pnpm smoke:hermes-gateway-join` for an already-running
   gateway.
 - Adapter development override: Adapter manager can install
-  `@paperclipai/hermes-paperclip-adapter` as an external override, but normal
+  `@greatstone/hermes-paperclip-adapter` as an external override, but normal
   operators should use the built-in `hermes_local` and `hermes_gateway`
   adapters.

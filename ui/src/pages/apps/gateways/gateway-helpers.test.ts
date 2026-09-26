@@ -5,7 +5,7 @@ import type {
   ToolMcpGatewayToken,
   ToolMcpGatewayWithTokens,
   ToolProfileWithDetails,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { describe, expect, it } from "vitest";
 import {
   activeTokenCount,
@@ -126,7 +126,7 @@ describe("gateway client snippets", () => {
     expect(formatHydratedSnippetConfig(
       {
         mcpServers: {
-          Paperclip: {
+          "GS Agentic Manager": {
             url: "/mcp/gateways/public-id",
             headers: { Authorization: "Bearer pcgw_..." },
           },

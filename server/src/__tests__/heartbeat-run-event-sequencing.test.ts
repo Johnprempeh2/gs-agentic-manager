@@ -6,7 +6,7 @@ import {
   createDb,
   heartbeatRunEvents,
   heartbeatRuns,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   allocateHeartbeatRunEventSeq,
   appendHeartbeatRunEvent,

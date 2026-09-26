@@ -18,7 +18,7 @@ import {
   chatEndpoints,
   chatPublications,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type DbOrTransaction = Db | DbTransaction;

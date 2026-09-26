@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
+import type { CompanySecret, UserSecretDefinition } from "@greatstone/shared";
 import {
   computeDuplicateNames,
   computeRowHealth,
@@ -153,7 +153,7 @@ describe("valueFromRows (emit semantics)", () => {
 });
 
 describe("validateName", () => {
-  const reserved = ["PAPERCLIP_"];
+  const reserved = ["GSAM_"];
 
   it("returns null for empty and valid names", () => {
     expect(validateName("", new Set(), reserved)).toBeNull();
@@ -171,7 +171,7 @@ describe("validateName", () => {
   });
 
   it("flags reserved prefixes as warnings", () => {
-    const issue = validateName("PAPERCLIP_HOME", new Set(), reserved);
+    const issue = validateName("GSAM_HOME", new Set(), reserved);
     expect(issue?.level).toBe("warn");
     expect(issue?.message).toMatch(/Reserved prefix/);
   });

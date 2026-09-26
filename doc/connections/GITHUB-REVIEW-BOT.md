@@ -1,7 +1,7 @@
 # GitHub chat and review bots
 
-A GitHub bot belongs to one Paperclip agent. GitHub issues, pull requests, and
-review threads enter ordinary Paperclip tasks; the agent's runs, permissions,
+A GitHub bot belongs to one GS Agentic Manager agent. GitHub issues, pull requests, and
+review threads enter ordinary GS Agentic Manager tasks; the agent's runs, permissions,
 budget, and activity remain visible there. The Reviews page is a projection of
 assessments attached to those tasks, not a separate execution system.
 
@@ -18,8 +18,8 @@ required GitHub checks, read
 2. Make the instance reachable through public HTTPS, then create an App with
    manifest registration or connect an existing App. Credentials are vaulted.
 3. Install the App on GitHub. Grant access only to the intended repositories.
-4. Refresh the repository list in Paperclip and enable the repositories this bot
-   should handle. GitHub installation access and Paperclip enablement are
+4. Refresh the repository list in GS Agentic Manager and enable the repositories this bot
+   should handle. GitHub installation access and GS Agentic Manager enablement are
    separate controls. Use **Configure on GitHub** to change installation access,
    then refresh again.
 5. Verify signed delivery, App identity, repository permissions, and the assigned
@@ -37,7 +37,7 @@ provider software to the Cloud server image. Codex with managed MCP tools and
 the native Runner Codex backend do not require a server-side remote provider
 pack. Remote native ACPX (including Claude) and OpenCode currently require an
 operator-supplied, build-owned provider pack configured through
-`PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH`; the standard Cloud server image
+`GSAM_RUNNER_REMOTE_PROVIDER_PACK_PATH`; the standard Cloud server image
 does not supply one. A pack installed in the sandbox alone does not satisfy
 that existing runtime requirement. Treat that provider setup as a separate
 Runner prerequisite, not an automatic connector installation step.
@@ -83,8 +83,8 @@ The execution records the configuration revision and event context used.
 ## Assessments, checks, and formal reviews
 
 The agent reads through task-bound bot tools, explicitly begins an assessment,
-and submits the reviewed commit, findings, rationale, and coverage. Paperclip
-validates the result and computes the **Paperclip Review** check. The default
+and submits the reviewed commit, findings, rationale, and coverage. GS Agentic Manager
+validates the result and computes the **GS Agentic Manager Review** check. The default
 threshold is 5/5; choose 1–5 or report-only as needed.
 
 | Score | Assessment rubric |
@@ -102,7 +102,7 @@ old runs cannot publish over the latest head. One current summary is updated in
 place, with history and task/run links retained. Stable finding keys prevent
 duplicate inline comments on repeated reviews.
 
-The check's **Details** link opens its Paperclip task on the current instance
+The check's **Details** link opens its GS Agentic Manager task on the current instance
 hostname, or the connector's Reviews page when no task has been created yet.
 
 Formal **APPROVE** and **REQUEST_CHANGES** are separate governed tools, each off
@@ -110,8 +110,8 @@ by default. Enabling either does not automatically perform it. A score of 5/5
 alone never approves a PR.
 
 To enforce the rating at merge time, configure GitHub branch protection or a
-ruleset to require **Paperclip Review**, selecting this bot App as the source
-where supported. Paperclip does not change repository rules. GitHub account and
+ruleset to require **GS Agentic Manager Review**, selecting this bot App as the source
+where supported. GS Agentic Manager does not change repository rules. GitHub account and
 repository plan restrictions may limit required-check enforcement. If automatic
 execution is disallowed, a gated head requests an authorized manual review.
 

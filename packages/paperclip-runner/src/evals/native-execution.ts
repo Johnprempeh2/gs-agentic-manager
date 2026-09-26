@@ -5,7 +5,7 @@ import {
   type PrpEvent,
   type PrpTerminalState,
 } from "../protocol/replay-contract.js";
-import { PAPERCLIP_RUNNER_NATIVE_EXECUTION_SCHEMA } from "./build-metadata.js";
+import { GSAM_RUNNER_NATIVE_EXECUTION_SCHEMA } from "./build-metadata.js";
 
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const TOOL_OUTCOMES = new Set([
@@ -35,7 +35,7 @@ export interface NativeExecutionContentRef {
 }
 
 export interface PaperclipNativeExecutionV1 {
-  schema: typeof PAPERCLIP_RUNNER_NATIVE_EXECUTION_SCHEMA;
+  schema: typeof GSAM_RUNNER_NATIVE_EXECUTION_SCHEMA;
   provenance: "seeded" | "replay" | "live";
   identity: {
     runId: string;
@@ -204,10 +204,10 @@ export function parsePaperclipNativeExecution(
   value: unknown,
 ): PaperclipNativeExecutionV1 {
   const bundle = record(value, "bundle");
-  if (bundle.schema !== PAPERCLIP_RUNNER_NATIVE_EXECUTION_SCHEMA) {
+  if (bundle.schema !== GSAM_RUNNER_NATIVE_EXECUTION_SCHEMA) {
     fail(
       "bundle.schema",
-      `unsupported schema ${String(bundle.schema)}; expected ${PAPERCLIP_RUNNER_NATIVE_EXECUTION_SCHEMA}`,
+      `unsupported schema ${String(bundle.schema)}; expected ${GSAM_RUNNER_NATIVE_EXECUTION_SCHEMA}`,
     );
   }
   if (bundle.provenance !== "seeded" && bundle.provenance !== "replay" && bundle.provenance !== "live") {
@@ -493,7 +493,7 @@ export function parsePaperclipNativeExecution(
 
   return {
     ...structuredClone(bundle),
-    schema: PAPERCLIP_RUNNER_NATIVE_EXECUTION_SCHEMA,
+    schema: GSAM_RUNNER_NATIVE_EXECUTION_SCHEMA,
     provenance: bundle.provenance,
     identity: parsedIdentity,
     input: parsedInput,

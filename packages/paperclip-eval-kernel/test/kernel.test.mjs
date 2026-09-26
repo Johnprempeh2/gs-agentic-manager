@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  PAPERCLIP_EVAL_KERNEL_COMPATIBILITY,
+  GSAM_EVAL_KERNEL_COMPATIBILITY,
   PaperclipEvalKernelConfigurationError,
   runPaperclipEvalMatrix,
 } from "../dist/index.js";
@@ -14,7 +14,7 @@ test("runs a caller-owned scenario/candidate matrix", async () => {
     execute: async ({ scenario, candidate }) => scenario.input.value * candidate.config.multiplier,
     score: ({ output }) => ({ passed: output === 6 }),
   });
-  assert.equal(PAPERCLIP_EVAL_KERNEL_COMPATIBILITY.apiVersion, 1);
+  assert.equal(GSAM_EVAL_KERNEL_COMPATIBILITY.apiVersion, 1);
   assert.deepEqual(results, [{
     scenarioId: "scenario-a",
     candidateId: "candidate-a",

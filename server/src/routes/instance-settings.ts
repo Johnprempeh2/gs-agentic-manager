@@ -1,11 +1,11 @@
 import { Router, type Request } from "express";
-import { companies, type Db } from "@paperclipai/db";
+import { companies, type Db } from "@greatstone/db";
 import {
   patchInstanceSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   startTaskDrainRequestSchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { forbidden } from "../errors.js";
 import {
   cloudTenantPrimaryCompanyId,

@@ -10,7 +10,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { AlertCircle, KeyRound, Plus, RotateCcw, Save, UserRound } from "lucide-react";
-import type { CompanySecret, EnvBinding, UserSecretDefinition } from "@paperclipai/shared";
+import type { CompanySecret, EnvBinding, UserSecretDefinition } from "@greatstone/shared";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useOptionalToastActions } from "@/context/ToastContext";
@@ -29,10 +29,10 @@ import {
 } from "./model";
 import type { EnvironmentVariableDirtyFields } from "./Row";
 
-const DEFAULT_RESERVED_PREFIXES = ["PAPERCLIP_"];
+const DEFAULT_RESERVED_PREFIXES = ["GSAM_"];
 
 const DEFAULT_HINT =
-  "Set the KEY to the env var name the process expects, for example GH_TOKEN. Choose a secret to resolve a stored value at run start. PAPERCLIP_* variables are injected automatically.";
+  "Set the KEY to the env var name the process expects, for example GH_TOKEN. Choose a secret to resolve a stored value at run start. GSAM_* variables are injected automatically.";
 
 // Canonical entries for dirty comparison. Must mirror the emit semantics of
 // valueFromRows (trimmed names, incomplete refs dropped, last-writer-wins on
@@ -129,7 +129,7 @@ export interface EnvironmentVariablesEditorProps {
   recentlyUsedSecrets?: readonly CompanySecret[];
   /** Read-only rendering. */
   disabled?: boolean;
-  /** Prefixes flagged as reserved/auto-provided. Default `["PAPERCLIP_"]`. */
+  /** Prefixes flagged as reserved/auto-provided. Default `["GSAM_"]`. */
   reservedPrefixes?: readonly string[];
   /** Context-specific hint line. `null` hides the default copy; omit for default. */
   footerHint?: ReactNode | null;
@@ -501,7 +501,7 @@ export const EnvironmentVariablesEditor = forwardRef<EnvironmentVariablesEditorH
 
         {quickBind.length > 0 && !disabled ? (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 text-(length:--text-micro) text-muted-foreground/70">
+            <span className="inline-flex items-center gap-1 text-(length:--text-micro) text-subtle-foreground">
               <KeyRound className="size-3" />
               Recently used:
             </span>
@@ -558,9 +558,9 @@ export const EnvironmentVariablesEditor = forwardRef<EnvironmentVariablesEditorH
         </div>
       ) : null}
 
-      {hint ? <p className="text-(length:--text-micro) text-muted-foreground/70">{hint}</p> : null}
+      {hint ? <p className="text-(length:--text-micro) text-subtle-foreground">{hint}</p> : null}
       {rows.some((row) => row.source === "user_secret" && row.userSecretKey) ? (
-        <p className="inline-flex items-start gap-1 text-(length:--text-micro) text-muted-foreground/70">
+        <p className="inline-flex items-start gap-1 text-(length:--text-micro) text-subtle-foreground">
           <UserRound className="mt-0.5 size-3 shrink-0" />
           <span>
             User secrets resolve from the user responsible for the run. Required bindings fail until that user

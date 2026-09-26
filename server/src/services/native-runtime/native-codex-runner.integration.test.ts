@@ -17,7 +17,7 @@ import {
   issues,
   nativeRunFinalizations,
   nativeRunResults,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 
 import {
   getEmbeddedPostgresTestSupport,
@@ -251,7 +251,7 @@ describeEmbeddedPostgres("native Codex server vertical slice", () => {
         },
       },
     });
-    expect(logs.join("\n")).not.toContain("PAPERCLIP_RUNNER_BOOTSTRAP_TICKET");
+    expect(logs.join("\n")).not.toContain("GSAM_RUNNER_BOOTSTRAP_TICKET");
 
     const [persistedResult] = await db
       .select()

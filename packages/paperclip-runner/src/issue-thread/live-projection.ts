@@ -613,9 +613,9 @@ function composerModel(
 /**
  * The real-API block, rendered as a record rather than a claim in prose.
  *
- * Both the clean-room chat and the scenario path route every Paperclip
+ * Both the clean-room chat and the scenario path route every GS Agentic Manager
  * operation through the in-process mock port, so "no request reached a real
- * Paperclip API" is a fact the session already carries. Projecting it into the
+ * GS Agentic Manager API" is a fact the session already carries. Projecting it into the
  * Control plane section is what makes it inspectable in the drawer instead of
  * something a reader has to take on trust.
  */
@@ -630,8 +630,8 @@ function networkGuardRecord(
     category: "session",
     outcome: realPaperclipRequests === 0 ? "no_real_paperclip_request" : "real_paperclip_request",
     reason:
-      `Real Paperclip API requests: ${realPaperclipRequests}. ` +
-      `Child PAPERCLIP_* environment keys: ${
+      `Real GS Agentic Manager API requests: ${realPaperclipRequests}. ` +
+      `Child GSAM_* environment keys: ${
         childPaperclipEnvironmentKeys.length === 0
           ? "none"
           : childPaperclipEnvironmentKeys.join(", ")
@@ -925,8 +925,8 @@ export function projectCapabilityIssueThread(
       agentLabel,
       runnerLabel: mode === "live" ? "Real runnerd" : "In-process runner",
       runnerAttached: ["idle", "warm_idle", "waiting_input", "running"].includes(snapshot.status),
-      controlPlaneLabel: "Mock Paperclip",
-      controlPlaneTooltip: "All issue records are mock. No real Paperclip API is reachable.",
+      controlPlaneLabel: "Mock GS Agentic Manager",
+      controlPlaneTooltip: "All issue records are mock. No real GS Agentic Manager API is reachable.",
       replaySource: input.replaySource ?? null,
     },
     issue: {

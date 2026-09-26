@@ -2,15 +2,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AdapterExecutionContext, AdapterInvocationMeta } from "@paperclipai/adapter-utils";
-import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
+import type { AdapterExecutionContext, AdapterInvocationMeta } from "@greatstone/adapter-utils";
+import { runChildProcess } from "@greatstone/adapter-utils/server-utils";
 
 // Every test in this file needs a real teardown, so the mock below delegates
 // to the actual factory by default. Only the wiring test further down reads
 // the call arguments; it does not change this behavior.
 const mockCreateWorkspaceRestoreTeardown = vi.hoisted(() => vi.fn());
 
-vi.mock("@paperclipai/adapter-utils/workspace-restore-teardown", async (importOriginal) => {
+vi.mock("@greatstone/adapter-utils/workspace-restore-teardown", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   mockCreateWorkspaceRestoreTeardown.mockImplementation(
     actual.createWorkspaceRestoreTeardown as (...args: unknown[]) => unknown,

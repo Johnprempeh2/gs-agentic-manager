@@ -11,7 +11,7 @@ import {
 } from "../../components/agent-config-primitives";
 
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground";
 
 const DEFAULT_SESSION_KEY_STRATEGY = "issue";
 const DEFAULT_TIMEOUT_SEC = 600;
@@ -79,7 +79,7 @@ function SecretField({
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          className="absolute left-2 top-1/2 -translate-y-1/2 text-subtle-foreground hover:text-muted-foreground transition-colors"
           aria-label={visible ? `Hide ${label}` : `Show ${label}`}
         >
           {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -144,7 +144,7 @@ export function HermesGatewayConfigFields({
     <>
       <Field
         label="API base URL"
-        hint="Hermes API server base URL that Paperclip can reach, such as http://127.0.0.1:8642 or a private HTTPS URL. Default dashboard root/chat URLs such as http://127.0.0.1:9119/chat are accepted and map to /api."
+        hint="Hermes API server base URL that GS Agentic Manager can reach, such as http://127.0.0.1:8642 or a private HTTPS URL. Default dashboard root/chat URLs such as http://127.0.0.1:9119/chat are accepted and map to /api."
       >
         <DraftInput
           value={apiBaseUrl}
@@ -159,13 +159,13 @@ export function HermesGatewayConfigFields({
         label="API key"
         value={isCreate ? String(readCreateValue(values, "apiKey", "") ?? "") : editApiKeyValue}
         onCommit={(v) => writeValue("apiKey", v || undefined)}
-        placeholder="Hermes API_SERVER_KEY, not PAPERCLIP_API_KEY"
+        placeholder="Hermes API_SERVER_KEY, not GSAM_API_KEY"
         stored={!isCreate && hasStoredApiKey && !editApiKeyValue}
       />
 
       <Field
-        label="Paperclip API URL"
-        hint="Optional Paperclip API URL reachable by the Hermes host. This is not a credential."
+        label="GS Agentic Manager API URL"
+        hint="Optional GS Agentic Manager API URL reachable by the Hermes host. This is not a credential."
       >
         <DraftInput
           value={paperclipApiUrl}

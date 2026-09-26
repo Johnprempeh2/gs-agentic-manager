@@ -19,7 +19,7 @@ import {
   toolProfileBindings,
   toolProfileEntries,
   toolProfiles,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -34,7 +34,7 @@ const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : 
 describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-  const originalApiUrl = process.env.PAPERCLIP_API_URL;
+  const originalApiUrl = process.env.GSAM_API_URL;
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-runtime-mcp-");
@@ -42,8 +42,8 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
   }, 20_000);
 
   afterEach(async () => {
-    if (originalApiUrl === undefined) delete process.env.PAPERCLIP_API_URL;
-    else process.env.PAPERCLIP_API_URL = originalApiUrl;
+    if (originalApiUrl === undefined) delete process.env.GSAM_API_URL;
+    else process.env.GSAM_API_URL = originalApiUrl;
     await db.delete(toolMcpGatewayTokens);
     await db.delete(activityLog);
     await db.delete(toolAccessAuditEvents);
@@ -66,7 +66,7 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
   });
 
   it("provisions one aggregate gateway and omits unavailable access without blocking any runtime", async () => {
-    process.env.PAPERCLIP_API_URL = "https://paperclip.example.test";
+    process.env.GSAM_API_URL = "https://paperclip.example.test";
     const [company] = await db.insert(companies).values({
       name: `Runtime MCP ${randomUUID()}`,
       issuePrefix: `RM${randomUUID().slice(0, 5).toUpperCase()}`,
@@ -207,7 +207,7 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
   });
 
   it("preserves exact permissions when an aggregate assignment exceeds the public 250-entry edit limit", async () => {
-    process.env.PAPERCLIP_API_URL = "https://paperclip.example.test";
+    process.env.GSAM_API_URL = "https://paperclip.example.test";
     const [company] = await db.insert(companies).values({
       name: "Large MCP assignment",
       issuePrefix: `LM${randomUUID().slice(0, 5).toUpperCase()}`,
@@ -285,7 +285,7 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
   });
 
   it("exposes only the dedicated GitHub connection when a personal connection is also installed", async () => {
-    process.env.PAPERCLIP_API_URL = "https://paperclip.example.test";
+    process.env.GSAM_API_URL = "https://paperclip.example.test";
     const [company] = await db.insert(companies).values({
       name: `Runtime GitHub identity ${randomUUID()}`,
       issuePrefix: `RG${randomUUID().slice(0, 5).toUpperCase()}`,

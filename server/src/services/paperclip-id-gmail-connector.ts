@@ -1,9 +1,9 @@
 /**
- * @deprecated Paperclip ID is identity-only. Import the Paperclip Cloud
+ * @deprecated GS Agentic Manager ID is identity-only. Import the Paperclip Cloud
  * connector names from `paperclip-cloud-connector.ts` for new code.
  *
  * These aliases keep source compatibility while deployments and persisted app
- * definitions move from the former Paperclip ID broker prototype.
+ * definitions move from the former GS Agentic Manager ID broker prototype.
  */
 export {
   GMAIL_CONNECTOR_SCOPES,

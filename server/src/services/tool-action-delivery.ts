@@ -20,7 +20,7 @@ import {
   toolInvocations,
   toolActionDeliveries,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import type { heartbeatService } from "./heartbeat.js";
 
 const terminalStatuses: Array<typeof toolActionRequests.$inferSelect.status> = [

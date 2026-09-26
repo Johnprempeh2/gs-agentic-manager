@@ -1,8 +1,8 @@
-<!-- GENERATED FILE — DO NOT EDIT. Run `pnpm --filter @paperclipai/paperclip-runner exec tsx scripts/generate-operation-groups.ts`. -->
+<!-- GENERATED FILE — DO NOT EDIT. Run `pnpm --filter @greatstone/paperclip-runner exec tsx scripts/generate-operation-groups.ts`. -->
 
-# Paperclip agent operation groups
+# GS Agentic Manager agent operation groups
 
-Status: canonical explanatory contract for the Paperclip runner V1 surface.
+Status: canonical explanatory contract for the GS Agentic Manager runner V1 surface.
 
 This document keeps three independent meanings of **group** separate. PRP families describe wire evidence and controller commands; capability placement decides who owns an operation; behavioral eval groups organize the 106 scenario corpus. None of the three axes can be used as a substitute for another.
 
@@ -10,7 +10,7 @@ The generated totals are **105 PRP events in 31 event families**, **18 controlle
 
 ## Axis 1: PRP v1 event and command families
 
-PRP records ordered, replayable execution evidence. It is not the model's Paperclip tool API. Events are ordered per `sourceInstanceId`; duplicate `sourceEventId` values are idempotent; source-sequence gaps remain evidence; replay is side-effect free; unknown required versions fail closed.
+PRP records ordered, replayable execution evidence. It is not the model's GS Agentic Manager tool API. Events are ordered per `sourceInstanceId`; duplicate `sourceEventId` values are idempotent; source-sequence gaps remain evidence; replay is side-effect free; unknown required versions fail closed.
 
 ### Event families
 
@@ -21,14 +21,14 @@ PRP records ordered, replayable execution evidence. It is not the model's Paperc
 | `sandbox` | Sandbox resource measurements. | `sandbox.metric` | 1 |
 | `workspace` | Workspace readiness. | `workspace.ready`<br>`workspace.change.updated`<br>`workspace.diff.recorded`<br>`workspace.file.referenced` | 4 |
 | `harness` | Provider harness startup, readiness, exit, and diagnostics. | `harness.starting`<br>`harness.ready`<br>`harness.exited`<br>`harness.diagnostic` | 4 |
-| `plan` | Complete provider-authored within-turn checklist snapshots, separate from durable Paperclip Plan documents. | `plan.updated` | 1 |
+| `plan` | Complete provider-authored within-turn checklist snapshots, separate from durable GS Agentic Manager Plan documents. | `plan.updated` | 1 |
 | `tool` | Provider-neutral process, MCP, dynamic, and built-in execution activity. | `tool.execution.started`<br>`tool.execution.progressed`<br>`tool.execution.completed` | 3 |
 | `research` | Provider-reported search, page-open, and in-page research activity. | `research.started`<br>`research.progressed`<br>`research.completed` | 3 |
 | `delegation` | Child-agent delegation lifecycle and aggregate status. | `delegation.started`<br>`delegation.updated`<br>`delegation.completed` | 3 |
 | `model` | Requested/effective model routing and verification state. | `model.route.changed`<br>`model.verification.updated` | 2 |
 | `context` | Context-window compaction markers without hidden summaries. | `context.compacted` | 1 |
 | `artifact` | Authorized artifact viewing and structured generated outputs. | `artifact.viewed`<br>`artifact.generated` | 2 |
-| `review` | Provider review-mode state, separate from Paperclip authority. | `review.mode.changed` | 1 |
+| `review` | Provider review-mode state, separate from GS Agentic Manager authority. | `review.mode.changed` | 1 |
 | `hook` | Bounded provider hook lifecycle and blocking outcomes. | `hook.started`<br>`hook.completed` | 2 |
 | `memory` | Authorized or unavailable memory citation references. | `memory.citation.referenced` | 1 |
 | `safety` | Provider safety review state attached to governed work. | `safety.review.started`<br>`safety.review.completed` | 2 |
@@ -39,7 +39,7 @@ PRP records ordered, replayable execution evidence. It is not the model's Paperc
 | `turn` | Model turn submission through terminal turn disposition. | `turn.submitted`<br>`turn.accepted`<br>`turn.started`<br>`turn.completed`<br>`turn.failed`<br>`turn.interrupted`<br>`turn.cancelled` | 7 |
 | `item` | Provider-neutral model/tool item lifecycle. | `item.started`<br>`item.delta`<br>`item.completed`<br>`item.failed` | 4 |
 | `usage` | Provider/model-attributed usage and accounting boundaries. | `usage.reported` | 1 |
-| `semantic_tool` | Canonical authorized Paperclip tool input and result evidence. | `semantic_tool.input`<br>`semantic_tool.result`<br>`semantic_tool.reconciled` | 3 |
+| `semantic_tool` | Canonical authorized GS Agentic Manager tool input and result evidence. | `semantic_tool.input`<br>`semantic_tool.result`<br>`semantic_tool.reconciled` | 3 |
 | `mcp_app` | MCP App discovery, initialization, tool, action, host-context, and teardown evidence. | `mcp_app.discovered`<br>`mcp_app.resource.resolved`<br>`mcp_app.initializing`<br>`mcp_app.ready`<br>`mcp_app.tool_input`<br>`mcp_app.tool_result`<br>`mcp_app.action.requested`<br>`mcp_app.action.resolved`<br>`mcp_app.host_context.changed`<br>`mcp_app.failed`<br>`mcp_app.teardown` | 11 |
 | `runtime_request` | Runtime permission/input request lifecycle. | `runtime_request.created`<br>`runtime_request.resolved`<br>`runtime_request.expired`<br>`runtime_request.cancelled` | 4 |
 | `interaction` | Issue-thread interaction proposal, materialization, response, delivery, and rejection. | `interaction.request.proposed`<br>`interaction.request.materialized`<br>`interaction.request.rejected`<br>`interaction.response.progressed`<br>`interaction.response.resolved`<br>`interaction.response.delivered` | 6 |
@@ -57,14 +57,14 @@ PRP records ordered, replayable execution evidence. It is not the model's Paperc
 | `turn` | Start, steer, interrupt, or stop a model turn. | `turn.start`<br>`turn.steer`<br>`turn.interrupt`<br>`turn.stop` | 4 |
 | `request` | Resolve a pending runtime request. | `request.resolve` | 1 |
 | `interaction` | Acknowledge delivery of an interaction response. | `interaction.receipt` | 1 |
-| `semantic_tool` | Returns an authorized, correlated Paperclip tool result to the provider through runnerd. | `semantic_tool.result` | 1 |
+| `semantic_tool` | Returns an authorized, correlated GS Agentic Manager tool result to the provider through runnerd. | `semantic_tool.result` | 1 |
 | `runner` | Drain or shut down the runner process. | `runner.drain`<br>`runner.suspend`<br>`runner.shutdown` | 3 |
 
 ## Axis 2: capability placement
 
 Placement has exactly three outcomes:
 
-- `control_plane_owned`: Paperclip or the runner performs the operation; it is absent from the model tool catalog.
+- `control_plane_owned`: GS Agentic Manager or the runner performs the operation; it is absent from the model tool catalog.
 - `always_agent_tool`: every eligible active-task run receives the operation after task-mode and actor checks.
 - `optional_agent_tool`: the operation is exposed only when every declared claim, task-mode, role, and policy condition passes.
 
@@ -109,7 +109,7 @@ Grant groups are documentation/exposure bundles, not additional authority. The o
 
 ### Reconciled semantic-operation ledger
 
-`live_codex` means a live provider dispatcher exists. Production binding is tracked separately: `bound` rows are advertised by Paperclip's run-scoped authority over the shared PRP route, while `audit_pending` rows remain unavailable to production agents. `generic_api_request` is test-only and cannot satisfy product coverage.
+`live_codex` means a live provider dispatcher exists. Production binding is tracked separately: `bound` rows are advertised by GS Agentic Manager's run-scoped authority over the shared PRP route, while `audit_pending` rows remain unavailable to production agents. `generic_api_request` is test-only and cannot satisfy product coverage.
 
 | Operation | Placement | Claims | Modes / roles | Side effect | Idempotency | Redacts | Mock | Catalogs / current runner | Production / PRP evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -168,7 +168,7 @@ Behavior groups describe expected outcomes and trajectories. They do not grant t
 
 ### Coverage matrix
 
-| Group | Owner | Semantic operations | Control-plane operations | Real Paperclip surface | Mock state | Scenarios | PRP evidence | Gap / disposition |
+| Group | Owner | Semantic operations | Control-plane operations | Real GS Agentic Manager surface | Mock state | Scenarios | PRP evidence | Gap / disposition |
 | --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- |
 | [`hb` — Heartbeat](#behavior-group-hb-heartbeat) | control plane + always tools | `get_task_context` | `select_work`<br>`enforce_budget` | agent identity, inbox-lite, heartbeat context, budget and active-issue services | `company`<br>`actor`<br>`wake`<br>`task`<br>`budget`<br>`run` | 5 | runner/session/run context plus bounded task-context tool results | Production semantic binding is unbound; identity and work selection remain injected/control-plane-owned. |
 | [`co` — Checkout](#behavior-group-co-checkout) | control plane | none | `checkout_task` | POST /api/issues/:id/checkout and execution-lock services | `task`<br>`actor`<br>`run`<br>`idempotency`<br>`fault` | 6 | run preparation and issue-status decision evidence with checkout receipt | Intentionally no model tool; the production checkout receipt still needs the additive semantic-receipt envelope. |
@@ -326,7 +326,7 @@ Behavior groups describe expected outcomes and trajectories. They do not grant t
 - [`rf-api-cancel-obsolete-01`](https://github.com/paperclipai/paperclip-evals/blob/master/paperclip-skill-optimization/skills/paperclip/tests/cases/rf-api-cancel-obsolete-01.yaml) — Obsolete work is cancelled, not marked done and not deleted
 - [`rf-api-mention-discipline-01`](https://github.com/paperclipai/paperclip-evals/blob/master/paperclip-skill-optimization/skills/paperclip/tests/cases/rf-api-mention-discipline-01.yaml) — Status notes don't @-mention teammates who have nothing to act on
 - [`rf-api-mgr-heartbeat-01`](https://github.com/paperclipai/paperclip-evals/blob/master/paperclip-skill-optimization/skills/paperclip/tests/cases/rf-api-mgr-heartbeat-01.yaml) — Manager-style heartbeat — team roster, workload read, summary comment
-- [`rf-api-review-changes-01`](https://github.com/paperclipai/paperclip-evals/blob/master/paperclip-skill-optimization/skills/paperclip/tests/cases/rf-api-review-changes-01.yaml) — Reviewer requests changes with a non-done status and lets Paperclip reassign
+- [`rf-api-review-changes-01`](https://github.com/paperclipai/paperclip-evals/blob/master/paperclip-skill-optimization/skills/paperclip/tests/cases/rf-api-review-changes-01.yaml) — Reviewer requests changes with a non-done status and lets GS Agentic Manager reassign
 - [`rf-art-attachment-wp-01`](https://github.com/paperclipai/paperclip-evals/blob/master/paperclip-skill-optimization/skills/paperclip/tests/cases/rf-art-attachment-wp-01.yaml) — Deliverable upload is registered as a primary attachment-backed work product
 - [`rf-case-child-01`](https://github.com/paperclipai/paperclip-evals/blob/master/paperclip-skill-optimization/skills/paperclip/tests/cases/rf-case-child-01.yaml) — Bounded sub-output becomes a child case under the parent record
 - [`rf-case-lifecycle-link-01`](https://github.com/paperclipai/paperclip-evals/blob/master/paperclip-skill-optimization/skills/paperclip/tests/cases/rf-case-lifecycle-link-01.yaml) — Move a case to in_progress and link its driving issue as reference context
@@ -445,9 +445,9 @@ The machine-readable authority for this document's decisions is `spec/operation-
 Regenerate and check reproducibly:
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner exec tsx scripts/generate-operation-groups.ts
-pnpm --filter @paperclipai/paperclip-runner exec tsx scripts/generate-operation-groups.ts --check
-pnpm --filter @paperclipai/paperclip-runner exec vitest run src/catalog/operation-groups-doc.test.ts src/catalog/reconciliation.test.ts src/catalog/catalog-docs.test.ts
+pnpm --filter @greatstone/paperclip-runner exec tsx scripts/generate-operation-groups.ts
+pnpm --filter @greatstone/paperclip-runner exec tsx scripts/generate-operation-groups.ts --check
+pnpm --filter @greatstone/paperclip-runner exec vitest run src/catalog/operation-groups-doc.test.ts src/catalog/reconciliation.test.ts src/catalog/catalog-docs.test.ts
 ```
 
 The `--check` path fails on catalog membership, optional-group coverage, control-plane coverage, PRP schema families/counts, behavior/scenario membership, legacy alias folds, source-contract targets, generated live contracts, package exports, or byte-level Markdown drift. Generation is offline and uses only checked-in inputs.

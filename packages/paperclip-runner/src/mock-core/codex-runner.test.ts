@@ -116,7 +116,7 @@ class TraceConformanceDriver implements HarnessDriver {
       codexVersion: "trace-fixture",
       clientInfo: {
         name: "paperclip-runner",
-        title: "Paperclip Runner",
+        title: "GS Agentic Manager Runner",
         version: "1.0.0",
       },
       model: "codex-fixture",

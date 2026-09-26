@@ -7,8 +7,8 @@ import type {
   PaperclipQuestionSet,
 } from "../../contracts/harness-driver.js";
 import {
-  PAPERCLIP_QUESTION_SET_SCHEMA,
-  PAPERCLIP_RUNTIME_REQUEST_SCHEMA_V2,
+  GSAM_QUESTION_SET_SCHEMA,
+  GSAM_RUNTIME_REQUEST_SCHEMA_V2,
   parsePaperclipQuestionSet,
 } from "../../contracts/harness-driver.js";
 import { redactCodexDiagnostic } from "./app-server-transport.js";
@@ -344,7 +344,7 @@ export function normalizeCodexQuestionSet(
       };
     });
     return retainNativeOptionValues(parsePaperclipQuestionSet({
-      schema: PAPERCLIP_QUESTION_SET_SCHEMA,
+      schema: GSAM_QUESTION_SET_SCHEMA,
       title: exactRedactedQuestionText(
         text(params.title, "Codex needs your input"),
         "form title",
@@ -431,7 +431,7 @@ export function normalizeCodexQuestionSet(
   });
   if (questions.length === 0) return null;
   return retainNativeOptionValues(parsePaperclipQuestionSet({
-    schema: PAPERCLIP_QUESTION_SET_SCHEMA,
+    schema: GSAM_QUESTION_SET_SCHEMA,
     title: "A tool needs your input",
     ...(text(params.message).length > 0
       ? {
@@ -449,7 +449,7 @@ export function normalizeCodexQuestionSet(
 export function runtimeRequestProtocolPayload(request: HarnessRuntimeRequest): Record<string, unknown> {
   if (request.input !== undefined) {
     return {
-      schema: PAPERCLIP_RUNTIME_REQUEST_SCHEMA_V2,
+      schema: GSAM_RUNTIME_REQUEST_SCHEMA_V2,
       requestKind: "runtime",
       requestId: request.requestId,
       type: "input",

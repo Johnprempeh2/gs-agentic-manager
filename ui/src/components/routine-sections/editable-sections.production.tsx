@@ -35,7 +35,7 @@ import { RoutineVariablesEditor, RoutineVariablesHint } from "../RoutineVariable
 import { RoutineTriggerCard } from "../RoutineTriggerCard";
 import { EnvironmentVariablesEditor } from "../environment-variables-editor";
 import { createDefaultNewTrigger, useRoutineDetail } from "./context";
-import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@paperclipai/shared";
+import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@greatstone/shared";
 
 const concurrencyPolicyOptions = [
   {
@@ -368,7 +368,7 @@ export function OverviewSection({
                     ? Object.keys(event.details).slice(0, 3).join(" · ")
                     : ""}
                 </span>
-                <span className="shrink-0 text-muted-foreground/60">{timeAgo(event.createdAt)}</span>
+                <span className="shrink-0 text-subtle-foreground">{timeAgo(event.createdAt)}</span>
               </div>
             ))}
             <button
@@ -407,7 +407,7 @@ function SummaryCard({
           <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
             <Icon className="h-3.5 w-3.5" />
             {label}
-            <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground/60" />
+            <ArrowRight className="ml-auto h-3.5 w-3.5 text-subtle-foreground" />
           </div>
           <p className="text-lg font-semibold">{value}</p>
           <p className="text-xs text-muted-foreground">{hint}</p>
@@ -564,7 +564,7 @@ export function TriggersSection() {
           <div>
             <p className="font-medium">{secretMessage.title}</p>
             <p className="text-xs text-muted-foreground">
-              Save this now. Paperclip will not show the secret value again.
+              Save this now. GS Agentic Manager will not show the secret value again.
             </p>
           </div>
           <div className="space-y-3">
@@ -675,7 +675,7 @@ export function SecretsSection() {
     <div className="space-y-4">
       <div className="rounded-md border border-border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
         Routine secrets apply to every task this routine creates. They override matching keys in
-        project and agent env. <span className="font-mono">PAPERCLIP_*</span> names are reserved.
+        project and agent env. <span className="font-mono">GSAM_*</span> names are reserved.
       </div>
 
 
@@ -816,19 +816,19 @@ function NextFiresPreview({
           <div className="space-y-1.5 rounded-lg border border-border p-3 font-mono text-xs">
             {preview.entries.map((entry, index) => (
               <div key={index} className="flex items-center gap-2">
-                <span className="text-muted-foreground/40">·</span>
+                <span className="text-subtle-foreground">·</span>
                 <span className="tabular-nums">{formatFireTime(entry.at, preview.timeZone)}</span>
-                <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+                <ArrowRight className="h-3 w-3 shrink-0 text-subtle-foreground" />
                 <span className={cn("font-medium", dispositionToneClass[entry.disposition])}>
                   {entry.label}
                 </span>
                 {entry.note ? (
-                  <span className="truncate text-muted-foreground/60">({entry.note})</span>
+                  <span className="truncate text-subtle-foreground">({entry.note})</span>
                 ) : null}
               </div>
             ))}
           </div>
-          <p className="text-(length:--text-micro) text-muted-foreground/60">
+          <p className="text-(length:--text-micro) text-subtle-foreground">
             Preview assumes the previous run is still in flight when the next fires. Times shown in{" "}
             {preview.timeZone}.
           </p>

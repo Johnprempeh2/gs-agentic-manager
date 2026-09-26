@@ -4,10 +4,10 @@ export function runnerApiToolsEnabled(
   bindingOverride?: boolean,
   environment: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  const enabled = environment.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
+  const enabled = environment.GSAM_RUNNER_API_TOOLS_ENABLED;
   // A binding can only narrow operator permission, never opt into this surface.
   if (enabled !== "true" || bindingOverride === false) return false;
-  const companies = environment.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS;
+  const companies = environment.GSAM_RUNNER_API_TOOLS_COMPANY_IDS;
   if (companies === undefined) return true;
   return companies.split(",").map(value => value.trim()).filter(Boolean).includes(companyId);
 }

@@ -17,7 +17,7 @@ import {
   issueWorkProducts,
   issues,
   issueWatchdogs,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,

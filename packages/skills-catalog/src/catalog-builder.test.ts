@@ -156,7 +156,7 @@ describe("skills catalog manifest", () => {
       path.join(packageDir, "generated", "catalog.json"),
       formatCatalogManifest({
         schemaVersion: 1,
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@greatstone/skills-catalog",
         packageVersion: "0.3.1",
         generatedAt: "2026-05-26T00:00:00.000Z",
         skills: [{
@@ -243,7 +243,7 @@ describe("skills catalog manifest", () => {
       path.join(packageDir, "generated", "catalog.json"),
       formatCatalogManifest({
         schemaVersion: 1,
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@greatstone/skills-catalog",
         packageVersion: "0.3.1",
         generatedAt: "2026-05-26T00:00:00.000Z",
         skills: [{
@@ -354,7 +354,7 @@ describe("skills catalog manifest", () => {
       path.join(packageDir, "generated", "catalog.json"),
       formatCatalogManifest({
         schemaVersion: 1,
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@greatstone/skills-catalog",
         packageVersion: "0.3.1",
         generatedAt: "2026-05-26T00:00:00.000Z",
         skills: [],
@@ -365,7 +365,7 @@ describe("skills catalog manifest", () => {
     const result = await validateCatalog(packageDir);
 
     expect(result.errors).toContain(
-      "generated/catalog.json is stale. Run pnpm --filter @paperclipai/skills-catalog build:manifest.",
+      "generated/catalog.json is stale. Run pnpm --filter @greatstone/skills-catalog build:manifest.",
     );
   });
 });

@@ -6,7 +6,7 @@ import {
   resolvePaperclipRunnerIdleTimeoutMs,
   resolvePaperclipRunnerPermissionMode,
   type CreateConfigValues,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "../index.js";
 
 function parseCommaArgs(value: string): string[] {
@@ -166,7 +166,7 @@ export function buildPaperclipRunnerConfig(v: CreateConfigValues): Record<string
     && configuredCodexPermissionMode !== "never"
   ) {
     throw new Error(
-      "Paperclip Runner currently supports Codex only with codexPermissionMode set to never. Select Full auto (never ask) before saving.",
+      "GS Agentic Manager Runner currently supports Codex only with codexPermissionMode set to never. Select Full auto (never ask) before saving.",
     );
   }
   for (const normalizedKey of [

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
-import type { PaperclipQuestionResponse, PaperclipQuestionSet } from "@paperclipai/adapter-utils";
+import type { PaperclipQuestionResponse, PaperclipQuestionSet } from "@greatstone/adapter-utils";
 import { QuestionForm, QuestionResponseSummary } from "@/components/task-chat/QuestionForm";
 import { TaskChatComposer } from "@/components/task-chat/TaskChatComposer";
 import { Button } from "@/components/ui/button";
@@ -894,7 +894,7 @@ export const ConnectionIntentStates: Story = {
           </ScenarioCard>
           <ScenarioCard
             title="Other viewer"
-            description="Other viewers see who Paperclip is waiting for and receive no connection controls."
+            description="Other viewers see who GS Agentic Manager is waiting for and receive no connection controls."
           >
             <IssueThreadInteractionCard
               interaction={pendingConnectionIntentInteraction}

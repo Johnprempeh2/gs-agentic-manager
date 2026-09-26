@@ -1,4 +1,4 @@
-import type { ExternalObjectMentionGroup, ExternalObjectSummary } from "@paperclipai/shared";
+import type { ExternalObjectMentionGroup, ExternalObjectSummary } from "@greatstone/shared";
 import { api } from "./client";
 
 export const externalObjectsApi = {

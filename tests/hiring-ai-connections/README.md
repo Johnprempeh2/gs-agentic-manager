@@ -35,9 +35,9 @@ not automated by this live suite. Integration tests cover subscription inheritan
 credential serialization, and automatic retry after the parent's lease is released.
 
 For representative coverage of the newer native runner, put
-`PAPERCLIP_RUNNER_API_TOOLS_ENABLED=true` in the disposable data directory's
+`GSAM_RUNNER_API_TOOLS_ENABLED=true` in the disposable data directory's
 `instances/default/.env`, then restart test-drive. Test-drive clears inherited
-`PAPERCLIP_*` variables before loading that file. The existing opt-in managed API
+`GSAM_*` variables before loading that file. The existing opt-in managed API
 tools are how native agents hire. Then use:
 
 ```sh
@@ -89,8 +89,8 @@ Add these settings to the disposable instance's `instances/default/.env`, alongs
 the native API-tools flag, and restart test-drive:
 
 ```dotenv
-PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH=/tmp/hiring-native-artifacts/provider-pack
-PAPERCLIP_RUNNER_REMOTE_BINARY_PATH=/tmp/hiring-native-artifacts/paperclip-runnerd
+GSAM_RUNNER_REMOTE_PROVIDER_PACK_PATH=/tmp/hiring-native-artifacts/provider-pack
+GSAM_RUNNER_REMOTE_BINARY_PATH=/tmp/hiring-native-artifacts/paperclip-runnerd
 ```
 
 Run the Daytona command with `HIRING_AI_RUNNER=native` and
@@ -110,7 +110,7 @@ pnpm exec vitest run server/src/__tests__/agent-hire-ai-connections.test.ts \
   server/src/services/execution-recovery-attempt.test.ts \
   server/src/services/native-runtime/runner-api.integration.test.ts \
   ui/src/features/connections/ConnectionIntentInteractionBody.test.tsx
-pnpm --filter @paperclipai/ui exec storybook dev -p 6010 -c storybook/.storybook --ci --no-open
+pnpm --filter @greatstone/ui exec storybook dev -p 6010 -c storybook/.storybook --ci --no-open
 HIRING_AI_STORYBOOK_URL=http://127.0.0.1:6010 \
   pnpm exec playwright test --config tests/hiring-ai-connections/playwright.config.ts --grep storybook
 ```

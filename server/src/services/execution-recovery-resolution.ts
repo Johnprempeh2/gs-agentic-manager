@@ -1,4 +1,4 @@
-import { hasWorkspaceRestoreFailure } from "@paperclipai/shared";
+import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { randomUUID } from "node:crypto";
 import { conversationRecoveryActionPredicate, getConversationOwnershipBlocker } from "./conversation-continuation.js";
 import { persistActivity } from "./activity-log.js";
@@ -13,13 +13,13 @@ import {
   issues,
   nativeRunFinalizations,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { conflict } from "../errors.js";
 import { buildExecutionContinuation } from "./execution-continuation.js";
 import {
   EXECUTION_RECONCILIATION_CAUSES,
   type ExecutionReconciliation,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { parseIssueExecutionState } from "./issue-execution-policy.js";
 import { isSupersededConversationRun } from "./agent-conversations.js";
 

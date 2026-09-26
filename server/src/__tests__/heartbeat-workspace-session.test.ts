@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import type { agents } from "@paperclipai/db";
-import { sessionCodec as codexSessionCodec } from "@paperclipai/adapter-codex-local/server";
+import type { agents } from "@greatstone/db";
+import { sessionCodec as codexSessionCodec } from "@greatstone/adapter-codex-local/server";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import {
   applyPersistedExecutionWorkspaceConfig,
@@ -385,7 +385,7 @@ describe("assertGitSensitiveAdapterWorkspaceValid", () => {
     const actualBranch = "PAP-1-push-pr-head";
     try {
       await runGit(repoRoot, ["config", "user.email", "test@example.com"]);
-      await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+      await runGit(repoRoot, ["config", "user.name", "GS Agentic Manager Test"]);
       await fs.writeFile(path.join(repoRoot, "README.md"), "initial\n", "utf8");
       await runGit(repoRoot, ["add", "README.md"]);
       await runGit(repoRoot, ["commit", "-m", "Initial commit"]);
@@ -1428,7 +1428,7 @@ function buildWorkspaceConfigMetadata(
       type: "git_worktree",
       baseRef: "origin/main",
       branchTemplate: "{{issue.identifier}}-{{slug}}",
-      worktreeParentDir: ".paperclip/worktrees",
+      worktreeParentDir: ".gsam/worktrees",
     },
     repoUrl: "https://github.com/example/repo.git",
     repoRef: "origin/main",
@@ -1564,7 +1564,7 @@ describe("effective run execution workspace config freshness", () => {
           type: "git_worktree",
           baseRef: "origin/main",
           branchTemplate: "custom-{{issue.identifier}}",
-          worktreeParentDir: ".paperclip/worktrees",
+          worktreeParentDir: ".gsam/worktrees",
         },
       }),
     },
@@ -1582,7 +1582,7 @@ describe("effective run execution workspace config freshness", () => {
           type: "git_worktree",
           baseRef: "origin/release",
           branchTemplate: "{{issue.identifier}}-{{slug}}",
-          worktreeParentDir: ".paperclip/worktrees",
+          worktreeParentDir: ".gsam/worktrees",
         },
       }),
     },
@@ -1623,7 +1623,7 @@ describe("effective run execution workspace config freshness", () => {
         type: "git_worktree",
         baseRef: "origin/release",
         branchTemplate: "{{issue.identifier}}-{{slug}}",
-        worktreeParentDir: ".paperclip/worktrees",
+        worktreeParentDir: ".gsam/worktrees",
       },
       configSnapshot: {
         provisionCommand: "pnpm install --frozen-lockfile",
@@ -1687,7 +1687,7 @@ describe("effective run execution workspace config freshness", () => {
         type: "git_worktree",
         baseRef: "origin/release",
         branchTemplate: "{{issue.identifier}}-{{slug}}",
-        worktreeParentDir: ".paperclip/worktrees",
+        worktreeParentDir: ".gsam/worktrees",
       },
     });
     const decision = resolveExecutionWorkspaceConfigFreshness({
@@ -2615,7 +2615,7 @@ describe("stripConfiguredModelFromSessionParams", () => {
 });
 
 describe("stripPaperclipSessionMetadataFromSessionParams", () => {
-  it("removes all internal Paperclip session metadata before adapter invocation", () => {
+  it("removes all internal GS Agentic Manager session metadata before adapter invocation", () => {
     expect(
       stripPaperclipSessionMetadataFromSessionParams({
         sessionId: "thread-1",
@@ -3098,7 +3098,7 @@ describe("prioritizeProjectWorkspaceCandidatesForRun", () => {
 });
 
 describe("parseSessionCompactionPolicy", () => {
-  it("disables Paperclip-managed rotation by default for codex and claude local", () => {
+  it("disables GS Agentic Manager-managed rotation by default for codex and claude local", () => {
     expect(parseSessionCompactionPolicy(buildAgent("codex_local"))).toEqual({
       enabled: true,
       maxSessionRuns: 0,

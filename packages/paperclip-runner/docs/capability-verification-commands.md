@@ -1,8 +1,8 @@
 # Capability Verification Commands
 
 Every command here runs from the repository root, is offline and deterministic,
-starts no Paperclip service, and holds no credential. All are prefixed
-`pnpm --filter @paperclipai/paperclip-runner`.
+starts no GS Agentic Manager service, and holds no credential. All are prefixed
+`pnpm --filter @greatstone/paperclip-runner`.
 
 | Surface | Command | Expected result |
 | --- | --- | --- |

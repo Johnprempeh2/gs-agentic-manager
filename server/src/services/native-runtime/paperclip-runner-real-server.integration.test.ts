@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { eq } from "drizzle-orm";
-import { agents, companies, createDb, heartbeatRuns, issues } from "@paperclipai/db";
+import { agents, companies, createDb, heartbeatRuns, issues } from "@greatstone/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -45,7 +45,7 @@ describe("paperclip-runner real server vertical slice", () => {
     await temporary.cleanup();
   });
 
-  runnerBinaryIt("runs Rust runnerd through Paperclip PRP and reads the real bound task", async () => {
+  runnerBinaryIt("runs Rust runnerd through GS Agentic Manager PRP and reads the real bound task", async () => {
     const db = createDb(temporary.connectionString);
     await db.insert(companies).values({ id: companyId, name: "Real runner slice", issuePrefix: "RRS" });
     await db.insert(agents).values({

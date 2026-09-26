@@ -1,6 +1,6 @@
 # Continuation accounting baseline
 
-Explicit-only Product E2E suite: real Chromium, Paperclip server/database, runner
+Explicit-only Product E2E suite: real Chromium, GS Agentic Manager server/database, runner
 and qualified Codex provider. Select `--suite continuation-accounting`. It is
 excluded from `--all`; it does not change scheduled paid coverage.
 

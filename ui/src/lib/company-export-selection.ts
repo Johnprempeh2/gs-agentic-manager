@@ -1,7 +1,7 @@
 import type {
   CompanyPortabilityEmbeddedAssetManifestEntry,
   CompanyPortabilityIssueManifestEntry,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 
 /**
  * Export selection is category-driven: instead of per-file checkboxes the

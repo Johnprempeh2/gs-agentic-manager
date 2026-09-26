@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   directorySnapshotSha256,
   serializeDirectorySnapshot,
-} from "@paperclipai/adapter-utils/workspace-restore-merge";
+} from "@greatstone/adapter-utils/workspace-restore-merge";
 
 import {
   classifyNativeWorkspaceInbound,
@@ -18,16 +18,16 @@ import {
 const digest = "a".repeat(64);
 
 describe("native workspace sync durable metadata", () => {
-  const originalPaperclipHome = process.env.PAPERCLIP_HOME;
-  const originalPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+  const originalPaperclipHome = process.env.GSAM_HOME;
+  const originalPaperclipInstanceId = process.env.GSAM_INSTANCE_ID;
   const cleanupDirs: string[] = [];
 
   afterEach(async () => {
-    if (originalPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-    else process.env.PAPERCLIP_HOME = originalPaperclipHome;
+    if (originalPaperclipHome === undefined) delete process.env.GSAM_HOME;
+    else process.env.GSAM_HOME = originalPaperclipHome;
     if (originalPaperclipInstanceId === undefined)
-      delete process.env.PAPERCLIP_INSTANCE_ID;
-    else process.env.PAPERCLIP_INSTANCE_ID = originalPaperclipInstanceId;
+      delete process.env.GSAM_INSTANCE_ID;
+    else process.env.GSAM_INSTANCE_ID = originalPaperclipInstanceId;
     await Promise.all(
       cleanupDirs
         .splice(0)
@@ -154,8 +154,8 @@ describe("native workspace sync durable metadata", () => {
       path.join(os.tmpdir(), "paperclip-native-workspace-sync-"),
     );
     cleanupDirs.push(paperclipHome);
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "descriptor-test";
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = "descriptor-test";
     const baseline = {
       exclude: [".paperclip-runtime"],
       entries: new Map([
@@ -222,8 +222,8 @@ describe("native workspace sync durable metadata", () => {
       path.join(os.tmpdir(), "paperclip-native-workspace-sync-repair-"),
     );
     cleanupDirs.push(paperclipHome);
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "descriptor-repair-test";
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = "descriptor-repair-test";
     const baseline = {
       exclude: [".paperclip-runtime"],
       entries: new Map([

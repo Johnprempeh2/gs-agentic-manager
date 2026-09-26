@@ -9,7 +9,7 @@ const manifest = {
   version: "1.0.0",
   displayName: "Test Actions",
   description: "Test plugin",
-  author: "Paperclip",
+  author: "GS Agentic Manager",
   categories: ["automation"],
   capabilities: [],
   entrypoints: {},

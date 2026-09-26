@@ -24,7 +24,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import type { FolderListItem, FolderListResult } from "@paperclipai/shared";
+import type { FolderListItem, FolderListResult } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -509,7 +509,7 @@ function VirtualRow({
       type="button"
       className={cn(
         "grid w-full grid-cols-(--gtc-folder-row-actions) items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/40",
-        active ? "bg-accent/60 text-foreground" : muted ? "text-muted-foreground/70" : "text-muted-foreground",
+        active ? "bg-accent/60 text-foreground" : muted ? "text-subtle-foreground" : "text-muted-foreground",
       )}
       aria-current={active ? "page" : undefined}
       disabled={disabled}
@@ -726,7 +726,7 @@ export function FolderBreadcrumb({
       </button>
       {selection === "unfiled" ? (
         <>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" />
+          <ChevronRight className="h-3.5 w-3.5 text-subtle-foreground" />
           <span className="rounded px-1.5 py-0.5 font-medium text-foreground">Unfiled</span>
         </>
       ) : null}
@@ -735,7 +735,7 @@ export function FolderBreadcrumb({
         const label = index === 0 ? reservedRootLabel(folder) : folder.name;
         return (
           <span key={folder.id} className="inline-flex items-center gap-1">
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" />
+            <ChevronRight className="h-3.5 w-3.5 text-subtle-foreground" />
             <button
               type="button"
               onClick={() => onSelect(folder.id)}

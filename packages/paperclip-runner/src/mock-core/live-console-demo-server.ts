@@ -159,7 +159,7 @@ function browserSafeValue(value: unknown, depth: number, budget: BrowserSafeBudg
 /**
  * Hides absolute host paths under any home root. The provider names its own
  * state directories in session context — `.codex/memories` as well as
- * `.paperclip` — and none of them mean anything to a browser.
+ * `.gsam` — and none of them mean anything to a browser.
  */
 function redactBrowserString(value: string): string {
   const truncated = value.length > MAX_BROWSER_STRING_CHARACTERS;

@@ -7,7 +7,7 @@ import type {
   CatalogTeamInstallResult,
   CatalogTeamKind,
   InstalledCatalogTeam,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { api } from "./client";
 
 export interface TeamCatalogListQuery {

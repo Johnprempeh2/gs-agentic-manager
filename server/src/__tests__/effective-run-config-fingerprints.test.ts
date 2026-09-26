@@ -14,7 +14,7 @@ describe("effective run config fingerprints", () => {
           env: {
             ZETA: "raw-zeta",
             ALPHA: "raw-alpha",
-            PAPERCLIP_RUN_ID: "run-one",
+            GSAM_RUN_ID: "run-one",
           },
           model: "gpt-5.2",
         },
@@ -58,7 +58,7 @@ describe("effective run config fingerprints", () => {
         adapterConfig: {
           model: "gpt-5.2",
           env: {
-            PAPERCLIP_RUN_ID: "run-two",
+            GSAM_RUN_ID: "run-two",
             ALPHA: "raw-alpha",
             ZETA: "raw-zeta",
           },
@@ -238,7 +238,7 @@ describe("effective run config fingerprints", () => {
             authorization: "Bearer first",
           },
           env: {
-            PAPERCLIP_API_KEY: "runtime-api-key-one",
+            GSAM_API_KEY: "runtime-api-key-one",
             NORMAL_VALUE: "first",
           },
         },
@@ -263,7 +263,7 @@ describe("effective run config fingerprints", () => {
             authorization: "Bearer second",
           },
           env: {
-            PAPERCLIP_API_KEY: "runtime-api-key-two",
+            GSAM_API_KEY: "runtime-api-key-two",
             NORMAL_VALUE: "first",
           },
         },

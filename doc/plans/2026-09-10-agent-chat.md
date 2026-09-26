@@ -230,9 +230,9 @@ to other agents. The recovery regression fails with the guard removed and passes
 with it restored; all 20 comment-wake batching tests and server typecheck pass.
 
 The other failures distinguish requested approval from ordinary draft planning,
-and a persisted Paperclip document from a workspace file. The chat directive now
+and a persisted GS Agentic Manager document from a workspace file. The chat directive now
 explains how to create a revision-bound approval card when explicitly requested,
-including after a revision. Paid fixtures name the requested Paperclip document
+including after a revision. Paid fixtures name the requested GS Agentic Manager document
 explicitly while retaining strict checks of approvals, transferred plans, and
 persisted execution output.
 

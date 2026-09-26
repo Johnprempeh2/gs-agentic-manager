@@ -114,13 +114,13 @@ function RotatingReasoningDemo({ intervalMs = 2200 }: { intervalMs?: number }) {
   return (
     <div className="flex gap-2 px-1">
       <div className="flex flex-col items-center pt-0.5">
-        <Brain className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+        <Brain className="h-3.5 w-3.5 shrink-0 text-subtle-foreground" />
       </div>
       <div className="relative h-5 min-w-0 flex-1 overflow-hidden">
         {ticker.exiting !== null && (
           <span
             key={`out-${ticker.key}`}
-            className="cot-line-exit absolute inset-x-0 truncate text-(length:--text-compact) italic leading-5 text-muted-foreground/70"
+            className="cot-line-exit absolute inset-x-0 truncate text-(length:--text-compact) italic leading-5 text-subtle-foreground"
             onAnimationEnd={() => setTicker((t) => ({ ...t, exiting: null }))}
           >
             {ticker.exiting}
@@ -129,7 +129,7 @@ function RotatingReasoningDemo({ intervalMs = 2200 }: { intervalMs?: number }) {
         <span
           key={`in-${ticker.key}`}
           className={cn(
-            "absolute inset-x-0 truncate text-(length:--text-compact) italic leading-5 text-muted-foreground/70",
+            "absolute inset-x-0 truncate text-(length:--text-compact) italic leading-5 text-subtle-foreground",
             ticker.key > 0 && "cot-line-enter",
           )}
         >
@@ -244,7 +244,7 @@ export function IssueChatUxLab() {
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
                 <span className="shimmer-text">Working</span>
               </span>
-              <span className="text-xs text-muted-foreground/60">for 12s</span>
+              <span className="text-xs text-subtle-foreground">for 12s</span>
             </div>
           </div>
           <div className="rounded-xl border border-border/60 bg-accent/10 p-4">
@@ -258,7 +258,7 @@ export function IssueChatUxLab() {
                 </span>
                 Worked
               </span>
-              <span className="text-xs text-muted-foreground/60">for 1 min 24s</span>
+              <span className="text-xs text-subtle-foreground">for 1 min 24s</span>
             </div>
           </div>
         </div>

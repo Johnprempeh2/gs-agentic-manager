@@ -4,7 +4,7 @@ import { ServerResponse } from "node:http";
 import { PaperclipRunnerToolAuthority } from "../../server/src/services/native-runtime/paperclip-runner-tool-authority.js";
 import { holdInteractionResponse } from "./interaction-response-gate.js";
 
-const ids: string[] = JSON.parse(process.env.PAPERCLIP_RUNNER_E2E_EXECUTION_IDS ?? "[]");
+const ids: string[] = JSON.parse(process.env.GSAM_RUNNER_E2E_EXECUTION_IDS ?? "[]");
 if (ids.some((id) => id.endsWith(".accept-while-running"))) {
   const held = new Set<string>();
   const hold = async (value: any) => {
@@ -15,7 +15,7 @@ if (ids.some((id) => id.endsWith(".accept-while-running"))) {
     await holdInteractionResponse({
       deadlineAt: Date.now() + 90_000,
       loadStatus: async () => {
-        const response = await fetch(`http://127.0.0.1:${process.env.PAPERCLIP_RUNNER_E2E_PORT}/api/issues/${interaction.issueId}/interactions`);
+        const response = await fetch(`http://127.0.0.1:${process.env.GSAM_RUNNER_E2E_PORT}/api/issues/${interaction.issueId}/interactions`);
         if (!response.ok) throw new Error(`Approval barrier read failed: ${response.status}`);
         const rows = await response.json() as Array<{ id: string; status: string }>;
         const row = rows.find((candidate) => candidate.id === interaction.id);

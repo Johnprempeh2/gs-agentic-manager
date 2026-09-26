@@ -1,4 +1,4 @@
-import type { CompanyPortabilityFileEntry } from "@paperclipai/shared";
+import type { CompanyPortabilityFileEntry } from "@greatstone/shared";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();

@@ -1,13 +1,13 @@
 import { and, eq, ne, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   companySecretBindings,
   companySecretProviderConfigs,
   companySecrets,
   companySecretVersions,
   toolConnections,
-} from "@paperclipai/db";
-import type { McpConnectionCredentialRef, SecretProvider, ToolCredentialSecretRef } from "@paperclipai/shared";
+} from "@greatstone/db";
+import type { McpConnectionCredentialRef, SecretProvider, ToolCredentialSecretRef } from "@greatstone/shared";
 import { getSecretProvider } from "../secrets/provider-registry.js";
 import type { SecretProviderVaultRuntimeConfig } from "../secrets/types.js";
 

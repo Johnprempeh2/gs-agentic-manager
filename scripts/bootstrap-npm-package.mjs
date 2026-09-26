@@ -58,8 +58,8 @@ function usage() {
       "environment, so codes never appear on a command line.",
       "",
       "Examples:",
-      "  node scripts/bootstrap-npm-package.mjs @paperclipai/new-package",
-      "  node scripts/bootstrap-npm-package.mjs @paperclipai/new-package --publish",
+      "  node scripts/bootstrap-npm-package.mjs @greatstone/new-package",
+      "  node scripts/bootstrap-npm-package.mjs @greatstone/new-package --publish",
       "",
     ].join("\n"),
   );
@@ -114,14 +114,14 @@ export function validatePackageName(packageName) {
 export function buildPlaceholderFiles(packageName) {
   const deprecationNote =
     `${packageName}@${PLACEHOLDER_VERSION} is a placeholder that reserves the package name ` +
-    "for Paperclip's release pipeline. It contains no functionality; the first real release " +
+    "for GS Agentic Manager's release pipeline. It contains no functionality; the first real release " +
     "supersedes it. See https://github.com/paperclipai/paperclip";
 
   const packageJson = {
     name: packageName,
     version: PLACEHOLDER_VERSION,
     description:
-      "Placeholder publish reserving this name for Paperclip's release pipeline. Do not install this version.",
+      "Placeholder publish reserving this name for GS Agentic Manager's release pipeline. Do not install this version.",
     license: "MIT",
     main: "index.js",
     files: ["index.js"],
@@ -141,7 +141,7 @@ export function buildPlaceholderFiles(packageName) {
     `# ${packageName}`,
     "",
     `Version ${PLACEHOLDER_VERSION} is a **placeholder publish**. It reserves this package name so`,
-    "Paperclip's release-bootstrap CI gate can pass before the package's first real",
+    "GS Agentic Manager's release-bootstrap CI gate can pass before the package's first real",
     "release ships from CI. It intentionally contains no functionality.",
     "",
     "Real versions are published by the release workflow of",

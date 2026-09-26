@@ -219,7 +219,7 @@ describe("teams catalog manifest", () => {
       path.join(packageDir, "generated", "catalog.json"),
       formatCatalogManifest({
         schemaVersion: 1,
-        packageName: "@paperclipai/teams-catalog",
+        packageName: "@greatstone/teams-catalog",
         packageVersion: "0.1.0",
         generatedAt: "2026-06-03T00:00:00.000Z",
         teams: [],
@@ -241,7 +241,7 @@ describe("teams catalog manifest", () => {
     const result = await validateCatalog(packageDir);
 
     expect(result.errors).toContain(
-      "generated/catalog.json is stale. Run pnpm --filter @paperclipai/teams-catalog build:manifest.",
+      "generated/catalog.json is stale. Run pnpm --filter @greatstone/teams-catalog build:manifest.",
     );
   });
 });

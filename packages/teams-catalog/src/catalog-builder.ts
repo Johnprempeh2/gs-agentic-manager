@@ -22,7 +22,7 @@ import type {
   CatalogTeamTrustLevel,
 } from "./types.js";
 
-const CATALOG_PACKAGE_NAME = "@paperclipai/teams-catalog";
+const CATALOG_PACKAGE_NAME = "@greatstone/teams-catalog";
 const CATALOG_SCHEMA_VERSION = 1;
 const TEAM_ENTRYPOINT = "TEAM.md";
 const MAX_CATALOG_FILE_BYTES = 1024 * 1024;
@@ -140,7 +140,7 @@ export async function validateCatalog(packageDir: string): Promise<BuildCatalogM
   if (generatedText !== null) {
     const expectedText = formatCatalogManifest(expected.manifest);
     if (generatedText !== expectedText) {
-      errors.push("generated/catalog.json is stale. Run pnpm --filter @paperclipai/teams-catalog build:manifest.");
+      errors.push("generated/catalog.json is stale. Run pnpm --filter @greatstone/teams-catalog build:manifest.");
     }
   }
 
@@ -178,7 +178,7 @@ async function readExistingManifest(packageDir: string): Promise<CatalogManifest
 
 async function loadCatalogSkills(packageDir: string, errors: string[]): Promise<CatalogSkillSummary[]> {
   try {
-    const catalogPackageName = "@paperclipai/skills-catalog";
+    const catalogPackageName = "@greatstone/skills-catalog";
     const catalog = await import(catalogPackageName) as { catalogSkills: CatalogSkillSummary[] };
     const skills = catalog.catalogSkills as CatalogSkillSummary[];
     return skills.map((skill) => ({ id: skill.id, key: skill.key, slug: skill.slug }));
@@ -188,7 +188,7 @@ async function loadCatalogSkills(packageDir: string, errors: string[]): Promise<
       const manifest = JSON.parse(await fs.readFile(siblingManifestPath, "utf8")) as { skills?: CatalogSkillSummary[] };
       return (manifest.skills ?? []).map((skill) => ({ id: skill.id, key: skill.key, slug: skill.slug }));
     } catch (error) {
-      errors.push(`Could not load @paperclipai/skills-catalog for skill requirement validation: ${errorMessage(error)}`);
+      errors.push(`Could not load @greatstone/skills-catalog for skill requirement validation: ${errorMessage(error)}`);
       return [];
     }
   }
@@ -608,7 +608,7 @@ function resolveSkillRequirement(
     };
   }
 
-  errors.push(`${prefix} skill reference "${ref}" does not resolve to a local team skill or @paperclipai/skills-catalog skill.`);
+  errors.push(`${prefix} skill reference "${ref}" does not resolve to a local team skill or @greatstone/skills-catalog skill.`);
   return {
     type: "catalog",
     ref,

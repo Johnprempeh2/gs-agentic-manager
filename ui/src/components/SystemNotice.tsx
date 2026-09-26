@@ -288,7 +288,7 @@ export function SystemNotice({
             <span className={tokens.label}>{resolvedLabel}</span>
             {source ? (
               <>
-                <span className="text-muted-foreground/60" aria-hidden>·</span>
+                <span className="text-subtle-foreground" aria-hidden>·</span>
                 {source.href ? (
                   <a
                     href={source.href}
@@ -305,7 +305,7 @@ export function SystemNotice({
             ) : null}
             {timestamp ? (
               <>
-                <span className="text-muted-foreground/60" aria-hidden>·</span>
+                <span className="text-subtle-foreground" aria-hidden>·</span>
                 <span className="font-medium normal-case tracking-normal text-muted-foreground">
                   {formatTimestamp(timestamp)}
                 </span>

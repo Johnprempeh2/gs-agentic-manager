@@ -8,7 +8,7 @@
  *
  * Read-only routes require board org access. Mutating adapter management
  * routes require instance-admin access because they can install, reload, or
- * toggle server-side adapter code for the whole Paperclip instance.
+ * toggle server-side adapter code for the whole GS Agentic Manager instance.
  *
  * @module server/routes/adapters
  */
@@ -44,7 +44,7 @@ import type { ServerAdapterModule, AdapterConfigSchema } from "../adapters/types
 import type {
   AdapterLoginPanelMode,
   AdapterLoginTimeoutPolicy,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import { loadExternalAdapterPackage, getUiParserSource, getOrExtractUiParserSource, reloadExternalAdapter } from "../adapters/plugin-loader.js";
 import { logger } from "../middleware/logger.js";
 import { forbidden } from "../errors.js";
@@ -73,7 +73,7 @@ function assertAdapterCodeInstallAllowed() {
 
 /**
  * Floor: when the hosting operator hides the Adapters settings surface
- * (`instance.adapters` in PAPERCLIP_HIDDEN_SETTINGS), adapter management
+ * (`instance.adapters` in GSAM_HIDDEN_SETTINGS), adapter management
  * writes are rejected alongside it. Reads stay open — adapter metadata is
  * consumed by agent-creation UIs outside the hidden page.
  */
@@ -756,7 +756,7 @@ export function adapterRoutes(options: {
   // ── GET /api/adapters/:type/ui-parser.js ─────────────────────────────────
   // Serve the self-contained UI parser JS for an adapter type.
   // This allows external adapters to provide custom run-log parsing
-  // without modifying Paperclip's source code.
+  // without modifying GS Agentic Manager's source code.
   //
   // The adapter package must export a "./ui-parser" entry in package.json
   // pointing to a self-contained ESM module with zero runtime dependencies.

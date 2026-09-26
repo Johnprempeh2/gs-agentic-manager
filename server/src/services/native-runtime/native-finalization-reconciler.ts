@@ -2,7 +2,7 @@ import { dismissAutomaticCompletionReviews, decisionHasRetiredAutomaticReview } 
 import { logger } from "../../middleware/logger.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   completionContracts,
   heartbeatRunEvents,
@@ -15,7 +15,7 @@ import {
   statusDecisions,
   workAssessments,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   finalizeNativeRun,
   pendingNativeGovernance,

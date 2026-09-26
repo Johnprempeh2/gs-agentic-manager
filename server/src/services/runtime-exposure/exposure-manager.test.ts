@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { RUNTIME_EXPOSURE_APP_PORT_MIN, deriveViteHmrPort } from "@paperclipai/shared";
+import { RUNTIME_EXPOSURE_APP_PORT_MIN, deriveViteHmrPort } from "@greatstone/shared";
 
 import {
   BrokerClientError,

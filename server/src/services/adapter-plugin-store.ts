@@ -2,7 +2,7 @@
  * JSON-file-backed store for external adapter registrations.
  *
  * Stores metadata about externally installed adapter packages at
- * ~/.paperclip/adapter-plugins.json. This is the source of truth for which
+ * ~/.gsam/adapter-plugins.json. This is the source of truth for which
  * external adapters should be loaded at startup.
  *
  * Both the plugin store and the settings store are cached in memory after
@@ -72,7 +72,7 @@ function ensureDirs(): string {
       name: "paperclip-adapter-plugins",
       version: "0.0.0",
       private: true,
-      description: "Managed directory for Paperclip external adapter plugins. Do not edit manually.",
+      description: "Managed directory for GS Agentic Manager external adapter plugins. Do not edit manually.",
     }, null, 2) + "\n");
   }
   return adapterPluginsDir;

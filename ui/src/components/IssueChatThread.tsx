@@ -46,7 +46,7 @@ import type {
   SuccessfulRunHandoffState,
   IssueWorkMode,
   IssueWorkProduct,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
 import { findUIAdapter } from "../adapters/registry";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
@@ -194,7 +194,7 @@ import type {
   IssueCommentMetadata,
   IssueCommentPresentation,
   SourceTrustMetadata,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   describeToolInput,
   displayToolName,
@@ -204,7 +204,7 @@ import {
   summarizeToolInput,
   summarizeToolResult,
 } from "../lib/transcriptPresentation";
-import { buildAgentMentionHref } from "@paperclipai/shared";
+import { buildAgentMentionHref } from "@greatstone/shared";
 import { useComposerStop } from "@/hooks/useComposerStop";
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { liveBlueBadge } from "../lib/status-colors";
@@ -236,7 +236,7 @@ import {
   Hammer,
   Loader2,
   MoreHorizontal,
-  Paperclip,
+  PaperclipIcon,
   PauseCircle,
   Search,
   Square,
@@ -458,7 +458,7 @@ function IssueChatLiveRunStatusLine({
   return (
     <span
       className={cn(
-        "mt-0.5 block truncate text-xs leading-4 text-muted-foreground/70",
+        "mt-0.5 block truncate text-xs leading-4 text-subtle-foreground",
         className,
       )}
       title={text}
@@ -1306,12 +1306,12 @@ function IssueChatChainOfThought({
               )}
             </span>
             {headerSuffix ? (
-              <span className="text-xs text-muted-foreground/60">
+              <span className="text-xs text-subtle-foreground">
                 {headerSuffix}
               </span>
             ) : null}
             {toolSummary ? (
-              <span className="text-xs text-muted-foreground/40">
+              <span className="text-xs text-subtle-foreground">
                 · {toolSummary}
               </span>
             ) : null}
@@ -1325,7 +1325,7 @@ function IssueChatChainOfThought({
         {hasContent ? (
           <ChevronDown
             className={cn(
-              "mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform",
+              "mt-0.5 h-4 w-4 shrink-0 text-subtle-foreground transition-transform",
               expanded && "rotate-180",
             )}
           />
@@ -1405,7 +1405,7 @@ function IssueChatVerboseLiveReasoningPart({ text }: { text: string }) {
   return (
     <div className="flex gap-2 px-1">
       <div className="flex flex-col items-center pt-0.5">
-        <Brain className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+        <Brain className="h-3.5 w-3.5 shrink-0 text-subtle-foreground" />
       </div>
       <div
         ref={scrollRef}
@@ -1420,7 +1420,7 @@ function IssueChatVerboseLiveReasoningPart({ text }: { text: string }) {
         {lines.map((line, index) => (
           <p
             key={index}
-            className="whitespace-pre-wrap break-words text-(length:--text-compact) italic leading-5 text-muted-foreground/70"
+            className="whitespace-pre-wrap break-words text-(length:--text-compact) italic leading-5 text-subtle-foreground"
           >
             {line}
           </p>
@@ -1451,13 +1451,13 @@ function IssueChatReasoningPart({ text }: { text: string }) {
   return (
     <div className="flex gap-2 px-1">
       <div className="flex flex-col items-center pt-0.5">
-        <Brain className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+        <Brain className="h-3.5 w-3.5 shrink-0 text-subtle-foreground" />
       </div>
       <div className="relative h-5 min-w-0 flex-1 overflow-hidden">
         {ticker.exiting !== null && (
           <span
             key={`out-${ticker.key}`}
-            className="cot-line-exit absolute inset-x-0 truncate text-(length:--text-compact) italic leading-5 text-muted-foreground/70"
+            className="cot-line-exit absolute inset-x-0 truncate text-(length:--text-compact) italic leading-5 text-subtle-foreground"
             onAnimationEnd={() => setTicker((t) => ({ ...t, exiting: null }))}
           >
             {ticker.exiting}
@@ -1466,7 +1466,7 @@ function IssueChatReasoningPart({ text }: { text: string }) {
         <span
           key={`in-${ticker.key}`}
           className={cn(
-            "absolute inset-x-0 truncate text-(length:--text-compact) italic leading-5 text-muted-foreground/70",
+            "absolute inset-x-0 truncate text-(length:--text-compact) italic leading-5 text-subtle-foreground",
             ticker.key > 0 && "cot-line-enter",
           )}
         >
@@ -1509,16 +1509,16 @@ function IssueChatRollingToolPart({
     <div className="flex gap-2 px-1">
       <div className="flex flex-col items-center pt-0.5">
         {isRunning ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground/50" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-subtle-foreground" />
         ) : (
-          <ToolIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+          <ToolIcon className="h-3.5 w-3.5 shrink-0 text-subtle-foreground" />
         )}
       </div>
       <div className="relative h-5 min-w-0 flex-1 overflow-hidden">
         {ticker.exiting !== null && (
           <span
             key={`out-${ticker.key}`}
-            className="cot-line-exit absolute inset-x-0 truncate text-(length:--text-compact) leading-5 text-muted-foreground/70"
+            className="cot-line-exit absolute inset-x-0 truncate text-(length:--text-compact) leading-5 text-subtle-foreground"
             onAnimationEnd={() => setTicker((t) => ({ ...t, exiting: null }))}
           >
             {ticker.exiting}
@@ -1527,7 +1527,7 @@ function IssueChatRollingToolPart({
         <span
           key={`in-${ticker.key}`}
           className={cn(
-            "absolute inset-x-0 truncate text-(length:--text-compact) leading-5 text-muted-foreground/70",
+            "absolute inset-x-0 truncate text-(length:--text-compact) leading-5 text-subtle-foreground",
             ticker.key > 0 && "cot-line-enter",
           )}
         >
@@ -1644,7 +1644,7 @@ function IssueChatToolPart({
   return (
     <div className="flex gap-2 px-1">
       <div className="flex flex-col items-center pt-1">
-        <ToolIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+        <ToolIcon className="h-3.5 w-3.5 shrink-0 text-subtle-foreground" />
         {open ? <div className="mt-1 w-px flex-1 bg-border/40" /> : null}
       </div>
 
@@ -1654,18 +1654,18 @@ function IssueChatToolPart({
           className="flex w-full items-center gap-2 rounded-md py-0.5 text-left transition-colors hover:bg-accent/5"
           onClick={() => setOpen((current) => !current)}
         >
-          <span className="min-w-0 flex-1 truncate text-(length:--text-compact) text-muted-foreground/80">
+          <span className="min-w-0 flex-1 truncate text-(length:--text-compact) text-subtle-foreground">
             {title}
             {!intentDetail && summary ? (
-              <span className="ml-1.5 text-muted-foreground/50">{summary}</span>
+              <span className="ml-1.5 text-subtle-foreground">{summary}</span>
             ) : null}
           </span>
           {result === undefined ? (
-            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground/50" />
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-subtle-foreground" />
           ) : null}
           <ChevronDown
             className={cn(
-              "h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-transform",
+              "h-3.5 w-3.5 shrink-0 text-subtle-foreground transition-transform",
               open && "rotate-180",
             )}
           />
@@ -1675,13 +1675,13 @@ function IssueChatToolPart({
           <div className="mt-1 space-y-2 pb-1">
             {nonIntentDetails.length > 0 ? (
               <div>
-                <div className="mb-1 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground/60">
+                <div className="mb-1 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-eyebrow) text-subtle-foreground">
                   Input
                 </div>
                 <dl className="space-y-1.5">
                   {nonIntentDetails.map((detail) => (
                     <div key={`${detail.label}:${detail.value}`}>
-                      <dt className="text-(length:--text-nano) font-medium text-muted-foreground/60">
+                      <dt className="text-(length:--text-nano) font-medium text-subtle-foreground">
                         {detail.label}
                       </dt>
                       <dd
@@ -1699,7 +1699,7 @@ function IssueChatToolPart({
               </div>
             ) : rawArgsText ? (
               <div>
-                <div className="mb-1 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground/60">
+                <div className="mb-1 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-eyebrow) text-subtle-foreground">
                   Input
                 </div>
                 <CopyablePreBlock className="overflow-x-auto rounded-md bg-accent/30 p-2 text-(length:--text-micro) leading-4 text-foreground/70">
@@ -1709,7 +1709,7 @@ function IssueChatToolPart({
             ) : null}
             {result !== undefined ? (
               <div>
-                <div className="mb-1 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground/60">
+                <div className="mb-1 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-eyebrow) text-subtle-foreground">
                   Result
                 </div>
                 <CopyablePreBlock className="overflow-x-auto rounded-md bg-accent/30 p-2 text-(length:--text-micro) leading-4 text-foreground/70">
@@ -1773,7 +1773,7 @@ function IssueChatProviderActivity({
       data-provider-family={String(value.family ?? "unknown")}
     >
       <div className="pt-1">
-        <ClipboardList className="h-3.5 w-3.5 text-muted-foreground/50" />
+        <ClipboardList className="h-3.5 w-3.5 text-subtle-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         <button
@@ -1782,19 +1782,19 @@ function IssueChatProviderActivity({
           onClick={onToggle}
           aria-expanded={open}
         >
-          <span className="min-w-0 flex-1 truncate text-(length:--text-compact) text-muted-foreground/80">
+          <span className="min-w-0 flex-1 truncate text-(length:--text-compact) text-subtle-foreground">
             {title}
             {summary ? (
-              <span className="ml-1.5 text-muted-foreground/50">{summary}</span>
+              <span className="ml-1.5 text-subtle-foreground">{summary}</span>
             ) : null}
           </span>
           {running ? (
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/50" />
+            <Loader2 className="h-3 w-3 animate-spin text-subtle-foreground" />
           ) : null}
           {hasDetails ? (
             <ChevronDown
               className={cn(
-                "h-3.5 w-3.5 text-muted-foreground/40 transition-transform",
+                "h-3.5 w-3.5 text-subtle-foreground transition-transform",
                 open && "rotate-180",
               )}
             />
@@ -2643,18 +2643,18 @@ function IssueChatAssistantMessage({
                 sourceTrust={sourceTrust}
                 artifactLabel="comment"
               />
-              <span className="text-xs text-muted-foreground/60">
+              <span className="text-xs text-subtle-foreground">
                 {chainOfThoughtLabel?.toLowerCase()}
               </span>
               <span className="ml-auto flex items-center gap-1.5">
                 {message.createdAt ? (
-                  <span className="text-(length:--text-micro) text-muted-foreground/50">
+                  <span className="text-(length:--text-micro) text-subtle-foreground">
                     {commentDateLabel(message.createdAt)}
                   </span>
                 ) : null}
                 <ChevronDown
                   className={cn(
-                    "h-3.5 w-3.5 text-muted-foreground/40 transition-transform",
+                    "h-3.5 w-3.5 text-subtle-foreground transition-transform",
                     !folded && "rotate-180",
                   )}
                 />
@@ -3372,14 +3372,14 @@ function StaleDispositionWarningRow({
               {message.createdAt ? (
                 <span
                   data-testid="stale-disposition-warning-time"
-                  className="text-(length:--text-micro) text-muted-foreground/50"
+                  className="text-(length:--text-micro) text-subtle-foreground"
                 >
                   {commentDateLabel(message.createdAt)}
                 </span>
               ) : null}
               <ChevronDown
                 className={cn(
-                  "h-3.5 w-3.5 text-muted-foreground/40 transition-transform",
+                  "h-3.5 w-3.5 text-subtle-foreground transition-transform",
                   open && "rotate-180",
                 )}
               />
@@ -3461,14 +3461,14 @@ function CompactSystemNoticeRow({
               {message.createdAt ? (
                 <span
                   data-testid="compact-system-notice-time"
-                  className="whitespace-nowrap text-(length:--text-micro) text-muted-foreground/50"
+                  className="whitespace-nowrap text-(length:--text-micro) text-subtle-foreground"
                 >
                   {commentDateLabel(message.createdAt)}
                 </span>
               ) : null}
               <ChevronDown
                 className={cn(
-                  "h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-transform group-hover:text-muted-foreground/70",
+                  "h-3.5 w-3.5 shrink-0 text-subtle-foreground transition-transform group-hover:text-subtle-foreground",
                   open && "rotate-180",
                 )}
               />
@@ -3532,14 +3532,14 @@ function SystemNoticeCommentContent({
       ? (agentMap?.get(runAgentId)?.name ?? null)
       : null;
     if (authorType === "system") {
-      const label = runAgentName ?? "Paperclip";
+      const label = runAgentName ?? "GS Agentic Manager";
       if (runAgentId && runId)
         return { label, href: `/agents/${runAgentId}/runs/${runId}` };
       return { label };
     }
     if (runAgentId && runId) {
       return {
-        label: authorName ?? runAgentName ?? "Paperclip",
+        label: authorName ?? runAgentName ?? "GS Agentic Manager",
         href: `/agents/${runAgentId}/runs/${runId}`,
       };
     }
@@ -3664,7 +3664,7 @@ function SystemNoticeCommentContent({
               {copiedLink ? (
                 <Check className="h-3.5 w-3.5" />
               ) : (
-                <Paperclip className="h-3.5 w-3.5" />
+                <PaperclipIcon className="h-3.5 w-3.5" />
               )}
             </button>
           ) : null}
@@ -3706,7 +3706,7 @@ function IssueChatMetadataRow({
   return (
     <div id={anchorId} data-testid={testid}>
       <div className="ml-3 flex items-start gap-2.5 border-l-2 border-border/50 py-0.5 pl-3">
-        <span className="mt-px flex size-(--sz-18px) shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/30 text-muted-foreground/60">
+        <span className="mt-px flex size-(--sz-18px) shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/30 text-subtle-foreground">
           {icon}
         </span>
         <div className="min-w-0 flex-1 space-y-1">{children}</div>
@@ -3826,7 +3826,7 @@ function IssueChatSystemMessage({ message }: { message: ThreadMessage }) {
           </span>
           <a
             href={anchorId ? `#${anchorId}` : undefined}
-            className="text-xs text-muted-foreground/70 transition-colors hover:text-foreground hover:underline"
+            className="text-xs text-subtle-foreground transition-colors hover:text-foreground hover:underline"
           >
             {timeAgo(message.createdAt)}
           </a>
@@ -3834,13 +3834,13 @@ function IssueChatSystemMessage({ message }: { message: ThreadMessage }) {
 
         {statusChange ? (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-muted-foreground/70">
+            <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-subtle-foreground">
               Status
             </span>
             <span className="text-muted-foreground">
               {humanizeValue(statusChange.from)}
             </span>
-            <ArrowRight className="h-3 w-3 text-muted-foreground/70" />
+            <ArrowRight className="h-3 w-3 text-subtle-foreground" />
             <span className="font-medium text-foreground">
               {humanizeValue(statusChange.to)}
             </span>
@@ -3855,14 +3855,14 @@ function IssueChatSystemMessage({ message }: { message: ThreadMessage }) {
                 isCurrentUser && "justify-end",
               )}
             >
-              <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-muted-foreground/70">
+              <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-subtle-foreground">
                 Assignee
               </span>
               <AssigneeChip
                 assignee={assigneeChange.from}
                 resolvers={handoffResolvers}
               />
-              <ArrowRight className="h-3 w-3 text-muted-foreground/70" />
+              <ArrowRight className="h-3 w-3 text-subtle-foreground" />
               <AssigneeChip
                 assignee={assigneeChange.to}
                 resolvers={handoffResolvers}
@@ -3880,13 +3880,13 @@ function IssueChatSystemMessage({ message }: { message: ThreadMessage }) {
 
         {workspaceChange ? (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-muted-foreground/70">
+            <span className="text-(length:--text-nano) font-medium uppercase tracking-wider text-subtle-foreground">
               Workspace
             </span>
             <span className="text-muted-foreground">
               {formatTimelineWorkspaceLabel(workspaceChange.from)}
             </span>
-            <ArrowRight className="h-3 w-3 text-muted-foreground/70" />
+            <ArrowRight className="h-3 w-3 text-subtle-foreground" />
             <span className="font-medium text-foreground">
               {formatTimelineWorkspaceLabel(workspaceChange.to)}
             </span>
@@ -3927,7 +3927,7 @@ function IssueChatSystemMessage({ message }: { message: ThreadMessage }) {
           />
           <a
             href={anchorId ? `#${anchorId}` : undefined}
-            className="text-xs text-muted-foreground/70 transition-colors hover:text-foreground hover:underline"
+            className="text-xs text-subtle-foreground transition-colors hover:text-foreground hover:underline"
           >
             {timeAgo(message.createdAt)}
           </a>
@@ -5336,7 +5336,7 @@ const IssueChatComposer = forwardRef<
         >
           <div className="flex max-w-md items-center gap-3 rounded-md bg-background/80 px-3 py-2 text-left shadow-sm ring-1 ring-border/60">
             <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <Paperclip className="h-4 w-4" />
+              <PaperclipIcon className="h-4 w-4" />
             </span>
             <div className="min-w-0">
               <div className="text-sm font-medium text-foreground">
@@ -5546,7 +5546,7 @@ const IssueChatComposer = forwardRef<
                 disabled={attaching}
                 title="Attach file"
               >
-                <Paperclip className="h-4 w-4" />
+                <PaperclipIcon className="h-4 w-4" />
               </Button>
             </>
           ) : null}

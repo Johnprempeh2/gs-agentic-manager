@@ -1,9 +1,9 @@
-import { hasWorkspaceRestoreFailure } from "@paperclipai/shared";
+import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { workspaceRestoreMarkerDetail } from "@/lib/workspace-restore-marker";
-import type { ActivityEvent } from "@paperclipai/shared";
+import type { ActivityEvent } from "@greatstone/shared";
 import { useProjectCreatedItems } from "@/hooks/useProjectCreatedItems";
 import { skillCreatedItems } from "@/components/task-chat/skill-created-items";
-import { requiresExecutionReconciliation } from "@paperclipai/shared";
+import { requiresExecutionReconciliation } from "@greatstone/shared";
 import { TaskChatExpansionState } from "@/components/task-chat/expansion-state";
 import { TaskChatScrollReady } from "@/components/task-chat/scroll-navigation";
 import {
@@ -81,7 +81,7 @@ import type {
   FeedbackVoteValue,
   IssueDocument,
   IssueThreadInteraction,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   TaskChatThreadView,
   taskChatContentKey,
@@ -1017,7 +1017,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       if (comment.deletedAt || !comment.runId || !comment.id) continue;
       map.set(comment.runId, comment.id);
     }
-    // A settled Paperclip turn normally attaches to its durable final reply.
+    // A settled GS Agentic Manager turn normally attaches to its durable final reply.
     // Same-turn steering splits that causal interval into timestamped segments,
     // so each segment must stay unanchored and interleave around the injected
     // human bubble through the chronological assembler.

@@ -22,11 +22,11 @@ describe("paperclip config schema", () => {
       server: {},
     });
 
-    expect(parsed.database.embeddedPostgresDataDir).toBe("~/.paperclip/instances/default/db");
-    expect(parsed.database.backup.dir).toBe("~/.paperclip/instances/default/data/backups");
-    expect(parsed.logging.logDir).toBe("~/.paperclip/instances/default/logs");
-    expect(parsed.storage.localDisk.baseDir).toBe("~/.paperclip/instances/default/data/storage");
-    expect(parsed.secrets.localEncrypted.keyFilePath).toBe("~/.paperclip/instances/default/secrets/master.key");
+    expect(parsed.database.embeddedPostgresDataDir).toBe("~/.gsam/instances/default/db");
+    expect(parsed.database.backup.dir).toBe("~/.gsam/instances/default/data/backups");
+    expect(parsed.logging.logDir).toBe("~/.gsam/instances/default/logs");
+    expect(parsed.storage.localDisk.baseDir).toBe("~/.gsam/instances/default/data/storage");
+    expect(parsed.secrets.localEncrypted.keyFilePath).toBe("~/.gsam/instances/default/secrets/master.key");
   });
 
   it("retains extension keys at the top level and every nested config boundary", () => {

@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RoutineDetail, RoutineTrigger } from "@paperclipai/shared";
+import type { RoutineDetail, RoutineTrigger } from "@greatstone/shared";
 import { BreadcrumbProvider } from "@/context/BreadcrumbContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { TriggersSection } from "./editable-sections";

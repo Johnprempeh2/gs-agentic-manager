@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, Plus, Webhook } from "lucide-react";
-import type { RoutineTrigger } from "@paperclipai/shared";
+import type { RoutineTrigger } from "@greatstone/shared";
 import { useSearchParams } from "@/lib/router";
 import { routinesApi } from "@/api/routines";
 import { queryKeys } from "@/lib/queryKeys";

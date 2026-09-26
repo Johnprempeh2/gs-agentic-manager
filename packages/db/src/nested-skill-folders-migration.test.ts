@@ -51,7 +51,7 @@ describeEmbeddedPostgres("nested skill folders migration", () => {
     const unfiledSkillId = randomUUID();
     await sql`
       INSERT INTO "companies" ("id", "name", "issue_prefix")
-      VALUES (${companyId}, 'Paperclip', 'PAP')
+      VALUES (${companyId}, 'GS Agentic Manager', 'PAP')
     `;
     await sql`
       INSERT INTO "projects" ("id", "company_id", "name")

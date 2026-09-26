@@ -1,4 +1,4 @@
-import type { Environment } from "@paperclipai/shared";
+import type { Environment } from "@greatstone/shared";
 
 /**
  * The managed-sandbox-only policy hides the local environment and runs every
@@ -28,7 +28,7 @@ export class ManagedSandboxUnavailableForTestError extends Error {
  * instance local-default environment. The server always resolves a run to one
  * of these three tiers, so the Test must probe the same target. Without the
  * local-default tier the Test would send no environment id and probe the
- * Paperclip host, even though a real run resolves to the local-default
+ * GS Agentic Manager host, even though a real run resolves to the local-default
  * environment. The two paths must match, so a Test result reflects a real run.
  *
  * The managed-sandbox-only policy (`enableManagedSandboxOnly`) redirects a

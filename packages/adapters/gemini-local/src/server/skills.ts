@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 import type {
   AdapterSkillContext,
   AdapterSkillSnapshot,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import {
   buildPersistentSkillSnapshot,
   ensurePaperclipSkillSymlink,
   readPaperclipRuntimeSkillEntries,
   readInstalledSkillTargets,
   resolveLegacyPaperclipDesiredSkillNames,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,7 +44,7 @@ async function buildGeminiSkillSnapshot(config: Record<string, unknown>): Promis
     locationLabel: "~/.gemini/skills",
     missingDetail: "Configured but not currently linked into the Gemini skills home.",
     externalConflictDetail: "Skill name is occupied by an external installation.",
-    externalDetail: "Installed outside Paperclip management.",
+    externalDetail: "Installed outside GS Agentic Manager management.",
   });
 }
 

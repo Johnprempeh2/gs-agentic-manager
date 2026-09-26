@@ -1,4 +1,4 @@
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import type { EnvironmentRuntimeService } from "./environment-runtime.js";
 import { environmentService } from "./environments.js";
 import {

@@ -5,7 +5,7 @@ import {
   issueDocuments,
   issues,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { redactQuarantinedBodyForHigherTrust } from "./source-trust.js";
 
 /** Read the task's durable plan before constructing any provider's assignment. */

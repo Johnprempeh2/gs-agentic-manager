@@ -14,7 +14,7 @@ import {
   issueRecoveryActions,
   issueRelations,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,

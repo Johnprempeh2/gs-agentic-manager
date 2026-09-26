@@ -17,7 +17,7 @@ import type {
   AdapterExecutionTargetPaperclipBridgeHandle,
   AdapterExecutionTargetProcessSessionBridgeHandle,
   PreparedAdapterExecutionTargetRuntime,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 import type { WorkspaceRestoreOutcome } from "../workspace-restore-merge.js";
 
 // ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ export interface StagingLeaseResource {
 }
 
 /**
- * Maps each resource id to its payload. The `control_bridge` is the Paperclip
+ * Maps each resource id to its payload. The `control_bridge` is the GS Agentic Manager
  * control-plane bridge; the `agent_bridge` is the agent process-session bridge.
  */
 export interface RunResourcePayloads {
@@ -425,7 +425,7 @@ export interface McpServerIdentity {
   readonly connectionId: string;
 }
 
-/** The Paperclip Claude settings the fingerprint reads. */
+/** The GS Agentic Manager Claude settings the fingerprint reads. */
 export interface PaperclipClaudeSettingsIdentity {
   readonly allow: readonly string[];
   readonly additionalDirectories: readonly string[];

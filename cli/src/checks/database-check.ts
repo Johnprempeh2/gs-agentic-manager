@@ -19,12 +19,12 @@ export async function databaseCheck(config: PaperclipConfig, configPath?: string
         status: "fail",
         message: "PostgreSQL mode selected but no connection string configured",
         canRepair: false,
-        repairHint: "Run `paperclipai configure --section database`",
+        repairHint: "Run `gsam configure --section database`",
       };
     }
 
     try {
-      const { createDb } = await import("@paperclipai/db");
+      const { createDb } = await import("@greatstone/db");
       const db = createDb(config.database.connectionString);
       await db.execute("SELECT 1");
       return {
@@ -47,25 +47,25 @@ export async function databaseCheck(config: PaperclipConfig, configPath?: string
     const dataDir = resolveRuntimeLikePath(config.database.embeddedPostgresDataDir, configPath);
 
     // A worktree-mode instance whose data dir lives under the OS temp dir is a red
-    // flag: this is what happens when PAPERCLIP_HOME / PAPERCLIP_IN_WORKTREE leak
+    // flag: this is what happens when GSAM_HOME / GSAM_IN_WORKTREE leak
     // into a PRIMARY instance's environment and silently relocate it to a throwaway
     // temp home, so it boots an empty DB and locks everyone out. (Intentional
-    // ephemeral/CI instances that don't set PAPERCLIP_IN_WORKTREE are not flagged.)
+    // ephemeral/CI instances that don't set GSAM_IN_WORKTREE are not flagged.)
     // Check BEFORE creating the dir so we don't bootstrap the very temp location
     // we're warning about.
-    if (isInsideOsTmpDir(dataDir) && process.env.PAPERCLIP_IN_WORKTREE === "true") {
+    if (isInsideOsTmpDir(dataDir) && process.env.GSAM_IN_WORKTREE === "true") {
       return {
         name: "Database",
         status: "warn",
         message:
           `Embedded PostgreSQL data dir is inside the OS temp directory (${dataDir}) ` +
-          "while running in worktree mode (PAPERCLIP_IN_WORKTREE=true). Data stored here is " +
+          "while running in worktree mode (GSAM_IN_WORKTREE=true). Data stored here is " +
           "ephemeral and will be lost on reboot or a temp cleanup. If this is your primary " +
-          "instance, PAPERCLIP_HOME / PAPERCLIP_IN_WORKTREE likely leaked into its environment, " +
+          "instance, GSAM_HOME / GSAM_IN_WORKTREE likely leaked into its environment, " +
           "pointing it at a throwaway worktree home instead of your real data.",
         canRepair: false,
         repairHint:
-          "If this is the primary instance, unset PAPERCLIP_HOME and PAPERCLIP_IN_WORKTREE " +
+          "If this is the primary instance, unset GSAM_HOME and GSAM_IN_WORKTREE " +
           "(or pass --data-dir <persistent path>) and restart so it uses the persistent instance.",
       };
     }
@@ -86,6 +86,6 @@ export async function databaseCheck(config: PaperclipConfig, configPath?: string
     status: "fail",
     message: `Unknown database mode: ${String(config.database.mode)}`,
     canRepair: false,
-    repairHint: "Run `paperclipai configure --section database`",
+    repairHint: "Run `gsam configure --section database`",
   };
 }

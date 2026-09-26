@@ -116,7 +116,7 @@ fn build_metadata() -> serde_json::Value {
     json!({
         "schema": RUNNERD_BUILD_METADATA_SCHEMA,
         "binaryName": "paperclip-runnerd",
-        "packageName": "@paperclipai/paperclip-runner",
+        "packageName": "@greatstone/paperclip-runner",
         "packageVersion": env!("CARGO_PKG_VERSION"),
         "binaryContractVersion": 2,
         "durableSessionCapabilities": ["unlimited_runtime", "connection_lease_renewal"],
@@ -265,9 +265,7 @@ fn run_durable(args: &[String]) -> Result<(), LocalRunnerError> {
     let ticket = capture_bootstrap_ticket()
         .map_err(|error| LocalRunnerError::invalid(error.to_string()))?
         .ok_or_else(|| {
-            LocalRunnerError::invalid(
-                "PAPERCLIP_RUNNER_BOOTSTRAP_TICKET is required for durable mode",
-            )
+            LocalRunnerError::invalid("GSAM_RUNNER_BOOTSTRAP_TICKET is required for durable mode")
         })?;
     let duration = |name: &str, default: u64| {
         optional_u64(args, name).map(|value| Duration::from_millis(value.unwrap_or(default)))

@@ -23,7 +23,7 @@ const MANIFEST = {
   version: "1.0.0",
   displayName: "Sync Negotiation Test",
   description: "Test plugin",
-  author: "Paperclip",
+  author: "GS Agentic Manager",
   categories: ["automation"],
   capabilities: [],
   entrypoints: {},

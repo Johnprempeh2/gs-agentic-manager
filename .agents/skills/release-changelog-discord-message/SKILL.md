@@ -1,14 +1,14 @@
 ---
 name: release-changelog-discord-message
 description: >
-  Write the Discord announcement for a stable Paperclip release from the release
+  Write the Discord announcement for a stable GS Agentic Manager release from the release
   changelog. Use when a release issue needs a copy-pasteable dotta-voice Discord
   post or refreshed discord_announcement document.
 ---
 
 # Release Discord Announcement Skill
 
-Write the Discord release announcement for the **stable** Paperclip release.
+Write the Discord release announcement for the **stable** GS Agentic Manager release.
 
 This is the companion to `.agents/skills/release-changelog/SKILL.md`. That skill
 writes the changelog — during the beta soak it lives at
@@ -27,7 +27,7 @@ a single copy-pasteable Discord block, in dotta's voice, and posts it as the
 The Discord announcement is **not** the changelog. The changelog is exhaustive;
 the announcement is opinionated, in-voice, and built around the same handful of
 shipped highlights plus a real "what's next" + "what's on my mind" pulled from
-current Paperclip work — not invented.
+current GS Agentic Manager work — not invented.
 
 ## When to use
 
@@ -98,7 +98,7 @@ OFFICIAL TWITTER: https://x.com/papercliping - follow it, report any others
 ## WHAT I NEED FROM YOU               (optional — only if there's a real ask)
 
 FOLLOW THE TWITTER: https://x.com/papercliping - that's the only official one
-TELL ME if you're using Paperclip in your business - I want to meet you
+TELL ME if you're using GS Agentic Manager in your business - I want to meet you
 
 ## Community
 
@@ -113,7 +113,7 @@ Thank you to everyone who contributed to this release!
 PAPERCLIP IS THE AI ORCHESTRATOR FOR HUMANS TO ACCOMPLISH 100x MORE WORK
 
 Every single person will be managing a team of a dozen, or a hundred, or a
-thousand agents and Paperclip will be the default tool to manage it all.
+thousand agents and GS Agentic Manager will be the default tool to manage it all.
 
 ITS TIME TO CLIP :paperclip: :paperclip: :paperclip:
 
@@ -128,7 +128,7 @@ Notes on the template:
 
 - The opening and closing `:paperclip: :paperclip: :paperclip:` bookends are
   part of the brand — keep them.
-- Name the install channels somewhere in the post: `npx paperclipai@latest`
+- Name the install channels somewhere in the post: `npx gsam@latest`
   for the stable, `@beta` / `@nightly` / `@canary` for earlier access, and
   Docker `:latest` moving **only** on stable releases.
 - The FULL RELEASE NOTES link points at `releases/v{VERSION}.md` on
@@ -144,8 +144,8 @@ Notes on the template:
 These are extracted from how dotta has written the last several announcements.
 Mimic this register; do not invent a "professional" tone.
 
-- **First person, conversational.** "I want to meet companies using Paperclip",
-  "what's on my mind", "if that's you let me know". Not "Paperclip is excited
+- **First person, conversational.** "I want to meet companies using GS Agentic Manager",
+  "what's on my mind", "if that's you let me know". Not "GS Agentic Manager is excited
   to announce".
 - **ALL CAPS for excitement and asks**, especially in the opener, the section
   headers, the "WHAT I NEED FROM YOU" section, and the closing tagline. Do not
@@ -168,7 +168,7 @@ Mimic this register; do not invent a "professional" tone.
   this release, and does not headline twice for follow-through work.
 - **"What's on my mind"** is dotta's personal/strategic thinking — docs gaps,
   philosophical positioning ("we're the human control plane for ai labor"),
-  invitations ("if you've ever wanted to write about how you use Paperclip,
+  invitations ("if you've ever wanted to write about how you use GS Agentic Manager,
   hit me up"). Pull real tensions from recent issues/comments; do not invent.
 - **Press section** is optional. Only include it if there is real press in the
   release window (a tweet, a podcast, a talk, a star milestone). No press →
@@ -183,7 +183,7 @@ Mimic this register; do not invent a "professional" tone.
   variant unless dotta tells you otherwise. Recent variants:
   - "PAPERCLIP IS THE AI ORCHESTRATOR FOR HUMANS TO ACCOMPLISH 100x MORE WORK"
   - "PAPERCLIP WILL BE THE DEFAULT AGENT-MANAGEMENT TOOL FOR EVERY COMPANY"
-  - "Paperclip will be _the_ control plane for AI agents in **every** company."
+  - "GS Agentic Manager will be _the_ control plane for AI agents in **every** company."
 - **Closing tagline** is always `ITS TIME TO CLIP :paperclip: :paperclip:
   :paperclip:`. Keep it.
 
@@ -222,8 +222,8 @@ POST /api/companies/:companyId/cases
 {
   "caseType": "tweet_storm",
   "key": "paperclip-release:vYYYY.MDD.P:tweet-storm",
-  "title": "Paperclip vYYYY.MDD.P tweet storm",
-  "summary": "Social announcement thread for Paperclip vYYYY.MDD.P.",
+  "title": "GS Agentic Manager vYYYY.MDD.P tweet storm",
+  "summary": "Social announcement thread for GS Agentic Manager vYYYY.MDD.P.",
   "status": "in_review",
   "parentCaseId": "<release-case-id>",
   "fields": {
@@ -250,7 +250,7 @@ Then write the body document:
 ```http
 PUT /api/cases/:tweetStormCaseId/documents/body
 {
-  "title": "Paperclip vYYYY.MDD.P tweet storm body",
+  "title": "GS Agentic Manager vYYYY.MDD.P tweet storm body",
   "format": "markdown",
   "body": "<announcement body>",
   "changeSummary": "Draft social announcement"
@@ -276,10 +276,10 @@ CLIPPERS! v2026.403.0 has dropped!! :paperclip: :paperclip: :paperclip:
 ## Highlights
 
 :inbox_tray:  **Inbox overhaul** - there is a new "mine" tab that has mail-client like keyboard shortcuts. It's my new default view for managing work
-:thumbsup:  **Feedback and evals** - you can now vote :thumbsup: / :thumbsdown: on your agent's responses. If you choose to share your traces with me, I'll use it to make Paperclip better. In either case you can export locally for your own org's learning
+:thumbsup:  **Feedback and evals** - you can now vote :thumbsup: / :thumbsdown: on your agent's responses. If you choose to share your traces with me, I'll use it to make GS Agentic Manager better. In either case you can export locally for your own org's learning
 :page_with_curl:  **Document revisions** - you can now restore old versions of your documents
-:ping_pong:  **Telemetry** - this version has anonymized telemetry that helps me better understand the basic uses of Paperclip (adapters and so on) - if you hate that, just it disable with `DO_NOT_TRACK=1` or `PAPERCLIP_TELEMETRY_DISABLED=1` environment variables
-:construction_worker: **Execution Workspaces (experimental)** - Paperclip is not a "code review" tool, but I have been finding worktrees are important for certain projects. Enable it in experimental settings
+:ping_pong:  **Telemetry** - this version has anonymized telemetry that helps me better understand the basic uses of GS Agentic Manager (adapters and so on) - if you hate that, just it disable with `DO_NOT_TRACK=1` or `GSAM_TELEMETRY_DISABLED=1` environment variables
+:construction_worker: **Execution Workspaces (experimental)** - GS Agentic Manager is not a "code review" tool, but I have been finding worktrees are important for certain projects. Enable it in experimental settings
 :loop:  **Routine variables** - sometimes you need to customize a routine and the new variables feature makes that easy
 
 PLUS **tons** of improvements aound adapters, bugfixes, qol
@@ -308,7 +308,7 @@ PLUS: just dealing with the excellent PRs we have sitting in our inbox.
 
 ## PRESS
 
-I've been doing my part to spread the word about Paperclip
+I've been doing my part to spread the word about GS Agentic Manager
 
 * We talked to the incredible [Andrew Warner of Mixergy Fame](https://x.com/dotta/status/2039087507514507407)
 * We gave a tutorial with the [inimitable Greg Isenberg](https://x.com/dotta/status/2037279902445994345)
@@ -318,17 +318,17 @@ I've been doing my part to spread the word about Paperclip
 
 ## SUCCESS STORIES
 
-* [Nevo made $76k in march](https://x.com/dotta/status/2039406772859920758) after using Paperclip to automate his marketing
-* [Lewis Jackson](https://x.com/WhatSayLew/status/2039810227394978158) said 34 agents were already operating his trading firm through Paperclip and called it his "holy s***" AI moment.
-* [Neal Kotak](https://x.com/nkotak1/status/2039582439459209638) said Paperclip already runs most of Roominary for him and praised how strong the product is.
-* [Sam Woods](https://x.com/samwoods/status/2039039305960587755) said he knows several people who moved from OpenClaw to Paperclip, often with Hermes in the stack, and that they love it.
-* [Josh Galt](https://x.com/JoshGalt/status/2039386307219095557) called Paperclip the coolest agent tooling he has used and said it is finally something that just works.
+* [Nevo made $76k in march](https://x.com/dotta/status/2039406772859920758) after using GS Agentic Manager to automate his marketing
+* [Lewis Jackson](https://x.com/WhatSayLew/status/2039810227394978158) said 34 agents were already operating his trading firm through GS Agentic Manager and called it his "holy s***" AI moment.
+* [Neal Kotak](https://x.com/nkotak1/status/2039582439459209638) said GS Agentic Manager already runs most of Roominary for him and praised how strong the product is.
+* [Sam Woods](https://x.com/samwoods/status/2039039305960587755) said he knows several people who moved from OpenClaw to GS Agentic Manager, often with Hermes in the stack, and that they love it.
+* [Josh Galt](https://x.com/JoshGalt/status/2039386307219095557) called GS Agentic Manager the coolest agent tooling he has used and said it is finally something that just works.
 
 ## IN SUMMARY
 
 I know there are still some rough edges, but
 
-Paperclip will be *the* control plane for AI agents in **every** company.
+GS Agentic Manager will be *the* control plane for AI agents in **every** company.
 
 and I think we're moving at a pretty good clip :paperclip: :paperclip: :paperclip:
 
@@ -350,7 +350,7 @@ This release has *tons* of quality of life improvements around speed, performanc
 
 :thread: Issue chat threads now are a conversation more than comments
 :police_officer: Execution policies like **Reviewer** and **Approver** are now first-class in the harness (e.g. enforce that QA *must* review a task)
-:no_smoking: Blocker dependencies - first-class "wake on blocker resolved" which means now you can have "task graphs" that depend on one another and it's enforced by Paperclip
+:no_smoking: Blocker dependencies - first-class "wake on blocker resolved" which means now you can have "task graphs" that depend on one another and it's enforced by GS Agentic Manager
 :woman_feeding_baby: Parent-child tasks - better support for sub-tasks all around, which makes it much easier to organize your work
 
 And then a million fixes around ux, details, keyboard shortcuts, bug fixes, security fixes, etc. Really you should read the [full release notes here](https://github.com/paperclipai/paperclip/releases/tag/v2026.416.0)
@@ -365,28 +365,28 @@ INCREDIBLE INCREDIBLE WORK BY folks with commits and reports in this release:
 
 ## WHATS NEXT (:motorway:  Roadmap)
 
-* **Multi-human users** - in the last stages of testing, Paperclip is better with teams
+* **Multi-human users** - in the last stages of testing, GS Agentic Manager is better with teams
 * **Memory Infrastructure** - your agents will remember everything about yoru business
 * **Sandbox execution** - run your agents anywhere
 
 ## What's on my mind
 
-* I want to meet with companies who are using Paperclip in their business - if that's you let me know
-* We need more Paperclip tutorials, defaults, and education - thanks to @aronprins for his work in this area already!
+* I want to meet with companies who are using GS Agentic Manager in their business - if that's you let me know
+* We need more GS Agentic Manager tutorials, defaults, and education - thanks to @aronprins for his work in this area already!
 * We still need to get better at reviewing your PRs and we're improving our process every day
 * "Zero-human company" language has to go - we're the human control plane for ai labor
-* We're adding better support for *knowledge (wikis & files)*, *artifacts*, and *work product* in Paperclip soon.
+* We're adding better support for *knowledge (wikis & files)*, *artifacts*, and *work product* in GS Agentic Manager soon.
 
 ## PRESS
 
-* **AI Engineer Europe Tutorial** - I gave a tutorial for AIE. If someone is looking for a basics ABC of Paperclip [you can send them this](https://x.com/dotta/status/2044575580264316931)
-* **AI Club Chicago** - JB gave a talk on Paperclip [at AI Tinkerers in Chicago](https://x.com/developwithJB/status/2044281068778316268) !
+* **AI Engineer Europe Tutorial** - I gave a tutorial for AIE. If someone is looking for a basics ABC of GS Agentic Manager [you can send them this](https://x.com/dotta/status/2044575580264316931)
+* **AI Club Chicago** - JB gave a talk on GS Agentic Manager [at AI Tinkerers in Chicago](https://x.com/developwithJB/status/2044281068778316268) !
 
 ## IN SUMMARY
 
 PAPERCLIP WILL BE THE DEFAULT AGENT-MANAGEMENT TOOL FOR EVERY COMPANY
 
-If there's anything I can do to help you and your company use Paperclip, hit me up. Until then, enjoy the new release
+If there's anything I can do to help you and your company use GS Agentic Manager, hit me up. Until then, enjoy the new release
 
 ITS TIME TO CLIP :paperclip: :paperclip: :paperclip:
 
@@ -423,21 +423,21 @@ Thank you to everyone who contributed to this release!
 
 ## WHATS NEXT (:motorway:  Roadmap)
 
-* **Longer-range planning and execution** - Paperclip will support longer and longer tasks and work until it's done
-* **Secrets Service v2** - an important prereq for Paperclip cloud
+* **Longer-range planning and execution** - GS Agentic Manager will support longer and longer tasks and work until it's done
+* **Secrets Service v2** - an important prereq for GS Agentic Manager cloud
 * **Artifacts, memory, and knowledge**
 * **Conference Room** aka CEO/Agent Chat
 
 ## What's on my mind
 
 * **Documentation & Blog posts** - I've fallen behind on the docs but aron has done a good job here - we'll be setting up Clips to help maintain these
-* **Paperclip Cloud** - will be a critical unlock for us, but even the shared team story needs developed more - *where should the work be done* and *where are the outputs stored* and *how do we surface them to users*? Each of these questions are a core Paperclip service that needs developed
-* **Paperclip Bench** - In the vein of SWE-Bench I've started an internal benchmark for Paperclip - we have to be able to measure that our changes are improving the system and not regressing
-* **Paperclip Connections Store** - connecting to Github, Slack, Google Docs, and the hundreds of other services we use every day should be easy, secure, and configurable per agent and team
+* **Paperclip Cloud** - will be a critical unlock for us, but even the shared team story needs developed more - *where should the work be done* and *where are the outputs stored* and *how do we surface them to users*? Each of these questions are a core GS Agentic Manager service that needs developed
+* **GS Agentic Manager Bench** - In the vein of SWE-Bench I've started an internal benchmark for GS Agentic Manager - we have to be able to measure that our changes are improving the system and not regressing
+* **GS Agentic Manager Connections Store** - connecting to Github, Slack, Google Docs, and the hundreds of other services we use every day should be easy, secure, and configurable per agent and team
 
 ## Press
 
-I met with the [Wisemen about Paperclip](https://x.com/dotta/status/2045146539534827998)
+I met with the [Wisemen about GS Agentic Manager](https://x.com/dotta/status/2045146539534827998)
 
 ## WHAT I NEED FROM YOU
 
@@ -447,7 +447,7 @@ FOLLOW THIS TWITTER ACCOUNT: https://x.com/papercliping - that's the only offici
 
 PAPERCLIP IS THE AI ORCHESTRATOR FOR HUMANS TO ACCOMPLISH 100x MORE WORK
 
-Every single person will be managing a team of a dozen, or a hundred, or a thousand agents and Paperclip will be the default tool to manage it all.
+Every single person will be managing a team of a dozen, or a hundred, or a thousand agents and GS Agentic Manager will be the default tool to manage it all.
 
 ITS TIME TO CLIP :paperclip: :paperclip: :paperclip:
 

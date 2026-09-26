@@ -29,7 +29,7 @@ function createSnapshotOptions(root: string) {
     watchedDirectories: [path.join(root, "server")],
     watchedFiles: [path.join(root, "package.json")],
     ignoredDirectoryNames: new Set(["node_modules"]),
-    ignoredRelativePaths: new Set([".paperclip/dev-server-status.json"]),
+    ignoredRelativePaths: new Set([".gsam/dev-server-status.json"]),
   };
 }
 

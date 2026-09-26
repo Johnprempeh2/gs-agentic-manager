@@ -2,7 +2,7 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { Issue, IssueDocument } from "@paperclipai/shared";
+import type { Issue, IssueDocument } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssuePropertiesArtifactsTab } from "./IssuePropertiesArtifactsTab";
 import { IssuePropertiesPlansTab } from "./IssuePropertiesPlansTab";

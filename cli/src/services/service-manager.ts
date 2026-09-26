@@ -74,11 +74,11 @@ function escapeRegExp(value: string): string {
 }
 
 export function resolveServiceShimPath(homeDir = os.homedir()): string {
-  return process.env.PAPERCLIP_SHIM_PATH?.trim() || path.join(homeDir, ".local", "bin", "paperclipai");
+  return process.env.GSAM_SHIM_PATH?.trim() || path.join(homeDir, ".local", "bin", "gsam");
 }
 
 // The installed definition, not the current environment, is the truth
-// about what the service executes: PAPERCLIP_SHIM_PATH may have changed
+// about what the service executes: GSAM_SHIM_PATH may have changed
 // or been unset since the definition was written.
 function unescapeSystemd(value: string): string {
   return value.replace(/\\\\|\\"|\$\$|%%/g, (m) =>
@@ -135,9 +135,9 @@ StartLimitBurst=5
 Type=notify
 NotifyAccess=all
 ExecStart="${escapeSystemd(input.shimPath)}" run --instance "${escapeSystemd(input.instanceId)}"
-Environment="PAPERCLIP_SERVICE_MANAGED=1"
-Environment="PAPERCLIP_INSTANCE_ID=${escapeSystemd(input.instanceId)}"
-Environment="PAPERCLIP_HOME=${escapeSystemd(input.homeDir)}"
+Environment="GSAM_SERVICE_MANAGED=1"
+Environment="GSAM_INSTANCE_ID=${escapeSystemd(input.instanceId)}"
+Environment="GSAM_HOME=${escapeSystemd(input.homeDir)}"
 WorkingDirectory=%h
 Restart=always
 RestartSec=5
@@ -161,9 +161,9 @@ export function renderLaunchdPlist(input: { instanceId: string; shimPath: string
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PAPERCLIP_SERVICE_MANAGED</key><string>1</string>
-    <key>PAPERCLIP_INSTANCE_ID</key><string>${escapeXml(input.instanceId)}</string>
-    <key>PAPERCLIP_HOME</key><string>${escapeXml(input.homeDir)}</string>
+    <key>GSAM_SERVICE_MANAGED</key><string>1</string>
+    <key>GSAM_INSTANCE_ID</key><string>${escapeXml(input.instanceId)}</string>
+    <key>GSAM_HOME</key><string>${escapeXml(input.homeDir)}</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -350,19 +350,19 @@ export async function detectServiceManager(input: { instanceId?: string; platfor
   const platform = input.platform ?? process.platform;
   const runner = input.runner ?? defaultCommandRunner;
   if (platform === "darwin") return { supported: true, manager: new LaunchdServiceManager(instanceId, runner) };
-  if (platform !== "linux") return { supported: false, reason: `Service management is not supported on ${platform}. Use paperclipai run instead.` };
+  if (platform !== "linux") return { supported: false, reason: `Service management is not supported on ${platform}. Use gsam run instead.` };
   try {
     await runner("systemctl", ["--user", "show-environment"]);
     return { supported: true, manager: new SystemdServiceManager(instanceId, runner) };
   } catch {
-    return { supported: false, reason: "No usable systemd user manager was detected (common in containers and WSL1). Use paperclipai run instead." };
+    return { supported: false, reason: "No usable systemd user manager was detected (common in containers and WSL1). Use gsam run instead." };
   }
 }
 
 export async function assertForegroundRunAllowed(instanceId: string, force = false, detector: typeof detectServiceManager = detectServiceManager): Promise<void> {
-  if (force || process.env.PAPERCLIP_SERVICE_MANAGED === "1") return;
+  if (force || process.env.GSAM_SERVICE_MANAGED === "1") return;
   const detection = await detector({ instanceId });
   if (!detection.supported) return;
   const status = await detection.manager.status();
-  if (status.active) throw new Error(`Paperclip instance '${instanceId}' is already running as ${status.serviceName}. Use 'paperclipai service status --instance ${instanceId}' or pass --force to bypass this safety check.`);
+  if (status.active) throw new Error(`GS Agentic Manager instance '${instanceId}' is already running as ${status.serviceName}. Use 'gsam service status --instance ${instanceId}' or pass --force to bypass this safety check.`);
 }

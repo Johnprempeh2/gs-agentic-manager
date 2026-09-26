@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Environment } from "@paperclipai/shared";
+import type { Environment } from "@greatstone/shared";
 
 import {
   ManagedSandboxUnavailableForTestError,
@@ -38,7 +38,7 @@ describe("resolveAdapterTestEnvironmentId", () => {
   it("falls back to the instance default when the agent has none", () => {
     // The regression this pins: an agent relying on the instance default
     // (e.g. a managed sandbox with extra CLIs baked into its image) must be
-    // tested inside that environment, not on the Paperclip host where the
+    // tested inside that environment, not on the GS Agentic Manager host where the
     // CLI does not exist.
     expect(
       resolveAdapterTestEnvironmentId({

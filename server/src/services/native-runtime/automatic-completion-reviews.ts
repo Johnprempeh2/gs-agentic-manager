@@ -8,7 +8,7 @@ import {
   statusDecisions,
   workAssessments,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   persistActivity,
   publishActivity,

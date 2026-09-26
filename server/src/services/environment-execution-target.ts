@@ -1,19 +1,19 @@
-import type { Db } from "@paperclipai/db";
-import type { Environment, EnvironmentLease } from "@paperclipai/shared";
-import { adapterSupportsRemoteManagedEnvironments } from "@paperclipai/shared";
+import type { Db } from "@greatstone/db";
+import type { Environment, EnvironmentLease } from "@greatstone/shared";
+import { adapterSupportsRemoteManagedEnvironments } from "@greatstone/shared";
 import {
   adapterExecutionTargetToRemoteSpec,
   type AdapterExecutionTarget,
   type SandboxLeaseAcquisition,
-} from "@paperclipai/adapter-utils/execution-target";
-import type { DuplexObservabilityRecorder } from "@paperclipai/adapter-utils/duplex-observability";
+} from "@greatstone/adapter-utils/execution-target";
+import type { DuplexObservabilityRecorder } from "@greatstone/adapter-utils/duplex-observability";
 import {
   clampSpanLabel,
   getActiveStepContext,
   normalizeProviderFamily,
   SANDBOX_STARTUP_OUTCOME,
   SANDBOX_STARTUP_SPAN_ATTRS,
-} from "@paperclipai/adapter-utils/acpx-engine/startup-timing";
+} from "@greatstone/adapter-utils/acpx-engine/startup-timing";
 import { parseObject } from "../adapters/utils.js";
 import { getStartupTracer } from "../instrumentation.js";
 import { resolveEnvironmentDriverConfigForRuntime } from "./environment-config.js";

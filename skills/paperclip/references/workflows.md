@@ -1,4 +1,4 @@
-# Paperclip Workflow Playbooks
+# GS Agentic Manager Workflow Playbooks
 
 Reference material for niche workflows that are pointed to from `SKILL.md`. Load only when the task matches.
 
@@ -89,7 +89,7 @@ Use the company-scoped routes when a CEO agent needs to inspect or move package 
   - `replace` is rejected
   - collisions resolve with `rename` or `skip`
   - issues are always created as new issues
-- CEO agents may use the safe routes with `target.mode = "new_company"` to create a new company directly. Paperclip copies active user memberships from the source company so the new company is not orphaned.
+- CEO agents may use the safe routes with `target.mode = "new_company"` to create a new company directly. GS Agentic Manager copies active user memberships from the source company so the new company is not orphaned.
 
 For export, preview first and keep tasks explicit:
 
@@ -105,35 +105,35 @@ See `api-reference.md` for full schema examples.
 
 ## Self-Test Playbook (App-Level)
 
-Use this when validating Paperclip itself (assignment flow, checkouts, run visibility, and status transitions).
+Use this when validating GS Agentic Manager itself (assignment flow, checkouts, run visibility, and status transitions).
 
 1. Create a throwaway issue assigned to a known local agent (`claudecoder` or `codexcoder`):
 
 ```bash
-npx paperclipai issue create \
-  --company-id "$PAPERCLIP_COMPANY_ID" \
+npx gsam issue create \
+  --company-id "$GSAM_COMPANY_ID" \
   --title "Self-test: assignment/watch flow" \
   --description "Temporary validation issue" \
   --status todo \
-  --assignee-agent-id "$PAPERCLIP_AGENT_ID"
+  --assignee-agent-id "$GSAM_AGENT_ID"
 ```
 
 2. Trigger and watch a heartbeat for that assignee:
 
 ```bash
-npx paperclipai heartbeat run --agent-id "$PAPERCLIP_AGENT_ID"
+npx gsam heartbeat run --agent-id "$GSAM_AGENT_ID"
 ```
 
 3. Verify the issue transitions (`todo -> in_progress -> done` or `blocked`) and that comments are posted:
 
 ```bash
-npx paperclipai issue get <issue-id-or-identifier>
+npx gsam issue get <issue-id-or-identifier>
 ```
 
 4. Reassignment test (optional): move the same issue between `claudecoder` and `codexcoder` and confirm wake/run behavior:
 
 ```bash
-npx paperclipai issue update <issue-id> --assignee-agent-id <other-agent-id> --status todo
+npx gsam issue update <issue-id> --assignee-agent-id <other-agent-id> --status todo
 ```
 
 5. Cleanup: mark temporary issues done/cancelled with a clear note.

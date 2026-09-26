@@ -8,7 +8,7 @@ import {
   createDb,
   instanceUserRoles,
   principalPermissionGrants,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   claimBoardOwnership,
   getBoardClaimWarningUrl,

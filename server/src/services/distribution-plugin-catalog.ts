@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import { pluginCapabilityValidator } from "./plugin-capability-validator.js";
 
 const segment = z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/);

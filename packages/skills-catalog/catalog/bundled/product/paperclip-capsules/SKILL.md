@@ -1,6 +1,6 @@
 ---
 name: paperclip-capsules
-description: Generate, implement, or review Paperclip capsule visuals. Use for capsule art, agent capsules, heartbeat status capsules, identicons, capsule banks, or brand-usage validation.
+description: Generate, implement, or review GS Agentic Manager capsule visuals. Use for capsule art, agent capsules, heartbeat status capsules, identicons, capsule banks, or brand-usage validation.
 key: paperclipai/bundled/product/paperclip-capsules
 recommendedForRoles:
   - designer
@@ -16,18 +16,18 @@ tags:
   - hyperframes
 ---
 
-# Paperclip Capsules
+# GS Agentic Manager Capsules
 
-Use this skill when creating or checking Paperclip capsule visuals. The central rule is simple: **the capsule is the agent**. A capsule is not generic chrome, a button shape, a random status pill, or background decoration.
+Use this skill when creating or checking GS Agentic Manager capsule visuals. The central rule is simple: **the capsule is the agent**. A capsule is not generic chrome, a button shape, a random status pill, or background decoration.
 
-The one approved decorative exception is the canonical hero capsule bank. Treat it as a specific Paperclip brand surface, not a license to make arbitrary capsule wallpaper.
+The one approved decorative exception is the canonical hero capsule bank. Treat it as a specific GS Agentic Manager brand surface, not a license to make arbitrary capsule wallpaper.
 
 ## When to Use
 
-- Generating Paperclip capsule art, agent avatars, capsule fields, hero capsule banks, or seeded capsule identicons.
+- Generating GS Agentic Manager capsule art, agent avatars, capsule fields, hero capsule banks, or seeded capsule identicons.
 - Implementing an individual agent capsule in product UI.
 - Rendering heartbeat status capsules for agent status.
-- Building Paperclip feature videos or marketing graphics that use the capsule motif.
+- Building GS Agentic Manager feature videos or marketing graphics that use the capsule motif.
 - Reviewing a design for capsule brand correctness.
 
 ## When Not to Use
@@ -65,7 +65,7 @@ Use **seeded identicons/profile pills** when an agent needs a reproducible perso
 3. Prefer existing source implementations:
    - Product UI: `ui/src/components/AgentCapsule.tsx`, `ui/src/index.css`, and `ui/src/lib/status-colors.ts`.
    - Hero bank: canonical spec in `references/hero-capsule-bank.md`.
-   - Video work: pair this skill with the Paperclip feature-video HyperFrames skill when available.
+   - Video work: pair this skill with the GS Agentic Manager feature-video HyperFrames skill when available.
 4. If generating an artifact, choose a reproducible workflow and write down the seed/config.
 5. Verify that the result still reads as agent-related. Remove capsules if they became decoration.
 6. Attach or otherwise expose generated deliverables when doing issue work, and name the exact workflow used.
@@ -78,7 +78,7 @@ For any generated capsule asset, include:
 - Source workflow or implementation path.
 - Seed and config where available.
 - Dimensions, format, and renderer.
-- Any divergence from canonical Paperclip rendering.
+- Any divergence from canonical GS Agentic Manager rendering.
 
 For code changes, include targeted checks that exercise the edited surface. For visuals, include screenshots or inspectable SVG/PNG/HTML when possible.
 

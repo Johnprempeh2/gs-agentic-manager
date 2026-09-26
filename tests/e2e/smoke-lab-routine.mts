@@ -28,9 +28,9 @@
  *   SMOKE_BUDGET_MS=600000             hard timeout for the browser run
  *
  * Control plane where failure issues + amber notes are recorded (the REAL
- * Paperclip company — provided in every routine run's env):
- *   PAPERCLIP_API_URL, PAPERCLIP_API_KEY, PAPERCLIP_COMPANY_ID, PAPERCLIP_RUN_ID
- *   ROUTINE_ISSUE_ID=<uuid>            issue to record against (default PAPERCLIP_TASK_ID)
+ * GS Agentic Manager company — provided in every routine run's env):
+ *   GSAM_API_URL, GSAM_API_KEY, GSAM_COMPANY_ID, GSAM_RUN_ID
+ *   ROUTINE_ISSUE_ID=<uuid>            issue to record against (default GSAM_TASK_ID)
  *   SMOKE_OWNER_DEFAULT / SMOKE_OWNER_UI / SMOKE_OWNER_CTO  owner overrides
  *   SMOKE_DRY_RUN=1                    log the control-plane writes, don't perform them
  */
@@ -47,13 +47,13 @@ const ONLY = process.env.SMOKE_ONLY ?? "";
 const DRY = process.env.SMOKE_DRY_RUN === "1";
 
 const CP_BASE = (() => {
-  const b = (process.env.PAPERCLIP_API_URL ?? "").replace(/\/$/, "");
+  const b = (process.env.GSAM_API_URL ?? "").replace(/\/$/, "");
   return b.replace(/\/api$/, "");
 })();
-const CP_KEY = process.env.PAPERCLIP_API_KEY ?? "";
-const CP_COMPANY = process.env.PAPERCLIP_COMPANY_ID ?? "";
-const CP_RUN = process.env.PAPERCLIP_RUN_ID ?? "";
-const ROUTINE_ISSUE_ID = process.env.ROUTINE_ISSUE_ID ?? process.env.PAPERCLIP_TASK_ID ?? "";
+const CP_KEY = process.env.GSAM_API_KEY ?? "";
+const CP_COMPANY = process.env.GSAM_COMPANY_ID ?? "";
+const CP_RUN = process.env.GSAM_RUN_ID ?? "";
+const ROUTINE_ISSUE_ID = process.env.ROUTINE_ISSUE_ID ?? process.env.GSAM_TASK_ID ?? "";
 
 // Owning coder per plan (§5): S1/S4 governance+catalog = CodexCoder; S2 UI = ClaudeCoder;
 // escalation fallback = CTO. Steps recorded by the runner are governance/API behaviours,

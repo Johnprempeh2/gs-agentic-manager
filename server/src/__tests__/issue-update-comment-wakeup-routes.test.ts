@@ -653,8 +653,8 @@ describe("issue update comment wakeups", () => {
     const updated = makeIssue({ status: "todo", assigneeAgentId: ASSIGNEE_AGENT_ID });
     mockIssueService.getById.mockResolvedValue(existing);
     mockIssueService.update.mockResolvedValue(updated);
-    mockIssueService.addComment.mockResolvedValue({ id: "comment-reopen-slack", issueId: existing.id, companyId: existing.companyId, body: "Continue from Paperclip" });
-    const res = await request(await createApp()).post(`/api/issues/${existing.id}/comments`).send({ body: "Continue from Paperclip", reopen: true });
+    mockIssueService.addComment.mockResolvedValue({ id: "comment-reopen-slack", issueId: existing.id, companyId: existing.companyId, body: "Continue from GS Agentic Manager" });
+    const res = await request(await createApp()).post(`/api/issues/${existing.id}/comments`).send({ body: "Continue from GS Agentic Manager", reopen: true });
     expect(res.status).toBe(201);
     await vi.waitFor(() => expect(mockHeartbeatService.wakeup).toHaveBeenCalledTimes(1));
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(ASSIGNEE_AGENT_ID, expect.objectContaining({

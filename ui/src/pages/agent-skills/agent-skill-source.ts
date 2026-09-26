@@ -1,6 +1,6 @@
-import { Boxes, Folder, Link2, Paperclip, type LucideIcon } from "lucide-react";
+import { Boxes, Folder, Link2, PaperclipIcon, type LucideIcon } from "lucide-react";
 import { GithubIcon } from "@/components/icons/github-icon";
-import type { CompanySkillListItem } from "@paperclipai/shared";
+import type { CompanySkillListItem } from "@greatstone/shared";
 
 export interface AgentSkillSourceMeta {
   icon: LucideIcon;
@@ -104,7 +104,7 @@ export function buildAgentSkillSourceMeta(skill: SourceSkill): AgentSkillSourceM
   }
 
   if (skill.sourceBadge === "paperclip") {
-    return { icon: Paperclip, label: skill.sourceLabel?.trim() || "Paperclip managed" };
+    return { icon: PaperclipIcon, label: skill.sourceLabel?.trim() || "GS Agentic Manager managed" };
   }
 
   if (skill.sourceBadge === "catalog" || skill.sourceType === "catalog") {

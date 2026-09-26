@@ -1,7 +1,7 @@
 import { schemaFieldSection } from "./config-sections";
 import { useState, useEffect, useRef, useCallback } from "react";
 
-import type { AdapterConfigSchema, ConfigFieldSchema, CreateConfigValues } from "@paperclipai/adapter-utils";
+import type { AdapterConfigSchema, ConfigFieldSchema, CreateConfigValues } from "@greatstone/adapter-utils";
 
 import type { AdapterConfigFieldsProps } from "./types";
 import {
@@ -55,7 +55,7 @@ function SelectField({
   );
 }
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground";
 
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ function ComboboxField({
         <input
           ref={inputRef}
           type="text"
-          className="flex-1 rounded-l-md border border-r-0 border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 focus:z-10"
+          className="flex-1 rounded-l-md border border-r-0 border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground focus:z-10"
           value={displayValue}
           placeholder={placeholder ?? "Type or select..."}
           onChange={(e) => {

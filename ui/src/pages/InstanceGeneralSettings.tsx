@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { PatchInstanceGeneralSettings, BackupRetentionPolicy } from "@paperclipai/shared";
+import type { PatchInstanceGeneralSettings, BackupRetentionPolicy } from "@greatstone/shared";
 import {
   DAILY_RETENTION_PRESETS,
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { LogOut, SlidersHorizontal } from "lucide-react";
 import { healthApi } from "@/api/health";
 import { instanceSettingsApi } from "@/api/instanceSettings";
@@ -364,7 +364,7 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
           <div className="space-y-1.5">
             <h2 className="text-sm font-semibold">Sign out</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Sign out of this Paperclip instance. You will be redirected to the login page.
+              Sign out of this GS Agentic Manager instance. You will be redirected to the login page.
             </p>
           </div>
           <Button

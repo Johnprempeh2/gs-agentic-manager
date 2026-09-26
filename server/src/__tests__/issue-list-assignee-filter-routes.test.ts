@@ -3,7 +3,7 @@ import express from "express";
 import request from "supertest";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activityLog, agents, companies, companyMemberships, createDb, heartbeatRuns, issues, principalPermissionGrants } from "@paperclipai/db";
+import { activityLog, agents, companies, companyMemberships, createDb, heartbeatRuns, issues, principalPermissionGrants } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -105,7 +105,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -157,7 +157,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -253,7 +253,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -317,7 +317,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -382,7 +382,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -455,7 +455,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -491,7 +491,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -533,7 +533,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -580,7 +580,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -620,7 +620,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -651,7 +651,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -706,7 +706,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -767,7 +767,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });
@@ -802,7 +802,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
     await db.insert(companies).values([
       {
         id: companyId,
-        name: "Paperclip",
+        name: "GS Agentic Manager",
         issuePrefix: uniqueIssuePrefix(),
         requireBoardApprovalForNewAgents: false,
       },
@@ -951,7 +951,7 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: uniqueIssuePrefix(),
       requireBoardApprovalForNewAgents: false,
     });

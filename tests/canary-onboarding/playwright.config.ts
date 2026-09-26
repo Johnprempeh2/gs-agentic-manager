@@ -11,10 +11,10 @@ if (!canaryVersion || !/^[0-9A-Za-z.+-]+$/.test(canaryVersion)) {
 }
 
 const baseUrl =
-  process.env.PAPERCLIP_CANARY_SMOKE_BASE_URL ?? "http://127.0.0.1:3233";
+  process.env.GSAM_CANARY_SMOKE_BASE_URL ?? "http://127.0.0.1:3233";
 const parsedBaseUrl = new URL(baseUrl);
 if (parsedBaseUrl.hostname !== "127.0.0.1" || !parsedBaseUrl.port) {
-  throw new Error("PAPERCLIP_CANARY_SMOKE_BASE_URL must use 127.0.0.1 and an explicit port");
+  throw new Error("GSAM_CANARY_SMOKE_BASE_URL must use 127.0.0.1 and an explicit port");
 }
 
 const workspace = fs.mkdtempSync(
@@ -26,7 +26,7 @@ fs.mkdirSync(dataDir);
 fs.mkdirSync(npmCache);
 
 const serverLog =
-  process.env.PAPERCLIP_CANARY_SMOKE_SERVER_LOG ??
+  process.env.GSAM_CANARY_SMOKE_SERVER_LOG ??
   path.join(workspace, "canary-onboarding-server.log");
 
 function shellQuote(value: string): string {
@@ -36,7 +36,7 @@ function shellQuote(value: string): string {
 const command = [
   "npx",
   "--yes",
-  shellQuote(`paperclipai@${canaryVersion}`),
+  shellQuote(`gsam@${canaryVersion}`),
   "onboard",
   "--yes",
   "--data-dir",
@@ -66,8 +66,8 @@ export default defineConfig({
       name: "chromium",
       use: {
         browserName: "chromium",
-        ...(process.env.PAPERCLIP_PLAYWRIGHT_CHANNEL
-          ? { channel: process.env.PAPERCLIP_PLAYWRIGHT_CHANNEL }
+        ...(process.env.GSAM_PLAYWRIGHT_CHANNEL
+          ? { channel: process.env.GSAM_PLAYWRIGHT_CHANNEL }
           : {}),
       },
     },
@@ -80,8 +80,8 @@ export default defineConfig({
     env: {
       ...process.env,
       PORT: parsedBaseUrl.port,
-      PAPERCLIP_NO_BROWSER: "1",
-      PAPERCLIP_OPEN_ON_LISTEN: "false",
+      GSAM_NO_BROWSER: "1",
+      GSAM_OPEN_ON_LISTEN: "false",
       npm_config_cache: npmCache,
     },
   },

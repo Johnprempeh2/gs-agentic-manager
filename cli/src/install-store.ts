@@ -3,10 +3,10 @@ import path from "node:path";
 import { resolvePaperclipHomeDir } from "./config/home.js";
 
 export const INSTALL_MANIFEST_VERSION = 1;
-export const MANAGED_SHIM_MARKER = "paperclipai managed install shim v1";
-export const MANAGED_STORE_MARKER = "paperclipai managed install store v1\n";
-export const PATH_BLOCK_START = "# >>> paperclipai managed PATH >>>";
-export const PATH_BLOCK_END = "# <<< paperclipai managed PATH <<<";
+export const MANAGED_SHIM_MARKER = "gsam managed install shim v1";
+export const MANAGED_STORE_MARKER = "gsam managed install store v1\n";
+export const PATH_BLOCK_START = "# >>> gsam managed PATH >>>";
+export const PATH_BLOCK_END = "# <<< gsam managed PATH <<<";
 
 export type InstallSource = "npm" | "git";
 export type InstallChannel = "latest" | "canary" | "pinned";
@@ -82,7 +82,7 @@ export function resolveInstallStorePaths(options: {
     markerPath: path.join(cliRoot, ".managed-install"),
     lockPath: path.join(cliRoot, ".install.lock"),
     currentPath: path.join(cliRoot, "current"),
-    shimPath: path.join(homeDir, ".local", "bin", "paperclipai"),
+    shimPath: path.join(homeDir, ".local", "bin", "gsam"),
   };
 }
 
@@ -402,7 +402,7 @@ export function writeManagedShim(paths = resolveInstallStorePaths()): void {
   fs.mkdirSync(localDir, { recursive: true, mode: 0o755 });
   fs.mkdirSync(path.dirname(paths.shimPath), { recursive: true, mode: 0o755 });
   assertManagedShimWritable(paths);
-  const entrypoint = path.join(paths.currentPath, "node_modules", "paperclipai", "dist", "index.js");
+  const entrypoint = path.join(paths.currentPath, "node_modules", "gsam", "dist", "index.js");
   // ACP servers and package-manager shims use /usr/bin/env node. Pin their
   // runtime too, even when systemd/launchd supplies a different PATH.
   const contents = `#!/bin/sh\n# ${MANAGED_SHIM_MARKER}\nset -eu\nexport PATH=${shellQuote(path.dirname(process.execPath))}:"\${PATH:-/usr/local/bin:/usr/bin:/bin}"\nexec ${shellQuote(process.execPath)} ${shellQuote(entrypoint)} "\$@"\n`;

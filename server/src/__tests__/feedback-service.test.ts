@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { writePaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
+import { writePaperclipSkillSyncPreference } from "@greatstone/adapter-utils/server-utils";
 import {
   agents,
   companies,
@@ -20,7 +20,7 @@ import {
   issueComments,
   issueDocuments,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { feedbackService } from "../services/feedback.ts";
 import {
   getEmbeddedPostgresTestSupport,
@@ -87,7 +87,7 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `F${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -147,7 +147,7 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `R${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -158,8 +158,8 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
         companyId,
         key: "paperclipai/paperclip/paperclip",
         slug: "paperclip",
-        name: "Paperclip",
-        markdown: "# Paperclip",
+        name: "GS Agentic Manager",
+        markdown: "# GS Agentic Manager",
         sourceType: "catalog",
         sourceLocator: null,
         sourceRef: null,
@@ -291,7 +291,7 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `D${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -360,7 +360,7 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -886,7 +886,7 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
       JSON.stringify([{ content: "Verify exported traces" }]),
       "utf8",
     );
-    vi.stubEnv("PAPERCLIP_OPENCODE_STORAGE_DIR", opencodeRoot);
+    vi.stubEnv("GSAM_OPENCODE_STORAGE_DIR", opencodeRoot);
     const uploadTraceBundle = vi.fn().mockResolvedValue({ objectKey: "feedback-traces/test.json" });
     const flushingSvc = feedbackService(db, {
       shareClient: {
@@ -933,7 +933,7 @@ describeEmbeddedPostgres("feedbackService.saveIssueVote", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `H${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

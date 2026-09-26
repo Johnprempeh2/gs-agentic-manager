@@ -11,10 +11,10 @@ describe("ACPX launch environment", () => {
       OPENAI_API_KEY: "openai-secret",
       ANTHROPIC_API_KEY: "anthropic-secret",
       OPENROUTER_API_KEY: "openrouter-secret",
-      PAPERCLIP_ACPX_CODEX_AUTH_JSON_SECRET:
+      GSAM_ACPX_CODEX_AUTH_JSON_SECRET:
         '{"tokens":{"access_token":"managed-secret"}}',
-      PAPERCLIP_RUNNER_BOOTSTRAP_TICKET: "transport-secret",
-      PAPERCLIP_NATIVE_MCP_TOKEN: "bridge-secret",
+      GSAM_RUNNER_BOOTSTRAP_TICKET: "transport-secret",
+      GSAM_NATIVE_MCP_TOKEN: "bridge-secret",
       UNRELATED_SECRET: "not-visible",
     };
 
@@ -37,9 +37,9 @@ describe("ACPX launch environment", () => {
       HTTPS_PROXY: "https://proxy.example",
       OPENROUTER_API_KEY: "openrouter-secret",
     });
-    expect(codex.env).not.toHaveProperty("PAPERCLIP_NATIVE_MCP_TOKEN");
+    expect(codex.env).not.toHaveProperty("GSAM_NATIVE_MCP_TOKEN");
     expect(codex.env).not.toHaveProperty(
-      "PAPERCLIP_ACPX_CODEX_AUTH_JSON_SECRET",
+      "GSAM_ACPX_CODEX_AUTH_JSON_SECRET",
     );
     expect(Object.isFrozen(codex)).toBe(true);
     expect(Object.isFrozen(codex.env)).toBe(true);

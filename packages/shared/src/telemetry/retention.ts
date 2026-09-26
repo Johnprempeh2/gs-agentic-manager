@@ -1,7 +1,7 @@
 /**
  * Telemetry retention contract.
  *
- * Defines the retention class for each Paperclip telemetry event and the
+ * Defines the retention class for each GS Agentic Manager telemetry event and the
  * corresponding retention window in days. This is a housekeeping/cost
  * concern separate from the event schema: it is updated by data-infra
  * and does not require a schema version bump.

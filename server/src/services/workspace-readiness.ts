@@ -18,13 +18,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { and, eq, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { authUsers, companies, companyMemberships, issues } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
+import { authUsers, companies, companyMemberships, issues } from "@greatstone/db";
 import type {
   WorkspaceReadiness,
   WorkspaceReadinessState,
   WorkspaceSeedReadinessState,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   resolveWorkspaceHandoffLocalCompanyId,
   resolveWorkspaceHandoffLocalKey,
@@ -47,13 +47,13 @@ type SeedManifestSummary = {
 /**
  * Directory holding this instance's seed markers.
  *
- * `PAPERCLIP_CONFIG` is the authoritative pointer a seeded worktree is started
+ * `GSAM_CONFIG` is the authoritative pointer a seeded worktree is started
  * with; the cwd fallback covers a guest launched without it.
  */
 export function resolveWorkspaceSeedMarkerDir(env: NodeJS.ProcessEnv = process.env): string {
-  const configPath = env.PAPERCLIP_CONFIG?.trim();
+  const configPath = env.GSAM_CONFIG?.trim();
   if (configPath) return path.dirname(path.resolve(configPath));
-  return path.resolve(process.cwd(), ".paperclip");
+  return path.resolve(process.cwd(), ".gsam");
 }
 
 function readSeedManifestSummary(markerDir: string): SeedManifestSummary {

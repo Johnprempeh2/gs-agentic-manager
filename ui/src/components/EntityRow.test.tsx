@@ -16,11 +16,11 @@ describe("EntityRow", () => {
       <EntityRow
         title="Left project"
         to="/projects/left-project"
-        className="group text-foreground/55"
+        className="group text-muted-foreground"
       />,
     );
 
-    expect(markup).toContain("text-foreground/55");
+    expect(markup).toContain("text-muted-foreground");
     expect(markup).not.toContain("text-inherit");
   });
 

@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import type {
   EventSourceLike,
   SessionItemSnapshot,
-} from "@paperclipai/paperclip-runner/browser";
+} from "@greatstone/paperclip-runner/browser";
 import {
   Composer,
   ConnectionBanner,
@@ -12,8 +12,8 @@ import {
   ReplayControls,
   RequestCard,
   useRunnerConsole,
-} from "@paperclipai/paperclip-runner/react";
-import "@paperclipai/paperclip-runner/styles.css";
+} from "@greatstone/paperclip-runner/react";
+import "@greatstone/paperclip-runner/styles.css";
 import "./mini.css";
 
 const injectedFetch: typeof fetch = (input, init) => window.fetch(input, init);

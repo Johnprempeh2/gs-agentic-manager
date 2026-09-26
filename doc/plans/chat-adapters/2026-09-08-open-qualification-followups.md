@@ -922,7 +922,7 @@ Enabling this option is not evidence that the missing Slack A would be recovered
 
 GitHub D's delay is now explained more precisely by provider records: the first
 attempt was classified `failed to connect to host` (recorded code 502, empty
-response), then Paperclip's existing scheduled recovery requested the successful
+response), then GS Agentic Manager's existing scheduled recovery requested the successful
 redelivery. The roughly 60-second detection cadence accounts for most of that
 wait, not model execution. Faster failure recovery remains a performance followup
 requiring actual App API-budget/backoff qualification; do not simply multiply
@@ -1091,7 +1091,7 @@ has admitted no new runs since the cutover.
   Short replies took 13–16 seconds; 120–220-word replies took 32–60 seconds.
   Queue correctness is verified; model-response latency still needs work.
 - **GitHub:** fresh issue #5 correctly reported the private TXT unavailable
-  and supplied a working stable Paperclip task link. Uploading the exact
+  and supplied a working stable GS Agentic Manager task link. Uploading the exact
   152-byte file through the actual Board UI produced the correct fields.
   However, a passive `response_wake` triggered an unwanted continuation that
   marked CHA-45 done despite “keep open.” A durable passive Board-wait fix
@@ -1169,7 +1169,7 @@ text test. Preserve the failed guild form and historical quarantined epochs.
 Discord DM CHA-41 passed fresh new/status and true FIFO A/B/C. C began 102ms
 after B finished; all three responses updated their own single bot message.
 However, `/paperclip close` only completed the external conversation. It
-confirmed “This task is closed” while the Paperclip task remained in progress.
+confirmed “This task is closed” while the GS Agentic Manager task remained in progress.
 Generic productive-run recovery immediately restarted that task, lost its
 external-chat wait context, and began a roughly 30-second response-wake loop.
 The pause contains the loop, not fixes it. Epicurus is taking the source-bound
@@ -1271,7 +1271,7 @@ recovery records; fresh successful tasks do not establish their recovery.
 Finish production-quality Slack, GitHub, Microsoft Teams and Telegram chat,
 plus the user's explicitly added Discord connector. Test real conversations,
 files/images, interactions, races, queues, reactions, retries and the quality
-of the experience. External chat is transport; Paperclip owns tasks, runs,
+of the experience. External chat is transport; GS Agentic Manager owns tasks, runs,
 permissions and audit. Do not narrow completion to whichever tests pass.
 
 - Live stress work stays in `/Users/dotta/paperclipai/branches/chat-adapters`,
@@ -1459,7 +1459,7 @@ npm consumers. Packaging contracts pass 22/22. The earlier isolated helper
 stage at patch snapshot `1a0a77025` was not a full server install. A new stage
 at source `d5b154e1c7` freshly compiled all 17 runtime packages, applied the real
 production bundle helper, packed and installed local tarballs with npm 10.9.7,
-and verified all 21 patched files. All Paperclip sibling registry probes were
+and verified all 21 patched files. All GS Agentic Manager sibling registry probes were
 rejected; installed siblings resolve to the exact local tarballs and module
 imports remain inside the consumer. Compiled-server imports and synthetic
 Slack stream/Telegram Stop transport pass. The retained qualified runner was
@@ -1897,7 +1897,7 @@ to avoid same-agent queue contention. See permanent log for source/message IDs.
 
 GitHub generic private attachment URLs can be unavailable to the App even when
 the signed-in human can read them. Never forward browser cookies or guess file
-contents. The new deterministic fallback appends an authorized Paperclip task
+contents. The new deterministic fallback appends an authorized GS Agentic Manager task
 link; it does not make those provider files generically downloadable.
 
 Slack once took about 61.5 seconds and Telegram once 234.435 seconds before

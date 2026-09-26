@@ -11,5 +11,5 @@ export const contextualSidebarStyles = {
   sectionLabel:
     "px-2 pb-1 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground",
   sectionDescription:
-    "px-4 pb-1.5 text-(length:--text-micro) leading-snug text-muted-foreground/70",
+    "px-4 pb-1.5 text-(length:--text-micro) leading-snug text-subtle-foreground",
 } as const;

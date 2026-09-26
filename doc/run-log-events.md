@@ -2,7 +2,7 @@
 
 Run-log events write to the `heartbeat_run_events` table
 (`packages/db/src/schema/heartbeat_run_events.ts:6-20`). They are not
-Paperclip Telemetry events, and they are not OpenTelemetry exports. A run-log
+GS Agentic Manager Telemetry events, and they are not OpenTelemetry exports. A run-log
 event needs no operator endpoint.
 
 ## Native PRP Run-Log Events
@@ -32,14 +32,14 @@ tickets, reconnect leases, authentication proofs, encryption keys, and raw
 credential material are never written to the run log.
 
 These records remain run-log events. They do not create an OpenTelemetry or
-Paperclip Telemetry export, and legacy adapters do not use this writer.
+GS Agentic Manager Telemetry export, and legacy adapters do not use this writer.
 
 ## Native Restart Recovery Run-Log Event
 
-Paperclip writes a `native.recovery.transition` event for every native restart
+GS Agentic Manager writes a `native.recovery.transition` event for every native restart
 classification and for graceful restart suspension. This immutable run-log
 record lets operators reconstruct recovery decisions without exporting data to
-Paperclip Telemetry or OpenTelemetry.
+GS Agentic Manager Telemetry or OpenTelemetry.
 
 The payload contains the restart kind, recovery request id when one exists,
 runner disposition, and the controller generation and provider attempt for a
@@ -83,7 +83,7 @@ It remains in the local run log and adds no Telemetry or OpenTelemetry export.
 
 ## Sandbox Startup Run-Log Event
 
-Paperclip writes one `run.startup.step` event to the run log for each bring-up
+GS Agentic Manager writes one `run.startup.step` event to the run log for each bring-up
 step. This event is a run-log record, not a first-party telemetry event. The
 generated telemetry contract does not cover it, so this section is its canonical
 contract.
@@ -109,7 +109,7 @@ endpoint. A run with no endpoint keeps only the three run-log fields above.
 
 ## Run Phase Timing Run-Log Event
 
-Paperclip writes one `run.phase.timing` event to the run log for each
+GS Agentic Manager writes one `run.phase.timing` event to the run log for each
 run-lifecycle phase. This event is a run-log record, not a first-party telemetry
 event. The generated telemetry contract does not cover it, so this section is its
 canonical contract. The producer is `emitRunPhaseTiming` in

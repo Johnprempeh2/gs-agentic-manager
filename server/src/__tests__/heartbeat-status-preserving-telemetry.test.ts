@@ -8,7 +8,7 @@ import {
   heartbeatRuns,
   issues,
   nativeRunFinalizations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,

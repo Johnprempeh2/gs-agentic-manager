@@ -9,7 +9,7 @@ import {
   externalObjects,
   toolApplications,
   toolConnections,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { eq } from "drizzle-orm";
 import { githubConnectionEventService } from "../services/github-connection-events.js";
 import { subscribeCompanyLiveEvents } from "../services/live-events.js";
@@ -51,7 +51,7 @@ describeEmbeddedPostgres.sequential("GitHub connection event delivery", () => {
     const applicationId = randomUUID();
     const connectionId = randomUUID();
     const grantId = randomUUID();
-    await db.insert(companies).values({ id: companyId, name: "Paperclip", issuePrefix: "GHE" });
+    await db.insert(companies).values({ id: companyId, name: "GS Agentic Manager", issuePrefix: "GHE" });
     await db.insert(toolApplications).values({
       id: applicationId,
       companyId,
@@ -91,7 +91,7 @@ describeEmbeddedPostgres.sequential("GitHub connection event delivery", () => {
           repositoryCount: 3,
           repositorySelection: "selected",
           installationIds: ["101"],
-          installationOwnerLogins: ["paperclipai"],
+          installationOwnerLogins: ["gsam"],
           repositories: [{ id: "203", fullName: "paperclipai/removed", installationId: "101" }],
           webhookHealth: "pending",
         },
@@ -212,7 +212,7 @@ describeEmbeddedPostgres.sequential("GitHub connection event delivery", () => {
     const applicationId = randomUUID();
     const connectionId = randomUUID();
     const grantId = randomUUID();
-    await db.insert(companies).values({ id: companyId, name: "Paperclip", issuePrefix: "GHI" });
+    await db.insert(companies).values({ id: companyId, name: "GS Agentic Manager", issuePrefix: "GHI" });
     await db.insert(toolApplications).values({
       id: applicationId,
       companyId,
@@ -252,7 +252,7 @@ describeEmbeddedPostgres.sequential("GitHub connection event delivery", () => {
           repositoryCount: 3,
           repositorySelection: "selected",
           installationIds: ["101"],
-          installationOwnerLogins: ["paperclipai"],
+          installationOwnerLogins: ["gsam"],
           repositories: [{ id: "203", fullName: "paperclipai/removed", installationId: "101" }],
           webhookHealth: "pending",
         },

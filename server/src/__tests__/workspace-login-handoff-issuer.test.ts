@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   issueWorkspaceLoginHandoff,
   resolveWorkspaceHandoffBoardIdentity,
@@ -23,11 +23,11 @@ let previousSecret: string | undefined;
 function createWorkspaceCwd(instanceId: string | null) {
   const cwd = mkdtempSync(path.join(os.tmpdir(), "paperclip-handoff-issuer-"));
   tempDirs.push(cwd);
-  mkdirSync(path.join(cwd, ".paperclip"), { recursive: true });
+  mkdirSync(path.join(cwd, ".gsam"), { recursive: true });
   if (instanceId) {
     writeFileSync(
-      path.join(cwd, ".paperclip", ".env"),
-      `PAPERCLIP_HOME=/srv/home\nPAPERCLIP_INSTANCE_ID=${instanceId}\n`,
+      path.join(cwd, ".gsam", ".env"),
+      `GSAM_HOME=/srv/home\nGSAM_INSTANCE_ID=${instanceId}\n`,
       "utf8",
     );
   }
@@ -76,13 +76,13 @@ function readyProbe() {
 }
 
 beforeEach(() => {
-  previousSecret = process.env.PAPERCLIP_WORKSPACE_HANDOFF_SECRET;
-  process.env.PAPERCLIP_WORKSPACE_HANDOFF_SECRET = "issuer-test-root-secret";
+  previousSecret = process.env.GSAM_WORKSPACE_HANDOFF_SECRET;
+  process.env.GSAM_WORKSPACE_HANDOFF_SECRET = "issuer-test-root-secret";
 });
 
 afterEach(() => {
-  if (previousSecret === undefined) delete process.env.PAPERCLIP_WORKSPACE_HANDOFF_SECRET;
-  else process.env.PAPERCLIP_WORKSPACE_HANDOFF_SECRET = previousSecret;
+  if (previousSecret === undefined) delete process.env.GSAM_WORKSPACE_HANDOFF_SECRET;
+  else process.env.GSAM_WORKSPACE_HANDOFF_SECRET = previousSecret;
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -195,11 +195,11 @@ describe("issueWorkspaceLoginHandoff", () => {
   });
 
   it("falls back to credentials when no signing secret is configured at all", async () => {
-    delete process.env.PAPERCLIP_WORKSPACE_HANDOFF_SECRET;
+    delete process.env.GSAM_WORKSPACE_HANDOFF_SECRET;
     const previousAuthSecret = process.env.BETTER_AUTH_SECRET;
-    const previousJwtSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;
+    const previousJwtSecret = process.env.GSAM_AGENT_JWT_SECRET;
     delete process.env.BETTER_AUTH_SECRET;
-    delete process.env.PAPERCLIP_AGENT_JWT_SECRET;
+    delete process.env.GSAM_AGENT_JWT_SECRET;
     try {
       const cwd = createWorkspaceCwd(INSTANCE_ID);
       const result = await issueWorkspaceLoginHandoff({
@@ -212,7 +212,7 @@ describe("issueWorkspaceLoginHandoff", () => {
       expect(result).toMatchObject({ ok: false, failure: { reason: "handoff_not_configured" } });
     } finally {
       if (previousAuthSecret !== undefined) process.env.BETTER_AUTH_SECRET = previousAuthSecret;
-      if (previousJwtSecret !== undefined) process.env.PAPERCLIP_AGENT_JWT_SECRET = previousJwtSecret;
+      if (previousJwtSecret !== undefined) process.env.GSAM_AGENT_JWT_SECRET = previousJwtSecret;
     }
   });
 

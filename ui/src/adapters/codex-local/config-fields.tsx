@@ -15,20 +15,20 @@ import {
   CODEX_LOCAL_FAST_MODE_SUPPORTED_MODELS,
   isCodexLocalFastModeSupported,
   isCodexLocalManualModel,
-} from "@paperclipai/adapter-codex-local";
+} from "@greatstone/adapter-codex-local";
 import {
-  PAPERCLIP_RUNNER_IDLE_TIMEOUT_DEFAULT_MS,
-  PAPERCLIP_RUNNER_IDLE_TIMEOUT_MAX_MS,
-  PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES,
+  GSAM_RUNNER_IDLE_TIMEOUT_DEFAULT_MS,
+  GSAM_RUNNER_IDLE_TIMEOUT_MAX_MS,
+  GSAM_RUNNER_PERMISSION_CAPABILITIES,
   isPaperclipRunnerProvider,
   resolvePaperclipRunnerIdleTimeoutMs,
   resolvePaperclipRunnerPermissionMode,
   type PaperclipRunnerPermissionMode,
   type PaperclipRunnerProvider,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground";
 const instructionsFileHint =
   "Absolute path to a markdown file (e.g. AGENTS.md) that defines this agent's behavior. Injected into the system prompt at runtime. Note: Codex may still auto-apply repo-scoped AGENTS.md files from the workspace.";
 const defaultOpenCodeRunnerModel = "openrouter/deepseek/deepseek-v4-flash-0731";
@@ -54,7 +54,7 @@ export function CodexLocalConfigFields({
   // The execution engine picks which binary runs on the execution host, and the
   // ACP sub-fields below name host paths. The platform-managed environment owns
   // both, so the managed-sandbox-only policy hides them the same way
-  // `runnerManaged` already does for the Paperclip Runner.
+  // `runnerManaged` already does for the GS Agentic Manager Runner.
   const hideEngineChoice = runnerManaged || managedSandboxOnly === true;
   const configuredRunnerProvider = runnerManaged
     ? isCreate
@@ -67,7 +67,7 @@ export function CodexLocalConfigFields({
     ? configuredRunnerProvider
     : "codex";
   const runnerPermissionCapability =
-    PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES[runnerProvider];
+    GSAM_RUNNER_PERMISSION_CAPABILITIES[runnerProvider];
   const configuredRunnerPermissionMode =
     runnerManaged && runnerPermissionCapability.configurable
       ? isCreate
@@ -128,7 +128,7 @@ export function CodexLocalConfigFields({
           ? values!.paperclipRunnerIdleTimeoutMs
           : eff("adapterConfig", "idleTimeoutMs", config.idleTimeoutMs),
       )
-    : PAPERCLIP_RUNNER_IDLE_TIMEOUT_DEFAULT_MS;
+    : GSAM_RUNNER_IDLE_TIMEOUT_DEFAULT_MS;
   const rawEngine = runnerManaged
     ? "cli"
     : isCreate
@@ -154,7 +154,7 @@ export function CodexLocalConfigFields({
     ? "Fast mode will be passed through for this manual model. If Codex rejects it, turn the toggle off."
     : fastModeSupported
       ? "Fast mode consumes credits/tokens much faster than standard Codex runs."
-      : `Fast mode currently only works on ${supportedModelsLabel} or manual model IDs. Paperclip will ignore this toggle until the model is switched.`;
+      : `Fast mode currently only works on ${supportedModelsLabel} or manual model IDs. GS Agentic Manager will ignore this toggle until the model is switched.`;
 
   return configFieldsForSection(section, (
     <>
@@ -300,7 +300,7 @@ export function CodexLocalConfigFields({
           </Field>
           <Field
             label="Estimated session ceiling (USD)"
-            hint="Paperclip estimate; AWS does not provide a per-session currency hard stop."
+            hint="GS Agentic Manager estimate; AWS does not provide a per-session currency hard stop."
           >
             <DraftNumberInput
               value={Number(runnerSchemaValue("maxEstimatedSessionCostUsd", 1))}
@@ -373,7 +373,7 @@ export function CodexLocalConfigFields({
       {runnerManaged && runnerPermissionCapability.configurable && (runnerPermissionCapability.options.length > 1 || runnerPermissionModeUnsupported) && (
         <Field
           label="Permission mode"
-          hint={`${runnerPermissionCapability.description} The selected mode does not widen Paperclip's workspace, network, credential, or planning boundaries.`}
+          hint={`${runnerPermissionCapability.description} The selected mode does not widen GS Agentic Manager's workspace, network, credential, or planning boundaries.`}
         >
           <Select
             value={
@@ -424,7 +424,7 @@ export function CodexLocalConfigFields({
           </Select>
           {runnerPermissionModeUnsupported && runnerProvider === "codex" && (
             <p className="mt-1 text-xs text-destructive" role="alert">
-              This saved Codex mode cannot start or recover a Paperclip Runner
+              This saved Codex mode cannot start or recover a GS Agentic Manager Runner
               run. Select Automatic (isolated) to remediate it.
             </p>
           )}
@@ -459,7 +459,7 @@ export function CodexLocalConfigFields({
             <input
               type="number"
               min={1}
-              max={PAPERCLIP_RUNNER_IDLE_TIMEOUT_MAX_MS}
+              max={GSAM_RUNNER_IDLE_TIMEOUT_MAX_MS}
               className={inputClass}
               value={runnerIdleTimeoutMs}
               onChange={(event) =>
@@ -475,7 +475,7 @@ export function CodexLocalConfigFields({
             <DraftNumberInput
               value={runnerIdleTimeoutMs}
               min={1}
-              max={PAPERCLIP_RUNNER_IDLE_TIMEOUT_MAX_MS}
+              max={GSAM_RUNNER_IDLE_TIMEOUT_MAX_MS}
               onCommit={(value) =>
                 mark(
                   "adapterConfig",
@@ -573,7 +573,7 @@ export function CodexLocalConfigFields({
           {!managedSandboxOnly && (
             <Field
               label="ACP state directory"
-              hint="Optional ACP session state directory. Defaults to Paperclip-managed organization/agent scoped storage."
+              hint="Optional ACP session state directory. Defaults to GS Agentic Manager-managed organization/agent scoped storage."
             >
               <div className="flex items-center gap-2">
                 <DraftInput

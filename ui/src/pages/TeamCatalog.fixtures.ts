@@ -2,7 +2,7 @@ import type {
   CatalogTeam,
   CatalogTeamSkillPreparation,
   InstalledCatalogTeam,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 
 // ---------------------------------------------------------------------------
 // Shared Team Catalog fixtures.
@@ -61,7 +61,7 @@ export const sampleTeam: CatalogTeam = {
   trustLevel: "external_sources",
   compatibility: "compatible",
   contentHash: "sha256:deadbeefdeadbeefdeadbeefdeadbeef",
-  packageName: "@paperclipai/teams-catalog",
+  packageName: "@greatstone/teams-catalog",
   packageVersion: "0.1.0",
 };
 

@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { type Db, toolConnections, companySecretBindings, connectionGrants, companySecrets, userSecretDefinitions } from "@paperclipai/db";
-import type { ToolCredentialSecretRef } from "@paperclipai/shared";
+import { type Db, toolConnections, companySecretBindings, connectionGrants, companySecrets, userSecretDefinitions } from "@greatstone/db";
+import type { ToolCredentialSecretRef } from "@greatstone/shared";
 import { secretService } from "./secrets.js";
 function credentialRefConfigPath(ref: { name: string }): string { return ref.name.startsWith("credentials.") ? ref.name : `credentials.${ref.name}`; }
 export async function syncConnectionCredentialBindings(

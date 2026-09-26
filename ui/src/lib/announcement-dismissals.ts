@@ -1,4 +1,4 @@
-import { announcementIdSchema } from "@paperclipai/shared";
+import { announcementIdSchema } from "@greatstone/shared";
 
 const memory = new Map<string, boolean>();
 export function announcementStoragePrefix(userId: string) {

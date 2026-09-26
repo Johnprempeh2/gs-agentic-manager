@@ -7,7 +7,7 @@
  * tree so published server packages have no workspace runtime dependency.
  * Keep server imports pointed at this relative boundary.
  */
-type RunnerModule = typeof import("@paperclipai/paperclip-runner");
+type RunnerModule = typeof import("@greatstone/paperclip-runner");
 
 export type {
   PaperclipJsonValue,
@@ -55,11 +55,11 @@ export type {
   RunnerProcessLaunchSpec,
   StrictCompletionContractInput,
   TransportCloseReason,
-} from "@paperclipai/paperclip-runner";
+} from "@greatstone/paperclip-runner";
 export type DurablePrpControlPlane =
-  import("@paperclipai/paperclip-runner").DurablePrpControlPlane;
+  import("@greatstone/paperclip-runner").DurablePrpControlPlane;
 export type PaperclipSemanticDispatcher =
-  import("@paperclipai/paperclip-runner").PaperclipSemanticDispatcher;
+  import("@greatstone/paperclip-runner").PaperclipSemanticDispatcher;
 
 const sourceUrl = new URL(
   "../../../../packages/paperclip-runner/src/index.ts",
@@ -80,9 +80,9 @@ export const CAPABILITY_SEMANTIC_TOOL_CATALOG =
 export const HarnessRuntimeRequestResolutionError =
   runner.HarnessRuntimeRequestResolutionError;
 export const NATIVE_RUNTIME_ASSET_SCHEMA = runner.NATIVE_RUNTIME_ASSET_SCHEMA;
-export const PAPERCLIP_EXECUTION_PROMPT = runner.PAPERCLIP_EXECUTION_PROMPT;
-export const PAPERCLIP_EXECUTION_PROMPT_REVISION =
-  runner.PAPERCLIP_EXECUTION_PROMPT_REVISION;
+export const GSAM_EXECUTION_PROMPT = runner.GSAM_EXECUTION_PROMPT;
+export const GSAM_EXECUTION_PROMPT_REVISION =
+  runner.GSAM_EXECUTION_PROMPT_REVISION;
 export const acpxRuntimeSessionDirectoryName =
   runner.acpxRuntimeSessionDirectoryName;
 export const canonicalNativeRuntimeContextDigest =
@@ -91,8 +91,8 @@ export const createNativeSessionBackend = runner.createNativeSessionBackend;
 export const createPaperclipRunnerAuthorizedToolSet =
   runner.createPaperclipRunnerAuthorizedToolSet;
 export const createRunnerdCodexTransport: (
-  options?: import("@paperclipai/paperclip-runner").RunnerdCodexTransportOptions,
-) => import("@paperclipai/paperclip-runner").RunnerdCodexTransport =
+  options?: import("@greatstone/paperclip-runner").RunnerdCodexTransportOptions,
+) => import("@greatstone/paperclip-runner").RunnerdCodexTransport =
   runner.createRunnerdCodexTransport;
 export const defaultCapabilityRunnerdBinary =
   runner.defaultCapabilityRunnerdBinary;

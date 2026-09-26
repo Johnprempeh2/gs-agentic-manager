@@ -94,7 +94,7 @@ class StubSession implements HarnessSession {
       diagnostic: "Bearer server-only-secret",
       sandbox: {
         writableRoots: [
-          "/srv/paperclip/home/.paperclip/instances/company/codex-home/memories",
+          "/srv/paperclip/home/.gsam/instances/company/codex-home/memories",
           // The real app-server reports this one; it leaked before the
           // redactor covered every hidden directory under a home root.
           "/srv/paperclip/home/.codex/memories",

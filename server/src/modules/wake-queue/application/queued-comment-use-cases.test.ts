@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { IssueComment } from "@paperclipai/shared";
+import type { IssueComment } from "@greatstone/shared";
 import {
   createDiscardQueuedComment,
   createEditQueuedComment,

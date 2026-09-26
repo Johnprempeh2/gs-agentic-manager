@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IssueWorkProduct } from "@paperclipai/shared";
+import type { IssueWorkProduct } from "@greatstone/shared";
 import {
   formatBytes,
   formatDuration,

@@ -93,7 +93,7 @@ export function AuthPage() {
           </div>
 
           <h1 className="text-xl font-semibold">
-            {mode === "sign_in" ? "Sign in to Paperclip" : "Create your Paperclip account"}
+            {mode === "sign_in" ? "Sign in to GS Agentic Manager" : "Create your GS Agentic Manager account"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {mode === "sign_in"
@@ -121,7 +121,7 @@ export function AuthPage() {
                 <input
                   id="name"
                   name="name"
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-subtle-foreground"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   autoComplete="name"
@@ -138,7 +138,7 @@ export function AuthPage() {
               <input
                 id="email"
                 name="email"
-                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-subtle-foreground"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -155,7 +155,7 @@ export function AuthPage() {
               <input
                 id="password"
                 name="password"
-                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-subtle-foreground"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}

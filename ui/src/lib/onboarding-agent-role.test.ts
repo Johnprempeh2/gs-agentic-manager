@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_ROLE_LABELS } from "@paperclipai/shared";
+import { AGENT_ROLE_LABELS } from "@greatstone/shared";
 import { DEFAULT_AGENT_NAME, nextAgentNameForRole } from "./onboarding-agent-role";
 
 describe("nextAgentNameForRole", () => {

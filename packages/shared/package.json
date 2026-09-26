@@ -1,14 +1,14 @@
 {
-  "name": "@paperclipai/shared",
+  "name": "@greatstone/shared",
   "version": "0.3.1",
   "license": "MIT",
-  "homepage": "https://github.com/paperclipai/paperclip",
+  "homepage": "https://github.com/Johnprempeh2/GS-Clip",
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/Johnprempeh2/GS-Clip/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/Johnprempeh2/GS-Clip",
     "directory": "packages/shared"
   },
   "type": "module",

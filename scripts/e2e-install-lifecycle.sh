@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end proof of the paperclipai managed install lifecycle on a CLEAN machine.
+# End-to-end proof of the gsam managed install lifecycle on a CLEAN machine.
 #
 # Exercises the real user journey against real GitHub + real npm:
 #   bootstrap build -> install (npm latest) -> install --ref (build-from-source)
@@ -22,14 +22,14 @@ E2E_REPO="${E2E_REPO:-paperclipai/paperclip}"
 E2E_REF="${E2E_REF:-master}"
 E2E_SERVICE_TIMEOUT_SECS="${E2E_SERVICE_TIMEOUT_SECS:-300}"
 
-# A clean environment: no inherited Paperclip or build-mode state.
-for var in $(env | grep -o '^PAPERCLIP_[A-Z_]*' || true); do unset "$var"; done
+# A clean environment: no inherited GS Agentic Manager or build-mode state.
+for var in $(env | grep -o '^GSAM_[A-Z_]*' || true); do unset "$var"; done
 unset NODE_ENV npm_config_prefix 2>/dev/null || true
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 export CI="${CI:-1}"
 
 SHIM="$HOME/.local/bin/paperclipai"
-STORE="$HOME/.paperclip/cli"
+STORE="$HOME/.gsam/cli"
 RESULTS=()
 FAILED=0
 
@@ -51,7 +51,7 @@ echo "repo=$E2E_REPO ref=$E2E_REF home=$HOME"
 
 note "1. Bootstrap: build the new CLI from the GitHub tarball of $E2E_REF"
 # Nothing published on npm has the install/update/service commands yet, so the
-# bootstrap simulates what `npx paperclipai@<channel> install` will run post-release:
+# bootstrap simulates what `npx gsam@<channel> install` will run post-release:
 # the same CLI code, built from the exact ref under test.
 BOOT="$HOME/e2e-bootstrap"
 mkdir -p "$BOOT"
@@ -68,7 +68,7 @@ if corepack pnpm install --frozen-lockfile > "$HOME/e2e-bootstrap-install.log" 2
 else
   tail -40 "$HOME/e2e-bootstrap-install.log"; fail_ "1b bootstrap pnpm install"; exit 1
 fi
-if PAPERCLIP_README_ASSET_REF="$E2E_REF" \
+if GSAM_README_ASSET_REF="$E2E_REF" \
     bash scripts/build-npm.sh --skip-checks --skip-typecheck > "$HOME/e2e-bootstrap-build.log" 2>&1; then
   pass "1c bootstrap build-npm.sh"
 else
@@ -101,7 +101,7 @@ if [ "${E2E_SKIP_NPM:-0}" != "1" ]; then
   esac
   [ -f "$STORE/install.json" ] && pass "2d install.json manifest present" || fail_ "2d install.json manifest present"
   NPM_VERSION="$("$SHIM" --version 2>/dev/null || true)"
-  [ -n "$NPM_VERSION" ] && pass "2e shim runs: paperclipai --version = $NPM_VERSION" || fail_ "2e shim runs paperclipai --version"
+  [ -n "$NPM_VERSION" ] && pass "2e shim runs: gsam --version = $NPM_VERSION" || fail_ "2e shim runs gsam --version"
 else
   skip_ "2 install (npm latest)" "E2E_SKIP_NPM=1"
 fi
@@ -215,7 +215,7 @@ else
 fi
 
 note "10. uninstall preserves user data"
-mkdir -p "$HOME/.paperclip" && touch "$HOME/.paperclip/e2e-user-data-marker"
+mkdir -p "$HOME/.gsam" && touch "$HOME/.gsam/e2e-user-data-marker"
 if shim uninstall; then
   pass "10a uninstall exits 0"
 else
@@ -223,7 +223,7 @@ else
 fi
 [ ! -e "$SHIM" ] && pass "10b shim removed" || fail_ "10b shim removed"
 [ ! -d "$STORE" ] && pass "10c managed store removed" || fail_ "10c managed store removed"
-[ -f "$HOME/.paperclip/e2e-user-data-marker" ] && pass "10d user data under ~/.paperclip preserved" || fail_ "10d user data preserved"
+[ -f "$HOME/.gsam/e2e-user-data-marker" ] && pass "10d user data under ~/.gsam preserved" || fail_ "10d user data preserved"
 
 note "RESULTS ($E2E_REPO@$E2E_REF on $(uname -sm))"
 printf '%s\n' "${RESULTS[@]}"

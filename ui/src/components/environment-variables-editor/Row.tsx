@@ -8,7 +8,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
+import type { CompanySecret, UserSecretDefinition } from "@greatstone/shared";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -32,10 +32,10 @@ import {
 } from "./model";
 
 const nameInputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground focus-visible:ring-2 focus-visible:ring-ring/40";
 
 const valueTextInputClass =
-  "min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm font-mono outline-none placeholder:text-muted-foreground/40";
+  "min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm font-mono outline-none placeholder:text-subtle-foreground";
 
 type SecretPopoverState = { mode: "create" | "store"; name: string; value: string } | null;
 export interface EnvironmentVariableDirtyFields {

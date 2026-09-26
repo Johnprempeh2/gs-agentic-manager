@@ -1,4 +1,4 @@
-import type { Agent, Issue, IssueWorkMode } from "@paperclipai/shared";
+import type { Agent, Issue, IssueWorkMode } from "@greatstone/shared";
 /** Ephemeral view model; never persisted until first send or upload. */
 export function agentChatDraft(
   agent: Agent,

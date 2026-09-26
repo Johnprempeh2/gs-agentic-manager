@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { HttpError } from "../errors.js";
 import { HTTP_LOG_REDACT_PATHS } from "../middleware/http-log-redaction.js";
 import { errorHandler } from "../middleware/error-handler.js";
-import { testAdapterEnvironmentSchema } from "@paperclipai/shared";
+import { testAdapterEnvironmentSchema } from "@greatstone/shared";
 import { createHttpLogger } from "../middleware/logger.js";
 
 describe("HTTP logger redaction", () => {

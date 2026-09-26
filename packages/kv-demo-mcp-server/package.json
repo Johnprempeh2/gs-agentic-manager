@@ -1,14 +1,14 @@
 {
-  "name": "@paperclipai/kv-demo-mcp-server",
+  "name": "@greatstone/kv-demo-mcp-server",
   "version": "0.1.0",
   "license": "MIT",
-  "homepage": "https://github.com/paperclipai/paperclip",
+  "homepage": "https://github.com/Johnprempeh2/GS-Clip",
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/Johnprempeh2/GS-Clip/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/Johnprempeh2/GS-Clip",
     "directory": "packages/kv-demo-mcp-server"
   },
   "type": "module",

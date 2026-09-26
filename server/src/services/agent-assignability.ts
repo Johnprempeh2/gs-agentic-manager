@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { agents } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
+import { agents } from "@greatstone/db";
 import {
   getAgentWorkEligibility,
   type AgentEligibilityAgent,
   type AgentOrgChainHealth,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
 type AgentAssignmentKind = "work" | "routine";

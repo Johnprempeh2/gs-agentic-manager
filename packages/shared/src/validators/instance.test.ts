@@ -27,7 +27,7 @@ describe("instance experimental settings validators", () => {
     expect(settings.enableServerInfoDebugView).toBe(false);
   });
 
-  it("defaults Paperclip developer mode off and accepts explicit patches", () => {
+  it("defaults GS Agentic Manager developer mode off and accepts explicit patches", () => {
     expect(instanceExperimentalSettingsSchema.parse({}).enablePaperclipDeveloperMode).toBe(false);
     expect(
       patchInstanceExperimentalSettingsSchema.parse({ enablePaperclipDeveloperMode: true }),

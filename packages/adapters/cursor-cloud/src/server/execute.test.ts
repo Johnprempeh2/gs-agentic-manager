@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext } from "@greatstone/adapter-utils";
 import { execute } from "./execute.js";
 
 type MockRunOptions = {
@@ -163,7 +163,7 @@ describe("cursor_cloud execute", () => {
     expect(result.exitCode).toBe(0);
     const prompt = String(sdkAgent.send.mock.calls[0]?.[0]);
     expect(prompt).toContain(directive);
-    expect(prompt).toContain(custom ? "Do the work for" : "Continue your Paperclip conversation");
+    expect(prompt).toContain(custom ? "Do the work for" : "Continue your GS Agentic Manager conversation");
     expect(prompt).not.toContain("Execution contract:");
     expect(prompt).not.toContain("Create child issues");
   });
@@ -173,18 +173,18 @@ describe("cursor_cloud execute", () => {
     createMock.mockResolvedValue(sdkAgent);
     const ctx = createContext();
     const description = "start " + "context ".repeat(25_000) + " end";
-    ctx.config.env = { CURSOR_API_KEY: "cursor-secret", PAPERCLIP_WAKE_PAYLOAD_JSON: description };
+    ctx.config.env = { CURSOR_API_KEY: "cursor-secret", GSAM_WAKE_PAYLOAD_JSON: description };
     ctx.context.paperclipWake = {
       reason: "issue_assigned",
       issue: { id: "issue-1", description },
     };
     const result = await execute(ctx);
     expect(result.exitCode).toBe(0);
-    expect(createMock.mock.calls[0]?.[0]?.cloud?.envVars).not.toHaveProperty("PAPERCLIP_WAKE_PAYLOAD_JSON");
+    expect(createMock.mock.calls[0]?.[0]?.cloud?.envVars).not.toHaveProperty("GSAM_WAKE_PAYLOAD_JSON");
     expect(sdkAgent.send.mock.calls[0]?.[0]).toContain(description);
   });
 
-  it("creates a fresh Cursor agent and injects Paperclip env without CURSOR_API_KEY", async () => {
+  it("creates a fresh Cursor agent and injects GS Agentic Manager env without CURSOR_API_KEY", async () => {
     const run = createMockRun({
       agentId: "agent-fresh",
       streamMessages: [
@@ -207,7 +207,7 @@ describe("cursor_cloud execute", () => {
     expect(getRunMock).not.toHaveBeenCalled();
     expect(createMock.mock.calls[0]?.[0]).toMatchObject({
       apiKey: "cursor-secret",
-      name: "Paperclip Cursor Cloud Agent",
+      name: "GS Agentic Manager Cursor Cloud Agent",
       model: { id: "gpt-5.4" },
       cloud: {
         env: { type: "cloud" },
@@ -216,14 +216,14 @@ describe("cursor_cloud execute", () => {
     });
     expect(createMock.mock.calls[0]?.[0]?.cloud?.envVars).toMatchObject({
       EXTRA_FLAG: "1",
-      PAPERCLIP_RUN_ID: "run-heartbeat-1",
-      PAPERCLIP_TASK_ID: "issue-1",
-      PAPERCLIP_WAKE_REASON: "issue_commented",
-      PAPERCLIP_API_KEY: "paperclip-run-jwt",
+      GSAM_RUN_ID: "run-heartbeat-1",
+      GSAM_TASK_ID: "issue-1",
+      GSAM_WAKE_REASON: "issue_commented",
+      GSAM_API_KEY: "paperclip-run-jwt",
     });
     // When a run JWT is present the callback URL is retained so the worker can
-    // authenticate its Paperclip API calls.
-    expect(createMock.mock.calls[0]?.[0]?.cloud?.envVars).toHaveProperty("PAPERCLIP_API_URL");
+    // authenticate its GS Agentic Manager API calls.
+    expect(createMock.mock.calls[0]?.[0]?.cloud?.envVars).toHaveProperty("GSAM_API_URL");
     expect(createMock.mock.calls[0]?.[0]?.cloud?.envVars).not.toHaveProperty("CURSOR_API_KEY");
 
     expect(result).toMatchObject({
@@ -288,7 +288,7 @@ describe("cursor_cloud execute", () => {
     expect(onDispatch.mock.invocationCallOrder[0]).toBeLessThan(createMock.mock.invocationCallOrder[0]!);
   });
 
-  it("omits the Paperclip API callback when no run JWT is issued (remote worker cannot call home)", async () => {
+  it("omits the GS Agentic Manager API callback when no run JWT is issued (remote worker cannot call home)", async () => {
     const run = createMockRun({ agentId: "agent-no-jwt" });
     const sdkAgent = createMockSdkAgent({ agentId: "agent-no-jwt", sendRun: run });
     createMock.mockResolvedValue(sdkAgent);
@@ -300,14 +300,14 @@ describe("cursor_cloud execute", () => {
     await execute(ctx);
 
     const envVars = (createMock.mock.calls[0]?.[0]?.cloud?.envVars ?? {}) as Record<string, string>;
-    expect(envVars).not.toHaveProperty("PAPERCLIP_API_KEY");
-    expect(envVars).not.toHaveProperty("PAPERCLIP_API_URL");
-    expect(envVars).not.toHaveProperty("PAPERCLIP_API_BRIDGE_MODE");
-    // Informational Paperclip env (non-credential) still flows through.
+    expect(envVars).not.toHaveProperty("GSAM_API_KEY");
+    expect(envVars).not.toHaveProperty("GSAM_API_URL");
+    expect(envVars).not.toHaveProperty("GSAM_API_BRIDGE_MODE");
+    // Informational GS Agentic Manager env (non-credential) still flows through.
     expect(envVars).toMatchObject({
-      PAPERCLIP_RUN_ID: "run-heartbeat-1",
-      PAPERCLIP_AGENT_ID: "agent-1",
-      PAPERCLIP_COMPANY_ID: "company-1",
+      GSAM_RUN_ID: "run-heartbeat-1",
+      GSAM_AGENT_ID: "agent-1",
+      GSAM_COMPANY_ID: "company-1",
     });
   });
 
@@ -453,7 +453,7 @@ describe("cursor_cloud execute", () => {
     expect(sdkAgent.send).toHaveBeenCalledTimes(1);
   });
 
-  it("maps non-finished Cursor results to failing Paperclip runs", async () => {
+  it("maps non-finished Cursor results to failing GS Agentic Manager runs", async () => {
     const cancelledRun = createMockRun({
       id: "run-cancelled",
       agentId: "agent-cancelled",

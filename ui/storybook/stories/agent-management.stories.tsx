@@ -9,7 +9,7 @@ import {
   type CompanySecret,
   type EnvBinding,
   type Environment,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { ActiveAgentsPanel } from "@/components/ActiveAgentsPanel";
 import { AgentConfigForm, type CreateConfigValues } from "@/components/AgentConfigForm";
 import { defaultCreateValues } from "@/components/agent-config-defaults";
@@ -108,7 +108,7 @@ const agentManagementAgents: Agent[] = [
       extraArgs: ["--full-auto"],
       env: {
         OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
-        PAPERCLIP_TRACE: { type: "plain", value: "storybook" },
+        GSAM_TRACE: { type: "plain", value: "storybook" },
       } satisfies Record<string, EnvBinding>,
       timeoutSec: 7200,
       graceSec: 20,
@@ -494,7 +494,7 @@ function AgentConfigFormStory() {
     extraArgs: "--full-auto, --search",
     envBindings: {
       OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
-      PAPERCLIP_TRACE: { type: "plain", value: "storybook" },
+      GSAM_TRACE: { type: "plain", value: "storybook" },
     },
     runtimeServicesJson: JSON.stringify(
       [
@@ -663,7 +663,7 @@ function ConfigPrimitivesStory() {
     runtimeServices: [
       { name: "api", command: "pnpm dev:once", healthUrl: "http://localhost:3100/api/health" },
     ],
-    env: { PAPERCLIP_BIND: "lan" },
+    env: { GSAM_BIND: "lan" },
   }, null, 2));
 
   return (
@@ -825,7 +825,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Agent management stories cover detail, configuration, icon, action, live-run, and config primitive states using extended Paperclip fixtures.",
+          "Agent management stories cover detail, configuration, icon, action, live-run, and config primitive states using extended GS Agentic Manager fixtures.",
       },
     },
   },
@@ -871,7 +871,7 @@ function ForcedKubernetesFixtures({
   queryClient.setQueryData(queryKeys.secrets.list(COMPANY_ID), storybookSecrets);
   queryClient.setQueryData(queryKeys.adapters.all, adapterFixtures);
   // The instance-level execution policy that forces all agent execution onto
-  // the managed Kubernetes sandbox (PAPERCLIP_EXECUTION_MODE=kubernetes).
+  // the managed Kubernetes sandbox (GSAM_EXECUTION_MODE=kubernetes).
   queryClient.setQueryData(queryKeys.instance.generalSettings, {
     censorUsernameInLogs: false,
     executionMode: "kubernetes",

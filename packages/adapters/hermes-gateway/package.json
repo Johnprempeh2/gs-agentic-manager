@@ -1,17 +1,17 @@
 {
-  "name": "@paperclipai/adapter-hermes-gateway",
+  "name": "@greatstone/adapter-hermes-gateway",
   "version": "0.1.0",
-  "description": "Deprecated compatibility shim for Hermes Gateway; use @paperclipai/hermes-paperclip-adapter/gateway",
+  "description": "Deprecated compatibility shim for Hermes Gateway; use @greatstone/hermes-paperclip-adapter/gateway",
   "type": "module",
   "license": "MIT",
-  "author": "Paperclip",
+  "author": "GS Agentic Manager",
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/Johnprempeh2/GS-Clip",
     "directory": "packages/adapters/hermes-gateway"
   },
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/Johnprempeh2/GS-Clip/issues"
   },
   "homepage": "https://github.com/paperclipai/paperclip/tree/master/packages/adapters/hermes#readme",
   "keywords": [
@@ -68,7 +68,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@paperclipai/hermes-paperclip-adapter": "workspace:*"
+    "@greatstone/hermes-paperclip-adapter": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

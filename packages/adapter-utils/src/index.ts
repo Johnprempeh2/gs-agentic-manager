@@ -113,10 +113,10 @@ export type {
   LoginRunnerRaceResult,
 } from "./login-runner-lifecycle.js";
 export {
-  PAPERCLIP_RUNNER_IDLE_TIMEOUT_DEFAULT_MS,
-  PAPERCLIP_RUNNER_IDLE_TIMEOUT_MAX_MS,
-  PAPERCLIP_RUNNER_DEFAULT_MODELS,
-  PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES,
+  GSAM_RUNNER_IDLE_TIMEOUT_DEFAULT_MS,
+  GSAM_RUNNER_IDLE_TIMEOUT_MAX_MS,
+  GSAM_RUNNER_DEFAULT_MODELS,
+  GSAM_RUNNER_PERMISSION_CAPABILITIES,
   isPaperclipRunnerProvider,
   resolvePaperclipRunnerIdleTimeoutMs,
   resolvePaperclipRunnerModel,
@@ -125,8 +125,8 @@ export {
   resolvePaperclipRunnerPermissionMode,
 } from "./paperclip-runner-permissions.js";
 export {
-  PAPERCLIP_RUNNER_INGRESS_PORT,
-  PAPERCLIP_RUNNER_CONNECT_PATH_PREFIX,
+  GSAM_RUNNER_INGRESS_PORT,
+  GSAM_RUNNER_CONNECT_PATH_PREFIX,
   PaperclipRunnerTransportError,
   buildDirectRunnerConnectUrl,
   resolvePaperclipRunnerTransport,

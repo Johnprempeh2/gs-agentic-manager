@@ -2,12 +2,12 @@ import { COGNEE_STDIO_TEMPLATE, cogneeCloudUrl, callCogneeCloud } from "./cognee
 import { HttpError } from "../errors.js";
 import { claimSlackRateLimitRetry } from "./connectors/slack-retry.js";
 import { resolveSlackTaskAuthority } from "./connectors/slack-authority.js";
-import { SLACK_TOOLS } from "@paperclipai/shared";
+import { SLACK_TOOLS } from "@greatstone/shared";
 import { slackToolsForSession } from "./connectors/slack-catalog.js";
 import { executeSlackTool } from "./connectors/slack.js";
 import { githubGuestBotConnectionForSession, githubBotToolsForSession } from "./chat-github-tools.js";
 import { githubChatReviewService } from "./chat-github-reviews.js";
-import { runIdentityContexts } from "@paperclipai/db";
+import { runIdentityContexts } from "@greatstone/db";
 import { captureRunIdentity } from "./run-identity.js";
 import { emitConnectionInvoked } from "./connector-telemetry.js";
 import { resolveManagedGitHubIdentitySelection } from "./git-credentials.js";
@@ -28,7 +28,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   agents,
   approvals,
@@ -62,8 +62,8 @@ import {
   toolProfileEntries,
   toolProfiles,
   toolStdioCommandTemplates,
-} from "@paperclipai/db";
-import type { ToolRunContext } from "@paperclipai/plugin-sdk";
+} from "@greatstone/db";
+import type { ToolRunContext } from "@greatstone/plugin-sdk";
 import type {
   CreateToolMcpGateway,
   CreateToolMcpGatewayToken,
@@ -84,13 +84,13 @@ import type {
   ToolMcpGatewayTokenCreated,
   ToolMcpGatewayWithTokens,
   UpdateToolMcpGateway,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   isGitHubConnectorProfileId,
   isGoogleWorkspaceConnectorProfileId,
   type GitHubConnectorProfileId,
   type GoogleWorkspaceConnectorProfileId,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import type {
   AgentToolDescriptor,
   PluginToolDispatcher,
@@ -133,7 +133,7 @@ import {
   type ToolRuntimeSlotView,
 } from "./tool-runtime-supervisor.js";
 import { recordToolRuntimeAuditWriteFailure } from "./tool-runtime-metrics.js";
-import { isRetiredComposioConnection, RETIRED_COMPOSIO_MESSAGE } from "@paperclipai/shared";
+import { isRetiredComposioConnection, RETIRED_COMPOSIO_MESSAGE } from "@greatstone/shared";
 import {
   createPaperclipCloudConnector,
   isPaperclipCloudConnectorStrategy,
@@ -545,41 +545,41 @@ function mcpGatewayProtocolLimits(
   const envDefaults: McpGatewayProtocolLimitOptions = {
     authFailures: {
       windowMs: positiveInt(
-        process.env.PAPERCLIP_MCP_GATEWAY_AUTH_FAILURE_WINDOW_MS,
+        process.env.GSAM_MCP_GATEWAY_AUTH_FAILURE_WINDOW_MS,
         DEFAULT_MCP_GATEWAY_PROTOCOL_LIMITS.authFailures.windowMs,
       ),
       max: positiveInt(
-        process.env.PAPERCLIP_MCP_GATEWAY_AUTH_FAILURE_LIMIT,
+        process.env.GSAM_MCP_GATEWAY_AUTH_FAILURE_LIMIT,
         DEFAULT_MCP_GATEWAY_PROTOCOL_LIMITS.authFailures.max,
       ),
     },
     gatewayRequests: {
       windowMs: positiveInt(
-        process.env.PAPERCLIP_MCP_GATEWAY_REQUEST_WINDOW_MS,
+        process.env.GSAM_MCP_GATEWAY_REQUEST_WINDOW_MS,
         DEFAULT_MCP_GATEWAY_PROTOCOL_LIMITS.gatewayRequests.windowMs,
       ),
       max: positiveInt(
-        process.env.PAPERCLIP_MCP_GATEWAY_REQUEST_LIMIT,
+        process.env.GSAM_MCP_GATEWAY_REQUEST_LIMIT,
         DEFAULT_MCP_GATEWAY_PROTOCOL_LIMITS.gatewayRequests.max,
       ),
     },
     tokenRequests: {
       windowMs: positiveInt(
-        process.env.PAPERCLIP_MCP_GATEWAY_TOKEN_REQUEST_WINDOW_MS,
+        process.env.GSAM_MCP_GATEWAY_TOKEN_REQUEST_WINDOW_MS,
         DEFAULT_MCP_GATEWAY_PROTOCOL_LIMITS.tokenRequests.windowMs,
       ),
       max: positiveInt(
-        process.env.PAPERCLIP_MCP_GATEWAY_TOKEN_REQUEST_LIMIT,
+        process.env.GSAM_MCP_GATEWAY_TOKEN_REQUEST_LIMIT,
         DEFAULT_MCP_GATEWAY_PROTOCOL_LIMITS.tokenRequests.max,
       ),
     },
     sessionSetup: {
       windowMs: positiveInt(
-        process.env.PAPERCLIP_MCP_GATEWAY_SESSION_SETUP_WINDOW_MS,
+        process.env.GSAM_MCP_GATEWAY_SESSION_SETUP_WINDOW_MS,
         DEFAULT_MCP_GATEWAY_PROTOCOL_LIMITS.sessionSetup.windowMs,
       ),
       max: positiveInt(
-        process.env.PAPERCLIP_MCP_GATEWAY_SESSION_SETUP_LIMIT,
+        process.env.GSAM_MCP_GATEWAY_SESSION_SETUP_LIMIT,
         DEFAULT_MCP_GATEWAY_PROTOCOL_LIMITS.sessionSetup.max,
       ),
     },
@@ -926,9 +926,9 @@ const BUILTIN_TOOLS: ToolGatewayDescriptor[] = [
   },
   {
     name: "paperclip-self:list_my_issues",
-    displayName: "List my Paperclip issues",
+    displayName: "List my GS Agentic Manager issues",
     description:
-      "Paperclip self-MCP read fixture that lists the authenticated agent's current issues.",
+      "GS Agentic Manager self-MCP read fixture that lists the authenticated agent's current issues.",
     parametersSchema: {
       type: "object",
       properties: { limit: { type: "number" } },
@@ -942,7 +942,7 @@ const BUILTIN_TOOLS: ToolGatewayDescriptor[] = [
     name: "paperclip-self:get_issue_context",
     displayName: "Get issue context",
     description:
-      "Paperclip self-MCP read fixture that returns scoped issue context and plan document metadata.",
+      "GS Agentic Manager self-MCP read fixture that returns scoped issue context and plan document metadata.",
     parametersSchema: {
       type: "object",
       properties: { issueId: { type: "string" } },
@@ -986,7 +986,7 @@ const VIRTUAL_SEARCH_TOOLS: ToolGatewayDescriptor = {
   name: "search_tools",
   displayName: "Search available tools",
   description:
-    "Search the tools available through this Paperclip gateway without loading every target tool into the tool list.",
+    "Search the tools available through this GS Agentic Manager gateway without loading every target tool into the tool list.",
   parametersSchema: {
     type: "object",
     properties: {
@@ -1004,7 +1004,7 @@ const VIRTUAL_RUN_TOOL: ToolGatewayDescriptor = {
   name: "run_tool",
   displayName: "Run a selected tool",
   description:
-    "Run a target tool by name after Paperclip applies the target tool's profile, policy, approval, and rate-limit checks.",
+    "Run a target tool by name after GS Agentic Manager applies the target tool's profile, policy, approval, and rate-limit checks.",
   parametersSchema: {
     type: "object",
     properties: {
@@ -3007,7 +3007,7 @@ export function createToolGatewayService(
       if (!session.agentId) {
         throw new ToolGatewayHttpError(
           403,
-          "Paperclip self tools require an agent-scoped gateway session",
+          "GS Agentic Manager self tools require an agent-scoped gateway session",
           "agent_context_required",
         );
       }
@@ -3040,7 +3040,7 @@ export function createToolGatewayService(
       if (!session.agentId) {
         throw new ToolGatewayHttpError(
           403,
-          "Paperclip self tools require an agent-scoped gateway session",
+          "GS Agentic Manager self tools require an agent-scoped gateway session",
           "agent_context_required",
         );
       }
@@ -3688,7 +3688,7 @@ export function createToolGatewayService(
     )
       return grant;
     if (oauth.strategy === "paperclip_id_connector") {
-      // Paperclip ID used different endpoints, signing metadata, envelope
+      // GS Agentic Manager ID used different endpoints, signing metadata, envelope
       // purposes, and a different Google client. Its refresh token cannot be
       // exchanged through Paperclip Cloud. Let an unexpired access token finish
       // its useful life, then require an explicit managed-connector enrollment
@@ -4290,7 +4290,7 @@ export function createToolGatewayService(
       detailsMarkdown:
         grantKind === "organization"
           ? "Vercel Connect reports that the shared organization identity needs authorization."
-          : "This run needs your personal authorization. Paperclip will not use another user's identity.",
+          : "This run needs your personal authorization. GS Agentic Manager will not use another user's identity.",
       target: {
         type: "custom" as const,
         key: `connection:${connection.uid}:user:${userId}`,
@@ -5749,7 +5749,7 @@ export function createToolGatewayService(
         status: "awaiting_approval",
         errorCode: "elicitation_required",
         errorMessage:
-          "Remote MCP tool requested elicitation; Paperclip created an issue interaction for the response.",
+          "Remote MCP tool requested elicitation; GS Agentic Manager created an issue interaction for the response.",
         updatedAt: now,
       })
       .where(eq(toolInvocations.id, input.invocationId));
@@ -6384,7 +6384,7 @@ export function createToolGatewayService(
             },
           },
         },
-        notes: ["Use the full Paperclip origin before the endpoint path."],
+        notes: ["Use the full GS Agentic Manager origin before the endpoint path."],
       },
       {
         client: "claude_desktop",
@@ -6444,7 +6444,7 @@ export function createToolGatewayService(
             },
           },
         },
-        notes: ["Use the full Paperclip origin before the endpoint path."],
+        notes: ["Use the full GS Agentic Manager origin before the endpoint path."],
       },
     ];
   }

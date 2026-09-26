@@ -2,7 +2,7 @@
 
 import { act as reactAct, type ComponentProps, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { CatalogSkill, CompanySkillDetail, CompanySkillListItem, CompanySkillVersion, FolderListResult } from "@paperclipai/shared";
+import type { CatalogSkill, CompanySkillDetail, CompanySkillListItem, CompanySkillVersion, FolderListResult } from "@greatstone/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DiscoveryGrid,
@@ -394,7 +394,7 @@ describe("DiscoveryGrid IA presentation", () => {
       catalogRef: null,
       name: "Installed Skill",
       slug: "installed",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       version: null,
       tagline: null,
       description: null,
@@ -420,7 +420,7 @@ describe("DiscoveryGrid IA presentation", () => {
       slug: "available",
       installed: false,
       sourceBadge: "catalog" as const,
-      sourceLabel: "Paperclip catalog",
+      sourceLabel: "GS Agentic Manager catalog",
     };
     const node = await renderDiscoveryGrid({
       tab: "discover",
@@ -431,7 +431,7 @@ describe("DiscoveryGrid IA presentation", () => {
     expect(node.textContent).toContain("Not enabled for any agents");
     expect(node.textContent).toContain("Available to install");
     expect(node.textContent).toContain("Local workspace");
-    expect(node.textContent).toContain("Paperclip catalog");
+    expect(node.textContent).toContain("GS Agentic Manager catalog");
   });
 
   it("uses the create callback from the New menu and empty state", async () => {
@@ -536,7 +536,7 @@ describe("DiscoveryGrid IA presentation", () => {
       catalogRef: null,
       name: "Demo Skill",
       slug: "demo-skill",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       version: null,
       tagline: null,
       description: null,
@@ -576,7 +576,7 @@ describe("DiscoveryGrid IA presentation", () => {
       catalogRef: null,
       name: "Bundled Skill",
       slug: "bundled-skill",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       version: null,
       tagline: null,
       description: null,
@@ -653,7 +653,7 @@ describe("skills discovery card reconciliation", () => {
       slug: "review",
       updatedAt: new Date("2026-08-30T00:00:00Z"),
       folderId: null,
-      authorName: "Paperclip",
+      authorName: "GS Agentic Manager",
       packageVersion: "2.0.0",
       sourceRef: null,
       tagline: null,
@@ -667,7 +667,7 @@ describe("skills discovery card reconciliation", () => {
       catalogKind: "optional",
       forkedFromSkillId: null,
       sourceBadge: "catalog",
-      sourceLabel: "Paperclip",
+      sourceLabel: "GS Agentic Manager",
     } as unknown as CompanySkillListItem;
     const olderDuplicate = {
       ...installed,
@@ -683,7 +683,7 @@ describe("skills discovery card reconciliation", () => {
       kind: "optional",
       category: "quality",
       description: "Catalog copy",
-      packageName: "Paperclip",
+      packageName: "GS Agentic Manager",
       packageVersion: "2.0.0",
       tags: [],
     } as unknown as CatalogSkill;

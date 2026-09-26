@@ -9,7 +9,7 @@ import {
   createDb,
   heartbeatRunEvents,
   heartbeatRuns,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -74,7 +74,7 @@ describeEmbeddedPostgres("agent service clearError", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -186,7 +186,7 @@ describeEmbeddedPostgres("agent service clearError", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -217,7 +217,7 @@ describeEmbeddedPostgres("agent service clearError", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });

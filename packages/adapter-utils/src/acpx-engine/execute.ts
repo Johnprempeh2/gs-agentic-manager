@@ -1,4 +1,5 @@
 import { cancellableSandboxStartup } from "./startup-cancellation.js";
+import { withLegacyEnvAliases } from "@greatstone/shared/legacy-env";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import os from "node:os";
@@ -12,7 +13,7 @@ import type {
   AdapterExecutionContext,
   AdapterExecutionResult,
   UsageSummary,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import {
   adapterExecutionTargetSessionIdentity,
   describeAdapterExecutionTarget,
@@ -35,7 +36,7 @@ import {
   type PreparedAdapterExecutionTargetRuntime,
   type ReferencedSourceIgnoreResolution,
   type SandboxAdditionalSource,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 import { captureLocalProcess, capturedProcessExited, killCapturedLocalProcess } from "./local-process-control.js";
 import type { DuplexLossReason } from "../duplex-observability.js";
 import { DUPLEX_CHANNEL_LOST_ERROR_CODE } from "../bridge-transport-contract.js";
@@ -45,8 +46,8 @@ import {
   describeWorkspaceRestoreFailure,
 } from "../workspace-restore-merge.js";
 import {
-  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
-  DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE,
   applyPaperclipWorkspaceEnv,
   asNumber,
   asString,
@@ -73,8 +74,8 @@ import {
   rewriteWorkspaceCwdEnvVarsForExecution,
   shapePaperclipWorkspaceEnvForExecution,
   type PaperclipSkillEntry,
-} from "@paperclipai/adapter-utils/server-utils";
-import { shellQuote } from "@paperclipai/adapter-utils/ssh";
+} from "@greatstone/adapter-utils/server-utils";
+import { shellQuote } from "@greatstone/adapter-utils/ssh";
 import {
   createAcpRuntime,
   createAgentRegistry,
@@ -156,7 +157,7 @@ import {
 } from "./startup-timing.js";
 
 const defaultModuleDir = path.dirname(fileURLToPath(import.meta.url));
-const PAPERCLIP_MANAGED_CODEX_SKILLS_MANIFEST = ".paperclip-managed-skills.json";
+const GSAM_MANAGED_CODEX_SKILLS_MANIFEST = ".paperclip-managed-skills.json";
 const BENIGN_NES_CLOSE_STDERR = /method: ['"]nes\/close['"].*-32601/;
 
 function routeChildStderr(state: ChildStderrState, chunk: string) {
@@ -261,7 +262,7 @@ export interface AcpxEngineBillingIdentity {
  * credential/home helpers (`copyBackCodexAuth`, `stageCodexHomeForSync`,
  * `prepareClaudeConfigSeed`, the Gemini skills stager, …) live in the adapter
  * packages, and the shared engine — which lives *inside*
- * `@paperclipai/adapter-utils`, a dependency of those packages — cannot import
+ * `@greatstone/adapter-utils`, a dependency of those packages — cannot import
  * them without a circular dependency. So the engine exposes this seam and each
  * adapter supplies it, reusing the exact same vetted helpers (no duplication of
  * the security-critical copy-back path).
@@ -547,7 +548,7 @@ export function buildSessionKey(identity: SessionKeyIdentity, fingerprint: strin
   return `paperclip:${identity.companyId}:${identity.agentId}:${identity.taskKey}:${fingerprint}`;
 }
 
-// ACPX runs inside the long-lived Paperclip server process. A local child needs
+// ACPX runs inside the long-lived GS Agentic Manager server process. A local child needs
 // a small amount of host context (PATH, locale, certificate/proxy settings, and
 // provider authentication), but it must not inherit the server's complete
 // environment. A runner-backed remote sandbox inherits no ambient host context
@@ -683,8 +684,10 @@ export function finalizeLaunchEnvironment(
   for (const contribution of contributions) {
     Object.assign(baseEnv, contribution.env);
   }
+  // Both GSAM_* and legacy names: ACP providers and the upstream runtime
+  // images may still read the old ones (see @greatstone/shared/legacy-env).
   const env = Object.freeze(
-    resolveRuntimeEnv(baseEnv, options.acpxAgent, options),
+    withLegacyEnvAliases(resolveRuntimeEnv(baseEnv, options.acpxAgent, options)),
   );
   return { env } as unknown as LaunchEnvironment;
 }
@@ -793,8 +796,8 @@ export async function referencedSourceContentSignature(
 }
 
 function defaultPaperclipInstanceDir(): string {
-  const home = process.env.PAPERCLIP_HOME?.trim() || path.join(os.homedir(), ".paperclip");
-  const instanceId = process.env.PAPERCLIP_INSTANCE_ID?.trim() || "default";
+  const home = process.env.GSAM_HOME?.trim() || path.join(os.homedir(), ".gsam");
+  const instanceId = process.env.GSAM_INSTANCE_ID?.trim() || "default";
   return resolvePaperclipInstanceRootForAdapter({
     homeDir: home,
     instanceId,
@@ -1020,7 +1023,7 @@ async function prepareManagedCodexHome(input: {
 
   await onLog(
     "stdout",
-    `[paperclip] Using Paperclip-managed ACPX Codex home "${targetHome}" (seeded from "${sourceHome}").\n`,
+    `[paperclip] Using GS Agentic Manager-managed ACPX Codex home "${targetHome}" (seeded from "${sourceHome}").\n`,
   );
   return targetHome;
 }
@@ -1162,7 +1165,7 @@ async function prepareClaudeSkillRuntime(input: {
   const selectedNames = materializedNames.sort();
   const promptInstructions = selectedNames.length > 0
     ? [
-        "Paperclip has materialized selected runtime skills for this ACPX Claude session.",
+        "GS Agentic Manager has materialized selected runtime skills for this ACPX Claude session.",
         `Skill root: ${skillsHome}`,
         `Selected skills: ${selectedNames.join(", ")}`,
         "When a task calls for one of these skills, read its SKILL.md from that root and follow it.",
@@ -1179,14 +1182,14 @@ async function prepareClaudeSkillRuntime(input: {
     },
     promptInstructions,
     commandNotes: selectedNames.length > 0
-      ? [`Materialized ${selectedNames.length} Paperclip skill(s) for ACPX Claude at ${skillsHome}.`]
+      ? [`Materialized ${selectedNames.length} GS Agentic Manager skill(s) for ACPX Claude at ${skillsHome}.`]
       : [],
     bundleDir: selectedNames.length > 0 ? skillsHome : null,
   };
 }
 
 async function readManagedCodexSkillsManifest(skillsHome: string): Promise<Set<string>> {
-  const manifestPath = path.join(skillsHome, PAPERCLIP_MANAGED_CODEX_SKILLS_MANIFEST);
+  const manifestPath = path.join(skillsHome, GSAM_MANAGED_CODEX_SKILLS_MANIFEST);
   try {
     const raw = JSON.parse(await fs.readFile(manifestPath, "utf8")) as unknown;
     const parsed = parseObject(raw);
@@ -1202,7 +1205,7 @@ async function readManagedCodexSkillsManifest(skillsHome: string): Promise<Set<s
 async function writeManagedCodexSkillsManifest(skillsHome: string, skillNames: Iterable<string>): Promise<void> {
   const managedSkillNames = Array.from(new Set(skillNames)).sort();
   await fs.writeFile(
-    path.join(skillsHome, PAPERCLIP_MANAGED_CODEX_SKILLS_MANIFEST),
+    path.join(skillsHome, GSAM_MANAGED_CODEX_SKILLS_MANIFEST),
     `${JSON.stringify({ version: 1, managedSkillNames }, null, 2)}\n`,
     "utf8",
   );
@@ -1542,7 +1545,7 @@ function uniqueSorted(values: Array<string | null | undefined>): string[] {
 // `.claude/settings.local.json` we override the user's potentially-restrictive
 // `~/.claude/settings.json` (e.g. `defaultMode: "dontAsk"`, which silently
 // denies every non-allowlisted tool and never reaches `canUseTool`), and we
-// widen the SDK's Read sandbox to include the Paperclip state dirs the agent
+// widen the SDK's Read sandbox to include the GS Agentic Manager state dirs the agent
 // needs to talk to its own control plane.
 async function writePaperclipClaudeSettings(input: {
   cwd: string;
@@ -1832,7 +1835,7 @@ async function buildRuntime(input: {
       contentSignature: await referencedSourceContentSignature(entry.localPath, ignoreResolution),
     })),
   );
-  // Referenced-project workspace hints exposed to the agent through PAPERCLIP_WORKSPACES_JSON. The
+  // Referenced-project workspace hints exposed to the agent through GSAM_WORKSPACES_JSON. The
   // list joins the anchor project's alternative workspaces with the referenced (mentioned) projects.
   // On the confined sandbox lane the run repoints each referenced hint at its staged directory after
   // staging below. Empty unless run prep resolved referenced projects or alternative workspaces.
@@ -1912,7 +1915,7 @@ async function buildRuntime(input: {
   await fs.mkdir(stateDir, { recursive: true });
 
   const envConfig = parseObject(config.env);
-  const env: Record<string, string> = { ...buildPaperclipEnv(agent), PAPERCLIP_RUN_ID: runId };
+  const env: Record<string, string> = { ...buildPaperclipEnv(agent), GSAM_RUN_ID: runId };
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim()) ||
     (typeof context.issueId === "string" && context.issueId.trim()) ||
@@ -1928,13 +1931,13 @@ async function buildRuntime(input: {
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
   const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
-  if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
-  if (issueWorkMode) env.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
-  if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
-  if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
-  if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
-  if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
-  if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (wakeTaskId) env.GSAM_TASK_ID = wakeTaskId;
+  if (issueWorkMode) env.GSAM_ISSUE_WORK_MODE = issueWorkMode;
+  if (wakeReason) env.GSAM_WAKE_REASON = wakeReason;
+  if (wakeCommentId) env.GSAM_WAKE_COMMENT_ID = wakeCommentId;
+  if (approvalId) env.GSAM_APPROVAL_ID = approvalId;
+  if (approvalStatus) env.GSAM_APPROVAL_STATUS = approvalStatus;
+  if (linkedIssueIds.length > 0) env.GSAM_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   applyPaperclipWorkspaceEnv(env, {
     workspaceCwd: shapedWorkspaceEnv.workspaceCwd,
     workspaceSource,
@@ -1956,23 +1959,23 @@ async function buildRuntime(input: {
   // forward to the spawned agent process. Captured so a stable hash of it can be
   // folded into the session fingerprint below — a change here must invalidate a
   // warm/resumable session so the next launch picks up the latest env. Only
-  // user/adapter-configured env flows through this loop; per-wake PAPERCLIP_*
-  // runtime vars (PAPERCLIP_RUN_ID, wake/approval ids, ...) were assigned to
+  // user/adapter-configured env flows through this loop; per-wake GSAM_*
+  // runtime vars (GSAM_RUN_ID, wake/approval ids, ...) were assigned to
   // `env` above and are never present in shapedEnvConfig, so they inherently
   // stay out of the hash and don't reset the session every heartbeat.
   const resolvedAdapterEnv: Record<string, string> = {};
   const scratch = parseObject(context.paperclipScratch);
   const scratchKeys = scratch.type === "heartbeat_run" && typeof scratch.dir === "string"
-    ? new Set(["PAPERCLIP_RUN_SCRATCH_DIR", "PAPERCLIP_TASK_SCRATCH_DIR", "PAPERCLIP_SCRATCH_DIR", "PAPERCLIP_TMPDIR",
+    ? new Set(["GSAM_RUN_SCRATCH_DIR", "GSAM_TASK_SCRATCH_DIR", "GSAM_SCRATCH_DIR", "GSAM_TMPDIR",
       ...(Array.isArray(scratch.tempKeysApplied) ? scratch.tempKeysApplied.filter((key): key is string =>
         typeof key === "string" && ["TMPDIR", "TEMP", "TMP"].includes(key)) : [])])
     : new Set<string>();
   for (const [key, value] of Object.entries(shapedEnvConfig)) {
     if (typeof value !== "string") continue;
-    // Runtime PAPERCLIP_* always wins over config: skip a PAPERCLIP_* key that
-    // Paperclip has already assigned this run. PAPERCLIP_API_KEY is never
+    // Runtime GSAM_* always wins over config: skip a GSAM_* key that
+    // GS Agentic Manager has already assigned this run. GSAM_API_KEY is never
     // accepted from config — the harness-minted run token is the only source.
-    // A PAPERCLIP_* key Paperclip did NOT set is stable per-run config, so it
+    // A GSAM_* key GS Agentic Manager did NOT set is stable per-run config, so it
     // applies and feeds the fingerprint hash below.
     if (isForbiddenConfigEnvKey(key)) continue;
     if (isPaperclipRuntimeEnvKey(key) && key in env) continue;
@@ -1982,7 +1985,7 @@ async function buildRuntime(input: {
     // are absent from tempKeysApplied and keep their compatibility protection.
     if (!scratchKeys.has(key) || value !== scratch.dir) resolvedAdapterEnv[key] = value;
   }
-  if (authToken) env.PAPERCLIP_API_KEY = authToken;
+  if (authToken) env.GSAM_API_KEY = authToken;
   // For the claude agent, set model via ANTHROPIC_MODEL at startup rather than
   // via session/set_config_option — the ACP server's set_config_option handler
   // validates the value against its internal available-models list and rejects
@@ -2036,7 +2039,7 @@ async function buildRuntime(input: {
       companyId: agent.companyId,
     });
     skillCommandNotes.push(
-      `Wrote Paperclip-managed Claude settings to ${paperclipClaudeSettings.filePath} (defaultMode=${paperclipClaudeSettings.defaultMode}${
+      `Wrote GS Agentic Manager-managed Claude settings to ${paperclipClaudeSettings.filePath} (defaultMode=${paperclipClaudeSettings.defaultMode}${
         paperclipClaudeSettings.overrodeDontAsk ? "; overrode user dontAsk" : ""
       }, +${paperclipClaudeSettings.additionalDirectories.length} read root(s), +${paperclipClaudeSettings.allow.length} allow rule(s)).`,
     );
@@ -2082,7 +2085,7 @@ async function buildRuntime(input: {
     );
     skillsIdentity = { mode: "custom_unsupported", desiredSkillNames: desired };
     if (desired.length > 0) {
-      skillCommandNotes.push("Selected Paperclip skills are tracked only; ACPX custom commands do not expose a runtime skill contract yet.");
+      skillCommandNotes.push("Selected GS Agentic Manager skills are tracked only; ACPX custom commands do not expose a runtime skill contract yet.");
     }
   }
 
@@ -2178,8 +2181,8 @@ async function buildRuntime(input: {
     mcpServers: mcpIdentity,
     secretManifestHash: shortHash(secretManifest),
     // Fold the resolved adapter env (all applied user-configured values —
-    // plain, secret_ref, and stable PAPERCLIP_* config such as an explicit
-    // PAPERCLIP_API_KEY) into the fingerprint so a change to any forwarded value
+    // plain, secret_ref, and stable GSAM_* config such as an explicit
+    // GSAM_API_KEY) into the fingerprint so a change to any forwarded value
     // invalidates a warm handle / resumable session and forces a fresh launch
     // that sources the latest env. secretManifestHash alone misses plain-value
     // edits and same-version secret rotations. Per-wake runtime vars never enter
@@ -2324,7 +2327,7 @@ async function buildRuntime(input: {
           stagedProjectDirs,
         }).workspaceHints;
         if (shapedHints.length > 0) {
-          env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(shapedHints);
+          env.GSAM_WORKSPACES_JSON = JSON.stringify(shapedHints);
         }
       },
       onReuseLog: () =>
@@ -2339,7 +2342,7 @@ async function buildRuntime(input: {
           runtimeRootDir,
           adapterKey: input.engine.adapterType,
           timeoutSec,
-          hostApiToken: env.PAPERCLIP_API_KEY,
+          hostApiToken: env.GSAM_API_KEY,
           enableSandboxDuplexBridge: adapterExecutionTargetEnablesSandboxDuplexBridge(remoteTarget),
           duplexObservabilityRecorder: adapterExecutionTargetDuplexObservabilityRecorder(remoteTarget),
           onLog: input.ctx.onLog,
@@ -2905,30 +2908,30 @@ function guardEnsureSession(params: {
 
 function renderPaperclipEnvNote(env: Record<string, string>): string {
   const paperclipKeys = Object.keys(env)
-    .filter((key) => key.startsWith("PAPERCLIP_"))
+    .filter((key) => key.startsWith("GSAM_"))
     .sort();
   if (paperclipKeys.length === 0) return "";
   return [
-    "Paperclip runtime note:",
-    `The following PAPERCLIP_* environment variables are available in this run: ${paperclipKeys.join(", ")}`,
+    "GS Agentic Manager runtime note:",
+    `The following GSAM_* environment variables are available in this run: ${paperclipKeys.join(", ")}`,
     "Do not assume these variables are missing without checking your shell environment.",
   ].join("\n");
 }
 
 function renderApiAccessNote(env: Record<string, string>): string {
-  if (!env.PAPERCLIP_API_URL || !env.PAPERCLIP_API_KEY) return "";
+  if (!env.GSAM_API_URL || !env.GSAM_API_KEY) return "";
   const lines = [
-    "Paperclip API access note:",
-    "Use terminal commands with curl to make Paperclip API requests.",
+    "GS Agentic Manager API access note:",
+    "Use terminal commands with curl to make GS Agentic Manager API requests.",
     "Normalize the base URL before adding API paths:",
-    `  PAPERCLIP_API_BASE="\${PAPERCLIP_API_URL%/}"; PAPERCLIP_API_BASE="\${PAPERCLIP_API_BASE%/api}"`,
+    `  GSAM_API_BASE="\${GSAM_API_URL%/}"; GSAM_API_BASE="\${GSAM_API_BASE%/api}"`,
     "GET example:",
-    `  curl -s -H "Authorization: Bearer $PAPERCLIP_API_KEY" "$PAPERCLIP_API_BASE/api/agents/me"`,
+    `  curl -s -H "Authorization: Bearer $GSAM_API_KEY" "$GSAM_API_BASE/api/agents/me"`,
   ];
-  if (env.PAPERCLIP_TASK_ID) {
+  if (env.GSAM_TASK_ID) {
     lines.push(
       "Scoped issue comment example:",
-      `  curl -s -X POST -H "Authorization: Bearer $PAPERCLIP_API_KEY" -H "Content-Type: application/json" -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" -d '{"body":"Status update from agent."}' "$PAPERCLIP_API_BASE/api/issues/$PAPERCLIP_TASK_ID/comments"`,
+      `  curl -s -X POST -H "Authorization: Bearer $GSAM_API_KEY" -H "Content-Type: application/json" -H "X-Paperclip-Run-Id: $GSAM_RUN_ID" -d '{"body":"Status update from agent."}' "$GSAM_API_BASE/api/issues/$GSAM_TASK_ID/comments"`,
     );
   } else {
     lines.push("Use a real issue id from the current context before making issue write requests.");
@@ -2947,8 +2950,8 @@ async function buildPrompt(ctx: AdapterExecutionContext, resumedSession: boolean
   const promptTemplate = hasCustomPromptTemplate
     ? configuredPromptTemplate
     : context.conversationMode === true
-      ? DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE
-      : DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE;
+      ? DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE
+      : DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE;
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
   const instructionsDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
   let instructionsPrefix = "";
@@ -3038,7 +3041,7 @@ async function emitAcpxLog(ctx: AdapterExecutionContext, payload: Record<string,
 }
 
 /**
- * Build the short run summary that Paperclip may auto-post as an issue comment
+ * Build the short run summary that GS Agentic Manager may auto-post as an issue comment
  * when the agent leaves no comment of its own.
  *
  * Prefer the last non-empty *output* segment after a tool call. Intermediate
@@ -4245,7 +4248,7 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
           // benefit from doubling the log volume.
           verbose: prepared.acpxAgent === "claude",
           // The engine passes a complete, sanitized launch environment. ACPX
-          // must not merge the Paperclip server's ambient environment back in
+          // must not merge the GS Agentic Manager server's ambient environment back in
           // when it spawns the provider child.
           inheritProcessEnv: false,
           onAgentStderr: prepared.childStderrLogPath
@@ -4710,7 +4713,7 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
             command: prepared.agentCommand ?? prepared.acpxAgent,
             cwd: prepared.cwd,
             commandNotes: [
-              `ACPX runtime embedded in Paperclip with ${prepared.mode} session mode.`,
+              `ACPX runtime embedded in GS Agentic Manager with ${prepared.mode} session mode.`,
               `Effective ACPX permission mode: ${prepared.permissionMode}.`,
               ...(prepared.requestedModel
                 ? [

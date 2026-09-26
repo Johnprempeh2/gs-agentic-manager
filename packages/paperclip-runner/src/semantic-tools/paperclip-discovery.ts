@@ -1,4 +1,4 @@
-import { PAPERCLIP_SEMANTIC_ACTION_CATALOG } from "../catalog/semantic-action-catalog.js";
+import { GSAM_SEMANTIC_ACTION_CATALOG } from "../catalog/semantic-action-catalog.js";
 import type {
   PaperclipSemanticActionDescriptor,
   PaperclipSemanticActionId,
@@ -122,7 +122,7 @@ function authorizedBoundDescriptors(input: {
   readonly boundOperationIds: ReadonlySet<PaperclipSemanticActionId>;
   readonly placement?: PaperclipSemanticActionDescriptor["placement"];
 }): PaperclipSemanticActionDescriptor[] {
-  return PAPERCLIP_SEMANTIC_ACTION_CATALOG.filter(
+  return GSAM_SEMANTIC_ACTION_CATALOG.filter(
     (descriptor) =>
       input.boundOperationIds.has(descriptor.operationId) &&
       (input.placement === undefined ||

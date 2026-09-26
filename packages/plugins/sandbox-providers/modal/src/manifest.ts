@@ -1,4 +1,4 @@
-import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
+import type { PaperclipPluginManifestV1 } from "@greatstone/plugin-sdk";
 
 const PLUGIN_ID = "paperclip.modal-sandbox-provider";
 const PLUGIN_VERSION = "0.1.1";
@@ -9,8 +9,8 @@ const manifest: PaperclipPluginManifestV1 = {
   version: PLUGIN_VERSION,
   displayName: "Modal Sandbox Provider",
   description:
-    "First-party sandbox provider plugin that provisions Modal sandboxes as Paperclip execution environments.",
-  author: "Paperclip",
+    "First-party sandbox provider plugin that provisions Modal sandboxes as GS Agentic Manager execution environments.",
+  author: "GS Agentic Manager",
   categories: ["automation"],
   capabilities: ["environment.drivers.register"],
   entrypoints: {
@@ -43,7 +43,7 @@ const manifest: PaperclipPluginManifestV1 = {
             type: "string",
             format: "secret-ref",
             description:
-              "Modal token ID. Paste a token or an existing Paperclip secret reference; saved environments store pasted values as company secrets. Required.",
+              "Modal token ID. Paste a token or an existing GS Agentic Manager secret reference; saved environments store pasted values as company secrets. Required.",
           },
           tokenSecret: {
             type: "string",

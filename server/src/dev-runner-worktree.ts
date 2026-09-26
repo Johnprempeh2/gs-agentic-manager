@@ -54,11 +54,11 @@ export function isLinkedGitWorktreeCheckout(rootDir: string): boolean {
 }
 
 export function resolveWorktreeEnvFilePath(rootDir: string): string {
-  return path.resolve(rootDir, ".paperclip", ".env");
+  return path.resolve(rootDir, ".gsam", ".env");
 }
 
 export function isWorktreeSeedPending(rootDir: string): boolean {
-  const markerDir = path.resolve(rootDir, ".paperclip");
+  const markerDir = path.resolve(rootDir, ".gsam");
   const manifestPath = path.resolve(markerDir, "seed-manifest.json");
   if (existsSync(manifestPath)) {
     return !hasVerifiedWorktreeSeedManifest(manifestPath);
@@ -78,7 +78,7 @@ function resolveHomeAwarePath(value: string): string {
 }
 
 function resolveDefaultWorktreeHome(env: NodeJS.ProcessEnv): string {
-  return path.resolve(expandHomePrefix(env.PAPERCLIP_WORKTREES_DIR?.trim() || "~/.paperclip-worktrees"));
+  return path.resolve(expandHomePrefix(env.GSAM_WORKTREES_DIR?.trim() || "~/.paperclip-worktrees"));
 }
 
 function repairStaleMigratedWorktreeEnvEntries(
@@ -86,8 +86,8 @@ function repairStaleMigratedWorktreeEnvEntries(
   entries: Record<string, string>,
   env: NodeJS.ProcessEnv,
 ): Record<string, string> {
-  const localConfigPath = path.resolve(rootDir, ".paperclip", "config.json");
-  const configuredPath = entries.PAPERCLIP_CONFIG?.trim();
+  const localConfigPath = path.resolve(rootDir, ".gsam", "config.json");
+  const configuredPath = entries.GSAM_CONFIG?.trim();
   if (!configuredPath) return entries;
 
   const resolvedConfiguredPath = resolveHomeAwarePath(configuredPath);
@@ -100,9 +100,9 @@ function repairStaleMigratedWorktreeEnvEntries(
   const homeDir = resolveDefaultWorktreeHome(env);
   return {
     ...entries,
-    PAPERCLIP_HOME: homeDir,
-    PAPERCLIP_CONFIG: localConfigPath,
-    PAPERCLIP_CONTEXT: path.resolve(homeDir, "context.json"),
+    GSAM_HOME: homeDir,
+    GSAM_CONFIG: localConfigPath,
+    GSAM_CONTEXT: path.resolve(homeDir, "context.json"),
   };
 }
 

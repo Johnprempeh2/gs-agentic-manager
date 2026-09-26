@@ -533,7 +533,7 @@ async function runSmoke({ config, chromium }) {
   const connectionName = `PostHog live self-test ${startedAt.toISOString()}`;
   const outputDirectory = process.env.POSTHOG_EVIDENCE_DIR
     ? path.resolve(process.env.POSTHOG_EVIDENCE_DIR)
-    : path.join(process.env.PAPERCLIP_RUN_SCRATCH_DIR || process.cwd(), `posthog-live-${runKey}`);
+    : path.join(process.env.GSAM_RUN_SCRATCH_DIR || process.cwd(), `posthog-live-${runKey}`);
   await mkdir(outputDirectory, { recursive: true });
 
   const summary = {
@@ -887,7 +887,7 @@ async function runSmoke({ config, chromium }) {
     };
 
     activeCheckpoint = "E.create-proof-issue";
-    const parentIssueId = process.env.POSTHOG_PROOF_PARENT_ISSUE_ID || process.env.PAPERCLIP_TASK_ID;
+    const parentIssueId = process.env.POSTHOG_PROOF_PARENT_ISSUE_ID || process.env.GSAM_TASK_ID;
     if (!parentIssueId) fail("E.create-proof-issue", "parent_issue_id_missing");
     const child = await apiJson(
       context.request,
@@ -899,7 +899,7 @@ async function runSmoke({ config, chromium }) {
         description: [
           "Invoke exactly one installed PostHog action: the read-only upstream `project-get` tool, with an empty `{}` input.",
           `Verify the returned project ID is exactly ${config.projectId} and make no PostHog mutations.`,
-          "Then post exactly one JSON object with keys `projectId`, `projectName`, and `invocationId` (the Paperclip invocation ID), and mark this issue done.",
+          "Then post exactly one JSON object with keys `projectId`, `projectName`, and `invocationId` (the GS Agentic Manager invocation ID), and mark this issue done.",
           "Do not report tokens, cookies, authorization data, request headers, raw tool payloads, or any other fields.",
         ].join("\n\n"),
         status: "todo",
@@ -908,7 +908,7 @@ async function runSmoke({ config, chromium }) {
         assigneeAgentId: agent.id,
         acceptanceCriteria: [
           `The installed PostHog project-get action returns project ${config.projectId}.`,
-          "The comment contains only sanitized project ID/name and Paperclip invocation ID.",
+          "The comment contains only sanitized project ID/name and GS Agentic Manager invocation ID.",
           "No mutation is attempted.",
         ],
       },

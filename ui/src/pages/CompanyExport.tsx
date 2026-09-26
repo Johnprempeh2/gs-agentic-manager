@@ -7,7 +7,7 @@ import type {
   CompanyPortabilityExportResult,
   CompanyPortabilityManifest,
   Project,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { useNavigate, useLocation } from "@/lib/router";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -487,13 +487,13 @@ function generateReadmeFromSelection(
   lines.push("## Getting Started");
   lines.push("");
   lines.push("```bash");
-  lines.push("npx paperclipai company import this-github-url-or-folder");
+  lines.push("npx gsam company import this-github-url-or-folder");
   lines.push("```");
   lines.push("");
-  lines.push("See [Paperclip](https://paperclip.ing) for more information.");
+  lines.push("See [GS Agentic Manager](https://paperclip.ing) for more information.");
   lines.push("");
   lines.push("---");
-  lines.push(`Exported from [Paperclip](https://paperclip.ing) on ${new Date().toISOString().split("T")[0]}`);
+  lines.push(`Exported from [GS Agentic Manager](https://paperclip.ing) on ${new Date().toISOString().split("T")[0]}`);
   lines.push("");
 
   return lines.join("\n");

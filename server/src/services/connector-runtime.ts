@@ -1,17 +1,17 @@
-import { SLACK_TOOLS } from "@paperclipai/shared";
+import { SLACK_TOOLS } from "@greatstone/shared";
 import { slackAssignedResource, executeGovernedSlackTool } from "./connectors/slack.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import type { Db } from "@paperclipai/db";
-import type { AgentSkillSnapshot } from "@paperclipai/shared";
+import type { Db } from "@greatstone/db";
+import type { AgentSkillSnapshot } from "@greatstone/shared";
 import {
   resolvePaperclipSkillsDir,
   readPaperclipSkillSyncPreference,
   writePaperclipSkillSyncPreference,
   type PaperclipSkillEntry,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 import { forbidden } from "../errors.js";
 import { emailChannelService } from "./email-channels.js";
 import {

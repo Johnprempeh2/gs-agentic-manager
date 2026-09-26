@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
-import type { Db } from "@paperclipai/db";
-import { agents, companies, connectionGrants, issueThreadInteractions, toolConnectionInstalls } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
+import { agents, companies, connectionGrants, issueThreadInteractions, toolConnectionInstalls } from "@greatstone/db";
 import { and, eq, or } from "drizzle-orm";
 import {
   APP_STORE_DEFINITIONS,
@@ -51,7 +51,7 @@ import {
   updateToolPolicySchema,
   updateToolProfileEntrySchema,
   updateToolProfileWithEntriesSchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { getActorInfo, assertBoard, assertCompanyAccess, assertInstanceAdmin, getAccessibleResource, hasCompanyAccess } from "./authz.js";
 import { badRequest, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
@@ -188,7 +188,7 @@ export function connectionIntentOAuthOutcomeHtml(input: {
     }
   })();
   const targetOrigin = JSON.stringify(openerOrigin ?? "");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Connection authorization</title></head><body><p>Returning to Paperclip…</p><script>const message=${message};const targetOrigin=${targetOrigin}||window.location.origin;if(window.opener&&window.opener!==window){window.opener.postMessage(message,targetOrigin);window.close();}else{window.location.replace(${fallback});}</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Connection authorization</title></head><body><p>Returning to GS Agentic Manager…</p><script>const message=${message};const targetOrigin=${targetOrigin}||window.location.origin;if(window.opener&&window.opener!==window){window.opener.postMessage(message,targetOrigin);window.close();}else{window.location.replace(${fallback});}</script></body></html>`;
 }
 
 function normalizeCloudConnectorEnrollmentReturnTo(returnTo?: string | null): string | null {
@@ -214,7 +214,7 @@ export function cloudConnectorEnrollmentOutcomeHtml(issuePrefix: string, returnT
   const fallback = JSON.stringify(fallbackPath).replaceAll("<", "\\u003c");
   // This document is served only after server-verified enrollment. The parent
   // independently re-reads enrollment status; browser messages grant no access.
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Paperclip connected</title></head><body><p>Paperclip is connected. Return to your task to finish connecting the app.</p><script>if(window.opener&&window.opener!==window){window.close();}else{const link=document.createElement("a");link.href=${fallback};link.textContent=${JSON.stringify(issueId ? "Return to task" : "Continue setup")};document.body.append(link);}</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>GS Agentic Manager connected</title></head><body><p>GS Agentic Manager is connected. Return to your task to finish connecting the app.</p><script>if(window.opener&&window.opener!==window){window.close();}else{const link=document.createElement("a");link.href=${fallback};link.textContent=${JSON.stringify(issueId ? "Return to task" : "Continue setup")};document.body.append(link);}</script></body></html>`;
 }
 
 export function cloudConnectorEnrollmentReturnPath(issuePrefix: string, returnTo?: string | null): string {
@@ -307,12 +307,12 @@ export function toolAccessRoutes(
     const runtimeOrigin = runtimeCanonicalOrigin();
     if (runtimeOrigin) return runtimeOrigin;
     const raw = (
-      process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL?.trim()
+      process.env.GSAM_AUTH_PUBLIC_BASE_URL?.trim()
       || process.env.BETTER_AUTH_URL?.trim()
       || process.env.BETTER_AUTH_BASE_URL?.trim()
       || options.authPublicBaseUrl?.trim()
-      || process.env.PAPERCLIP_PUBLIC_URL?.trim()
-      || process.env.PAPERCLIP_MANAGED_RUNTIME_PUBLIC_URL?.trim()
+      || process.env.GSAM_PUBLIC_URL?.trim()
+      || process.env.GSAM_MANAGED_RUNTIME_PUBLIC_URL?.trim()
     );
     if (!raw) return null;
     try {
@@ -416,7 +416,7 @@ export function toolAccessRoutes(
       ?? requestLoopbackBaseUrl(req);
     if (!baseUrl) {
       throw unprocessable(
-        "This Paperclip needs a browser-reachable HTTPS address (or loopback HTTP) before browser sign-in can start.",
+        "This GS Agentic Manager needs a browser-reachable HTTPS address (or loopback HTTP) before browser sign-in can start.",
         { code: "oauth_redirect_origin_unsupported" },
       );
     }
@@ -827,8 +827,8 @@ function connectorEnrollmentPrincipal(req: Request): string {
           reason: vercelConnect.enabled
             ? vercelConnect.configured
               ? null
-              : "Vercel Connect needs workload OIDC or PAPERCLIP_VERCEL_CONNECT_ACCESS_TOKEN."
-            : "Vercel Connect setup is disabled on this Paperclip instance.",
+              : "Vercel Connect needs workload OIDC or GSAM_VERCEL_CONNECT_ACCESS_TOKEN."
+            : "Vercel Connect setup is disabled on this GS Agentic Manager instance.",
         },
       },
       apps: APP_STORE_DEFINITIONS.filter((app) => (enableMemoryConnectors || !isMemoryConnectorId(app.slug))).map((app) =>
@@ -846,13 +846,13 @@ function connectorEnrollmentPrincipal(req: Request): string {
   });
 
   /**
-   * Paperclip's Client ID Metadata Document (PAP-17087).
+   * GS Agentic Manager's Client ID Metadata Document (PAP-17087).
    *
-   * The document's own URL is the `client_id` Paperclip presents to an
+   * The document's own URL is the `client_id` GS Agentic Manager presents to an
    * authorization server that supports CIMD, so this endpoint has to be publicly
    * readable — an authorization server fetches it server-to-server with no
-   * Paperclip session. It contains only this deployment's callback and the
-   * grant/response/auth methods Paperclip uses: no company, connection or secret
+   * GS Agentic Manager session. It contains only this deployment's callback and the
+   * grant/response/auth methods GS Agentic Manager uses: no company, connection or secret
    * data of any kind.
    */
   router.get(OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH.replace(/^\/api/, ""), (_req, res) => {
@@ -1312,7 +1312,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
     const code = typeof req.query.code === "string" ? req.query.code : null;
     const error = typeof req.query.error === "string" ? req.query.error : null;
     // `error_description` / `error_uri` are read from neither the query nor the
-    // provider's body: they are provider-authored prose, and Paperclip maps the
+    // provider's body: they are provider-authored prose, and GS Agentic Manager maps the
     // `error` code to its own copy instead of reflecting them (PAP-17108).
     const iss = typeof req.query.iss === "string" ? req.query.iss : null;
     const pendingState = state ? await svc.peekOAuthState(state) : null;
@@ -1365,7 +1365,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         details: {
           code: callbackFailureCode,
           status: callbackError instanceof HttpError ? callbackError.status : 500,
-          // HttpError messages are Paperclip-authored. Provider-authored
+          // HttpError messages are GS Agentic Manager-authored. Provider-authored
           // error_description/error_uri values are never read above and cannot
           // be reflected into the activity stream.
           message: callbackError instanceof HttpError

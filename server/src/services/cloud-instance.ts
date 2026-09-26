@@ -27,8 +27,8 @@ export function isCloudManagedInstance(
   env: CloudInstanceEnv = process.env,
 ): boolean {
   return (
-    normalizeOptionalEnvValue(env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN) !== null ||
-    env.PAPERCLIP_MANAGED_CONFIG !== undefined
+    normalizeOptionalEnvValue(env.GSAM_CLOUD_TENANT_SERVER_TOKEN) !== null ||
+    env.GSAM_MANAGED_CONFIG !== undefined
   );
 }
 
@@ -45,11 +45,11 @@ export function getCloudStackContext(
   if (!isCloudManagedInstance(env)) return null;
 
   return {
-    stackId: normalizeOptionalEnvValue(env.PAPERCLIP_CLOUD_STACK_ID),
-    stackSlug: normalizeOptionalEnvValue(env.PAPERCLIP_STACK_SLUG),
-    accountGroupId: normalizeOptionalEnvValue(env.PAPERCLIP_CLOUD_ACCOUNT_GROUP_ID),
-    primaryHost: normalizeOptionalEnvValue(env.PAPERCLIP_PRIMARY_HOST),
-    cloudOrigin: normalizeOptionalEnvValue(env.PAPERCLIP_CLOUD_API_ORIGIN),
+    stackId: normalizeOptionalEnvValue(env.GSAM_CLOUD_STACK_ID),
+    stackSlug: normalizeOptionalEnvValue(env.GSAM_STACK_SLUG),
+    accountGroupId: normalizeOptionalEnvValue(env.GSAM_CLOUD_ACCOUNT_GROUP_ID),
+    primaryHost: normalizeOptionalEnvValue(env.GSAM_PRIMARY_HOST),
+    cloudOrigin: normalizeOptionalEnvValue(env.GSAM_CLOUD_API_ORIGIN),
   };
 }
 

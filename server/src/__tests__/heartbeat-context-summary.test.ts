@@ -150,8 +150,8 @@ describe("buildPaperclipTaskMarkdown", () => {
     expect(markdown).toContain(
       '"contentPath":"/api/attachments/attachment-text/content"',
     );
-    expect(markdown).toContain("PAPERCLIP_API_URL");
-    expect(markdown).toContain("PAPERCLIP_API_KEY");
+    expect(markdown).toContain("GSAM_API_URL");
+    expect(markdown).toContain("GSAM_API_KEY");
     expect(markdown).toContain("never invoke `npx`");
     expect(markdown).toContain(
       "Do not infer file contents from filenames or metadata",
@@ -245,7 +245,7 @@ describe("buildPaperclipTaskMarkdown", () => {
       expect(markdown).toContain("do not suppress transport-managed progress");
       expect(markdown).toContain('"id":"native-attachment"');
       expect(markdown).not.toContain("paperclip-upload-artifact.sh");
-      expect(markdown).not.toContain("PAPERCLIP_API_KEY");
+      expect(markdown).not.toContain("GSAM_API_KEY");
       expect(markdown).not.toContain("/api/attachments/");
     },
   );
@@ -288,7 +288,7 @@ describe("buildPaperclipTaskMarkdown", () => {
       "do not ask for another chat connection",
     );
     expect(markdown).toContain(
-      "attach the file directly to this Paperclip task or paste the needed text",
+      "attach the file directly to this GS Agentic Manager task or paste the needed text",
     );
     expect(markdown).toContain(
       "Never borrow browser cookies or forward credentials to an attachment URL",

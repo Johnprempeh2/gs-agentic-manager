@@ -1,4 +1,4 @@
-import type { Environment } from "@paperclipai/shared";
+import type { Environment } from "@greatstone/shared";
 
 /**
  * True iff the environment row was provisioned by the platform (the
@@ -16,7 +16,7 @@ export function isPlatformManagedEnvironment(
 /**
  * Display label for an environment in selectors and lists. Platform-managed
  * rows render their name alone: their name is the product name for the
- * default Paperclip environment, and the raw driver key ("sandbox") is
+ * default GS Agentic Manager environment, and the raw driver key ("sandbox") is
  * infrastructure vocabulary we don't surface next to it. User-created rows
  * keep the driver suffix so mixed lists (ssh vs sandbox) stay tellable apart.
  */

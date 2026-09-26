@@ -7,12 +7,12 @@ import {
   issueComments,
   issueDocuments,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   COMPANY_SEARCH_EXTRACT_DEFAULT_MATCHES_PER_ISSUE,
   COMPANY_SEARCH_EXTRACT_MAX_MATCHES_PER_ISSUE,
   companySearchExtractQuerySchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -80,7 +80,7 @@ describeEmbeddedPostgres("companySearchExtractService", () => {
     await tempDb?.cleanup();
   });
 
-  async function createCompany(name = "Paperclip") {
+  async function createCompany(name = "GS Agentic Manager") {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,

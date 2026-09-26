@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
-  PAPERCLIP_QUESTION_SET_SCHEMA,
+  GSAM_QUESTION_SET_SCHEMA,
   parsePaperclipQuestionResponse,
   parsePaperclipQuestionSet,
   type PaperclipQuestion,
@@ -38,13 +38,13 @@ interface AcpFieldBinding {
 
 export interface NormalizedAcpForm {
   questionSet: PaperclipQuestionSet;
-  /** Convert a validated Paperclip response back into typed ACP content. */
+  /** Convert a validated GS Agentic Manager response back into typed ACP content. */
   accept(response: unknown): AcpAcceptElicitationResponse;
 }
 
 /**
  * ACP remains private to this adapter. Only the normalized question set is
- * allowed to cross the Paperclip runtime-request boundary.
+ * allowed to cross the GS Agentic Manager runtime-request boundary.
  */
 export function normalizeAcpFormElicitation(
   request: AcpFormElicitationRequest,
@@ -86,7 +86,7 @@ export function normalizeAcpFormElicitation(
         Boolean(value) && all.indexOf(value) === position,
     );
   const questionSet = parsePaperclipQuestionSet({
-    schema: PAPERCLIP_QUESTION_SET_SCHEMA,
+    schema: GSAM_QUESTION_SET_SCHEMA,
     title,
     ...(descriptions.length > 0
       ? { description: descriptions.join("\n\n") }

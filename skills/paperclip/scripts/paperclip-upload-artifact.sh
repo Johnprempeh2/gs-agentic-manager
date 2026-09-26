@@ -7,15 +7,15 @@ usage() {
 Usage:
   paperclip-upload-artifact.sh FILE [options]
 
-Uploads a generated file from the current workspace to the current Paperclip
+Uploads a generated file from the current workspace to the current GS Agentic Manager
 issue, then creates an attachment-backed artifact work product by default.
 
 Required environment for live uploads:
-  PAPERCLIP_API_URL, PAPERCLIP_API_KEY, PAPERCLIP_COMPANY_ID, PAPERCLIP_TASK_ID, PAPERCLIP_RUN_ID
+  GSAM_API_URL, GSAM_API_KEY, GSAM_COMPANY_ID, GSAM_TASK_ID, GSAM_RUN_ID
 
 Options:
-  --issue-id ID          Issue id to attach to (default: PAPERCLIP_TASK_ID)
-  --company-id ID        Company id (default: PAPERCLIP_COMPANY_ID)
+  --issue-id ID          Issue id to attach to (default: GSAM_TASK_ID)
+  --company-id ID        Company id (default: GSAM_COMPANY_ID)
   --title TEXT           Work product title (default: file basename)
   --summary TEXT         Work product summary
   --content-type TYPE    Override detected upload content type
@@ -125,8 +125,8 @@ request_json() {
     status_code="$(
       curl -sS -X "$method" -w '%{http_code}' -o "$response_file" \
         "$url" \
-        -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-        -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" \
+        -H "Authorization: Bearer $GSAM_API_KEY" \
+        -H "X-Paperclip-Run-Id: $GSAM_RUN_ID" \
         -H 'Content-Type: application/json' \
         --data-binary "$body"
     )"
@@ -134,8 +134,8 @@ request_json() {
     status_code="$(
       curl -sS -X "$method" -w '%{http_code}' -o "$response_file" \
         "$url" \
-        -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-        -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID"
+        -H "Authorization: Bearer $GSAM_API_KEY" \
+        -H "X-Paperclip-Run-Id: $GSAM_RUN_ID"
     )"
   fi
 
@@ -167,8 +167,8 @@ upload_file() {
   status_code="$(
     curl -sS -X POST -w '%{http_code}' -o "$response_file" \
       "$url" \
-      -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-      -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" \
+      -H "Authorization: Bearer $GSAM_API_KEY" \
+      -H "X-Paperclip-Run-Id: $GSAM_RUN_ID" \
       -F "file=@\"${escaped_path}\";type=${content_type}"
   )" || curl_status=$?
 
@@ -223,7 +223,7 @@ acquire_operation_lock() {
   local attempts=0
 
   umask 077
-  operation_state_root="${PAPERCLIP_HELPER_STATE_DIR:-${TMPDIR:-/tmp}/paperclip-upload-artifact}"
+  operation_state_root="${GSAM_HELPER_STATE_DIR:-${TMPDIR:-/tmp}/paperclip-upload-artifact}"
   mkdir -p "$operation_state_root"
   operation_lock_path="$operation_state_root/$operation_key.lock"
   operation_lock_owner="$$|$(process_start_identity "$$" || true)"
@@ -264,8 +264,8 @@ acquire_operation_lock() {
 }
 
 file_path=""
-issue_id="${PAPERCLIP_TASK_ID:-}"
-company_id="${PAPERCLIP_COMPANY_ID:-}"
+issue_id="${GSAM_TASK_ID:-}"
+company_id="${GSAM_COMPANY_ID:-}"
 title=""
 summary=""
 content_type=""
@@ -398,17 +398,17 @@ if [[ "$dry_run" == "1" ]]; then
   exit 0
 fi
 
-if [[ -z "${PAPERCLIP_API_URL:-}" || -z "${PAPERCLIP_API_KEY:-}" || -z "${PAPERCLIP_RUN_ID:-}" ]]; then
-  printf 'Missing PAPERCLIP_API_URL, PAPERCLIP_API_KEY, or PAPERCLIP_RUN_ID.\n' >&2
+if [[ -z "${GSAM_API_URL:-}" || -z "${GSAM_API_KEY:-}" || -z "${GSAM_RUN_ID:-}" ]]; then
+  printf 'Missing GSAM_API_URL, GSAM_API_KEY, or GSAM_RUN_ID.\n' >&2
   exit 1
 fi
 
 if [[ -z "$issue_id" || -z "$company_id" ]]; then
-  printf 'Missing issue or company id. Pass --issue-id/--company-id or set PAPERCLIP_TASK_ID/PAPERCLIP_COMPANY_ID.\n' >&2
+  printf 'Missing issue or company id. Pass --issue-id/--company-id or set GSAM_TASK_ID/GSAM_COMPANY_ID.\n' >&2
   exit 1
 fi
 
-api_root="${PAPERCLIP_API_URL%/}"
+api_root="${GSAM_API_URL%/}"
 case "$api_root" in
   */api) api_base="$api_root" ;;
   *) api_base="$api_root/api" ;;
@@ -416,7 +416,7 @@ esac
 file_sha256="$(sha256_file "$file_path")"
 original_filename="$(basename "$file_path")"
 operation_key="$(
-  sha256_text "$api_base|$company_id|$issue_id|$PAPERCLIP_RUN_ID|$original_filename|$file_sha256|$content_type"
+  sha256_text "$api_base|$company_id|$issue_id|$GSAM_RUN_ID|$original_filename|$file_sha256|$content_type"
 )"
 acquire_operation_lock "$operation_key"
 trap release_operation_lock EXIT
@@ -433,7 +433,7 @@ for ((lookup_attempt = 1; lookup_attempt <= lookup_attempts; lookup_attempt++));
   attachment="$(
     jq -nc \
       --argjson attachments "$existing_attachments" \
-      --arg runId "$PAPERCLIP_RUN_ID" \
+      --arg runId "$GSAM_RUN_ID" \
       --arg sha256 "$file_sha256" \
       --arg originalFilename "$original_filename" \
       --arg contentType "$content_type" \
@@ -458,7 +458,7 @@ for ((lookup_attempt = 1; lookup_attempt <= lookup_attempts; lookup_attempt++));
 done
 
 if [[ -z "$attachment" && -f "$unknown_upload_marker" && "$retry_unknown_upload" != "1" ]]; then
-  printf '%s\n' 'A previous matching upload ended without a definitive response, and Paperclip has not exposed its durable attachment yet.' >&2
+  printf '%s\n' 'A previous matching upload ended without a definitive response, and GS Agentic Manager has not exposed its durable attachment yet.' >&2
   printf '%s\n' 'Retry this command later. If the upload definitely did not commit, pass --retry-unknown-upload to accept the duplicate-file risk.' >&2
   exit 1
 fi
@@ -503,7 +503,7 @@ if [[ "$create_work_product" == "1" ]]; then
       --arg title "$title" \
       --arg summary "$summary" \
       --arg status "$status" \
-      --arg runId "$PAPERCLIP_RUN_ID" \
+      --arg runId "$GSAM_RUN_ID" \
       --arg attachmentId "$attachment_id" \
       --arg contentType "$content_type" \
       --argjson byteSize "$byte_size" \
@@ -586,7 +586,7 @@ if [[ -n "$work_product_id" ]]; then
   printf -- '- Work product ID: `%s`\n' "$work_product_id"
 fi
 if [[ -n "$chat_comment" ]]; then
-  printf -- '- Paperclip comment binding: saved. External publication requires an authorized active chat origin; this helper does not confirm provider delivery.\n'
+  printf -- '- GS Agentic Manager comment binding: saved. External publication requires an authorized active chat origin; this helper does not confirm provider delivery.\n'
 fi
 printf '\nFinal comment snippet:\n\n'
 printf -- '- Artifact: [%s](%s)\n' "$title" "$content_path"

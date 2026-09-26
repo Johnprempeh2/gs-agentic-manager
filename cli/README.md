@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/paperclipai/paperclip/master/doc/assets/banner.jpg" alt="Paperclip is the app people use to manage AI agents for work." width="720" />
+  <img src="https://raw.githubusercontent.com/paperclipai/paperclip/master/doc/assets/banner.jpg" alt="GS Agentic Manager is the app people use to manage AI agents for work." width="720" />
 </p>
 
 <p align="center">
@@ -25,13 +25,13 @@
 
 <br/>
 
-# Paperclip is the app people use to manage AI agents for work.
+# GS Agentic Manager is the app people use to manage AI agents for work.
 
 Open-source orchestration for teams of AI agents.
 
-**If OpenClaw is an _employee_, Paperclip is the _company_.**
+**If OpenClaw is an _employee_, GS Agentic Manager is the _company_.**
 
-Paperclip is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track work and costs from one dashboard.
+GS Agentic Manager is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track work and costs from one dashboard.
 
 It looks like a task manager. Under the hood: org charts, budgets, governance, goal alignment, and agent coordination.
 
@@ -64,7 +64,7 @@ It looks like a task manager. Under the hood: org charts, budgets, governance, g
 
 <br/>
 
-## Paperclip is right for you if
+## GS Agentic Manager is right for you if
 
 - ✅ You want to build **autonomous AI companies**
 - ✅ You **coordinate many different agents** (OpenClaw, Codex, Claude, Cursor) toward a common goal
@@ -125,28 +125,28 @@ Monitor and manage your autonomous businesses from anywhere.
 
 <br/>
 
-## Problems Paperclip solves
+## Problems GS Agentic Manager solves
 
-| Without Paperclip                                                                                                                     | With Paperclip                                                                                                                         |
+| Without GS Agentic Manager                                                                                                                     | With GS Agentic Manager                                                                                                                         |
 | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | ❌ You have 20 Claude Code tabs open and can't track which one does what. On reboot you lose everything.                              | ✅ Tasks are ticket-based, conversations are threaded, sessions persist across reboots.                                                |
 | ❌ You manually gather context from several places to remind your bot what you're actually doing.                                     | ✅ Context flows from the task up through the project and company goals — your agent always knows what to do and why.                  |
-| ❌ Folders of agent configs are disorganized and you're re-inventing task management, communication, and coordination between agents. | ✅ Paperclip gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
+| ❌ Folders of agent configs are disorganized and you're re-inventing task management, communication, and coordination between agents. | ✅ GS Agentic Manager gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
 | ❌ Runaway loops waste hundreds of dollars of tokens and max your quota before you even know what happened.                           | ✅ Cost tracking surfaces token budgets and throttles agents when they're out. Management prioritizes with budgets.                    |
 | ❌ You have recurring jobs (customer support, social, reports) and have to remember to manually kick them off.                        | ✅ Heartbeats handle regular work on a schedule. Management supervises.                                                                |
-| ❌ You have an idea, you have to find your repo, fire up Claude Code, keep a tab open, and babysit it.                                | ✅ Add a task in Paperclip. Your coding agent works on it until it's done. Management reviews their work.                              |
+| ❌ You have an idea, you have to find your repo, fire up Claude Code, keep a tab open, and babysit it.                                | ✅ Add a task in GS Agentic Manager. Your coding agent works on it until it's done. Management reviews their work.                              |
 
 <br/>
 
-## Why Paperclip is special
+## Why GS Agentic Manager is special
 
-Paperclip handles the hard orchestration details correctly.
+GS Agentic Manager handles the hard orchestration details correctly.
 
 |                                   |                                                                                                               |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Atomic execution.**             | Task checkout and budget enforcement are atomic, so no double-work and no runaway spend.                      |
 | **Persistent agent state.**       | Agents resume the same task context across heartbeats instead of restarting from scratch.                     |
-| **Runtime skill injection.**      | Agents can learn Paperclip workflows and project context at runtime, without retraining.                      |
+| **Runtime skill injection.**      | Agents can learn GS Agentic Manager workflows and project context at runtime, without retraining.                      |
 | **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
 | **Goal-aware execution.**         | Tasks carry full goal ancestry so agents consistently see the "why," not just a title.                        |
 | **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
@@ -156,7 +156,7 @@ Paperclip handles the hard orchestration details correctly.
 
 ## What's Under the Hood
 
-Paperclip is a full control plane, not a wrapper. Before you build any of this yourself, know that it already exists:
+GS Agentic Manager is a full control plane, not a wrapper. Before you build any of this yourself, know that it already exists:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -238,7 +238,7 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 <tr>
 <td>
 
-**Plugins** — Instance-wide plugin system with out-of-process workers, capability-gated host services, job scheduling, tool exposure, and UI contributions. Extend Paperclip without forking it.
+**Plugins** — Instance-wide plugin system with out-of-process workers, capability-gated host services, job scheduling, tool exposure, and UI contributions. Extend GS Agentic Manager without forking it.
 
 </td>
 <td>
@@ -263,36 +263,36 @@ Paperclip is a full control plane, not a wrapper. Before you build any of this y
 
 <br/>
 
-## What Paperclip is not
+## What GS Agentic Manager is not
 
 |                              |                                                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | **Not a chatbot.**           | Agents have jobs, not chat windows.                                                                                  |
 | **Not an agent framework.**  | We don't tell you how to build agents. We tell you how to run a company made of them.                                |
-| **Not a workflow builder.**  | No drag-and-drop pipelines. Paperclip models companies — with org charts, goals, budgets, and governance.            |
-| **Not a prompt manager.**    | Agents bring their own prompts, models, and runtimes. Paperclip manages the organization they work in.               |
-| **Not a single-agent tool.** | This is for teams. If you have one agent, you probably don't need Paperclip. If you have twenty — you definitely do. |
-| **Not a code review tool.**  | Paperclip orchestrates work, not pull requests. Bring your own review process.                                       |
+| **Not a workflow builder.**  | No drag-and-drop pipelines. GS Agentic Manager models companies — with org charts, goals, budgets, and governance.            |
+| **Not a prompt manager.**    | Agents bring their own prompts, models, and runtimes. GS Agentic Manager manages the organization they work in.               |
+| **Not a single-agent tool.** | This is for teams. If you have one agent, you probably don't need GS Agentic Manager. If you have twenty — you definitely do. |
+| **Not a code review tool.**  | GS Agentic Manager orchestrates work, not pull requests. Bring your own review process.                                       |
 
 <br/>
 
 ## Quickstart
 
-Open source. Self-hosted. No Paperclip account required.
+Open source. Self-hosted. No GS Agentic Manager account required.
 
 ```bash
-npx paperclipai onboard --yes
+npx gsam onboard --yes
 ```
 
 That quickstart path now defaults to trusted local loopback mode for the fastest first run. To start in authenticated/private mode instead, choose a bind preset explicitly:
 
 ```bash
-npx paperclipai onboard --yes --bind lan
+npx gsam onboard --yes --bind lan
 # or:
-npx paperclipai onboard --yes --bind tailnet
+npx gsam onboard --yes --bind tailnet
 ```
 
-If you already have Paperclip configured, rerunning `onboard` keeps the existing config in place. Use `paperclipai configure` to edit settings.
+If you already have GS Agentic Manager configured, rerunning `onboard` keeps the existing config in place. Use `gsam configure` to edit settings.
 
 Or manually:
 
@@ -314,21 +314,21 @@ This starts the API server at `http://localhost:3100`. An embedded PostgreSQL da
 **What does a typical setup look like?**
 Locally, a single Node.js process manages an embedded Postgres and local file storage. For production, point it at your own Postgres and deploy however you like. Configure projects, agents, and goals — the agents take care of the rest.
 
-If you're a solo entrepreneur you can use Tailscale to access Paperclip on the go. Then later you can deploy to e.g. Vercel when you need it.
+If you're a solo entrepreneur you can use Tailscale to access GS Agentic Manager on the go. Then later you can deploy to e.g. Vercel when you need it.
 
 **Can I run multiple companies?**
 Yes. A single deployment can run an unlimited number of companies with complete data isolation.
 
-**How is Paperclip different from agents like OpenClaw or Claude Code?**
-Paperclip _uses_ those agents. It orchestrates them into a company — with org charts, budgets, goals, governance, and accountability.
+**How is GS Agentic Manager different from agents like OpenClaw or Claude Code?**
+GS Agentic Manager _uses_ those agents. It orchestrates them into a company — with org charts, budgets, goals, governance, and accountability.
 
-**Why should I use Paperclip instead of just pointing my OpenClaw to Asana or Trello?**
-Agent orchestration has subtleties in how you coordinate who has work checked out, how to maintain sessions, monitoring costs, establishing governance - Paperclip does this for you.
+**Why should I use GS Agentic Manager instead of just pointing my OpenClaw to Asana or Trello?**
+Agent orchestration has subtleties in how you coordinate who has work checked out, how to maintain sessions, monitoring costs, establishing governance - GS Agentic Manager does this for you.
 
 (Bring-your-own-ticket-system is on the Roadmap)
 
 **Do agents run continuously?**
-By default, agents run on scheduled heartbeats and event-based triggers (task assignment, @-mentions). You can also hook in continuous agents like OpenClaw. You bring your agent and Paperclip coordinates.
+By default, agents run on scheduled heartbeats and event-based triggers (task assignment, @-mentions). You can also hook in continuous agents like OpenClaw. You bring your agent and GS Agentic Manager coordinates.
 
 <br/>
 
@@ -337,9 +337,9 @@ By default, agents run on scheduled heartbeats and event-based triggers (task as
 Export a company to a portable package and import it into any other instance — local or cloud — from a local path or GitHub:
 
 ```bash
-paperclipai company export <company-id> --out ./my-export
-paperclipai company import ./my-export --dry-run
-paperclipai company import org/repo --target new
+gsam company export <company-id> --out ./my-export
+gsam company import ./my-export --dry-run
+gsam company import org/repo --target new
 ```
 
 The board UI has matching Export and Import pages in company settings: the Export page shows a fidelity panel listing what the bundle will not carry, and the Import page starts imported agents and routines paused by default, with a post-import activation step. See the [Importing & Exporting guide](https://github.com/paperclipai/paperclip/blob/master/docs/guides/board-operator/importing-and-exporting.md) for details.
@@ -399,16 +399,16 @@ Find Plugins and more at [awesome-paperclip](https://github.com/gsxdsm/awesome-p
 
 ## Telemetry
 
-Paperclip collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, issue content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.
+GS Agentic Manager collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, issue content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.
 
 Telemetry is **enabled by default** and can be disabled with any of the following:
 
 | Method               | How                                                     |
 | -------------------- | ------------------------------------------------------- |
-| Environment variable | `PAPERCLIP_TELEMETRY_DISABLED=1`                        |
+| Environment variable | `GSAM_TELEMETRY_DISABLED=1`                        |
 | Standard convention  | `DO_NOT_TRACK=1`                                        |
 | CI environments      | Automatically disabled when `CI=true`                   |
-| Config file          | Set `telemetry.enabled: false` in your Paperclip config |
+| Config file          | Set `telemetry.enabled: false` in your GS Agentic Manager config |
 
 ## Contributing
 
@@ -431,7 +431,7 @@ MIT &copy; 2026 [Paperclip Labs, Inc](https://paperclip.ing)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/image?repos=paperclipai/paperclip&type=date&legend=top-left)](https://www.star-history.com/?repos=paperclipai%2Fpaperclip&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/image?repos=paperclipai/paperclip&type=date&legend=top-left)](https://www.star-history.com/?repos=gsam%2Fpaperclip&type=date&legend=top-left)
 
 <br/>
 

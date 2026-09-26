@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import type { ToolConnectionCredentialSource } from "@paperclipai/shared";
+import type { ToolConnectionCredentialSource } from "@greatstone/shared";
 import { Navigate, Outlet, Route, Routes, useActiveCompanyPrefix, useLocation, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/i18n";

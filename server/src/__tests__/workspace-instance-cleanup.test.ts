@@ -9,7 +9,7 @@ import {
   readWorktreeInstancePointer,
   stopEmbeddedPostgresIfRunning,
 } from "../services/workspace-instance-cleanup.js";
-import type { WorkspaceOperation } from "@paperclipai/shared";
+import type { WorkspaceOperation } from "@greatstone/shared";
 import type { WorkspaceOperationRecorder } from "../services/workspace-operations.js";
 
 const tempRoots = new Set<string>();
@@ -21,11 +21,11 @@ async function makeTempRoot(prefix: string): Promise<string> {
 }
 
 async function writeWorkspaceEnv(workspacePath: string, homeDir: string, instanceId: string): Promise<void> {
-  const envDir = path.join(workspacePath, ".paperclip");
+  const envDir = path.join(workspacePath, ".gsam");
   await fs.mkdir(envDir, { recursive: true });
   await fs.writeFile(
     path.join(envDir, ".env"),
-    `PAPERCLIP_HOME=${JSON.stringify(homeDir)}\nPAPERCLIP_INSTANCE_ID=${JSON.stringify(instanceId)}\n`,
+    `GSAM_HOME=${JSON.stringify(homeDir)}\nGSAM_INSTANCE_ID=${JSON.stringify(instanceId)}\n`,
     "utf8",
   );
 }

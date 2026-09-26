@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { heartbeatRuns, issues, issueThreadInteractions, statusDecisions, type Db } from "@paperclipai/db";
-import type { ExecutionContinuationEnvelope } from "@paperclipai/shared";
+import { heartbeatRuns, issues, issueThreadInteractions, statusDecisions, type Db } from "@greatstone/db";
+import type { ExecutionContinuationEnvelope } from "@greatstone/shared";
 
 /** Recorded decisions are evidence for the parent, never new review authority. */
 export async function childReviewOutcomes(

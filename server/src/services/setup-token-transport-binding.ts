@@ -37,16 +37,16 @@ import { secretService } from "./secrets.js";
 import type { environmentService } from "./environments.js";
 import type { environmentRuntimeService } from "./environment-runtime.js";
 import { buildLoginLeaseAcquireArgs } from "./adapter-login-lease.js";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   createLoginPtyTransport,
   type LoginPtySession,
   type LoginPtySessionOpener,
-} from "@paperclipai/adapter-utils/login-pty-transport";
+} from "@greatstone/adapter-utils/login-pty-transport";
 import {
   runSetupTokenLogin,
   CLAUDE_SETUP_TOKEN_COMMAND,
-} from "@paperclipai/adapter-claude-local/server";
+} from "@greatstone/adapter-claude-local/server";
 import { randomUUID } from "node:crypto";
 import {
   deriveLoginSessionHome,

@@ -83,12 +83,12 @@ Slack, Discord, GitHub, Teams, and Telegram surfaces.
 | Shared catalog project | 727 passed, including exact catalog and branding coverage. |
 | Repository Vitest suite | The initial `pnpm test:run` overlapped edits/rebase and was stopped; it is not a final-commit pass. Fresh targeted and CI checks supersede it. The serialized route run found the missing Photon OpenAPI contract, which is fixed and passes its 8-case suite. Full gate status is recorded in the linked PR. |
 | Build | Full `pnpm build` passed before and after rebase. |
-| Generated forward migration | Generated through `pnpm db:generate`; `@paperclipai/db check:migrations` passed. Disposable database migrations exercised by integration tests. |
+| Generated forward migration | Generated through `pnpm db:generate`; `@greatstone/db check:migrations` passed. Disposable database migrations exercised by integration tests. |
 | Native HEIF platform packages | macOS arm64 executed; other published platforms not executed. |
 
 ### Local test prerequisites
 
-The standard `pnpm test:run` launcher isolates `PAPERCLIP_CONFIG`, `PAPERCLIP_HOME`,
+The standard `pnpm test:run` launcher isolates `GSAM_CONFIG`, `GSAM_HOME`,
 and temporary files. Direct heartbeat/continuation tests must use equivalent
 isolation; otherwise the worktree preview configuration suppresses execution.
 The actual runner-driver fixture also requires:
@@ -122,7 +122,7 @@ plus the shared-DM changes in this PR:
   jumped from an empty cursor to a non-adjacent sequence; the dedicated-only
   adjacency check initially stopped in Attention.
 - After the shared recovery fix and an isolated server restart, reconnect replayed
-  the original message at 13:26 UTC. Paperclip discovered the exact sender but
+  the original message at 13:26 UTC. GS Agentic Manager discovered the exact sender but
   created no conversation/task while the identity was unlinked. The normal private
   confirmation flow then linked that identity to the isolated Board account.
 - At 13:27–13:28 UTC, the fresh linked request created a task, ran the native
@@ -150,7 +150,7 @@ plus the shared-DM changes in this PR:
   reply with an actionable reason request. A correlated rejection with a reason
   resolved the canonical interaction and resumed the native agent, which returned
   the exact reason and confirmed that no further action ran.
-- At 13:49–13:50 UTC, a synthetic HEIC was sent through Apple Messages. Paperclip
+- At 13:49–13:50 UTC, a synthetic HEIC was sent through Apple Messages. GS Agentic Manager
   retained the 676-byte original and created a 633-byte JPEG derivative. The agent
   correctly described the solid blue 16×16 image and returned the original HEIC
   through Photon; the file appeared in Messages. This tests the real transport and
@@ -173,7 +173,7 @@ plus the shared-DM changes in this PR:
 - At 18:13–18:14 UTC, an operator-supplied iPhone camera HEIC passed the same
   authorized Apple Messages conversation on code commit `fc4e4f0a3` (documentation
   head `a2a9319f3`). Messages transformed the 1,432,391-byte source into a
-  1,132,602-byte HEIC before ingestion. Paperclip retained those received bytes
+  1,132,602-byte HEIC before ingestion. GS Agentic Manager retained those received bytes
   and generated a 783,443-byte, 3024×4032 JPEG preview. The native agent correctly
   described the photo, then staged the HEIC with the same SHA-256 as the received
   original. Text and file publications each succeeded on their first attempt with

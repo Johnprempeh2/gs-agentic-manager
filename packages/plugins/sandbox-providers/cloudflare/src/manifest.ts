@@ -1,4 +1,4 @@
-import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
+import type { PaperclipPluginManifestV1 } from "@greatstone/plugin-sdk";
 
 const PLUGIN_ID = "paperclip.cloudflare-sandbox-provider";
 const PLUGIN_VERSION = "0.1.0";
@@ -10,7 +10,7 @@ const manifest: PaperclipPluginManifestV1 = {
   displayName: "Cloudflare Sandbox Provider",
   description:
     "First-party sandbox provider plugin that provisions Cloudflare sandboxes through an operator-deployed Worker bridge.",
-  author: "Paperclip",
+  author: "GS Agentic Manager",
   categories: ["automation"],
   capabilities: ["environment.drivers.register"],
   entrypoints: {
@@ -22,7 +22,7 @@ const manifest: PaperclipPluginManifestV1 = {
       kind: "sandbox_provider",
       displayName: "Cloudflare Sandbox",
       description:
-        "Runs Paperclip sandbox environments through a Cloudflare Worker bridge backed by the Sandbox SDK and Durable Objects.",
+        "Runs GS Agentic Manager sandbox environments through a Cloudflare Worker bridge backed by the Sandbox SDK and Durable Objects.",
       configSchema: {
         type: "object",
         properties: {

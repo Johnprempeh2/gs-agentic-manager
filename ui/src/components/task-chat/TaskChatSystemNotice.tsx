@@ -111,7 +111,7 @@ export function TaskChatSystemNotice({
           <ToneIcon className={cn("h-3.5 w-3.5 shrink-0", TONE_ICON_CLASS[tone])} aria-hidden />
           <span className="truncate font-medium">{title}</span>
           {detail ? <span className="hidden truncate sm:inline">· {detail}</span> : null}
-          {relative ? <span className="shrink-0 text-muted-foreground/70">· {relative}</span> : null}
+          {relative ? <span className="shrink-0 text-subtle-foreground">· {relative}</span> : null}
           <ChevronDown
             className={cn("tc-notice-chevron h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")}
             aria-hidden

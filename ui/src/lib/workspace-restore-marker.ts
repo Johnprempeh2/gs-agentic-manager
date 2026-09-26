@@ -1,4 +1,4 @@
-import { safeWorkspaceRestorePath } from "@paperclipai/shared";
+import { safeWorkspaceRestorePath } from "@greatstone/shared";
 
 export function workspaceRestoreMarkerDetail(input: {
   result: Record<string, unknown> | null | undefined;

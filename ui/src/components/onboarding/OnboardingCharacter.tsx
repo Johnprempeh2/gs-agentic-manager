@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { resolveAgentAppearance, type AgentAppearance } from "@paperclipai/shared";
+import { resolveAgentAppearance, type AgentAppearance } from "@greatstone/shared";
 import { cn } from "@/lib/utils";
 import { AgentAvatar } from "../AgentAvatar";
-import type { createCharacter } from "@paperclipai/shared/cliplab/runtime";
-import type { Definition } from "@paperclipai/shared/cliplab/model";
+import type { createCharacter } from "@greatstone/shared/cliplab/runtime";
+import type { Definition } from "@greatstone/shared/cliplab/model";
 import { colorOnboardingDefinition, resolveOnboardingSequences, sequenceDuration, sequenceLeadIn, type OnboardingSequences } from "./onboarding-character";
 
 type Player = ReturnType<typeof createCharacter>;
@@ -136,9 +136,9 @@ export function OnboardingCharacter({ appearance, awake, className }: Onboarding
     if (typeof IntersectionObserver !== "function" || typeof ResizeObserver !== "function" || typeof WebGLRenderingContext === "undefined") { setFailed(true); return; }
     let disposed = false;
     setReady(false);
-    void Promise.all([import("@paperclipai/shared/cliplab/runtime"), import("@paperclipai/shared/cliplab/character")]).then(([runtime, exported]) => {
+    void Promise.all([import("@greatstone/shared/cliplab/runtime"), import("@greatstone/shared/cliplab/character")]).then(([runtime, exported]) => {
       if (disposed) return;
-      const definition = exported.PAPERCLIP_CHARACTER;
+      const definition = exported.GSAM_CHARACTER;
       library.current = { create: runtime.createCharacter, definition, sequences: resolveOnboardingSequences(definition) };
       mount(phase.current);
       if (players.current.base) setReady(true);

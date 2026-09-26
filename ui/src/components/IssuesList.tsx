@@ -96,7 +96,7 @@ import {
   type TaskCollectionPreferenceLocation,
 } from "../lib/task-collection-preferences";
 import { taskDateGroup, taskDateGroupSeparator, type TaskDateGroup } from "../lib/task-date-groups";
-import { deriveOriginatingActor, ISSUE_STATUSES, type Issue, type IssueStatus, type Project } from "@paperclipai/shared";
+import { deriveOriginatingActor, ISSUE_STATUSES, type Issue, type IssueStatus, type Project } from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 const ISSUE_SEARCH_DEBOUNCE_MS = 250;
 const ISSUE_SEARCH_RESULT_LIMIT = 200;
@@ -346,7 +346,7 @@ function IssueDateSeparator({ label }: { label: string }) {
     >
       <span className="h-px min-w-0 flex-1 bg-border/80" aria-hidden="true" data-date-group-rule="" />
       <span
-        className="shrink-0 text-(length:--text-nano) font-medium uppercase tracking-wider text-muted-foreground/70"
+        className="shrink-0 text-(length:--text-nano) font-medium uppercase tracking-wider text-subtle-foreground"
         data-date-group-label=""
       >
         {label}
@@ -2361,7 +2361,7 @@ function StreamlinedIssuesList({
                                     onPointerDownOutside={() => setAssigneeSearch("")}
                                   >
                                     <input
-                                      className="mb-1 w-full border-b border-border bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50"
+                                      className="mb-1 w-full border-b border-border bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-subtle-foreground"
                                       placeholder="Search responsible..."
                                       value={assigneeSearch}
                                       onChange={(e) => setAssigneeSearch(e.target.value)}

@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { executionWorkspaces, heartbeatRunEvents, issueWorkProducts, workspaceRuntimeServices } from "@paperclipai/db";
-import type { IssueWorkProduct } from "@paperclipai/shared";
+import type { Db } from "@greatstone/db";
+import { executionWorkspaces, heartbeatRunEvents, issueWorkProducts, workspaceRuntimeServices } from "@greatstone/db";
+import type { IssueWorkProduct } from "@greatstone/shared";
 import { unprocessable } from "../errors.js";
 import { insertRowsInChunks } from "./batch-insert.js";
 import {

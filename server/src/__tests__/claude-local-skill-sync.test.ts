@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   listClaudeSkills,
   syncClaudeSkills,
-} from "@paperclipai/adapter-claude-local/server";
+} from "@greatstone/adapter-claude-local/server";
 
 async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -28,7 +28,7 @@ describe("claude local skill sync", () => {
     cleanupDirs.clear();
   });
 
-  it("keeps the operational Paperclip skill configured when no explicit selection exists", async () => {
+  it("keeps the operational GS Agentic Manager skill configured when no explicit selection exists", async () => {
     const snapshot = await listClaudeSkills({
       agentId: "agent-1",
       companyId: "company-1",
@@ -60,7 +60,7 @@ describe("claude local skill sync", () => {
     expect(snapshot.entries.find((entry) => entry.key === createAgentKey)?.state).toBe("available");
   });
 
-  it("normalizes legacy flat Paperclip skill refs to canonical keys", async () => {
+  it("normalizes legacy flat GS Agentic Manager skill refs to canonical keys", async () => {
     const snapshot = await listClaudeSkills({
       agentId: "agent-3",
       companyId: "company-1",
@@ -104,7 +104,7 @@ describe("claude local skill sync", () => {
       originLabel: "User-installed",
       locationLabel: "~/.claude/skills",
       readOnly: true,
-      detail: "Installed outside Paperclip management in the Claude skills home.",
+      detail: "Installed outside GS Agentic Manager management in the Claude skills home.",
     }));
   });
 });

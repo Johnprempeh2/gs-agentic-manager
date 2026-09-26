@@ -221,7 +221,7 @@ function buildConnectionErrorMessage(input: {
 }): string {
   const healthUrl = buildHealthCheckUrl(input.url);
   const lines = [
-    "Could not reach the Paperclip API.",
+    "Could not reach the GS Agentic Manager API.",
     "",
     `Request: ${input.method} ${input.url}`,
   ];
@@ -230,12 +230,12 @@ function buildConnectionErrorMessage(input: {
   }
   lines.push(
     "",
-    "This usually means the Paperclip server is not running, the configured URL is wrong, or the request is being blocked before it reaches Paperclip.",
+    "This usually means the GS Agentic Manager server is not running, the configured URL is wrong, or the request is being blocked before it reaches GS Agentic Manager.",
     "",
     "Try:",
-    "- Start Paperclip with `pnpm dev` (from a source checkout) or `npx paperclipai run`.",
+    "- Start GS Agentic Manager with `pnpm dev` (from a source checkout) or `npx gsam run`.",
     `- Verify the server is reachable with \`curl ${healthUrl}\`.`,
-    `- If Paperclip is running elsewhere, pass \`--api-base ${input.apiBase.replace(/\/+$/, "")}\` or set \`PAPERCLIP_API_URL\`.`,
+    `- If GS Agentic Manager is running elsewhere, pass \`--api-base ${input.apiBase.replace(/\/+$/, "")}\` or set \`GSAM_API_URL\`.`,
   );
   return lines.join("\n");
 }

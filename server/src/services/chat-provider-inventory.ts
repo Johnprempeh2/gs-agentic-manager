@@ -1,4 +1,4 @@
-import type { ChatProvider } from "@paperclipai/shared";
+import type { ChatProvider } from "@greatstone/shared";
 
 export interface ChatProviderResourceInventoryItem {
   providerResourceId: string;
@@ -167,7 +167,7 @@ export async function getSlackBotChannel(input: {
 /**
  * Exchange a GitHub App JWT for a short-lived installation token and list the
  * repositories selected for that installation. The token never leaves this
- * function and is never persisted in Paperclip.
+ * function and is never persisted in GS Agentic Manager.
  */
 export async function listGitHubInstallationRepositories(input: {
   appJwt: string;

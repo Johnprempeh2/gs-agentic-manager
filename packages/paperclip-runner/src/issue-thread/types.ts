@@ -43,7 +43,7 @@ export interface CapabilityThreadIdentity {
   runnerLabel: string;
   /** Pulse while a runnerd session is attached; static when detached. */
   runnerAttached: boolean;
-  /** Always `Mock Paperclip`. */
+  /** Always `Mock GS Agentic Manager`. */
   controlPlaneLabel: string;
   controlPlaneTooltip: string;
   /** Present in replay mode so replay evidence can never satisfy a live criterion. */
@@ -93,7 +93,7 @@ export type CapabilityThreadInteractionState =
 
 export interface CapabilityThreadLink {
   label: string;
-  /** In-explorer route only. Real Paperclip URLs never appear (§11). */
+  /** In-explorer route only. Real GS Agentic Manager URLs never appear (§11). */
   href: string;
 }
 

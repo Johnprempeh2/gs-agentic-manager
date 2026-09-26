@@ -415,8 +415,8 @@ describe("GitHub launcher lifecycle", () => {
       const a = await prepareGitHubOperationLaunchers({ ...first, cwd: "/tmp", env: {} });
       const b = await prepareGitHubOperationLaunchers({ ...second, cwd: "/tmp", env: {} });
       await cleanupGitHubOperationLaunchers(first);
-      await expect(access(a.PAPERCLIP_GITHUB_LAUNCHER_DIR)).rejects.toMatchObject({ code: "ENOENT" });
-      expect(await readFile(`${b.PAPERCLIP_GITHUB_LAUNCHER_DIR}/git`, "utf8")).toContain("PAPERCLIP_GITHUB_BROKER_URL");
+      await expect(access(a.GSAM_GITHUB_LAUNCHER_DIR)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(`${b.GSAM_GITHUB_LAUNCHER_DIR}/git`, "utf8")).toContain("GSAM_GITHUB_BROKER_URL");
       await cleanupGitHubOperationLaunchers(first); // teardown replay is harmless
     } finally {
       await cleanupGitHubOperationLaunchers(first);

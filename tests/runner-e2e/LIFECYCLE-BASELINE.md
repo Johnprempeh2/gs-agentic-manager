@@ -1,6 +1,6 @@
 # Live lifecycle baseline
 
-This explicit-only Product E2E suite runs real Chromium, Paperclip, an isolated
+This explicit-only Product E2E suite runs real Chromium, GS Agentic Manager, an isolated
 database, the selected runner, and a real LLM. It is distinct from
 `pnpm test:lifecycle-baseline`, whose providers are scripted.
 

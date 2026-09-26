@@ -7,7 +7,7 @@ import { PopoverTitle, PopoverDescription } from "@/components/ui/popover";
 const SECRET_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
 const fieldClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground focus-visible:ring-2 focus-visible:ring-ring/40";
 
 export interface SecretPopoverFormProps {
   /** Popover heading / body copy differ between the two flows. */

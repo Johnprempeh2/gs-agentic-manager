@@ -29,7 +29,7 @@ export async function assertEmbeddedDatabaseIsolation(
     config.database.connectionString
   ) {
     throw new Error(
-      "Runner E2E Paperclip instance did not use its embedded database",
+      "Runner E2E GS Agentic Manager instance did not use its embedded database",
     );
   }
   if (

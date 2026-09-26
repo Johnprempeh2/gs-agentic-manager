@@ -15,7 +15,7 @@ const WORKSPACES: ReusableExecutionWorkspaceLike[] = [
   {
     id: "ws-auth-refresh",
     name: "auth-token-refresh",
-    cwd: "/srv/paperclip/home/paperclipai/paperclip/.paperclip/worktrees/PAP-11502-auth-token-refresh",
+    cwd: "/srv/paperclip/home/paperclipai/paperclip/.gsam/worktrees/PAP-11502-auth-token-refresh",
     branchName: "PAP-11502-auth-token-refresh",
     status: "running",
     lastUsedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000),
@@ -23,7 +23,7 @@ const WORKSPACES: ReusableExecutionWorkspaceLike[] = [
   {
     id: "ws-billing",
     name: "billing-webhooks",
-    cwd: "/srv/paperclip/home/paperclipai/paperclip/.paperclip/worktrees/PAP-11380-billing-webhooks",
+    cwd: "/srv/paperclip/home/paperclipai/paperclip/.gsam/worktrees/PAP-11380-billing-webhooks",
     branchName: "PAP-11380-billing-webhooks",
     status: "idle",
     lastUsedAt: new Date(NOW.getTime() - 1 * DAY),
@@ -31,7 +31,7 @@ const WORKSPACES: ReusableExecutionWorkspaceLike[] = [
   {
     id: "ws-search",
     name: "workspace-selector",
-    cwd: "/srv/paperclip/home/paperclipai/paperclip/.paperclip/worktrees/PAP-11722-new-existing-workspace-selector",
+    cwd: "/srv/paperclip/home/paperclipai/paperclip/.gsam/worktrees/PAP-11722-new-existing-workspace-selector",
     branchName: "PAP-11722-new-existing-workspace-selector",
     status: "idle",
     lastUsedAt: new Date(NOW.getTime() - 2 * DAY),
@@ -39,7 +39,7 @@ const WORKSPACES: ReusableExecutionWorkspaceLike[] = [
   {
     id: "ws-docs",
     name: "docs-trust-presets",
-    cwd: "/srv/paperclip/home/docs/.paperclip/worktrees/docs-trust-presets",
+    cwd: "/srv/paperclip/home/docs/.gsam/worktrees/docs-trust-presets",
     branchName: "docs/trust-presets",
     status: "archived",
     lastUsedAt: new Date(NOW.getTime() - 9 * DAY),
@@ -47,7 +47,7 @@ const WORKSPACES: ReusableExecutionWorkspaceLike[] = [
   {
     id: "ws-pipeline",
     name: "pipeline-body-doc",
-    cwd: "/srv/paperclip/home/paperclipai/paperclip/.paperclip/worktrees/PAP-11567-body-document-ui",
+    cwd: "/srv/paperclip/home/paperclipai/paperclip/.gsam/worktrees/PAP-11567-body-document-ui",
     branchName: "PAP-11567-body-document-ui",
     status: "idle",
     lastUsedAt: new Date(NOW.getTime() - 14 * DAY),
@@ -55,7 +55,7 @@ const WORKSPACES: ReusableExecutionWorkspaceLike[] = [
   {
     id: "ws-watchdog",
     name: "task-watchdog",
-    cwd: "/srv/paperclip/home/paperclipai/paperclip/.paperclip/worktrees/PAP-11275-task-watchdog",
+    cwd: "/srv/paperclip/home/paperclipai/paperclip/.gsam/worktrees/PAP-11275-task-watchdog",
     branchName: "PAP-11275-task-watchdog",
     status: "idle",
     lastUsedAt: new Date(NOW.getTime() - 21 * DAY),
@@ -66,7 +66,7 @@ const LONG_WORKSPACES: ReusableExecutionWorkspaceLike[] = [
   {
     id: "ws-long-name",
     name: "paperclip-control-plane-existing-workspace-selector-long-running-validation-branch",
-    cwd: "/srv/paperclip/home/paperclipai/paperclip/.paperclip/worktrees/PAP-11722-existing-workspace-selector-with-a-very-long-path-segment-for-review",
+    cwd: "/srv/paperclip/home/paperclipai/paperclip/.gsam/worktrees/PAP-11722-existing-workspace-selector-with-a-very-long-path-segment-for-review",
     branchName: "feature/existing-workspace-selector-long-path-validation",
     status: "running",
     lastUsedAt: new Date(NOW.getTime() - 90 * 60 * 1000),

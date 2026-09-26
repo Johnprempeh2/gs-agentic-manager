@@ -1,4 +1,4 @@
-import { createDb, heartbeatRuns } from "@paperclipai/db";
+import { createDb, heartbeatRuns } from "@greatstone/db";
 import type { heartbeatService } from "../../services/heartbeat.js";
 
 type Db = ReturnType<typeof createDb>;

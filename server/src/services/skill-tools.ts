@@ -1,4 +1,4 @@
-import { parseFrontmatterMarkdown, skillFrontmatterSchema } from "@paperclipai/shared";
+import { parseFrontmatterMarkdown, skillFrontmatterSchema } from "@greatstone/shared";
 import { z } from "zod";
 
 /** A complete single-file skill. Identity and permissions come from the run. */

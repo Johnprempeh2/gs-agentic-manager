@@ -12,7 +12,7 @@ import {
   issueRelations,
   issues,
   nativeRunFinalizations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -69,7 +69,7 @@ describeEmbeddedPostgres("recovery sweepStaleIssueLocks", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

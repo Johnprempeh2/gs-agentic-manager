@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
-import { testEnvironment } from "@paperclipai/adapter-cursor-local/server";
+import { runChildProcess } from "@greatstone/adapter-utils/server-utils";
+import { testEnvironment } from "@greatstone/adapter-cursor-local/server";
 
 async function writeFakeAgentCommand(binDir: string, argsCapturePath: string): Promise<string> {
   const commandPath = path.join(binDir, "agent");
   const script = `#!/usr/bin/env node
 const fs = require("node:fs");
-const outPath = process.env.PAPERCLIP_TEST_ARGS_PATH;
+const outPath = process.env.GSAM_TEST_ARGS_PATH;
 if (outPath) {
   fs.writeFileSync(outPath, JSON.stringify(process.argv.slice(2)), "utf8");
 }
@@ -31,7 +31,7 @@ console.log(JSON.stringify({
 async function writeFakeCursorAgentCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
 const fs = require("node:fs");
-const outPath = process.env.PAPERCLIP_TEST_ARGS_PATH;
+const outPath = process.env.GSAM_TEST_ARGS_PATH;
 if (outPath) {
   fs.writeFileSync(outPath, JSON.stringify({
     command: process.argv[1],
@@ -135,7 +135,7 @@ describe("cursor environment diagnostics", () => {
         cwd,
         env: {
           CURSOR_API_KEY: "test-key",
-          PAPERCLIP_TEST_ARGS_PATH: argsCapturePath,
+          GSAM_TEST_ARGS_PATH: argsCapturePath,
           PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
         },
       },
@@ -167,7 +167,7 @@ describe("cursor environment diagnostics", () => {
         extraArgs: ["--yolo"],
         env: {
           CURSOR_API_KEY: "test-key",
-          PAPERCLIP_TEST_ARGS_PATH: argsCapturePath,
+          GSAM_TEST_ARGS_PATH: argsCapturePath,
           PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
         },
       },
@@ -211,7 +211,7 @@ describe("cursor environment diagnostics", () => {
           cwd: remoteCwd,
           env: {
             CURSOR_API_KEY: "test-key",
-            PAPERCLIP_TEST_ARGS_PATH: argsCapturePath,
+            GSAM_TEST_ARGS_PATH: argsCapturePath,
           },
         },
       });

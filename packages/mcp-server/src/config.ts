@@ -20,20 +20,20 @@ export function normalizeApiUrl(apiUrl: string): string {
 }
 
 export function readConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PaperclipMcpConfig {
-  const apiUrl = nonEmpty(env.PAPERCLIP_API_URL);
+  const apiUrl = nonEmpty(env.GSAM_API_URL);
   if (!apiUrl) {
-    throw new Error("Missing PAPERCLIP_API_URL");
+    throw new Error("Missing GSAM_API_URL");
   }
-  const apiKey = nonEmpty(env.PAPERCLIP_API_KEY);
+  const apiKey = nonEmpty(env.GSAM_API_KEY);
   if (!apiKey) {
-    throw new Error("Missing PAPERCLIP_API_KEY");
+    throw new Error("Missing GSAM_API_KEY");
   }
 
   return {
     apiUrl: normalizeApiUrl(apiUrl),
     apiKey,
-    companyId: nonEmpty(env.PAPERCLIP_COMPANY_ID),
-    agentId: nonEmpty(env.PAPERCLIP_AGENT_ID),
-    runId: nonEmpty(env.PAPERCLIP_RUN_ID),
+    companyId: nonEmpty(env.GSAM_COMPANY_ID),
+    agentId: nonEmpty(env.GSAM_AGENT_ID),
+    runId: nonEmpty(env.GSAM_RUN_ID),
   };
 }

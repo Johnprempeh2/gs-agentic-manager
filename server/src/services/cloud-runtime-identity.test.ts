@@ -21,8 +21,8 @@ const publicJwk = {
   alg: "EdDSA",
 };
 const env = {
-  PAPERCLIP_CLOUD_STACK_ID: STACK_ID,
-  PAPERCLIP_CLOUD_RUNTIME_IDENTITY_JWKS: JSON.stringify({ keys: [publicJwk] }),
+  GSAM_CLOUD_STACK_ID: STACK_ID,
+  GSAM_CLOUD_RUNTIME_IDENTITY_JWKS: JSON.stringify({ keys: [publicJwk] }),
 } as NodeJS.ProcessEnv;
 
 function encodeJson(value: Record<string, unknown>) {
@@ -74,9 +74,9 @@ function verifyAssertion(compactJws: string, overrides: Partial<NodeJS.ProcessEn
 describe("verifyCloudRuntimeIdentityAssertion", () => {
   it("preserves distinct self-hosted public and authentication origins", () => {
     const selfHostedEnv = {
-      PAPERCLIP_PUBLIC_URL: "https://app.example.test",
-      PAPERCLIP_AUTH_PUBLIC_BASE_URL: "https://auth.example.test",
-      PAPERCLIP_API_URL: "https://api.example.test",
+      GSAM_PUBLIC_URL: "https://app.example.test",
+      GSAM_AUTH_PUBLIC_BASE_URL: "https://auth.example.test",
+      GSAM_API_URL: "https://api.example.test",
     } as NodeJS.ProcessEnv;
 
     expect(runtimePublicOrigin(selfHostedEnv)).toBe("https://app.example.test");

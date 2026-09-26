@@ -23,7 +23,7 @@ export function PropertySection({
         <div
           className={cn(
             streamlined
-              ? "pb-1 font-mono text-(length:--text-nano) font-normal uppercase tracking-wide text-muted-foreground/70"
+              ? "pb-1 font-mono text-(length:--text-nano) font-normal uppercase tracking-wide text-subtle-foreground"
               : "text-xs font-semibold uppercase tracking-wide text-muted-foreground pb-1",
             first ? "pt-0" : "pt-3",
           )}

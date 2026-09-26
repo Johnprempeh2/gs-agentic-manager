@@ -1,6 +1,6 @@
 # Identicon Prototyper
 
-Use this reference when generating or reviewing deterministic Paperclip capsule identicons/profile pills. Prototype source paths, when the Paperclip content repository is available:
+Use this reference when generating or reviewing deterministic GS Agentic Manager capsule identicons/profile pills. Prototype source paths, when the GS Agentic Manager content repository is available:
 
 - `paperclip-content/design/PAP-11825/paperclip-capsule-identicon-prototyper/README.md`
 - `paperclip-content/design/PAP-11825/paperclip-capsule-identicon-prototyper/src/identicon.ts`

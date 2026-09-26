@@ -1,4 +1,4 @@
-import { agents } from "@paperclipai/db";
+import { agents } from "@greatstone/db";
 import { asBoolean, parseObject } from "../adapters/utils.js";
 
 export function isHeartbeatWakeOnDemandEnabled(

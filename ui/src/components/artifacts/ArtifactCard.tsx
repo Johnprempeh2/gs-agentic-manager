@@ -1,5 +1,5 @@
 import { type SyntheticEvent, useEffect, useRef, useState } from "react";
-import { Download, ExternalLink, Paperclip, Play } from "lucide-react";
+import { Download, ExternalLink, PaperclipIcon, Play } from "lucide-react";
 import type { CompanyArtifact } from "@/api/artifacts";
 import { Link } from "@/lib/router";
 import { cn, formatDate } from "@/lib/utils";
@@ -24,8 +24,8 @@ function PreviewFrame({ children, className }: { children: React.ReactNode; clas
 function PlaceholderPreview({ label }: { label?: string }) {
   return (
     <PreviewFrame className="flex items-center justify-center">
-      <div className="flex flex-col items-center gap-1.5 text-muted-foreground/50">
-        <Paperclip className="h-7 w-7" aria-hidden="true" />
+      <div className="flex flex-col items-center gap-1.5 text-subtle-foreground">
+        <PaperclipIcon className="h-7 w-7" aria-hidden="true" />
         {label ? <span className="text-(length:--text-micro) font-medium uppercase tracking-wide">{label}</span> : null}
       </div>
     </PreviewFrame>
@@ -141,7 +141,7 @@ function TextPreview({ artifact }: { artifact: PreviewArtifact }) {
   return (
     <PreviewFrame className="bg-card">
       <div className="absolute inset-0 overflow-hidden p-3">
-        <p className="max-h-full overflow-hidden whitespace-pre-wrap break-words text-base leading-6 text-muted-foreground/75">
+        <p className="max-h-full overflow-hidden whitespace-pre-wrap break-words text-base leading-6 text-subtle-foreground">
           {preview}
         </p>
       </div>
@@ -226,11 +226,11 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
           </div>
         </div>
 
-        <div className="mt-0.5 flex items-center gap-1.5 text-(length:--text-micro) text-muted-foreground/65">
+        <div className="mt-0.5 flex items-center gap-1.5 text-(length:--text-micro) text-subtle-foreground">
           <span>Last edited {formatDate(artifact.updatedAt)}</span>
           {artifact.createdByAgent ? (
             <>
-              <span className="text-muted-foreground/50">·</span>
+              <span className="text-subtle-foreground">·</span>
               <span className="truncate">{artifact.createdByAgent.name}</span>
             </>
           ) : null}

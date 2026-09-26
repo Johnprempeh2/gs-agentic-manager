@@ -1,6 +1,6 @@
 ---
 name: add-runner-eval
-description: Add or extend a Paperclip Runner protocol evaluation definition, roster, assertion, or report fixture with provenance and narrow validation.
+description: Add or extend a GS Agentic Manager Runner protocol evaluation definition, roster, assertion, or report fixture with provenance and narrow validation.
 ---
 
 # Add a Runner Eval
@@ -9,11 +9,11 @@ Use this skill for the **Runner Evals** family: a real Runner/provider session
 against a seeded mock control plane. Product browser/server/database/Daytona
 coverage belongs in [add-product-e2e-eval](../add-product-e2e-eval/SKILL.md).
 
-Locate the Paperclip checkout using `PAPERCLIP_ROOT` when supplied, or
+Locate the GS Agentic Manager checkout using `GSAM_ROOT` when supplied, or
 `git rev-parse --show-toplevel` from a checkout. From outside Git, inspect the
 workspace roots (for example `~/paperclipai/paperclip`) and verify that the
 selected root contains `packages/paperclip-runner` and `tests/runner-e2e`.
-Locate `paperclip-evals` using `PAPERCLIP_EVALS_ROOT` or a discovered sibling;
+Locate `paperclip-evals` using `GSAM_EVALS_ROOT` or a discovered sibling;
 a worktree's parent directory need not contain that repository. Read
 `doc/evals.md` and `packages/paperclip-runner/docs/runner-protocol-live-evals.md`,
 then inspect the nearest existing case, roster, schema, and report test before
@@ -60,7 +60,7 @@ reasoning may not.
 
 Validate without provider calls first using the commands above and the relevant
 report/render validation documented in the Runner docs. When a live run is
-authorized, pin the Paperclip commit and exact 40-character
+authorized, pin the GS Agentic Manager commit and exact 40-character
 `paperclip-evals` commit, select the smallest useful roster, and retain the
 complete provenance and cost record.
 

@@ -2182,7 +2182,7 @@
     },
     {
       "id": "rf-api-review-changes-01",
-      "title": "Reviewer requests changes with a non-done status and lets Paperclip reassign",
+      "title": "Reviewer requests changes with a non-done status and lets GS Agentic Manager reassign",
       "group": "rf",
       "legacyGroup": 13,
       "sourceKind": "eval_case",

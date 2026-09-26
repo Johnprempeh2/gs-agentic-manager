@@ -85,13 +85,13 @@ export function AgentSkillRow({
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{data.summary}</p>
         ) : null}
         {data.sourceMeta && SourceIcon ? (
-          <p className="mt-0.5 flex min-w-0 items-center gap-1 text-(length:--text-nano) text-muted-foreground/80">
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 text-(length:--text-nano) text-subtle-foreground">
             <SourceIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span className="truncate">{data.sourceMeta.label}</span>
           </p>
         ) : null}
         {readOnly && data.originLabel ? (
-          <p className="mt-0.5 truncate text-(length:--text-nano) text-muted-foreground/80">
+          <p className="mt-0.5 truncate text-(length:--text-nano) text-subtle-foreground">
             {data.originLabel}
             {data.locationLabel ? ` · ${data.locationLabel}` : ""}
           </p>
@@ -120,7 +120,7 @@ export function AgentSkillRow({
   );
 
   const trailing = readOnly ? (
-    <Lock className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-label="Read-only" />
+    <Lock className="h-4 w-4 shrink-0 text-subtle-foreground" aria-label="Read-only" />
   ) : (
     (() => {
       const toggle = (

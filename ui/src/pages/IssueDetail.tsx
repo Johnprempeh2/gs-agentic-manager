@@ -325,7 +325,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   MoreVertical,
-  Paperclip,
+  PaperclipIcon,
   Plus,
   Repeat,
   SlidersHorizontal,
@@ -357,7 +357,7 @@ import {
   type IssueTreeControlMode,
   type WorkspaceFileRef,
   workspaceFileRefSchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 
 // Stable empty array for React Query `data` defaults. A literal `= []` default
 // creates a new array reference on every render while `data` is undefined
@@ -1492,7 +1492,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
     null;
   // Do not briefly select queue behavior from the current assignee while the
   // authoritative active-run lookup is still loading. The active runtime owns
-  // the protocol: native Paperclip turns can steer in place, while legacy
+  // the protocol: native GS Agentic Manager turns can steer in place, while legacy
   // adapters expose the same composer queue with an interrupt fallback.
   const runtimeSelectionKnown =
     liveRunsFetched && (!activeRunQueryEnabled || activeRunFetched);
@@ -2244,7 +2244,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
         if (code === "queued_comment_already_dispatching") {
           pushToast({
             title: "Message is already being sent",
-            body: "The continuation started before the discard was confirmed, so Paperclip could not unsend it.",
+            body: "The continuation started before the discard was confirmed, so GS Agentic Manager could not unsend it.",
             tone: "error",
             ttlMs: 15_000,
             dedupeKey: `queued-comment-already-dispatching:${issueId}:${commentId}`,
@@ -6828,7 +6828,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           attachmentDragActive && "border-primary bg-primary/5",
         )}
       >
-        <Paperclip className="h-3.5 w-3.5 mr-1.5" />
+        <PaperclipIcon className="h-3.5 w-3.5 mr-1.5" />
         {uploadAttachment.isPending || importMarkdownDocument.isPending ? (
           "Uploading..."
         ) : (
@@ -6875,7 +6875,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           </span>
         ))}
         <ChevronRight className="h-3 w-3 shrink-0" />
-        <span className="text-foreground/60 truncate max-w-(--sz-200px)">
+        <span className="text-muted-foreground truncate max-w-(--sz-200px)">
           {issue.title}
         </span>
       </nav>

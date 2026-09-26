@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "packageName": "@paperclipai/teams-catalog",
+  "packageName": "@greatstone/teams-catalog",
   "packageVersion": "0.1.0",
-  "generatedAt": "2026-06-04T18:03:41.262Z",
+  "generatedAt": "2026-09-26T21:29:33.889Z",
   "teams": [
     {
       "id": "paperclipai:bundled:company-defaults:core-exec-team",
@@ -11,7 +11,7 @@
       "category": "company-defaults",
       "slug": "core-exec-team",
       "name": "Core Exec Team",
-      "description": "Default leadership and engineering team for bootstrapping a Paperclip company with a CEO, CTO, QA Engineer, starter project, and a recurring CEO heartbeat review task.",
+      "description": "Default leadership and engineering team for bootstrapping a GS Agentic Manager company with a CEO, CTO, QA Engineer, starter project, and a recurring CEO heartbeat review task.",
       "path": "catalog/bundled/company-defaults/core-exec-team",
       "entrypoint": "TEAM.md",
       "schema": "agentcompanies/v1",
@@ -96,26 +96,26 @@
         {
           "path": "TEAM.md",
           "kind": "team",
-          "sizeBytes": 2144,
-          "sha256": "4ab4f57f147e89a56a6753755d7ef142d91741b3c0159f2e53fb333cd2779eaf"
+          "sizeBytes": 2162,
+          "sha256": "42c5c379bf0a22f85e01d3e42588bc18854b9872c9e73c28ce7c2073ef08e323"
         },
         {
           "path": "agents/ceo/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 2492,
-          "sha256": "50f580c51807762265f09c6fe7bf32d7701d64caeb30595bfd577b2f5087c21b"
+          "sizeBytes": 2510,
+          "sha256": "8dd379e1b7b59d7437f2ca044dbb56b54b3df833a988a5522819834b8733e2aa"
         },
         {
           "path": "agents/cto/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1449,
-          "sha256": "596e2e9fe08d7368b3b0cfe72c2635ea80444d92a2c0414157bfb0a17773fcaf"
+          "sizeBytes": 1458,
+          "sha256": "6167d2f98f1d98042b2d22fc1910c1c017cf6ef18fba360bd7be57995a5570a3"
         },
         {
           "path": "agents/qa/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1307,
-          "sha256": "2a139b88b4b98516048395c569c1bc74fd31cdc2da65db410e9779b8d92c0343"
+          "sizeBytes": 1316,
+          "sha256": "8f58162d61cc859a3e67d6263a853216e850170b283061d1dbf578e329b2b234"
         },
         {
           "path": "projects/first-project/PROJECT.md",
@@ -132,7 +132,7 @@
       ],
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
-      "contentHash": "sha256:0f20e9d56124c1dc90a1e4b128fabd863538bcc935117220f719d9620f7c89f1"
+      "contentHash": "sha256:f9430fce3f27f61f633ca241db9ff4703297a11c1d9edd8547bc740468327502"
     },
     {
       "id": "paperclipai:bundled:product:product-design",
@@ -218,8 +218,8 @@
         {
           "path": "agents/ux-designer/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 2136,
-          "sha256": "f5a4b5696d8249e9f9d808a4373c2a1e6b07faa463e72f83fd9d5bed98d2022f"
+          "sizeBytes": 2145,
+          "sha256": "c4cf6d4b490884575655aa3d68a7fe92a7456e0b8653fd3639c95d434a5e3231"
         },
         {
           "path": "projects/product-design/PROJECT.md",
@@ -236,7 +236,7 @@
       ],
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
-      "contentHash": "sha256:15a04b36f31d4c9a391bb499c92e91fedfcc237cfa6c3d41ea3ddb441bc85c5b"
+      "contentHash": "sha256:e48d12b3bc2af7dd5d9343c4c818b86344762c943041f9a183edde5bcfa749ea"
     },
     {
       "id": "paperclipai:bundled:software-development:product-engineering",
@@ -343,20 +343,20 @@
         {
           "path": "agents/cto/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1499,
-          "sha256": "0a1a73ec9e5008056bca0a26325131ded2fcf4c4680a5014ba1e13400b32c173"
+          "sizeBytes": 1508,
+          "sha256": "9cfcd7341ff3d1c26a397b67346f088215503145e80c1572148c4e1ea55cdda8"
         },
         {
           "path": "agents/qa/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1223,
-          "sha256": "2d5738f831aa772befa3471c844a0c9e611584be668e3ec82580ca9e92dc13fc"
+          "sizeBytes": 1232,
+          "sha256": "654d99ebffd7636b30b6960e7460cd9fcaca519448ef454faa0bc0abe724c164"
         },
         {
           "path": "agents/senior-coder/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1413,
-          "sha256": "b61071518755d9e584c099ae2082c7a78448d09586093ee91393082fe10872b5"
+          "sizeBytes": 1422,
+          "sha256": "50c61c50ec8fad68d2f334355b350d551ff2d8dddbea440787cefb4310d47675"
         },
         {
           "path": "projects/product-engineering/PROJECT.md",
@@ -373,7 +373,7 @@
       ],
       "trustLevel": "assets",
       "compatibility": "compatible",
-      "contentHash": "sha256:74ddeaeb11805835a4a67fc4530b048ab7f8aa1dc7d2b80acea139a933d158d3"
+      "contentHash": "sha256:bedd294a7e2b3a43ee55cf518bcc84d3affc532f9acad92d3d09f803deb2eec1"
     },
     {
       "id": "paperclipai:optional:content:content-machine",

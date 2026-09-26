@@ -1,4 +1,4 @@
-import type { DocumentRevision, IssueDocument, IssueLabel } from "@paperclipai/shared";
+import type { DocumentRevision, IssueDocument, IssueLabel } from "@greatstone/shared";
 import { api } from "./client";
 
 // -----------------------------------------------------------------------------

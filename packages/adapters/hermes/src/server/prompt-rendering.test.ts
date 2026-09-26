@@ -29,7 +29,7 @@ function baseContext(overrides: Record<string, unknown> = {}) {
         fallbackFetchNeeded: false,
       },
       paperclipTaskMarkdown: [
-        "Paperclip task context:",
+        "GS Agentic Manager task context:",
         '- Issue: "PAP-3404"',
         '- Title: "Plan the Hermes prompt update"',
         "",
@@ -64,7 +64,7 @@ test("renders standard assignment wake with task authority and no backlog discov
       fallbackFetchNeeded: false,
     },
     paperclipTaskMarkdown: [
-      "Paperclip task context:",
+      "GS Agentic Manager task context:",
       '- Issue: "PAP-11750"',
       '- Title: "Add Hermes prompt rendering regression tests"',
       "",
@@ -75,11 +75,11 @@ test("renders standard assignment wake with task authority and no backlog discov
     ].join("\n"),
   }), {});
 
-  expect(prompt).toContain("## Paperclip Wake Payload");
+  expect(prompt).toContain("## GS Agentic Manager Wake Payload");
   expect(prompt).toContain("- reason: issue_assigned");
   expect(prompt).toContain("- issue: PAP-11750 Add Hermes prompt rendering regression tests");
   expect(prompt).toContain("- issue work mode: standard");
-  expect(prompt).toContain("Paperclip task context:");
+  expect(prompt).toContain("GS Agentic Manager task context:");
   expect(prompt).toContain("Add focused unit tests for assignment wake and custom prompt rendering.");
   expect(prompt).toContain("The harness already checked out this issue for the current run.");
   expect(prompt).toContain("clear final disposition");
@@ -92,7 +92,7 @@ test("renders scoped planning wake authority before the Hermes default workflow"
     paperclipApiUrl: "http://127.0.0.1:3101/api",
   });
 
-  expect(prompt).toContain("## Paperclip Wake Payload");
+  expect(prompt).toContain("## GS Agentic Manager Wake Payload");
   expect(prompt).toContain("- issue: PAP-3404 Plan the Hermes prompt update");
   expect(prompt).toContain("- planning directive: Make the plan only. Do not write code or perform implementation work.");
   expect(prompt).toContain("- checkout: already claimed by the harness for this run");
@@ -123,8 +123,8 @@ test("renders resume deltas instead of full scoped-wake boilerplate when continu
     },
   }), {}, { resumedSession: true });
 
-  expect(prompt).toContain("## Paperclip Resume Delta");
-  expect(prompt).toContain("You are resuming an existing Paperclip session.");
+  expect(prompt).toContain("## GS Agentic Manager Resume Delta");
+  expect(prompt).toContain("You are resuming an existing GS Agentic Manager session.");
   expect(prompt).toContain("Focus on the new wake delta below");
   expect(prompt).toContain("Please add the resume-delta case.");
   expect(prompt).toContain("- fallback fetch needed: no");
@@ -188,7 +188,7 @@ test("renders accepted-plan continuation without authorizing implementation on t
 test("keeps authoritative parent and ancestor context from task markdown", () => {
   const prompt = buildPrompt(baseContext({
     paperclipTaskMarkdown: [
-      "Paperclip task context:",
+      "GS Agentic Manager task context:",
       '- Issue: "PAP-3404"',
       "",
       "Authoritative parent / ancestor context:",
@@ -202,15 +202,15 @@ test("keeps authoritative parent and ancestor context from task markdown", () =>
   expect(prompt).not.toContain("check the issue body or comments for references");
 });
 
-test("renders safe Paperclip API examples from environment variables with multiline update preservation", () => {
+test("renders safe GS Agentic Manager API examples from environment variables with multiline update preservation", () => {
   const prompt = buildPrompt(baseContext(), {
     paperclipApiUrl: "http://paperclip.local/api",
   });
 
-  expect(prompt).toContain("Use `$PAPERCLIP_API_URL`, `$PAPERCLIP_API_KEY`, and `$PAPERCLIP_RUN_ID`");
+  expect(prompt).toContain("Use `$GSAM_API_URL`, `$GSAM_API_KEY`, and `$GSAM_RUN_ID`");
   expect(prompt).toContain("Displayed command logs may redact secrets");
-  expect(prompt).toContain('-H "Authorization: Bearer $PAPERCLIP_API_KEY"');
-  expect(prompt).toContain('-H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID"');
+  expect(prompt).toContain('-H "Authorization: Bearer $GSAM_API_KEY"');
+  expect(prompt).toContain('-H "X-Paperclip-Run-Id: $GSAM_RUN_ID"');
   expect(prompt).toContain("body=$(cat <<'MD'");
   expect(prompt).toContain("jq -n --arg status done --arg comment \"$body\"");
   expect(prompt).toContain("--data-binary @-");
@@ -236,15 +236,15 @@ test("preserves custom prompt templates while exposing runtime and wake variable
   expect(prompt).toContain("CUSTOM TEMPLATE");
   expect(prompt).toContain("agent=Hermes Engineer");
   expect(prompt).toContain("api=http://paperclip.local/api");
-  expect(prompt).toContain("keyEnv=PAPERCLIP_API_KEY");
-  expect(prompt).toContain("runEnv=PAPERCLIP_RUN_ID");
-  expect(prompt).toContain("wakePrompt=## Paperclip Wake Payload");
-  expect(prompt).toContain("task=Paperclip task context:");
+  expect(prompt).toContain("keyEnv=GSAM_API_KEY");
+  expect(prompt).toContain("runEnv=GSAM_RUN_ID");
+  expect(prompt).toContain("wakePrompt=## GS Agentic Manager Wake Payload");
+  expect(prompt).toContain("task=GS Agentic Manager task context:");
   expect(prompt).toContain("wakeJson={\"reason\":\"issue_assigned\"");
   expect(prompt).toContain('"reason":"issue_assigned"');
-  expect(prompt).toContain("## Paperclip Wake Payload");
+  expect(prompt).toContain("## GS Agentic Manager Wake Payload");
   expect(prompt).toContain("Issue description:\n```text\nUse the wake payload as runtime authority.\n```");
-  expect(prompt).not.toContain("Paperclip runtime identity:");
+  expect(prompt).not.toContain("GS Agentic Manager runtime identity:");
 });
 
 

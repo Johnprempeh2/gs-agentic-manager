@@ -1,4 +1,4 @@
-import type { FolderListItem, FolderListResult } from "@paperclipai/shared";
+import type { FolderListItem, FolderListResult } from "@greatstone/shared";
 
 /**
  * Pure tree helpers for the skill folder browser (Idea A, PAP-14038).

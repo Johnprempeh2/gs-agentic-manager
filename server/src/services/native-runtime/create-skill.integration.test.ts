@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { activityLog, companySkills, companyMemberships, heartbeatRuns, issues } from "@paperclipai/db";
+import { activityLog, companySkills, companyMemberships, heartbeatRuns, issues } from "@greatstone/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startRunnerApiTestServer } from "../../__tests__/helpers/runner-api-server.js";
 import { companySkillPolicyService } from "../company-skill-policy.js";
@@ -14,20 +14,20 @@ import { activityService } from "../activity.js";
 describe("runner create_skill through the real skill API", () => {
   let server: Awaited<ReturnType<typeof startRunnerApiTestServer>>;
   let home: string;
-  const previousSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;
-  const previousHome = process.env.PAPERCLIP_HOME;
+  const previousSecret = process.env.GSAM_AGENT_JWT_SECRET;
+  const previousHome = process.env.GSAM_HOME;
   beforeAll(async () => {
-    process.env.PAPERCLIP_AGENT_JWT_SECRET = randomUUID();
+    process.env.GSAM_AGENT_JWT_SECRET = randomUUID();
     home = await mkdtemp(join(tmpdir(), "paperclip-create-skill-"));
-    process.env.PAPERCLIP_HOME = home;
+    process.env.GSAM_HOME = home;
     server = await startRunnerApiTestServer();
   }, 60_000);
   afterAll(async () => {
     await server?.close();
-    if (previousSecret === undefined) delete process.env.PAPERCLIP_AGENT_JWT_SECRET;
-    else process.env.PAPERCLIP_AGENT_JWT_SECRET = previousSecret;
-    if (previousHome === undefined) delete process.env.PAPERCLIP_HOME;
-    else process.env.PAPERCLIP_HOME = previousHome;
+    if (previousSecret === undefined) delete process.env.GSAM_AGENT_JWT_SECRET;
+    else process.env.GSAM_AGENT_JWT_SECRET = previousSecret;
+    if (previousHome === undefined) delete process.env.GSAM_HOME;
+    else process.env.GSAM_HOME = previousHome;
     if (home) await rm(home, { recursive: true, force: true });
   });
 

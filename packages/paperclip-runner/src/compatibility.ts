@@ -1,8 +1,8 @@
 import { capabilityCanonicalOperation } from "./catalog/index.js";
 
-export const PAPERCLIP_RUNNER_COMPATIBILITY = Object.freeze({
+export const GSAM_RUNNER_COMPATIBILITY = Object.freeze({
   schema: "paperclip.runner.compatibility.v1" as const,
-  packageName: "@paperclipai/paperclip-runner" as const,
+  packageName: "@greatstone/paperclip-runner" as const,
   packageVersion: "0.0.0" as const,
   components: Object.freeze({
     catalog: 1,
@@ -20,7 +20,7 @@ export const PAPERCLIP_RUNNER_COMPATIBILITY = Object.freeze({
 });
 
 export type PaperclipRunnerCompatibilityComponent =
-  keyof typeof PAPERCLIP_RUNNER_COMPATIBILITY.components;
+  keyof typeof GSAM_RUNNER_COMPATIBILITY.components;
 
 export type PaperclipRunnerCompatibilityIssueCode =
   | "component_version_mismatch"
@@ -61,7 +61,7 @@ export class PaperclipRunnerCompatibilityError extends Error {
     issues: readonly PaperclipRunnerCompatibilityIssue[],
   ) {
     super(
-      `Paperclip runner compatibility check failed for ${consumer}: ${issues
+      `GS Agentic Manager runner compatibility check failed for ${consumer}: ${issues
         .map((issue) => `${issue.code}: ${issue.message}`)
         .join("; ")}`,
     );
@@ -77,13 +77,13 @@ export class PaperclipRunnerCompatibilityError extends Error {
  */
 export function assertPaperclipRunnerCompatibility(
   requirement: PaperclipRunnerCompatibilityRequirement,
-): typeof PAPERCLIP_RUNNER_COMPATIBILITY {
+): typeof GSAM_RUNNER_COMPATIBILITY {
   const issues: PaperclipRunnerCompatibilityIssue[] = [];
 
   for (const [component, received] of Object.entries(requirement.components ?? {}) as Array<
     [PaperclipRunnerCompatibilityComponent, number]
   >) {
-    const expected = PAPERCLIP_RUNNER_COMPATIBILITY.components[component];
+    const expected = GSAM_RUNNER_COMPATIBILITY.components[component];
     if (received !== expected) {
       issues.push({
         code: "component_version_mismatch",
@@ -96,7 +96,7 @@ export function assertPaperclipRunnerCompatibility(
   }
 
   if (requirement.evalCorpusVersion !== undefined) {
-    const { minimum, maximum } = PAPERCLIP_RUNNER_COMPATIBILITY.evalCorpus;
+    const { minimum, maximum } = GSAM_RUNNER_COMPATIBILITY.evalCorpus;
     if (
       requirement.evalCorpusVersion < minimum
       || requirement.evalCorpusVersion > maximum
@@ -150,5 +150,5 @@ export function assertPaperclipRunnerCompatibility(
   if (issues.length > 0) {
     throw new PaperclipRunnerCompatibilityError(requirement.consumer, issues);
   }
-  return PAPERCLIP_RUNNER_COMPATIBILITY;
+  return GSAM_RUNNER_COMPATIBILITY;
 }

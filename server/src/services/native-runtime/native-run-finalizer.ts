@@ -4,7 +4,7 @@ import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./
 import { conversationNativeDecision, isConversation } from "../agent-conversations.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   approvals,
   agentWakeupRequests,
@@ -18,9 +18,9 @@ import {
   nativeRunResults,
   statusDecisions,
   workAssessments,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { classifyNativeEvidence } from "./evidence-classifier.js";
-import type { PrpIgnoredAttentionRequest } from "@paperclipai/paperclip-runner";
+import type { PrpIgnoredAttentionRequest } from "@greatstone/paperclip-runner";
 import {
   arbitrateNativeStatus,
   NATIVE_STATUS_ARBITER_POLICY_VERSION,

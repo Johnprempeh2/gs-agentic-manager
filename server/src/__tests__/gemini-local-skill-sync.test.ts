@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   listGeminiSkills,
   syncGeminiSkills,
-} from "@paperclipai/adapter-gemini-local/server";
+} from "@greatstone/adapter-gemini-local/server";
 
 async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -20,7 +20,7 @@ describe("gemini local skill sync", () => {
     cleanupDirs.clear();
   });
 
-  it("defaults and installs the operational Paperclip skill in the Gemini skills home", async () => {
+  it("defaults and installs the operational GS Agentic Manager skill in the Gemini skills home", async () => {
     const home = await makeTempDir("paperclip-gemini-skill-sync-");
     cleanupDirs.add(home);
 

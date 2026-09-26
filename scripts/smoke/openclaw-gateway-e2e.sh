@@ -25,8 +25,8 @@ require_cmd docker
 require_cmd node
 require_cmd shasum
 
-PAPERCLIP_API_URL="${PAPERCLIP_API_URL:-http://127.0.0.1:3100}"
-API_BASE="${PAPERCLIP_API_URL%/}/api"
+GSAM_API_URL="${GSAM_API_URL:-http://127.0.0.1:3100}"
+API_BASE="${GSAM_API_URL%/}/api"
 
 COMPANY_SELECTOR="${COMPANY_SELECTOR:-CLA}"
 OPENCLAW_AGENT_NAME="${OPENCLAW_AGENT_NAME:-OpenClaw Gateway Smoke Agent}"
@@ -45,7 +45,7 @@ OPENCLAW_BUILD="${OPENCLAW_BUILD:-1}"
 OPENCLAW_WAIT_SECONDS="${OPENCLAW_WAIT_SECONDS:-60}"
 OPENCLAW_RESET_STATE="${OPENCLAW_RESET_STATE:-1}"
 
-PAPERCLIP_API_URL_FOR_OPENCLAW="${PAPERCLIP_API_URL_FOR_OPENCLAW:-http://host.docker.internal:3100}"
+GSAM_API_URL_FOR_OPENCLAW="${GSAM_API_URL_FOR_OPENCLAW:-http://host.docker.internal:3100}"
 CASE_TIMEOUT_SEC="${CASE_TIMEOUT_SEC:-420}"
 RUN_TIMEOUT_SEC="${RUN_TIMEOUT_SEC:-300}"
 STRICT_CASES="${STRICT_CASES:-1}"
@@ -57,13 +57,13 @@ PAIRING_AUTO_APPROVE="${PAIRING_AUTO_APPROVE:-1}"
 PAYLOAD_TEMPLATE_MESSAGE_APPEND="${PAYLOAD_TEMPLATE_MESSAGE_APPEND:-}"
 
 AUTH_HEADERS=()
-if [[ -n "${PAPERCLIP_AUTH_HEADER:-}" ]]; then
-  AUTH_HEADERS+=( -H "Authorization: ${PAPERCLIP_AUTH_HEADER}" )
+if [[ -n "${GSAM_AUTH_HEADER:-}" ]]; then
+  AUTH_HEADERS+=( -H "Authorization: ${GSAM_AUTH_HEADER}" )
 fi
-if [[ -n "${PAPERCLIP_COOKIE:-}" ]]; then
-  AUTH_HEADERS+=( -H "Cookie: ${PAPERCLIP_COOKIE}" )
-  PAPERCLIP_BROWSER_ORIGIN="${PAPERCLIP_BROWSER_ORIGIN:-${PAPERCLIP_API_URL%/}}"
-  AUTH_HEADERS+=( -H "Origin: ${PAPERCLIP_BROWSER_ORIGIN}" -H "Referer: ${PAPERCLIP_BROWSER_ORIGIN}/" )
+if [[ -n "${GSAM_COOKIE:-}" ]]; then
+  AUTH_HEADERS+=( -H "Cookie: ${GSAM_COOKIE}" )
+  GSAM_BROWSER_ORIGIN="${GSAM_BROWSER_ORIGIN:-${GSAM_API_URL%/}}"
+  AUTH_HEADERS+=( -H "Origin: ${GSAM_BROWSER_ORIGIN}" -H "Referer: ${GSAM_BROWSER_ORIGIN}/" )
 fi
 
 RESPONSE_CODE=""
@@ -91,7 +91,7 @@ api_request() {
   if [[ "$path" == http://* || "$path" == https://* ]]; then
     url="$path"
   elif [[ "$path" == /api/* ]]; then
-    url="${PAPERCLIP_API_URL%/}${path}"
+    url="${GSAM_API_URL%/}${path}"
   else
     url="${API_BASE}${path}"
   fi
@@ -175,7 +175,7 @@ assert_status() {
 
 require_board_auth() {
   if [[ ${#AUTH_HEADERS[@]} -eq 0 ]]; then
-    fail "board auth required. Set PAPERCLIP_COOKIE or PAPERCLIP_AUTH_HEADER."
+    fail "board auth required. Set GSAM_COOKIE or GSAM_AUTH_HEADER."
   fi
   api_request "GET" "/companies"
   if [[ "$RESPONSE_CODE" != "200" ]]; then
@@ -406,7 +406,7 @@ create_and_approve_gateway_join() {
     --arg name "$OPENCLAW_AGENT_NAME" \
     --arg url "$OPENCLAW_GATEWAY_URL" \
     --arg token "$gateway_token" \
-    --arg paperclipApiUrl "$PAPERCLIP_API_URL_FOR_OPENCLAW" \
+    --arg paperclipApiUrl "$GSAM_API_URL_FOR_OPENCLAW" \
     --argjson timeoutSec "$OPENCLAW_ADAPTER_TIMEOUT_SEC" \
     --argjson waitTimeoutMs "$OPENCLAW_ADAPTER_WAIT_TIMEOUT_MS" \
     '{
@@ -488,7 +488,7 @@ persist_claimed_key_artifacts() {
     api_request "GET" "/skills/paperclip"
     assert_status "200"
     {
-      echo "PAPERCLIP_API_URL=${PAPERCLIP_API_URL_FOR_OPENCLAW}"
+      echo "GSAM_API_URL=${GSAM_API_URL_FOR_OPENCLAW}"
       echo
       printf "%s\n" "$RESPONSE_BODY"
     } > "${skill_dir}/SKILL.md"
@@ -506,7 +506,7 @@ inject_agent_api_key_payload_template() {
   assert_status "200"
 
   local base_message
-  base_message="Set PAPERCLIP_API_KEY=${AGENT_API_KEY} in your run context before running Paperclip heartbeat steps."
+  base_message="Set GSAM_API_KEY=${AGENT_API_KEY} in your run context before running GS Agentic Manager heartbeat steps."
   if [[ -n "$PAYLOAD_TEMPLATE_MESSAGE_APPEND" ]]; then
     base_message="${base_message}\n\n${PAYLOAD_TEMPLATE_MESSAGE_APPEND}"
   fi
@@ -787,7 +787,7 @@ run_case_b() {
   local marker="OPENCLAW_CASE_B_OK_$(date +%s)"
   local message_text="${marker}"
   local description
-  description="Case B validation.\n\nUse the message tool to send this exact text to the user's main chat session in webchat:\n${message_text}\n\nAfter sending, post a Paperclip issue comment containing exactly: ${marker}\nThen mark this issue done."
+  description="Case B validation.\n\nUse the message tool to send this exact text to the user's main chat session in webchat:\n${message_text}\n\nAfter sending, post a GS Agentic Manager issue comment containing exactly: ${marker}\nThen mark this issue done."
 
   local created
   created="$(create_issue_for_case "[OpenClaw Gateway Smoke] Case B" "$description")"
@@ -833,7 +833,7 @@ run_case_c() {
   local ack_marker="OPENCLAW_CASE_C_ACK_$(date +%s)"
   local original_issue_reference="the original case issue you are currently reading"
   local description
-  description="Case C validation.\n\nTreat this run as a fresh/new session.\nCreate a NEW Paperclip issue in this same company with title exactly:\n${marker}\nUse description: 'created by case C smoke'.\n\nThen post a comment on ${original_issue_reference} containing exactly: ${ack_marker}\nDo NOT post the ACK comment on the newly created issue.\nThen mark the original case issue done."
+  description="Case C validation.\n\nTreat this run as a fresh/new session.\nCreate a NEW GS Agentic Manager issue in this same company with title exactly:\n${marker}\nUse description: 'created by case C smoke'.\n\nThen post a comment on ${original_issue_reference} containing exactly: ${ack_marker}\nDo NOT post the ACK comment on the newly created issue.\nThen mark the original case issue done."
 
   local created
   created="$(create_issue_for_case "[OpenClaw Gateway Smoke] Case C" "$description")"
@@ -884,7 +884,7 @@ main() {
   mkdir -p "$OPENCLAW_DIAG_DIR"
   log "diagnostics dir: ${OPENCLAW_DIAG_DIR}"
 
-  wait_http_ready "${PAPERCLIP_API_URL%/}/api/health" 15 || fail "Paperclip API health endpoint not reachable"
+  wait_http_ready "${GSAM_API_URL%/}/api/health" 15 || fail "GS Agentic Manager API health endpoint not reachable"
   api_request "GET" "/health"
   assert_status "200"
   log "paperclip health deploymentMode=$(jq -r '.deploymentMode // "unknown"' <<<"$RESPONSE_BODY") exposure=$(jq -r '.deploymentExposure // "unknown"' <<<"$RESPONSE_BODY")"

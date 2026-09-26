@@ -61,7 +61,7 @@ export function TaskChatMarker({
             <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
             <span className="truncate font-medium">{item.label}</span>
             {relative ? (
-              <span className="shrink-0 text-muted-foreground/70">
+              <span className="shrink-0 text-subtle-foreground">
                 · {relative}
               </span>
             ) : null}

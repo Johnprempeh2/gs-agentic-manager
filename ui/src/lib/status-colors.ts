@@ -316,7 +316,7 @@ export const priorityColorDefault = "text-yellow-600 dark:text-yellow-400";
 // External object status — colors & severity ranking
 // ---------------------------------------------------------------------------
 //
-// Categories come from `EXTERNAL_OBJECT_STATUS_CATEGORIES` in @paperclipai/shared.
+// Categories come from `EXTERNAL_OBJECT_STATUS_CATEGORIES` in @greatstone/shared.
 // The map keys here intentionally mirror the union — keep them in sync.
 //
 // Tone reuse rationale (see UX spec §1):

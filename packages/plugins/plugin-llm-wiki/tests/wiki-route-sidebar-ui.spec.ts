@@ -656,7 +656,7 @@ describe("WikiPage", () => {
     delete (globalThis as BridgeGlobal).__paperclipPluginBridge__;
   });
 
-  it("renders structured Paperclip source refs as text", () => {
+  it("renders structured GS Agentic Manager source refs as text", () => {
     act(() => {
       root.render(createElement(WikiPage, {
         context: { companyId: COMPANY_ID, companyPrefix: "PAP" },

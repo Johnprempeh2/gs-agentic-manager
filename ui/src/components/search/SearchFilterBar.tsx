@@ -7,7 +7,7 @@ import {
   type CompanySearchFilterOptionCounts,
   type CompanySearchSort,
   type IssueStatus,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { StatusIcon } from "@/components/StatusIcon";
 import { PriorityIcon } from "@/components/PriorityIcon";
 import { SHOW_TASK_PRIORITY_UI } from "@/lib/ui-flags";

@@ -37,7 +37,7 @@ videos, and browser reports stay in existing campaign artifact storage.
 
 ## Run and inspect
 
-From an installed Paperclip checkout:
+From an installed GS Agentic Manager checkout:
 
 ```sh
 pnpm test:lifecycle-baseline --list
@@ -52,7 +52,7 @@ pnpm exec tsc -p tests/lifecycle-baseline/tsconfig.json
 
 All four lanes are credential-free. The integration lane uses disposable embedded
 Postgres and scripted providers. No command above invokes a model, starts a paid
-campaign, or changes an existing Paperclip instance. Tests are outside default
+campaign, or changes an existing GS Agentic Manager instance. Tests are outside default
 server/workspace discovery; Product E2E matcher calibration remains in its normal
 opt-in support suite. The baseline command returns nonzero on failed assertions,
 missing evidence, or unavailable selected coverage. Ordinary CI is unaffected.
@@ -179,11 +179,11 @@ retain the original measurements and cover separate persisted allowances, delaye
 repair promotion and the current native question/response continuation contract.
 
 The inexpensive browser regressions use real Chromium without a provider or
-Paperclip instance. They check screenshot readiness and development service-worker
+GS Agentic Manager instance. They check screenshot readiness and development service-worker
 module revalidation across repeated reloads:
 
 ```sh
 pnpm exec playwright test --config tests/runner-e2e/playwright-support.config.ts
 ```
 
-Set `PAPERCLIP_PLAYWRIGHT_CHANNEL=chrome` to use an installed Chrome browser.
+Set `GSAM_PLAYWRIGHT_CHANNEL=chrome` to use an installed Chrome browser.

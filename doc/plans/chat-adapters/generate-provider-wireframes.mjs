@@ -41,7 +41,7 @@ function annotations(regions, mobile = false) {
 
 function globalSidebar() {
   const items = ["New Task", "Search", "Dashboard", "Inbox", "Tasks", "Projects", "Routines", "Artifacts", "Agents", "Skills", "Connectors", "Audit"];
-  return `<g data-region="global-navigation">${tx(24, 38, "Paperclip", 20, "#000", 'font-weight="700"')}${items.map((item, index) => {
+  return `<g data-region="global-navigation">${tx(24, 38, "GS Agentic Manager", 20, "#000", 'font-weight="700"')}${items.map((item, index) => {
     const y = 78 + index * 46;
     return `${item === "Connectors" ? rc(12, y - 28, 216, 38, 'fill="#e6e6e6"') : ""}${circle(32, y - 10, 6, 'fill="#e6e6e6"')}${tx(52, y - 5, item, 14, item === "Connectors" ? "#000" : "#666", item === "Connectors" ? 'font-weight="600"' : "")}`;
   }).join("\n")}${tx(24, 744, "Acme Company", 14, "#000", 'font-weight="600"')}${tx(24, 772, "Dana · Admin", 12, "#666")}${ln(240, 0, 240, 800)}</g>`;
@@ -68,7 +68,7 @@ function heading(screen, step = "") {
 const setupData = {
   Slack: {
     bot: "Maya → Slack bot @maya", identity: "Workspace app · one bot identity",
-    delivery: "Direct verified webhook", deliveryNote: "Advanced: Paperclip relay or Slack Socket Mode",
+    delivery: "Direct verified webhook", deliveryNote: "Advanced: GS Agentic Manager relay or Slack Socket Mode",
     secrets: ["Bot/OAuth token  •••• 7K2M", "Signing secret   •••• C19Q"],
     steps: ["Create app from generated manifest", "Install app to workspace or Grid org", "Return token/secret or finish OAuth", "Invite @maya to allowed channels"],
     verify: [["Bot + workspace", "Ready"], ["Signed event", "Ready"], ["Scopes + events", "Ready"], ["Channel membership", "Test next"]],
@@ -103,7 +103,7 @@ const setupData = {
 const settingsData = {
   Slack: {
     reach: ["Workspace · Acme", "#customer-support · Invited", "#product-feedback · Invited", "DMs · On"],
-    boundary: ["Root @maya → Slack thread", "One thread ↔ one Paperclip issue", "Bound replies need no mention"],
+    boundary: ["Root @maya → Slack thread", "One thread ↔ one GS Agentic Manager issue", "Bound replies need no mention"],
     capabilities: ["Agent Sessions + native stream · On", "Block Kit actions + modals · On", "Files + emoji/reactions · On", "Slash commands · Off", "Ephemeral denials · On"],
     security: ["OAuth workspace install", "Signature · Healthy", "Token rotation · Supported", "Socket Mode · Off"],
     fallback: "Missing scope → disable feature + Reinstall with scope"
@@ -111,9 +111,9 @@ const settingsData = {
   GitHub: {
     reach: ["acme/api · Installed", "acme/web · Installed", "acme/legacy · Excluded", "GitHub.com"],
     boundary: ["Issue or PR conversation ↔ issue", "Review comment thread ↔ separate issue", "Discussions · Not in launch"],
-    capabilities: ["Mention activation · On", "Receipt reaction · On", "One edited GFM progress comment", "Files → Paperclip links", "Labels/trusted authors · Advanced"],
+    capabilities: ["Mention activation · On", "Receipt reaction · On", "One edited GFM progress comment", "Files → GS Agentic Manager links", "Labels/trusted authors · Advanced"],
     security: ["GitHub App installation", "Webhook signature · Healthy", "Self-message suppression · Ready", "Code/tool access · Separate connection"],
-    fallback: "No stream/buttons/modals/DM → GFM text + Paperclip URL"
+    fallback: "No stream/buttons/modals/DM → GFM text + GS Agentic Manager URL"
   },
   "Microsoft Teams": {
     reach: ["Tenant · Acme", "Support team / General · Allowed", "Personal scope · On", "Group chats · On"],
@@ -148,7 +148,7 @@ const interactionData = {
   ],
   "Microsoft Teams": [
     ["Human", "Channel root @Maya · or DM/group message", "Conversation type selects the boundary"],
-    ["Ingress", "Verify bot activity + tenant/member", "Persist, scope-check, resolve Paperclip actor"],
+    ["Ingress", "Verify bot activity + tenant/member", "Persist, scope-check, resolve GS Agentic Manager actor"],
     ["Binding", "Channel post thread or active conversation", "Create one PAP issue; explicit New task in DM"],
     ["Turns", "Replies, files, Adaptive Card/task module", "Mention/RSC delivery and current permissions apply"],
     ["Output", "DM native stream; group/channel buffered", "Targeted → DM/text fallback; safe output only"]

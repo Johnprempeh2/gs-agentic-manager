@@ -1,4 +1,4 @@
-import type { IssueDocument } from "@paperclipai/shared";
+import type { IssueDocument } from "@greatstone/shared";
 import { Lightbulb, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TaskChatProviderActivityItem } from "./task-chat-model";
@@ -122,7 +122,7 @@ export function TaskChatPlanPreviewCard({
           <ul className="mt-2 space-y-1.5 text-sm leading-5 text-muted-foreground">
             {content.preview.map((line, index) => (
               <li key={`${index}-${line}`} className="flex gap-2">
-                <span aria-hidden className="shrink-0 text-muted-foreground/60">•</span>
+                <span aria-hidden className="shrink-0 text-subtle-foreground">•</span>
                 <span className="line-clamp-1">{line}</span>
               </li>
             ))}

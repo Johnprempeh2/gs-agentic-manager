@@ -9,13 +9,13 @@ import { isConnectorTool, executeConnectorTool, type ConnectorAssignment } from 
 import { resolveNativeRuntimeMcpSnapshot } from "./runtime-context.js";
 import { connectionIntentService } from "../connection-intents.js";
 import { RUNTIME_CONNECTION_TOOL_DEFINITIONS } from "../connection-tool-definitions.js";
-import { connectionsSearchInputSchema, connectionRequestInputSchema, CONNECTION_INTENT_AGENT_GUIDANCE } from "@paperclipai/shared";
+import { connectionsSearchInputSchema, connectionRequestInputSchema, CONNECTION_INTENT_AGENT_GUIDANCE } from "@greatstone/shared";
 import { createHash } from "node:crypto";
-import { paperclipChatFilePreparationDelivery } from "@paperclipai/adapter-utils/chat-file-delivery";
+import { paperclipChatFilePreparationDelivery } from "@greatstone/adapter-utils/chat-file-delivery";
 import {
   isPaperclipExternalChatContractTurn,
   normalizePaperclipWakePayload,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 import { runnerApiToolsEnabled } from "./runner-api-rollout.js";
 import { openRunnerApiWorkspaceFile } from "./runner-api-files.js";
 import { basename } from "node:path";
@@ -28,7 +28,7 @@ import { badRequest, forbidden } from "../../errors.js";
 import { searchRunnerApi } from "./runner-api-catalog.js";
 import { executeRunnerApi, validateRunnerApiCall, RUNNER_API_MAX_BYTES, type RunnerApiFile } from "./runner-api-client.js";
 import { and, desc, eq, isNull, notInArray, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   activityLog,
   agents,
@@ -42,7 +42,7 @@ import {
   issueDocuments,
   issues,
   issueThreadInteractions,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { CAPABILITY_SEMANTIC_TOOL_CATALOG } from "../../vendor/paperclip-runner/index.js";
 import { agentService } from "../agents.js";
 import { approvalService } from "../approvals.js";
@@ -153,7 +153,7 @@ export class PaperclipRunnerToolAuthority {
 
   definitions(): Array<Record<string, unknown>> {
     if (this.binding.nativeReview) {
-      // Scope Paperclip control-plane actions. Provider file and shell access
+      // Scope GS Agentic Manager control-plane actions. Provider file and shell access
       // still follow the configured agent/environment policy, including tests.
       return [
         ...CAPABILITY_SEMANTIC_TOOL_CATALOG
@@ -191,7 +191,7 @@ export class PaperclipRunnerToolAuthority {
         name: descriptor.operationId,
         description:
           descriptor.operationId === "register_deliverable"
-            ? "Prepare one verified workspace file for Paperclip's final task or external-chat response. This records the attachment, work product, and explicit same-run selection; it does not confirm provider delivery."
+            ? "Prepare one verified workspace file for GS Agentic Manager's final task or external-chat response. This records the attachment, work product, and explicit same-run selection; it does not confirm provider delivery."
             : descriptor.description,
         inputSchema:
           descriptor.operationId === "register_deliverable"
@@ -361,7 +361,7 @@ export class PaperclipRunnerToolAuthority {
     }
     switch (call.tool) {
       case "create_skill": {
-        const apiUrl = this.binding.apiUrl ?? process.env.PAPERCLIP_API_URL;
+        const apiUrl = this.binding.apiUrl ?? process.env.GSAM_API_URL;
         const token = createLocalAgentJwt(this.binding.agentId, this.binding.companyId, context.actor.adapterType, this.binding.runId, context.run.responsibleUserId);
         if (!apiUrl || !token) throw new Error("Skill tool authentication is unavailable");
         return callCreateSkillTool({ arguments: input, apiUrl, token, companyId: this.binding.companyId });
@@ -369,7 +369,7 @@ export class PaperclipRunnerToolAuthority {
       case "create_project":
       case "list_project_repositories":
       case "list_projects": {
-        const apiUrl = this.binding.apiUrl ?? process.env.PAPERCLIP_API_URL;
+        const apiUrl = this.binding.apiUrl ?? process.env.GSAM_API_URL;
         const token = createLocalAgentJwt(this.binding.agentId, this.binding.companyId, context.actor.adapterType, this.binding.runId, context.run.responsibleUserId);
         if (!apiUrl || !token) throw new Error("Project tool authentication is unavailable");
         return callProjectTool({ name: call.tool, arguments: input, apiUrl, token,
@@ -518,10 +518,10 @@ export class PaperclipRunnerToolAuthority {
     const bound = await this.#boundContext();
     const context = { ...this.binding, issueIdentifier: bound.issue.identifier, workMode: bound.issue.workMode };
     const { input, operation } = validateRunnerApiCall(value, context);
-    const apiUrl = this.binding.apiUrl ?? process.env.PAPERCLIP_API_URL;
-    if (!apiUrl) throw new Error("Paperclip API origin is unavailable");
+    const apiUrl = this.binding.apiUrl ?? process.env.GSAM_API_URL;
+    if (!apiUrl) throw new Error("GS Agentic Manager API origin is unavailable");
     const token = createLocalAgentJwt(this.binding.agentId, this.binding.companyId, bound.actor.adapterType, this.binding.runId, bound.run.responsibleUserId);
-    if (!token) throw new Error("Paperclip run authentication is unavailable");
+    if (!token) throw new Error("GS Agentic Manager run authentication is unavailable");
     const execute = async () => {
       const current = await this.#boundContext();
       if (!runnerApiToolsEnabled(this.binding.companyId, this.binding.apiToolsEnabled)) throw new Error("paperclip_runner_tool_not_advertised");
@@ -688,7 +688,7 @@ export class PaperclipRunnerToolAuthority {
       if (review.interaction.status !== expectedStatus) throw badRequest("This review already has a different decision.");
       return { interactionId: review.interaction.id, status: expectedStatus, deduplicated: true };
     }
-    const apiUrl = this.binding.apiUrl ?? process.env.PAPERCLIP_API_URL;
+    const apiUrl = this.binding.apiUrl ?? process.env.GSAM_API_URL;
     const token = createLocalAgentJwt(this.binding.agentId, this.binding.companyId,
       context.actor.adapterType, this.binding.runId, context.run.responsibleUserId);
     if (!apiUrl || !token) throw new Error("Review tool authentication is unavailable");

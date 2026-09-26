@@ -78,7 +78,7 @@ set_public_package_version() { :; }
     `#!/usr/bin/env node
 const [mode] = process.argv.slice(2);
 if (mode === "fetch") {
-  process.stdout.write('{"paperclipai":[]}\\n');
+  process.stdout.write('{"gsam":[]}\\n');
   process.exit(0);
 }
 if (mode === "assert-absent") {
@@ -293,7 +293,7 @@ function preparePreviewFixture(fixture) {
   mkdirSync(join(fixtureDir, "cli"), { recursive: true });
   writeFileSync(
     join(fixtureDir, "cli", "package.json"),
-    JSON.stringify({ name: "paperclipai", version: "2026.710.0-canary.0" }),
+    JSON.stringify({ name: "gsam", version: "2026.710.0-canary.0" }),
   );
   // Step 5 cds into each previewed package directory.
   for (let index = 1; index <= PREVIEW_PACKAGE_COUNT; index += 1) {

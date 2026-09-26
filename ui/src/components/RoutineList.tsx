@@ -1,4 +1,4 @@
-import type { AgentAppearance } from "@paperclipai/shared";
+import type { AgentAppearance } from "@greatstone/shared";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import type { ReactNode } from "react";
 import { MoreHorizontal, Play } from "lucide-react";

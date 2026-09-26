@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Puzzle, ArrowLeft, ShieldAlert, ActivitySquare, CheckCircle, XCircle, Loader2, Clock, Cpu, Webhook, CalendarClock, AlertTriangle, FolderOpen, Save } from "lucide-react";
-import type { PluginLocalFolderDeclaration } from "@paperclipai/shared";
+import type { PluginLocalFolderDeclaration } from "@greatstone/shared";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useManagedSandboxOnly } from "@/hooks/useManagedSandboxOnly";
@@ -451,11 +451,11 @@ export function PluginSettings() {
                               : entry.level === "warn"
                                 ? "text-yellow-600 dark:text-yellow-400"
                                 : entry.level === "debug"
-                                  ? "text-muted-foreground/60"
+                                  ? "text-subtle-foreground"
                                   : "text-muted-foreground"
                           }`}
                         >
-                          <span className="shrink-0 text-muted-foreground/50">{new Date(entry.createdAt).toLocaleTimeString()}</span>
+                          <span className="shrink-0 text-subtle-foreground">{new Date(entry.createdAt).toLocaleTimeString()}</span>
                           <Badge variant="outline" className="h-4 shrink-0 px-1 text-(length:--text-nano)">{entry.level}</Badge>
                           <span className="truncate" title={entry.message}>{entry.message}</span>
                         </div>

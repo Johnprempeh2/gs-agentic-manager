@@ -48,7 +48,7 @@ import {
   toolStdioCommandTemplates,
   userSecretDefinitions,
   userSecretDeclarations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   APP_STORE_HIDDEN_SLUGS,
@@ -58,7 +58,7 @@ import {
   getAvailableConnectionMethod,
   getConnectableAppDefinition,
   type GoogleWorkspaceConnectorProfileId,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -602,7 +602,7 @@ async function createBrokerConnection(
     .values({
       companyId,
       applicationKey: "paperclip-pages",
-      name: `Paperclip Pages ${randomUUID()}`,
+      name: `GS Agentic Manager Pages ${randomUUID()}`,
       type: "mcp_http",
       status: "active",
     })
@@ -808,7 +808,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
   beforeAll(async () => {
     const externalDatabaseUrl =
-      process.env.PAPERCLIP_TOOL_ACCESS_TEST_DATABASE_URL?.trim();
+      process.env.GSAM_TOOL_ACCESS_TEST_DATABASE_URL?.trim();
     if (externalDatabaseUrl) {
       db = createDb(externalDatabaseUrl);
       await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: true });
@@ -1212,7 +1212,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
   it("allows an explicitly allowlisted internal token broker through the guarded fetch", async () => {
     vi.stubEnv(
-      "PAPERCLIP_TOKEN_BROKER_ALLOWED_HOSTS",
+      "GSAM_TOKEN_BROKER_ALLOWED_HOSTS",
       "broker.example, 127.0.0.1",
     );
     const company = await createCompany(db);
@@ -3160,7 +3160,7 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("implicitly allowlists the configured Pages API host for internal token brokers", async () => {
-    vi.stubEnv("PAPERCLIP_PAGES_API_URL", "http://127.0.0.1:8787");
+    vi.stubEnv("GSAM_PAGES_API_URL", "http://127.0.0.1:8787");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db, {
       deploymentMode: "authenticated",
@@ -3498,7 +3498,7 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("cancels an ask-first test request when approval signing is unavailable", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_ACTION_SIGNING_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_ACTION_SIGNING_SECRET", "");
     const company = await createCompany(db);
     const userId = `tool-tester-${randomUUID()}`;
     await grantBoardUser(db, company.id, userId, ["tools:use"]);
@@ -3528,7 +3528,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     expect(res.body).toMatchObject({
       reasonCode: "signing_secret_unconfigured",
-      error: expect.stringContaining("PAPERCLIP_TOOL_ACTION_SIGNING_SECRET"),
+      error: expect.stringContaining("GSAM_TOOL_ACTION_SIGNING_SECRET"),
     });
     const [actionRequest] = await db
       .select()
@@ -5726,9 +5726,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("validates a reviewed Vercel connector and stores no provider bearer or vault secret", async () => {
-    vi.stubEnv("PAPERCLIP_VERCEL_CONNECT_ENABLED", "true");
+    vi.stubEnv("GSAM_VERCEL_CONNECT_ENABLED", "true");
     vi.stubEnv(
-      "PAPERCLIP_VERCEL_CONNECT_ACCESS_TOKEN",
+      "GSAM_VERCEL_CONNECT_ACCESS_TOKEN",
       "vercel-bootstrap-authority",
     );
     const company = await createCompany(db);
@@ -5750,7 +5750,7 @@ describeEmbeddedPostgres("tool access service", () => {
       getConnectorMetadata: vi.fn(async () => ({
         id: "scl_posthog",
         uid: "posthog-paperclip",
-        name: "Paperclip PostHog",
+        name: "GS Agentic Manager PostHog",
         type: "api-key",
         service: "mcp.posthog.com/mcp",
         createdAt: Date.now(),
@@ -5869,9 +5869,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("rejects an attached Vercel connector for the wrong reviewed service", async () => {
-    vi.stubEnv("PAPERCLIP_VERCEL_CONNECT_ENABLED", "true");
+    vi.stubEnv("GSAM_VERCEL_CONNECT_ENABLED", "true");
     vi.stubEnv(
-      "PAPERCLIP_VERCEL_CONNECT_ACCESS_TOKEN",
+      "GSAM_VERCEL_CONNECT_ACCESS_TOKEN",
       "vercel-bootstrap-authority",
     );
     const company = await createCompany(db);
@@ -5913,9 +5913,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("binds the Vercel OAuth callback to one company, actor, session, and one-time state", async () => {
-    vi.stubEnv("PAPERCLIP_VERCEL_CONNECT_ENABLED", "true");
+    vi.stubEnv("GSAM_VERCEL_CONNECT_ENABLED", "true");
     vi.stubEnv(
-      "PAPERCLIP_VERCEL_CONNECT_ACCESS_TOKEN",
+      "GSAM_VERCEL_CONNECT_ACCESS_TOKEN",
       "vercel-bootstrap-authority",
     );
     const company = await createCompany(db);
@@ -5941,7 +5941,7 @@ describeEmbeddedPostgres("tool access service", () => {
         getConnectorMetadata: vi.fn(async () => ({
           id: "scl_notion",
           uid: "notion-paperclip",
-          name: "Paperclip Notion",
+          name: "GS Agentic Manager Notion",
           type: "oauth",
           service: "notion",
           createdAt: Date.now(),
@@ -7027,12 +7027,12 @@ describeEmbeddedPostgres("tool access service", () => {
     await grantBoardUser(db, company.id, userId, [], "owner");
     const signing = generateKeyPairSync("ed25519");
     const sealing = generateKeyPairSync("x25519");
-    vi.stubEnv("PAPERCLIP_AUTH_PUBLIC_BASE_URL", "https://tenant.paperclip.app");
-    vi.stubEnv("PAPERCLIP_CLOUD_CONNECTOR_BASE_URL", "https://my.paperclip.app");
-    vi.stubEnv("PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT", "production");
-    vi.stubEnv("PAPERCLIP_CLOUD_CONNECTOR_INSTANCE_ID", "inst-cloud-workspace-regression");
-    vi.stubEnv("PAPERCLIP_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY", signing.privateKey.export({ type: "pkcs8", format: "pem" }).toString());
-    vi.stubEnv("PAPERCLIP_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY", sealing.privateKey.export({ type: "pkcs8", format: "pem" }).toString());
+    vi.stubEnv("GSAM_AUTH_PUBLIC_BASE_URL", "https://tenant.paperclip.app");
+    vi.stubEnv("GSAM_CLOUD_CONNECTOR_BASE_URL", "https://my.paperclip.app");
+    vi.stubEnv("GSAM_CLOUD_CONNECTOR_ENVIRONMENT", "production");
+    vi.stubEnv("GSAM_CLOUD_CONNECTOR_INSTANCE_ID", "inst-cloud-workspace-regression");
+    vi.stubEnv("GSAM_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY", signing.privateKey.export({ type: "pkcs8", format: "pem" }).toString());
+    vi.stubEnv("GSAM_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY", sealing.privateKey.export({ type: "pkcs8", format: "pem" }).toString());
     invalidatePaperclipCloudConnectorCapabilities();
     const cloudRequest = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const signed = JSON.parse(String(init?.body)).request as string;
@@ -8890,9 +8890,9 @@ describeEmbeddedPostgres("tool access service", () => {
   }, 15_000);
 
   it("synchronizes shared OAuth credentials to the organization grant used by gateway calls", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -9039,9 +9039,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("creates and resolves an agent-initiated user authorization grant card", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -9333,9 +9333,9 @@ describeEmbeddedPostgres("tool access service", () => {
   it.each(["page", "task"] as const)(
     "activates and discovers actions for a fresh personal OAuth callback from %s without widening task access",
     async (host) => {
-      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+      vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
       vi.stubEnv(
-        "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+        "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
         "slack-client-secret",
       );
       const company = await createCompany(db);
@@ -9716,9 +9716,9 @@ describeEmbeddedPostgres("tool access service", () => {
   );
 
   it("promotes a personal OAuth identity only after Everyone in the company is chosen", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -9865,9 +9865,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("refreshes an expired personal OAuth grant during health checks without moving its tokens onto the connection", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -10002,11 +10002,11 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("returns a pre-scoped personal Notion callback directly to Permissions", async () => {
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "https://paperclip.example");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_SECRET", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_PUBLIC_URL", "https://paperclip.example");
+    vi.stubEnv("GSAM_TOOL_OAUTH_NOTION_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_NOTION_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_SECRET", "");
     const company = await createCompany(db);
     const userId = `notion-owner-${randomUUID()}`;
     await grantBoardUser(db, company.id, userId, [], "owner");
@@ -10118,7 +10118,7 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("returns a declined curated OAuth draft to its exact resumable setup route", async () => {
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "https://paperclip.example");
+    vi.stubEnv("GSAM_PUBLIC_URL", "https://paperclip.example");
     const company = await createCompany(db);
     const userId = `notion-resume-${randomUUID()}`;
     await grantBoardUser(db, company.id, userId, [], "owner");
@@ -10201,13 +10201,13 @@ describeEmbeddedPostgres("tool access service", () => {
   ])(
     "starts and completes OAuth with the same redirect URI at %s",
     async (origin) => {
-      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+      vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
       vi.stubEnv(
-        "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+        "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
         "slack-client-secret",
       );
       vi.stubEnv(
-        "PAPERCLIP_PUBLIC_URL",
+        "GSAM_PUBLIC_URL",
         origin.startsWith("https:") ? origin : "",
       );
       const company = await createCompany(db);
@@ -10375,10 +10375,10 @@ describeEmbeddedPostgres("tool access service", () => {
   );
 
   it("normalizes a direct numeric loopback origin for OAuth when no public URL is configured", async () => {
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_PUBLIC_URL", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -10397,10 +10397,10 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("does not derive an OAuth callback origin from a non-loopback request host", async () => {
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_PUBLIC_URL", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -10419,15 +10419,15 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(connectRes.body).toMatchObject({
       code: "oauth_redirect_origin_unsupported",
       error:
-        "This Paperclip needs a browser-reachable HTTPS address (or loopback HTTP) before browser sign-in can start.",
+        "This GS Agentic Manager needs a browser-reachable HTTPS address (or loopback HTTP) before browser sign-in can start.",
     });
   });
 
   it("uses an authenticated same-origin HTTPS browser request without public URL config", async () => {
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_PUBLIC_URL", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -10454,10 +10454,10 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("rejects a browser HTTPS origin that does not match the routed request host", async () => {
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_PUBLIC_URL", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -10484,8 +10484,8 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("requires non-viewer board access to start OAuth for active app connections", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://paperclip.test");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_PUBLIC_URL", "http://paperclip.test");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     const connect = await service.connectGalleryApp(
@@ -10539,8 +10539,8 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("lets the retained personal identity owner reconnect without manager configuration access", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://paperclip.test");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_PUBLIC_URL", "http://paperclip.test");
     const company = await createCompany(db);
     const userId = `personal-oauth-member-${randomUUID()}`;
     const service = createTestToolAccessService(db);
@@ -10658,12 +10658,12 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("binds OAuth callback completion to the initiating board session", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://paperclip.test");
+    vi.stubEnv("GSAM_PUBLIC_URL", "http://paperclip.test");
     const company = await createCompany(db);
     await grantBoardUser(db, company.id, "oauth-operator", [
       "tools:manage_connections",
@@ -10806,10 +10806,10 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("discovers Notion MCP OAuth metadata, registers one public client, and reuses it", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_SECRET", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_NOTION_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_NOTION_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_SECRET", "");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     const connected = await service.connectGalleryApp(company.id, {
@@ -10884,12 +10884,12 @@ describeEmbeddedPostgres("tool access service", () => {
     ).toBe("notion-dcr-client");
     expect(registrationBodies).toEqual([
       {
-        client_name: "Paperclip (paperclip-dev.tail29c1aa.ts.net)",
+        client_name: "GS Agentic Manager (paperclip-dev.tail29c1aa.ts.net)",
         redirect_uris: [redirectUri],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
         token_endpoint_auth_method: "none",
-        // PAP-17087: Paperclip's callback is a server-side HTTPS endpoint, so
+        // PAP-17087: GS Agentic Manager's callback is a server-side HTTPS endpoint, so
         // registration must declare a `web` client rather than let the
         // authorization server apply native-client redirect rules.
         application_type: "web",
@@ -10986,10 +10986,10 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("supports confidential DCR clients without exposing their registration secret", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SUPABASE_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SUPABASE_CLIENT_SECRET", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SUPABASE_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SUPABASE_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_SECRET", "");
     const company = await createCompany(db);
     await grantBoardUser(db, company.id, "board", ["tools:manage_connections"]);
     const service = createTestToolAccessService(db);
@@ -11143,10 +11143,10 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("preserves the provider's DCR client-auth ordering for Miro token exchange", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_MIRO_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_MIRO_CLIENT_SECRET", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_MIRO_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_MIRO_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_SECRET", "");
     const company = await createCompany(db);
     await grantBoardUser(db, company.id, "board", ["tools:manage_connections"]);
     const service = createTestToolAccessService(db);
@@ -11260,10 +11260,10 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("accepts provider-added DCR grants without adopting them", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_HUGGING_FACE_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_HUGGING_FACE_CLIENT_SECRET", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_HUGGING_FACE_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_HUGGING_FACE_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_SECRET", "");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     const connected = await service.connectGalleryApp(company.id, {
@@ -11358,10 +11358,10 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("does not request refresh-token registration from a provider that explicitly omits it", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CODA_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CODA_CLIENT_SECRET", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CODA_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CODA_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_SECRET", "");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     const connected = await service.connectGalleryApp(company.id, {
@@ -11423,10 +11423,10 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("normalizes a public DCR client's zero secret expiry when no secret was issued", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_MIXPANEL_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_MIXPANEL_CLIENT_SECRET", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_MIXPANEL_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_MIXPANEL_CLIENT_SECRET", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_SECRET", "");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     const connected = await service.connectGalleryApp(company.id, {
@@ -11800,10 +11800,10 @@ describeEmbeddedPostgres("tool access service", () => {
   ])(
     "rejects DCR responses that return %s",
     async (_label, registrationResponse, field) => {
-      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_ID", "");
-      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_SECRET", "");
-      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
-      vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_SECRET", "");
+      vi.stubEnv("GSAM_TOOL_OAUTH_NOTION_CLIENT_ID", "");
+      vi.stubEnv("GSAM_TOOL_OAUTH_NOTION_CLIENT_SECRET", "");
+      vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
+      vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_SECRET", "");
       const company = await createCompany(db);
       const service = createTestToolAccessService(db);
       const connected = await service.connectGalleryApp(company.id, {
@@ -11873,8 +11873,8 @@ describeEmbeddedPostgres("tool access service", () => {
   );
 
   it("fails fast when Notion DCR is attempted from a non-loopback HTTP origin", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_ID", "");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_NOTION_CLIENT_ID", "");
+    vi.stubEnv("GSAM_TOOL_OAUTH_CLIENT_ID", "");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     const connected = await service.connectGalleryApp(company.id, {
@@ -11901,9 +11901,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("leases rotating OAuth refresh tokens across service instances before concurrent remote app calls", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -12049,9 +12049,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("treats invalid_grant as terminal without replaying a rotated refresh token", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -12172,9 +12172,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("does not disable a connection when invalid_grant used a superseded refresh-token version", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -12275,9 +12275,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("fails closed instead of replaying a refresh token after an abandoned lease", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -12336,8 +12336,8 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("uses OAuth client credentials for shared machine-to-machine MCP connections", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_M2M_CLIENT_ID", "m2m-client-id");
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_M2M_CLIENT_SECRET", "m2m-client-secret");
+    vi.stubEnv("GSAM_TOOL_OAUTH_M2M_CLIENT_ID", "m2m-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_M2M_CLIENT_SECRET", "m2m-client-secret");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     const connection = await service.createConnection(company.id, {
@@ -12420,9 +12420,9 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it.each(["catalog", "catalog/refresh", "health-check"])("returns reconnect instructions on %s for expired OAuth without a refresh token", async (path) => {
-    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("GSAM_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_SLACK_CLIENT_SECRET",
       "slack-client-secret",
     );
     const company = await createCompany(db);
@@ -12682,7 +12682,7 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("cancels invalid-signature pending action requests but keeps unsigned in-flight ones out of the review queue without cancelling them", async () => {
-    vi.stubEnv("PAPERCLIP_TOOL_ACTION_SIGNING_SECRET", "current-secret");
+    vi.stubEnv("GSAM_TOOL_ACTION_SIGNING_SECRET", "current-secret");
     const company = await createCompany(db);
     const [application] = await db
       .insert(toolApplications)
@@ -14155,14 +14155,14 @@ describeEmbeddedPostgres("tool access service", () => {
 
   it("discovers OAuth for pasted MCP links and completes sign-in without a gallery entry", async () => {
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_GENERIC_EXAMPLE_TEST_CLIENT_ID",
+      "GSAM_TOOL_OAUTH_GENERIC_EXAMPLE_TEST_CLIENT_ID",
       "generic-client-id",
     );
     vi.stubEnv(
-      "PAPERCLIP_TOOL_OAUTH_GENERIC_EXAMPLE_TEST_CLIENT_SECRET",
+      "GSAM_TOOL_OAUTH_GENERIC_EXAMPLE_TEST_CLIENT_SECRET",
       "generic-client-secret",
     );
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://paperclip.test");
+    vi.stubEnv("GSAM_PUBLIC_URL", "http://paperclip.test");
     const company = await createCompany(db);
     await grantBoardUser(db, company.id, "board-user", [
       "tools:manage_connections",
@@ -17477,7 +17477,7 @@ describeEmbeddedPostgres("tool access service", () => {
           transport: "mcp_remote",
           status: "draft",
           config: { url: "https://mcp.example/github" },
-          warnings: [expect.stringContaining("Paperclip secret")],
+          warnings: [expect.stringContaining("GS Agentic Manager secret")],
         }),
         expect.objectContaining({
           name: "local",
@@ -17487,7 +17487,7 @@ describeEmbeddedPostgres("tool access service", () => {
             importedCommand: "npx",
             importedArgs: ["-y", "@example/local-mcp"],
           },
-          warnings: [expect.stringContaining("approved Paperclip template")],
+          warnings: [expect.stringContaining("approved GS Agentic Manager template")],
         }),
       ]),
     );

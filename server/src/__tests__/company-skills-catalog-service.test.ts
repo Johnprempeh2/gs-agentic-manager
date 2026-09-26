@@ -4,12 +4,12 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { companies, companySkills, createDb, folders } from "@paperclipai/db";
+import { companies, companySkills, createDb, folders } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import type { CatalogSkill, CatalogSkillFile } from "@paperclipai/shared";
+import type { CatalogSkill, CatalogSkillFile } from "@greatstone/shared";
 
 function sha256(value: string | Buffer) {
   return createHash("sha256").update(value).digest("hex");
@@ -57,7 +57,7 @@ const sampleCatalogSkill: CatalogSkill = {
 
 const mockCatalogService = vi.hoisted(() => ({
   getCatalogPackageMetadata: vi.fn(() => ({
-    packageName: "@paperclipai/skills-catalog",
+    packageName: "@greatstone/skills-catalog",
     packageVersion: "0.3.1",
   })),
   getCatalogSkillOrThrow: vi.fn(),
@@ -93,7 +93,7 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -101,7 +101,7 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
   }
 
   beforeAll(async () => {
-    oldPaperclipHome = process.env.PAPERCLIP_HOME;
+    oldPaperclipHome = process.env.GSAM_HOME;
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-company-skills-catalog-");
     db = createDb(tempDb.connectionString);
     svc = await createService();
@@ -110,7 +110,7 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
   beforeEach(async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-catalog-home-"));
     cleanupDirs.add(home);
-    process.env.PAPERCLIP_HOME = home;
+    process.env.GSAM_HOME = home;
     mockCatalogService.getCatalogSkillOrThrow.mockReturnValue(sampleCatalogSkill);
     mockCatalogService.resolveCatalogSkillReference.mockReturnValue({
       skill: sampleCatalogSkill,
@@ -140,8 +140,8 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
   });
 
   afterAll(async () => {
-    if (oldPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-    else process.env.PAPERCLIP_HOME = oldPaperclipHome;
+    if (oldPaperclipHome === undefined) delete process.env.GSAM_HOME;
+    else process.env.GSAM_HOME = oldPaperclipHome;
     await tempDb?.cleanup();
   });
 
@@ -168,7 +168,7 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
         catalogKey: sampleCatalogSkill.key,
         catalogKind: "bundled",
         catalogCategory: "software-development",
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@greatstone/skills-catalog",
         originHash: sampleCatalogSkill.contentHash,
         installedHash: sampleCatalogSkill.contentHash,
         auditVerdict: "pass",
@@ -181,7 +181,7 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
     expect(listed.find((skill) => skill.id === result.skill.id)).toMatchObject({
       catalogKind: "bundled",
       originHash: sampleCatalogSkill.contentHash,
-      packageName: "@paperclipai/skills-catalog",
+      packageName: "@greatstone/skills-catalog",
       packageVersion: "0.3.1",
     });
     const folder = await db
@@ -196,7 +196,7 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
     });
   });
 
-  it("repairs an existing unfiled Paperclip catalog skill during inventory refresh", async () => {
+  it("repairs an existing unfiled GS Agentic Manager catalog skill during inventory refresh", async () => {
     const companyId = await createCompany();
     const installed = await svc.installFromCatalog(companyId, { catalogSkillId: sampleCatalogSkill.id });
     await db
@@ -317,7 +317,7 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
         `      catalogKey: "${sampleCatalogSkill.key}"`,
         '      catalogKind: "bundled"',
         '      catalogPath: "catalog/bundled/software-development/review"',
-        '      packageName: "@paperclipai/skills-catalog"',
+        '      packageName: "@greatstone/skills-catalog"',
         '      packageVersion: "0.3.1"',
         `      installedHash: "${sampleCatalogSkill.contentHash}"`,
         '      userModifiedAt: "2026-05-01T00:00:00.000Z"',
@@ -352,7 +352,7 @@ describeEmbeddedPostgres("companySkillService.installFromCatalog", () => {
         catalogKey: sampleCatalogSkill.key,
         catalogKind: "bundled",
         catalogPath: "catalog/bundled/software-development/review",
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@greatstone/skills-catalog",
         packageVersion: "0.3.1",
         installedHash: sampleCatalogSkill.contentHash,
         userModifiedAt: "2026-05-01T00:00:00.000Z",

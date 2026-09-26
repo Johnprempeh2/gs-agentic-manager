@@ -90,7 +90,7 @@ export function validateRunnerApiCall(value: unknown, context: RunnerApiContext)
 
 export function runnerApiUrl(operation: RunnerApiOperation, input: RunnerApiCall, context: RunnerApiContext, apiUrl: string): URL {
   const origin = new URL(apiUrl);
-  if (!["http:", "https:"].includes(origin.protocol) || origin.username || origin.password || origin.search || origin.hash) throw new Error("Invalid configured Paperclip API origin");
+  if (!["http:", "https:"].includes(origin.protocol) || origin.username || origin.password || origin.search || origin.hash) throw new Error("Invalid configured GS Agentic Manager API origin");
   const params = { ...input.pathParams };
   if (operation.path.includes("{companyId}")) params.companyId ??= context.companyId;
   const names = [...operation.path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
@@ -141,7 +141,7 @@ export async function readBoundedResponse(response: Response, maxBytes = RUNNER_
 export async function executeRunnerApi(input: RunnerApiCall, context: RunnerApiContext, io: RunnerApiIo) {
   const { operation } = validateRunnerApiCall(input, context);
   const url = runnerApiUrl(operation, input, context, io.apiUrl);
-  if (!io.token) throw new Error("Paperclip run authentication is unavailable");
+  if (!io.token) throw new Error("GS Agentic Manager run authentication is unavailable");
   const headers = new Headers({ Authorization: `Bearer ${io.token}`, "X-Paperclip-Run-Id": context.runId });
   let body: BodyInit | undefined;
   const contentType = input.contentType ?? (input.files?.length ? "multipart/form-data" : "application/json");

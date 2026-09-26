@@ -126,8 +126,8 @@ describe("acpx identity split and launch environment", () => {
       KIMI_MODEL_BASE_URL: "https://kimi.example",
       KIMI_MODEL_PROVIDER_TYPE: "openai_legacy",
       KIMI_CODE_HOME: "/host/kimi",
-      PAPERCLIP_NATIVE_MCP_TOKEN: "native-mcp-host-secret",
-      PAPERCLIP_ACPX_CODEX_AUTH_JSON_SECRET: "managed-auth-host-secret",
+      GSAM_NATIVE_MCP_TOKEN: "native-mcp-host-secret",
+      GSAM_ACPX_CODEX_AUTH_JSON_SECRET: "managed-auth-host-secret",
       UNRELATED_SECRET: "unrelated-host-secret",
       NODE_OPTIONS: "--require /tmp/host-hook.cjs",
     };
@@ -181,8 +181,8 @@ describe("acpx identity split and launch environment", () => {
     const inherited = {
       PATH: "/host/bin",
       OPENAI_API_KEY: "ambient-provider-secret",
-      PAPERCLIP_NATIVE_MCP_TOKEN: "ambient-native-mcp-secret",
-      PAPERCLIP_RUNNER_BOOTSTRAP_TICKET: "ambient-bootstrap-secret",
+      GSAM_NATIVE_MCP_TOKEN: "ambient-native-mcp-secret",
+      GSAM_RUNNER_BOOTSTRAP_TICKET: "ambient-bootstrap-secret",
     };
 
     expect(projectAcpxInheritedHostEnvironment(inherited, "codex", false)).toEqual({});
@@ -193,12 +193,12 @@ describe("acpx identity split and launch environment", () => {
       {
         OPENAI_API_KEY: "explicit-provider-secret",
         EXPLICIT_ADAPTER_SECRET: "adapter-secret",
-        PAPERCLIP_RUNTIME_API_URL: "http://paperclip.internal/api",
+        GSAM_RUNTIME_API_URL: "http://paperclip.internal/api",
       },
       [
         {
           scope: "session",
-          env: { PAPERCLIP_NATIVE_MCP_TOKEN: "explicit-run-contribution" },
+          env: { GSAM_NATIVE_MCP_TOKEN: "explicit-run-contribution" },
         },
       ],
       {
@@ -207,8 +207,8 @@ describe("acpx identity split and launch environment", () => {
         inheritedEnv: {
           PATH: "/host/bin",
           OPENAI_API_KEY: "ambient-provider-secret",
-          PAPERCLIP_NATIVE_MCP_TOKEN: "ambient-native-mcp-secret",
-          PAPERCLIP_RUNNER_BOOTSTRAP_TICKET: "ambient-bootstrap-secret",
+          GSAM_NATIVE_MCP_TOKEN: "ambient-native-mcp-secret",
+          GSAM_RUNNER_BOOTSTRAP_TICKET: "ambient-bootstrap-secret",
         },
       },
     );
@@ -216,11 +216,11 @@ describe("acpx identity split and launch environment", () => {
     expect(launchEnvironment.env).toMatchObject({
       OPENAI_API_KEY: "explicit-provider-secret",
       EXPLICIT_ADAPTER_SECRET: "adapter-secret",
-      PAPERCLIP_RUNTIME_API_URL: "http://paperclip.internal/api",
-      PAPERCLIP_NATIVE_MCP_TOKEN: "explicit-run-contribution",
+      GSAM_RUNTIME_API_URL: "http://paperclip.internal/api",
+      GSAM_NATIVE_MCP_TOKEN: "explicit-run-contribution",
     });
     expect(launchEnvironment.env).not.toHaveProperty("PATH");
-    expect(launchEnvironment.env).not.toHaveProperty("PAPERCLIP_RUNNER_BOOTSTRAP_TICKET");
+    expect(launchEnvironment.env).not.toHaveProperty("GSAM_RUNNER_BOOTSTRAP_TICKET");
   });
 
   it("preserves an explicit remote PATH instead of synthesizing a host fallback", () => {

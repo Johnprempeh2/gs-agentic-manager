@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { IssueWorkProduct } from "@paperclipai/shared";
+import type { IssueWorkProduct } from "@greatstone/shared";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { MarkdownBody } from "./MarkdownBody";
@@ -161,7 +161,7 @@ export function ArtifactsPanel({ taskId, isAgentWorking, openDocKey, openDocTitl
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-8 text-center">
-            <Package className="h-8 w-8 mx-auto text-muted-foreground/40 mb-3" />
+            <Package className="h-8 w-8 mx-auto text-subtle-foreground mb-3" />
             <p className="text-sm text-muted-foreground">
               {workProducts?.length === 0
                 ? "Your team's deliverables and plans will appear here as they're produced."

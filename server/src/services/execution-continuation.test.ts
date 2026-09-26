@@ -9,8 +9,8 @@ import {
   issueComments,
   issueThreadInteractions,
   issues,
-} from "@paperclipai/db";
-import { renderPaperclipWakePrompt } from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/db";
+import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-utils";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,

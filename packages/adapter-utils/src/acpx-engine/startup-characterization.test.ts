@@ -3,19 +3,19 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpRuntimeOptions } from "acpx/runtime";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@greatstone/adapter-utils";
 import {
   prepareAdapterExecutionTargetRuntime,
   startAdapterExecutionTargetPaperclipBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 
 // Wrap the staging seam + both sandbox bridges in call-recording spies that
 // still delegate to the real implementations. This copies the execute.test.ts
 // harness verbatim so a startup test asserts the exact staging args and bridge
 // hand-off the engine threads without changing any real behavior.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@greatstone/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@greatstone/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),
@@ -236,9 +236,9 @@ describe("ACPX engine startup characterization", () => {
       // in-sandbox process env rides there, not in the exec's own `env`.
       let launchPayload: Record<string, unknown> | null = null;
       (executionTarget as { runner: unknown }).runner = createLocalSandboxRunner((input) => {
-        if (input.env?.PAPERCLIP_SANDBOX_EXEC_CHANNEL === "bridge") {
+        if (input.env?.GSAM_SANDBOX_EXEC_CHANNEL === "bridge") {
           const script = input.args?.[1] ?? "";
-          const match = script.match(/PAPERCLIP_PROCESS_SESSION_COMMAND_B64='([^']+)'/);
+          const match = script.match(/GSAM_PROCESS_SESSION_COMMAND_B64='([^']+)'/);
           if (match) {
             launchPayload = JSON.parse(Buffer.from(match[1]!, "base64").toString("utf8")) as Record<
               string,
@@ -259,11 +259,11 @@ describe("ACPX engine startup characterization", () => {
         string,
         unknown
       >;
-      expect(payloadEnv).toMatchObject({ PAPERCLIP_API_BRIDGE_MODE: "queue_v1" });
-      expect(String(payloadEnv.PAPERCLIP_API_URL ?? "")).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+      expect(payloadEnv).toMatchObject({ GSAM_API_BRIDGE_MODE: "queue_v1" });
+      expect(String(payloadEnv.GSAM_API_URL ?? "")).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
       // The minted bridge token is present and is NOT the host run JWT.
-      expect(payloadEnv.PAPERCLIP_API_KEY).toBeTruthy();
-      expect(payloadEnv.PAPERCLIP_API_KEY).not.toBe("real-run-jwt");
+      expect(payloadEnv.GSAM_API_KEY).toBeTruthy();
+      expect(payloadEnv.GSAM_API_KEY).not.toBe("real-run-jwt");
     });
 
     it("finalizes the launch env at the bridge merge: the process env carries the merged bridge values", async () => {
@@ -272,10 +272,10 @@ describe("ACPX engine startup characterization", () => {
       let launchPayload: Record<string, unknown> | null = null;
       let bridgeExecEnv: Record<string, string> | undefined;
       (executionTarget as { runner: unknown }).runner = createLocalSandboxRunner((input) => {
-        if (input.env?.PAPERCLIP_SANDBOX_EXEC_CHANNEL === "bridge") {
+        if (input.env?.GSAM_SANDBOX_EXEC_CHANNEL === "bridge") {
           bridgeExecEnv = input.env;
           const script = input.args?.[1] ?? "";
-          const match = script.match(/PAPERCLIP_PROCESS_SESSION_COMMAND_B64='([^']+)'/);
+          const match = script.match(/GSAM_PROCESS_SESSION_COMMAND_B64='([^']+)'/);
           if (match) {
             launchPayload = JSON.parse(Buffer.from(match[1]!, "base64").toString("utf8")) as Record<
               string,
@@ -297,13 +297,13 @@ describe("ACPX engine startup characterization", () => {
         string,
         unknown
       >;
-      expect(payloadEnv.PAPERCLIP_API_BRIDGE_MODE).toBe("queue_v1");
-      expect(payloadEnv.PAPERCLIP_API_KEY).toBeTruthy();
+      expect(payloadEnv.GSAM_API_BRIDGE_MODE).toBe("queue_v1");
+      expect(payloadEnv.GSAM_API_KEY).toBeTruthy();
       // The bridge-channel exec's OWN env is the sandbox transport channel, not the
       // agent process env: it does not carry the minted agent bridge key. This pins
       // that the merged agent env lives only in the finalized launch payload.
-      expect(bridgeExecEnv?.PAPERCLIP_SANDBOX_EXEC_CHANNEL).toBe("bridge");
-      expect(bridgeExecEnv?.PAPERCLIP_API_KEY).toBeUndefined();
+      expect(bridgeExecEnv?.GSAM_SANDBOX_EXEC_CHANNEL).toBe("bridge");
+      expect(bridgeExecEnv?.GSAM_API_KEY).toBeUndefined();
     });
   });
 
@@ -350,7 +350,7 @@ describe("ACPX engine startup characterization", () => {
 
       expect(fpOf(first.result)).toBeTruthy();
       expect(fpOf(identical.result)).toBe(fpOf(first.result));
-      // Per-wake PAPERCLIP_* churn does not reset the session fingerprint.
+      // Per-wake GSAM_* churn does not reset the session fingerprint.
       expect(fpOf(newWake.result)).toBe(fpOf(first.result));
     });
 

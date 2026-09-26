@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
+import type { AdapterExecutionTarget } from "@greatstone/adapter-utils/execution-target";
 
 // The managed-config step runs inside `prepareSandboxClaudeProbeRuntime`. The
-// step resolves the Paperclip instance root first. This mock makes that resolve
+// step resolves the GS Agentic Manager instance root first. This mock makes that resolve
 // throw, so the managed-config materialization fails with a controllable error
 // that carries a secret marker.
 const { resolveInstanceRoot } = vi.hoisted(() => {
@@ -10,9 +10,9 @@ const { resolveInstanceRoot } = vi.hoisted(() => {
   return { resolveInstanceRoot };
 });
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(
-    "@paperclipai/adapter-utils/execution-target",
+vi.mock("@greatstone/adapter-utils/execution-target", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/adapter-utils/execution-target")>(
+    "@greatstone/adapter-utils/execution-target",
   );
   return {
     ...actual,
@@ -20,9 +20,9 @@ vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/server-utils")>(
-    "@paperclipai/adapter-utils/server-utils",
+vi.mock("@greatstone/adapter-utils/server-utils", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/adapter-utils/server-utils")>(
+    "@greatstone/adapter-utils/server-utils",
   );
   return {
     ...actual,

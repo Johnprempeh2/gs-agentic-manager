@@ -1,14 +1,14 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 
-import type { Db } from "@paperclipai/db";
-import { heartbeatRuns, issueThreadInteractions } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
+import { heartbeatRuns, issueThreadInteractions } from "@greatstone/db";
 import type {
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
   AskUserQuestionsQuestionOption,
   PaperclipQuestionSetPayload,
   RespondIssueThreadInteraction,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 
 import type { PrpEvent } from "../../vendor/paperclip-runner/index.js";
 import {

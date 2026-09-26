@@ -151,7 +151,7 @@ function UrlSegment({ entry, compact }: { entry: WorkspaceServiceControlEntry; c
   const live = entry.state === "running" && Boolean(entry.url);
 
   if (!displayUrl) {
-    return <span className="font-mono text-xs text-muted-foreground/70">no url</span>;
+    return <span className="font-mono text-xs text-subtle-foreground">no url</span>;
   }
   return (
     <>
@@ -168,7 +168,7 @@ function UrlSegment({ entry, compact }: { entry: WorkspaceServiceControlEntry; c
       ) : (
         <span
           title={entry.url ?? undefined}
-          className={cn("min-w-0 truncate font-mono text-xs text-muted-foreground/70", compact ? "max-w-44" : "max-w-56")}
+          className={cn("min-w-0 truncate font-mono text-xs text-subtle-foreground", compact ? "max-w-44" : "max-w-56")}
         >
           {displayUrl}
         </span>
@@ -495,7 +495,7 @@ function MultiServiceBar({
                 <UrlSegment entry={primary} />
               </>
             ) : (
-              <span className="font-mono text-xs text-muted-foreground/70">no url</span>
+              <span className="font-mono text-xs text-subtle-foreground">no url</span>
             )}
           </div>
           <div className="mx-3 hidden h-5 w-px bg-border sm:block" />

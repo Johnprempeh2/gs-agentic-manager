@@ -31,7 +31,7 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
-    selectedCompany: { id: "company-1", name: "Paperclip", issuePrefix: "PAP" },
+    selectedCompany: { id: "company-1", name: "GS Agentic Manager", issuePrefix: "PAP" },
     selectedCompanyId: "company-1",
   }),
 }));
@@ -65,15 +65,15 @@ function basePlugin(overrides: Record<string, unknown> = {}) {
   return {
     id: "plugin-1",
     pluginKey: "paperclip.e2b-sandbox-provider",
-    packageName: "@paperclipai/plugin-e2b",
+    packageName: "@greatstone/plugin-e2b",
     version: "0.1.0",
     status: "error",
     categories: ["automation"],
     manifestJson: {
       displayName: "E2B Sandbox Provider",
       version: "0.1.0",
-      description: "E2B environments for Paperclip.",
-      author: "Paperclip",
+      description: "E2B environments for GS Agentic Manager.",
+      author: "GS Agentic Manager",
       capabilities: ["environment.drivers.register"],
       environmentDrivers: [
         {
@@ -186,13 +186,13 @@ describe("PluginSettings", () => {
     const declaration = wikiFolderDeclaration();
     mockPluginsApi.get.mockResolvedValue(basePlugin({
       pluginKey: "paperclipai.plugin-llm-wiki",
-      packageName: "@paperclipai/plugin-llm-wiki",
+      packageName: "@greatstone/plugin-llm-wiki",
       status: "ready",
       manifestJson: {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "GS Agentic Manager",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -222,13 +222,13 @@ describe("PluginSettings", () => {
     const declaration = wikiFolderDeclaration();
     mockPluginsApi.get.mockResolvedValue(basePlugin({
       pluginKey: "paperclipai.plugin-llm-wiki",
-      packageName: "@paperclipai/plugin-llm-wiki",
+      packageName: "@greatstone/plugin-llm-wiki",
       status: "ready",
       manifestJson: {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "GS Agentic Manager",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -258,7 +258,7 @@ describe("PluginSettings", () => {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "GS Agentic Manager",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -300,7 +300,7 @@ describe("PluginSettings", () => {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "GS Agentic Manager",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },
@@ -339,7 +339,7 @@ describe("PluginSettings", () => {
         displayName: "LLM Wiki",
         version: "0.1.0",
         description: "Local-file LLM Wiki plugin.",
-        author: "Paperclip",
+        author: "GS Agentic Manager",
         capabilities: ["local.folders"],
         localFolders: [declaration],
       },

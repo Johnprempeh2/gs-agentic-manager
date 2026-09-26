@@ -14,7 +14,7 @@ import {
   paperclipNativeExecutionSchemaUrl,
   parsePaperclipNativeExecution,
 } from "./native-execution.js";
-import { PAPERCLIP_RUNNER_BUILD_METADATA } from "./build-metadata.js";
+import { GSAM_RUNNER_BUILD_METADATA } from "./build-metadata.js";
 import { serializeCapabilityGeneratedSemanticContracts } from "../semantic-tools/provider-neutral.js";
 
 describe("paperclip-runner/native-execution/v1", () => {
@@ -37,7 +37,7 @@ describe("paperclip-runner/native-execution/v1", () => {
       await writeFile(join(root, "dist/semantic-tools/provider-neutral.js"),
         `export const serializeCapabilityGeneratedSemanticContracts = () => ${JSON.stringify(serializeCapabilityGeneratedSemanticContracts())};`);
       await writeFile(join(root, "dist/evals/build-metadata.js"),
-        `export const PAPERCLIP_RUNNER_BUILD_METADATA = ${JSON.stringify(PAPERCLIP_RUNNER_BUILD_METADATA)};`);
+        `export const GSAM_RUNNER_BUILD_METADATA = ${JSON.stringify(GSAM_RUNNER_BUILD_METADATA)};`);
       const fixturePath = join(root, "protocol/fixtures/evals/native-execution-seeded.json");
       const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
       fixture.runner.catalogSha256 = `sha256:${"0".repeat(64)}`;
@@ -48,7 +48,7 @@ describe("paperclip-runner/native-execution/v1", () => {
       await expect(run(process.execPath, [generator, "--check"])).rejects.toThrow();
       await run(process.execPath, [generator]);
       expect(JSON.parse(await readFile(fixturePath, "utf8")).runner.catalogSha256)
-        .toBe(PAPERCLIP_RUNNER_BUILD_METADATA.semanticCatalog.sha256);
+        .toBe(GSAM_RUNNER_BUILD_METADATA.semanticCatalog.sha256);
       await run(process.execPath, [generator, "--check"]);
       await run(process.execPath, [join(root, "scripts/generate-protocol-manifest.mjs"), "--check"]);
     } finally {
@@ -79,9 +79,9 @@ describe("paperclip-runner/native-execution/v1", () => {
     expect(bundle.semanticTools.denials).toHaveLength(1);
     expect(bundle.transcript).toMatchObject({ complete: true, eventCount: 4 });
     expect(bundle.usage.cost).toEqual({ currency: "USD", amountMicros: 0 });
-    expect(bundle.runner.package).toEqual(PAPERCLIP_RUNNER_BUILD_METADATA.package);
+    expect(bundle.runner.package).toEqual(GSAM_RUNNER_BUILD_METADATA.package);
     expect(bundle.runner.catalogSha256).toBe(
-      PAPERCLIP_RUNNER_BUILD_METADATA.semanticCatalog.sha256,
+      GSAM_RUNNER_BUILD_METADATA.semanticCatalog.sha256,
     );
     expect(bundle.x_fixturePurpose).toContain("additive field preservation");
 

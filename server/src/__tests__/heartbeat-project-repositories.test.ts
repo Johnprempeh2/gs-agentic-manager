@@ -6,8 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { agents, companies, createDb, heartbeatRuns, issues, projects, projectWorkspaces } from "@paperclipai/db";
-import { runLocalGit, setExpensiveWorkspaceGitExecutor } from "@paperclipai/adapter-utils/git-workspace-sync";
+import { agents, companies, createDb, heartbeatRuns, issues, projects, projectWorkspaces } from "@greatstone/db";
+import { runLocalGit, setExpensiveWorkspaceGitExecutor } from "@greatstone/adapter-utils/git-workspace-sync";
 import { WorkspaceGitScanError } from "../services/workspace-git-operation-scheduler.js";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { heartbeatService } from "../services/heartbeat.ts";
@@ -30,8 +30,8 @@ suite("task project repository provisioning", () => {
   let heartbeat: ReturnType<typeof heartbeatService>;
   beforeAll(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "paperclip-project-repos-"));
-    vi.stubEnv("PAPERCLIP_HOME", path.join(root, "home"));
-    vi.stubEnv("PAPERCLIP_MULTI_PROJECT_WORKSPACE_SYNC", "false");
+    vi.stubEnv("GSAM_HOME", path.join(root, "home"));
+    vi.stubEnv("GSAM_MULTI_PROJECT_WORKSPACE_SYNC", "false");
     database = await startEmbeddedPostgresTestDatabase("project-repositories");
     db = createDb(database.connectionString);
     heartbeat = heartbeatService(db);

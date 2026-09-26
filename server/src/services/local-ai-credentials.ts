@@ -1,10 +1,10 @@
 import { readLocalAiCredentialFile } from "./local-ai-credential-file.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readClaudeToken, readIsolatedClaudeKeychainToken, fetchClaudeQuota } from "@paperclipai/adapter-claude-local/server";
-import { readCodexAuthInfo, fetchCodexQuota } from "@paperclipai/adapter-codex-local/server";
-import { parseGrokAuthPayload, hasUsableGrokAuthValue } from "@paperclipai/adapter-grok-local/server";
-import type { AiProvider } from "@paperclipai/shared";
+import { readClaudeToken, readIsolatedClaudeKeychainToken, fetchClaudeQuota } from "@greatstone/adapter-claude-local/server";
+import { readCodexAuthInfo, fetchCodexQuota } from "@greatstone/adapter-codex-local/server";
+import { parseGrokAuthPayload, hasUsableGrokAuthValue } from "@greatstone/adapter-grok-local/server";
+import type { AiProvider } from "@greatstone/shared";
 import { unprocessable } from "../errors.js";
 
 /** Read an owned login home, or an explicitly authorized local-operator import. */
@@ -56,7 +56,7 @@ export async function readVerifiedLocalAiCredential(provider: AiProvider, loginH
   } catch {
     // Provider/CLI errors may contain credential material; never return them.
     throw unprocessable(provider === "anthropic" && !loginHome
-      ? "Could not verify the local subscription. Run claude auth login in a terminal on the machine running Paperclip, then try Connect again."
+      ? "Could not verify the local subscription. Run claude auth login in a terminal on the machine running GS Agentic Manager, then try Connect again."
       : "Could not verify the local subscription. Run the sign-in command shown for this connection, finish signing in, then try Connect again.");
   }
 }

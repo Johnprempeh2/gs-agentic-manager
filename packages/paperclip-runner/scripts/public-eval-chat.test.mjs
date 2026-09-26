@@ -94,7 +94,7 @@ test("projects only isolated recorded messages and bounded tool facts", () => {
     { realPaperclipRequests: 1, childPaperclipEnvironmentKeys: [] },
     {
       realPaperclipRequests: 0,
-      childPaperclipEnvironmentKeys: ["PAPERCLIP_API_KEY"],
+      childPaperclipEnvironmentKeys: ["GSAM_API_KEY"],
     },
   ]) {
     const source = artifact();

@@ -1,4 +1,4 @@
-import type { Approval, HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
+import type { Approval, HeartbeatRun, Issue, JoinRequest } from "@greatstone/shared";
 import { describe, expect, it } from "vitest";
 import {
   getInboxWorkItemKey,

@@ -9,7 +9,7 @@ import {
   goals,
   issueThreadInteractions,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   extractGitHubPullRequestReferences,
   getMergeConfirmationPullRequestReferences,
@@ -163,7 +163,7 @@ describeEmbeddedPostgres.sequential("merged pull-request confirmation sweep", ()
     const agentId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "MPR",
       requireBoardApprovalForNewAgents: false,
     });

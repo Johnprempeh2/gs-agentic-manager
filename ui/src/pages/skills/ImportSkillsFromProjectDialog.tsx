@@ -26,8 +26,8 @@ import type {
   CompanySkillProjectScanResult,
   Project,
   ProjectWorkspace,
-} from "@paperclipai/shared";
-import { normalizeAgentUrlKey } from "@paperclipai/shared";
+} from "@greatstone/shared";
+import { normalizeAgentUrlKey } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { ApiError } from "../../api/client";
 import { companySkillsApi } from "../../api/companySkills";
@@ -746,7 +746,7 @@ function ScanningStep({ projectName }: { projectName: string }) {
       data-testid="scanning-step"
     >
       <div className="flex flex-col items-center gap-3">
-        <FolderSearch className="h-10 w-10 text-muted-foreground/60" />
+        <FolderSearch className="h-10 w-10 text-subtle-foreground" />
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
       <div>
@@ -945,9 +945,9 @@ function SelectStep({
         <div className="max-w-md text-center">
           <div className="mx-auto mb-4 w-fit bg-muted/50 p-4">
             {grant ? (
-              <ShieldAlert className="h-10 w-10 text-muted-foreground/60" />
+              <ShieldAlert className="h-10 w-10 text-subtle-foreground" />
             ) : (
-              <AlertCircle className="h-10 w-10 text-muted-foreground/60" />
+              <AlertCircle className="h-10 w-10 text-subtle-foreground" />
             )}
           </div>
           <p className="text-base font-semibold">
@@ -988,7 +988,7 @@ function SelectStep({
       >
         <div className="max-w-md text-center">
           <div className="mx-auto mb-4 w-fit bg-muted/50 p-4">
-            <FolderSearch className="h-10 w-10 text-muted-foreground/50" />
+            <FolderSearch className="h-10 w-10 text-subtle-foreground" />
           </div>
           <p className="text-base font-semibold">No skills found</p>
           <p className="mt-1.5 text-sm text-muted-foreground">

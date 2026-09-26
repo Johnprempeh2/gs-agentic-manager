@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   addDecisionQueueItemSchema,
   createDecisionQueueSchema,
@@ -8,7 +8,7 @@ import {
   updateDecisionQueueSchema,
   updateDecisionRetentionSchema,
   updateDecisionTriageSchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import {

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Paperclip proof-of-concept Amazon Bedrock AgentCore Harness and least-privilege invocation roles.
+Description: GS Agentic Manager proof-of-concept Amazon Bedrock AgentCore Harness and least-privilege invocation roles.
 
 Parameters:
   EnvironmentName:
@@ -12,7 +12,7 @@ Parameters:
     AllowedValues: [development, private]
   TrustedRunnerPrincipalArn:
     Type: String
-    Description: Stable IAM user or role ARN allowed to assume the Paperclip invocation role.
+    Description: Stable IAM user or role ARN allowed to assume the GS Agentic Manager invocation role.
     AllowedPattern: "^arn:aws(-[^:]+)?:iam::[0-9]{12}:(role|user)/.+$"
   GitHubOidcProviderArn:
     Type: String
@@ -72,7 +72,7 @@ Resources:
   ContextEncryptionKey:
     Type: AWS::KMS::Key
     Properties:
-      Description: !Sub Paperclip AgentCore runtime-context assets (${EnvironmentName})
+      Description: !Sub GS Agentic Manager AgentCore runtime-context assets (${EnvironmentName})
       EnableKeyRotation: true
       KeyPolicy:
         Version: "2012-10-17"
@@ -157,7 +157,7 @@ Resources:
     Type: AWS::BedrockAgentCore::Memory
     Properties:
       Name: !Ref MemoryName
-      Description: Short-term Paperclip Runner chat continuity; no long-term strategies.
+      Description: Short-term GS Agentic Manager Runner chat continuity; no long-term strategies.
       EventExpiryDuration: 90
       Tags:
         paperclip:owned: "true"
@@ -271,8 +271,8 @@ Resources:
           MaxTokens: 4096
       SystemPrompt:
         - Text: >-
-            You are a Paperclip-governed remote agent. Use only caller-supplied inline
-            functions. Never claim access to Paperclip, a local workspace, shell,
+            You are a GS Agentic Manager-governed remote agent. Use only caller-supplied inline
+            functions. Never claim access to GS Agentic Manager, a local workspace, shell,
             filesystem, browser, network, MCP, skills, or other agents. Follow the
             current turn's completion contract and use its finish or block function.
       Memory:

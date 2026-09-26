@@ -79,7 +79,7 @@ export function AppsSidebar() {
         <div className="px-3 pb-1 pt-4 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground">
           Developer
         </div>
-        <p className="px-3 pb-1.5 text-(length:--text-micro) leading-snug text-muted-foreground/70">
+        <p className="px-3 pb-1.5 text-(length:--text-micro) leading-snug text-subtle-foreground">
           Advanced setup for developers. Most teams never open this.
         </p>
         <div className="flex flex-col gap-0.5">

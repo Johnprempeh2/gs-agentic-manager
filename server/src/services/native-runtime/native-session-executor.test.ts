@@ -22,7 +22,7 @@ import {
   nativeRunFinalizations,
   nativeRunResults,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   acpxRuntimeSessionDirectoryName,
   createPrpSemanticToolInputEnvelope,
@@ -32,7 +32,7 @@ import {
   parseNativeExecutionInput,
   type NativeExecutionInputV1,
   type PrpEvent,
-} from "@paperclipai/paperclip-runner";
+} from "@greatstone/paperclip-runner";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { nativeSha256 } from "./canonical.js";
@@ -195,9 +195,9 @@ vi.mock("../../vendor/paperclip-runner/index.js", async (importOriginal) => {
   };
 });
 
-vi.mock("@paperclipai/adapter-codex-local/server", async (importOriginal) => ({
+vi.mock("@greatstone/adapter-codex-local/server", async (importOriginal) => ({
   ...(await importOriginal<
-    typeof import("@paperclipai/adapter-codex-local/server")
+    typeof import("@greatstone/adapter-codex-local/server")
   >()),
   copyBackCodexAuth: state.copyBackCodexAuth,
 }));
@@ -462,8 +462,8 @@ describe("remote controller restart adoption", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-remote-reattach-"),
     );
-    const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previous = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const current = {
       ...execution,
       binding: { ...execution.binding, runId: "run" },
@@ -500,8 +500,8 @@ describe("remote controller restart adoption", () => {
       expect(await readdir(root)).toContain("control-plane");
       expect(await readdir(root)).not.toContain("runner");
     } finally {
-      if (previous === undefined) delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+      if (previous === undefined) delete process.env.GSAM_RUNNER_STATE_DIR;
+      else process.env.GSAM_RUNNER_STATE_DIR = previous;
       await rm(stateBase, { recursive: true, force: true });
     }
   });
@@ -1469,8 +1469,8 @@ describe("verified native harness backups", () => {
 
   it("verifies the lease stamp and all backup directory digests before replacement", async () => {
     const stateBase = await mkdtemp(join(tmpdir(), "paperclip-harness-stamp-"));
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     try {
       const sessionScopeId = "native-session-scope-v2";
       const sessionRoot = join(
@@ -1527,9 +1527,9 @@ describe("verified native harness backups", () => {
       expect(verifyNativeHarnessBackupStamp(stamp, "sandbox-1")).toBe(false);
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -1539,8 +1539,8 @@ describe("verified native harness backups", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-legacy-harness-stamp-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     try {
       const legacyRoot = join(
         stateBase,
@@ -1588,9 +1588,9 @@ describe("verified native harness backups", () => {
       ).toBe(false);
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -2130,7 +2130,7 @@ describe("remote runner build metadata", () => {
   const current = {
     schema: "paperclip-runner/runnerd-build-metadata/v1",
     binaryName: "paperclip-runnerd",
-    packageName: "@paperclipai/paperclip-runner",
+    packageName: "@greatstone/paperclip-runner",
     binaryContractVersion: 2,
     durableSessionCapabilities: ["unlimited_runtime", "connection_lease_renewal"],
     prpTransportModes: ["dial_ws_loopback", "dial_wss", "listen_ws"],
@@ -2396,7 +2396,7 @@ describe("native provider bootstrap environment", () => {
           PATH: "/opt/homebrew/bin:/usr/bin",
           HOME: "/Users/runner",
           CODEX_HOME: "/Users/runner/.codex",
-          PAPERCLIP_INTERNAL_SECRET: "must-not-leak",
+          GSAM_INTERNAL_SECRET: "must-not-leak",
         },
       ),
     ).toEqual({
@@ -2429,15 +2429,15 @@ describe("native provider bootstrap environment", () => {
     expect(
       buildNativeProviderEnvironment(
         {
-          PAPERCLIP_WORKSPACE_CWD: "/untrusted/configured-workspace",
+          GSAM_WORKSPACE_CWD: "/untrusted/configured-workspace",
         },
         { HOME: "/Users/runner" },
-        "/Users/runner/.paperclip/instances/default/workspaces/agent-1",
+        "/Users/runner/.gsam/instances/default/workspaces/agent-1",
       ),
     ).toEqual({
       HOME: "/Users/runner",
-      PAPERCLIP_WORKSPACE_CWD:
-        "/Users/runner/.paperclip/instances/default/workspaces/agent-1",
+      GSAM_WORKSPACE_CWD:
+        "/Users/runner/.gsam/instances/default/workspaces/agent-1",
     });
   });
 });
@@ -2568,8 +2568,8 @@ describe("retained native cleanup activation", () => {
       "config.toml",
     ];
     let preservedHomeBytes: Buffer[] | null = null;
-    const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = directory;
+    const previous = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = directory;
     const canonical = (value: unknown): string =>
       value && typeof value === "object" && !Array.isArray(value)
         ? `{${Object.entries(value)
@@ -3918,8 +3918,8 @@ describe("retained native cleanup activation", () => {
       proofSpy.mockRestore();
       state.maintenanceIdle.mockReset().mockReturnValue(true);
       releaseCommit();
-      if (previous === undefined) delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+      if (previous === undefined) delete process.env.GSAM_RUNNER_STATE_DIR;
+      else process.env.GSAM_RUNNER_STATE_DIR = previous;
       await rm(directory, { recursive: true, force: true });
     }
   });
@@ -3931,8 +3931,8 @@ describe("stopped native conversation physical cleanup", () => {
     "foreign_run", "foreign_company", "foreign_runner", "remote", "unreleased", "changed_state", "changed_pid", "symlink", "startup_intent", "pending_identity", "wrong_schema", "replacement", "replacement_alive", "agent_alive", "checkpoint_owner_alive", "diagnostic_owner_alive", "normalized_session_receipt",
   ].map(mode => ({ provider, mode }))))("$provider $mode", async ({ provider, mode }) => {
     const base = await mkdtemp(join(tmpdir(), "native-conversation-cleanup-"));
-    const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = base;
+    const previous = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = base;
     const input = parseNativeExecutionInput({ ...execution,
       provider: provider === "codex" ? execution.provider : { kind: "acpx", agent: "claude", model: "claude-sonnet-5", permissionPolicy: "interactive",
         profile: { driverKind: "acpx_runtime", protocolVersion: 1, acpxVersion: "0.13.1", agent: "claude", agentProfileVersion: 1,
@@ -3998,7 +3998,7 @@ describe("stopped native conversation physical cleanup", () => {
         expect(await readFile(join(root, `runner/${provider}-provider-state.json`), "utf8")).toBe(JSON.stringify(providerState));
       } else expect(proof).toBeNull();
     } finally {
-      if (previous === undefined) delete process.env.PAPERCLIP_RUNNER_STATE_DIR; else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+      if (previous === undefined) delete process.env.GSAM_RUNNER_STATE_DIR; else process.env.GSAM_RUNNER_STATE_DIR = previous;
       await rm(base, { recursive: true, force: true });
     }
   });
@@ -4030,8 +4030,8 @@ describe("explicit failed native retry physical evidence", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-failed-retry-state-"),
     );
-    const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previous = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const canonical = (value: unknown): string =>
       value && typeof value === "object" && !Array.isArray(value)
         ? `{${Object.entries(value)
@@ -4233,8 +4233,8 @@ describe("explicit failed native retry physical evidence", () => {
           await access(join(root, "control-plane", "control-plane-state.json")),
         ).toBeUndefined();
     } finally {
-      if (previous === undefined) delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+      if (previous === undefined) delete process.env.GSAM_RUNNER_STATE_DIR;
+      else process.env.GSAM_RUNNER_STATE_DIR = previous;
       await rm(stateBase, { recursive: true, force: true });
     }
   });
@@ -4845,8 +4845,8 @@ describe("native startup cancellation fence", () => {
 describe("native startup restart detachment", () => {
   it("waits for in-flight runner startup and its detach acknowledgement before shutdown returns", async () => {
     const root = await mkdtemp(join(tmpdir(), "native-startup-detach-"));
-    const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = root;
+    const previous = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = root;
     const restarting = structuredClone(execution);
     restarting.binding.runId = "restart-inflight-bootstrap";
     restarting.session.normalizedSessionId = "restart-inflight-session";
@@ -4882,16 +4882,16 @@ describe("native startup restart detachment", () => {
       open(); acknowledge();
       await outcome;
       await detaching;
-      if (previous === undefined) delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+      if (previous === undefined) delete process.env.GSAM_RUNNER_STATE_DIR;
+      else process.env.GSAM_RUNNER_STATE_DIR = previous;
       await rm(root, { recursive: true, force: true });
     }
   });
 
   it.each([false, true])("settles failed startup without claiming detachment (deadline exceeded: %s)", async (exceedDeadline) => {
     const root = await mkdtemp(join(tmpdir(), "native-startup-failure-"));
-    const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = root;
+    const previous = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = root;
     const restarting = structuredClone(execution);
     restarting.binding.runId = `restart-failed-bootstrap-${exceedDeadline}`;
     restarting.session.normalizedSessionId = `restart-failed-session-${exceedDeadline}`;
@@ -4920,8 +4920,8 @@ describe("native startup restart detachment", () => {
       vi.useRealTimers();
       release();
       await outcome;
-      if (previous === undefined) delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+      if (previous === undefined) delete process.env.GSAM_RUNNER_STATE_DIR;
+      else process.env.GSAM_RUNNER_STATE_DIR = previous;
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -5088,8 +5088,8 @@ describe("native session cancellation", () => {
     { useRunnerd: false, durableIntentVisible: true },
   ])("waits for an in-flight startup handle before acknowledging Stop (runnerd=$useRunnerd, durable intent=$durableIntentVisible)", async ({ useRunnerd, durableIntentVisible }) => {
     const root = await mkdtemp(join(tmpdir(), "native-startup-stop-"));
-    const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = root;
+    const previous = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = root;
     let open!: () => void, started!: () => void, finish!: () => void;
     const opening = new Promise<void>(resolve => { open = resolve; });
     const admitted = new Promise<void>(resolve => { started = resolve; });
@@ -5145,16 +5145,16 @@ describe("native session cancellation", () => {
       open(); finish();
       await outcome;
       await stopping;
-      if (previous === undefined) delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+      if (previous === undefined) delete process.env.GSAM_RUNNER_STATE_DIR;
+      else process.env.GSAM_RUNNER_STATE_DIR = previous;
       await rm(root, { recursive: true, force: true });
     }
   });
 
   it.each([true, false])("fences a late startup even when Stop reaches its acknowledgement deadline (runnerd=%s)", async (useRunnerd) => {
     const root = await mkdtemp(join(tmpdir(), "native-late-startup-stop-"));
-    const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = root;
+    const previous = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = root;
     let open!: () => void, started!: () => void;
     const opening = new Promise<void>(resolve => { open = resolve; });
     const admitted = new Promise<void>(resolve => { started = resolve; });
@@ -5182,8 +5182,8 @@ describe("native session cancellation", () => {
       expect(submitTurn).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers(); open(); await outcome;
-      if (previous === undefined) delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+      if (previous === undefined) delete process.env.GSAM_RUNNER_STATE_DIR;
+      else process.env.GSAM_RUNNER_STATE_DIR = previous;
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -5896,8 +5896,8 @@ describe("native warm session supervision", () => {
 
   it.each(["checkpoint first", "turn first"])("serializes restart checkpoint and turn admission: %s", async (order) => {
     const stateBase = await mkdtemp(join(tmpdir(), "paperclip-close-race-"));
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    process.env.PAPERCLIP_HOME = stateBase;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    process.env.GSAM_HOME = stateBase;
     let finishClose!: () => void;
     const closing = new Promise<void>((resolve) => { finishClose = resolve; });
     const close = vi.fn(() => closing);
@@ -5968,8 +5968,8 @@ describe("native warm session supervision", () => {
     } finally {
       finishClose();
       await closeIdleWarmNativeSessionsForRestart();
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
       await rm(stateBase, { recursive: true, force: true });
     }
   });
@@ -6033,8 +6033,8 @@ describe("native warm session supervision", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-warm-same-run-recovery-"),
     );
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    process.env.PAPERCLIP_HOME = stateBase;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    process.env.GSAM_HOME = stateBase;
     const activeRun = {
       ...execution,
       binding: {
@@ -6115,9 +6115,9 @@ describe("native warm session supervision", () => {
       ).resolves.toBeDefined();
     } finally {
       if (previousPaperclipHome === undefined) {
-        delete process.env.PAPERCLIP_HOME;
+        delete process.env.GSAM_HOME;
       } else {
-        process.env.PAPERCLIP_HOME = previousPaperclipHome;
+        process.env.GSAM_HOME = previousPaperclipHome;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -6343,7 +6343,7 @@ describe("native warm session supervision", () => {
       brokerReady,
     }) => {
       githubAccess.create.mockReset().mockResolvedValue({
-        env: { PAPERCLIP_GITHUB_BROKER_TOKEN: "stable-session-capability" },
+        env: { GSAM_GITHUB_BROKER_TOKEN: "stable-session-capability" },
         ready: brokerReady,
         activate: githubAccess.activate.mockReset().mockImplementation(() => vi.fn()),
         stop: githubAccess.stop.mockReset().mockResolvedValue(undefined),
@@ -6356,10 +6356,10 @@ describe("native warm session supervision", () => {
       const stateBase = await mkdtemp(
         join(tmpdir(), "paperclip-runnerd-warm-authority-"),
       );
-      const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-      process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
-      process.env.PAPERCLIP_HOME = stateBase;
+      const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+      const previousPaperclipHome = process.env.GSAM_HOME;
+      process.env.GSAM_RUNNER_STATE_DIR = stateBase;
+      process.env.GSAM_HOME = stateBase;
       const firstClose = vi.fn(async () => undefined);
       const firstSession = { close: firstClose };
       const first = {
@@ -6469,10 +6469,10 @@ describe("native warm session supervision", () => {
           db: leaseDb(first),
           execution: first,
           runnerEnvironment: {
-            PAPERCLIP_GITHUB_AUTH_MODE: firstMode,
-            PAPERCLIP_RUNNER_NETWORK_ACCESS: firstNetwork,
+            GSAM_GITHUB_AUTH_MODE: firstMode,
+            GSAM_RUNNER_NETWORK_ACCESS: firstNetwork,
             ...(firstBroker
-              ? { PAPERCLIP_GITHUB_BROKER_TOKEN: "first-run-capability" }
+              ? { GSAM_GITHUB_BROKER_TOKEN: "first-run-capability" }
               : {}),
           },
           runnerInstanceId: "runner-runnerd-warm",
@@ -6564,10 +6564,10 @@ describe("native warm session supervision", () => {
           db: continuationDb,
           execution: second,
           runnerEnvironment: {
-            PAPERCLIP_GITHUB_AUTH_MODE: secondMode,
-            PAPERCLIP_RUNNER_NETWORK_ACCESS: secondNetwork,
+            GSAM_GITHUB_AUTH_MODE: secondMode,
+            GSAM_RUNNER_NETWORK_ACCESS: secondNetwork,
             ...(secondBroker
-              ? { PAPERCLIP_GITHUB_BROKER_TOKEN: "second-run-capability" }
+              ? { GSAM_GITHUB_BROKER_TOKEN: "second-run-capability" }
               : {}),
           },
           runnerInstanceId: "runner-runnerd-warm",
@@ -6607,14 +6607,14 @@ describe("native warm session supervision", () => {
         }
       } finally {
         if (previousStateDirectory === undefined) {
-          delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+          delete process.env.GSAM_RUNNER_STATE_DIR;
         } else {
-          process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+          process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
         }
         if (previousPaperclipHome === undefined) {
-          delete process.env.PAPERCLIP_HOME;
+          delete process.env.GSAM_HOME;
         } else {
-          process.env.PAPERCLIP_HOME = previousPaperclipHome;
+          process.env.GSAM_HOME = previousPaperclipHome;
         }
         await rm(stateBase, { recursive: true, force: true });
       }
@@ -7625,18 +7625,18 @@ describe("runnerd provider runtime wiring", () => {
   let previousStateDirectory: string | undefined;
 
   beforeEach(async () => {
-    previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
+    previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
     isolatedStateDirectory = await mkdtemp(
       join(tmpdir(), "paperclip-runnerd-wiring-"),
     );
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = isolatedStateDirectory;
+    process.env.GSAM_RUNNER_STATE_DIR = isolatedStateDirectory;
   });
 
   afterEach(async () => {
     if (previousStateDirectory === undefined) {
-      delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+      delete process.env.GSAM_RUNNER_STATE_DIR;
     } else {
-      process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+      process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
     }
     await rm(isolatedStateDirectory, { recursive: true, force: true });
   });
@@ -7741,7 +7741,7 @@ describe("runnerd provider runtime wiring", () => {
       cleanup,
     });
     state.renderNativeRunnerStagedAttachmentPrompt.mockReturnValueOnce(
-      "Paperclip native attachment access: staged.",
+      "GS Agentic Manager native attachment access: staged.",
     );
     state.execute.mockReset().mockResolvedValueOnce({
       result: { summary: "completed" },
@@ -7900,8 +7900,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-runner-binding-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const prior = {
       ...execution,
       binding: {
@@ -8032,18 +8032,18 @@ describe("runnerd provider runtime wiring", () => {
       );
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
   });
 
   it.each([
-    { PAPERCLIP_NATIVE_MCP_NAME: "paperclip-assigned" },
-    { PAPERCLIP_NATIVE_MCP_URL: "http://127.0.0.1:3217/mcp/gateways/test" },
-    { PAPERCLIP_NATIVE_MCP_TOKEN: "private-run-token" },
+    { GSAM_NATIVE_MCP_NAME: "paperclip-assigned" },
+    { GSAM_NATIVE_MCP_URL: "http://127.0.0.1:3217/mcp/gateways/test" },
+    { GSAM_NATIVE_MCP_TOKEN: "private-run-token" },
   ])("rejects partial remote assigned MCP bindings", async (runnerEnvironment) => {
     await expect(createRunnerdBackend({
       db: leaseDb(execution), execution, runnerInstanceId: "runner-partial-mcp", runnerEnvironment,
@@ -8065,9 +8065,9 @@ describe("runnerd provider runtime wiring", () => {
     await createRunnerdBackend({
       db: leaseDb(execution), execution, runnerInstanceId: "runner-assigned-mcp",
       runnerEnvironment: {
-        PAPERCLIP_NATIVE_MCP_NAME: "paperclip-assigned",
-        PAPERCLIP_NATIVE_MCP_URL: "http://127.0.0.1:3217/mcp/gateways/assigned-test",
-        PAPERCLIP_NATIVE_MCP_TOKEN: "private-run-token",
+        GSAM_NATIVE_MCP_NAME: "paperclip-assigned",
+        GSAM_NATIVE_MCP_URL: "http://127.0.0.1:3217/mcp/gateways/assigned-test",
+        GSAM_NATIVE_MCP_TOKEN: "private-run-token",
       },
       runnerExecutionTarget: {
         kind: "remote", transport: "sandbox", providerKey: "daytona",
@@ -8081,9 +8081,9 @@ describe("runnerd provider runtime wiring", () => {
     expect(state.toolAuthorityDefinitions).toHaveBeenCalledWith(expect.objectContaining({ assignedMcpTools }));
     state.createBackend.mock.calls[0]![1].codexTransportFactory!();
     const options = state.createTransport.mock.calls[0]![0] as { environment: NodeJS.ProcessEnv };
-    expect(options.environment.PAPERCLIP_NATIVE_MCP_NAME).toBeUndefined();
-    expect(options.environment.PAPERCLIP_NATIVE_MCP_URL).toBeUndefined();
-    expect(options.environment.PAPERCLIP_NATIVE_MCP_TOKEN).toBeUndefined();
+    expect(options.environment.GSAM_NATIVE_MCP_NAME).toBeUndefined();
+    expect(options.environment.GSAM_NATIVE_MCP_URL).toBeUndefined();
+    expect(options.environment.GSAM_NATIVE_MCP_TOKEN).toBeUndefined();
   });
 
   it("makes remote authority archival idempotent and returns the archived state", async () => {
@@ -8126,7 +8126,7 @@ describe("runnerd provider runtime wiring", () => {
       expect.objectContaining({
         externallySandboxed: true,
         environment: expect.objectContaining({
-          PAPERCLIP_RUNNER_EXTERNAL_SANDBOX: "1",
+          GSAM_RUNNER_EXTERNAL_SANDBOX: "1",
         }),
       }),
     );
@@ -8187,8 +8187,8 @@ describe("runnerd provider runtime wiring", () => {
       runnerInstanceId: "runner-local-workspace",
       runnerEnvironment: {
         HOME: "/home/runner",
-        PAPERCLIP_WORKSPACE_CWD: "/untrusted/configured-workspace",
-        PAPERCLIP_RUNNER_EXTERNAL_SANDBOX: "1",
+        GSAM_WORKSPACE_CWD: "/untrusted/configured-workspace",
+        GSAM_RUNNER_EXTERNAL_SANDBOX: "1",
       },
     });
 
@@ -8198,7 +8198,7 @@ describe("runnerd provider runtime wiring", () => {
     expect(state.createTransport).toHaveBeenCalledWith(
       expect.objectContaining({
         environment: expect.objectContaining({
-          PAPERCLIP_WORKSPACE_CWD: execution.workspace.cwd,
+          GSAM_WORKSPACE_CWD: execution.workspace.cwd,
         }),
       }),
     );
@@ -8206,7 +8206,7 @@ describe("runnerd provider runtime wiring", () => {
       environment: NodeJS.ProcessEnv;
     };
     expect(
-      localTransportOptions.environment.PAPERCLIP_RUNNER_EXTERNAL_SANDBOX,
+      localTransportOptions.environment.GSAM_RUNNER_EXTERNAL_SANDBOX,
     ).toBeUndefined();
   });
 
@@ -8214,8 +8214,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-legacy-runner-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const legacyExecution = {
       ...execution,
       binding: {
@@ -8295,9 +8295,9 @@ describe("runnerd provider runtime wiring", () => {
       );
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -8307,8 +8307,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-company-session-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const legacyExecution = {
       ...execution,
       binding: {
@@ -8369,9 +8369,9 @@ describe("runnerd provider runtime wiring", () => {
       ).resolves.toBeUndefined();
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -8381,8 +8381,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-prior-run-session-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const priorExecution = {
       ...execution,
       binding: {
@@ -8482,9 +8482,9 @@ describe("runnerd provider runtime wiring", () => {
       );
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -8539,8 +8539,8 @@ describe("runnerd provider runtime wiring", () => {
       const stateBase = await mkdtemp(
         join(tmpdir(), "paperclip-remote-prior-run-state-"),
       );
-      const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+      const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+      process.env.GSAM_RUNNER_STATE_DIR = stateBase;
       const priorExecution = {
         ...execution,
         binding: {
@@ -8695,9 +8695,9 @@ describe("runnerd provider runtime wiring", () => {
         );
       } finally {
         if (previousStateDirectory === undefined) {
-          delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+          delete process.env.GSAM_RUNNER_STATE_DIR;
         } else {
-          process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+          process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
         }
         await rm(stateBase, { recursive: true, force: true });
       }
@@ -8708,8 +8708,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-legacy-terminal-unsuspended-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const priorExecution = {
       ...execution,
       binding: {
@@ -8794,9 +8794,9 @@ describe("runnerd provider runtime wiring", () => {
       expect(state.createTransport).not.toHaveBeenCalled();
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -8806,8 +8806,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-running-prior-run-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const priorExecution = {
       ...execution,
       binding: {
@@ -8889,9 +8889,9 @@ describe("runnerd provider runtime wiring", () => {
       expect(state.createTransport).not.toHaveBeenCalled();
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -8926,8 +8926,8 @@ describe("runnerd provider runtime wiring", () => {
       const stateBase = await mkdtemp(
         join(tmpdir(), "paperclip-quiescent-recovery-"),
       );
-      const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+      const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+      process.env.GSAM_RUNNER_STATE_DIR = stateBase;
       const priorExecution = {
         ...execution,
         binding: {
@@ -9198,8 +9198,8 @@ describe("runnerd provider runtime wiring", () => {
       } finally {
         processKill.mockRestore();
         if (previousStateDirectory === undefined)
-          delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-        else process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+          delete process.env.GSAM_RUNNER_STATE_DIR;
+        else process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
         await rm(stateBase, { recursive: true, force: true });
       }
     },
@@ -9209,8 +9209,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-terminal-unsuspended-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const priorExecution = {
       ...execution,
       binding: {
@@ -9341,9 +9341,9 @@ describe("runnerd provider runtime wiring", () => {
       expect(state.createTransport).not.toHaveBeenCalled();
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -9353,8 +9353,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-current-scoped-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const currentExecution = {
       ...execution,
       binding: {
@@ -9415,9 +9415,9 @@ describe("runnerd provider runtime wiring", () => {
       );
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -9438,8 +9438,8 @@ describe("runnerd provider runtime wiring", () => {
       const stateBase = await mkdtemp(
         join(tmpdir(), "paperclip-pending-warm-transition-"),
       );
-      const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+      const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+      process.env.GSAM_RUNNER_STATE_DIR = stateBase;
       const currentExecution = {
         ...execution,
         binding: {
@@ -9549,8 +9549,8 @@ describe("runnerd provider runtime wiring", () => {
         expect(state.createTransport).not.toHaveBeenCalled();
       } finally {
         if (previousStateDirectory === undefined)
-          delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-        else process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+          delete process.env.GSAM_RUNNER_STATE_DIR;
+        else process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
         await rm(stateBase, { recursive: true, force: true });
       }
     },
@@ -9562,8 +9562,8 @@ describe("runnerd provider runtime wiring", () => {
       const stateBase = await mkdtemp(
         join(tmpdir(), `paperclip-${caseName}-runner-state-`),
       );
-      const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+      const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+      process.env.GSAM_RUNNER_STATE_DIR = stateBase;
       const currentExecution = {
         ...execution,
         binding: {
@@ -9634,9 +9634,9 @@ describe("runnerd provider runtime wiring", () => {
         expect(state.createTransport).not.toHaveBeenCalled();
       } finally {
         if (previousStateDirectory === undefined) {
-          delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+          delete process.env.GSAM_RUNNER_STATE_DIR;
         } else {
-          process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+          process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
         }
         await rm(stateBase, { recursive: true, force: true });
       }
@@ -9649,8 +9649,8 @@ describe("runnerd provider runtime wiring", () => {
       const stateBase = await mkdtemp(
         join(tmpdir(), `paperclip-${caseName}-scoped-state-`),
       );
-      const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-      process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+      const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+      process.env.GSAM_RUNNER_STATE_DIR = stateBase;
       const scopedExecution = {
         ...execution,
         binding: {
@@ -9745,9 +9745,9 @@ describe("runnerd provider runtime wiring", () => {
         expect(state.createTransport).not.toHaveBeenCalled();
       } finally {
         if (previousStateDirectory === undefined) {
-          delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+          delete process.env.GSAM_RUNNER_STATE_DIR;
         } else {
-          process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+          process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
         }
         await rm(stateBase, { recursive: true, force: true });
       }
@@ -9758,8 +9758,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-symlink-scoped-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const scopedExecution = {
       ...execution,
       binding: {
@@ -9809,9 +9809,9 @@ describe("runnerd provider runtime wiring", () => {
       expect(state.createTransport).not.toHaveBeenCalled();
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -9821,8 +9821,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-prior-run-mismatched-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const currentExecution = {
       ...execution,
       binding: {
@@ -9902,9 +9902,9 @@ describe("runnerd provider runtime wiring", () => {
       await expect(access(join(stateBase, "quarantine"))).rejects.toThrow();
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -9914,8 +9914,8 @@ describe("runnerd provider runtime wiring", () => {
     const stateBase = await mkdtemp(
       join(tmpdir(), "paperclip-mismatched-session-state-"),
     );
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const currentExecution = {
       ...execution,
       binding: {
@@ -9965,9 +9965,9 @@ describe("runnerd provider runtime wiring", () => {
       await expect(access(legacyRoot)).resolves.toBeUndefined();
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -10048,8 +10048,8 @@ describe("runnerd provider runtime wiring", () => {
 
   it("scopes local durable sessions by agent, workspace, and provider profile while reusing them across runs", async () => {
     const stateBase = await mkdtemp(join(tmpdir(), "paperclip-session-scope-"));
-    const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
-    process.env.PAPERCLIP_RUNNER_STATE_DIR = stateBase;
+    const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
+    process.env.GSAM_RUNNER_STATE_DIR = stateBase;
     const scopedExecution = (input: {
       runId: string;
       agentId?: string;
@@ -10221,9 +10221,9 @@ describe("runnerd provider runtime wiring", () => {
       expect(tracedRuns).toEqual([continuation.binding.runId, continuation.binding.runId]);
     } finally {
       if (previousStateDirectory === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
+        delete process.env.GSAM_RUNNER_STATE_DIR;
       } else {
-        process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+        process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
       }
       await rm(stateBase, { recursive: true, force: true });
     }
@@ -10363,7 +10363,7 @@ describe("runnerd provider runtime wiring", () => {
       expect.objectContaining({
         runnerBinary: "/tmp/paperclip-runnerd",
         environment: expect.objectContaining({
-          PAPERCLIP_WORKSPACE_CWD: remoteCwd,
+          GSAM_WORKSPACE_CWD: remoteCwd,
         }),
       }),
     );
@@ -10371,7 +10371,7 @@ describe("runnerd provider runtime wiring", () => {
       environment: NodeJS.ProcessEnv;
     };
     expect(
-      sshTransportOptions.environment.PAPERCLIP_RUNNER_EXTERNAL_SANDBOX,
+      sshTransportOptions.environment.GSAM_RUNNER_EXTERNAL_SANDBOX,
     ).toBeUndefined();
     expect(state.createTransport.mock.calls[0]![0].runnerBinary).not.toBe(
       `${remoteCwd}/.paperclip-runtime/paperclip-runner/bin/paperclip-runnerd`,
@@ -10398,7 +10398,7 @@ describe("runnerd provider runtime wiring", () => {
       if (command.args?.[0] === "--build-metadata") return {
         exitCode: 0, timedOut: false, stdout: JSON.stringify({
           schema: "paperclip-runner/runnerd-build-metadata/v1", binaryName: "paperclip-runnerd",
-          packageName: "@paperclipai/paperclip-runner", binaryContractVersion: 2,
+          packageName: "@greatstone/paperclip-runner", binaryContractVersion: 2,
           durableSessionCapabilities: ["unlimited_runtime", "connection_lease_renewal"],
           prpTransportModes: ["listen_ws"],
         }), stderr: "",
@@ -10518,7 +10518,7 @@ describe("runnerd provider runtime wiring", () => {
           stdout = JSON.stringify({
             schema: "paperclip-runner/runnerd-build-metadata/v1",
             binaryName: "paperclip-runnerd",
-            packageName: "@paperclipai/paperclip-runner",
+            packageName: "@greatstone/paperclip-runner",
             binaryContractVersion: 2,
             durableSessionCapabilities: (image === "stale" || retained) && command.command === "/usr/local/bin/paperclip-runnerd"
               ? undefined
@@ -10706,7 +10706,7 @@ describe("runnerd provider runtime wiring", () => {
           },
         }),
       ).rejects.toThrow(
-        "runner_remote_provider_artifact_incompatible: configure PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH",
+        "runner_remote_provider_artifact_incompatible: configure GSAM_RUNNER_REMOTE_PROVIDER_PACK_PATH",
       );
       expect(state.createBackend).not.toHaveBeenCalled();
     },

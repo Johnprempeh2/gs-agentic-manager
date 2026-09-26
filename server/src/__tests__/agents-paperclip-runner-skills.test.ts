@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   normalizePaperclipOperationalSkillPreference,
   normalizePaperclipRunnerAdapterConfig,
-  PAPERCLIP_OPERATIONAL_SKILL_KEY,
+  GSAM_OPERATIONAL_SKILL_KEY,
   resolveLegacyPaperclipDesiredSkillNames,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 
 const legacyConfig = {
   paperclipSkillSync: {
-    desiredSkills: [PAPERCLIP_OPERATIONAL_SKILL_KEY],
+    desiredSkills: [GSAM_OPERATIONAL_SKILL_KEY],
   },
 };
 
@@ -42,7 +42,7 @@ describe("paperclip_runner operational skill normalization", () => {
   it("removes the legacy operational skill while preserving optional skills", () => {
     const normalized = normalizePaperclipOperationalSkillPreference("paperclip_runner", {
       paperclipSkillSync: {
-        desiredSkills: [PAPERCLIP_OPERATIONAL_SKILL_KEY, "company-1/reviewer"],
+        desiredSkills: [GSAM_OPERATIONAL_SKILL_KEY, "company-1/reviewer"],
       },
     });
 
@@ -54,9 +54,9 @@ describe("paperclip_runner operational skill normalization", () => {
   it("restores the required operational skill through the legacy resolver after switching back", () => {
     const normalized = normalizePaperclipOperationalSkillPreference("paperclip_runner", legacyConfig);
     expect(resolveLegacyPaperclipDesiredSkillNames(normalized, [{
-      key: PAPERCLIP_OPERATIONAL_SKILL_KEY,
+      key: GSAM_OPERATIONAL_SKILL_KEY,
       runtimeName: "paperclip",
-    }])).toEqual([PAPERCLIP_OPERATIONAL_SKILL_KEY]);
+    }])).toEqual([GSAM_OPERATIONAL_SKILL_KEY]);
   });
 
   it("does not change direct adapter preferences", () => {

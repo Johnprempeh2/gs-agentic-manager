@@ -2,18 +2,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@greatstone/adapter-utils";
 import {
   prepareAdapterExecutionTargetRuntime,
   startAdapterExecutionTargetPaperclipBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 
 // Wrap the staging seam + both sandbox bridges in call-recording spies that
 // still delegate to the real implementations. This mirrors the execute.test.ts
 // harness so the turn characterization tests share the same mocked module graph.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@greatstone/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@greatstone/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),

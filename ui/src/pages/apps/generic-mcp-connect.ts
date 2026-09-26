@@ -1,5 +1,5 @@
-import { checkMcpRemoteHeaderName, checkMcpRemoteHeaderValue, mcpRemoteHeaderRejectionMessage } from "@paperclipai/shared";
-import type { GenericMcpAuthMode } from "@paperclipai/shared";
+import { checkMcpRemoteHeaderName, checkMcpRemoteHeaderValue, mcpRemoteHeaderRejectionMessage } from "@greatstone/shared";
+import type { GenericMcpAuthMode } from "@greatstone/shared";
 
 /**
  * Logic behind the guided "Connect your own MCP server" flow (PAP-17087).
@@ -97,7 +97,7 @@ export function genericConnectGuidance(
   code: string | null | undefined,
   message: string | null | undefined,
 ): GenericConnectGuidance {
-  const fallback = message?.trim() || "Paperclip couldn't connect to that address. Check it and try again.";
+  const fallback = message?.trim() || "GS Agentic Manager couldn't connect to that address. Check it and try again.";
   switch (code) {
     case "mcp_remote_url_missing":
     case "mcp_remote_url_invalid":
@@ -109,7 +109,7 @@ export function genericConnectGuidance(
     case "remote_http_private_endpoint":
       return {
         title: "That address is inside a private network",
-        body: "This Paperclip is reachable from the internet, so it won't call addresses on your local network. Use the server's public address instead.",
+        body: "This GS Agentic Manager is reachable from the internet, so it won't call addresses on your local network. Use the server's public address instead.",
         focus: "url",
       };
     case "remote_http_dns_failed":
@@ -120,34 +120,34 @@ export function genericConnectGuidance(
       };
     case "mcp_header_rejected":
       return {
-        title: "Paperclip can't send that header",
+        title: "GS Agentic Manager can't send that header",
         body: fallback,
         focus: "credentials",
       };
     case "tool_access_name_conflict":
       return {
-        title: "Paperclip couldn’t name this connection",
+        title: "GS Agentic Manager couldn’t name this connection",
         body: "Try connecting again.",
         focus: "none",
       };
     case "oauth_challenge":
       return {
         title: "This server wants a credential",
-        body: "It asked us to authenticate but didn't offer a sign-in Paperclip can complete on its own. Add the key or headers its docs list under Advanced authentication.",
+        body: "It asked us to authenticate but didn't offer a sign-in GS Agentic Manager can complete on its own. Add the key or headers its docs list under Advanced authentication.",
         focus: "credentials",
       };
     case "oauth_manual_client_required":
     case "oauth_manual_client_rebinding_required":
       return {
         title: "This server needs sign-in details you create yourself",
-        body: "Register Paperclip in the provider's settings, then add the client ID and secret it gives you under Advanced authentication.",
+        body: "Register GS Agentic Manager in the provider's settings, then add the client ID and secret it gives you under Advanced authentication.",
         focus: "credentials",
       };
     case "oauth_redirect_origin_unsupported":
     case "oauth_redirect_uri_invalid":
       return {
-        title: "This Paperclip needs a public HTTPS address first",
-        body: "Sign-in sends the operator back to Paperclip, so this instance has to be reachable over HTTPS. Ask your Paperclip admin to configure it.",
+        title: "This GS Agentic Manager needs a public HTTPS address first",
+        body: "Sign-in sends the operator back to GS Agentic Manager, so this instance has to be reachable over HTTPS. Ask your GS Agentic Manager admin to configure it.",
         focus: "deployment",
       };
     case "runtime_error":
@@ -158,7 +158,7 @@ export function genericConnectGuidance(
       };
     default:
       return {
-        title: "Paperclip couldn't connect",
+        title: "GS Agentic Manager couldn't connect",
         body: fallback,
         focus: "none",
       };
@@ -213,7 +213,7 @@ export interface GenericConnectPayload {
  * `authMode` is only sent when the operator made an explicit choice under Advanced
  * authentication; the simple path leaves it off so the server probes and decides.
  * Header values become `headers.<Name>` credential paths, which the server turns
- * into Paperclip secrets — nothing here ever puts a value in the config.
+ * into GS Agentic Manager secrets — nothing here ever puts a value in the config.
  */
 export function genericConnectPayload(draft: GenericConnectDraft): GenericConnectPayload {
   const credentialValues: Record<string, string> = {};

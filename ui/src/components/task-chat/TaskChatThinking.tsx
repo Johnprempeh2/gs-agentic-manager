@@ -40,7 +40,7 @@ export function TaskChatThinking({
       >
         <span className="flex w-5 shrink-0 items-center justify-center">
           <Brain
-            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/50"
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 text-subtle-foreground"
             aria-hidden
             data-testid="task-chat-thinking-icon"
           />

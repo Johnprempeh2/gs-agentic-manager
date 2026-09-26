@@ -4,7 +4,7 @@ export function shouldLoadWorkingDirectoryEnv(input: {
   env?: NodeJS.ProcessEnv;
 }): boolean {
   const env = input.env ?? process.env;
-  return env.PAPERCLIP_DISABLE_CWD_ENV_FILE !== "true"
+  return env.GSAM_DISABLE_CWD_ENV_FILE !== "true"
     && input.cwdEnvExists
     && !input.isPaperclipEnvFile;
 }

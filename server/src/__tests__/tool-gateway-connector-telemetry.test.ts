@@ -24,7 +24,7 @@ import {
   toolProfileBindings,
   toolProfiles,
   toolRuntimeSlots,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,

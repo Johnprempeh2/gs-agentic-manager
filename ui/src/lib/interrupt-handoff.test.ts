@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAgentMentionHref } from "@paperclipai/shared";
+import { buildAgentMentionHref } from "@greatstone/shared";
 import {
   bodyHasAgentMention,
   classifyAssigneeHandoff,

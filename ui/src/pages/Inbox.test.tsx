@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Approval, HeartbeatRun, Issue } from "@paperclipai/shared";
+import type { Approval, HeartbeatRun, Issue } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyJoinRequest } from "../api/access";
 import {
@@ -731,7 +731,7 @@ describe("Inbox toolbar", () => {
       separator.querySelectorAll("[data-date-group-rule]").length === 2
     ))).toBe(true);
     expect(separators.every((separator) => (
-      separator.querySelector("[data-date-group-label]")?.classList.contains("text-muted-foreground/70")
+      separator.querySelector("[data-date-group-label]")?.classList.contains("text-subtle-foreground")
     ))).toBe(true);
 
     act(() => root.unmount());

@@ -188,8 +188,8 @@ test("summarizes PR bodies into a one-line purpose", () => {
     "Fixes the flaky retry loop so wakes stop duplicating.",
   );
   assert.equal(
-    summarizePullRequestBody("> - Paperclip is the control plane.\n> - Blocker edges gate work."),
-    "Paperclip is the control plane. Blocker edges gate work.",
+    summarizePullRequestBody("> - GS Agentic Manager is the control plane.\n> - Blocker edges gate work."),
+    "GS Agentic Manager is the control plane. Blocker edges gate work.",
   );
   assert.equal(summarizePullRequestBody(""), null);
   assert.equal(summarizePullRequestBody(null), null);
@@ -263,7 +263,7 @@ test("renders scope, purpose, confidence groups, and immutable guardrail", () =>
     summary: { ready: 1, needsGardening: 0, reportOnly: 0 },
     pullRequests: [entry],
   });
-  assert.match(report, /Scope: PRs authored by `cryppadotta` \(this Paperclip instance\) referenced by issues active in the last 14 day\(s\)/);
+  assert.match(report, /Scope: PRs authored by `cryppadotta` \(this GS Agentic Manager instance\) referenced by issues active in the last 14 day\(s\)/);
   assert.match(report, /- Purpose: Fixes the retry loop\./);
   assert.match(report, /- Author: `cryppadotta`/);
   assert.match(report, /## High Confidence/);

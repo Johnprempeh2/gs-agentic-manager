@@ -4,7 +4,7 @@ import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { IssueAttachment } from "@paperclipai/shared";
+import type { IssueAttachment } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExternallyConnectedTaskBanner } from "./ExternallyConnectedTaskBanner";
 import { boardSendDraftKey, readBoardSendDraft } from "./board-send-draft";

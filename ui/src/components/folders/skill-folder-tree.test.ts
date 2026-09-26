@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FolderListItem } from "@paperclipai/shared";
+import type { FolderListItem } from "@greatstone/shared";
 import {
   buildSkillFolderTree,
   folderBreadcrumbTrail,

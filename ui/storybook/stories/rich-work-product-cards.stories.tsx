@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { IssueAttachment, IssueWorkProduct } from "@paperclipai/shared";
+import type { IssueAttachment, IssueWorkProduct } from "@greatstone/shared";
 import { expect } from "storybook/test";
 import { RichWorkProductCard } from "../../src/components/task-chat/RichWorkProductCard";
 import { TaskChatBubble } from "../../src/components/task-chat/TaskChatBubble";

@@ -5,8 +5,8 @@ import type {
   ToolMcpGatewayToken,
   ToolMcpGatewayWithTokens,
   ToolProfileWithDetails,
-} from "@paperclipai/shared";
-import { humanizeConnectionDisplayName, isToolConnectionAttentionHealth } from "@paperclipai/shared";
+} from "@greatstone/shared";
+import { humanizeConnectionDisplayName, isToolConnectionAttentionHealth } from "@greatstone/shared";
 
 /** Days before expiry at which we surface a token as "Expiring". */
 export const TOKEN_EXPIRING_WINDOW_DAYS = 14;

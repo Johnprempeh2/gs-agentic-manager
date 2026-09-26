@@ -19,7 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import { EventEmitter } from "node:events";
 import { createPluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
@@ -33,7 +33,7 @@ const MANIFEST: PaperclipPluginManifestV1 = {
   version: "1.0.0",
   displayName: "Demo plugin",
   description: "Regression fixture",
-  author: "Paperclip",
+  author: "GS Agentic Manager",
   categories: ["automation"],
   capabilities: [],
   entrypoints: { worker: "dist/worker.js" },

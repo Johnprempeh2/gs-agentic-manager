@@ -14,8 +14,8 @@ import {
   issueRelations,
   issues,
   projects,
-} from "@paperclipai/db";
-import { LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
+} from "@greatstone/db";
+import { LOW_TRUST_REVIEW_PRESET } from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,

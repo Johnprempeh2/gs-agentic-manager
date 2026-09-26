@@ -337,8 +337,8 @@ function nonEmpty(value: string | undefined): string | null {
 /**
  * Resolves the private, instance-scoped root for every directory-merge lock:
  * `<instance root>/locks/directory-merge`. Every process that can mutate one
- * target directory must resolve to the same `PAPERCLIP_HOME` and
- * `PAPERCLIP_INSTANCE_ID`. That shared resolution is what keeps mutual
+ * target directory must resolve to the same `GSAM_HOME` and
+ * `GSAM_INSTANCE_ID`. That shared resolution is what keeps mutual
  * exclusion true for all five callers of `withDirectoryMergeLock`, including
  * the three Codex credential call sites that never touch a workspace.
  *
@@ -347,7 +347,7 @@ function nonEmpty(value: string | undefined): string | null {
  * so a read-only target parent (the workspace-restore bug) cannot block a
  * lock acquisition.
  *
- * The root reads `PAPERCLIP_HOME` and `PAPERCLIP_INSTANCE_ID` from `env`, so an
+ * The root reads `GSAM_HOME` and `GSAM_INSTANCE_ID` from `env`, so an
  * environment-parameterized caller (a Codex credential call site that builds
  * its own `env` object instead of reading `process.env`) resolves its lock
  * root under the same instance root as the directory it protects. This never
@@ -372,8 +372,8 @@ function nonEmpty(value: string | undefined): string | null {
  */
 async function resolveDirectoryMergeLockRoot(env: NodeJS.ProcessEnv = process.env): Promise<string> {
   const instanceRoot = resolvePaperclipInstanceRootForAdapter({
-    homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
-    instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
+    homeDir: nonEmpty(env.GSAM_HOME) ?? undefined,
+    instanceId: nonEmpty(env.GSAM_INSTANCE_ID) ?? undefined,
     env,
   });
   const lockRoot = path.join(instanceRoot, "locks", "directory-merge");

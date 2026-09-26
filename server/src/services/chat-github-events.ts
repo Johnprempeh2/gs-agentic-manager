@@ -9,12 +9,12 @@ import {
   chatIdentityLinks,
   companyMemberships,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   githubCommitSchema,
   githubIdSchema,
   type GitHubReviewEventContext,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   effectiveGitHubReviewPolicy,
   githubReviewSchedulingDecision,

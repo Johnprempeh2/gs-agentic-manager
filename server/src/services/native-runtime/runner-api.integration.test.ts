@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, writeFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { documents, heartbeatRuns, issues, routineDocuments, routines } from "@paperclipai/db";
+import { documents, heartbeatRuns, issues, routineDocuments, routines } from "@greatstone/db";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { startRunnerApiTestServer } from "../../__tests__/helpers/runner-api-server.js";
 import { createRunnerdCodexTransport, defaultCapabilityRunnerdBinary } from "../../vendor/paperclip-runner/index.js";
@@ -12,22 +12,22 @@ import { registerRunnerPrpAuthority } from "../../realtime/runner-prp-ws.js";
 
 describe("runner API against real HTTP routes", () => {
   let server: Awaited<ReturnType<typeof startRunnerApiTestServer>>;
-  const oldSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;
-  const oldEnabled = process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
+  const oldSecret = process.env.GSAM_AGENT_JWT_SECRET;
+  const oldEnabled = process.env.GSAM_RUNNER_API_TOOLS_ENABLED;
   beforeAll(async () => {
-    process.env.PAPERCLIP_AGENT_JWT_SECRET = randomUUID();
-    process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED = "true";
+    process.env.GSAM_AGENT_JWT_SECRET = randomUUID();
+    process.env.GSAM_RUNNER_API_TOOLS_ENABLED = "true";
     server = await startRunnerApiTestServer();
   }, 60_000);
   afterAll(async () => {
     await server?.close();
-    if (oldSecret === undefined) delete process.env.PAPERCLIP_AGENT_JWT_SECRET;
-    else process.env.PAPERCLIP_AGENT_JWT_SECRET = oldSecret;
-    if (oldEnabled === undefined) delete process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
-    else process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED = oldEnabled;
+    if (oldSecret === undefined) delete process.env.GSAM_AGENT_JWT_SECRET;
+    else process.env.GSAM_AGENT_JWT_SECRET = oldSecret;
+    if (oldEnabled === undefined) delete process.env.GSAM_RUNNER_API_TOOLS_ENABLED;
+    else process.env.GSAM_RUNNER_API_TOOLS_ENABLED = oldEnabled;
   });
 
-  it.skipIf(!process.env.PAPERCLIP_REQUIRE_RUNNER_API_INTEGRATION && !existsSync(defaultCapabilityRunnerdBinary())).each(["current", "legacy_http"])("runs runnerd → PRP → authority → actual authenticated HTTP (%s receipt)", async (receiptFormat) => {
+  it.skipIf(!process.env.GSAM_REQUIRE_RUNNER_API_INTEGRATION && !existsSync(defaultCapabilityRunnerdBinary())).each(["current", "legacy_http"])("runs runnerd → PRP → authority → actual authenticated HTTP (%s receipt)", async (receiptFormat) => {
     const fixture = await server.fixture();
     const provider = join(server.root, `scripted-api-provider-${receiptFormat}.mjs`);
     await writeFile(provider, `#!${process.execPath}
@@ -94,14 +94,14 @@ else if(m.id!==undefined) send({id:m.id,result:{}});
 
   it("cannot opt into API tools through a binding when the operator flag is absent", async () => {
     const fixture = await server.fixture({ apiToolsEnabled: true });
-    delete process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
+    delete process.env.GSAM_RUNNER_API_TOOLS_ENABLED;
     try {
       const names = (await fixture.authority.definitions()).map(tool => tool.name);
       expect(names).toContain("get_task_context");
       expect(names).not.toContain("search_api");
       expect(names).not.toContain("call_api");
       await expect(fixture.authority.execute({ tool: "call_api", callId: "disabled", arguments: { operationId: "GET /api/companies/{companyId}/projects" } })).rejects.toThrow("not_advertised");
-    } finally { process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED = "true"; }
+    } finally { process.env.GSAM_RUNNER_API_TOOLS_ENABLED = "true"; }
   });
 
   it("rejects credential calls before any durable receipt or secret result exists", async () => {
@@ -200,7 +200,7 @@ else if(m.id!==undefined) send({id:m.id,result:{}});
   it("revokes advertised API tools without disabling dedicated operations", async () => {
     const fixture = await server.fixture();
     expect(fixture.authority.definitions().some(tool => tool.name === "call_api")).toBe(true);
-    vi.stubEnv("PAPERCLIP_RUNNER_API_TOOLS_ENABLED", "false");
+    vi.stubEnv("GSAM_RUNNER_API_TOOLS_ENABLED", "false");
     try {
       expect(fixture.authority.definitions().some(tool => tool.name === "search_api")).toBe(false);
       await expect(fixture.authority.execute({ tool: "call_api", callId: "revoked", arguments: {

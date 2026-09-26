@@ -1,17 +1,17 @@
 # Gmail connection
 
-Paperclip connects to Google's hosted Gmail MCP server at
+GS Agentic Manager connects to Google's hosted Gmail MCP server at
 `https://gmailmcp.googleapis.com/mcp/v1`. Gmail authorization is separate from
 Google sign-in:
 
-- Google sign-in identifies a Paperclip ID user and requests only
+- Google sign-in identifies a GS Agentic Manager ID user and requests only
   `openid email profile`.
 - Gmail authorization lets that user's agents search and read mail and create
   drafts. It requests only `gmail.readonly` and `gmail.compose`.
 
-Do not add Gmail scopes to the Google sign-in client. The existing Paperclip
+Do not add Gmail scopes to the Google sign-in client. The existing GS Agentic Manager
 Cloud application at `my.paperclip.app` hosts the public Gmail OAuth callback;
-Paperclip ID remains identity-only. The originating Paperclip instance remains
+GS Agentic Manager ID remains identity-only. The originating GS Agentic Manager instance remains
 the durable owner of the encrypted access and refresh tokens.
 
 > Google Workspace MCP is a Developer Preview. Enroll the required Workspace
@@ -24,17 +24,17 @@ Use a separate Google Cloud project and OAuth web client for each environment:
 
 | Environment | Suggested project id | OAuth client name | Authorized redirect URI |
 | --- | --- | --- | --- |
-| Development | `paperclip-gmail-dev` | `Paperclip Gmail Connection Dev` | Local Paperclip Cloud origin + `/v1/connector/oauth/google/callback` |
-| Staging | `paperclip-gmail-staging` | `Paperclip Gmail Connection Staging` | `https://my-staging.paperclip.app/v1/connector/oauth/google/callback` |
-| Production | `paperclip-gmail-prod` | `Paperclip Gmail Connection Production` | `https://my.paperclip.app/v1/connector/oauth/google/callback` |
+| Development | `paperclip-gmail-dev` | `GS Agentic Manager Gmail Connection Dev` | Local Paperclip Cloud origin + `/v1/connector/oauth/google/callback` |
+| Staging | `paperclip-gmail-staging` | `GS Agentic Manager Gmail Connection Staging` | `https://my-staging.paperclip.app/v1/connector/oauth/google/callback` |
+| Production | `paperclip-gmail-prod` | `GS Agentic Manager Gmail Connection Production` | `https://my.paperclip.app/v1/connector/oauth/google/callback` |
 
 Replace the development port if the local Paperclip Cloud application uses another
-port. Do not register Tailscale, customer, or other self-hosted Paperclip
+port. Do not register Tailscale, customer, or other self-hosted GS Agentic Manager
 instance URLs with Google. The browser always returns to Paperclip Cloud first;
 Cloud then sends an opaque, one-time claim identifier to the exact
 originating instance URL that was enrolled before the flow began.
 
-Keeping projects separate is a Paperclip release policy. It prevents a
+Keeping projects separate is a GS Agentic Manager release policy. It prevents a
 development credential or consent-screen change from affecting production and
 keeps restricted-scope Gmail verification independent of Google sign-in.
 
@@ -42,7 +42,7 @@ keeps restricted-scope Gmail verification independent of Google sign-in.
 
 Repeat this procedure in development, staging, and production. Complete and
 test development first, then staging. Do not enable production authorization
-until Google verification and Paperclip Security review are complete.
+until Google verification and GS Agentic Manager Security review are complete.
 
 ### 1. Create the project
 
@@ -77,18 +77,18 @@ release.
 
 Open **Google Auth Platform → Branding**. Set:
 
-- App name: `Paperclip`
+- App name: `GS Agentic Manager`
 - User support email: a monitored support address
-- Logo: the approved Paperclip logo
-- Homepage: the public Paperclip product page
+- Logo: the approved GS Agentic Manager logo
+- Homepage: the public GS Agentic Manager product page
 - Privacy policy: the public policy that describes Gmail data handling
-- Terms of service: the public Paperclip terms
+- Terms of service: the public GS Agentic Manager terms
 - Authorized domain: `paperclip.app`
 - Developer contact: a monitored security or engineering group
 
 The homepage, privacy policy, and terms must be live on the verified domain
 before production verification. The privacy policy must explain that the
-originating Paperclip instance stores Gmail credentials and that Paperclip Cloud
+originating GS Agentic Manager instance stores Gmail credentials and that Paperclip Cloud
 performs bounded OAuth exchange, refresh, and provider-supported revocation
 without durable plaintext token storage.
 
@@ -141,8 +141,8 @@ deployment variables that receive them.
 ### 7. Configure the Paperclip Cloud broker deployment
 
 Set these on the existing Paperclip Cloud application that owns the redirect URI above. This is
-the broker half of the configuration; the originating Paperclip instance is
-configured separately under [Configure each originating Paperclip
+the broker half of the configuration; the originating GS Agentic Manager instance is
+configured separately under [Configure each originating GS Agentic Manager
 instance](#configure-each-originating-paperclip-instance).
 
 | Variable | Development | Staging | Production |
@@ -165,7 +165,7 @@ connector request declares its own environment, and the broker accepts the
 request only when that value matches both this deployment's environment and the
 environment recorded on the enrolled instance. That three-way match is what
 makes a leaked staging instance key inert against production, so it must equal
-the instance's `PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT`.
+the instance's `GSAM_CLOUD_CONNECTOR_ENVIRONMENT`.
 
 Paperclip Cloud derives a safe development, staging, or production fallback
 from its own customer origin, but the explicit value makes environment
@@ -190,7 +190,7 @@ scope set with the two required scopes. If either is missing, leave that
 personal connection grant inactive and let the user retry deliberately.
 
 No access token, refresh token, Google authorization code, client secret, or
-token fragment may appear in a browser URL. The browser return from Paperclip
+token fragment may appear in a browser URL. The browser return from GS Agentic Manager
 Cloud to the originating instance contains only an opaque one-time claim id and
 the instance's local state.
 
@@ -201,7 +201,7 @@ The expected flow is:
 ```mermaid
 sequenceDiagram
     actor U as User browser
-    participant P as Originating Paperclip instance
+    participant P as Originating GS Agentic Manager instance
     participant C as Paperclip Cloud connector
     participant G as Google OAuth
     participant V as Instance encrypted vault
@@ -227,7 +227,7 @@ Before an instance can create a session:
    X25519 lets Paperclip Cloud encrypt token responses that only the instance can
    open.
 2. An instance administrator signs in to Paperclip Cloud through its existing
-   Paperclip ID OIDC login and enrolls the instance. Enrollment is
+   GS Agentic Manager ID OIDC login and enrolls the instance. Enrollment is
    instance-global: ordinary company membership cannot start it, and the
    initiating administrator must complete the return callback.
 3. Paperclip Cloud binds the account, opaque instance id, both public keys,
@@ -247,17 +247,17 @@ deletes the ciphertext on expiry and excludes it from long-term backups. Refresh
 and supported revoke operations handle plaintext only in memory for one bounded
 request.
 
-Removing one managed Google profile revokes only the local Paperclip grant.
-Paperclip does not call Google's token revocation endpoint for that action.
+Removing one managed Google profile revokes only the local GS Agentic Manager grant.
+GS Agentic Manager does not call Google's token revocation endpoint for that action.
 Google treats revocation as client-wide for the user, so a provider-side revoke
 could also invalidate the user's other managed Gmail, Drive, and Calendar
 profiles. A future provider-level disconnect must present that all-profiles
 effect explicitly.
 
-### Configure each originating Paperclip instance
+### Configure each originating GS Agentic Manager instance
 
 Generate the two long-lived instance keys once. PEM-encoded PKCS#8 keys work
-directly with Paperclip:
+directly with GS Agentic Manager:
 
 ```sh
 openssl genpkey -algorithm ED25519 -out paperclip-cloud-signing.pem
@@ -268,16 +268,16 @@ openssl pkey -in paperclip-cloud-sealing.pem -pubout -out paperclip-cloud-sealin
 
 Keep both private files in the instance secret manager. Enroll only the public
 files with Paperclip Cloud, together with the instance id, the matching environment,
-and every exact browser return origin. Then configure the originating Paperclip
+and every exact browser return origin. Then configure the originating GS Agentic Manager
 deployment:
 
 | Variable | Development | Staging | Production |
 | --- | --- | --- | --- |
-| `PAPERCLIP_CLOUD_CONNECTOR_BASE_URL` | Local Paperclip Cloud URL | `https://my-staging.paperclip.app` | `https://my.paperclip.app` |
-| `PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT` | `development` | `staging` | `production` |
-| `PAPERCLIP_CLOUD_CONNECTOR_INSTANCE_ID` | Enrolled development instance id | Enrolled staging instance id | Enrolled production instance id |
-| `PAPERCLIP_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY` | Development Ed25519 private key | Staging Ed25519 private key | Production Ed25519 private key |
-| `PAPERCLIP_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY` | Development X25519 private key | Staging X25519 private key | Production X25519 private key |
+| `GSAM_CLOUD_CONNECTOR_BASE_URL` | Local Paperclip Cloud URL | `https://my-staging.paperclip.app` | `https://my.paperclip.app` |
+| `GSAM_CLOUD_CONNECTOR_ENVIRONMENT` | `development` | `staging` | `production` |
+| `GSAM_CLOUD_CONNECTOR_INSTANCE_ID` | Enrolled development instance id | Enrolled staging instance id | Enrolled production instance id |
+| `GSAM_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY` | Development Ed25519 private key | Staging Ed25519 private key | Production Ed25519 private key |
+| `GSAM_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY` | Development X25519 private key | Staging X25519 private key | Production X25519 private key |
 
 Use separate keypairs and instance enrollments across environments. The
 connector is unavailable unless all four identity/key variables are present.
@@ -290,14 +290,14 @@ the Apps enrollment action instead of running the OpenSSL commands manually;
 it generates the keys and writes them to the ignored instance secret directory
 with owner-only permissions.
 
-`PAPERCLIP_ID_CONNECTOR_*` values are not aliases for this protocol. Paperclip
+`GSAM_ID_CONNECTOR_*` values are not aliases for this protocol. GS Agentic Manager
 ID used different endpoints, signing metadata, envelope purposes, and Google
 client credentials. An instance with only those legacy values fails with
 `CONNECTOR_MIGRATION_REQUIRED`. Enroll it with Paperclip Cloud and reconnect
 each legacy Google grant. Cloud-hosted fleets must deliver the new enrollment
 keys before they deploy a binary that enables the Cloud connector.
 
-## Paperclip access defaults
+## GS Agentic Manager access defaults
 
 Gmail uses the same credential ownership choice as the rest of the Apps setup:
 
@@ -336,7 +336,7 @@ The existing error code, status, authorization, and retry behavior are unchanged
 
 1. Enable the connector only in development.
 2. Confirm the broker's `CLOUD_HARNESS_CONNECTOR_ENVIRONMENT` and the instance's
-   `PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT` both read `development`. A mismatch
+   `GSAM_CLOUD_CONNECTOR_ENVIRONMENT` both read `development`. A mismatch
    fails every signed request with an environment error before Google is ever
    contacted, which looks nothing like a Google misconfiguration.
 3. Use an isolated Gmail test mailbox.
@@ -363,7 +363,7 @@ seven-day testing-token expiry.
 ### Production
 
 1. Complete Developer Preview enrollment, restricted-scope verification, any
-   required security assessment, and Paperclip Security review.
+   required security assessment, and GS Agentic Manager Security review.
 2. Configure only the production project credentials in production secrets.
 3. Start with an internal allowlist and read tools.
 4. Enable Ask-first draft and label tools only after production telemetry is
@@ -382,7 +382,7 @@ seven-day testing-token expiry.
 | Refresh fails after seven days | The external app is still in Testing. Reauthorize the test user; do not treat this as token-rotation failure. |
 | One required capability is missing | Inspect the returned granted scope set. Keep the grant inactive if either exact required scope is absent. |
 | Local or Tailscale return is rejected | Enroll the exact origin on Paperclip Cloud. Only loopback HTTP is allowed; Tailscale must use HTTPS. |
-| Every signed request fails on environment | `CLOUD_HARNESS_CONNECTOR_ENVIRONMENT`, the enrollment record, and `PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT` must agree. |
+| Every signed request fails on environment | `CLOUD_HARNESS_CONNECTOR_ENVIRONMENT`, the enrollment record, and `GSAM_CLOUD_CONNECTOR_ENVIRONMENT` must agree. |
 | The managed method is unavailable | Confirm the exact profile is in `CLOUD_HARNESS_CONNECTOR_GOOGLE_ENABLED_PROFILES` and its client id and secret reference are configured. |
 | Login starts asking for Gmail | Stop the rollout. The login and Gmail clients or route namespaces have been mixed. |
 | Connector is unavailable | Keep the grant in `needs_reauthorization` or an actionable unavailable state. Never use a login token or another environment's client. |

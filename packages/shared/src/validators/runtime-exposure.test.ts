@@ -50,7 +50,7 @@ describe("runtimeExposureConfigSchema", () => {
 
 describe("readRuntimeExposureIntent", () => {
   it("treats a legacy expose block with no exposure fields as unset", () => {
-    // The pre-feature Paperclip App template shape: an `expose` block that only
+    // The pre-feature GS Agentic Manager App template shape: an `expose` block that only
     // describes the backend URL. This must be defaultable, not opted out.
     expect(readRuntimeExposureIntent({ urlTemplate: "http://paperclip-dev:{{port}}" })).toBe("unset");
     expect(readRuntimeExposureIntent(undefined)).toBe("unset");

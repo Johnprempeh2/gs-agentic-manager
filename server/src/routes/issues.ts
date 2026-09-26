@@ -2,7 +2,7 @@ import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractio
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
-import { extractIssueReferenceIdentifiers, requiresExecutionReconciliation } from "@paperclipai/shared";
+import { extractIssueReferenceIdentifiers, requiresExecutionReconciliation } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -28,7 +28,7 @@ import {
   notInArray,
   sql,
 } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import type { ChatChannelService } from "../services/chat-channels.js";
 import {
   activityLog,
@@ -56,7 +56,7 @@ import {
   pipelineStages,
   pipelines,
   projectWorkspaces,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   addIssueCommentSchema,
   acceptIssueThreadInteractionSchema,
@@ -139,8 +139,8 @@ import {
   issueWriteDenialResponse,
   type IssueWriteDenialCode,
   type IssueWriteDenialContext,
-} from "@paperclipai/shared";
-import { trackAgentTaskCompleted } from "@paperclipai/shared/telemetry";
+} from "@greatstone/shared";
+import { trackAgentTaskCompleted } from "@greatstone/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
 import { isUniqueViolation } from "../db-errors.js";
 import type { StorageService } from "../storage/types.js";

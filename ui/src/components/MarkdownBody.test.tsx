@@ -11,7 +11,7 @@ import {
   buildRoutineMentionHref,
   buildSkillMentionHref,
   buildUserMentionHref,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { ThemeProvider } from "../context/ThemeContext";
 import { MarkdownBody } from "./MarkdownBody";
 import { queryKeys } from "../lib/queryKeys";
@@ -125,7 +125,7 @@ describe("MarkdownBody", () => {
       <QueryClientProvider client={new QueryClient()}>
         <ThemeProvider>
           <MarkdownBody>
-            {`[@Taylor](${buildUserMentionHref("user-123")}) [@CodexCoder](${buildAgentMentionHref("agent-123", "code")}) [@Paperclip App](${buildProjectMentionHref("project-456", "#336699")}) [/release-changelog](${buildSkillMentionHref("skill-789", "release-changelog")}) [/routine:Weekly review](${buildRoutineMentionHref("routine-123")})`}
+            {`[@Taylor](${buildUserMentionHref("user-123")}) [@CodexCoder](${buildAgentMentionHref("agent-123", "code")}) [@GS Agentic Manager App](${buildProjectMentionHref("project-456", "#336699")}) [/release-changelog](${buildSkillMentionHref("skill-789", "release-changelog")}) [/routine:Weekly review](${buildRoutineMentionHref("routine-123")})`}
           </MarkdownBody>
         </ThemeProvider>
       </QueryClientProvider>,
@@ -420,7 +420,7 @@ describe("MarkdownBody", () => {
 
   it("renders wiki links with a custom resolver when enabled", () => {
     const html = renderMarkdown(
-      "See [[wiki/entities/paperclip|Paperclip]] and [[wiki/entities/dotta-b]].",
+      "See [[wiki/entities/paperclip|GS Agentic Manager]] and [[wiki/entities/dotta-b]].",
       [],
       {
         enableWikiLinks: true,
@@ -431,7 +431,7 @@ describe("MarkdownBody", () => {
     expect(html).toContain('href="/wiki/page/wiki/entities/paperclip.md"');
     expect(html).toContain('data-paperclip-wiki-link="true"');
     expect(html).toContain('data-paperclip-wiki-target="wiki/entities/paperclip"');
-    expect(html).toContain(">Paperclip</a>");
+    expect(html).toContain(">GS Agentic Manager</a>");
     expect(html).toContain('href="/wiki/page/wiki/entities/dotta-b.md"');
     expect(html).toContain(">wiki/entities/dotta-b</a>");
     expect(html).not.toContain("[[wiki/entities/paperclip");

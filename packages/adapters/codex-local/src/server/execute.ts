@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@greatstone/adapter-utils";
 import { buildCodexAuthInboundProvision } from "./codex-auth-merge-scripts.js";
 import { copyBackCodexAuth } from "./codex-auth-copyback.js";
 import {
@@ -29,7 +29,7 @@ import {
   runAdapterExecutionTargetProcess,
   runAdapterExecutionTargetShellCommand,
   startAdapterExecutionTargetPaperclipBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 import {
   asString,
   asNumber,
@@ -47,17 +47,17 @@ import {
   renderPaperclipWakePrompt,
   selectPaperclipTaskMarkdown,
   isPaperclipRecoveryWakePayload,
-  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
-  DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE,
   joinPromptSections,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 import {
   parseLocalProcessFilesystemScope,
   parseLocalProcessSandboxExtraPaths,
   parseLocalProcessNetworkAllowlist,
   parseLocalProcessNetworkScope,
   type LocalProcessSandboxOptions,
-} from "@paperclipai/adapter-utils/local-process-sandbox";
+} from "@greatstone/adapter-utils/local-process-sandbox";
 import {
   parseCodexJsonl,
   classifyCodexAuthRefreshFailure,
@@ -485,7 +485,7 @@ function buildCodexTransientHandoffNote(input: {
   continuationSummaryBody: string | null;
 }): string {
   return [
-    "Paperclip session handoff:",
+    "GS Agentic Manager session handoff:",
     input.previousSessionId ? `- Previous session: ${input.previousSessionId}` : "",
     "- Rotation reason: repeated Codex transient remote-compaction failures",
     `- Fallback mode: ${input.fallbackMode}`,
@@ -589,8 +589,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const promptTemplate = asString(
     config.promptTemplate,
     context.conversationMode === true
-      ? DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE
-      : DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
+      ? DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE
+      : DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
   );
   const command = asString(config.command, "codex");
   const model = asString(config.model, "");
@@ -659,7 +659,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     typeof envConfig.OPENAI_API_KEY === "string" && envConfig.OPENAI_API_KEY.trim().length > 0
       ? envConfig.OPENAI_API_KEY.trim()
       : null;
-  // A configured CODEX_HOME that lives under the Paperclip-managed company tree
+  // A configured CODEX_HOME that lives under the GS Agentic Manager-managed company tree
   // (the per-agent home set by the server isolation guard) still needs auth
   // seeded — it ships with no credentials and OPENAI_API_KEY="" by default.
   // Only a genuine external/user-supplied override is treated as self-managed
@@ -730,7 +730,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     cwd,
     onLog,
   });
-  // Merge custom model providers (PAPERCLIP_CODEX_PROVIDERS) into the managed
+  // Merge custom model providers (GSAM_CODEX_PROVIDERS) into the managed
   // CODEX_HOME's config.toml BEFORE the home is shipped to a remote execution
   // target, so both local and sandboxed Codex processes pick up the routing.
   // An explicit env.CODEX_HOME override is treated as user-managed and skipped.
@@ -763,7 +763,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     );
     const managedMcp = await writeManagedCodexMcpConfig({
       codexHome: effectiveCodexHome,
-      apiBaseUrl: paperclipBaseEnv.PAPERCLIP_API_URL,
+      apiBaseUrl: paperclipBaseEnv.GSAM_API_URL,
       gateways: managedMcpGateways,
     });
     if (managedMcpGateways.length > 0) {
@@ -890,7 +890,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       onEvent,
     });
     const env: Record<string, string> = { ...paperclipBaseEnv };
-    env.PAPERCLIP_RUN_ID = runId;
+    env.GSAM_RUN_ID = runId;
     const wakeTaskId =
       (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
       (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
@@ -916,25 +916,25 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : [];
     const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
     if (wakeTaskId) {
-      env.PAPERCLIP_TASK_ID = wakeTaskId;
+      env.GSAM_TASK_ID = wakeTaskId;
     }
     if (issueWorkMode) {
-      env.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
+      env.GSAM_ISSUE_WORK_MODE = issueWorkMode;
     }
     if (wakeReason) {
-      env.PAPERCLIP_WAKE_REASON = wakeReason;
+      env.GSAM_WAKE_REASON = wakeReason;
     }
     if (wakeCommentId) {
-      env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
+      env.GSAM_WAKE_COMMENT_ID = wakeCommentId;
     }
     if (approvalId) {
-      env.PAPERCLIP_APPROVAL_ID = approvalId;
+      env.GSAM_APPROVAL_ID = approvalId;
     }
     if (approvalStatus) {
-      env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
+      env.GSAM_APPROVAL_STATUS = approvalStatus;
     }
     if (linkedIssueIds.length > 0) {
-      env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+      env.GSAM_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
     }
     refreshPaperclipWorkspaceEnvForExecution({
       env,
@@ -953,21 +953,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       executionCwd: effectiveExecutionCwd,
     });
     if (targetWorkspaceRealization) {
-      env.PAPERCLIP_WORKSPACE_REALIZATION_MODE = targetWorkspaceRealization.mode;
-      env.PAPERCLIP_WORKSPACE_AUTHORITATIVE_ROOT = targetWorkspaceRealization.authoritativeRoot;
+      env.GSAM_WORKSPACE_REALIZATION_MODE = targetWorkspaceRealization.mode;
+      env.GSAM_WORKSPACE_AUTHORITATIVE_ROOT = targetWorkspaceRealization.authoritativeRoot;
     }
     if (runtimeServiceIntents.length > 0) {
-      env.PAPERCLIP_RUNTIME_SERVICE_INTENTS_JSON = JSON.stringify(runtimeServiceIntents);
+      env.GSAM_RUNTIME_SERVICE_INTENTS_JSON = JSON.stringify(runtimeServiceIntents);
     }
     if (runtimeServices.length > 0) {
-      env.PAPERCLIP_RUNTIME_SERVICES_JSON = JSON.stringify(runtimeServices);
+      env.GSAM_RUNTIME_SERVICES_JSON = JSON.stringify(runtimeServices);
     }
     if (runtimePrimaryUrl) {
-      env.PAPERCLIP_RUNTIME_PRIMARY_URL = runtimePrimaryUrl;
+      env.GSAM_RUNTIME_PRIMARY_URL = runtimePrimaryUrl;
     }
     env.CODEX_HOME = remoteCodexHome ?? effectiveCodexHome;
     if (authToken) {
-      env.PAPERCLIP_API_KEY = authToken;
+      env.GSAM_API_KEY = authToken;
     }
     if (executionTargetIsRemote && adapterExecutionTargetUsesPaperclipBridge(runtimeExecutionTarget)) {
       paperclipBridge = await startAdapterExecutionTargetPaperclipBridge({
@@ -978,7 +978,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         runtimeRootDir: preparedExecutionTargetRuntime?.runtimeRootDir,
         adapterKey: "codex",
         timeoutSec,
-        hostApiToken: env.PAPERCLIP_API_KEY,
+        hostApiToken: env.GSAM_API_KEY,
         onLog,
       });
       if (paperclipBridge) {
@@ -1008,7 +1008,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
             networkScope,
             networkAllowlist: parseLocalProcessNetworkAllowlist(config.networkAllowlist),
             networkTrustedUrls: [
-              paperclipBaseEnv.PAPERCLIP_API_URL,
+              paperclipBaseEnv.GSAM_API_URL,
               ...runtimeMcpGateways.map((gateway) => gateway.endpointPath),
             ],
             command: asString(config.filesystemSandboxCommand, "bwrap"),
@@ -1103,7 +1103,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       }
     }
     const repoAgentsNote =
-      "Codex exec automatically applies repo-scoped AGENTS.md instructions from the current workspace; Paperclip does not currently suppress that discovery.";
+      "Codex exec automatically applies repo-scoped AGENTS.md instructions from the current workspace; GS Agentic Manager does not currently suppress that discovery.";
     const bootstrapPromptTemplate = asString(config.bootstrapPromptTemplate, "");
     const templateData = {
       agentId: agent.id,
@@ -1225,7 +1225,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         {
           resumeSessionId,
           skipGitRepoCheck: executionTargetIsSandbox,
-          networkAccess: env.PAPERCLIP_RUNNER_NETWORK_ACCESS !== "disabled",
+          networkAccess: env.GSAM_RUNNER_NETWORK_ACCESS !== "disabled",
         },
       );
       const args = execArgs.args;
@@ -1620,7 +1620,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         );
       });
     }
-    // Restore the managed config.toml so PAPERCLIP_CODEX_PROVIDERS changes
+    // Restore the managed config.toml so GSAM_CODEX_PROVIDERS changes
     // (or removal) between runs never leave stale provider routing behind. This
     // finally starts the moment prepareCodexRuntimeConfig returns, so a throw
     // anywhere in the remaining setup (skill injection, remote runtime

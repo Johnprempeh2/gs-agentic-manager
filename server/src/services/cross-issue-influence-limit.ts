@@ -1,7 +1,7 @@
 import { and, count, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { activityLog, heartbeatRuns } from "@paperclipai/db";
-import { isUuidLike, issueWriteDenialResponse } from "@paperclipai/shared";
+import type { Db } from "@greatstone/db";
+import { activityLog, heartbeatRuns } from "@greatstone/db";
+import { isUuidLike, issueWriteDenialResponse } from "@greatstone/shared";
 import { forbidden } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 

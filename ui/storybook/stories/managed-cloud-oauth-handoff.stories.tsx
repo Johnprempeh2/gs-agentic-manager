@@ -32,6 +32,6 @@ export const RetryAfterInfrastructureFailure: Story = {
 export const TerminalExpiredSession: Story = {
   args: {
     phase: "error",
-    error: "This sign-in expired. Return to Paperclip and start the connection again.",
+    error: "This sign-in expired. Return to GS Agentic Manager and start the connection again.",
   },
 };

@@ -134,7 +134,7 @@ export interface EventDimensionsMap {
   "skill.imported": PaperclipSkillImportedDimensions;
 }
 
-export const PAPERCLIP_EVENTS = {
+export const GSAM_EVENTS = {
   "agent.created": "agent.created",
   "agent.first_heartbeat": "agent.first_heartbeat",
   "agent.task_completed": "agent.task_completed",
@@ -152,7 +152,7 @@ export const PAPERCLIP_EVENTS = {
   "skill.imported": "skill.imported",
 } as const;
 
-export const PAPERCLIP_ENUM_DESCRIPTIONS = {
+export const GSAM_ENUM_DESCRIPTIONS = {
   "agent.created": {
     "agent_role": {
       "ceo": "Agent configured for company leadership and board coordination work.",
@@ -269,7 +269,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "local_path": "Import source came from a filesystem path on the operator's machine.",
       "github": "Import source came from a GitHub repository or GitHub-backed reference.",
       "url": "Import source came from a direct URL.",
-      "catalog": "Import source came from a Paperclip catalog entry.",
+      "catalog": "Import source came from a GS Agentic Manager catalog entry.",
       "skills_sh": "Import source came from a Skills.sh-compatible source.",
       "unknown": "Source type could not be classified."
     }
@@ -345,7 +345,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
     "resolved_by_kind": {
       "user": "A board or human user resolved the interaction.",
       "agent": "An agent resolved the interaction.",
-      "system": "Paperclip resolved the interaction automatically.",
+      "system": "GS Agentic Manager resolved the interaction automatically.",
       "other": "Fallback when the resolver kind is unknown or not represented by the tracked enum."
     },
     "created_by_kind": {
@@ -404,7 +404,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "local_path": "Import source came from a filesystem path on the operator's machine.",
       "github": "Import source came from a GitHub repository or GitHub-backed reference.",
       "url": "Import source came from a direct URL.",
-      "catalog": "Import source came from a Paperclip catalog entry.",
+      "catalog": "Import source came from a GS Agentic Manager catalog entry.",
       "skills_sh": "Import source came from a Skills.sh-compatible source.",
       "unknown": "Source type could not be classified."
     }
@@ -428,7 +428,7 @@ app: "paperclip"
 schemaVersion: typeof SCHEMA_VERSION
 installId: string
 /**
- * Optional client application build version. Paperclip clients report PEP 440
+ * Optional client application build version. GS Agentic Manager clients report PEP 440
  * local versions such as <nearest-tag>+<commits-since-tag>.git.<abbrev-sha>;
  * nearest tags are usually CalVer, but legacy SemVer tags such as 0.3.1 can
  * appear. Ingest documents this shape but does not strictly enforce PEP 440.
@@ -449,7 +449,7 @@ export function makeBatch(
   installId: string,
   events: readonly AnyPaperclipTelemetryEvent[],
   /**
-   * Optional client application build version. Paperclip clients report PEP 440
+   * Optional client application build version. GS Agentic Manager clients report PEP 440
    * local versions such as <nearest-tag>+<commits-since-tag>.git.<abbrev-sha>;
    * nearest tags are usually CalVer, but legacy SemVer tags such as 0.3.1 can
    * appear. Ingest documents this shape but does not strictly enforce PEP 440.

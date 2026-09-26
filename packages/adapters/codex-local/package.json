@@ -1,14 +1,14 @@
 {
-  "name": "@paperclipai/adapter-codex-local",
+  "name": "@greatstone/adapter-codex-local",
   "version": "0.3.1",
   "license": "MIT",
-  "homepage": "https://github.com/paperclipai/paperclip",
+  "homepage": "https://github.com/Johnprempeh2/GS-Clip",
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/Johnprempeh2/GS-Clip/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/Johnprempeh2/GS-Clip",
     "directory": "packages/adapters/codex-local"
   },
   "type": "module",
@@ -53,8 +53,8 @@
   },
   "dependencies": {
     "@agentclientprotocol/codex-acp": "^1.6.2",
-    "@paperclipai/adapter-utils": "workspace:*",
-    "@paperclipai/shared": "workspace:*",
+    "@greatstone/adapter-utils": "workspace:*",
+    "@greatstone/shared": "workspace:*",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {

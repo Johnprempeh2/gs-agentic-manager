@@ -2,7 +2,7 @@ import { AgentIdentity } from "@/components/AgentIdentity";
 import { memo, useMemo } from "react";
 import { Link } from "@/lib/router";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue } from "@greatstone/shared";
 import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
 import type { TranscriptEntry } from "../adapters";
 import { issuesApi } from "../api/issues";
@@ -221,7 +221,7 @@ export const AgentRunCard = memo(function AgentRunCard({
         )}
         <time
           dateTime={run.finishedAt ?? run.startedAt ?? run.createdAt}
-          className="text-right font-sans text-xs text-muted-foreground/70"
+          className="text-right font-sans text-xs text-subtle-foreground"
         >
           {timestamp}
         </time>

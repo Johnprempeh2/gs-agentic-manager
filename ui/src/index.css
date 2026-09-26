@@ -128,6 +128,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -184,11 +185,12 @@
   --secondary: #eceee8;
   --secondary-foreground: #1b2a21;
   --muted: #eceee8;
-  --muted-foreground: #565e57;
+  --muted-foreground: #4f5750;
+  --subtle-foreground: #5d655e; /* third text tier: de-emphasis as a colour step, never alpha (AA on every light surface) */
   --accent: color-mix(in oklab, #1b5039 9%, #f7f8f4);
   --accent-foreground: #121512;
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.55 0.235 27.325); /* darkened from 0.577 so it clears AA on paper (was 4.47:1) */
+  --destructive-foreground: oklch(0.55 0.235 27.325);
   --border: #dfe3da;
   --input: #d3d9ce;
   --ring: #0b2a1c;
@@ -205,7 +207,7 @@
   --sidebar-foreground: #121512;
   --sidebar-primary: #1b5039;
   --sidebar-primary-foreground: #f5f7f2;
-  --sidebar-accent: color-mix(in oklab, #1b5039 13%, #eff1eb);
+  --sidebar-accent: color-mix(in oklab, #1b5039 10%, #eff1eb);
   --sidebar-accent-foreground: #121512;
   --sidebar-border: #dfe3da;
   --sidebar-ring: #0b2a1c;
@@ -482,7 +484,8 @@
   --secondary: #222622;
   --secondary-foreground: #f5f5f5;
   --muted: #1e211e;
-  --muted-foreground: #a4aaa3;
+  --muted-foreground: #b4b9b3;
+  --subtle-foreground: #9ca29b; /* brand faint grey; AA on every dark surface */
   --accent: color-mix(in oklab, #c8ff00 7%, #1c1f1c);
   --accent-foreground: #f5f5f5;
   --destructive: oklch(0.637 0.237 25.331); /* Gallery feedback round 1: user preferred master's original dark destructive red over the preset's softer 0.704 0.191 22.216. */
@@ -2457,7 +2460,9 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    reads on dark surfaces. A single hue covers both modes. */
 .status-chip {
   background-color: color-mix(in srgb, var(--sc) 15%, white);
-  color: color-mix(in srgb, var(--sc) 82%, black);
+  /* 60% (was 82%): amber/green/grey chips measured 2.8 to 3.0:1 at 82%; every
+     status clears AA at 60% (lowest: todo/paused 4.84:1) and keeps its hue. */
+  color: color-mix(in srgb, var(--sc) 60%, black);
   border-color: var(--sc);
 }
 .dark .status-chip {

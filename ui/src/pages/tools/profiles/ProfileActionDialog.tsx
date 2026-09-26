@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import type { ToolProfileWithDetails } from "@paperclipai/shared";
+import type { ToolProfileWithDetails } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

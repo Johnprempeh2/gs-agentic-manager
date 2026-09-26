@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import type {
   CatalogManifest,
   CatalogTeam,
@@ -19,9 +19,9 @@ import type {
   CompanyPortabilityPreview,
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
-} from "@paperclipai/shared";
-import { normalizeAgentUrlKey } from "@paperclipai/shared";
-import { parseFrontmatterMarkdown } from "@paperclipai/shared/frontmatter";
+} from "@greatstone/shared";
+import { normalizeAgentUrlKey } from "@greatstone/shared";
+import { parseFrontmatterMarkdown } from "@greatstone/shared/frontmatter";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { agentService } from "./agents.js";
 import { companyPortabilityService } from "./company-portability.js";
@@ -142,7 +142,7 @@ let cachedCatalogManifest: {
 } | null = null;
 
 function buildCatalogPackageRootCandidates() {
-  const configuredRoot = process.env.PAPERCLIP_TEAMS_CATALOG_DIR?.trim();
+  const configuredRoot = process.env.GSAM_TEAMS_CATALOG_DIR?.trim();
   const candidates = [
     ...(configuredRoot ? [path.resolve(configuredRoot)] : []),
     path.resolve(process.cwd(), "packages/teams-catalog"),
@@ -164,7 +164,7 @@ async function statCatalogManifest() {
     }
   }
   throw new Error(
-    `Teams catalog manifest not found. Checked: ${catalogPackageRootCandidates.map((root) => path.join(root, "generated/catalog.json")).join(", ")}. Run pnpm --filter @paperclipai/teams-catalog build:manifest.`,
+    `Teams catalog manifest not found. Checked: ${catalogPackageRootCandidates.map((root) => path.join(root, "generated/catalog.json")).join(", ")}. Run pnpm --filter @greatstone/teams-catalog build:manifest.`,
   );
 }
 
@@ -684,7 +684,7 @@ async function readCatalogTeamSourceFiles(team: CatalogTeam): Promise<Record<str
 const FALLBACK_SAFE_CATALOG_ADAPTER_TYPE = "claude_local";
 
 function defaultSafeCatalogAdapterType() {
-  return process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE?.trim() || FALLBACK_SAFE_CATALOG_ADAPTER_TYPE;
+  return process.env.GSAM_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE?.trim() || FALLBACK_SAFE_CATALOG_ADAPTER_TYPE;
 }
 
 /**
@@ -934,7 +934,7 @@ export function teamsCatalogService(db: Db) {
       ...importPreview.warnings,
       ...(defaultedAdapterSlugs.length > 0
         ? [
-            `Catalog agents without explicit overrides (${defaultedAdapterSlugs.join(", ")}) default to ${defaultAdapterType}. Pass adapterOverrides or PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE to use a different supported adapter.`,
+            `Catalog agents without explicit overrides (${defaultedAdapterSlugs.join(", ")}) default to ${defaultAdapterType}. Pass adapterOverrides or GSAM_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE to use a different supported adapter.`,
           ]
         : []),
     ];

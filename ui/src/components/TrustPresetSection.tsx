@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AgentPermissions, TrustPreset } from "@paperclipai/shared";
+import type { AgentPermissions, TrustPreset } from "@greatstone/shared";
 import { Lock, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, CollapsibleSection } from "./agent-config-primitives";
@@ -20,7 +20,7 @@ import {
 import { cn } from "../lib/utils";
 
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground";
 
 function formatCount(value: readonly unknown[] | undefined, singular: string, plural: string) {
   const count = value?.length ?? 0;
@@ -108,7 +108,7 @@ export function TrustPresetSection({
     <div>
       <h3 className="mb-3 text-sm font-medium">Trust</h3>
       <div className="rounded-lg border border-border p-4 space-y-3">
-        <Field label="Trust preset" hint="Choose how broadly this agent can read and act on Paperclip work objects.">
+        <Field label="Trust preset" hint="Choose how broadly this agent can read and act on GS Agentic Manager work objects.">
           <select
             className={inputClass}
             value={preset}
@@ -219,7 +219,7 @@ export function TrustPresetSection({
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Get Paperclip EE.
+                  Get GS Agentic Manager EE.
                 </a>
               </p>
               <CollapsibleSection

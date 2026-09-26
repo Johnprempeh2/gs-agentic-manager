@@ -22,25 +22,25 @@ echo "PC_HOME: $PC_HOME"
 
 env \
   HOME="$PC_HOME" \
-  PAPERCLIP_HOME="$PC_HOME/.paperclip" \
+  GSAM_HOME="$PC_HOME/.gsam" \
   npm_config_cache="$PC_CACHE" \
   npm_config_userconfig="$PC_HOME/.npmrc" \
   PATH="$PC_HOME/.local/bin:$PATH" \
-  pnpm --dir "$REPO_ROOT" paperclipai install --yes
+  pnpm --dir "$REPO_ROOT" gsam install --yes
 
 test -x "$PC_HOME/.local/bin/paperclipai"
-test -L "$PC_HOME/.paperclip/cli/current"
-test -f "$PC_HOME/.paperclip/cli/install.json"
+test -L "$PC_HOME/.gsam/cli/current"
+test -f "$PC_HOME/.gsam/cli/install.json"
 
-env HOME="$PC_HOME" PAPERCLIP_HOME="$PC_HOME/.paperclip" PATH="$PC_HOME/.local/bin:$PATH" paperclipai --version
-env HOME="$PC_HOME" PAPERCLIP_HOME="$PC_HOME/.paperclip" PATH="$PC_HOME/.local/bin:$PATH" paperclipai doctor \
+env HOME="$PC_HOME" GSAM_HOME="$PC_HOME/.gsam" PATH="$PC_HOME/.local/bin:$PATH" gsam --version
+env HOME="$PC_HOME" GSAM_HOME="$PC_HOME/.gsam" PATH="$PC_HOME/.local/bin:$PATH" gsam doctor \
   --config "$PC_TEST_ROOT/missing-config.json" >/dev/null || true
 
 env \
   HOME="$PC_HOME" \
-  PAPERCLIP_HOME="$PC_HOME/.paperclip" \
+  GSAM_HOME="$PC_HOME/.gsam" \
   PATH="$PC_HOME/.local/bin:$PATH" \
-  pnpm --dir "$REPO_ROOT" paperclipai uninstall
+  pnpm --dir "$REPO_ROOT" gsam uninstall
 
-test ! -e "$PC_HOME/.paperclip/cli"
+test ! -e "$PC_HOME/.gsam/cli"
 test ! -e "$PC_HOME/.local/bin/paperclipai"

@@ -120,7 +120,7 @@ test("selects exactly one Grok credential and preserves authentication provenanc
   const { root } = await grokFixture();
   for (const [mode, credential] of [
     ["api_key", "XAI_API_KEY"],
-    ["subscription", "PAPERCLIP_ACPX_GROK_AUTH_JSON_SECRET"],
+    ["subscription", "GSAM_ACPX_GROK_AUTH_JSON_SECRET"],
   ]) {
     const catalog = await buildProtocolEvalCatalog({ evalsRoot: root, campaignId: "gha-42-1", grokAuthenticationMode: mode });
     assert.equal(catalog.selection.grokAuthenticationMode, mode);

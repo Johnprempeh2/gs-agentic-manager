@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getAppStoreDefinition } from "@paperclipai/shared";
+import { getAppStoreDefinition } from "@greatstone/shared";
 import { AppDetail } from "./AppDetail";
 import { APP_TABS } from "./app-tabs";
 
@@ -154,7 +154,7 @@ vi.mock("@/lib/router", () => ({
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "Paperclip" },
+    selectedCompany: { id: "company-1", name: "GS Agentic Manager" },
   }),
 }));
 
@@ -283,7 +283,7 @@ function dedicatedGitHubGrant(
         repositoryCount: 1,
         repositorySelection: "selected",
         installationIds: ["456"],
-        installationOwnerLogins: ["paperclipai"],
+        installationOwnerLogins: ["gsam"],
         repositories: [{ id: "789", fullName: "paperclipai/test-repo", installationId: "456" }],
         installationUrl: "https://github.com/apps/paperclip-test/installations/new",
         managementUrl: "https://github.com/settings/installations/456",
@@ -1581,7 +1581,7 @@ describe("AppDetail", () => {
       connection: { id: "conn-1", uid: "conn-1" },
       grants: [dedicatedGitHubGrant({ kind: "user", subjectAgentId: null, subjectUserId: "user-1" }, {
         repositoryCount: empty ? 0 : 3,
-        installationOwnerLogins: ["paperclipai", "dottabot", "empty-org"],
+        installationOwnerLogins: ["gsam", "dottabot", "empty-org"],
         repositories: empty ? [] : [
           { id: "1", fullName: "paperclipai/first", installationId: "456" },
           { id: "2", fullName: "paperclipai/second", installationId: "456" },

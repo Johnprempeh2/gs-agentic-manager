@@ -1,6 +1,6 @@
 import { and, asc, eq, max, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { companySkills, folders, routines } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
+import { companySkills, folders, routines } from "@greatstone/db";
 import type {
   CreateFolder,
   Folder,
@@ -9,7 +9,7 @@ import type {
   MoveFolder,
   MoveFolderItem,
   UpdateFolder,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 
 const MAX_FOLDER_DEPTH = 4;

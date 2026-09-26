@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { PaperclipJsonSchema } from "../catalog/semantic-action-types.js";
 import type { PaperclipSemanticToolDefinition } from "./types.js";
 
-export const PAPERCLIP_RUNNER_AUTHORIZED_TOOLS_SCHEMA =
+export const GSAM_RUNNER_AUTHORIZED_TOOLS_SCHEMA =
   "paperclip.runner.authorized-tools.v1" as const;
 
 export interface PaperclipRunnerAuthorizedTool {
@@ -15,7 +15,7 @@ export interface PaperclipRunnerAuthorizedTool {
 }
 
 export interface PaperclipRunnerAuthorizedToolSet {
-  readonly schema: typeof PAPERCLIP_RUNNER_AUTHORIZED_TOOLS_SCHEMA;
+  readonly schema: typeof GSAM_RUNNER_AUTHORIZED_TOOLS_SCHEMA;
   readonly schemaVersion: 1;
   readonly catalogDigest: string;
   readonly operations: readonly PaperclipRunnerAuthorizedTool[];
@@ -47,7 +47,7 @@ export function createPaperclipRunnerAuthorizedToolSet(
           : 0,
     );
   return deepFreeze({
-    schema: PAPERCLIP_RUNNER_AUTHORIZED_TOOLS_SCHEMA,
+    schema: GSAM_RUNNER_AUTHORIZED_TOOLS_SCHEMA,
     schemaVersion: 1,
     catalogDigest: digestOperations(operations),
     operations,

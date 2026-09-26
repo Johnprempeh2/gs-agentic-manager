@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   issueExecutionWorkspaceSettingsSchema,
   projectExecutionWorkspacePolicySchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   applyDefaultIsolatedExecutionWorkspacePolicy,
   buildExecutionWorkspaceAdapterConfig,
@@ -352,7 +352,7 @@ describe("execution workspace policy helpers", () => {
         defaultMode: "isolated",
         workspaceStrategy: {
           type: "git_worktree",
-          worktreeParentDir: ".paperclip/worktrees",
+          worktreeParentDir: ".gsam/worktrees",
           provisionCommand: "bash ./scripts/provision-worktree.sh",
           runtimeProvisionCommand: "bash ./scripts/provision-runtime.sh",
           teardownCommand: "bash ./scripts/teardown-worktree.sh",
@@ -364,7 +364,7 @@ describe("execution workspace policy helpers", () => {
       defaultMode: "isolated_workspace",
       workspaceStrategy: {
         type: "git_worktree",
-        worktreeParentDir: ".paperclip/worktrees",
+        worktreeParentDir: ".gsam/worktrees",
         provisionCommand: "bash ./scripts/provision-worktree.sh",
         runtimeProvisionCommand: "bash ./scripts/provision-runtime.sh",
         teardownCommand: "bash ./scripts/teardown-worktree.sh",

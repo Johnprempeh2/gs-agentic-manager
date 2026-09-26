@@ -15,7 +15,7 @@ export interface RuntimeToolsTokenClaims {
 const TOKEN_TTL_SECONDS = 60 * 60;
 
 function secret() {
-  return process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim()
+  return process.env.GSAM_AGENT_JWT_SECRET?.trim()
     || process.env.BETTER_AUTH_SECRET?.trim()
     || null;
 }

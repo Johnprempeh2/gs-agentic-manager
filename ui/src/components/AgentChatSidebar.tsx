@@ -3,7 +3,7 @@ import { SidebarNavItem } from "@/components/SidebarNavItem";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/context/SidebarContext";
-import type { Agent } from "@paperclipai/shared";
+import type { Agent } from "@greatstone/shared";
 import { agentRouteRef, cn } from "@/lib/utils";
 import { orderChatAgents } from "@/lib/recent-agent-chats";
 export function AgentChatSidebar({
@@ -66,7 +66,7 @@ export function AgentChatSidebar({
   return (
     <section aria-label="Chats" className="group/chats flex flex-col gap-0.5">
       <div className="relative flex min-h-9 items-center px-4 py-1.5">
-        <span className={cn("font-mono text-(length:--text-nano) font-medium uppercase tracking-widest text-muted-foreground/60", rail && "sr-only")}>Chats</span>
+        <span className={cn("font-mono text-(length:--text-nano) font-medium uppercase tracking-widest text-subtle-foreground", rail && "sr-only")}>Chats</span>
         <Button
           type="button"
           variant="ghost"

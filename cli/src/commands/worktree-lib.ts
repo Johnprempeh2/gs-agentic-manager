@@ -201,7 +201,7 @@ export function resolveWorktreeLocalPaths(opts: {
   const cwd = path.resolve(opts.cwd);
   const homeDir = path.resolve(expandHomePrefix(opts.homeDir ?? DEFAULT_WORKTREE_HOME));
   const instanceRoot = path.resolve(homeDir, "instances", opts.instanceId);
-  const repoConfigDir = path.resolve(cwd, ".paperclip");
+  const repoConfigDir = path.resolve(cwd, ".gsam");
   return {
     cwd,
     repoConfigDir,
@@ -313,14 +313,14 @@ export function buildWorktreeEnvEntries(
   branding?: WorktreeUiBranding,
 ): Record<string, string> {
   return {
-    PAPERCLIP_HOME: paths.homeDir,
-    PAPERCLIP_INSTANCE_ID: paths.instanceId,
-    PAPERCLIP_CONFIG: paths.configPath,
-    PAPERCLIP_CONTEXT: paths.contextPath,
-    PAPERCLIP_IN_WORKTREE: "true",
-    PAPERCLIP_DB_BACKUP_ENABLED: "false",
-    ...(branding?.name ? { PAPERCLIP_WORKTREE_NAME: branding.name } : {}),
-    ...(branding?.color ? { PAPERCLIP_WORKTREE_COLOR: branding.color } : {}),
+    GSAM_HOME: paths.homeDir,
+    GSAM_INSTANCE_ID: paths.instanceId,
+    GSAM_CONFIG: paths.configPath,
+    GSAM_CONTEXT: paths.contextPath,
+    GSAM_IN_WORKTREE: "true",
+    GSAM_DB_BACKUP_ENABLED: "false",
+    ...(branding?.name ? { GSAM_WORKTREE_NAME: branding.name } : {}),
+    ...(branding?.color ? { GSAM_WORKTREE_COLOR: branding.color } : {}),
   };
 }
 

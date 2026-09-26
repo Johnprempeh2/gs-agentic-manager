@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderPaperclipWakePrompt } from "@paperclipai/adapter-utils/server-utils";
+import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-utils";
 import { buildPaperclipWakePayload } from "../services/heartbeat.js";
 
 describe("agent session wake messages", () => {

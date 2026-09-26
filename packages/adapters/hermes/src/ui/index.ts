@@ -1,5 +1,5 @@
 /**
- * UI module exports — used by Paperclip's dashboard for run viewing
+ * UI module exports — used by GS Agentic Manager's dashboard for run viewing
  * and agent configuration forms.
  */
 

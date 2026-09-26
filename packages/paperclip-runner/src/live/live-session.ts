@@ -59,10 +59,10 @@ const LIVE_COMPLETION_CONTRACT = Object.freeze({
   criterionIds: ["objective"],
 });
 const LIVE_BASE_INSTRUCTIONS = [
-  "You are operating one mock Paperclip issue through typed semantic tools.",
-  "Use only the tools exposed in this thread; never call a Paperclip REST API.",
+  "You are operating one mock GS Agentic Manager issue through typed semantic tools.",
+  "Use only the tools exposed in this thread; never call a GS Agentic Manager REST API.",
   "Treat every tool result as authoritative mock state and use it in your next response.",
-  "The user conversation and provider are real, but all Paperclip records are mock records.",
+  "The user conversation and provider are real, but all GS Agentic Manager records are mock records.",
   "Do not discover skills, credentials, endpoints, or hidden control-plane capabilities.",
 ].join(" ");
 const CODEX_PERMISSION_PROFILE = "paperclip-runner-workspace-only";
@@ -1381,7 +1381,7 @@ export class CapabilityLiveSession {
       process: this.#processEvidence === null ? null : structuredClone(this.#processEvidence),
       networkEvidence: {
         realPaperclipRequests: 0,
-        childPaperclipEnvironmentKeys: childKeys.filter((key) => key.startsWith("PAPERCLIP_")),
+        childPaperclipEnvironmentKeys: childKeys.filter((key) => key.startsWith("GSAM_")),
       },
       attempts: structuredClone(this.#attempts),
       currentAttemptId: this.#currentAttemptId,
@@ -2337,7 +2337,7 @@ export class CapabilityLiveSession {
     const initialized = await this.#transport.request("initialize", {
       clientInfo: {
         name: "paperclip-runner",
-        title: "Paperclip Runner Capability",
+        title: "GS Agentic Manager Runner Capability",
         version: "capability-v1",
       },
       capabilities: { experimentalApi: true, requestAttestation: false },

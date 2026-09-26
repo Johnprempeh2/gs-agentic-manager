@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, ShieldQuestion, X } from "lucide-react";
-import type { ToolActionRequestListItem } from "@paperclipai/shared";
-import { humanizeConnectionDisplayName } from "@paperclipai/shared";
+import type { ToolActionRequestListItem } from "@greatstone/shared";
+import { humanizeConnectionDisplayName } from "@greatstone/shared";
 import { useCompany } from "@/context/CompanyContext";
 import { useToast } from "@/context/ToastContext";
 import { queryKeys } from "@/lib/queryKeys";

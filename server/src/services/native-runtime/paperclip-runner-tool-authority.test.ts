@@ -14,7 +14,7 @@ import {
   issueComments,
   issueThreadInteractions,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import { initializeRunIdentity, reserveSteeredIdentity, reconcileSteeredIdentity } from "../run-identity.js";
 import { documentService } from "../documents.js";
@@ -217,9 +217,9 @@ describe("PaperclipRunnerToolAuthority", () => {
   });
 
   it("preserves direct-chat file tools across the guarded API rollout", () => {
-    const previousEnabled = process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
+    const previousEnabled = process.env.GSAM_RUNNER_API_TOOLS_ENABLED;
     const previousCompanies =
-      process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS;
+      process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS;
     const createAuthority = () =>
       new PaperclipRunnerToolAuthority(db, {
         companyId,
@@ -238,8 +238,8 @@ describe("PaperclipRunnerToolAuthority", () => {
     ];
 
     try {
-      delete process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
-      delete process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS;
+      delete process.env.GSAM_RUNNER_API_TOOLS_ENABLED;
+      delete process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS;
       const disabledNames = createAuthority()
         .definitions()
         .map((tool) => tool.name);
@@ -250,8 +250,8 @@ describe("PaperclipRunnerToolAuthority", () => {
       expect(disabledNames).not.toContain("call_api");
       expect(disabledNames).not.toContain("hire_agent");
 
-      process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED = "true";
-      process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS = companyId;
+      process.env.GSAM_RUNNER_API_TOOLS_ENABLED = "true";
+      process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS = companyId;
       const enabledNames = createAuthority()
         .definitions()
         .map((tool) => tool.name);
@@ -270,25 +270,25 @@ describe("PaperclipRunnerToolAuthority", () => {
       expect(hireSchema.properties).not.toHaveProperty("env");
     } finally {
       if (previousEnabled === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
+        delete process.env.GSAM_RUNNER_API_TOOLS_ENABLED;
       } else {
-        process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED = previousEnabled;
+        process.env.GSAM_RUNNER_API_TOOLS_ENABLED = previousEnabled;
       }
       if (previousCompanies === undefined) {
-        delete process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS;
+        delete process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS;
       } else {
-        process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS = previousCompanies;
+        process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS = previousCompanies;
       }
     }
   });
 
   it("dispatches hire_agent with fixed caller context and replays its API receipt", async () => {
-    const previousEnabled = process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
-    const previousCompanies = process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS;
-    const previousSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;
-    process.env.PAPERCLIP_AGENT_JWT_SECRET = "hire-agent-test-secret";
-    process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED = "true";
-    process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS = companyId;
+    const previousEnabled = process.env.GSAM_RUNNER_API_TOOLS_ENABLED;
+    const previousCompanies = process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS;
+    const previousSecret = process.env.GSAM_AGENT_JWT_SECRET;
+    process.env.GSAM_AGENT_JWT_SECRET = "hire-agent-test-secret";
+    process.env.GSAM_RUNNER_API_TOOLS_ENABLED = "true";
+    process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS = companyId;
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ id: randomUUID(), status: "active" }), {
         status: 201,
@@ -338,12 +338,12 @@ describe("PaperclipRunnerToolAuthority", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       fetchMock.mockRestore();
-      if (previousEnabled === undefined) delete process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED;
-      else process.env.PAPERCLIP_RUNNER_API_TOOLS_ENABLED = previousEnabled;
-      if (previousCompanies === undefined) delete process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS;
-      else process.env.PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS = previousCompanies;
-      if (previousSecret === undefined) delete process.env.PAPERCLIP_AGENT_JWT_SECRET;
-      else process.env.PAPERCLIP_AGENT_JWT_SECRET = previousSecret;
+      if (previousEnabled === undefined) delete process.env.GSAM_RUNNER_API_TOOLS_ENABLED;
+      else process.env.GSAM_RUNNER_API_TOOLS_ENABLED = previousEnabled;
+      if (previousCompanies === undefined) delete process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS;
+      else process.env.GSAM_RUNNER_API_TOOLS_COMPANY_IDS = previousCompanies;
+      if (previousSecret === undefined) delete process.env.GSAM_AGENT_JWT_SECRET;
+      else process.env.GSAM_AGENT_JWT_SECRET = previousSecret;
     }
   });
 
@@ -384,13 +384,13 @@ describe("PaperclipRunnerToolAuthority", () => {
         JSON.stringify(authority.definitions()),
       ).find((tool: { name: string }) => tool.name === "request_human_input");
       expect(advertised.description).toContain(
-        "current Paperclip task bound to this run",
+        "current GS Agentic Manager task bound to this run",
       );
       expect(advertised.description).toContain(
         "payload.questions for choices",
       );
       expect(advertised.description).toContain(
-        "Paperclip renders it and authenticates the response",
+        "GS Agentic Manager renders it and authenticates the response",
       );
       expect(advertised.description).toContain(
         "Preserve existing review gates",

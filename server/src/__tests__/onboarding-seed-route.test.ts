@@ -9,7 +9,7 @@ import {
   goals,
   issues,
   projects,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { onboardingSeedRoutes } from "../routes/onboarding-seed.js";
 import { logActivity } from "../services/activity-log.js";
 import {
@@ -123,8 +123,8 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
   });
 
   it("keeps server-seeded onboarding on a legacy adapter when native runner is requested", async () => {
-    const previous = process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE;
-    process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE = "paperclip_runner";
+    const previous = process.env.GSAM_ONBOARDING_SEED_ADAPTER_TYPE;
+    process.env.GSAM_ONBOARDING_SEED_ADAPTER_TYPE = "paperclip_runner";
     try {
       const { companyId, app } = await seedCompany();
 
@@ -136,9 +136,9 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
       expect(companyAgents[0]?.adapterType).toBe("claude_local");
     } finally {
       if (previous === undefined) {
-        delete process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE;
+        delete process.env.GSAM_ONBOARDING_SEED_ADAPTER_TYPE;
       } else {
-        process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE = previous;
+        process.env.GSAM_ONBOARDING_SEED_ADAPTER_TYPE = previous;
       }
     }
   });

@@ -74,18 +74,18 @@ function SidebarSectionHeader({
   const hasMenu = Boolean(
     menu && ((menu.actions?.length ?? 0) > 0 || (menu.radioChoices?.length ?? 0) > 0),
   );
-  const labelClassName = "text-(length:--text-nano) font-medium uppercase tracking-widest font-mono text-muted-foreground/60";
+  const labelClassName = "text-(length:--text-nano) font-medium uppercase tracking-widest font-mono text-subtle-foreground";
   const headerControlVisibilityClassName = isMobile
     ? "opacity-100"
     : "opacity-0 group-hover/sidebar-section:opacity-100 group-focus-within/sidebar-section:opacity-100";
   const caretClassName = cn(
-    "h-3 w-3 shrink-0 text-muted-foreground/60 transition-all",
+    "h-3 w-3 shrink-0 text-subtle-foreground transition-all",
     headerControlVisibilityClassName,
     collapsible?.open && "rotate-90",
     menuOpen && "opacity-100",
   );
   const actionClassName = cn(
-    "h-5 w-5 shrink-0 text-muted-foreground/60 transition-opacity hover:text-foreground data-[state=open]:opacity-100",
+    "h-5 w-5 shrink-0 text-subtle-foreground transition-opacity hover:text-foreground data-[state=open]:opacity-100",
     headerControlVisibilityClassName,
   );
   const headerContent = <span className={labelClassName}>{label}</span>;

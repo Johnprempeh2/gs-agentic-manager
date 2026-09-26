@@ -27,7 +27,7 @@ import {
   issueWorkProducts,
   toolApplications,
   toolConnections,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 
 import { startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import { createLocalDiskStorageProvider } from "../../storage/local-disk-provider.js";

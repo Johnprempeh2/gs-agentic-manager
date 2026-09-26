@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { chatActions } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
+import { chatActions } from "@greatstone/db";
 import type {
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
   AskUserQuestionsQuestion,
   PaperclipQuestionSetQuestion,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   Modal,
   Select,
@@ -134,10 +134,10 @@ export type ChatQuestionFormValidationResult =
     };
 
 const CHAT_QUESTION_FORM_DENIAL_MESSAGE =
-  "This form is no longer authorized. Close it and open the linked Paperclip task.";
+  "This form is no longer authorized. Close it and open the linked GS Agentic Manager task.";
 
 /**
- * Provider callbacks must be acknowledged after Paperclip has durably denied a
+ * Provider callbacks must be acknowledged after GS Agentic Manager has durably denied a
  * stale or unauthorized submission. When the opaque form token is known, keep
  * the modal open with a safe field-level explanation; otherwise clear the
  * untrusted view without reflecting any callback details.
@@ -219,7 +219,7 @@ function formKind(
   if (source) {
     if (source.answerMode === "text") {
       // Regex evaluation supplied by an agent can be computationally unsafe.
-      // Keep those uncommon forms in Paperclip, whose canonical validator owns
+      // Keep those uncommon forms in GS Agentic Manager, whose canonical validator owns
       // that policy, instead of evaluating a pattern inside a webhook callback.
       return source.textValidation?.pattern ? null : "text";
     }
@@ -620,7 +620,7 @@ function invalid(
 }
 
 /**
- * Converts opaque submitted values to canonical Paperclip answers. Provider
+ * Converts opaque submitted values to canonical GS Agentic Manager answers. Provider
  * labels, question ids, option ids, private metadata, and extra form fields are
  * never trusted as canonical identifiers.
  */

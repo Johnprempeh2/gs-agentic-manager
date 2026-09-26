@@ -73,7 +73,7 @@ describe("classifyJsonlText", () => {
 
 describe("encodeClaudeCwd", () => {
   it("mirrors the claude-local adapter encoding rule", () => {
-    expect(encodeClaudeCwd("/Users/dj/.paperclip/instances/default/workspaces/abc")).toBe(
+    expect(encodeClaudeCwd("/Users/dj/.gsam/instances/default/workspaces/abc")).toBe(
       "-Users-dj--paperclip-instances-default-workspaces-abc",
     );
   });

@@ -26,13 +26,13 @@ set -euo pipefail
 printf 'npm %s\\n' "$*" >> "$FAKE_CALL_LOG"
 target="$2"
 case "$target" in
-  "@paperclipai/present@"*)
+  "@greatstone/present@"*)
     printf '%s\\n' "\${target##*@}"
     ;;
-  "@paperclipai/absent@"*)
+  "@greatstone/absent@"*)
     exit 1
     ;;
-  "@paperclipai/present")
+  "@greatstone/present")
     echo '["1.0.0","2026.707.0","2026.707.1","2026.707.1-canary.4"]'
     ;;
   *)
@@ -97,17 +97,17 @@ ${fnCall}
 
 test("fetch prints a JSON version map and treats missing packages as empty", () => {
   const fixture = makeFixture();
-  const result = runScript(["fetch", "@paperclipai/present", "@paperclipai/missing"], fixture);
+  const result = runScript(["fetch", "@greatstone/present", "@greatstone/missing"], fixture);
 
   assert.equal(result.status, 0);
   const map = JSON.parse(result.stdout);
-  assert.deepEqual(map["@paperclipai/present"], [
+  assert.deepEqual(map["@greatstone/present"], [
     "1.0.0",
     "2026.707.0",
     "2026.707.1",
     "2026.707.1-canary.4",
   ]);
-  assert.deepEqual(map["@paperclipai/missing"], []);
+  assert.deepEqual(map["@greatstone/missing"], []);
   assert.match(result.calls, /^npm view @paperclipai\/present versions --json$/m);
   assert.match(result.calls, /^npm view @paperclipai\/missing versions --json$/m);
 });
@@ -115,7 +115,7 @@ test("fetch prints a JSON version map and treats missing packages as empty", () 
 test("assert-absent succeeds when no package has the version", () => {
   const fixture = makeFixture();
   const result = runScript(
-    ["assert-absent", "2026.707.2", "@paperclipai/absent", "@paperclipai/absent"],
+    ["assert-absent", "2026.707.2", "@greatstone/absent", "@greatstone/absent"],
     fixture,
   );
 
@@ -126,7 +126,7 @@ test("assert-absent succeeds when no package has the version", () => {
 test("assert-absent fails and names packages that already have the version", () => {
   const fixture = makeFixture();
   const result = runScript(
-    ["assert-absent", "2026.707.2", "@paperclipai/present", "@paperclipai/absent"],
+    ["assert-absent", "2026.707.2", "@greatstone/present", "@greatstone/absent"],
     fixture,
   );
 
@@ -137,7 +137,7 @@ test("assert-absent fails and names packages that already have the version", () 
 
 test("invalid concurrency fails instead of skipping registry checks", () => {
   const fixture = makeFixture();
-  const result = runScript(["assert-absent", "2026.707.2", "@paperclipai/present"], fixture, {
+  const result = runScript(["assert-absent", "2026.707.2", "@greatstone/present"], fixture, {
     RELEASE_REGISTRY_CONCURRENCY: "0",
   });
 
@@ -152,13 +152,13 @@ test("next_stable_version reads RELEASE_PACKAGE_VERSIONS_FILE without calling np
   writeFileSync(
     versionsFile,
     JSON.stringify({
-      "@paperclipai/a": ["2026.707.0", "2026.707.1", "2026.707.1-canary.4"],
-      "@paperclipai/b": [],
+      "@greatstone/a": ["2026.707.0", "2026.707.1", "2026.707.1-canary.4"],
+      "@greatstone/b": [],
     }),
   );
 
   const result = runReleaseLibHelper(
-    'next_stable_version 2026-07-07 "@paperclipai/a" "@paperclipai/b"',
+    'next_stable_version 2026-07-07 "@greatstone/a" "@greatstone/b"',
     fixture,
     { RELEASE_PACKAGE_VERSIONS_FILE: versionsFile },
   );
@@ -174,11 +174,11 @@ test("next_canary_version reads RELEASE_PACKAGE_VERSIONS_FILE without calling np
   writeFileSync(
     versionsFile,
     JSON.stringify({
-      "@paperclipai/a": ["2026.707.0", "2026.707.1", "2026.707.1-canary.4"],
+      "@greatstone/a": ["2026.707.0", "2026.707.1", "2026.707.1-canary.4"],
     }),
   );
 
-  const result = runReleaseLibHelper('next_canary_version 2026.707.1 "@paperclipai/a"', fixture, {
+  const result = runReleaseLibHelper('next_canary_version 2026.707.1 "@greatstone/a"', fixture, {
     RELEASE_PACKAGE_VERSIONS_FILE: versionsFile,
   });
 
@@ -189,7 +189,7 @@ test("next_canary_version reads RELEASE_PACKAGE_VERSIONS_FILE without calling np
 
 test("next_stable_version falls back to npm view without a versions file", () => {
   const fixture = makeFixture();
-  const result = runReleaseLibHelper('next_stable_version 2026-07-07 "@paperclipai/present"', fixture);
+  const result = runReleaseLibHelper('next_stable_version 2026-07-07 "@greatstone/present"', fixture);
 
   assert.equal(result.status, 0);
   assert.equal(result.output, "2026.707.2");
@@ -202,12 +202,12 @@ test("next_prerelease_version counts per channel so nightly numbering ignores ca
   writeFileSync(
     versionsFile,
     JSON.stringify({
-      "@paperclipai/a": ["2026.707.1-canary.4", "2026.707.1-nightly.0", "2026.707.1-nightly.1"],
+      "@greatstone/a": ["2026.707.1-canary.4", "2026.707.1-nightly.0", "2026.707.1-nightly.1"],
     }),
   );
 
   const result = runReleaseLibHelper(
-    'next_prerelease_version nightly 2026.707.1 "@paperclipai/a"',
+    'next_prerelease_version nightly 2026.707.1 "@greatstone/a"',
     fixture,
     { RELEASE_PACKAGE_VERSIONS_FILE: versionsFile },
   );
@@ -223,12 +223,12 @@ test("next_prerelease_version counts beta numbering independently of other chann
   writeFileSync(
     versionsFile,
     JSON.stringify({
-      "@paperclipai/a": ["2026.707.1-canary.4", "2026.707.1-nightly.3", "2026.707.1-beta.0"],
+      "@greatstone/a": ["2026.707.1-canary.4", "2026.707.1-nightly.3", "2026.707.1-beta.0"],
     }),
   );
 
   const result = runReleaseLibHelper(
-    'next_prerelease_version beta 2026.707.1 "@paperclipai/a"',
+    'next_prerelease_version beta 2026.707.1 "@greatstone/a"',
     fixture,
     { RELEASE_PACKAGE_VERSIONS_FILE: versionsFile },
   );
@@ -241,7 +241,7 @@ test("next_prerelease_version counts beta numbering independently of other chann
 test("next_prerelease_version rejects unknown channels", () => {
   const fixture = makeFixture();
   const result = runReleaseLibHelper(
-    'next_prerelease_version weekly 2026.707.1 "@paperclipai/a"',
+    'next_prerelease_version weekly 2026.707.1 "@greatstone/a"',
     fixture,
   );
 

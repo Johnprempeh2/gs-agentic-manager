@@ -1,7 +1,7 @@
 {
-  "name": "@paperclipai/plugin-fake-sandbox",
+  "name": "@greatstone/plugin-fake-sandbox",
   "version": "0.1.0",
-  "description": "First-party deterministic fake sandbox provider plugin for Paperclip environments",
+  "description": "First-party deterministic fake sandbox provider plugin for GS Agentic Manager environments",
   "type": "module",
   "private": true,
   "exports": {
@@ -12,14 +12,14 @@
     "worker": "./dist/worker.js"
   },
   "scripts": {
-    "prebuild": "pnpm --filter @paperclipai/plugin-sdk ensure-build-deps",
+    "prebuild": "pnpm --filter @greatstone/plugin-sdk ensure-build-deps",
     "build": "tsc",
     "clean": "rm -rf dist",
-    "typecheck": "pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && tsc --noEmit",
+    "typecheck": "pnpm --filter @greatstone/plugin-sdk ensure-build-deps && tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@paperclipai/plugin-sdk": "workspace:*"
+    "@greatstone/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -157,7 +157,7 @@ export function extractProposedEvents(options = {}) {
 function buildSource(options) {
   const source = {
     repo: options.repo ?? "paperclipai/paperclip",
-    ref: options.ref ?? process.env.GITHUB_SHA ?? process.env.PAPERCLIP_WORKSPACE_REPO_REF ?? "unknown",
+    ref: options.ref ?? process.env.GITHUB_SHA ?? process.env.GSAM_WORKSPACE_REPO_REF ?? "unknown",
   };
   const baseRef = options.baseRef ?? process.env.GITHUB_BASE_REF;
   if (baseRef) source.baseRef = baseRef;

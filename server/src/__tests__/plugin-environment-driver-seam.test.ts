@@ -10,7 +10,7 @@ import {
 } from "../../../packages/plugins/sdk/src/protocol.js";
 import { definePlugin } from "../../../packages/plugins/sdk/src/define-plugin.js";
 import { startWorkerRpcHost } from "../../../packages/plugins/sdk/src/worker-rpc-host.js";
-import { pluginManifestV1Schema, type PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import { pluginManifestV1Schema, type PaperclipPluginManifestV1 } from "@greatstone/shared";
 import { pluginCapabilityValidator } from "../services/plugin-capability-validator.js";
 
 const baseManifest: PaperclipPluginManifestV1 = {
@@ -19,7 +19,7 @@ const baseManifest: PaperclipPluginManifestV1 = {
   version: "1.0.0",
   displayName: "Environment Driver",
   description: "Test environment driver plugin",
-  author: "Paperclip",
+  author: "GS Agentic Manager",
   categories: ["automation"],
   capabilities: ["environment.drivers.register"],
   entrypoints: { worker: "dist/worker.js" },
@@ -210,7 +210,7 @@ const objectReferenceManifest: PaperclipPluginManifestV1 = {
   version: "1.0.0",
   displayName: "External Object Provider",
   description: "Test external object provider plugin",
-  author: "Paperclip",
+  author: "GS Agentic Manager",
   categories: ["connector"],
   capabilities: ["external.objects.detect", "external.objects.read"],
   entrypoints: { worker: "dist/worker.js" },

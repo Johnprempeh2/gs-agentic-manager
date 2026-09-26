@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Project, ProjectWorkspace } from "@paperclipai/shared";
+import type { Project, ProjectWorkspace } from "@greatstone/shared";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -132,7 +132,7 @@ function project(overrides: Partial<Project> = {}): Project {
     goalId: null,
     goalIds: [],
     goals: [],
-    name: "Paperclip App",
+    name: "GS Agentic Manager App",
     description: null,
     status: "in_progress",
     leadAgentId: null,

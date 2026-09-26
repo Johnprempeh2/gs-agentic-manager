@@ -15,7 +15,7 @@ import type {
   ToolMcpGatewayClientSnippet,
   ToolMcpGatewayTokenCreated,
   ToolMcpGatewayWithTokens,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { toolsApi } from "@/api/tools";
 import { SearchableSelect, type SearchableSelectGroup } from "@/components/SearchableSelect";
 import { Button } from "@/components/ui/button";
@@ -188,7 +188,7 @@ export function ConnectClientDialog({
                 </button>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                Give this MCP gateway configuration to your tool. It does not give it access to Paperclip or
+                Give this MCP gateway configuration to your tool. It does not give it access to GS Agentic Manager or
                 skills; it only gateways calls between the client and the tools exposed here.
               </TooltipContent>
             </Tooltip>

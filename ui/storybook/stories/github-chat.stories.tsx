@@ -27,7 +27,7 @@ export const StandardTrustWarning: Story = {
   name: "01 · Agent without low-trust review",
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.selectOptions(canvas.getByRole("combobox", { name: /Paperclip agent/ }), "Atlas");
+    await userEvent.selectOptions(canvas.getByRole("combobox", { name: /GS Agentic Manager agent/ }), "Atlas");
     await expect(canvas.getByRole("alert")).toHaveTextContent("Atlas is not configured for low-trust review");
     await expect(canvas.getByRole("link", { name: /Learn about low-trust agents/ })).toHaveAttribute("href", "https://docs.paperclip.ing/administration/trust-and-low-trust-review/");
   },
@@ -417,7 +417,7 @@ export const VerifiedMemberAccess: Story = {
     const canvas = within(canvasElement);
     const body = within(canvasElement.ownerDocument.body);
     await userEvent.click(
-      canvas.getByRole("button", { name: "Add Paperclip member" }),
+      canvas.getByRole("button", { name: "Add GS Agentic Manager member" }),
     );
     await userEvent.selectOptions(await body.findByLabelText("Member"), "Sam");
     await expect(
@@ -425,7 +425,7 @@ export const VerifiedMemberAccess: Story = {
     ).toBeDisabled();
     await userEvent.selectOptions(body.getByLabelText("Member"), "Alex");
     await userEvent.click(body.getByRole("button", { name: "Add member" }));
-    await expect(canvas.getByLabelText("Paperclip members")).toHaveValue(
+    await expect(canvas.getByLabelText("GS Agentic Manager members")).toHaveValue(
       "selected",
     );
     await expect(

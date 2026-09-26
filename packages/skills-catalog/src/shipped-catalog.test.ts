@@ -41,7 +41,7 @@ const SKILL_FRONTMATTER_ROOTS = [
 function listSkillFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     // Standalone provider installs can contain third-party skills. They are not
-    // shipped Paperclip skills and must not participate in this repo audit.
+    // shipped GS Agentic Manager skills and must not participate in this repo audit.
     if (entry.name === "node_modules") return [];
     const entryPath = path.join(dir, entry.name);
     if (entry.isDirectory()) return listSkillFiles(entryPath);
@@ -154,7 +154,7 @@ describe("shipped skills catalog", () => {
     expect(issues).toEqual([]);
   });
 
-  it("uses canonical paperclipai keys derived from kind/category/slug", () => {
+  it("uses canonical gsam keys derived from kind/category/slug", () => {
     const violations: string[] = [];
     for (const skill of catalogSkills) {
       const expectedKey = `paperclipai/${skill.kind}/${skill.category}/${skill.slug}`;
@@ -167,7 +167,7 @@ describe("shipped skills catalog", () => {
 
   it("exposes a stable manifest header for downstream consumers", () => {
     expect(catalogManifest.schemaVersion).toBe(1);
-    expect(catalogManifest.packageName).toBe("@paperclipai/skills-catalog");
+    expect(catalogManifest.packageName).toBe("@greatstone/skills-catalog");
     expect(catalogSkills.length).toBe(EXPECTED_BUNDLED_KEYS.length + EXPECTED_OPTIONAL_KEYS.length);
   });
 
@@ -185,7 +185,7 @@ describe("shipped skills catalog", () => {
     const rampSkill = readFileSync(new URL("../catalog/optional/finance/ramp/SKILL.md", import.meta.url), "utf8");
 
     expect(rampSkill).toContain("mixes Official and Community playbooks");
-    expect(rampSkill).toContain("do not execute them inside Paperclip unless a Paperclip approval explicitly names the playbook");
+    expect(rampSkill).toContain("do not execute them inside GS Agentic Manager unless a GS Agentic Manager approval explicitly names the playbook");
     expect(rampSkill).toContain("third-party browser automation, MCP server, CLI, or connector");
   });
 

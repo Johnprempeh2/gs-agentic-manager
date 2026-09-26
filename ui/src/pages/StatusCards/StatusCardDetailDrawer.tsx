@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CompanySearchIssueSummary, StatusCardUpdate, SummarySlotIssueRef } from "@paperclipai/shared";
+import type { CompanySearchIssueSummary, StatusCardUpdate, SummarySlotIssueRef } from "@greatstone/shared";
 import { AlertTriangle, ChevronDown, ExternalLink, History, Loader2, RefreshCw, Wand2 } from "lucide-react";
 
 import { statusCardsApi, type StatusCardDryRun } from "@/api/statusCards";
@@ -316,7 +316,7 @@ export function StatusCardDetailDrawer({
                   ) : selectedRevision.changeSummary ? (
                     <>
                       <MarkdownBody className="text-sm leading-7">{selectedRevision.changeSummary}</MarkdownBody>
-                      <p className="text-xs text-muted-foreground/70">
+                      <p className="text-xs text-subtle-foreground">
                         The full summary text for this revision is unavailable — showing its change summary. The
                         integrated changes below are the live ledger for this revision.
                       </p>

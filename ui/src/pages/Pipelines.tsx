@@ -1,7 +1,7 @@
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { groupWarningsByStage, LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
+import { groupWarningsByStage, LOW_TRUST_REVIEW_PRESET } from "@greatstone/shared";
 import type {
   Agent,
   AskUserQuestionsAnswer,
@@ -20,8 +20,8 @@ import type {
   RequestCheckboxConfirmationInteraction,
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
-} from "@paperclipai/shared";
-import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, Paperclip, Plus, Search, Settings, Trash2, X } from "lucide-react";
+} from "@greatstone/shared";
+import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Trash2, X } from "lucide-react";
 import {
   DndContext,
   DragOverlay,
@@ -2926,7 +2926,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
                   Moving this item may skip stage automation, review expectations, and configured transition paths.
-                  Paperclip will still enforce blockers and other hard safety checks.
+                  GS Agentic Manager will still enforce blockers and other hard safety checks.
                 </p>
               </div>
             </div>
@@ -2976,7 +2976,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
           <DialogHeader>
             <DialogTitle>{retryDialogScope === "previous_stage" ? "Retry previous step" : "Re-run this step"}</DialogTitle>
             <DialogDescription>
-              Review the automation preflight before Paperclip dispatches a fresh run.
+              Review the automation preflight before GS Agentic Manager dispatches a fresh run.
             </DialogDescription>
           </DialogHeader>
           {retryPlan.isLoading ? (
@@ -3992,7 +3992,7 @@ function ItemOutputAttachmentRow({ item }: { item: PipelineCaseAttachmentOutputI
           <img src={item.contentPath} alt={filename} className="h-full w-full object-cover" loading="lazy" />
         </a>
       ) : (
-        <Paperclip className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <PaperclipIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -4073,7 +4073,7 @@ function ItemOutputsSection({
     groups.push({
       key: "attachment",
       label: "Attachments",
-      icon: <Paperclip className="h-4 w-4 text-muted-foreground" />,
+      icon: <PaperclipIcon className="h-4 w-4 text-muted-foreground" />,
       rows: attachments.map((item) => <ItemOutputAttachmentRow key={item.id} item={item} />),
     });
   }

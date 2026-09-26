@@ -390,7 +390,7 @@ export function createDurableRunLogStore(options: DurableRunLogStoreOptions): Ru
 }
 
 // Build the run-log S3 mirror from dedicated RUN_LOG_S3_* env. Deliberately
-// separate from PAPERCLIP_STORAGE_PROVIDER so enabling durable run logs does
+// separate from GSAM_STORAGE_PROVIDER so enabling durable run logs does
 // NOT redirect the product's workspace/file storage (smaller blast radius).
 // Unset RUN_LOG_S3_BUCKET -> no mirror -> local-only (safe degrade). Creds come
 // from the standard AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY chain.

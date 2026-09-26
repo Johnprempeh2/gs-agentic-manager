@@ -1,5 +1,5 @@
 import { and, eq, sql, inArray } from "drizzle-orm";
-import { chatActions, toolInvocations, type Db } from "@paperclipai/db";
+import { chatActions, toolInvocations, type Db } from "@greatstone/db";
 import {
   resolveSlackTaskAuthority,
   type SlackTaskBinding,

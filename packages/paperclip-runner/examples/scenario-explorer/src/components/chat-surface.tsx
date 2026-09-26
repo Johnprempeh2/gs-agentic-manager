@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { Composer, Dialog, Button } from "@paperclipai/paperclip-runner/react";
+import { Composer, Dialog, Button } from "@greatstone/paperclip-runner/react";
 import {
   CapabilityChatSession,
   type CapabilityChatSessionArtifact,

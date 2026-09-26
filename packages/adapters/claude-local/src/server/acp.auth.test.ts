@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
+import type { AdapterExecutionResult } from "@greatstone/adapter-utils";
+import type { AdapterExecutionTarget } from "@greatstone/adapter-utils/execution-target";
 
 // A shared handle so each test can set the stub Claude hello-probe output the
 // sandbox runner returns.
@@ -32,9 +32,9 @@ const { runAdapterExecutionTargetProcess, probeResult } = vi.hoisted(() => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(
-    "@paperclipai/adapter-utils/execution-target",
+vi.mock("@greatstone/adapter-utils/execution-target", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/adapter-utils/execution-target")>(
+    "@greatstone/adapter-utils/execution-target",
   );
   return {
     ...actual,

@@ -19,11 +19,11 @@ import type {
   IssueDocument,
   IssueDocumentSummary,
   IssueWorkProduct,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import type {
   PaperclipQuestionResponse,
   PaperclipQuestionSet,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 
 export type { PaperclipQuestionResponse, PaperclipQuestionSet };
 
@@ -522,7 +522,7 @@ export interface TaskChatTurnItem {
   standaloneHeader?: boolean;
   /** This segment resumes the same native run after a steering input. */
   continuedAfterSteering?: boolean;
-  /** Durable response shown after the ordered Paperclip Runner timeline. */
+  /** Durable response shown after the ordered GS Agentic Manager Runner timeline. */
   finalResponse?: TaskChatMessageItem;
   summary: {
     /** e.g. "38s" — omitted when unknown. */

@@ -549,9 +549,9 @@ function withCancellationAndTimeout<T>(
       callback();
     };
     const onAbort = () =>
-      finish(() => reject(new Error("Paperclip tool call cancelled")));
+      finish(() => reject(new Error("GS Agentic Manager tool call cancelled")));
     const timer = setTimeout(() => {
-      finish(() => reject(new Error("Paperclip tool call timed out")));
+      finish(() => reject(new Error("GS Agentic Manager tool call timed out")));
       controller.abort();
     }, timeoutMs);
     timer.unref();

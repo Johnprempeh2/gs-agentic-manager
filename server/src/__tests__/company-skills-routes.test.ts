@@ -133,7 +133,7 @@ function denySkillPolicy(action = "skills.import") {
 function registerModuleMocks() {
   vi.doMock("../routes/authz.js", async () => vi.importActual("../routes/authz.js"));
 
-  vi.doMock("@paperclipai/shared/telemetry", () => ({
+  vi.doMock("@greatstone/shared/telemetry", () => ({
     trackSkillImported: mockTrackSkillImported,
     trackErrorHandlerCrash: vi.fn(),
   }));
@@ -562,7 +562,7 @@ describe("company skill mutation permissions", () => {
       ...templateResponse,
       id: "built-in:default-test-template",
       name: "Default test template",
-      description: "Paperclip default",
+      description: "GS Agentic Manager default",
       body: "Default {{skillName}}",
       builtIn: true,
       createdByUserId: null,
@@ -735,7 +735,7 @@ describe("company skill mutation permissions", () => {
         workspaceId,
         workspaceName: "Primary",
         projectId: "22222222-2222-4222-8222-222222222222",
-        projectName: "Paperclip",
+        projectName: "GS Agentic Manager",
         directoryRoot: ".codex/skills",
         relativePath: ".codex/skills/review",
         status: "new",

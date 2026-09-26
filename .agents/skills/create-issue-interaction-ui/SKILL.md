@@ -1,22 +1,22 @@
 ---
 name: create-issue-interaction-ui
 description: >
-  Add a new Paperclip issue-thread interaction kind end-to-end. Use when repo
+  Add a new GS Agentic Manager issue-thread interaction kind end-to-end. Use when repo
   work introduces or extends interaction cards like request_confirmation,
   checkbox confirmations, ask_user_questions, or suggest_tasks.
 ---
 
 # Create a new issue-thread interaction UI (Developer/maintainer skill)
 
-Developer/maintainer skill. Do NOT install this on production Paperclip agents.
+Developer/maintainer skill. Do NOT install this on production GS Agentic Manager agents.
 
-This skill walks a Paperclip contributor through introducing a new issue-thread
+This skill walks a GS Agentic Manager contributor through introducing a new issue-thread
 interaction kind from shared contract to issue-detail wiring, helpers, and
 docs. It is intentionally a developer/maintainer skill: the audience is a
 human or coding agent making code changes inside `paperclipai/paperclip`, not
-the operational agents that run inside a deployed Paperclip company.
+the operational agents that run inside a deployed GS Agentic Manager company.
 
-Do NOT install this on production Paperclip agents. This guide is for repository contributors changing Paperclip itself.
+Do NOT install this on production GS Agentic Manager agents. This guide is for repository contributors changing GS Agentic Manager itself.
 
 ## When to use
 
@@ -32,7 +32,7 @@ Do NOT install this on production Paperclip agents. This guide is for repository
 
 - Adding fields to an existing interaction kind that does not need a new
   payload schema. Patch the existing validators/UI in place instead.
-- Changing how Paperclip agents *call* interactions. Update `skills/paperclip`
+- Changing how GS Agentic Manager agents *call* interactions. Update `skills/paperclip`
   or `references/api-reference.md`; that is agent guidance, not card work.
 - Building a non-thread UI (issue detail sidebar, project board widget, etc.).
   Those have their own component conventions.
@@ -72,7 +72,7 @@ git show --stat 4d5322c82
 
 The plan it implemented is preserved as an issue document on
 [PAP-10415](/PAP/issues/PAP-10415#document-plan). Use it as the template for
-your own plan document if you are running this work through Paperclip itself.
+your own plan document if you are running this work through GS Agentic Manager itself.
 
 ## Order of operations
 

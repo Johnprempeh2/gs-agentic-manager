@@ -1,6 +1,6 @@
 import { applyConnectorSkills, prepareConnectorSkillDelivery, resolveConnectorAssignments, annotateConnectorSkills } from "../services/connector-runtime.js";
 import { PaperclipRunnerToolAuthority } from "../services/native-runtime/paperclip-runner-tool-authority.js";
-import { renderPaperclipWakePrompt, resolvePaperclipDesiredSkillNames, resolveLegacyPaperclipDesiredSkillNames } from "@paperclipai/adapter-utils/server-utils";
+import { renderPaperclipWakePrompt, resolvePaperclipDesiredSkillNames, resolveLegacyPaperclipDesiredSkillNames } from "@greatstone/adapter-utils/server-utils";
 import express from "express";
 import type WebSocket from "ws";
 import request from "supertest";
@@ -47,7 +47,7 @@ import {
   toolConnectionInstalls,
   connectionGrants,
   projects,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import {
   emailChannelService,
@@ -61,17 +61,17 @@ import {
 } from "../services/agentmail-api.js";
 import { emailConnectionService } from "../services/email-connections.js";
 import { toolAccessService } from "../services/tool-access.js";
-import { emailSendSchema } from "@paperclipai/shared";
+import { emailSendSchema } from "@greatstone/shared";
 import { chatChannelService } from "../services/chat-channels.js";
 
 describe("AgentMail durable email pipeline", () => {
   let database: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>>;
   let db: ReturnType<typeof createDb>;
   const folder = mkdtempSync(path.join(os.tmpdir(), "paperclip-email-"));
-  const previous = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
+  const previous = process.env.GSAM_SECRETS_MASTER_KEY_FILE;
   const services: EmailChannelService[] = [];
   beforeAll(async () => {
-    process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = path.join(
+    process.env.GSAM_SECRETS_MASTER_KEY_FILE = path.join(
       folder,
       "master.key",
     );
@@ -105,8 +105,8 @@ describe("AgentMail durable email pipeline", () => {
   afterAll(async () => {
     await database?.cleanup();
     if (previous === undefined)
-      delete process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-    else process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = previous;
+      delete process.env.GSAM_SECRETS_MASTER_KEY_FILE;
+    else process.env.GSAM_SECRETS_MASTER_KEY_FILE = previous;
     rmSync(folder, { recursive: true, force: true });
   });
   it("installs one connector skill and provider tools only for the assigned agent", async () => {

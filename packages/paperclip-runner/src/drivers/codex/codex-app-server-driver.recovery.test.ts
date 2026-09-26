@@ -281,7 +281,7 @@ describe("Codex app-server Codex driver", () => {
         PATH: "/bin",
         HOME: "/isolated/home",
         CODEX_HOME: "/isolated/codex",
-        PAPERCLIP_WORKSPACE_CWD: WORKSPACE,
+        GSAM_WORKSPACE_CWD: WORKSPACE,
       },
     });
     const original = await driver.openSession({

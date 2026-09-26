@@ -4,7 +4,7 @@ import {
   createDb,
   heartbeatRunEvents,
   heartbeatRuns,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 

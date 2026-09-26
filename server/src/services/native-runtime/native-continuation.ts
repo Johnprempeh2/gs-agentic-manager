@@ -1,4 +1,4 @@
-import { isPaperclipExternalChatContractTurn, normalizePaperclipWakePayload } from "@paperclipai/adapter-utils/server-utils";
+import { isPaperclipExternalChatContractTurn, normalizePaperclipWakePayload } from "@greatstone/adapter-utils/server-utils";
 
 /** Only new, authorized events belong in an already retained provider conversation.
  * Full bootstrap input is kept separately for an actual provider resume failure.

@@ -114,7 +114,7 @@ export function RoutineSubSidebar({
     >
       {NAV_GROUPS.map((group) => (
         <div key={group.label} className="flex flex-col gap-0.5">
-          <p className="mx-2 px-2 pb-1 text-(length:--text-nano) font-medium uppercase tracking-widest font-mono text-muted-foreground/60">
+          <p className="mx-2 px-2 pb-1 text-(length:--text-nano) font-medium uppercase tracking-widest font-mono text-subtle-foreground">
             {group.label}
           </p>
           {group.items.map((item) => {

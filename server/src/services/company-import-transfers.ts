@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { companyTransferRunService } from "./company-transfer-runs.js";
 

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   listCodexSkills,
   syncCodexSkills,
-} from "@paperclipai/adapter-codex-local/server";
+} from "@greatstone/adapter-codex-local/server";
 
 async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -20,7 +20,7 @@ describe("codex local skill sync", () => {
     cleanupDirs.clear();
   });
 
-  it("defaults the operational Paperclip skill for workspace injection on the next run", async () => {
+  it("defaults the operational GS Agentic Manager skill for workspace injection on the next run", async () => {
     const codexHome = await makeTempDir("paperclip-codex-skill-sync-");
     cleanupDirs.add(codexHome);
 
@@ -55,7 +55,7 @@ describe("codex local skill sync", () => {
     expect(snapshot.entries.find((entry) => entry.key === paperclipKey)?.state).toBe("available");
   });
 
-  it("does not persist Paperclip skills into CODEX_HOME during sync", async () => {
+  it("does not persist GS Agentic Manager skills into CODEX_HOME during sync", async () => {
     const codexHome = await makeTempDir("paperclip-codex-skill-prune-");
     cleanupDirs.add(codexHome);
 
@@ -81,7 +81,7 @@ describe("codex local skill sync", () => {
     });
   });
 
-  it("normalizes legacy flat Paperclip skill refs before reporting configured state", async () => {
+  it("normalizes legacy flat GS Agentic Manager skill refs before reporting configured state", async () => {
     const codexHome = await makeTempDir("paperclip-codex-legacy-skill-sync-");
     cleanupDirs.add(codexHome);
 

@@ -21,8 +21,8 @@ import {
   principalPermissionGrants,
   routines,
   routineTriggers,
-} from "@paperclipai/db";
-import { readPaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/db";
+import { readPaperclipSkillSyncPreference } from "@greatstone/adapter-utils/server-utils";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -159,7 +159,7 @@ describeEmbeddedPostgres("built-in agents", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: issuePrefix(companyId),
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: options.requireApproval ?? true,

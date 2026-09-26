@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { pluginOperationIssueOriginKind } from "@paperclipai/shared";
+import { pluginOperationIssueOriginKind } from "@greatstone/shared";
 import type {
   PaperclipPluginManifestV1,
   PluginCapability,
@@ -22,7 +22,7 @@ import type {
   Agent,
   Goal,
   Approval,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import type {
   EventFilter,
   PluginContext,
@@ -474,7 +474,7 @@ function isInCompany<T extends { companyId: string | null | undefined }>(
  * Create an in-memory host harness for plugin worker tests.
  *
  * The harness enforces declared capabilities and simulates host APIs, so tests
- * can validate plugin behavior without spinning up the Paperclip server runtime.
+ * can validate plugin behavior without spinning up the GS Agentic Manager server runtime.
  */
 export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const manifest = options.manifest;

@@ -1,9 +1,9 @@
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import type {
   EnvironmentProbeResult,
   PluginEnvironmentConfig,
   PluginEnvironmentDriverDeclaration,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import type {
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
@@ -19,7 +19,7 @@ import type {
   PluginEnvironmentLease,
   PluginEnvironmentRealizeWorkspaceParams,
   PluginEnvironmentRealizeWorkspaceResult,
-} from "@paperclipai/plugin-sdk";
+} from "@greatstone/plugin-sdk";
 import { unprocessable } from "../errors.js";
 import {
   collectSecretRefPaths,

@@ -11,8 +11,8 @@ describe("runner E2E source provenance", () => {
           workflowRunUrl: "https://example.test/result-run",
         },
         {
-          PAPERCLIP_RUNNER_E2E_SOURCE_SHA: "target-sha",
-          PAPERCLIP_RUNNER_E2E_SOURCE_REF: "refs/heads/target",
+          GSAM_RUNNER_E2E_SOURCE_SHA: "target-sha",
+          GSAM_RUNNER_E2E_SOURCE_REF: "refs/heads/target",
           GITHUB_SHA: "workflow-sha",
           GITHUB_REF: "refs/heads/master",
           GITHUB_SERVER_URL: "https://github.com",

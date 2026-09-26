@@ -1,4 +1,4 @@
-import type { ExecutionWorkspaceMode, Issue } from "@paperclipai/shared";
+import type { ExecutionWorkspaceMode, Issue } from "@greatstone/shared";
 import {
   defaultExecutionWorkspaceModeForProject,
   issueExecutionWorkspaceModeForExistingWorkspace,

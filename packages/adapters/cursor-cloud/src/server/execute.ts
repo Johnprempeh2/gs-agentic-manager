@@ -9,10 +9,10 @@ import {
   type SDKAgent,
   type SDKMessage,
 } from "@cursor/sdk";
-import type { AdapterExecutionContext, AdapterExecutionResult, AdapterInvocationMeta } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult, AdapterInvocationMeta } from "@greatstone/adapter-utils";
 import {
-  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
-  DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE,
   asBoolean,
   asString,
   buildPaperclipEnv,
@@ -25,7 +25,7 @@ import {
   selectInitialCommunicationGuidance,
   isPaperclipRecoveryWakePayload,
   renderTemplate,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 
 type CursorCloudSession = {
   cursorAgentId: string;
@@ -110,13 +110,13 @@ function buildWakeEnv(ctx: AdapterExecutionContext, configEnv: Record<string, st
     ...configEnv,
     ...buildPaperclipEnv(agent),
     ...buildRuntimeToolsEnv(ctx.runtimeTools),
-    PAPERCLIP_RUN_ID: runId,
+    GSAM_RUN_ID: runId,
   };
-  // PAPERCLIP_API_KEY is never accepted from config — the harness-minted run
-  // token is the only source of Paperclip API identity.
-  delete env.PAPERCLIP_API_KEY;
+  // GSAM_API_KEY is never accepted from config — the harness-minted run
+  // token is the only source of GS Agentic Manager API identity.
+  delete env.GSAM_API_KEY;
   // Wake context travels in the prompt; a configured copy can exceed spawn limits.
-  delete env.PAPERCLIP_WAKE_PAYLOAD_JSON;
+  delete env.GSAM_WAKE_PAYLOAD_JSON;
 
   const wakeTaskId = trimNullable(context.taskId) ?? trimNullable(context.issueId);
   const wakeReason = trimNullable(context.wakeReason);
@@ -128,40 +128,40 @@ function buildWakeEnv(ctx: AdapterExecutionContext, configEnv: Record<string, st
     : [];
   const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
 
-  if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
-  if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
-  if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
-  if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
-  if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
-  if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
-  if (issueWorkMode) env.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
+  if (wakeTaskId) env.GSAM_TASK_ID = wakeTaskId;
+  if (wakeReason) env.GSAM_WAKE_REASON = wakeReason;
+  if (wakeCommentId) env.GSAM_WAKE_COMMENT_ID = wakeCommentId;
+  if (approvalId) env.GSAM_APPROVAL_ID = approvalId;
+  if (approvalStatus) env.GSAM_APPROVAL_STATUS = approvalStatus;
+  if (linkedIssueIds.length > 0) env.GSAM_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (issueWorkMode) env.GSAM_ISSUE_WORK_MODE = issueWorkMode;
   if (authToken) {
-    env.PAPERCLIP_API_KEY = authToken;
+    env.GSAM_API_KEY = authToken;
   }
 
   // cursor_cloud runs remotely in Cursor's cloud and is intentionally not
-  // issued a Paperclip run JWT (registry: supportsLocalAgentJwt=false).
-  // buildPaperclipEnv always sets PAPERCLIP_API_URL, defaulting to the local
+  // issued a GS Agentic Manager run JWT (registry: supportsLocalAgentJwt=false).
+  // buildPaperclipEnv always sets GSAM_API_URL, defaulting to the local
   // runtime host — which a remote worker can neither reach nor authenticate
-  // against, so any agent-initiated Paperclip API call would fail with a 401
+  // against, so any agent-initiated GS Agentic Manager API call would fail with a 401
   // (or be unreachable) and add noise. When there is no usable key, drop the
-  // callback wiring so cloud-side Paperclip tools degrade to a clean no-op.
+  // callback wiring so cloud-side GS Agentic Manager tools degrade to a clean no-op.
   // Run results are delivered server-side via the Cursor Agent SDK (getRun /
   // wait), not through this callback, so nothing is lost.
-  if (!trimNullable(env.PAPERCLIP_API_KEY)) {
-    delete env.PAPERCLIP_API_URL;
-    delete env.PAPERCLIP_API_BRIDGE_MODE;
+  if (!trimNullable(env.GSAM_API_KEY)) {
+    delete env.GSAM_API_URL;
+    delete env.GSAM_API_BRIDGE_MODE;
   }
 
   const workspace = parseObject(context.paperclipWorkspace);
   const workspaceMappings: Array<[string, unknown]> = [
-    ["PAPERCLIP_WORKSPACE_CWD", workspace.cwd],
-    ["PAPERCLIP_WORKSPACE_SOURCE", workspace.source],
-    ["PAPERCLIP_WORKSPACE_ID", workspace.workspaceId],
-    ["PAPERCLIP_WORKSPACE_REPO_URL", workspace.repoUrl],
-    ["PAPERCLIP_WORKSPACE_REPO_REF", workspace.repoRef],
-    ["PAPERCLIP_WORKSPACE_BRANCH", workspace.branch],
-    ["PAPERCLIP_WORKSPACE_WORKTREE_PATH", workspace.worktreePath],
+    ["GSAM_WORKSPACE_CWD", workspace.cwd],
+    ["GSAM_WORKSPACE_SOURCE", workspace.source],
+    ["GSAM_WORKSPACE_ID", workspace.workspaceId],
+    ["GSAM_WORKSPACE_REPO_URL", workspace.repoUrl],
+    ["GSAM_WORKSPACE_REPO_REF", workspace.repoRef],
+    ["GSAM_WORKSPACE_BRANCH", workspace.branch],
+    ["GSAM_WORKSPACE_WORKTREE_PATH", workspace.worktreePath],
     ["AGENT_HOME", workspace.agentHome],
   ];
   for (const [key, value] of workspaceMappings) {
@@ -171,7 +171,7 @@ function buildWakeEnv(ctx: AdapterExecutionContext, configEnv: Record<string, st
 
   delete env.CURSOR_API_KEY;
   // Cursor rejects the entire request when any envVars value is empty.
-  // Paperclip may use empty values to unset optional host credentials; remote
+  // GS Agentic Manager may use empty values to unset optional host credentials; remote
   // workers do not inherit those host variables, so omit the empty entries.
   return Object.fromEntries(Object.entries(env).filter(([, value]) => value.length > 0));
 }
@@ -215,12 +215,12 @@ async function buildInstructionsPrefix(
 
 function renderPaperclipEnvNote(env: Record<string, string>): string {
   const keys = Object.keys(env)
-    .filter((key) => key.startsWith("PAPERCLIP_"))
+    .filter((key) => key.startsWith("GSAM_"))
     .sort();
   if (keys.length === 0) return "";
   return [
-    "Paperclip runtime note:",
-    `The following PAPERCLIP_* environment variables are available in the cloud agent shell: ${keys.join(", ")}`,
+    "GS Agentic Manager runtime note:",
+    `The following GSAM_* environment variables are available in the cloud agent shell: ${keys.join(", ")}`,
     "Use them directly instead of assuming they are absent.",
   ].join("\n");
 }
@@ -403,8 +403,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     : null);
   const canReuseSession = sessionMatches(session, envType, envName, repos);
   const promptTemplate = asString(config.promptTemplate, context.conversationMode === true
-    ? DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE
-    : DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE);
+    ? DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE
+    : DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE);
   const bootstrapPromptTemplate = asString(config.bootstrapPromptTemplate, "");
   const templateData = {
     agentId: agent.id,
@@ -447,7 +447,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const agentOptions = buildAgentOptions({
     apiKey,
-    name: `Paperclip ${agent.name}`,
+    name: `GS Agentic Manager ${agent.name}`,
     model,
     envType,
     envName,

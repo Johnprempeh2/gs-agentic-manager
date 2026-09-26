@@ -15,7 +15,7 @@ export interface ChatSdkStateScope {
   endpointId: string;
 }
 
-/** A versioned row returned by the Paperclip persistence implementation. */
+/** A versioned row returned by the GS Agentic Manager persistence implementation. */
 export interface ChatSdkStateRecord {
   expiresAt: Date | null;
   value: unknown;
@@ -111,7 +111,7 @@ function decodeEnvelope(
 }
 
 /**
- * Chat SDK StateAdapter backed by Paperclip's injected, company-scoped CAS
+ * Chat SDK StateAdapter backed by GS Agentic Manager's injected, company-scoped CAS
  * persistence. Instances are endpoint-scoped and never own or close the shared
  * database connection.
  */

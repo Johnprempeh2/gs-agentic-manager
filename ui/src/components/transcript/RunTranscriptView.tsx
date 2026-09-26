@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TranscriptEntry } from "../../adapters";
-import type { ToolRunDecision } from "@paperclipai/shared";
+import type { ToolRunDecision } from "@greatstone/shared";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "../MarkdownBody";
 import { cn, formatTokens } from "../../lib/utils";
 import { runningLabelText } from "../../lib/status-colors";
@@ -958,9 +958,9 @@ function TranscriptThinkingBlock({
     <MarkdownBody
       className={cn(
         // Match the default view's chain-of-thought text (IssueChatThread:
-        // `text-(length:--text-compact) italic leading-5 text-muted-foreground/70`)
+        // `text-(length:--text-compact) italic leading-5 text-subtle-foreground`)
         // so streamed thinking reads identically across both views (PAP-461, A2).
-        "italic text-muted-foreground/70 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        "italic text-subtle-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         density === "compact" ? "text-(length:--text-micro) leading-5" : "text-(length:--text-compact) leading-5",
         className,
       )}
@@ -1197,7 +1197,7 @@ function TranscriptCommandGroup({
                 index > 0 && "-ml-1.5",
                 isRunning
                   ? "border-blue-500/25 bg-blue-500/[0.08] text-blue-600 dark:text-blue-300"
-                  : "border-border/70 bg-background text-foreground/55",
+                  : "border-border/70 bg-background text-muted-foreground",
                 isRunning && "animate-pulse",
               )}
             >
@@ -1206,7 +1206,7 @@ function TranscriptCommandGroup({
           ))}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-(length:--text-micro) font-semibold uppercase leading-none tracking-(--tracking-label) text-muted-foreground/70">
+          <div className="text-(length:--text-micro) font-semibold uppercase leading-none tracking-(--tracking-label) text-subtle-foreground">
             {title}
           </div>
           {highlightedDecision && (
@@ -1252,7 +1252,7 @@ function TranscriptCommandGroup({
                     ? "border-red-500/25 bg-red-500/[0.08] text-red-600 dark:text-red-300"
                     : item.status === "running"
                       ? "border-blue-500/25 bg-blue-500/[0.08] text-blue-600 dark:text-blue-300"
-                      : "border-border/70 bg-background text-foreground/55",
+                      : "border-border/70 bg-background text-muted-foreground",
                 )}>
                   <TerminalSquare className="h-3 w-3" />
                 </span>
@@ -1337,7 +1337,7 @@ function TranscriptToolGroup({
                     ? "border-blue-500/25 bg-blue-500/[0.08] text-blue-600 dark:text-blue-300"
                     : isItemError
                       ? "border-red-500/25 bg-red-500/[0.08] text-red-600 dark:text-red-300"
-                      : "border-border/70 bg-background text-foreground/55",
+                      : "border-border/70 bg-background text-muted-foreground",
                   isItemRunning && "animate-pulse",
                 )}
               >
@@ -1347,7 +1347,7 @@ function TranscriptToolGroup({
           })}
         </div>
         <div className="min-w-0 flex-1">
-          <div className={cn("font-semibold uppercase leading-none tracking-(--tracking-label)", compact ? "text-(length:--text-nano)" : "text-(length:--text-micro)", "text-muted-foreground/70")}>
+          <div className={cn("font-semibold uppercase leading-none tracking-(--tracking-label)", compact ? "text-(length:--text-nano)" : "text-(length:--text-micro)", "text-subtle-foreground")}>
             {title}
           </div>
           {highlightedDecision && (
@@ -1382,7 +1382,7 @@ function TranscriptToolGroup({
                     ? "border-red-500/25 bg-red-500/[0.08] text-red-600 dark:text-red-300"
                     : item.status === "running"
                       ? "border-blue-500/25 bg-blue-500/[0.08] text-blue-600 dark:text-blue-300"
-                      : "border-border/70 bg-background text-foreground/55",
+                      : "border-border/70 bg-background text-muted-foreground",
                 )}>
                   <ToolFamilyIcon name={item.name} className="h-3 w-3" />
                 </span>
@@ -1498,7 +1498,7 @@ function TranscriptEventRow({
             </MarkdownBody>
           ) : (
             <div className={cn("whitespace-pre-wrap break-words", compact ? "text-(length:--text-micro)" : "text-xs")}>
-              <span className="text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-label) text-muted-foreground/70">
+              <span className="text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-label) text-subtle-foreground">
                 {block.label}
               </span>
               {block.text ? <span className="ml-2">{block.text}</span> : null}
@@ -1598,7 +1598,7 @@ function TranscriptDiffGroup({
               case "context":
               default:
                 return (
-                  <span key={key} className="block text-muted-foreground/70">
+                  <span key={key} className="block text-subtle-foreground">
                     {" "}
                     {hunk.text}
                     {"\n"}

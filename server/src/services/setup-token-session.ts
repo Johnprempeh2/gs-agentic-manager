@@ -33,9 +33,9 @@
 
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { adapterAuthSessions } from "@paperclipai/db";
-import type { AgentAdapterType } from "@paperclipai/shared";
+import type { Db } from "@greatstone/db";
+import { adapterAuthSessions } from "@greatstone/db";
+import type { AgentAdapterType } from "@greatstone/shared";
 
 // The setup-token login flow supports only the `claude_local` adapter. The
 // unified `adapter_auth_sessions` table also holds the Codex device-login rows,
@@ -109,7 +109,7 @@ export const SETUP_TOKEN_CANCELLABLE_STATES: readonly SetupTokenSessionState[] =
  * per environment.
  */
 export interface SetupTokenSessionScope {
-  aiConnection?: import("@paperclipai/shared").AiConnectionLoginIntent;
+  aiConnection?: import("@greatstone/shared").AiConnectionLoginIntent;
   companyId: string;
   ownerUserId: string;
   // The adapter of the login. It is part of the session identity.
@@ -219,7 +219,7 @@ export interface SetupTokenLeaseManager {
  * column on the row.
  */
 export interface SetupTokenCleanupRecord {
-  aiConnection?: import("@paperclipai/shared").AiConnectionLoginIntent;
+  aiConnection?: import("@greatstone/shared").AiConnectionLoginIntent;
   sessionId: string;
   companyId: string;
   ownerUserId: string;
@@ -686,7 +686,7 @@ export interface SetupTokenPromptView {
  * response returns the login URL through the confidential transport guard.
  */
 export interface SetupTokenSessionDescriptor {
-  aiConnection?: import("@paperclipai/shared").AiConnectionLoginIntent;
+  aiConnection?: import("@greatstone/shared").AiConnectionLoginIntent;
   sessionId: string;
   state: SetupTokenSessionState;
   environmentId: string;

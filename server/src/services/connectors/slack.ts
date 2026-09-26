@@ -3,13 +3,13 @@ import { slackDelivery } from "./slack-delivery.js";
 import { slackMessage } from "./slack-message.js";
 import { executeSlackWrite } from "./slack-writes.js";
 import { syncSlackBotTools } from "./slack-catalog.js";
-import { SLACK_TOOLS } from "@paperclipai/shared";
+import { SLACK_TOOLS } from "@greatstone/shared";
 import {
   toolProfiles,
   toolProfileBindings,
   toolProfileEntries,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { and, eq } from "drizzle-orm";
 import { badRequest, forbidden } from "../../errors.js";
 import {

@@ -19,7 +19,7 @@ vi.mock("@daytonaio/sdk", () => ({
 
 import { performSyncIn } from "./file-sync.js";
 import { __setDaytonaPluginContextForTest } from "./plugin.js";
-import type { PluginContext, PluginSyncOperation } from "@paperclipai/plugin-sdk";
+import type { PluginContext, PluginSyncOperation } from "@greatstone/plugin-sdk";
 
 // One recorded in-sandbox command, so a test can assert the exact cleanup command.
 interface RecordedCommand {
@@ -239,7 +239,7 @@ function createRecordingSandbox(input: {
       executeCommand: async (command: string) => {
         input.commands.push({ command });
         if (command.includes("mkdir -p")) {
-          return { exitCode: 0, result: input.probeReportsZstd ? "PAPERCLIP_ZSTD_AVAILABLE\n" : "" };
+          return { exitCode: 0, result: input.probeReportsZstd ? "GSAM_ZSTD_AVAILABLE\n" : "" };
         }
         return { exitCode: 0, result: "" };
       },
@@ -982,7 +982,7 @@ describe("daytona file-sync inbound zstd transport compression", () => {
         process: {
           executeCommand: async (command: string) => {
             commands.push({ command });
-            return { exitCode: 0, result: command.includes("mkdir -p") ? "PAPERCLIP_ZSTD_AVAILABLE\n" : "" };
+            return { exitCode: 0, result: command.includes("mkdir -p") ? "GSAM_ZSTD_AVAILABLE\n" : "" };
           },
         },
         fs: {
@@ -1019,7 +1019,7 @@ describe("daytona file-sync inbound zstd transport compression", () => {
         process: {
           executeCommand: async (command: string) => ({
             exitCode: 0,
-            result: command.includes("mkdir -p") ? "PAPERCLIP_ZSTD_AVAILABLE\n" : "",
+            result: command.includes("mkdir -p") ? "GSAM_ZSTD_AVAILABLE\n" : "",
           }),
         },
         fs: {
@@ -1060,7 +1060,7 @@ describe("daytona file-sync inbound zstd transport compression", () => {
         process: {
           executeCommand: async (command: string, _cwd?: string, _env?: unknown, timeoutSeconds?: number) => {
             seenTimeouts.push(timeoutSeconds);
-            return { exitCode: 0, result: command.includes("mkdir -p") ? "PAPERCLIP_ZSTD_AVAILABLE\n" : "" };
+            return { exitCode: 0, result: command.includes("mkdir -p") ? "GSAM_ZSTD_AVAILABLE\n" : "" };
           },
         },
         fs: {

@@ -1,4 +1,4 @@
-# Paperclip Component Index
+# GS Agentic Manager Component Index
 
 Complete inventory of all UI components. Update this file when adding new reusable components.
 

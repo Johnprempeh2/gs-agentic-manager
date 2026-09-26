@@ -1,11 +1,11 @@
 import { and, eq, ne, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { agents, companyOnboardingSeeds, goals, issues, projects } from "@paperclipai/db";
-import type { ApplyOnboardingSeed } from "@paperclipai/shared";
-import { writePaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
+import type { Db } from "@greatstone/db";
+import { agents, companyOnboardingSeeds, goals, issues, projects } from "@greatstone/db";
+import type { ApplyOnboardingSeed } from "@greatstone/shared";
+import { writePaperclipSkillSyncPreference } from "@greatstone/adapter-utils/server-utils";
 import { findActiveServerAdapter } from "../adapters/registry.js";
 import { agentService } from "./agents.js";
-import { PAPERCLIP_CORE_SKILL_KEYS } from "./company-skills.js";
+import { GSAM_CORE_SKILL_KEYS } from "./company-skills.js";
 import { goalService } from "./goals.js";
 import { projectService } from "./projects.js";
 import { issueService } from "./issues.js";
@@ -34,8 +34,8 @@ const SEEDED_AGENT_ROLE = "ceo";
 const FALLBACK_SEEDED_AGENT_ADAPTER_TYPE = "claude_local";
 
 function seededAgentAdapterType() {
-  const configured = process.env.PAPERCLIP_ONBOARDING_SEED_ADAPTER_TYPE?.trim()
-    || process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE?.trim()
+  const configured = process.env.GSAM_ONBOARDING_SEED_ADAPTER_TYPE?.trim()
+    || process.env.GSAM_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE?.trim()
     || FALLBACK_SEEDED_AGENT_ADAPTER_TYPE;
   // Server-seeded onboarding deliberately stays on a direct adapter. Native
   // runner rollout is an explicit post-onboarding configuration choice.
@@ -57,7 +57,7 @@ function seededAgentAdapterConfig(adapterType: string): Record<string, unknown> 
   if (!adapter?.listSkills && !adapter?.syncSkills) return {};
   return writePaperclipSkillSyncPreference(
     {},
-    PAPERCLIP_CORE_SKILL_KEYS.map((key) => ({ key, versionId: null })),
+    GSAM_CORE_SKILL_KEYS.map((key) => ({ key, versionId: null })),
   );
 }
 

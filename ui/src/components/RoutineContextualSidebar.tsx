@@ -100,7 +100,7 @@ export function RoutineContextualSidebar({
           ))}
         </div>
 
-        <p className="px-4 pb-1 pt-5 text-(length:--text-nano) font-mono font-medium uppercase tracking-widest text-muted-foreground/60">
+        <p className="px-4 pb-1 pt-5 text-(length:--text-nano) font-mono font-medium uppercase tracking-widest text-subtle-foreground">
           Operate
         </p>
         <div className="flex flex-col gap-0.5">

@@ -1,6 +1,6 @@
-export const PAPERCLIP_QUESTION_SET_SCHEMA = "paperclip.question_set.v1" as const;
-export const PAPERCLIP_QUESTION_RESPONSE_SCHEMA = "paperclip.question_response.v1" as const;
-export const PAPERCLIP_RUNTIME_REQUEST_SCHEMA_V2 = "paperclip.runtime_request.v2" as const;
+export const GSAM_QUESTION_SET_SCHEMA = "paperclip.question_set.v1" as const;
+export const GSAM_QUESTION_RESPONSE_SCHEMA = "paperclip.question_response.v1" as const;
+export const GSAM_RUNTIME_REQUEST_SCHEMA_V2 = "paperclip.runtime_request.v2" as const;
 
 export type PaperclipQuestionAnswerMode = "single_select" | "multi_select" | "text";
 
@@ -39,7 +39,7 @@ export interface PaperclipQuestion {
 }
 
 export interface PaperclipQuestionSet {
-  schema: typeof PAPERCLIP_QUESTION_SET_SCHEMA;
+  schema: typeof GSAM_QUESTION_SET_SCHEMA;
   title?: string;
   description?: string;
   submitLabel?: string;
@@ -53,7 +53,7 @@ export interface PaperclipQuestionAnswer {
 }
 
 export interface PaperclipQuestionResponse {
-  schema: typeof PAPERCLIP_QUESTION_RESPONSE_SCHEMA;
+  schema: typeof GSAM_QUESTION_RESPONSE_SCHEMA;
   answers: Record<string, PaperclipQuestionAnswer>;
 }
 
@@ -64,7 +64,7 @@ export interface PaperclipRuntimeRequestOrigin {
 }
 
 export interface PaperclipRuntimeInputRequest {
-  schema: typeof PAPERCLIP_RUNTIME_REQUEST_SCHEMA_V2;
+  schema: typeof GSAM_RUNTIME_REQUEST_SCHEMA_V2;
   requestKind: "runtime";
   requestId: string;
   type: "input";
@@ -131,8 +131,8 @@ function optionalFiniteNumber(value: unknown, path: string): number | undefined 
 /** Parse and sanitize the provider-neutral presentation contract at an adapter boundary. */
 export function parsePaperclipQuestionSet(value: unknown): PaperclipQuestionSet {
   const candidate = record(value);
-  if (candidate === null || candidate.schema !== PAPERCLIP_QUESTION_SET_SCHEMA) {
-    throw new PaperclipQuestionValidationError("/input", `must use ${PAPERCLIP_QUESTION_SET_SCHEMA}`);
+  if (candidate === null || candidate.schema !== GSAM_QUESTION_SET_SCHEMA) {
+    throw new PaperclipQuestionValidationError("/input", `must use ${GSAM_QUESTION_SET_SCHEMA}`);
   }
   if (!Array.isArray(candidate.questions) || candidate.questions.length === 0 || candidate.questions.length > 64) {
     throw new PaperclipQuestionValidationError("/input/questions", "must contain between 1 and 64 questions");
@@ -258,7 +258,7 @@ export function parsePaperclipQuestionSet(value: unknown): PaperclipQuestionSet 
     };
   });
   return {
-    schema: PAPERCLIP_QUESTION_SET_SCHEMA,
+    schema: GSAM_QUESTION_SET_SCHEMA,
     ...(optionalText(candidate.title, "/input/title", 1_000) !== undefined
       ? { title: optionalText(candidate.title, "/input/title", 1_000) }
       : {}),
@@ -283,8 +283,8 @@ export function parsePaperclipQuestionResponse(
 ): PaperclipQuestionResponse {
   const questionSet = parsePaperclipQuestionSet(questionSetValue);
   const response = record(responseValue);
-  if (response === null || response.schema !== PAPERCLIP_QUESTION_RESPONSE_SCHEMA) {
-    throw new PaperclipQuestionValidationError("/response", `must use ${PAPERCLIP_QUESTION_RESPONSE_SCHEMA}`);
+  if (response === null || response.schema !== GSAM_QUESTION_RESPONSE_SCHEMA) {
+    throw new PaperclipQuestionValidationError("/response", `must use ${GSAM_QUESTION_RESPONSE_SCHEMA}`);
   }
   rejectUnknownKeys(response, ["schema", "answers"], "/response");
   const rawAnswers = record(response.answers);
@@ -362,5 +362,5 @@ export function parsePaperclipQuestionResponse(
     }
     if (answerHasValue(parsed)) answers[question.id] = parsed;
   }
-  return { schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA, answers };
+  return { schema: GSAM_QUESTION_RESPONSE_SCHEMA, answers };
 }

@@ -28,7 +28,7 @@ import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Bot, Plus, List, Network } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent, type Environment, type EnvironmentCapabilities } from "@paperclipai/shared";
+import { AGENT_ROLE_LABELS, type Agent, type Environment, type EnvironmentCapabilities } from "@greatstone/shared";
 import {
   isStarred,
   resourceMembershipState,
@@ -72,8 +72,8 @@ interface EnvironmentDescriptor {
 
 const localEnvironmentDescriptor: EnvironmentDescriptor = {
   label: "Local",
-  detail: "Paperclip host",
-  title: "Local - Paperclip host",
+  detail: "GS Agentic Manager host",
+  title: "Local - GS Agentic Manager host",
 };
 
 const loadingEnvironmentDescriptor: EnvironmentDescriptor = {
@@ -134,11 +134,11 @@ function describeEnvironment(
   capabilities?: EnvironmentCapabilities | null,
 ): EnvironmentDescriptor {
   const detail = isPlatformManagedEnvironment(environment)
-    ? "Managed by Paperclip"
+    ? "Managed by GS Agentic Manager"
     : environment.driver === "sandbox"
       ? `${getSandboxProviderLabel(environment, capabilities)} sandbox provider`
       : environment.driver === "local"
-        ? "Paperclip host"
+        ? "GS Agentic Manager host"
         : formatEnvironmentDriver(environment.driver);
 
   return {
@@ -396,7 +396,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         className={cn(
           "group py-3",
           agent.pausedAt && tab !== "paused" ? "opacity-50" : "",
-          resourceMembershipState(membershipsQuery.data, "agent", agent.id) === "left" ? "sm:text-foreground/55" : "",
+          resourceMembershipState(membershipsQuery.data, "agent", agent.id) === "left" ? "sm:text-muted-foreground" : "",
         )}
         leading={hasInvalidOrgChain ? (
           <AlertTriangle className="h-3.5 w-3.5 text-amber-500" aria-label="Invalid reporting chain" />
@@ -631,7 +631,7 @@ function OrgTreeNode({
         className={cn(
           "group flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-accent/50 transition-colors w-full text-left no-underline text-inherit",
           agent?.pausedAt && tab !== "paused" && "opacity-50",
-          membershipState === "left" && "sm:text-foreground/55",
+          membershipState === "left" && "sm:text-muted-foreground",
         )}
       >
         {hasInvalidOrgChain ? (
@@ -791,7 +791,7 @@ function AgentMetaColumns({
         >
           {model ?? "—"}
         </div>
-        <div className="truncate font-mono text-(length:--text-micro) text-muted-foreground/70" title={adapterLabel}>
+        <div className="truncate font-mono text-(length:--text-micro) text-subtle-foreground" title={adapterLabel}>
           {adapterLabel}
         </div>
       </div>
@@ -800,7 +800,7 @@ function AgentMetaColumns({
           <div className="truncate text-xs text-muted-foreground" title={environment.title}>
             {environment.label}
           </div>
-          <div className="truncate text-(length:--text-micro) text-muted-foreground/70">
+          <div className="truncate text-(length:--text-micro) text-subtle-foreground">
             {environment.detail}
           </div>
         </div>

@@ -11,26 +11,26 @@ mkdir -p "$PC_HOME" "$PC_CACHE"
 trap 'rm -rf "$PC_TEST_ROOT"' EXIT
 
 export HOME="$PC_HOME"
-export PAPERCLIP_HOME="$PC_HOME/.paperclip"
+export GSAM_HOME="$PC_HOME/.gsam"
 export npm_config_cache="$PC_CACHE"
 export npm_config_userconfig="$PC_HOME/.npmrc"
 export PATH="$PC_HOME/.local/bin:$PATH"
 
 if [ "$PC_INSTALL_DRIVER" = "published" ]; then
-  (cd "$PC_TEST_ROOT" && npx --yes --registry https://registry.npmjs.org paperclipai install)
+  (cd "$PC_TEST_ROOT" && npx --yes --registry https://registry.npmjs.org gsam install)
 else
-  (cd "$REPO_ROOT" && pnpm paperclipai install --yes)
+  (cd "$REPO_ROOT" && pnpm gsam install --yes)
 fi
 
 test -x "$PC_HOME/.local/bin/paperclipai"
-test -L "$PAPERCLIP_HOME/cli/current"
-test -f "$PAPERCLIP_HOME/cli/install.json"
-paperclipai --version
+test -L "$GSAM_HOME/cli/current"
+test -f "$GSAM_HOME/cli/install.json"
+gsam --version
 
-mkdir -p "$PAPERCLIP_HOME/instances/default"
-touch "$PAPERCLIP_HOME/instances/default/user-data-marker"
-(cd "$REPO_ROOT" && pnpm paperclipai uninstall)
+mkdir -p "$GSAM_HOME/instances/default"
+touch "$GSAM_HOME/instances/default/user-data-marker"
+(cd "$REPO_ROOT" && pnpm gsam uninstall)
 
-test ! -e "$PAPERCLIP_HOME/cli"
+test ! -e "$GSAM_HOME/cli"
 test ! -e "$PC_HOME/.local/bin/paperclipai"
-test -f "$PAPERCLIP_HOME/instances/default/user-data-marker"
+test -f "$GSAM_HOME/instances/default/user-data-marker"

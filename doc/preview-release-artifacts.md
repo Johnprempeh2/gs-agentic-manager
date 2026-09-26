@@ -29,7 +29,7 @@ release images retain their existing short-tag convention. Build arguments carry
 Preview builds do not import or overwrite the shared release cache or release
 aliases. Missing images are built for Linux amd64, matching managed deployments.
 
-When requested, both `@paperclipai/shared` and `@paperclipai/db` use
+When requested, both `@greatstone/shared` and `@greatstone/db` use
 `0.0.0-preview.g<FULL_SHA>`. Workspace dependencies are pinned to exact versions.
 Packages carry `gitHead` and `paperclipPreviewCommit` source identity. npm publishes
 them under the `preview` dist-tag only. Normal consumers of `latest` or `canary`

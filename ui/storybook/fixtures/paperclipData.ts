@@ -20,20 +20,20 @@ import type {
   SecretProviderDescriptor,
   SidebarBadges,
   WorkspaceRuntimeService,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import type { RunForIssue } from "@/api/activity";
 import type { LiveRunForIssue } from "@/api/heartbeats";
 
 const now = new Date("2026-04-20T12:00:00.000Z");
 const recent = (minutesAgo: number) => new Date(now.getTime() - minutesAgo * 60_000);
 const storybookRepoRoot = "~/paperclip";
-const storybookWorkspaceRoot = `${storybookRepoRoot}/.paperclip/workspaces`;
-const storybookWorktreeRoot = `${storybookRepoRoot}/.paperclip/worktrees`;
+const storybookWorkspaceRoot = `${storybookRepoRoot}/.gsam/workspaces`;
+const storybookWorktreeRoot = `${storybookRepoRoot}/.gsam/worktrees`;
 
 export const storybookCompanies: Company[] = [
   {
     id: "company-storybook",
-    name: "Paperclip Storybook",
+    name: "GS Agentic Manager Storybook",
     description: "Fixture company for isolated UI review.",
     status: "active",
     pauseReason: null,
@@ -127,7 +127,7 @@ export const storybookAgents: Agent[] = [
     icon: "code",
     status: "running",
     reportsTo: "agent-cto",
-    capabilities: "Ships full-stack Paperclip product tasks, Storybook coverage, and verification.",
+    capabilities: "Ships full-stack GS Agentic Manager product tasks, Storybook coverage, and verification.",
     adapterType: "codex_local",
     adapterConfig: {},
     runtimeConfig: {},
@@ -271,8 +271,8 @@ export const storybookGoals: Goal[] = [
   {
     id: "goal-company",
     companyId: "company-storybook",
-    title: "Build Paperclip",
-    description: "Make Paperclip the control plane operators trust for autonomous AI companies.",
+    title: "Build GS Agentic Manager",
+    description: "Make GS Agentic Manager the control plane operators trust for autonomous AI companies.",
     level: "company",
     status: "active",
     parentId: null,
@@ -391,7 +391,7 @@ const storybookWorkspaceRuntime = {
       id: "typecheck-ui",
       name: "UI typecheck",
       kind: "job",
-      command: "pnpm --filter @paperclipai/ui typecheck",
+      command: "pnpm --filter @greatstone/ui typecheck",
       cwd: ".",
     },
   ],
@@ -657,7 +657,7 @@ function createProject(overrides: Partial<Project> = {}): Project {
       defaultRef: "master",
       repoName: "paperclip",
       localFolder: storybookRepoRoot,
-      managedFolder: ".paperclip/worktrees/storybook",
+      managedFolder: ".gsam/worktrees/storybook",
       effectiveLocalFolder: storybookRepoRoot,
       origin: "local_folder",
     },
@@ -1113,7 +1113,7 @@ export const storybookApprovals: Approval[] = [
     requestedByUserId: null,
     status: "revision_requested",
     payload: {
-      scopeName: "Paperclip App",
+      scopeName: "GS Agentic Manager App",
       scopeType: "project",
       windowKind: "calendar_month_utc",
       metric: "billed_cents",
@@ -1158,7 +1158,7 @@ export const storybookBudgetSummaries: BudgetPolicySummary[] = [
     companyId: "company-storybook",
     scopeType: "company",
     scopeId: "company-storybook",
-    scopeName: "Paperclip Storybook",
+    scopeName: "GS Agentic Manager Storybook",
     metric: "billed_cents",
     windowKind: "calendar_month_utc",
     amount: 250_000,
@@ -1180,7 +1180,7 @@ export const storybookBudgetSummaries: BudgetPolicySummary[] = [
     companyId: "company-storybook",
     scopeType: "project",
     scopeId: "project-board-ui",
-    scopeName: "Paperclip App",
+    scopeName: "GS Agentic Manager App",
     metric: "billed_cents",
     windowKind: "calendar_month_utc",
     amount: 120_000,
@@ -1451,7 +1451,7 @@ export const storybookSecretProviderDiscoveryPreview: SecretProviderConfigDiscov
   nextToken: null,
   sampledSecretCount: 6,
   skippedForeignPaperclipSampleCount: 1,
-  warnings: ["Skipped 1 Paperclip-managed AWS secret from a different deployment namespace."],
+  warnings: ["Skipped 1 GS Agentic Manager-managed AWS secret from a different deployment namespace."],
   candidates: [
     {
       provider: "aws_secrets_manager",
@@ -1612,7 +1612,7 @@ export const storybookSecretBindings: CompanySecretBinding[] = [
     configPath: "env.OPENAI_API_KEY",
     versionSelector: "latest",
     required: true,
-    label: "Paperclip App project env",
+    label: "GS Agentic Manager App project env",
     projectionClass: "unclassified",
     projectionAllowlistKey: null,
     createdAt: new Date("2026-03-02T09:00:00.000Z"),
@@ -1717,7 +1717,7 @@ export const storybookSecretProviderHealth = {
       status: "ok" as const,
       message: "Encryption key loaded; permissions OK.",
       warnings: [] as string[],
-      backupGuidance: ["Backup ~/.paperclip/instances/default/secrets/key separately from the database."],
+      backupGuidance: ["Backup ~/.gsam/instances/default/secrets/key separately from the database."],
     },
     {
       provider: "aws_secrets_manager" as const,

@@ -4,8 +4,8 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Issue, IssueAttachment, IssueDocument, IssueWorkProduct } from "@paperclipai/shared";
-import { artifactReviewDocumentKey } from "@paperclipai/shared";
+import type { Issue, IssueAttachment, IssueDocument, IssueWorkProduct } from "@greatstone/shared";
+import { artifactReviewDocumentKey } from "@greatstone/shared";
 import { IssuePropertiesArtifactsTab } from "./IssuePropertiesArtifactsTab";
 import { ApiError } from "@/api/client";
 

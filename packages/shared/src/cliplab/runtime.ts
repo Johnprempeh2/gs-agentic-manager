@@ -1,4 +1,4 @@
-// ClipLab runtime adapted for Paperclip; geometry/animation model remain upstream.
+// ClipLab runtime adapted for GS Agentic Manager; geometry/animation model remain upstream.
 // See PROVENANCE.md and LICENSE.
 import { CharacterRenderer } from './renderer.js'
 import { sampleDefinition, animationDuration, type Definition } from './model.js'

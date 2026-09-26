@@ -1,15 +1,15 @@
-# `@paperclipai/plugin-cloudflare-sandbox`
+# `@greatstone/plugin-cloudflare-sandbox`
 
-Published Cloudflare sandbox provider plugin for Paperclip.
+Published Cloudflare sandbox provider plugin for GS Agentic Manager.
 
-This package lives in the Paperclip monorepo, but it is intentionally excluded from the root `pnpm` workspace and shaped to publish and install like a standalone npm package. Operators can install it from the Plugins page by package name, and the host will fetch its dependencies at install time without adding lockfile churn to the Paperclip repo.
+This package lives in the GS Agentic Manager monorepo, but it is intentionally excluded from the root `pnpm` workspace and shaped to publish and install like a standalone npm package. Operators can install it from the Plugins page by package name, and the host will fetch its dependencies at install time without adding lockfile churn to the GS Agentic Manager repo.
 
 ## Install
 
-From a Paperclip instance, install:
+From a GS Agentic Manager instance, install:
 
 ```text
-@paperclipai/plugin-cloudflare-sandbox
+@greatstone/plugin-cloudflare-sandbox
 ```
 
 Configure Cloudflare from `Instance Settings -> Environments`, not from the plugin's plugin page.
@@ -29,7 +29,7 @@ Important validation rules:
 - non-local `bridgeBaseUrl` values must be `https://`
 - `sessionId` is required when `sessionStrategy` is `named`
 
-Pasted auth tokens are stored by Paperclip as company secrets because the manifest marks `bridgeAuthToken` as a `secret-ref` field.
+Pasted auth tokens are stored by GS Agentic Manager as company secrets because the manifest marks `bridgeAuthToken` as a `secret-ref` field.
 
 ## Bridge template
 
@@ -45,4 +45,4 @@ pnpm test
 pnpm typecheck
 ```
 
-These commands assume the repo root has already been installed once so the local `@paperclipai/plugin-sdk` workspace package is available to the compiler during development.
+These commands assume the repo root has already been installed once so the local `@greatstone/plugin-sdk` workspace package is available to the compiler during development.

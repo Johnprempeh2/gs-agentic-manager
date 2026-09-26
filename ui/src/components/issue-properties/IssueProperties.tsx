@@ -1,7 +1,7 @@
 import { useWorkspaceIsolationControls } from "@/hooks/useWorkspaceIsolationControls";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { AgentAvatar } from "@/components/AgentAvatar";
-import { normalizeLegacyRunnerProvider } from "@paperclipai/adapter-utils";
+import { normalizeLegacyRunnerProvider } from "@greatstone/adapter-utils";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 import { PROPERTIES_PANE_HEADER_SLOT_ID } from "../PropertiesPanel";
@@ -14,7 +14,7 @@ import {
   type ExecutionWorkspace,
   type Issue,
   type IssueLabel,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "../../api/access";
 import { agentsApi } from "../../api/agents";
@@ -1631,7 +1631,7 @@ export function IssueProperties({
   const labelsContent = (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-subtle-foreground"
         placeholder="Search labels..."
         value={labelSearch}
         onChange={(e) => setLabelSearch(e.target.value)}
@@ -1670,7 +1670,7 @@ export function IssueProperties({
             onChange={(e) => setNewLabelColor(e.target.value)}
           />
           <input
-            className="flex-1 px-2 py-1.5 text-xs bg-transparent outline-none rounded placeholder:text-muted-foreground/50"
+            className="flex-1 px-2 py-1.5 text-xs bg-transparent outline-none rounded placeholder:text-subtle-foreground"
             placeholder="New label"
             value={newLabelName}
             onChange={(e) => setNewLabelName(e.target.value)}
@@ -1821,7 +1821,7 @@ export function IssueProperties({
         </div>
       ) : null}
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-subtle-foreground"
         placeholder="Search assignees..."
         value={assigneeSearch}
         onChange={(e) => setAssigneeSearch(e.target.value)}
@@ -1859,7 +1859,7 @@ export function IssueProperties({
   ) => (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-subtle-foreground"
         placeholder={`Search ${stageType === "review" ? "reviewers" : "approvers"}...`}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -1972,7 +1972,7 @@ export function IssueProperties({
   const projectContent = (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-subtle-foreground"
         placeholder="Search projects..."
         value={projectSearch}
         onChange={(e) => setProjectSearch(e.target.value)}
@@ -2141,7 +2141,7 @@ export function IssueProperties({
   const parentContent = (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-subtle-foreground"
         placeholder="Search tasks..."
         value={parentSearch}
         onChange={(e) => setParentSearch(e.target.value)}
@@ -2227,7 +2227,7 @@ export function IssueProperties({
   const blockedByContent = (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-subtle-foreground"
         placeholder="Search tasks..."
         value={blockedBySearch}
         onChange={(e) => setBlockedBySearch(e.target.value)}
@@ -2778,7 +2778,7 @@ export function IssueProperties({
                       Workspace mode
                     </button>
                     <input
-                      className="block w-full bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50"
+                      className="block w-full bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-subtle-foreground"
                       placeholder="Search workspaces..."
                       value={workspaceSearch}
                       onChange={(event) => setWorkspaceSearch(event.target.value)}

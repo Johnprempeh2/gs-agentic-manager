@@ -39,7 +39,7 @@ const ARCHIVING_COMPANY = {
 const SIBLING_COMPANY = {
   ...ARCHIVING_COMPANY,
   id: "company-pap",
-  name: "Paperclip",
+  name: "GS Agentic Manager",
   issuePrefix: "PAP",
 };
 
@@ -188,7 +188,7 @@ describe("CompanySettings archive departure", () => {
       expect(mockPushToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Old Co is archived",
-          body: "Switched to Paperclip.",
+          body: "Switched to GS Agentic Manager.",
         }),
       );
       expect(mockNavigateTopLevel).not.toHaveBeenCalled();

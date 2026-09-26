@@ -1,6 +1,6 @@
 # Dev-Plane Deploy & Restart Hygiene
 
-Operational runbook for restarting a dev/shared Paperclip control plane without killing in-flight agent work. Written after the 2026-07-06/07 failure spike, where a restart-heavy deploy window was the single largest source of failed tasks.
+Operational runbook for restarting a dev/shared GS Agentic Manager control plane without killing in-flight agent work. Written after the 2026-07-06/07 failure spike, where a restart-heavy deploy window was the single largest source of failed tasks.
 
 ## Why this matters
 
@@ -22,11 +22,11 @@ Every control-plane restart hard-kills any heartbeat run in flight at that momen
 
 Two signals, cross-referenced:
 
-**1. Server start markers in the instance log.** Each boot logs `Server listening on <host>:<port>`. Logs live at `~/.paperclip/instances/<instance>/server.log`, rotated daily to `server.log-YYYYMMDD.gz`.
+**1. Server start markers in the instance log.** Each boot logs `Server listening on <host>:<port>`. Logs live at `~/.gsam/instances/<instance>/server.log`, rotated daily to `server.log-YYYYMMDD.gz`.
 
 ```bash
-grep -h "Server listening" ~/.paperclip/instances/default/server.log
-zgrep -h "Server listening" ~/.paperclip/instances/default/server.log-20260706.gz
+grep -h "Server listening" ~/.gsam/instances/default/server.log
+zgrep -h "Server listening" ~/.gsam/instances/default/server.log-20260706.gz
 ```
 
 Many markers minutes apart = restart burst.

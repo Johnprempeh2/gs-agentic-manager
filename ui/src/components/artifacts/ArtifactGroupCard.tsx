@@ -54,7 +54,7 @@ export function ArtifactGroupCard({ group, to }: ArtifactGroupCardProps) {
           {preview ? (
             <ArtifactPreview artifact={preview} />
           ) : (
-            <div className="flex aspect-video w-full items-center justify-center bg-accent/20 text-muted-foreground/50">
+            <div className="flex aspect-video w-full items-center justify-center bg-accent/20 text-subtle-foreground">
               <Layers className="h-7 w-7" aria-hidden="true" />
             </div>
           )}
@@ -77,9 +77,9 @@ export function ArtifactGroupCard({ group, to }: ArtifactGroupCardProps) {
             </h3>
           </div>
 
-          <div className="mt-0.5 flex items-center gap-1.5 text-(length:--text-micro) text-muted-foreground/65">
+          <div className="mt-0.5 flex items-center gap-1.5 text-(length:--text-micro) text-subtle-foreground">
             <span>{countLabel}</span>
-            <span className="text-muted-foreground/50">·</span>
+            <span className="text-subtle-foreground">·</span>
             <span>Updated {formatDate(group.updatedAt)}</span>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import type { ExecutionProjection } from "@paperclipai/shared";
+import type { ExecutionProjection } from "@greatstone/shared";
 import type {
   ReasoningMessagePart,
   TextMessagePart,
@@ -8,7 +8,7 @@ import type {
   ThreadSystemMessage,
   ThreadUserMessage,
 } from "@assistant-ui/react";
-import type { Agent, IssueComment } from "@paperclipai/shared";
+import type { Agent, IssueComment } from "@greatstone/shared";
 import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
 import { formatAssigneeUserLabel } from "./assignees";
 import { isOperatorInterruptedRun } from "./interrupt-handoff";
@@ -541,10 +541,10 @@ function authorNameForComment(
 ) {
   const authorAgentId = effectiveCommentAuthorAgentId(comment);
   if (authorAgentId) {
-    return agentMap?.get(authorAgentId)?.name ?? (options?.isSystemNotice ? "Paperclip" : authorAgentId.slice(0, 8));
+    return agentMap?.get(authorAgentId)?.name ?? (options?.isSystemNotice ? "GS Agentic Manager" : authorAgentId.slice(0, 8));
   }
   const authorUserId = comment.authorUserId ?? null;
-  if (!authorUserId) return options?.isSystemNotice ? "Paperclip" : "You";
+  if (!authorUserId) return options?.isSystemNotice ? "GS Agentic Manager" : "You";
   const userLabel = userLabelMap?.get(authorUserId)?.trim();
   if (userLabel) return userLabel;
   return formatAssigneeUserLabel(authorUserId, currentUserId, userLabelMap) ?? "You";

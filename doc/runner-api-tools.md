@@ -9,8 +9,8 @@ initial prompt.
 ## Controlled rollout
 
 The escape hatch is disabled by default. Set
-`PAPERCLIP_RUNNER_API_TOOLS_ENABLED=true` on the server to enable it. For an
-initial company rollout, also set `PAPERCLIP_RUNNER_API_TOOLS_COMPANY_IDS` to a
+`GSAM_RUNNER_API_TOOLS_ENABLED=true` on the server to enable it. For an
+initial company rollout, also set `GSAM_RUNNER_API_TOOLS_COMPANY_IDS` to a
 comma-separated list of company UUIDs. An unset list allows every company;
 an explicitly empty list allows none. IDs must match exactly.
 

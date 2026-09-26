@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, asc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   agentWakeupRequests,
   agents,
@@ -14,8 +14,8 @@ import {
   issueThreadInteractions,
   issueWatchdogs,
   issueWorkProducts,
-} from "@paperclipai/db";
-import type { IssueWatchdog, IssueWatchdogSummary } from "@paperclipai/shared";
+} from "@greatstone/db";
+import type { IssueWatchdog, IssueWatchdogSummary } from "@greatstone/shared";
 import { conflict, notFound } from "../errors.js";
 import { parseObject } from "../adapters/utils.js";
 import { logActivity } from "./activity-log.js";

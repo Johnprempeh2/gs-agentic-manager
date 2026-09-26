@@ -8,8 +8,8 @@ import {
   issueThreadInteractions,
   issues,
   type Db,
-} from "@paperclipai/db";
-import type { ExecutionContinuationEnvelope } from "@paperclipai/shared";
+} from "@greatstone/db";
+import type { ExecutionContinuationEnvelope } from "@greatstone/shared";
 import { sanitizeQuarantinedCommentForHigherTrust } from "./source-trust.js";
 import { hasConversationContinuationPolicy } from "./conversation-continuation.js";
 import { queuedCommentIdsFromWakePayload } from "./issue-queued-comment-queue.js";

@@ -20,7 +20,7 @@ test("Grok subscription credentials require explicit catalog selection and obser
   const paid = workflow.slice(workflow.indexOf("    steps: &direct_eval_steps"), workflow.indexOf("  eval_shard_1:"));
   assert.match(workflow, /grok_authentication:\n[\s\S]*?type: choice\n[\s\S]*?default: api_key/u);
   assert.match(workflow, /--grok-authentication "\$GROK_AUTHENTICATION"/u);
-  assert.ok(paid.includes("PAPERCLIP_ACPX_GROK_AUTH_JSON_SECRET: ${{ matrix.credentialName == 'PAPERCLIP_ACPX_GROK_AUTH_JSON_SECRET' && secrets.GROK_AUTH_JSON || '' }}"));
+  assert.ok(paid.includes("GSAM_ACPX_GROK_AUTH_JSON_SECRET: ${{ matrix.credentialName == 'GSAM_ACPX_GROK_AUTH_JSON_SECRET' && secrets.GROK_AUTH_JSON || '' }}"));
   assert.ok(paid.includes("XAI_API_KEY: ${{ matrix.credentialName == 'XAI_API_KEY' && secrets.XAI_API_KEY || '' }}"));
   assert.match(paid, /--summary-path cell-output\/roster-summary\.json/u);
   assert.match(paid, /JSON\.parse\(readFileSync\("cell-output\/roster-summary\.json", "utf8"\)\)\.authenticationMode/u);
@@ -92,7 +92,7 @@ test("resolves both repositories immutably and bounds total matrix concurrency",
     /repos\/paperclipai\/paperclip-evals\/commits\/\$EVALS_SHA/u,
   );
   assert.match(authorize, /COMMITPERCLIP_KEY/u);
-  assert.match(authorize, /GH_REPO: paperclipai\/paperclip-evals/u);
+  assert.match(authorize, /GH_REPO: gsam\/paperclip-evals/u);
   assert.match(
     authorize,
     /GH_TOKEN: \$\{\{ steps\.evals_token\.outputs\.value \}\}/u,
@@ -110,7 +110,7 @@ test("resolves both repositories immutably and bounds total matrix concurrency",
   assert.match(catalog, /max_parallel_per_shard/u);
   const privateCheckouts = [
     ...workflow.matchAll(
-      /repository: paperclipai\/paperclip-evals[\s\S]*?persist-credentials: false/gmu,
+      /repository: gsam\/paperclip-evals[\s\S]*?persist-credentials: false/gmu,
     ),
   ];
   assert.equal(privateCheckouts.length, 3);
@@ -123,7 +123,7 @@ test("resolves both repositories immutably and bounds total matrix concurrency",
   for (const tokenStep of privateTokenSteps) {
     assert.match(
       tokenStep.groups.body,
-      /^ {10}GH_REPO: paperclipai\/paperclip-evals$/mu,
+      /^ {10}GH_REPO: gsam\/paperclip-evals$/mu,
       "every private-eval token must be minted from the eval repository installation",
     );
   }
@@ -187,7 +187,7 @@ test("publishes only the separately sanitized Evalbook through trusted OIDC code
   assert.match(publisher, /publish-runner-protocol-eval-history\.mjs/u);
   assert.match(publisher, /runner-protocol-evals/u);
   assert.match(publisher, /runner-protocol-viewer-/u);
-  assert.match(publisher, /PAPERCLIP_RUNNER_PROTOCOL_EVAL_VIEWER_DIR/u);
+  assert.match(publisher, /GSAM_RUNNER_PROTOCOL_EVAL_VIEWER_DIR/u);
   assert.match(publisher, /url: \$\{\{ steps\.publish\.outputs\.report_url \}\}/u);
   assert.match(publisher, /Publish versioned report and refresh the root index\n\s+id: publish/u);
   assert.doesNotMatch(publisher, /(?:OPENAI|ANTHROPIC|OPENROUTER)_API_KEY/u);
@@ -267,7 +267,7 @@ test("authentication failures retain cell metadata without leaking malformed sum
       else await writeFile(summary, content);
       const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
         cwd: root, encoding: "utf8",
-        env: { CREDENTIAL_NAME: "PAPERCLIP_ACPX_GROK_AUTH_JSON_SECRET", CELL_ID: "cell-1", CASE_ID: "context", ROSTER_FILE: "grok.json", CELL_EXIT_CODE: "7" },
+        env: { CREDENTIAL_NAME: "GSAM_ACPX_GROK_AUTH_JSON_SECRET", CELL_ID: "cell-1", CASE_ID: "context", ROSTER_FILE: "grok.json", CELL_EXIT_CODE: "7" },
       });
       assert.equal(result.status, expectedFailure ? 1 : 0);
       const retained = await readFile(resolve(root, "cell-output/cell.json"), "utf8");

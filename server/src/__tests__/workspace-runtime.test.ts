@@ -22,7 +22,7 @@ import {
   projects,
   workspaceOperations,
   workspaceRuntimeServices,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { eq } from "drizzle-orm";
 import {
   buildWorkspaceRuntimeDesiredStatePatch,
@@ -69,9 +69,9 @@ import {
   deriveViteHmrPort,
   type Environment,
   type EnvironmentLease,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { resolvePaperclipConfigPath } from "../paths.ts";
-import type { WorkspaceOperation } from "@paperclipai/shared";
+import type { WorkspaceOperation } from "@greatstone/shared";
 import type { WorkspaceOperationRecorder } from "../services/workspace-operations.ts";
 import { deriveWorktreeInstanceId } from "../services/workspace-instance-cleanup.ts";
 import {
@@ -148,12 +148,12 @@ async function runPnpm(cwd: string, args: string[]) {
 }
 
 async function writeRegisteredSourceConfig(baseCwd: string, instanceId = "source-instance") {
-  const configDir = path.join(baseCwd, ".paperclip");
+  const configDir = path.join(baseCwd, ".gsam");
   await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(path.join(configDir, "config.json"), "{}\n", "utf8");
   await fs.writeFile(
     path.join(configDir, ".env"),
-    `PAPERCLIP_INSTANCE_ID=${instanceId}\n`,
+    `GSAM_INSTANCE_ID=${instanceId}\n`,
     "utf8",
   );
 }
@@ -162,7 +162,7 @@ async function createTempRepo(defaultBranch = "main") {
   const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-repo-"));
   await runGit(repoRoot, ["init"]);
   await runGit(repoRoot, ["config", "user.email", "paperclip@example.com"]);
-  await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+  await runGit(repoRoot, ["config", "user.name", "GS Agentic Manager Test"]);
   await fs.writeFile(path.join(repoRoot, "README.md"), "hello\n", "utf8");
   await runGit(repoRoot, ["add", "README.md"]);
   await runGit(repoRoot, ["commit", "-m", "Initial commit"]);
@@ -253,7 +253,7 @@ async function createClonedRepoWithRemote() {
   const repoRoot = path.join(cloneRoot, "paperclip");
   await execFileAsync("git", ["clone", remotePath, repoRoot]);
   await runGit(repoRoot, ["config", "user.email", "paperclip@example.com"]);
-  await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+  await runGit(repoRoot, ["config", "user.name", "GS Agentic Manager Test"]);
   return { sourceRepo, remotePath, repoRoot };
 }
 
@@ -443,21 +443,21 @@ afterEach(async () => {
       leasedRunIds.delete(runId);
     }),
   );
-  delete process.env.PAPERCLIP_CONFIG;
-  delete process.env.PAPERCLIP_HOME;
-  delete process.env.PAPERCLIP_INSTANCE_ID;
-  delete process.env.PAPERCLIP_WORKTREES_DIR;
+  delete process.env.GSAM_CONFIG;
+  delete process.env.GSAM_HOME;
+  delete process.env.GSAM_INSTANCE_ID;
+  delete process.env.GSAM_WORKTREES_DIR;
   delete process.env.DATABASE_URL;
   await resetRuntimeServicesForTests();
 });
 
 describe("sanitizeRuntimeServiceBaseEnv", () => {
-  it("removes inherited Paperclip and pnpm auth flags before spawning runtime services", () => {
+  it("removes inherited GS Agentic Manager and pnpm auth flags before spawning runtime services", () => {
     const sanitized = sanitizeRuntimeServiceBaseEnv({
       PATH: process.env.PATH,
       DATABASE_URL: "postgres://example.test/paperclip",
-      PAPERCLIP_HOME: "/tmp/paperclip-home",
-      PAPERCLIP_INSTANCE_ID: "runtime-instance",
+      GSAM_HOME: "/tmp/paperclip-home",
+      GSAM_INSTANCE_ID: "runtime-instance",
       BETTER_AUTH_URL: "https://parent.example.test",
       BETTER_AUTH_BASE_URL: "https://legacy-parent.example.test",
       npm_config_tailscale_auth: "true",
@@ -465,8 +465,8 @@ describe("sanitizeRuntimeServiceBaseEnv", () => {
       HOST: "0.0.0.0",
     });
 
-    expect(sanitized.PAPERCLIP_HOME).toBeUndefined();
-    expect(sanitized.PAPERCLIP_INSTANCE_ID).toBeUndefined();
+    expect(sanitized.GSAM_HOME).toBeUndefined();
+    expect(sanitized.GSAM_INSTANCE_ID).toBeUndefined();
     expect(sanitized.BETTER_AUTH_URL).toBeUndefined();
     expect(sanitized.BETTER_AUTH_BASE_URL).toBeUndefined();
     expect(sanitized.DATABASE_URL).toBeUndefined();
@@ -485,7 +485,7 @@ describe("resolveManagedPaperclipRuntimePublicOrigin", () => {
   it("leaves explicit operator origin configuration unchanged", () => {
     expect(resolveManagedPaperclipRuntimePublicOrigin({
       ...baseInput,
-      environment: { PAPERCLIP_PUBLIC_URL: "https://operator.example.com" },
+      environment: { GSAM_PUBLIC_URL: "https://operator.example.com" },
       exposedUrl: "https://managed-worktree.example.com",
     })).toBeNull();
 
@@ -515,7 +515,7 @@ describe("resolveManagedPaperclipRuntimePublicOrigin", () => {
       ...baseInput,
       environment: {},
       exposedUrl: "http://paperclip-dev:45439",
-    })).toThrow(/internal-only.*Configure PAPERCLIP_PUBLIC_URL or BETTER_AUTH_URL/);
+    })).toThrow(/internal-only.*Configure GSAM_PUBLIC_URL or BETTER_AUTH_URL/);
     expect(() => resolveManagedPaperclipRuntimePublicOrigin({
       ...baseInput,
       environment: {},
@@ -561,13 +561,13 @@ describe("resolveRuntimeProvisionCommand", () => {
         "bash ./scripts/provision-worktree-runtime.sh",
       );
 
-      await fs.mkdir(path.join(cwd, ".paperclip"), { recursive: true });
-      await fs.writeFile(path.join(cwd, ".paperclip", "config.json"), "{}\n");
+      await fs.mkdir(path.join(cwd, ".gsam"), { recursive: true });
+      await fs.writeFile(path.join(cwd, ".gsam", "config.json"), "{}\n");
       expect(resolveRuntimeProvisionCommand({ config: {}, workspace })).toBe(
         "bash ./scripts/provision-worktree-runtime.sh",
       );
 
-      await fs.writeFile(path.join(cwd, ".paperclip", "seed-pending"), "{}\n");
+      await fs.writeFile(path.join(cwd, ".gsam", "seed-pending"), "{}\n");
       expect(resolveRuntimeProvisionCommand({ config: {}, workspace })).toBe(
         "bash ./scripts/provision-worktree-runtime.sh",
       );
@@ -576,27 +576,27 @@ describe("resolveRuntimeProvisionCommand", () => {
         workspace,
       })).toBe("./custom-provision.sh");
 
-      await fs.writeFile(path.join(cwd, ".paperclip", "seed-complete"), "{}\n");
+      await fs.writeFile(path.join(cwd, ".gsam", "seed-complete"), "{}\n");
       expect(resolveRuntimeProvisionCommand({ config: {}, workspace })).toBe(
         "bash ./scripts/provision-worktree-runtime.sh",
       );
 
       await fs.writeFile(
-        path.join(cwd, ".paperclip", "seed-manifest.json"),
+        path.join(cwd, ".gsam", "seed-manifest.json"),
         JSON.stringify({ version: 2, state: "failed" }),
       );
       expect(resolveRuntimeProvisionCommand({ config: {}, workspace })).toBe(
         "bash ./scripts/provision-worktree-runtime.sh",
       );
       await fs.writeFile(
-        path.join(cwd, ".paperclip", "seed-manifest.json"),
+        path.join(cwd, ".gsam", "seed-manifest.json"),
         JSON.stringify({ version: 2, state: "verified" }),
       );
       expect(resolveRuntimeProvisionCommand({ config: {}, workspace })).toBe(
         "bash ./scripts/provision-worktree-runtime.sh",
       );
       await fs.writeFile(
-        path.join(cwd, ".paperclip", "seed-manifest.json"),
+        path.join(cwd, ".gsam", "seed-manifest.json"),
         JSON.stringify({
           version: 2,
           source: { instanceId: "source", configPath: "/source/config.json" },
@@ -672,21 +672,21 @@ describe("ensureServerWorkspaceLinksCurrent", () => {
     await fs.writeFile(
       path.join(repoRoot, "server", "package.json"),
       JSON.stringify({
-        name: "@paperclipai/server",
+        name: "@greatstone/server",
         dependencies: {
-          "@paperclipai/db": "workspace:*",
+          "@greatstone/db": "workspace:*",
         },
       }),
       "utf8",
     );
     await fs.writeFile(
       path.join(expectedPackageDir, "package.json"),
-      JSON.stringify({ name: "@paperclipai/db" }),
+      JSON.stringify({ name: "@greatstone/db" }),
       "utf8",
     );
     await fs.writeFile(
       path.join(stalePackageDir, "package.json"),
-      JSON.stringify({ name: "@paperclipai/db" }),
+      JSON.stringify({ name: "@greatstone/db" }),
       "utf8",
     );
     await fs.symlink(stalePackageDir, path.join(serverNodeModulesScopeDir, "db"));
@@ -708,16 +708,16 @@ describe("ensureServerWorkspaceLinksCurrent", () => {
     await fs.writeFile(
       path.join(repoRoot, "server", "package.json"),
       JSON.stringify({
-        name: "@paperclipai/server",
+        name: "@greatstone/server",
         dependencies: {
-          "@paperclipai/db": "workspace:*",
+          "@greatstone/db": "workspace:*",
         },
       }),
       "utf8",
     );
     await fs.writeFile(
       path.join(expectedPackageDir, "package.json"),
-      JSON.stringify({ name: "@paperclipai/db" }),
+      JSON.stringify({ name: "@greatstone/db" }),
       "utf8",
     );
     await fs.symlink(expectedPackageDir, path.join(serverNodeModulesScopeDir, "db"));
@@ -741,21 +741,21 @@ describe("ensureServerWorkspaceLinksCurrent", () => {
     await fs.writeFile(
       path.join(repoRoot, "server", "package.json"),
       JSON.stringify({
-        name: "@paperclipai/server",
+        name: "@greatstone/server",
         dependencies: {
-          "@paperclipai/db": "workspace:*",
+          "@greatstone/db": "workspace:*",
         },
       }),
       "utf8",
     );
     await fs.writeFile(
       path.join(expectedPackageDir, "package.json"),
-      JSON.stringify({ name: "@paperclipai/db" }),
+      JSON.stringify({ name: "@greatstone/db" }),
       "utf8",
     );
     await fs.writeFile(
       path.join(stalePackageDir, "package.json"),
-      JSON.stringify({ name: "@paperclipai/db" }),
+      JSON.stringify({ name: "@greatstone/db" }),
       "utf8",
     );
     await fs.symlink(stalePackageDir, path.join(serverNodeModulesScopeDir, "db"));
@@ -776,7 +776,7 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = path.join(cloneRoot, "paperclip");
     await execFileAsync("git", ["clone", remotePath, repoRoot]);
     await runGit(repoRoot, ["config", "user.email", "paperclip@example.com"]);
-    await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+    await runGit(repoRoot, ["config", "user.name", "GS Agentic Manager Test"]);
 
     await fs.writeFile(path.join(sourceRepo, "auth-fix.txt"), "cookie fix\n", "utf8");
     await runGit(sourceRepo, ["add", "auth-fix.txt"]);
@@ -852,7 +852,7 @@ describe("realizeExecutionWorkspace", () => {
     expect(first.created).toBe(true);
     expect(first.branchCreatedByRuntime).toBe(true);
     expect(first.branchName).toBe("PAP-447-add-worktree-support");
-    expect(first.cwd).toContain(path.join(".paperclip", "worktrees"));
+    expect(first.cwd).toContain(path.join(".gsam", "worktrees"));
     await expect(fs.stat(path.join(first.cwd, ".git"))).resolves.toBeTruthy();
 
     const second = await realizeExecutionWorkspace({
@@ -877,8 +877,8 @@ describe("realizeExecutionWorkspace", () => {
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        "mkdir -p .paperclip",
-        "printf 'provisioned\\n' > .paperclip/default-provision-ran",
+        "mkdir -p .gsam",
+        "printf 'provisioned\\n' > .gsam/default-provision-ran",
         "",
       ].join("\n"),
       "utf8",
@@ -914,7 +914,7 @@ describe("realizeExecutionWorkspace", () => {
     });
 
     await expect(
-      fs.readFile(path.join(workspace.cwd, ".paperclip", "default-provision-ran"), "utf8"),
+      fs.readFile(path.join(workspace.cwd, ".gsam", "default-provision-ran"), "utf8"),
     ).resolves.toBe("provisioned\n");
   });
 
@@ -1149,7 +1149,7 @@ describe("realizeExecutionWorkspace", () => {
     expect(unresolved.attemptedRefs).toEqual(["origin/fix/does-not-exist"]);
     // No worktree directory was created for the fresh-create path.
     await expect(
-      fs.stat(path.join(repoRoot, ".paperclip", "worktrees", "PAP-447-add-worktree-support")),
+      fs.stat(path.join(repoRoot, ".gsam", "worktrees", "PAP-447-add-worktree-support")),
     ).rejects.toThrow();
   });
 
@@ -1212,7 +1212,7 @@ describe("realizeExecutionWorkspace", () => {
   it("rejects reusing an empty directory that only looks like a worktree because it sits inside the repo", async () => {
     const repoRoot = await createTempRepo();
     const branchName = "PAP-447-add-worktree-support";
-    const poisonedPath = path.join(repoRoot, ".paperclip", "worktrees", branchName);
+    const poisonedPath = path.join(repoRoot, ".gsam", "worktrees", branchName);
     await fs.mkdir(poisonedPath, { recursive: true });
 
     await expect(
@@ -1248,7 +1248,7 @@ describe("realizeExecutionWorkspace", () => {
   it("reuses the current linked worktree instead of nesting another worktree inside it", async () => {
     const repoRoot = await createTempRepo();
     const branchName = "PAP-1355-worktree-reuse";
-    const currentWorktree = path.join(repoRoot, ".paperclip", "worktrees", branchName);
+    const currentWorktree = path.join(repoRoot, ".gsam", "worktrees", branchName);
 
     await fs.mkdir(path.dirname(currentWorktree), { recursive: true });
     await execFileAsync("git", ["worktree", "add", "-b", branchName, currentWorktree, "HEAD"], { cwd: repoRoot });
@@ -1370,7 +1370,7 @@ describe("realizeExecutionWorkspace", () => {
   it("reuses an already checked out branch from git worktree metadata even when the target path differs", async () => {
     const repoRoot = await createTempRepo();
     const branchName = "PAP-1355-worktree-reuse";
-    const existingWorktree = path.join(repoRoot, ".paperclip", "worktrees", branchName);
+    const existingWorktree = path.join(repoRoot, ".gsam", "worktrees", branchName);
     const { recorder, operations } = createWorkspaceOperationRecorderDouble();
 
     await fs.mkdir(path.dirname(existingWorktree), { recursive: true });
@@ -1389,7 +1389,7 @@ describe("realizeExecutionWorkspace", () => {
         workspaceStrategy: {
           type: "git_worktree",
           branchTemplate: "{{issue.identifier}}-{{slug}}",
-          worktreeParentDir: ".paperclip/other-worktrees",
+          worktreeParentDir: ".gsam/other-worktrees",
         },
       },
       issue: {
@@ -1498,9 +1498,9 @@ describe("realizeExecutionWorkspace", () => {
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_BRANCH\" > .paperclip-provision-branch",
-        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_BASE_CWD\" > .paperclip-provision-base",
-        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_CREATED\" > .paperclip-provision-created",
+        "printf '%s\\n' \"$GSAM_WORKSPACE_BRANCH\" > .paperclip-provision-branch",
+        "printf '%s\\n' \"$GSAM_WORKSPACE_BASE_CWD\" > .paperclip-provision-base",
+        "printf '%s\\n' \"$GSAM_WORKSPACE_CREATED\" > .paperclip-provision-created",
       ].join("\n"),
       "utf8",
     );
@@ -1666,15 +1666,15 @@ describe("realizeExecutionWorkspace", () => {
     await expect(fs.readFile(path.join(reused.cwd, ".paperclip-provision-version"), "utf8")).resolves.toBe("v2\n");
   }, 30_000);
 
-  it("writes an isolated repo-local Paperclip config and worktree branding when provisioning", async () => {
+  it("writes an isolated repo-local GS Agentic Manager config and worktree branding when provisioning", async () => {
     const repoRoot = await createTempRepo();
     await writeRegisteredSourceConfig(repoRoot, "worktree-base-source");
     const previousCwd = process.cwd();
     const previousPath = process.env.PATH;
-    const previousConfig = process.env.PAPERCLIP_CONFIG;
-    const previousHome = process.env.PAPERCLIP_HOME;
-    const previousInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const previousWorktreesDir = process.env.PAPERCLIP_WORKTREES_DIR;
+    const previousConfig = process.env.GSAM_CONFIG;
+    const previousHome = process.env.GSAM_HOME;
+    const previousInstanceId = process.env.GSAM_INSTANCE_ID;
+    const previousWorktreesDir = process.env.GSAM_WORKTREES_DIR;
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-home-"));
     const isolatedWorktreeHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktrees-"));
     const isolatedBin = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-bin-"));
@@ -1683,10 +1683,10 @@ describe("realizeExecutionWorkspace", () => {
     const sharedConfigPath = path.join(sharedConfigDir, "config.json");
     const sharedEnvPath = path.join(sharedConfigDir, ".env");
 
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = instanceId;
-    process.env.PAPERCLIP_WORKTREES_DIR = isolatedWorktreeHome;
-    delete process.env.PAPERCLIP_CONFIG;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = instanceId;
+    process.env.GSAM_WORKTREES_DIR = isolatedWorktreeHome;
+    delete process.env.GSAM_CONFIG;
     // Keep this server-side fixture on provision-worktree.sh's config writer path;
     // CLI/database seeding is covered by the CLI worktree tests.
     await fs.symlink(process.execPath, path.join(isolatedBin, "node"));
@@ -1794,8 +1794,8 @@ describe("realizeExecutionWorkspace", () => {
       } satisfies Parameters<typeof realizeExecutionWorkspace>[0];
       const workspace = await realizeExecutionWorkspace(workspaceInput);
 
-      const configPath = path.join(workspace.cwd, ".paperclip", "config.json");
-      const envPath = path.join(workspace.cwd, ".paperclip", ".env");
+      const configPath = path.join(workspace.cwd, ".gsam", "config.json");
+      const envPath = path.join(workspace.cwd, ".gsam", ".env");
       const envContents = await fs.readFile(envPath, "utf8");
       const configContents = JSON.parse(await fs.readFile(configPath, "utf8"));
       const configStats = await fs.lstat(configPath);
@@ -1815,11 +1815,11 @@ describe("realizeExecutionWorkspace", () => {
       );
       expect(envContents).not.toContain("DATABASE_URL=");
       const envVars = parseEnvContents(envContents);
-      expect(envVars.PAPERCLIP_HOME).toBe(isolatedWorktreeHome);
-      expect(envVars.PAPERCLIP_INSTANCE_ID).toBe(expectedInstanceId);
-      expect(await fs.realpath(envVars.PAPERCLIP_CONFIG!)).toBe(await fs.realpath(configPath));
-      expect(envVars.PAPERCLIP_IN_WORKTREE).toBe("true");
-      expect(envVars.PAPERCLIP_WORKTREE_NAME).toBe("PAP-885-show-worktree-banner");
+      expect(envVars.GSAM_HOME).toBe(isolatedWorktreeHome);
+      expect(envVars.GSAM_INSTANCE_ID).toBe(expectedInstanceId);
+      expect(await fs.realpath(envVars.GSAM_CONFIG!)).toBe(await fs.realpath(configPath));
+      expect(envVars.GSAM_IN_WORKTREE).toBe("true");
+      expect(envVars.GSAM_WORKTREE_NAME).toBe("PAP-885-show-worktree-banner");
 
       process.chdir(workspace.cwd);
       expect(resolvePaperclipConfigPath()).toBe(configPath);
@@ -1840,7 +1840,7 @@ describe("realizeExecutionWorkspace", () => {
         ) + "\n",
         "utf8",
       );
-      await fs.writeFile(envPath, `${envContents}PAPERCLIP_WORKTREE_COLOR="#112233"\n`, "utf8");
+      await fs.writeFile(envPath, `${envContents}GSAM_WORKTREE_COLOR="#112233"\n`, "utf8");
 
       const reusedWorkspace = await realizeExecutionWorkspace(workspaceInput);
       const reusedConfigContents = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -1850,7 +1850,7 @@ describe("realizeExecutionWorkspace", () => {
       expect(reusedWorkspace.created).toBe(false);
       expect(reusedConfigContents.server.port).toBe(preservedPort);
       expect(reusedConfigContents.database.embeddedPostgresDataDir).toBe(path.join(expectedInstanceRoot, "db"));
-      expect(reusedEnvContents).toContain('PAPERCLIP_WORKTREE_COLOR="#112233"');
+      expect(reusedEnvContents).toContain('GSAM_WORKTREE_COLOR="#112233"');
     } finally {
       process.chdir(previousCwd);
       if (previousPath === undefined) {
@@ -1859,10 +1859,10 @@ describe("realizeExecutionWorkspace", () => {
         process.env.PATH = previousPath;
       }
       for (const [key, value] of [
-        ["PAPERCLIP_CONFIG", previousConfig],
-        ["PAPERCLIP_HOME", previousHome],
-        ["PAPERCLIP_INSTANCE_ID", previousInstanceId],
-        ["PAPERCLIP_WORKTREES_DIR", previousWorktreesDir],
+        ["GSAM_CONFIG", previousConfig],
+        ["GSAM_HOME", previousHome],
+        ["GSAM_INSTANCE_ID", previousInstanceId],
+        ["GSAM_WORKTREES_DIR", previousWorktreesDir],
       ] as const) {
         if (value === undefined) {
           delete process.env[key];
@@ -2047,7 +2047,7 @@ describe("realizeExecutionWorkspace", () => {
       },
     });
 
-    await expect(fs.readFile(path.join(workspace.cwd, ".paperclip", "config.json"), "utf8")).resolves.toContain(
+    await expect(fs.readFile(path.join(workspace.cwd, ".gsam", "config.json"), "utf8")).resolves.toContain(
       "\"database\"",
     );
   }, 30_000);
@@ -2096,7 +2096,7 @@ describe("realizeExecutionWorkspace", () => {
         fakePnpmPath,
         [
           "#!/bin/sh",
-          "if [ \"$1\" = \"paperclipai\" ] && [ \"$2\" = \"--help\" ]; then",
+          "if [ \"$1\" = \"gsam\" ] && [ \"$2\" = \"--help\" ]; then",
           "  exit 1",
           "fi",
           "if [ \"$1\" = \"install\" ] && [ \"$2\" = \"--prod=false\" ] && [ \"$3\" = \"--frozen-lockfile\" ]; then",
@@ -2116,8 +2116,8 @@ describe("realizeExecutionWorkspace", () => {
         env: {
           ...process.env,
           PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-          PAPERCLIP_WORKSPACE_BASE_CWD: baseRoot,
-          PAPERCLIP_WORKSPACE_CWD: worktreeRoot,
+          GSAM_WORKSPACE_BASE_CWD: baseRoot,
+          GSAM_WORKSPACE_CWD: worktreeRoot,
         },
       });
 
@@ -2165,10 +2165,10 @@ describe("realizeExecutionWorkspace", () => {
         fakePnpmPath,
         [
           "#!/bin/sh",
-          "if [ \"$1\" = \"paperclipai\" ] && [ \"$2\" = \"--help\" ]; then",
+          "if [ \"$1\" = \"gsam\" ] && [ \"$2\" = \"--help\" ]; then",
           "  exit 0",
           "fi",
-          "if [ \"$1\" = \"paperclipai\" ] && [ \"$2\" = \"worktree\" ] && [ \"$3\" = \"init\" ]; then",
+          "if [ \"$1\" = \"gsam\" ] && [ \"$2\" = \"worktree\" ] && [ \"$3\" = \"init\" ]; then",
           "  echo \"simulated init failure\" >&2",
           "  exit 42",
           "fi",
@@ -2186,8 +2186,8 @@ describe("realizeExecutionWorkspace", () => {
           env: {
             ...process.env,
             PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-            PAPERCLIP_WORKSPACE_BASE_CWD: baseRoot,
-            PAPERCLIP_WORKSPACE_CWD: worktreeRoot,
+            GSAM_WORKSPACE_BASE_CWD: baseRoot,
+            GSAM_WORKSPACE_CWD: worktreeRoot,
           },
         });
       } catch (error) {
@@ -2196,8 +2196,8 @@ describe("realizeExecutionWorkspace", () => {
 
       expect(caught).toBeTruthy();
       expect(String(caught)).toContain("simulated init failure");
-      await expect(fs.stat(path.join(worktreeRoot, ".paperclip", "config.json"))).rejects.toThrow();
-      await expect(fs.stat(path.join(worktreeRoot, ".paperclip", ".env"))).rejects.toThrow();
+      await expect(fs.stat(path.join(worktreeRoot, ".gsam", "config.json"))).rejects.toThrow();
+      await expect(fs.stat(path.join(worktreeRoot, ".gsam", ".env"))).rejects.toThrow();
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -2210,7 +2210,7 @@ describe("realizeExecutionWorkspace", () => {
     const fakeBin = path.join(tempRoot, "bin");
     const fakePnpmPath = path.join(fakeBin, "pnpm");
     const scriptPath = path.join(worktreeRoot, "provision-worktree.sh");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
 
     try {
       await fs.mkdir(baseRoot, { recursive: true });
@@ -2248,9 +2248,9 @@ describe("realizeExecutionWorkspace", () => {
       await fs.writeFile(
         path.join(paperclipDir, ".env"),
         [
-          "PAPERCLIP_HOME=/Users/example/.paperclip-worktrees",
-          "PAPERCLIP_INSTANCE_ID=stale",
-          `PAPERCLIP_CONFIG=/Users/example/paperclip/${path.basename(worktreeRoot)}/.paperclip/config.json`,
+          "GSAM_HOME=/Users/example/.paperclip-worktrees",
+          "GSAM_INSTANCE_ID=stale",
+          `GSAM_CONFIG=/Users/example/paperclip/${path.basename(worktreeRoot)}/.gsam/config.json`,
           "",
         ].join("\n"),
         "utf8",
@@ -2259,13 +2259,13 @@ describe("realizeExecutionWorkspace", () => {
         fakePnpmPath,
         [
           "#!/bin/sh",
-          "if [ \"$1\" = \"paperclipai\" ] && [ \"$2\" = \"--help\" ]; then",
+          "if [ \"$1\" = \"gsam\" ] && [ \"$2\" = \"--help\" ]; then",
           "  exit 0",
           "fi",
-          "if [ \"$1\" = \"paperclipai\" ] && [ \"$2\" = \"worktree\" ] && [ \"$3\" = \"init\" ]; then",
+          "if [ \"$1\" = \"gsam\" ] && [ \"$2\" = \"worktree\" ] && [ \"$3\" = \"init\" ]; then",
           "  mkdir -p \"$PWD/.paperclip\"",
-          "  printf '%s\\n' '{\"database\":{\"embeddedPostgresDataDir\":\"'$PWD'/.paperclip/runtime/db\"}}' > \"$PWD/.paperclip/config.json\"",
-          "  printf '%s\\n' \"PAPERCLIP_HOME=$PWD/.paperclip/runtime\" \"PAPERCLIP_INSTANCE_ID=healthy\" \"PAPERCLIP_CONFIG=$PWD/.paperclip/config.json\" > \"$PWD/.paperclip/.env\"",
+          "  printf '%s\\n' '{\"database\":{\"embeddedPostgresDataDir\":\"'$PWD'/.gsam/runtime/db\"}}' > \"$PWD/.gsam/config.json\"",
+          "  printf '%s\\n' \"GSAM_HOME=$PWD/.gsam/runtime\" \"GSAM_INSTANCE_ID=healthy\" \"GSAM_CONFIG=$PWD/.gsam/config.json\" > \"$PWD/.gsam/.env\"",
           "  exit 0",
           "fi",
           "exit 0",
@@ -2280,14 +2280,14 @@ describe("realizeExecutionWorkspace", () => {
         env: {
           ...process.env,
           PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-          PAPERCLIP_WORKSPACE_BASE_CWD: baseRoot,
-          PAPERCLIP_WORKSPACE_CWD: worktreeRoot,
+          GSAM_WORKSPACE_BASE_CWD: baseRoot,
+          GSAM_WORKSPACE_CWD: worktreeRoot,
         },
       });
 
-      expect(result.stderr).toContain("Existing isolated Paperclip worktree config is stale for this host; regenerating.");
+      expect(result.stderr).toContain("Existing isolated GS Agentic Manager worktree config is stale for this host; regenerating.");
       await expect(fs.readFile(path.join(paperclipDir, ".env"), "utf8")).resolves.toContain(
-        `PAPERCLIP_CONFIG=${worktreeRoot}/.paperclip/config.json`,
+        `GSAM_CONFIG=${worktreeRoot}/.gsam/config.json`,
       );
       await expect(fs.readFile(path.join(paperclipDir, "config.json"), "utf8")).resolves.toContain(worktreeRoot);
     } finally {
@@ -2332,7 +2332,7 @@ describe("realizeExecutionWorkspace", () => {
         fakePnpmPath,
         [
           "#!/bin/sh",
-          "if [ \"$1\" = \"paperclipai\" ] && [ \"$2\" = \"--help\" ]; then",
+          "if [ \"$1\" = \"gsam\" ] && [ \"$2\" = \"--help\" ]; then",
           "  exit 1",
           "fi",
           "if [ \"$1\" = \"install\" ] && [ \"$2\" = \"--prod=false\" ] && [ \"$3\" = \"--frozen-lockfile\" ]; then",
@@ -2356,14 +2356,14 @@ describe("realizeExecutionWorkspace", () => {
         env: {
           ...process.env,
           PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-          PAPERCLIP_WORKSPACE_BASE_CWD: baseRoot,
-          PAPERCLIP_WORKSPACE_CWD: worktreeRoot,
+          GSAM_WORKSPACE_BASE_CWD: baseRoot,
+          GSAM_WORKSPACE_CWD: worktreeRoot,
         },
       });
 
       expect(result.stderr).toContain("retrying install without --frozen-lockfile");
       await expect(fs.readFile(path.join(worktreeRoot, "node_modules", ".retry-success"), "utf8")).resolves.toBe("");
-      await expect(fs.readFile(path.join(worktreeRoot, ".paperclip", "config.json"), "utf8")).resolves.toContain(
+      await expect(fs.readFile(path.join(worktreeRoot, ".gsam", "config.json"), "utf8")).resolves.toContain(
         "\"database\"",
       );
     } finally {
@@ -2638,7 +2638,7 @@ describe("realizeExecutionWorkspace", () => {
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_BRANCH\" > .paperclip-restored-branch",
+        "printf '%s\\n' \"$GSAM_WORKSPACE_BRANCH\" > .paperclip-restored-branch",
       ].join("\n"),
       "utf8",
     );
@@ -2730,8 +2730,8 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-454-repair-clean-branch-mismatch";
     const actualBranch = "PAP-454-publish-head";
-    const realWorktreeRoot = path.join(repoRoot, ".paperclip", "real-worktrees");
-    const symlinkedWorktreeRoot = path.join(repoRoot, ".paperclip", "worktrees");
+    const realWorktreeRoot = path.join(repoRoot, ".gsam", "real-worktrees");
+    const symlinkedWorktreeRoot = path.join(repoRoot, ".gsam", "worktrees");
     const realWorktreePath = path.join(realWorktreeRoot, expectedBranch);
     const worktreePath = path.join(symlinkedWorktreeRoot, expectedBranch);
     await fs.mkdir(realWorktreeRoot, { recursive: true });
@@ -2798,7 +2798,7 @@ describe("realizeExecutionWorkspace", () => {
   it("reattaches a clean forward detached HEAD to the recorded persisted git worktree branch", async () => {
     const repoRoot = await createTempRepo();
     const branchName = "PAP-454-reattach-detached-head";
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", branchName);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", branchName);
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
     await runGit(repoRoot, ["branch", branchName]);
     await runGit(repoRoot, ["worktree", "add", worktreePath, branchName]);
@@ -2854,7 +2854,7 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-455-reject-dirty-branch-mismatch";
     const actualBranch = "PAP-455-publish-head";
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
     await runGit(repoRoot, ["branch", expectedBranch]);
     await runGit(repoRoot, ["worktree", "add", "-b", actualBranch, worktreePath, "HEAD"]);
@@ -2927,7 +2927,7 @@ describe("realizeExecutionWorkspace", () => {
   it("routes non-reusable persisted git worktrees through workspace validation recovery", async () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-455-not-registered-worktree";
-    const detachedWorktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const detachedWorktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
     await fs.mkdir(path.dirname(detachedWorktreePath), { recursive: true });
     await execFileAsync("git", ["clone", repoRoot, detachedWorktreePath]);
     await runGit(detachedWorktreePath, ["checkout", "-B", expectedBranch]);
@@ -3058,7 +3058,7 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-457-recorded-work";
     const actualBranch = "PAP-457-sibling-work";
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
 
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
     await runGit(repoRoot, ["branch", expectedBranch]);
@@ -3140,7 +3140,7 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-458-deleted-recorded-branch";
     const actualBranch = "PAP-458-actual-work";
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
 
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
     await runGit(repoRoot, ["branch", expectedBranch]);
@@ -3222,7 +3222,7 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-458-deleted-recorded-branch-flag-off";
     const actualBranch = "PAP-458-actual-work-flag-off";
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
 
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
     await runGit(repoRoot, ["branch", expectedBranch]);
@@ -3294,7 +3294,7 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-459-recorded-content";
     const actualBranch = "PAP-459-rewritten-content";
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
 
     await runGit(repoRoot, ["checkout", "-b", expectedBranch]);
     await fs.writeFile(path.join(repoRoot, "same-content.txt"), "same content\n", "utf8");
@@ -3324,7 +3324,7 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-459-recorded-task";
     const actualBranch = "PAP-999-unrelated-task";
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
 
     await runGit(repoRoot, ["checkout", "-b", expectedBranch]);
     await fs.writeFile(path.join(repoRoot, "recorded-task.txt"), "recorded task work\n", "utf8");
@@ -3354,7 +3354,7 @@ describe("realizeExecutionWorkspace", () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-459-recorded-ahead";
     const actualBranch = "PAP-459-live-behind";
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
 
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
     await runGit(repoRoot, ["branch", expectedBranch]);
@@ -4004,13 +4004,13 @@ describe("realizeExecutionWorkspace", () => {
     const instanceId = deriveWorktreeInstanceId(workspace.cwd);
     const instanceRoot = path.join(worktreesDir, "instances", instanceId);
     await fs.mkdir(path.join(instanceRoot, "db"), { recursive: true });
-    await fs.mkdir(path.join(workspace.cwd, ".paperclip"), { recursive: true });
+    await fs.mkdir(path.join(workspace.cwd, ".gsam"), { recursive: true });
     await fs.writeFile(
-      path.join(workspace.cwd, ".paperclip", ".env"),
-      `PAPERCLIP_HOME=${JSON.stringify(worktreesDir)}\nPAPERCLIP_INSTANCE_ID=${JSON.stringify(instanceId)}\n`,
+      path.join(workspace.cwd, ".gsam", ".env"),
+      `GSAM_HOME=${JSON.stringify(worktreesDir)}\nGSAM_INSTANCE_ID=${JSON.stringify(instanceId)}\n`,
       "utf8",
     );
-    process.env.PAPERCLIP_WORKTREES_DIR = worktreesDir;
+    process.env.GSAM_WORKTREES_DIR = worktreesDir;
 
     await cleanupExecutionWorkspaceArtifacts({
       workspace: {
@@ -4060,15 +4060,15 @@ describe("realizeExecutionWorkspace", () => {
 
 describe("ensureRuntimeServicesForRun", () => {
   function configureRuntimeProvisionTestHome(workspaceRoot: string, suffix: string) {
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    process.env.PAPERCLIP_HOME = workspaceRoot;
-    process.env.PAPERCLIP_INSTANCE_ID = `${suffix}-${randomUUID()}`;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousPaperclipInstanceId = process.env.GSAM_INSTANCE_ID;
+    process.env.GSAM_HOME = workspaceRoot;
+    process.env.GSAM_INSTANCE_ID = `${suffix}-${randomUUID()}`;
     return () => {
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousPaperclipInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousPaperclipInstanceId;
     };
   }
 
@@ -4224,7 +4224,7 @@ describe("ensureRuntimeServicesForRun", () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-workspace-seed-operation-"));
     const restorePaperclipEnv = configureRuntimeProvisionTestHome(workspaceRoot, "workspace-seed-operation");
     const scriptsDir = path.join(workspaceRoot, "scripts");
-    const markerDir = path.join(workspaceRoot, ".paperclip");
+    const markerDir = path.join(workspaceRoot, ".gsam");
     await fs.mkdir(scriptsDir, { recursive: true });
     await fs.mkdir(markerDir, { recursive: true });
     await fs.writeFile(path.join(markerDir, "seed-pending"), "{}\n", "utf8");
@@ -4233,7 +4233,7 @@ describe("ensureRuntimeServicesForRun", () => {
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        `printf '%s\\n' '${JSON.stringify({ version: 2, state: "failed", phase: "source_validation" })}' > .paperclip/seed-manifest.json`,
+        `printf '%s\\n' '${JSON.stringify({ version: 2, state: "failed", phase: "source_validation" })}' > .gsam/seed-manifest.json`,
       ].join("\n"),
       "utf8",
     );
@@ -4401,7 +4401,7 @@ describe("ensureRuntimeServicesForRun", () => {
     expect(services).toEqual([]);
   });
 
-  it("enables UI dev middleware by default for managed Paperclip worktree runtimes", async () => {
+  it("enables UI dev middleware by default for managed GS Agentic Manager worktree runtimes", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-ui-dev-"));
     const workspace = buildWorkspace(workspaceRoot);
     const serviceScript =
@@ -4409,7 +4409,7 @@ describe("ensureRuntimeServicesForRun", () => {
       + "http.createServer((req,res)=>{"
       + "if(req.url==='/api/health'){res.setHeader('content-type','application/json');"
       + "res.end(JSON.stringify({status:'ok'}));return;}"
-      + "res.end(process.env.PAPERCLIP_UI_DEV_MIDDLEWARE||'missing');"
+      + "res.end(process.env.GSAM_UI_DEV_MIDDLEWARE||'missing');"
       + "}).listen(Number(process.env.PORT),'127.0.0.1');";
 
     try {
@@ -4541,7 +4541,7 @@ describe("ensureRuntimeServicesForRun", () => {
     }
   }, 15_000);
 
-  it("requires Paperclip dev runtime services to pass /api/health readiness", async () => {
+  it("requires GS Agentic Manager dev runtime services to pass /api/health readiness", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-health-"));
     const workspace = buildWorkspace(workspaceRoot);
     const runId = "run-paperclip-health";
@@ -4597,7 +4597,7 @@ describe("ensureRuntimeServicesForRun", () => {
     }
   });
 
-  it("replaces a reused Paperclip dev runtime whose 2xx health payload is unhealthy", async () => {
+  it("replaces a reused GS Agentic Manager dev runtime whose 2xx health payload is unhealthy", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-misreported-health-"));
     const workspace = buildWorkspace(workspaceRoot);
     const serviceCommand =
@@ -4642,7 +4642,7 @@ describe("ensureRuntimeServicesForRun", () => {
     }
   }, 30_000);
 
-  it("reuses a shared Paperclip dev runtime after one transient unhealthy response", async () => {
+  it("reuses a shared GS Agentic Manager dev runtime after one transient unhealthy response", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-transient-health-"));
     const workspace = buildWorkspace(workspaceRoot);
     const serviceCommand =
@@ -4725,7 +4725,7 @@ describe("ensureRuntimeServicesForRun", () => {
           },
         },
         adapterEnv: {},
-      })).rejects.toThrow(/internal-only or non-resolvable.*Configure PAPERCLIP_PUBLIC_URL or BETTER_AUTH_URL/);
+      })).rejects.toThrow(/internal-only or non-resolvable.*Configure GSAM_PUBLIC_URL or BETTER_AUTH_URL/);
     } finally {
       await releaseRuntimeServicesForRun(runId);
     }
@@ -4832,7 +4832,7 @@ describe("ensureRuntimeServicesForRun", () => {
 
   it("does not reuse project-scoped shared services across different workspace launch contexts", async () => {
     const primaryWorkspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-primary-"));
-    const worktreeWorkspaceRoot = path.join(primaryWorkspaceRoot, ".paperclip", "worktrees", "PAP-874-chat-speed-issues");
+    const worktreeWorkspaceRoot = path.join(primaryWorkspaceRoot, ".gsam", "worktrees", "PAP-874-chat-speed-issues");
     await fs.mkdir(worktreeWorkspaceRoot, { recursive: true });
 
     const primaryWorkspace = buildWorkspace(primaryWorkspaceRoot);
@@ -4844,10 +4844,10 @@ describe("ensureRuntimeServicesForRun", () => {
       branchName: "PAP-874-chat-speed-issues",
       worktreePath: worktreeWorkspaceRoot,
     };
-    // A Paperclip dev runtime must answer `/api/health` semantically before it may
+    // A GS Agentic Manager dev runtime must answer `/api/health` semantically before it may
     // be published, so the fake serves the same shape a real one does.
     const serviceCommand =
-      "node -e \"require('node:http').createServer((req,res)=>{if(req.url==='/api/health'){res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok'}));return;}res.end(process.env.PAPERCLIP_HOME)}).listen(Number(process.env.PORT), '127.0.0.1')\"";
+      "node -e \"require('node:http').createServer((req,res)=>{if(req.url==='/api/health'){res.setHeader('content-type','application/json');res.end(JSON.stringify({status:'ok'}));return;}res.end(process.env.GSAM_HOME)}).listen(Number(process.env.PORT), '127.0.0.1')\"";
     const config = {
       workspaceRuntime: {
         services: [
@@ -4856,7 +4856,7 @@ describe("ensureRuntimeServicesForRun", () => {
             command: serviceCommand,
             cwd: ".",
             env: {
-              PAPERCLIP_HOME: "{{workspace.cwd}}/.paperclip/runtime-services",
+              GSAM_HOME: "{{workspace.cwd}}/.gsam/runtime-services",
             },
             port: { type: "auto" },
             readiness: {
@@ -4921,13 +4921,13 @@ describe("ensureRuntimeServicesForRun", () => {
     expect(executionServices[0]?.url).not.toBe(primaryServices[0]?.url);
 
     const primaryResponse = await fetch(primaryServices[0]!.url!);
-    expect(await primaryResponse.text()).toBe(path.join(primaryWorkspaceRoot, ".paperclip", "runtime-services"));
+    expect(await primaryResponse.text()).toBe(path.join(primaryWorkspaceRoot, ".gsam", "runtime-services"));
 
     const executionResponse = await fetch(executionServices[0]!.url!);
-    expect(await executionResponse.text()).toBe(path.join(worktreeWorkspaceRoot, ".paperclip", "runtime-services"));
+    expect(await executionResponse.text()).toBe(path.join(worktreeWorkspaceRoot, ".gsam", "runtime-services"));
   });
 
-  it("does not leak parent Paperclip instance env into runtime service commands", async () => {
+  it("does not leak parent GS Agentic Manager instance env into runtime service commands", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-env-"));
     const workspace = buildWorkspace(workspaceRoot);
     const envCapturePath = path.join(workspaceRoot, "captured-env.json");
@@ -4937,9 +4937,9 @@ describe("ensureRuntimeServicesForRun", () => {
         [
           "const fs = require('node:fs');",
           `fs.writeFileSync(${JSON.stringify(envCapturePath)}, JSON.stringify({`,
-          "paperclipConfig: process.env.PAPERCLIP_CONFIG ?? null,",
-          "paperclipHome: process.env.PAPERCLIP_HOME ?? null,",
-          "paperclipInstanceId: process.env.PAPERCLIP_INSTANCE_ID ?? null,",
+          "paperclipConfig: process.env.GSAM_CONFIG ?? null,",
+          "paperclipHome: process.env.GSAM_HOME ?? null,",
+          "paperclipInstanceId: process.env.GSAM_INSTANCE_ID ?? null,",
           "databaseUrl: process.env.DATABASE_URL ?? null,",
           "customEnv: process.env.RUNTIME_CUSTOM_ENV ?? null,",
           "port: process.env.PORT ?? null,",
@@ -4949,9 +4949,9 @@ describe("ensureRuntimeServicesForRun", () => {
       ),
     ].join(" ");
 
-    process.env.PAPERCLIP_CONFIG = "/tmp/base-paperclip-config.json";
-    process.env.PAPERCLIP_HOME = "/tmp/base-paperclip-home";
-    process.env.PAPERCLIP_INSTANCE_ID = "base-instance";
+    process.env.GSAM_CONFIG = "/tmp/base-paperclip-config.json";
+    process.env.GSAM_HOME = "/tmp/base-paperclip-home";
+    process.env.GSAM_INSTANCE_ID = "base-instance";
     process.env.DATABASE_URL = "postgres://shared-db.example.com/paperclip";
 
     const runId = "run-env";
@@ -5571,8 +5571,8 @@ describe("readLocalServicePortOwner", () => {
     const port = typeof address === "object" && address ? address.port : null;
     const serviceKey = `unsupported-cwd-${randomUUID()}`;
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `unsupported-cwd-${randomUUID()}`;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `unsupported-cwd-${randomUUID()}`;
     expect(port).toBeTypeOf("number");
 
     try {
@@ -5632,8 +5632,8 @@ describe("readLocalServicePortOwner", () => {
     const targetWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-target-"));
     const ownerWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-owner-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `cross-workspace-${randomUUID()}`;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `cross-workspace-${randomUUID()}`;
     const serviceKey = `cross-workspace-${randomUUID()}`;
     const child = spawn(
       process.execPath,
@@ -5724,8 +5724,8 @@ describe("readLocalServicePortOwner", () => {
 
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-adopt-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `adopt-port-owner-${randomUUID()}`;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `adopt-port-owner-${randomUUID()}`;
     const serviceKey = `adopt-port-owner-${randomUUID()}`;
     // Detach, because managed runtime services also start detached
     // (`detached: process.platform !== "win32"`). An attached child shares the
@@ -5783,8 +5783,8 @@ describe("readLocalServicePortOwner", () => {
     const lookalike = `${workspace} `;
     await fs.mkdir(lookalike, { recursive: true });
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `adopt-whitespace-${randomUUID()}`;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `adopt-whitespace-${randomUUID()}`;
     const serviceKey = `adopt-whitespace-${randomUUID()}`;
     const child = spawn(
       process.execPath,
@@ -5854,7 +5854,7 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
     actualBranch: string;
   }) {
     const repoRoot = await createTempRepo();
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", input.expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", input.expectedBranch);
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
     await runGit(repoRoot, ["branch", input.expectedBranch]);
     await runGit(repoRoot, ["worktree", "add", "-b", input.actualBranch, worktreePath, input.expectedBranch]);
@@ -5883,7 +5883,7 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `Q${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -5901,7 +5901,7 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
     await db.insert(projects).values({
       id: projectId,
       companyId,
-      name: "Paperclip App",
+      name: "GS Agentic Manager App",
       status: "in_progress",
     });
     await db.insert(projectWorkspaces).values({
@@ -6000,8 +6000,8 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
         strategyType: "git_worktree",
         name: input.actualBranch,
         status: "active",
-        cwd: path.join(input.repoRoot, ".paperclip", "claimants", claimantWorkspaceId),
-        providerRef: path.join(input.repoRoot, ".paperclip", "claimants", claimantWorkspaceId),
+        cwd: path.join(input.repoRoot, ".gsam", "claimants", claimantWorkspaceId),
+        providerRef: path.join(input.repoRoot, ".gsam", "claimants", claimantWorkspaceId),
         baseRef: "HEAD",
         branchName: input.actualBranch,
         providerType: "git_worktree",
@@ -6174,7 +6174,7 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
   it("quarantines a worktree wedged mid-rebase and clears the interrupted rebase state", async () => {
     const expectedBranch = "PAP-456-recorded";
     const repoRoot = await createTempRepo("master");
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+    const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
     await runGit(repoRoot, ["branch", expectedBranch]);
     await runGit(repoRoot, ["worktree", "add", worktreePath, expectedBranch]);
@@ -6502,10 +6502,10 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
   it("persists provisioning before starting and excludes provision time from readiness timeout", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-slow-control-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-control-home-"));
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `runtime-control-${randomUUID()}`;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousPaperclipInstanceId = process.env.GSAM_INSTANCE_ID;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `runtime-control-${randomUUID()}`;
 
     const companyId = randomUUID();
     const projectId = randomUUID();
@@ -6533,7 +6533,7 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -6704,10 +6704,10 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
         workspaceCwd: workspaceRoot,
       });
       await fs.rm(paperclipHome, { recursive: true, force: true });
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousPaperclipInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousPaperclipInstanceId;
     }
   }, 15_000);
 
@@ -6834,15 +6834,15 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
 
   async function createRuntimeHome() {
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-port-home-"));
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `runtime-ports-${randomUUID()}`;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousPaperclipInstanceId = process.env.GSAM_INSTANCE_ID;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `runtime-ports-${randomUUID()}`;
     return async () => {
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousPaperclipInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousPaperclipInstanceId;
       await fs.rm(paperclipHome, { recursive: true, force: true });
     };
   }
@@ -6863,7 +6863,7 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
         services: [{
           name: "paperclip-dev",
           command,
-          env: { PAPERCLIP_PUBLIC_URL: "http://127.0.0.1:3100" },
+          env: { GSAM_PUBLIC_URL: "http://127.0.0.1:3100" },
           port: { type: "fixed", value: 45_439, envKey: "PORT" },
           readiness: {
             type: "http",
@@ -7552,8 +7552,8 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
   it("restores desired services when one row is stopped and a live registered service has no row", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-desired-reconcile-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `runtime-desired-reconcile-${randomUUID()}`;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `runtime-desired-reconcile-${randomUUID()}`;
 
     const reservePort = async () => {
       const probe = net.createServer();
@@ -7620,7 +7620,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -7660,7 +7660,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
       },
     });
 
-    const actor = { id: null, name: "Paperclip", companyId };
+    const actor = { id: null, name: "GS Agentic Manager", companyId };
     const workspace = {
       ...buildWorkspace(workspaceRoot),
       projectId,
@@ -7732,11 +7732,11 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
     // — and must never keep its HTTP URL as a healthy fallback.
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-https-backfill-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const previousHttpsMode = process.env.PAPERCLIP_MANAGED_RUNTIME_HTTPS;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `runtime-https-backfill-${randomUUID()}`;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousPaperclipInstanceId = process.env.GSAM_INSTANCE_ID;
+    const previousHttpsMode = process.env.GSAM_MANAGED_RUNTIME_HTTPS;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `runtime-https-backfill-${randomUUID()}`;
 
     const reservePort = async () => {
       for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -7781,7 +7781,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
         {
           name: "paperclip-dev",
           command,
-          env: { PAPERCLIP_PUBLIC_URL: "http://127.0.0.1:3100" },
+          env: { GSAM_PUBLIC_URL: "http://127.0.0.1:3100" },
           port: legacyPort,
           // The pre-feature block: backend URL only, no exposure declaration.
           expose: { type: "url", urlTemplate: "http://127.0.0.1:{{port}}" },
@@ -7795,7 +7795,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -7822,7 +7822,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
       },
     });
 
-    const actor = { id: null, name: "Paperclip", companyId };
+    const actor = { id: null, name: "GS Agentic Manager", companyId };
     const workspace = {
       ...buildWorkspace(workspaceRoot),
       projectId,
@@ -7874,7 +7874,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     try {
       // ---- Before: the workspace as it exists today, on plain HTTP. ----
-      process.env.PAPERCLIP_MANAGED_RUNTIME_HTTPS = "off";
+      process.env.GSAM_MANAGED_RUNTIME_HTTPS = "off";
       const before = await startRuntimeServicesForWorkspaceControl({
         db,
         actor,
@@ -7893,9 +7893,9 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
       await expect(fetch(`http://127.0.0.1:${legacyPort}`)).resolves.toMatchObject({ ok: true });
       expect(brokerCalls).toEqual([]);
 
-      // ---- Deploy: the feature turns on and Paperclip restarts. ----
+      // ---- Deploy: the feature turns on and GS Agentic Manager restarts. ----
       await resetRuntimeServicesForTests();
-      delete process.env.PAPERCLIP_MANAGED_RUNTIME_HTTPS;
+      delete process.env.GSAM_MANAGED_RUNTIME_HTTPS;
       installExposureDeps();
 
       const result = await reconcilePersistedRuntimeServicesOnStartup(db);
@@ -7942,20 +7942,20 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
       await resetRuntimeServicesForTests();
       await fs.rm(paperclipHome, { recursive: true, force: true });
       await fs.rm(workspaceRoot, { recursive: true, force: true });
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
-      if (previousHttpsMode === undefined) delete process.env.PAPERCLIP_MANAGED_RUNTIME_HTTPS;
-      else process.env.PAPERCLIP_MANAGED_RUNTIME_HTTPS = previousHttpsMode;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousPaperclipInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousHttpsMode === undefined) delete process.env.GSAM_MANAGED_RUNTIME_HTTPS;
+      else process.env.GSAM_MANAGED_RUNTIME_HTTPS = previousHttpsMode;
     }
   }, 40_000);
 
   it("re-adopts a request-logging service on the same auto port after supervisor stdio closes", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-reconcile-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `runtime-reconcile-${randomUUID()}`;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `runtime-reconcile-${randomUUID()}`;
 
     const companyId = randomUUID();
     const agentId = randomUUID();
@@ -7963,7 +7963,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -8076,10 +8076,10 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
   it("re-adopts a live service whose shell command differs from the surviving process argv", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-pnpm-reconcile-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `runtime-pnpm-reconcile-${randomUUID()}`;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousInstanceId = process.env.GSAM_INSTANCE_ID;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `runtime-pnpm-reconcile-${randomUUID()}`;
 
     // Reserve a port outside the runtime exposure app-port range (42000-42999).
     // The reconciler stores this port on the row. A port inside that range makes
@@ -8170,7 +8170,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "GS Agentic Manager",
         issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
         requireBoardApprovalForNewAgents: false,
       });
@@ -8285,10 +8285,10 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
         }
       }
       await resetRuntimeServicesForTests();
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousInstanceId;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousInstanceId;
       await fs.rm(paperclipHome, { recursive: true, force: true });
       await fs.rm(workspaceRoot, { recursive: true, force: true });
     }
@@ -8297,8 +8297,8 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
   it("does not reuse a stopped auto-port service port while another process owns it", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-unhealthy-adopt-"));
     const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = `runtime-unhealthy-adopt-${randomUUID()}`;
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = `runtime-unhealthy-adopt-${randomUUID()}`;
 
     const portProbe = net.createServer();
     await new Promise<void>((resolve) => portProbe.listen(0, "127.0.0.1", resolve));
@@ -8365,7 +8365,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "GS Agentic Manager",
         issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
         requireBoardApprovalForNewAgents: false,
       });
@@ -8527,7 +8527,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -8620,7 +8620,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -8725,7 +8725,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -8845,7 +8845,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -8897,7 +8897,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
           {
             name: "web",
             command: serviceCommand,
-            env: { PAPERCLIP_TEST_RUNTIME_FLAG: flag },
+            env: { GSAM_TEST_RUNTIME_FLAG: flag },
             port: { type: "auto" },
             readiness: {
               type: "http",
@@ -8970,7 +8970,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -9626,7 +9626,7 @@ describe("realizeExecutionWorkspace with an exact existing branch", () => {
     expect(workspace.created).toBe(true);
     expect(workspace.branchCreatedByRuntime).toBe(false);
     expect(workspace.cwd).not.toBe(repoRoot);
-    expect(workspace.cwd).toContain(path.join(".paperclip", "worktrees"));
+    expect(workspace.cwd).toContain(path.join(".gsam", "worktrees"));
     expect(await readGit(workspace.cwd, ["branch", "--show-current"])).toBe("feature/preexisting-work");
     expect(await readGit(workspace.cwd, ["rev-parse", "HEAD"])).toBe(branchTip);
     expect(await readGit(repoRoot, ["rev-parse", "feature/preexisting-work"])).toBe(branchTip);
@@ -9682,14 +9682,14 @@ describe("realizeExecutionWorkspace with an exact existing branch", () => {
 
     expect(await readGit(repoRoot, ["branch", "--list", "feature/never-created"])).toBe("");
     expect(
-      existsSync(path.join(repoRoot, ".paperclip", "worktrees", "feature", "never-created")),
+      existsSync(path.join(repoRoot, ".gsam", "worktrees", "feature", "never-created")),
     ).toBe(false);
   });
 
   it("fails closed instead of reconciling when the managed worktree path holds another branch", async () => {
     const repoRoot = await createTempRepo();
     const branchTip = await createBranchWithCommit(repoRoot, "feature/pinned", "pinned.txt");
-    const managedPath = path.join(repoRoot, ".paperclip", "worktrees", "feature/pinned");
+    const managedPath = path.join(repoRoot, ".gsam", "worktrees", "feature/pinned");
     await runGit(repoRoot, ["worktree", "add", "-b", "stale-occupant", managedPath]);
 
     await expect(realizeExistingBranch(repoRoot, "feature/pinned")).rejects.toMatchObject({

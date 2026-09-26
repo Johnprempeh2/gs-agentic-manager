@@ -15,8 +15,8 @@ import {
   pluginCompanySettings,
   pluginManagedResources,
   plugins,
-} from "@paperclipai/db";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+} from "@greatstone/db";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -49,7 +49,7 @@ function manifest(): PaperclipPluginManifestV1 {
     version: "0.1.0",
     displayName: "Managed Agents Test",
     description: "Test plugin",
-    author: "Paperclip",
+    author: "GS Agentic Manager",
     categories: ["automation"],
     capabilities: ["agents.managed"],
     entrypoints: { worker: "./dist/worker.js" },
@@ -116,14 +116,14 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
     const pluginManifest = options.manifest ?? manifest();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: issuePrefix(companyId),
       requireBoardApprovalForNewAgents: options.requireApproval ?? false,
     });
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: pluginManifest.id,
-      packageName: "@paperclipai/plugin-managed-agents-test",
+      packageName: "@greatstone/plugin-managed-agents-test",
       version: pluginManifest.version,
       apiVersion: pluginManifest.apiVersion,
       categories: pluginManifest.categories,
@@ -310,12 +310,12 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
   });
 
   it("materializes declared managed agent instructions with local folder paths", async () => {
-    const previousHome = process.env.PAPERCLIP_HOME;
-    const previousInstance = process.env.PAPERCLIP_INSTANCE_ID;
+    const previousHome = process.env.GSAM_HOME;
+    const previousInstance = process.env.GSAM_INSTANCE_ID;
     const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-managed-agent-home-"));
     const wikiRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-managed-agent-wiki-")));
-    process.env.PAPERCLIP_HOME = tempHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "test";
+    process.env.GSAM_HOME = tempHome;
+    process.env.GSAM_INSTANCE_ID = "test";
     try {
       const pluginManifest = manifest();
       pluginManifest.localFolders = [
@@ -370,10 +370,10 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
       expect(content).toContain(`Wiki root: \`${wikiRoot}\``);
       expect(content).toContain(`Wiki schema: \`${path.join(wikiRoot, "AGENTS.md")}\``);
     } finally {
-      if (previousHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousHome;
-      if (previousInstance === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousInstance;
+      if (previousHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousHome;
+      if (previousInstance === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousInstance;
       await fs.rm(tempHome, { recursive: true, force: true });
       await fs.rm(wikiRoot, { recursive: true, force: true });
     }

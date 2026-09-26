@@ -22,7 +22,7 @@ import {
   projectWorkspaces,
   projects,
   workspaceRuntimeServices,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -175,7 +175,7 @@ async function readGit(cwd: string, args: string[]) {
 async function createTempRepo() {
   const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-execution-workspace-"));
   await runGit(repoRoot, ["init"]);
-  await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+  await runGit(repoRoot, ["config", "user.name", "GS Agentic Manager Test"]);
   await runGit(repoRoot, ["config", "user.email", "test@paperclip.local"]);
   await fs.writeFile(path.join(repoRoot, "README.md"), "# Test repo\n", "utf8");
   await runGit(repoRoot, ["add", "README.md"]);
@@ -315,7 +315,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const headSha = await readGit(worktreePath, ["rev-parse", "HEAD"]);
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -495,7 +495,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const issuePrefix = `P${companyId.slice(0, 8).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -565,7 +565,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         state: "blocked",
         isDestructiveCloseAllowed: false,
         blockingReasons: [
-          "Paperclip could not verify the workspace git status. Retry before destructive cleanup.",
+          "GS Agentic Manager could not verify the workspace git status. Retry before destructive cleanup.",
         ],
       });
 
@@ -641,7 +641,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const issuePrefix = `P${companyId.slice(0, 8).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1869,7 +1869,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -1945,7 +1945,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2042,7 +2042,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2139,7 +2139,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2261,7 +2261,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2342,7 +2342,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2415,7 +2415,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2494,7 +2494,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2654,7 +2654,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2772,7 +2772,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2953,7 +2953,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "GS Agentic Manager",
         issuePrefix: "PAP",
         requireBoardApprovalForNewAgents: false,
       });
@@ -3120,7 +3120,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3205,7 +3205,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3290,7 +3290,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3394,7 +3394,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3501,7 +3501,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3630,7 +3630,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3813,7 +3813,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3884,7 +3884,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3976,7 +3976,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -4141,7 +4141,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -4314,7 +4314,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     await db.insert(companies).values([
       {
         id: companyId,
-        name: "Paperclip",
+        name: "GS Agentic Manager",
         issuePrefix: "PAP",
         requireBoardApprovalForNewAgents: false,
       },
@@ -4534,7 +4534,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -4629,7 +4629,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });

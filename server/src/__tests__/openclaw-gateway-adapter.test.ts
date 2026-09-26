@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
-import { execute, testEnvironment } from "@paperclipai/adapter-openclaw-gateway/server";
+import { execute, testEnvironment } from "@greatstone/adapter-openclaw-gateway/server";
 import {
   buildOpenClawGatewayConfig,
   parseOpenClawGatewayStdoutLine,
-} from "@paperclipai/adapter-openclaw-gateway/ui";
-import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-openclaw-gateway/ui";
+import type { AdapterExecutionContext } from "@greatstone/adapter-utils";
 
 function buildContext(
   config: Record<string, unknown>,
@@ -491,9 +491,9 @@ describe("openclaw gateway adapter execute", () => {
       expect(payload?.idempotencyKey).toBe("run-123");
       expect(payload?.sessionKey).toBe("paperclip:issue:issue-123");
       expect(String(payload?.message ?? "")).toContain("wake now");
-      expect(String(payload?.message ?? "")).toContain("PAPERCLIP_RUN_ID=run-123");
-      expect(String(payload?.message ?? "")).toContain("PAPERCLIP_TASK_ID=task-123");
-      expect(String(payload?.message ?? "")).toContain("## Paperclip Wake Payload");
+      expect(String(payload?.message ?? "")).toContain("GSAM_RUN_ID=run-123");
+      expect(String(payload?.message ?? "")).toContain("GSAM_TASK_ID=task-123");
+      expect(String(payload?.message ?? "")).toContain("## GS Agentic Manager Wake Payload");
       expect(String(payload?.message ?? "")).toContain(
         "Use this wake to continue the task, applying new user direction and preserving its approval gates.",
       );

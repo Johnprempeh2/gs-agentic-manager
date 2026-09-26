@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  PAPERCLIP_RUNNER_DEFAULT_MODELS,
+  GSAM_RUNNER_DEFAULT_MODELS,
   paperclipRunnerTransitionConfig,
   isPaperclipRunnerProvider,
   resolvePaperclipRunnerModel,
   resolvePaperclipRunnerPermissionMode,
 } from "./paperclip-runner-permissions.js";
 
-describe("Paperclip Runner permission defaults", () => {
+describe("GS Agentic Manager Runner permission defaults", () => {
   it("defaults Codex to the only qualified non-interactive mode", () => {
     expect(resolvePaperclipRunnerPermissionMode("codex", undefined)).toBe(
       "never",
@@ -57,10 +57,10 @@ describe("Paperclip Runner permission defaults", () => {
 
   it("uses the Codex default for missing or blank models", () => {
     expect(resolvePaperclipRunnerModel("codex", undefined)).toBe(
-      PAPERCLIP_RUNNER_DEFAULT_MODELS.codex,
+      GSAM_RUNNER_DEFAULT_MODELS.codex,
     );
     expect(resolvePaperclipRunnerModel("codex", "   ")).toBe(
-      PAPERCLIP_RUNNER_DEFAULT_MODELS.codex,
+      GSAM_RUNNER_DEFAULT_MODELS.codex,
     );
   });
 

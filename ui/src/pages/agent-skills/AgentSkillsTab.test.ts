@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent } from "@paperclipai/shared";
+import type { Agent } from "@greatstone/shared";
 import { queryKeys } from "../../lib/queryKeys";
 import { AgentSkillsTab } from "./AgentSkillsTab";
 import { TooltipProvider } from "../../components/ui/tooltip";

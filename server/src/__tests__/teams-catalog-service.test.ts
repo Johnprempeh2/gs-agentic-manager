@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CatalogTeam } from "@paperclipai/shared";
+import type { CatalogTeam } from "@greatstone/shared";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -69,7 +69,7 @@ describe("teamsCatalogService", () => {
     mockCompanyPortabilityService.previewImport.mockResolvedValue({
       include: { company: false, agents: true, projects: true, issues: true, skills: true },
       targetCompanyId: "company-1",
-      targetCompanyName: "Paperclip",
+      targetCompanyName: "GS Agentic Manager",
       collisionStrategy: "rename",
       selectedAgentSlugs: ["ceo", "cto"],
       plan: { companyAction: "none", agentPlans: [], projectPlans: [], issuePlans: [] },
@@ -80,7 +80,7 @@ describe("teamsCatalogService", () => {
       errors: [],
     });
     mockCompanyPortabilityService.importBundle.mockResolvedValue({
-      company: { id: "company-1", name: "Paperclip", action: "unchanged" },
+      company: { id: "company-1", name: "GS Agentic Manager", action: "unchanged" },
       agents: [],
       projects: [],
       envInputs: [],
@@ -128,7 +128,7 @@ describe("teamsCatalogService", () => {
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentSlug: \"ceo\""));
   });
 
-  it("preserves package-declared Paperclip sidecar permissions while adding generated catalog provenance", async () => {
+  it("preserves package-declared GS Agentic Manager sidecar permissions while adding generated catalog provenance", async () => {
     const svc = teamsCatalogService({} as any);
 
     const prepared = await svc.prepareCatalogTeamSource("company-1", "product-engineering");
@@ -208,7 +208,7 @@ describe("teamsCatalogService", () => {
     mockCompanyPortabilityService.previewImport.mockResolvedValueOnce({
       include: { company: false, agents: true, projects: true, issues: true, skills: true },
       targetCompanyId: "company-1",
-      targetCompanyName: "Paperclip",
+      targetCompanyName: "GS Agentic Manager",
       collisionStrategy: "rename",
       selectedAgentSlugs: ["ceo"],
       plan: { companyAction: "none", agentPlans: [], projectPlans: [], issuePlans: [] },
@@ -264,8 +264,8 @@ describe("teamsCatalogService", () => {
   });
 
   it("uses the configured safe adapter default for bundled agents", async () => {
-    const previousDefault = process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE;
-    process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE = "opencode_local";
+    const previousDefault = process.env.GSAM_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE;
+    process.env.GSAM_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE = "opencode_local";
     try {
       const svc = teamsCatalogService({} as any);
 
@@ -279,9 +279,9 @@ describe("teamsCatalogService", () => {
       });
     } finally {
       if (previousDefault === undefined) {
-        delete process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE;
+        delete process.env.GSAM_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE;
       } else {
-        process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE = previousDefault;
+        process.env.GSAM_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE = previousDefault;
       }
     }
   });

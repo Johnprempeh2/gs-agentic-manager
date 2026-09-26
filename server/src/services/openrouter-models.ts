@@ -1,4 +1,4 @@
-import type { AdapterModel } from "@paperclipai/adapter-utils";
+import type { AdapterModel } from "@greatstone/adapter-utils";
 
 let cached: { until: number; models: AdapterModel[] } | undefined;
 let pending: Promise<AdapterModel[]> | undefined;

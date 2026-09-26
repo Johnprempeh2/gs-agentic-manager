@@ -15,7 +15,7 @@ import type {
   EmailEnvelope,
   EmailDeliveryOutcome,
   EmailSendInput,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   chatEndpoints,
   chatConversations,

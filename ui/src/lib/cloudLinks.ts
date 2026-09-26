@@ -2,7 +2,7 @@
  * Links out of a tenant instance and into the Paperclip Cloud app.
  *
  * The base always comes from the health `cloud` block (derived from
- * `PAPERCLIP_CLOUD_API_ORIGIN`) — the cloud domain is never hardcoded, because
+ * `GSAM_CLOUD_API_ORIGIN`) — the cloud domain is never hardcoded, because
  * aliases move and self-hosted instances have no cloud block at all. Only the
  * origin of that value is used; a control-plane path suffix is dropped, exactly
  * as the server-side portfolio proxy resolves it.

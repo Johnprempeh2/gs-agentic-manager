@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   agentMemberships,
   agents,
@@ -7,13 +7,13 @@ import {
   documents,
   projectMemberships,
   projects,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import type {
   ResourceMembershipResourceType,
   ResourceMembershipState,
   ResourceMemberships,
   ResourceMembershipUpdateResult,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { forbidden, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 

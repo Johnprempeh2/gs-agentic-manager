@@ -1989,7 +1989,7 @@ export class DurablePrpControlPlane {
     wire.acceptInitialData(head);
   }
 
-  /** Attach either an accepted inbound WebSocket or a Paperclip-opened peer. */
+  /** Attach either an accepted inbound WebSocket or a GS Agentic Manager-opened peer. */
   attachWireConnection(wire: PrpWireConnection): PrpWireAttachment {
     let connection!: AuthorityConnection;
     let processing = Promise.resolve();
@@ -3282,7 +3282,7 @@ const runnerExplicitProviderEnvironmentKeys = [
   "CLAUDE_CODE_OAUTH_TOKEN",
   "OPENAI_API_KEY",
   "CODEX_API_KEY",
-  "PAPERCLIP_ACPX_CODEX_AUTH_JSON_SECRET",
+  "GSAM_ACPX_CODEX_AUTH_JSON_SECRET",
   "AWS_REGION",
   "AWS_DEFAULT_REGION",
   "AWS_WEB_IDENTITY_TOKEN_FILE",
@@ -3291,21 +3291,21 @@ const runnerExplicitProviderEnvironmentKeys = [
   "AWS_CONTAINER_CREDENTIALS_FULL_URI",
   "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
   "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
-  "PAPERCLIP_OPENCODE_PERMISSION_MODE",
-  "PAPERCLIP_OPENCODE_RUNTIME_DIR",
-  "PAPERCLIP_RUNNER_INSTANCE_ID",
-  "PAPERCLIP_RUN_ID",
-  "PAPERCLIP_NORMALIZED_SESSION_ID",
-  "PAPERCLIP_NATIVE_MCP_NAME",
-  "PAPERCLIP_NATIVE_MCP_URL",
-  "PAPERCLIP_NATIVE_MCP_TOKEN",
-  "PAPERCLIP_NATIVE_RUNTIME_CONTEXT_PATH",
-  "PAPERCLIP_RUNNER_EXTERNAL_SANDBOX",
-  "PAPERCLIP_ACPX_PROVIDER_PACKAGE_ROOT",
-  "PAPERCLIP_ACPX_PROVIDER_PACKAGE_MANIFEST",
-  "PAPERCLIP_ACPX_PROVIDER_RECOVERY_POLICY",
-  "PAPERCLIP_PROVIDER_TRACE_PATH",
-  "PAPERCLIP_PROVIDER_TRACE_MAX_BYTES",
+  "GSAM_OPENCODE_PERMISSION_MODE",
+  "GSAM_OPENCODE_RUNTIME_DIR",
+  "GSAM_RUNNER_INSTANCE_ID",
+  "GSAM_RUN_ID",
+  "GSAM_NORMALIZED_SESSION_ID",
+  "GSAM_NATIVE_MCP_NAME",
+  "GSAM_NATIVE_MCP_URL",
+  "GSAM_NATIVE_MCP_TOKEN",
+  "GSAM_NATIVE_RUNTIME_CONTEXT_PATH",
+  "GSAM_RUNNER_EXTERNAL_SANDBOX",
+  "GSAM_ACPX_PROVIDER_PACKAGE_ROOT",
+  "GSAM_ACPX_PROVIDER_PACKAGE_MANIFEST",
+  "GSAM_ACPX_PROVIDER_RECOVERY_POLICY",
+  "GSAM_PROVIDER_TRACE_PATH",
+  "GSAM_PROVIDER_TRACE_MAX_BYTES",
 ] as const;
 
 function runnerEnvironment(
@@ -3314,7 +3314,7 @@ function runnerEnvironment(
 ): NodeJS.ProcessEnv {
   const platformSource = explicitSource ?? process.env;
   const environment: NodeJS.ProcessEnv = {
-    PAPERCLIP_RUNNER_BOOTSTRAP_TICKET: ticket,
+    GSAM_RUNNER_BOOTSTRAP_TICKET: ticket,
   };
   for (const key of runnerPlatformEnvironmentKeys) {
     const value = platformSource[key];

@@ -1,4 +1,4 @@
-import { agentAppearanceSchema } from "@paperclipai/shared";
+import { agentAppearanceSchema } from "@greatstone/shared";
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { execFile } from "node:child_process";
@@ -10,7 +10,7 @@ import {
   issueRelations,
   principalPermissionGrants,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import type {
   CompanyPortabilityAgentManifestEntry,
   CompanyPortabilityBlobManifestEntry,
@@ -44,7 +44,7 @@ import type {
   AgentEnvConfig,
   PermissionKey,
   RoutineVariable,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   ISSUE_PRIORITIES,
@@ -63,13 +63,13 @@ import {
   issueCommentPresentationSchema,
   normalizeAgentUrlKey,
   PERMISSION_KEYS,
-} from "@paperclipai/shared";
-import { sha256HexOfBytes } from "@paperclipai/shared/portability-hash";
+} from "@greatstone/shared";
+import { sha256HexOfBytes } from "@greatstone/shared/portability-hash";
 import {
   readPaperclipSkillSyncPreference,
   writePaperclipSkillSyncPreference,
-} from "@paperclipai/adapter-utils/server-utils";
-import { requireOpenCodeModelId } from "@paperclipai/adapter-opencode-local/server";
+} from "@greatstone/adapter-utils/server-utils";
+import { requireOpenCodeModelId } from "@greatstone/adapter-opencode-local/server";
 import { findServerAdapter } from "../adapters/index.js";
 import { formatAttachmentSize, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { forbidden, notFound, unprocessable } from "../errors.js";
@@ -703,7 +703,7 @@ type ProjectLike = {
   targetDate: string | null;
   color: string | null;
   icon: string | null;
-  appearance?: import("@paperclipai/shared").AgentAppearance | null;
+  appearance?: import("@greatstone/shared").AgentAppearance | null;
   status: string;
   env: Record<string, unknown> | null;
   executionWorkspacePolicy: Record<string, unknown> | null;
@@ -1673,7 +1673,7 @@ function buildLegacyRoutineTriggerFromRecurrence(
   }
 
   if (issue.legacyRecurrence.until != null || issue.legacyRecurrence.count != null) {
-    warnings.push(`Recurring task ${issue.slug} uses legacy recurrence end bounds; Paperclip will import the routine trigger without those limits.`);
+    warnings.push(`Recurring task ${issue.slug} uses legacy recurrence end bounds; GS Agentic Manager will import the routine trigger without those limits.`);
   }
 
   let cronExpression: string | null = null;
@@ -2678,7 +2678,7 @@ async function buildSkillSourceEntry(skill: CompanySkill) {
 
 function shouldReferenceSkillOnExport(skill: CompanySkill, expandReferencedSkills: boolean) {
   const metadata = isPlainRecord(skill.metadata) ? skill.metadata : null;
-  // Bundled Paperclip skills ship with every build and may contain executable
+  // Bundled GS Agentic Manager skills ship with every build and may contain executable
   // scripts that import policy rejects when expanded; the target re-resolves
   // them from its own catalog via the pinned reference stub instead.
   if (asString(metadata?.sourceKind) === "paperclip_bundled") return true;
@@ -3112,7 +3112,7 @@ function buildManifestFromPackageFiles(
     ? declaredSchemaVersion
     : UNSTAMPED_BUNDLE_SCHEMA_VERSION;
   if (bundleSchemaVersion > BUNDLE_SCHEMA_VERSION) {
-    throw unprocessable(`Company package declares schemaVersion ${bundleSchemaVersion}, which was produced by a newer Paperclip; this board reads up to schemaVersion ${BUNDLE_SCHEMA_VERSION}.`);
+    throw unprocessable(`Company package declares schemaVersion ${bundleSchemaVersion}, which was produced by a newer GS Agentic Manager; this board reads up to schemaVersion ${BUNDLE_SCHEMA_VERSION}.`);
   }
   const paperclipCompany = isPlainRecord(paperclipExtension.company) ? paperclipExtension.company : {};
   const paperclipSidebar = normalizePortableSidebarOrder(paperclipExtension.sidebar);
@@ -3308,7 +3308,7 @@ function buildManifestFromPackageFiles(
       const sourceHostname = asString(primarySource?.hostname) || "github.com";
       const [owner, repoName] = (repo ?? "").split("/");
       const canonicalKey = readSkillKey(frontmatter);
-      const normalizedSourceKind = owner === "paperclipai"
+      const normalizedSourceKind = owner === "gsam"
         && repoName === "paperclip"
         && canonicalKey?.startsWith("paperclipai/paperclip/")
         ? "paperclip_bundled"
@@ -3557,7 +3557,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
   const secrets = secretService(db);
   const documentsSvc = documentService(db);
   const workProductsSvc = workProductService(db);
-  const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
+  const strictSecretsMode = process.env.GSAM_SECRETS_STRICT_MODE === "true";
   const defaultSecretProvider = getConfiguredSecretProvider();
 
   async function applyImportedAgentPermissionGrants(
@@ -5258,7 +5258,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         && (await instanceSettingsService(db).getExperimental()).enableNativeRunner !== true
       ) {
         throw unprocessable(
-          "Paperclip Runner is experimental and disabled on this instance.",
+          "GS Agentic Manager Runner is experimental and disabled on this instance.",
           { code: "paperclip_runner_rollout_disabled" },
         );
       }

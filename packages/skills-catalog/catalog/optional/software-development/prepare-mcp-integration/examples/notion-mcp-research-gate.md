@@ -2,7 +2,7 @@
 
 ## Input
 
-> Research Notion's hosted MCP server and prepare it for Paperclip. Start from
+> Research Notion's hosted MCP server and prepare it for GS Agentic Manager. Start from
 > the vendor documentation URL. Do not build the connector until I approve the
 > research.
 
@@ -18,7 +18,7 @@
    required by the integrations playbook.
 5. Record the research PR head SHA and proposed connection set in an issue
    document, then request confirmation against that exact revision.
-6. Stop with the issue in review. No Paperclip App branch exists yet.
+6. Stop with the issue in review. No GS Agentic Manager App branch exists yet.
 
 ## Gate Output
 
@@ -36,7 +36,7 @@ Next action:
 - Human confirms or rejects this exact research revision.
 ```
 
-After acceptance, create one isolated Paperclip App worktree and PR for
+After acceptance, create one isolated GS Agentic Manager App worktree and PR for
 `notion-mcp`, reread the current Connector Playbook, and follow its current
 implementation and validation requirements. If research reveals a reusable
 OAuth or documentation rule, update the owning upstream playbook in the

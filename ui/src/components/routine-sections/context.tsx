@@ -5,7 +5,7 @@ import type {
   RoutineDetail as RoutineDetailType,
   RoutineEnvConfig,
   RoutineVariable,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import type { MarkdownEditorRef, MentionOption } from "../MarkdownEditor";
 import type { InlineEntityOption } from "../InlineEntitySelector";
 import type { RoutineHistoryDirtyFieldDescriptor } from "../RoutineHistoryTab";

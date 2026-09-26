@@ -7,7 +7,7 @@ import type {
   ToolConnectionTestAgent,
   ToolConnectionTestCallResult,
   ToolConnectionTestDecision,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { queryKeys } from "@/lib/queryKeys";
 import { TestPanel } from "@/pages/apps/app-detail/TestPanel";
 

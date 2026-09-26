@@ -229,7 +229,7 @@ let currentActor: Record<string, unknown> = {
   source: "local_implicit",
 };
 const routeOptions: Record<string, unknown> = {};
-const originalSecretsProviderEnv = process.env.PAPERCLIP_SECRETS_PROVIDER;
+const originalSecretsProviderEnv = process.env.GSAM_SECRETS_PROVIDER;
 
 // The routes open a transaction around environment writes and their binding
 // syncs. Service calls are mocked, so the executor never runs a real query —
@@ -263,9 +263,9 @@ function createApp(actor: Record<string, unknown>, options: Record<string, unkno
 describe("environment routes", () => {
   afterAll(async () => {
     if (originalSecretsProviderEnv === undefined) {
-      delete process.env.PAPERCLIP_SECRETS_PROVIDER;
+      delete process.env.GSAM_SECRETS_PROVIDER;
     } else {
-      process.env.PAPERCLIP_SECRETS_PROVIDER = originalSecretsProviderEnv;
+      process.env.GSAM_SECRETS_PROVIDER = originalSecretsProviderEnv;
     }
     if (!server) return;
     await new Promise<void>((resolve, reject) => {
@@ -348,7 +348,7 @@ describe("environment routes", () => {
     mockSecretService.replaceSecretRefsForInstanceTarget.mockResolvedValue([]);
     mockSecretService.remove.mockResolvedValue(null);
     mockSecretService.resolveSecretValueForEphemeralAccess.mockResolvedValue("resolved-provider-key");
-    delete process.env.PAPERCLIP_SECRETS_PROVIDER;
+    delete process.env.GSAM_SECRETS_PROVIDER;
     mockValidatePluginEnvironmentDriverConfig.mockReset();
     mockValidatePluginEnvironmentDriverConfig.mockImplementation(async ({ config }) => config);
     mockValidatePluginSandboxProviderConfig.mockReset();
@@ -506,10 +506,10 @@ describe("environment routes", () => {
     });
 
     beforeEach(() => {
-      process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN = "test-server-token";
+      process.env.GSAM_CLOUD_TENANT_SERVER_TOKEN = "test-server-token";
     });
     afterEach(() => {
-      delete process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN;
+      delete process.env.GSAM_CLOUD_TENANT_SERVER_TOKEN;
     });
 
     it("never echoes credential-shaped config keys, while tenant env vars round-trip", async () => {
@@ -816,7 +816,7 @@ describe("environment routes", () => {
       // managedByPaperclip is THE provisioner-owned slot row, adopted and
       // refreshed on every boot — clearing its markers would reclassify it
       // tenant-managed and let the next PATCH/DELETE bypass the write floor.
-      process.env.PAPERCLIP_MANAGED_CONFIG = MANAGED_CONFIG_WITH_SANDBOX_ENTRY;
+      process.env.GSAM_MANAGED_CONFIG = MANAGED_CONFIG_WITH_SANDBOX_ENTRY;
       try {
         mockEnvironmentService.getById.mockResolvedValue(createPlatformSandboxEnvironment());
         const app = createApp(ownerAdminActor);
@@ -829,14 +829,14 @@ describe("environment routes", () => {
         expect(res.body.details).toMatchObject({ code: "environment_platform_managed" });
         expect(mockEnvironmentService.update).not.toHaveBeenCalled();
       } finally {
-        delete process.env.PAPERCLIP_MANAGED_CONFIG;
+        delete process.env.GSAM_MANAGED_CONFIG;
       }
     });
 
     it("refuses the marker-clear patch on the sandbox slot row under the forced kubernetes execution mode", async () => {
-      // PAPERCLIP_EXECUTION_MODE=kubernetes is the other bootstrap path that
+      // GSAM_EXECUTION_MODE=kubernetes is the other bootstrap path that
       // owns (adopts and refreshes) the single marked sandbox row.
-      process.env.PAPERCLIP_EXECUTION_MODE = "kubernetes";
+      process.env.GSAM_EXECUTION_MODE = "kubernetes";
       try {
         mockEnvironmentService.getById.mockResolvedValue(createPlatformSandboxEnvironment());
         const app = createApp(ownerAdminActor);
@@ -849,7 +849,7 @@ describe("environment routes", () => {
         expect(res.body.details).toMatchObject({ code: "environment_platform_managed" });
         expect(mockEnvironmentService.update).not.toHaveBeenCalled();
       } finally {
-        delete process.env.PAPERCLIP_EXECUTION_MODE;
+        delete process.env.GSAM_EXECUTION_MODE;
       }
     });
 
@@ -1001,7 +1001,7 @@ describe("environment routes", () => {
     });
 
     it("accepts platform markers in client payloads on self-hosted instances", async () => {
-      delete process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN;
+      delete process.env.GSAM_CLOUD_TENANT_SERVER_TOKEN;
       const existing = {
         ...createPlatformSandboxEnvironment(),
         id: "env-tenant-1",
@@ -1045,7 +1045,7 @@ describe("environment routes", () => {
     });
 
     it("does not floor writes to platform-marked rows on self-hosted instances", async () => {
-      delete process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN;
+      delete process.env.GSAM_CLOUD_TENANT_SERVER_TOKEN;
       const existing = createPlatformSandboxEnvironment();
       mockEnvironmentService.getById.mockResolvedValue(existing);
       mockEnvironmentService.update.mockResolvedValue({ ...existing, name: "Renamed" });
@@ -1079,7 +1079,7 @@ describe("environment routes", () => {
     });
 
     it("does not floor platform-marked rows on self-hosted instances", async () => {
-      delete process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN;
+      delete process.env.GSAM_CLOUD_TENANT_SERVER_TOKEN;
       mockEnvironmentService.getById.mockResolvedValue(createPlatformSandboxEnvironment());
       const app = createApp({
         type: "board",
@@ -1642,7 +1642,7 @@ describe("environment routes", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe(
-      "Cannot delete this environment while it has a reusable sandbox lease. Remove the associated execution workspace or issue so Paperclip can destroy the sandbox, then retry.",
+      "Cannot delete this environment while it has a reusable sandbox lease. Remove the associated execution workspace or issue so GS Agentic Manager can destroy the sandbox, then retry.",
     );
     expect(res.body.details).toEqual({ deleteBlockedReasons: ["reusable_sandbox_lease"] });
     expect(mockEnvironmentService.removeIfDeletable).not.toHaveBeenCalled();
@@ -2044,7 +2044,7 @@ describe("environment routes", () => {
   });
 
   it("uses the configured provider for SSH private key secret materialization", async () => {
-    process.env.PAPERCLIP_SECRETS_PROVIDER = "aws_secrets_manager";
+    process.env.GSAM_SECRETS_PROVIDER = "aws_secrets_manager";
     const environment = {
       ...createEnvironment(),
       id: "env-ssh",
@@ -2428,7 +2428,7 @@ describe("environment routes", () => {
   });
 
   it("uses the configured provider for schema-driven sandbox secret fields", async () => {
-    process.env.PAPERCLIP_SECRETS_PROVIDER = "aws_secrets_manager";
+    process.env.GSAM_SECRETS_PROVIDER = "aws_secrets_manager";
     const environment = {
       ...createEnvironment(),
       id: "env-sandbox-secure-plugin",

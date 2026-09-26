@@ -147,7 +147,7 @@ async function terminateProcessGroup(pid: number) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return processGroupIsAlive(pid)
-    ? `Paperclip/Playwright process group ${pid} survived SIGKILL`
+    ? `GSAM/Playwright process group ${pid} survived SIGKILL`
     : null;
 }
 
@@ -669,23 +669,23 @@ async function runAttempt(input: {
     const childEnv: NodeJS.ProcessEnv = {
       ...buildRunnerE2EProcessEnvironment(process.env, executions),
       PATH: providerPath,
-      PAPERCLIP_RUNNER_E2E_EXECUTION_IDS: JSON.stringify(
+      GSAM_RUNNER_E2E_EXECUTION_IDS: JSON.stringify(
         executions.map((candidate) => candidate.id),
       ),
-      PAPERCLIP_RUNNER_E2E_ATTEMPT: String(attempt),
-      PAPERCLIP_RUNNER_E2E_PORT: String(port),
-      PAPERCLIP_RUNNER_E2E_TEMP_ROOT: temporaryRoot,
-      PAPERCLIP_RUNNER_E2E_PRIVATE_DIR: privateDir,
-      PAPERCLIP_RUNNER_E2E_WORKSPACE: workspace,
-      PAPERCLIP_RUNNER_E2E_SERVER_LOG: path.join(privateDir, "server.log"),
-      PAPERCLIP_RUNNER_BINARY: runnerBinary,
-      PAPERCLIP_RUNNER_REMOTE_BINARY_PATH:
+      GSAM_RUNNER_E2E_ATTEMPT: String(attempt),
+      GSAM_RUNNER_E2E_PORT: String(port),
+      GSAM_RUNNER_E2E_TEMP_ROOT: temporaryRoot,
+      GSAM_RUNNER_E2E_PRIVATE_DIR: privateDir,
+      GSAM_RUNNER_E2E_WORKSPACE: workspace,
+      GSAM_RUNNER_E2E_SERVER_LOG: path.join(privateDir, "server.log"),
+      GSAM_RUNNER_BINARY: runnerBinary,
+      GSAM_RUNNER_REMOTE_BINARY_PATH:
         resolvePaperclipRemoteRunnerBinaryForHarness(executions, runnerBinary),
       // Vite's optimized dependency cache embeds revision query strings. A
       // private per-attempt cache prevents an earlier cell or local rebuild
       // from producing `504 Outdated Optimize Dep` during browser bootstrap.
-      PAPERCLIP_VITE_CACHE_DIR: path.join(temporaryRoot, "vite-cache"),
-      PAPERCLIP_RUNNER_E2E_TEST_TIMEOUT_MS: String(
+      GSAM_VITE_CACHE_DIR: path.join(temporaryRoot, "vite-cache"),
+      GSAM_RUNNER_E2E_TEST_TIMEOUT_MS: String(
         Math.max(
           ...executions.map(
             (candidate) =>
@@ -693,12 +693,12 @@ async function runAttempt(input: {
           ),
         ) + 90_000,
       ),
-      PAPERCLIP_HOME: paperclipHome,
-      PAPERCLIP_INSTANCE_ID: instanceId,
-      PAPERCLIP_CONFIG: configPath,
-      PAPERCLIP_AGENT_JWT_SECRET: agentJwtSecret,
-      PAPERCLIP_DECISION_SIGNING_SECRET: decisionSigningSecret,
-      PAPERCLIP_TOOL_ACTION_SIGNING_SECRET: toolActionSigningSecret,
+      GSAM_HOME: paperclipHome,
+      GSAM_INSTANCE_ID: instanceId,
+      GSAM_CONFIG: configPath,
+      GSAM_AGENT_JWT_SECRET: agentJwtSecret,
+      GSAM_DECISION_SIGNING_SECRET: decisionSigningSecret,
+      GSAM_TOOL_ACTION_SIGNING_SECRET: toolActionSigningSecret,
       BETTER_AUTH_SECRET: betterAuthSecret,
     };
     // The database URLs are stripped here and again at the Playwright web-server
@@ -787,7 +787,7 @@ async function runAttempt(input: {
       try {
         const expectedEphemeralCredentials = new Set<string>();
         for (const [label, directory] of [
-          ["Paperclip home", paperclipHome],
+          ["GS Agentic Manager home", paperclipHome],
           ["workspace", workspace],
         ] as const) {
           while (true) {
@@ -797,12 +797,12 @@ async function runAttempt(input: {
               includeShapes: false,
               ignoreFile: (file) => expectedEphemeralCredentials.has(file),
               allowDisappearedFile: (file) =>
-                label === "Paperclip home" &&
+                label === "GS Agentic Manager home" &&
                 isEphemeralPostgresScanFile(paperclipHome, file),
             });
             if (!leak) break;
             const isManagedCodexRuntimeAuth =
-              label === "Paperclip home" &&
+              label === "GS Agentic Manager home" &&
               isEphemeralCodexRuntimeAuthFile(paperclipHome, leak.file);
             if (isManagedCodexRuntimeAuth) {
               const metadata = await lstat(leak.file);
@@ -1106,15 +1106,15 @@ async function main() {
   }
   if (
     executions.some((execution) => execution.environment.id === "daytona") &&
-    !isImmutableDaytonaImage(process.env.PAPERCLIP_E2E_DAYTONA_IMAGE)
+    !isImmutableDaytonaImage(process.env.GSAM_E2E_DAYTONA_IMAGE)
   ) {
     throw new Error(
-      "PAPERCLIP_E2E_DAYTONA_IMAGE must be an immutable image@sha256 digest for Daytona cells",
+      "GSAM_E2E_DAYTONA_IMAGE must be an immutable image@sha256 digest for Daytona cells",
     );
   }
 
   const campaignId = cleanId(
-    process.env.PAPERCLIP_E2E_CAMPAIGN_ID ??
+    process.env.GSAM_E2E_CAMPAIGN_ID ??
       `local-${new Date().toISOString().replace(/[:.]/g, "-")}`,
   );
   const requestedParallelism =

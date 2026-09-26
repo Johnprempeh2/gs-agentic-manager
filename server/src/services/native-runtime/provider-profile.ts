@@ -1,9 +1,9 @@
 import {
   isPaperclipRunnerProvider,
-  PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES,
+  GSAM_RUNNER_PERMISSION_CAPABILITIES,
   resolvePaperclipRunnerPermissionMode,
   type PaperclipRunnerProvider,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import {
   AGENTCORE_QUALIFIED_MODEL,
   CLAUDE_MANAGED_QUALIFIED_MODEL,
@@ -173,7 +173,7 @@ function assertPermissionMode(
   provider: PaperclipRunnerProvider,
   config: Record<string, unknown>,
 ): void {
-  const capability = PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES[provider];
+  const capability = GSAM_RUNNER_PERMISSION_CAPABILITIES[provider];
   if (!capability.configurable) return;
   const configured = config[capability.configKey];
   if (
@@ -183,7 +183,7 @@ function assertPermissionMode(
     if (provider === "codex") {
       throw new PaperclipRunnerProviderProfileError(
         "paperclip_runner_codex_permission_mode_unqualified",
-        "Paperclip Runner currently supports Codex only with codexPermissionMode set to never. Update the agent configuration before starting a new native run.",
+        "GS Agentic Manager Runner currently supports Codex only with codexPermissionMode set to never. Update the agent configuration before starting a new native run.",
       );
     }
     throw new PaperclipRunnerProviderProfileError(
@@ -296,7 +296,7 @@ export function assertAgentCoreProfileRecoveryBinding(input: {
 }
 
 /**
- * Resolve the immutable provider identity used for a fresh Paperclip Runner
+ * Resolve the immutable provider identity used for a fresh GS Agentic Manager Runner
  * selection. The persisted adapterConfig is the authority; runtimeConfig is
  * deliberately not consulted so model-profile or migration metadata cannot
  * silently switch the harness selected for a run.
@@ -309,7 +309,7 @@ export function resolvePaperclipRunnerProviderProfile(
   if (!isPaperclipRunnerProvider(candidate)) {
     throw new PaperclipRunnerProviderProfileError(
       "paperclip_runner_provider_unsupported",
-      "Paperclip Runner provider must be Codex, OpenCode, Claude Managed, AWS AgentCore, or ACPX.",
+      "GS Agentic Manager Runner provider must be Codex, OpenCode, Claude Managed, AWS AgentCore, or ACPX.",
     );
   }
 
@@ -327,7 +327,7 @@ export function resolvePaperclipRunnerProviderProfile(
     if (!model || !model.includes("/") || model.endsWith("/")) {
       throw new PaperclipRunnerProviderProfileError(
         "paperclip_runner_opencode_model_invalid",
-        "Paperclip Runner OpenCode requires model in provider/model form.",
+        "GS Agentic Manager Runner OpenCode requires model in provider/model form.",
       );
     }
     return {
@@ -342,13 +342,13 @@ export function resolvePaperclipRunnerProviderProfile(
     if (!managedProfileId) {
       throw new PaperclipRunnerProviderProfileError(
         "paperclip_runner_claude_managed_profile_required",
-        "Paperclip Runner Claude Managed requires a company managed-agent profile.",
+        "GS Agentic Manager Runner Claude Managed requires a company managed-agent profile.",
       );
     }
     if (config.managedAgentsRetentionAcknowledged !== true) {
       throw new PaperclipRunnerProviderProfileError(
         "paperclip_runner_claude_managed_retention_required",
-        "Paperclip Runner Claude Managed requires acknowledgement of stateful beta retention.",
+        "GS Agentic Manager Runner Claude Managed requires acknowledgement of stateful beta retention.",
       );
     }
     if (model !== null && model !== CLAUDE_MANAGED_QUALIFIED_MODEL) {
@@ -365,7 +365,7 @@ export function resolvePaperclipRunnerProviderProfile(
       maxSessionListCostUsd: positiveNumberOrNull(
         config.maxSessionListCostUsd,
         "paperclip_runner_claude_managed_spend_cap_invalid",
-        "Paperclip Runner Claude Managed requires a positive session spend ceiling when overridden.",
+        "GS Agentic Manager Runner Claude Managed requires a positive session spend ceiling when overridden.",
       ),
     };
   }
@@ -375,13 +375,13 @@ export function resolvePaperclipRunnerProviderProfile(
     if (!agentCoreProfileId) {
       throw new PaperclipRunnerProviderProfileError(
         "paperclip_runner_aws_agentcore_profile_required",
-        "Paperclip Runner AWS AgentCore requires a company remote-agent profile.",
+        "GS Agentic Manager Runner AWS AgentCore requires a company remote-agent profile.",
       );
     }
     if (config.agentCoreRetentionAcknowledged !== true) {
       throw new PaperclipRunnerProviderProfileError(
         "paperclip_runner_aws_agentcore_retention_required",
-        "Paperclip Runner AWS AgentCore requires acknowledgement of 90-day Memory retention.",
+        "GS Agentic Manager Runner AWS AgentCore requires acknowledgement of 90-day Memory retention.",
       );
     }
     if (model !== null && model !== AGENTCORE_QUALIFIED_MODEL) {
@@ -398,7 +398,7 @@ export function resolvePaperclipRunnerProviderProfile(
       maxEstimatedSessionCostUsd: positiveNumberOrNull(
         config.maxEstimatedSessionCostUsd,
         "paperclip_runner_aws_agentcore_spend_cap_invalid",
-        "Paperclip Runner AWS AgentCore requires a positive estimated session spend ceiling when overridden.",
+        "GS Agentic Manager Runner AWS AgentCore requires a positive estimated session spend ceiling when overridden.",
       ),
     };
   }
@@ -407,14 +407,14 @@ export function resolvePaperclipRunnerProviderProfile(
   if (acpxAgent !== "claude" && acpxAgent !== "codex") {
     throw new PaperclipRunnerProviderProfileError(
       "paperclip_runner_acpx_agent_unavailable",
-      "Paperclip Runner ACPX requires the qualified Claude or Codex agent profile; Pi is not available.",
+      "GS Agentic Manager Runner ACPX requires the qualified Claude or Codex agent profile; Pi is not available.",
     );
   }
   const qualifiedModel = QUALIFIED_ACPX_RUNNER_MODELS[acpxAgent];
   if (acpxAgent === "codex" && model !== qualifiedModel) {
     throw new PaperclipRunnerProviderProfileError(
       "paperclip_runner_acpx_model_unqualified",
-      `Paperclip Runner ACPX ${acpxAgent} requires exact model ${qualifiedModel}.`,
+      `GS Agentic Manager Runner ACPX ${acpxAgent} requires exact model ${qualifiedModel}.`,
     );
   }
   return {
@@ -455,7 +455,7 @@ export function resolvePaperclipRunnerNativeProviderInput(input: {
   if (profile.backend !== input.backend) {
     throw new PaperclipRunnerProviderProfileError(
       "paperclip_runner_provider_changed",
-      "Paperclip Runner provider changed after this run selected its native backend.",
+      "GS Agentic Manager Runner provider changed after this run selected its native backend.",
     );
   }
   if (profile.provider === "opencode") {

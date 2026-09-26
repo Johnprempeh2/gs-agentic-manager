@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { SLACK_TOOLS, type SlackSearchStatus } from "@paperclipai/shared";
+import { SLACK_TOOLS, type SlackSearchStatus } from "@greatstone/shared";
 import {
   SlackCapabilitiesView,
   SlackSearchView,

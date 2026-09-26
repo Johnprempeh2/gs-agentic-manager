@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, Project } from "@paperclipai/shared";
+import type { Issue, Project } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   IssuesList,
@@ -750,7 +750,7 @@ describe("IssuesList", () => {
     });
     const project = {
       id: "project-1",
-      name: "Paperclip App",
+      name: "GS Agentic Manager App",
       color: null,
       workspaces: [{ id: "project-workspace-1", name: "Primary workspace" }],
       primaryWorkspace: { id: "project-workspace-1" },
@@ -2186,7 +2186,7 @@ describe("IssuesList", () => {
         separator.querySelectorAll("[data-date-group-rule]").length === 2
       ))).toBe(true);
       expect(separators.every((separator) => (
-        separator.querySelector("[data-date-group-label]")?.classList.contains("text-muted-foreground/70")
+        separator.querySelector("[data-date-group-label]")?.classList.contains("text-subtle-foreground")
       ))).toBe(true);
     });
 

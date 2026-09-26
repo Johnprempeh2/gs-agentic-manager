@@ -9,8 +9,8 @@ DATA_DIR="${DATA_DIR:-$REPO_ROOT/data/docker-onboard-smoke}"
 HOST_UID="${HOST_UID:-$(id -u)}"
 SMOKE_DETACH="${SMOKE_DETACH:-false}"
 SMOKE_METADATA_FILE="${SMOKE_METADATA_FILE:-}"
-PAPERCLIP_DEPLOYMENT_MODE="${PAPERCLIP_DEPLOYMENT_MODE:-authenticated}"
-PAPERCLIP_DEPLOYMENT_EXPOSURE="${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}"
+GSAM_DEPLOYMENT_MODE="${GSAM_DEPLOYMENT_MODE:-authenticated}"
+GSAM_DEPLOYMENT_EXPOSURE="${GSAM_DEPLOYMENT_EXPOSURE:-private}"
 # Serve api.anthropic.com from a mock inside the harness. Connecting a model
 # is live-verified against provider endpoints that are deliberately hardcoded
 # in the product (see validateAiApiKey), so a smoke that finishes onboarding
@@ -21,10 +21,10 @@ PAPERCLIP_DEPLOYMENT_EXPOSURE="${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}"
 # proves is that the artifact can finish onboarding when the provider accepts
 # the credential — the provider's actual verdict is not this artifact's code.
 SMOKE_PROVIDER_MOCK="${SMOKE_PROVIDER_MOCK:-true}"
-PAPERCLIP_PUBLIC_URL="${PAPERCLIP_PUBLIC_URL:-http://localhost:${HOST_PORT}}"
+GSAM_PUBLIC_URL="${GSAM_PUBLIC_URL:-http://localhost:${HOST_PORT}}"
 SMOKE_AUTO_BOOTSTRAP="${SMOKE_AUTO_BOOTSTRAP:-true}"
 # Seconds to wait for /api/health after the container starts. The container
-# cold-installs paperclipai from npm and initializes embedded postgres before
+# cold-installs gsam from npm and initializes embedded postgres before
 # it can serve health, so CI callers with no warm caches need far more than
 # the local default.
 SMOKE_READY_TIMEOUT_SECONDS="${SMOKE_READY_TIMEOUT_SECONDS:-90}"
@@ -137,7 +137,7 @@ write_metadata_file() {
   fi
   mkdir -p "$(dirname "$SMOKE_METADATA_FILE")"
   {
-    printf 'SMOKE_BASE_URL=%q\n' "$PAPERCLIP_PUBLIC_URL"
+    printf 'SMOKE_BASE_URL=%q\n' "$GSAM_PUBLIC_URL"
     printf 'SMOKE_ADMIN_EMAIL=%q\n' "$SMOKE_ADMIN_EMAIL"
     printf 'SMOKE_ADMIN_PASSWORD=%q\n' "$SMOKE_ADMIN_PASSWORD"
     printf 'SMOKE_CONTAINER_NAME=%q\n' "$CONTAINER_NAME"
@@ -153,12 +153,12 @@ generate_bootstrap_invite_url() {
   local bootstrap_status
   if bootstrap_output="$(
     docker exec \
-      -e PAPERCLIP_DEPLOYMENT_MODE="$PAPERCLIP_DEPLOYMENT_MODE" \
-      -e PAPERCLIP_DEPLOYMENT_EXPOSURE="$PAPERCLIP_DEPLOYMENT_EXPOSURE" \
-      -e PAPERCLIP_PUBLIC_URL="$PAPERCLIP_PUBLIC_URL" \
-      -e PAPERCLIP_HOME="/paperclip" \
+      -e GSAM_DEPLOYMENT_MODE="$GSAM_DEPLOYMENT_MODE" \
+      -e GSAM_DEPLOYMENT_EXPOSURE="$GSAM_DEPLOYMENT_EXPOSURE" \
+      -e GSAM_PUBLIC_URL="$GSAM_PUBLIC_URL" \
+      -e GSAM_HOME="/paperclip" \
       "$CONTAINER_NAME" bash -lc \
-      'timeout 20s npx --yes "paperclipai@${PAPERCLIPAI_VERSION}" auth bootstrap-ceo --data-dir "$PAPERCLIP_HOME" --base-url "$PAPERCLIP_PUBLIC_URL"' \
+      'timeout 20s npx --yes "gsam@${PAPERCLIPAI_VERSION}" auth bootstrap-ceo --data-dir "$GSAM_HOME" --base-url "$GSAM_PUBLIC_URL"' \
       2>&1
   )"; then
     bootstrap_status=0
@@ -202,7 +202,7 @@ post_json_with_cookies() {
     -c "$COOKIE_JAR" \
     -b "$COOKIE_JAR" \
     -H "Content-Type: application/json" \
-    -H "Origin: $PAPERCLIP_PUBLIC_URL" \
+    -H "Origin: $GSAM_PUBLIC_URL" \
     -X POST \
     "$url" \
     --data "$body"
@@ -221,7 +221,7 @@ sign_up_or_sign_in() {
   local signup_response="$TMP_DIR/signup.json"
   local signup_status
   signup_status="$(post_json_with_cookies \
-    "$PAPERCLIP_PUBLIC_URL/api/auth/sign-up/email" \
+    "$GSAM_PUBLIC_URL/api/auth/sign-up/email" \
     "{\"name\":\"$SMOKE_ADMIN_NAME\",\"email\":\"$SMOKE_ADMIN_EMAIL\",\"password\":\"$SMOKE_ADMIN_PASSWORD\"}" \
     "$signup_response")"
   if [[ "$signup_status" =~ ^2 ]]; then
@@ -232,7 +232,7 @@ sign_up_or_sign_in() {
   local signin_response="$TMP_DIR/signin.json"
   local signin_status
   signin_status="$(post_json_with_cookies \
-    "$PAPERCLIP_PUBLIC_URL/api/auth/sign-in/email" \
+    "$GSAM_PUBLIC_URL/api/auth/sign-in/email" \
     "{\"email\":\"$SMOKE_ADMIN_EMAIL\",\"password\":\"$SMOKE_ADMIN_PASSWORD\"}" \
     "$signin_response")"
   if [[ "$signin_status" =~ ^2 ]]; then
@@ -251,7 +251,7 @@ sign_up_or_sign_in() {
 }
 
 auto_bootstrap_authenticated_smoke() {
-  local health_url="$PAPERCLIP_PUBLIC_URL/api/health"
+  local health_url="$GSAM_PUBLIC_URL/api/health"
   local health_json
   health_json="$(curl -fsS "$health_url")"
   if [[ "$health_json" != *'"deploymentMode":"authenticated"'* ]]; then
@@ -271,7 +271,7 @@ auto_bootstrap_authenticated_smoke() {
     local accept_response="$TMP_DIR/accept.json"
     local accept_status
     accept_status="$(post_json_with_cookies \
-      "$PAPERCLIP_PUBLIC_URL/api/invites/$invite_token/accept" \
+      "$GSAM_PUBLIC_URL/api/invites/$invite_token/accept" \
       '{"requestType":"human"}' \
       "$accept_response")"
     if [[ ! "$accept_status" =~ ^2 ]]; then
@@ -284,7 +284,7 @@ auto_bootstrap_authenticated_smoke() {
   fi
 
   local session_json
-  session_json="$(get_with_cookies "$PAPERCLIP_PUBLIC_URL/api/auth/get-session")"
+  session_json="$(get_with_cookies "$GSAM_PUBLIC_URL/api/auth/get-session")"
   if [[ "$session_json" != *'"userId"'* ]]; then
     echo "Smoke bootstrap failed: no authenticated session after bootstrap" >&2
     echo "$session_json" >&2
@@ -292,7 +292,7 @@ auto_bootstrap_authenticated_smoke() {
   fi
 
   local companies_json
-  companies_json="$(get_with_cookies "$PAPERCLIP_PUBLIC_URL/api/companies")"
+  companies_json="$(get_with_cookies "$GSAM_PUBLIC_URL/api/companies")"
   if [[ "${companies_json:0:1}" != "[" ]]; then
     echo "Smoke bootstrap failed: board companies endpoint did not return JSON array" >&2
     echo "$companies_json" >&2
@@ -394,13 +394,13 @@ fi
 
 echo "==> Running onboard smoke container"
 echo "    UI should be reachable at: http://localhost:$HOST_PORT"
-echo "    Public URL: $PAPERCLIP_PUBLIC_URL"
+echo "    Public URL: $GSAM_PUBLIC_URL"
 echo "    Smoke auto-bootstrap: $SMOKE_AUTO_BOOTSTRAP"
 echo "    Detached mode: $SMOKE_DETACH"
 echo "    Data dir: $DATA_DIR"
 echo "    Container name: $CONTAINER_NAME"
 echo "    Container log dump: $SMOKE_LOG_FILE"
-echo "    Deployment: $PAPERCLIP_DEPLOYMENT_MODE/$PAPERCLIP_DEPLOYMENT_EXPOSURE"
+echo "    Deployment: $GSAM_DEPLOYMENT_MODE/$GSAM_DEPLOYMENT_EXPOSURE"
 if [[ "$SMOKE_DETACH" != "true" ]]; then
   echo "    Live output: onboard banner and server logs stream in this terminal (Ctrl+C to stop)"
 fi
@@ -416,9 +416,9 @@ docker run -d \
   -p "$HOST_PORT:3100" \
   -e HOST=0.0.0.0 \
   -e PORT=3100 \
-  -e PAPERCLIP_DEPLOYMENT_MODE="$PAPERCLIP_DEPLOYMENT_MODE" \
-  -e PAPERCLIP_DEPLOYMENT_EXPOSURE="$PAPERCLIP_DEPLOYMENT_EXPOSURE" \
-  -e PAPERCLIP_PUBLIC_URL="$PAPERCLIP_PUBLIC_URL" \
+  -e GSAM_DEPLOYMENT_MODE="$GSAM_DEPLOYMENT_MODE" \
+  -e GSAM_DEPLOYMENT_EXPOSURE="$GSAM_DEPLOYMENT_EXPOSURE" \
+  -e GSAM_PUBLIC_URL="$GSAM_PUBLIC_URL" \
   -v "$DATA_DIR:/paperclip" \
   ${PROVIDER_MOCK_RUN_ARGS[@]+"${PROVIDER_MOCK_RUN_ARGS[@]}"} \
   "$IMAGE_NAME" >/dev/null
@@ -431,12 +431,12 @@ fi
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/paperclip-onboard-smoke.XXXXXX")"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 
-if ! wait_for_http "$PAPERCLIP_PUBLIC_URL/api/health" "$SMOKE_READY_TIMEOUT_SECONDS" 1; then
-  echo "Smoke bootstrap failed: server did not become ready at $PAPERCLIP_PUBLIC_URL/api/health" >&2
+if ! wait_for_http "$GSAM_PUBLIC_URL/api/health" "$SMOKE_READY_TIMEOUT_SECONDS" 1; then
+  echo "Smoke bootstrap failed: server did not become ready at $GSAM_PUBLIC_URL/api/health" >&2
   exit 1
 fi
 
-if [[ "$SMOKE_AUTO_BOOTSTRAP" == "true" && "$PAPERCLIP_DEPLOYMENT_MODE" == "authenticated" ]]; then
+if [[ "$SMOKE_AUTO_BOOTSTRAP" == "true" && "$GSAM_DEPLOYMENT_MODE" == "authenticated" ]]; then
   auto_bootstrap_authenticated_smoke
 fi
 
@@ -445,7 +445,7 @@ write_metadata_file
 if [[ "$SMOKE_DETACH" == "true" ]]; then
   PRESERVE_CONTAINER_ON_EXIT="true"
   echo "==> Smoke container ready for automation"
-  echo "    Smoke base URL: $PAPERCLIP_PUBLIC_URL"
+  echo "    Smoke base URL: $GSAM_PUBLIC_URL"
   echo "    Smoke admin credentials: $SMOKE_ADMIN_EMAIL / $SMOKE_ADMIN_PASSWORD"
   if [[ -n "$SMOKE_METADATA_FILE" ]]; then
     echo "    Smoke metadata file: $SMOKE_METADATA_FILE"

@@ -27,8 +27,8 @@ export const callApiAction = {
     "legacyAliases": []
   },
   "documentation": {
-    "title": "Call the Paperclip API",
-    "description": "Fallback only: call a discovered Paperclip API operation when dedicated tools lack the required operation or parameters. Uses your existing permissions. Prefer dedicated tools; never bypass a denial or runner lifecycle tool.",
+    "title": "Call the GS Agentic Manager API",
+    "description": "Fallback only: call a discovered GS Agentic Manager API operation when dedicated tools lack the required operation or parameters. Uses your existing permissions. Prefer dedicated tools; never bypass a denial or runner lifecycle tool.",
     "note": "Production HTTP fallback; does not grant privileges or replace dedicated tools."
   },
   "examples": {
@@ -50,8 +50,8 @@ export const callApiAction = {
       "schema": "paperclip.semantic-tool.v1",
       "operationId": "call_api",
       "version": 1,
-      "title": "Call the Paperclip API",
-      "description": "Fallback only: call a discovered Paperclip API operation when dedicated tools lack the required operation or parameters. Uses your existing permissions. Prefer dedicated tools; never bypass a denial or runner lifecycle tool.",
+      "title": "Call the GS Agentic Manager API",
+      "description": "Fallback only: call a discovered GS Agentic Manager API operation when dedicated tools lack the required operation or parameters. Uses your existing permissions. Prefer dedicated tools; never bypass a denial or runner lifecycle tool.",
       "exposure": "optional",
       "requiredClaims": [
         "api:call"

@@ -5,7 +5,7 @@ import type {
   EnvSecretRefBinding,
   SecretProposalView,
   SecretVersionSelector,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { cn } from "../lib/utils";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -500,7 +500,7 @@ export function AgentSecretAccessEditor({
         </button>
       </div>
 
-      <p className="text-(length:--text-micro) text-muted-foreground/70">
+      <p className="text-(length:--text-micro) text-subtle-foreground">
         {deliveryModeDescription("api")} The agent reads them by alias through <code>GET /agents/me/secrets</code>.
       </p>
     </div>

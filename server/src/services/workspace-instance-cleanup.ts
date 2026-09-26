@@ -37,14 +37,14 @@ export function deriveWorktreeInstanceId(workspacePath: string): string {
  * unreadable pointer must fail closed rather than fall back to a guess.
  */
 export function readWorktreeInstanceId(workspacePath: string): string | null {
-  const envPath = path.join(path.resolve(workspacePath), ".paperclip", ".env");
+  const envPath = path.join(path.resolve(workspacePath), ".gsam", ".env");
   let contents: string;
   try {
     contents = readFileSync(envPath, "utf8");
   } catch {
     return null;
   }
-  const instanceId = parseEnvContents(contents).PAPERCLIP_INSTANCE_ID?.trim();
+  const instanceId = parseEnvContents(contents).GSAM_INSTANCE_ID?.trim();
   if (!instanceId || !INSTANCE_ID_RE.test(instanceId)) return null;
   return instanceId;
 }
@@ -184,7 +184,7 @@ export async function stopEmbeddedPostgresIfRunning(
 }
 
 export async function readWorktreeInstancePointer(workspacePath: string): Promise<WorktreeInstancePointer | null> {
-  const envPath = path.join(workspacePath, ".paperclip", ".env");
+  const envPath = path.join(workspacePath, ".gsam", ".env");
   try {
     return {
       envPath,
@@ -200,15 +200,15 @@ function resolveConfiguredInstanceRoot(pointer: WorktreeInstancePointer, expecte
   | { instanceRoot: string; instanceId: string }
   | { warning: string; instanceRoot: string | null; refusalReason: string | null } {
   const env = parseEnvContents(pointer.envContents);
-  const configuredHome = env.PAPERCLIP_HOME?.trim();
-  const instanceId = env.PAPERCLIP_INSTANCE_ID?.trim();
+  const configuredHome = env.GSAM_HOME?.trim();
+  const instanceId = env.GSAM_INSTANCE_ID?.trim();
   if (!configuredHome || !instanceId) {
     return { warning: "", instanceRoot: null, refusalReason: null };
   }
   if (!INSTANCE_ID_RE.test(instanceId)) {
     return {
       instanceRoot: null,
-      warning: `Refusing worktree instance cleanup from ${pointer.envPath}: PAPERCLIP_INSTANCE_ID is not a safe path segment.`,
+      warning: `Refusing worktree instance cleanup from ${pointer.envPath}: GSAM_INSTANCE_ID is not a safe path segment.`,
       refusalReason: "unsafe_instance_id",
     };
   }
@@ -217,7 +217,7 @@ function resolveConfiguredInstanceRoot(pointer: WorktreeInstancePointer, expecte
   if (!path.isAbsolute(expandedHome)) {
     return {
       instanceRoot: null,
-      warning: `Refusing worktree instance cleanup from ${pointer.envPath}: PAPERCLIP_HOME is not absolute.`,
+      warning: `Refusing worktree instance cleanup from ${pointer.envPath}: GSAM_HOME is not absolute.`,
       refusalReason: "non_absolute_home",
     };
   }
@@ -225,7 +225,7 @@ function resolveConfiguredInstanceRoot(pointer: WorktreeInstancePointer, expecte
   if (expectedInstanceId && instanceId !== expectedInstanceId) {
     return {
       instanceRoot,
-      warning: `Refusing worktree instance cleanup from ${pointer.envPath}: PAPERCLIP_INSTANCE_ID "${instanceId}" does not match the expected workspace instance "${expectedInstanceId}".`,
+      warning: `Refusing worktree instance cleanup from ${pointer.envPath}: GSAM_INSTANCE_ID "${instanceId}" does not match the expected workspace instance "${expectedInstanceId}".`,
       refusalReason: "instance_id_mismatch",
     };
   }
@@ -236,7 +236,7 @@ function resolveManagedInstancesDir(worktreesDir?: string): string {
   const managedWorktreesDir = path.resolve(
     expandHomePrefix(
       worktreesDir?.trim()
-      || process.env.PAPERCLIP_WORKTREES_DIR?.trim()
+      || process.env.GSAM_WORKTREES_DIR?.trim()
       || path.join(os.homedir(), ".paperclip-worktrees"),
     ),
   );

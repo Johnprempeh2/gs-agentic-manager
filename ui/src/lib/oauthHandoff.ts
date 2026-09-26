@@ -1,4 +1,4 @@
-import type { ToolOAuthStartResult } from "@paperclipai/shared";
+import type { ToolOAuthStartResult } from "@greatstone/shared";
 import { resolveAuthorizationTarget } from "./authorizationUrl";
 
 const CLOUD_HANDOFF_PATH = "/cloud/connections/handoff";

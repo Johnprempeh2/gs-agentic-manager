@@ -5,8 +5,8 @@ import {
   issueThreadInteractions,
   nativeRunFinalizations,
   type Db,
-} from "@paperclipai/db";
-import type { ExecutionProjection } from "@paperclipai/shared";
+} from "@greatstone/db";
+import type { ExecutionProjection } from "@greatstone/shared";
 import { EXECUTION_CONTROL_DEADLINE_MS } from "./execution-control-deadline.js";
 import { executionFailureRetryCount } from "./execution-recovery-attempt.js";
 const text = (v: unknown) => (typeof v === "string" ? v : null);

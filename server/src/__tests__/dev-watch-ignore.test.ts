@@ -8,7 +8,7 @@ describe("resolveServerDevWatchIgnorePaths", () => {
   it("includes both the worktree UI paths and their real shared targets", () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-dev-watch-"));
     const sharedUiRoot = path.join(tempRoot, "shared-ui");
-    const worktreeRoot = path.join(tempRoot, "repo", ".paperclip", "worktrees", "PAP-884");
+    const worktreeRoot = path.join(tempRoot, "repo", ".gsam", "worktrees", "PAP-884");
     const serverRoot = path.join(worktreeRoot, "server");
     const worktreeUiRoot = path.join(worktreeRoot, "ui");
 
@@ -36,7 +36,7 @@ describe("resolveServerDevWatchIgnorePaths", () => {
     expect(ignorePaths).toContain(fs.realpathSync(path.join(sharedUiRoot, ".vite")));
     expect(ignorePaths).toContain(path.join(worktreeUiRoot, "dist"));
     expect(ignorePaths).toContain(fs.realpathSync(path.join(sharedUiRoot, "dist")));
-    const sharedWorktreesRoot = path.join(tempRoot, "repo", ".paperclip", "worktrees");
+    const sharedWorktreesRoot = path.join(tempRoot, "repo", ".gsam", "worktrees");
     expect(ignorePaths).toContain(sharedWorktreesRoot);
     expect(ignorePaths).toContain(`${sharedWorktreesRoot.replaceAll(path.sep, "/")}/**`);
     expect(ignorePaths).toContain("**/{node_modules,bower_components,vendor}/**");

@@ -12,8 +12,8 @@ import {
   pluginDatabaseNamespaces,
   pluginMigrations,
   plugins,
-} from "@paperclipai/db";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+} from "@greatstone/db";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -161,8 +161,8 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
       ANTHROPIC_API_KEY: "anthropic-token",
       OPENAI_API_KEY: "openai-token",
     });
@@ -181,8 +181,8 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
       KUBERNETES_SERVICE_HOST: "10.0.0.1",
       KUBERNETES_SERVICE_PORT: "443",
     });
@@ -198,17 +198,17 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
     });
   });
 
   it.each([
-    { packagePath: null, packageName: "@paperclipai/plugin-createos", driverKey: "createos", allowed: true },
-    { packagePath: "/app/packages/plugins/sandbox-providers/createos", packageName: "@paperclipai/plugin-createos", driverKey: "createos", allowed: true },
-    { packagePath: "/home/operator/plugins/fake-createos", packageName: "@paperclipai/plugin-createos", driverKey: "createos", allowed: false },
+    { packagePath: null, packageName: "@greatstone/plugin-createos", driverKey: "createos", allowed: true },
+    { packagePath: "/app/packages/plugins/sandbox-providers/createos", packageName: "@greatstone/plugin-createos", driverKey: "createos", allowed: true },
+    { packagePath: "/home/operator/plugins/fake-createos", packageName: "@greatstone/plugin-createos", driverKey: "createos", allowed: false },
     { packagePath: null, packageName: "@acme/plugin-createos", driverKey: "createos", allowed: false },
-    { packagePath: null, packageName: "@paperclipai/plugin-createos", driverKey: "daytona", allowed: false },
+    { packagePath: null, packageName: "@greatstone/plugin-createos", driverKey: "daytona", allowed: false },
   ])("confines the CreateOS fallback credential to its trusted worker: $packageName / $packagePath / $driverKey", ({ allowed, driverKey, ...installation }) => {
     const env = buildPluginWorkerEnv({
       ...installation,
@@ -221,8 +221,8 @@ describe("buildPluginWorkerEnv", () => {
       processEnv: { CREATEOS_API_KEY: "createos-token", DAYTONA_API_KEY: "daytona-token" },
     });
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
       ...(allowed ? { CREATEOS_API_KEY: "createos-token" } : {}),
     });
   });
@@ -233,7 +233,7 @@ describe("buildPluginWorkerEnv", () => {
         capabilities: ["environment.drivers.register"],
         environmentDrivers: [{ driverKey: "daytona" }],
       },
-      packageName: "@paperclipai/plugin-daytona",
+      packageName: "@greatstone/plugin-daytona",
       packagePath: null,
       instanceInfo,
       processEnv: {
@@ -244,8 +244,8 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
       DAYTONA_API_KEY: "daytona-token",
     });
   });
@@ -256,7 +256,7 @@ describe("buildPluginWorkerEnv", () => {
         capabilities: ["environment.drivers.register"],
         environmentDrivers: [{ driverKey: "daytona" }],
       },
-      packageName: "@paperclipai/plugin-daytona",
+      packageName: "@greatstone/plugin-daytona",
       packagePath: "/app/packages/plugins/sandbox-providers/daytona",
       trustedLocalPluginRoots: ["/app/packages/plugins"],
       instanceInfo,
@@ -266,8 +266,8 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
       DAYTONA_API_KEY: "daytona-token",
     });
   });
@@ -278,8 +278,8 @@ describe("buildPluginWorkerEnv", () => {
         capabilities: ["environment.drivers.register"],
         environmentDrivers: [{ driverKey: "daytona" }],
       },
-      packageName: "@paperclipai/plugin-daytona",
-      packagePath: "/home/operator/.paperclip/plugins/fake-daytona",
+      packageName: "@greatstone/plugin-daytona",
+      packagePath: "/home/operator/.gsam/plugins/fake-daytona",
       trustedLocalPluginRoots: ["/app/packages/plugins"],
       instanceInfo,
       processEnv: {
@@ -288,8 +288,8 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
     });
   });
 
@@ -307,8 +307,8 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
     });
   });
 
@@ -318,7 +318,7 @@ describe("buildPluginWorkerEnv", () => {
         capabilities: ["environment.drivers.register"],
         environmentDrivers: [{ driverKey: "kubernetes" }],
       },
-      packageName: "@paperclipai/plugin-daytona",
+      packageName: "@greatstone/plugin-daytona",
       instanceInfo,
       processEnv: {
         DAYTONA_API_KEY: "daytona-token",
@@ -326,8 +326,8 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+      GSAM_DEPLOYMENT_MODE: "authenticated",
+      GSAM_DEPLOYMENT_EXPOSURE: "public",
     });
   });
 });
@@ -378,7 +378,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
       version: "0.1.0",
       displayName: "LLM Wiki",
       description: "Local-file LLM Wiki plugin.",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation", "ui"],
       capabilities: [
         "database.namespace.migrate",
@@ -442,7 +442,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
       version: "1.0.0",
       displayName: "DB Test",
       description: "Exercises restricted plugin database access.",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["automation"],
       capabilities: [
         "database.namespace.migrate",
@@ -555,7 +555,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
     const issueId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: "TST",
       requireBoardApprovalForNewAgents: false,
     });
@@ -745,8 +745,8 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
       expect.objectContaining({
         databaseNamespace: namespace,
         env: {
-          PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-          PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
+          GSAM_DEPLOYMENT_MODE: "authenticated",
+          GSAM_DEPLOYMENT_EXPOSURE: "public",
         },
         manifest: expect.objectContaining({
           database: expect.objectContaining({ coreReadTables: ["companies"] }),

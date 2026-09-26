@@ -1,7 +1,7 @@
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { and, eq, sql } from "drizzle-orm";
-import { chatConversations, issues, type Db } from "@paperclipai/db";
+import { chatConversations, issues, type Db } from "@greatstone/db";
 import { resolvePaperclipInstanceRoot } from "../../home-paths.js";
 
 export type NativeChatWorkspaceScope = {

@@ -3,17 +3,17 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
-import { heartbeatRuns, type Db } from "@paperclipai/db";
-import type { PaperclipSkillEntry } from "@paperclipai/adapter-utils/server-utils";
-import { isToolConnectionAttentionHealth } from "@paperclipai/shared";
+import { heartbeatRuns, type Db } from "@greatstone/db";
+import type { PaperclipSkillEntry } from "@greatstone/adapter-utils/server-utils";
+import { isToolConnectionAttentionHealth } from "@greatstone/shared";
 import {
-  PAPERCLIP_OPERATIONAL_SKILL_KEY,
+  GSAM_OPERATIONAL_SKILL_KEY,
   resolvePaperclipDesiredSkillNames,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 import {
   NATIVE_RUNTIME_ASSET_SCHEMA,
-  PAPERCLIP_EXECUTION_PROMPT,
-  PAPERCLIP_EXECUTION_PROMPT_REVISION,
+  GSAM_EXECUTION_PROMPT,
+  GSAM_EXECUTION_PROMPT_REVISION,
   canonicalNativeRuntimeContextDigest,
   nativeRuntimePromptDigest,
   parseNativeRuntimeContext,
@@ -155,7 +155,7 @@ async function materializeInstructionBundle(agent: RuntimeAgent) {
 
 async function materializeSelectedSkills(runtimeConfig: Record<string, unknown>, entries: PaperclipSkillEntry[], omitLegacy: boolean) {
   const desiredKeys = resolvePaperclipDesiredSkillNames(runtimeConfig, entries).filter(
-    (key) => !omitLegacy || key !== PAPERCLIP_OPERATIONAL_SKILL_KEY,
+    (key) => !omitLegacy || key !== GSAM_OPERATIONAL_SKILL_KEY,
   );
   const byKey = new Map(entries.map((entry) => [entry.key, entry]));
   return Promise.all(desiredKeys.sort().map(async (key) => {
@@ -228,6 +228,6 @@ export async function buildNativeRuntimeContext(input: { db: Db; agent: RuntimeA
     materializeSelectedSkills(input.runtimeConfig, input.runtimeSkillEntries, input.agent.adapterType === "paperclip_runner"),
     resolveNativeRuntimeMcpSnapshot({ db: input.db, agent: input.agent, runId: input.runId }),
   ]);
-  const snapshot = { prompt: { revision: PAPERCLIP_EXECUTION_PROMPT_REVISION, text: PAPERCLIP_EXECUTION_PROMPT, digest: nativeRuntimePromptDigest() }, instructions, skills, mcp };
+  const snapshot = { prompt: { revision: GSAM_EXECUTION_PROMPT_REVISION, text: GSAM_EXECUTION_PROMPT, digest: nativeRuntimePromptDigest() }, instructions, skills, mcp };
   return parseNativeRuntimeContext({ ...snapshot, aggregateDigest: canonicalNativeRuntimeContextDigest(snapshot) });
 }

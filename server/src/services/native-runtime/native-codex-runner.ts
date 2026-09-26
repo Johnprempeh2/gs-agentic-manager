@@ -5,9 +5,9 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { and, eq } from "drizzle-orm";
 
-import type { AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import type { Db } from "@paperclipai/db";
-import { agentSessionGoalActions, agentTaskSessions } from "@paperclipai/db";
+import type { AdapterExecutionResult } from "@greatstone/adapter-utils";
+import type { Db } from "@greatstone/db";
+import { agentSessionGoalActions, agentTaskSessions } from "@greatstone/db";
 
 import { resolvePaperclipInstanceRoot } from "../../home-paths.js";
 import { failRunnerGoalAction } from "../runner-goals.js";
@@ -169,7 +169,7 @@ function executableName(): string {
 }
 
 export function resolvePaperclipRunnerBinary(
-  configuredPath = process.env.PAPERCLIP_RUNNER_BINARY,
+  configuredPath = process.env.GSAM_RUNNER_BINARY,
 ): string {
   const candidates = [
     configuredPath,
@@ -182,7 +182,7 @@ export function resolvePaperclipRunnerBinary(
     ),
   ].filter((candidate): candidate is string => Boolean(candidate));
   if (configuredPath && !isAbsolute(configuredPath)) {
-    throw new Error("PAPERCLIP_RUNNER_BINARY must be an absolute path");
+    throw new Error("GSAM_RUNNER_BINARY must be an absolute path");
   }
   for (const candidate of candidates) {
     try {
@@ -193,7 +193,7 @@ export function resolvePaperclipRunnerBinary(
     }
   }
   throw new Error(
-    "paperclip_runner_binary_missing: build @paperclipai/paperclip-runner or set PAPERCLIP_RUNNER_BINARY",
+    "paperclip_runner_binary_missing: build @greatstone/paperclip-runner or set GSAM_RUNNER_BINARY",
   );
 }
 
@@ -398,7 +398,7 @@ export async function executeNativeCodexRunner(input: {
     env: {
       ...process.env,
       ...input.environment,
-      PAPERCLIP_RUNNER_BOOTSTRAP_TICKET: prepared.bootstrapTicket,
+      GSAM_RUNNER_BOOTSTRAP_TICKET: prepared.bootstrapTicket,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

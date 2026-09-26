@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { ChatFileTransferPhase } from "@paperclipai/shared";
+import type { ChatFileTransferPhase } from "@greatstone/shared";
 import { guardedRemoteHttpFetch } from "./remote-http-fetch.js";
 import {
   assets,
@@ -11,7 +11,7 @@ import {
   issueAttachments,
   issueComments,
   type Db,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   bindEarlyTeamsFileConsent,
   bindTeamsFileConsent,

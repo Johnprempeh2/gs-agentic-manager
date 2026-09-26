@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import type { RunProcessResult } from "@paperclipai/adapter-utils/server-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult } from "@greatstone/adapter-utils";
+import type { RunProcessResult } from "@greatstone/adapter-utils/server-utils";
 import {
   adapterExecutionTargetIsRemote,
   adapterExecutionTargetRemoteCwd,
@@ -22,7 +22,7 @@ import {
   resolveAdapterExecutionTargetCommandForLogs,
   runAdapterExecutionTargetProcess,
   startAdapterExecutionTargetPaperclipBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 import {
   asString,
   asNumber,
@@ -48,17 +48,17 @@ import {
   selectPaperclipTaskMarkdown,
   rewriteWorkspaceCwdEnvVarsForExecution,
   shapePaperclipWorkspaceEnvForExecution,
-  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
-  DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE,
-} from "@paperclipai/adapter-utils/server-utils";
-import { buildSkillLibraryManifestMarkdown } from "@paperclipai/adapter-utils/skill-library-manifest";
+  DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE,
+} from "@greatstone/adapter-utils/server-utils";
+import { buildSkillLibraryManifestMarkdown } from "@greatstone/adapter-utils/skill-library-manifest";
 import {
   parseLocalProcessFilesystemScope,
   parseLocalProcessSandboxExtraPaths,
   parseLocalProcessNetworkAllowlist,
   parseLocalProcessNetworkScope,
   type LocalProcessSandboxOptions,
-} from "@paperclipai/adapter-utils/local-process-sandbox";
+} from "@greatstone/adapter-utils/local-process-sandbox";
 import {
   claudeModelUsageTotals,
   parseClaudeStreamJson,
@@ -215,7 +215,7 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
 
   const envConfig = parseObject(config.env);
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
-  env.PAPERCLIP_RUN_ID = runId;
+  env.GSAM_RUN_ID = runId;
 
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
@@ -243,25 +243,25 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
 
   if (wakeTaskId) {
-    env.PAPERCLIP_TASK_ID = wakeTaskId;
+    env.GSAM_TASK_ID = wakeTaskId;
   }
   if (issueWorkMode) {
-    env.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
+    env.GSAM_ISSUE_WORK_MODE = issueWorkMode;
   }
   if (wakeReason) {
-    env.PAPERCLIP_WAKE_REASON = wakeReason;
+    env.GSAM_WAKE_REASON = wakeReason;
   }
   if (wakeCommentId) {
-    env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
+    env.GSAM_WAKE_COMMENT_ID = wakeCommentId;
   }
   if (approvalId) {
-    env.PAPERCLIP_APPROVAL_ID = approvalId;
+    env.GSAM_APPROVAL_ID = approvalId;
   }
   if (approvalStatus) {
-    env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
+    env.GSAM_APPROVAL_STATUS = approvalStatus;
   }
   if (linkedIssueIds.length > 0) {
-    env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+    env.GSAM_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
   applyPaperclipWorkspaceEnv(env, {
     workspaceCwd: shapedWorkspaceEnv.workspaceCwd,
@@ -275,16 +275,16 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
     agentHome,
   });
   if (shapedWorkspaceEnv.workspaceHints.length > 0) {
-    env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(shapedWorkspaceEnv.workspaceHints);
+    env.GSAM_WORKSPACES_JSON = JSON.stringify(shapedWorkspaceEnv.workspaceHints);
   }
   if (runtimeServiceIntents.length > 0) {
-    env.PAPERCLIP_RUNTIME_SERVICE_INTENTS_JSON = JSON.stringify(runtimeServiceIntents);
+    env.GSAM_RUNTIME_SERVICE_INTENTS_JSON = JSON.stringify(runtimeServiceIntents);
   }
   if (runtimeServices.length > 0) {
-    env.PAPERCLIP_RUNTIME_SERVICES_JSON = JSON.stringify(runtimeServices);
+    env.GSAM_RUNTIME_SERVICES_JSON = JSON.stringify(runtimeServices);
   }
   if (runtimePrimaryUrl) {
-    env.PAPERCLIP_RUNTIME_PRIMARY_URL = runtimePrimaryUrl;
+    env.GSAM_RUNTIME_PRIMARY_URL = runtimePrimaryUrl;
   }
   const shapedEnvConfig = rewriteWorkspaceCwdEnvVarsForExecution({
     env: envConfig,
@@ -294,16 +294,16 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   });
   for (const [key, value] of Object.entries(shapedEnvConfig)) {
     if (typeof value !== "string") continue;
-    // Runtime PAPERCLIP_* always wins over config, and PAPERCLIP_API_KEY is
+    // Runtime GSAM_* always wins over config, and GSAM_API_KEY is
     // never accepted from config — the harness-minted run token is the only
-    // source. Other PAPERCLIP_* keys Paperclip did not assign flow through.
+    // source. Other GSAM_* keys GS Agentic Manager did not assign flow through.
     if (isForbiddenConfigEnvKey(key)) continue;
     if (isPaperclipRuntimeEnvKey(key) && key in env) continue;
     env[key] = value;
   }
 
   if (authToken) {
-    env.PAPERCLIP_API_KEY = authToken;
+    env.GSAM_API_KEY = authToken;
   }
 
   const runtimeEnv = Object.fromEntries(
@@ -425,8 +425,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const promptTemplate = asString(
     config.promptTemplate,
     context.conversationMode === true
-      ? DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE
-      : DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
+      ? DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE
+      : DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
   );
   const effort = asString(config.effort, "");
   const chrome = asBoolean(config.chrome, false);
@@ -580,7 +580,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           networkScope,
           networkAllowlist: parseLocalProcessNetworkAllowlist(config.networkAllowlist),
           networkTrustedUrls: [
-            env.PAPERCLIP_API_URL,
+            env.GSAM_API_URL,
             ...runtimeMcpServers.map((server) => server.url),
           ].filter((value): value is string => typeof value === "string" && value.length > 0),
           command: asString(config.filesystemSandboxCommand, "bwrap"),
@@ -722,7 +722,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       runtimeRootDir: preparedExecutionTargetRuntime?.runtimeRootDir,
       adapterKey: "claude",
       timeoutSec,
-      hostApiToken: env.PAPERCLIP_API_KEY,
+      hostApiToken: env.GSAM_API_KEY,
       onLog,
     });
     if (paperclipBridge) {
@@ -943,7 +943,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     }
     if (runtimeMcpServers.length > 0) {
       commandNotes.push(
-        `Using ${runtimeMcpServers.length} Paperclip-managed MCP server(s) from strict config ${effectiveMcpConfigPath}.`,
+        `Using ${runtimeMcpServers.length} GS Agentic Manager-managed MCP server(s) from strict config ${effectiveMcpConfigPath}.`,
       );
     }
     if (onMeta) {
@@ -1119,7 +1119,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const poisonedPreviousMessageId = isClaudePoisonedPreviousMessageIdError(parsed);
     // Fable 5 policy refusals exit cleanly (exitCode=0, is_error=false), so this
     // is intentionally independent of `failed` — otherwise a refusal looks like a
-    // successful run to Paperclip and the heartbeat stalls silently. See RY-604.
+    // successful run to GS Agentic Manager and the heartbeat stalls silently. See RY-604.
     const claudeRefusal = isClaudeRefusalResult(parsed);
     const parsedIsError = asBoolean(parsed.is_error, false);
     const parsedSubtype = asString(parsed.subtype, "").trim().toLowerCase();

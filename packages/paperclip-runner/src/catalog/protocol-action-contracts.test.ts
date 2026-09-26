@@ -1,12 +1,12 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 
-import { PAPERCLIP_PROTOCOL_ACTIONS } from "../protocol-actions/index.js";
+import { GSAM_PROTOCOL_ACTIONS } from "../protocol-actions/index.js";
 
-describe("canonical Paperclip protocol action contracts", () => {
+describe("canonical GS Agentic Manager protocol action contracts", () => {
   const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true, strict: false });
 
-  it.each(PAPERCLIP_PROTOCOL_ACTIONS.map((action) => [action.id, action] as const))(
+  it.each(GSAM_PROTOCOL_ACTIONS.map((action) => [action.id, action] as const))(
     "%s has a schema-valid canonical example and every declared projection",
     (operationId, action) => {
       expect(action.canonical.operationId).toBe(operationId);

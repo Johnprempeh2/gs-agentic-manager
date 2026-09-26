@@ -29,7 +29,7 @@ sandbox providers instead wrap each command in a login shell. That shell sources
 exec path sources `nvm`. For the full exec-path contract, see
 `packages/plugins/sandbox-providers/SANDBOX-REQUIREMENTS.md`.
 
-**Paperclip Binaries:**
+**GS Agentic Manager Binaries:**
 - `/usr/local/bin/paperclip-agent-shim`: Go binary compiled from `tools/agent-shim/`. Reads `/run/paperclip/runtime-command.json` and `syscall.Exec`s the harness CLI.
 
 **Defaults:**

@@ -6,7 +6,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const expectedEngine = ">=24.11.0";
 const expectedTypes = "^24.0.0";
 const failures = [];
-const skippedDirectories = new Set([".git", ".paperclip", "coverage", "data", "dist", "node_modules"]);
+const skippedDirectories = new Set([".git", ".gsam", "coverage", "data", "dist", "node_modules"]);
 
 function relative(filePath) {
   return path.relative(repoRoot, filePath) || ".";

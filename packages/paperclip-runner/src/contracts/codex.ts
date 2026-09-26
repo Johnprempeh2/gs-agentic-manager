@@ -41,7 +41,7 @@ export interface CodexModelContextSnapshot {
   codexVersion: string;
   clientInfo: {
     name: "paperclip-runner";
-    title: "Paperclip Runner";
+    title: "GS Agentic Manager Runner";
     version: string;
   };
   model: string;

@@ -14,7 +14,7 @@ import {
   issueRelations,
   issues,
   issueThreadInteractions,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   CapabilitySemanticDispatcher,
   createCapabilityFixtureState,

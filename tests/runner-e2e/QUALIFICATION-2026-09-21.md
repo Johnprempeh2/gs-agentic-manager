@@ -2,7 +2,7 @@
 
 This record distinguishes live behavior from the existence of an eval. No native
 onboarding default or production prompt was changed. All paid work ran on isolated
-GitHub Actions workers with real providers, Chromium, Paperclip, and public APIs.
+GitHub Actions workers with real providers, Chromium, GS Agentic Manager, and public APIs.
 
 ## Native onboarding
 

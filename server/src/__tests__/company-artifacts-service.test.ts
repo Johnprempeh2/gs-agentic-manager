@@ -17,8 +17,8 @@ import {
   issues,
   issueWorkProducts,
   projects,
-} from "@paperclipai/db";
-import { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY } from "@paperclipai/shared";
+} from "@greatstone/db";
+import { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY } from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -99,7 +99,7 @@ describeEmbeddedPostgres("companyArtifactsService", () => {
     const workProductAttachmentId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
     await db.insert(companies).values([
-      { id: companyId, name: "Paperclip", issuePrefix: "PAP", requireBoardApprovalForNewAgents: false },
+      { id: companyId, name: "GS Agentic Manager", issuePrefix: "PAP", requireBoardApprovalForNewAgents: false },
       { id: otherCompanyId, name: "OtherCo", issuePrefix: "OTH", requireBoardApprovalForNewAgents: false },
     ]);
     await db.insert(agents).values([

@@ -75,7 +75,7 @@ function expectResponseId(value: unknown): string {
   return String(value);
 }
 
-vi.mock("@paperclipai/shared/telemetry", () => ({
+vi.mock("@greatstone/shared/telemetry", () => ({
   trackAgentCreated: mockTrackAgentCreated,
   trackErrorHandlerCrash: vi.fn(),
 }));
@@ -119,7 +119,7 @@ vi.mock("../adapters/index.js", () => ({
 }));
 
 function registerModuleMocks() {
-  vi.doMock("@paperclipai/shared/telemetry", () => ({
+  vi.doMock("@greatstone/shared/telemetry", () => ({
     trackAgentCreated: mockTrackAgentCreated,
     trackErrorHandlerCrash: vi.fn(),
   }));
@@ -844,7 +844,7 @@ describe.sequential("agent skill routes", () => {
     expect(mockAdapter.syncSkills).toHaveBeenCalled();
   });
 
-  it("ignores the reserved legacy Paperclip skill for paperclip_runner", async () => {
+  it("ignores the reserved legacy GS Agentic Manager skill for paperclip_runner", async () => {
     mockAgentService.getById.mockResolvedValue(makeAgent("paperclip_runner"));
 
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
@@ -867,7 +867,7 @@ describe.sequential("agent skill routes", () => {
     );
   });
 
-  it("allows paperclip_runner to remove a pre-existing legacy Paperclip skill", async () => {
+  it("allows paperclip_runner to remove a pre-existing legacy GS Agentic Manager skill", async () => {
     mockAgentService.getById.mockResolvedValue({
       ...makeAgent("paperclip_runner"),
       adapterConfig: {

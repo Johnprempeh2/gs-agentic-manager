@@ -9,7 +9,7 @@ import type {
   TelemetryState,
 } from "./types.js";
 import { type ResolvedTelemetryCaps, resolveCaps } from "./config.js";
-import { PAPERCLIP_EVENTS } from "./generated/paperclip-telemetry.js";
+import { GSAM_EVENTS } from "./generated/paperclip-telemetry.js";
 
 const DEFAULT_ENDPOINTS = [
   "https://telemetry.paperclip.ing/ingest",
@@ -112,7 +112,7 @@ export class TelemetryClient {
   }
 
   /**
-   * Tracks first-party Paperclip telemetry events registered in the generated
+   * Tracks first-party GS Agentic Manager telemetry events registered in the generated
    * backend event schema.
    */
   track<K extends TelemetryEventName>(eventName: K, ...args: TrackArgs<K>): void {
@@ -128,7 +128,7 @@ export class TelemetryClient {
    * client would discard anyway.
    */
   isRegisteredEventName(eventName: string): boolean {
-    return Object.hasOwn(PAPERCLIP_EVENTS, eventName);
+    return Object.hasOwn(GSAM_EVENTS, eventName);
   }
 
   /**

@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
-export const PAPERCLIP_WORKSPACE_FILE_REFERENCE_SCHEMA = "paperclip.workspace.file_reference.v1" as const;
+export const GSAM_WORKSPACE_FILE_REFERENCE_SCHEMA = "paperclip.workspace.file_reference.v1" as const;
 
 export interface PaperclipWorkspaceFileReference {
-  schema: typeof PAPERCLIP_WORKSPACE_FILE_REFERENCE_SCHEMA;
+  schema: typeof GSAM_WORKSPACE_FILE_REFERENCE_SCHEMA;
   referenceId: string;
   source: "harness_reported" | "runner_verified";
   path: string;
@@ -99,7 +99,7 @@ export function paperclipWorkspaceFileReferencesFromText(
     seen.add(key);
     const identity = createHash("sha256").update(`${turnId}\0${key}`).digest("hex").slice(0, 24);
     references.push({
-      schema: PAPERCLIP_WORKSPACE_FILE_REFERENCE_SCHEMA,
+      schema: GSAM_WORKSPACE_FILE_REFERENCE_SCHEMA,
       referenceId: `${turnId}:file:${identity}`,
       source,
       path: relativePath,

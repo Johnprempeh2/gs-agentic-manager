@@ -1,13 +1,13 @@
 ---
 name: paperclip-evals
-description: Choose, inspect, validate, and report Paperclip Runner or Product E2E evaluations while preserving evidence, provenance, cost, and failure classification.
+description: Choose, inspect, validate, and report GS Agentic Manager Runner or Product E2E evaluations while preserving evidence, provenance, cost, and failure classification.
 ---
 
-# Paperclip evals
+# GS Agentic Manager evals
 
-Use this skill when a request concerns Paperclip evaluation selection,
+Use this skill when a request concerns GS Agentic Manager evaluation selection,
 interpretation, evidence, history, or a live run. Read `doc/evals.md` in the
-Paperclip repository first. It defines the two families and their boundaries.
+GS Agentic Manager repository first. It defines the two families and their boundaries.
 
 ## Discover the repository
 
@@ -16,7 +16,7 @@ repo explicitly with `git rev-parse --show-toplevel` from the current directory,
 or inspect likely workspace roots and select the checkout containing
 `package.json`, `tests/runner-e2e`, and `packages/paperclip-runner`. Locate the
 private sibling `paperclip-evals` only when a Runner Eval needs its definitions;
-use an explicit `PAPERCLIP_EVALS_ROOT` or a discovered sibling checkout. Never
+use an explicit `GSAM_EVALS_ROOT` or a discovered sibling checkout. Never
 invent a relative path from this copied skill into the repository.
 
 ## Route the request

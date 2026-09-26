@@ -7,7 +7,7 @@ import {
   lowTrustReviewPresetPolicySchema,
   trustAuthorizationPolicySchema,
   trustPresetSchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 
 type JsonRecord = Record<string, unknown>;
 

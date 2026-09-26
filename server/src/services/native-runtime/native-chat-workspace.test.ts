@@ -18,7 +18,7 @@ import {
   createDb,
   heartbeatRuns,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";

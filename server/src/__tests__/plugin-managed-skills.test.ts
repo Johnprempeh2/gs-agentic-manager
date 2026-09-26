@@ -8,8 +8,8 @@ import {
   createDb,
   pluginManagedResources,
   plugins,
-} from "@paperclipai/db";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+} from "@greatstone/db";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -41,7 +41,7 @@ function manifest(): PaperclipPluginManifestV1 {
     version: "0.1.0",
     displayName: "Managed Skills Test",
     description: "Test plugin",
-    author: "Paperclip",
+    author: "GS Agentic Manager",
     categories: ["automation"],
     capabilities: ["skills.managed"],
     entrypoints: { worker: "./dist/worker.js" },
@@ -89,13 +89,13 @@ describeEmbeddedPostgres("plugin-managed skills", () => {
     const pluginId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: issuePrefix(companyId),
     });
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: pluginManifest.id,
-      packageName: "@paperclipai/plugin-managed-skills-test",
+      packageName: "@greatstone/plugin-managed-skills-test",
       version: pluginManifest.version,
       apiVersion: pluginManifest.apiVersion,
       categories: pluginManifest.categories,

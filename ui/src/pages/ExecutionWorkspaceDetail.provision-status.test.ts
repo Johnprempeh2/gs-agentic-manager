@@ -1,4 +1,4 @@
-import type { WorkspaceOperation } from "@paperclipai/shared";
+import type { WorkspaceOperation } from "@greatstone/shared";
 import { describe, expect, it } from "vitest";
 import { resolveRuntimeProvisionStatus } from "./ExecutionWorkspaceDetail";
 

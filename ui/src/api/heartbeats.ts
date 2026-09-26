@@ -1,12 +1,12 @@
-import type { AgentAppearance } from "@paperclipai/shared";
-import type { IssueRecoveryAction } from "@paperclipai/shared";
+import type { AgentAppearance } from "@greatstone/shared";
+import type { IssueRecoveryAction } from "@greatstone/shared";
 import type {
   HeartbeatRun,
   HeartbeatRunEvent,
   WorkspaceOperation,
   ProviderTraceFrame,
   ProviderTraceMetadata,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { tenantSessionRecovery } from "@/lib/tenant-session-recovery";
 import { api, type RequestOptions } from "./client";
 
@@ -104,7 +104,7 @@ export type RuntimeRequestResolution =
   | { action: "accept" | "accept_for_session" | "decline" | "cancel" }
   | { action: "submit"; answers: Record<string, { answers: string[] }> }
   | { action: "submit"; content: Record<string, unknown> }
-  | { action: "submit"; response: import("@paperclipai/adapter-utils").PaperclipQuestionResponse };
+  | { action: "submit"; response: import("@greatstone/adapter-utils").PaperclipQuestionResponse };
 
 export interface HeartbeatRunListOptions {
   summary?: boolean;

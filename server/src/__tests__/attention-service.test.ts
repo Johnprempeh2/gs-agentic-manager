@@ -34,7 +34,7 @@ import {
   joinRequests,
   projects,
   projectWorkspaces,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,

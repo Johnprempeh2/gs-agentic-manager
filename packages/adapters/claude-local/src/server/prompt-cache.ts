@@ -2,12 +2,12 @@ import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash, type Hash } from "node:crypto";
-import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext } from "@greatstone/adapter-utils";
 import {
   ensurePaperclipSkillSymlink,
   resolvePaperclipInstanceRootForAdapter,
   type PaperclipSkillEntry,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 
 type SkillEntry = PaperclipSkillEntry;
 
@@ -27,8 +27,8 @@ function resolveManagedClaudePromptCacheRoot(
   companyId: string,
 ): string {
   const instanceRoot = resolvePaperclipInstanceRootForAdapter({
-    homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
-    instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
+    homeDir: nonEmpty(env.GSAM_HOME) ?? undefined,
+    instanceId: nonEmpty(env.GSAM_INSTANCE_ID) ?? undefined,
     env,
   });
   return path.resolve(

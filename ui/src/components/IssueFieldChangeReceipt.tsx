@@ -1,5 +1,5 @@
 import { ArrowRight, ShieldCheck } from "lucide-react";
-import type { ActivityEvent } from "@paperclipai/shared";
+import type { ActivityEvent } from "@greatstone/shared";
 import {
   issueAuthorizationReasonLabel,
   readIssueChangeReceipt,
@@ -60,7 +60,7 @@ export function IssueFieldChangeReceipt({
                 <span className="min-w-0 break-words text-muted-foreground line-through decoration-muted-foreground/50">
                   {row.from}
                 </span>
-                <ArrowRight className="size-3 shrink-0 text-muted-foreground/70" aria-hidden="true" />
+                <ArrowRight className="size-3 shrink-0 text-subtle-foreground" aria-hidden="true" />
                 <span className="min-w-0 break-words font-medium text-foreground">{row.to}</span>
                 {/* Long text is stored as a preview, so the receipt says so
                     rather than implying the whole value is shown. */}

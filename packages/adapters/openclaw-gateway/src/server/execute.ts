@@ -2,7 +2,7 @@ import type {
   AdapterExecutionContext,
   AdapterExecutionResult,
   AdapterRuntimeServiceReport,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import {
   asNumber,
   asString,
@@ -15,7 +15,8 @@ import {
   selectInitialCommunicationGuidance,
   joinPromptSections,
   stringifyPaperclipWakePayload,
-} from "@paperclipai/adapter-utils/server-utils";
+  toLegacyEnvKey,
+} from "@greatstone/adapter-utils/server-utils";
 import crypto, { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 
@@ -350,21 +351,21 @@ function buildPaperclipEnvForWake(ctx: AdapterExecutionContext, wakePayload: Wak
   const paperclipEnv: Record<string, string> = {
     ...buildPaperclipEnv(ctx.agent),
     ...buildRuntimeToolsEnv(ctx.runtimeTools),
-    PAPERCLIP_RUN_ID: ctx.runId,
+    GSAM_RUN_ID: ctx.runId,
   };
 
   if (paperclipApiUrlOverride) {
-    paperclipEnv.PAPERCLIP_API_URL = paperclipApiUrlOverride;
+    paperclipEnv.GSAM_API_URL = paperclipApiUrlOverride;
   }
-  if (wakePayload.taskId) paperclipEnv.PAPERCLIP_TASK_ID = wakePayload.taskId;
+  if (wakePayload.taskId) paperclipEnv.GSAM_TASK_ID = wakePayload.taskId;
   const issueWorkMode = readPaperclipIssueWorkModeFromContext(ctx.context);
-  if (issueWorkMode) paperclipEnv.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
-  if (wakePayload.wakeReason) paperclipEnv.PAPERCLIP_WAKE_REASON = wakePayload.wakeReason;
-  if (wakePayload.wakeCommentId) paperclipEnv.PAPERCLIP_WAKE_COMMENT_ID = wakePayload.wakeCommentId;
-  if (wakePayload.approvalId) paperclipEnv.PAPERCLIP_APPROVAL_ID = wakePayload.approvalId;
-  if (wakePayload.approvalStatus) paperclipEnv.PAPERCLIP_APPROVAL_STATUS = wakePayload.approvalStatus;
+  if (issueWorkMode) paperclipEnv.GSAM_ISSUE_WORK_MODE = issueWorkMode;
+  if (wakePayload.wakeReason) paperclipEnv.GSAM_WAKE_REASON = wakePayload.wakeReason;
+  if (wakePayload.wakeCommentId) paperclipEnv.GSAM_WAKE_COMMENT_ID = wakePayload.wakeCommentId;
+  if (wakePayload.approvalId) paperclipEnv.GSAM_APPROVAL_ID = wakePayload.approvalId;
+  if (wakePayload.approvalStatus) paperclipEnv.GSAM_APPROVAL_STATUS = wakePayload.approvalStatus;
   if (wakePayload.issueIds.length > 0) {
-    paperclipEnv.PAPERCLIP_LINKED_ISSUE_IDS = wakePayload.issueIds.join(",");
+    paperclipEnv.GSAM_LINKED_ISSUE_IDS = wakePayload.issueIds.join(",");
   }
 
   return paperclipEnv;
@@ -378,35 +379,39 @@ function buildWakeText(
   conversationTaskMarkdown?: string,
 ): string {
   const orderedKeys = [
-    "PAPERCLIP_RUN_ID",
-    "PAPERCLIP_AGENT_ID",
-    "PAPERCLIP_COMPANY_ID",
-    "PAPERCLIP_API_URL",
-    "PAPERCLIP_TASK_ID",
-    "PAPERCLIP_WAKE_REASON",
-    "PAPERCLIP_WAKE_COMMENT_ID",
-    "PAPERCLIP_APPROVAL_ID",
-    "PAPERCLIP_APPROVAL_STATUS",
-    "PAPERCLIP_LINKED_ISSUE_IDS",
+    "GSAM_RUN_ID",
+    "GSAM_AGENT_ID",
+    "GSAM_COMPANY_ID",
+    "GSAM_API_URL",
+    "GSAM_TASK_ID",
+    "GSAM_WAKE_REASON",
+    "GSAM_WAKE_COMMENT_ID",
+    "GSAM_APPROVAL_ID",
+    "GSAM_APPROVAL_STATUS",
+    "GSAM_LINKED_ISSUE_IDS",
   ];
 
   const envLines: string[] = [];
+  const legacyEnvLines: string[] = [];
   for (const key of orderedKeys) {
     const value = paperclipEnv[key];
     if (!value) continue;
     envLines.push(`${key}=${value}`);
+    // OpenClaw-side skills published upstream still read the legacy names.
+    legacyEnvLines.push(`${toLegacyEnvKey(key)}=${value}`);
   }
+  envLines.push(...legacyEnvLines);
 
   const issueIdHint = payload.taskId ?? payload.issueId ?? "";
-  const apiBaseHint = paperclipEnv.PAPERCLIP_API_URL ?? "<set PAPERCLIP_API_URL>";
+  const apiBaseHint = paperclipEnv.GSAM_API_URL ?? "<set GSAM_API_URL>";
 
   if (conversationTaskMarkdown !== undefined) {
     return [
-      "Paperclip conversation turn for a cloud adapter.",
+      "GS Agentic Manager conversation turn for a cloud adapter.",
       "Set these values in your run context:",
       ...envLines,
-      `Load PAPERCLIP_API_KEY from ${claimedApiKeyPath} (the token saved after claim-api-key).`,
-      "Use Authorization: Bearer $PAPERCLIP_API_KEY on every API call and X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every mutation.",
+      `Load GSAM_API_KEY from ${claimedApiKeyPath} (the token saved after claim-api-key).`,
+      "Use Authorization: Bearer $GSAM_API_KEY on every API call and X-Paperclip-Run-Id: $GSAM_RUN_ID on every mutation.",
       "Follow the supplied chat mode directive. Keep this conversation available for the next message.",
       structuredWakePrompt,
       conversationTaskMarkdown,
@@ -414,15 +419,15 @@ function buildWakeText(
   }
 
   const lines = [
-    "Paperclip wake event for a cloud adapter.",
+    "GS Agentic Manager wake event for a cloud adapter.",
     "",
     "Run this procedure now. Do not guess undocumented endpoints and do not ask for additional heartbeat docs.",
     "",
     "Set these values in your run context:",
     ...envLines,
-    `PAPERCLIP_API_KEY=<token from ${claimedApiKeyPath}>`,
+    `GSAM_API_KEY=<token from ${claimedApiKeyPath}>`,
     "",
-    `Load PAPERCLIP_API_KEY from ${claimedApiKeyPath} (the token you saved after claim-api-key).`,
+    `Load GSAM_API_KEY from ${claimedApiKeyPath} (the token you saved after claim-api-key).`,
     "",
     `api_base=${apiBaseHint}`,
     `task_id=${payload.taskId ?? ""}`,
@@ -434,17 +439,17 @@ function buildWakeText(
     `linked_issue_ids=${payload.issueIds.join(",")}`,
     "",
     "HTTP rules:",
-    "- Use Authorization: Bearer $PAPERCLIP_API_KEY on every API call.",
-    "- Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every mutating API call.",
+    "- Use Authorization: Bearer $GSAM_API_KEY on every API call.",
+    "- Use X-Paperclip-Run-Id: $GSAM_RUN_ID on every mutating API call.",
     "- Use only /api endpoints listed below.",
     "- Do NOT call guessed endpoints like /api/cloud-adapter/*, /api/cloud-adapters/*, /api/adapters/cloud/*, or /api/heartbeat.",
     "",
     "Workflow:",
     "1) GET /api/agents/me",
-    `2) Determine issueId: PAPERCLIP_TASK_ID if present, otherwise issue_id (${issueIdHint}).`,
+    `2) Determine issueId: GSAM_TASK_ID if present, otherwise issue_id (${issueIdHint}).`,
     '   Replace {issueId} in every endpoint below with that determined id. Never send the literal text "{issueId}" in a URL.',
     "3) If issueId exists:",
-    "   - POST /api/issues/{issueId}/checkout with {\"agentId\":\"$PAPERCLIP_AGENT_ID\",\"expectedStatuses\":[\"todo\",\"backlog\",\"blocked\",\"in_review\"]}",
+    "   - POST /api/issues/{issueId}/checkout with {\"agentId\":\"$GSAM_AGENT_ID\",\"expectedStatuses\":[\"todo\",\"backlog\",\"blocked\",\"in_review\"]}",
     "   - GET /api/issues/{issueId}",
     "   - GET /api/issues/{issueId}/comments",
     "   - Execute the issue instructions exactly. If the issue is actionable, take concrete action in this run; do not stop at a plan unless planning was requested.",
@@ -455,7 +460,7 @@ function buildWakeText(
     "   - If instructions require a comment, POST /api/issues/{issueId}/comments with {\"body\":\"...\"}.",
     "   - PATCH /api/issues/{issueId} with {\"status\":\"done\",\"comment\":\"what changed and why\"}.",
     "4) If issueId does not exist:",
-    "   - GET /api/companies/$PAPERCLIP_COMPANY_ID/issues?assigneeAgentId=$PAPERCLIP_AGENT_ID&status=todo,in_progress,in_review,blocked",
+    "   - GET /api/companies/$GSAM_COMPANY_ID/issues?assigneeAgentId=$GSAM_AGENT_ID&status=todo,in_progress,in_review,blocked",
     "   - Pick in_progress first, then in_review when you were woken by a comment, then todo, then blocked, then execute step 3.",
     "",
     "Useful endpoints for issue work:",

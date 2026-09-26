@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import { reconcileCodexLocalManagedHomesOnStartup } from "../services/codex-auth-reconciliation.js";
 
 type AgentRow = {
@@ -47,11 +47,11 @@ describe("reconcileCodexLocalManagedHomesOnStartup", () => {
     await fs.mkdir(sharedCodexHome, { recursive: true });
     await fs.writeFile(path.join(sharedCodexHome, "auth.json"), '{"OPENAI_API_KEY":"sk-shared"}', "utf8");
 
-    for (const key of ["PAPERCLIP_HOME", "PAPERCLIP_INSTANCE_ID", "CODEX_HOME"]) {
+    for (const key of ["GSAM_HOME", "GSAM_INSTANCE_ID", "CODEX_HOME"]) {
       savedEnv[key] = process.env[key];
     }
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "default";
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = "default";
     process.env.CODEX_HOME = sharedCodexHome;
   });
 

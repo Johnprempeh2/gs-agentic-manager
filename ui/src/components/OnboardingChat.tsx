@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { IssueComment } from "@paperclipai/shared";
+import type { IssueComment } from "@greatstone/shared";
 import { issuesApi } from "../api/issues";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
@@ -335,7 +335,7 @@ export function OnboardingChat({
                 </>
               )}
             </div>
-            <span className="text-(length:--text-micro) text-muted-foreground/60 tabular-nums shrink-0">
+            <span className="text-(length:--text-micro) text-subtle-foreground tabular-nums shrink-0">
               {elapsedStr}
             </span>
           </div>
@@ -370,7 +370,7 @@ export function OnboardingChat({
         <input
           ref={inputRef}
           type="text"
-          className="flex-1 rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+          className="flex-1 rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-subtle-foreground"
           placeholder={detectedPlanCommentId ? `Ask ${agentName} to revise the plan...` : `Message ${agentName}...`}
           value={input}
           onChange={(e) => setInput(e.target.value)}

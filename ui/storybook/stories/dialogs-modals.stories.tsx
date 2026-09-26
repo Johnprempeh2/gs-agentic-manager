@@ -5,7 +5,7 @@ import type {
   ExecutionWorkspaceCloseReadiness,
   Goal,
   IssueAttachment,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { DocumentDiffModal } from "@/components/DocumentDiffModal";
@@ -19,7 +19,7 @@ import { PathInstructionsModal } from "@/components/PathInstructionsModal";
 import { useCompany } from "@/context/CompanyContext";
 import { useDialog } from "@/context/DialogContext";
 import { queryKeys } from "@/lib/queryKeys";
-import type { Agent } from "@paperclipai/shared";
+import type { Agent } from "@greatstone/shared";
 import {
   storybookAgents,
   storybookAuthSession,
@@ -39,7 +39,7 @@ const storybookGoals: Goal[] = [
   {
     id: "goal-company",
     companyId: COMPANY_ID,
-    title: "Build Paperclip",
+    title: "Build GS Agentic Manager",
     description: "Make autonomous companies easier to run and govern.",
     level: "company",
     status: "active",
@@ -171,7 +171,7 @@ const closeReadinessReady: ExecutionWorkspaceCloseReadiness = {
       kind: "git_worktree_remove",
       label: "Remove git worktree",
       description: "Removes the issue worktree from the local worktree parent directory.",
-      command: "git worktree remove .paperclip/worktrees/PAP-1641-create-super-detailed-storybooks-for-our-project",
+      command: "git worktree remove .gsam/worktrees/PAP-1641-create-super-detailed-storybooks-for-our-project",
     },
     {
       kind: "archive_record",
@@ -185,7 +185,7 @@ const closeReadinessReady: ExecutionWorkspaceCloseReadiness = {
   isProjectPrimaryWorkspace: false,
   git: {
     repoRoot: "/Users/dotta/paperclip",
-    workspacePath: "/Users/dotta/paperclip/.paperclip/worktrees/PAP-1641-create-super-detailed-storybooks-for-our-project",
+    workspacePath: "/Users/dotta/paperclip/.gsam/worktrees/PAP-1641-create-super-detailed-storybooks-for-our-project",
     branchName: "PAP-1641-create-super-detailed-storybooks-for-our-project",
     baseRef: "master",
     hasDirtyTrackedFiles: true,
@@ -678,7 +678,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Open-state stories for Paperclip creation dialogs, workspace confirmations, document diffing, image attachments, and path helper modals.",
+          "Open-state stories for GS Agentic Manager creation dialogs, workspace confirmations, document diffing, image attachments, and path helper modals.",
       },
     },
   },

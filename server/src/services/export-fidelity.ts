@@ -4,8 +4,8 @@ import {
   buildExportFidelityWarnings,
   type ExportFidelityCounts,
   type ExportFidelityReport,
-} from "@paperclipai/shared/portability-fidelity";
-import type { Db } from "@paperclipai/db";
+} from "@greatstone/shared/portability-fidelity";
+import type { Db } from "@greatstone/db";
 import {
   activityLog,
   approvals,
@@ -17,7 +17,7 @@ import {
   issueWorkProducts,
   issues,
   labels,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 
 export async function collectExportFidelityCounts(db: Db, companyId: string): Promise<ExportFidelityCounts> {
   const [

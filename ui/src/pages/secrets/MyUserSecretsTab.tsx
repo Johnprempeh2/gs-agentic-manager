@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CompanySecret } from "@paperclipai/shared";
+import type { CompanySecret } from "@greatstone/shared";
 import { AlertCircle, KeyRound, Trash2, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -151,7 +151,7 @@ function MyUserSecretRow({
           <p className="mt-1 text-xs text-muted-foreground">{definition.description}</p>
         ) : null}
         {definition.usageGuidance ? (
-          <p className="mt-1 text-(length:--text-micro) text-muted-foreground/80">{definition.usageGuidance}</p>
+          <p className="mt-1 text-(length:--text-micro) text-subtle-foreground">{definition.usageGuidance}</p>
         ) : null}
       </div>
 

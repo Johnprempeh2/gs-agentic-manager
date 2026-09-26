@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { deriveOriginatingActor, INBOX_MINE_ISSUE_STATUS_FILTER } from "@paperclipai/shared";
+import { deriveOriginatingActor, INBOX_MINE_ISSUE_STATUS_FILTER } from "@greatstone/shared";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
 import { approvalsApi } from "../api/approvals";
 import { accessApi } from "../api/access";
@@ -124,7 +124,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PageTabBar } from "../components/PageTabBar";
-import type { Approval, HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
+import type { Approval, HeartbeatRun, Issue, JoinRequest } from "@greatstone/shared";
 import {
   ACTIONABLE_APPROVAL_STATUSES,
   DEFAULT_INBOX_ISSUE_COLUMNS,
@@ -3038,7 +3038,7 @@ function StreamlinedInbox() {
                         >
                           <span className="h-px min-w-0 flex-1 bg-border/80" aria-hidden="true" data-date-group-rule="" />
                           <span
-                            className="shrink-0 text-(length:--text-nano) font-medium uppercase tracking-wider text-muted-foreground/70"
+                            className="shrink-0 text-(length:--text-nano) font-medium uppercase tracking-wider text-subtle-foreground"
                             data-date-group-label=""
                           >
                             {dateGroupLabel}
@@ -3051,7 +3051,7 @@ function StreamlinedInbox() {
                         <div key={`earlier-divider-${group.key}-${index}`} className="my-2 flex items-center gap-3 px-4">
                           <div className="flex-1 border-t border-border" />
                           <span
-                            className="shrink-0 text-(length:--text-micro) font-medium uppercase tracking-wider text-muted-foreground/70"
+                            className="shrink-0 text-(length:--text-micro) font-medium uppercase tracking-wider text-subtle-foreground"
                             data-date-group-label=""
                           >
                             Earlier

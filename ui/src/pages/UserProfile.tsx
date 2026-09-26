@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, UserRound } from "lucide-react";
-import type { UserProfileDailyPoint, UserProfileWindowStats } from "@paperclipai/shared";
+import type { UserProfileDailyPoint, UserProfileWindowStats } from "@greatstone/shared";
 import { Link, useParams } from "@/lib/router";
 import { userProfilesApi } from "../api/userProfiles";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
@@ -45,7 +45,7 @@ function HeroStat({ label, value, hint }: { label: string; value: string; hint?:
     <div className="min-w-0">
       <div className="text-2xl font-semibold tabular-nums sm:text-3xl">{value}</div>
       <div className="mt-1 text-(length:--text-micro) font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      {hint ? <div className="mt-0.5 text-xs text-muted-foreground/70">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-xs text-subtle-foreground">{hint}</div> : null}
     </div>
   );
 }

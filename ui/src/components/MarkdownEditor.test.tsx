@@ -3,7 +3,7 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { buildIssueReferenceHref, buildProjectMentionHref, buildRoutineMentionHref, buildSkillMentionHref } from "@paperclipai/shared";
+import { buildIssueReferenceHref, buildProjectMentionHref, buildRoutineMentionHref, buildSkillMentionHref } from "@greatstone/shared";
 import {
   computeMentionMenuPosition,
   findClosestAutocompleteAnchor,
@@ -1060,12 +1060,12 @@ describe("MarkdownEditor", () => {
   });
 
   it("keeps mention queries active across spaces", () => {
-    expect(findMentionMatch("Ping @Paperclip App", "Ping @Paperclip App".length)).toEqual({
+    expect(findMentionMatch("Ping @GS Agentic Manager App", "Ping @GS Agentic Manager App".length)).toEqual({
       trigger: "mention",
       marker: "@",
-      query: "Paperclip App",
+      query: "GS Agentic Manager App",
       atPos: 5,
-      endPos: "Ping @Paperclip App".length,
+      endPos: "Ping @GS Agentic Manager App".length,
     });
   });
 
@@ -1225,12 +1225,12 @@ describe("MarkdownEditor", () => {
       {
         id: "project:project-123",
         kind: "project" as const,
-        name: "Paperclip App",
+        name: "GS Agentic Manager App",
         projectId: "project-123",
         projectColor: "#336699",
       },
     ],
-    matchText = "Paperclip App",
+    matchText = "GS Agentic Manager App",
   ): Promise<{ option: HTMLButtonElement; root: ReturnType<typeof createRoot>; menu: HTMLElement }> {
     const root = createRoot(container);
 
@@ -1284,7 +1284,7 @@ describe("MarkdownEditor", () => {
     });
 
     expect(handleChange).toHaveBeenCalledWith(
-      `[@Paperclip App](${buildProjectMentionHref("project-123", "#336699")}) `,
+      `[@GS Agentic Manager App](${buildProjectMentionHref("project-123", "#336699")}) `,
     );
 
     await act(async () => {
@@ -1385,7 +1385,7 @@ describe("MarkdownEditor", () => {
     const mentions = Array.from({ length: 12 }, (_, index) => ({
       id: `project:project-${index}`,
       kind: "project" as const,
-      name: `Paperclip App ${index}`,
+      name: `GS Agentic Manager App ${index}`,
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));
@@ -1413,7 +1413,7 @@ describe("MarkdownEditor", () => {
     const mentions = Array.from({ length: 12 }, (_, index) => ({
       id: `project:project-${index}`,
       kind: "project" as const,
-      name: `Paperclip App ${index}`,
+      name: `GS Agentic Manager App ${index}`,
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));
@@ -1471,7 +1471,7 @@ describe("MarkdownEditor", () => {
     const mentions = Array.from({ length: 60 }, (_, index) => ({
       id: `project:project-${index}`,
       kind: "project" as const,
-      name: `Paperclip App ${index}`,
+      name: `GS Agentic Manager App ${index}`,
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));
@@ -1497,7 +1497,7 @@ describe("MarkdownEditor", () => {
     const mentions = Array.from({ length: 12 }, (_, index) => ({
       id: `project:project-${index}`,
       kind: "project" as const,
-      name: `Paperclip App ${index}`,
+      name: `GS Agentic Manager App ${index}`,
       projectId: `project-${index}`,
       projectColor: "#336699",
     }));

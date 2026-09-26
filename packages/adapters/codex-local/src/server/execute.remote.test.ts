@@ -30,17 +30,17 @@ const {
   syncDirectoryToSsh: vi.fn(async () => undefined),
   startAdapterExecutionTargetPaperclipBridge: vi.fn(async () => ({
     env: {
-      PAPERCLIP_API_URL: "http://127.0.0.1:4310",
-      PAPERCLIP_API_KEY: "bridge-token",
-      PAPERCLIP_API_BRIDGE_MODE: "queue_v1",
+      GSAM_API_URL: "http://127.0.0.1:4310",
+      GSAM_API_KEY: "bridge-token",
+      GSAM_API_BRIDGE_MODE: "queue_v1",
     },
     stop: async () => {},
   })),
 }));
 
-vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/server-utils")>(
-    "@paperclipai/adapter-utils/server-utils",
+vi.mock("@greatstone/adapter-utils/server-utils", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/adapter-utils/server-utils")>(
+    "@greatstone/adapter-utils/server-utils",
   );
   return {
     ...actual,
@@ -50,9 +50,9 @@ vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/ssh", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/ssh")>(
-    "@paperclipai/adapter-utils/ssh",
+vi.mock("@greatstone/adapter-utils/ssh", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/adapter-utils/ssh")>(
+    "@greatstone/adapter-utils/ssh",
   );
   return {
     ...actual,
@@ -63,9 +63,9 @@ vi.mock("@paperclipai/adapter-utils/ssh", async () => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(
-    "@paperclipai/adapter-utils/execution-target",
+vi.mock("@greatstone/adapter-utils/execution-target", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/adapter-utils/execution-target")>(
+    "@greatstone/adapter-utils/execution-target",
   );
   return {
     ...actual,
@@ -189,9 +189,9 @@ describe("codex remote execution", () => {
       | undefined;
     expect(call?.[2]).not.toContain("--skip-git-repo-check");
     expect(call?.[3].env.CODEX_HOME).toBe(`${managedRemoteWorkspace}/.paperclip-runtime/codex/home`);
-    expect(call?.[3].env.PAPERCLIP_WORKSPACE_CWD).toBe(managedRemoteWorkspace);
-    expect(call?.[3].env.PAPERCLIP_WORKSPACE_WORKTREE_PATH).toBeUndefined();
-    expect(JSON.parse(call?.[3].env.PAPERCLIP_WORKSPACES_JSON ?? "[]")).toEqual([
+    expect(call?.[3].env.GSAM_WORKSPACE_CWD).toBe(managedRemoteWorkspace);
+    expect(call?.[3].env.GSAM_WORKSPACE_WORKTREE_PATH).toBeUndefined();
+    expect(JSON.parse(call?.[3].env.GSAM_WORKSPACES_JSON ?? "[]")).toEqual([
       {
         workspaceId: "workspace-1",
         cwd: managedRemoteWorkspace,
@@ -204,8 +204,8 @@ describe("codex remote execution", () => {
         repoRef: "feature/other",
       },
     ]);
-    expect(call?.[3].env.PAPERCLIP_API_URL).toBe("http://127.0.0.1:4310");
-    expect(call?.[3].env.PAPERCLIP_API_BRIDGE_MODE).toBe("queue_v1");
+    expect(call?.[3].env.GSAM_API_URL).toBe("http://127.0.0.1:4310");
+    expect(call?.[3].env.GSAM_API_BRIDGE_MODE).toBe("queue_v1");
     expect(call?.[3].remoteExecution?.remoteCwd).toBe(managedRemoteWorkspace);
     expect(startAdapterExecutionTargetPaperclipBridge).toHaveBeenCalledTimes(1);
     expect(restoreWorkspaceFromSshExecution).toHaveBeenCalledTimes(1);
@@ -619,9 +619,9 @@ describe("codex remote execution", () => {
     const call = runChildProcess.mock.calls[0] as unknown as
       | [string, string, string[], { env: Record<string, string>; remoteExecution?: { remoteCwd: string } | null }]
       | undefined;
-    expect(call?.[3].env.PAPERCLIP_WORKSPACE_CWD).toBe("/app");
-    expect(call?.[3].env.PAPERCLIP_WORKSPACE_REALIZATION_MODE).toBe("in_place");
-    expect(call?.[3].env.PAPERCLIP_WORKSPACE_AUTHORITATIVE_ROOT).toBe("/app");
+    expect(call?.[3].env.GSAM_WORKSPACE_CWD).toBe("/app");
+    expect(call?.[3].env.GSAM_WORKSPACE_REALIZATION_MODE).toBe("in_place");
+    expect(call?.[3].env.GSAM_WORKSPACE_AUTHORITATIVE_ROOT).toBe("/app");
     expect(call?.[3].env.CODEX_HOME).toBe("/app/.paperclip-runtime/codex/home");
     expect(call?.[3].remoteExecution?.remoteCwd).toBe("/app");
   });

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   listKimiSkills,
   syncKimiSkills,
-} from "@paperclipai/adapter-kimi-local/server";
+} from "@greatstone/adapter-kimi-local/server";
 
 async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -20,7 +20,7 @@ describe("kimi local skill sync", () => {
     cleanupDirs.clear();
   });
 
-  it("defaults and installs the operational Paperclip skill in the Kimi skills home", async () => {
+  it("defaults and installs the operational GS Agentic Manager skill in the Kimi skills home", async () => {
     const kimiCodeHome = await makeTempDir("paperclip-kimi-skill-sync-");
     cleanupDirs.add(kimiCodeHome);
 

@@ -30,7 +30,7 @@ import {
   projects,
   projectWorkspaces,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -135,7 +135,7 @@ async function createGitRepo() {
   const repoRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "paperclip-branch-containment-repo-")));
   await runGit(repoRoot, ["init"]);
   await runGit(repoRoot, ["config", "user.email", "paperclip-test@example.com"]);
-  await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+  await runGit(repoRoot, ["config", "user.name", "GS Agentic Manager Test"]);
   await writeFile(path.join(repoRoot, "README.md"), "branch containment\n", "utf8");
   await runGit(repoRoot, ["add", "README.md"]);
   await runGit(repoRoot, ["commit", "-m", "initial"]);
@@ -320,7 +320,7 @@ async function seedBranchContainmentRun(
   const otherSiblingIdentifier = `${issuePrefix}-3`;
   const expectedBranch = `${sourceIdentifier}-recorded`;
   const actualBranch = `${sourceIdentifier}-actual`;
-  const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", expectedBranch);
+  const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
   const now = new Date("2026-07-07T00:00:00.000Z");
 
   await instanceSettingsService(db).updateExperimental({
@@ -428,12 +428,12 @@ async function seedBranchContainmentRun(
       strategyType: "git_worktree",
       name: "other-workspace",
       status: "active",
-      cwd: path.join(repoRoot, ".paperclip", "worktrees", "other-workspace"),
+      cwd: path.join(repoRoot, ".gsam", "worktrees", "other-workspace"),
       repoUrl: null,
       baseRef: "HEAD",
       branchName: "other-workspace",
       providerType: "git_worktree",
-      providerRef: path.join(repoRoot, ".paperclip", "worktrees", "other-workspace"),
+      providerRef: path.join(repoRoot, ".gsam", "worktrees", "other-workspace"),
       lastUsedAt: now,
       openedAt: now,
       createdAt: now,

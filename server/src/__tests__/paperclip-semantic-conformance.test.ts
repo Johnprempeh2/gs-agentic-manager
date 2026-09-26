@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createDb } from "@paperclipai/db";
+import { createDb } from "@greatstone/db";
 import {
   CAPABILITY_HIGH_RISK_SEMANTIC_VECTORS,
   CAPABILITY_SEMANTIC_CONFORMANCE_IDS,
@@ -18,10 +18,10 @@ import {
 } from "./helpers/paperclip-semantic-conformance.js";
 
 vi.hoisted(() => {
-  process.env.PAPERCLIP_HOME = "/tmp/paperclip-semantic-conformance-home";
-  process.env.PAPERCLIP_INSTANCE_ID = "semantic-conformance";
-  process.env.PAPERCLIP_LOG_DIR = "/tmp/paperclip-semantic-conformance-home/logs";
-  process.env.PAPERCLIP_IN_WORKTREE = "false";
+  process.env.GSAM_HOME = "/tmp/paperclip-semantic-conformance-home";
+  process.env.GSAM_INSTANCE_ID = "semantic-conformance";
+  process.env.GSAM_LOG_DIR = "/tmp/paperclip-semantic-conformance-home/logs";
+  process.env.GSAM_IN_WORKTREE = "false";
 });
 
 const embeddedSupport = await getEmbeddedPostgresTestSupport();
@@ -31,7 +31,7 @@ if (!embeddedSupport.supported) {
   console.warn(`Skipping semantic production conformance: ${embeddedSupport.reason ?? "unsupported host"}`);
 }
 
-describeEmbedded("Paperclip semantic mock/production conformance", () => {
+describeEmbedded("GS Agentic Manager semantic mock/production conformance", () => {
   let temporary: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   let mock: CapabilityMockSemanticConformanceAdapter | null = null;
 

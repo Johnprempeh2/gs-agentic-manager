@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import {
   createDuplexRouteSlotController,
   createPluginWorkerHandle,
@@ -19,7 +19,7 @@ const TEST_MANIFEST: PaperclipPluginManifestV1 = {
   version: "1.0.0",
   displayName: "Test plugin",
   description: "Test plugin",
-  author: "Paperclip",
+  author: "GS Agentic Manager",
   categories: ["automation"],
   capabilities: [],
   entrypoints: { worker: "dist/worker.js" },

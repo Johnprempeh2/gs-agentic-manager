@@ -1,4 +1,4 @@
-import type { CompanySkillVersion } from "@paperclipai/shared";
+import type { CompanySkillVersion } from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,

@@ -1,4 +1,4 @@
-import type { ServerInfoSnapshot } from "@paperclipai/shared";
+import type { ServerInfoSnapshot } from "@greatstone/shared";
 import { tenantSessionRecovery } from "@/lib/tenant-session-recovery";
 
 export type DevServerHealthStatus = {

@@ -108,7 +108,7 @@ remain separate from this deterministic evidence.
 
 ## Native Codex approval and continuation
 
-A real native Paperclip Runner agent used `gpt-5.6-sol` with existing local
+A real native GS Agentic Manager Runner agent used `gpt-5.6-sol` with existing local
 ChatGPT authentication. Its initial run discovered the installed MCP fixture
 action, called it with `query: "10 most recent pages"`, and yielded to a pending
 server-owned review. The operator approved in the browser. The server executed

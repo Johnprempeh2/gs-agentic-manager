@@ -139,7 +139,7 @@ describe("git workspace sync", () => {
     await mkdir(repo, { recursive: true });
     await git(repo, ["init"]);
     await git(repo, ["checkout", "-b", "main"]);
-    await git(repo, ["config", "user.name", "Paperclip Test"]);
+    await git(repo, ["config", "user.name", "GS Agentic Manager Test"]);
     await git(repo, ["config", "user.email", "test@paperclip.dev"]);
     await writeFile(path.join(repo, "tracked.txt"), "base\n", "utf8");
     await git(repo, ["add", "tracked.txt"]);
@@ -298,7 +298,7 @@ describe("git workspace sync", () => {
       localDir: repo,
       snapshot: snapshot!,
     }, async (cloneDir) => {
-      await git(cloneDir, ["config", "user.name", "Paperclip Sandbox"]);
+      await git(cloneDir, ["config", "user.name", "GS Agentic Manager Sandbox"]);
       await git(cloneDir, ["config", "user.email", "sandbox@paperclip.dev"]);
       await writeFile(path.join(cloneDir, "change.txt"), "sandbox change\n", "utf8");
       await git(cloneDir, ["add", "change.txt"]);
@@ -339,7 +339,7 @@ describe("git workspace sync", () => {
       })]);
       expect((await stat(emptyBundle)).size).toBe(0);
 
-      await git(remoteDir, ["config", "user.name", "Paperclip Remote"]);
+      await git(remoteDir, ["config", "user.name", "GS Agentic Manager Remote"]);
       await git(remoteDir, ["config", "user.email", "remote@paperclip.dev"]);
       await writeFile(path.join(remoteDir, "tracked.txt"), "remote\n", "utf8");
       await git(remoteDir, ["commit", "-am", "remote update"]);
@@ -385,7 +385,7 @@ describe("git workspace sync", () => {
     // local-only commit S that forked from B and diverges from H.
     const sandbox = path.join(rootDir, "sandbox");
     await git(rootDir, ["clone", host, sandbox]);
-    await git(sandbox, ["config", "user.name", "Paperclip Remote"]);
+    await git(sandbox, ["config", "user.name", "GS Agentic Manager Remote"]);
     await git(sandbox, ["config", "user.email", "remote@paperclip.dev"]);
     await writeFile(path.join(sandbox, "advance.txt"), "advance\n", "utf8");
     await git(sandbox, ["add", "-A"]);
@@ -438,7 +438,7 @@ describe("git workspace sync", () => {
 
     const sandbox = path.join(rootDir, "sandbox");
     await git(rootDir, ["clone", host, sandbox]);
-    await git(sandbox, ["config", "user.name", "Paperclip Remote"]);
+    await git(sandbox, ["config", "user.name", "GS Agentic Manager Remote"]);
     await git(sandbox, ["config", "user.email", "remote@paperclip.dev"]);
     // Advance the merge-base past the host, then baseSha past that, then a
     // divergent local commit — so merge-base(baseSha, HEAD) is itself a commit
@@ -591,9 +591,9 @@ describe("git workspace sync", () => {
     const parents = (await git(repo, ["rev-list", "--parents", "-1", "HEAD"])).split(" ");
     expect(parents.slice(1)).toEqual([currentHead, importedHead]);
     expect(await git(repo, ["log", "-1", "--format=%an|%ae|%cn|%ce"]))
-      .toBe("Paperclip|noreply@paperclip.ing|Paperclip|noreply@paperclip.ing");
+      .toBe("GS Agentic Manager|noreply@paperclip.ing|GS Agentic Manager|noreply@paperclip.ing");
     expect(await git(repo, ["log", "-1", "--format=%s"]))
-      .toBe(`Paperclip remote git sync merge ${importedHead.slice(0, 12)}`);
+      .toBe(`GS Agentic Manager remote git sync merge ${importedHead.slice(0, 12)}`);
     const mergedTree = await git(repo, ["ls-tree", "--name-only", "HEAD"]);
     expect(mergedTree).toContain("local.txt");
     expect(mergedTree).toContain("imported.txt");
@@ -630,7 +630,7 @@ describe("git workspace sync", () => {
     expect(await git(repo, ["rev-parse", "HEAD^{tree}"])).toBe(importedTree);
     expect(await git(repo, ["log", "-1", "--format=%s"])).toBe("sandbox rewrite");
     const body = await git(repo, ["log", "-1", "--format=%B"]);
-    expect(body).toContain(`Paperclip remote git sync graft ${importedHead.slice(0, 12)}`);
+    expect(body).toContain(`GS Agentic Manager remote git sync graft ${importedHead.slice(0, 12)}`);
     expect(body).toContain("shares no ancestor");
   });
 

@@ -29,7 +29,7 @@ import {
   issueComments,
   issues,
   issueWorkProducts,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 
 import { startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import { createLocalDiskStorageProvider } from "../../storage/local-disk-provider.js";
@@ -641,7 +641,7 @@ describe("native runner file handoff", () => {
     );
     expect(prompt).toContain(relativePath!);
     expect(prompt).not.toContain("/api/attachments/");
-    expect(prompt).not.toContain("PAPERCLIP_API_KEY");
+    expect(prompt).not.toContain("GSAM_API_KEY");
     await stage.cleanup();
     await expect(
       readFile(path.join(workspaceRoot, relativePath!)),
@@ -833,7 +833,7 @@ describe("native runner file handoff", () => {
     });
     const currentComment = await issueService(db).addComment(
       issueId,
-      "Inspect the current attachment if Paperclip imported it.",
+      "Inspect the current attachment if GS Agentic Manager imported it.",
       { userId: "inbound-user" },
     );
     await db
@@ -845,7 +845,7 @@ describe("native runner file handoff", () => {
             comments: [
               {
                 id: currentComment.id,
-                body: "Inspect the current attachment if Paperclip imported it.",
+                body: "Inspect the current attachment if GS Agentic Manager imported it.",
                 attachments: [],
               },
             ],

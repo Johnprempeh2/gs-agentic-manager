@@ -1,7 +1,7 @@
 /**
  * Public test-only surface for deterministic adapters and conformance kits.
  *
- * Production Paperclip code imports the package root. Tests, Paperclip Evals,
+ * Production GS Agentic Manager code imports the package root. Tests, GS Agentic Manager Evals,
  * and other conformance consumers import this explicit subpath so test helpers
  * never become an accidental runtime dependency.
  */

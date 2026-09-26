@@ -13,7 +13,7 @@ import { AiConnectionDesignExamples } from "@/components/ai-connections/AiConnec
 import { SavedProviderKeySelect } from "../components/onboarding/SavedProviderKeySelect";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { AgentCharacter } from "@/components/AgentCharacter";
-import { AGENT_PALETTE_IDS, appearanceForPalette } from "@paperclipai/shared";
+import { AGENT_PALETTE_IDS, appearanceForPalette } from "@greatstone/shared";
 import { RepositoryEditor } from "@/components/RepositoryEditor";
 import { TaskChatRunnerActivityGroup } from "@/components/task-chat/TaskChatRunnerActivityGroup";
 import { TaskChatMarker } from "@/components/task-chat/TaskChatMarker";
@@ -169,7 +169,7 @@ import {
   pendingConnectionIntentInteraction,
   retryConnectionIntentInteraction,
 } from "@/fixtures/issueThreadInteractionFixtures";
-import type { CompanySecret, EnvBinding, Issue } from "@paperclipai/shared";
+import type { CompanySecret, EnvBinding, Issue } from "@greatstone/shared";
 import { CollectionToolbar } from "@/components/CollectionToolbar";
 import { IssueRow } from "@/components/IssueRow";
 import {
@@ -191,7 +191,7 @@ import {
   sampleTeam,
   warnTeam,
 } from "@/pages/TeamCatalog.fixtures";
-import type { IssueWorkProduct } from "@paperclipai/shared";
+import type { IssueWorkProduct } from "@greatstone/shared";
 
 /* ------------------------------------------------------------------ */
 /*  Sample data for the Issue Output surface showcase                  */
@@ -475,7 +475,7 @@ export function DesignGuide() {
       <div>
         <h2 className="text-xl font-bold">Design Guide</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Every component, style, and pattern used across Paperclip.
+          Every component, style, and pattern used across GS Agentic Manager.
         </p>
       </div>
 
@@ -1174,7 +1174,7 @@ export function DesignGuide() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbLink href="#">Paperclip App</BreadcrumbLink>
+              <BreadcrumbLink href="#">GS Agentic Manager App</BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -1199,7 +1199,7 @@ export function DesignGuide() {
                   status, adapterType: "codex_local", invocationSource: "on_demand", triggerDetail: "manual",
                   startedAt: null, finishedAt: null, createdAt: "2026-09-11T12:00:00Z", issueId: "design-guide-task",
                 }}
-                issue={{ identifier: "PAP-559", title: "Recreate this wireframe on pages Paperclip", status: status === "succeeded" ? "done" : "in_progress" }}
+                issue={{ identifier: "PAP-559", title: "Recreate this wireframe on pages GS Agentic Manager", status: status === "succeeded" ? "done" : "in_progress" }}
               />
             ))}
           </div>
@@ -1354,7 +1354,7 @@ export function DesignGuide() {
             <EntityRow
               title="Left resource"
               subtitle="Persistent action with dimmed row content."
-              className="group text-foreground/55"
+              className="group text-muted-foreground"
               trailing={
                 <MembershipAction
                   state="left"
@@ -1367,7 +1367,7 @@ export function DesignGuide() {
             <EntityRow
               title="Leaving resource"
               subtitle="Disabled while the optimistic mutation is pending."
-              className="group text-foreground/55"
+              className="group text-muted-foreground"
               trailing={
                 <MembershipAction
                   state="left"
@@ -2296,7 +2296,7 @@ export function DesignGuide() {
             title="Built-in agent"
             actions={<Button variant="outline" size="sm">Reset to defaults</Button>}
           >
-            Ships with Paperclip and powers <strong>Briefs</strong>. It can be paused but not deleted.
+            Ships with GS Agentic Manager and powers <strong>Briefs</strong>. It can be paused but not deleted.
           </InlineBanner>
           <InlineBanner
             tone="warning"

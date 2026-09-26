@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
-import { execute } from "@paperclipai/adapter-codex-local/server";
+import { runChildProcess } from "@greatstone/adapter-utils/server-utils";
+import { execute } from "@greatstone/adapter-codex-local/server";
 import { buildPaperclipTaskMarkdown } from "../services/heartbeat.js";
 import { AGENT_CHAT_DIRECTIVE } from "../services/agent-conversations.js";
 
@@ -11,7 +11,7 @@ async function writeFakeCodexCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
 const fs = require("node:fs");
 
-const capturePath = process.env.PAPERCLIP_TEST_CAPTURE_PATH;
+const capturePath = process.env.GSAM_TEST_CAPTURE_PATH;
 const payload = {
   argv: process.argv.slice(2),
   prompt: fs.readFileSync(0, "utf8"),
@@ -19,12 +19,12 @@ const payload = {
   codexConfigContents: process.env.CODEX_HOME && fs.existsSync(process.env.CODEX_HOME + "/config.toml")
     ? fs.readFileSync(process.env.CODEX_HOME + "/config.toml", "utf8")
     : null,
-  paperclipWakePayloadJson: process.env.PAPERCLIP_WAKE_PAYLOAD_JSON || null,
-  paperclipApiUrl: process.env.PAPERCLIP_API_URL || null,
-  paperclipApiKey: process.env.PAPERCLIP_API_KEY || null,
-  paperclipApiBridgeMode: process.env.PAPERCLIP_API_BRIDGE_MODE || null,
+  paperclipWakePayloadJson: process.env.GSAM_WAKE_PAYLOAD_JSON || null,
+  paperclipApiUrl: process.env.GSAM_API_URL || null,
+  paperclipApiKey: process.env.GSAM_API_KEY || null,
+  paperclipApiBridgeMode: process.env.GSAM_API_BRIDGE_MODE || null,
   paperclipEnvKeys: Object.keys(process.env)
-    .filter((key) => key.startsWith("PAPERCLIP_"))
+    .filter((key) => key.startsWith("GSAM_"))
     .sort(),
 };
 if (capturePath) {
@@ -119,7 +119,7 @@ function createLocalSandboxRunner() {
 }
 
 describe("codex execute", () => {
-  it("uses a Paperclip-managed CODEX_HOME outside worktree mode while preserving shared auth and config", async () => {
+  it("uses a GS Agentic Manager-managed CODEX_HOME outside worktree mode while preserving shared auth and config", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-default-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -141,14 +141,14 @@ describe("codex execute", () => {
     await writeFakeCodexCommand(commandPath);
 
     const previousHome = process.env.HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const previousPaperclipInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousPaperclipInstanceId = process.env.GSAM_INSTANCE_ID;
+    const previousPaperclipInWorktree = process.env.GSAM_IN_WORKTREE;
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.HOME = root;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    delete process.env.PAPERCLIP_INSTANCE_ID;
-    delete process.env.PAPERCLIP_IN_WORKTREE;
+    process.env.GSAM_HOME = paperclipHome;
+    delete process.env.GSAM_INSTANCE_ID;
+    delete process.env.GSAM_IN_WORKTREE;
     process.env.CODEX_HOME = sharedCodexHome;
 
     try {
@@ -173,7 +173,7 @@ describe("codex execute", () => {
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -203,18 +203,18 @@ describe("codex execute", () => {
       expect(logs).toContainEqual(
         expect.objectContaining({
           stream: "stdout",
-          chunk: expect.stringContaining("Using Paperclip-managed Codex home"),
+          chunk: expect.stringContaining("Using GS Agentic Manager-managed Codex home"),
         }),
       );
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
-      if (previousPaperclipInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
-      else process.env.PAPERCLIP_IN_WORKTREE = previousPaperclipInWorktree;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousPaperclipInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousPaperclipInWorktree === undefined) delete process.env.GSAM_IN_WORKTREE;
+      else process.env.GSAM_IN_WORKTREE = previousPaperclipInWorktree;
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
       await fs.rm(root, { recursive: true, force: true });
@@ -253,14 +253,14 @@ describe("codex execute", () => {
     await writeFakeCodexCommand(commandPath);
 
     const previousHome = process.env.HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipApiUrl = process.env.PAPERCLIP_API_URL;
-    const previousPaperclipRuntimeApiUrl = process.env.PAPERCLIP_RUNTIME_API_URL;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousPaperclipApiUrl = process.env.GSAM_API_URL;
+    const previousPaperclipRuntimeApiUrl = process.env.GSAM_RUNTIME_API_URL;
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.HOME = root;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_API_URL = "http://paperclip.local:3100";
-    process.env.PAPERCLIP_RUNTIME_API_URL = "http://paperclip.local:3100";
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_API_URL = "http://paperclip.local:3100";
+    process.env.GSAM_RUNTIME_API_URL = "http://paperclip.local:3100";
     process.env.CODEX_HOME = sharedCodexHome;
 
     try {
@@ -285,7 +285,7 @@ describe("codex execute", () => {
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -318,7 +318,7 @@ describe("codex execute", () => {
         expect.arrayContaining([
           expect.objectContaining({
             stream: "stderr",
-            chunk: expect.stringContaining("Paperclip cannot enforce policies for that direct entry"),
+            chunk: expect.stringContaining("GS Agentic Manager cannot enforce policies for that direct entry"),
           }),
         ]),
       );
@@ -326,12 +326,12 @@ describe("codex execute", () => {
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipApiUrl === undefined) delete process.env.PAPERCLIP_API_URL;
-      else process.env.PAPERCLIP_API_URL = previousPaperclipApiUrl;
-      if (previousPaperclipRuntimeApiUrl === undefined) delete process.env.PAPERCLIP_RUNTIME_API_URL;
-      else process.env.PAPERCLIP_RUNTIME_API_URL = previousPaperclipRuntimeApiUrl;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousPaperclipApiUrl === undefined) delete process.env.GSAM_API_URL;
+      else process.env.GSAM_API_URL = previousPaperclipApiUrl;
+      if (previousPaperclipRuntimeApiUrl === undefined) delete process.env.GSAM_RUNTIME_API_URL;
+      else process.env.GSAM_RUNTIME_API_URL = previousPaperclipRuntimeApiUrl;
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
       await fs.rm(root, { recursive: true, force: true });
@@ -372,7 +372,7 @@ describe("codex execute", () => {
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -387,7 +387,7 @@ describe("codex execute", () => {
       expect(result.exitCode).toBe(0);
       expect(result.errorMessage).toBeNull();
       expect(commandNotes).toContain(
-        "Codex exec automatically applies repo-scoped AGENTS.md instructions from the current workspace; Paperclip does not currently suppress that discovery.",
+        "Codex exec automatically applies repo-scoped AGENTS.md instructions from the current workspace; GS Agentic Manager does not currently suppress that discovery.",
       );
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
@@ -435,7 +435,7 @@ describe("codex execute", () => {
           command: "codex",
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -452,7 +452,7 @@ describe("codex execute", () => {
       expect(result.errorMessage).toBeNull();
       expect(loggedCommand).toBe(commandPath);
       expect(loggedEnv.HOME).toBe(root);
-      expect(loggedEnv.PAPERCLIP_RESOLVED_COMMAND).toBe(commandPath);
+      expect(loggedEnv.GSAM_RESOLVED_COMMAND).toBe(commandPath);
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
@@ -502,7 +502,7 @@ describe("codex execute", () => {
           command: commandPath,
           cwd: localWorkspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -573,8 +573,8 @@ describe("codex execute", () => {
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
-            PAPERCLIP_WAKE_PAYLOAD_JSON: description,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
+            GSAM_WAKE_PAYLOAD_JSON: description,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -640,11 +640,11 @@ describe("codex execute", () => {
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
-      expect(capture.paperclipEnvKeys).not.toContain("PAPERCLIP_WAKE_PAYLOAD_JSON");
+      expect(capture.paperclipEnvKeys).not.toContain("GSAM_WAKE_PAYLOAD_JSON");
       expect(capture.paperclipWakePayloadJson).toBeNull();
       expect(capture.prompt).toContain(description);
       expect(capture.prompt).toContain("- reason: issue_commented");
-      expect(capture.prompt).toContain("## Paperclip Wake Payload");
+      expect(capture.prompt).toContain("## GS Agentic Manager Wake Payload");
       expect(capture.prompt).toContain("Use this wake to continue the task, applying new user direction and preserving its approval gates.");
       expect(capture.prompt).toContain("Do not switch to another issue until you have handled this wake.");
       expect(capture.prompt).toContain(
@@ -960,7 +960,7 @@ process.exit(1);
           fastMode: true,
           model: "gpt-5.4",
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -988,7 +988,7 @@ process.exit(1);
       expect(capture.argv).not.toContain("resume");
       expect(capture.argv).not.toContain('service_tier="fast"');
       expect(capture.argv).not.toContain("features.fast_mode=true");
-      expect(capture.prompt).toContain("Paperclip session handoff:");
+      expect(capture.prompt).toContain("GS Agentic Manager session handoff:");
       expect(capture.prompt).toContain("Issue continuation summary for the next fresh session.");
       expect(commandNotes).toContain("Codex transient fallback requested safer invocation settings for this retry.");
       expect(commandNotes).toContain("Codex transient fallback forced a fresh session with a continuation handoff.");
@@ -1032,7 +1032,7 @@ process.exit(1);
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -1102,7 +1102,7 @@ process.exit(1);
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: executorCapturePath,
+            GSAM_TEST_CAPTURE_PATH: executorCapturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -1189,7 +1189,7 @@ process.exit(1);
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -1227,9 +1227,9 @@ process.exit(1);
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
-      expect(capture.paperclipEnvKeys).not.toContain("PAPERCLIP_WAKE_PAYLOAD_JSON");
+      expect(capture.paperclipEnvKeys).not.toContain("GSAM_WAKE_PAYLOAD_JSON");
       expect(capture.paperclipWakePayloadJson).toBeNull();
-      expect(capture.prompt).toContain("## Paperclip Wake Payload");
+      expect(capture.prompt).toContain("## GS Agentic Manager Wake Payload");
       expect(capture.prompt).toContain("Do not switch to another issue until you have handled this wake.");
       expect(capture.prompt).toContain("- issue: PAP-1201 Fix gallery opening for inline images");
       expect(capture.prompt).not.toContain("- pending comments:");
@@ -1295,7 +1295,7 @@ process.exit(1);
           cwd: workspace,
           instructionsFilePath: instructionsPath,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: conversationMode ? undefined : "Follow the paperclip heartbeat.",
         },
@@ -1352,7 +1352,7 @@ process.exit(1);
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       if (resumedSession) expect(capture.argv).toEqual(expect.arrayContaining(["resume", "codex-session-1", "-"]));
       else expect(capture.argv).not.toContain("resume");
-      expect(capture.prompt).toContain(resumedSession ? "## Paperclip Resume Delta" : "## Paperclip Wake Payload");
+      expect(capture.prompt).toContain(resumedSession ? "## GS Agentic Manager Resume Delta" : "## GS Agentic Manager Wake Payload");
       expect(capture.prompt).toContain("Do not switch to another issue until you have handled this wake.");
       expect(capture.prompt).toContain("Second comment");
       expect(capture.prompt).toContain(policy);
@@ -1371,7 +1371,7 @@ process.exit(1);
       expect(capture.prompt).not.toContain("Follow the paperclip heartbeat.");
       if (resumedSession) {
         expect(capture.prompt).not.toContain("You are managed instructions.");
-        expect(invocationPrompt).toContain("## Paperclip Resume Delta");
+        expect(invocationPrompt).toContain("## GS Agentic Manager Resume Delta");
         expect(invocationNotes).toContain("Skipped stdin instruction reinjection because an existing Codex session is being resumed with a wake delta.");
         expect(promptMetrics.instructionsChars).toBe(0);
         expect(promptMetrics.heartbeatPromptChars).toBe(0);
@@ -1408,14 +1408,14 @@ process.exit(1);
     await writeFakeCodexCommand(commandPath);
 
     const previousHome = process.env.HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const previousPaperclipInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousPaperclipInstanceId = process.env.GSAM_INSTANCE_ID;
+    const previousPaperclipInWorktree = process.env.GSAM_IN_WORKTREE;
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.HOME = root;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "worktree-1";
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = "worktree-1";
+    process.env.GSAM_IN_WORKTREE = "true";
     process.env.CODEX_HOME = sharedCodexHome;
 
     try {
@@ -1440,7 +1440,7 @@ process.exit(1);
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
         },
@@ -1460,11 +1460,11 @@ process.exit(1);
       expect(capture.prompt).toContain("Follow the paperclip heartbeat.");
       expect(capture.paperclipEnvKeys).toEqual(
         expect.arrayContaining([
-          "PAPERCLIP_AGENT_ID",
-          "PAPERCLIP_API_KEY",
-          "PAPERCLIP_API_URL",
-          "PAPERCLIP_COMPANY_ID",
-          "PAPERCLIP_RUN_ID",
+          "GSAM_AGENT_ID",
+          "GSAM_API_KEY",
+          "GSAM_API_URL",
+          "GSAM_COMPANY_ID",
+          "GSAM_RUN_ID",
         ]),
       );
 
@@ -1491,12 +1491,12 @@ process.exit(1);
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
-      if (previousPaperclipInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
-      else process.env.PAPERCLIP_IN_WORKTREE = previousPaperclipInWorktree;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousPaperclipInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousPaperclipInWorktree === undefined) delete process.env.GSAM_IN_WORKTREE;
+      else process.env.GSAM_IN_WORKTREE = previousPaperclipInWorktree;
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
       await fs.rm(root, { recursive: true, force: true });
@@ -1516,15 +1516,15 @@ process.exit(1);
     await fs.writeFile(path.join(sourceHome, "auth.json"), fakeCodexAuthJson);
     await fs.writeFile(path.join(skillSource, "SKILL.md"), "# AgentMail\nAssigned inbox one.");
     await writeFakeCodexCommand(command);
-    const keys = ["PAPERCLIP_HOME", "PAPERCLIP_INSTANCE_ID", "CODEX_HOME"] as const;
+    const keys = ["GSAM_HOME", "GSAM_INSTANCE_ID", "CODEX_HOME"] as const;
     const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
-    process.env.PAPERCLIP_HOME = path.join(root, "paperclip");
-    process.env.PAPERCLIP_INSTANCE_ID = "connectors";
+    process.env.GSAM_HOME = path.join(root, "paperclip");
+    process.env.GSAM_INSTANCE_ID = "connectors";
     process.env.CODEX_HOME = sourceHome;
     const invoke = async (agentId: string, digest: string | null, source = skillSource, connectorSkillInstructions = "") => {
       const config = {
         engine: "cli", command, cwd: workspace,
-        env: { CODEX_HOME: sourceHome, PAPERCLIP_TEST_CAPTURE_PATH: capture },
+        env: { CODEX_HOME: sourceHome, GSAM_TEST_CAPTURE_PATH: capture },
         paperclipConnectorSkillDigest: digest,
         paperclipSkillSync: { desiredSkills: digest ? ["paperclipai/paperclip/agentmail"] : [] },
         paperclipRuntimeSkills: digest ? [{ key: "paperclipai/paperclip/agentmail", runtimeName: "agentmail", source }] : [],
@@ -1579,14 +1579,14 @@ process.exit(1);
     await writeFakeCodexCommand(commandPath);
 
     const previousHome = process.env.HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const previousPaperclipInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
+    const previousPaperclipHome = process.env.GSAM_HOME;
+    const previousPaperclipInstanceId = process.env.GSAM_INSTANCE_ID;
+    const previousPaperclipInWorktree = process.env.GSAM_IN_WORKTREE;
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.HOME = root;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "worktree-1";
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
+    process.env.GSAM_HOME = paperclipHome;
+    process.env.GSAM_INSTANCE_ID = "worktree-1";
+    process.env.GSAM_IN_WORKTREE = "true";
     process.env.CODEX_HOME = sharedCodexHome;
 
     try {
@@ -1610,7 +1610,7 @@ process.exit(1);
           command: commandPath,
           cwd: workspace,
           env: {
-            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+            GSAM_TEST_CAPTURE_PATH: capturePath,
             CODEX_HOME: explicitCodexHome,
           },
           promptTemplate: "Follow the paperclip heartbeat.",
@@ -1633,12 +1633,12 @@ process.exit(1);
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
-      if (previousPaperclipInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
-      else process.env.PAPERCLIP_IN_WORKTREE = previousPaperclipInWorktree;
+      if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousPaperclipHome;
+      if (previousPaperclipInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+      else process.env.GSAM_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousPaperclipInWorktree === undefined) delete process.env.GSAM_IN_WORKTREE;
+      else process.env.GSAM_IN_WORKTREE = previousPaperclipInWorktree;
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
       await fs.rm(root, { recursive: true, force: true });

@@ -17,8 +17,8 @@ import {
   routineRuns,
   routineTriggers,
   routines,
-} from "@paperclipai/db";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+} from "@greatstone/db";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -51,7 +51,7 @@ function manifest(): PaperclipPluginManifestV1 {
     version: "0.1.0",
     displayName: "Managed Routines Test",
     description: "Test plugin",
-    author: "Paperclip",
+    author: "GS Agentic Manager",
     categories: ["automation"],
     capabilities: ["agents.managed", "projects.managed", "routines.managed"],
     entrypoints: { worker: "./dist/worker.js" },
@@ -136,14 +136,14 @@ describeEmbeddedPostgres("plugin-managed routines", () => {
     const pluginId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: issuePrefix(companyId),
       defaultResponsibleUserId: "responsible-user",
     });
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: pluginManifest.id,
-      packageName: "@paperclipai/plugin-managed-routines-test",
+      packageName: "@greatstone/plugin-managed-routines-test",
       version: pluginManifest.version,
       apiVersion: pluginManifest.apiVersion,
       categories: pluginManifest.categories,

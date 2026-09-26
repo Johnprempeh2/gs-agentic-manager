@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AskUserQuestionsInteraction } from "@paperclipai/shared";
+import type { AskUserQuestionsInteraction } from "@greatstone/shared";
 import { TelegramAdapter } from "@chat-adapter/telegram";
 import { Actions, Button, Card, CardText } from "chat";
 import {
@@ -53,7 +53,7 @@ describe("native chat question eligibility", () => {
     });
   });
 
-  it("keeps an explicitly open question on the Paperclip-only response path", () => {
+  it("keeps an explicitly open question on the GS Agentic Manager-only response path", () => {
     expect(nativeChatQuestion(closedQuestion(true))).toBeNull();
   });
 });

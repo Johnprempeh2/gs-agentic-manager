@@ -1,11 +1,11 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Mail, Paperclip } from "lucide-react";
+import { Mail, PaperclipIcon } from "lucide-react";
 import type {
   EmailMessage,
   EmailPublicationSummary,
   EmailThreadSummary,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { emailApi } from "@/api/email";
 import { issuesApi } from "@/api/issues";
 import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
@@ -109,7 +109,7 @@ export function EmailMessageCard({
                 rel="noreferrer"
                 className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs"
               >
-                <Paperclip className="size-3.5" />
+                <PaperclipIcon className="size-3.5" />
                 {attachment?.originalFilename ?? "Open attachment"}
               </a>
             );

@@ -49,7 +49,7 @@ export interface CatalogSkill {
 
 export interface CatalogManifest {
   schemaVersion: 1;
-  packageName: "@paperclipai/skills-catalog";
+  packageName: "@greatstone/skills-catalog";
   packageVersion: string;
   generatedAt: string;
   skills: CatalogSkill[];

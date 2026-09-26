@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
-  PAPERCLIP_QUESTION_SET_SCHEMA,
+  GSAM_QUESTION_RESPONSE_SCHEMA,
+  GSAM_QUESTION_SET_SCHEMA,
   parsePaperclipQuestionResponse,
   parsePaperclipQuestionSet,
   type PaperclipQuestionSet,
 } from "./question-set.js";
 
 const questionSet: PaperclipQuestionSet = {
-  schema: PAPERCLIP_QUESTION_SET_SCHEMA,
+  schema: GSAM_QUESTION_SET_SCHEMA,
   title: "Release input",
   questions: [
     {
@@ -33,17 +33,17 @@ const questionSet: PaperclipQuestionSet = {
   ],
 };
 
-describe("Paperclip question-set contract", () => {
+describe("GS Agentic Manager question-set contract", () => {
   it("round-trips the portable presentation model", () => {
     expect(parsePaperclipQuestionSet(questionSet)).toEqual(questionSet);
     expect(parsePaperclipQuestionResponse(questionSet, {
-      schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
+      schema: GSAM_QUESTION_RESPONSE_SCHEMA,
       answers: {
         environment: { selectedOptionIds: ["staging"] },
         replicas: { text: "3" },
       },
     })).toEqual({
-      schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
+      schema: GSAM_QUESTION_RESPONSE_SCHEMA,
       answers: {
         environment: { selectedOptionIds: ["staging"] },
         replicas: { text: "3" },
@@ -53,18 +53,18 @@ describe("Paperclip question-set contract", () => {
 
   it("rejects missing, unknown, and provider-shaped answers", () => {
     expect(() => parsePaperclipQuestionResponse(questionSet, {
-      schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
+      schema: GSAM_QUESTION_RESPONSE_SCHEMA,
       answers: { environment: { selectedOptionIds: ["unknown"] }, replicas: { text: "3" } },
     })).toThrow(/unknown option/);
     expect(() => parsePaperclipQuestionResponse(questionSet, {
-      schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
+      schema: GSAM_QUESTION_RESPONSE_SCHEMA,
       answers: { environment: { selectedOptionIds: ["staging"] } },
     })).toThrow(/replicas.*required/);
     expect(() => parsePaperclipQuestionResponse(questionSet, {
       answers: { environment: { answers: ["Staging"] } },
     })).toThrow(/paperclip.question_response.v1/);
     expect(() => parsePaperclipQuestionResponse(questionSet, {
-      schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
+      schema: GSAM_QUESTION_RESPONSE_SCHEMA,
       answers: {
         environment: { answers: ["Staging"] },
         replicas: { text: "3" },
@@ -74,14 +74,14 @@ describe("Paperclip question-set contract", () => {
 
   it("applies typed numeric validation before an adapter sees the answer", () => {
     expect(() => parsePaperclipQuestionResponse(questionSet, {
-      schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
+      schema: GSAM_QUESTION_RESPONSE_SCHEMA,
       answers: {
         environment: { customText: "Canary" },
         replicas: { text: "3.5" },
       },
     })).toThrow(/valid integer/);
     expect(() => parsePaperclipQuestionResponse(questionSet, {
-      schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
+      schema: GSAM_QUESTION_RESPONSE_SCHEMA,
       answers: {
         environment: { customText: "Canary" },
         replicas: { text: "21" },

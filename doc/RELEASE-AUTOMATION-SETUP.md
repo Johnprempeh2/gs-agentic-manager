@@ -1,6 +1,6 @@
 # Release Automation Setup
 
-This document covers the GitHub and npm setup required for the current Paperclip release model:
+This document covers the GitHub and npm setup required for the current GS Agentic Manager release model:
 
 - automatic canaries from `master`
 - manual stable promotion from a chosen source ref
@@ -29,13 +29,13 @@ Required files:
 
 ## 2. Configure npm Trusted Publishing
 
-Do this for every public package that Paperclip publishes.
+Do this for every public package that GS Agentic Manager publishes.
 
 At minimum that includes:
 
-- `paperclipai`
-- `@paperclipai/server`
-- `@paperclipai/ui`
+- `gsam`
+- `@greatstone/server`
+- `@greatstone/ui`
 - public packages under `packages/`
 
 ### 2.1. In npm, open each package settings page
@@ -104,7 +104,7 @@ Only after that should you remove old token-based access.
 After trusted publishing works:
 
 1. revoke any repository or organization `NPM_TOKEN` secrets used for publish
-2. revoke any personal automation token that used to publish Paperclip
+2. revoke any personal automation token that used to publish GS Agentic Manager
 3. if npm offers a package-level setting to restrict publishing to trusted publishers, enable it
 
 Goal:
@@ -262,11 +262,11 @@ After setup:
 Install-path check:
 
 ```bash
-npm install --prefix "$(mktemp -d)" paperclipai@canary --no-audit --no-fund
+npm install --prefix "$(mktemp -d)" gsam@canary --no-audit --no-fund
 ```
 
 The release script runs this clean-prefix install after publishing every workspace
-package dependency-first and publishing `paperclipai` last. A package that is not
+package dependency-first and publishing `gsam` last. A package that is not
 yet registry-visible stops the train before the channel entrypoint can advance.
 
 ## 12. Verify the Stable Workflow
@@ -338,7 +338,7 @@ Check:
 
 ## Runner verification dependency cache
 
-`release-verify.yml` runs `Verify Paperclip Runner` on two independent runners.
+`release-verify.yml` runs `Verify GS Agentic Manager Runner` on two independent runners.
 The protocol lane runs `check:eval-kernel` and `check:protocol`. The Rust lane
 runs `check:runner` and `check:api-authority`. Together they retain every check
 in `check:all`; both lanes must pass before Cloud source verification or

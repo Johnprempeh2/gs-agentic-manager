@@ -35,14 +35,14 @@ import {
   documentRevisions,
   issues,
   nativeRunFinalizations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "../../__tests__/helpers/embedded-postgres.js";
 import { reconcileSafeNativeReplacements } from "./native-safe-replacement.js";
 import { reconcileAbandonedExecutionControl } from "../execution-control-reconciliation.js";
-const externalDatabaseUrl = process.env.PAPERCLIP_TEST_DATABASE_URL;
+const externalDatabaseUrl = process.env.GSAM_TEST_DATABASE_URL;
 const support = externalDatabaseUrl
   ? { supported: true }
   : await getEmbeddedPostgresTestSupport();

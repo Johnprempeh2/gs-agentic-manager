@@ -22,12 +22,12 @@ describe("compactRunLogChunk", () => {
     expect(compacted.endsWith("tail")).toBe(true);
   });
 
-  it("redacts Paperclip credential shapes before persisting run-log chunks", () => {
+  it("redacts GS Agentic Manager credential shapes before persisting run-log chunks", () => {
     const chunk = [
       "Authorization: Bearer live-bearer-token-value",
-      `export PAPERCLIP_API_KEY='paperclip-shell-secret'`,
+      `export GSAM_API_KEY='paperclip-shell-secret'`,
       `auth {"refresh_token":"refresh-token-fixture-secret"}`,
-      `payload {"PAPERCLIP_API_KEY":"paperclip-json-secret"}`,
+      `payload {"GSAM_API_KEY":"paperclip-json-secret"}`,
       "--paperclip-api-key=paperclip-flag-secret",
     ].join("\n");
 

@@ -12,9 +12,9 @@ describe("heartbeat workspace-ready comment", () => {
       repoUrl: null,
       repoRef: "main",
       strategy: "git_worktree",
-      cwd: "/repo/.paperclip/worktrees/PAP-16051",
+      cwd: "/repo/.gsam/worktrees/PAP-16051",
       branchName: "PAP-16051-workspace-ready-notice",
-      worktreePath: "/repo/.paperclip/worktrees/PAP-16051",
+      worktreePath: "/repo/.gsam/worktrees/PAP-16051",
       warnings: [],
       created: true,
     };
@@ -38,7 +38,7 @@ describe("heartbeat workspace-ready comment", () => {
         "",
         "- Strategy: `git_worktree`",
         "- Branch: `PAP-16051-workspace-ready-notice`",
-        "- CWD: `/repo/.paperclip/worktrees/PAP-16051`",
+        "- CWD: `/repo/.gsam/worktrees/PAP-16051`",
       ].join("\n"),
       { agentId: "agent-id", runId: "run-id" },
       {
@@ -56,7 +56,7 @@ describe("heartbeat workspace-ready comment", () => {
             rows: [
               { type: "key_value", label: "Strategy", value: "git_worktree" },
               { type: "key_value", label: "Branch", value: "PAP-16051-workspace-ready-notice" },
-              { type: "key_value", label: "CWD", value: "/repo/.paperclip/worktrees/PAP-16051" },
+              { type: "key_value", label: "CWD", value: "/repo/.gsam/worktrees/PAP-16051" },
             ],
           }],
         },

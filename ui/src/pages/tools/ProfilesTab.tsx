@@ -12,7 +12,7 @@ import type {
   ToolProfileStatus,
   ToolProfileWithDetails,
   ToolRiskLevel,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { agentsApi } from "@/api/agents";
 import { projectsApi } from "@/api/projects";
 import { routinesApi } from "@/api/routines";
@@ -599,7 +599,7 @@ function AllowList({ rows, catalogLoading }: { rows: AllowListRow[]; catalogLoad
                       <span className="font-mono text-xs text-foreground">{row.toolName}</span>
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">
-                      {row.applicationName ?? <span className="text-muted-foreground/60">—</span>}
+                      {row.applicationName ?? <span className="text-subtle-foreground">—</span>}
                     </td>
                     <td className="px-3 py-2.5">
                       {row.isReadOnly || row.isWrite || row.isDestructive ? (
@@ -609,11 +609,11 @@ function AllowList({ rows, catalogLoading }: { rows: AllowListRow[]; catalogLoad
                           isDestructive={row.isDestructive}
                         />
                       ) : (
-                        <span className="text-muted-foreground/60">—</span>
+                        <span className="text-subtle-foreground">—</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5">
-                      {row.risk ? <RiskBadge risk={row.risk} /> : <span className="text-muted-foreground/60">—</span>}
+                      {row.risk ? <RiskBadge risk={row.risk} /> : <span className="text-subtle-foreground">—</span>}
                     </td>
                     <td className="px-3 py-2.5">
                       <SourceBadge source={row.source} />

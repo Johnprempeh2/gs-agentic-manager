@@ -8,7 +8,7 @@ import type {
   AttentionSeverity,
   AttentionSourceKind,
   AttentionWorkspaceRef,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 
 export type AttentionListOptions = AttentionFeedQuery;
 

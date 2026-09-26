@@ -2,13 +2,13 @@
  * Shared attachment content-type configuration.
  *
  * By default a curated set of image/document/text/media types are allowed. Set the
- * `PAPERCLIP_ALLOWED_ATTACHMENT_TYPES` environment variable to a
+ * `GSAM_ALLOWED_ATTACHMENT_TYPES` environment variable to a
  * comma-separated list of MIME types or wildcard patterns to expand the
  * allowed set for routes that use this allowlist.
  *
  * Examples:
- *   PAPERCLIP_ALLOWED_ATTACHMENT_TYPES=image/*,application/pdf
- *   PAPERCLIP_ALLOWED_ATTACHMENT_TYPES=image/*,application/pdf,text/*
+ *   GSAM_ALLOWED_ATTACHMENT_TYPES=image/*,application/pdf
+ *   GSAM_ALLOWED_ATTACHMENT_TYPES=image/*,application/pdf,text/*
  *
  * Supported pattern syntax:
  *   - Exact types:   "application/pdf"
@@ -100,7 +100,7 @@ export function matchesContentType(contentType: string, allowedPatterns: string[
 
 export function normalizeContentType(contentType: string | null | undefined): string {
   // Provider APIs commonly return a complete Content-Type header value (for
-  // example Discord uses `text/plain; charset=utf-8`) while Paperclip's
+  // example Discord uses `text/plain; charset=utf-8`) while GS Agentic Manager's
   // allowlist and persisted asset metadata operate on the MIME essence. MIME
   // parameters do not change the media type, so normalize them away before
   // enforcing the allowlist. Invalid/empty essences still fail closed to the
@@ -148,7 +148,7 @@ export function isInlineAttachmentContentType(contentType: string): boolean {
 // ---------- Module-level singletons read once at startup ----------
 
 const allowedPatterns: string[] = parseAllowedTypes(
-  process.env.PAPERCLIP_ALLOWED_ATTACHMENT_TYPES,
+  process.env.GSAM_ALLOWED_ATTACHMENT_TYPES,
 );
 
 /** Convenience wrapper using the process-level allowed list. */
@@ -162,7 +162,7 @@ export function isAllowedContentType(contentType: string): boolean {
  * value, so an operator raises or lowers the limit in exactly one place.
  */
 export const MAX_ATTACHMENT_BYTES =
-  Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
+  Number(process.env.GSAM_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
 
 const ATTACHMENT_SIZE_UNITS: readonly string[] = ["KB", "MB", "GB"];
 

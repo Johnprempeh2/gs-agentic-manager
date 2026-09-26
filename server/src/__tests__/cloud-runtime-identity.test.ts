@@ -2,7 +2,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createDb, instanceSettings } from "@paperclipai/db";
+import { createDb, instanceSettings } from "@greatstone/db";
 import {
   applyCloudRuntimeIdentityAssertion,
   CLOUD_RUNTIME_IDENTITY_AUDIENCE,
@@ -88,40 +88,40 @@ describeEmbeddedPostgres("Cloud runtime identity", () => {
   beforeEach(async () => {
     await db.delete(instanceSettings);
     resetCloudRuntimeIdentityForTests();
-    process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN = "test-tenant-server-token";
-    process.env.PAPERCLIP_CLOUD_STACK_ID = STACK_ID;
-    process.env.PAPERCLIP_CLOUD_API_ORIGIN = "https://my-staging.paperclip.app";
-    process.env.PAPERCLIP_PUBLIC_URL = POOL_ORIGIN;
-    process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL = POOL_ORIGIN;
-    process.env.PAPERCLIP_API_URL = POOL_ORIGIN;
-    process.env.PAPERCLIP_PRIMARY_HOST = "pool-123.staging.paperclip.app";
-    process.env.PAPERCLIP_STACK_SLUG = "pool-123";
-    process.env.PAPERCLIP_CLOUD_RUNTIME_IDENTITY_JWKS = JSON.stringify({ keys: [publicJwk] });
-    process.env.PAPERCLIP_CLOUD_CONNECTOR_INSTANCE_ID = "managed-instance";
-    process.env.PAPERCLIP_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY = "managed-signing-key";
-    process.env.PAPERCLIP_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY = "managed-sealing-key";
-    process.env.PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT = "staging";
-    process.env.PAPERCLIP_CLOUD_CONNECTOR_BASE_URL = "https://my-staging.paperclip.app";
+    process.env.GSAM_CLOUD_TENANT_SERVER_TOKEN = "test-tenant-server-token";
+    process.env.GSAM_CLOUD_STACK_ID = STACK_ID;
+    process.env.GSAM_CLOUD_API_ORIGIN = "https://my-staging.paperclip.app";
+    process.env.GSAM_PUBLIC_URL = POOL_ORIGIN;
+    process.env.GSAM_AUTH_PUBLIC_BASE_URL = POOL_ORIGIN;
+    process.env.GSAM_API_URL = POOL_ORIGIN;
+    process.env.GSAM_PRIMARY_HOST = "pool-123.staging.paperclip.app";
+    process.env.GSAM_STACK_SLUG = "pool-123";
+    process.env.GSAM_CLOUD_RUNTIME_IDENTITY_JWKS = JSON.stringify({ keys: [publicJwk] });
+    process.env.GSAM_CLOUD_CONNECTOR_INSTANCE_ID = "managed-instance";
+    process.env.GSAM_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY = "managed-signing-key";
+    process.env.GSAM_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY = "managed-sealing-key";
+    process.env.GSAM_CLOUD_CONNECTOR_ENVIRONMENT = "staging";
+    process.env.GSAM_CLOUD_CONNECTOR_BASE_URL = "https://my-staging.paperclip.app";
     await initializeCloudRuntimeIdentity(db);
   });
 
   afterEach(() => {
     for (const key of [
-      "PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN",
-      "PAPERCLIP_CLOUD_STACK_ID",
-      "PAPERCLIP_CLOUD_API_ORIGIN",
-      "PAPERCLIP_PUBLIC_URL",
-      "PAPERCLIP_AUTH_PUBLIC_BASE_URL",
-      "PAPERCLIP_API_URL",
-      "PAPERCLIP_PRIMARY_HOST",
-      "PAPERCLIP_STACK_SLUG",
-      "PAPERCLIP_CLOUD_RUNTIME_IDENTITY_JWKS",
-      "PAPERCLIP_CLOUD_CONNECTOR_INSTANCE_ID",
-      "PAPERCLIP_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY",
-      "PAPERCLIP_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY",
-      "PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT",
-      "PAPERCLIP_CLOUD_CONNECTOR_BASE_URL",
-      "PAPERCLIP_RUNTIME_API_CANDIDATES_JSON",
+      "GSAM_CLOUD_TENANT_SERVER_TOKEN",
+      "GSAM_CLOUD_STACK_ID",
+      "GSAM_CLOUD_API_ORIGIN",
+      "GSAM_PUBLIC_URL",
+      "GSAM_AUTH_PUBLIC_BASE_URL",
+      "GSAM_API_URL",
+      "GSAM_PRIMARY_HOST",
+      "GSAM_STACK_SLUG",
+      "GSAM_CLOUD_RUNTIME_IDENTITY_JWKS",
+      "GSAM_CLOUD_CONNECTOR_INSTANCE_ID",
+      "GSAM_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY",
+      "GSAM_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY",
+      "GSAM_CLOUD_CONNECTOR_ENVIRONMENT",
+      "GSAM_CLOUD_CONNECTOR_BASE_URL",
+      "GSAM_RUNTIME_API_CANDIDATES_JSON",
     ]) {
       const original = originalEnv[key];
       if (original === undefined) delete process.env[key];
@@ -144,11 +144,11 @@ describeEmbeddedPostgres("Cloud runtime identity", () => {
     expect(applied.canonicalOrigin).toBe(CANONICAL_ORIGIN);
     expect(getCloudRuntimeIdentity()?.stackSlug).toBe("gonzo");
     expect(runtimePublicOrigin()).toBe(CANONICAL_ORIGIN);
-    expect(process.env.PAPERCLIP_PUBLIC_URL).toBe(CANONICAL_ORIGIN);
-    expect(process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL).toBe(CANONICAL_ORIGIN);
-    expect(process.env.PAPERCLIP_API_URL).toBe(CANONICAL_ORIGIN);
-    expect(process.env.PAPERCLIP_PRIMARY_HOST).toBe("gonzo.staging.paperclip.app");
-    expect(process.env.PAPERCLIP_STACK_SLUG).toBe("gonzo");
+    expect(process.env.GSAM_PUBLIC_URL).toBe(CANONICAL_ORIGIN);
+    expect(process.env.GSAM_AUTH_PUBLIC_BASE_URL).toBe(CANONICAL_ORIGIN);
+    expect(process.env.GSAM_API_URL).toBe(CANONICAL_ORIGIN);
+    expect(process.env.GSAM_PRIMARY_HOST).toBe("gonzo.staging.paperclip.app");
+    expect(process.env.GSAM_STACK_SLUG).toBe("gonzo");
     expect(routineWebhookUrl("hook-1")).toBe(
       "https://gonzo.staging.paperclip.app/api/routine-triggers/public/hook-1/fire",
     );
@@ -186,22 +186,22 @@ describeEmbeddedPostgres("Cloud runtime identity", () => {
   it("restores the canonical identity before consumers read stale startup variables", async () => {
     await applyCloudRuntimeIdentityAssertion({ db, compactJws: assertion(), now: NOW });
     resetCloudRuntimeIdentityForTests();
-    process.env.PAPERCLIP_PUBLIC_URL = POOL_ORIGIN;
-    process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL = POOL_ORIGIN;
-    process.env.PAPERCLIP_API_URL = POOL_ORIGIN;
+    process.env.GSAM_PUBLIC_URL = POOL_ORIGIN;
+    process.env.GSAM_AUTH_PUBLIC_BASE_URL = POOL_ORIGIN;
+    process.env.GSAM_API_URL = POOL_ORIGIN;
 
     await initializeCloudRuntimeIdentity(db);
 
     expect(runtimePublicOrigin()).toBe(CANONICAL_ORIGIN);
-    expect(process.env.PAPERCLIP_API_URL).toBe(CANONICAL_ORIGIN);
+    expect(process.env.GSAM_API_URL).toBe(CANONICAL_ORIGIN);
   });
 
   it("accepts the identical claim after a restart with already-aligned provider variables", async () => {
     await applyCloudRuntimeIdentityAssertion({ db, compactJws: assertion(), now: NOW });
     resetCloudRuntimeIdentityForTests();
-    process.env.PAPERCLIP_PUBLIC_URL = CANONICAL_ORIGIN;
-    process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL = CANONICAL_ORIGIN;
-    process.env.PAPERCLIP_API_URL = CANONICAL_ORIGIN;
+    process.env.GSAM_PUBLIC_URL = CANONICAL_ORIGIN;
+    process.env.GSAM_AUTH_PUBLIC_BASE_URL = CANONICAL_ORIGIN;
+    process.env.GSAM_API_URL = CANONICAL_ORIGIN;
     await initializeCloudRuntimeIdentity(db);
 
     await expect(applyCloudRuntimeIdentityAssertion({

@@ -1,14 +1,14 @@
 import path from "node:path";
 import fs from "node:fs";
 import { isDeepStrictEqual } from "node:util";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import { assertDistributionManifestCapabilities, readDistributionPluginCatalog, type DistributionPlugin } from "./distribution-plugin-catalog.js";
 
 /**
  * Bundled plugin auto-provisioning.
  *
  * Managed-cloud instances receive a `plugins.autoInstall` key list through
- * `PAPERCLIP_MANAGED_CONFIG` (parsed fail-closed at startup — see
+ * `GSAM_MANAGED_CONFIG` (parsed fail-closed at startup — see
  * `managed-config.ts`). Each key maps to a plugin bundled into
  * the release image under the bundled catalog root. Nobody "installs" on a
  * managed instance: the control plane provisions, tenants use.
@@ -40,7 +40,7 @@ export const DEFAULT_BUNDLED_CATALOG_ROOT = "/app/packages/plugins";
 /**
  * Env var that relocates the bundled catalog root (dev images, tests).
  */
-export const BUNDLED_CATALOG_ROOT_ENV_VAR = "PAPERCLIP_BUNDLED_PLUGIN_ROOT";
+export const BUNDLED_CATALOG_ROOT_ENV_VAR = "GSAM_BUNDLED_PLUGIN_ROOT";
 
 export interface BundledPluginCatalogEntry {
   /** Key the managed config's `plugins.autoInstall` list uses. */
@@ -92,7 +92,7 @@ export const BUNDLED_PLUGIN_CATALOG: readonly BundledPluginCatalogEntry[] = [
     key: "kubernetes",
     pluginKey: "paperclip.kubernetes-sandbox-provider",
     relativePath: "sandbox-providers/kubernetes",
-    pathOverrideEnvVar: "PAPERCLIP_KUBERNETES_PLUGIN_PATH",
+    pathOverrideEnvVar: "GSAM_KUBERNETES_PLUGIN_PATH",
   },
   {
     key: "modal",

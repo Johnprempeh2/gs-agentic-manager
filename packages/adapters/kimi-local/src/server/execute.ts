@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult } from "@greatstone/adapter-utils";
 import {
   adapterExecutionTargetIsRemote,
   adapterExecutionTargetRemoteCwd,
@@ -20,7 +20,7 @@ import {
   resolveAdapterExecutionTargetCommandForLogs,
   runAdapterExecutionTargetProcess,
   startAdapterExecutionTargetPaperclipBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 import {
   asNumber,
   asString,
@@ -42,9 +42,9 @@ import {
   selectPaperclipTaskMarkdown,
   selectInitialCommunicationGuidance,
   isPaperclipRecoveryWakePayload,
-  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
-  DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE,
-} from "@paperclipai/adapter-utils/server-utils";
+  DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE,
+} from "@greatstone/adapter-utils/server-utils";
 import {
   SANDBOX_INSTALL_COMMAND,
   modelSupportsEffort,
@@ -146,12 +146,12 @@ function buildKimiRuntimeEnv(env: Record<string, string>): Record<string, string
 
 function renderPaperclipEnvNote(env: Record<string, string>): string {
   const paperclipKeys = Object.keys(env)
-    .filter((key) => key.startsWith("PAPERCLIP_"))
+    .filter((key) => key.startsWith("GSAM_"))
     .sort();
   if (paperclipKeys.length === 0) return "";
   return [
-    "Paperclip runtime note:",
-    `The following PAPERCLIP_* environment variables are available in this run: ${paperclipKeys.join(", ")}`,
+    "GS Agentic Manager runtime note:",
+    `The following GSAM_* environment variables are available in this run: ${paperclipKeys.join(", ")}`,
     "Do not assume these variables are missing without checking your shell environment.",
     "",
     "",
@@ -159,10 +159,10 @@ function renderPaperclipEnvNote(env: Record<string, string>): string {
 }
 
 function renderApiAccessNote(env: Record<string, string>): string {
-  if (!hasNonEmptyEnvValue(env, "PAPERCLIP_API_URL") || !hasNonEmptyEnvValue(env, "PAPERCLIP_API_KEY")) return "";
+  if (!hasNonEmptyEnvValue(env, "GSAM_API_URL") || !hasNonEmptyEnvValue(env, "GSAM_API_KEY")) return "";
   return [
-    "Paperclip API access note:",
-    "Use shell commands with curl to make Paperclip API requests when needed.",
+    "GS Agentic Manager API access note:",
+    "Use shell commands with curl to make GS Agentic Manager API requests when needed.",
     "Include X-Paperclip-Run-Id on mutating requests.",
     "",
     "",
@@ -213,8 +213,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const promptTemplate = asString(
     config.promptTemplate,
     context.conversationMode === true
-      ? DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE
-      : DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
+      ? DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE
+      : DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
   );
   const command = asString(config.command, "kimi");
   const model = asString(config.model, "").trim();
@@ -242,12 +242,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const envConfig = parseObject(config.env);
 
   const hasExplicitApiKey =
-    typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
+    typeof envConfig.GSAM_API_KEY === "string" && envConfig.GSAM_API_KEY.trim().length > 0;
   const env: Record<string, string> = {
     ...buildPaperclipEnv(agent),
     ...buildRuntimeToolsEnv(ctx.runtimeTools),
   };
-  env.PAPERCLIP_RUN_ID = runId;
+  env.GSAM_RUN_ID = runId;
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
@@ -272,13 +272,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
   const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
-  if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
-  if (issueWorkMode) env.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
-  if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
-  if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
-  if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
-  if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
-  if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (wakeTaskId) env.GSAM_TASK_ID = wakeTaskId;
+  if (issueWorkMode) env.GSAM_ISSUE_WORK_MODE = issueWorkMode;
+  if (wakeReason) env.GSAM_WAKE_REASON = wakeReason;
+  if (wakeCommentId) env.GSAM_WAKE_COMMENT_ID = wakeCommentId;
+  if (approvalId) env.GSAM_APPROVAL_ID = approvalId;
+  if (approvalStatus) env.GSAM_APPROVAL_STATUS = approvalStatus;
+  if (linkedIssueIds.length > 0) env.GSAM_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   refreshPaperclipWorkspaceEnvForExecution({
     env,
     envConfig,
@@ -293,7 +293,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     executionCwd: effectiveExecutionCwd,
   });
   if (!hasExplicitApiKey && authToken) {
-    env.PAPERCLIP_API_KEY = authToken;
+    env.GSAM_API_KEY = authToken;
   }
   // Forward configured thinking effort as KIMI_MODEL_THINKING_EFFORT. Kimi has
   // no per-invocation effort flag; this env var is an operational override that
@@ -390,7 +390,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       // from its isolated per-run location instead of copying it over the
       // shared $KIMI_CODE_HOME/skills home. Overwriting the shared home would
       // delete Kimi skills installed by the operator or other agents that
-      // Paperclip does not own.
+      // GS Agentic Manager does not own.
       if (desiredKimiSkillNames.length > 0 && preparedExecutionTargetRuntime.assetDirs.skills) {
         remoteSkillsDir = preparedExecutionTargetRuntime.assetDirs.skills;
       }
@@ -410,7 +410,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       runtimeRootDir: remoteRuntimeRootDir,
       adapterKey: "kimi",
       timeoutSec,
-      hostApiToken: env.PAPERCLIP_API_KEY,
+      hostApiToken: env.GSAM_API_KEY,
       onLog,
     });
     if (paperclipBridge) {
@@ -561,7 +561,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (!executionTargetIsRemote && instructionsFilePath) {
       args.push("--add-dir", path.dirname(instructionsFilePath));
     }
-    // Load desired Paperclip skills from the dedicated per-run directory
+    // Load desired GS Agentic Manager skills from the dedicated per-run directory
     // (local snapshot, or the synced remote snapshot) instead of the shared
     // skills home. Only passed when skills are desired so unconfigured agents
     // keep Kimi's default skill discovery.

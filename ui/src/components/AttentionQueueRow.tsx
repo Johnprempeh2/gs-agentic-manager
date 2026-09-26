@@ -11,7 +11,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import type { Agent, AttentionDetailImage, AttentionItem } from "@paperclipai/shared";
+import type { Agent, AttentionDetailImage, AttentionItem } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { accessApi } from "../api/access";
 import { approvalsApi } from "../api/approvals";
@@ -282,7 +282,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                 <CalendarClock className="h-3 w-3" />
                 {decideByLabel(item.decideBy)}
                 {decideByProvenance(item) && (
-                  <span className="text-muted-foreground/80">· set by {decideByProvenance(item)}</span>
+                  <span className="text-subtle-foreground">· set by {decideByProvenance(item)}</span>
                 )}
               </span>
             </>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import { listReadyPluginEnvironmentDrivers } from "../services/plugin-environment-driver.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 
@@ -23,7 +23,7 @@ const manifest: PaperclipPluginManifestV1 = {
   version: "1.0.0",
   displayName: "Capability Sandbox Provider",
   description: "Sandbox provider that declares fine-grained capabilities.",
-  author: "Paperclip",
+  author: "GS Agentic Manager",
   categories: ["automation"],
   capabilities: ["environment.drivers.register"],
   entrypoints: { worker: "dist/worker.js" },

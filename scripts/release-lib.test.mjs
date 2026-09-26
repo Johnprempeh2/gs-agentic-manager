@@ -175,7 +175,7 @@ exec npm "$@"
     ? ""
     : `sleep() { printf 'sleep %s\\n' "$*" >> "$FAKE_CALL_LOG"; }`;
   const packageInfo = (
-    visibilityPackages ?? ["@paperclipai/example"]
+    visibilityPackages ?? ["@greatstone/example"]
   )
     .map((name) => `packages/example\\t${name}\\t1.2.3`)
     .join("\\n");
@@ -188,10 +188,10 @@ ${
     ? `PACKAGE_INFO="$(printf '${packageInfo}')"
 wait_for_npm_package_versions "$VERIFY_ATTEMPTS" "$VERIFY_DELAY_SECONDS" "$PACKAGE_INFO"`
     : waitForRegistry
-      ? `publish_package_to_npm ${distTag} @paperclipai/example 1.2.3 ${publishTool}
+      ? `publish_package_to_npm ${distTag} @greatstone/example 1.2.3 ${publishTool}
 PACKAGE_INFO="$(printf '${packageInfo}')"
 wait_for_npm_package_versions "$VERIFY_ATTEMPTS" "$VERIFY_DELAY_SECONDS" "$PACKAGE_INFO"`
-      : `publish_package_to_npm ${distTag} @paperclipai/example 1.2.3 ${publishTool}`
+      : `publish_package_to_npm ${distTag} @greatstone/example 1.2.3 ${publishTool}`
 }
 `;
 
@@ -335,7 +335,7 @@ test("wait_for_npm_package_versions polls every package concurrently", () => {
   // only concurrent polling converges.
   const result = runPublishHelper({
     pnpmMode: "success",
-    visibilityPackages: ["@paperclipai/alpha", "@paperclipai/beta"],
+    visibilityPackages: ["@greatstone/alpha", "@greatstone/beta"],
     verifyAttempts: 50,
     verifyDelaySeconds: 0.2,
   });

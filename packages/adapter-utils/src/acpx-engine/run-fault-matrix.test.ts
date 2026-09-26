@@ -6,7 +6,7 @@ import {
   prepareAdapterExecutionTargetRuntime,
   startAdapterExecutionTargetPaperclipBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 import { runChildProcess } from "../server-utils.js";
 import { classifyWorkspaceRestoreFailure } from "../workspace-restore-merge.js";
 
@@ -27,8 +27,8 @@ import { classifyWorkspaceRestoreFailure } from "../workspace-restore-merge.js";
 
 // Wrap the staging seam and both sandbox bridges so a test can stub them without
 // changing behavior for the other tests.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@greatstone/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@greatstone/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),

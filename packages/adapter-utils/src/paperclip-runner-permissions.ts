@@ -8,9 +8,9 @@ export type AcpxPermissionMode = "approve-all" | "approve-paperclip" | "approve-
 export type PaperclipRunnerPermissionMode =
   CodexPermissionMode | OpenCodePermissionMode | AcpxPermissionMode;
 
-export const PAPERCLIP_RUNNER_IDLE_TIMEOUT_DEFAULT_MS = 300_000;
-export const PAPERCLIP_RUNNER_IDLE_TIMEOUT_MAX_MS = 86_400_000;
-export const PAPERCLIP_RUNNER_DEFAULT_MODELS = {
+export const GSAM_RUNNER_IDLE_TIMEOUT_DEFAULT_MS = 300_000;
+export const GSAM_RUNNER_IDLE_TIMEOUT_MAX_MS = 86_400_000;
+export const GSAM_RUNNER_DEFAULT_MODELS = {
   codex: "gpt-5.6-sol",
   acpx: "claude-sonnet-5",
   opencode: "openrouter/deepseek/deepseek-v4-flash-0731",
@@ -41,11 +41,11 @@ export type PaperclipRunnerPermissionCapability =
     };
 
 /**
- * Control-plane catalog for Paperclip Runner permission UX and validation.
+ * Control-plane catalog for GS Agentic Manager Runner permission UX and validation.
  * Runtime contracts validate the same native values again at the process
  * boundary; this catalog must remain browser-safe.
  */
-export const PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES = {
+export const GSAM_RUNNER_PERMISSION_CAPABILITIES = {
   codex: {
     configurable: true,
     configKey: "codexPermissionMode",
@@ -55,13 +55,13 @@ export const PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES = {
     // only through the root-denied, workspace-scoped, network-disabled, and
     // environment-allowlisted profile assembled by codex-security-config.ts.
     description:
-      "Codex runs automatically inside a root-denied, workspace-scoped, network-disabled Paperclip environment.",
+      "Codex runs automatically inside a root-denied, workspace-scoped, network-disabled GS Agentic Manager environment.",
     options: [
       {
         value: "never",
         label: "Automatic (isolated)",
         description:
-          "Run without Codex approval pauses while Paperclip keeps its independent workspace, network, and environment restrictions.",
+          "Run without Codex approval pauses while GS Agentic Manager keeps its independent workspace, network, and environment restrictions.",
       },
     ],
   },
@@ -70,7 +70,7 @@ export const PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES = {
     configKey: "opencodePermissionMode",
     defaultMode: "allow",
     description:
-      "Controls OpenCode tool permissions inside the assigned Paperclip environment.",
+      "Controls OpenCode tool permissions inside the assigned GS Agentic Manager environment.",
     options: [
       {
         value: "allow",
@@ -94,21 +94,21 @@ export const PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES = {
     defaultMode: "provider-managed",
     options: [],
     description:
-      "Claude Managed runs non-interactively under its qualified provider profile and Paperclip policy.",
+      "Claude Managed runs non-interactively under its qualified provider profile and GS Agentic Manager policy.",
   },
   aws_agentcore: {
     configurable: false,
     defaultMode: "provider-managed",
     options: [],
     description:
-      "AWS AgentCore runs non-interactively under its qualified harness profile and Paperclip policy.",
+      "AWS AgentCore runs non-interactively under its qualified harness profile and GS Agentic Manager policy.",
   },
   acpx: {
     configurable: true,
     configKey: "acpxPermissionMode",
     defaultMode: "approve-all",
     description:
-      "Controls ACPX agent operations inside the assigned Paperclip environment.",
+      "Controls ACPX agent operations inside the assigned GS Agentic Manager environment.",
     options: [
       {
         value: "approve-all",
@@ -117,15 +117,15 @@ export const PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES = {
       },
       {
         value: "approve-paperclip",
-        label: "Automatic Paperclip actions",
+        label: "Automatic GS Agentic Manager actions",
         description:
-          "Automatically run assigned Paperclip planning and task tools, including reassignment. Company permissions and approval requirements still apply. Other operations require permission.",
+          "Automatically run assigned GS Agentic Manager planning and task tools, including reassignment. Company permissions and approval requirements still apply. Other operations require permission.",
       },
       {
         value: "approve-reads",
-        label: "Allow Paperclip reads",
+        label: "Allow GS Agentic Manager reads",
         description:
-          "Automatically allow assigned Paperclip read tools. Other operations stop with an approval-required message because this runner has no interactive approval handler.",
+          "Automatically allow assigned GS Agentic Manager read tools. Other operations stop with an approval-required message because this runner has no interactive approval handler.",
       },
       {
         value: "deny-all",
@@ -155,7 +155,7 @@ export function resolvePaperclipRunnerPermissionMode(
   provider: PaperclipRunnerProvider,
   value: unknown,
 ): PaperclipRunnerPermissionMode | "provider-managed" {
-  const capability = PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES[provider];
+  const capability = GSAM_RUNNER_PERMISSION_CAPABILITIES[provider];
   if (!capability.configurable) return capability.defaultMode;
   return capability.options.some((option) => option.value === value)
     ? (value as PaperclipRunnerPermissionMode)
@@ -163,21 +163,21 @@ export function resolvePaperclipRunnerPermissionMode(
 }
 
 export function resolvePaperclipRunnerModel(
-  provider: keyof typeof PAPERCLIP_RUNNER_DEFAULT_MODELS,
+  provider: keyof typeof GSAM_RUNNER_DEFAULT_MODELS,
   value: unknown,
 ): string {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
-    : PAPERCLIP_RUNNER_DEFAULT_MODELS[provider];
+    : GSAM_RUNNER_DEFAULT_MODELS[provider];
 }
 
 export function resolvePaperclipRunnerIdleTimeoutMs(value: unknown): number {
   return typeof value === "number" &&
     Number.isSafeInteger(value) &&
     value > 0 &&
-    value <= PAPERCLIP_RUNNER_IDLE_TIMEOUT_MAX_MS
+    value <= GSAM_RUNNER_IDLE_TIMEOUT_MAX_MS
     ? value
-    : PAPERCLIP_RUNNER_IDLE_TIMEOUT_DEFAULT_MS;
+    : GSAM_RUNNER_IDLE_TIMEOUT_DEFAULT_MS;
 }
 
 /** Defaults for converting a local adapter; the operator may override the provider. */
@@ -205,8 +205,8 @@ export function paperclipRunnerTransitionConfig(
       provider === previousProvider ? previousModel : undefined,
     ),
     ...(provider === "acpx" ? { acpxAgent: "claude" } : {}),
-    [PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES[provider].configKey]:
-      PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES[provider].defaultMode,
+    [GSAM_RUNNER_PERMISSION_CAPABILITIES[provider].configKey]:
+      GSAM_RUNNER_PERMISSION_CAPABILITIES[provider].defaultMode,
     lifecycleMode: "per_turn",
   };
 }

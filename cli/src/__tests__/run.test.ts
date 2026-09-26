@@ -26,8 +26,8 @@ function createProgram(): Command {
 describe("run inspection commands", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_API_URL;
+    delete process.env.GSAM_API_KEY;
+    delete process.env.GSAM_API_URL;
   });
 
   afterEach(() => {

@@ -1,5 +1,5 @@
 import { AiConnectionField } from "./ai-connections/AiConnectionField";
-import { aiConnectionBindingSchema } from "@paperclipai/shared";
+import { aiConnectionBindingSchema } from "@greatstone/shared";
 import { testAgentSetup } from "@/lib/test-agent-setup";
 import { setupEfforts } from "../lib/agent-setup-fields";
 import { RuntimeTestCard } from "./RuntimeTestCard";
@@ -18,8 +18,8 @@ import type {
   EnvBinding,
   EnvSecretRefBinding,
   Environment,
-} from "@paperclipai/shared";
-import { AGENT_DEFAULT_MAX_CONCURRENT_RUNS, supportedEnvironmentDriversForAdapter, isValidBrowserCode, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@paperclipai/shared";
+} from "@greatstone/shared";
+import { AGENT_DEFAULT_MAX_CONCURRENT_RUNS, supportedEnvironmentDriversForAdapter, isValidBrowserCode, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@greatstone/shared";
 import type { AdapterModel } from "../api/agents";
 import { agentsApi } from "../api/agents";
 import { ApiError } from "../api/client";
@@ -30,12 +30,12 @@ import { assetsApi } from "../api/assets";
 import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
   DEFAULT_CODEX_LOCAL_MODEL,
-} from "@paperclipai/adapter-codex-local";
-import { DEFAULT_CLAUDE_LOCAL_MODEL } from "@paperclipai/adapter-claude-local";
-import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
-import { DEFAULT_KIMI_LOCAL_MODEL } from "@paperclipai/adapter-kimi-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
+} from "@greatstone/adapter-codex-local";
+import { DEFAULT_CLAUDE_LOCAL_MODEL } from "@greatstone/adapter-claude-local";
+import { DEFAULT_CURSOR_LOCAL_MODEL } from "@greatstone/adapter-cursor-local";
+import { DEFAULT_GEMINI_LOCAL_MODEL } from "@greatstone/adapter-gemini-local";
+import { DEFAULT_KIMI_LOCAL_MODEL } from "@greatstone/adapter-kimi-local";
+import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@greatstone/adapter-opencode-local";
 import {
   Popover,
   PopoverContent,
@@ -97,14 +97,14 @@ import { codexReasoningEffortOptions } from "../lib/codex-reasoning-effort";
 
 /* ---- Create mode values ---- */
 
-// Canonical type lives in @paperclipai/adapter-utils; re-exported here
+// Canonical type lives in @greatstone/adapter-utils; re-exported here
 // so existing imports from this file keep working.
-export type { CreateConfigValues } from "@paperclipai/adapter-utils";
+export type { CreateConfigValues } from "@greatstone/adapter-utils";
 import {
-  PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES,
+  GSAM_RUNNER_PERMISSION_CAPABILITIES,
   paperclipRunnerTransitionConfig,
   type CreateConfigValues,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import { Badge } from "@/components/ui/badge";
 
 /* ---- Props ---- */
@@ -254,7 +254,7 @@ export function subtractPersistedOverlay(
 
 /* ---- Shared input class ---- */
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground";
 
 function parseCommaArgs(value: string): string[] {
   return value
@@ -884,7 +884,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const inheritedEnvironmentLabel = instanceDefaultEnvironment
     ? environmentDisplayLabel(instanceDefaultEnvironment)
     : managedSandboxOnly
-      ? "Paperclip Computer"
+      ? "GS Agentic Manager Computer"
       : "Local";
 
   const runnerProvider = adapterType === "paperclip_runner"
@@ -1706,7 +1706,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       : mark("adapterConfig", "cwd", v || undefined)
                   }
                   immediate
-                  className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
+                  className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground"
                   placeholder="/path/to/project"
                 />
                 <ChoosePathButton />
@@ -2127,7 +2127,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               <div className="mt-3 flex items-start gap-2 rounded-md border border-border bg-background/60 px-3 py-2 text-xs text-foreground">
                 <Bug className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
-                  Raw tracing is on for future runs. Paperclip keeps at most 64 MiB per run and automatically deletes it after 24 hours.
+                  Raw tracing is on for future runs. GS Agentic Manager keeps at most 64 MiB per run and automatically deletes it after 24 hours.
                 </span>
               </div>
             ) : null}
@@ -2264,7 +2264,7 @@ export type AdapterLoginDescriptor = {
 // correctly, and the first thing to rot would have been the timeout and
 // cleanup paths, which are the ones nobody exercises by hand.
 export type AdapterLoginPanelProps = AdapterLoginDescriptor & {
-  aiConnection?: import("@paperclipai/shared").AiConnectionLoginIntent;
+  aiConnection?: import("@greatstone/shared").AiConnectionLoginIntent;
   onStored?: (storedSessionId: string) => void;
   onApplyStored?: () => void;
   // Applies the non-secret Codex account-binding claim from an authenticated
@@ -3820,7 +3820,7 @@ export function ModelDropdown({
         <PopoverContent className="w-(--radix-popover-trigger-width) p-1" align="start">
           <div className="relative mb-1">
             <input
-              className="w-full px-2 py-1.5 pr-6 text-xs bg-transparent outline-none border-b border-border placeholder:text-muted-foreground/50"
+              className="w-full px-2 py-1.5 pr-6 text-xs bg-transparent outline-none border-b border-border placeholder:text-subtle-foreground"
               placeholder={creatable ? "Search models... (type to create)" : "Search models..."}
               value={modelSearch}
               onChange={(e) => setModelSearch(e.target.value)}

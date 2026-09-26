@@ -1,9 +1,9 @@
 import { useWorkspaceIsolationControls } from "@/hooks/useWorkspaceIsolationControls";
 import { AgentAvatar } from "@/components/AgentAvatar";
-import { normalizeLegacyRunnerProvider } from "@paperclipai/adapter-utils";
+import { normalizeLegacyRunnerProvider } from "@greatstone/adapter-utils";
 import { memo, useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent, type CSSProperties, type DragEvent, type RefObject } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { AgentEnvConfig, EnvBinding, IssueWorkMode } from "@paperclipai/shared";
+import type { AgentEnvConfig, EnvBinding, IssueWorkMode } from "@greatstone/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
@@ -61,7 +61,7 @@ import {
   AlertTriangle,
   Tag,
   Calendar,
-  Paperclip,
+  PaperclipIcon,
   FileText,
   Flag,
   PauseCircle,
@@ -401,7 +401,7 @@ const IssueTitleTextarea = memo(function IssueTitleTextarea({
 
   return (
     <textarea
-      className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50"
+      className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-subtle-foreground"
       placeholder="Task title"
       rows={1}
       value={draftValue}
@@ -1454,7 +1454,7 @@ export function NewIssueDialog() {
                 ))}
               </PopoverContent>
             </Popover>
-            <span className="text-muted-foreground/60">&rsaquo;</span>
+            <span className="text-subtle-foreground">&rsaquo;</span>
             <span>{isSubIssueMode ? "New sub-task" : "New task"}</span>
           </div>
           <div className="flex items-center gap-1">
@@ -2088,7 +2088,7 @@ export function NewIssueDialog() {
                       <div key={file.id} className="flex items-start justify-between gap-3 rounded-md border border-border/70 px-3 py-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            <PaperclipIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <span className="truncate text-sm">{file.file.name}</span>
                           </div>
                           <div className="mt-1 text-(length:--text-micro) text-muted-foreground">
@@ -2210,7 +2210,7 @@ export function NewIssueDialog() {
             onClick={() => stageFileInputRef.current?.click()}
             disabled={createIssue.isPending}
           >
-            <Paperclip className="h-3 w-3" />
+            <PaperclipIcon className="h-3 w-3" />
             Upload
           </button>
 

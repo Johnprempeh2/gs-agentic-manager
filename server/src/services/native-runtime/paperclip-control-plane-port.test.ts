@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { asc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { renderPaperclipWakePrompt } from "@paperclipai/adapter-utils/server-utils";
+import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-utils";
 import { readCompletedAssistantMessageCandidate, resolveHeartbeatRunResponse, selectHeartbeatRunFinalAgentMessage } from "../heartbeat-run-summary.js";
 import {
   activityLog,
@@ -22,7 +22,7 @@ import {
   statusDecisionEffects,
   statusDecisions,
   workAssessments,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   executeNativeSession,
   parseNativeExecutionInput,
@@ -295,7 +295,7 @@ describe("PaperclipControlPlanePort conformance", () => {
     }
   });
 
-  it("runs the unchanged package conformance suite against Paperclip persistence", async () => {
+  it("runs the unchanged package conformance suite against GS Agentic Manager persistence", async () => {
     const identity = CONTROL_PLANE_CONFORMANCE_OPEN.identity;
     const committedEventIds: string[] = [];
     const duplicateEventIds: string[] = [];

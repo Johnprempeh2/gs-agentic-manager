@@ -83,27 +83,27 @@ function violationReason({ file, packageRoot, specifier }) {
   const relativeFile = relative(packageRoot, file).split(/[\\/]/).join("/");
   const isExampleConsumer = relativeFile.startsWith("examples/");
   const publicRunnerImports = new Set([
-    "@paperclipai/paperclip-runner/browser",
-    "@paperclipai/paperclip-runner/react",
-    "@paperclipai/paperclip-runner/standalone",
-    "@paperclipai/paperclip-runner/testing",
-    "@paperclipai/paperclip-runner/styles.css",
+    "@greatstone/paperclip-runner/browser",
+    "@greatstone/paperclip-runner/react",
+    "@greatstone/paperclip-runner/standalone",
+    "@greatstone/paperclip-runner/testing",
+    "@greatstone/paperclip-runner/styles.css",
   ]);
   if (
-    specifier.startsWith("@paperclipai/paperclip-runner/") &&
+    specifier.startsWith("@greatstone/paperclip-runner/") &&
     !publicRunnerImports.has(specifier)
   ) {
     return "runner consumers may import only declared public subpaths";
   }
-  if (isExampleConsumer && specifier === "@paperclipai/paperclip-runner") {
+  if (isExampleConsumer && specifier === "@greatstone/paperclip-runner") {
     return "runner consumers may import only declared public subpaths";
   }
   if (
-    specifier.startsWith("@paperclipai/") &&
-    specifier !== "@paperclipai/paperclip-runner" &&
+    specifier.startsWith("@greatstone/") &&
+    specifier !== "@greatstone/paperclip-runner" &&
     !publicRunnerImports.has(specifier)
   ) {
-    return "Paperclip workspace packages are outside the standalone boundary";
+    return "GS Agentic Manager workspace packages are outside the standalone boundary";
   }
 
   if (
@@ -114,7 +114,7 @@ function violationReason({ file, packageRoot, specifier }) {
   }
 
   if (["server", "ui", "cli"].some((root) => specifier === root || specifier.startsWith(`${root}/`))) {
-    return "Paperclip application internals are outside the standalone boundary";
+    return "GS Agentic Manager application internals are outside the standalone boundary";
   }
 
   if (specifier.startsWith(".") || specifier.startsWith("/")) {
@@ -152,11 +152,11 @@ async function manifestViolations(packageRoot) {
   const unreviewedDevelopmentDependencies = Object.keys(
     manifest.devDependencies ?? {},
   ).filter(
-    (name) => name.startsWith("@paperclipai/"),
+    (name) => name.startsWith("@greatstone/"),
   );
   return [...runtimeDependencies, ...unreviewedDevelopmentDependencies]
     .filter(
-      (name) => name.startsWith("@paperclipai/") && name !== "@paperclipai/paperclip-runner",
+      (name) => name.startsWith("@greatstone/") && name !== "@greatstone/paperclip-runner",
     )
     .map((specifier) => ({
       file: manifestPath,

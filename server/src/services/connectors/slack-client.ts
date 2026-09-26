@@ -1,4 +1,4 @@
-import { SLACK_TOOLS } from "@paperclipai/shared";
+import { SLACK_TOOLS } from "@greatstone/shared";
 import { forbidden, tooManyRequests, unprocessable } from "../../errors.js";
 
 const METHODS = new Set([

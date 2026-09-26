@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { Agent, CompanySecret, EnvBinding, Project, RoutineVariable } from "@paperclipai/shared";
+import type { Agent, CompanySecret, EnvBinding, Project, RoutineVariable } from "@greatstone/shared";
 import { Code2, FileText, ListPlus, RotateCcw, Table2 } from "lucide-react";
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
 import { ExecutionParticipantPicker } from "@/components/ExecutionParticipantPicker";
@@ -133,7 +133,7 @@ const adapterSchema: JsonSchemaNode = {
       type: "string",
       title: "API key",
       format: "secret-ref",
-      description: "Stored with the active Paperclip secret provider.",
+      description: "Stored with the active GS Agentic Manager secret provider.",
     },
     concurrency: {
       type: "integer",
@@ -181,7 +181,7 @@ const validAdapterValues = {
   concurrency: 2,
   dryRun: true,
   notes: "Use the project worktree and post a concise task update before handoff.",
-  allowedCommands: ["pnpm --filter @paperclipai/ui typecheck", "pnpm build-storybook"],
+  allowedCommands: ["pnpm --filter @greatstone/ui typecheck", "pnpm build-storybook"],
   advanced: { timeoutSeconds: 900, requireApproval: false },
 };
 
@@ -295,7 +295,7 @@ const storybookProject: Project = {
   urlKey: "board-ui",
   goalId: "goal-company",
   goalIds: ["goal-company"],
-  goals: [{ id: "goal-company", title: "We're building Paperclip" }],
+  goals: [{ id: "goal-company", title: "We're building GS Agentic Manager" }],
   name: "Board UI",
   description: "Control-plane interface, Storybook review surfaces, and operator workflows.",
   status: "in_progress",
@@ -642,7 +642,7 @@ function FormsEditorsShowcase() {
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div>
             <div className="paperclip-story__label">Forms and editors</div>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Paperclip form controls under realistic state</h1>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">GS Agentic Manager form controls under realistic state</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
               Dense control-plane forms need to hold empty, filled, validation, and disabled states without losing scan
               speed. These fixtures keep the components reviewable outside production routes.
@@ -717,7 +717,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Fixture-backed stories for Paperclip form controls, markdown editors, inline editors, schedule controls, runtime-variable dialogs, and selection pickers.",
+          "Fixture-backed stories for GS Agentic Manager form controls, markdown editors, inline editors, schedule controls, runtime-variable dialogs, and selection pickers.",
       },
     },
   },

@@ -265,7 +265,7 @@ async function openSession(
       runnerInstanceId: `runner-${profile.key}`,
       environment: {
         ...process.env,
-        PAPERCLIP_WORKSPACE_CWD: WORKSPACE,
+        GSAM_WORKSPACE_CWD: WORKSPACE,
       },
       codexTransportFactory: () => {
         const transport = transports[transportIndex++];

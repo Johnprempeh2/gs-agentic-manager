@@ -2,8 +2,8 @@ import type { HarnessDriverDescriptor } from "../contracts/harness-driver.js";
 import type { NativeSessionCapabilities } from "../contracts/types.js";
 import { negotiateProtocolVersion } from "../protocol/replay-contract.js";
 import {
-  PAPERCLIP_RUNNER_BUILD_METADATA,
-  PAPERCLIP_RUNNER_EVAL_INTEGRATION_SCHEMA,
+  GSAM_RUNNER_BUILD_METADATA,
+  GSAM_RUNNER_EVAL_INTEGRATION_SCHEMA,
 } from "./build-metadata.js";
 import type { PaperclipRunnerdBuildMetadata } from "./runnerd-artifact.js";
 
@@ -48,7 +48,7 @@ export interface PaperclipRunnerEvalCompatibilityRequirement {
 }
 
 export interface PaperclipRunnerEvalCompatibilityReceipt {
-  schema: typeof PAPERCLIP_RUNNER_EVAL_INTEGRATION_SCHEMA;
+  schema: typeof GSAM_RUNNER_EVAL_INTEGRATION_SCHEMA;
   consumer: string;
   packageVersion: string;
   runnerdPackageVersion: string;
@@ -66,7 +66,7 @@ export class PaperclipRunnerEvalCompatibilityError extends Error {
     readonly issues: readonly PaperclipRunnerEvalCompatibilityIssue[],
   ) {
     super(
-      `Paperclip runner eval compatibility check failed for ${consumer}: ${issues
+      `GS Agentic Manager runner eval compatibility check failed for ${consumer}: ${issues
         .map((issue) => `${issue.code}: ${issue.message}`)
         .join("; ")}`,
     );
@@ -83,7 +83,7 @@ export class PaperclipRunnerEvalCompatibilityError extends Error {
 export function assertPaperclipRunnerEvalCompatibility(
   requirement: PaperclipRunnerEvalCompatibilityRequirement,
 ): PaperclipRunnerEvalCompatibilityReceipt {
-  const expected = PAPERCLIP_RUNNER_BUILD_METADATA;
+  const expected = GSAM_RUNNER_BUILD_METADATA;
   const issues: PaperclipRunnerEvalCompatibilityIssue[] = [];
   const issue = (
     code: PaperclipRunnerEvalCompatibilityIssueCode,
@@ -232,7 +232,7 @@ export function assertPaperclipRunnerEvalCompatibility(
   }
 
   return {
-    schema: PAPERCLIP_RUNNER_EVAL_INTEGRATION_SCHEMA,
+    schema: GSAM_RUNNER_EVAL_INTEGRATION_SCHEMA,
     consumer: requirement.consumer,
     packageVersion: expected.package.version,
     runnerdPackageVersion: requirement.runnerd.packageVersion,

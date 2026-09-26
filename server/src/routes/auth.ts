@@ -1,14 +1,14 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { authUsers } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
+import { authUsers } from "@greatstone/db";
 import {
   authSessionSchema,
   currentUserPreferencesSchema,
   updateCurrentUserPreferencesSchema,
   currentUserProfileSchema,
   updateCurrentUserProfileSchema,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { hasCompanyAccess } from "./authz.js";
 import { logActivity, publishActivity, type ActivityPublication } from "../services/activity-log.js";
 import { forbidden, unauthorized } from "../errors.js";

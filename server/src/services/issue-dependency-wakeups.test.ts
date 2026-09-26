@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   buildIssueBlockersResolvedWakeIdempotencyKey,
   buildIssueBlockersResolvedWakeStateKey,

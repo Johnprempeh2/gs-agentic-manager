@@ -2,7 +2,7 @@ import { AgentAvatar } from "@/components/AgentAvatar";
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Download, ScrollText, ShieldAlert } from "lucide-react";
-import type { Agent } from "@paperclipai/shared";
+import type { Agent } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -263,7 +263,7 @@ function AuditUpsell() {
   return (
     <Card>
       <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-        <ShieldAlert className="h-10 w-10 text-muted-foreground/50" />
+        <ShieldAlert className="h-10 w-10 text-subtle-foreground" />
         <div>
           <p className="text-sm font-medium text-foreground">Agent audit is a Paperclip Enterprise view</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
@@ -671,7 +671,7 @@ export function AuditFeed({
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-            <ScrollText className="h-10 w-10 text-muted-foreground/40" />
+            <ScrollText className="h-10 w-10 text-subtle-foreground" />
             <div>
               <p className="text-sm font-medium text-foreground">
                 {hasActiveFilters ? "No actions match these filters" : "Nothing here yet"}
@@ -720,7 +720,7 @@ export function AuditFeed({
       ) : null}
 
       <p className="text-xs text-muted-foreground">
-        Recorded by Paperclip — entries can't be edited. Sensitive values are never stored.
+        Recorded by GS Agentic Manager — entries can't be edited. Sensitive values are never stored.
       </p>
     </div>
   );

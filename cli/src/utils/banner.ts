@@ -1,20 +1,20 @@
 import pc from "picocolors";
 
-const PAPERCLIP_ART = [
-  "██████╗  █████╗ ██████╗ ███████╗██████╗  ██████╗██╗     ██╗██████╗ ",
-  "██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔════╝██║     ██║██╔══██╗",
-  "██████╔╝███████║██████╔╝█████╗  ██████╔╝██║     ██║     ██║██████╔╝",
-  "██╔═══╝ ██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗██║     ██║     ██║██╔═══╝ ",
-  "██║     ██║  ██║██║     ███████╗██║  ██║╚██████╗███████╗██║██║     ",
-  "╚═╝     ╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝╚═╝     ",
+const GSAM_ART = [
+  " ██████╗ ███████╗ █████╗ ███╗   ███╗",
+  "██╔════╝ ██╔════╝██╔══██╗████╗ ████║",
+  "██║  ███╗███████╗███████║██╔████╔██║",
+  "██║   ██║╚════██║██╔══██║██║╚██╔╝██║",
+  "╚██████╔╝███████║██║  ██║██║ ╚═╝ ██║",
+  " ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝",
 ] as const;
 
-const TAGLINE = "The app people use to manage AI agents for work";
+const TAGLINE = "Goals, tasks, budgets and approvals for teams of AI agents. By Greatstone.";
 
 export function printPaperclipCliBanner(): void {
   const lines = [
     "",
-    ...PAPERCLIP_ART.map((line) => pc.cyan(line)),
+    ...GSAM_ART.map((line) => pc.green(line)),
     pc.blue("  ───────────────────────────────────────────────────────"),
     pc.bold(pc.white(`  ${TAGLINE}`)),
     "",

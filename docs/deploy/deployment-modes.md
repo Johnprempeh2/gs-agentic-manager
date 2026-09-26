@@ -3,7 +3,7 @@ title: Deployment Modes
 summary: local_trusted vs authenticated (private/public)
 ---
 
-Paperclip supports two runtime modes with different security profiles. Reachability is configured separately with `bind`.
+GS Agentic Manager supports two runtime modes with different security profiles. Reachability is configured separately with `bind`.
 
 ## `local_trusted`
 
@@ -17,7 +17,7 @@ The default mode. Optimized for single-operator local use.
 
 ```sh
 # Set during onboard
-pnpm paperclipai onboard
+pnpm gsam onboard
 # Choose "local_trusted"
 ```
 
@@ -35,14 +35,14 @@ For private network access (Tailscale, VPN, LAN).
 - **Bind**: choose `loopback`, `lan`, `tailnet`, or `custom`
 
 ```sh
-pnpm paperclipai onboard
+pnpm gsam onboard
 # Choose "authenticated" -> "private"
 ```
 
 Allow custom Tailscale hostnames:
 
 ```sh
-npx paperclipai allowed-hostname my-machine
+npx gsam allowed-hostname my-machine
 ```
 
 ### `authenticated` + `public`
@@ -55,13 +55,13 @@ For internet-facing deployment.
 - **Bind**: usually `loopback` behind a reverse proxy; `lan/custom` is advanced
 
 ```sh
-pnpm paperclipai onboard
+pnpm gsam onboard
 # Choose "authenticated" -> "public"
 ```
 
 ## Board Claim Flow
 
-When migrating from `local_trusted` to `authenticated`, Paperclip emits a one-time claim URL at startup:
+When migrating from `local_trusted` to `authenticated`, GS Agentic Manager emits a one-time claim URL at startup:
 
 ```
 /board-claim/<token>?code=<code>
@@ -78,11 +78,11 @@ A signed-in user visits this URL to claim board ownership. This:
 Update the deployment mode:
 
 ```sh
-pnpm paperclipai configure --section server
+pnpm gsam configure --section server
 ```
 
 Runtime override via environment variable:
 
 ```sh
-PAPERCLIP_DEPLOYMENT_MODE=authenticated PAPERCLIP_BIND=lan pnpm paperclipai run
+GSAM_DEPLOYMENT_MODE=authenticated GSAM_BIND=lan pnpm gsam run
 ```

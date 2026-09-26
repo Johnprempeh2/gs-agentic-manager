@@ -1,7 +1,7 @@
 import { usePageVisibility } from "@/lib/page-visibility";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { LiveEvent, SummarySlotIssueRef } from "@paperclipai/shared";
+import type { LiveEvent, SummarySlotIssueRef } from "@greatstone/shared";
 
 import type { RunLogChunk } from "@/adapters";
 import { heartbeatsApi } from "@/api/heartbeats";

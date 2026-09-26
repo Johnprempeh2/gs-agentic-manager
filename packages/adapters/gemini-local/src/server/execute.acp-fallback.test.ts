@@ -47,9 +47,9 @@ vi.mock("./acp.js", () => ({
       : { engine: "acp", explicit: false },
 }));
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(
-    "@paperclipai/adapter-utils/execution-target",
+vi.mock("@greatstone/adapter-utils/execution-target", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/adapter-utils/execution-target")>(
+    "@greatstone/adapter-utils/execution-target",
   );
   return {
     ...actual,
@@ -60,9 +60,9 @@ vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/server-utils")>(
-    "@paperclipai/adapter-utils/server-utils",
+vi.mock("@greatstone/adapter-utils/server-utils", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/adapter-utils/server-utils")>(
+    "@greatstone/adapter-utils/server-utils",
   );
   return {
     ...actual,

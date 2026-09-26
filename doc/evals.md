@@ -1,12 +1,12 @@
-# Paperclip evaluation guide
+# GS Agentic Manager evaluation guide
 
-Paperclip has two live eval families with different questions, owners, and
+GS Agentic Manager has two live eval families with different questions, owners, and
 evidence. Choose the family before selecting a model, profile, or case.
 
 - **Runner Evals:** real Runner/provider behavior against a seeded mock control
   plane. Definitions live in `paperclip-evals/evals/paperclip-runner`; see the
   [direct live protocol evals](../packages/paperclip-runner/docs/runner-protocol-live-evals.md).
-- **Product E2E Evals:** real browser, Paperclip server, database, Runner,
+- **Product E2E Evals:** real browser, GS Agentic Manager server, database, Runner,
   provider, and (where selected) Daytona, using an isolated instance and
   grading oracle. See [`tests/runner-e2e`](../tests/runner-e2e/README.md) and
   [Everyday Workflows](../tests/runner-e2e/EVERYDAY-WORKFLOWS.md).
@@ -14,7 +14,7 @@ evidence. Choose the family before selecting a model, profile, or case.
 Runner Evals answer whether a real runner/provider can perform a bounded
 protocol operation against the expected control-plane contract. Product E2E
 Evals answer whether a person can complete a product workflow through the real
-Paperclip surfaces and whether the resulting artifact and state are usable.
+GS Agentic Manager surfaces and whether the resulting artifact and state are usable.
 The names describe the system under test; “headless” is an execution option,
 not an eval category.
 
@@ -32,13 +32,13 @@ Use **Product E2E Evals** for browser interaction, issue/task lifecycle,
 approval and clarification UI, project/repository selection, persistence over a
 controller restart, artifact delivery, billing/evidence behavior, or runner
 continuity in local or Daytona environments. The harness creates a fresh
-Paperclip instance per cell and uses public APIs and the production browser
+GS Agentic Manager instance per cell and uses public APIs and the production browser
 surface. The suite's [Everyday Workflows](../tests/runner-e2e/EVERYDAY-WORKFLOWS.md)
 are Product E2E even when their results are imported into Evalbook.
 
 Do not combine a partial Runner campaign and a partial Product E2E campaign into
 one score. A campaign is comparable when its definition/grader, model/profile,
-environment, and contract match. The evaluated Paperclip revision may
+environment, and contract match. The evaluated GS Agentic Manager revision may
 intentionally differ for a before/after fix comparison; record it as a
 comparison axis.
 
@@ -110,7 +110,7 @@ the user's stated scope when selecting them.
 
 Record the primary failure class and preserve the evidence that supports it.
 
-- **Product failure:** evidence shows Paperclip or Runner behavior violates the
+- **Product failure:** evidence shows GS Agentic Manager or Runner behavior violates the
   authored case or a hard invariant, such as wrong task state, missing approval
   gate, lost persistence, bad artifact, or incorrect protocol operation.
 - **Model/provider behavior failure:** the provider turn completed with usable
@@ -124,7 +124,7 @@ Record the primary failure class and preserve the evidence that supports it.
   unavailability, transport admission failure, service startup failure, a
   missing credential/image, or inability to produce usable evidence. Startup,
   transport, and timeout symptoms can instead be product defects when evidence
-  implicates Paperclip or Runner; classify from the observed failure and
+  implicates GS Agentic Manager or Runner; classify from the observed failure and
   supported cause, rather than the symptom name alone. Preserve the artifact.
 
 Missing usage or price data means unknown, not free. Keep provider-reported
@@ -147,7 +147,7 @@ The private archive is not a dependency of app test execution. Keep large logs,
 traces, and videos in the existing campaign artifact storage.
 
 An Evalbook report is a presentation of immutable attempt records, not the
-source of truth. Keep the campaign ID, Paperclip commit, `paperclip-evals`
+source of truth. Keep the campaign ID, GS Agentic Manager commit, `paperclip-evals`
 commit, catalog/roster or definition fingerprint, model/profile, environment,
 grader version, selected cells, retries, and provider/runtime usage with the
 report. Public projections follow each family's reviewed allowlist and may
@@ -178,7 +178,7 @@ For a repeatable workflow, use the matching skill: [paperclip-evals](../.agents/
 
 The reviewable sources live in this repository's `.agents/skills`. For a
 multi-repository workspace, install the three skills at
-`~/paperclipai/.agents/skills` (not `~/paperclipai/skills`). From the Paperclip
+`~/paperclipai/.agents/skills` (not `~/paperclipai/skills`). From the GS Agentic Manager
 checkout, run:
 
 ```sh
@@ -203,7 +203,7 @@ Build from the public history feeds and check its summary logic:
 
 ```sh
 python3 -m unittest discover -s scripts/evals-hub -p 'test_*.py'
-python3 scripts/evals-hub/build.py --output .paperclip/evals-hub
+python3 scripts/evals-hub/build.py --output .gsam/evals-hub
 ```
 
 The hub checks need Python 3 and do not call model providers.
@@ -213,17 +213,17 @@ For offline checks, pass `--history-dir <directory>` containing
 For a pre-merge preview, pass `--docs-ref <branch-or-sha>` to link the guide
 at that revision. The default guide link uses `master`.
 
-Publish with the [Paperclip page helper](../.agents/skills/paperclip-page/SKILL.md)
+Publish with the [GS Agentic Manager page helper](../.agents/skills/paperclip-page/SKILL.md)
 and the configured page-uploader credentials. Use Bash 4 or newer; macOS's
 system Bash 3 cannot run this helper. On macOS with Homebrew Bash installed,
 put `$(brew --prefix bash)/bin` first in `PATH` before these commands:
 
 ```sh
-export PAPERCLIP_PAGE_BUCKET=pages.paperclip.ing
-export PAPERCLIP_PAGE_BASE_URL=https://pages.paperclip.ing
+export GSAM_PAGE_BUCKET=pages.paperclip.ing
+export GSAM_PAGE_BASE_URL=https://pages.paperclip.ing
 export AWS_REGION=us-east-1
-bash .agents/skills/paperclip-page/scripts/publish.sh .paperclip/evals-hub --slug evals --dry-run
-bash .agents/skills/paperclip-page/scripts/publish.sh .paperclip/evals-hub --slug evals
+bash .agents/skills/paperclip-page/scripts/publish.sh .gsam/evals-hub --slug evals --dry-run
+bash .agents/skills/paperclip-page/scripts/publish.sh .gsam/evals-hub --slug evals
 ```
 
 For later refreshes, rebuild in the same output directory and publish with

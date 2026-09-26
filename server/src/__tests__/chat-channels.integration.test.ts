@@ -1,4 +1,4 @@
-import { toolActionRequests, toolInvocations } from "@paperclipai/db";
+import { toolActionRequests, toolInvocations } from "@greatstone/db";
 import { GitHubPublicationLeaseLost, withGitHubPublicationLease } from "../services/chat-github-publication-lease.js";
 import { githubChatManagementService } from "../services/chat-github-management.js";
 import { githubChatReviewService } from "../services/chat-github-reviews.js";
@@ -7,7 +7,7 @@ import { githubAutomaticReviewEvent } from "../services/chat-github-events.js";
 import { githubBotToolsForSession } from "../services/chat-github-tools.js";
 import { resolveGitHubOperationCredentials } from "../services/github-operation-credentials.js";
 import { initializeRunIdentity } from "../services/run-identity.js";
-import { chatGitHubRegistrations, chatGitHubReviews, toolCatalogEntries } from "@paperclipai/db";
+import { chatGitHubRegistrations, chatGitHubReviews, toolCatalogEntries } from "@greatstone/db";
 import { AsyncLocalStorage } from "node:async_hooks";
 import * as cloudRuntimeIdentity from "../services/cloud-runtime-identity.js";
 import {
@@ -85,9 +85,9 @@ import {
   environmentLeases,
   principalPermissionGrants,
   toolConnections,
-} from "@paperclipai/db";
-import type { ChatProvider } from "@paperclipai/shared";
-import { isPaperclipExternalChatTurn } from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/db";
+import type { ChatProvider } from "@greatstone/shared";
+import { isPaperclipExternalChatTurn } from "@greatstone/adapter-utils/server-utils";
 import type { Attachment, Author, Message, Thread } from "chat";
 import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
@@ -119,7 +119,7 @@ import type { TelegramDraftControl } from "../services/chat-telegram-draft-stop.
 
 // Opt-in private physical candidate; normal CI uses the staged pinned package.
 vi.mock("@chat-adapter/telegram", async (importOriginal) => {
-  const candidate = process.env.PAPERCLIP_TELEGRAM_STOP_ADAPTER_MODULE;
+  const candidate = process.env.GSAM_TELEGRAM_STOP_ADAPTER_MODULE;
   return candidate ? import(/* @vite-ignore */ candidate) : importOriginal();
 });
 import { createDiscordAdapter } from "@chat-adapter/discord";
@@ -193,7 +193,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 
-const externalTestDatabaseUrl = process.env.PAPERCLIP_TEST_DATABASE_URL;
+const externalTestDatabaseUrl = process.env.GSAM_TEST_DATABASE_URL;
 const embeddedPostgresSupport = externalTestDatabaseUrl
   ? { supported: true }
   : await getEmbeddedPostgresTestSupport();
@@ -759,7 +759,7 @@ function fakeSlackFetch(botId = `U-BOT-${randomUUID()}`) {
           JSON.stringify({
             ok: true,
             team_id: "T-PAPERCLIP",
-            team: "Paperclip Test",
+            team: "GS Agentic Manager Test",
             user_id: botId,
             user: `maya-${botId.slice(-8)}`,
           }),
@@ -866,7 +866,7 @@ function fakeTelegramFetch(
           result: {
             id: botId,
             username: `paperclip_${botId}_bot`,
-            first_name: "Paperclip Test",
+            first_name: "GS Agentic Manager Test",
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -1010,7 +1010,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
   let tempDb: Awaited<
     ReturnType<typeof startEmbeddedPostgresTestDatabase>
   > | null = null;
-  const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
+  const previousKeyFile = process.env.GSAM_SECRETS_MASTER_KEY_FILE;
   const secretsTmpDir = path.join(
     os.tmpdir(),
     `paperclip-chat-channels-${randomUUID()}`,
@@ -1018,7 +1018,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });
-    process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = path.join(
+    process.env.GSAM_SECRETS_MASTER_KEY_FILE = path.join(
       secretsTmpDir,
       "master.key",
     );
@@ -1035,8 +1035,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
   afterAll(async () => {
     await tempDb?.cleanup();
     if (previousKeyFile === undefined)
-      delete process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-    else process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = previousKeyFile;
+      delete process.env.GSAM_SECRETS_MASTER_KEY_FILE;
+    else process.env.GSAM_SECRETS_MASTER_KEY_FILE = previousKeyFile;
     rmSync(secretsTmpDir, { recursive: true, force: true });
   });
 
@@ -1935,7 +1935,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           JSON.stringify({
             id: appRegistrationId,
             slug: `maya-${fixture.companyId.slice(0, 8)}`,
-            name: "Maya Paperclip",
+            name: "Maya GS Agentic Manager",
             owner: { login: "paperclipai" },
             permissions: appPermissions,
             events: appEvents,
@@ -2150,7 +2150,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       const registration = await service.startGitHubRegistration(
         endpoint.id,
         "owner-user",
-        "Paperclip Review QA",
+        "GS Agentic Manager Review QA",
       );
       expect(registration.manifest.redirect_url).toBe(
         "https://reviews.example.test/api/chat-github/manifest/callback",
@@ -2876,7 +2876,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(
         mutations.find((m) => m.body.conclusion === "failure")?.body,
       ).toMatchObject({
-        name: "Paperclip Review",
+        name: "GS Agentic Manager Review",
         head_sha: head,
         conclusion: "failure",
         details_url: `https://current-vanity.example/${company.issuePrefix}/issues/${conversation.issueId}`,
@@ -4010,7 +4010,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await request(app).patch(`/api/chat-endpoints/${github.id}`).send({ communicationInstructions: "Not enabled" }).expect(422);
   });
 
-  it("mirrors Paperclip messages with user attribution and returns only the selected Slack reply", async () => {
+  it("mirrors GS Agentic Manager messages with user attribution and returns only the selected Slack reply", async () => {
     await instanceSettingsService(db).updateExperimental({ enableChatConnectors: true });
     const fixture = await seedCompany();
     const { callbacks, endpoint, runtime, service, wakeup } = await configuredSlackEndpoint(fixture);
@@ -4030,7 +4030,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       { authorType: "user", mirrorToSlack: true, clientRequestId })).id).toBe(comment.id);
     await service.processPendingPublications();
     expect(runtime.endpoints.get(endpoint.id)!.posts).toEqual([
-      { threadId: channel.thread.id, text: "**Owner User (via Paperclip)**\n\nPlease make the plan" },
+      { threadId: channel.thread.id, text: "**Owner User (via GS Agentic Manager)**\n\nPlease make the plan" },
     ]);
     const runId = randomUUID();
     await db.insert(heartbeatRuns).values({ id: runId, companyId: fixture.companyId, agentId: fixture.assignedAgentId,
@@ -4045,7 +4045,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await service.processPendingPublications();
     await service.processPendingPublications();
     expect(runtime.endpoints.get(endpoint.id)!.posts.map(post => post.text)).toEqual([
-      "**Owner User (via Paperclip)**\n\nPlease make the plan", "The plan is ready.",
+      "**Owner User (via GS Agentic Manager)**\n\nPlease make the plan", "The plan is ready.",
     ]);
     // The explicit Board composer uses the same mirror and a durable wakeup.
     const key = randomUUID();
@@ -4112,7 +4112,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await service.processPendingPublications();
     if (change === "later-cancelled") {
       expect(runtime.endpoints.get(endpoint.id)!.posts.map(post => post.text)).toEqual([
-        "**Owner User (via Paperclip)**\n\nQueued before access changed", "Queued final before access changed",
+        "**Owner User (via GS Agentic Manager)**\n\nQueued before access changed", "Queued final before access changed",
       ]);
     } else {
       expect(runtime.endpoints.get(endpoint.id)!.posts).toEqual([]);
@@ -4121,7 +4121,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
   });
 
   it.each(["cancelled", "paused", "blocked", "closed-workspace"] as const)("does not bypass %s task guards from the Slack Board composer or its outbox", async (guard) => {
-    const { issueTreeHolds, issueRelations, executionWorkspaces, projects } = await import("@paperclipai/db");
+    const { issueTreeHolds, issueRelations, executionWorkspaces, projects } = await import("@greatstone/db");
     const fixture = await seedCompany();
     const { callbacks, endpoint, service, wakeup, runtime } = await configuredSlackEndpoint(fixture);
     const channel = makeThread({ channelId: "CGUARD", id: "slack:CGUARD:8100.1", name: "guard" });
@@ -4224,7 +4224,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await worker.processPendingDeliveries();
     await worker.processPendingPublications();
     expect(smallWake).toHaveBeenCalledTimes(1);
-    expect(runtime.endpoints.get(endpoint.id)!.posts.map(post => post.text)).toEqual(["**Owner User (via Paperclip)**\n\nSmall pool work"]);
+    expect(runtime.endpoints.get(endpoint.id)!.posts.map(post => post.text)).toEqual(["**Owner User (via GS Agentic Manager)**\n\nSmall pool work"]);
   }, 15_000);
 
   it("provides assigned Slack tools to routine tasks and can DM only their linked responsible user", async () => {
@@ -4366,7 +4366,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       inspected: [{ channel: "COTHER", count: 1, nextCursor: "older", hasMore: true }],
     });
     await expect(executeSlackTool(db, binding, "slack_history", { channel: "GPRIVATE" }, fetched as typeof fetch)).rejects.toThrow("in a DM");
-    vi.stubEnv("PAPERCLIP_TOOL_ACTION_SIGNING_SECRET", "slack-tools-integration-signing-secret");
+    vi.stubEnv("GSAM_TOOL_ACTION_SIGNING_SECRET", "slack-tools-integration-signing-secret");
     onTestFinished(() => vi.unstubAllEnvs());
     const originalFetch = globalThis.fetch;
     const postFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -4535,7 +4535,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await rejected;
     await expect(oauth.status(fixture.companyId, endpoint.id, "owner-user")).resolves.toMatchObject({ connected: false });
     await expect(oauth.status(randomUUID(), endpoint.id, "owner-user")).rejects.toThrow("not found");
-    const { toolProfiles, toolProfileBindings } = await import("@paperclipai/db");
+    const { toolProfiles, toolProfileBindings } = await import("@greatstone/db");
     const [slackProfile] = await db.select().from(toolProfiles).where(and(eq(toolProfiles.companyId, fixture.companyId), eq(toolProfiles.profileKey, `slack-bot:${endpoint.id}`)));
     const [removedBinding] = await db.delete(toolProfileBindings).where(and(eq(toolProfileBindings.profileId, slackProfile.id), eq(toolProfileBindings.targetId, binding.agentId))).returning();
     await expect(resolveConnectorAssignments(db, recovered)).resolves.toEqual([]);
@@ -5397,7 +5397,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             JSON.stringify({
               id: appRegistrationId,
               slug: "shared-paperclip-app",
-              name: "Shared Paperclip App",
+              name: "Shared GS Agentic Manager App",
               owner: { login: owner },
               permissions: {
                 issues: "write",
@@ -5569,7 +5569,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             JSON.stringify({
               id: appRegistrationId,
               slug: "maya-paperclip",
-              name: "Maya Paperclip",
+              name: "Maya GS Agentic Manager",
               owner: { login: "paperclipai" },
               permissions: {
                 issues: "write",
@@ -5710,7 +5710,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(observedIssuer).toBe(appId);
     expect(configured).toMatchObject({
       status: "verifying",
-      providerAccountId: "paperclipai",
+      providerAccountId: "gsam",
       botExternalId: "789",
       botUsername: "maya-paperclip[bot]",
       setup: { step: "test", webhookVerifiedAt: expect.any(String) },
@@ -5783,8 +5783,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       endpointId: endpoint.id,
       provider: "github",
       thread: makeThread({
-        channelId: "PaperclipAI/Paperclip",
-        id: "github:PaperclipAI/Paperclip:issue:17",
+        channelId: "PaperclipAI/GS Agentic Manager",
+        id: "github:PaperclipAI/GS Agentic Manager:issue:17",
         name: "paperclipai/paperclip",
       }).thread,
       message: makeMessage({
@@ -6275,7 +6275,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       ),
     ).resolves.toMatchObject({
       status: "verifying",
-      providerAccountId: "paperclipai",
+      providerAccountId: "gsam",
       botExternalId: "991124",
       botUsername: "maya-selectable-events[bot]",
     });
@@ -7523,7 +7523,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       .where(eq(chatDeliveries.endpointId, endpoint.id));
     expect(filtered).toMatchObject({
       state: "filtered",
-      redactedError: "External identity must be linked to a Paperclip account",
+      redactedError: "External identity must be linked to a GS Agentic Manager account",
       normalizedEvent: { deduplication: { duplicateCount: 1 } },
     });
 
@@ -7606,7 +7606,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       .then((rows) => rows[0]);
     expect(suspendedDelivery).toMatchObject({
       state: "filtered",
-      redactedError: "Linked Paperclip account is not currently permitted",
+      redactedError: "Linked GS Agentic Manager account is not currently permitted",
     });
   });
 
@@ -9296,7 +9296,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         status: "received",
         summary: "GitHub webhook received after recovery request",
         detail:
-          "Paperclip received this callback. Its normal access checks and processing still apply.",
+          "GS Agentic Manager received this callback. Its normal access checks and processing still apply.",
         replayable: false,
         resolutionActions: [],
       });
@@ -10019,7 +10019,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       eventKind: "message",
       conversationId: null,
       principalId: null,
-      redactedError: "Destination is not enabled in Paperclip",
+      redactedError: "Destination is not enabled in GS Agentic Manager",
       normalizedEvent: {
         kind: "message",
         filtering: {
@@ -10044,7 +10044,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         id: rows[0]!.id,
         status: "filtered",
         summary: "message ignored",
-        detail: "Destination is not enabled in Paperclip",
+        detail: "Destination is not enabled in GS Agentic Manager",
         replayable: false,
       }),
     );
@@ -10483,9 +10483,9 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       endpointId: endpoint.id,
       provider: "github",
       thread: makeThread({
-        channelId: "PaperclipAI/Paperclip",
-        id: "github:PaperclipAI/Paperclip:issue:77",
-        name: "PaperclipAI/Paperclip",
+        channelId: "PaperclipAI/GS Agentic Manager",
+        id: "github:PaperclipAI/GS Agentic Manager:issue:77",
+        name: "PaperclipAI/GS Agentic Manager",
       }).thread,
       message: makeMessage({
         id: "github-rename-root",
@@ -11865,7 +11865,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             providerThreadCreated: false,
           },
         }),
-        redactedError: "Destination is not enabled in Paperclip",
+        redactedError: "Destination is not enabled in GS Agentic Manager",
         state: "filtered",
       },
     ]);
@@ -11949,7 +11949,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         action: "reconnect",
         // Rotation accepts the one changed secret and merges the immutable
-        // Application/Server identity from Paperclip's existing vault refs.
+        // Application/Server identity from GS Agentic Manager's existing vault refs.
         credentials: { botToken: "discord-secret-rotated" },
       },
       "owner-user",
@@ -12599,7 +12599,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(failure).toMatchObject({
       status: 422,
       message:
-        "Telegram webhooks require PAPERCLIP_CHAT_WEBHOOK_PUBLIC_URL to use HTTPS on port 443, 80, 88, or 8443",
+        "Telegram webhooks require GSAM_CHAT_WEBHOOK_PUBLIC_URL to use HTTPS on port 443, 80, 88, or 8443",
       details: {
         code: "chat_telegram_webhook_url_unsupported",
         provider: "telegram",
@@ -12878,9 +12878,9 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         commands: [
           {
             command: "task",
-            description: "Start or continue a Paperclip task",
+            description: "Start or continue a GS Agentic Manager task",
           },
-          { command: "status", description: "Show the active Paperclip task" },
+          { command: "status", description: "Show the active GS Agentic Manager task" },
           {
             command: "new",
             description: "Start a new task after the current one",
@@ -12964,7 +12964,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             result: {
               id: botId,
               username: "paperclip_maintenance_bot",
-              first_name: "Paperclip Maintenance",
+              first_name: "GS Agentic Manager Maintenance",
             },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -13202,7 +13202,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             result: {
               id: botId,
               username: "paperclip_maintenance_race_bot",
-              first_name: "Paperclip Maintenance Race",
+              first_name: "GS Agentic Manager Maintenance Race",
             },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -13952,7 +13952,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       },
       channelData: {
         tenant: { id: teamsTenantId },
-        team: { id: "team-1", name: "Paperclip" },
+        team: { id: "team-1", name: "GS Agentic Manager" },
         channel: { id: "channel-1", name: "Engineering" },
       },
     });
@@ -17513,7 +17513,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect.objectContaining({ state: "active", sessionGeneration: 1 }),
     ]);
     expect(runtime.endpoints.get(endpoint.id)?.posts[0]?.text).toBe(
-      "Send your request to start a new Paperclip task.",
+      "Send your request to start a new GS Agentic Manager task.",
     );
     // Command-only acknowledgements have no run whose final reply can retire
     // a processing reaction. The subsequent task message has its own receipt.
@@ -17696,7 +17696,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       state: "filtered",
       attempts: 0,
       principalId: null,
-      redactedError: "Destination is not enabled in Paperclip",
+      redactedError: "Destination is not enabled in GS Agentic Manager",
       normalizedEvent: {
         filtering: { contentRetained: false },
         message: { providerMessageId: "teams-setup-group-disabled" },
@@ -18097,7 +18097,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       { allowDirectMessages: false },
       "owner-user",
     );
-    await send("teams-direct-disabled", "This must remain outside Paperclip");
+    await send("teams-direct-disabled", "This must remain outside GS Agentic Manager");
     expect(await service.listConversations(endpoint.id)).toEqual([]);
     expect(wakeup).not.toHaveBeenCalled();
     await expect(
@@ -18113,7 +18113,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).resolves.toEqual([
       {
         state: "filtered",
-        redactedError: "Destination is not enabled in Paperclip",
+        redactedError: "Destination is not enabled in GS Agentic Manager",
         normalizedEvent: expect.objectContaining({
           providerEventId: `${directThread.thread.id}:teams-direct-disabled`,
           kind: "direct_message",
@@ -18138,7 +18138,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       .where(eq(chatDeliveries.endpointId, endpoint.id))
       .then((rows) => rows[0]);
     expect(JSON.stringify(disabledDelivery)).not.toContain(
-      "This must remain outside Paperclip",
+      "This must remain outside GS Agentic Manager",
     );
     expect(JSON.stringify(disabledDelivery)).not.toContain(
       "6c4dd0ef-f027-4b75-93d9-04d97424220e",
@@ -18550,7 +18550,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(delivery).toMatchObject({
         state: "filtered",
         principalId: null,
-        redactedError: "Destination is not enabled in Paperclip",
+        redactedError: "Destination is not enabled in GS Agentic Manager",
         normalizedEvent: {
           filtering: { contentRetained: false },
           message: { providerMessageId: rootMessageId },
@@ -18653,7 +18653,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(delivery).toMatchObject({
       state: "filtered",
       principalId: null,
-      redactedError: "Destination is not enabled in Paperclip",
+      redactedError: "Destination is not enabled in GS Agentic Manager",
       normalizedEvent: {
         filtering: { contentRetained: false },
         message: { providerMessageId: messageId },
@@ -18798,8 +18798,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         state: "filtered",
         redactedError:
           authorizationChange === "viewer"
-            ? "Linked Paperclip account is not currently permitted"
-            : "External identity must be linked to a Paperclip account",
+            ? "Linked GS Agentic Manager account is not currently permitted"
+            : "External identity must be linked to a GS Agentic Manager account",
         normalizedEvent: {
           filtering: { contentRetained: false },
           message: { providerMessageId: messageId },
@@ -18979,7 +18979,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(delivery).toMatchObject({
       state: "filtered",
       principalId: null,
-      redactedError: "Destination is not enabled in Paperclip",
+      redactedError: "Destination is not enabled in GS Agentic Manager",
       normalizedEvent: {
         filtering: { contentRetained: false },
         message: { providerMessageId: messageId },
@@ -19592,7 +19592,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     const posts = runtime.endpoints.get(endpoint.id)?.posts ?? [];
     const channelAttachmentPost = posts.find((post) =>
       post.text.includes(
-        "File saved on the Paperclip task: channel-report.txt.",
+        "File saved on the GS Agentic Manager task: channel-report.txt.",
       ),
     );
     expect(channelAttachmentPost?.text).toContain(
@@ -19604,7 +19604,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(channelAttachmentPost?.files).toBeUndefined();
     const personalAttachmentPost = posts.find((post) =>
       post.text.includes(
-        "File saved on the Paperclip task: personal-report.txt.",
+        "File saved on the GS Agentic Manager task: personal-report.txt.",
       ),
     );
     expect(personalAttachmentPost?.text).toContain(
@@ -22142,7 +22142,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
 
     // Scope inspection is not a substitute for the adapter's signature gate.
     // An invalid request must continue to the SDK so it receives the normal
-    // authentication failure instead of Paperclip acknowledging it as foreign.
+    // authentication failure instead of GS Agentic Manager acknowledging it as foreign.
     endpointRuntime.webhookRequest = null;
     const forgedForeign = signedRequest(
       cases[0]!.foreignBody,
@@ -22986,7 +22986,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(deliveries[2]).toMatchObject({
       eventKind: "action",
       state: "filtered",
-      redactedError: "External chat modal submission denied by Paperclip",
+      redactedError: "External chat modal submission denied by GS Agentic Manager",
       processedAt: expect.any(Date),
     });
     expect(JSON.stringify(await service.get(endpoint.id))).not.toContain(
@@ -25156,7 +25156,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).resolves.toEqual([{ state: "filtered" }]);
   });
 
-  it("keeps one Paperclip account mapping for the same provider principal across endpoints", async () => {
+  it("keeps one GS Agentic Manager account mapping for the same provider principal across endpoints", async () => {
     const fixture = await seedCompany();
     const firstContext = createService(
       new FakeChatSdkRuntime(),
@@ -25230,7 +25230,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await db.insert(authUsers).values([
       {
         id: "paperclip-user-a",
-        name: "Paperclip User A",
+        name: "GS Agentic Manager User A",
         email: `identity-a-${fixture.companyId}@example.com`,
         emailVerified: true,
         createdAt: now,
@@ -25238,7 +25238,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       },
       {
         id: "paperclip-user-b",
-        name: "Paperclip User B",
+        name: "GS Agentic Manager User B",
         email: `identity-b-${fixture.companyId}@example.com`,
         emailVerified: true,
         createdAt: now,
@@ -26578,7 +26578,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             method: "sendMessage",
             body: {
               chat_id: "-100123",
-              text: "This Paperclip action is no longer available. Open the linked task or ask an operator to link this account.",
+              text: "This GS Agentic Manager action is no longer available. Open the linked task or ask an operator to link this account.",
               ephemeral_message_parameters: {
                 receiver_user_id: 456,
                 callback_query_id: "native-private-callback-1",
@@ -26793,7 +26793,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             method: "sendMessage",
             body: {
               chat_id: "456",
-              text: "This Paperclip action is no longer available. Open the linked task or ask an operator to link this account.",
+              text: "This GS Agentic Manager action is no longer available. Open the linked task or ask an operator to link this account.",
             },
           },
         ]);
@@ -27006,7 +27006,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     });
 
     // Sample again at send time so a status waiting behind an older provider
-    // operation cannot report a state Paperclip has already left.
+    // operation cannot report a state GS Agentic Manager has already left.
     await db
       .update(issues)
       .set({ status: "done", completedAt: new Date(), updatedAt: new Date() })
@@ -27166,7 +27166,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       runtime.endpoints.get(endpoint.id)?.posts.map((post) => post.text),
     ).toEqual([
       "old-generation-final",
-      "Send your request to start a new Paperclip task.",
+      "Send your request to start a new GS Agentic Manager task.",
     ]);
     await expect(service.listConversations(endpoint.id)).resolves.toEqual([
       expect.objectContaining({ id: oldConversation.id, state: "completed" }),
@@ -27232,7 +27232,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       runtime.endpoints.get(endpoint.id)?.posts.map((post) => post.text),
     ).toEqual([
       "old-generation-final",
-      "Send your request to start a new Paperclip task.",
+      "Send your request to start a new GS Agentic Manager task.",
       "new-generation-final",
     ]);
     expect(
@@ -29733,7 +29733,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toMatchObject({
       progressState: "failed",
       text: expect.stringContaining(
-        "Ask a Paperclip admin to create a private identity link for this account or enable isolated guest execution, then start a new task.",
+        "Ask a GS Agentic Manager admin to create a private identity link for this account or enable isolated guest execution, then start a new task.",
       ),
     });
   });
@@ -30980,7 +30980,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             result: {
               id: 884422,
               username: "paperclip_lease_reclaim_bot",
-              first_name: "Paperclip Lease Reclaim",
+              first_name: "GS Agentic Manager Lease Reclaim",
             },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -31144,7 +31144,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             result: {
               id: 884423,
               username: "paperclip_removal_reclaim_bot",
-              first_name: "Paperclip Removal Reclaim",
+              first_name: "GS Agentic Manager Removal Reclaim",
             },
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -32811,7 +32811,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         expect.objectContaining({
           state: "filtered",
           attempts: 1,
-          redactedError: "External action denied by Paperclip authorization",
+          redactedError: "External action denied by GS Agentic Manager authorization",
           normalizedEvent: {
             providerEventId: expect.stringMatching(
               /^action-denied:[a-f0-9]{64}$/,
@@ -32839,7 +32839,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       });
       expect(gatewayInteraction.reply).toHaveBeenLastCalledWith({
         content:
-          "This action is no longer available. Open the linked Paperclip task or ask an operator to link this account.",
+          "This action is no longer available. Open the linked GS Agentic Manager task or ask an operator to link this account.",
         flags: 64,
       });
     } finally {
@@ -34012,7 +34012,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           expect(callback.reply.mock.calls[0]![0].content).toBe(
             submittedText === winnerText
               ? "Your response was received."
-              : "This response was not accepted. Open the linked Paperclip task or reopen the question to try again.",
+              : "This response was not accepted. Open the linked GS Agentic Manager task or reopen the question to try again.",
           );
         }
         expect(answered).toMatchObject({
@@ -34667,7 +34667,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(providerRuntime.posts).toHaveLength(1);
     const delivered = providerRuntime.posts[0]!;
     expect(delivered.text).toBe(
-      "Paperclip attached the complete response because it exceeds Discord’s message limit.",
+      "GS Agentic Manager attached the complete response because it exceeds Discord’s message limit.",
     );
     expect(delivered.text).not.toContain("...");
     expect(delivered.files).toHaveLength(1);
@@ -34679,7 +34679,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(uploaded.filename).toBe("paperclip-response.md");
     expect(uploaded.mimeType).toBe("text/markdown; charset=utf-8");
     expect(Buffer.isBuffer(uploaded.data)).toBe(true);
-    // The attachment is lossless after Paperclip's mandatory provider-safety
+    // The attachment is lossless after GS Agentic Manager's mandatory provider-safety
     // projection (which strips URL query strings before any transport work).
     expect(uploaded.data.toString("utf8")).toBe(providerSafeSource);
     expect(uploaded.data.toString("utf8")).not.toContain("?case=discord");
@@ -34821,7 +34821,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       );
     expect(definiteFailureNotices).toHaveLength(1);
     const rejectedAttachmentNotice =
-      "Paperclip could not send the response attachment. The complete response remains on its Paperclip task for an operator to retry." +
+      "GS Agentic Manager could not send the response attachment. The complete response remains on its GS Agentic Manager task for an operator to retry." +
       ` Open task: https://paperclip.example/issues/${conversation.issueId}`;
     expect(definiteFailureNotices[0]).toMatchObject({
       commentId: null,
@@ -35409,7 +35409,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(completed).toMatchObject({ state: "published", attempts: 2 });
     expect(providerRuntime.posts).toHaveLength(1);
     expect(providerRuntime.posts[0]?.text).toBe(
-      "Paperclip attached the complete response to preserve its Markdown formatting.",
+      "GS Agentic Manager attached the complete response to preserve its Markdown formatting.",
     );
     const attachment = providerRuntime.posts[0]?.attachments?.[0] as {
       data: Buffer;
@@ -36302,7 +36302,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         raw: { type: "block_actions" },
         thread: channel.thread,
         // The pinned Slack adapter uses the clicked Block Kit message ts here,
-        // even though the authoritative Paperclip conversation is rooted at
+        // even though the authoritative GS Agentic Manager conversation is rooted at
         // the original mention (and a DM root has no ts at all).
         threadId:
           overrides.threadId ??
@@ -36329,7 +36329,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     );
     expect(channel.postEphemeral).toHaveBeenCalledWith(
       unlinkedAction.event.user.userId,
-      "This action is no longer available. Open the linked Paperclip task or ask an operator to link this account.",
+      "This action is no longer available. Open the linked GS Agentic Manager task or ask an operator to link this account.",
       { fallbackToDM: false },
     );
     const deniedSlackActions = await db
@@ -36347,7 +36347,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         principalId: expect.any(String),
         state: "filtered",
         attempts: 1,
-        redactedError: "External action denied by Paperclip authorization",
+        redactedError: "External action denied by GS Agentic Manager authorization",
         normalizedEvent: {
           providerEventId: expect.stringMatching(
             /^action-denied:[a-f0-9]{64}$/,
@@ -36368,7 +36368,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           kind: "delivery",
           status: "filtered",
           summary: "action ignored",
-          detail: "External action denied by Paperclip authorization",
+          detail: "External action denied by GS Agentic Manager authorization",
           replayable: false,
         }),
       ]),
@@ -36383,7 +36383,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     );
     await vi.waitFor(() =>
       expect(channel.post).toHaveBeenCalledWith(
-        "This Paperclip action is no longer available.",
+        "This GS Agentic Manager action is no longer available.",
       ),
     );
     expect(channel.postEphemeral).toHaveBeenCalledTimes(2);
@@ -36434,7 +36434,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       }),
     );
 
-    // Model the provider accepting the interactive card while Paperclip loses
+    // Model the provider accepting the interactive card while GS Agentic Manager loses
     // the response before it can persist the provider message binding. The
     // signed callback and opaque issued token must reconcile that ambiguity
     // without requiring a duplicate send or disabling the real button.
@@ -36872,7 +36872,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       ([userId, text]) =>
         userId === externalUserId &&
         text ===
-          "This action is no longer available. Open the linked Paperclip task or ask an operator to link this account.",
+          "This action is no longer available. Open the linked GS Agentic Manager task or ask an operator to link this account.",
     ).length;
     await callbacks.onAction(actionEvent());
     expect(
@@ -36880,7 +36880,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         ([userId, text]) =>
           userId === externalUserId &&
           text ===
-            "This action is no longer available. Open the linked Paperclip task or ask an operator to link this account.",
+            "This action is no longer available. Open the linked GS Agentic Manager task or ask an operator to link this account.",
       ),
     ).toHaveLength(staleNoticeCount);
     expect(
@@ -37316,7 +37316,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         response_action: "errors",
         errors: {
           [select.block_id]:
-            "This form is no longer authorized. Close it and open the linked Paperclip task.",
+            "This form is no longer authorized. Close it and open the linked GS Agentic Manager task.",
         },
       });
       expect(await submissionState()).toEqual(before);
@@ -37720,7 +37720,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       await vi.waitFor(() =>
         expect(channel.postEphemeral).toHaveBeenCalledWith(
           modalUser.userId,
-          "This action is no longer available. Open the linked Paperclip task or ask an operator to link this account.",
+          "This action is no longer available. Open the linked GS Agentic Manager task or ask an operator to link this account.",
           { fallbackToDM: false },
         ),
       );
@@ -37830,7 +37830,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         await vi.waitFor(() =>
           expect(channel.postEphemeral).toHaveBeenCalledWith(
             modalUser.userId,
-            "Paperclip could not open this form. Try the action again or open the linked Paperclip task.",
+            "GS Agentic Manager could not open this form. Try the action again or open the linked GS Agentic Manager task.",
             { fallbackToDM: false },
           ),
         );
@@ -38041,7 +38041,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         action: "errors",
         errors: {
           [selectField.id]:
-            "This form is no longer authorized. Close it and open the linked Paperclip task.",
+            "This form is no longer authorized. Close it and open the linked GS Agentic Manager task.",
         },
       };
       await expect(
@@ -38344,7 +38344,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           expect.objectContaining({
             kind: "delivery",
             status: "filtered",
-            detail: "External chat modal submission denied by Paperclip",
+            detail: "External chat modal submission denied by GS Agentic Manager",
             replayable: false,
           }),
         ]),
@@ -38957,7 +38957,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
               result: {
                 id: botId,
                 username: "paperclip_denial_test_bot",
-                first_name: "Paperclip Denial Test",
+                first_name: "GS Agentic Manager Denial Test",
               },
             }),
             { status: 200, headers: { "content-type": "application/json" } },
@@ -39006,7 +39006,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
                   type: "private",
                   first_name: "Telegram User",
                 },
-                text: "This Paperclip action is no longer available.",
+                text: "This GS Agentic Manager action is no longer available.",
               },
             }),
             { status: 200, headers: { "content-type": "application/json" } },
@@ -39145,7 +39145,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(notices).toHaveLength(1);
       expect(JSON.parse(notices[0]!.body)).toMatchObject({
         chat_id: "417200359",
-        text: "This Paperclip action is no longer available. Open the linked task or ask an operator to link this account.",
+        text: "This GS Agentic Manager action is no longer available. Open the linked task or ask an operator to link this account.",
       });
       expect(notices[0]!.body).not.toContain(actionId);
       expect(notices[0]!.body).not.toContain(callbackData);
@@ -39166,7 +39166,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(denials[0]).toMatchObject({
         state: "filtered",
         attempts: 1,
-        redactedError: "External action denied by Paperclip authorization",
+        redactedError: "External action denied by GS Agentic Manager authorization",
         normalizedEvent: {
           providerEventId: expect.stringMatching(
             /^action-denied:[a-f0-9]{64}$/,
@@ -39431,7 +39431,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         principalId: principal.id,
         state: "filtered",
         attempts: 1,
-        redactedError: "External action denied by Paperclip authorization",
+        redactedError: "External action denied by GS Agentic Manager authorization",
         normalizedEvent: {
           providerEventId: expect.stringMatching(
             /^action-denied:[a-f0-9]{64}$/,
@@ -39454,7 +39454,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           kind: "delivery",
           status: "filtered",
           summary: "action ignored",
-          detail: "External action denied by Paperclip authorization",
+          detail: "External action denied by GS Agentic Manager authorization",
           replayable: false,
         }),
       ]),
@@ -40500,7 +40500,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toHaveLength(0);
   });
 
-  it("publishes complex question sets as non-executable Paperclip fallbacks", async () => {
+  it("publishes complex question sets as non-executable GS Agentic Manager fallbacks", async () => {
     const fixture = await seedCompany();
     const { callbacks, endpoint, service } =
       await configuredSlackEndpoint(fixture);
@@ -40582,7 +40582,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       ) ?? [],
     ).toEqual([]);
     expect(publication.payload.text).toContain(
-      "Open the task in Paperclip to respond",
+      "Open the task in GS Agentic Manager to respond",
     );
     expect(callbacks.onModalSubmit).toBeTypeOf("function");
     expect(callbacks.onModalClose).toBeUndefined();
@@ -40591,8 +40591,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
 
   it("publishes GitHub questions as link-only cards with no executable callback", async () => {
     const fixture = await seedCompany();
-    const previousPublicUrl = process.env.PAPERCLIP_PUBLIC_URL;
-    process.env.PAPERCLIP_PUBLIC_URL = "https://paperclip.example";
+    const previousPublicUrl = process.env.GSAM_PUBLIC_URL;
+    process.env.GSAM_PUBLIC_URL = "https://paperclip.example";
     try {
       const { callbacks, endpoint, runtime, service } =
         await configuredGitHubEndpoint(fixture);
@@ -40662,7 +40662,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             actions: [
               {
                 type: "link",
-                label: "Open in Paperclip",
+                label: "Open in GS Agentic Manager",
                 url: `https://paperclip.example/issues/${conversation!.issueId}`,
               },
             ],
@@ -40686,15 +40686,15 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       ).toContain(`https://paperclip.example/issues/${conversation!.issueId}`);
     } finally {
       if (previousPublicUrl === undefined)
-        delete process.env.PAPERCLIP_PUBLIC_URL;
-      else process.env.PAPERCLIP_PUBLIC_URL = previousPublicUrl;
+        delete process.env.GSAM_PUBLIC_URL;
+      else process.env.GSAM_PUBLIC_URL = previousPublicUrl;
     }
   });
 
   it("returns a successful GitHub link-question continuation as one exact final reply", async () => {
     const fixture = await seedCompany();
-    const previousPublicUrl = process.env.PAPERCLIP_PUBLIC_URL;
-    process.env.PAPERCLIP_PUBLIC_URL = "https://paperclip.example";
+    const previousPublicUrl = process.env.GSAM_PUBLIC_URL;
+    process.env.GSAM_PUBLIC_URL = "https://paperclip.example";
     try {
       const continuationRunId = randomUUID();
       const wakeup = vi.fn(async (agentId, options) => {
@@ -40803,7 +40803,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           card: {
             actions: [
               expect.objectContaining({
-                label: "Open in Paperclip",
+                label: "Open in GS Agentic Manager",
                 type: "link",
               }),
             ],
@@ -40915,8 +40915,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       await service.shutdown();
     } finally {
       if (previousPublicUrl === undefined)
-        delete process.env.PAPERCLIP_PUBLIC_URL;
-      else process.env.PAPERCLIP_PUBLIC_URL = previousPublicUrl;
+        delete process.env.GSAM_PUBLIC_URL;
+      else process.env.GSAM_PUBLIC_URL = previousPublicUrl;
     }
   });
 
@@ -41067,12 +41067,12 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         publicBaseUrl: "https://board.paperclip.example",
         expectedFallback: (issueId: string) =>
-          `File saved on the Paperclip task: report.txt. This GitHub App connection cannot upload file bytes into comments. Download it: https://board.paperclip.example/issues/${issueId}`,
+          `File saved on the GS Agentic Manager task: report.txt. This GitHub App connection cannot upload file bytes into comments. Download it: https://board.paperclip.example/issues/${issueId}`,
       },
       {
         publicBaseUrl: "http://127.0.0.1:3103",
         expectedFallback: () =>
-          "File saved on the private Paperclip task: report.txt. This GitHub App connection cannot upload file bytes into comments.",
+          "File saved on the private GS Agentic Manager task: report.txt. This GitHub App connection cannot upload file bytes into comments.",
       },
     ]) {
       const fixture = await seedCompany();
@@ -41236,7 +41236,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
 
     expect(failed).toMatchObject({ state: "failed" });
     const selectedAttachmentNotice =
-      "Paperclip could not send an attachment. The file remains on its Paperclip task for an operator to retry." +
+      "GS Agentic Manager could not send an attachment. The file remains on its GS Agentic Manager task for an operator to retry." +
       ` Open task: https://paperclip.example/issues/${conversation.issueId}`;
     const publications = await db
       .select()
@@ -41258,7 +41258,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(publications).toEqual([
       expect.objectContaining({
         state: "published",
-        payload: { text: "**Owner User (via Paperclip)**\n\nThe selected PNG should follow." },
+        payload: { text: "**Owner User (via GS Agentic Manager)**\n\nThe selected PNG should follow." },
       }),
       expect.objectContaining({
         id: failed.id,
@@ -41276,7 +41276,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(providerRuntime.posts).toEqual([
       {
         threadId: channel.thread.id,
-        text: "**Owner User (via Paperclip)**\n\nThe selected PNG should follow.",
+        text: "**Owner User (via GS Agentic Manager)**\n\nThe selected PNG should follow.",
       },
       {
         threadId: channel.thread.id,
@@ -41888,7 +41888,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(publications).toEqual([
       expect.objectContaining({
         state: "published",
-        payload: { text: "**Owner User (via Paperclip)**\n\nVisible board update" },
+        payload: { text: "**Owner User (via GS Agentic Manager)**\n\nVisible board update" },
       }),
       expect.objectContaining({
         id: first.id,
@@ -41903,7 +41903,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         .where(eq(issueAttachments.id, attachment.id)),
     ).resolves.toEqual([{ issueCommentId: comments[0].id }]);
     expect(runtime.endpoints.get(endpoint.id)?.posts).toEqual([
-      { threadId: channel.thread.id, text: "**Owner User (via Paperclip)**\n\nVisible board update" },
+      { threadId: channel.thread.id, text: "**Owner User (via GS Agentic Manager)**\n\nVisible board update" },
       {
         threadId: channel.thread.id,
         text: "",
@@ -42170,7 +42170,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         ).toEqual([
           {
             threadId: "slack:C-BOARD-REJECTION:4410.1",
-            text: "**Owner User (via Paperclip)**\n\nCorrected separately keyed send",
+            text: "**Owner User (via GS Agentic Manager)**\n\nCorrected separately keyed send",
           },
         ]);
       } finally {
@@ -43201,7 +43201,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         ).toEqual([[], ...attachmentIds.map((id) => [id])]);
         expect(initialBatch[2]!.id).toBe(blocked.id);
         expect(initialRuntime.posts).toEqual([
-          { threadId: channel.thread.id, text: provider === "slack" ? `**Owner User (via Paperclip)**\n\n${text}` : text },
+          { threadId: channel.thread.id, text: provider === "slack" ? `**Owner User (via GS Agentic Manager)**\n\n${text}` : text },
           {
             threadId: channel.thread.id,
             text: provider === "slack" ? "" : "Shared selected-1.txt.",
@@ -44202,7 +44202,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(providerRuntime.posts).toEqual([
         {
           threadId: damagedChannel.thread.id,
-          text: "**Owner User (via Paperclip)**\n\nDamaged attachment send",
+          text: "**Owner User (via GS Agentic Manager)**\n\nDamaged attachment send",
         },
       ]);
 
@@ -44221,11 +44221,11 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(providerRuntime.posts).toEqual([
         {
           threadId: damagedChannel.thread.id,
-          text: "**Owner User (via Paperclip)**\n\nDamaged attachment send",
+          text: "**Owner User (via GS Agentic Manager)**\n\nDamaged attachment send",
         },
         {
           threadId: healthyChannel.thread.id,
-          text: "**Owner User (via Paperclip)**\n\nHealthy attachment send",
+          text: "**Owner User (via GS Agentic Manager)**\n\nHealthy attachment send",
         },
         {
           threadId: healthyChannel.thread.id,
@@ -44339,7 +44339,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(providerRuntime.posts).toEqual([
         {
           threadId: channel.thread.id,
-          text: "**Owner User (via Paperclip)**\n\nMissing storage attachment send",
+          text: "**Owner User (via GS Agentic Manager)**\n\nMissing storage attachment send",
         },
       ]);
 
@@ -46710,7 +46710,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           if (legacyCopy) {
             const prior = structuredClone(remoteCommands[0]!);
             (prior.options as Array<{ description: string }>)[2]!.description =
-              "Close the current Paperclip task";
+              "Close the current GS Agentic Manager task";
             remoteCommands[0] = prior;
             const {
               id: _id,
@@ -48431,7 +48431,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect((await service.listPrincipals(other.id))[0]?.lastConnectAt).toBeNull();
     const notice = String((postEphemeral.mock.calls[0] as unknown[])[1]);
     const token = /token=([A-Za-z0-9_-]+)/.exec(notice)![1];
-    expect(notice).toContain("Connect your Paperclip account");
+    expect(notice).toContain("Connect your GS Agentic Manager account");
     expect((postEphemeral.mock.calls[0] as unknown[])[2]).toEqual({ fallbackToDM: false });
     expect(await service.previewIdentityLink(token, "owner-user")).toMatchObject({ selfService: true, canConfirm: true, externalLabel: "Connect Person" });
     expect(await service.setupTestStatus(endpoint.id, "owner-user")).toEqual({ messageReceivedAt: null });
@@ -48489,7 +48489,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(await service.setupTestStatus(endpoint.id, "someone-else")).toEqual({ messageReceivedAt: null });
   });
 
-  it("turns a Slack slash command into a new native thread and one Paperclip task", async () => {
+  it("turns a Slack slash command into a new native thread and one GS Agentic Manager task", async () => {
     const fixture = await seedCompany();
     const { callbacks, endpoint, runtime, service } =
       await configuredSlackEndpoint(fixture);
@@ -48850,7 +48850,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ]);
     // Provider transport owns only its short authorization snapshot. The
     // resource update completed while Slack was in flight, so the later
-    // Paperclip task mutation must honor the now-disabled destination.
+    // GS Agentic Manager task mutation must honor the now-disabled destination.
     await expect(service.listConversations(endpoint.id)).resolves.toEqual([]);
     await expect(
       db
@@ -48876,7 +48876,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           }),
         }),
         principalId: null,
-        redactedError: "Destination is not enabled in Paperclip",
+        redactedError: "Destination is not enabled in GS Agentic Manager",
       },
     ]);
     await expect(
@@ -49123,7 +49123,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       .returning();
 
     // This row models the crash window after Slack returned the root timestamp
-    // but before the original callback could durably admit the Paperclip task.
+    // but before the original callback could durably admit the GS Agentic Manager task.
     await service.processPendingDeliveries(1_000);
     await db
       .update(chatDeliveries)
@@ -49459,10 +49459,10 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         principalId: null,
         redactedError:
           authorizationChange === "resource_disabled"
-            ? "Destination is not enabled in Paperclip"
+            ? "Destination is not enabled in GS Agentic Manager"
             : authorizationChange === "viewer"
-              ? "Linked Paperclip account is not currently permitted"
-              : "External identity must be linked to a Paperclip account",
+              ? "Linked GS Agentic Manager account is not currently permitted"
+              : "External identity must be linked to a GS Agentic Manager account",
         state: "filtered",
       });
       expect(JSON.stringify(delivery?.normalizedEvent)).not.toContain(
@@ -49540,7 +49540,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       .returning();
 
     // Seed the exact crash boundary deterministically: Slack has confirmed the
-    // starter and Paperclip has durably normalized it, but no delivery drain
+    // starter and GS Agentic Manager has durably normalized it, but no delivery drain
     // has begun. A global reconciliation sweep intentionally runs action and
     // delivery lanes concurrently, so using it to create this fixture made
     // the pre-shutdown assertion depend on query scheduling under load.
@@ -49636,7 +49636,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await recoveredService.processPendingDeliveries(1_000);
 
     // Slack already accepted the starter, so recovery must never post it again.
-    // Task admission is a distinct Paperclip mutation and must still honor the
+    // Task admission is a distinct GS Agentic Manager mutation and must still honor the
     // destination and identity policy that is current after restart.
     expect(recoveredRuntime.endpoints.get(endpoint.id)?.posts).toEqual([]);
     expect(recoveredWakeup).not.toHaveBeenCalled();
@@ -49671,7 +49671,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           filtering: { contentRetained: false },
         }),
         principalId: null,
-        redactedError: "Destination is not enabled in Paperclip",
+        redactedError: "Destination is not enabled in GS Agentic Manager",
         state: "filtered",
       }),
     ]);
@@ -50215,7 +50215,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     const scheduledWork: Array<() => void> = [];
     const { callbacks, endpoint, runtime, service, wakeup } =
       await configuredSlackEndpoint(fixture, {
-        // Transport and Paperclip admission are separate durable phases.
+        // Transport and GS Agentic Manager admission are separate durable phases.
         // Run transport explicitly, then hold the delivery drain until reach
         // revocation has committed instead of racing their query scheduling.
         deferWebhookProcessing: true,
@@ -50384,7 +50384,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).resolves.toEqual([{ enabled: false }]);
 
     // Expire only this receipt's reorder window, then drain after revocation.
-    // Provider acceptance is not a grant to create a Paperclip task later.
+    // Provider acceptance is not a grant to create a GS Agentic Manager task later.
     await db
       .update(chatDeliveries)
       .set({ nextAttemptAt: new Date(0) })
@@ -50404,7 +50404,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect.objectContaining({
         state: "filtered",
         principalId: null,
-        redactedError: "Destination is not enabled in Paperclip",
+        redactedError: "Destination is not enabled in GS Agentic Manager",
         normalizedEvent: expect.objectContaining({
           filtering: { contentRetained: false },
         }),
@@ -50640,7 +50640,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       },
       {
         threadId: dm.thread.id,
-        text: "Send your request to start a new Paperclip task.",
+        text: "Send your request to start a new GS Agentic Manager task.",
       },
       {
         threadId: dm.thread.id,
@@ -50753,7 +50753,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await vi.waitFor(() => expect(postEphemeral).toHaveBeenCalledTimes(3));
     for (const call of postEphemeral.mock.calls) {
       expect(call[1]).toBe(
-        "Use status, new, and close in a direct message with this agent. In a channel, open the Paperclip task from its Slack thread.",
+        "Use status, new, and close in a direct message with this agent. In a channel, open the GS Agentic Manager task from its Slack thread.",
       );
       expect(call[2]).toEqual({ fallbackToDM: false });
     }
@@ -51710,7 +51710,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
               result: {
                 id: botId,
                 username: "paperclip_guidance_test_bot",
-                first_name: "Paperclip Guidance Test",
+                first_name: "GS Agentic Manager Guidance Test",
               },
             }),
             { status: 200, headers: { "content-type": "application/json" } },
@@ -51903,7 +51903,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           state: "filtered",
           attempts: 0,
           conversationId: null,
-          redactedError: "Destination is not enabled in Paperclip",
+          redactedError: "Destination is not enabled in GS Agentic Manager",
           normalizedEvent: expect.objectContaining({
             deduplication: expect.objectContaining({ duplicateCount: 1 }),
           }),
@@ -52049,13 +52049,13 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toEqual([
       expect.stringMatching(/— todo$/),
       expect.stringContaining(
-        "Open a new Telegram forum topic to start a new Paperclip task.",
+        "Open a new Telegram forum topic to start a new GS Agentic Manager task.",
       ),
-      "This chat conversation is closed. A later message here will continue the same Paperclip task.",
+      "This chat conversation is closed. A later message here will continue the same GS Agentic Manager task.",
     ]);
   });
 
-  it("keeps successive Telegram DM messages on one active Paperclip task", async () => {
+  it("keeps successive Telegram DM messages on one active GS Agentic Manager task", async () => {
     const fixture = await seedCompany();
     const { callbacks, endpoint, service, wakeup } =
       await configuredTelegramEndpoint(fixture);
@@ -52243,7 +52243,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await vi.waitFor(() =>
       expect(postEphemeral).toHaveBeenCalledWith(
         "U-COMMANDER",
-        "This channel or account is not allowed to start Paperclip work.",
+        "This channel or account is not allowed to start GS Agentic Manager work.",
         { fallbackToDM: false },
       ),
     );
@@ -54476,7 +54476,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
               edit_date: 1_788_620_390,
               chat: { id: Number(chatId), type: "private" },
               from: { id: Number(chatId), first_name: "Telegram User" },
-              text: "Edit whose original never reached Paperclip",
+              text: "Edit whose original never reached GS Agentic Manager",
             },
           }),
         }),
@@ -55240,7 +55240,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       .from(issueComments)
       .where(eq(issueComments.issueId, conversation.issueId))
       .then((rows) => rows.length);
-    const secretEdit = "Revoked Telegram edit must not enter Paperclip";
+    const secretEdit = "Revoked Telegram edit must not enter GS Agentic Manager";
     await expect(
       service.handleWebhook(
         endpoint.publicId,
@@ -55355,7 +55355,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         threadId: dm.thread.id,
         messageId: "outbound-2",
-        text: "Maya needs a Paperclip admin to safely recover this turn before more work can start. Open the task in Paperclip for details.",
+        text: "Maya needs a GS Agentic Manager admin to safely recover this turn before more work can start. Open the task in GS Agentic Manager for details.",
       },
     ]);
     expect(JSON.stringify(providerRuntime?.edits)).not.toContain(
@@ -55423,7 +55423,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           errorCode: terminal
             ? "adapter_failed"
             : "native_execution_ownership_unverified",
-          error: "Private diagnostic must not leave Paperclip",
+          error: "Private diagnostic must not leave GS Agentic Manager",
           updatedAt: new Date(),
         })
         .where(eq(heartbeatRuns.id, runId));
@@ -56175,11 +56175,11 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             : mode === "malformed_account"
               ? 123
               : providerAccount;
-      const previous = process.env.PAPERCLIP_RUNNER_STATE_DIR;
+      const previous = process.env.GSAM_RUNNER_STATE_DIR;
       const directory = mkdtempSync(
         path.join(os.tmpdir(), "paperclip-chat-cleanup-retry-"),
       );
-      process.env.PAPERCLIP_RUNNER_STATE_DIR = directory;
+      process.env.GSAM_RUNNER_STATE_DIR = directory;
       try {
         const runId = randomUUID();
         const nativeSessionId = context.binding.normalizedSessionId;
@@ -56553,8 +56553,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       } finally {
         await context.service.shutdown();
         if (previous === undefined)
-          delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-        else process.env.PAPERCLIP_RUNNER_STATE_DIR = previous;
+          delete process.env.GSAM_RUNNER_STATE_DIR;
+        else process.env.GSAM_RUNNER_STATE_DIR = previous;
         rmSync(directory, { recursive: true, force: true });
       }
     },
@@ -56609,7 +56609,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             : kind === "malformed_account"
               ? 123
               : providerAccount;
-      const previousStateDirectory = process.env.PAPERCLIP_RUNNER_STATE_DIR;
+      const previousStateDirectory = process.env.GSAM_RUNNER_STATE_DIR;
       let stateDirectory: string | null = null;
       try {
         const nativeSessionId = randomUUID();
@@ -56737,7 +56737,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           stateDirectory = mkdtempSync(
             path.join(os.tmpdir(), "paperclip-chat-retry-checkpoint-"),
           );
-          process.env.PAPERCLIP_RUNNER_STATE_DIR = stateDirectory;
+          process.env.GSAM_RUNNER_STATE_DIR = stateDirectory;
           const canonical = (value: unknown): string =>
             value && typeof value === "object" && !Array.isArray(value)
               ? `{${Object.entries(value)
@@ -56840,8 +56840,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         await context.service.shutdown();
         if (stateDirectory) {
           if (previousStateDirectory === undefined)
-            delete process.env.PAPERCLIP_RUNNER_STATE_DIR;
-          else process.env.PAPERCLIP_RUNNER_STATE_DIR = previousStateDirectory;
+            delete process.env.GSAM_RUNNER_STATE_DIR;
+          else process.env.GSAM_RUNNER_STATE_DIR = previousStateDirectory;
           rmSync(stateDirectory, { recursive: true, force: true });
         }
       }
@@ -58325,7 +58325,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         agentId: fixture.assignedAgentId,
         seq,
         eventType,
-        message: "PRIVATE native event prose must stay in Paperclip",
+        message: "PRIVATE native event prose must stay in GS Agentic Manager",
         payload: {
           toolName: "secret_internal_tool",
           arguments: { token: "PRIVATE-NATIVE-TOKEN" },
@@ -58674,7 +58674,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         {
           threadId: context.thread.thread.id,
           messageId: originalWorking!.providerMessageId,
-          text: "Maya stopped before completing this turn. Open the task in Paperclip for details.",
+          text: "Maya stopped before completing this turn. Open the task in GS Agentic Manager for details.",
         },
       ]);
 
@@ -58730,7 +58730,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           providerMessageId: originalWorking!.providerMessageId,
           payload: {
             progressState: "failed",
-            text: "Maya stopped before completing this turn. Open the task in Paperclip for details.",
+            text: "Maya stopped before completing this turn. Open the task in GS Agentic Manager for details.",
           },
         }),
       ]);
@@ -61945,7 +61945,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           JSON.stringify({
             id: 790,
             slug: "maya-paperclip-lifecycle",
-            name: "Maya Paperclip",
+            name: "Maya GS Agentic Manager",
             owner: { login: "paperclipai" },
             permissions: {
               issues: "write",
@@ -62657,7 +62657,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       state: "filtered",
       attempts: 0,
       principalId: null,
-      redactedError: "Destination is not enabled in Paperclip",
+      redactedError: "Destination is not enabled in GS Agentic Manager",
       normalizedEvent: {
         filtering: { contentRetained: false },
         message: { providerMessageId: `${chatId}:10` },
@@ -63377,7 +63377,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       const [conversation] = await service.listConversations(endpoint.id);
       if (!conversation)
         throw new Error("Expected Telegram attachment failure conversation");
-      const visibleFailure = `Paperclip could not safely import the attached Telegram file. Please resend it as a supported file under ${formatAttachmentSize(MAX_ATTACHMENT_BYTES)} or include text describing the request.`;
+      const visibleFailure = `GS Agentic Manager could not safely import the attached Telegram file. Please resend it as a supported file under ${formatAttachmentSize(MAX_ATTACHMENT_BYTES)} or include text describing the request.`;
       await expect(
         db
           .select({ body: issueComments.body })
@@ -64638,7 +64638,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       await expect(context.repair()).resolves.toBe(true);
       await context.service.processPendingPublications(100);
       const taskUrl = `https://paperclip.example/issues/${context.issue.id}`;
-      const expected = `${context.result.summary}\n\n[Open this Paperclip task](${taskUrl})`;
+      const expected = `${context.result.summary}\n\n[Open this GS Agentic Manager task](${taskUrl})`;
       expect(context.providerRuntime.posts.map((post) => post.text)).toEqual([
         expected,
       ]);
@@ -64699,7 +64699,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           .posts[0]!.text;
         expect(text).toBe(
           expected
-            ? `${context.result.summary}\n\n[Open this Paperclip task](${expected}/issues/${context.issue.id})`
+            ? `${context.result.summary}\n\n[Open this GS Agentic Manager task](${expected}/issues/${context.issue.id})`
             : context.result.summary,
         );
         for (const secret of [
@@ -64726,7 +64726,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         undefined,
         mode === "existing_link"
           ? (issueId) =>
-              `Attach directly: [Open this Paperclip task](https://paperclip.example/issues/${issueId})`
+              `Attach directly: [Open this GS Agentic Manager task](https://paperclip.example/issues/${issueId})`
           : undefined,
       );
       let restarted: ReturnType<typeof createService> | undefined;
@@ -64748,7 +64748,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           );
         expect(before).toMatchObject({ state: "retry", attempts: 1 });
         expect(
-          before.payload.text.match(/Open this Paperclip task/g),
+          before.payload.text.match(/Open this GS Agentic Manager task/g),
         ).toHaveLength(1);
         const [preparation] = await db
           .select()
@@ -65024,7 +65024,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             ? []
             : [
                 mode === "complete_batch"
-                  ? `${context.result.summary}\n\n[Open this Paperclip task](https://paperclip.example/issues/${context.issue.id})`
+                  ? `${context.result.summary}\n\n[Open this GS Agentic Manager task](https://paperclip.example/issues/${context.issue.id})`
                   : context.result.summary,
               ],
         );
@@ -65074,7 +65074,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             ),
           );
         expect(publication).toMatchObject({ state: "retry", attempts: 1 });
-        expect(publication.payload.text).toContain("Open this Paperclip task");
+        expect(publication.payload.text).toContain("Open this GS Agentic Manager task");
         const payload = { ...publication.payload };
         if (mode === "text") payload.text += "\nChanged after preparation";
         if (mode === "progress") payload.progressState = "completed";
@@ -66722,7 +66722,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           issueId: context.conversation.issueId,
           idempotencyKey: `run:${runId}:failed:${context.endpoint.id}`,
           payload: {
-            text: "Maya stopped before completing this turn. Open the task in Paperclip for details.",
+            text: "Maya stopped before completing this turn. Open the task in GS Agentic Manager for details.",
             progressState: "failed",
           },
         });
@@ -66736,7 +66736,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           {
             threadId: context.thread.thread.id,
             messageId: queued.providerMessageId,
-            text: "Maya stopped before completing this turn. Open the task in Paperclip for details.",
+            text: "Maya stopped before completing this turn. Open the task in GS Agentic Manager for details.",
           },
         ]);
         expect(JSON.stringify(runtime.edits)).not.toContain("was not started");
@@ -66838,7 +66838,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         {
           threadId: context.thread.thread.id,
           messageId: queued.providerMessageId,
-          text: "This follow-up was not started. Open the task in Paperclip for details.",
+          text: "This follow-up was not started. Open the task in GS Agentic Manager for details.",
         },
       ]);
       expect(JSON.stringify(runtime.edits)).not.toMatch(
@@ -70622,7 +70622,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           for (let drain = 0; drain < 20; drain++)
             await service.processPendingPublications();
           expect(publication?.commentId).toBeTruthy();
-          const expectedText = provider === "slack" && source === "new" ? `**Owner User (via Paperclip)**\n\n${body}` : body;
+          const expectedText = provider === "slack" && source === "new" ? `**Owner User (via GS Agentic Manager)**\n\n${body}` : body;
           const rows = await orderedBatch(publication!.commentId!);
           expect(rows.every((row) => row.state === "published")).toBe(true);
           expect(rows.map((row) => row.payload.text).join("") === expectedText).toBe(
@@ -70672,7 +70672,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             "@here ".repeat(1_000) +
             "END-OF-RICH-BOARD";
           expect(body.length).toBeLessThanOrEqual(100_000);
-          const safe = projectSafeChatPublicationText(provider === "slack" ? `**Owner User (via Paperclip)**\n\n${body}` : body);
+          const safe = projectSafeChatPublicationText(provider === "slack" ? `**Owner User (via GS Agentic Manager)**\n\n${body}` : body);
           const publication = await service.publishBoardMessage(
             endpoint.id,
             conversation.id,
@@ -70763,7 +70763,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         let restarted: ChatChannelService | undefined;
         try {
           const body = "a".repeat(99_990) + "FINAL-TAIL";
-          const expectedText = provider === "slack" ? `**Owner User (via Paperclip)**\n\n${body}` : body;
+          const expectedText = provider === "slack" ? `**Owner User (via GS Agentic Manager)**\n\n${body}` : body;
           let attempts = 0;
           transport.postHook = async () => {
             if (++attempts === 2)

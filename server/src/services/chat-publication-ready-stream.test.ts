@@ -7,7 +7,7 @@ import { nativePublicationTextFits } from "./chat-publication-text-parts.js";
 // Local qualification only: load an independently copied candidate module,
 // never a behavioral mock. CI/default runs use the installed pinned adapter.
 vi.mock("@chat-adapter/slack", async (importOriginal) => {
-  const candidate = process.env.PAPERCLIP_SLACK_STREAM_ADAPTER_MODULE;
+  const candidate = process.env.GSAM_SLACK_STREAM_ADAPTER_MODULE;
   return candidate ? import(/* @vite-ignore */ candidate) : importOriginal();
 });
 
@@ -807,7 +807,7 @@ describe("already-approved publication streaming", () => {
                   message_id: 901,
                   date: 1788910000,
                   chat: { id: chatId, type: chatType },
-                  from: { id: 123, is_bot: true, first_name: "Paperclip" },
+                  from: { id: 123, is_bot: true, first_name: "GS Agentic Manager" },
                   text: source,
                 },
           });

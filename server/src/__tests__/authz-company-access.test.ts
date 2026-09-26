@@ -153,8 +153,8 @@ describe("assertCompanyAccess", () => {
   });
 
   it("logs only in shadow mode for responsible-user company access denials", () => {
-    const previous = process.env.PAPERCLIP_RESPONSIBLE_USER_AUTHZ_SHADOW;
-    process.env.PAPERCLIP_RESPONSIBLE_USER_AUTHZ_SHADOW = "true";
+    const previous = process.env.GSAM_RESPONSIBLE_USER_AUTHZ_SHADOW;
+    process.env.GSAM_RESPONSIBLE_USER_AUTHZ_SHADOW = "true";
     try {
       const req = makeReq({
         method: "PATCH",
@@ -170,8 +170,8 @@ describe("assertCompanyAccess", () => {
 
       expect(() => assertCompanyAccess(req, "company-1")).not.toThrow();
     } finally {
-      if (previous === undefined) delete process.env.PAPERCLIP_RESPONSIBLE_USER_AUTHZ_SHADOW;
-      else process.env.PAPERCLIP_RESPONSIBLE_USER_AUTHZ_SHADOW = previous;
+      if (previous === undefined) delete process.env.GSAM_RESPONSIBLE_USER_AUTHZ_SHADOW;
+      else process.env.GSAM_RESPONSIBLE_USER_AUTHZ_SHADOW = previous;
     }
   });
 

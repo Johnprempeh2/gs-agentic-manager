@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { heartbeatRuns, type Db } from "@paperclipai/db";
+import { heartbeatRuns, type Db } from "@greatstone/db";
 import { conflict } from "../errors.js";
 import {
   resolveCoreTrustPreset,

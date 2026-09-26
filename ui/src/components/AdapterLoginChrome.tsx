@@ -299,7 +299,7 @@ export function OnboardingLoginCodeRow({
         {copied && (
           <motion.span
             key="copied"
-            className="shrink-0 text-sm text-muted-foreground/40"
+            className="shrink-0 text-sm text-subtle-foreground"
             initial={{ opacity: 0, y: COPIED_REVEAL_TRAVEL }}
             animate={{ opacity: 1, y: 0, transition: COPIED_REVEAL }}
             exit={{ opacity: 0, transition: COPIED_REVEAL }}
@@ -481,7 +481,7 @@ export function LocalProviderLoginInstructions({ adapterType, login }: {
     {ready ? <>
       <p role="status" className="flex items-center gap-2 text-foreground"><Check className="size-4 shrink-0 text-(--status-task-icon-done)" />{provider} is signed in. Click Connect to use this account.</p>
       {!showCommand && <button type="button" className="underline underline-offset-4" onClick={() => setShowCommand(true)}>Use a different account</button>}
-    </> : <p>{isolated ? `Sign in to ${provider} for this connection on the machine running Paperclip. Your existing terminal login stays separate.` : `Connect uses your local ${provider} account on the machine running Paperclip.`}</p>}
+    </> : <p>{isolated ? `Sign in to ${provider} for this connection on the machine running GS Agentic Manager. Your existing terminal login stays separate.` : `Connect uses your local ${provider} account on the machine running GS Agentic Manager.`}</p>}
     {(!ready || showCommand) && !login?.error && <>
       <p>Run this in a terminal on that machine and finish signing in in your browser. We’ll check automatically when you return.</p>
       {command && <div className="flex min-w-0 max-w-full items-start gap-2 rounded-md border bg-muted p-3 text-foreground">

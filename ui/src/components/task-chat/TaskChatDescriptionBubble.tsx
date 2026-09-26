@@ -94,7 +94,7 @@ export function TaskChatDescriptionBubble({ brief }: TaskChatDescriptionBubblePr
     return (
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 rounded-lg px-1 py-1.5 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-accent/20 hover:text-muted-foreground"
+        className="flex w-full items-center gap-1.5 rounded-lg px-1 py-1.5 text-left text-sm text-subtle-foreground transition-colors hover:bg-accent/20 hover:text-muted-foreground"
         onClick={() => setEditing(true)}
         data-testid="task-chat-description-ghost"
       >

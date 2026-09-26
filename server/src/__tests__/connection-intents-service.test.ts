@@ -25,7 +25,7 @@ import {
   toolProfileBindings,
   toolProfiles,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import type { RuntimeToolsTokenClaims } from "../runtime-tools-token.js";
 import { wakeConnectionIntentAfterResolution } from "../routes/connection-intents.js";
 import { connectionIntentDeliveryService } from "../services/connection-intent-delivery.js";

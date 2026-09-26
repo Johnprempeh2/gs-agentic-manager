@@ -4,7 +4,7 @@ import type {
   CompanySearchResult,
   CompanySearchResponse,
   CompanySearchZeroResults,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { PageTabBar, type PageTabItem } from "@/components/PageTabBar";

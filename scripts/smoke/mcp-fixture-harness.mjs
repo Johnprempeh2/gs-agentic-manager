@@ -18,7 +18,7 @@ const httpServerPath = resolve(repoRoot, "scripts/mcp-fixtures/servers/http-fixt
 
 function parseArgs(argv) {
   const args = {
-    paperclipUrl: process.env.PAPERCLIP_API_URL ?? "http://127.0.0.1:3100/api",
+    paperclipUrl: process.env.GSAM_API_URL ?? "http://127.0.0.1:3100/api",
     requirePaperclip: false,
     json: false,
   };
@@ -54,7 +54,7 @@ async function checkPaperclipHealth(rawUrl, required) {
     return { ok: true, baseUrl };
   } catch (error) {
     if (required) {
-      throw new Error(`Paperclip health check failed at ${baseUrl}/api/health: ${error.message}`);
+      throw new Error(`GS Agentic Manager health check failed at ${baseUrl}/api/health: ${error.message}`);
     }
     return { ok: false, baseUrl, skippedReason: error.message };
   }
@@ -63,7 +63,7 @@ async function checkPaperclipHealth(rawUrl, required) {
 function redactHostileText(value) {
   return JSON.stringify(value)
     .replace(/pc_live_[A-Za-z0-9_=-]+/g, "[REDACTED_SECRET]")
-    .replace(/PAPERCLIP_API_KEY/g, "[REDACTED_ENV_NAME]");
+    .replace(/GSAM_API_KEY/g, "[REDACTED_ENV_NAME]");
 }
 
 function fingerprintTool(tool) {
@@ -381,7 +381,7 @@ async function main() {
       assert(response.ok, "malicious result fixture should return a result");
       assert(response.outcome === "malicious_result_quarantined", "malicious result should be quarantined");
       assert(!response.result.redacted.includes("pc_live_should_be_redacted"), "synthetic secret should be redacted");
-      assert(!response.result.redacted.includes("PAPERCLIP_API_KEY"), "env key name should be redacted");
+      assert(!response.result.redacted.includes("GSAM_API_KEY"), "env key name should be redacted");
     });
 
     await runCase(results, "idempotent approved writes only execute once", async () => {
@@ -411,7 +411,7 @@ async function main() {
       console.log(JSON.stringify(summary, null, 2));
     } else {
       console.log(`MCP fixture smoke: ${summary.ok ? "PASS" : "FAIL"}`);
-      console.log(`Paperclip health: ${paperclip.ok ? "ok" : `skipped (${paperclip.skippedReason})`}`);
+      console.log(`GS Agentic Manager health: ${paperclip.ok ? "ok" : `skipped (${paperclip.skippedReason})`}`);
       for (const result of results) {
         console.log(`${result.ok ? "PASS" : "FAIL"} ${result.name}${result.error ? ` - ${result.error}` : ""}`);
       }

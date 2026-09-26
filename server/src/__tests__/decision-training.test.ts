@@ -16,7 +16,7 @@ import {
   issueThreadInteractions,
   projectWorkspaces,
   projects,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,

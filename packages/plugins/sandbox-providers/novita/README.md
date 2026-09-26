@@ -1,15 +1,15 @@
-# `@paperclipai/plugin-novita-sandbox`
+# `@greatstone/plugin-novita-sandbox`
 
-Published Novita Agent Sandbox provider plugin for Paperclip.
+Published Novita Agent Sandbox provider plugin for GS Agentic Manager.
 
-This package lives in the Paperclip monorepo, but it is intentionally excluded from the root `pnpm` workspace and shaped to publish and install like a standalone npm package. That means operators can install it from the Plugins page by package name, and the host will fetch its transitive dependencies at install time without adding lockfile churn to the Paperclip repo.
+This package lives in the GS Agentic Manager monorepo, but it is intentionally excluded from the root `pnpm` workspace and shaped to publish and install like a standalone npm package. That means operators can install it from the Plugins page by package name, and the host will fetch its transitive dependencies at install time without adding lockfile churn to the GS Agentic Manager repo.
 
 ## Install
 
-From a Paperclip instance, install:
+From a GS Agentic Manager instance, install:
 
 ```text
-@paperclipai/plugin-novita-sandbox
+@greatstone/plugin-novita-sandbox
 ```
 
 The host plugin installer runs `npm install` into the managed plugin directory, so package dependencies such as `novita-sandbox` are pulled in during installation.
@@ -19,7 +19,7 @@ The host plugin installer runs `npm install` into the managed plugin directory, 
 Configure Novita from `Instance Settings -> Environments`, not from the plugin's plugin page.
 
 - Put the Novita API key on the sandbox environment itself.
-- When you save an environment, Paperclip stores pasted API keys as company secrets.
+- When you save an environment, GS Agentic Manager stores pasted API keys as company secrets.
 - `NOVITA_API_KEY` remains an optional host-level fallback when an environment omits the key.
 
 ## Local development
@@ -32,7 +32,7 @@ pnpm test
 pnpm typecheck
 ```
 
-These commands assume the repo root has already been installed once so the local `@paperclipai/plugin-sdk` workspace package is available to the compiler during development.
+These commands assume the repo root has already been installed once so the local `@greatstone/plugin-sdk` workspace package is available to the compiler during development.
 
 ## Package layout
 

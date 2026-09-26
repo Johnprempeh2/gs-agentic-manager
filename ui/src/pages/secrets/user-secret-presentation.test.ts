@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
+import type { CompanySecret, UserSecretDefinition } from "@greatstone/shared";
 import {
   coverageSummaryLabel,
   myValueLabel,

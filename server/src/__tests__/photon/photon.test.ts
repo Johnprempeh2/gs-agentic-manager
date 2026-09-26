@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { Client, Server, ServerCredentials, credentials } from "@grpc/grpc-js";
 import { IMessageError } from "@photon-ai/advanced-imessage";
-import type { AskUserQuestionsInteraction } from "@paperclipai/shared";
+import type { AskUserQuestionsInteraction } from "@greatstone/shared";
 import {
   PhotonCloudClient,
   PhotonLineAuthentication, photonSharedIdentity, photonSharedScope,

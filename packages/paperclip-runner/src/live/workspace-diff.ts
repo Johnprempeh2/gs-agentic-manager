@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
-export const PAPERCLIP_WORKSPACE_DIFF_SCHEMA = "paperclip.workspace.diff.v1" as const;
+export const GSAM_WORKSPACE_DIFF_SCHEMA = "paperclip.workspace.diff.v1" as const;
 
 export type PaperclipWorkspaceChangeSource = "harness_reported" | "runner_verified";
 export type PaperclipWorkspaceFileOperation =
@@ -23,7 +23,7 @@ export interface PaperclipWorkspaceFileChange {
 }
 
 export interface PaperclipWorkspaceDiff {
-  schema: typeof PAPERCLIP_WORKSPACE_DIFF_SCHEMA;
+  schema: typeof GSAM_WORKSPACE_DIFF_SCHEMA;
   changeSetId: string;
   revision: number;
   source: PaperclipWorkspaceChangeSource;
@@ -212,7 +212,7 @@ export function diffPaperclipWorkspace(
 
   const hasUnknownStats = files.some((file) => file.additions === null || file.deletions === null);
   return {
-    schema: PAPERCLIP_WORKSPACE_DIFF_SCHEMA,
+    schema: GSAM_WORKSPACE_DIFF_SCHEMA,
     changeSetId,
     revision: 1,
     source: "runner_verified",

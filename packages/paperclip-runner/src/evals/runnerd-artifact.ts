@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import {
-  PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA,
-  PAPERCLIP_RUNNER_BUILD_METADATA,
+  GSAM_RUNNERD_BUILD_METADATA_SCHEMA,
+  GSAM_RUNNER_BUILD_METADATA,
 } from "./build-metadata.js";
 
 const execFileAsync = promisify(execFile);
@@ -39,9 +39,9 @@ async function readVerifiedBuildMetadata(
 }
 
 export interface PaperclipRunnerdBuildMetadata {
-  schema: typeof PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA;
+  schema: typeof GSAM_RUNNERD_BUILD_METADATA_SCHEMA;
   binaryName: "paperclip-runnerd";
-  packageName: "@paperclipai/paperclip-runner";
+  packageName: "@greatstone/paperclip-runner";
   packageVersion: string;
   binaryContractVersion: number;
   nativeExecutionVersion: number;
@@ -103,9 +103,9 @@ export function parsePaperclipRunnerdBuildMetadata(
   value: unknown,
 ): PaperclipRunnerdBuildMetadata {
   const metadata = record(value, "runnerd build metadata");
-  if (metadata.schema !== PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA) {
+  if (metadata.schema !== GSAM_RUNNERD_BUILD_METADATA_SCHEMA) {
     throw new PaperclipRunnerdArtifactError(
-      `runnerd metadata schema ${String(metadata.schema)} is unsupported; expected ${PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA}`,
+      `runnerd metadata schema ${String(metadata.schema)} is unsupported; expected ${GSAM_RUNNERD_BUILD_METADATA_SCHEMA}`,
       "metadata_invalid",
     );
   }
@@ -115,7 +115,7 @@ export function parsePaperclipRunnerdBuildMetadata(
       "metadata_invalid",
     );
   }
-  if (metadata.packageName !== PAPERCLIP_RUNNER_BUILD_METADATA.package.name) {
+  if (metadata.packageName !== GSAM_RUNNER_BUILD_METADATA.package.name) {
     throw new PaperclipRunnerdArtifactError(
       `runnerd metadata names unexpected package ${String(metadata.packageName)}`,
       "metadata_invalid",
@@ -137,9 +137,9 @@ export function parsePaperclipRunnerdBuildMetadata(
     );
   }
   return {
-    schema: PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA,
+    schema: GSAM_RUNNERD_BUILD_METADATA_SCHEMA,
     binaryName: "paperclip-runnerd",
-    packageName: PAPERCLIP_RUNNER_BUILD_METADATA.package.name,
+    packageName: GSAM_RUNNER_BUILD_METADATA.package.name,
     packageVersion: text(metadata.packageVersion, "runnerd build metadata.packageVersion"),
     binaryContractVersion: version(
       metadata.binaryContractVersion,

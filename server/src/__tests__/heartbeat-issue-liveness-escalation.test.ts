@@ -24,7 +24,7 @@ import {
   projects,
   projectWorkspaces,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -46,9 +46,9 @@ vi.mock("../telemetry.ts", () => ({
   getTelemetryClient: () => ({ track: vi.fn() }),
 }));
 
-vi.mock("@paperclipai/shared/telemetry", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/shared/telemetry")>(
-    "@paperclipai/shared/telemetry",
+vi.mock("@greatstone/shared/telemetry", async () => {
+  const actual = await vi.importActual<typeof import("@greatstone/shared/telemetry")>(
+    "@greatstone/shared/telemetry",
   );
   return {
     ...actual,
@@ -147,7 +147,7 @@ describeEmbeddedPostgres("heartbeat resolved dependency wake reconciliation", ()
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -239,7 +239,7 @@ describeEmbeddedPostgres("heartbeat resolved dependency wake reconciliation", ()
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });

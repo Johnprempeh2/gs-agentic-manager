@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA } from "./build-metadata.js";
+import { GSAM_RUNNERD_BUILD_METADATA_SCHEMA } from "./build-metadata.js";
 import {
   PaperclipRunnerdArtifactError,
   parsePaperclipRunnerdBuildMetadata,
@@ -13,9 +13,9 @@ import {
 } from "./runnerd-artifact.js";
 
 const valid = {
-  schema: PAPERCLIP_RUNNERD_BUILD_METADATA_SCHEMA,
+  schema: GSAM_RUNNERD_BUILD_METADATA_SCHEMA,
   binaryName: "paperclip-runnerd",
-  packageName: "@paperclipai/paperclip-runner",
+  packageName: "@greatstone/paperclip-runner",
   packageVersion: "0.0.0",
   binaryContractVersion: 2,
   nativeExecutionVersion: 1,

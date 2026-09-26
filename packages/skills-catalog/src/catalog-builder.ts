@@ -19,7 +19,7 @@ import type {
   CatalogTrustLevel,
 } from "./types.js";
 
-const CATALOG_PACKAGE_NAME = "@paperclipai/skills-catalog";
+const CATALOG_PACKAGE_NAME = "@greatstone/skills-catalog";
 const CATALOG_SCHEMA_VERSION = 1;
 const SKILL_ENTRYPOINT = "SKILL.md";
 const CATALOG_REFERENCE_FILE = "catalog-ref.json";
@@ -150,7 +150,7 @@ export async function validateCatalog(packageDir: string): Promise<BuildCatalogM
   if (generatedText !== null) {
     const expectedText = formatCatalogManifest(expected.manifest);
     if (generatedText !== expectedText) {
-      errors.push("generated/catalog.json is stale. Run pnpm --filter @paperclipai/skills-catalog build:manifest.");
+      errors.push("generated/catalog.json is stale. Run pnpm --filter @greatstone/skills-catalog build:manifest.");
     }
   }
 

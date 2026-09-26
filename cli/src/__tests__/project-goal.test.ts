@@ -25,15 +25,15 @@ function createProgram(): Command {
 describe("project and goal commands", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_API_URL;
-    delete process.env.PAPERCLIP_COMPANY_ID;
-    process.env.PAPERCLIP_CONTEXT = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-project-goal-")), "context.json");
+    delete process.env.GSAM_API_KEY;
+    delete process.env.GSAM_API_URL;
+    delete process.env.GSAM_COMPANY_ID;
+    process.env.GSAM_CONTEXT = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-project-goal-")), "context.json");
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_CONTEXT;
+    delete process.env.GSAM_CONTEXT;
   });
 
   it("creates and updates projects with shared schemas", async () => {

@@ -4,10 +4,10 @@ import { stampClaudeAgentIdHeader } from "./claude-agent-id-header.js";
 import {
   buildSandboxNpmInstallCommand,
   getAdapterSessionManagement,
-  PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES,
-} from "@paperclipai/adapter-utils";
-import type { AdapterLoginCapability } from "@paperclipai/adapter-utils";
-import { runAdapterExecutionTargetShellCommand } from "@paperclipai/adapter-utils/execution-target";
+  GSAM_RUNNER_PERMISSION_CAPABILITIES,
+} from "@greatstone/adapter-utils";
+import type { AdapterLoginCapability } from "@greatstone/adapter-utils";
+import { runAdapterExecutionTargetShellCommand } from "@greatstone/adapter-utils/execution-target";
 import {
   execute as claudeExecute,
   listClaudeSkills,
@@ -21,11 +21,11 @@ import {
   CLAUDE_SETUP_TOKEN_COMMAND,
   parseSetupTokenPrompt,
   parseSetupTokenCredential,
-} from "@paperclipai/adapter-claude-local/server";
+} from "@greatstone/adapter-claude-local/server";
 import {
   agentConfigurationDoc as claudeAgentConfigurationDoc,
   models as claudeModels,
-} from "@paperclipai/adapter-claude-local";
+} from "@greatstone/adapter-claude-local";
 import {
   execute as codexExecute,
   listCodexSkills,
@@ -36,29 +36,29 @@ import {
   getConfigSchema as getCodexConfigSchema,
   CODEX_DEVICE_LOGIN_COMMAND,
   parseDeviceLoginPrompt,
-} from "@paperclipai/adapter-codex-local/server";
+} from "@greatstone/adapter-codex-local/server";
 import {
   agentConfigurationDoc as codexAgentConfigurationDoc,
   models as codexModels,
-} from "@paperclipai/adapter-codex-local";
+} from "@greatstone/adapter-codex-local";
 import {
   execute as cursorExecute,
   listCursorSkills,
   syncCursorSkills,
   testEnvironment as cursorTestEnvironment,
   sessionCodec as cursorSessionCodec,
-} from "@paperclipai/adapter-cursor-local/server";
+} from "@greatstone/adapter-cursor-local/server";
 import {
   agentConfigurationDoc as cursorAgentConfigurationDoc,
   models as cursorModels,
-} from "@paperclipai/adapter-cursor-local";
+} from "@greatstone/adapter-cursor-local";
 import {
   execute as cursorCloudExecute,
   getConfigSchema as getCursorCloudConfigSchema,
   sessionCodec as cursorCloudSessionCodec,
   testEnvironment as cursorCloudTestEnvironment,
-} from "@paperclipai/adapter-cursor-cloud/server";
-import { agentConfigurationDoc as cursorCloudAgentConfigurationDoc } from "@paperclipai/adapter-cursor-cloud";
+} from "@greatstone/adapter-cursor-cloud/server";
+import { agentConfigurationDoc as cursorCloudAgentConfigurationDoc } from "@greatstone/adapter-cursor-cloud";
 import {
   execute as geminiExecute,
   listGeminiSkills,
@@ -66,11 +66,11 @@ import {
   testEnvironment as geminiTestEnvironment,
   sessionCodec as geminiSessionCodec,
   getConfigSchema as getGeminiConfigSchema,
-} from "@paperclipai/adapter-gemini-local/server";
+} from "@greatstone/adapter-gemini-local/server";
 import {
   agentConfigurationDoc as geminiAgentConfigurationDoc,
   models as geminiModels,
-} from "@paperclipai/adapter-gemini-local";
+} from "@greatstone/adapter-gemini-local";
 import {
   execute as grokExecute,
   listGrokSkills,
@@ -79,26 +79,26 @@ import {
   sessionCodec as grokSessionCodec,
   GROK_DEVICE_LOGIN_COMMAND,
   parseGrokDeviceLoginPrompt,
-} from "@paperclipai/adapter-grok-local/server";
+} from "@greatstone/adapter-grok-local/server";
 import {
   agentConfigurationDoc as grokAgentConfigurationDoc,
   models as grokModels,
-} from "@paperclipai/adapter-grok-local";
+} from "@greatstone/adapter-grok-local";
 import {
   execute as kimiExecute,
   listKimiSkills,
   syncKimiSkills,
   testEnvironment as kimiTestEnvironment,
   sessionCodec as kimiSessionCodec,
-} from "@paperclipai/adapter-kimi-local/server";
+} from "@greatstone/adapter-kimi-local/server";
 import {
   agentConfigurationDoc as kimiAgentConfigurationDoc,
   models as kimiModels,
-} from "@paperclipai/adapter-kimi-local";
+} from "@greatstone/adapter-kimi-local";
 import {
   createHermesGatewayServerAdapter,
   createHermesLocalServerAdapter,
-} from "@paperclipai/hermes-paperclip-adapter";
+} from "@greatstone/hermes-paperclip-adapter";
 import {
   execute as openCodeExecute,
   listOpenCodeSkills,
@@ -106,19 +106,19 @@ import {
   testEnvironment as openCodeTestEnvironment,
   sessionCodec as openCodeSessionCodec,
   listOpenCodeModels,
-} from "@paperclipai/adapter-opencode-local/server";
+} from "@greatstone/adapter-opencode-local/server";
 import {
   agentConfigurationDoc as openCodeAgentConfigurationDoc,
   models as openCodeModels,
-} from "@paperclipai/adapter-opencode-local";
+} from "@greatstone/adapter-opencode-local";
 import {
   execute as openclawGatewayExecute,
   testEnvironment as openclawGatewayTestEnvironment,
-} from "@paperclipai/adapter-openclaw-gateway/server";
+} from "@greatstone/adapter-openclaw-gateway/server";
 import {
   agentConfigurationDoc as openclawGatewayAgentConfigurationDoc,
   models as openclawGatewayModels,
-} from "@paperclipai/adapter-openclaw-gateway";
+} from "@greatstone/adapter-openclaw-gateway";
 import { listCodexModels, refreshCodexModels } from "./codex-models.js";
 import { listCursorModels } from "./cursor-models.js";
 import {
@@ -128,8 +128,8 @@ import {
   testEnvironment as piTestEnvironment,
   sessionCodec as piSessionCodec,
   listPiModels,
-} from "@paperclipai/adapter-pi-local/server";
-import { agentConfigurationDoc as piAgentConfigurationDoc } from "@paperclipai/adapter-pi-local";
+} from "@greatstone/adapter-pi-local/server";
+import { agentConfigurationDoc as piAgentConfigurationDoc } from "@greatstone/adapter-pi-local";
 import { BUILTIN_ADAPTER_TYPES } from "./builtin-adapter-types.js";
 import { buildExternalAdapters } from "./plugin-loader.js";
 import { getDisabledAdapterTypes } from "../services/adapter-plugin-store.js";
@@ -194,7 +194,7 @@ The standalone ACPX adapter has been retired. Use:
 - claude_local with adapterConfig.engine="acp" for Claude ACP execution.
 - codex_local with adapterConfig.engine="acp" for Codex ACP execution.
 
-Paperclip keeps this tombstone registered so stale acpx_local rows fail clearly instead of falling back to the process adapter.
+GS Agentic Manager keeps this tombstone registered so stale acpx_local rows fail clearly instead of falling back to the process adapter.
 `;
 
 // The Claude interactive login capability. Claude runs `claude setup-token` on a
@@ -390,7 +390,7 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
         ? error
         : new PaperclipRunnerProviderProfileError(
             "paperclip_runner_provider_unsupported",
-            "Paperclip Runner provider configuration is invalid.",
+            "GS Agentic Manager Runner provider configuration is invalid.",
           );
       return {
         adapterType: "paperclip_runner",
@@ -423,7 +423,7 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
               message: "The remote platform is supported. Runtime package integrity and readiness must still be verified by the remote runner before launch." }],
           };
         }
-        const { probeAcpxClaudeInstallation } = await import("@paperclipai/paperclip-runner/live");
+        const { probeAcpxClaudeInstallation } = await import("@greatstone/paperclip-runner/live");
         await probeAcpxClaudeInstallation(profile.model);
         return {
           adapterType: "paperclip_runner", status: "pass" as const, testedAt: new Date().toISOString(),
@@ -510,7 +510,7 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
         )
       : buildNpmRuntimeCommandSpec(config, "codex", "@openai/codex@0.156.0"),
   agentConfigurationDoc:
-    "# Paperclip Runner\n\nAdapter: paperclip_runner\n\nRuns Codex, OpenCode, Claude Managed, AWS AgentCore, or ACPX Claude through the Rust Paperclip runner and authenticated PRP transport. Pi is not available through the qualified ACPX profile. Managed providers use company-scoped qualified profiles, explicit retention acknowledgement, and spend limits.\n",
+    "# GS Agentic Manager Runner\n\nAdapter: paperclip_runner\n\nRuns Codex, OpenCode, Claude Managed, AWS AgentCore, or ACPX Claude through the Rust GS Agentic Manager runner and authenticated PRP transport. Pi is not available through the qualified ACPX profile. Managed providers use company-scoped qualified profiles, explicit retention acknowledgement, and spend limits.\n",
   getConfigSchema: () => ({
     fields: [
       {
@@ -531,33 +531,33 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
         key: "codexPermissionMode",
         label: "Codex permission mode",
         type: "select" as const,
-        default: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.codex.defaultMode,
-        options: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.codex.options.map(
+        default: GSAM_RUNNER_PERMISSION_CAPABILITIES.codex.defaultMode,
+        options: GSAM_RUNNER_PERMISSION_CAPABILITIES.codex.options.map(
           ({ value, label }) => ({ value, label }),
         ),
-        hint: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.codex.description,
+        hint: GSAM_RUNNER_PERMISSION_CAPABILITIES.codex.description,
         meta: { visibleWhen: { key: "provider", value: "codex" } },
       },
       {
         key: "opencodePermissionMode",
         label: "OpenCode permission mode",
         type: "select" as const,
-        default: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.opencode.defaultMode,
-        options: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.opencode.options.map(
+        default: GSAM_RUNNER_PERMISSION_CAPABILITIES.opencode.defaultMode,
+        options: GSAM_RUNNER_PERMISSION_CAPABILITIES.opencode.options.map(
           ({ value, label }) => ({ value, label }),
         ),
-        hint: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.opencode.description,
+        hint: GSAM_RUNNER_PERMISSION_CAPABILITIES.opencode.description,
         meta: { visibleWhen: { key: "provider", value: "opencode" } },
       },
       {
         key: "acpxPermissionMode",
         label: "ACPX permission mode",
         type: "select" as const,
-        default: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.acpx.defaultMode,
-        options: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.acpx.options.map(
+        default: GSAM_RUNNER_PERMISSION_CAPABILITIES.acpx.defaultMode,
+        options: GSAM_RUNNER_PERMISSION_CAPABILITIES.acpx.options.map(
           ({ value, label }) => ({ value, label }),
         ),
-        hint: PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.acpx.description,
+        hint: GSAM_RUNNER_PERMISSION_CAPABILITIES.acpx.description,
         meta: { visibleWhen: { key: "provider", value: "acpx" } },
       },
       {
@@ -606,7 +606,7 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
         label: "Estimated session ceiling (USD)",
         type: "number" as const,
         default: 1,
-        hint: "Paperclip estimate; AWS does not provide a per-session currency hard stop.",
+        hint: "GS Agentic Manager estimate; AWS does not provide a per-session currency hard stop.",
         meta: { visibleWhen: { key: "provider", value: "aws_agentcore" } },
       },
       {
@@ -998,7 +998,7 @@ export function getServerAdapter(type: string): ServerAdapterModule {
 }
 
 /**
- * Memoized view of PAPERCLIP_ADAPTER_MODELS, keyed by the raw env string so
+ * Memoized view of GSAM_ADAPTER_MODELS, keyed by the raw env string so
  * tests (and live env mutation) that change the variable are still observed.
  * Parsing happens at most once per distinct raw value instead of per
  * `listAdapterModels` request, and malformed values fail SOFT here: we log the
@@ -1011,7 +1011,7 @@ let adapterModelsEnvCache: {
 } | null = null;
 
 function getDeclaredAdapterModels(): ReturnType<typeof parseAdapterModelsEnv> {
-  const raw = process.env.PAPERCLIP_ADAPTER_MODELS;
+  const raw = process.env.GSAM_ADAPTER_MODELS;
   if (adapterModelsEnvCache && adapterModelsEnvCache.raw === raw) {
     return adapterModelsEnvCache.value;
   }
@@ -1020,7 +1020,7 @@ function getDeclaredAdapterModels(): ReturnType<typeof parseAdapterModelsEnv> {
     value = parseAdapterModelsEnv(process.env);
   } catch (err) {
     console.error(
-      "[paperclip] Invalid PAPERCLIP_ADAPTER_MODELS; ignoring declared model lists:",
+      "[paperclip] Invalid GSAM_ADAPTER_MODELS; ignoring declared model lists:",
       err,
     );
   }

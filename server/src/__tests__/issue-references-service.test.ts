@@ -9,7 +9,7 @@ import {
   issueDocuments,
   issueReferenceMentions,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -87,7 +87,7 @@ describeEmbeddedPostgres("issueReferenceService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `R${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -185,7 +185,7 @@ describeEmbeddedPostgres("issueReferenceService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip Backfill",
+      name: "GS Agentic Manager Backfill",
       issuePrefix: `B${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

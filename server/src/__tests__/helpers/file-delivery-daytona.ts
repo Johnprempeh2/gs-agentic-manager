@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
-import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/command-managed-runtime";
-import { shellQuote } from "@paperclipai/adapter-utils/ssh";
+import type { CommandManagedRuntimeRunner } from "@greatstone/adapter-utils/command-managed-runtime";
+import { shellQuote } from "@greatstone/adapter-utils/ssh";
 import { openDaytonaDuplexChannelSession, type DaytonaPtyProcess } from "../../../../packages/plugins/sandbox-providers/daytona/src/duplex-command-stream.js";
 
 /** Opt-in live fixture; uses an isolated sandbox and never reuses a user's lease. */

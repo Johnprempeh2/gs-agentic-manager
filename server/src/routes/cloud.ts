@@ -38,7 +38,7 @@ export function cloudRoutes(opts: {
       });
     }
 
-    const tenantToken = runtimeEnv.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN?.trim();
+    const tenantToken = runtimeEnv.GSAM_CLOUD_TENANT_SERVER_TOKEN?.trim();
     if (!context.cloudOrigin || !context.stackId || !tenantToken) {
       throw new HttpError(503, "Paperclip Cloud portfolio is not configured", {
         code: "cloud_portfolio_not_configured",

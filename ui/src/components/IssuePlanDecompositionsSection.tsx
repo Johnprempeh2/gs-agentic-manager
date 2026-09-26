@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AcceptedPlanDecompositionSummary } from "@paperclipai/shared";
+import type { Agent, AcceptedPlanDecompositionSummary } from "@greatstone/shared";
 import { ChevronRight, GitBranch, Repeat, CheckCircle2, Loader2 } from "lucide-react";
 import { Link } from "@/lib/router";
 import { issuesApi } from "../api/issues";
@@ -47,7 +47,7 @@ export function IssuePlanDecompositionsSection({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-muted-foreground">Plan decomposition</h3>
-        <span className="text-(length:--text-micro) text-muted-foreground/80">
+        <span className="text-(length:--text-micro) text-subtle-foreground">
           {items.length === 1 ? "1 accepted plan revision" : `${items.length} accepted plan revisions`}
         </span>
       </div>
@@ -93,7 +93,7 @@ export function IssuePlanDecompositionsSection({
                 <span className="text-xs text-muted-foreground">
                   Plan {revisionLabel}
                 </span>
-                <span className="text-xs text-muted-foreground/70">·</span>
+                <span className="text-xs text-subtle-foreground">·</span>
                 <span className="inline-flex items-center gap-1 text-xs text-foreground">
                   <GitBranch className="h-3 w-3 text-muted-foreground" />
                   {created} of {requested} child {requested === 1 ? "task" : "tasks"} created

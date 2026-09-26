@@ -1,4 +1,4 @@
-import type { ExecutionReconciliation } from "@paperclipai/shared";
+import type { ExecutionReconciliation } from "@greatstone/shared";
 import type {
   AcceptedPlanDecompositionSummary,
   AskUserQuestionsAnswer,
@@ -34,7 +34,7 @@ import type {
   ReleaseIssueTreeHoldResponse,
   UpsertIssueWatchdog,
   UpsertIssueDocument,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { api, ApiError, type RequestOptions } from "./client";
 import { CommentSubmissionUnknownError } from "../lib/comment-submit-result";
 

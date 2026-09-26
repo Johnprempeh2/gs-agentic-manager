@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, ChevronDown, Loader2, Search, Store, X } from "lucide-react";
-import type { Agent, AgentDesiredSkillEntry } from "@paperclipai/shared";
+import type { Agent, AgentDesiredSkillEntry } from "@greatstone/shared";
 import { agentsApi } from "../../api/agents";
 import { companySkillsApi } from "../../api/companySkills";
 import { instanceSettingsApi } from "../../api/instanceSettings";
@@ -28,10 +28,10 @@ import { buildAgentSkillSourceMeta } from "./agent-skill-source";
 import { AgentSkillReleasePicker, releaseShortLabel } from "./AgentSkillReleasePicker";
 
 const MATERIALIZATION_NOTE =
-  "Enabled skills are materialized into the stable Paperclip-managed prompt bundle on the agent's next run.";
+  "Enabled skills are materialized into the stable GS Agentic Manager-managed prompt bundle on the agent's next run.";
 
-/** Company skill key of the Paperclip core skill that carries beta releases. */
-const PAPERCLIP_CORE_SKILL_KEY = "paperclipai/paperclip/paperclip";
+/** Company skill key of the GS Agentic Manager core skill that carries beta releases. */
+const GSAM_CORE_SKILL_KEY = "paperclipai/paperclip/paperclip";
 
 /** Build the desired-skill sync payload, carrying any active version pins. */
 export function toDesiredSkillPayload(
@@ -94,7 +94,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   const betaSkillsEnabled = experimentalSettings?.enableBetaSkills === true;
 
   const paperclipCoreSkill = useMemo(
-    () => (companySkills ?? []).find((skill) => skill.key === PAPERCLIP_CORE_SKILL_KEY) ?? null,
+    () => (companySkills ?? []).find((skill) => skill.key === GSAM_CORE_SKILL_KEY) ?? null,
     [companySkills, skillSnapshot],
   );
 
@@ -311,12 +311,12 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
       typeof agent.adapterConfig.agent === "string" &&
       agent.adapterConfig.agent === "custom"
     ) {
-      return "Paperclip cannot manage skills for custom ACP commands yet.";
+      return "GS Agentic Manager cannot manage skills for custom ACP commands yet.";
     }
     if (agent.adapterType === "openclaw_gateway") {
-      return "Paperclip cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
+      return "GS Agentic Manager cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
     }
-    return "Paperclip cannot manage skills for this adapter yet. Manage them in the adapter directly.";
+    return "GS Agentic Manager cannot manage skills for this adapter yet. Manage them in the adapter directly.";
   }, [agent.adapterConfig.agent, agent.adapterType, unsupported]);
 
   const hasUnsavedChanges = !sameSkillSelection(skillDraft, lastSavedSkills);
@@ -350,13 +350,13 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     // runtime context, so disabling an enabled row would only trap stale data.
     const legacyPaperclipBlocked = agent.adapterType === "paperclip_runner"
       && variant === "available"
-      && row.key === PAPERCLIP_CORE_SKILL_KEY;
+      && row.key === GSAM_CORE_SKILL_KEY;
     const rowDisabled = unsupported || legacyPaperclipBlocked;
     const rowDisabledReason = legacyPaperclipBlocked
-      ? "Paperclip Runner uses native semantic coordination and cannot attach the legacy Paperclip operational skill."
+      ? "GS Agentic Manager Runner uses native semantic coordination and cannot attach the legacy GS Agentic Manager operational skill."
       : unsupportedMessage;
     const showReleasePicker =
-      releasePickerActive && variant === "enabled" && row.key === PAPERCLIP_CORE_SKILL_KEY;
+      releasePickerActive && variant === "enabled" && row.key === GSAM_CORE_SKILL_KEY;
     const pinnedVersionId = versionPins[row.key] ?? null;
     const pinnedRelease = pinnedVersionId
       ? paperclipReleases.find((release) => release.id === pinnedVersionId) ?? null
@@ -520,7 +520,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
                   <span className="text-xs font-medium text-muted-foreground">
                     Automatic and detected skills (read-only)
                   </span>
-                  <span className="text-xs text-muted-foreground/70">{filteredDetected.length}</span>
+                  <span className="text-xs text-subtle-foreground">{filteredDetected.length}</span>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   {filteredDetected.length > 0 ? (
@@ -598,7 +598,7 @@ function SkillSection({
     <section className="overflow-hidden rounded-lg border border-border">
       <div className="flex items-center gap-2 bg-muted/50 px-3 py-2">
         <span className="text-xs font-medium text-muted-foreground">{title}</span>
-        <span className="text-xs text-muted-foreground/70">{count}</span>
+        <span className="text-xs text-subtle-foreground">{count}</span>
       </div>
       <div>{children}</div>
     </section>
@@ -612,7 +612,7 @@ function SectionEmpty({ children }: { children: React.ReactNode }) {
 function EmptyLibraryCard() {
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-10 text-center">
-      <Store className="h-8 w-8 text-muted-foreground/60" />
+      <Store className="h-8 w-8 text-subtle-foreground" />
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground">No skills in the organization library</p>
         <p className="text-xs text-muted-foreground">

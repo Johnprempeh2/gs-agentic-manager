@@ -5,7 +5,7 @@ import {
   resolveDefaultEmbeddedPostgresDir,
   resolvePaperclipConfigPathForInstance,
   resolvePaperclipEnvPathForConfig,
-} from "@paperclipai/shared/home-paths";
+} from "@greatstone/shared/home-paths";
 
 const CONFIG_BASENAME = "config.json";
 
@@ -45,7 +45,7 @@ function findConfigFileFromAncestors(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
 
   while (true) {
-    const candidate = path.resolve(currentDir, ".paperclip", CONFIG_BASENAME);
+    const candidate = path.resolve(currentDir, ".gsam", CONFIG_BASENAME);
     if (existsSync(candidate)) return candidate;
 
     const nextDir = path.resolve(currentDir, "..");
@@ -55,8 +55,8 @@ function findConfigFileFromAncestors(startDir: string): string | null {
 }
 
 function resolvePaperclipConfigPath(): string {
-  if (process.env.PAPERCLIP_CONFIG?.trim()) {
-    return path.resolve(process.env.PAPERCLIP_CONFIG.trim());
+  if (process.env.GSAM_CONFIG?.trim()) {
+    return path.resolve(process.env.GSAM_CONFIG.trim());
   }
   return findConfigFileFromAncestors(process.cwd()) ?? resolvePaperclipConfigPathForInstance();
 }

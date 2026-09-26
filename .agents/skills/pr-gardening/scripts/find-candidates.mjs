@@ -25,11 +25,11 @@ export async function findCandidates(options) {
   const now = options.now ? new Date(options.now) : new Date();
   const windowStartMs = now.getTime() - days * 24 * 60 * 60 * 1000;
 
-  const apiUrl = options.api_url ?? process.env.PAPERCLIP_API_URL;
-  const apiKey = options.api_key ?? process.env.PAPERCLIP_API_KEY;
-  const companyId = options.company_id ?? process.env.PAPERCLIP_COMPANY_ID;
+  const apiUrl = options.api_url ?? process.env.GSAM_API_URL;
+  const apiKey = options.api_key ?? process.env.GSAM_API_KEY;
+  const companyId = options.company_id ?? process.env.GSAM_COMPANY_ID;
   if (!apiUrl || !apiKey || !companyId) {
-    throw new Error("PAPERCLIP_API_URL, PAPERCLIP_API_KEY, and PAPERCLIP_COMPANY_ID are required");
+    throw new Error("GSAM_API_URL, GSAM_API_KEY, and GSAM_COMPANY_ID are required");
   }
 
   const contains = `github.com/${repository}/pull`;

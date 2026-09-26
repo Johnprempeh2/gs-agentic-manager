@@ -27,18 +27,18 @@ function createTempRoot(prefix: string): string {
 describe("dev-runner worktree env bootstrap", () => {
   it("guards seed-pending worktrees until a seed-complete marker exists", () => {
     const root = createTempRoot("paperclip-dev-runner-seed-pending-");
-    fs.mkdirSync(path.join(root, ".paperclip"), { recursive: true });
-    fs.writeFileSync(path.join(root, ".paperclip", "seed-pending"), "{}\n", "utf8");
+    fs.mkdirSync(path.join(root, ".gsam"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".gsam", "seed-pending"), "{}\n", "utf8");
 
     expect(isWorktreeSeedPending(root)).toBe(true);
 
-    fs.writeFileSync(path.join(root, ".paperclip", "seed-complete"), "{}\n", "utf8");
+    fs.writeFileSync(path.join(root, ".gsam", "seed-complete"), "{}\n", "utf8");
     expect(isWorktreeSeedPending(root)).toBe(false);
   });
 
   it("guards every manifest state except a complete verified manifest", () => {
     const root = createTempRoot("paperclip-dev-runner-seed-manifest-");
-    const manifestPath = path.join(root, ".paperclip", "seed-manifest.json");
+    const manifestPath = path.join(root, ".gsam", "seed-manifest.json");
     fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
     fs.writeFileSync(manifestPath, JSON.stringify({ version: 2, state: "failed" }), "utf8");
     expect(isWorktreeSeedPending(root)).toBe(true);
@@ -73,25 +73,25 @@ describe("dev-runner worktree env bootstrap", () => {
     expect(isLinkedGitWorktreeCheckout(root)).toBe(true);
   });
 
-  it("loads repo-local Paperclip env for initialized worktrees without overriding explicit env", () => {
+  it("loads repo-local GS Agentic Manager env for initialized worktrees without overriding explicit env", () => {
     const root = createTempRoot("paperclip-dev-runner-worktree-env-");
-    fs.mkdirSync(path.join(root, ".paperclip"), { recursive: true });
+    fs.mkdirSync(path.join(root, ".gsam"), { recursive: true });
     fs.writeFileSync(path.join(root, ".git"), "gitdir: /tmp/paperclip/.git/worktrees/feature\n", "utf8");
     fs.writeFileSync(
       resolveWorktreeEnvFilePath(root),
       [
-        "PAPERCLIP_HOME=/tmp/paperclip-worktrees",
-        "PAPERCLIP_INSTANCE_ID=feature-worktree",
-        "PAPERCLIP_IN_WORKTREE=true",
-        "PAPERCLIP_WORKTREE_NAME=feature-worktree",
-        "PAPERCLIP_OPTIONAL= # comment-only value",
+        "GSAM_HOME=/tmp/paperclip-worktrees",
+        "GSAM_INSTANCE_ID=feature-worktree",
+        "GSAM_IN_WORKTREE=true",
+        "GSAM_WORKTREE_NAME=feature-worktree",
+        "GSAM_OPTIONAL= # comment-only value",
         "",
       ].join("\n"),
       "utf8",
     );
 
     const env: NodeJS.ProcessEnv = {
-      PAPERCLIP_INSTANCE_ID: "already-set",
+      GSAM_INSTANCE_ID: "already-set",
     };
     const result = bootstrapDevRunnerWorktreeEnv(root, env);
 
@@ -99,15 +99,15 @@ describe("dev-runner worktree env bootstrap", () => {
       envPath: resolveWorktreeEnvFilePath(root),
       missingEnv: false,
     });
-    expect(env.PAPERCLIP_HOME).toBe("/tmp/paperclip-worktrees");
-    expect(env.PAPERCLIP_INSTANCE_ID).toBe("already-set");
-    expect(env.PAPERCLIP_IN_WORKTREE).toBe("true");
-    expect(env.PAPERCLIP_OPTIONAL).toBe("");
+    expect(env.GSAM_HOME).toBe("/tmp/paperclip-worktrees");
+    expect(env.GSAM_INSTANCE_ID).toBe("already-set");
+    expect(env.GSAM_IN_WORKTREE).toBe("true");
+    expect(env.GSAM_OPTIONAL).toBe("");
   });
 
   it("repairs stale migrated config paths before loading worktree env", () => {
     const root = createTempRoot("paperclip-dev-runner-worktree-migrated-env-");
-    const localConfigPath = path.join(root, ".paperclip", "config.json");
+    const localConfigPath = path.join(root, ".gsam", "config.json");
     const worktreesDir = path.join(root, ".paperclip-worktrees");
     fs.mkdirSync(path.dirname(localConfigPath), { recursive: true });
     fs.writeFileSync(path.join(root, ".git"), "gitdir: /tmp/paperclip/.git/worktrees/feature\n", "utf8");
@@ -115,19 +115,19 @@ describe("dev-runner worktree env bootstrap", () => {
     fs.writeFileSync(
       resolveWorktreeEnvFilePath(root),
       [
-        "PAPERCLIP_HOME=/old/home/.paperclip-worktrees",
-        "PAPERCLIP_INSTANCE_ID=feature-worktree",
-        "PAPERCLIP_CONFIG=/old/home/paperclip/.paperclip/worktrees/feature/.paperclip/config.json",
-        "PAPERCLIP_CONTEXT=/old/home/.paperclip-worktrees/context.json",
-        "PAPERCLIP_IN_WORKTREE=true",
-        "PAPERCLIP_WORKTREE_NAME=feature-worktree",
+        "GSAM_HOME=/old/home/.paperclip-worktrees",
+        "GSAM_INSTANCE_ID=feature-worktree",
+        "GSAM_CONFIG=/old/home/paperclip/.gsam/worktrees/feature/.gsam/config.json",
+        "GSAM_CONTEXT=/old/home/.paperclip-worktrees/context.json",
+        "GSAM_IN_WORKTREE=true",
+        "GSAM_WORKTREE_NAME=feature-worktree",
         "",
       ].join("\n"),
       "utf8",
     );
 
     const env: NodeJS.ProcessEnv = {
-      PAPERCLIP_WORKTREES_DIR: worktreesDir,
+      GSAM_WORKTREES_DIR: worktreesDir,
     };
     const result = bootstrapDevRunnerWorktreeEnv(root, env);
 
@@ -135,10 +135,10 @@ describe("dev-runner worktree env bootstrap", () => {
       envPath: resolveWorktreeEnvFilePath(root),
       missingEnv: false,
     });
-    expect(env.PAPERCLIP_HOME).toBe(worktreesDir);
-    expect(env.PAPERCLIP_CONFIG).toBe(localConfigPath);
-    expect(env.PAPERCLIP_CONTEXT).toBe(path.join(worktreesDir, "context.json"));
-    expect(env.PAPERCLIP_INSTANCE_ID).toBe("feature-worktree");
+    expect(env.GSAM_HOME).toBe(worktreesDir);
+    expect(env.GSAM_CONFIG).toBe(localConfigPath);
+    expect(env.GSAM_CONTEXT).toBe(path.join(worktreesDir, "context.json"));
+    expect(env.GSAM_INSTANCE_ID).toBe("feature-worktree");
   });
 
   it("reports uninitialized linked worktrees so dev runner can fail fast", () => {

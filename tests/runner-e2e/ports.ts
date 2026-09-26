@@ -87,7 +87,7 @@ export async function reserveRunnerE2EServerPort(
   }
 
   throw new Error(
-    `Failed to reserve a conflict-free Paperclip/Vite port pair after ${maxAttempts} attempts`,
+    `Failed to reserve a conflict-free GSAM/Vite port pair after ${maxAttempts} attempts`,
   );
 }
 

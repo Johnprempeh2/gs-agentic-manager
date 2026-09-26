@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import { ToolGatewayHttpError, type ToolGatewayDescriptor, type ToolGatewayService } from "../tool-gateway.js";
 
 type WorkMode = "standard" | "planning" | "ask";

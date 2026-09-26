@@ -2,7 +2,7 @@
  * JSON-RPC 2.0 message types and protocol helpers for the host ↔ worker IPC
  * channel.
  *
- * The Paperclip plugin runtime uses JSON-RPC 2.0 over stdio to communicate
+ * The GS Agentic Manager plugin runtime uses JSON-RPC 2.0 over stdio to communicate
  * between the host process and each plugin worker process. This module defines:
  *
  * - Core JSON-RPC 2.0 envelope types (request, response, notification, error)
@@ -48,8 +48,8 @@ import type {
   ExternalObjectMentionConfidence,
   ExternalObjectMentionSourceKind,
   EnvSecretRefBinding,
-} from "@paperclipai/shared";
-export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
+} from "@greatstone/shared";
+export type { PluginLauncherRenderContextSnapshot } from "@greatstone/shared";
 
 import type {
   PluginEvent,
@@ -92,7 +92,7 @@ export const JSONRPC_VERSION = "2.0" as const;
 
 /**
  * A unique request identifier. JSON-RPC 2.0 allows strings or numbers;
- * we use strings (UUIDs or monotonic counters) for all Paperclip messages.
+ * we use strings (UUIDs or monotonic counters) for all GS Agentic Manager messages.
  */
 export type JsonRpcId = string | number;
 
@@ -237,7 +237,7 @@ export type JsonRpcErrorCode =
   (typeof JSONRPC_ERROR_CODES)[keyof typeof JSONRPC_ERROR_CODES];
 
 /**
- * Paperclip plugin-specific error codes.
+ * GS Agentic Manager plugin-specific error codes.
  *
  * These live in the JSON-RPC "server error" reserved range (-32000 to -32099)
  * as specified by JSON-RPC 2.0 for implementation-defined server errors.
@@ -332,9 +332,9 @@ export interface InitializeParams {
   config: Record<string, unknown>;
   /** Instance-level metadata. */
   instanceInfo: {
-    /** UUID of this Paperclip instance. */
+    /** UUID of this GS Agentic Manager instance. */
     instanceId: string;
-    /** Semver version of the running Paperclip host. */
+    /** Semver version of the running GS Agentic Manager host. */
     hostVersion: string;
   };
   /** Host API version. */
@@ -419,7 +419,7 @@ export interface GetDataParams {
 export type PluginPerformActionActorType = "user" | "agent" | "system";
 
 export interface PluginPerformActionActorContext {
-  /** Authenticated principal type resolved by the Paperclip host. */
+  /** Authenticated principal type resolved by the GS Agentic Manager host. */
   type: PluginPerformActionActorType;
   /** Authenticated board user id when `type === "user"`, otherwise null. */
   userId: string | null;
@@ -803,7 +803,7 @@ export interface PluginSyncFileMapping {
  * aborts the operation).
  *
  * SECURITY — command origin (Stage-1 design review, condition C1). `command` is
- * a **Paperclip/adapter-authored control operation**: it may be supplied ONLY by
+ * a **GSAM/adapter-authored control operation**: it may be supplied ONLY by
  * core/adapter code. No server route, issue/comment content, project/workspace
  * file content, provider-plugin callback, or arbitrary adapter config may supply
  * a raw `command` string, and any path embedded in it MUST be built by

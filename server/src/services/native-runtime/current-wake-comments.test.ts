@@ -10,7 +10,7 @@ import {
   heartbeatRuns,
   issueComments,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 
 import {
   assertCurrentWakeCommentsRead,
@@ -69,7 +69,7 @@ describeEmbeddedPostgres("current external-chat wake comment reader", () => {
     const issuePrefix = `W${companyId.replaceAll("-", "").slice(0, 6)}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
       defaultResponsibleUserId: "local-board",
@@ -302,7 +302,7 @@ describeEmbeddedPostgres("current external-chat wake comment reader", () => {
     const page = await readCurrentWakeComments(db, binding, {});
     expect(page.complete).toBe(true);
     expect(page.comments[0]?.attachmentImportNotice).toBe(
-      "Paperclip could not import every attachment from this exact external message: 2 attachments were omitted (unsupported type: 1, processing failed: 1). Treat omitted attachments as unavailable; do not infer their contents or substitute an older workspace file.",
+      "GS Agentic Manager could not import every attachment from this exact external message: 2 attachments were omitted (unsupported type: 1, processing failed: 1). Treat omitted attachments as unavailable; do not infer their contents or substitute an older workspace file.",
     );
     expect(JSON.stringify(page)).not.toContain("credential_token");
     expect(

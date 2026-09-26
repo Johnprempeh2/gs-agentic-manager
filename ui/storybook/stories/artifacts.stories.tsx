@@ -62,7 +62,7 @@ function makeArtifact(overrides: Partial<CompanyArtifact>): CompanyArtifact {
     openPath: null,
     downloadPath: null,
     issue: { id: "issue-1", identifier: "PAP-10306", title: "Landing visuals refresh" },
-    project: { id: "proj-1", name: "Paperclip App" },
+    project: { id: "proj-1", name: "GS Agentic Manager App" },
     createdByAgent: { id: "agent-1", name: "ClaudeCoder" },
     updatedAt: new Date("2026-06-04T12:00:00Z").toISOString(),
     href: "/issues/PAP-10306#attachment-art",
@@ -303,7 +303,7 @@ function ArtifactStackCard({ group }: { group: MockGroup }) {
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-accent/15 text-muted-foreground/40">
+            <div className="flex h-full w-full items-center justify-center bg-accent/15 text-subtle-foreground">
               <Layers className="h-8 w-8" aria-hidden="true" />
             </div>
           )}
@@ -326,9 +326,9 @@ function ArtifactStackCard({ group }: { group: MockGroup }) {
             </h3>
           </div>
 
-          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/65">
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-subtle-foreground">
             <span>{group.count} artifacts</span>
-            <span className="text-muted-foreground/50">·</span>
+            <span className="text-subtle-foreground">·</span>
             <span>Updated {formatDate(group.updatedAt)}</span>
           </div>
         </div>
@@ -596,7 +596,7 @@ export const SelectedStack: Story = {
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
               All stacks
             </a>
-            <span className="text-muted-foreground/40" aria-hidden="true">
+            <span className="text-subtle-foreground" aria-hidden="true">
               /
             </span>
             <span className="shrink-0 font-mono text-[11px] text-muted-foreground">PAP-10306</span>
@@ -604,7 +604,7 @@ export const SelectedStack: Story = {
               Landing visuals refresh
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+          <div className="flex items-center gap-1.5 text-[11px] text-subtle-foreground">
             <Layers className="h-3 w-3" aria-hidden="true" />
             <span>{SELECTED_GROUP_ARTIFACTS.length} artifacts in this stack</span>
           </div>

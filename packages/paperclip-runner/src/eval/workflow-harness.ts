@@ -1,4 +1,4 @@
-import { runPaperclipEvalMatrix, type PaperclipEvalCandidate } from "@paperclipai/paperclip-eval-kernel";
+import { runPaperclipEvalMatrix, type PaperclipEvalCandidate } from "@greatstone/paperclip-eval-kernel";
 
 import acpxFixture from "./fixtures/acpx-sanitized-provider.json" with { type: "json" };
 import codexFixture from "./fixtures/codex-sanitized-provider.json" with { type: "json" };

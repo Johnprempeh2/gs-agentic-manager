@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createDb, plugins } from "@paperclipai/db";
+import { createDb, plugins } from "@greatstone/db";
 import {
   ensureLocalPluginBuilt,
   pluginLoader,
@@ -61,7 +61,7 @@ async function createBundledPluginFixture(
   options: { rootDir?: string; buildDistImmediately?: boolean } = {},
 ): Promise<FixturePlugin> {
   const slug = `plugin-autobuild-${nameSuffix}-${randomUUID().slice(0, 8)}`;
-  const packageName = `@paperclipai/${slug}`;
+  const packageName = `@greatstone/${slug}`;
   const pluginKey = `paperclip.${slug.replace(/^plugin-/, "").replace(/-/g, "_")}`;
   const packageRoot = path.join(options.rootDir ?? repoPluginRoot, slug);
   const distDir = path.join(packageRoot, "dist");
@@ -97,7 +97,7 @@ async function createBundledPluginFixture(
     version: "0.1.0",
     displayName: "Autobuild Fixture",
     description: "Bundled plugin fixture for install-time auto-build coverage.",
-    author: "Paperclip",
+    author: "GS Agentic Manager",
     categories: ["automation"],
     capabilities: ["companies.read"],
     entrypoints: {
@@ -184,7 +184,7 @@ describe("ensureLocalPluginBuilt", () => {
     await ensureLocalPluginBuilt(
       packageRoot,
       {
-        name: "@paperclipai/plugin-outside",
+        name: "@greatstone/plugin-outside",
         paperclipPlugin: {
           manifest: "./dist/manifest.js",
           worker: "./dist/worker.js",
@@ -196,7 +196,7 @@ describe("ensureLocalPluginBuilt", () => {
     expect(execStub).not.toHaveBeenCalled();
   });
 
-  it("skips auto-build when PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD=1", async () => {
+  it("skips auto-build when GSAM_DISABLE_PLUGIN_AUTOBUILD=1", async () => {
     const fixture = await createBundledPluginFixture("skip");
     cleanupPaths.add(fixture.packageRoot);
 
@@ -205,7 +205,7 @@ describe("ensureLocalPluginBuilt", () => {
       fixture.packageRoot,
       JSON.parse(await readFile(path.join(fixture.packageRoot, "package.json"), "utf8")) as Record<string, unknown>,
       {
-        processEnv: { PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD: "1" },
+        processEnv: { GSAM_DISABLE_PLUGIN_AUTOBUILD: "1" },
         execFileAsyncImpl: execStub,
       },
     );
@@ -300,7 +300,7 @@ describeEmbeddedPostgres("plugin install auto-build route", () => {
       await rm(cleanupPath, { recursive: true, force: true });
     }
     cleanupPaths.clear();
-    delete process.env["PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD"];
+    delete process.env["GSAM_DISABLE_PLUGIN_AUTOBUILD"];
   });
 
   afterAll(async () => {
@@ -372,7 +372,7 @@ describeEmbeddedPostgres("plugin install auto-build route", () => {
   }, 60_000);
 
   it("returns the manual build command when auto-build is disabled and dist is missing", async () => {
-    process.env["PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD"] = "1";
+    process.env["GSAM_DISABLE_PLUGIN_AUTOBUILD"] = "1";
     const fixture = await createBundledPluginFixture("disabled");
     cleanupPaths.add(fixture.packageRoot);
     const app = await createInstallApp(db);
@@ -382,14 +382,14 @@ describeEmbeddedPostgres("plugin install auto-build route", () => {
       .send({ packageName: fixture.packageRoot, isLocalPath: true });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("does not appear to be a Paperclip plugin (no manifest found)");
+    expect(res.body.error).toContain("does not appear to be a GS Agentic Manager plugin (no manifest found)");
     expect(res.body.error).toContain(`pnpm --filter ${fixture.packageName} build`);
     expect(existsSync(path.join(fixture.distDir, "manifest.js"))).toBe(false);
     expect(mockLifecycle.load).not.toHaveBeenCalled();
   }, 20_000);
 
   it("returns the standalone bootstrap command when auto-build is disabled for sandbox-provider plugins", async () => {
-    process.env["PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD"] = "1";
+    process.env["GSAM_DISABLE_PLUGIN_AUTOBUILD"] = "1";
     const fixture = await createBundledPluginFixture("standalone-disabled", { rootDir: standaloneRepoPluginRoot });
     cleanupPaths.add(fixture.packageRoot);
     const app = await createInstallApp(db);
@@ -399,7 +399,7 @@ describeEmbeddedPostgres("plugin install auto-build route", () => {
       .send({ packageName: fixture.packageRoot, isLocalPath: true });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("does not appear to be a Paperclip plugin (no manifest found)");
+    expect(res.body.error).toContain("does not appear to be a GS Agentic Manager plugin (no manifest found)");
     expect(res.body.error).toContain(path.relative(REPO_ROOT, fixture.packageRoot));
     expect(res.body.error).toContain("pnpm install --ignore-workspace --no-lockfile && pnpm build");
     expect(existsSync(path.join(fixture.distDir, "manifest.js"))).toBe(false);

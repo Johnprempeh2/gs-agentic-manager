@@ -3,7 +3,7 @@ import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizz
 import type {
   EnvironmentCustomImageSetupConnectionSummary,
   EnvironmentCustomImageSetupSessionStatus,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { agents } from "./agents.js";
 import { environmentLeases } from "./environment_leases.js";
 import { environmentCustomImageTemplates } from "./environment_custom_image_templates.js";

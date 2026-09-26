@@ -51,7 +51,7 @@ import type {
   ResolvedWorkspaceResource,
   WorkspaceFileContent,
   WorkspaceFileSelector,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 
 const FILE_VIEWER_LABELLED_BY_ID = "paperclip-file-viewer-title";
 const FILE_VIEWER_DESCRIBED_BY_ID = "paperclip-file-viewer-description";

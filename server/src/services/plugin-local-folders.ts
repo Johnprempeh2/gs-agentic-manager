@@ -8,7 +8,7 @@ import type {
   PluginLocalFolderListing,
   PluginLocalFolderProblem,
   PluginLocalFolderStatus,
-} from "@paperclipai/plugin-sdk";
+} from "@greatstone/plugin-sdk";
 import { badRequest, forbidden, notFound } from "../errors.js";
 
 export interface StoredPluginLocalFolderConfig {
@@ -592,7 +592,7 @@ export async function deletePluginLocalFolderFile(
 }
 
 export function defaultLocalFolderBasePath(pluginKey: string, companyId: string) {
-  return path.join(os.homedir(), ".paperclip", "plugin-data", companyId, pluginKey);
+  return path.join(os.homedir(), ".gsam", "plugin-data", companyId, pluginKey);
 }
 
 export function assertConfiguredLocalFolder(status: PluginLocalFolderStatus) {

@@ -1,4 +1,4 @@
-import type { AiConnectionBinding, AiManagedConnectionSummary, AiProvider, CompanySecret, EnvBinding } from "@paperclipai/shared";
+import type { AiConnectionBinding, AiManagedConnectionSummary, AiProvider, CompanySecret, EnvBinding } from "@greatstone/shared";
 import type { MyUserSecretEntry } from "../api/secrets";
 
 export type SavedProviderKey = { id: string; label: string } & (

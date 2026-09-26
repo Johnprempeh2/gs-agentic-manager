@@ -4,7 +4,7 @@ import type {
   CompanySkillDetail,
   CompanySkillFileDetail,
   CompanySkillVersion,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { SkillDetailPage } from "@/pages/CompanySkills";
 
 type DetailTab = "overview" | "files" | "versions" | "agents";

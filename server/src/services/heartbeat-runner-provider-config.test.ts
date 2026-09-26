@@ -6,7 +6,7 @@ import {
   resolvePaperclipRunnerNativeProviderInput,
 } from "./native-runtime/provider-profile.js";
 
-describe("Paperclip Runner native provider configuration", () => {
+describe("GS Agentic Manager Runner native provider configuration", () => {
   it("qualifies native Codex only in never-ask mode", () => {
     expect(
       resolvePaperclipRunnerNativeProviderInput({

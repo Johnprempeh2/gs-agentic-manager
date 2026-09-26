@@ -134,7 +134,7 @@ describe("SidebarAccountMenu", () => {
     );
     expect(feedbackButton?.getAttribute("href")).toBe("https://paperclip.ing/feedback");
     expect(feedbackButton?.getAttribute("target")).toBe("_blank");
-    expect(feedbackButton?.classList).toContain("text-muted-foreground/50");
+    expect(feedbackButton?.classList).toContain("text-subtle-foreground");
     expect(feedbackButton?.classList).not.toContain("text-border");
     expect(feedbackButton?.classList).not.toContain("text-muted-foreground");
     expect(feedbackButton?.classList).toContain("hover:bg-sidebar-accent");
@@ -173,7 +173,7 @@ describe("SidebarAccountMenu", () => {
     );
     expect(feedbackButton?.getAttribute("href")).toBe("https://paperclip.ing/feedback");
     expect(feedbackButton?.getAttribute("target")).toBe("_blank");
-    expect(feedbackButton?.classList).toContain("text-muted-foreground/50");
+    expect(feedbackButton?.classList).toContain("text-subtle-foreground");
     expect(feedbackButton?.classList).not.toContain("text-border");
     expect(feedbackButton?.classList).not.toContain("text-muted-foreground");
     expect(feedbackButton?.classList).toContain("hover:bg-accent/50");
@@ -243,7 +243,7 @@ describe("SidebarAccountMenu", () => {
 
     // The popover header stays down to name + email: no "Account" badge, no version line.
     expect(popover?.textContent).not.toContain("Account");
-    expect(popover?.textContent).not.toContain("Paperclip v");
+    expect(popover?.textContent).not.toContain("GS Agentic Manager v");
     expect(document.body.textContent).toContain("jane@example.com");
     expect(document.body.querySelector('[data-slot="popover-content"]')?.className)
       .toContain("w-(--profile-popover-width)");

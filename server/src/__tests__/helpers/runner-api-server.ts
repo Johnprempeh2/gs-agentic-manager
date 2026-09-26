@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
-import { agents, authUsers, companies, companyMemberships, createDb, heartbeatRuns, issues, projects, projectWorkspaces, activityLog, issueComments, assets, goals, approvals, documents, documentRevisions, issueDocuments, issueRelations, issueThreadInteractions, connectionIntentDeliveries, toolApplications, toolConnections, toolConnectionInstalls, connectionGrants, toolCatalogEntries, toolProfiles, toolProfileBindings } from "@paperclipai/db";
+import { agents, authUsers, companies, companyMemberships, createDb, heartbeatRuns, issues, projects, projectWorkspaces, activityLog, issueComments, assets, goals, approvals, documents, documentRevisions, issueDocuments, issueRelations, issueThreadInteractions, connectionIntentDeliveries, toolApplications, toolConnections, toolConnectionInstalls, connectionGrants, toolCatalogEntries, toolProfiles, toolProfileBindings } from "@greatstone/db";
 import { documentService } from "../../services/documents.js";
 import { connectionIntentService } from "../../services/connection-intents.js";
 import { initializeRunIdentity } from "../../services/run-identity.js";

@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, realpathSyn
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import { distributionBundleDigest, distributionPluginActivationGuard, readDistributionPluginCatalog } from "../services/distribution-plugin-catalog.js";
 import { BUNDLED_PLUGIN_CATALOG, resolveBundledPluginInstalls } from "../services/bundled-plugins.js";
 

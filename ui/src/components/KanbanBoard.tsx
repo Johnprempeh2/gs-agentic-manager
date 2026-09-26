@@ -22,7 +22,7 @@ import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { Identity } from "./Identity";
-import type { Issue, IssueStatus } from "@paperclipai/shared";
+import type { Issue, IssueStatus } from "@greatstone/shared";
 import { AlertTriangle } from "lucide-react";
 import { isSuccessfulRunHandoffRequired } from "../lib/successful-run-handoff";
 import { collectSubtreeLiveCounts } from "../lib/liveIssueIds";
@@ -52,7 +52,7 @@ const defaultKanbanColumnTone = {
   rail: "border-border bg-muted/20",
   railOver: "bg-accent/50 ring-1 ring-primary/20",
   header: "text-muted-foreground",
-  count: "text-muted-foreground/60",
+  count: "text-subtle-foreground",
   body: "bg-muted/20",
   bodyOver: "bg-accent/40",
   card: "",
@@ -66,7 +66,7 @@ export const kanbanColumnTones: Partial<Record<IssueStatus, typeof defaultKanban
     rail: "border-border bg-muted/30",
     railOver: "bg-muted/50 ring-1 ring-neutral-400/25",
     header: "text-muted-foreground",
-    count: "text-muted-foreground/60",
+    count: "text-subtle-foreground",
     body: "bg-muted/30 ring-1 ring-inset ring-border/50",
     bodyOver: "bg-muted/50 ring-1 ring-inset ring-neutral-400/25",
     card: "",
@@ -119,8 +119,8 @@ export const kanbanColumnTones: Partial<Record<IssueStatus, typeof defaultKanban
   cancelled: {
     rail: "border-neutral-300/70 bg-muted/25 opacity-80 dark:border-neutral-700/70 dark:bg-neutral-900/20",
     railOver: "bg-muted/45 opacity-90 ring-1 ring-neutral-400/25 dark:bg-neutral-900/35",
-    header: "text-muted-foreground/80",
-    count: "text-muted-foreground/50",
+    header: "text-subtle-foreground",
+    count: "text-subtle-foreground",
     body: "bg-muted/25 ring-1 ring-inset ring-border/50",
     bodyOver: "bg-muted/45 ring-1 ring-inset ring-neutral-400/25",
     card: "bg-muted/35 text-muted-foreground opacity-80 hover:shadow-none",

@@ -2,7 +2,7 @@
 
 ## What this phase is
 
-Conformance is the smallest standalone runner path. It uses a mock control plane and does not start Paperclip.
+Conformance is the smallest standalone runner path. It uses a mock control plane and does not start GS Agentic Manager.
 
 ## What this phase proves
 
@@ -23,7 +23,7 @@ You will start the Rust mock core. The tracer validates one fixture and prints a
 ## 1. Install the package tools
 
 ```sh
-pnpm install --filter @paperclipai/paperclip-runner --lockfile=false --offline --ignore-scripts --dev
+pnpm install --filter @greatstone/paperclip-runner --lockfile=false --offline --ignore-scripts --dev
 ```
 
 `--lockfile=false` follows this repository's policy that automation owns the
@@ -34,7 +34,7 @@ root lockfile. `--offline` proves Conformance needs no newly downloaded package.
 ## 2. Build the standalone package
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner build
+pnpm --filter @greatstone/paperclip-runner build
 ```
 
 Expected result: TypeScript writes package-local `dist/` files and Cargo builds
@@ -43,8 +43,8 @@ the `paperclip-runner-core` crate under `runner/target/`.
 ## 3. Run the behavior and boundary tests
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner test
-pnpm --filter @paperclipai/paperclip-runner check:forbidden-imports
+pnpm --filter @greatstone/paperclip-runner test
+pnpm --filter @greatstone/paperclip-runner check:forbidden-imports
 ```
 
 The tests cover fixture validation, complete Rust and TypeScript mock-core paths,
@@ -54,7 +54,7 @@ standalone boundary check must print `Standalone boundary check passed.`
 ## 4. Validate the documentation
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner docs:validate
+pnpm --filter @greatstone/paperclip-runner docs:validate
 ```
 
 Expected result: documentation-link validation passes. The historical OKF and
@@ -63,7 +63,7 @@ recorded-evidence bundle is intentionally deferred from this release.
 ## 5. Run the tracer
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner trace:conformance
+pnpm --filter @greatstone/paperclip-runner trace:conformance
 ```
 
 Expected final line:
@@ -78,7 +78,7 @@ The default tracer is Rust. Prove that the TypeScript reference produces the
 same bytes with:
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner check:conformance-parity
+pnpm --filter @greatstone/paperclip-runner check:conformance-parity
 ```
 
 Expected result: `Rust and TypeScript Conformance tracer output matches the shared
@@ -95,7 +95,7 @@ sed -n '1,240p' packages/paperclip-runner/protocol/fixtures/conformance-minimal-
 After installation, the same checks can be repeated with:
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner verify
+pnpm --filter @greatstone/paperclip-runner verify
 ```
 
 Continue with the [cumulative end-to-end tutorial](end-to-end.md), which points

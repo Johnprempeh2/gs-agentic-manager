@@ -10,9 +10,9 @@ import type {
   IssueLabel,
   Project,
   WorkspaceRuntimeService,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, IssueDocument } from "@paperclipai/shared";
+import type { Issue, IssueDocument } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueProperties } from "./IssueProperties";
 import { queryKeys } from "../lib/queryKeys";
@@ -528,7 +528,7 @@ describe("IssueProperties", () => {
     expect(surface?.querySelectorAll('[data-property-section="true"]').length).toBeGreaterThan(1);
     expect(surface?.querySelector('[data-property-value="true"]')).not.toBeNull();
     expect(surface?.querySelector('[data-property-section="true"] > div')?.classList)
-      .toContain("text-muted-foreground/70");
+      .toContain("text-subtle-foreground");
     const projectLabel = surface?.querySelector('[data-property-label="Project"]');
     const labelsLabel = surface?.querySelector('[data-property-label="Labels"]');
     if (!projectLabel || !labelsLabel) throw new Error("Expected Project and Labels rows");

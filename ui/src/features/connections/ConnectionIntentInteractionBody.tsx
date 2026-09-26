@@ -8,7 +8,7 @@ import {
   RotateCcw,
   XCircle,
 } from "lucide-react";
-import type { ConnectionIntentInteraction } from "@paperclipai/shared";
+import type { ConnectionIntentInteraction } from "@greatstone/shared";
 import { connectionIntentsApi } from "@/api/connection-intents";
 import { AiConnectionCredentialStep } from "@/components/ai-connections/AiConnectionCredentialStep";
 import { AI_PROVIDERS } from "@/components/ai-connections/model";

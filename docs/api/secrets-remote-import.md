@@ -4,8 +4,8 @@ summary: AWS Secrets Manager metadata-only remote import API
 ---
 
 Remote import lets the board link existing AWS Secrets Manager entries as
-Paperclip `external_reference` secrets without copying plaintext into
-Paperclip.
+GS Agentic Manager `external_reference` secrets without copying plaintext into
+GS Agentic Manager.
 
 Both routes are board-only and company-scoped. The selected provider vault must
 belong to the company, use `aws_secrets_manager`, and have a selectable status
@@ -13,10 +13,10 @@ belong to the company, use `aws_secrets_manager`, and have a selectable status
 rejected.
 
 Remote import is an inventory and metadata workflow. Preview calls AWS
-`ListSecrets` only and import stores a Paperclip external reference plus
+`ListSecrets` only and import stores a GS Agentic Manager external reference plus
 fingerprint/version metadata. Neither route calls `GetSecretValue` or
 `BatchGetSecretValue`, requests `SecretString`, requires KMS decrypt, logs raw
-remote metadata, or copies secret plaintext into Paperclip.
+remote metadata, or copies secret plaintext into GS Agentic Manager.
 
 ## Preview Remote AWS Secrets
 
@@ -65,12 +65,12 @@ Candidate `status` values:
 
 - `ready`: no existing exact external reference and no name/key collision.
 - `duplicate`: an existing secret already has the exact provider `externalRef`.
-- `conflict`: the suggested Paperclip `name` or `key` is already in use.
+- `conflict`: the suggested GS Agentic Manager `name` or `key` is already in use.
 
 Conflict `type` values are `exact_reference`, `name`, `key`, and
-`provider_guardrail`. AWS refs under Paperclip's own managed namespace are
+`provider_guardrail`. AWS refs under GS Agentic Manager's own managed namespace are
 blocked as external references so one company cannot import another company's
-Paperclip-managed AWS secret through a broad runtime role.
+GS Agentic Manager-managed AWS secret through a broad runtime role.
 
 ## Import Remote AWS Secret References
 
@@ -99,7 +99,7 @@ The import response is row-level. Ready rows become active
 duplicates and name/key conflicts are skipped without failing the whole request.
 The `secrets` array accepts 1-100 rows, and the backend re-checks duplicates and
 conflicts at submit time.
-Each row may include an optional Paperclip `description` entered during review;
+Each row may include an optional GS Agentic Manager `description` entered during review;
 blank descriptions are stored as `null`. AWS provider descriptions are not
 copied into this field.
 
@@ -128,6 +128,6 @@ Activity logs record aggregate counts and provider/vault ids only, not remote
 secret names, ARNs, tags, or values.
 
 Imported references may still fail during a future bound runtime resolution if
-the Paperclip runtime role can list the AWS secret but lacks
+the GS Agentic Manager runtime role can list the AWS secret but lacks
 `secretsmanager:GetSecretValue` or required KMS decrypt permission for that
 specific secret.

@@ -18,7 +18,7 @@ import {
   isGoogleWorkspaceConnectorProfileId,
   type GitHubConnectorProfileId,
   type GoogleWorkspaceConnectorProfileId,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   loadPaperclipCloudConnectorIdentity,
   paperclipCloudConnectorEnrollmentStatus,
@@ -194,23 +194,23 @@ export function paperclipCloudConnectorConfigFromEnv(
 ): PaperclipCloudConnectorConfig | null {
   const localIdentity = loadPaperclipCloudConnectorIdentity();
   const legacyConfigured = [
-    env.PAPERCLIP_ID_CONNECTOR_INSTANCE_ID,
-    env.PAPERCLIP_ID_CONNECTOR_SIGN_PRIVATE_KEY,
-    env.PAPERCLIP_ID_CONNECTOR_SEAL_PRIVATE_KEY,
-    env.PAPERCLIP_ID_CONNECTOR_ENVIRONMENT,
-    env.PAPERCLIP_ID_CONNECTOR_BASE_URL,
+    env.GSAM_ID_CONNECTOR_INSTANCE_ID,
+    env.GSAM_ID_CONNECTOR_SIGN_PRIVATE_KEY,
+    env.GSAM_ID_CONNECTOR_SEAL_PRIVATE_KEY,
+    env.GSAM_ID_CONNECTOR_ENVIRONMENT,
+    env.GSAM_ID_CONNECTOR_BASE_URL,
   ].some((value) => Boolean(value?.trim()));
-  const managedInstanceId = env.PAPERCLIP_CLOUD_CONNECTOR_INSTANCE_ID?.trim();
-  const managedSignPrivateKey = env.PAPERCLIP_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY?.trim();
-  const managedSealPrivateKey = env.PAPERCLIP_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY?.trim();
-  const managedEnvironment = env.PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT?.trim();
+  const managedInstanceId = env.GSAM_CLOUD_CONNECTOR_INSTANCE_ID?.trim();
+  const managedSignPrivateKey = env.GSAM_CLOUD_CONNECTOR_SIGN_PRIVATE_KEY?.trim();
+  const managedSealPrivateKey = env.GSAM_CLOUD_CONNECTOR_SEAL_PRIVATE_KEY?.trim();
+  const managedEnvironment = env.GSAM_CLOUD_CONNECTOR_ENVIRONMENT?.trim();
   const hasManagedIdentityOverride = [managedInstanceId, managedSignPrivateKey, managedSealPrivateKey]
     .some(Boolean);
   const localStatus = hasManagedIdentityOverride ? null : paperclipCloudConnectorEnrollmentStatus(env);
   const hasActiveLocalIdentity = localIdentity?.status === "active" && localStatus?.configured === true;
   if (!hasManagedIdentityOverride && !hasActiveLocalIdentity && legacyConfigured) {
     throw new PaperclipCloudConnectorError(
-      "Paperclip ID connector settings use an incompatible legacy protocol; enroll this instance with Paperclip Cloud",
+      "GS Agentic Manager ID connector settings use an incompatible legacy protocol; enroll this instance with Paperclip Cloud",
       "CONNECTOR_MIGRATION_REQUIRED",
     );
   }
@@ -220,7 +220,7 @@ export function paperclipCloudConnectorConfigFromEnv(
   const signPrivateKey = hasManagedIdentityOverride ? managedSignPrivateKey : localIdentity!.signPrivateKey;
   const sealPrivateKey = hasManagedIdentityOverride ? managedSealPrivateKey : localIdentity!.sealPrivateKey;
   const environment = hasManagedIdentityOverride ? managedEnvironment : localIdentity!.environment;
-  const baseUrl = env.PAPERCLIP_CLOUD_CONNECTOR_BASE_URL?.trim()
+  const baseUrl = env.GSAM_CLOUD_CONNECTOR_BASE_URL?.trim()
     || (hasActiveLocalIdentity ? localIdentity!.brokerBaseUrl : undefined)
     || "https://my.paperclip.app";
   const values = [instanceId, signPrivateKey, sealPrivateKey, environment];
@@ -533,7 +533,7 @@ function parseCloudHandoff(value: unknown): { kind: "paperclip_cloud"; session: 
 export type PaperclipCloudConnector = ReturnType<typeof createPaperclipCloudConnector>;
 export type PaperclipCloudGoogleWorkspaceConnector = PaperclipCloudConnector;
 
-/** Accept persisted Paperclip ID-era records while all new records use the Cloud strategy. */
+/** Accept persisted GS Agentic Manager ID-era records while all new records use the Cloud strategy. */
 export function isPaperclipCloudConnectorStrategy(value: unknown): boolean {
   return value === "paperclip_cloud_connector" || value === "paperclip_id_connector";
 }

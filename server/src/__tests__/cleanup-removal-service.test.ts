@@ -17,7 +17,7 @@ import {
   issueReadStates,
   issues,
   routines,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -72,7 +72,7 @@ describeEmbeddedPostgres("cleanup removal services", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -172,8 +172,8 @@ describeEmbeddedPostgres("cleanup removal services", () => {
       companyId,
       key: "paperclipai/paperclip/paperclip",
       slug: "paperclip",
-      name: "Paperclip",
-      markdown: "# Paperclip",
+      name: "GS Agentic Manager",
+      markdown: "# GS Agentic Manager",
     });
 
     await db.insert(activityLog).values({

@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { appearanceForPalette } from "@paperclipai/shared";
-import { CAP_V1_COLORS } from "@paperclipai/shared/cliplab/palette-tokens";
-import { PAPERCLIP_CHARACTER } from "@paperclipai/shared/cliplab/character";
+import { appearanceForPalette } from "@greatstone/shared";
+import { CAP_V1_COLORS } from "@greatstone/shared/cliplab/palette-tokens";
+import { GSAM_CHARACTER } from "@greatstone/shared/cliplab/character";
 import exported from "@/assets/cliplab/onboarding.character.json";
 import { colorOnboardingDefinition, resolveOnboardingSequences, sequenceDuration, sequenceLeadIn } from "./onboarding-character";
 
-const definition = PAPERCLIP_CHARACTER;
+const definition = GSAM_CHARACTER;
 
 describe("onboarding character export", () => {
   it("is the same export the shared engine renders everywhere", () => {
-    expect(JSON.parse(JSON.stringify(PAPERCLIP_CHARACTER))).toEqual(exported);
+    expect(JSON.parse(JSON.stringify(GSAM_CHARACTER))).toEqual(exported);
   });
 
   it("carries the three sequences the arc plays, with the wake as its one-shot", () => {

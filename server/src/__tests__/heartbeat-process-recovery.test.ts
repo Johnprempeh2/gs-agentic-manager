@@ -76,7 +76,7 @@ import {
   toolConnections,
   workAssessments,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -182,10 +182,10 @@ vi.mock("../services/local-service-supervisor.js", async () => {
   };
 });
 
-vi.mock("@paperclipai/shared/telemetry", async () => {
+vi.mock("@greatstone/shared/telemetry", async () => {
   const actual = await vi.importActual<
-    typeof import("@paperclipai/shared/telemetry")
-  >("@paperclipai/shared/telemetry");
+    typeof import("@greatstone/shared/telemetry")
+  >("@greatstone/shared/telemetry");
   return {
     ...actual,
     trackAgentFirstHeartbeat: mockTrackAgentFirstHeartbeat,
@@ -248,8 +248,8 @@ import { collectDispositionRepairSourceState } from "../services/recovery/dispos
 import {
   UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON,
   UNMANAGED_BACKGROUND_TASK_STOP_REASON,
-} from "@paperclipai/adapter-utils/server-utils";
-const externalTestDatabaseUrl = process.env.PAPERCLIP_TEST_DATABASE_URL?.trim();
+} from "@greatstone/adapter-utils/server-utils";
+const externalTestDatabaseUrl = process.env.GSAM_TEST_DATABASE_URL?.trim();
 const embeddedPostgresSupport = externalTestDatabaseUrl
   ? { supported: true }
   : await getEmbeddedPostgresTestSupport();
@@ -690,7 +690,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -924,7 +924,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -1122,7 +1122,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -1215,7 +1215,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -1256,7 +1256,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1408,7 +1408,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -2540,13 +2540,13 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const home = await fs.mkdtemp(
       path.join(os.tmpdir(), "paperclip-hot-restart-"),
     );
-    const previousHome = process.env.PAPERCLIP_HOME;
-    process.env.PAPERCLIP_HOME = home;
+    const previousHome = process.env.GSAM_HOME;
+    process.env.GSAM_HOME = home;
     try {
       return await fn(home);
     } finally {
-      if (previousHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousHome;
+      if (previousHome === undefined) delete process.env.GSAM_HOME;
+      else process.env.GSAM_HOME = previousHome;
       // Native dispatch materializes read-only runtime bundles in this owned
       // temporary home. Restore directory permissions solely for test cleanup.
       const makeDirectoriesWritable = async (
@@ -3607,7 +3607,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     ]);
   });
 
-  it("suspends native Paperclip Runner ownership on graceful restart without cancelling or creating a retry run", async () => {
+  it("suspends native GS Agentic Manager Runner ownership on graceful restart without cancelling or creating a retry run", async () => {
     const { agentId, runId, issueId, wakeupRequestId } = await seedRunFixture({
       adapterType: "paperclip_runner",
       agentStatus: "running",
@@ -4258,7 +4258,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: "paperclip.kubernetes-sandbox-provider",
-      packageName: "@paperclipai/kubernetes-sandbox-provider",
+      packageName: "@greatstone/kubernetes-sandbox-provider",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
@@ -4269,7 +4269,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
         displayName: "Kubernetes Sandbox Provider",
         description:
           "Test Kubernetes sandbox provider whose worker is mid-restart",
-        author: "Paperclip",
+        author: "GS Agentic Manager",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -4471,7 +4471,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: "paperclip.kubernetes-sandbox-provider",
-      packageName: "@paperclipai/kubernetes-sandbox-provider",
+      packageName: "@greatstone/kubernetes-sandbox-provider",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
@@ -4481,7 +4481,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
         version: "1.0.0",
         displayName: "Kubernetes Sandbox Provider",
         description: "Test Kubernetes sandbox provider stuck in error",
-        author: "Paperclip",
+        author: "GS Agentic Manager",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -5058,7 +5058,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await db.insert(projects).values({
       id: projectId,
       companyId,
-      name: "Paperclip App",
+      name: "GS Agentic Manager App",
       status: "in_progress",
     });
     await db.insert(projectWorkspaces).values({
@@ -8250,7 +8250,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       issueId,
       authorAgentId: agentId,
       authorType: "agent",
-      body: "Welcome to Paperclip!",
+      body: "Welcome to GS Agentic Manager!",
     });
     const heartbeat = heartbeatService(db);
 
@@ -9532,7 +9532,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -9617,7 +9617,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -9791,7 +9791,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -9934,7 +9934,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -10023,7 +10023,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -10123,7 +10123,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -10539,7 +10539,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -10722,7 +10722,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,

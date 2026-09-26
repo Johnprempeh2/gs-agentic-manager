@@ -123,7 +123,7 @@ describe("Chat SDK published adapter integration", () => {
       },
       {
         provider: "microsoft-teams" as const,
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -254,7 +254,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -310,7 +310,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "discord",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           apiUrl: "https://discord.com/api/v10",
           applicationId: "123456789012345678",
@@ -546,7 +546,7 @@ describe("Chat SDK published adapter integration", () => {
         async () =>
           await new Promise<never>(() => {
             // A regression to the upstream cold lookup would hold the provider
-            // acknowledgement open until Paperclip's webhook deadline.
+            // acknowledgement open until GS Agentic Manager's webhook deadline.
           }),
       );
       adapter._client.users.info = usersInfo;
@@ -573,7 +573,7 @@ describe("Chat SDK published adapter integration", () => {
       expect((response as Response).status).toBe(200);
       await expect((response as Response).json()).resolves.toEqual({
         response_type: "ephemeral",
-        text: "Paperclip received this command.",
+        text: "GS Agentic Manager received this command.",
       });
       expect(usersInfo).not.toHaveBeenCalled();
       expect(onSlashCommand).toHaveBeenCalledWith(
@@ -2086,7 +2086,7 @@ describe("Chat SDK published adapter integration", () => {
     { label: "an absent Content-Length", contentLength: undefined },
     { label: "a misleading small Content-Length", contentLength: "4" },
   ])(
-    "stops Telegram attachment downloads at Paperclip's byte cap with $label",
+    "stops Telegram attachment downloads at GS Agentic Manager's byte cap with $label",
     async ({ contentLength }) => {
       const providerFetch = vi.fn(async (input: string | URL | Request) => {
         const url = String(input);
@@ -2437,7 +2437,7 @@ describe("Chat SDK published adapter integration", () => {
         );
         const edited = await adapter.editMessage(threadId, "owned-progress", {
           markdown:
-            "This chat conversation is closed. The Paperclip task remains available.",
+            "This chat conversation is closed. The GS Agentic Manager task remains available.",
         });
         expect(edited).toMatchObject({ id: "owned-progress", threadId });
         expect(put).toHaveBeenCalledTimes(1);
@@ -2448,7 +2448,7 @@ describe("Chat SDK published adapter integration", () => {
         expect(body).toMatchObject({
           type: "message",
           textFormat: "markdown",
-          text: "This chat conversation is closed. The Paperclip task remains available.",
+          text: "This chat conversation is closed. The GS Agentic Manager task remains available.",
         });
         expect(body.attachments ?? []).toEqual([]);
         expect(body.suggestedActions).toBeUndefined();
@@ -2492,7 +2492,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-4000-8000-000000000511",
           appPassword: "secret",
@@ -2667,7 +2667,7 @@ describe("Chat SDK published adapter integration", () => {
         persistence,
         providerConfig: {
           provider: "microsoft-teams",
-          userName: "Paperclip Agent",
+          userName: "GS Agentic Manager Agent",
           credentials: {
             appId: "00000000-0000-4000-8000-000000000000",
             appPassword: "secret",
@@ -2723,7 +2723,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-4000-8000-000000000000",
           appPassword: "secret",
@@ -2818,7 +2818,7 @@ describe("Chat SDK published adapter integration", () => {
       provider: "microsoft-teams",
       providerConfig: {
         provider: "microsoft-teams" as const,
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "teams-secret",
@@ -2843,7 +2843,7 @@ describe("Chat SDK published adapter integration", () => {
             result: {
               id: 123,
               is_bot: true,
-              first_name: "Paperclip Agent",
+              first_name: "GS Agentic Manager Agent",
               username: "paperclip_agent_bot",
             },
           });
@@ -2983,7 +2983,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "teams-secret",
@@ -3064,7 +3064,7 @@ describe("Chat SDK published adapter integration", () => {
       {
         providerConfig: {
           provider: "microsoft-teams",
-          userName: "Paperclip Agent",
+          userName: "GS Agentic Manager Agent",
           credentials: {
             appId: "00000000-0000-0000-0000-000000000000",
             appPassword: "teams-password-never-persist",
@@ -3172,7 +3172,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -3219,7 +3219,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -3302,7 +3302,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence: state,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -3353,7 +3353,7 @@ describe("Chat SDK published adapter integration", () => {
     await runtime.shutdown();
   });
 
-  it("persists Teams metadata only after Paperclip admits the authenticated activity", async () => {
+  it("persists Teams metadata only after GS Agentic Manager admits the authenticated activity", async () => {
     const state = memoryPersistence();
     const tenantId = "00000000-0000-4000-8000-000000000622";
     const appId = "00000000-0000-4000-8000-000000000611";
@@ -3365,7 +3365,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence: state,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId,
           appPassword: "secret",
@@ -3471,7 +3471,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -3573,7 +3573,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence: state,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -3695,7 +3695,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -3735,7 +3735,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-4000-8000-000000000000",
           appPassword: "secret",
@@ -3786,7 +3786,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           appId: "00000000-0000-0000-0000-000000000000",
           appPassword: "secret",
@@ -3843,7 +3843,7 @@ describe("Chat SDK published adapter integration", () => {
       persistence,
       providerConfig: {
         provider: "microsoft-teams",
-        userName: "Paperclip Agent",
+        userName: "GS Agentic Manager Agent",
         credentials: {
           apiUrl: configuredApiUrl,
           appId: "00000000-0000-0000-0000-000000000000",

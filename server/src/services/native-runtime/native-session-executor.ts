@@ -9,7 +9,7 @@ import { resolveGitHubOperationCredentials } from "../github-operation-credentia
 import { bindManagedNativeCredentialTurn, completeManagedNativeCredentialTurn } from "./managed-native-credentials.js";
 import { createLocalNativeQuestionBridge } from "./local-native-question-bridge.js";
 import { readVerifiedRemoteWorkspaceFile } from "./remote-deliverable-file.js";
-import { copyBackCodexAuth } from "@paperclipai/adapter-codex-local/server";
+import { copyBackCodexAuth } from "@greatstone/adapter-codex-local/server";
 import { nativeCompletionFeedback } from "./native-completion-feedback.js";
 import { hasAcknowledgedNativeReassignmentStopIntent, hasAcknowledgedNativeStopIntent } from "../acknowledged-native-stop.js";
 import { stoppedCodexTurnIsTextOnly } from "./stopped-codex-turn.js";
@@ -50,7 +50,7 @@ import type {
   AdapterExecutionResult,
   AdapterRuntimeEvent,
 } from "../../adapters/index.js";
-import type { NativeFinalizationResult } from "@paperclipai/shared";
+import type { NativeFinalizationResult } from "@greatstone/shared";
 import type {
   HarnessRuntimeRequestResolution,
   NativeExecutionInput,
@@ -86,14 +86,14 @@ import {
   type RunnerProcessLaunchSpec,
   type NativeSessionGoalControl,
 } from "../../vendor/paperclip-runner/index.js";
-import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
+import type { AdapterExecutionTarget } from "@greatstone/adapter-utils/execution-target";
 import { createNativeSshCommandRunner } from "./native-ssh-command-runner.js";
-import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/command-managed-runtime";
+import type { CommandManagedRuntimeRunner } from "@greatstone/adapter-utils/command-managed-runtime";
 import {
   resolvePaperclipRunnerTransport,
   type PaperclipRunnerTransport,
-} from "@paperclipai/adapter-utils/runner-connectivity";
-import type { Db } from "@paperclipai/db";
+} from "@greatstone/adapter-utils/runner-connectivity";
+import type { Db } from "@greatstone/db";
 import {
   and,
   desc,
@@ -117,7 +117,7 @@ import {
   issues,
   nativeRunFinalizations,
   nativeRunResults,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { PaperclipControlPlanePort } from "./paperclip-control-plane-port.js";
 import { appendHeartbeatRunEvent } from "../heartbeat-run-events.js";
 import { nativeSha256 } from "./canonical.js";
@@ -574,7 +574,7 @@ export function buildNativeProviderEnvironment(
   );
   const environment = { ...inherited, ...configured };
   if (assignedWorkspaceCwd?.trim()) {
-    environment.PAPERCLIP_WORKSPACE_CWD = assignedWorkspaceCwd;
+    environment.GSAM_WORKSPACE_CWD = assignedWorkspaceCwd;
   }
   return environment;
 }
@@ -1321,7 +1321,7 @@ export async function synchronizeCompletedProviderPlan(input: {
         idempotencyKey: `runner-plan-approval:v1:${input.execution.binding.runId}:${planId}:${providerRevision}:${digest}`,
         sourceRunId: input.execution.binding.runId,
         title: `Review plan revision ${revision.revisionNumber}`,
-        summary: "Review the synchronized Paperclip plan.",
+        summary: "Review the synchronized GS Agentic Manager plan.",
         continuationPolicy: "wake_assignee",
         payload: {
           version: 1,
@@ -1530,7 +1530,7 @@ function legacyCompanyNativeSessionScopeKey(
 
 function runnerdStateBase(): string {
   return (
-    process.env.PAPERCLIP_RUNNER_STATE_DIR ??
+    process.env.GSAM_RUNNER_STATE_DIR ??
     resolve(
       resolvePaperclipInstanceRoot(),
       "runtime",
@@ -6038,7 +6038,7 @@ export function nativeSessionFailureSourceCode(
 }
 
 const NATIVE_CLEANUP_OPERATOR_RECOVERY_MESSAGE =
-  "Send a new message to continue after Paperclip verifies that the previous provider and its tools have stopped. If cleanup cannot be verified, inspect the run and its environment. Clearing a task session does not resolve this quarantine. Automatic retries are stopped.";
+  "Send a new message to continue after GS Agentic Manager verifies that the previous provider and its tools have stopped. If cleanup cannot be verified, inspect the run and its environment. Clearing a task session does not resolve this quarantine. Automatic retries are stopped.";
 
 const PROVIDER_DURABLE_EVENT_TYPES = new Set([
   "harness.ready",
@@ -7105,7 +7105,7 @@ export async function executePaperclipNativeSession(input: {
   /** Test seam at the provider boundary; production uses a qualified package backend. */
   backend?: NativeSessionBackend;
   useRunnerd?: boolean;
-  /** Paperclip adapter identity used to scope the durable goal projection. */
+  /** GS Agentic Manager adapter identity used to scope the durable goal projection. */
   adapterType?: string;
   /** Internal, run-owned file inspection lifetime; never supplied by tool arguments. */
   chatAttachmentReadScope?: NativeChatAttachmentReadScope;
@@ -7965,7 +7965,7 @@ async function executePaperclipNativeSessionWithinScope(
       // Old run-scoped environments still require process replacement. A
       // session-owned broker can change run authority without replacing it.
       const hasBrokerCapability = Boolean(
-        !input.managedGitHub && input.runnerEnvironment?.PAPERCLIP_GITHUB_BROKER_TOKEN,
+        !input.managedGitHub && input.runnerEnvironment?.GSAM_GITHUB_BROKER_TOKEN,
       );
       const credentialRunChanged =
         Boolean(entry.credentialRunId) !== hasBrokerCapability ||
@@ -7978,9 +7978,9 @@ async function executePaperclipNativeSessionWithinScope(
         Boolean(entry.githubAccess) !== Boolean(input.managedGitHub) ||
         entry.githubAccess?.ready === false ||
         entry.githubAuthenticationMode !==
-          input.runnerEnvironment?.PAPERCLIP_GITHUB_AUTH_MODE ||
+          input.runnerEnvironment?.GSAM_GITHUB_AUTH_MODE ||
         entry.networkAccess !==
-          (input.runnerEnvironment?.PAPERCLIP_RUNNER_NETWORK_ACCESS ===
+          (input.runnerEnvironment?.GSAM_RUNNER_NETWORK_ACCESS ===
             "enabled")
       ) {
         if (entry.busy) throw new Error("native_session_supervisor_busy");
@@ -8324,13 +8324,13 @@ async function executePaperclipNativeSessionWithinScope(
                   warmNativeSessions.set(warmSessionId, {
                     managedAiCredentialIdentity: input.managedAiCredentialIdentity,
                     githubAuthenticationMode:
-                      input.runnerEnvironment?.PAPERCLIP_GITHUB_AUTH_MODE,
+                      input.runnerEnvironment?.GSAM_GITHUB_AUTH_MODE,
                     networkAccess:
                       input.runnerEnvironment
-                        ?.PAPERCLIP_RUNNER_NETWORK_ACCESS === "enabled",
+                        ?.GSAM_RUNNER_NETWORK_ACCESS === "enabled",
                     githubAccess,
                     credentialRunId: !input.managedGitHub && input.runnerEnvironment
-                      ?.PAPERCLIP_GITHUB_BROKER_TOKEN
+                      ?.GSAM_GITHUB_BROKER_TOKEN
                       ? input.execution.binding.runId
                       : undefined,
                     session,
@@ -9395,7 +9395,7 @@ export function assertRemoteRunnerBuildMetadata(
   if (
     metadata.schema !== RUNNERD_BUILD_METADATA_SCHEMA ||
     metadata.binaryName !== "paperclip-runnerd" ||
-    metadata.packageName !== "@paperclipai/paperclip-runner" ||
+    metadata.packageName !== "@greatstone/paperclip-runner" ||
     metadata.binaryContractVersion !== RUNNERD_BINARY_CONTRACT_VERSION
   ) {
     throw new Error("runner_remote_artifact_contract_incompatible");
@@ -10174,7 +10174,7 @@ export function createRemoteRunnerProcessLauncher(input: {
       }
       // Do not keep runnerd as the foreground command of a provider RPC. Some
       // sandbox command/session transports impose a provider-side lifetime on
-      // that RPC even when Paperclip requests a longer timeout. Detach runnerd
+      // that RPC even when GS Agentic Manager requests a longer timeout. Detach runnerd
       // into its own session instead; its own bounded diagnostics directory and
       // durable PRP state remain the authorities, and the controller monitors
       // the exact persisted process identity below.
@@ -10491,9 +10491,9 @@ async function createRunnerdBackendWithinSessionClaim(
   // the assigned gateway on the control plane instead of asking the sandbox to
   // reach the host's HTTP origin (which may be private or loopback-only).
   const relayAssignedMcp = remoteTarget !== null && input.execution.provider.kind === "codex";
-  const assignedMcpUrl = input.runnerEnvironment?.PAPERCLIP_NATIVE_MCP_URL;
-  const assignedMcpToken = input.runnerEnvironment?.PAPERCLIP_NATIVE_MCP_TOKEN;
-  const assignedMcpName = input.runnerEnvironment?.PAPERCLIP_NATIVE_MCP_NAME;
+  const assignedMcpUrl = input.runnerEnvironment?.GSAM_NATIVE_MCP_URL;
+  const assignedMcpToken = input.runnerEnvironment?.GSAM_NATIVE_MCP_TOKEN;
+  const assignedMcpName = input.runnerEnvironment?.GSAM_NATIVE_MCP_NAME;
   const hasAssignedMcp = Boolean(assignedMcpName || assignedMcpUrl || assignedMcpToken);
   if (relayAssignedMcp && hasAssignedMcp && (!assignedMcpName?.trim() || !assignedMcpUrl?.trim() || !assignedMcpToken?.trim())) {
     throw new Error("assigned native MCP launch binding is incomplete");
@@ -10585,7 +10585,7 @@ async function createRunnerdBackendWithinSessionClaim(
       !lstatSync(configuredProviderPackRoot).isDirectory()
     ) {
       throw new Error(
-        "runner_remote_provider_artifact_incompatible: configure PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH with the build-owned provider pack",
+        "runner_remote_provider_artifact_incompatible: configure GSAM_RUNNER_REMOTE_PROVIDER_PACK_PATH with the build-owned provider pack",
       );
     }
     expectedProviderPackManifest = readRemoteProviderPackManifest(
@@ -10738,7 +10738,7 @@ async function createRunnerdBackendWithinSessionClaim(
     const version = parseCodexCliVersion(versionOutput);
     if (!version || !isSupportedRemoteCodexVersion(version)) {
       throw new Error(
-        `runner_remote_provider_artifact_incompatible: supported Codex versions ${REMOTE_CODEX_SUPPORTED_RANGE}, received ${version ?? "an unrecognized or prerelease version"}; install a supported stable Codex release or configure PAPERCLIP_RUNNER_REMOTE_CODEX_NPM_SPEC=@openai/codex@${REMOTE_PROVIDER_PACK_PINS.codex}`,
+        `runner_remote_provider_artifact_incompatible: supported Codex versions ${REMOTE_CODEX_SUPPORTED_RANGE}, received ${version ?? "an unrecognized or prerelease version"}; install a supported stable Codex release or configure GSAM_RUNNER_REMOTE_CODEX_NPM_SPEC=@openai/codex@${REMOTE_PROVIDER_PACK_PINS.codex}`,
       );
     }
     if (version !== REMOTE_PROVIDER_PACK_PINS.codex && !reportedCodexVersions.has(version)) {
@@ -11014,7 +11014,7 @@ async function createRunnerdBackendWithinSessionClaim(
           !archMatches
         ) {
           throw new Error(
-            "runner_remote_artifact_platform_mismatch: configure PAPERCLIP_RUNNER_REMOTE_BINARY_PATH for the remote OS and architecture",
+            "runner_remote_artifact_platform_mismatch: configure GSAM_RUNNER_REMOTE_BINARY_PATH for the remote OS and architecture",
           );
         }
       }
@@ -11109,7 +11109,7 @@ async function createRunnerdBackendWithinSessionClaim(
       );
       if (!preinstalledCodex) {
         throw new Error(
-          "runner_remote_codex_artifact_unavailable: install codex in the sandbox image or configure PAPERCLIP_RUNNER_REMOTE_CODEX_NPM_SPEC",
+          "runner_remote_codex_artifact_unavailable: install codex in the sandbox image or configure GSAM_RUNNER_REMOTE_CODEX_NPM_SPEC",
         );
       }
       await measureNativeRunnerSpan(
@@ -12077,14 +12077,14 @@ async function createRunnerdBackendWithinSessionClaim(
   if (relayAssignedMcp) {
     // The server-held tool authority owns this credential. Do not deliver a
     // duplicate HTTP MCP server or its bearer token to the remote provider.
-    delete effectiveRunnerEnvironmentBase.PAPERCLIP_NATIVE_MCP_NAME;
-    delete effectiveRunnerEnvironmentBase.PAPERCLIP_NATIVE_MCP_URL;
-    delete effectiveRunnerEnvironmentBase.PAPERCLIP_NATIVE_MCP_TOKEN;
+    delete effectiveRunnerEnvironmentBase.GSAM_NATIVE_MCP_NAME;
+    delete effectiveRunnerEnvironmentBase.GSAM_NATIVE_MCP_URL;
+    delete effectiveRunnerEnvironmentBase.GSAM_NATIVE_MCP_TOKEN;
   }
   // This authority bit is derived only from the selected execution target.
   // Never let an agent, environment binding, or host variable disable the
   // Codex sandbox for a local runner by supplying the same key.
-  delete effectiveRunnerEnvironmentBase.PAPERCLIP_RUNNER_EXTERNAL_SANDBOX;
+  delete effectiveRunnerEnvironmentBase.GSAM_RUNNER_EXTERNAL_SANDBOX;
   const effectiveRunnerEnvironment: NodeJS.ProcessEnv = remoteRuntimeRoot
     ? {
         ...effectiveRunnerEnvironmentBase,
@@ -12094,14 +12094,14 @@ async function createRunnerdBackendWithinSessionClaim(
         // grant and the provider cannot initialize its shell sandbox or edit.
         HOME: posix.join(remoteRunnerFilesystemRoot!, "codex-home"),
         CODEX_HOME: posix.join(remoteRunnerFilesystemRoot!, "codex-home"),
-        PAPERCLIP_WORKSPACE_CWD: remoteTarget!.remoteCwd,
+        GSAM_WORKSPACE_CWD: remoteTarget!.remoteCwd,
         ...(remoteTarget!.transport === "sandbox"
-          ? { PAPERCLIP_RUNNER_EXTERNAL_SANDBOX: "1" }
+          ? { GSAM_RUNNER_EXTERNAL_SANDBOX: "1" }
           : {}),
       }
     : {
         ...effectiveRunnerEnvironmentBase,
-        PAPERCLIP_WORKSPACE_CWD: input.execution.workspace.cwd,
+        GSAM_WORKSPACE_CWD: input.execution.workspace.cwd,
       };
   const archiveContinuityState = async () => {
     if (hasRetainedWarmTransitionEvidence(root)) {

@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import { and, eq, isNull } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   activityLog,
   agentApiKeys,
@@ -11,7 +11,7 @@ import {
   companyMemberships,
   heartbeatRuns,
   instanceUserRoles,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   MAX_ISSUE_PREFIX_ATTEMPTS,
   deriveIssuePrefixBase,
@@ -21,7 +21,7 @@ import {
   rekeyCompanyIssueIdentifiers,
 } from "../services/issue-prefix.js";
 import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
-import { isUuidLike, normalizeAgentApiKeyScope, type DeploymentMode } from "@paperclipai/shared";
+import { isUuidLike, normalizeAgentApiKeyScope, type DeploymentMode } from "@greatstone/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "./logger.js";
 import { captureRunIdentity } from "../services/run-identity.js";
@@ -607,7 +607,7 @@ async function resolveCloudTenantActorOnce(
   db: Db,
   req: CloudActorHeaderSource,
 ): Promise<Express.Request["actor"] | null> {
-  const expectedToken = process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN?.trim();
+  const expectedToken = process.env.GSAM_CLOUD_TENANT_SERVER_TOKEN?.trim();
   if (!expectedToken) return null;
 
   const token = req.header("x-paperclip-cloud-tenant-token")?.trim();

@@ -5,8 +5,8 @@ import {
   cleanupGitHubOperationLaunchers,
   prepareGitHubOperationLaunchers,
   startAdapterExecutionTargetPaperclipBridge,
-} from "@paperclipai/adapter-utils/execution-target";
-import { githubBrokerEnvironment } from "@paperclipai/adapter-utils/github-launcher";
+} from "@greatstone/adapter-utils/execution-target";
+import { githubBrokerEnvironment } from "@greatstone/adapter-utils/github-launcher";
 
 type Binding = { companyId: string; agentId: string; issueId: string; runId: string };
 type LauncherInput = Parameters<typeof prepareGitHubOperationLaunchers>[0];
@@ -119,11 +119,11 @@ export async function createNativeGitHubAccess(input: {
       ...location, cwd: input.cwd,
       env: {
         ...githubBrokerEnvironment({ PATH: input.env.PATH }, {
-          url: ready ? bridge?.env.PAPERCLIP_API_URL ?? url : "",
-          token: ready ? bridge?.env.PAPERCLIP_API_KEY ?? token : "",
+          url: ready ? bridge?.env.GSAM_API_URL ?? url : "",
+          token: ready ? bridge?.env.GSAM_API_KEY ?? token : "",
         }),
         // Never retain an old run's bridge authentication override.
-        PAPERCLIP_GITHUB_BRIDGE_TOKEN: ready ? bridge?.env.PAPERCLIP_API_KEY ?? token : "",
+        GSAM_GITHUB_BRIDGE_TOKEN: ready ? bridge?.env.GSAM_API_KEY ?? token : "",
       },
     });
     return {

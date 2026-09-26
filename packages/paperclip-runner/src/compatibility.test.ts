@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
-  PAPERCLIP_RUNNER_COMPATIBILITY,
+  GSAM_RUNNER_COMPATIBILITY,
   PaperclipRunnerCompatibilityError,
   assertPaperclipRunnerCompatibility,
 } from "./compatibility.js";
@@ -12,7 +12,7 @@ describe("runner compatibility preflight", () => {
   it("keeps the compatibility manifest synchronized with the package version", () => {
     const manifestPath = fileURLToPath(new URL("../package.json", import.meta.url));
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    expect(PAPERCLIP_RUNNER_COMPATIBILITY.packageVersion).toBe(manifest.version);
+    expect(GSAM_RUNNER_COMPATIBILITY.packageVersion).toBe(manifest.version);
   });
 
   it("accepts the supported product/test/eval bundle", () => {
@@ -31,7 +31,7 @@ describe("runner compatibility preflight", () => {
         id: "codex-app-server",
         supportedOperationIds: ["get_task_context", "finish_task"],
       },
-    })).toBe(PAPERCLIP_RUNNER_COMPATIBILITY);
+    })).toBe(GSAM_RUNNER_COMPATIBILITY);
   });
 
   it("fails with stable component, corpus, catalog, and provider issues", () => {

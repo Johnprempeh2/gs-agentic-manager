@@ -1,13 +1,13 @@
 import fs from "node:fs/promises";
 import { and, desc, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   executionWorkspaces,
   heartbeatRuns,
   issues,
   nativeRunFinalizations,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { workspaceOperationService } from "../workspace-operations.js";
 import { inspectManagedGitWorktreeBranch } from "../workspace-runtime.js";
 import { environmentService } from "../environments.js";

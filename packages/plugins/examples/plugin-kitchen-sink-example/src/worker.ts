@@ -21,8 +21,8 @@ import {
   type ScopeKey,
   type ToolResult,
   type ToolRunContext,
-} from "@paperclipai/plugin-sdk";
-import type { Goal, Issue } from "@paperclipai/shared";
+} from "@greatstone/plugin-sdk";
+import type { Goal, Issue } from "@greatstone/shared";
 import {
   DEFAULT_CONFIG,
   JOB_KEYS,
@@ -855,7 +855,7 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
     TOOL_NAMES.companySummary,
     {
       displayName: "Kitchen Sink Company Summary",
-      description: "Summarizes current company counts from the Paperclip APIs.",
+      description: "Summarizes current company counts from the GS Agentic Manager APIs.",
       parametersSchema: { type: "object", properties: {} },
     },
     async (_params, runCtx): Promise<ToolResult> => {

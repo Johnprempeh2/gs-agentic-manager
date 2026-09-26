@@ -22,7 +22,7 @@ import {
   issueAttachments,
   issueComments,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
 import { createStorageService } from "../storage/service.js";

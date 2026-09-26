@@ -3,13 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importOriginal) => {
+vi.mock("@greatstone/adapter-utils/execution-target", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return { ...actual, runAdapterExecutionTargetProcess: vi.fn() };
 });
 
 import { ensureRemoteOpenCodeModelConfiguredAndAvailable, execute } from "./execute.js";
-import { runAdapterExecutionTargetProcess } from "@paperclipai/adapter-utils/execution-target";
+import { runAdapterExecutionTargetProcess } from "@greatstone/adapter-utils/execution-target";
 
 const runProcessMock = vi.mocked(runAdapterExecutionTargetProcess);
 
@@ -76,7 +76,7 @@ describe("OpenCode local skill injection", () => {
     });
     expect(result.exitCode).toBe(0);
     expect(prompt).toContain(directive);
-    expect(prompt).toContain(custom ? "Custom agent instruction." : "Continue your Paperclip conversation");
+    expect(prompt).toContain(custom ? "Custom agent instruction." : "Continue your GS Agentic Manager conversation");
     expect(prompt).not.toContain("Execution contract:");
     expect(prompt).not.toContain("Create child issues");
   });

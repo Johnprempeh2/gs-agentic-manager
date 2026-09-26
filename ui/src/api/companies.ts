@@ -8,8 +8,8 @@ import type {
   CompanyPortabilityPreviewRequest,
   CompanyPortabilityPreviewResult,
   UpdateCompanyBranding,
-} from "@paperclipai/shared";
-import type { ExportFidelityReport } from "@paperclipai/shared/portability-fidelity";
+} from "@greatstone/shared";
+import type { ExportFidelityReport } from "@greatstone/shared/portability-fidelity";
 import {
   companyImportTransferApplyPath,
   companyImportTransferPartPath,
@@ -20,7 +20,7 @@ import {
   type CompanyImportTransferDeclaration,
   type CompanyImportTransferPartUploadResult,
   type CompanyImportTransferStatus,
-} from "@paperclipai/shared/company-import-transfer";
+} from "@greatstone/shared/company-import-transfer";
 import { api, detachInflightGet, type RequestOptions } from "./client";
 
 // The board navigates only into companies the user can enter. The unscoped

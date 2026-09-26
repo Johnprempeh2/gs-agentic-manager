@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import type { CreateIssueThreadInteraction } from "@paperclipai/shared";
+import type { Db } from "@greatstone/db";
+import type { CreateIssueThreadInteraction } from "@greatstone/shared";
 import {
   agentWakeupRequests,
   agents,
@@ -17,7 +17,7 @@ import {
   statusDecisions,
   workAssessments,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   NATIVE_STATUS_ARBITER_POLICY_VERSION,
   type NativeStatusDecision,

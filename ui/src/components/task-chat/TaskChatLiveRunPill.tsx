@@ -1,4 +1,4 @@
-import type { ExecutionProjection } from "@paperclipai/shared";
+import type { ExecutionProjection } from "@greatstone/shared";
 import { Loader2 } from "lucide-react";
 import type { TranscriptEntry } from "../../adapters";
 import { cn } from "@/lib/utils";
@@ -88,8 +88,8 @@ export function TaskChatLiveRunPill({
         )}
         {active ? <span className={cn("shimmer-text")}>{verb}</span> : verb}
       </span>
-      {suffix ? <span className="text-xs text-muted-foreground/60">{suffix}</span> : null}
-      {toolSummary ? <span className="text-xs text-muted-foreground/40">· {toolSummary}</span> : null}
+      {suffix ? <span className="text-xs text-subtle-foreground">{suffix}</span> : null}
+      {toolSummary ? <span className="text-xs text-subtle-foreground">· {toolSummary}</span> : null}
     </div>
   );
 }

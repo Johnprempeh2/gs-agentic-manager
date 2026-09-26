@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@greatstone/adapter-utils";
 import {
   adapterExecutionTargetIsRemote,
   adapterExecutionTargetRemoteCwd,
@@ -24,7 +24,7 @@ import {
   runAdapterExecutionTargetProcess,
   runAdapterExecutionTargetShellCommand,
   startAdapterExecutionTargetPaperclipBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 import {
   asString,
   asNumber,
@@ -43,14 +43,14 @@ import {
   selectPaperclipTaskMarkdown,
   selectInitialCommunicationGuidance,
   isPaperclipRecoveryWakePayload,
-  DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
-  DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
+  DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE,
   runChildProcess,
   isPaperclipSkillSourceMissing,
   readPaperclipRuntimeSkillEntries,
   readPaperclipIssueWorkModeFromContext,
   resolveLegacyPaperclipDesiredSkillNames,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 import { isOpenCodeUnknownSessionError, parseOpenCodeJsonl } from "./parse.js";
 import {
   ensureOpenCodeModelConfiguredAndAvailable,
@@ -58,7 +58,7 @@ import {
   parseOpenCodeModelsOutput,
   requireOpenCodeModelId,
 } from "./models.js";
-import { removeMaintainerOnlySkillSymlinks } from "@paperclipai/adapter-utils/server-utils";
+import { removeMaintainerOnlySkillSymlinks } from "@greatstone/adapter-utils/server-utils";
 import { prepareOpenCodeRuntimeConfig, prepareManagedOpenCodeRemoteHomes } from "./runtime-config.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 import { resolveOpenCodeSkillsHome } from "./skills.js";
@@ -232,8 +232,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const promptTemplate = asString(
     config.promptTemplate,
     context.conversationMode === true
-      ? DEFAULT_PAPERCLIP_CONVERSATION_PROMPT_TEMPLATE
-      : DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
+      ? DEFAULT_GSAM_CONVERSATION_PROMPT_TEMPLATE
+      : DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE,
   );
   const command = asString(config.command, "opencode");
   const model = asString(config.model, "").trim();
@@ -273,7 +273,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ...buildPaperclipEnv(agent),
     ...buildRuntimeToolsEnv(ctx.runtimeTools),
   };
-  env.PAPERCLIP_RUN_ID = runId;
+  env.GSAM_RUN_ID = runId;
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
@@ -298,13 +298,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
   const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
-  if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
-  if (issueWorkMode) env.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
-  if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
-  if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
-  if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
-  if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
-  if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (wakeTaskId) env.GSAM_TASK_ID = wakeTaskId;
+  if (issueWorkMode) env.GSAM_ISSUE_WORK_MODE = issueWorkMode;
+  if (wakeReason) env.GSAM_WAKE_REASON = wakeReason;
+  if (wakeCommentId) env.GSAM_WAKE_COMMENT_ID = wakeCommentId;
+  if (approvalId) env.GSAM_APPROVAL_ID = approvalId;
+  if (approvalStatus) env.GSAM_APPROVAL_STATUS = approvalStatus;
+  if (linkedIssueIds.length > 0) env.GSAM_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   refreshPaperclipWorkspaceEnvForExecution({
     env,
     envConfig,
@@ -324,7 +324,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   // envConfig loop so user overrides cannot disable this guard.
   env.OPENCODE_DISABLE_PROJECT_CONFIG = "true";
   if (authToken) {
-    env.PAPERCLIP_API_KEY = authToken;
+    env.GSAM_API_KEY = authToken;
   }
   const preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({ env, config });
   const localRuntimeConfigHome =
@@ -482,7 +482,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         runtimeRootDir: remoteRuntimeRootDir,
         adapterKey: "opencode",
         timeoutSec,
-        hostApiToken: preparedRuntimeConfig.env.PAPERCLIP_API_KEY,
+        hostApiToken: preparedRuntimeConfig.env.GSAM_API_KEY,
         onLog,
       });
       if (paperclipBridge) {
@@ -605,10 +605,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // Optional diagnostic: surface OpenCode's own logs on stderr (captured into the
     // run result) so failures that OpenCode otherwise wraps as an opaque
     // "Unexpected server error" can be diagnosed in remote/sandbox runs where the
-    // log file is unreachable. Toggle via PAPERCLIP_OPENCODE_PRINT_LOGS (run env,
+    // log file is unreachable. Toggle via GSAM_OPENCODE_PRINT_LOGS (run env,
     // then process env).
     const printLogs = isTruthyEnvFlag(
-      env.PAPERCLIP_OPENCODE_PRINT_LOGS ?? process.env.PAPERCLIP_OPENCODE_PRINT_LOGS,
+      env.GSAM_OPENCODE_PRINT_LOGS ?? process.env.GSAM_OPENCODE_PRINT_LOGS,
     );
     const buildArgs = (resumeSessionId: string | null) => {
       const args = ["run", "--format", "json"];

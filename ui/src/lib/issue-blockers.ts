@@ -1,4 +1,4 @@
-import type { IssueRelationIssueSummary } from "@paperclipai/shared";
+import type { IssueRelationIssueSummary } from "@greatstone/shared";
 
 export type WaitingBlockerStatus = "done" | "running" | "queued";
 

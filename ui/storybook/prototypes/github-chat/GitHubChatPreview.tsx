@@ -245,7 +245,7 @@ function ConfigEditor({
     <div className="space-y-6">
       <Select
         label="Responsible user for automatic events"
-        help="This member authorizes unattended work. Human mentions use the linked sender’s current Paperclip permissions."
+        help="This member authorizes unattended work. Human mentions use the linked sender’s current GS Agentic Manager permissions."
         value={config.responsible}
         onChange={(v) => update("responsible", v)}
         options={[
@@ -296,7 +296,7 @@ function ConfigEditor({
           </div>
           <Select
             label="Minimum passing rating"
-            help="Paperclip compares the agent’s validated score with this threshold. Incomplete reviews never pass."
+            help="GS Agentic Manager compares the agent’s validated score with this threshold. Incomplete reviews never pass."
             value={config.threshold}
             onChange={(v) => update("threshold", v)}
             options={[
@@ -309,7 +309,7 @@ function ConfigEditor({
             ]}
           />
           <p className="text-xs text-muted-foreground">
-            To block merging, require <strong>Paperclip Review</strong> from
+            To block merging, require <strong>GS Agentic Manager Review</strong> from
             this GitHub App in your repository’s ruleset. Saving here does not
             change GitHub rules.
           </p>
@@ -405,7 +405,7 @@ function ConfigEditor({
             Event prompts
           </summary>
           <p className="text-xs text-muted-foreground">
-            Each event becomes a message in the existing Paperclip task. Your
+            Each event becomes a message in the existing GS Agentic Manager task. Your
             agent’s instructions and tool permissions still apply.
           </p>
           <Select
@@ -704,7 +704,7 @@ export function GitHubChatPreview({
             </div>
           )}
           <p className="mt-8 text-xs text-muted-foreground">
-            GitHub conversations run as Paperclip tasks, assigned to this agent.
+            GitHub conversations run as GS Agentic Manager tasks, assigned to this agent.
           </p>
         </aside>
         <main className="min-w-0 flex-1 px-5 py-8 sm:px-8">
@@ -745,9 +745,9 @@ export function GitHubChatPreview({
                     : page === "Access"
                       ? "Choose who can start work and which permissions apply."
                       : page === "Reviews"
-                        ? "Agent assessments, findings, and checks attached to Paperclip tasks."
+                        ? "Agent assessments, findings, and checks attached to GS Agentic Manager tasks."
                         : page === "Conversations"
-                          ? "Continue GitHub discussions from their linked Paperclip tasks."
+                          ? "Continue GitHub discussions from their linked GS Agentic Manager tasks."
                           : "Connection events and agent actions, with a clear outcome."}
                 </Heading>
                 {linkedContext}
@@ -946,10 +946,10 @@ export function GitHubChatPreview({
                       conversation. PR events can ask the same agent to review
                       changes.
                     </Heading>
-                    <GitHubSetupPrompt instanceUrl={import.meta.env.VITE_PAPERCLIP_INSTANCE_URL ?? ""} />
+                    <GitHubSetupPrompt instanceUrl={import.meta.env.VITE_GSAM_INSTANCE_URL ?? ""} />
                     <Select
                       disabled={draft.connected}
-                      label="Paperclip agent"
+                      label="GS Agentic Manager agent"
                       help="This connection stays assigned to this agent. Use another connection for a different agent."
                       value={draft.agent}
                       onChange={(v) => change({ agent: v })}
@@ -962,7 +962,7 @@ export function GitHubChatPreview({
                       <Bot className="mr-2 inline size-4" />
                       Messages become tasks assigned to{" "}
                       <strong>{draft.agent}</strong>. Linked people use their
-                      Paperclip permissions.
+                      GS Agentic Manager permissions.
                     </Notice>
                     <GitHubAgentTrustWarning agent={{ name: draft.agent, permissions: { trustPreset: draft.agent === "Code Reviewer" ? "low_trust_review" : "standard" } }} />
                     {footer("Continue", () => go(1))}
@@ -986,7 +986,7 @@ export function GitHubChatPreview({
                         </strong>
                         <p className="mt-2">
                           This instance uses a private Tailscale address. Enable
-                          public ingress before verifying delivery. Paperclip
+                          public ingress before verifying delivery. GS Agentic Manager
                           Cloud provides HTTPS for hosted instances.
                         </p>
                         <a
@@ -1063,7 +1063,7 @@ export function GitHubChatPreview({
                         )}
                         <p className="text-sm text-muted-foreground">
                           GitHub creates the App and returns its credentials
-                          directly to Paperclip. Then you choose which
+                          directly to GS Agentic Manager. Then you choose which
                           repositories to install it on.
                         </p>
                         <Button
@@ -1127,7 +1127,7 @@ export function GitHubChatPreview({
                         </Field>
                         <Field
                           label="Webhook secret"
-                          help="Use the webhook secret configured on this App. Paperclip verifies the original bytes of every delivery with it."
+                          help="Use the webhook secret configured on this App. GS Agentic Manager verifies the original bytes of every delivery with it."
                         >
                           <Input
                             id="Webhook secret"
@@ -1241,7 +1241,7 @@ export function GitHubChatPreview({
                 {draft.step === 4 && (
                   <>
                     <Heading title="Verify connection and agent tools">
-                      Check that GitHub can reach Paperclip and that your agent
+                      Check that GitHub can reach GS Agentic Manager and that your agent
                       can use this bot’s connection.
                     </Heading>
                     <div className="divide-y divide-border rounded-lg border border-border px-4">
@@ -1284,7 +1284,7 @@ export function GitHubChatPreview({
                                       "Signed ping received at this instance’s current address",
                                       `${draft.repositories.length} ${draft.repositories.length === 1 ? "repository" : "repositories"} · Contents read · Pull requests and Checks write`,
                                       `Available to ${draft.agent} · same GitHub App identity`,
-                                      "Ready to run Paperclip tasks",
+                                      "Ready to run GS Agentic Manager tasks",
                                     ][i]}
                               </p>
                             </div>
@@ -1327,7 +1327,7 @@ export function GitHubChatPreview({
                   <>
                     <Heading title="Connect your GitHub account">
                       Use a personal GitHub connection to identify your messages
-                      in Paperclip.
+                      in GS Agentic Manager.
                     </Heading>
                     {draft.linked ? (
                       <Notice tone="success">
@@ -1336,7 +1336,7 @@ export function GitHubChatPreview({
                           @{draft.accountLogin} is linked to Dotta.
                         </strong>
                         <p className="mt-2">
-                          Your mentions use your current Paperclip permissions.
+                          Your mentions use your current GS Agentic Manager permissions.
                         </p>
                       </Notice>
                     ) : personalReady ? (
@@ -1448,7 +1448,7 @@ export function GitHubChatPreview({
                       </li>
                       <li>
                         Continue the conversation on GitHub or open its linked
-                        task in Paperclip.
+                        task in GS Agentic Manager.
                       </li>
                     </ol>
                     {draft.testSent ? (
@@ -1518,7 +1518,7 @@ export function GitHubChatPreview({
             </DialogTitle>
             <DialogDescription>
               {dialog === "task"
-                ? "Example Paperclip task, messages, and governed agent tools. No live run."
+                ? "Example GS Agentic Manager task, messages, and governed agent tools. No live run."
                 : "Storybook fixture. No GitHub account, credentials, or external resources are changed."}
             </DialogDescription>
           </DialogHeader>
@@ -1531,7 +1531,7 @@ export function GitHubChatPreview({
                     ? draft.organization
                     : "your account"}
                 </strong>
-                . GitHub returns the new App credentials directly to Paperclip.
+                . GitHub returns the new App credentials directly to GS Agentic Manager.
               </p>
               <Button
                 onClick={() => {
@@ -1547,8 +1547,8 @@ export function GitHubChatPreview({
           {dialog === "account-auth" && (
             <div className="space-y-4">
               <p className="text-sm">
-                Continue through Paperclip’s existing personal GitHub sign-in.
-                On return, Paperclip verifies your GitHub account before you
+                Continue through GS Agentic Manager’s existing personal GitHub sign-in.
+                On return, GS Agentic Manager verifies your GitHub account before you
                 confirm the link.
               </p>
               <Button
@@ -1636,7 +1636,7 @@ export function GitHubChatPreview({
                         ? "github.submit_review · score 3/5 · 2 findings"
                         : "No complete review result published for this head"}
                   </p>
-                  <p>Paperclip Review · {reviewLabels[check]} · requires 5/5</p>
+                  <p>GS Agentic Manager Review · {reviewLabels[check]} · requires 5/5</p>
                 </div>
                 <p>
                   <strong>GitHub · Dotta</strong>
@@ -1749,7 +1749,7 @@ function ReviewCard({
           ) : (
             <XCircle className="size-4" />
           )}
-          <strong>Paperclip Review · {reviewLabels[state]}</strong>
+          <strong>GS Agentic Manager Review · {reviewLabels[state]}</strong>
         </div>
         <p className="mt-2 text-xs">
           {state === "passed"
@@ -1765,7 +1765,7 @@ function ReviewCard({
       </Notice>
       <div className="flex flex-wrap items-center gap-4 text-xs">
         <button className="underline" onClick={onTask}>
-          ACM-142 · Open Paperclip task
+          ACM-142 · Open GS Agentic Manager task
         </button>
         {onGitHub && (
           <button className="underline" onClick={onGitHub}>
@@ -1976,7 +1976,7 @@ function RepositoryPicker({
           </DialogHeader>
           <p className="text-sm">
             For this preview, add acme/mobile to the installation. Return to
-            Paperclip and refresh to see it; it won’t be enabled automatically.
+            GS Agentic Manager and refresh to see it; it won’t be enabled automatically.
           </p>
           <Button
             onClick={() => {

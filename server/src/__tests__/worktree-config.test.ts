@@ -12,17 +12,17 @@ import {
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_CWD = process.cwd();
 
-// The ambient shell can carry real PAPERCLIP_* settings (agent shells export
-// PAPERCLIP_CONFIG pointing at the live default instance). Repair helpers
+// The ambient shell can carry real GSAM_* settings (agent shells export
+// GSAM_CONFIG pointing at the live default instance). Repair helpers
 // resolve paths from these, so a test that forgets to override one would
 // otherwise rewrite the machine's real config/env files.
 beforeEach(() => {
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("PAPERCLIP_")) {
+    if (key.startsWith("GSAM_")) {
       delete process.env[key];
     }
   }
-  process.env.PAPERCLIP_INSTANCE_ID = "default";
+  process.env.GSAM_INSTANCE_ID = "default";
 });
 
 afterEach(() => {
@@ -118,10 +118,10 @@ describe("worktree config repair", () => {
   it("repairs legacy repo-local worktree config and env files into an isolated instance", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-repair-"));
     const worktreeRoot = path.join(tempRoot, "PAP-884-ai-commits-component");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const envPath = path.join(paperclipDir, ".env");
-    const sharedRoot = path.join(tempRoot, ".paperclip", "instances", "default");
+    const sharedRoot = path.join(tempRoot, ".gsam", "instances", "default");
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
 
     await fs.mkdir(paperclipDir, { recursive: true });
@@ -129,24 +129,24 @@ describe("worktree config repair", () => {
     await fs.writeFile(
       envPath,
       [
-        "# Paperclip environment variables",
-        "PAPERCLIP_IN_WORKTREE=true",
-        "PAPERCLIP_WORKTREE_NAME=PAP-884-ai-commits-component",
-        "PAPERCLIP_AGENT_JWT_SECRET=shared-secret",
+        "# GS Agentic Manager environment variables",
+        "GSAM_IN_WORKTREE=true",
+        "GSAM_WORKTREE_NAME=PAP-884-ai-commits-component",
+        "GSAM_AGENT_JWT_SECRET=shared-secret",
         "",
       ].join("\n"),
       "utf8",
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-884-ai-commits-component";
-    process.env.PAPERCLIP_WORKTREES_DIR = isolatedHome;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-884-ai-commits-component";
+    process.env.GSAM_WORKTREES_DIR = isolatedHome;
     delete process.env.PORT;
-    delete process.env.PAPERCLIP_HOME;
-    delete process.env.PAPERCLIP_INSTANCE_ID;
-    delete process.env.PAPERCLIP_CONFIG;
-    delete process.env.PAPERCLIP_CONTEXT;
+    delete process.env.GSAM_HOME;
+    delete process.env.GSAM_INSTANCE_ID;
+    delete process.env.GSAM_CONFIG;
+    delete process.env.GSAM_CONTEXT;
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
 
@@ -165,24 +165,24 @@ describe("worktree config repair", () => {
     expect(repairedConfig.logging.logDir).toBe(path.join(instanceRoot, "logs"));
     expect(repairedConfig.storage.localDisk.baseDir).toBe(path.join(instanceRoot, "data", "storage"));
     expect(repairedConfig.secrets.localEncrypted.keyFilePath).toBe(path.join(instanceRoot, "secrets", "master.key"));
-    expect(repairedEnv).toContain(`PAPERCLIP_HOME=${JSON.stringify(isolatedHome)}`);
-    expect(repairedEnv).toContain('PAPERCLIP_INSTANCE_ID="pap-884-ai-commits-component"');
-    expect(repairedEnv).toContain(`PAPERCLIP_CONFIG=${JSON.stringify(await fs.realpath(configPath))}`);
-    expect(repairedEnv).toContain(`PAPERCLIP_CONTEXT=${JSON.stringify(path.join(isolatedHome, "context.json"))}`);
-    expect(repairedEnv).toContain('PAPERCLIP_DB_BACKUP_ENABLED="false"');
-    expect(repairedEnv).toContain("PAPERCLIP_AGENT_JWT_SECRET=shared-secret");
-    expect(repairedEnv).toContain("PAPERCLIP_TOOL_ACTION_SIGNING_SECRET=");
-    expect(process.env.PAPERCLIP_HOME).toBe(isolatedHome);
+    expect(repairedEnv).toContain(`GSAM_HOME=${JSON.stringify(isolatedHome)}`);
+    expect(repairedEnv).toContain('GSAM_INSTANCE_ID="pap-884-ai-commits-component"');
+    expect(repairedEnv).toContain(`GSAM_CONFIG=${JSON.stringify(await fs.realpath(configPath))}`);
+    expect(repairedEnv).toContain(`GSAM_CONTEXT=${JSON.stringify(path.join(isolatedHome, "context.json"))}`);
+    expect(repairedEnv).toContain('GSAM_DB_BACKUP_ENABLED="false"');
+    expect(repairedEnv).toContain("GSAM_AGENT_JWT_SECRET=shared-secret");
+    expect(repairedEnv).toContain("GSAM_TOOL_ACTION_SIGNING_SECRET=");
+    expect(process.env.GSAM_HOME).toBe(isolatedHome);
     expect(process.env.PORT).toBe("3101");
-    expect(process.env.PAPERCLIP_INSTANCE_ID).toBe("pap-884-ai-commits-component");
-    expect(process.env.PAPERCLIP_DB_BACKUP_ENABLED).toBe("false");
-    expect(process.env.PAPERCLIP_TOOL_ACTION_SIGNING_SECRET).toHaveLength(64);
+    expect(process.env.GSAM_INSTANCE_ID).toBe("pap-884-ai-commits-component");
+    expect(process.env.GSAM_DB_BACKUP_ENABLED).toBe("false");
+    expect(process.env.GSAM_TOOL_ACTION_SIGNING_SECRET).toHaveLength(64);
   });
 
   it("disables backups in an otherwise isolated existing worktree config", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-backup-migration-"));
     const worktreeRoot = path.join(tempRoot, "disable-worktree-backups");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const envPath = path.join(paperclipDir, ".env");
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
@@ -195,14 +195,14 @@ describe("worktree config repair", () => {
     await fs.writeFile(
       envPath,
       [
-        "# Paperclip environment variables",
+        "# GS Agentic Manager environment variables",
         "# Keep this operator note during repair",
-        `PAPERCLIP_HOME=${JSON.stringify(isolatedHome)}`,
-        'PAPERCLIP_INSTANCE_ID="disable-worktree-backups"',
-        `PAPERCLIP_CONFIG=${JSON.stringify(configPath)}`,
-        'PAPERCLIP_DB_BACKUP_ENABLED="true" # managed worktree policy',
-        'PAPERCLIP_IN_WORKTREE="true"',
-        'PAPERCLIP_WORKTREE_NAME="disable-worktree-backups"',
+        `GSAM_HOME=${JSON.stringify(isolatedHome)}`,
+        'GSAM_INSTANCE_ID="disable-worktree-backups"',
+        `GSAM_CONFIG=${JSON.stringify(configPath)}`,
+        'GSAM_DB_BACKUP_ENABLED="true" # managed worktree policy',
+        'GSAM_IN_WORKTREE="true"',
+        'GSAM_WORKTREE_NAME="disable-worktree-backups"',
         "# Keep this trailing note too",
         "",
       ].join("\n"),
@@ -210,12 +210,12 @@ describe("worktree config repair", () => {
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_HOME = isolatedHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "disable-worktree-backups";
-    process.env.PAPERCLIP_CONFIG = configPath;
-    process.env.PAPERCLIP_DB_BACKUP_ENABLED = "true";
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "disable-worktree-backups";
+    process.env.GSAM_HOME = isolatedHome;
+    process.env.GSAM_INSTANCE_ID = "disable-worktree-backups";
+    process.env.GSAM_CONFIG = configPath;
+    process.env.GSAM_DB_BACKUP_ENABLED = "true";
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "disable-worktree-backups";
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -224,20 +224,20 @@ describe("worktree config repair", () => {
     expect(result).toEqual({ repairedConfig: true, repairedEnv: true });
     expect(repairedConfig.database.backup.enabled).toBe(false);
     expect(repairedEnv).toContain(
-      'PAPERCLIP_DB_BACKUP_ENABLED="false" # managed worktree policy',
+      'GSAM_DB_BACKUP_ENABLED="false" # managed worktree policy',
     );
     expect(repairedEnv).toContain("# Keep this operator note during repair");
     expect(repairedEnv).toContain("# Keep this trailing note too");
-    expect(process.env.PAPERCLIP_DB_BACKUP_ENABLED).toBe("false");
+    expect(process.env.GSAM_DB_BACKUP_ENABLED).toBe("false");
   });
 
   it("preserves an externally supplied PORT while repairing worktree config", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-repair-external-port-"));
     const worktreeRoot = path.join(tempRoot, "PAP-10341-runtime-managed-port");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const envPath = path.join(paperclipDir, ".env");
-    const sharedRoot = path.join(tempRoot, ".paperclip", "instances", "default");
+    const sharedRoot = path.join(tempRoot, ".gsam", "instances", "default");
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
 
     await fs.mkdir(paperclipDir, { recursive: true });
@@ -245,23 +245,23 @@ describe("worktree config repair", () => {
     await fs.writeFile(
       envPath,
       [
-        "# Paperclip environment variables",
-        "PAPERCLIP_IN_WORKTREE=true",
-        "PAPERCLIP_WORKTREE_NAME=PAP-10341-runtime-managed-port",
+        "# GS Agentic Manager environment variables",
+        "GSAM_IN_WORKTREE=true",
+        "GSAM_WORKTREE_NAME=PAP-10341-runtime-managed-port",
         "",
       ].join("\n"),
       "utf8",
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-10341-runtime-managed-port";
-    process.env.PAPERCLIP_WORKTREES_DIR = isolatedHome;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-10341-runtime-managed-port";
+    process.env.GSAM_WORKTREES_DIR = isolatedHome;
     process.env.PORT = "32987";
-    delete process.env.PAPERCLIP_HOME;
-    delete process.env.PAPERCLIP_INSTANCE_ID;
-    delete process.env.PAPERCLIP_CONFIG;
-    delete process.env.PAPERCLIP_CONTEXT;
+    delete process.env.GSAM_HOME;
+    delete process.env.GSAM_INSTANCE_ID;
+    delete process.env.GSAM_CONFIG;
+    delete process.env.GSAM_CONTEXT;
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -269,12 +269,12 @@ describe("worktree config repair", () => {
     expect(result.repairedConfig).toBe(true);
     expect(repairedConfig.server.port).toBe(3101);
     expect(process.env.PORT).toBe("32987");
-    expect(process.env.PAPERCLIP_HOME).toBe(isolatedHome);
+    expect(process.env.GSAM_HOME).toBe(isolatedHome);
   });
 
   it("never rewrites a main-instance env when ambient worktree flags leak into the process", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-leak-"));
-    const homeDir = path.join(tempRoot, ".paperclip");
+    const homeDir = path.join(tempRoot, ".gsam");
     const instanceRoot = path.join(homeDir, "instances", "default");
     const configPath = path.join(instanceRoot, "config.json");
     const envPath = path.join(instanceRoot, ".env");
@@ -283,35 +283,35 @@ describe("worktree config repair", () => {
     const originalConfig = JSON.stringify(buildLegacyConfig(instanceRoot), null, 2) + "\n";
     await fs.writeFile(configPath, originalConfig, "utf8");
     const cleanEnv = [
-      "# Paperclip environment variables",
+      "# GS Agentic Manager environment variables",
       "# Generated by `paperclip onboard`",
-      `PAPERCLIP_HOME=${JSON.stringify(homeDir)}`,
-      'PAPERCLIP_INSTANCE_ID="default"',
-      `PAPERCLIP_CONFIG=${JSON.stringify(configPath)}`,
+      `GSAM_HOME=${JSON.stringify(homeDir)}`,
+      'GSAM_INSTANCE_ID="default"',
+      `GSAM_CONFIG=${JSON.stringify(configPath)}`,
       "",
     ].join("\n");
     await fs.writeFile(envPath, cleanEnv, "utf8");
 
     process.chdir(tempRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-884-ai-commits-component";
-    process.env.PAPERCLIP_HOME = homeDir;
-    process.env.PAPERCLIP_INSTANCE_ID = "default";
-    process.env.PAPERCLIP_CONFIG = configPath;
-    delete process.env.PAPERCLIP_CONTEXT;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-884-ai-commits-component";
+    process.env.GSAM_HOME = homeDir;
+    process.env.GSAM_INSTANCE_ID = "default";
+    process.env.GSAM_CONFIG = configPath;
+    delete process.env.GSAM_CONTEXT;
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
 
     expect(result).toEqual({ repairedConfig: false, repairedEnv: false });
     expect(await fs.readFile(envPath, "utf8")).toBe(cleanEnv);
     expect(await fs.readFile(configPath, "utf8")).toBe(originalConfig);
-    expect(process.env.PAPERCLIP_HOME).toBe(homeDir);
-    expect(process.env.PAPERCLIP_INSTANCE_ID).toBe("default");
+    expect(process.env.GSAM_HOME).toBe(homeDir);
+    expect(process.env.GSAM_INSTANCE_ID).toBe("default");
   });
 
   it("does not persist runtime ports into a main-instance config when ambient worktree flags leak in", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-leak-ports-"));
-    const homeDir = path.join(tempRoot, ".paperclip");
+    const homeDir = path.join(tempRoot, ".gsam");
     const instanceRoot = path.join(homeDir, "instances", "default");
     const configPath = path.join(instanceRoot, "config.json");
 
@@ -319,11 +319,11 @@ describe("worktree config repair", () => {
     await fs.writeFile(configPath, JSON.stringify(buildLegacyConfig(instanceRoot), null, 2) + "\n", "utf8");
 
     process.chdir(tempRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-884-ai-commits-component";
-    process.env.PAPERCLIP_HOME = homeDir;
-    process.env.PAPERCLIP_INSTANCE_ID = "default";
-    process.env.PAPERCLIP_CONFIG = configPath;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-884-ai-commits-component";
+    process.env.GSAM_HOME = homeDir;
+    process.env.GSAM_INSTANCE_ID = "default";
+    process.env.GSAM_CONFIG = configPath;
     delete process.env.PORT;
     delete process.env.DATABASE_URL;
 
@@ -334,10 +334,10 @@ describe("worktree config repair", () => {
     expect(writtenConfig.database.embeddedPostgresPort).toBe(54329);
   });
 
-  it("does not adopt a .paperclip config whose own env does not declare a worktree", async () => {
+  it("does not adopt a .gsam config whose own env does not declare a worktree", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-unattested-"));
     const repoRoot = path.join(tempRoot, "repo");
-    const paperclipDir = path.join(repoRoot, ".paperclip");
+    const paperclipDir = path.join(repoRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const envPath = path.join(paperclipDir, ".env");
 
@@ -346,19 +346,19 @@ describe("worktree config repair", () => {
       JSON.stringify(buildLegacyConfig(path.join(tempRoot, "shared")), null, 2) + "\n";
     await fs.writeFile(configPath, originalConfig, "utf8");
     const nonWorktreeEnv = [
-      "# Paperclip environment variables",
-      `PAPERCLIP_CONFIG=${JSON.stringify(configPath)}`,
+      "# GS Agentic Manager environment variables",
+      `GSAM_CONFIG=${JSON.stringify(configPath)}`,
       "",
     ].join("\n");
     await fs.writeFile(envPath, nonWorktreeEnv, "utf8");
 
     process.chdir(repoRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-884-ai-commits-component";
-    process.env.PAPERCLIP_WORKTREES_DIR = path.join(tempRoot, ".paperclip-worktrees");
-    delete process.env.PAPERCLIP_HOME;
-    delete process.env.PAPERCLIP_INSTANCE_ID;
-    delete process.env.PAPERCLIP_CONFIG;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-884-ai-commits-component";
+    process.env.GSAM_WORKTREES_DIR = path.join(tempRoot, ".paperclip-worktrees");
+    delete process.env.GSAM_HOME;
+    delete process.env.GSAM_INSTANCE_ID;
+    delete process.env.GSAM_CONFIG;
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
 
@@ -370,10 +370,10 @@ describe("worktree config repair", () => {
   it("avoids sibling worktree ports when repairing legacy configs", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-repair-ports-"));
     const worktreeRoot = path.join(tempRoot, "PAP-880-thumbs-capture-for-evals-feature");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const envPath = path.join(paperclipDir, ".env");
-    const sharedRoot = path.join(tempRoot, ".paperclip", "instances", "default");
+    const sharedRoot = path.join(tempRoot, ".gsam", "instances", "default");
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
     const siblingInstanceRoot = path.join(isolatedHome, "instances", "pap-878-create-a-mine-tab-in-inbox");
 
@@ -383,9 +383,9 @@ describe("worktree config repair", () => {
     await fs.writeFile(
       envPath,
       [
-        "# Paperclip environment variables",
-        "PAPERCLIP_IN_WORKTREE=true",
-        "PAPERCLIP_WORKTREE_NAME=PAP-880-thumbs-capture-for-evals-feature",
+        "# GS Agentic Manager environment variables",
+        "GSAM_IN_WORKTREE=true",
+        "GSAM_WORKTREE_NAME=PAP-880-thumbs-capture-for-evals-feature",
         "",
       ].join("\n"),
       "utf8",
@@ -422,13 +422,13 @@ describe("worktree config repair", () => {
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-880-thumbs-capture-for-evals-feature";
-    process.env.PAPERCLIP_WORKTREES_DIR = isolatedHome;
-    delete process.env.PAPERCLIP_HOME;
-    delete process.env.PAPERCLIP_INSTANCE_ID;
-    delete process.env.PAPERCLIP_CONFIG;
-    delete process.env.PAPERCLIP_CONTEXT;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-880-thumbs-capture-for-evals-feature";
+    process.env.GSAM_WORKTREES_DIR = isolatedHome;
+    delete process.env.GSAM_HOME;
+    delete process.env.GSAM_INSTANCE_ID;
+    delete process.env.GSAM_CONFIG;
+    delete process.env.GSAM_CONTEXT;
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -443,15 +443,15 @@ describe("worktree config repair", () => {
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
     const firstWorktreeRoot = path.join(tempRoot, "repo-one", "PAP-14013-import-bulk-skills");
     const secondWorktreeRoot = path.join(tempRoot, "repo-two", "PAP-14069-port-conflicts");
-    const firstConfigPath = path.join(firstWorktreeRoot, ".paperclip", "config.json");
-    const secondConfigPath = path.join(secondWorktreeRoot, ".paperclip", "config.json");
+    const firstConfigPath = path.join(firstWorktreeRoot, ".gsam", "config.json");
+    const secondConfigPath = path.join(secondWorktreeRoot, ".gsam", "config.json");
 
     const writeWorktree = async (
       worktreeRoot: string,
       name: string,
       databaseMode: "embedded-postgres" | "postgres" = "embedded-postgres",
     ) => {
-      const paperclipDir = path.join(worktreeRoot, ".paperclip");
+      const paperclipDir = path.join(worktreeRoot, ".gsam");
       const instanceRoot = path.join(isolatedHome, "instances", name.toLowerCase());
       const config = buildIsolatedConfig(instanceRoot, 45439, 55439);
       await fs.mkdir(paperclipDir, { recursive: true });
@@ -472,12 +472,12 @@ describe("worktree config repair", () => {
       await fs.writeFile(
         path.join(paperclipDir, ".env"),
         [
-          "# Paperclip environment variables",
-          "PAPERCLIP_IN_WORKTREE=true",
-          `PAPERCLIP_WORKTREE_NAME=${name}`,
-          `PAPERCLIP_HOME=${JSON.stringify(isolatedHome)}`,
-          `PAPERCLIP_INSTANCE_ID=${name.toLowerCase()}`,
-          `PAPERCLIP_CONFIG=${JSON.stringify(path.join(paperclipDir, "config.json"))}`,
+          "# GS Agentic Manager environment variables",
+          "GSAM_IN_WORKTREE=true",
+          `GSAM_WORKTREE_NAME=${name}`,
+          `GSAM_HOME=${JSON.stringify(isolatedHome)}`,
+          `GSAM_INSTANCE_ID=${name.toLowerCase()}`,
+          `GSAM_CONFIG=${JSON.stringify(path.join(paperclipDir, "config.json"))}`,
           "",
         ].join("\n"),
         "utf8",
@@ -486,12 +486,12 @@ describe("worktree config repair", () => {
 
     const activateWorktree = (worktreeRoot: string, name: string) => {
       process.chdir(worktreeRoot);
-      process.env.PAPERCLIP_IN_WORKTREE = "true";
-      process.env.PAPERCLIP_WORKTREE_NAME = name;
-      process.env.PAPERCLIP_WORKTREES_DIR = isolatedHome;
-      process.env.PAPERCLIP_HOME = isolatedHome;
-      process.env.PAPERCLIP_INSTANCE_ID = name.toLowerCase();
-      process.env.PAPERCLIP_CONFIG = path.join(worktreeRoot, ".paperclip", "config.json");
+      process.env.GSAM_IN_WORKTREE = "true";
+      process.env.GSAM_WORKTREE_NAME = name;
+      process.env.GSAM_WORKTREES_DIR = isolatedHome;
+      process.env.GSAM_HOME = isolatedHome;
+      process.env.GSAM_INSTANCE_ID = name.toLowerCase();
+      process.env.GSAM_CONFIG = path.join(worktreeRoot, ".gsam", "config.json");
       delete process.env.PORT;
       delete process.env.DATABASE_URL;
     };
@@ -537,7 +537,7 @@ describe("worktree config repair", () => {
   it("ignores stale migrated env paths when the dev runner resolved the local config", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-migrated-env-"));
     const worktreeRoot = path.join(tempRoot, "PAP-9940-what-can-we-learn");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const envPath = path.join(paperclipDir, ".env");
     const oldHome = "/old/home/.paperclip-worktrees";
@@ -548,25 +548,25 @@ describe("worktree config repair", () => {
     await fs.writeFile(
       envPath,
       [
-        "# Paperclip environment variables",
-        "PAPERCLIP_HOME=/old/home/.paperclip-worktrees",
-        "PAPERCLIP_INSTANCE_ID=pap-9940-what-can-we-learn",
-        "PAPERCLIP_CONFIG=/old/home/paperclip/.paperclip/worktrees/PAP-9940-what-can-we-learn/.paperclip/config.json",
-        "PAPERCLIP_CONTEXT=/old/home/.paperclip-worktrees/context.json",
-        "PAPERCLIP_IN_WORKTREE=true",
-        "PAPERCLIP_WORKTREE_NAME=PAP-9940-what-can-we-learn",
+        "# GS Agentic Manager environment variables",
+        "GSAM_HOME=/old/home/.paperclip-worktrees",
+        "GSAM_INSTANCE_ID=pap-9940-what-can-we-learn",
+        "GSAM_CONFIG=/old/home/paperclip/.gsam/worktrees/PAP-9940-what-can-we-learn/.gsam/config.json",
+        "GSAM_CONTEXT=/old/home/.paperclip-worktrees/context.json",
+        "GSAM_IN_WORKTREE=true",
+        "GSAM_WORKTREE_NAME=PAP-9940-what-can-we-learn",
         "",
       ].join("\n"),
       "utf8",
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_CONFIG = configPath;
-    process.env.PAPERCLIP_WORKTREES_DIR = isolatedHome;
-    delete process.env.PAPERCLIP_HOME;
-    delete process.env.PAPERCLIP_INSTANCE_ID;
-    delete process.env.PAPERCLIP_CONTEXT;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_CONFIG = configPath;
+    process.env.GSAM_WORKTREES_DIR = isolatedHome;
+    delete process.env.GSAM_HOME;
+    delete process.env.GSAM_INSTANCE_ID;
+    delete process.env.GSAM_CONTEXT;
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -579,8 +579,8 @@ describe("worktree config repair", () => {
     });
     expect(repairedConfig.database.embeddedPostgresDataDir).toBe(path.join(instanceRoot, "db"));
     expect(repairedConfig.secrets.localEncrypted.keyFilePath).toBe(path.join(instanceRoot, "secrets", "master.key"));
-    expect(repairedEnv).toContain(`PAPERCLIP_HOME=${JSON.stringify(isolatedHome)}`);
-    expect(repairedEnv).toContain(`PAPERCLIP_CONFIG=${JSON.stringify(configPath)}`);
+    expect(repairedEnv).toContain(`GSAM_HOME=${JSON.stringify(isolatedHome)}`);
+    expect(repairedEnv).toContain(`GSAM_CONFIG=${JSON.stringify(configPath)}`);
     expect(repairedEnv).not.toContain("/old/home");
   });
 
@@ -589,7 +589,7 @@ describe("worktree config repair", () => {
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
     const transientHome = path.join(tempRoot, "tests", "e2e", ".tmp", "multiuser-authenticated");
     const worktreeRoot = path.join(tempRoot, "PAP-989-multi-user-implementation-using-plan-from-pap-958");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const envPath = path.join(paperclipDir, ".env");
     const instanceId = "pap-989-multi-user-implementation-using-plan-from-pap-958";
@@ -652,24 +652,24 @@ describe("worktree config repair", () => {
     await fs.writeFile(
       envPath,
       [
-        "# Paperclip environment variables",
-        `PAPERCLIP_HOME=${JSON.stringify(isolatedHome)}`,
-        `PAPERCLIP_INSTANCE_ID=${JSON.stringify(instanceId)}`,
-        `PAPERCLIP_CONFIG=${JSON.stringify(configPath)}`,
-        `PAPERCLIP_CONTEXT=${JSON.stringify(path.join(isolatedHome, "context.json"))}`,
-        'PAPERCLIP_IN_WORKTREE="true"',
-        'PAPERCLIP_WORKTREE_NAME="PAP-989-multi-user-implementation-using-plan-from-pap-958"',
+        "# GS Agentic Manager environment variables",
+        `GSAM_HOME=${JSON.stringify(isolatedHome)}`,
+        `GSAM_INSTANCE_ID=${JSON.stringify(instanceId)}`,
+        `GSAM_CONFIG=${JSON.stringify(configPath)}`,
+        `GSAM_CONTEXT=${JSON.stringify(path.join(isolatedHome, "context.json"))}`,
+        'GSAM_IN_WORKTREE="true"',
+        'GSAM_WORKTREE_NAME="PAP-989-multi-user-implementation-using-plan-from-pap-958"',
         "",
       ].join("\n"),
       "utf8",
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-989-multi-user-implementation-using-plan-from-pap-958";
-    process.env.PAPERCLIP_HOME = transientHome;
-    process.env.PAPERCLIP_INSTANCE_ID = instanceId;
-    process.env.PAPERCLIP_CONFIG = configPath;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-989-multi-user-implementation-using-plan-from-pap-958";
+    process.env.GSAM_HOME = transientHome;
+    process.env.GSAM_INSTANCE_ID = instanceId;
+    process.env.GSAM_CONFIG = configPath;
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -686,24 +686,24 @@ describe("worktree config repair", () => {
     expect(repairedConfig.secrets.localEncrypted.keyFilePath).toBe(
       path.join(stableInstanceRoot, "secrets", "master.key"),
     );
-    expect(repairedEnv).toContain(`PAPERCLIP_HOME=${JSON.stringify(isolatedHome)}`);
-    expect(repairedEnv).toContain('PAPERCLIP_DB_BACKUP_ENABLED="false"');
-    expect(repairedEnv).not.toContain(`PAPERCLIP_HOME=${JSON.stringify(transientHome)}`);
-    expect(process.env.PAPERCLIP_HOME).toBe(isolatedHome);
+    expect(repairedEnv).toContain(`GSAM_HOME=${JSON.stringify(isolatedHome)}`);
+    expect(repairedEnv).toContain('GSAM_DB_BACKUP_ENABLED="false"');
+    expect(repairedEnv).not.toContain(`GSAM_HOME=${JSON.stringify(transientHome)}`);
+    expect(process.env.GSAM_HOME).toBe(isolatedHome);
   });
 
   it("rebalances duplicate ports for already isolated worktree configs", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-rebalance-"));
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
-    const repoWorktreesRoot = path.join(tempRoot, "repo", ".paperclip", "worktrees");
+    const repoWorktreesRoot = path.join(tempRoot, "repo", ".gsam", "worktrees");
     const siblingWorktreeRoot = path.join(repoWorktreesRoot, "PAP-878-create-a-mine-tab-in-inbox");
     const siblingInstanceRoot = path.join(isolatedHome, "instances", "pap-878-create-a-mine-tab-in-inbox");
     const currentWorktreeRoot = path.join(repoWorktreesRoot, "PAP-884-ai-commits-component");
-    const paperclipDir = path.join(currentWorktreeRoot, ".paperclip");
+    const paperclipDir = path.join(currentWorktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const envPath = path.join(paperclipDir, ".env");
     const currentInstanceRoot = path.join(isolatedHome, "instances", "pap-884-ai-commits-component");
-    const siblingConfigPath = path.join(siblingWorktreeRoot, ".paperclip", "config.json");
+    const siblingConfigPath = path.join(siblingWorktreeRoot, ".gsam", "config.json");
 
     await fs.mkdir(paperclipDir, { recursive: true });
     await fs.mkdir(path.dirname(siblingConfigPath), { recursive: true });
@@ -763,9 +763,9 @@ describe("worktree config repair", () => {
     await fs.writeFile(
       envPath,
       [
-        "# Paperclip environment variables",
-        "PAPERCLIP_IN_WORKTREE=true",
-        "PAPERCLIP_WORKTREE_NAME=PAP-884-ai-commits-component",
+        "# GS Agentic Manager environment variables",
+        "GSAM_IN_WORKTREE=true",
+        "GSAM_WORKTREE_NAME=PAP-884-ai-commits-component",
         "",
       ].join("\n"),
       "utf8",
@@ -802,13 +802,13 @@ describe("worktree config repair", () => {
     );
 
     process.chdir(currentWorktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-884-ai-commits-component";
-    process.env.PAPERCLIP_WORKTREES_DIR = isolatedHome;
-    delete process.env.PAPERCLIP_HOME;
-    delete process.env.PAPERCLIP_INSTANCE_ID;
-    delete process.env.PAPERCLIP_CONFIG;
-    delete process.env.PAPERCLIP_CONTEXT;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-884-ai-commits-component";
+    process.env.GSAM_WORKTREES_DIR = isolatedHome;
+    delete process.env.GSAM_HOME;
+    delete process.env.GSAM_INSTANCE_ID;
+    delete process.env.GSAM_CONFIG;
+    delete process.env.GSAM_CONTEXT;
 
     const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
@@ -821,7 +821,7 @@ describe("worktree config repair", () => {
   it("persists runtime-selected worktree ports back into explicit-port auth URLs", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-ports-"));
     const worktreeRoot = path.join(tempRoot, "PAP-878-create-a-mine-tab-in-inbox");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
     const instanceRoot = path.join(isolatedHome, "instances", "pap-878-create-a-mine-tab-in-inbox");
@@ -883,16 +883,16 @@ describe("worktree config repair", () => {
 
     await fs.writeFile(
       path.join(paperclipDir, ".env"),
-      ["# Paperclip environment variables", "PAPERCLIP_IN_WORKTREE=true", ""].join("\n"),
+      ["# GS Agentic Manager environment variables", "GSAM_IN_WORKTREE=true", ""].join("\n"),
       "utf8",
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-878-create-a-mine-tab-in-inbox";
-    process.env.PAPERCLIP_HOME = isolatedHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "pap-878-create-a-mine-tab-in-inbox";
-    process.env.PAPERCLIP_CONFIG = configPath;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-878-create-a-mine-tab-in-inbox";
+    process.env.GSAM_HOME = isolatedHome;
+    process.env.GSAM_INSTANCE_ID = "pap-878-create-a-mine-tab-in-inbox";
+    process.env.GSAM_CONFIG = configPath;
     delete process.env.PORT;
     delete process.env.DATABASE_URL;
 
@@ -911,7 +911,7 @@ describe("worktree config repair", () => {
   it("does not rewrite no-port public auth URLs when persisting runtime-selected ports", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-public-ports-"));
     const worktreeRoot = path.join(tempRoot, "PAP-125-public-base-url");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
     const instanceRoot = path.join(isolatedHome, "instances", "pap-125-public-base-url");
@@ -973,16 +973,16 @@ describe("worktree config repair", () => {
 
     await fs.writeFile(
       path.join(paperclipDir, ".env"),
-      ["# Paperclip environment variables", "PAPERCLIP_IN_WORKTREE=true", ""].join("\n"),
+      ["# GS Agentic Manager environment variables", "GSAM_IN_WORKTREE=true", ""].join("\n"),
       "utf8",
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-125-public-base-url";
-    process.env.PAPERCLIP_HOME = isolatedHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "pap-125-public-base-url";
-    process.env.PAPERCLIP_CONFIG = configPath;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "PAP-125-public-base-url";
+    process.env.GSAM_HOME = isolatedHome;
+    process.env.GSAM_INSTANCE_ID = "pap-125-public-base-url";
+    process.env.GSAM_CONFIG = configPath;
     delete process.env.PORT;
     delete process.env.DATABASE_URL;
 
@@ -1001,7 +1001,7 @@ describe("worktree config repair", () => {
   it("preserves top-level and nested config extensions while persisting runtime ports", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-config-extensions-"));
     const worktreeRoot = path.join(tempRoot, "config-extensions");
-    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const paperclipDir = path.join(worktreeRoot, ".gsam");
     const configPath = path.join(paperclipDir, "config.json");
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
     const instanceRoot = path.join(isolatedHome, "instances", "config-extensions");
@@ -1033,16 +1033,16 @@ describe("worktree config repair", () => {
     await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
     await fs.writeFile(
       path.join(paperclipDir, ".env"),
-      ["# Paperclip environment variables", "PAPERCLIP_IN_WORKTREE=true", ""].join("\n"),
+      ["# GS Agentic Manager environment variables", "GSAM_IN_WORKTREE=true", ""].join("\n"),
       "utf8",
     );
 
     process.chdir(worktreeRoot);
-    process.env.PAPERCLIP_IN_WORKTREE = "true";
-    process.env.PAPERCLIP_WORKTREE_NAME = "config-extensions";
-    process.env.PAPERCLIP_HOME = isolatedHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "config-extensions";
-    process.env.PAPERCLIP_CONFIG = configPath;
+    process.env.GSAM_IN_WORKTREE = "true";
+    process.env.GSAM_WORKTREE_NAME = "config-extensions";
+    process.env.GSAM_HOME = isolatedHome;
+    process.env.GSAM_INSTANCE_ID = "config-extensions";
+    process.env.GSAM_CONFIG = configPath;
     delete process.env.PORT;
     delete process.env.DATABASE_URL;
 

@@ -76,9 +76,9 @@ describe("teams CLI commands", () => {
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.PAPERCLIP_API_URL;
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_COMPANY_ID;
+    delete process.env.GSAM_API_URL;
+    delete process.env.GSAM_API_KEY;
+    delete process.env.GSAM_COMPANY_ID;
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -256,7 +256,7 @@ describe("teams CLI commands", () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://paperclip.test/api/teams/catalog/ref?ref=paperclipai%2Fbundled%2Fsoftware-development%2Fproduct-engineering",
+      "http://paperclip.test/api/teams/catalog/ref?ref=gsam%2Fbundled%2Fsoftware-development%2Fproduct-engineering",
       expect.objectContaining({ method: "GET" }),
     );
     expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toEqual(detail);
@@ -309,7 +309,7 @@ describe("teams CLI commands", () => {
     const result = {
       team: catalogTeam(),
       portabilityImport: {
-        company: { id: "company-1", name: "Paperclip", action: "unchanged" },
+        company: { id: "company-1", name: "GS Agentic Manager", action: "unchanged" },
         agents: [],
         projects: [],
         envInputs: [],
@@ -458,8 +458,8 @@ describe("teams CLI commands", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it("auto-requests board approval for forbidden installs inside a Paperclip task run", async () => {
-    process.env.PAPERCLIP_TASK_ID = "11111111-1111-4111-8111-111111111111";
+  it("auto-requests board approval for forbidden installs inside a GS Agentic Manager task run", async () => {
+    process.env.GSAM_TASK_ID = "11111111-1111-4111-8111-111111111111";
     const approval = {
       id: "approval-2",
       companyId: "company-1",

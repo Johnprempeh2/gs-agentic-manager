@@ -69,8 +69,8 @@ describe("codex managed home", () => {
         prepareManagedCodexHome(
           {
             CODEX_HOME: sharedCodexHome,
-            PAPERCLIP_HOME: paperclipHome,
-            PAPERCLIP_INSTANCE_ID: "default",
+            GSAM_HOME: paperclipHome,
+            GSAM_INSTANCE_ID: "default",
           },
           async () => {},
           "company-1",
@@ -117,8 +117,8 @@ describe("codex managed home", () => {
         prepareManagedCodexHome(
           {
             CODEX_HOME: sharedCodexHome,
-            PAPERCLIP_HOME: paperclipHome,
-            PAPERCLIP_INSTANCE_ID: "default",
+            GSAM_HOME: paperclipHome,
+            GSAM_INSTANCE_ID: "default",
           },
           async () => {},
           "company-1",
@@ -132,7 +132,7 @@ describe("codex managed home", () => {
     }
   });
 
-  // Regression for #5028: older Paperclip versions copied auth.json into the
+  // Regression for #5028: older GS Agentic Manager versions copied auth.json into the
   // managed home instead of symlinking. After upgrading to the symlink-based
   // logic, the stale regular file at the target stayed in place and every
   // subsequent codex_local run failed with refresh_token_reused as soon as the
@@ -158,15 +158,15 @@ describe("codex managed home", () => {
       // The live source has rotated since the stale copy was written.
       await fs.writeFile(sharedAuth, '{"token":"fresh"}', "utf8");
 
-      // Simulate a stale copy left by a previous Paperclip version.
+      // Simulate a stale copy left by a previous GS Agentic Manager version.
       await fs.mkdir(managedCodexHome, { recursive: true });
       await fs.writeFile(managedAuth, '{"token":"stale-from-copy"}', "utf8");
 
       await prepareManagedCodexHome(
         {
           CODEX_HOME: sharedCodexHome,
-          PAPERCLIP_HOME: paperclipHome,
-          PAPERCLIP_INSTANCE_ID: "default",
+          GSAM_HOME: paperclipHome,
+          GSAM_INSTANCE_ID: "default",
         },
         async () => {},
         "company-1",
@@ -203,7 +203,7 @@ describe("codex managed home", () => {
 
   // The isDirectory() guard added with the heal branch must keep an unexpected
   // directory in place rather than throwing EISDIR. We treat a directory at
-  // this path as operator-owned, not a stale Paperclip copy.
+  // this path as operator-owned, not a stale GS Agentic Manager copy.
   it("ensureSymlink: leaves an unexpected directory in place instead of throwing", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-ensure-symlink-dir-"));
     try {
@@ -226,8 +226,8 @@ describe("codex managed home", () => {
 
 describe("isManagedCodexHomePath", () => {
   const env = {
-    PAPERCLIP_HOME: "/srv/paperclip",
-    PAPERCLIP_INSTANCE_ID: "default",
+    GSAM_HOME: "/srv/paperclip",
+    GSAM_INSTANCE_ID: "default",
   } satisfies NodeJS.ProcessEnv;
   const companyRoot = path.resolve(
     "/srv/paperclip/instances/default/companies/company-1",
@@ -602,8 +602,8 @@ describe("seedManagedCodexHome", () => {
       );
       const env = {
         CODEX_HOME: sharedCodexHome,
-        PAPERCLIP_HOME: path.join(root, "paperclip-home"),
-        PAPERCLIP_INSTANCE_ID: "default",
+        GSAM_HOME: path.join(root, "paperclip-home"),
+        GSAM_INSTANCE_ID: "default",
       };
       const stored = subscriptionAuth("acct-same", "stored", "2026-07-09T01:00:00Z");
       await fs.mkdir(sharedCodexHome, { recursive: true });
@@ -638,8 +638,8 @@ describe("seedManagedCodexHome", () => {
       );
       const env = {
         CODEX_HOME: sharedCodexHome,
-        PAPERCLIP_HOME: path.join(root, "paperclip-home"),
-        PAPERCLIP_INSTANCE_ID: "default",
+        GSAM_HOME: path.join(root, "paperclip-home"),
+        GSAM_INSTANCE_ID: "default",
       };
       const stored = subscriptionAuth("acct-bound-id", "stored", "2026-07-09T01:00:00Z");
       await fs.mkdir(sharedCodexHome, { recursive: true });
@@ -706,8 +706,8 @@ describe("reconcileManagedCodexHome", () => {
     await fs.writeFile(sharedAuth, '{"OPENAI_API_KEY":"shared"}', "utf8");
     const env = {
       CODEX_HOME: sharedCodexHome,
-      PAPERCLIP_HOME: paperclipHome,
-      PAPERCLIP_INSTANCE_ID: "default",
+      GSAM_HOME: paperclipHome,
+      GSAM_INSTANCE_ID: "default",
     } satisfies NodeJS.ProcessEnv;
     return { root, sharedCodexHome, sharedAuth, agentHome, agentAuth, env };
   }
@@ -883,8 +883,8 @@ describe("evaluateCodexCredentialReadiness", () => {
     const managedAgentHome = path.join(companyRoot, "agents", "agent-1", "codex-home");
     const env: NodeJS.ProcessEnv = {
       CODEX_HOME: sharedCodexHome,
-      PAPERCLIP_HOME: paperclipHome,
-      PAPERCLIP_INSTANCE_ID: "default",
+      GSAM_HOME: paperclipHome,
+      GSAM_INSTANCE_ID: "default",
     };
     await fs.mkdir(sharedCodexHome, { recursive: true });
     return { root, sharedCodexHome, managedCompanyHome, managedAgentHome, env };
@@ -1263,7 +1263,7 @@ describe("stageCodexHomeForSync", () => {
   });
 
   // Circular symlinks inside skills/ must be silently skipped (not throw ELOOP).
-  // Skill symlinks that point OUTSIDE skills/ are intentional design (Paperclip
+  // Skill symlinks that point OUTSIDE skills/ are intentional design (GS Agentic Manager
   // stores skill packages in a shared location) and are dereferenced normally;
   // all resulting files land 0600 inside the 0700 staged dir.
   it("skips circular skill symlinks (ELOOP) without throwing", async () => {

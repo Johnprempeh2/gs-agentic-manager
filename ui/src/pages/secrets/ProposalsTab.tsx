@@ -10,7 +10,7 @@ import {
   Link2,
   Loader2,
 } from "lucide-react";
-import type { CompanySecretProviderConfig, SecretProposalView } from "@paperclipai/shared";
+import type { CompanySecretProviderConfig, SecretProposalView } from "@greatstone/shared";
 import { secretsApi } from "../../api/secrets";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn } from "../../lib/utils";

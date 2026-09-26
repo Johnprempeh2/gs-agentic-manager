@@ -15,7 +15,7 @@ import {
   File as FileIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { IssueAttachment } from "@paperclipai/shared";
+import type { IssueAttachment } from "@greatstone/shared";
 
 export interface FileKind {
   icon: LucideIcon;

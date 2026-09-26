@@ -2,12 +2,12 @@
  * Forcing a managed runtime's listeners onto loopback through argv (PAP-17256).
  *
  * The broker only exposes a port whose listener /proc proves to be loopback-only,
- * so an exposed Paperclip dev runtime MUST bind `127.0.0.1`. The server used to
- * request that with env vars alone (`PAPERCLIP_BIND` / `PAPERCLIP_BIND_HOST`),
+ * so an exposed GS Agentic Manager dev runtime MUST bind `127.0.0.1`. The server used to
+ * request that with env vars alone (`GSAM_BIND` / `GSAM_BIND_HOST`),
  * which is not sufficient: the process that has to honour them is the *guest
  * checkout's* `scripts/dev-runner.ts`, and a checkout that predates managed
- * exposure overwrites `PAPERCLIP_BIND` from its own `--bind` argv and deletes
- * `PAPERCLIP_BIND_HOST` outright. A branch pinned at such a commit therefore
+ * exposure overwrites `GSAM_BIND` from its own `--bind` argv and deletes
+ * `GSAM_BIND_HOST` outright. A branch pinned at such a commit therefore
  * bound `0.0.0.0` and every expose was correctly denied with
  * `listener_ownership_mismatch`.
  *
@@ -39,7 +39,7 @@ export function commandSelectsBindMode(command: string): boolean {
 }
 
 /**
- * A Paperclip dev-runner invocation — the only shape that understands
+ * A GS Agentic Manager dev-runner invocation — the only shape that understands
  * `--bind` / `--bind-host`.
  *
  * Deliberately keyed on the *command*, not the service name. `--bind` means
@@ -47,15 +47,15 @@ export function commandSelectsBindMode(command: string): boolean {
  * pass it to `python3 -m http.server`), and appending flags a command does not
  * parse turns a working service into one that exits on startup.
  */
-const PAPERCLIP_DEV_RUNNER_COMMAND =
+const GSAM_DEV_RUNNER_COMMAND =
   /(?:^|[\s;&|])(?:(?:pnpm|npm|yarn|bun)(?:\s+run)?\s+dev(?::once|:watch|:server)?(?=\s|$)|[^\s]*dev-runner(?:\.[cm]?[jt]s)?(?=\s|$))/;
 
 export function isPaperclipDevRunnerCommand(command: string): boolean {
-  return PAPERCLIP_DEV_RUNNER_COMMAND.test(command);
+  return GSAM_DEV_RUNNER_COMMAND.test(command);
 }
 
 /**
- * Rewrite a Paperclip dev-runner command so it explicitly requests the loopback
+ * Rewrite a GS Agentic Manager dev-runner command so it explicitly requests the loopback
  * bind, replacing whatever bind selection it carried.
  *
  * A command that is not a dev-runner invocation is returned untouched — see

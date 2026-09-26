@@ -10,7 +10,7 @@ import {
   issueComments,
   issues,
   plugins,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -21,8 +21,8 @@ import {
   externalObjectService,
   type ExternalObjectResolver,
 } from "../services/external-objects.js";
-import { canonicalizeExternalObjectUrl } from "@paperclipai/shared/external-objects-server";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import { canonicalizeExternalObjectUrl } from "@greatstone/shared/external-objects-server";
+import type { PaperclipPluginManifestV1 } from "@greatstone/shared";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { createGitHubExternalObjectProvider } from "../services/github-external-object-provider.js";
 
@@ -378,7 +378,7 @@ describeEmbeddedPostgres("externalObjectService", () => {
     const issueId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `E${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -815,7 +815,7 @@ describeEmbeddedPostgres("externalObjectService", () => {
       version: "1.0.0",
       displayName: "Mock Object Provider",
       description: "Detects mock tracker tickets",
-      author: "Paperclip",
+      author: "GS Agentic Manager",
       categories: ["connector"],
       capabilities: ["external.objects.detect", "external.objects.read"],
       entrypoints: { worker: "dist/worker.js" },

@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { inboxDismissals } from "@paperclipai/db";
-import type { InboxDismissalKind } from "@paperclipai/shared";
+import type { Db } from "@greatstone/db";
+import { inboxDismissals } from "@greatstone/db";
+import type { InboxDismissalKind } from "@greatstone/shared";
 
 export function inboxDismissalService(db: Db) {
   async function upsert(

@@ -2,7 +2,7 @@ import { AgentAvatar } from "@/components/AgentAvatar";
 import { Link } from "@/lib/router";
 import { timeAgo } from "../lib/timeAgo";
 import { cn } from "../lib/utils";
-import { deriveProjectUrlKey, type ActivityEvent, type Agent } from "@paperclipai/shared";
+import { deriveProjectUrlKey, type ActivityEvent, type Agent } from "@greatstone/shared";
 import { issueStatusIcon, issueStatusIconDefault } from "../lib/status-colors";
 import {
   FileText,
@@ -430,7 +430,7 @@ export function FeedCard({
   const verb = formatVerb(event.action, details, isPinned ? "pinned" : "chronological");
   const iconSpec = getIconSpec(event, details, isActive);
 
-  const mutedTextBase = isMuted ? "text-muted-foreground/70" : "text-(--hex-959596)";
+  const mutedTextBase = isMuted ? "text-subtle-foreground" : "text-(--hex-959596)";
   const mutedTextHover = isMuted ? "" : "group-hover:text-white";
 
   const card = (

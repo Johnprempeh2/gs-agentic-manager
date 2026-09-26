@@ -31,7 +31,7 @@ describe("chat file preparation delivery contract", () => {
       });
       expect(delivery.guidance).toContain("cannot upload file bytes");
       expect(delivery.guidance).toContain(
-        "must be opened there with Paperclip access",
+        "must be opened there with GS Agentic Manager access",
       );
       expect(delivery.guidance).toContain("do not say it is attached");
       expect(delivery.guidance).toContain(

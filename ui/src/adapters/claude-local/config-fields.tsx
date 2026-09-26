@@ -11,7 +11,7 @@ import { ChoosePathButton } from "../../components/PathInstructionsModal";
 import { LocalWorkspaceRuntimeFields } from "../local-workspace-runtime-fields";
 
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground";
 
 const instructionsFileHint =
   "Absolute path to a markdown file (e.g. AGENTS.md) that defines this agent's behavior. Injected into the system prompt at runtime.";
@@ -94,7 +94,7 @@ export function ClaudeLocalAdvancedFields({
         The execution engine picks which binary runs on the execution host, and
         the ACP sub-fields below name host paths. The platform-managed
         environment owns both, so the managed-sandbox-only policy hides them,
-        the same way `runnerManaged` hides them for the Paperclip Runner.
+        the same way `runnerManaged` hides them for the GS Agentic Manager Runner.
       */}
       {!managedSandboxOnly && <Field label="Execution engine" hint="Default uses ACP. If ACP is unavailable, the run fails with a setup error. Choose CLI explicitly to use it.">
         <select
@@ -180,7 +180,7 @@ export function ClaudeLocalAdvancedFields({
           {!managedSandboxOnly && (
             <Field
               label="ACP state directory"
-              hint="Optional ACP session state directory. Defaults to Paperclip-managed organization/agent scoped storage."
+              hint="Optional ACP session state directory. Defaults to GS Agentic Manager-managed organization/agent scoped storage."
             >
               <div className="flex items-center gap-2">
                 <DraftInput

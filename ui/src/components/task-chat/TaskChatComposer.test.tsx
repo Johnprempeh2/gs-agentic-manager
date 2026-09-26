@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAgentMentionHref,
   buildSkillMentionHref,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { parseRunnerGoalCommand, TaskChatComposer } from "./TaskChatComposer";
 import { QuestionForm } from "./QuestionForm";
 import { DRAFT_DEBOUNCE_MS } from "../../lib/composer-draft";

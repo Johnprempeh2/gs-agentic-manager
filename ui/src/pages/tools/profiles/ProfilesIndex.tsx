@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArchiveRestore, MoreHorizontal, Plus, ShieldCheck, Users } from "lucide-react";
-import type { ToolProfileWithDetails } from "@paperclipai/shared";
+import type { ToolProfileWithDetails } from "@greatstone/shared";
 import { useNavigate } from "@/lib/router";
 import { toolsApi } from "@/api/tools";
 import { queryKeys } from "@/lib/queryKeys";
@@ -257,7 +257,7 @@ export function ProfilesIndex({
                       {assigned.unassigned ? (
                         <span className="text-muted-foreground">
                           {assigned.text}
-                          <span className="ml-1 text-xs text-muted-foreground/70">— does not change access</span>
+                          <span className="ml-1 text-xs text-subtle-foreground">— does not change access</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-foreground">

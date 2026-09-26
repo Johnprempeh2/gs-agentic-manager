@@ -10,22 +10,22 @@ describe("parseAdapterRegistryEnv", () => {
     expect(parseAdapterRegistryEnv({})).toBeNull();
   });
 
-  it("parses inline PAPERCLIP_ADAPTERS JSON", () => {
-    const r = parseAdapterRegistryEnv({ PAPERCLIP_ADAPTERS: ENTRY });
+  it("parses inline GSAM_ADAPTERS JSON", () => {
+    const r = parseAdapterRegistryEnv({ GSAM_ADAPTERS: ENTRY });
     expect(r).toHaveLength(1);
     expect(r?.[0].adapterType).toBe("opencode_local");
     expect(r?.[0].enabled).toBe(true);
   });
 
   it("throws on malformed JSON (fail loud)", () => {
-    expect(() => parseAdapterRegistryEnv({ PAPERCLIP_ADAPTERS: "{not json" })).toThrow(
-      /PAPERCLIP_ADAPTERS/,
+    expect(() => parseAdapterRegistryEnv({ GSAM_ADAPTERS: "{not json" })).toThrow(
+      /GSAM_ADAPTERS/,
     );
   });
 
   it("throws on schema-invalid content (fail loud)", () => {
     expect(() =>
-      parseAdapterRegistryEnv({ PAPERCLIP_ADAPTERS: JSON.stringify([{ enabled: true }]) }),
-    ).toThrow(/PAPERCLIP_ADAPTERS/);
+      parseAdapterRegistryEnv({ GSAM_ADAPTERS: JSON.stringify([{ enabled: true }]) }),
+    ).toThrow(/GSAM_ADAPTERS/);
   });
 });

@@ -16,8 +16,8 @@ import {
   issueDocuments,
   issueThreadInteractions,
   issues,
-} from "@paperclipai/db";
-import { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY } from "@paperclipai/shared";
+} from "@greatstone/db";
+import { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY } from "@greatstone/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -157,7 +157,7 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-stale-queue-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db, {
-      runtimeEnv: { ...process.env, PAPERCLIP_IN_WORKTREE: "false" },
+      runtimeEnv: { ...process.env, GSAM_IN_WORKTREE: "false" },
       beforeResolvedInteractionContinuationDispatchCheck: async (input) => {
         await beforeContinuationDispatchCheck?.(input);
       },
@@ -209,7 +209,7 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
     const agentId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,

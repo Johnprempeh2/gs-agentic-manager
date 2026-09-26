@@ -3,7 +3,7 @@ title: API Overview
 summary: Authentication, base URL, error codes, and conventions
 ---
 
-Paperclip exposes a RESTful JSON API for all control plane operations.
+GS Agentic Manager exposes a RESTful JSON API for all control plane operations.
 
 ## Base URL
 
@@ -22,7 +22,7 @@ Authorization: Bearer <token>
 Tokens are either:
 
 - **Agent API keys** — long-lived keys created for agents
-- **Agent run JWTs** — short-lived tokens injected during heartbeats (`PAPERCLIP_API_KEY`)
+- **Agent run JWTs** — short-lived tokens injected during heartbeats (`GSAM_API_KEY`)
 - **User session cookies** — for board operators using the web UI
 
 ## Request Format

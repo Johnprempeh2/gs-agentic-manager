@@ -1110,7 +1110,7 @@ async function consumeTurn(
         return settleDurableResult(
           event,
           governedResult,
-          "Paperclip parked this turn on a durable governed interaction.",
+          "GS Agentic Manager parked this turn on a durable governed interaction.",
         );
       }
       if (sessionGoalObserved) {
@@ -1796,7 +1796,7 @@ function checkpointedResultlessDispositionFallback(input: {
 }
 
 /**
- * Package-owned normalized session loop. Paperclip supplies persistence and
+ * Package-owned normalized session loop. GS Agentic Manager supplies persistence and
  * authority through ControlPlanePort; provider/session behavior stays here.
  */
 export async function executeNativeSession(
@@ -2350,7 +2350,7 @@ export async function executeNativeSession(
           if (dispositionOnlyRecovery && !effectFreeInitialAcpxTurn) {
             modelEnvelope = buildNativeModelEnvelope(input);
             modelEnvelope.task.prompt = [
-              "Paperclip semantic-result recovery for a prior completed provider turn.",
+              "GS Agentic Manager semantic-result recovery for a prior completed provider turn.",
               "The prior turn already performed the work and its user-facing final answer is recorded.",
               "Do not repeat implementation, tests, research, or the final answer.",
               "Use the existing session context to invoke exactly one paperclip_finish or paperclip_block with the accurate current disposition, then stop without additional user-facing prose.",

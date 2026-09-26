@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolvePaperclipConfigPath, resolvePaperclipEnvPath } from "./paths.js";
-import type { BindMode, DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import type { BindMode, DeploymentExposure, DeploymentMode } from "@greatstone/shared";
 
 import { parse as parseEnvFileContents } from "dotenv";
 
@@ -72,7 +72,7 @@ function resolveAgentJwtSecretStatus(
   status: "pass" | "warn";
   message: string;
 } {
-  const envValue = process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
+  const envValue = process.env.GSAM_AGENT_JWT_SECRET?.trim();
   if (envValue) {
     return {
       status: "pass",
@@ -82,7 +82,7 @@ function resolveAgentJwtSecretStatus(
 
   if (existsSync(envFilePath)) {
     const parsed = parseEnvFileContents(readFileSync(envFilePath, "utf-8"));
-    const fileValue = typeof parsed.PAPERCLIP_AGENT_JWT_SECRET === "string" ? parsed.PAPERCLIP_AGENT_JWT_SECRET.trim() : "";
+    const fileValue = typeof parsed.GSAM_AGENT_JWT_SECRET === "string" ? parsed.GSAM_AGENT_JWT_SECRET.trim() : "";
     if (fileValue) {
       return {
         status: "warn",
@@ -93,7 +93,7 @@ function resolveAgentJwtSecretStatus(
 
   return {
     status: "warn",
-    message: "missing (run `npx paperclipai onboard`)",
+    message: "missing (run `npx gsam onboard`)",
   };
 }
 
@@ -135,12 +135,12 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     : color("disabled", "yellow");
 
   const art = [
-    color("██████╗  █████╗ ██████╗ ███████╗██████╗  ██████╗██╗     ██╗██████╗ ", "cyan"),
-    color("██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔════╝██║     ██║██╔══██╗", "cyan"),
-    color("██████╔╝███████║██████╔╝█████╗  ██████╔╝██║     ██║     ██║██████╔╝", "cyan"),
-    color("██╔═══╝ ██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗██║     ██║     ██║██╔═══╝ ", "cyan"),
-    color("██║     ██║  ██║██║     ███████╗██║  ██║╚██████╗███████╗██║██║     ", "cyan"),
-    color("╚═╝     ╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝╚═╝     ", "cyan"),
+    color(" ██████╗ ███████╗ █████╗ ███╗   ███╗", "green"),
+    color("██╔════╝ ██╔════╝██╔══██╗████╗ ████║", "green"),
+    color("██║  ███╗███████╗███████║██╔████╔██║", "green"),
+    color("██║   ██║╚════██║██╔══██║██║╚██╔╝██║", "green"),
+    color("╚██████╔╝███████║██║  ██║██║ ╚═╝ ██║", "green"),
+    color(" ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝", "green"),
   ];
 
   const lines = [

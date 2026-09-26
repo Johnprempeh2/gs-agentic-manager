@@ -21,7 +21,7 @@ import {
   issueRecoveryActions,
   issues,
   runIdentityContexts,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
 import { heartbeatService } from "../services/heartbeat.js";
@@ -110,7 +110,7 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
     await db.insert(agents).values({
       id: agentId,
       companyId,
-      name: "Paperclip Runner",
+      name: "GS Agentic Manager Runner",
       role: "engineer",
       status: "idle",
       adapterType: "paperclip_runner",

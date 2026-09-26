@@ -1,4 +1,4 @@
-import type { AgentAppearance } from "@paperclipai/shared";
+import type { AgentAppearance } from "@greatstone/shared";
 import {
   type AnyPgColumn,
   pgTable,

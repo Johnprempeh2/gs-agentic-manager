@@ -7,7 +7,7 @@ import type {
   IssueAttachment,
   IssueDocument,
   IssueWorkProduct,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   buildReRunRequest,
   buildCreateRunRequest,

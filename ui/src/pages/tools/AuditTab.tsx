@@ -137,7 +137,7 @@ function plainReason(event: ToolGatewayActivityEvent): string {
     case "failed":
       return "The app was allowed to run it, but returned an error.";
     default:
-      return "Recorded by Paperclip.";
+      return "Recorded by GS Agentic Manager.";
   }
 }
 
@@ -465,7 +465,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
         hasActiveFilters ? (
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-              <ScrollText className="h-10 w-10 text-muted-foreground/40" />
+              <ScrollText className="h-10 w-10 text-subtle-foreground" />
               <div>
                 <p className="text-sm font-medium text-foreground">No activity matches these filters</p>
                 <p className="mt-1 max-w-md text-sm text-muted-foreground">
@@ -480,7 +480,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
         ) : (
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-              <ScrollText className="h-10 w-10 text-muted-foreground/40" />
+              <ScrollText className="h-10 w-10 text-subtle-foreground" />
               <div>
                 <p className="text-sm font-medium text-foreground">Nothing here yet</p>
                 <p className="mt-1 max-w-md text-sm text-muted-foreground">

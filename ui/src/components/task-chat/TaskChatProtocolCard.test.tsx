@@ -12,7 +12,7 @@ import type {
   TaskChatProviderActivityFamily,
   TaskChatRuntimeRequestDecision,
 } from "./task-chat-model";
-import type { IssueWorkProduct } from "@paperclipai/shared";
+import type { IssueWorkProduct } from "@greatstone/shared";
 import { IssueGalleryContext } from "@/context/IssueGalleryContext";
 import { RichWorkProductCard } from "./RichWorkProductCard";
 import { stateChipFor } from "./RichWorkProductCard";

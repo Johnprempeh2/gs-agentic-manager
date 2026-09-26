@@ -5,6 +5,6 @@ import type { RunnerApi } from "./api.js";
 export async function prepareLegacyContinuationSkill(api: RunnerApi, companyId: string, agentId: string) {
   const key = "paperclipai/paperclip/paperclip";
   const skills = await api.get<Array<{ key: string }>>(`/api/companies/${companyId}/skills`);
-  if (!skills.some(skill => skill.key === key)) throw new Error("Continuation fixture is missing the bundled Paperclip operational skill");
+  if (!skills.some(skill => skill.key === key)) throw new Error("Continuation fixture is missing the bundled GS Agentic Manager operational skill");
   await api.post(`/api/agents/${agentId}/skills/sync?companyId=${companyId}`, { desiredSkills: [key], mode: "add" });
 }

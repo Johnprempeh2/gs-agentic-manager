@@ -1,7 +1,7 @@
-import { agentAppearanceSchema, randomAgentAppearance, resolveAgentAppearance, agentAvatarUrl } from "@paperclipai/shared";
+import { agentAppearanceSchema, randomAgentAppearance, resolveAgentAppearance, agentAvatarUrl } from "@greatstone/shared";
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   agents,
   toolConnectionInstalls,
@@ -17,7 +17,7 @@ import {
   issueExecutionDecisions,
   issues,
   issueComments,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   agentRuntimeConfigSchema,
@@ -27,10 +27,10 @@ import {
   normalizeAgentUrlKey,
   type AgentEligibilityAgent,
   type AgentApiKeyScope,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   normalizePaperclipRunnerAdapterConfig,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@greatstone/adapter-utils/server-utils";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
   collectSecretRefs,
@@ -690,7 +690,7 @@ export function agentService(db: Db) {
     const beforeMarker = readBuiltInAgentMarker(beforeMetadata);
     const afterMarker = readBuiltInAgentMarker(afterMetadata);
     if (builtInAgentMarkersEqual(beforeMarker, afterMarker)) return;
-    throw conflict("Built-in agent marker is managed by Paperclip and cannot be edited directly", {
+    throw conflict("Built-in agent marker is managed by GS Agentic Manager and cannot be edited directly", {
       code: "built_in_agent_marker_readonly",
       key: beforeMarker?.key ?? afterMarker?.key ?? null,
     });

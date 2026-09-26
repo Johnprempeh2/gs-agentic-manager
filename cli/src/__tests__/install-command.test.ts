@@ -37,7 +37,7 @@ describe("managed install commands", () => {
     process.env = {
       ...ORIGINAL_ENV,
       HOME: path.join(root, "home"),
-      PAPERCLIP_HOME: path.join(root, "home", ".paperclip"),
+      GSAM_HOME: path.join(root, "home", ".gsam"),
       PATH: "/usr/bin:/bin",
       SHELL: "/bin/bash",
     };
@@ -95,7 +95,7 @@ describe("managed install commands", () => {
     const sha = "b".repeat(40);
     const paths = resolveInstallStorePaths();
     const payloadPath = payloadPathFor(paths, "git", sha.slice(0, 12));
-    const packageRoot = path.join(payloadPath, "node_modules", "paperclipai");
+    const packageRoot = path.join(payloadPath, "node_modules", "gsam");
     fs.mkdirSync(path.join(packageRoot, "dist"), { recursive: true });
     fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ version: "0.3.1" }));
     fs.writeFileSync(path.join(packageRoot, "dist", "index.js"), "#!/usr/bin/env node\n");
@@ -112,9 +112,9 @@ describe("managed install commands", () => {
       if (file === "tar") {
         const checkout = args[args.indexOf("-C") + 1];
         const packages = [
-          { dir: "packages/shared", name: "@paperclipai/shared", packageJson: { name: "@paperclipai/shared", version: "0.3.1" } },
-          { dir: "packages/db", name: "@paperclipai/db", packageJson: { name: "@paperclipai/db", version: "0.3.1", dependencies: { "@paperclipai/shared": "workspace:*" }, bundleDependencies: ["embedded-postgres"] } },
-          { dir: "server", name: "@paperclipai/server", packageJson: { name: "@paperclipai/server", version: "0.3.1", dependencies: { "@paperclipai/db": "workspace:*" } } },
+          { dir: "packages/shared", name: "@greatstone/shared", packageJson: { name: "@greatstone/shared", version: "0.3.1" } },
+          { dir: "packages/db", name: "@greatstone/db", packageJson: { name: "@greatstone/db", version: "0.3.1", dependencies: { "@greatstone/shared": "workspace:*" }, bundleDependencies: ["embedded-postgres"] } },
+          { dir: "server", name: "@greatstone/server", packageJson: { name: "@greatstone/server", version: "0.3.1", dependencies: { "@greatstone/db": "workspace:*" } } },
         ];
         fs.mkdirSync(path.join(checkout, "cli"), { recursive: true });
         fs.writeFileSync(path.join(checkout, "cli", "package.json"), JSON.stringify({ version: "0.3.1" }));
@@ -137,14 +137,14 @@ describe("managed install commands", () => {
       }
       if (file === "bash") return { stdout: "", stderr: "" };
       if (file === "npm" && args[0] === "pack") {
-        const packageName = args[1]?.includes("workspace-package-") ? "paperclipai-db" : "paperclipai";
+        const packageName = args[1]?.includes("workspace-package-") ? "paperclipai-db" : "gsam";
         fs.writeFileSync(path.join(args[args.indexOf("--pack-destination") + 1], `${packageName}-0.3.1.tgz`), "package");
         return { stdout: "", stderr: "" };
       }
-      if (file === "npm" && args[0] === "install") { const prefix = args[args.indexOf("--prefix") + 1]; const packageRoot = path.join(prefix, "node_modules", "paperclipai"); fs.mkdirSync(path.join(packageRoot, "dist"), { recursive: true }); fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ version: "0.3.1" })); fs.writeFileSync(path.join(packageRoot, "dist", "index.js"), "#!/usr/bin/env node\n"); return { stdout: "", stderr: "" }; }
+      if (file === "npm" && args[0] === "install") { const prefix = args[args.indexOf("--prefix") + 1]; const packageRoot = path.join(prefix, "node_modules", "gsam"); fs.mkdirSync(path.join(packageRoot, "dist"), { recursive: true }); fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ version: "0.3.1" })); fs.writeFileSync(path.join(packageRoot, "dist", "index.js"), "#!/usr/bin/env node\n"); return { stdout: "", stderr: "" }; }
       if (file === process.execPath && args[0]?.endsWith("prepare-bundled-package.mjs")) {
         fs.mkdirSync(args[2], { recursive: true });
-        fs.writeFileSync(path.join(args[2], "package.json"), JSON.stringify({ name: "@paperclipai/db", version: "0.3.1" }));
+        fs.writeFileSync(path.join(args[2], "package.json"), JSON.stringify({ name: "@greatstone/db", version: "0.3.1" }));
         return { stdout: "", stderr: "" };
       }
       if (file === process.execPath) return { stdout: "0.3.1\n", stderr: "" };
@@ -184,16 +184,16 @@ describe("managed install commands", () => {
       expect(env, `${call[0]} ${call[1].join(" ")} must run with an explicit env`).toBeDefined();
       expect(env, `${call[0]} ${call[1].join(" ")} must not inherit NODE_ENV`).not.toHaveProperty("NODE_ENV");
     }
-    const uiPackCall = buildCalls.find(([file, , options]) => file === "corepack" && options?.env?.PAPERCLIP_RELEASE_REUSE_UI_DIST === "1");
+    const uiPackCall = buildCalls.find(([file, , options]) => file === "corepack" && options?.env?.GSAM_RELEASE_REUSE_UI_DIST === "1");
     expect(uiPackCall).toBeDefined();
   });
 
   it("resolves the complete server workspace dependency closure in dependency order", () => {
     const checkout = path.join(root, "checkout");
     const packages = [
-      { dir: "packages/shared", name: "@paperclipai/shared", dependencies: {} },
-      { dir: "packages/db", name: "@paperclipai/db", dependencies: { "@paperclipai/shared": "workspace:*" } },
-      { dir: "server", name: "@paperclipai/server", dependencies: { "@paperclipai/db": "workspace:*" } },
+      { dir: "packages/shared", name: "@greatstone/shared", dependencies: {} },
+      { dir: "packages/db", name: "@greatstone/db", dependencies: { "@greatstone/shared": "workspace:*" } },
+      { dir: "server", name: "@greatstone/server", dependencies: { "@greatstone/db": "workspace:*" } },
     ];
     fs.mkdirSync(path.join(checkout, "scripts"), { recursive: true });
     fs.writeFileSync(path.join(checkout, "scripts", "release-package-manifest.json"), JSON.stringify(packages.map(({ dir, name }) => ({ dir, name }))));
@@ -203,9 +203,9 @@ describe("managed install commands", () => {
     }
 
     expect(resolveGitInstallWorkspacePackages(checkout).map(({ name }) => name)).toEqual([
-      "@paperclipai/shared",
-      "@paperclipai/db",
-      "@paperclipai/server",
+      "@greatstone/shared",
+      "@greatstone/db",
+      "@greatstone/server",
     ]);
   });
 
@@ -220,7 +220,7 @@ describe("managed install commands", () => {
       if (file === "npm" && args[0] === "view") return { stdout: JSON.stringify(version), stderr: "" };
       if (file === "npm" && args[0] === "install") {
         const prefix = args[args.indexOf("--prefix") + 1];
-        const entrypoint = path.join(prefix, "node_modules", "paperclipai", "dist", "index.js");
+        const entrypoint = path.join(prefix, "node_modules", "gsam", "dist", "index.js");
         fs.mkdirSync(path.dirname(entrypoint), { recursive: true });
         fs.writeFileSync(entrypoint, "#!/usr/bin/env node\n");
         return { stdout: "", stderr: "" };
@@ -245,10 +245,10 @@ describe("managed install commands", () => {
     expect(installCall?.[1]).toContain("--@paperclipai:registry=https://registry.npmjs.org");
     const installOptions = installCall?.[2] as { env?: NodeJS.ProcessEnv } | undefined;
     expect(installOptions?.env?.npm_config_userconfig).toContain(".npmrc-");
-    const entrypoint = path.join(manifest!.payloadPath, "node_modules", "paperclipai", "dist", "index.js");
+    const entrypoint = path.join(manifest!.payloadPath, "node_modules", "gsam", "dist", "index.js");
     expect(resolveCliVersion(entrypoint)).toContain(`managed npm latest; payload ${manifest!.payloadPath}`);
 
-    const userData = path.join(process.env.PAPERCLIP_HOME!, "instances", "default", "keep.txt");
+    const userData = path.join(process.env.GSAM_HOME!, "instances", "default", "keep.txt");
     fs.mkdirSync(path.dirname(userData), { recursive: true });
     fs.writeFileSync(userData, "keep");
     const uninstallService = vi.fn(async () => {

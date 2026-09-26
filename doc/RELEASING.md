@@ -1,6 +1,6 @@
-# Releasing Paperclip
+# Releasing GS Agentic Manager
 
-Maintainer runbook for shipping Paperclip across npm, GitHub, and the website-facing changelog surface.
+Maintainer runbook for shipping GS Agentic Manager across npm, GitHub, and the website-facing changelog surface.
 
 The release model is now commit-driven:
 
@@ -20,7 +20,7 @@ The user-facing guide to the channels is [`CHANNELS.md`](CHANNELS.md).
 
 ## Versioning Model
 
-Paperclip uses calendar versions that still fit semver syntax:
+GS Agentic Manager uses calendar versions that still fit semver syntax:
 
 - stable: `YYYY.MDD.P`
 - canary: `YYYY.MDD.P-canary.N`
@@ -52,7 +52,7 @@ Important constraints:
 Every stable release has four separate surfaces:
 
 1. **Verification** — the exact git SHA passes typecheck, tests, and build
-2. **npm** — `paperclipai` and public workspace packages are published
+2. **npm** — `gsam` and public workspace packages are published
 3. **GitHub** — the stable release gets a git tag and GitHub Release
 4. **Website / announcements** — the stable changelog is published externally and announced
 
@@ -97,18 +97,18 @@ It:
 - computes the canary version for the current UTC date
 - publishes workspace packages dependency-first under npm dist-tag `canary`
 - waits for each package version to become registry-visible before continuing
-- publishes the user-facing `paperclipai` package last, so `paperclipai@canary` does not advance before the full package set exists
+- publishes the user-facing `gsam` package last, so `gsam@canary` does not advance before the full package set exists
 - verifies that `canary` resolves to the just-published version and that published internal dependencies exist on npm
-- installs `paperclipai@canary` into a clean temporary prefix as the final npm gate
+- installs `gsam@canary` into a clean temporary prefix as the final npm gate
 - fails by default if npm leaves `latest` pointing at a canary; use `--allow-canary-latest` only when that state is intentional
 - creates a git tag `canary/vYYYY.MDD.P-canary.N`
 
 Users install canaries with:
 
 ```bash
-npx paperclipai@canary onboard
+npx gsam@canary onboard
 # or
-npx paperclipai@canary onboard --data-dir "$(mktemp -d /tmp/paperclip-canary.XXXXXX)"
+npx gsam@canary onboard --data-dir "$(mktemp -d /tmp/paperclip-canary.XXXXXX)"
 ```
 
 ### Nightly
@@ -142,7 +142,7 @@ push, and the Docker dispatch.
 Users install nightlies with:
 
 ```bash
-npx paperclipai@nightly onboard
+npx gsam@nightly onboard
 ```
 
 ### Beta
@@ -178,7 +178,7 @@ Betas are manual promotions. Dispatch
 Users install betas with:
 
 ```bash
-npx paperclipai@beta onboard
+npx gsam@beta onboard
 ```
 
 #### Beta fix path: candidate branches
@@ -351,7 +351,7 @@ Recommended local generation flow:
 
 ```bash
 VERSION="$(./scripts/release.sh stable --date 2026-03-18 --print-version)"
-claude --print --output-format stream-json --verbose --dangerously-skip-permissions --model claude-opus-4-6 "Use the release-changelog skill to draft or update releases/v${VERSION}.md for Paperclip. Read doc/RELEASING.md and .agents/skills/release-changelog/SKILL.md, then generate the stable changelog for v${VERSION} from commits since the last stable tag. Do not create a canary changelog."
+claude --print --output-format stream-json --verbose --dangerously-skip-permissions --model claude-opus-4-6 "Use the release-changelog skill to draft or update releases/v${VERSION}.md for GS Agentic Manager. Read doc/RELEASING.md and .agents/skills/release-changelog/SKILL.md, then generate the stable changelog for v${VERSION} from commits since the last stable tag. Do not create a canary changelog."
 ```
 
 The repo intentionally does not run this through GitHub Actions because:
@@ -396,7 +396,7 @@ post-publish verification.
 
 Minimum checks:
 
-- `npx paperclipai@canary onboard` installs
+- `npx gsam@canary onboard` installs
 - onboarding completes without crashes
 - authenticated login works with the smoke credentials
 - the browser lands in onboarding on a fresh instance

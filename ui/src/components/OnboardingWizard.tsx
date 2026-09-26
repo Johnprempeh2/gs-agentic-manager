@@ -3,10 +3,10 @@ import { LocalProviderLoginInstructions } from "./AdapterLoginChrome";
 import { useLocalAiLogin } from "./ai-connections/useLocalAiLogin";
 import { aiConnectionsApi } from "@/api/ai-connections";
 import { aiProviderForAdapter } from "./ai-connections/AiConnectionField";
-import type { AiConnectionBinding } from "@paperclipai/shared";
+import type { AiConnectionBinding } from "@greatstone/shared";
 import { storeProviderApiKey } from "../lib/provider-credential";
 import { SavedProviderKeySelect, useSavedProviderKeys } from "./onboarding/SavedProviderKeySelect";
-import { randomAgentAppearance, resolveAgentAppearance, agentAppearanceSchema } from "@paperclipai/shared";
+import { randomAgentAppearance, resolveAgentAppearance, agentAppearanceSchema } from "@greatstone/shared";
 import { OnboardingCharacter } from "./onboarding/OnboardingCharacter";
 import { useEffect, useState, useMemo, useRef } from "react";
 import type { ComponentType, CSSProperties } from "react";
@@ -18,8 +18,8 @@ import type {
   ClaudeOAuthTokenStatusResponse,
   Environment,
   InstanceSettings,
-} from "@paperclipai/shared";
-import { AGENT_ROLES, AGENT_ROLE_LABELS, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@paperclipai/shared";
+} from "@greatstone/shared";
+import { AGENT_ROLES, AGENT_ROLE_LABELS, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@greatstone/shared";
 import { AdapterLoginPanel } from "./AgentConfigForm";
 import {
   CONNECT_SOURCE_NAMES,
@@ -104,11 +104,11 @@ import {
   selectReusableOnboardingProject,
 } from "../lib/onboarding-launch";
 import { buildNewAgentRuntimeConfig } from "../lib/new-agent-runtime-config";
-import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
-import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
-import { DEFAULT_KIMI_LOCAL_MODEL } from "@paperclipai/adapter-kimi-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@paperclipai/adapter-opencode-local";
+import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@greatstone/adapter-codex-local";
+import { DEFAULT_CURSOR_LOCAL_MODEL } from "@greatstone/adapter-cursor-local";
+import { DEFAULT_GEMINI_LOCAL_MODEL } from "@greatstone/adapter-gemini-local";
+import { DEFAULT_KIMI_LOCAL_MODEL } from "@greatstone/adapter-kimi-local";
+import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@greatstone/adapter-opencode-local";
 import {
   canGoBackFromOnboardingStep,
   canJumpToOnboardingStep,
@@ -148,7 +148,7 @@ type Step = 0 | 1 | 2 | 3 | 4 | 5;
 type AdapterType = string;
 
 // First-run onboarding stays on the proven direct adapters even when an
-// instance administrator has opted into Paperclip Runner elsewhere. The
+// instance administrator has opted into GS Agentic Manager Runner elsewhere. The
 // experimental flag only exposes the runner in explicit agent configuration.
 const ONBOARDING_EXCLUDED_ADAPTER_TYPES = new Set([
   "process",
@@ -274,7 +274,7 @@ function ModelSourceMark({
 // Exported so tests write/read the exact key the component uses, instead of
 // duplicating the literal and silently drifting from it if it's ever renamed.
 export const ONBOARDING_STORAGE_KEY = "paperclip-onboarding-state";
-const DEFAULT_TASK_TITLE = "Paperclip onboarding";
+const DEFAULT_TASK_TITLE = "GS Agentic Manager onboarding";
 /**
  * The onboarding draft in `localStorage`, via a browser that is allowed to say
  * no.
@@ -925,7 +925,7 @@ function OnboardingWizardInner({
     isFetching: adapterModelsFetching
   } = useQuery({
     // The wizard doesn't expose an environment selector, so models always
-    // resolve against the local Paperclip host (environmentId = null).
+    // resolve against the local GS Agentic Manager host (environmentId = null).
     queryKey: createdCompanyId
       ? queryKeys.agents.adapterModels(createdCompanyId, adapterType, null)
       : ["agents", "none", "adapter-models", adapterType, null],
@@ -2023,7 +2023,7 @@ function OnboardingWizardInner({
     if (adapterType === "paperclip_runner") {
       setAdapterType("claude_local");
       setModel("");
-      setError("Paperclip Runner is not available during onboarding. Choose a legacy adapter.");
+      setError("GS Agentic Manager Runner is not available during onboarding. Choose a legacy adapter.");
       return;
     }
     if (createdAgentId) {
@@ -2575,7 +2575,7 @@ function OnboardingWizardInner({
                       <p className="pt-2 text-base leading-relaxed text-muted-foreground">
                         <motion.span key={step} {...titleSwapMotion} className="inline-block">
                           {step === 4
-                            ? "Paperclip works with your subscription or API keys."
+                            ? "GS Agentic Manager works with your subscription or API keys."
                             : `${agentName.trim() || "Your first agent"} is ready to work!`}
                         </motion.span>
                       </p>
@@ -3041,7 +3041,7 @@ function OnboardingWizardInner({
                           : "Webhook URL"}
                       </label>
                       <input
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-subtle-foreground"
                         placeholder={
                           adapterType === "openclaw_gateway"
                             ? "ws://127.0.0.1:18789"

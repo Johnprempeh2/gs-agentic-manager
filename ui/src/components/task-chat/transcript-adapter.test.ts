@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TranscriptEntry } from "@/adapters";
-import type { HeartbeatRunEvent } from "@paperclipai/shared";
+import type { HeartbeatRunEvent } from "@greatstone/shared";
 import {
   assembleThreadItems,
   attachSettledTurns,
@@ -595,7 +595,7 @@ describe("transcriptToTaskChatItems protocol surfaces", () => {
     expect(providerActivityPresentation(item)).toMatchObject({
       runningLabel: "Searching tasks",
       completedLabel: "Searched tasks",
-      detail: "Searching the task index · Paperclip · search_tasks",
+      detail: "Searching the task index · GS Agentic Manager · search_tasks",
     });
   });
 
@@ -990,7 +990,7 @@ describe("buildActivityPhases provider summaries", () => {
       providerTool("block", "paperclip_block", "edit", "paperclip"),
     ];
     expect(buildActivityPhases(items, false)[0]?.summary).toBe(
-      "Searched available tools 6 times, read from Paperclip 3 times, used Paperclip 3 times",
+      "Searched available tools 6 times, read from GS Agentic Manager 3 times, used GS Agentic Manager 3 times",
     );
   });
 });
@@ -1123,7 +1123,7 @@ describe("buildTurnTimelineRows (DOT-217)", () => {
     ]);
   });
 
-  it("keeps runtime requests in the Paperclip Runner timeline input", () => {
+  it("keeps runtime requests in the GS Agentic Manager Runner timeline input", () => {
     const pending = request("pending", "pending");
     expect(
       paperclipRunnerTimelineItems([

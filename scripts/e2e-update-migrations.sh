@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end proof that `paperclipai update` works ACROSS VERSIONS, including
+# End-to-end proof that `gsam update` works ACROSS VERSIONS, including
 # database migrations, against a real managed install with a live service.
 #
 # Journey (real GitHub, real embedded Postgres, real systemd/launchd service):
@@ -30,17 +30,17 @@ BASE_REF="${E2E_UPDATE_BASE_REF:?E2E_UPDATE_BASE_REF is required}"
 NEXT_REF="${E2E_UPDATE_NEXT_REF:?E2E_UPDATE_NEXT_REF is required}"
 E2E_SERVICE_TIMEOUT_SECS="${E2E_SERVICE_TIMEOUT_SECS:-300}"
 
-# Clean environment, then isolate ALL Paperclip state (managed store, config,
+# Clean environment, then isolate ALL GS Agentic Manager state (managed store, config,
 # embedded Postgres, backups) under a dedicated home for this test.
-for var in $(env | grep -o '^PAPERCLIP_[A-Z_]*' || true); do unset "$var"; done
+for var in $(env | grep -o '^GSAM_[A-Z_]*' || true); do unset "$var"; done
 unset NODE_ENV npm_config_prefix 2>/dev/null || true
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 export CI="${CI:-1}"
-export PAPERCLIP_HOME="$HOME/.paperclip-e2e-update"
+export GSAM_HOME="$HOME/.paperclip-e2e-update"
 
 SHIM="$HOME/.local/bin/paperclipai"
-STORE="$PAPERCLIP_HOME/cli"
-BACKUP_DIR="$PAPERCLIP_HOME/instances/default/data/backups"
+STORE="$GSAM_HOME/cli"
+BACKUP_DIR="$GSAM_HOME/instances/default/data/backups"
 RESULTS=()
 FAILED=0
 
@@ -79,11 +79,11 @@ uname -a
 node --version && npm --version
 command -v corepack >/dev/null || npm install -g corepack
 [ -e "$SHIM" ] && { echo "shim already exists at $SHIM — refusing to run"; exit 2; }
-[ -d "$PAPERCLIP_HOME" ] && { echo "$PAPERCLIP_HOME already exists — refusing to run"; exit 2; }
+[ -d "$GSAM_HOME" ] && { echo "$GSAM_HOME already exists — refusing to run"; exit 2; }
 if [ "$(uname -s)" = "Linux" ] && [ ! -S "/run/user/$(id -u)/bus" ]; then
   echo "no systemd user bus at /run/user/$(id -u)/bus — this test needs a real service"; exit 2
 fi
-echo "repo=$E2E_REPO base=$BASE_REF next=$NEXT_REF paperclip_home=$PAPERCLIP_HOME"
+echo "repo=$E2E_REPO base=$BASE_REF next=$NEXT_REF paperclip_home=$GSAM_HOME"
 
 if [ -n "${E2E_BOOTSTRAP_CLI:-}" ] && [ -f "$E2E_BOOTSTRAP_CLI" ]; then
   BOOTSTRAP_CLI="$E2E_BOOTSTRAP_CLI"
@@ -97,7 +97,7 @@ else
     | tar -xz --strip-components=1 -C "$BOOT" || { fail_ "1a bootstrap tarball"; exit 1; }
   ( cd "$BOOT" \
       && corepack pnpm install --frozen-lockfile > "$HOME/e2e-upd-bootstrap-install.log" 2>&1 \
-      && PAPERCLIP_README_ASSET_REF="$BASE_REF" bash scripts/build-npm.sh --skip-checks --skip-typecheck > "$HOME/e2e-upd-bootstrap-build.log" 2>&1 ) \
+      && GSAM_README_ASSET_REF="$BASE_REF" bash scripts/build-npm.sh --skip-checks --skip-typecheck > "$HOME/e2e-upd-bootstrap-build.log" 2>&1 ) \
     || { tail -40 "$HOME"/e2e-upd-bootstrap-*.log; fail_ "1b bootstrap build"; exit 1; }
   TARBALL="$(cd "$BOOT/cli" && npm pack --silent 2>/dev/null | tail -1)"
   mkdir -p "$HOME/e2e-upd-bootstrap-cli"
@@ -132,7 +132,7 @@ else
   fail_ "3b service active on base version"; exit 1
 fi
 FIRST_RUN_BEFORE="$(first_run_count)"
-PG_VERSION_FILE="$(find "$PAPERCLIP_HOME" -name PG_VERSION 2>/dev/null | head -1)"
+PG_VERSION_FILE="$(find "$GSAM_HOME" -name PG_VERSION 2>/dev/null | head -1)"
 PG_INODE_BEFORE="$([ -n "$PG_VERSION_FILE" ] && ls -i "$PG_VERSION_FILE" | awk '{print $1}')"
 [ -n "$PG_VERSION_FILE" ] && pass "3c embedded Postgres cluster initialized" || fail_ "3c embedded Postgres cluster found"
 

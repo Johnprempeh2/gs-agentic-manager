@@ -22,16 +22,16 @@ let previousPaperclipHome: string | undefined;
 let previousServiceManaged: string | undefined;
 
 beforeEach(() => {
-  previousPaperclipHome = process.env.PAPERCLIP_HOME;
-  previousServiceManaged = process.env.PAPERCLIP_SERVICE_MANAGED;
-  process.env.PAPERCLIP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-service-restart-"));
+  previousPaperclipHome = process.env.GSAM_HOME;
+  previousServiceManaged = process.env.GSAM_SERVICE_MANAGED;
+  process.env.GSAM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-service-restart-"));
 });
 
 afterEach(() => {
-  if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-  else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-  if (previousServiceManaged === undefined) delete process.env.PAPERCLIP_SERVICE_MANAGED;
-  else process.env.PAPERCLIP_SERVICE_MANAGED = previousServiceManaged;
+  if (previousPaperclipHome === undefined) delete process.env.GSAM_HOME;
+  else process.env.GSAM_HOME = previousPaperclipHome;
+  if (previousServiceManaged === undefined) delete process.env.GSAM_SERVICE_MANAGED;
+  else process.env.GSAM_SERVICE_MANAGED = previousServiceManaged;
 });
 
 function managerFixture(active = true) {
@@ -65,7 +65,7 @@ function managerFixture(active = true) {
 
 describe("service health doctor checks", () => {
   it("skips live service checks during the managed unit's own activation", async () => {
-    process.env.PAPERCLIP_SERVICE_MANAGED = "1";
+    process.env.GSAM_SERVICE_MANAGED = "1";
     const detect = vi.fn();
     const probe = vi.fn();
     await expect(serviceHealthChecks(config, { detect, probe })).resolves.toEqual([]);
@@ -102,7 +102,7 @@ describe("service health doctor checks", () => {
   });
 
   it("reclaims restart locks left by terminated processes", async () => {
-    const lockPath = path.join(process.env.PAPERCLIP_HOME!, "instances", "default", "hot-restart.lock");
+    const lockPath = path.join(process.env.GSAM_HOME!, "instances", "default", "hot-restart.lock");
     fs.mkdirSync(path.dirname(lockPath), { recursive: true });
     fs.writeFileSync(lockPath, "424242:stale-token\n");
     const callback = vi.fn(async () => "restarted");
@@ -144,7 +144,7 @@ describe("service health doctor checks", () => {
       expect.objectContaining({
         name: "Service runtime",
         status: "fail",
-        message: expect.stringContaining("another Paperclip process"),
+        message: expect.stringContaining("another GS Agentic Manager process"),
       }),
     );
   });
@@ -201,7 +201,7 @@ describe("service runtime shim awareness", () => {
     const runtime = results.find((r) => r.name === "Service runtime");
     expect(runtime?.status).toBe("fail");
     expect(runtime?.message).toContain("no executable exists at");
-    expect(runtime?.repairHint).toContain("paperclipai install");
+    expect(runtime?.repairHint).toContain("gsam install");
   });
 
   it("diagnoses against the executable recorded in the definition, not the current env", async () => {
@@ -217,8 +217,8 @@ describe("service runtime shim awareness", () => {
     expect(shimPresent).toHaveBeenCalledWith("/custom/bin/paperclipai");
     expect(runtime?.message).toContain("/custom/bin/paperclipai");
     expect(runtime?.repairHint).toContain("/custom/bin/paperclipai");
-    expect(runtime?.repairHint).toContain("unset PAPERCLIP_SHIM_PATH");
-    expect(runtime?.repairHint).toContain("`paperclipai install` followed by `paperclipai service install`");
+    expect(runtime?.repairHint).toContain("unset GSAM_SHIM_PATH");
+    expect(runtime?.repairHint).toContain("`gsam install` followed by `gsam service install`");
   });
 
   it("attributes a healthy foreign responder instead of reporting Healthy", async () => {
@@ -231,15 +231,15 @@ describe("service runtime shim awareness", () => {
     expect(healthResult?.status).toBe("warn");
     expect(healthResult?.message).toContain("but not from ing.paperclip.paperclipai");
     const runtime = results.find((r) => r.name === "Service runtime");
-    expect(runtime?.message).toContain("serving another Paperclip process");
+    expect(runtime?.message).toContain("serving another GS Agentic Manager process");
   });
 });
 
 describe("definition executable extraction", () => {
   it("round-trips through both renderers", () => {
-    const unit = renderSystemdUnit({ instanceId: "default", shimPath: "/custom/bin/paperclipai", homeDir: "/home/x/.paperclip" });
+    const unit = renderSystemdUnit({ instanceId: "default", shimPath: "/custom/bin/paperclipai", homeDir: "/home/x/.gsam" });
     expect(extractExecutableFromSystemdUnit(unit)).toBe("/custom/bin/paperclipai");
-    const plist = renderLaunchdPlist({ instanceId: "default", shimPath: "/custom/bin/paperclipai", homeDir: "/home/x/.paperclip", stdoutPath: "/tmp/o.log", stderrPath: "/tmp/e.log" });
+    const plist = renderLaunchdPlist({ instanceId: "default", shimPath: "/custom/bin/paperclipai", homeDir: "/home/x/.gsam", stdoutPath: "/tmp/o.log", stderrPath: "/tmp/e.log" });
     expect(extractExecutableFromLaunchdPlist(plist)).toBe("/custom/bin/paperclipai");
     expect(extractExecutableFromSystemdUnit("garbage")).toBe(null);
     expect(extractExecutableFromLaunchdPlist("garbage")).toBe(null);
@@ -247,9 +247,9 @@ describe("definition executable extraction", () => {
 
   it("round-trips paths the renderers escape", () => {
     const hostile = '/tmp/we"ird $pa%th & <x>/paperclipai';
-    const unit = renderSystemdUnit({ instanceId: "default", shimPath: hostile, homeDir: "/home/x/.paperclip" });
+    const unit = renderSystemdUnit({ instanceId: "default", shimPath: hostile, homeDir: "/home/x/.gsam" });
     expect(extractExecutableFromSystemdUnit(unit)).toBe(hostile);
-    const plist = renderLaunchdPlist({ instanceId: "default", shimPath: hostile, homeDir: "/home/x/.paperclip", stdoutPath: "/tmp/o.log", stderrPath: "/tmp/e.log" });
+    const plist = renderLaunchdPlist({ instanceId: "default", shimPath: hostile, homeDir: "/home/x/.gsam", stdoutPath: "/tmp/o.log", stderrPath: "/tmp/e.log" });
     expect(extractExecutableFromLaunchdPlist(plist)).toBe(hostile);
   });
 });

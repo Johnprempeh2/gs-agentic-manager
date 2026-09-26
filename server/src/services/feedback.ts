@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, getTableColumns, gte, isNull, lte, ne, or } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   agents,
   companies,
@@ -17,11 +17,11 @@ import {
   issueComments,
   issueDocuments,
   issues,
-} from "@paperclipai/db";
-import { readPaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
-import { claudeConfigDir, parseClaudeStreamJson } from "@paperclipai/adapter-claude-local/server";
-import { codexHomeDir, parseCodexJsonl } from "@paperclipai/adapter-codex-local/server";
-import { parseOpenCodeJsonl } from "@paperclipai/adapter-opencode-local/server";
+} from "@greatstone/db";
+import { readPaperclipSkillSyncPreference } from "@greatstone/adapter-utils/server-utils";
+import { claudeConfigDir, parseClaudeStreamJson } from "@greatstone/adapter-claude-local/server";
+import { codexHomeDir, parseCodexJsonl } from "@greatstone/adapter-codex-local/server";
+import { parseOpenCodeJsonl } from "@greatstone/adapter-opencode-local/server";
 import {
   DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
   DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
@@ -35,7 +35,7 @@ import {
   type FeedbackTraceStatus,
   type FeedbackTraceTargetSummary,
   type FeedbackVoteValue,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { resolveHomeAwarePath, resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { notFound, unprocessable } from "../errors.js";
 import { agentInstructionsBundleMode, agentInstructionsService } from "./agent-instructions.js";
@@ -587,7 +587,7 @@ async function buildOpenCodeTraceFiles(input: {
   }
 
   const opencodeRoot = resolveHomeAwarePath(
-    process.env.PAPERCLIP_OPENCODE_STORAGE_DIR ?? "~/.local/share/opencode",
+    process.env.GSAM_OPENCODE_STORAGE_DIR ?? "~/.local/share/opencode",
   );
   const sessionRoot = path.join(opencodeRoot, "storage", "session");
   const diffRoot = path.join(opencodeRoot, "storage", "session_diff");

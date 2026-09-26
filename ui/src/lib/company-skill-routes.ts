@@ -1,4 +1,4 @@
-import type { CompanySkill, CompanySkillDetail, CompanySkillListItem } from "@paperclipai/shared";
+import type { CompanySkill, CompanySkillDetail, CompanySkillListItem } from "@greatstone/shared";
 
 export type CompanySkillRouteSubject = Pick<CompanySkill | CompanySkillDetail | CompanySkillListItem, "id" | "key" | "slug">;
 

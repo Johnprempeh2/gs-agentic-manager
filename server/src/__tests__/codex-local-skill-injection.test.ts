@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureCodexSkillsInjected } from "@paperclipai/adapter-codex-local/server";
+import { ensureCodexSkillsInjected } from "@greatstone/adapter-codex-local/server";
 
 async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -40,7 +40,7 @@ describe("codex local adapter skill injection", () => {
     cleanupDirs.clear();
   });
 
-  it("repairs a Codex Paperclip skill symlink that still points at another live checkout", async () => {
+  it("repairs a Codex GS Agentic Manager skill symlink that still points at another live checkout", async () => {
     const currentRepo = await makeTempDir("paperclip-codex-current-");
     const oldRepo = await makeTempDir("paperclip-codex-old-");
     const skillsHome = await makeTempDir("paperclip-codex-home-");
@@ -95,7 +95,7 @@ describe("codex local adapter skill injection", () => {
     );
   });
 
-  it("preserves a custom Codex skill symlink outside Paperclip repo checkouts", async () => {
+  it("preserves a custom Codex skill symlink outside GS Agentic Manager repo checkouts", async () => {
     const currentRepo = await makeTempDir("paperclip-codex-current-");
     const customRoot = await makeTempDir("paperclip-codex-custom-");
     const skillsHome = await makeTempDir("paperclip-codex-home-");
@@ -121,7 +121,7 @@ describe("codex local adapter skill injection", () => {
     );
   });
 
-  it("prunes broken symlinks for unavailable Paperclip repo skills before Codex starts", async () => {
+  it("prunes broken symlinks for unavailable GS Agentic Manager repo skills before Codex starts", async () => {
     const currentRepo = await makeTempDir("paperclip-codex-current-");
     const oldRepo = await makeTempDir("paperclip-codex-old-");
     const skillsHome = await makeTempDir("paperclip-codex-home-");
@@ -161,7 +161,7 @@ describe("codex local adapter skill injection", () => {
     );
   });
 
-  it("preserves other live Paperclip skill symlinks in the shared workspace skill directory", async () => {
+  it("preserves other live GS Agentic Manager skill symlinks in the shared workspace skill directory", async () => {
     const currentRepo = await makeTempDir("paperclip-codex-current-");
     const skillsHome = await makeTempDir("paperclip-codex-home-");
     cleanupDirs.add(currentRepo);

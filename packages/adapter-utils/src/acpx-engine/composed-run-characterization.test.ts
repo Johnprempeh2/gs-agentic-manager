@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpRuntimeOptions } from "acpx/runtime";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@greatstone/adapter-utils";
 import {
   prepareAdapterExecutionTargetRuntime,
   startAdapterExecutionTargetPaperclipBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@greatstone/adapter-utils/execution-target";
 
 // This file is a characterization test. It pins the engine boundary's CURRENT
 // behavior; it never changes production code. Each test states the observed
@@ -35,8 +35,8 @@ import {
 // exercises them end-to-end against a local runner). This lets the staging
 // tests assert the exact `runtimeRootDir`/`workspaceLocalDir`/`assets` the
 // engine threads without changing any real behavior for the other tests.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@greatstone/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@greatstone/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),

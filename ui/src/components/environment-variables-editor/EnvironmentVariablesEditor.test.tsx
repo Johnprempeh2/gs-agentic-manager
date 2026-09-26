@@ -4,7 +4,7 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompanySecret, EnvBinding } from "@paperclipai/shared";
+import type { CompanySecret, EnvBinding } from "@greatstone/shared";
 import { EnvironmentVariablesEditor } from "./index";
 import { SecretPicker } from "./SecretPicker";
 
@@ -567,7 +567,7 @@ describe("EnvironmentVariablesEditor", () => {
   it("renders name warnings as a row spanning the name and value columns", () => {
     render(
       <EnvironmentVariablesEditor
-        value={{ PAPERCLIP_PAGE_BASE_URL: { type: "plain", value: "https://pages.paperclip.ing" } }}
+        value={{ GSAM_PAGE_BASE_URL: { type: "plain", value: "https://pages.paperclip.ing" } }}
         secrets={secrets}
         onChange={() => {}}
         onCreateSecret={async () => secrets[0]}

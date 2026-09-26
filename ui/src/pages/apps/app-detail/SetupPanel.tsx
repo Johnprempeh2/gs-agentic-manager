@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import type { ToolCatalogEntry, ToolConnection } from "@paperclipai/shared";
+import type { ToolCatalogEntry, ToolConnection } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -188,7 +188,7 @@ function GoogleSheetsAllowlistSection({
                   <span className="block truncate font-mono text-xs font-normal text-muted-foreground">
                     {sheetUrl}
                   </span>
-                  <span className="block truncate font-mono text-(length:--text-micro) font-normal text-muted-foreground/80">
+                  <span className="block truncate font-mono text-(length:--text-micro) font-normal text-subtle-foreground">
                     ID: {id}
                   </span>
                 </a>

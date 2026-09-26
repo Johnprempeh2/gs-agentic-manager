@@ -1,4 +1,4 @@
-import { normalizeAgentUrlKey } from "@paperclipai/shared";
+import { normalizeAgentUrlKey } from "@greatstone/shared";
 import { readBuiltInAgentMarker } from "./built-in-agent-metadata.js";
 
 interface ExportAgentCandidate {

@@ -27,7 +27,7 @@ import {
 import type {
   IssueQueuedCommentEntry,
   IssueQueuedCommentQueue,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -132,7 +132,7 @@ function SortableQueuedMessage({
         {...sortable.listeners}
         disabled={queueMutationDisabled || immutableResponse}
         aria-label={`Reorder queued message: ${entry.comment.body}`}
-        className="flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground active:cursor-grabbing disabled:cursor-default disabled:opacity-40"
+        className="flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-md text-subtle-foreground transition-colors hover:bg-accent hover:text-foreground active:cursor-grabbing disabled:cursor-default disabled:opacity-40"
       >
         <GripVertical className="h-3.5 w-3.5" aria-hidden />
       </button>

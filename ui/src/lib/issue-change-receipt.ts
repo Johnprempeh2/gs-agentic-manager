@@ -1,4 +1,4 @@
-import type { IssueChangeReceiptEntry } from "@paperclipai/shared";
+import type { IssueChangeReceiptEntry } from "@greatstone/shared";
 import { formatReviewPolicyValue } from "./review-policy";
 
 /**

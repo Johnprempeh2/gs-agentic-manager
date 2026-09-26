@@ -41,12 +41,12 @@ import type { Routine, RoutineTrigger, RoutineVariable } from "./routine.js";
  * A JSON Schema object used for plugin config schemas and tool parameter schemas.
  * Plugins provide these as plain JSON Schema compatible objects.
  *
- * The Paperclip extension keywords below are recognised by the Paperclip UI
+ * The GS Agentic Manager extension keywords below are recognised by the GS Agentic Manager UI
  * but are otherwise ignored by standard JSON Schema validators.
  */
 export type JsonSchema = {
   /**
-   * When true, the Paperclip config UI hides this property behind an
+   * When true, the GS Agentic Manager config UI hides this property behind an
    * "Advanced options" disclosure. Defaults to false (always visible).
    */
   "x-paperclip-advanced"?: boolean;
@@ -234,7 +234,7 @@ export interface PluginEnvironmentDriverDeclaration {
   /** Kind of template reference returned by the provider's capture hook. */
   templateRefKind?: "snapshot" | "image" | "provider_template" | "unknown" | (string & {});
   /**
-   * How Paperclip should apply a captured template ref back into this provider's
+   * How GS Agentic Manager should apply a captured template ref back into this provider's
    * runtime config. Omit to use the standard key for `templateRefKind`.
    */
   templateConfigBinding?: PluginEnvironmentTemplateConfigBinding;
@@ -268,7 +268,7 @@ export interface PluginEnvironmentDriverDeclaration {
 }
 
 /**
- * Declares a normal Paperclip agent that a plugin can provision and later
+ * Declares a normal GS Agentic Manager agent that a plugin can provision and later
  * resolve by stable key within each company.
  */
 export interface PluginManagedAgentDeclaration {
@@ -294,7 +294,7 @@ export interface PluginManagedAgentDeclaration {
   adapterPreference?: Array<AgentAdapterType | string>;
   /** Suggested adapter configuration. */
   adapterConfig?: Record<string, unknown>;
-  /** Suggested Paperclip runtime configuration. */
+  /** Suggested GS Agentic Manager runtime configuration. */
   runtimeConfig?: Record<string, unknown>;
   /** Suggested permissions object. Normalized by the host on create/reset. */
   permissions?: Record<string, unknown>;
@@ -333,7 +333,7 @@ export interface PluginLocalFolderDeclaration {
 }
 
 /**
- * Declares a normal Paperclip project that a plugin can provision and later
+ * Declares a normal GS Agentic Manager project that a plugin can provision and later
  * resolve by stable key within each company.
  */
 export interface PluginManagedProjectDeclaration {
@@ -571,7 +571,7 @@ export interface PluginLauncherDeclaration {
 }
 
 /**
- * Lower-bound semver requirement for the Paperclip host.
+ * Lower-bound semver requirement for the GS Agentic Manager host.
  *
  * The host should reject installation when its running version is lower than
  * the declared minimum.

@@ -9,7 +9,7 @@ import {
 import type {
   PaperclipQuestionResponse,
   PaperclipQuestionSet,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import type { MentionOption } from "@/components/MarkdownEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

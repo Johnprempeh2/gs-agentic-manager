@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { AskUserQuestionsInteraction } from "@paperclipai/shared";
+import type { AskUserQuestionsInteraction } from "@greatstone/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildChatQuestionFormModal,
@@ -280,9 +280,9 @@ describe("Slack native multi-question modal adapter-to-runtime boundary", () => 
           user: {
             id: params.get("user"),
             name: "paperclip-agent",
-            real_name: "Paperclip Agent",
+            real_name: "GS Agentic Manager Agent",
             is_bot: true,
-            profile: { display_name: "Paperclip Agent" },
+            profile: { display_name: "GS Agentic Manager Agent" },
           },
         };
       } else if (method === "views.open") {
@@ -386,7 +386,7 @@ describe("Slack native multi-question modal adapter-to-runtime boundary", () => 
     };
   }
 
-  it("round-trips the actual Paperclip modal, opaque metadata and Slack state into canonical answers", async () => {
+  it("round-trips the actual GS Agentic Manager modal, opaque metadata and Slack state into canonical answers", async () => {
     const test = await harness();
     const view = await test.open();
     expect(view.callback_id).toBe(test.form.draft.submitActionId);

@@ -1,4 +1,4 @@
-import type { IssueComment } from "@paperclipai/shared";
+import type { IssueComment } from "@greatstone/shared";
 import {
   decideQueuedCommentActorOwnsEntry,
   decideQueuedCommentReorder,

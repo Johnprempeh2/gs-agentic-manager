@@ -40,7 +40,7 @@ type OnboardServiceDashboardDependencies = {
   warn: (message: string) => void;
 };
 
-function envDisablesBrowser(value = process.env.PAPERCLIP_NO_BROWSER): boolean {
+function envDisablesBrowser(value = process.env.GSAM_NO_BROWSER): boolean {
   const normalized = value?.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
@@ -96,12 +96,12 @@ export async function handoffToOnboardedService(
   const deps = { ...defaultDashboardDependencies, ...dependencies };
   const runtime = await deps.waitUntilReady();
   const dashboardUrl = resolveOnboardServiceDashboardUrl(config, runtime);
-  deps.info(`Paperclip dashboard: ${pc.cyan(dashboardUrl)}`);
+  deps.info(`GS Agentic Manager dashboard: ${pc.cyan(dashboardUrl)}`);
 
   if (!runtime) {
     deps.warn(
       `The background service started, but the dashboard is not ready yet. ` +
-        `Open ${dashboardUrl} after checking \`paperclipai service logs\`.`,
+        `Open ${dashboardUrl} after checking \`gsam service logs\`.`,
     );
     return;
   }
@@ -109,7 +109,7 @@ export async function handoffToOnboardedService(
   if (!deps.isInteractive() || envDisablesBrowser()) return;
 
   if (await deps.openDashboard(dashboardUrl)) {
-    deps.success("Sent the Paperclip dashboard to your browser.");
+    deps.success("Sent the GS Agentic Manager dashboard to your browser.");
   } else {
     deps.warn(`Could not open a browser automatically. Open ${dashboardUrl} manually.`);
   }
@@ -148,7 +148,7 @@ const defaultDependencies: OnboardServiceDependencies = {
       return {
         ok: false,
         installedNow: false,
-        reason: `no executable exists at ${shimPath} (PAPERCLIP_SHIM_PATH), and it is outside the managed install store`,
+        reason: `no executable exists at ${shimPath} (GSAM_SHIM_PATH), and it is outside the managed install store`,
       };
     }
     let manifest: InstallManifest | null = null;
@@ -170,7 +170,7 @@ const defaultDependencies: OnboardServiceDependencies = {
           installedNow: false,
           reason:
             `this build reports version ${packageVersion}, which is not an installable release; ` +
-            "run `paperclipai install` (or `paperclipai install --repo <repo> --ref <ref>` for source builds) first",
+            "run `gsam install` (or `gsam install --repo <repo> --ref <ref>` for source builds) first",
         };
       }
     } catch (error) {
@@ -191,14 +191,14 @@ const defaultDependencies: OnboardServiceDependencies = {
   },
   confirm: async () => {
     const answer = await p.confirm({
-      message: "Install Paperclip as a background service?",
+      message: "Install GS Agentic Manager as a background service?",
       initialValue: true,
     });
     return !p.isCancel(answer) && answer === true;
   },
   confirmLinger: async () => {
     const answer = await p.confirm({
-      message: "Allow Paperclip to keep running after logout? This may request system authorization.",
+      message: "Allow GS Agentic Manager to keep running after logout? This may request system authorization.",
       initialValue: false,
     });
     return !p.isCancel(answer) && answer === true;
@@ -220,7 +220,7 @@ export async function handleOnboardService(
   const canPrompt = options.yes !== true && deps.isInteractive();
   if (!explicitlyRequested && !canPrompt) {
     deps.info(
-      "Background service not installed. Use `paperclipai onboard --install-service` or `paperclipai service install` to opt in.",
+      "Background service not installed. Use `gsam onboard --install-service` or `gsam service install` to opt in.",
     );
     return false;
   }
@@ -242,12 +242,12 @@ export async function handleOnboardService(
   if (!shim.ok) {
     deps.warn(
       `Background service not installed: ${shim.reason ?? "the managed install could not be completed"}. ` +
-        "Run `paperclipai install`, then `paperclipai service install`.",
+        "Run `gsam install`, then `gsam service install`.",
     );
     return false;
   }
   if (shim.installedNow) {
-    deps.success("Installed the managed paperclipai payload and command shim for the service.");
+    deps.success("Installed the managed gsam payload and command shim for the service.");
   }
 
   await detection.manager.install({ startNow: true, startOnLogin: true });

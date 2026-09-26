@@ -1,6 +1,6 @@
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
-import { applyOnboardingSeedSchema } from "@paperclipai/shared";
+import type { Db } from "@greatstone/db";
+import { applyOnboardingSeedSchema } from "@greatstone/shared";
 import { validate } from "../middleware/index.js";
 import { onboardingSeedService } from "../services/onboarding-seed.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";

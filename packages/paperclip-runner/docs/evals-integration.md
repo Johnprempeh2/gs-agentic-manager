@@ -1,10 +1,10 @@
-# Paperclip Evals Integration Contract
+# GS Agentic Manager Evals Integration Contract
 
 ## Stable consumer inputs
 
-Paperclip Evals consumes two explicit App artifacts:
+GS Agentic Manager Evals consumes two explicit App artifacts:
 
-1. a packed/released `@paperclipai/paperclip-runner` package; and
+1. a packed/released `@greatstone/paperclip-runner` package; and
 2. an explicit `paperclip-runnerd` executable path plus its
    `sha256:<lowercase hex>` digest.
 
@@ -88,10 +88,10 @@ and incompatible negotiation. It never qualifies a debug binary.
 Run it with:
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner check:clean-consumers
+pnpm --filter @greatstone/paperclip-runner check:clean-consumers
 ```
 
-Set `PAPERCLIP_CLEAN_CONSUMER_OUTPUT_DIR` to retain the qualifying inputs and
+Set `GSAM_CLEAN_CONSUMER_OUTPUT_DIR` to retain the qualifying inputs and
 machine-readable proof outside the temporary consumer. The output contains the
 package tarball, platform-named release runnerd, `SHA256SUMS`, and
 `paperclip-runner-consumer-conformance.json`. That record is produced by the clean
@@ -99,6 +99,6 @@ consumer after it imports only the packed package, resolves the explicit binary
 and digest, and completes deterministic conformance without provider calls.
 
 ```sh
-PAPERCLIP_CLEAN_CONSUMER_OUTPUT_DIR=/absolute/release/directory \
-  pnpm --filter @paperclipai/paperclip-runner check:clean-consumers
+GSAM_CLEAN_CONSUMER_OUTPUT_DIR=/absolute/release/directory \
+  pnpm --filter @greatstone/paperclip-runner check:clean-consumers
 ```

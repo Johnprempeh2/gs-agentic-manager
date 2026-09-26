@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type {
   FeedbackDataSharingPreference,
   FeedbackVoteValue,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { cn, formatShortDate } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { useCopyAction, useCopyToast } from "../lib/use-copy-action";

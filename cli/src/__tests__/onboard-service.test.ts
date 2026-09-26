@@ -129,7 +129,7 @@ describe("onboard service policy", () => {
 
     expect(installed).toBe(true);
     expect(ensureServiceShim).toHaveBeenCalledOnce();
-    expect(success).toHaveBeenCalledWith(expect.stringContaining("managed paperclipai payload"));
+    expect(success).toHaveBeenCalledWith(expect.stringContaining("managed gsam payload"));
     expect(detection.manager.install).toHaveBeenCalledWith({ startNow: true, startOnLogin: true });
   });
 
@@ -150,7 +150,7 @@ describe("onboard service policy", () => {
     expect(installed).toBe(false);
     expect(detection.manager.install).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("npm exploded"));
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("paperclipai install"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("gsam install"));
   });
 
 });
@@ -243,7 +243,7 @@ describe("onboarded service dashboard handoff", () => {
     });
 
     expect(openDashboard).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("paperclipai service logs"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("gsam service logs"));
   });
 });
 

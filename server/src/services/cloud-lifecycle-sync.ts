@@ -55,7 +55,7 @@ export async function notifyCloudOfPrimaryCompanyLifecycleChange(
   const env = options.env ?? process.env;
   if (!isCloudPinnedPrimaryCompany(companyId, env)) return;
   const context = getCloudStackContext(env);
-  const token = env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN?.trim();
+  const token = env.GSAM_CLOUD_TENANT_SERVER_TOKEN?.trim();
   if (!context?.stackId || !context.cloudOrigin || !token) return;
 
   const fetchImpl = options.fetchImpl ?? fetch;

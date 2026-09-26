@@ -7,7 +7,7 @@ import {
 } from "../../components/agent-config-primitives";
 
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground";
 
 function formatArgList(value: unknown): string {
   if (Array.isArray(value)) {

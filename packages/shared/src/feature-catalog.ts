@@ -14,7 +14,7 @@ import { instanceExperimentalSettingsSchema } from "./validators/instance.js";
  * - `preference`: tenant-controllable taste setting; the cloud harness does
  *   not manage it.
  * - `managed`: the cloud harness may set this per fleet/stack via
- *   `PAPERCLIP_MANAGED_CONFIG`.
+ *   `GSAM_MANAGED_CONFIG`.
  * - `floor`: pinned by code on managed instances; no flag value may widen it.
  */
 export const FEATURE_TIERS = ["preference", "managed", "floor"] as const;
@@ -51,13 +51,13 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableNativeRunner: {
-    title: "Paperclip Runner",
+    title: "GS Agentic Manager Runner",
     description:
-      "Allow explicitly configured local Codex, OpenCode, and qualified ACPX agents to use the experimental Rust Paperclip Runner, including authenticated sandbox ingress when required. Onboarding remains on legacy adapters.",
+      "Allow explicitly configured local Codex, OpenCode, and qualified ACPX agents to use the experimental Rust GS Agentic Manager Runner, including authenticated sandbox ingress when required. Onboarding remains on legacy adapters.",
     tier: "managed",
     cloudDefault: false,
     // On by default for self-hosted instances. Requires a Rust toolchain (or
-    // PAPERCLIP_RUNNER_BINARY) for `pnpm dev`, which builds runnerd whenever
+    // GSAM_RUNNER_BINARY) for `pnpm dev`, which builds runnerd whenever
     // this is on.
     selfHostedDefault: true,
   },
@@ -210,14 +210,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableBuiltInAgents: {
     title: "Built-in Agents",
     description:
-      "Show Paperclip-managed built-in agent surfaces, including roster badges, the Built-in agents tab, and setup controls.",
+      "Show GS Agentic Manager-managed built-in agent surfaces, including roster badges, the Built-in agents tab, and setup controls.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
   },
   enableBetaSkills: {
     title: "Beta skills",
-    description: "Allow agents to pin beta releases of the Paperclip core skill.",
+    description: "Allow agents to pin beta releases of the GS Agentic Manager core skill.",
     tier: "preference",
     cloudDefault: false,
     selfHostedDefault: false,
@@ -262,9 +262,9 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enablePaperclipDeveloperMode: {
-    title: "Paperclip Developer Mode",
+    title: "GS Agentic Manager Developer Mode",
     description:
-      "Show internal Paperclip maintainer tools and observability links, including Honeycomb trace queries on run pages.",
+      "Show internal GS Agentic Manager maintainer tools and observability links, including Honeycomb trace queries on run pages.",
     tier: "preference",
     cloudDefault: false,
     selfHostedDefault: false,
@@ -312,7 +312,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableRunnerPreviewIngress: {
     title: "Runner Preview Ingress (Deprecated)",
     description:
-      "Compatibility-only key retained for older managed configs. Runner ingress follows the Paperclip Runner setting.",
+      "Compatibility-only key retained for older managed configs. Runner ingress follows the GS Agentic Manager Runner setting.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,

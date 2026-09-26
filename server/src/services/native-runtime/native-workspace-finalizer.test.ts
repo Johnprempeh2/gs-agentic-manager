@@ -16,7 +16,7 @@ import {
   nativeRunResults,
   projects,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import { resumeNativeWorkspaceFinalization } from "./native-workspace-finalizer.js";
 

@@ -10,7 +10,7 @@ bash scripts/paperclip-upload-artifact.sh path/to/output.webm \
   --summary "Rendered walkthrough for review"
 ```
 
-The helper uses `PAPERCLIP_API_URL`, `PAPERCLIP_API_KEY`, `PAPERCLIP_COMPANY_ID`, `PAPERCLIP_TASK_ID`, and `PAPERCLIP_RUN_ID`. It uploads the file as an issue attachment, creates an attachment-backed artifact work product by default, and prints issue-safe markdown links for your final comment.
+The helper uses `GSAM_API_URL`, `GSAM_API_KEY`, `GSAM_COMPANY_ID`, `GSAM_TASK_ID`, and `GSAM_RUN_ID`. It uploads the file as an issue attachment, creates an attachment-backed artifact work product by default, and prints issue-safe markdown links for your final comment.
 
 ## Workspace-Only File References
 
@@ -53,20 +53,20 @@ Create the work product with:
 
 ```bash
 curl -sS -X POST \
-  "$PAPERCLIP_API_URL/api/issues/$PAPERCLIP_TASK_ID/work-products" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" \
+  "$GSAM_API_URL/api/issues/$GSAM_TASK_ID/work-products" \
+  -H "Authorization: Bearer $GSAM_API_KEY" \
+  -H "X-Paperclip-Run-Id: $GSAM_RUN_ID" \
   -H "Content-Type: application/json" \
   --data-binary @workspace-file-work-product.json
 ```
 
-If the helper is unavailable, use the Paperclip API directly:
+If the helper is unavailable, use the GS Agentic Manager API directly:
 
 ```bash
 curl -sS -X POST \
-  "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/issues/$PAPERCLIP_TASK_ID/attachments" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" \
+  "$GSAM_API_URL/api/companies/$GSAM_COMPANY_ID/issues/$GSAM_TASK_ID/attachments" \
+  -H "Authorization: Bearer $GSAM_API_KEY" \
+  -H "X-Paperclip-Run-Id: $GSAM_RUN_ID" \
   -F 'file=@"path/to/output.webm";type=video/webm'
 ```
 
@@ -74,9 +74,9 @@ Then create a work product when the file is the deliverable. The server canonica
 
 ```bash
 curl -sS -X POST \
-  "$PAPERCLIP_API_URL/api/issues/$PAPERCLIP_TASK_ID/work-products" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" \
+  "$GSAM_API_URL/api/issues/$GSAM_TASK_ID/work-products" \
+  -H "Authorization: Bearer $GSAM_API_KEY" \
+  -H "X-Paperclip-Run-Id: $GSAM_RUN_ID" \
   -H "Content-Type: application/json" \
   --data-binary '{
     "type": "artifact",
@@ -117,29 +117,29 @@ copy. A retry from a different host is still subject to server-side attachment
 admission and should not be run concurrently.
 
 If the upload connection ends without an HTTP response, the helper records that
-ambiguous outcome locally. The same command polls briefly for Paperclip's
+ambiguous outcome locally. The same command polls briefly for GS Agentic Manager's
 immutable attachment record and otherwise stops instead of blindly creating a
 duplicate. Retry later. Use `--retry-unknown-upload` only after establishing
 that the first upload did not commit; this explicit override accepts the risk of
 creating a duplicate file.
 
-The binding is durable Paperclip state, but it is not proof of external
+The binding is durable GS Agentic Manager state, but it is not proof of external
 delivery—or even proof that the current run has an active external-chat origin.
-For an authorized active chat-origin run, Paperclip keeps this selection
+For an authorized active chat-origin run, GS Agentic Manager keeps this selection
 internal until it selects the run's final response, then attempts the provider
 publication. The final assistant response may use different prose from
 `--chat-comment`.
 
-Treat the helper's exit status as confirmation that the Paperclip attachment,
+Treat the helper's exit status as confirmation that the GS Agentic Manager attachment,
 work product, and requested comment binding were saved. Use neutral final prose
 such as “I prepared the requested image.” Do not claim the file is shown above,
 attached, queued, or delivered. If the bind step fails after upload, say that
-the artifact was saved to the Paperclip task but was **not** bound to the
+the artifact was saved to the GS Agentic Manager task but was **not** bound to the
 response comment; never also claim that it appears above or is attached.
 
 Do not infer sharing intent from other files on the task or bind every
 attachment from a run. Only the file passed with `--chat-comment` is eligible
-for external publication; unbound artifacts remain Paperclip-only.
+for external publication; unbound artifacts remain GS Agentic Manager-only.
 
 **Native runner**
 
@@ -152,7 +152,7 @@ binds it to the response. Generic API tools and a legacy API key are unnecessary
 Wait for the receipt. It includes `attachmentId`, `contentPath`, and
 `downloadPath`, along with the existing command, revision, entity references,
 and disposition. Reuse the original key after an ambiguous result. A receipt
-confirms storage and response binding in Paperclip; it does not confirm delivery
+confirms storage and response binding in GS Agentic Manager; it does not confirm delivery
 to an external chat provider. If registration fails, use the returned error to
 resolve the failure or explain the limitation; do not describe a workspace path
 as an uploaded file.

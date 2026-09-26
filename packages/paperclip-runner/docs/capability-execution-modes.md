@@ -9,11 +9,11 @@ another.
 
 | Actor | What it is in Capability | What it is **not** |
 | --- | --- | --- |
-| **Real Codex** | A real Codex app-server session driving the turn loop. The agent has no Paperclip skill; it sees only the semantic tools the scenario exposes. | Not a scripted stand-in, and not a Paperclip-aware agent. |
-| **Real runnerd** | The real package-local `paperclip-runnerd` binary. It owns the Codex child process group and proxies newline-delimited JSON-RPC over stdio. | Not an in-process fake and not the production Paperclip runtime. |
-| **Mock Paperclip** | The deterministic in-process `ControlPlanePort` adapter. It holds every issue, comment, document, interaction, approval, and audit record as mock state. | Not the Paperclip control plane, database, or API. No request leaves the process for a Paperclip service. |
+| **Real Codex** | A real Codex app-server session driving the turn loop. The agent has no GS Agentic Manager skill; it sees only the semantic tools the scenario exposes. | Not a scripted stand-in, and not a GS Agentic Manager-aware agent. |
+| **Real runnerd** | The real package-local `paperclip-runnerd` binary. It owns the Codex child process group and proxies newline-delimited JSON-RPC over stdio. | Not an in-process fake and not the production GS Agentic Manager runtime. |
+| **Mock GS Agentic Manager** | The deterministic in-process `ControlPlanePort` adapter. It holds every issue, comment, document, interaction, approval, and audit record as mock state. | Not the GS Agentic Manager control plane, database, or API. No request leaves the process for a GS Agentic Manager service. |
 
-The live surface renders a `Real Codex`, `Real runnerd`, and `Mock Paperclip`
+The live surface renders a `Real Codex`, `Real runnerd`, and `Mock GS Agentic Manager`
 marker at all times. Mock records carry an `MCK-` identifier prefix so a mock
 issue is never confused with a real `PAP-` issue.
 

@@ -3,17 +3,17 @@ import type {
   AgentInstructionsBundle,
   AgentSkillSnapshot,
   CompanySkillListItem,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import {
   storybookHiredAgent,
   storybookAgents,
   storybookIssues,
   storybookSecrets,
 } from "../../fixtures/paperclipData";
-import { models as claudeModels } from "@paperclipai/adapter-claude-local";
-import { models as openCodeModels } from "@paperclipai/adapter-opencode-local";
+import { models as claudeModels } from "@greatstone/adapter-claude-local";
+import { models as openCodeModels } from "@greatstone/adapter-opencode-local";
 import { storybookEnvironments } from "../../fixtures/onboardingEnvironment";
-import { models as codexModels } from "@paperclipai/adapter-codex-local";
+import { models as codexModels } from "@greatstone/adapter-codex-local";
 import { runtimeTestResult, type TestOutcome } from "../new-agent-fixtures";
 export const COMPANY = "company-storybook";
 export const ID = "agent-settings-preview";
@@ -22,7 +22,7 @@ export const REF = "nova";
 export const library = [
   [
     "paperclip",
-    "Paperclip",
+    "GS Agentic Manager",
     "Coordinate tasks, report progress, and work with your team.",
   ],
   [
@@ -163,7 +163,7 @@ export function createSettingsFixtures(
       managed: true,
       state: "configured",
       origin: "company_managed",
-      originLabel: "Managed by Paperclip",
+      originLabel: "Managed by GS Agentic Manager",
       readOnly: false,
       sourcePath: `skills/${key}`,
       targetPath: null,
@@ -325,7 +325,7 @@ export function createSettingsFixtures(
               url.pathname.split("/").at(-2) ?? agent.adapterType,
               outcome,
               data.adapterConfig?.model ?? "",
-              "Paperclip Computer",
+              "GS Agentic Manager Computer",
             ),
           );
         }

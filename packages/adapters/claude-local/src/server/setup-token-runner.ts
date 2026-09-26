@@ -4,7 +4,7 @@ import {
   type LoginRunnerLifecycleOptions,
   type LoginRunnerOutcome,
   type LoginRunnerResult,
-} from "@paperclipai/adapter-utils";
+} from "@greatstone/adapter-utils";
 import {
   parseSetupTokenCredential,
   parseSetupTokenPrompt,

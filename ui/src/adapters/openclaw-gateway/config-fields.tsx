@@ -13,7 +13,7 @@ import {
 } from "../runtime-json-fields";
 
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground";
 
 function HeadersJsonTextarea({
   isCreate,
@@ -77,7 +77,7 @@ function SecretField({
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          className="absolute left-2 top-1/2 -translate-y-1/2 text-subtle-foreground hover:text-muted-foreground transition-colors"
         >
           {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
         </button>
@@ -309,7 +309,7 @@ export function OpenClawGatewayConfigFields({
         mark={mark}
       />
 
-      <Field label="Paperclip API URL override">
+      <Field label="GS Agentic Manager API URL override">
         <DraftInput
           value={
             isCreate
@@ -450,7 +450,7 @@ export function OpenClawGatewayConfigFields({
 
       <Field label="Device auth">
         <div className="text-xs text-muted-foreground leading-relaxed">
-          When enabled, Paperclip persists a device key during onboarding so pairing approvals
+          When enabled, GS Agentic Manager persists a device key during onboarding so pairing approvals
           remain stable across runs.
         </div>
       </Field>

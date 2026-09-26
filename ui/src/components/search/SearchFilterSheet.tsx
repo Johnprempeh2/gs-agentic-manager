@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
-import { COMPANY_SEARCH_SORTS, type CompanySearchSort } from "@paperclipai/shared";
+import { COMPANY_SEARCH_SORTS, type CompanySearchSort } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -57,7 +57,7 @@ function ChipToggleGroup({
               ) : null}
               <span>{option.label}</span>
               {typeof option.count === "number" ? (
-                <span className={cn("tabular-nums", isActive ? "opacity-80" : "text-muted-foreground/70")}>
+                <span className={cn("tabular-nums", isActive ? "opacity-80" : "text-subtle-foreground")}>
                   {option.count}
                 </span>
               ) : null}

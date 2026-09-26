@@ -168,7 +168,7 @@ Roles:
 - `work`: an issue/run that changed the case
 - `reference`: related issue context
 
-Agent run writes auto-link the run's issue when Paperclip can resolve it from
+Agent run writes auto-link the run's issue when GS Agentic Manager can resolve it from
 the run JWT or `X-Paperclip-Run-Id`. Creation/upsert writes use `origin`; later
 document, patch, and attachment writes use `work` when no link already exists.
 You do not need to manually link the current issue before writing the case.
@@ -230,7 +230,7 @@ Content-Type: application/json
 {
   "caseType": "blog_post",
   "key": "paperclip-cases-launch",
-  "title": "Introducing Paperclip Cases",
+  "title": "Introducing GS Agentic Manager Cases",
   "summary": "Blog post explaining the cases surface for agent outputs.",
   "status": "in_progress",
   "fields": {
@@ -248,9 +248,9 @@ PUT /api/cases/PAP-C42/documents/body
 Content-Type: application/json
 
 {
-  "title": "Introducing Paperclip Cases",
+  "title": "Introducing GS Agentic Manager Cases",
   "format": "markdown",
-  "body": "# Introducing Paperclip Cases\n\n..."
+  "body": "# Introducing GS Agentic Manager Cases\n\n..."
 }
 ```
 
@@ -263,7 +263,7 @@ Content-Type: application/json
 {
   "caseType": "image_assets",
   "key": "paperclip-cases-launch:image-assets",
-  "title": "Image assets for Introducing Paperclip Cases",
+  "title": "Image assets for Introducing GS Agentic Manager Cases",
   "parentCaseId": "parent-case-uuid",
   "status": "in_progress",
   "fields": {

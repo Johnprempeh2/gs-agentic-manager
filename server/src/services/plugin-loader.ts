@@ -4,7 +4,7 @@
  * This service is the entry point for the plugin system's I/O boundary:
  *
  * 1. **Discovery** — Scans the local plugin directory
- *    (`~/.paperclip/plugins/`) and `node_modules` for packages matching
+ *    (`~/.gsam/plugins/`) and `node_modules` for packages matching
  *    the `paperclip-plugin-*` naming convention. Aggregates results with
  *    path-based deduplication.
  *
@@ -31,14 +31,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import type { Db } from "@paperclipai/db";
-import { PLUGIN_RPC_ERROR_CODES } from "@paperclipai/plugin-sdk";
+import type { Db } from "@greatstone/db";
+import { PLUGIN_RPC_ERROR_CODES } from "@greatstone/plugin-sdk";
 import type {
   PaperclipPluginManifestV1,
   PluginLauncherDeclaration,
   PluginRecord,
   PluginUiSlotDeclaration,
-} from "@paperclipai/shared";
+} from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { pluginManifestValidator } from "./plugin-manifest-validator.js";
 import { pluginCapabilityValidator } from "./plugin-capability-validator.js";
@@ -58,15 +58,15 @@ export const REPO_ROOT = path.resolve(__dirname, "../../..");
 export const BUNDLED_LOCAL_PLUGIN_ROOT = path.join(REPO_ROOT, "packages", "plugins");
 export const STANDALONE_BUNDLED_PLUGIN_ROOT = path.join(BUNDLED_LOCAL_PLUGIN_ROOT, "sandbox-providers");
 export const LOCAL_PLUGIN_AUTOBUILD_TIMEOUT_MS = 120_000;
-const STANDALONE_BUNDLED_PLUGIN_SDK_PACKAGE = "@paperclipai/plugin-sdk";
+const STANDALONE_BUNDLED_PLUGIN_SDK_PACKAGE = "@greatstone/plugin-sdk";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /**
- * Naming convention for npm-published Paperclip plugins.
- * Packages matching this pattern are considered Paperclip plugins.
+ * Naming convention for npm-published GS Agentic Manager plugins.
+ * Packages matching this pattern are considered GS Agentic Manager plugins.
  *
  * @see PLUGIN_SPEC.md §10 — Package Contract
  */
@@ -80,7 +80,7 @@ export const NPM_PLUGIN_PACKAGE_PREFIX = "paperclip-plugin-";
  */
 export const DEFAULT_LOCAL_PLUGIN_DIR = path.join(
   os.homedir(),
-  ".paperclip",
+  ".gsam",
   "plugins",
 );
 
@@ -88,7 +88,7 @@ const DEV_TSX_LOADER_PATH = path.resolve(__dirname, "../../../cli/node_modules/t
 
 /**
  * Model-provider API keys that sandbox-provider plugins (e.g.
- * `@paperclipai/plugin-kubernetes`) are allowed to read from the
+ * `@greatstone/plugin-kubernetes`) are allowed to read from the
  * server's process environment so they can inject them into per-run
  * pod Secrets. All other host env vars remain stripped from plugin
  * workers (see `PluginWorkerManager.spawnProcess`). The passthrough
@@ -106,7 +106,7 @@ const ADAPTER_ENV_PASSTHROUGH = [
 
 /**
  * In-cluster Kubernetes service-discovery vars. A sandbox-provider plugin that
- * runs in-cluster (e.g. `@paperclipai/plugin-kubernetes` with inCluster=true)
+ * runs in-cluster (e.g. `@greatstone/plugin-kubernetes` with inCluster=true)
  * builds its API client via `KubeConfig.loadFromCluster()`, which reads these
  * to construct the apiserver URL. Without them the worker fails with "Invalid
  * URL" at lease acquisition. The CA + token are files under
@@ -141,11 +141,11 @@ const SANDBOX_PROVIDER_CREDENTIAL_ENV_PASSTHROUGH: Record<
   string,
   { driverKey: string; envVars: readonly string[] }
 > = {
-  "@paperclipai/plugin-createos": { driverKey: "createos", envVars: ["CREATEOS_API_KEY"] },
-  "@paperclipai/plugin-daytona": { driverKey: "daytona", envVars: ["DAYTONA_API_KEY"] },
-  "@paperclipai/plugin-e2b": { driverKey: "e2b", envVars: ["E2B_API_KEY"] },
-  "@paperclipai/plugin-exe-dev": { driverKey: "exe-dev", envVars: ["EXE_API_KEY"] },
-  "@paperclipai/plugin-novita-sandbox": { driverKey: "novita", envVars: ["NOVITA_API_KEY"] },
+  "@greatstone/plugin-createos": { driverKey: "createos", envVars: ["CREATEOS_API_KEY"] },
+  "@greatstone/plugin-daytona": { driverKey: "daytona", envVars: ["DAYTONA_API_KEY"] },
+  "@greatstone/plugin-e2b": { driverKey: "e2b", envVars: ["E2B_API_KEY"] },
+  "@greatstone/plugin-exe-dev": { driverKey: "exe-dev", envVars: ["EXE_API_KEY"] },
+  "@greatstone/plugin-novita-sandbox": { driverKey: "novita", envVars: ["NOVITA_API_KEY"] },
 };
 
 export function buildPluginWorkerEnv(input: {
@@ -162,8 +162,8 @@ export function buildPluginWorkerEnv(input: {
 }): Record<string, string> {
   const processEnv = input.processEnv ?? process.env;
   const env: Record<string, string> = {
-    PAPERCLIP_DEPLOYMENT_MODE: input.instanceInfo.deploymentMode ?? "",
-    PAPERCLIP_DEPLOYMENT_EXPOSURE: input.instanceInfo.deploymentExposure ?? "",
+    GSAM_DEPLOYMENT_MODE: input.instanceInfo.deploymentMode ?? "",
+    GSAM_DEPLOYMENT_EXPOSURE: input.instanceInfo.deploymentExposure ?? "",
   };
   const canRegisterEnvironmentDrivers = Array.isArray(input.manifest.capabilities)
     && input.manifest.capabilities.includes("environment.drivers.register");
@@ -219,7 +219,7 @@ export interface DiscoveredPlugin {
  * @see PLUGIN_SPEC.md §8.1 — On-Disk Layout
  */
 export type PluginSource =
-  | "local-filesystem"  // ~/.paperclip/plugins/ local directory
+  | "local-filesystem"  // ~/.gsam/plugins/ local directory
   | "npm"               // npm packages matching paperclip-plugin-* convention
   | "registry";         // future: remote plugin registry URL
 
@@ -281,7 +281,7 @@ export interface PluginLoaderOptions {
   }) => void;
   /**
    * Path to the local plugin directory to scan.
-   * Defaults to ~/.paperclip/plugins/
+   * Defaults to ~/.gsam/plugins/
    */
   localPluginDir?: string;
 
@@ -493,7 +493,7 @@ export interface PluginLoader {
   discoverFromLocalFilesystem(dir?: string): Promise<PluginDiscoveryResult>;
 
   /**
-   * Discover Paperclip plugins installed as npm packages in the current
+   * Discover GS Agentic Manager plugins installed as npm packages in the current
    * Node.js environment matching the "paperclip-plugin-*" naming convention.
    *
    * Looks for packages in node_modules that match the naming convention.
@@ -509,8 +509,8 @@ export interface PluginLoader {
    * the "paperclipPlugin.manifest" key, loads the manifest module, and
    * validates it against the plugin manifest schema.
    *
-   * Returns null if the package is not a Paperclip plugin.
-   * Throws if the package is a Paperclip plugin but the manifest is invalid.
+   * Returns null if the package is not a GS Agentic Manager plugin.
+   * Throws if the package is a GS Agentic Manager plugin but the manifest is invalid.
    *
    * @see PLUGIN_SPEC.md §10 — Package Contract
    */
@@ -657,14 +657,14 @@ export interface PluginLoader {
 // ---------------------------------------------------------------------------
 
 /**
- * Check whether a package name matches the Paperclip plugin naming convention.
+ * Check whether a package name matches the GS Agentic Manager plugin naming convention.
  * Accepts both the "paperclip-plugin-" prefix and scoped "@scope/plugin-" packages.
  *
  * @see PLUGIN_SPEC.md §10 — Package Contract
  */
 export function isPluginPackageName(name: string): boolean {
   if (name.startsWith(NPM_PLUGIN_PACKAGE_PREFIX)) return true;
-  // Also accept scoped packages like @acme/plugin-linear or @paperclipai/plugin-*
+  // Also accept scoped packages like @acme/plugin-linear or @greatstone/plugin-*
   if (name.includes("/")) {
     const localPart = name.split("/")[1] ?? "";
     return localPart.startsWith("plugin-");
@@ -793,8 +793,8 @@ function formatLocalPluginManualBuildHint(
   const manualBuildCommand = buildLocalPluginRecoveryCommand(packageRoot, pkgJson, { repoRoot: options.repoRoot });
   if (!manualBuildCommand) return "";
 
-  const autoBuildDisabled = (options.processEnv ?? process.env)["PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD"] === "1"
-    ? " Auto-build is disabled by PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD=1."
+  const autoBuildDisabled = (options.processEnv ?? process.env)["GSAM_DISABLE_PLUGIN_AUTOBUILD"] === "1"
+    ? " Auto-build is disabled by GSAM_DISABLE_PLUGIN_AUTOBUILD=1."
     : "";
 
   return `${autoBuildDisabled} Run \`${manualBuildCommand}\` from the repo root and retry.`;
@@ -888,7 +888,7 @@ export async function ensureLocalPluginBuilt(
   } = {},
 ): Promise<void> {
   const processEnv = options.processEnv ?? process.env;
-  if (processEnv["PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD"] === "1") return;
+  if (processEnv["GSAM_DISABLE_PLUGIN_AUTOBUILD"] === "1") return;
   if (!isRepoBundledPluginPath(packageRoot, { repoRoot: options.repoRoot })) return;
 
   const missingEntrypoints = listMissingDeclaredPluginEntrypoints(packageRoot, pkgJson);
@@ -1294,7 +1294,7 @@ export function pluginLoader(
         ? formatLocalPluginManualBuildHint(resolvedPackagePath, pkgJson)
         : "";
       throw new Error(
-        `Package ${resolvedPackageName} at ${resolvedPackagePath} does not appear to be a Paperclip plugin (no manifest found).${manualBuildHint}`,
+        `Package ${resolvedPackageName} at ${resolvedPackagePath} does not appear to be a GS Agentic Manager plugin (no manifest found).${manualBuildHint}`,
       );
     }
 
@@ -1387,7 +1387,7 @@ export function pluginLoader(
   ): Promise<PluginRecord> {
     const manifest = await loadManifestFromPackageRoot(packageRoot);
     if (!manifest) {
-      throw new Error(`Plugin package ${plugin.packageName} no longer exposes a Paperclip manifest`);
+      throw new Error(`Plugin package ${plugin.packageName} no longer exposes a GS Agentic Manager manifest`);
     }
     if (manifest.id !== plugin.pluginKey) {
       throw new Error(
@@ -1417,7 +1417,7 @@ export function pluginLoader(
 
   /**
    * Build a DiscoveredPlugin from a resolved package directory, or null
-   * if the package is not a Paperclip plugin.
+   * if the package is not a GS Agentic Manager plugin.
    */
   async function buildDiscoveredPlugin(
     packagePath: string,
@@ -2348,7 +2348,7 @@ export function pluginLoader(
       };
 
       // Repo-local plugin installs can resolve workspace TS sources at runtime
-      // (for example @paperclipai/shared exports). Run those workers through
+      // (for example @greatstone/shared exports). Run those workers through
       // the tsx loader so first-party example plugins work in development.
       if (activePlugin.packagePath && existsSync(DEV_TSX_LOADER_PATH)) {
         workerOptions.execArgv = ["--import", DEV_TSX_LOADER_PATH];

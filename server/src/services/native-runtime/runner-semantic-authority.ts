@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@greatstone/db";
 import {
   agents,
   documentRevisions,
@@ -9,7 +9,7 @@ import {
   issueComments,
   issueDocuments,
   issues,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   PaperclipSemanticDispatcher,
   type PaperclipJsonValue,

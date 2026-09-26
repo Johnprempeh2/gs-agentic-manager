@@ -14,7 +14,7 @@ import {
   projectWorkspaces,
   projects,
   summarySlots,
-} from "@paperclipai/db";
+} from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -67,7 +67,7 @@ describeEmbeddedPostgres("summary slot service", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "GS Agentic Manager",
       issuePrefix: issuePrefix(companyId),
       defaultResponsibleUserId: "responsible-user",
     });
@@ -76,7 +76,7 @@ describeEmbeddedPostgres("summary slot service", () => {
 
   async function seedProject(companyId: string) {
     const projectId = randomUUID();
-    await db.insert(projects).values({ id: projectId, companyId, name: "Paperclip App" });
+    await db.insert(projects).values({ id: projectId, companyId, name: "GS Agentic Manager App" });
     return projectId;
   }
 

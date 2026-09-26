@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Download, Maximize2, Minus, Network, Plus, Upload } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
+import { AGENT_ROLE_LABELS, type Agent } from "@greatstone/shared";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 
@@ -614,12 +614,12 @@ export function OrgChart() {
                       {agent?.title ?? roleLabel(node.role)}
                     </span>
                     {agent && (
-                      <span className="text-(length:--text-nano) text-muted-foreground/60 font-mono leading-tight mt-1">
+                      <span className="text-(length:--text-nano) text-subtle-foreground font-mono leading-tight mt-1">
                         {getAdapterLabel(agent.adapterType)}
                       </span>
                     )}
                     {agent && agent.capabilities && (
-                      <span className="text-(length:--text-nano) text-muted-foreground/80 leading-tight mt-1 line-clamp-2">
+                      <span className="text-(length:--text-nano) text-subtle-foreground leading-tight mt-1 line-clamp-2">
                         {agent.capabilities}
                       </span>
                     )}
