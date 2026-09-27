@@ -60,7 +60,10 @@ cmd_start() {
   git -C "$PREVIEW_CODE_DIR" checkout --quiet --force --detach "$commit"
   say "Code: $PREVIEW_CODE_DIR at $(git -C "$PREVIEW_CODE_DIR" rev-parse --short HEAD)"
   say "Installing dependencies..."
-  (cd "$PREVIEW_CODE_DIR" && pnpm install --frozen-lockfile --prefer-offline --reporter=silent)
+  # Non-interactive: agent runs get a new pnpm store each time, and pnpm then
+  # asks (hidden by --reporter=silent) to purge node_modules and waits forever.
+  (cd "$PREVIEW_CODE_DIR" && pnpm install --frozen-lockfile --prefer-offline \
+    --config.confirm-modules-purge=false --reporter=silent </dev/null)
 
   # Data: a fresh copy every start. Files are copied read-only from live; the
   # database comes from a read-only backup of the running live database.

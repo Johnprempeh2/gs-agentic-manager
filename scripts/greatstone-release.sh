@@ -64,7 +64,10 @@ STARTED_BEFORE="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
 git -C "$LIVE_DIR" fetch --quiet --tags origin
 git -C "$LIVE_DIR" checkout --quiet --detach "$LIVE_TAG"
 say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD))"
-(cd "$LIVE_DIR" && pnpm install --frozen-lockfile --prefer-offline --reporter=silent)
+# Non-interactive so a pnpm store change cannot hang on a hidden prompt. Such a
+# change purges node_modules under the running server; see the runbook.
+(cd "$LIVE_DIR" && pnpm install --frozen-lockfile --prefer-offline \
+  --config.confirm-modules-purge=false --reporter=silent </dev/null)
 
 # The live server runs under dev-runner's "restart required" supervisor. It
 # notices the changed files within a few seconds, then restarts on request.

@@ -151,6 +151,12 @@ This moves live back to that tag the same way (backup first, then restart). It
 does not undo database migrations. If the older code cannot run on the newer
 database, restore the backup the release printed; ask Keystone for the steps.
 
+Run the release from your own terminal, not from an agent run. Both scripts
+run `pnpm install` without questions. If the pnpm store is not the one live was
+installed with (agent runs each get their own store), pnpm deletes and
+reinstalls `node_modules` under the running live server. Your terminal always
+uses the same store, so this does not happen there.
+
 ### What the preview does and does not do
 
 - **Code:** its own clone in `~/GSAM/preview/code`, fetched from the local
