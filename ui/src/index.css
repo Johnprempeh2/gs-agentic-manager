@@ -3148,6 +3148,8 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --announcement-image-height: 8.5rem;
   --announcement-image-mobile-height: 6rem;
   --announcement-mobile-bottom: calc(var(--spacing) * 19 + env(safe-area-inset-bottom, 0px));
+  /* Toasts clear the mobile bottom nav the same way announcements do. */
+  --toast-mobile-bottom: calc(var(--spacing) * 19 + env(safe-area-inset-bottom, 0px));
   --announcement-max-height: calc(100dvh - var(--spacing) * 6);
   --announcement-mobile-max-height: calc(100dvh - var(--announcement-mobile-bottom) - var(--spacing) * 3);
 }
