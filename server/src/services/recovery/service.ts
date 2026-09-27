@@ -32,6 +32,7 @@ import {
   ONBOARDING_FIRST_TASK_ORIGIN_KIND,
   PROVIDER_QUOTA_MONITOR_SERVICE_NAME,
   ISSUE_DISPOSITION_REPAIR_RETRY_REASON,
+  isAiAuthRequiredErrorCode,
   requiresExecutionReconciliation,
   type IssueCommentMetadata,
   type IssueCommentPresentation,
@@ -623,6 +624,11 @@ export function classifyAdapterFailureForRecovery(
   if (latestRun.errorCode === "adapter_engine_unavailable") {
     return { kind: "configuration_incomplete" };
   }
+  // A rejected or expired login needs a person to reconnect the account.
+  // Retrying the same credential only spends the retry budget.
+  if (isAiAuthRequiredErrorCode(latestRun.errorCode)) {
+    return { kind: "configuration_incomplete" };
+  }
   if (
     latestRun.errorCode !== "adapter_failed" &&
     latestRun.errorCode !== "provider_quota" &&
@@ -707,7 +713,11 @@ export function classifyContinuationFailure(
       errorCode,
     };
   }
-  if (errorCode && NON_RETRYABLE_CONTINUATION_ERROR_CODES.has(errorCode)) {
+  if (
+    errorCode &&
+    (NON_RETRYABLE_CONTINUATION_ERROR_CODES.has(errorCode) ||
+      isAiAuthRequiredErrorCode(errorCode))
+  ) {
     return {
       kind: "non_retryable",
       maxAttempts: 0,
@@ -4740,9 +4750,11 @@ export function recoveryService(
             previousStatus: issue.status as StrandedPreviousStatus,
             latestRun,
             recoveryCause: "configuration_incomplete",
-            comment:
-              "GS Agentic Manager classified the latest adapter failure as `configuration_incomplete`. " +
-              "Moving the issue to `blocked` with the configuration fix recorded instead of creating a recovery takeover.",
+            comment: isAiAuthRequiredErrorCode(latestRun.errorCode)
+              ? `The AI provider rejected this agent's login (\`${latestRun.errorCode}\`), so retrying would fail the same way. ` +
+                "Moving the issue to `blocked` without retrying. Reconnect the AI account in Connections, then resume the task."
+              : "GS Agentic Manager classified the latest adapter failure as `configuration_incomplete`. " +
+                "Moving the issue to `blocked` with the configuration fix recorded instead of creating a recovery takeover.",
           });
           if (updated) {
             latestRun = await persistAdapterFailureRecoveryClassification(

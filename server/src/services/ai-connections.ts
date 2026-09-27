@@ -1,5 +1,5 @@
 import { syncConnectionCredentialBindings } from "./connection-credential-bindings.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray, or } from "drizzle-orm";
 import {
   type Db,
@@ -28,6 +28,9 @@ import {
   type AiManagedConnectionSummary,
   type CreateAiConnection,
   type AiConnectionLoginIntent,
+  type AiCredentialInfo,
+  aiCredentialExpiryState,
+  readAiCredentialRecord,
 } from "@greatstone/shared";
 import { forbidden, notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
@@ -45,6 +48,20 @@ function canUseCredential(
     audience.length === 0 || audience.some((member) => member.subjectType === "user" && member.subjectId === userId)
   );
 }
+
+/** Short fingerprint of a credential value; runs record it in their AI connection identity. */
+export function aiCredentialGeneration(value: string) {
+  return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
+function credentialExpiredMessage(provider: string, expiresAt: string) {
+  return provider === "anthropic"
+    ? `This Claude token expired at ${expiresAt}. Reconnect it. \`claude setup-token\` gives a token that lasts about a year.`
+    : `This credential expired at ${expiresAt}. Reconnect it.`;
+}
+
+export const AI_CREDENTIAL_REJECTED_MESSAGE =
+  "The provider rejected this account's login during a run. Reconnect it to resume work.";
 
 export function aiConnectionService(db: Db) {
   const secrets = secretService(db);
@@ -126,6 +143,15 @@ export function aiConnectionService(db: Db) {
       const needsReconnect = aiSubscriptionNeedsIsolatedLogin(connection.config);
       if (!canUseCredential(grant, userId, members.filter((m) => m.grantId === grant.id)))
         return [];
+      const credential = readAiCredentialRecord(connection.config);
+      const credentialExpired = aiCredentialExpiryState(credential?.expiresAt) === "expired";
+      const unavailableReason = needsReconnect
+        ? "Reconnect with a separate sign-in to protect your existing terminal login."
+        : credentialExpired
+          ? credentialExpiredMessage(metadata.data.provider, credential!.expiresAt!)
+          : connection.healthStatus !== "ok" && connection.healthMessage
+            ? connection.healthMessage
+            : undefined;
       return [
         {
           id: connection.id,
@@ -134,7 +160,8 @@ export function aiConnectionService(db: Db) {
           ...metadata.data,
           name: connection.name,
           accountLabel: grant.providerTenant?.name,
-          ...(needsReconnect ? { unavailableReason: "Reconnect with a separate sign-in to protect your existing terminal login." } : {}),
+          ...(unavailableReason ? { unavailableReason } : {}),
+          ...(credential ? { credential: { source: credential.source, expiresAt: credential.expiresAt } } : {}),
           ownership:
             grant.kind === "user" ? ("personal" as const) : ("shared" as const),
           ownerUserId: grant.subjectUserId ?? undefined,
@@ -150,7 +177,7 @@ export function aiConnectionService(db: Db) {
                 : grant.status !== "active" ||
                     !connection.enabled ||
                     connection.status !== "active" ||
-                    connection.healthStatus !== "ok" || needsReconnect
+                    connection.healthStatus !== "ok" || needsReconnect || credentialExpired
                   ? ("needs_attention" as const)
                   : ("connected" as const),
         },
@@ -290,6 +317,13 @@ export function aiConnectionService(db: Db) {
       });
     if (aiSubscriptionNeedsIsolatedLogin(connection.config))
       throw unprocessable("Reconnect this subscription with a separate sign-in to protect your existing terminal login.", {
+        code: "ai_connection_unavailable", connectionId: connection.id,
+      });
+    // Refuse a known-expired credential before any provider call, so the run
+    // becomes a board-owned configuration blocker instead of a retried failure.
+    const credentialRecord = readAiCredentialRecord(connection.config);
+    if (aiCredentialExpiryState(credentialRecord?.expiresAt) === "expired")
+      throw unprocessable(credentialExpiredMessage(metadata.data.provider, credentialRecord!.expiresAt!), {
         code: "ai_connection_unavailable", connectionId: connection.id,
       });
     if (
@@ -434,7 +468,14 @@ export function aiConnectionService(db: Db) {
     verifiedCredential: string,
     sessionId?: string,
     attemptStartedAt = new Date(),
+    credentialInfo?: AiCredentialInfo,
   ) {
+    // Where the credential came from and when it stops working. Never the value.
+    const credentialSource = credentialInfo ??
+      (input.method === "api_key" ? { source: "pasted" as const, expiresAt: null } : undefined);
+    const aiCredential = credentialSource
+      ? { ...credentialSource, recordedAt: new Date().toISOString() }
+      : undefined;
     if (!(await membership(companyId, userId)))
       throw forbidden("An active company member must own this connection");
     const reconnect = input.connectionId
@@ -625,7 +666,9 @@ export function aiConnectionService(db: Db) {
             status: "active",
             healthStatus: "ok",
             healthMessage: null,
-            config: { ...reconnect.connection.config, aiIsolatedSubscription: input.method === "subscription" && input.provider !== "anthropic" },
+            // A rotation replaces the credential record; one without a known
+            // source drops the stale record rather than keep an old expiry.
+            config: { ...reconnect.connection.config, aiIsolatedSubscription: input.method === "subscription" && input.provider !== "anthropic", aiCredential },
             updatedAt: new Date(),
           })
           .where(eq(toolConnections.id, id));
@@ -650,6 +693,7 @@ export function aiConnectionService(db: Db) {
               sourceTemplateKey: input.provider,
               ai: { provider: input.provider, method: input.method },
               aiIsolatedSubscription: input.method === "subscription" && input.provider !== "anthropic",
+              ...(aiCredential ? { aiCredential } : {}),
             },
             createdByUserId: userId,
           });
@@ -770,10 +814,78 @@ export function aiConnectionService(db: Db) {
           : "ai_connection.connected",
         entityType: "tool_connection",
         entityId: id,
-        details: { provider: input.provider, method: input.method, grantId },
+        details: {
+          provider: input.provider,
+          method: input.method,
+          grantId,
+          ...(credentialSource
+            ? { credentialSource: credentialSource.source, credentialExpiresAt: credentialSource.expiresAt }
+            : {}),
+        },
       });
       return { connectionId: id, grantId };
     });
   }
-  return { list, select, credential, save, setDefault, membership };
+  /**
+   * A run failed because the provider rejected this connection's credential.
+   * Mark the connection as needing attention, but only while that credential
+   * is still the stored one: a reconnect during the run must not be undone by
+   * the old run's failure. Returns true only for the call that changed it, so
+   * repeated failures notify once.
+   */
+  async function recordCredentialRejected(input: {
+    companyId: string;
+    connectionId: string;
+    grantId: string;
+    identity: string;
+    runId: string;
+  }) {
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ connection: toolConnections, grant: connectionGrants })
+        .from(toolConnections)
+        .innerJoin(
+          connectionGrants,
+          and(
+            eq(connectionGrants.companyId, toolConnections.companyId),
+            eq(connectionGrants.connectionId, toolConnections.id),
+          ),
+        )
+        .where(
+          and(
+            eq(toolConnections.companyId, input.companyId),
+            eq(toolConnections.id, input.connectionId),
+            eq(toolConnections.connectionPurpose, "ai"),
+            eq(connectionGrants.id, input.grantId),
+          ),
+        )
+        .for("update");
+      if (!row || row.grant.status !== "active" || row.connection.healthStatus !== "ok") return false;
+      const current = await aiConnectionService(tx as unknown as Db)
+        .credential(row as Awaited<ReturnType<typeof select>>)
+        .catch(() => null);
+      if (!current || !input.identity.endsWith(`:${aiCredentialGeneration(current)}`)) return false;
+      await tx
+        .update(toolConnections)
+        .set({
+          healthStatus: "error",
+          healthMessage: AI_CREDENTIAL_REJECTED_MESSAGE,
+          healthCheckedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(toolConnections.id, row.connection.id), eq(toolConnections.healthStatus, "ok")));
+      await logActivity(tx as unknown as Db, {
+        companyId: input.companyId,
+        actorType: "system",
+        actorId: "ai-connection-runtime",
+        action: "ai_connection.credential_rejected",
+        entityType: "tool_connection",
+        entityId: row.connection.id,
+        runId: input.runId,
+        details: { grantId: row.grant.id },
+      });
+      return true;
+    });
+  }
+  return { list, select, credential, save, setDefault, membership, recordCredentialRejected };
 }

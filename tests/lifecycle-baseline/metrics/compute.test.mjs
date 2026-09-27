@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { EXECUTION_HOLD_CAUSES, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -218,6 +218,31 @@ test("R2: an issue completed after the failure counts as recovered", () => {
   }));
   assert.equal(r2.recoveredWithoutHuman, 1);
 });
+
+test("R2: rejected logins are counted under either code, with the retries and exhaustion they caused", () => {
+  const failed = (id, fields) => ({ id, issueId: "i1", status: "failed", createdAt: hoursAgo(3), finishedAt: hoursAgo(3), ...fields });
+  // Before GRE-15: the ACP access failure was a generic turn failure, retried until exhausted.
+  const before = base({
+    runs: [
+      failed("r1", { errorCode: "acpx_turn_failed", errorMentionsAccessFailure: true }),
+      failed("r2", { errorCode: "acpx_turn_failed", errorMentionsAccessFailure: true, retryOfRunId: "r1" }),
+      failed("r3", { errorCode: "acpx_turn_failed", errorMentionsAccessFailure: false }),
+    ],
+    retryExhaustions: [{ runId: "r2", createdAt: hoursAgo(3) }, { runId: "r3", createdAt: hoursAgo(3) }],
+  });
+  const b = computeAuthFailures(before);
+  assert.equal(b.authFailedRuns, 2);
+  assert.equal(b.retriesAfterAuthFailure, 1);
+  assert.equal(b.retryExhaustions, 2);
+  assert.equal(b.retryExhaustionsFromAuthFailures, 1);
+  assert.deepEqual(b.exhaustedAuthRuns.map((entry) => entry.runId), ["r2"]);
+
+  // After: coded as a rejected login and handed to the board with no retry.
+  const after = computeAuthFailures(base({ runs: [failed("r4", { errorCode: "claude_auth_required" }), { ...failed("r5", { errorCode: "claude_auth_required" }), status: "succeeded" }] }));
+  assert.deepEqual([after.authFailedRuns, after.retriesAfterAuthFailure, after.retryExhaustionsFromAuthFailures], [1, 0, 0]);
+  assert.deepEqual(after.byErrorCode, { claude_auth_required: 1 });
+});
+
 
 test("S1: wake to first useful action ignores harness bookkeeping and untimed runs", () => {
   const runs = [

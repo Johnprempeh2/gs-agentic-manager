@@ -1,6 +1,7 @@
 import { healthApi } from "@/api/health";
 import { BrandLockup } from "./BrandLockup";
 import { LocalProviderLoginInstructions } from "./AdapterLoginChrome";
+import { AiCredentialLifetime } from "./ai-connections/AiCredentialLifetime";
 import { useLocalAiLogin } from "./ai-connections/useLocalAiLogin";
 import { aiConnectionsApi } from "@/api/ai-connections";
 import { aiProviderForAdapter } from "./ai-connections/AiConnectionField";
@@ -2892,7 +2893,9 @@ function OnboardingWizardInner({
                           });
                         }}
                       />
-                    ) : hasSavedSubscription || localLogin.status === "ready" ? null : connectStepHasNoSandbox ? (
+                    ) : hasSavedSubscription ? null : localLogin.status === "ready" ? (
+                      <AiCredentialLifetime credential={localLogin.credential} />
+                    ) : connectStepHasNoSandbox ? (
                       canUseLocalLogin && managedProvider ? (
                         <LocalProviderLoginInstructions adapterType={adapterType} login={{ ...localLogin, retry: () => { autoConnectStartedRef.current = false; setError(null); localLogin.retry(); } }} />
                       ) : <p className="text-xs text-muted-foreground">This environment does not support browser sign-in. Choose another sign-in environment or connect with an API key.</p>

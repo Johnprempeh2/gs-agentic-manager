@@ -149,6 +149,27 @@ describe("classifyAdapterFailureForRecovery", () => {
     })).toBe(false);
   });
 
+  it.each(["claude_auth_required", "acpx_auth_required", "grok_auth_required"])(
+    "hands a rejected login (%s) to the board instead of retrying (GRE-15)",
+    (errorCode) => {
+      expect(classifyAdapterFailureForRecovery({
+        errorCode,
+        error: "ACP agent reported a terminal access failure.",
+        resultJson: null,
+      })).toEqual({ kind: "configuration_incomplete" });
+      expect(classifyContinuationFailure({ errorCode } as never))
+        .toMatchObject({ kind: "non_retryable", maxAttempts: 0 });
+    },
+  );
+
+  it("keeps a generic turn failure on the retry path", () => {
+    expect(classifyAdapterFailureForRecovery({
+      errorCode: "acpx_turn_failed",
+      error: "ACP agent reported a terminal connection failure.",
+      resultJson: null,
+    })).toBeNull();
+  });
+
   it("does not treat a generic capacity limit as provider quota", () => {
     expect(classifyAdapterFailureForRecovery({
       errorCode: "adapter_failed",

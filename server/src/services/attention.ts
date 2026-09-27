@@ -5,6 +5,7 @@ import {
   approvals,
   assets,
   companies,
+  connectionGrants,
   decisionBundles,
   decisionQueueItems,
   decisionQueues,
@@ -25,8 +26,15 @@ import {
   documents,
   projects,
   projectWorkspaces,
+  toolConnections,
 } from "@greatstone/db";
-import { deriveProjectUrlKey } from "@greatstone/shared";
+import {
+  AI_CREDENTIAL_EXPIRY_WARNING_MS,
+  aiConnectionMetadataSchema,
+  aiCredentialExpiryState,
+  deriveProjectUrlKey,
+  readAiCredentialRecord,
+} from "@greatstone/shared";
 import type {
   AttentionDecisionVerb,
   AttentionFeed,
@@ -78,6 +86,7 @@ const ATTENTION_SOURCE_KINDS: AttentionSourceKind[] = [
   "failed_run",
   "budget_alert",
   "agent_error_alert",
+  "ai_connection_alert",
 ];
 
 const SEVERITY_RANK: Record<AttentionSeverity, number> = {
@@ -93,6 +102,7 @@ const SOURCE_RANK: Record<AttentionSourceKind, number> = {
   blocker_attention: 2,
   budget_alert: 3,
   agent_error_alert: 4,
+  ai_connection_alert: 4,
   approval: 5,
   decision: 6,
   issue_thread_interaction: 7,
@@ -1859,6 +1869,93 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             failureReasonExcerpt: excerpt(agent.errorReason),
             images: [],
           },
+        }));
+      }
+
+      // AI connections whose credential is about to stop working, has expired,
+      // or was rejected by the provider during a run. Computed from state, so
+      // there is no timer: the warning appears on the first feed read inside
+      // the window. The dedup key names the phase and the credential record, so
+      // a dismissed "expires soon" row does not hide the later "expired" row,
+      // and a new token starts fresh.
+      const aiConnections = await db
+        .select({ connection: toolConnections, grant: connectionGrants })
+        .from(toolConnections)
+        .innerJoin(
+          connectionGrants,
+          and(
+            eq(connectionGrants.companyId, toolConnections.companyId),
+            eq(connectionGrants.connectionId, toolConnections.id),
+          ),
+        )
+        .where(and(
+          eq(toolConnections.companyId, companyId),
+          eq(toolConnections.connectionPurpose, "ai"),
+          eq(toolConnections.enabled, true),
+          eq(connectionGrants.status, "active"),
+        ));
+      for (const { connection, grant } of aiConnections) {
+        // Personal accounts are shown only to their owner.
+        if (grant.kind === "user" && grant.subjectUserId !== options.userId) continue;
+        const metadata = aiConnectionMetadataSchema.safeParse(connection.config.ai);
+        if (!metadata.success) continue;
+        const credential = readAiCredentialRecord(connection.config);
+        const expiry = aiCredentialExpiryState(credential?.expiresAt, new Date(now));
+        const phase = connection.healthStatus === "error"
+          ? "rejected"
+          : expiry === "expired" || expiry === "expiring_soon" ? expiry : null;
+        if (!phase) continue;
+        const renewal = metadata.data.provider === "anthropic"
+          ? " Running claude setup-token gives a token that lasts about a year."
+          : "";
+        const at = credential?.expiresAt
+          ? `${credential.expiresAt.slice(0, 10)} ${credential.expiresAt.slice(11, 16)} UTC`
+          : "";
+        // Plain server-written text: excerpt() would strip the dashes from the
+        // date and the command name.
+        const summary = phase === "rejected"
+          ? `${connection.healthMessage ?? "The provider rejected this account's login."} Runs using it stop until it is reconnected.${renewal}`
+          : phase === "expired"
+            ? `The token expired at ${at}. Runs using this account stop until it is reconnected.${renewal}`
+            : `The token expires at ${at}. Reconnect before then to keep runs going.${renewal}`;
+        const activityAt = phase === "expiring_soon"
+          ? new Date(Date.parse(credential!.expiresAt!) - AI_CREDENTIAL_EXPIRY_WARNING_MS)
+          : phase === "expired" ? new Date(credential!.expiresAt!) : connection.healthCheckedAt ?? connection.updatedAt;
+        add(createItem({
+          companyId,
+          sourceKind: "ai_connection_alert",
+          subject: {
+            kind: "ai_connection",
+            id: connection.id,
+            companyId,
+            title: connection.name,
+            identifier: null,
+            status: phase,
+            href: `/${prefix}/apps/${connection.id}`,
+            metadata: {
+              provider: metadata.data.provider,
+              method: metadata.data.method,
+              credentialSource: credential?.source ?? null,
+              expiresAt: credential?.expiresAt ?? null,
+            },
+          },
+          whyNow: phase === "expiring_soon"
+            ? "An AI connection's token expires within the hour."
+            : "An AI connection can no longer authenticate; runs that use it are stopped.",
+          decisionVerbs: decisionVerbs(
+            { id: "inspect", label: "Reconnect", description: "Open the AI connection and reconnect it." },
+            { id: "dismiss", label: "Dismiss", description: "Dismiss this alert." },
+          ),
+          inlineResolvable: true,
+          entryRule: "AI connection token expires within an hour, has expired, or was rejected by the provider.",
+          exitRule: "The connection is reconnected with a new token, revoked, or the row is dismissed.",
+          dedupKey: `ai_connection:${connection.id}:${phase}:${credential?.recordedAt ?? toIso(grant.updatedAt)}`,
+          severity: phase === "expiring_soon" ? "medium" : "high",
+          activityAt: toIso(activityAt),
+          createdAt: toIso(connection.createdAt),
+          updatedAt: toIso(activityAt),
+          relatedIssue: null,
+          detail: { kind: "generic", summaryExcerpt: summary, images: [] },
         }));
       }
 

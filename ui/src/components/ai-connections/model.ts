@@ -1,5 +1,6 @@
 /** Redacted presentation contracts shared with the production API. */
-import type { AiProvider, AiAuthMethod, AiManagedConnectionSummary, AiConnectionBinding } from "@greatstone/shared";
+import { aiCredentialExpiryState } from "@greatstone/shared";
+import type { AiProvider, AiAuthMethod, AiManagedConnectionSummary, AiConnectionBinding, AiCredentialInfo } from "@greatstone/shared";
 export type { AiProvider, AiAuthMethod, AiConnectionBinding } from "@greatstone/shared";
 export type AiConnectionStatus = AiManagedConnectionSummary["status"];
 
@@ -117,4 +118,30 @@ export function bindingProblem(
   )
     return "This credential is not shared with you. Choose a connection you can use.";
   return aiConnectionProblem(connection);
+}
+
+/**
+ * Plain wording for how long a stored credential lasts. An imported Claude
+ * login is a short-lived access token; `claude setup-token` lasts about a year.
+ * Returns null when there is nothing to say (API keys, non-Claude logins).
+ */
+export function describeAiCredentialLifetime(
+  credential: AiCredentialInfo | undefined,
+  now = new Date(),
+): { tone: "muted" | "warning" | "danger"; text: string } | null {
+  if (!credential) return null;
+  if (credential.source === "setup_token")
+    return { tone: "muted", text: "Long-lived token from claude setup-token. It lasts about a year." };
+  if (credential.source !== "imported_login") return null;
+  const renewal = "claude setup-token gives a token that lasts about a year.";
+  const state = aiCredentialExpiryState(credential.expiresAt, now);
+  if (state === "unknown")
+    return { tone: "warning", text: `Short-lived token copied from your Claude login. Its expiry is unknown. ${renewal}` };
+  const when = new Date(credential.expiresAt!).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  if (state === "expired")
+    return { tone: "danger", text: `This token expired on ${when}. Runs using it stop until you reconnect. ${renewal}` };
+  return {
+    tone: state === "expiring_soon" ? "warning" : "muted",
+    text: `Short-lived token copied from your Claude login. It expires on ${when}; you will be warned an hour before. ${renewal}`,
+  };
 }

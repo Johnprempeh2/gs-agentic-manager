@@ -129,3 +129,27 @@ it("does not infer quota from the historical generic terminal-limit error", () =
     title: "ACP agent reported a terminal limit failure.",
   }, now)).toBeNull();
 });
+
+// GRE-15: an expired imported Claude token surfaced as "ACP agent reported a
+// terminal access failure." coded `acpx_turn_failed`, so recovery retried it as
+// transient until the task went to `blocked`.
+it.each([
+  ["0.12.0", "oneshot"],
+  ["0.12.0", "persistent"],
+  ["0.13.1", "oneshot"],
+  ["0.13.1", "persistent"],
+])("reports a typed Claude access failure as login required with ACPX %s in %s mode", async (version, mode) => {
+  const title = "OAuth token has expired. Please obtain a new token or refresh your existing token.";
+  const { result, logs } = await executeFailure(
+    title, "access", mode, version === "0.13.1" ? runnerAcpx.createAcpRuntime : undefined,
+  );
+  expect(result).toMatchObject({
+    exitCode: 1,
+    errorMessage: "ACP agent reported a terminal access failure.",
+    errorCode: "claude_auth_required",
+  });
+  expect(result.errorFamily).toBeUndefined();
+  expect(result.retryNotBefore).toBeUndefined();
+  expect(JSON.stringify(result)).not.toContain(title);
+  expect(logs).not.toContain(title);
+});

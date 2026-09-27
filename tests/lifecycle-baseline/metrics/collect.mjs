@@ -45,6 +45,8 @@ const snapshot = await sql.begin("read only", async (tx) => {
     select r.id, r.company_id as "companyId", r.agent_id as "agentId", r.status,
       r.context_snapshot->>'issueId' as "issueId", r.context_snapshot->>'taskId' as "taskId",
       r.native_issue_id as "nativeIssueId", r.error_code as "errorCode",
+      coalesce(r.error ilike '%terminal access failure%', false) as "errorMentionsAccessFailure",
+      r.retry_of_run_id as "retryOfRunId",
       r.created_at as "createdAt", r.started_at as "startedAt", r.last_output_at as "lastOutputAt", r.finished_at as "finishedAt",
       w.requested_at as "wakeRequestedAt",
       (select max(e.created_at) from heartbeat_run_events e
@@ -79,7 +81,10 @@ const snapshot = await sql.begin("read only", async (tx) => {
   const agents = await tx`
     select id, status, coalesce((runtime_config->'heartbeat'->>'enabled')::boolean, false) as "timerHeartbeat"
     from agents where true ${scope("company_id")}`;
-  return { now, issues, runs, activity, wakeRequests, interactions, approvals, recoveryActions, treeHolds, relations, agents };
+  const retryExhaustions = await tx`
+    select e.run_id as "runId", e.created_at as "createdAt" from heartbeat_run_events e
+    where e.message like 'Bounded retry exhausted%' and e.created_at >= ${since} ${scope("e.company_id")}`;
+  return { now, issues, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents };
 });
 await sql.end();
 
@@ -107,6 +112,7 @@ const markdown = [
   `| R1 | Stranded task trees stopped in window | ${metrics.r1.weekly} | ${metrics.r1.treesWithOpenWork} trees with open work; ${metrics.r1.total} stranded in total |`,
   `| R2 | Run failure rate | ${pct(metrics.r2.failureRate)} | ${metrics.r2.failed} failed / ${metrics.r2.succeeded + metrics.r2.failed} finished (${metrics.r2.cancelled} cancelled, excluded) |`,
   `| R2 | Failures recovered without a human | ${pct(metrics.r2.unattendedRecoveryShare)} | ${metrics.r2.recoveredWithoutHuman} auto, ${metrics.r2.recoveredWithHuman} human, ${metrics.r2.unresolved} unresolved, ${metrics.r2.failedWithoutIssue} without issue |`,
+  `| R2 | Rejected-login failures | ${metrics.auth.authFailedRuns} | ${metrics.auth.retriesAfterAuthFailure} retries after them; ${metrics.auth.retryExhaustionsFromAuthFailures} of ${metrics.auth.retryExhaustions} \`Bounded retry exhausted\` events follow one |`,
   `| S1 | Wake → first useful action, median | ${fmt(metrics.s1.medianMs, " ms")} | n=${metrics.s1.sampleSize} (${metrics.s1.runsWithoutUsefulAction} runs without a useful action) |`,
   `| S1 | Wake → first useful action, p95 | ${fmt(metrics.s1.p95Ms, " ms")} | n=${metrics.s1.sampleSize}; queue delay median ${fmt(metrics.s1.queueDelayMedianMs, " ms")} |`,
   `| S1 | of which setup (wake → prompt sent), median | ${fmt(metrics.s1.split.setupMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.setupP95Ms, " ms")} |`,

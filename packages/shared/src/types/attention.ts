@@ -18,6 +18,7 @@ export const ATTENTION_SOURCE_KINDS = [
   "failed_run",
   "budget_alert",
   "agent_error_alert",
+  "ai_connection_alert",
 ] as const;
 
 export type AttentionSourceKind = (typeof ATTENTION_SOURCE_KINDS)[number];
@@ -31,7 +32,8 @@ export type AttentionSubjectKind =
   | "recovery_action"
   | "run"
   | "budget_incident"
-  | "agent";
+  | "agent"
+  | "ai_connection";
 
 export type AttentionSeverity = "critical" | "high" | "medium" | "low";
 
