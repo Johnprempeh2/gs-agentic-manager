@@ -14,6 +14,7 @@ import { sanitizeQuarantinedCommentForHigherTrust } from "./source-trust.js";
 import { hasConversationContinuationPolicy } from "./conversation-continuation.js";
 import { queuedCommentIdsFromWakePayload } from "./issue-queued-comment-queue.js";
 import { childReviewOutcomes } from "./native-runtime/child-review-outcomes.js";
+import { buildReassignmentHandover, type ChangedFilesLister } from "./reassignment-handover.js";
 
 const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v)
@@ -116,6 +117,8 @@ export async function buildExecutionContinuation(input: {
   runId?: string;
   summary: string | null;
   exposeLowTrustRaw: boolean;
+  /** Test seam for the handover's changed-file list. */
+  listChangedFiles?: ChangedFilesLister;
 }): Promise<ExecutionContinuationEnvelope> {
   const { db, companyId, issueId } = input;
   const [issue] = await db
@@ -365,7 +368,13 @@ export async function buildExecutionContinuation(input: {
     (hasConversationContinuationPolicy(lastTerminal.result) ||
       lastTerminal.status === "interrupted" || lastTerminal.errorCode === "process_lost")
     ? lastTerminal.id : undefined);
+  const handover = await buildReassignmentHandover({
+    db, companyId, issueId, agentId: input.agentId,
+    sourceRunId: string(input.context.handoffFromRunId) ?? string(input.context.interruptedRunId),
+    listChangedFiles: input.listChangedFiles,
+  });
   return {
+    ...(handover ? { handover } : {}),
     ...(interruptedRunId ? { interruptedRunId } : {}),
     ...(resumeDelta ? { resumeDelta } : {}),
     recoveryOutcomes: reconciliations
