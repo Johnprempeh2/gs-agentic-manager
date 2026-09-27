@@ -358,7 +358,7 @@ describe("markdown work product review row", () => {
     const image = { ...makeMarkdownAttachment(), contentType, originalFilename: "cover.png" };
     const looseImage = { ...image, id: "loose-image", contentPath: "/api/attachments/loose-image/content" };
     const video = { ...makeMarkdownAttachment(), id: "loose-video", contentType: "application/octet-stream", originalFilename: "clip.mp4", contentPath: "/api/attachments/loose-video/content" };
-    mockIssuesApi.listAttachments.mockResolvedValue([image, video, looseImage, { ...video, id: "user-video", createdByAgentId: null, createdByUserId: "user-1" }]);
+    mockIssuesApi.listAttachments.mockResolvedValue([image, video, looseImage, { ...video, id: "user-video", createdByAgentId: null, createdByUserId: "user-1", issueCommentId: "comment-1" }]);
     mockIssuesApi.listWorkProducts.mockResolvedValue([makeMarkdownWorkProduct({
       title: "Cover artwork",
       metadata: { attachmentId: ATTACHMENT_ID, contentType, originalFilename: "cover.png", contentPath: image.contentPath, openPath: image.contentPath, downloadPath: `${image.contentPath}?download=1`, byteSize: 64 },

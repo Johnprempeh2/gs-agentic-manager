@@ -726,6 +726,55 @@ describe("NewIssueDialog", () => {
     act(() => root.unmount());
   });
 
+  it("uploads staged files after create and names each failed file (GRE-41)", async () => {
+    dialogState.newIssueDefaults = { title: "Task with files" };
+    mockIssuesApi.upsertDocument.mockResolvedValue({});
+    mockIssuesApi.uploadAttachment.mockRejectedValue(
+      new Error("Attachment is larger than the 10 MB limit"),
+    );
+
+    const { root } = renderDialog(container);
+    await flush();
+
+    const image = new File(["png-bytes"], "screenshot.png", { type: "image/png" });
+    const notes = new File(["# Notes\n"], "notes.md", { type: "text/markdown" });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][multiple]');
+    expect(input).not.toBeNull();
+    await act(async () => {
+      Object.defineProperty(input!, "files", { configurable: true, value: [image, notes] });
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    expect(container.textContent).toContain("screenshot.png");
+    expect(container.textContent).toContain("notes.md");
+
+    const submitButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Create Task"));
+    await vi.waitFor(() => {
+      expect(submitButton?.hasAttribute("disabled")).toBe(false);
+    });
+    await act(async () => {
+      submitButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitForAssertion(() => expect(toastState.pushToast).toHaveBeenCalled());
+    expect(mockIssuesApi.uploadAttachment).toHaveBeenCalledWith("company-1", "issue-2", image);
+    expect(mockIssuesApi.upsertDocument).toHaveBeenCalledWith(
+      "issue-2",
+      "notes",
+      expect.objectContaining({ format: "markdown", body: "# Notes\n" }),
+    );
+    expect(toastState.pushToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Created PAP-2 with upload warnings",
+        body: "Could not add screenshot.png (Attachment is larger than the 10 MB limit).",
+        tone: "warn",
+      }),
+    );
+
+    act(() => root.unmount());
+  });
+
   it("hides isolation choices and omits stale workspace draft overrides", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
     mockProjectsApi.list.mockResolvedValue([{
