@@ -16,6 +16,8 @@ import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
+import { DashboardHero } from "../components/DashboardHero";
+import { BrandStoneIcon } from "../components/BrandMark";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -296,7 +298,7 @@ export function Dashboard() {
     if (companies.length === 0) {
       return (
         <EmptyState
-          icon={LayoutDashboard}
+          icon={BrandStoneIcon}
           message="Welcome to GS Agentic Manager. Set up your first organization and agent to get started."
           action="Get Started"
           onAction={openOnboarding}
@@ -320,8 +322,11 @@ export function Dashboard() {
   const pausedImportedCount =
     pausedBanner?.kind === "imported" ? pausedBanner.pausedImportedAgentIds.length : 0;
 
+  const selectedCompany = companies.find((company) => company.id === selectedCompanyId);
+
   return (
     <div className="space-y-6">
+      {selectedCompany ? <DashboardHero companyName={selectedCompany.name} /> : null}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {pausedBanner?.kind === "imported" ? (

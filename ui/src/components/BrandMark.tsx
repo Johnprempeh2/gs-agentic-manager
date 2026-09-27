@@ -29,6 +29,11 @@ interface BrandMarkProps extends Omit<SVGProps<SVGSVGElement>, "children"> {
   title?: string;
 }
 
+/** Icon-shaped adapter (className + aria-hidden), e.g. for EmptyState. */
+export function BrandStoneIcon(props: Omit<SVGProps<SVGSVGElement>, "children">) {
+  return <BrandMark decorative {...props} />;
+}
+
 /**
  * Colour comes from `currentColor`; the `brand-mark` class maps it to the
  * `--brand-mark` token (lime on the void, emerald on paper). Size it with a

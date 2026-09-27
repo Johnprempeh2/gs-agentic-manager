@@ -42,6 +42,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
+import { SidebarBrandSignature } from "./SidebarBrandSignature";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu.production";
 
 export function Sidebar() {
@@ -245,6 +246,7 @@ export function Sidebar() {
           itemClassName="rounded-lg border border-border p-3"
           missingBehavior="placeholder"
         />
+        <SidebarBrandSignature rail={rail} />
       </nav>
     </aside>
   );

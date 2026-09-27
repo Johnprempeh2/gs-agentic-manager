@@ -1,9 +1,11 @@
+import type { ComponentType } from "react";
 import { Plus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface EmptyStateProps {
-  icon: LucideIcon;
+  /** A Lucide icon, or an icon-shaped brand glyph such as BrandStoneIcon. */
+  icon: LucideIcon | ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
   /** Optional bold heading rendered above the message. */
   title?: string;
   message: string;
@@ -26,7 +28,7 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className="gs-empty flex flex-col items-center justify-center py-16 text-center">
-      <div className="gs-empty-tile gs-glass-card mb-5 rounded-2xl border p-4">
+      <div className="gs-empty-tile gs-glass-card mb-5 rounded-xl border p-4">
         <Icon className="brand-mark h-9 w-9" aria-hidden="true" />
       </div>
       {title ? (

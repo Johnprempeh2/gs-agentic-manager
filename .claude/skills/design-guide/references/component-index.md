@@ -121,12 +121,30 @@ Always use in a responsive grid: `grid md:grid-cols-2 xl:grid-cols-4 gap-4`.
 ### EmptyState
 
 **File:** `EmptyState.tsx`
-**Props:** `icon: LucideIcon`, `message: string`, `action?: string`, `onAction?: () => void`
+**Props:** `icon: LucideIcon | BrandStoneIcon`, `message: string`, `title?`, `description?`, `action?: string`, `onAction?: () => void`
 **Usage:** Empty list placeholder with icon, message, and optional CTA button.
 
 ```tsx
 <EmptyState icon={Inbox} message="No items yet." action="Create Item" onAction={handleCreate} />
 ```
+
+### Brand components
+
+The Greatstone brand layer. Colour comes from the `--brand-mark` token (lime on
+the void, emerald on paper) or, on the void-only surfaces, from `--gs-lime`.
+
+| Component | File | Notes |
+|-----------|------|-------|
+| BrandMark / BrandStoneIcon | `BrandMark.tsx` | The stone. `variant` solid (to favicon size) or outline (32px+). BrandStoneIcon is the icon-shaped adapter for `EmptyState`. Never redraw the geometry. |
+| BrandLockup | `BrandLockup.tsx` | Stone + product name; size with a height class. |
+| BrandBuildingIcon / BrandThinkingIcon | `BrandLoading.tsx` | Loading: the stone builds slab by slab; inline "working" glyph. |
+| BrandTideHero | `BrandTideHero.tsx` | The tide of time with the lime stone, on the void. Carries NO copy. Needs a sized parent. Used on sign-in and 404. |
+| DashboardHero | `DashboardHero.tsx` | Dashboard welcome band on the void; the tide is masked out of the copy zone and not drawn below 640px. |
+| SidebarBrandSignature | `SidebarBrandSignature.tsx` | Quiet lockup at the foot of the primary sidebar; stone only in the rail. |
+
+The tide itself is `lib/greatstone-tide.ts` (`mountGreatstoneTide`): pauses when the
+tab is hidden or the host is off screen, parks under reduced motion, no-op without a
+canvas. Rule: at most one tide per viewport, and lime never behind copy.
 
 ### FilterBar
 

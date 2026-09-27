@@ -9,6 +9,8 @@
  * pauses while the tab is hidden, reduced motion parks the field (no loop, no
  * warp), the pointer is measured relative to the host, and destroy() tears
  * everything down. Environments without a 2D canvas (tests) get a no-op.
+ * In the app the loop also stops entirely while the host is scrolled out of
+ * view, and the field follows its container's size, not just the window's.
  */
 
 type Rgb = readonly [number, number, number];
@@ -194,26 +196,49 @@ export function mountGreatstoneTide(container: HTMLElement, options: TideOptions
   }
 
   let raf = 0;
+  let visible = true;
   function loop(now: number) {
+    raf = 0;
+    // Off screen: park the loop; the observer restarts it on the way back in.
+    if (!visible) return;
     if (!document.hidden) draw(now);
     if (!reduce) raf = requestAnimationFrame(loop);
   }
+  const start = () => {
+    if (!reduce && !raf && visible) raf = requestAnimationFrame(loop);
+  };
 
   resize();
   mouse.x = sm.x = W * 0.6;
   mouse.y = sm.y = H * 0.5;
-  const onResize = () => resize();
+  // Resizing clears the canvas, so a parked (reduced motion) field redraws once.
+  const onResize = () => {
+    resize();
+    if (reduce) draw(performance.now());
+  };
   window.addEventListener("resize", onResize, { passive: true });
+  const resizes = typeof ResizeObserver === "function" ? new ResizeObserver(onResize) : null;
+  resizes?.observe(container);
+  const views =
+    typeof IntersectionObserver === "function"
+      ? new IntersectionObserver((entries) => {
+          visible = entries.some((entry) => entry.isIntersecting);
+          start();
+        })
+      : null;
+  views?.observe(container);
   if (!coarse) {
     window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("pointerleave", onLeave, { passive: true });
   }
   draw(performance.now());
-  if (!reduce) raf = requestAnimationFrame(loop);
+  start();
 
   return {
     destroy() {
       if (raf) cancelAnimationFrame(raf);
+      resizes?.disconnect();
+      views?.disconnect();
       window.removeEventListener("resize", onResize);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerleave", onLeave);

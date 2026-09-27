@@ -102,6 +102,10 @@
   --gs-lane-tint: 9%;
   --gs-lane-tint-over: 18%;
   --gs-date-rule: rgb(27 80 57 / 0.3);
+  /* Dashboard welcome band: always the void, like the sign-in hero. */
+  --gs-hero-fg: #f5f7f2;
+  --gs-hero-muted: #aab2a9;
+  --gs-dash-hero-mark-inset: 9%;
   /* Toast tone rails come from the retuned palette, so they follow the brand. */
   --gs-toast-info: var(--color-sky-600);
   --gs-toast-success: var(--color-emerald-600);
@@ -719,6 +723,28 @@
     box-shadow: var(--glass-highlight), inset 0 0 0 1px var(--glass-card-border);
   }
 
+  /* Dashboard welcome band: the void with two emerald radials. The tide layer
+     is masked to nothing across the copy zone (left 42%), so lime never sits
+     behind the greeting. */
+  .gs-dash-hero {
+    isolation: isolate;
+    color: var(--gs-hero-fg);
+    background:
+      radial-gradient(60% 150% at 92% 130%, rgb(27 80 57 / 0.55), transparent 70%),
+      radial-gradient(45% 120% at 0% -10%, rgb(27 80 57 / 0.4), transparent 70%),
+      var(--gs-void);
+    border-color: rgb(255 255 255 / 0.08);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), var(--glass-shadow);
+  }
+  .gs-dash-hero-tide {
+    z-index: -1;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, transparent 42%, #000 74%);
+    mask-image: linear-gradient(90deg, transparent 0, transparent 42%, #000 74%);
+  }
+  .gs-dash-hero-muted {
+    color: var(--gs-hero-muted);
+  }
+
   .gs-toast-timer {
     position: absolute;
     left: 0;
@@ -738,6 +764,12 @@
 .gs-tide-hero .gs-tide-hero-mark {
   color: var(--gs-lime);
   filter: drop-shadow(0 0 18px rgb(200 255 0 / 0.25));
+}
+
+/* Same specificity rule as the tide hero: the band's stone is always lime. */
+.gs-dash-hero .gs-dash-hero-mark {
+  color: var(--gs-lime);
+  filter: drop-shadow(0 0 16px rgb(200 255 0 / 0.3));
 }
 
 @keyframes gs-grow {

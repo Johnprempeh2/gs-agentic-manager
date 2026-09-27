@@ -251,7 +251,10 @@ Standard `<table>` with `text-xs`, header row with `bg-accent/20`, `font-mono` f
 
 ### Disabled
 
-`disabled:opacity-50 disabled:pointer-events-none`
+`disabled:pointer-events-none` plus a colour token for the text
+(`disabled:text-subtle-foreground`, and `disabled:bg-muted` on filled buttons).
+Never fade text with opacity: it destroys contrast by construction, worst in
+light mode. The same rule applies to any de-emphasised text.
 
 ### Inline Editing
 

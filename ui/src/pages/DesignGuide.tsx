@@ -152,6 +152,12 @@ import { SHOW_TASK_PRIORITY_UI } from "@/lib/ui-flags";
 import { agentStatusDot, agentStatusDotDefault } from "@/lib/status-colors";
 import { EntityRow } from "@/components/EntityRow";
 import { EmptyState } from "@/components/EmptyState";
+import { BrandMark, BrandStoneIcon } from "@/components/BrandMark";
+import { BrandLockup } from "@/components/BrandLockup";
+import { BrandBuildingIcon, BrandThinkingIcon } from "@/components/BrandLoading";
+import { BrandTideHero } from "@/components/BrandTideHero";
+import { DashboardHero } from "@/components/DashboardHero";
+import { SidebarBrandSignature } from "@/components/SidebarBrandSignature";
 import { MetricCard } from "@/components/MetricCard";
 import { FilterBar, type FilterValue } from "@/components/FilterBar";
 import { InlineEditor } from "@/components/InlineEditor";
@@ -507,7 +513,8 @@ export function DesignGuide() {
                 "FilterBar", "InlineEditor", "PageSkeleton", "Identity", "CommentThread", "MarkdownEditor",
                 "PropertiesPanel", "Sidebar", "CommandPalette", "EnvironmentVariablesEditor",
                 "InlineBanner", "BuiltInAgentGate", "BuiltInLifecycleChip", "CollectionToolbar",
-                "IssueRow", "ContextualSidebarFrame",
+                "IssueRow", "ContextualSidebarFrame", "BrandMark", "BrandLockup", "BrandLoading",
+                "BrandTideHero", "DashboardHero", "SidebarBrandSignature",
               ].map((name) => (
                 <Badge key={name} variant="ghost" className="font-mono text-(length:--text-nano)">
                   {name}
@@ -561,6 +568,42 @@ export function DesignGuide() {
             <ThemeToggle variant="menu-action" />
             <ThemeToggle variant="compact-menu-action" />
           </div>
+        </SubSection>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  BRAND                                                        */}
+      {/* ============================================================ */}
+      <Section title="Brand">
+        <SubSection title="Stone mark">
+          <div className="flex flex-wrap items-end gap-6">
+            <BrandMark className="h-10 w-auto" />
+            <BrandMark variant="outline" className="h-10 w-auto" />
+            <BrandLockup className="h-6 text-base" />
+            <SidebarBrandSignature />
+          </div>
+        </SubSection>
+        <SubSection title="Working states">
+          <div className="flex items-center gap-6">
+            <BrandBuildingIcon className="h-10 w-auto" />
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              <BrandThinkingIcon className="h-3.5 w-3.5" />
+              Thinking
+            </span>
+          </div>
+        </SubSection>
+        <SubSection title="Tide of time">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Always on the void, never behind copy: BrandTideHero carries no text, and
+            DashboardHero masks the tide out of its copy zone.
+          </p>
+          <div className="h-56 overflow-hidden rounded-xl border">
+            <BrandTideHero />
+          </div>
+          <DashboardHero companyName="Northwind Labs" />
+        </SubSection>
+        <SubSection title="Empty state with the stone">
+          <EmptyState icon={BrandStoneIcon} message="Inbox zero." />
         </SubSection>
       </Section>
 

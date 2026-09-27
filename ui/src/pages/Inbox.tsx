@@ -72,6 +72,7 @@ import {
   useLocalInboxArchiveIssueIds,
 } from "../lib/inboxArchiveCache";
 import { EmptyState } from "../components/EmptyState";
+import { BrandStoneIcon } from "../components/BrandMark";
 import { CollectionToolbar, type CollectionToolbarProps } from "../components/CollectionToolbar";
 import { IssueGroupHeader } from "../components/IssueGroupHeader";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -2717,7 +2718,7 @@ function StreamlinedInbox() {
 
       {tab !== "blocked" && allLoaded && visibleSections.length === 0 && (
         <EmptyState
-          icon={searchQuery.trim() ? Search : InboxIcon}
+          icon={searchQuery.trim() ? Search : tab === "mine" ? BrandStoneIcon : InboxIcon}
           message={
             searchQuery.trim()
               ? "No inbox items match your search."
