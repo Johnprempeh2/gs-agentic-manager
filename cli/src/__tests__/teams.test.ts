@@ -256,7 +256,7 @@ describe("teams CLI commands", () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://paperclip.test/api/teams/catalog/ref?ref=gsam%2Fbundled%2Fsoftware-development%2Fproduct-engineering",
+      "http://paperclip.test/api/teams/catalog/ref?ref=paperclipai%2Fbundled%2Fsoftware-development%2Fproduct-engineering",
       expect.objectContaining({ method: "GET" }),
     );
     expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toEqual(detail);

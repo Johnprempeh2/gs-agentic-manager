@@ -162,7 +162,7 @@ function rebrand(file, text) {
       // Under .github/ every bare `paperclipai` is the GitHub org, not the CLI.
       /^\.github\//.test(file) || GITHUB_LOGIN_LINE.test(line) || NAMESPACE_COMPARISON.test(line)
         ? line
-        : sub(line, /(?<![@\w./-])paperclipai(?![\w/:.-])/g, BRAND.cli, "R2"),
+        : sub(line, /(?<![@\w./-])paperclipai(?![\w/:.%-])/g, BRAND.cli, "R2"), // `%`: URL-encoded key paths
     )
     .join("\n");
 

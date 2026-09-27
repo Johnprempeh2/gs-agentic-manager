@@ -222,7 +222,7 @@ describe("teams catalog routes", () => {
     });
 
     const res = await request(app)
-      .post(`/api/companies/${companyId}/teams/catalog/ref/preview?ref=gsam%2Fbundled%2Fsoftware-development%2Fproduct-engineering`)
+      .post(`/api/companies/${companyId}/teams/catalog/ref/preview?ref=paperclipai%2Fbundled%2Fsoftware-development%2Fproduct-engineering`)
       .send({
         targetManagerSlug: "engineering-lead",
         sourcePolicy: { allowExternalSources: true },

@@ -294,7 +294,7 @@ describe("skills CLI commands", () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://paperclip.test/api/skills/catalog/ref?ref=gsam%2Fbundled%2Fsoftware-development%2Fgithub-pr-workflow",
+      "http://paperclip.test/api/skills/catalog/ref?ref=paperclipai%2Fbundled%2Fsoftware-development%2Fgithub-pr-workflow",
       expect.objectContaining({ method: "GET" }),
     );
     expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toEqual(detail);
