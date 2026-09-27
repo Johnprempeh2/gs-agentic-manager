@@ -1,4 +1,7 @@
 import { createHmac } from "node:crypto";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLocalAgentJwt, verifyLocalAgentJwt } from "../agent-auth-jwt.js";
 
@@ -10,6 +13,7 @@ describe("agent local JWT", () => {
   const audienceEnv = "GSAM_AGENT_JWT_AUDIENCE";
   const disableLegacyFallbackEnv = "GSAM_AGENT_JWT_DISABLE_LEGACY_FALLBACK";
   const instanceIdEnv = "GSAM_INSTANCE_ID";
+  const homeEnv = "GSAM_HOME";
 
   const originalEnv = {
     secret: process.env[secretEnv],
@@ -19,7 +23,10 @@ describe("agent local JWT", () => {
     audience: process.env[audienceEnv],
     disableLegacyFallback: process.env[disableLegacyFallbackEnv],
     instanceId: process.env[instanceIdEnv],
+    home: process.env[homeEnv],
   };
+
+  let homeDir: string;
 
   beforeEach(() => {
     process.env[secretEnv] = "test-secret";
@@ -29,6 +36,9 @@ describe("agent local JWT", () => {
     delete process.env[audienceEnv];
     delete process.env[disableLegacyFallbackEnv];
     delete process.env[instanceIdEnv];
+    // Never let the generated-key fallback touch a real instance home.
+    homeDir = mkdtempSync(path.join(tmpdir(), "agent-jwt-key-"));
+    process.env[homeEnv] = homeDir;
     vi.useFakeTimers();
   });
 
@@ -48,7 +58,14 @@ describe("agent local JWT", () => {
     else process.env[disableLegacyFallbackEnv] = originalEnv.disableLegacyFallback;
     if (originalEnv.instanceId === undefined) delete process.env[instanceIdEnv];
     else process.env[instanceIdEnv] = originalEnv.instanceId;
+    if (originalEnv.home === undefined) delete process.env[homeEnv];
+    else process.env[homeEnv] = originalEnv.home;
+    rmSync(homeDir, { recursive: true, force: true });
   });
+
+  function generatedKeyPath(instanceId = "default") {
+    return path.join(homeDir, "instances", instanceId, "secrets", "agent-jwt.key");
+  }
 
   it("creates and verifies a token", () => {
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
@@ -79,8 +96,57 @@ describe("agent local JWT", () => {
     expect(claims?.key_scope).toEqual({ kind: "skill_test", issueId });
   });
 
-  it("returns null when secret is missing", () => {
+  // GRE-4: local_trusted never initializes Better Auth, so most local installs
+  // configure no auth secret at all. That used to disable run-token minting
+  // silently — the adapter spawned without GSAM_API_KEY and the run's own
+  // control-plane writes were attributed to the board principal. A per-instance
+  // key is generated and persisted instead.
+  it("generates and persists an instance key when no secret env is configured", () => {
     process.env[secretEnv] = "";
+    delete process.env[betterAuthSecretEnv];
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+    expect(existsSync(generatedKeyPath())).toBe(false);
+    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1", "user-1");
+    expect(typeof token).toBe("string");
+    expect(existsSync(generatedKeyPath())).toBe(true);
+    if (process.platform !== "win32") {
+      expect(statSync(generatedKeyPath()).mode & 0o777).toBe(0o600);
+    }
+
+    expect(verifyLocalAgentJwt(token!)).toMatchObject({
+      sub: "agent-1",
+      company_id: "company-1",
+      run_id: "run-1",
+      responsible_user_id: "user-1",
+    });
+  });
+
+  it("keeps the generated key stable across restarts so a live run token survives", () => {
+    process.env[secretEnv] = "";
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
+
+    // Simulate a server restart: the in-process cache is bypassed by pointing at
+    // a different instance id and back, forcing a re-read from the key file.
+    process.env[instanceIdEnv] = "other";
+    expect(verifyLocalAgentJwt(token!)).toBeNull();
+    delete process.env[instanceIdEnv];
+    expect(verifyLocalAgentJwt(token!)?.run_id).toBe("run-1");
+  });
+
+  it("prefers an explicit env secret over the generated instance key", () => {
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
+    expect(token).not.toBeNull();
+    expect(existsSync(generatedKeyPath())).toBe(false);
+  });
+
+  it("returns null when no secret is configured and the key file is unusable", () => {
+    process.env[secretEnv] = "";
+    // A regular file where the `instances` directory must be makes the key path
+    // unresolvable (ENOTDIR), standing in for a read-only or broken home.
+    writeFileSync(path.join(homeDir, "instances"), "not-a-directory");
     const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
     expect(token).toBeNull();
     expect(verifyLocalAgentJwt("abc.def.ghi")).toBeNull();

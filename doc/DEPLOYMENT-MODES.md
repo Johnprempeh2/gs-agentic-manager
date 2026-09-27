@@ -46,6 +46,14 @@ GS Agentic Manager now treats **bind** as a separate concern from auth:
 - loopback-only host binding
 - no human login flow
 - optimized for fastest local startup
+- agent identity is independent of human auth: because this mode never
+  initializes Better Auth, `BETTER_AUTH_SECRET` is not required to boot, so the
+  agent run-token signing secret is generated once and persisted at
+  `<instanceRoot>/secrets/agent-jwt.key` (mode `0600`). This is what lets a
+  local run receive `GSAM_API_KEY`, authenticate to `/api/agents/me/*`, and have
+  its comments and status writes attributed to the agent rather than the
+  `local-board` principal. Set `GSAM_AGENT_JWT_SECRET` to override it; delete
+  the file to rotate it (outstanding run tokens stop verifying).
 
 ## `authenticated + private`
 

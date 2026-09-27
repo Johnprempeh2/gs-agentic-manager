@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { resolveAgentJwtSecret } from "./agent-jwt-secret.js";
 import { resolvePaperclipInstanceId } from "./home-paths.js";
 
 export interface RuntimeToolsTokenClaims {
@@ -14,10 +15,11 @@ export interface RuntimeToolsTokenClaims {
 
 const TOKEN_TTL_SECONDS = 60 * 60;
 
+// Shares the run-JWT master secret so a local install with no configured auth
+// secret can still issue runtime-tools tokens instead of silently disabling
+// them alongside run tokens (GRE-4).
 function secret() {
-  return process.env.GSAM_AGENT_JWT_SECRET?.trim()
-    || process.env.BETTER_AUTH_SECRET?.trim()
-    || null;
+  return resolveAgentJwtSecret();
 }
 
 function encode(value: unknown) {

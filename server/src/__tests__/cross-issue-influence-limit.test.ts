@@ -10,6 +10,7 @@ import {
 function counterDb(
   initialCount = 0,
   runOverrides: Record<string, unknown> | null = {},
+  targetAssigneeAgentId: string | null = null,
 ) {
   let observedCount = initialCount;
   const inserted: Array<Record<string, unknown>> = [];
@@ -17,9 +18,19 @@ function counterDb(
     select: (selection: Record<string, unknown>) => ({
       from: () => ({
         where: () => {
-          if (Object.keys(selection).includes("count")) {
+          const keys = Object.keys(selection);
+          if (keys.includes("count")) {
             return {
               then: (resolve: (rows: unknown[]) => unknown) => resolve([{ count: observedCount }]),
+            };
+          }
+          // The untethered branch reads the target issue's assignee unlocked;
+          // only the run lookup below takes `for("update")`.
+          if (keys.includes("assigneeAgentId")) {
+            return {
+              then: (resolve: (rows: unknown[]) => unknown) => resolve(
+                targetAssigneeAgentId === null ? [] : [{ assigneeAgentId: targetAssigneeAgentId }],
+              ),
             };
           }
           return {
@@ -198,19 +209,51 @@ describe("cross-issue influence limit rollout", () => {
     expect(fake.inserted).toEqual([]);
   });
 
-  it("fails closed when the persisted run has no source issue", async () => {
-    const fake = counterDb(0, { contextSnapshot: {} });
-
-    await expect(observeCrossIssueInfluence(fake.db as never, {
+  describe("untethered run with no source issue", () => {
+    const agentId = "33333333-3333-4333-8333-333333333333";
+    const base = {
       companyId: "22222222-2222-4222-8222-222222222222",
       runId: "11111111-1111-4111-8111-111111111111",
-      agentId: "33333333-3333-4333-8333-333333333333",
+      agentId,
       targetIssueId: "55555555-5555-4555-8555-555555555555",
-      kind: "update",
-    })).rejects.toMatchObject({
-      status: 403,
-      details: { code: "cross_issue_influence_run_context_required" },
+    } as const;
+
+    it("treats a write to the agent's own assigned issue as in scope", async () => {
+      const fake = counterDb(0, { contextSnapshot: {} }, agentId);
+
+      await expect(observeCrossIssueInfluence(fake.db as never, { ...base, kind: "update" }))
+        .resolves.toBeNull();
+      expect(fake.inserted).toEqual([]);
     });
-    expect(fake.inserted).toEqual([]);
+
+    it("still counts a write to an issue the agent is not assigned to", async () => {
+      const fake = counterDb(0, { contextSnapshot: {} }, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+
+      await expect(observeCrossIssueInfluence(fake.db as never, { ...base, kind: "comment" }))
+        .resolves.toMatchObject({ allowed: true, count: 1 });
+      expect(fake.inserted).toEqual([
+        expect.objectContaining({
+          action: "issue.cross_issue_influence_observed",
+          details: expect.objectContaining({ sourceIssueId: null, runScope: "untethered" }),
+        }),
+      ]);
+    });
+
+    it("fails the cap closed once such a run has sprayed its budget", async () => {
+      const fake = counterDb(CROSS_ISSUE_INFLUENCE_LIMIT, { contextSnapshot: {} }, null);
+
+      await expect(observeCrossIssueInfluence(fake.db as never, {
+        ...base,
+        kind: "comment",
+        now: CROSS_ISSUE_INFLUENCE_ENFORCE_AT,
+      })).resolves.toMatchObject({
+        allowed: false,
+        mode: "enforce",
+        count: CROSS_ISSUE_INFLUENCE_LIMIT + 1,
+      });
+      expect(fake.inserted).toEqual([
+        expect.objectContaining({ action: "issue.cross_issue_influence_cap_rejected" }),
+      ]);
+    });
   });
 });

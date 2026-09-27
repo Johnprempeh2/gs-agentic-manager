@@ -114,6 +114,7 @@ import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
 import { conflict } from "./errors.js";
 import { ensureDecisionSigningSecret } from "./services/decision-signing.js";
+import { ensureAgentJwtSecret } from "./agent-jwt-secret.js";
 import { createDecisionRetentionNotifyOriginAgent, createDecisionWakeOriginAgent } from "./services/decision-wakeup.js";
 import {
   closeHttpListenerForShutdown,
@@ -215,6 +216,10 @@ async function startServerWithDatabaseTeardown(
   // sentry.ts.
   await sentryReady;
   ensureDecisionSigningSecret();
+  // Materialize the agent run-token signing key before any heartbeat spawns an
+  // adapter, so local installs that configure no auth secret still inject
+  // GSAM_API_KEY and attribute agent writes to the agent (GRE-4).
+  ensureAgentJwtSecret();
   let config = loadConfig();
   initTelemetry({ enabled: config.telemetryEnabled });
   if (process.env.GSAM_SECRETS_PROVIDER === undefined) {

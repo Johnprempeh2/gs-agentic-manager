@@ -1,6 +1,6 @@
 import { and, count, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { activityLog, heartbeatRuns } from "@greatstone/db";
+import { activityLog, heartbeatRuns, issues } from "@greatstone/db";
 import { isUuidLike, issueWriteDenialResponse } from "@greatstone/shared";
 import { forbidden } from "../errors.js";
 import { logger } from "../middleware/logger.js";
@@ -110,12 +110,30 @@ export async function observeCrossIssueInfluence(
     }
 
     const sourceIssueId = readRunSourceIssueId(run.contextSnapshot);
-    if (!sourceIssueId) throw crossIssueInfluenceRunContextError();
-    if (
-      sourceIssueId === input.targetIssueId ||
-      (input.targetIssueIdentifier && sourceIssueId.toUpperCase() === input.targetIssueIdentifier.toUpperCase())
-    ) {
-      return null;
+    if (sourceIssueId) {
+      if (
+        sourceIssueId === input.targetIssueId ||
+        (input.targetIssueIdentifier && sourceIssueId.toUpperCase() === input.targetIssueIdentifier.toUpperCase())
+      ) {
+        return null;
+      }
+    } else {
+      // An untethered run — woken with no issue binding — has no source issue to
+      // compare the target against, so every target would read as "cross-issue".
+      // Rejecting on that basis turns the cap into a permission decision and
+      // leaves the agent no first-class way to record its own work: writing to
+      // an issue it is the assignee of is in-scope work, not influence across
+      // issues. Anything else still lands on the per-run cap below, which keeps
+      // the rate backstop that bounds a spray from such a run.
+      const targetAssigneeAgentId = await tx
+        .select({ assigneeAgentId: issues.assigneeAgentId })
+        .from(issues)
+        .where(and(
+          eq(issues.id, input.targetIssueId),
+          eq(issues.companyId, input.companyId),
+        ))
+        .then((rows) => rows[0]?.assigneeAgentId ?? null);
+      if (targetAssigneeAgentId === input.agentId) return null;
     }
 
     const priorCount = await tx
@@ -144,6 +162,7 @@ export async function observeCrossIssueInfluence(
       details: {
         kind: input.kind,
         sourceIssueId,
+        runScope: sourceIssueId ? "issue_bound" : "untethered",
         targetIssueId: input.targetIssueId,
         targetIssueIdentifier: input.targetIssueIdentifier ?? null,
         count: decision.count,
@@ -160,6 +179,7 @@ export async function observeCrossIssueInfluence(
       runId: input.runId,
       agentId: input.agentId,
       sourceIssueId,
+      runScope: sourceIssueId ? "issue_bound" : "untethered",
       targetIssueId: input.targetIssueId,
       kind: input.kind,
       count: decision.count,

@@ -17,6 +17,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { actorMiddleware } from "../middleware/auth.js";
+import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
 import {
@@ -38,8 +39,15 @@ if (!embeddedPostgresSupport.supported) {
 describeEmbeddedPostgres("issue create deduplication routes", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  const originalJwtSecret = process.env.GSAM_AGENT_JWT_SECRET;
+  const originalInstanceId = process.env.GSAM_INSTANCE_ID;
 
   beforeAll(async () => {
+    // Minting a real agent JWT is what separates a credentialed run-linked
+    // create from the de-linked unauthenticated one below. Pin the instance so
+    // mint and verify derive the same per-company signing key.
+    process.env.GSAM_AGENT_JWT_SECRET = "issue-create-dedup-secret";
+    delete process.env.GSAM_INSTANCE_ID;
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-create-deduplication-routes-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
@@ -54,6 +62,10 @@ describeEmbeddedPostgres("issue create deduplication routes", () => {
   });
 
   afterAll(async () => {
+    if (originalJwtSecret === undefined) delete process.env.GSAM_AGENT_JWT_SECRET;
+    else process.env.GSAM_AGENT_JWT_SECRET = originalJwtSecret;
+    if (originalInstanceId === undefined) delete process.env.GSAM_INSTANCE_ID;
+    else process.env.GSAM_INSTANCE_ID = originalInstanceId;
     await tempDb?.cleanup();
   });
 
@@ -288,10 +300,7 @@ describeEmbeddedPostgres("issue create deduplication routes", () => {
     expect(recreatedClosed.body.id).not.toBe(closedIssueId);
   });
 
-  it("stores the request run header on manual creates", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const app = createApp();
+  async function seedAgentRun(companyId: string) {
     const runId = randomUUID();
     const agentId = randomUUID();
     await db.insert(agents).values({
@@ -311,9 +320,19 @@ describeEmbeddedPostgres("issue create deduplication routes", () => {
       agentId,
       status: "running",
     });
+    return { runId, agentId };
+  }
+
+  it("stores the run of an authenticated agent create", async () => {
+    const companyId = await seedCompany();
+    const parent = await seedParent(companyId);
+    const app = createApp();
+    const { runId, agentId } = await seedAgentRun(companyId);
+    const token = createLocalAgentJwt(agentId, companyId, "codex_local", runId);
 
     const response = await request(app)
       .post(`/api/companies/${companyId}/issues`)
+      .set("Authorization", `Bearer ${token}`)
       .set("X-Paperclip-Run-Id", runId)
       .send({ parentId: parent.id, title: "Attributed create" })
       .expect(201);
@@ -321,5 +340,27 @@ describeEmbeddedPostgres("issue create deduplication routes", () => {
 
     expect(created.originKind).toBe("manual");
     expect(created.originRunId).toBe(runId);
+  });
+
+  it("does not store the run header on an unauthenticated create", async () => {
+    const companyId = await seedCompany();
+    const parent = await seedParent(companyId);
+    const app = createApp();
+    const { runId } = await seedAgentRun(companyId);
+
+    // Agent-origin by construction — a run id with no agent credential — but
+    // `local_trusted` serves it as the implicit board actor. Recording the run
+    // would claim a human acted inside that agent's run, so the create lands
+    // with no run linkage at all (GRE-5). The board UI and an unauthenticated
+    // `gsam` CLI keep working; only the false attribution is dropped.
+    const response = await request(app)
+      .post(`/api/companies/${companyId}/issues`)
+      .set("X-Paperclip-Run-Id", runId)
+      .send({ parentId: parent.id, title: "Unattributed create" })
+      .expect(201);
+    const [created] = await db.select().from(issues).where(eq(issues.id, response.body.id));
+
+    expect(created.originKind).toBe("manual");
+    expect(created.originRunId).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import {
   companies,
   createDb,
   heartbeatRuns,
+  issues,
 } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
@@ -31,6 +32,7 @@ describeEmbeddedPostgres("cross-issue influence limit PostgreSQL serialization",
 
   afterEach(async () => {
     await db.delete(activityLog);
+    await db.delete(issues);
     await db.delete(heartbeatRuns);
     await db.delete(agents);
     await db.delete(companies);
@@ -112,5 +114,78 @@ describeEmbeddedPostgres("cross-issue influence limit PostgreSQL serialization",
       .where(and(eq(activityLog.companyId, companyId), eq(activityLog.runId, runId)));
     expect(recorded.filter((row) => row.action === "issue.cross_issue_influence_observed")).toHaveLength(20);
     expect(recorded.filter((row) => row.action === "issue.cross_issue_influence_cap_rejected")).toHaveLength(1);
+  });
+
+  // A run woken with no issue binding has no source issue, so the guard cannot
+  // compare source to target. It falls back to the target's assignee, which only
+  // a real database can prove is queried correctly.
+  it("scopes an untethered run to the issues it is assigned to", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const runId = randomUUID();
+    const ownedIssueId = randomUUID();
+    const otherIssueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `C${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      defaultResponsibleUserId: "board-user",
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Untethered Coder",
+      role: "engineer",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(heartbeatRuns).values({
+      id: runId,
+      companyId,
+      agentId,
+      status: "running",
+      responsibleUserId: "board-user",
+      contextSnapshot: {},
+    });
+    await db.insert(issues).values([
+      { id: ownedIssueId, companyId, title: "Owned", identifier: "CAP-10", assigneeAgentId: agentId },
+      { id: otherIssueId, companyId, title: "Someone else's", identifier: "CAP-11", assigneeAgentId: null },
+    ]);
+
+    const base = {
+      companyId,
+      runId,
+      agentId,
+      kind: "comment" as const,
+      now: CROSS_ISSUE_INFLUENCE_ENFORCE_AT,
+    };
+
+    // Its own assigned work is in scope and never spends budget.
+    await expect(observeCrossIssueInfluence(db, {
+      ...base,
+      targetIssueId: ownedIssueId,
+      targetIssueIdentifier: "CAP-10",
+    })).resolves.toBeNull();
+
+    // Anything else is still bounded by the per-run cap.
+    await expect(observeCrossIssueInfluence(db, {
+      ...base,
+      targetIssueId: otherIssueId,
+      targetIssueIdentifier: "CAP-11",
+    })).resolves.toMatchObject({ allowed: true, count: 1 });
+
+    const recorded = await db
+      .select({ action: activityLog.action, entityId: activityLog.entityId, details: activityLog.details })
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, companyId), eq(activityLog.runId, runId)));
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      action: "issue.cross_issue_influence_observed",
+      entityId: otherIssueId,
+      details: { sourceIssueId: null, runScope: "untethered" },
+    });
   });
 });

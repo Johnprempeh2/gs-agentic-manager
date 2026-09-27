@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { normalizeAgentApiKeyScope, type AgentApiKeyScope } from "@greatstone/shared";
+import { resolveAgentJwtSecret } from "./agent-jwt-secret.js";
 import { resolvePaperclipInstanceId } from "./home-paths.js";
 
 interface JwtHeader {
@@ -37,7 +38,7 @@ function parseBooleanEnv(value: string | undefined): boolean {
 }
 
 function jwtConfig() {
-  const secret = process.env.GSAM_AGENT_JWT_SECRET?.trim() || process.env.BETTER_AUTH_SECRET?.trim();
+  const secret = resolveAgentJwtSecret();
   if (!secret) return null;
 
   return {

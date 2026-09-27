@@ -178,7 +178,7 @@ describe("agent auth middleware", () => {
     else process.env.GSAM_INSTANCE_ID = originalInstanceId;
   });
 
-  it("keeps header-less local requests as the implicit board actor with their run id", async () => {
+  it("keeps header-less local requests as the implicit board actor without run linkage", async () => {
     const runId = randomUUID();
     const { db } = createDbState({ agent: { id: randomUUID(), companyId: randomUUID() } });
 
@@ -186,8 +186,71 @@ describe("agent auth middleware", () => {
       .get("/actor")
       .set("X-Paperclip-Run-Id", runId);
 
+    // The board UI and an unauthenticated `gsam` CLI must both keep working, so
+    // the request is still served as the implicit board actor. But a run id
+    // nobody authenticated for cannot be stamped onto a principal that has
+    // authority: it would link the write to a run the actor does not own.
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ type: "board", userId: "local-board", runId });
+    expect(res.body).toMatchObject({ type: "board", userId: "local-board", source: "local_implicit" });
+    expect(res.body.runId).toBeUndefined();
+  });
+
+  it.each(["POST", "PATCH", "PUT", "DELETE"] as const)(
+    "does not link an unauthenticated %s to the run id header",
+    async (method) => {
+      const runId = randomUUID();
+      const { db } = createDbState({ agent: { id: randomUUID(), companyId: randomUUID() } });
+      const app = createApp(db, "local_trusted");
+      const seen: Array<string | undefined> = [];
+      app.all("/writes", (req, res) => {
+        seen.push(req.actor.runId);
+        res.status(200).json({ ok: true, actor: req.actor });
+      });
+
+      const res = await (request(app) as any)[method.toLowerCase()]("/writes")
+        .set("X-Paperclip-Run-Id", runId)
+        .send({ body: "reply" });
+
+      // The write is accepted (local_trusted has no login to fall back on) but
+      // is recorded with no run linkage, so it cannot be attributed to a run
+      // the implicit board actor never proved it owns.
+      expect(res.status).toBe(200);
+      expect(seen).toEqual([undefined]);
+      expect(res.body.actor).toMatchObject({ type: "board", userId: "local-board" });
+    },
+  );
+
+  it("still carries the run id header on an unauthenticated actor in authenticated mode", async () => {
+    const runId = randomUUID();
+    const { db } = createDbState({ agent: { id: randomUUID(), companyId: randomUUID() } });
+
+    const res = await request(createApp(db, "authenticated"))
+      .get("/actor")
+      .set("X-Paperclip-Run-Id", runId);
+
+    // A `none` actor has no authority — `assertAuthenticated` rejects it
+    // downstream — so the run id is kept purely so the error-handler log line
+    // identifies which run was refused.
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ type: "none", runId });
+  });
+
+  it("keeps the signed run id when an agent JWT authenticates in local_trusted mode", async () => {
+    const agentId = randomUUID();
+    const companyId = randomUUID();
+    const runId = randomUUID();
+    const { db } = createDbState({ agent: { id: agentId, companyId }, run: { id: runId, companyId, agentId } });
+    const token = createLocalAgentJwt(agentId, companyId, "codex_local", runId, "user-claim");
+
+    const res = await request(createApp(db, "local_trusted"))
+      .get("/actor")
+      .set("Authorization", `Bearer ${token}`)
+      .set("X-Paperclip-Run-Id", runId);
+
+    // De-linking must not touch the path GRE-4 fixed: a run that does mint a
+    // token still authenticates as the agent and keeps its run linkage.
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ type: "agent", agentId, companyId, runId, source: "agent_jwt" });
   });
 
   it.each([

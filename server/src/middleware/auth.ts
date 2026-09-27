@@ -217,6 +217,65 @@ const publicRoutineWebhookPath = /^\/api\/routine-triggers\/public\/[a-f0-9]{24}
 
 const publicMcpGatewayProtocolPath = /^\/mcp\/gateways\/gw_[a-f0-9]{32}\/?$/i;
 
+const runIdLinkageSafeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Attach `X-Paperclip-Run-Id` to an actor that presented no bearer credential.
+ *
+ * A run id is only ever *authority* on an actor that authenticated: the agent
+ * JWT branch takes it from the signed `run_id` claim, and the session and
+ * board-key branches take it from the header on a principal that proved who it
+ * is. On the no-credential path there is nothing to bind the header to, so it
+ * carries two very different meanings depending on the actor we fell through
+ * with:
+ *
+ * - `type: "none"` (the `authenticated` deployment mode) has no authority at
+ *   all — `assertAuthenticated` rejects the request downstream. Keeping the run
+ *   id here is purely diagnostic: it puts the run into the error-handler log
+ *   line, which is how a run whose token minting degraded gets identified.
+ * - `local_implicit` (the `local_trusted` board actor) *does* have authority.
+ *   Stamping the header onto it let an unauthenticated, agent-origin-shaped
+ *   write land as `createdByUserId: "local-board"` / `authorType: user` while
+ *   still being linked to `createdByRunId: <the agent's run>` — authorship
+ *   corruption that reads like a human acting inside an agent's run (GRE-5).
+ *
+ * So the run id is dropped for `local_implicit`. That is safe because no
+ * authorization gate is loosened by its absence: every site that *requires* a
+ * run id (`routes/tool-access.ts` connection authorization and token minting,
+ * `routes/pipelines.ts` checkout ownership, the native completion-review
+ * assignment check in `services/issue-thread-interactions.ts`) first requires
+ * an agent actor, and `resolveActorSourceTrustForIssue` returns early for
+ * non-agent actors. The only remaining consumers are attribution and activity
+ * logging — which is exactly where the false linkage was being written.
+ *
+ * The header is not rejected outright. The audit for GRE-5 found one supported
+ * caller that sends it with no credential: the CLI (`cli/src/client/http.ts`)
+ * sets `authorization` only when it resolved a key but sets
+ * `x-paperclip-run-id` whenever `GSAM_RUN_ID` is in the environment, and in
+ * `local_trusted` the CLI is meant to work with no login and has no interactive
+ * board-auth recovery path. A 401 would therefore break a human running `gsam`
+ * from inside an agent workspace shell. Writes are logged instead, so a
+ * degraded run-token mint is visible rather than silent.
+ */
+function attachUnauthenticatedRunIdHeader(req: Request, runIdHeader: string | undefined): void {
+  if (!runIdHeader) return;
+  if (req.actor.source !== "local_implicit") {
+    req.actor.runId = runIdHeader;
+    return;
+  }
+  if (runIdLinkageSafeMethods.has(req.method.toUpperCase())) return;
+  logger.warn(
+    {
+      method: req.method,
+      url: req.originalUrl,
+      headerRunId: runIdHeader,
+    },
+    "Agent-origin write carried X-Paperclip-Run-Id with no agent credential; "
+      + "recording it as the implicit local board actor without run linkage. "
+      + "This usually means the run's agent JWT was never minted or was dropped before the request.",
+  );
+}
+
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
   const boardAuth = boardAuthService(db);
   return async (req, _res, next) => {
@@ -304,14 +363,23 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           return;
         }
       }
-      if (runIdHeader) req.actor.runId = runIdHeader;
+      attachUnauthenticatedRunIdHeader(req, runIdHeader);
       next();
       return;
     }
 
     const token = authHeader!.slice("bearer".length).trim();
     if (!token) {
-      next(unauthorized("Empty bearer token; provide valid agent credentials and retry"));
+      // Name the usual cause. A run that probes with `Bearer $GSAM_API_KEY`
+      // while that variable is unset sends an empty bearer, and a generic
+      // credential error reads as "this agent has no write access at all" —
+      // which has stranded runs that did in fact have a working write path
+      // (GRE-4).
+      next(
+        unauthorized(
+          "Empty bearer token; the Authorization header was sent with no credential (commonly an unset GSAM_API_KEY). Send a valid agent token, or omit the Authorization header entirely.",
+        ),
+      );
       return;
     }
 

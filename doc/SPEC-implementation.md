@@ -619,7 +619,11 @@ run context fails closed before mutation. A run may attempt at most 20 cross-iss
 updates, or issue-thread interaction resolutions across one shared counter. The
 server records each attempt with its source issue, target issue, run, count, and
 rollout mode, and fails closed with the cap in the error once enforcement is
-active. Writes to the run's own source issue are not counted. Assignee self-comments do not
+active. Writes to the run's own source issue are not counted. A run woken with
+no issue binding has no source issue; for it, writes to issues the agent is the
+assignee of are its own work and are not counted, while every other target
+still spends the shared budget. The cap stays a rate backstop, so an agent with
+a sanctioned credential is never less capable than one without. Assignee self-comments do not
 wake the assignee, and a non-assignee comment cannot mint a mention grant.
 
 Agent-authored issue comments persist the responsible user derived from the

@@ -160,6 +160,7 @@ const mockExternalObjectService = vi.hoisted(() => ({
 const mockIssueTreeControlService = vi.hoisted(() => ({ getActivePauseHoldGate: vi.fn(async () => null) }));
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const mockObserveCrossIssueInfluence = vi.hoisted(() => vi.fn(async () => null));
+const mockCrossIssueInfluenceLimitError = vi.hoisted(() => vi.fn());
 
 function registerRouteMocks() {
   vi.doMock("@greatstone/shared/telemetry", () => ({
@@ -202,7 +203,7 @@ function registerRouteMocks() {
 
   vi.doMock("../services/cross-issue-influence-limit.js", () => ({
     observeCrossIssueInfluence: mockObserveCrossIssueInfluence,
-    crossIssueInfluenceLimitError: vi.fn(),
+    crossIssueInfluenceLimitError: mockCrossIssueInfluenceLimitError,
     crossIssueInfluenceRunContextError: () => new HttpError(
       403,
       "Agent issue comments and updates require a valid heartbeat run so cross-issue influence can be contained",
@@ -420,11 +421,17 @@ function boardActor() {
 
 describe("agent issue mutation checkout ownership", () => {
   const routeModules = hoistModuleGraph(registerRouteMocks, async () => {
-    const [{ errorHandler }, { issueRoutes, __clearIssueListResponseCacheForTests }] = await Promise.all([
+    const [{ errorHandler }, { issueRoutes, __clearIssueListResponseCacheForTests }, crossIssueInfluence] = await Promise.all([
       vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
       vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
+      // The cap is stubbed out for the rest of this file. The untethered-run
+      // block below re-points the stub at this real implementation, because
+      // what it asserts is the decision the counter itself reaches.
+      vi.importActual<typeof import("../services/cross-issue-influence-limit.js")>(
+        "../services/cross-issue-influence-limit.js",
+      ),
     ]);
-    return { errorHandler, issueRoutes, __clearIssueListResponseCacheForTests };
+    return { errorHandler, issueRoutes, __clearIssueListResponseCacheForTests, crossIssueInfluence };
   });
 
   function createApp(
@@ -599,6 +606,7 @@ describe("agent issue mutation checkout ownership", () => {
     mockLogActivity.mockClear();
     mockObserveCrossIssueInfluence.mockReset();
     mockObserveCrossIssueInfluence.mockResolvedValue(null);
+    mockCrossIssueInfluenceLimitError.mockReset();
     mockDocumentService.upsertIssueDocument.mockReset();
     mockWorkProductService.createForIssue.mockReset();
     mockWorkProductService.latestRunDiffSummary.mockReset();
@@ -2940,6 +2948,178 @@ describe("agent issue mutation checkout ownership", () => {
       expect(res.status, JSON.stringify(res.body)).toBe(403);
       expect(res.body.error).toBe("Task-watchdog run context is not backed by an active persisted watchdog.");
       expect(mockIssueService.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("untethered runs with no issue binding", () => {
+    const untetheredRunId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac";
+
+    // A heartbeat woken with no task binding carries a real agent credential and
+    // a real run, but its context snapshot names no source issue.
+    function untetheredActor() {
+      return {
+        type: "agent",
+        agentId: ownerAgentId,
+        companyId,
+        source: "agent_key",
+        runId: untetheredRunId,
+      };
+    }
+
+    function createUntetheredDb(options: {
+      targetAssigneeAgentId?: string | null;
+      priorInfluenceCount?: number;
+    } = {}) {
+      const influenceRows: Record<string, unknown>[] = [];
+      const runRows = [{
+        id: untetheredRunId,
+        companyId,
+        agentId: ownerAgentId,
+        agentCompanyId: companyId,
+        responsibleUserId: "board-user",
+        contextSnapshot: {},
+      }];
+      const targetAssigneeAgentId = options.targetAssigneeAgentId === undefined
+        ? ownerAgentId
+        : options.targetAssigneeAgentId;
+      const rowsForSelection = async (selection: Record<string, unknown>) => {
+        const keys = Object.keys(selection);
+        if (keys.includes("count")) return [{ count: options.priorInfluenceCount ?? 0 }];
+        // Only the cap's untethered branch reads the target issue's assignee.
+        if (keys.length === 1 && keys[0] === "assigneeAgentId") {
+          return targetAssigneeAgentId === null ? [] : [{ assigneeAgentId: targetAssigneeAgentId }];
+        }
+        if (keys.includes("entityId")) return [];
+        if (keys.includes("contextSnapshot")) return runRows;
+        if (keys.includes("agentCompanyId")) return runRows;
+        if (keys.length === 0) {
+          const issue = await mockIssueService.getById(issueId);
+          return issue ? [issue] : [];
+        }
+        return [{ id: ownerAgentId, companyId, permissions: {}, role: "engineer", reportsTo: null }];
+      };
+      const buildQuery = (selection: Record<string, unknown>) => {
+        const whereResult = {
+          orderBy: vi.fn(async () => []),
+          limit: vi.fn(() => ({
+            then: async (resolve: (rows: unknown[]) => unknown) => resolve(await rowsForSelection(selection)),
+          })),
+          for: vi.fn(() => ({
+            then: async (resolve: (rows: unknown[]) => unknown) => resolve(await rowsForSelection(selection)),
+          })),
+          then: async (resolve: (rows: unknown[]) => unknown) => resolve(await rowsForSelection(selection)),
+        };
+        const query = {
+          innerJoin: vi.fn(() => query),
+          where: vi.fn(() => whereResult),
+        };
+        return query;
+      };
+      const dbStub = {
+        influenceRows,
+        transaction: async (callback: (tx: typeof dbStub) => Promise<unknown>) => callback(dbStub),
+        select: vi.fn((selection: Record<string, unknown> = {}) => ({
+          from: vi.fn((table: Parameters<typeof getTableName>[0]) => {
+            if (getTableName(table) === "issue_thread_interactions") {
+              return { where: vi.fn(() => ({ limit: vi.fn(async () => []) })) };
+            }
+            return buildQuery(selection);
+          }),
+        })),
+        insert: vi.fn(() => ({
+          values: vi.fn(async (row: Record<string, unknown>) => {
+            if (typeof row?.action === "string" && row.action.startsWith("issue.cross_issue_influence")) {
+              influenceRows.push(row);
+            }
+          }),
+        })),
+      };
+      return dbStub;
+    }
+
+    // The real counter is what decides an untethered run's fate, so these cases
+    // run it instead of the file-wide stub.
+    function useRealCrossIssueInfluenceCounter() {
+      const {
+        CROSS_ISSUE_INFLUENCE_LIMIT,
+        crossIssueInfluenceLimitError,
+        observeCrossIssueInfluence,
+      } = routeModules.value.crossIssueInfluence;
+      mockObserveCrossIssueInfluence.mockImplementation(observeCrossIssueInfluence as never);
+      mockCrossIssueInfluenceLimitError.mockImplementation(crossIssueInfluenceLimitError as never);
+      return CROSS_ISSUE_INFLUENCE_LIMIT;
+    }
+
+    it("lets an untethered run comment on an issue it is assigned to", async () => {
+      useRealCrossIssueInfluenceCounter();
+      const db = createUntetheredDb();
+      const app = await createApp(untetheredActor(), db);
+
+      const res = await request(app).post(`/api/issues/${issueId}/comments`).send({ body: "Untethered finding" });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.addComment).toHaveBeenCalledWith(
+        issueId,
+        "Untethered finding",
+        expect.any(Object),
+        expect.any(Object),
+        expect.any(Object),
+      );
+      // Its own assigned work is in scope, so it spends none of the run budget.
+      expect(db.influenceRows).toEqual([]);
+    });
+
+    it("lets an untethered run update an issue it is assigned to", async () => {
+      useRealCrossIssueInfluenceCounter();
+      const db = createUntetheredDb();
+      const app = await createApp(untetheredActor(), db);
+
+      const res = await request(app).patch(`/api/issues/${issueId}`).send({ status: "in_progress" });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockIssueService.update).toHaveBeenCalledWith(issueId, expect.objectContaining({ status: "in_progress" }));
+      expect(db.influenceRows).toEqual([]);
+    });
+
+    it("still counts an untethered run's write to an issue it is not assigned to", async () => {
+      useRealCrossIssueInfluenceCounter();
+      mockIssueService.getById.mockResolvedValue(makeIssue({ assigneeAgentId: null }));
+      const db = createUntetheredDb({ targetAssigneeAgentId: null });
+      const app = await createApp(untetheredActor(), db);
+
+      const res = await request(app).post(`/api/issues/${issueId}/comments`).send({ body: "Reaching elsewhere" });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(db.influenceRows).toEqual([
+        expect.objectContaining({
+          action: "issue.cross_issue_influence_observed",
+          entityId: issueId,
+          details: expect.objectContaining({ sourceIssueId: null, runScope: "untethered", count: 1 }),
+        }),
+      ]);
+    });
+
+    it("rejects an untethered run once its cap is spent on issues it does not own", async () => {
+      const cap = useRealCrossIssueInfluenceCounter();
+      mockIssueService.getById.mockResolvedValue(makeIssue({ assigneeAgentId: peerAgentId }));
+      const db = createUntetheredDb({
+        targetAssigneeAgentId: peerAgentId,
+        priorInfluenceCount: cap,
+      });
+      const app = await createApp(untetheredActor(), db);
+
+      const res = await request(app).post(`/api/issues/${issueId}/comments`).send({ body: "One spray too many" });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(429);
+      expect(res.body.details).toMatchObject({
+        code: "cross_issue_influence_cap_exceeded",
+        cap,
+        count: cap + 1,
+      });
+      expect(mockIssueService.addComment).not.toHaveBeenCalled();
+      expect(db.influenceRows).toEqual([
+        expect.objectContaining({ action: "issue.cross_issue_influence_cap_rejected" }),
+      ]);
     });
   });
 });
