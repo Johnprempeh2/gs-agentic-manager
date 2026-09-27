@@ -329,6 +329,7 @@ import {
   type IssueThreadInteractionResolverRestriction,
 } from "../services/issue-thread-interaction-resolution.js";
 import { resolveSelectedSuggestedTasks } from "../services/issue-thread-interactions.js";
+import { liveReleaseService } from "../services/live-release.js";
 import {
   crossIssueInfluenceLimitError,
   crossIssueInfluenceRunContextError,
@@ -16403,6 +16404,14 @@ export function issueRoutes(
           ? "accepted_plan_confirmation"
           : null,
       });
+
+      // An accepted "Update live?" card (idempotencyKey live-release:<rc-tag>)
+      // starts the one-click release. Rejecting it never reaches here.
+      if (interaction.kind === "request_confirmation" && interaction.status === "accepted") {
+        liveReleaseService(db)
+          .onConfirmationAccepted({ issueId: issue.id, interaction, actor })
+          .catch((err) => logger.error({ err, issueId: issue.id }, "live release: start failed"));
+      }
 
       res.json(continuationInteraction);
     },
