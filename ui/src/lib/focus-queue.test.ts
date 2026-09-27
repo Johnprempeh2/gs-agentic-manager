@@ -1,10 +1,15 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it } from "vitest";
 import {
   answerFocusItem,
   focusProgress,
+  focusSessionKey,
   initialFocusQueue,
+  loadFocusSession,
   markFocusGone,
   reviewSkippedFocus,
+  saveFocusSession,
   selectFocusItem,
   skipFocusItem,
   stepFocus,
@@ -85,5 +90,27 @@ describe("focus queue", () => {
     expect(stepFocus(state, 1).currentId).toBe("c");
     expect(stepFocus(stepFocus(state, 1), 1).currentId).toBe("b");
     expect(stepFocus(state, -1).currentId).toBe("c");
+  });
+});
+
+describe("focus session", () => {
+  it("saves and restores the queue and seen rows per company", () => {
+    sessionStorage.clear();
+    const queue = answerFocusItem(start(["a", "b"]), "a");
+    saveFocusSession("co-1", { queue, items: [{ id: "a" }, { id: "b" }] });
+    expect(loadFocusSession("co-1")).toEqual({ queue, items: [{ id: "a" }, { id: "b" }] });
+    expect(loadFocusSession("co-2")).toBeNull();
+    expect(focusProgress(syncFocusQueue(loadFocusSession("co-1")!.queue, ["b"]))).toEqual({
+      answered: 1,
+      remaining: 1,
+      total: 2,
+    });
+  });
+
+  it("ignores broken saved data", () => {
+    sessionStorage.setItem(focusSessionKey("co-1"), "{not json");
+    expect(loadFocusSession("co-1")).toBeNull();
+    sessionStorage.setItem(focusSessionKey("co-1"), JSON.stringify({ queue: { order: "a" }, items: [] }));
+    expect(loadFocusSession("co-1")).toBeNull();
   });
 });

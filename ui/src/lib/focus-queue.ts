@@ -120,3 +120,65 @@ export function focusProgress(state: FocusQueueState) {
   const remaining = focusPendingIds(state).length;
   return { answered, remaining, total: answered + remaining };
 }
+
+/**
+ * The Focus session survives leaving the page (Open task, then Back) for the
+ * rest of the browser session, so the progress count does not reset (GRE-59).
+ * `items` are the rows the session has shown, keyed by id, so answered tabs
+ * still render after the feed drops them.
+ */
+export interface FocusSession<Item> {
+  queue: FocusQueueState;
+  items: Item[];
+}
+
+export function focusSessionKey(companyId: string) {
+  return `paperclip:attention:focus-session:${companyId}`;
+}
+
+function isIdList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+export function loadFocusSession<Item extends { id: string }>(companyId: string): FocusSession<Item> | null {
+  try {
+    const raw = sessionStorage.getItem(focusSessionKey(companyId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { queue?: Partial<FocusQueueState>; items?: unknown };
+    const queue = parsed.queue;
+    if (
+      !queue ||
+      !isIdList(queue.order) ||
+      !isIdList(queue.answered) ||
+      !isIdList(queue.gone) ||
+      !isIdList(queue.skipped) ||
+      !(queue.currentId === null || typeof queue.currentId === "string") ||
+      !Array.isArray(parsed.items)
+    ) {
+      return null;
+    }
+    const items = parsed.items.filter(
+      (item): item is Item => !!item && typeof (item as { id?: unknown }).id === "string",
+    );
+    return {
+      queue: {
+        order: queue.order,
+        answered: queue.answered,
+        gone: queue.gone,
+        skipped: queue.skipped,
+        currentId: queue.currentId,
+      },
+      items,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function saveFocusSession<Item>(companyId: string, session: FocusSession<Item>) {
+  try {
+    sessionStorage.setItem(focusSessionKey(companyId), JSON.stringify(session));
+  } catch {
+    // Ignore sessionStorage failures: progress then lasts only while the page is open.
+  }
+}

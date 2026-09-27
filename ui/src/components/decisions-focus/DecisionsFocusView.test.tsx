@@ -9,6 +9,7 @@ import { defaultFocusPrefs, type FocusPrefs } from "../../lib/focus-prefs";
 const state = vi.hoisted(() => ({
   interactionsByIssue: new Map<string, unknown[]>(),
   respond: vi.fn(),
+  pushToast: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -47,7 +48,7 @@ vi.mock("../../api/issues", () => ({
 }));
 
 vi.mock("../../context/ToastContext", () => ({
-  useToastActions: () => ({ pushToast: vi.fn() }),
+  useToastActions: () => ({ pushToast: state.pushToast }),
 }));
 
 vi.mock("@/lib/router", () => ({
@@ -190,6 +191,7 @@ beforeEach(() => {
     ...question(interactionId, _issueId, ""),
     status: "answered",
   }));
+  state.pushToast.mockReset();
   synth.speak.mockClear();
   synth.cancel.mockClear();
   container = document.createElement("div");
@@ -237,6 +239,52 @@ describe("DecisionsFocusView", () => {
     expect(container.textContent).toContain("Ship the watchdog today?");
     expect(container.textContent).not.toContain("GRE-44");
     expect(state.respond).not.toHaveBeenCalled();
+  });
+
+  it("toasts once when the feed drops the open question", () => {
+    render(items());
+    render([feedItem("int-2", "issue-45", "GRE-45")]);
+    render([feedItem("int-2", "issue-45", "GRE-45")]);
+    expect(state.pushToast).toHaveBeenCalledTimes(1);
+    expect(state.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Answered elsewhere" }));
+  });
+
+  it("toasts once when the card finds its question already answered, then the feed catches up", () => {
+    state.interactionsByIssue.set("issue-44", [
+      { ...question("int-1", "issue-44", "When a run is stuck, should I restart it?"), status: "answered" },
+    ]);
+    render(items());
+    expect(container.textContent).toContain("Ship the watchdog today?");
+    expect(state.pushToast).toHaveBeenCalledTimes(1);
+    expect(state.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Answered elsewhere" }));
+    render([feedItem("int-2", "issue-45", "GRE-45")]);
+    expect(state.pushToast).toHaveBeenCalledTimes(1);
+    expect(state.respond).not.toHaveBeenCalled();
+  });
+
+  it("does not toast for a question answered here", async () => {
+    render(items());
+    act(() => (container.querySelector("[role='radio']") as HTMLButtonElement).click());
+    await act(async () => button("Submit & next").click());
+    render([feedItem("int-2", "issue-45", "GRE-45")]);
+    expect(state.respond).toHaveBeenCalledTimes(1);
+    expect(state.pushToast).not.toHaveBeenCalled();
+  });
+
+  it("keeps progress after leaving the page and coming back", async () => {
+    render(items());
+    act(() => (container.querySelector("[role='radio']") as HTMLButtonElement).click());
+    await act(async () => button("Submit & next").click());
+    expect(container.textContent).toContain("1 of 2 answered");
+
+    // Open task, then Back: the view unmounts, and the feed no longer lists the answered row.
+    act(() => root.unmount());
+    root = createRoot(container);
+    render([feedItem("int-2", "issue-45", "GRE-45")]);
+    expect(container.textContent).toContain("1 of 2 answered");
+    expect(container.textContent).toContain("Ship the watchdog today?");
+    expect(container.textContent).toContain("GRE-44");
+    expect(state.pushToast).not.toHaveBeenCalled();
   });
 
   it("skips, then shows the caught-up screen once the rest are answered", async () => {
