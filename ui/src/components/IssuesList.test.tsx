@@ -137,6 +137,7 @@ vi.mock("./IssueRow", () => ({
     treeGuides,
     showIdentifier,
     trailingMeta,
+    titleSuffix,
   }: {
     issue: Issue;
     desktopMetaLeading?: ReactNode;
@@ -152,6 +153,7 @@ vi.mock("./IssueRow", () => ({
     treeGuides?: number;
     showIdentifier?: boolean;
     trailingMeta?: ReactNode;
+    titleSuffix?: ReactNode;
   }) => (
     <div
       data-testid="issue-row"
@@ -166,6 +168,7 @@ vi.mock("./IssueRow", () => ({
       data-title-class={titleClassName ?? undefined}
     >
       <span>{issue.title}</span>
+      {titleSuffix}
       {leadingControl}
       {externalObjectSummary ? (
         <span data-testid="external-object-summary">{externalObjectSummary.total}</span>
@@ -414,6 +417,49 @@ describe("IssuesList", () => {
       expect(row).not.toBeNull();
       expect(row?.getAttribute("data-presentation")).toBeNull();
       expect(container.querySelector("[data-testid='kanban-board']")).toBeNull();
+    });
+
+    act(() => root.unmount());
+  });
+
+  it("groups by the page's custom grouping by default and shows row tags", async () => {
+    const reasons = new Map([["a", "blocking"], ["b", "assigned"], ["c", "blocking"]]);
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[
+          createIssue({ id: "b", identifier: "PAP-2", title: "Assigned task" }),
+          createIssue({ id: "a", identifier: "PAP-1", title: "Blocking task" }),
+          createIssue({ id: "c", identifier: "PAP-3", title: "Second blocker" }),
+        ]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-custom-group"
+        rowPresentation="task"
+        customGrouping={{
+          label: "Reason",
+          groups: [
+            { key: "blocking", label: "You are blocking" },
+            { key: "decision", label: "Waiting on your decision" },
+            { key: "assigned", label: "Assigned to you" },
+          ],
+          groupKeyForIssue: (issue) => reasons.get(issue.id) ?? "assigned",
+        }}
+        issueTagsById={new Map([["a", ["Blocking", "Decision"]]])}
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      const groups = [...container.querySelectorAll("[data-issues-group-key]")];
+      expect(groups.map((group) => group.getAttribute("data-issues-group-key"))).toEqual(["blocking", "assigned"]);
+      expect(groups[0]?.textContent).toContain("You are blocking");
+      expect(groups[0]?.textContent).toContain("2");
+      expect(groups[0]?.querySelector("button[aria-label^='New task in']")).toBeNull();
+      const rows = [...container.querySelectorAll("[data-testid='issue-row']")];
+      expect(rows).toHaveLength(3);
+      const blockingRow = rows.find((row) => row.textContent?.includes("Blocking task"));
+      expect(blockingRow?.textContent).toContain("BlockingDecision");
     });
 
     act(() => root.unmount());

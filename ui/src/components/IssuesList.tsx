@@ -162,7 +162,8 @@ export type BoardColumnPageSize = KanbanColumnPageSize;
 export type IssueViewState = IssueFilterState & {
   sortField: IssueSortField;
   sortDir: "asc" | "desc";
-  groupBy: "status" | "priority" | "assignee" | "project" | "workspace" | "parent" | "none";
+  /** "custom" groups by the page's `customGrouping`; without one it acts as "none". */
+  groupBy: "status" | "priority" | "assignee" | "project" | "workspace" | "parent" | "custom" | "none";
   viewMode: "list" | "board";
   nestingEnabled: boolean;
   showDateGroupSeparators: boolean;
@@ -212,7 +213,7 @@ function normalizeIssueViewState(value: unknown): IssueViewState {
       ? parsed.sortField as IssueSortField
       : defaultViewState.sortField,
     sortDir: parsed.sortDir === "asc" ? "asc" : "desc",
-    groupBy: ["status", "priority", "assignee", "project", "workspace", "parent", "none"].includes(parsed.groupBy ?? "")
+    groupBy: ["status", "priority", "assignee", "project", "workspace", "parent", "custom", "none"].includes(parsed.groupBy ?? "")
       ? parsed.groupBy as IssueViewState["groupBy"]
       : defaultViewState.groupBy,
     viewMode: parsed.viewMode === "board" ? "board" : "list",
@@ -251,8 +252,10 @@ function getInitialWorkspaceViewState(
   initialAssignees?: string[],
   initialWorkspaces?: string[],
   defaultSortField?: IssueSortField,
+  hasCustomGrouping = false,
 ): IssueViewState {
-  const initial = getInitialViewState(stored, initialAssignees, defaultSortField);
+  const base = getInitialViewState(stored, initialAssignees, defaultSortField);
+  const initial = hasCustomGrouping && stored.source === "default" ? { ...base, groupBy: "custom" as const } : base;
   if (!initialWorkspaces) return initial;
   return {
     ...initial,
@@ -496,7 +499,19 @@ interface IssuesListProps {
   rowPresentation?: IssueRowPresentation;
   /** Opt in per surface while the shared collection toolbar rolls out. */
   toolbarPresentation?: "legacy" | "collection";
+  /** Page-specific grouping: offered in the Group menu and used until the viewer picks another. */
+  customGrouping?: IssuesCustomGrouping;
+  /** Neutral tags shown after the title, for example why a task is on My tasks. */
+  issueTagsById?: Map<string, readonly string[]>;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
+}
+
+export interface IssuesCustomGrouping {
+  /** Label in the Group menu. */
+  label: string;
+  /** Groups in display order; empty groups are hidden. */
+  groups: readonly { key: string; label: string }[];
+  groupKeyForIssue: (issue: Issue) => string;
 }
 
 function LegacyIssuesToolbar({ context, search, controls }: CollectionToolbarProps) {
@@ -728,6 +743,8 @@ function StreamlinedIssuesList({
   onSearchChange,
   rowPresentation = "legacy",
   toolbarPresentation = "legacy",
+  customGrouping,
+  issueTagsById,
   onUpdateIssue,
 }: IssuesListProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -797,7 +814,7 @@ function StreamlinedIssuesList({
   const initialPreferences = initialPreferencesRef.current;
 
   const [viewState, setViewState] = useState<IssueViewState>(() =>
-    getInitialWorkspaceViewState(initialPreferences, initialAssignees, initialWorkspaces, defaultSortField),
+    getInitialWorkspaceViewState(initialPreferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping)),
   );
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState("");
@@ -820,7 +837,7 @@ function StreamlinedIssuesList({
     if (prevViewStateContextKey.current !== nextContextKey) {
       prevViewStateContextKey.current = nextContextKey;
       const preferences = loadIssueCollectionPreferences(preferenceLocation);
-      setViewState(getInitialWorkspaceViewState(preferences, initialAssignees, initialWorkspaces, defaultSortField));
+      setViewState(getInitialWorkspaceViewState(preferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping)));
       setVisibleIssueColumns(preferences.columns);
     }
   }, [
@@ -1265,8 +1282,14 @@ function StreamlinedIssuesList({
     || viewState.boardColumnPageSize !== KANBAN_COLUMN_DEFAULT_PAGE_SIZE;
 
   const groupedContent = useMemo(() => {
-    if (viewState.groupBy === "none") {
+    if (viewState.groupBy === "none" || (viewState.groupBy === "custom" && !customGrouping)) {
       return [{ key: "__all", label: null as string | null, items: filtered }];
+    }
+    if (viewState.groupBy === "custom" && customGrouping) {
+      const groups = groupBy(filtered, customGrouping.groupKeyForIssue);
+      return customGrouping.groups
+        .filter((group) => groups[group.key]?.length)
+        .map((group) => ({ key: group.key, label: group.label as string | null, items: groups[group.key]! }));
     }
     if (viewState.groupBy === "status") {
       const groups = groupBy(filtered, (i) => i.status);
@@ -1346,6 +1369,7 @@ function StreamlinedIssuesList({
     }));
   }, [
     filtered,
+    customGrouping,
     issueFilterWorkspaceContext,
     viewState.groupBy,
     agents,
@@ -1946,6 +1970,7 @@ function StreamlinedIssuesList({
                 <div className="p-2 space-y-0.5">
                   {/* PAP-411: "priority" group-by option hidden behind SHOW_TASK_PRIORITY_UI (group logic stays dormant). */}
                   {([
+                    ...(customGrouping ? [["custom", customGrouping.label] as const] : []),
                     ["status", "Status"],
                     ["priority", "Priority"],
                     ["assignee", "Responsible"],
@@ -2044,7 +2069,9 @@ function StreamlinedIssuesList({
                       : [...viewState.collapsedGroups, group.key],
                   });
                 }}
-                trailing={(
+                trailing={viewState.groupBy === "custom" ? (
+                  <span className="text-xs tabular-nums text-muted-foreground">{group.items.length}</span>
+                ) : (
                   <Button
                     variant="ghost"
                     size="icon-xs"
@@ -2077,6 +2104,7 @@ function StreamlinedIssuesList({
                   const issueProject = issue.projectId ? projectById.get(issue.projectId) ?? null : null;
                   const parentIssue = issue.parentId ? issueById.get(issue.parentId) ?? null : null;
                   const issueBadge = issueBadgeById?.get(issue.id);
+                  const issueTags = issueTagsById?.get(issue.id) ?? [];
                   const isMutedIssue = mutedIssueIds?.has(issue.id) === true;
                   const assigneeUserProfile = issue.assigneeUserId
                     ? companyUserProfileMap.get(issue.assigneeUserId) ?? null
@@ -2186,6 +2214,11 @@ function StreamlinedIssuesList({
                                 ({totalDescendants} sub-task{totalDescendants !== 1 ? "s" : ""})
                               </span>
                             ) : null}
+                            {issueTags.map((tag) => (
+                              <Badge key={tag} variant="outline" className="ml-1.5 px-1.5 text-(length:--text-nano) text-muted-foreground">
+                                {tag}
+                              </Badge>
+                            ))}
                             {issueBadge ? (
                               issueBadge === "Paused" ? (
                                 <Badge variant="ghost"
