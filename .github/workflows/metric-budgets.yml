@@ -7,18 +7,10 @@ name: Metric budgets
 # R1, R2 and S1 need a real instance's run history, so their budgets are enforced
 # by the weekly routine (`pnpm metrics:collect && pnpm metrics:budgets --group weekly`).
 
+# Manual runs only in the private Greatstone repo: the ui-budgets job takes up
+# to 45 minutes of the repo's Actions allowance, and a daily cron would spend
+# it with nobody asking. Agents run `pnpm test:metrics` locally before a PR.
 on:
-  pull_request:
-    paths:
-      - "ui/**"
-      - "server/**"
-      - "packages/**"
-      - "tests/perf/**"
-      - "tests/metrics-budgets/**"
-      - "tests/lifecycle-baseline/metrics/**"
-      - ".github/workflows/metric-budgets.yml"
-  schedule:
-    - cron: "17 4 * * *"
   workflow_dispatch:
 
 permissions:

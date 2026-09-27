@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WORKFLOWS_DIR = ".github/workflows";
 
-export const FORK_WORKFLOWS = ["fork-ci.yml"];
+export const FORK_WORKFLOWS = ["fork-ci.yml", "metric-budgets.yml"];
 
 let present = [];
 try {

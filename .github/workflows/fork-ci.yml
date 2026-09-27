@@ -1,4 +1,4 @@
-# Fork CI for GS Agentic Manager (Johnprempeh2/GS-Clip).
+# Fork CI for GS Agentic Manager (Johnprempeh2/gs-agentic-manager, private).
 #
 # The only workflow this fork runs. Upstream's CI, release, image, Storybook
 # and eval workflows were deleted rather than adapted: they publish to
@@ -17,10 +17,11 @@
 #              sharded across runners (the server suites run one file at a time)
 #   Fork CI    a single result to require in branch protection
 #
-# Triggers: a push to any branch, pull requests from other repositories, and
-# manual runs. A pull request from a branch of this repository is already
-# covered by that branch's push run, whose checks GitHub shows on the pull
-# request, so the pull_request run skips every job instead of repeating them.
+# Triggers: pull requests, pushes to main, and manual runs. The repository is
+# private, so every minute comes out of the account's Actions allowance: pull
+# requests and main run the fast lanes (guard, typecheck, build); the runner
+# and vitest lanes (about 17 jobs) run only when started by hand. Agents run
+# the relevant tests in their sandbox before opening a pull request.
 #
 # No secrets, a read-only token, GitHub-hosted runners only.
 
@@ -28,7 +29,7 @@ name: Fork CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -37,12 +38,11 @@ permissions:
 
 concurrency:
   group: fork-ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   guard:
     name: Rebrand and workflow guard
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -65,7 +65,6 @@ jobs:
 
   typecheck:
     name: Typecheck
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -91,7 +90,6 @@ jobs:
 
   build:
     name: Build
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -120,7 +118,7 @@ jobs:
 
   runner:
     name: Runner Rust tests
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -148,7 +146,7 @@ jobs:
 
   test:
     name: Tests (${{ matrix.label }})
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -199,7 +197,7 @@ jobs:
 
   result:
     name: Fork CI
-    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
+    if: always()
     needs: [guard, typecheck, build, runner, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -209,4 +207,5 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null
+          # Lanes that only run by hand report "skipped" on pull requests and main.
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null
