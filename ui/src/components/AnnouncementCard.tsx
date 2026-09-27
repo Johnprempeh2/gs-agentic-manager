@@ -3,7 +3,6 @@ import { ArrowUpRight, X } from "lucide-react";
 import type { Announcement, AnnouncementAction } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useAnnouncementAnimation } from "@/hooks/useAnnouncementAnimation";
 
@@ -35,10 +34,15 @@ export function AnnouncementCard({ announcement, onDismiss, imageSrc, animationS
   const animationDocument = useAnnouncementAnimation(announcement, animationSrc);
   const showAnimation = Boolean(animationDocument);
   return (
-    <Card
+    // Floats over live page content, so it takes the popup material, not the
+    // see-through Card material. The fill is solid (bg-popover, the float's
+    // own no-blur fallback): the well's fade-in keeps it a separate layer, so
+    // backdrop blur has nothing to blur and sidebar text would show through.
+    <div
       role="region"
       aria-labelledby={titleId}
-      className={cn("relative w-full max-w-(--announcement-width) gap-0 overflow-hidden rounded-xl p-0 shadow-sm", className)}
+      data-slot="announcement-card"
+      className={cn("gs-glass-float bg-popover text-popover-foreground relative flex w-full max-w-(--announcement-width) flex-col overflow-hidden rounded-xl border", className)}
       onKeyDown={(event) => {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onDismiss(); }
       }}
@@ -61,6 +65,6 @@ export function AnnouncementCard({ announcement, onDismiss, imageSrc, animationS
         {announcement.secondaryLink && <Action action={announcement.secondaryLink} onClick={onDismiss} />}
         <div className="ml-auto min-w-0 max-w-full"><Action action={announcement.primaryAction} primary onClick={onDismiss} /></div>
       </div>
-    </Card>
+    </div>
   );
 }
