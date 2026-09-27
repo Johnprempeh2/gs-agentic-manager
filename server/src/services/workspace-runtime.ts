@@ -3556,7 +3556,11 @@ export async function realizeExecutionWorkspace(input: {
   try {
     await recordGitOperation(input.recorder, {
       phase: "worktree_prepare",
-      args: ["worktree", "add", "-b", branchName, worktreePath, baseRef],
+      // --no-track: a remote base ref would otherwise make git write upstream
+      // config to the shared .git/config, and concurrent workspace setups in the
+      // same repo then fail on .git/config.lock. The task branch never pulls
+      // from its base ref, so tracking it is wrong anyway.
+      args: ["worktree", "add", "--no-track", "-b", branchName, worktreePath, baseRef],
       cwd: repoRoot,
       metadata: {
         repoRoot,
