@@ -643,7 +643,7 @@ export function NewIssueDialog() {
       ...data
     }: { companyId: string; stagedFiles: StagedIssueFile[] } & Record<string, unknown>) => {
       const issue = await issuesApi.create(companyId, data);
-      const failures: string[] = [];
+      const failures: Array<{ name: string; reason: string }> = [];
 
       for (const stagedFile of pendingStagedFiles) {
         try {
@@ -658,8 +658,11 @@ export function NewIssueDialog() {
           } else {
             await issuesApi.uploadAttachment(companyId, issue.id, stagedFile.file);
           }
-        } catch {
-          failures.push(stagedFile.file.name);
+        } catch (error) {
+          failures.push({
+            name: stagedFile.file.name,
+            reason: error instanceof Error && error.message ? error.message : "Upload failed",
+          });
         }
       }
 
@@ -678,7 +681,7 @@ export function NewIssueDialog() {
         const issueRef = issue.identifier ?? issue.id;
         pushToast({
           title: `Created ${issueRef} with upload warnings`,
-          body: `${failures.length} staged ${failures.length === 1 ? "file" : "files"} could not be added.`,
+          body: `Could not add ${failures.map((failure) => `${failure.name} (${failure.reason})`).join(", ")}.`,
           tone: "warn",
           action: prefix
             ? { label: `Open ${issueRef}`, href: `/${prefix}/issues/${issueRef}` }
