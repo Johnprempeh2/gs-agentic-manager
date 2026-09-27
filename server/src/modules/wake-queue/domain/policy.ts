@@ -199,6 +199,12 @@ export function decideWakeOutcome(facts: DeferredWakeOutcomeFacts): DeferredWake
 export type ReleaseRecoverySharedFacts = {
   hasExistingExecutionPath: boolean;
   hasPersistedMonitor: boolean;
+  /**
+   * A pending issue-thread interaction whose continuation policy wakes the
+   * assignee when the user answers. That answer is the issue's next step, so
+   * it is a live path just like an open run or a persisted monitor.
+   */
+  hasPendingWakeInteraction: boolean;
   suppressedByPauseHold: boolean;
   isStrandedRecoveryOrigin: boolean;
   recoveryAgentPresent: boolean;
@@ -381,6 +387,7 @@ export function decideReleaseRecovery(facts: ReleaseRecoveryFacts): ReleaseRecov
       facts.suppressImmediateRecovery ||
       shared.hasExistingExecutionPath ||
       shared.hasPersistedMonitor ||
+      shared.hasPendingWakeInteraction ||
       shared.suppressedByPauseHold
     ) {
       return { kind: "released" };
@@ -401,7 +408,12 @@ export function decideReleaseRecovery(facts: ReleaseRecoveryFacts): ReleaseRecov
   if (immediate.isDispositionRepairRetry) return { kind: "released" };
   if (!immediate.applies) return { kind: "released" };
   if (facts.suppressImmediateRecovery) return { kind: "released" };
-  if (shared.hasExistingExecutionPath || shared.hasPersistedMonitor || immediate.hasExplicitBlockerPath) {
+  if (
+    shared.hasExistingExecutionPath ||
+    shared.hasPersistedMonitor ||
+    shared.hasPendingWakeInteraction ||
+    immediate.hasExplicitBlockerPath
+  ) {
     return { kind: "released" };
   }
   if (shared.suppressedByPauseHold) return { kind: "released" };
