@@ -1,0 +1,212 @@
+# Fork CI for GS Agentic Manager (Johnprempeh2/GS-Clip).
+#
+# The only workflow this fork runs. Upstream's CI, release, image, Storybook
+# and eval workflows were deleted rather than adapted: they publish to
+# upstream's npm scope and container registry, route to upstream's AWS runner
+# fleets and call upstream's trusted PR workflow by reference, so on a fork
+# they either fail or act on infrastructure we do not own.
+# scripts/check-fork-workflows.mjs keeps it that way after upstream merges.
+#
+#   guard      the rebrand is complete and no upstream workflow came back
+#   typecheck  pnpm typecheck: every workspace, including the runner's
+#              cargo fmt --check and cargo check
+#   build      pnpm build: every workspace, including the runner's release
+#              binary built with cargo
+#   runner     the runner's Rust tests (the rebrand edits Rust sources)
+#   test       the vitest suites through scripts/run-vitest-stable.mjs,
+#              sharded across runners (the server suites run one file at a time)
+#   Fork CI    a single result to require in branch protection
+#
+# Triggers: a push to any branch, pull requests from other repositories, and
+# manual runs. A pull request from a branch of this repository is already
+# covered by that branch's push run, whose checks GitHub shows on the pull
+# request, so the pull_request run skips every job instead of repeating them.
+#
+# No secrets, a read-only token, GitHub-hosted runners only.
+
+name: Fork CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  guard:
+    name: Rebrand and workflow guard
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Nothing left to rebrand
+        run: node scripts/greatstone-rebrand.mjs --check
+
+      - name: Only fork-owned workflows
+        run: node scripts/check-fork-workflows.mjs
+
+  typecheck:
+    name: Typecheck
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+        with:
+          rust: "true"
+
+      - name: Restore runner Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/paperclip-runner/runner -> target
+          shared-key: fork-runner
+          save-if: "false"
+
+      - name: Typecheck every workspace
+        run: pnpm typecheck
+
+  build:
+    name: Build
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+        with:
+          rust: "true"
+          save-pnpm-store: "true"
+
+      # The one writer of the Rust cache, and only from branch pushes, so a
+      # pull request from another repository cannot seed it.
+      - name: Runner Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/paperclip-runner/runner -> target
+          shared-key: fork-runner
+          save-if: ${{ github.event_name == 'push' }}
+
+      - name: Build every workspace
+        run: pnpm build
+
+  runner:
+    name: Runner Rust tests
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+        with:
+          rust: "true"
+
+      - name: Restore runner Rust build cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: packages/paperclip-runner/runner -> target
+          shared-key: fork-runner
+          save-if: "false"
+
+      # cargo fmt --check, cargo check, the workspace tests in release mode and
+      # the conformance and replay parity checks.
+      - name: Runner Rust checks and tests
+        run: pnpm --filter @greatstone/paperclip-runner run check:runner
+
+  test:
+    name: Tests (${{ matrix.label }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # Shard counts keep the whole run under a free account's 20 concurrent
+      # jobs. The server groups are split by the durations recorded in
+      # scripts/general-server-shard-durations.json and
+      # scripts/serialized-shard-durations.json, so any count balances.
+      # One server shard also builds the runner with cargo (the native runner
+      # suite), which is why the server shards get the Rust toolchain.
+      matrix:
+        include:
+          - { label: "server 1/6", mode: general, group: general-server-without-chat, shard_index: 0, shard_count: 6, rust: true }
+          - { label: "server 2/6", mode: general, group: general-server-without-chat, shard_index: 1, shard_count: 6, rust: true }
+          - { label: "server 3/6", mode: general, group: general-server-without-chat, shard_index: 2, shard_count: 6, rust: true }
+          - { label: "server 4/6", mode: general, group: general-server-without-chat, shard_index: 3, shard_count: 6, rust: true }
+          - { label: "server 5/6", mode: general, group: general-server-without-chat, shard_index: 4, shard_count: 6, rust: true }
+          - { label: "server 6/6", mode: general, group: general-server-without-chat, shard_index: 5, shard_count: 6, rust: true }
+          - { label: "server chat", mode: general, group: general-chat }
+          - { label: "ui and cli", mode: general, group: general-workspaces-a }
+          - { label: "packages", mode: general, group: general-workspaces-b }
+          - { label: "serialized 1/4", mode: serialized, shard_index: 0, shard_count: 4 }
+          - { label: "serialized 2/4", mode: serialized, shard_index: 1, shard_count: 4 }
+          - { label: "serialized 3/4", mode: serialized, shard_index: 2, shard_count: 4 }
+          - { label: "serialized 4/4", mode: serialized, shard_index: 3, shard_count: 4 }
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+        with:
+          rust: ${{ matrix.rust && 'true' || 'false' }}
+
+      - name: Run vitest (${{ matrix.label }})
+        env:
+          MODE: ${{ matrix.mode }}
+          GROUP: ${{ matrix.group }}
+          SHARD_INDEX: ${{ matrix.shard_index }}
+          SHARD_COUNT: ${{ matrix.shard_count }}
+        run: |
+          args=()
+          if [ -n "$GROUP" ]; then args+=(--group "$GROUP"); fi
+          if [ -n "$SHARD_COUNT" ]; then args+=(--shard-index "$SHARD_INDEX" --shard-count "$SHARD_COUNT"); fi
+          pnpm "test:run:$MODE" -- "${args[@]}"
+
+  result:
+    name: Fork CI
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
+    needs: [guard, typecheck, build, runner, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every lane passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null

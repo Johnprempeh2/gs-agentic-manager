@@ -10,6 +10,10 @@
  *   node scripts/greatstone-rebrand.mjs          apply
  *   node scripts/greatstone-rebrand.mjs --check  exit 1 if anything is left to rename
  *
+ * An upstream merge also brings back upstream's GitHub workflows, which this
+ * fork deletes. Before pushing the merge, run
+ * `node scripts/check-fork-workflows.mjs` and `git rm` whatever it lists.
+ *
  * The runner package checks generated artefacts against their sources, and the
  * rename changes text inside those sources. After a run, regenerate them:
  *

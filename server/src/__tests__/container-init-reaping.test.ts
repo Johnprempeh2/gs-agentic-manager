@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -26,6 +26,8 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...segments: string[]) => readFileSync(path.join(repoRoot, ...segments), "utf8");
+const readIfPresent = (...segments: string[]) =>
+  existsSync(path.join(repoRoot, ...segments)) ? read(...segments) : null;
 
 const dockerfile = read("Dockerfile");
 const agentRuntimeBase = read("docker", "agent-runtime", "Dockerfile.base");
@@ -36,7 +38,9 @@ const ecsTaskDefinition = JSON.parse(read("docker", "ecs-task-definition.json"))
 };
 const reapingProbe = read("scripts", "assert-orphan-reaping.sh");
 const buildTest = read("scripts", "docker-build-test.sh");
-const dockerWorkflow = read(".github", "workflows", "docker.yml");
+// Upstream's image workflow. This fork deletes it (scripts/check-fork-workflows.mjs),
+// so it is checked only where the file exists.
+const dockerWorkflow = readIfPresent(".github", "workflows", "docker.yml");
 
 /** Every `ENTRYPOINT [...]` line in a Dockerfile, in order. */
 function entrypoints(source: string): string[] {
@@ -128,7 +132,7 @@ describe("deployment manifest parity", () => {
 describe("orphan-reaping probe", () => {
   it.each([
     ["the docker build test", buildTest],
-    ["the Docker publish workflow", dockerWorkflow],
+    ...(dockerWorkflow === null ? [] : [["the Docker publish workflow", dockerWorkflow]]),
   ])("is exercised against a real image by %s", (_name, source) => {
     // A probe nothing runs proves nothing. The static assertions above only
     // check configuration; this is what keeps the behavioural check wired up.

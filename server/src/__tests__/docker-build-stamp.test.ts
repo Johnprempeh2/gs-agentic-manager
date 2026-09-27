@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -20,8 +20,14 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8");
-const workflow = readFileSync(path.join(repoRoot, ".github", "workflows", "docker.yml"), "utf8");
-const previewWorkflow = readFileSync(path.join(repoRoot, ".github", "workflows", "release.yml"), "utf8");
+// Upstream's image and release workflows. This fork deletes them
+// (scripts/check-fork-workflows.mjs), so they are checked only where they exist.
+const readWorkflow = (name: string) => {
+  const workflowPath = path.join(repoRoot, ".github", "workflows", name);
+  return existsSync(workflowPath) ? readFileSync(workflowPath, "utf8") : null;
+};
+const workflow = readWorkflow("docker.yml");
+const previewWorkflow = readWorkflow("release.yml");
 
 /**
  * Return the text of the Dockerfile stage that starts at the named target.
@@ -68,7 +74,7 @@ describe("docker build-stamp wiring", () => {
     ).toBeLessThan(serverBuildIdx);
   });
 
-  it("passes GSAM_BUILD_COMMIT as a build-arg for standard and explicit preview builds", () => {
+  it.skipIf(workflow === null || previewWorkflow === null)("passes GSAM_BUILD_COMMIT as a build-arg for standard and explicit preview builds", () => {
     for (const [name, source] of [["standard", workflow], ["preview", previewWorkflow]]) {
       expect(source, `${name} must pass the source commit into the image build`)
         .toMatch(/^\s*GSAM_BUILD_COMMIT=\$\{\{ (?:github.sha|inputs.source_ref) \}\}$/m);
