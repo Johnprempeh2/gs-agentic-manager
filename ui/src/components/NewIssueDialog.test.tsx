@@ -57,7 +57,11 @@ const mockExecutionWorkspacesApi = vi.hoisted(() => ({
 
 const mockProjectsApi = vi.hoisted(() => ({
   list: vi.fn(),
+  create: vi.fn(),
 }));
+
+// Tests that exercise the project picker opt in to the real selector.
+const selectorState = vi.hoisted(() => ({ realProjectPicker: false }));
 
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -179,8 +183,9 @@ vi.mock("./MarkdownEditor", async () => {
   };
 });
 
-vi.mock("./InlineEntitySelector", async () => {
+vi.mock("./InlineEntitySelector", async (importOriginal) => {
   const React = await import("react");
+  const actual = await importOriginal<typeof import("./InlineEntitySelector")>();
   return {
     InlineEntitySelector: React.forwardRef<
       HTMLButtonElement,
@@ -191,7 +196,11 @@ vi.mock("./InlineEntitySelector", async () => {
         triggerDataSlot?: string;
         renderTriggerValue?: (option: { id: string; label: string } | null) => ReactNode;
       }
-    >(function InlineEntitySelectorMock({ value, placeholder, className, triggerDataSlot, renderTriggerValue }, ref) {
+    >(function InlineEntitySelectorMock(props, ref) {
+      const { value, placeholder, className, triggerDataSlot, renderTriggerValue } = props;
+      if (selectorState.realProjectPicker && placeholder === "Project") {
+        return <actual.InlineEntitySelector ref={ref} {...(props as ComponentProps<typeof actual.InlineEntitySelector>)} />;
+      }
       return (
         <button ref={ref} type="button" className={className} data-slot={triggerDataSlot}>
           {(renderTriggerValue?.(value ? { id: value, label: value } : null) ?? value) || placeholder}
@@ -337,6 +346,8 @@ describe("NewIssueDialog", () => {
     document.body.appendChild(container);
     dialogState.newIssueOpen = true;
     dialogState.newIssueDefaults = {};
+    selectorState.realProjectPicker = false;
+    mockProjectsApi.create.mockReset();
     dialogState.closeNewIssue.mockReset();
     dialogContentState.onEscapeKeyDown = null;
     dialogContentState.onPointerDownOutside = null;
@@ -1653,6 +1664,135 @@ describe("NewIssueDialog", () => {
         // Should show OPS (issuePrefix), not ACM (name.slice(0,3))
         expect(text).toContain("OPS");
       });
+
+      act(() => root.unmount());
+    });
+  });
+  describe("creating a project from the project picker", () => {
+    const alpha = {
+      id: "project-1",
+      name: "Alpha",
+      description: null,
+      archivedAt: null,
+      color: "#445566",
+      workspaces: [],
+      executionWorkspacePolicy: null,
+    };
+
+    async function typeProjectSearch(value: string) {
+      const input = container.querySelector('input[placeholder="Search projects..."]') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await flush();
+    }
+
+    function createRow() {
+      return container.querySelector<HTMLButtonElement>("[data-inline-entity-create]");
+    }
+
+    it("offers a plain New project entry and hides create for an existing name", async () => {
+      selectorState.realProjectPicker = true;
+      mockProjectsApi.list.mockResolvedValue([alpha]);
+      const { root } = renderDialog(container);
+      await flush();
+
+      expect(createRow()?.textContent).toBe("New project");
+
+      await act(async () => {
+        createRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flush();
+      expect(container.querySelector('input[placeholder="Name the new project..."]')).not.toBeNull();
+      expect(mockProjectsApi.create).not.toHaveBeenCalled();
+
+      const input = container.querySelector('input[placeholder="Name the new project..."]') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "alpha");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await flush();
+      expect(createRow()).toBeNull();
+
+      act(() => root.unmount());
+    });
+
+    it("creates the typed project, selects it and keeps the typed task", async () => {
+      selectorState.realProjectPicker = true;
+      mockProjectsApi.list.mockResolvedValue([alpha]);
+      const created = { ...alpha, id: "project-new", name: "Inbox triage", color: null };
+      mockProjectsApi.create.mockImplementation(async () => {
+        mockProjectsApi.list.mockResolvedValue([alpha, created]);
+        return created;
+      });
+      mockIssuesApi.create.mockResolvedValue({ id: "issue-1", companyId: "company-1", identifier: "PAP-9" });
+      const { root, queryClient } = renderDialog(container);
+      await flush();
+      const listCallsBeforeCreate = mockProjectsApi.list.mock.calls.length;
+
+      await typeTextareaValue(container.querySelector('textarea[placeholder="Task title"]')!, "Sort the inbox");
+      await typeProjectSearch("Inbox triage");
+      expect(createRow()?.textContent).toBe('Create project "Inbox triage"');
+
+      await act(async () => {
+        createRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flush();
+
+      expect(mockProjectsApi.create).toHaveBeenCalledWith("company-1", { name: "Inbox triage", status: "planned" });
+      expect(dialogState.closeNewIssue).not.toHaveBeenCalled();
+      expect((container.querySelector('textarea[placeholder="Task title"]') as HTMLTextAreaElement).value).toBe("Sort the inbox");
+      expect(
+        (queryClient.getQueryData(queryKeys.projects.list("company-1")) as Array<{ id: string }>).map((project) => project.id),
+      ).toContain("project-new");
+      // Project lists (and so the sidebar) refetch after the create.
+      expect(mockProjectsApi.list.mock.calls.length).toBeGreaterThan(listCallsBeforeCreate);
+
+      const submitButton = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("Create Task"));
+      await act(async () => {
+        submitButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flush();
+
+      expect(mockIssuesApi.create).toHaveBeenCalledWith(
+        "company-1",
+        expect.objectContaining({ title: "Sort the inbox", projectId: "project-new" }),
+      );
+
+      act(() => root.unmount());
+    });
+
+    it("shows a create failure inline and leaves the task project unchanged", async () => {
+      selectorState.realProjectPicker = true;
+      mockProjectsApi.list.mockResolvedValue([alpha]);
+      mockProjectsApi.create.mockRejectedValue(new Error("Project service unavailable"));
+      mockIssuesApi.create.mockResolvedValue({ id: "issue-1", companyId: "company-1", identifier: "PAP-9" });
+      const { root } = renderDialog(container);
+      await flush();
+
+      await typeTextareaValue(container.querySelector('textarea[placeholder="Task title"]')!, "Sort the inbox");
+      await typeProjectSearch("Inbox triage");
+      await act(async () => {
+        createRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flush();
+
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe("Project service unavailable");
+      expect(createRow()?.textContent).toBe('Create project "Inbox triage"');
+
+      const submitButton = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("Create Task"));
+      await act(async () => {
+        submitButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flush();
+
+      expect(mockIssuesApi.create).toHaveBeenCalledWith(
+        "company-1",
+        expect.not.objectContaining({ projectId: expect.any(String) }),
+      );
 
       act(() => root.unmount());
     });
