@@ -115,6 +115,45 @@ test("R1 blind spot B4: a live branch does not hide a dead sibling", () => {
   assert.deepEqual(r1.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["DEAD"]);
 });
 
+// GRE-23: two more strands behind a deferred wake. Enqueue never defers behind
+// a dead lock (heartbeat.ts enqueueWakeup clears it first), so a deferred wake
+// only moves when its live holder releases and the drain promotes it
+// (wake-queue use-cases.ts runReleaseDrain). Each is `todo` until Summit
+// changes the definition; drop the flag with the fix.
+const deferredStrand = (id) => ({ todo: `GRE-23 strand ${id}: R1 definition change pending (Summit)` });
+
+test("R1 strand D1: a deferred wake whose holder died without a drain is not a live path", deferredStrand("D1"), () => {
+  // sweepStaleIssueLocks clears a lock held by a terminal or missing run with a
+  // bare update and never drains the queue (recovery/service.ts). The only
+  // later promoter, resumeQueuedRuns, takes comment or interaction wakes on a
+  // legacy run only (heartbeat.ts); an assignment, mention or dependency wake
+  // stays deferred. hasActiveExecutionPath counts it as live, so
+  // reconcileStrandedAssignedIssues skips the issue too.
+  const issues = [issue("root", { status: "in_progress" })];
+  const failed = { id: "r", issueId: "root", status: "failed", createdAt: hoursAgo(5), finishedAt: hoursAgo(5) };
+  const wakeRequests = [{ issueId: "root", status: "deferred_issue_execution" }];
+  assert.equal(computeStrandedTrees(base({ issues, runs: [failed], wakeRequests })).total, 1);
+  const holder = { id: "h", issueId: "root", status: "running", createdAt: hoursAgo(1), startedAt: hoursAgo(1), lastOutputAt: hoursAgo(0.9) };
+  assert.equal(computeStrandedTrees(base({ issues, runs: [holder], wakeRequests })).total, 0, "a live holder will drain it on release");
+});
+
+test("R1 strand D2: a deferred wake behind an execution hold is not a live path", deferredStrand("D2"), () => {
+  // settleUnrecoverableExecutions resolves the recovery action but keeps
+  // evidence.automaticRecovery.replay = 'blocked' and sets the issue blocked
+  // (execution-recovery-resolution.ts). executionBlockerPredicate still counts
+  // that resolved row as a hold (execution-blocker.ts), so release returns
+  // "released" without draining (wake-queue adapters/postgres.ts
+  // withIssueExecutionLock) and dispatch cancels any queued run as stale
+  // (run-dispatch adapters/postgres.ts decideCurrentRunStaleness). The wake
+  // waits for a person who is not the assignee. An escalated hold is the same.
+  const issues = [issue("root", { status: "blocked" })];
+  const wakeRequests = [{ issueId: "root", status: "deferred_issue_execution" }];
+  const replayBlocked = { sourceIssueId: "root", resolvedAt: hoursAgo(5), status: "resolved", cause: "uncertain_provider_action", replay: "blocked" };
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, recoveryActions: [replayBlocked] })).total, 1);
+  const escalated = { sourceIssueId: "root", resolvedAt: null, status: "escalated", ownerType: "board", cause: "execution_recovery_budget_exhausted" };
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, recoveryActions: [escalated] })).total, 1);
+});
+
 test("R1: a hold on a subtree covers the issues beneath it only", () => {
   const issues = [
     issue("root", { status: "in_progress" }),
