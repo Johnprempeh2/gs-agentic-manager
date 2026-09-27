@@ -49,18 +49,20 @@ to it.
 - **Routine changes: Keystone merges.** After the ready check says "Ready to
   merge" and CI is green, Keystone merges and sets the issue to `done`. John
   does not merge routine pull requests.
-- **Big changes: John agrees first.** A change is big if it adds or changes a
-  database migration; touches login, permissions, secrets, tokens, or GitHub or
-  Claude access; changes the release or preview scripts, CI, or the push guard;
-  removes or renames something John uses every day; or changes more than about
-  1,000 lines outside tests. If unsure, it is big. Keystone does the ready
-  check, then posts a confirmation card for John on the issue (what changes,
-  why it is big, what could break, how to roll back). Keystone merges only
-  after John accepts; if he rejects, the issue goes back to its owner.
+- **Big changes: John decides once, at release.** A change is big if it adds
+  or changes a database migration; touches login, permissions, secrets, tokens,
+  or GitHub or Claude access; changes the release or preview scripts, CI, or
+  the push guard; removes or renames something John uses every day; or changes
+  more than about 1,000 lines outside tests. If unsure, it is big. Keystone
+  merges a big change after the ready check and Flint's checks pass; there is
+  no card per merge. Keystone lists each big change at the top of the next
+  release card (what changes, why it is big, what could break, how to roll
+  back). If John says "not yet", the change stays out of live until it is
+  fixed or reverted.
 - **Keystone's own pull requests go to Flint.** Keystone never merges its own
   work. It sets Flint (release verifier) as the `review` stage participant.
-  Flint does the ready check and merges; for a big change, Flint posts the card
-  for John and merges after he accepts.
+  Flint does the ready check and merges; a big change is listed on the release
+  card in the same way.
 
 ## Never
 
@@ -97,10 +99,13 @@ Merging does not change the live app. A version goes live in these steps.
    met, and the diff does not touch `~/GSAM/`, secrets or client data. Keystone
    posts "Ready to merge" or "Not ready, because ..." on the issue.
 2. **Merge (Keystone).** `gh pr merge` when the verdict is "Ready to merge" and
-   CI is green; big changes only after John accepts the card. Keystone never
+   CI is green; for a big change, also after Flint's checks pass. Keystone never
    merges its own pull requests; Flint checks and merges those.
-3. **Candidate (Keystone).** Tag the merged `main` as a candidate and write the
-   release note (each change, its issue, what to check) on a release issue:
+3. **Candidate (Keystone, once a day).** Each morning, if `main` has changed
+   since live, tag the merged `main` as a candidate and write the release note
+   (big changes first, then each change, its issue, what to check) on a release
+   issue. The candidate is checked and its card is ready for John's 08:00
+   digest. One candidate per day; a newer merge waits for the next day. Tag it:
 
    ```sh
    git fetch origin && git tag -a rc-YYYY-MM-DD.N origin/main -m "Release candidate rc-YYYY-MM-DD.N"
@@ -126,7 +131,8 @@ Merging does not change the live app. A version goes live in these steps.
 6. **Release (John accepts, the platform does it).** After Flint's verdict,
    Keystone posts an **"Update live?"** confirmation card on the release issue:
    a `request_confirmation` with `idempotencyKey` `live-release:rc-YYYY-MM-DD.N`.
-   When John accepts it, the live server:
+   The card lists the big changes first. It is the only card John gets for the
+   release. When John accepts it, the live server:
 
    - holds new agent runs (the task drain) and waits until no agent run is
      running, at most 60 minutes. If runs are still going then, it stops, says
