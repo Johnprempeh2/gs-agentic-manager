@@ -63,6 +63,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { scheduleMainContentFocus } from "../lib/main-content-focus";
 import { pinDocumentScrollToZero } from "../lib/pin-document-scroll";
 import { cn } from "../lib/utils";
+import { routeSectionKey, useRouteEnterMotion } from "../hooks/useRouteEnterMotion";
 import { NotFoundPage } from "../pages/NotFound";
 import {
   PluginSlotMount,
@@ -175,6 +176,7 @@ export function Layout() {
   const lastMainScrollTop = useRef(0);
   const previousPathname = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
+  useRouteEnterMotion(mainContentRef, routeSectionKey(location.pathname));
   const scrollMemory = useRef(new NavigationScrollMemory());
   const activeScrollKey = useRef<string>(location.key);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
@@ -636,7 +638,7 @@ export function Layout() {
     <GeneralSettingsProvider value={{ keyboardShortcutsEnabled }}>
       <div
         className={cn(
-          "bg-background text-foreground pt-(--sz-safe-top)",
+          "text-foreground pt-(--sz-safe-top)",
           // overflow-x-clip on mobile keeps a stray wide descendant from making the
           // whole viewport scroll horizontally. clip (not hidden) leaves overflow-y
           // computed as visible, so native body scroll + the sticky breadcrumb keep
@@ -663,7 +665,7 @@ export function Layout() {
           {isMobile && sidebarOpen && (
             <button
               type="button"
-              className="fixed inset-0 z-40 bg-black/50"
+              className="fixed inset-0 z-40 gs-scrim"
               onClick={() => setSidebarOpen(false)}
               aria-label="Close sidebar"
             />
@@ -714,7 +716,7 @@ export function Layout() {
             <div
               className={cn(
                 isMobile &&
-                  "sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85",
+                  "sticky top-0 z-20 gs-glass-bar",
               )}
             >
               <StandaloneBrowserControls mobile={isMobile} />

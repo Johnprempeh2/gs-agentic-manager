@@ -1,5 +1,6 @@
 @import "./motion-tokens.css";
 @import "tailwindcss";
+@import "./greatstone-glass.css";
 @plugin "@tailwindcss/typography";
 
 @font-face {
@@ -278,7 +279,7 @@
   --status-agent-paused: #f59e0b;
   --status-agent-error: #dc2626;
   /* Dashboard agent card: translucent running treatment from the Paper design. */
-  --dashboard-run-accent: oklch(62.3% 0.214 259.815);
+  --dashboard-run-accent: #1b5039; /* Greatstone: a live run glows emerald on paper, lime on the void */
   --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 4%, transparent);
   --dashboard-run-border: color-mix(in oklab, var(--dashboard-run-accent) 25%, transparent);
   --dashboard-list-leading-width: calc(var(--spacing) * 6);
@@ -469,6 +470,7 @@
   /* Greatstone void: #121212, lime #c8ff00 primary on ink #0e1611, text greys
      from the brand ramp. Contrast audited: every text pair AA. */
   --brand-mark: #c8ff00;
+  --dashboard-run-accent: #c8ff00;
   --background: #121212;
   --foreground: #f5f5f5;
   --side-panel-bg: var(--background);

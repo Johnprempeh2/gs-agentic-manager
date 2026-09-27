@@ -221,7 +221,7 @@ function AuditRow({
                 View run
               </Link>
             ) : null}
-            <span className="font-mono text-(length:--text-micro) opacity-70">{record.action}</span>
+            <span className="font-mono text-(length:--text-micro) text-subtle-foreground">{record.action}</span>
           </div>
         </div>
         <time

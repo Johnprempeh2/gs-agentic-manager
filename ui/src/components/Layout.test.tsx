@@ -1351,7 +1351,9 @@ describe("Layout", () => {
     const { root, rootEl } = await renderLayoutRoot();
 
     expect(rootEl.tagName).toBe("DIV");
-    expect(rootEl.className).toContain("bg-background");
+    expect(rootEl.className).toContain("pt-(--sz-safe-top)");
+    // Transparent on purpose: the Greatstone atmosphere on <body> shows through.
+    expect(rootEl.className).not.toContain("bg-background");
     // The mobile root must clip horizontal overflow to prevent a stray wide
     // descendant from making the whole viewport scroll sideways. clip (not
     // hidden) keeps overflow-y visible so body scroll keeps working.
@@ -1367,7 +1369,9 @@ describe("Layout", () => {
     mockSidebarState.isMobile = false;
     const { root, rootEl } = await renderLayoutRoot();
 
-    expect(rootEl.className).toContain("bg-background");
+    expect(rootEl.className).toContain("pt-(--sz-safe-top)");
+    // Transparent on purpose: the Greatstone atmosphere on <body> shows through.
+    expect(rootEl.className).not.toContain("bg-background");
     expect(rootEl.classList.contains("overflow-clip")).toBe(true);
 
     await act(async () => {

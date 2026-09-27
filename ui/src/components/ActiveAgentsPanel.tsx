@@ -115,11 +115,11 @@ export function ActiveAgentsPanel({
         {title}
       </h3>
       {runs.length === 0 ? (
-        <div className="rounded-xl border border-border p-4">
+        <div className="gs-glass-card rounded-xl border p-4">
           <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         </div>
       ) : (
-        <div className={cn("grid grid-cols-1 items-start gap-2 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4", gridClassName)}>
+        <div className={cn("gs-stagger grid grid-cols-1 items-start gap-2 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4", gridClassName)}>
           {visibleRuns.map((run) => (
             <AgentRunCard
               key={run.id}
@@ -181,7 +181,7 @@ export const AgentRunCard = memo(function AgentRunCard({
       showTranscript && "h-(--sz-320px)",
       run.status === "running"
         ? "border-(--dashboard-run-border) bg-(--dashboard-run-background) shadow-(--shadow-extract-1)"
-        : "border-border bg-background/70",
+        : "gs-glass-card",
       className,
     )} data-run-status={run.status}>
       <div className={cn("flex shrink-0 flex-col gap-3 p-3", showTranscript && "border-b border-border/60")}>

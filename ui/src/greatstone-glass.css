@@ -1,0 +1,314 @@
+/* Greatstone glass and motion layer. Imported by index.css, so the token
+   pipeline keeps a single root (DESIGN.md). Components never hardcode these
+   values; they opt in with the gs-* classes below.
+
+   Three materials, chosen by what sits behind them:
+   - gs-glass-card   Translucent tint + rim light, NO blur. Cards sit on the
+                     static atmosphere, and blurring a smooth gradient changes
+                     nothing visible while costing a GPU pass per card.
+   - gs-glass-float  Real backdrop blur, for layers that float over live
+                     content: popovers, menus, dialogs, sheets, the palette.
+   - gs-glass-chrome Real backdrop blur for the sidebar and sticky bars, where
+                     content scrolls underneath.
+
+   Legibility contract (measured, see the contrast probe in the rebrand
+   notes): every glass tint carries a dark (or, in light mode, paper) base
+   UNDER the gradient, so text tokens clear AA against the worst backdrop the
+   layer can sit on, not just the flat page colour. */
+
+:root {
+  /* Atmosphere: paper with a soft emerald wash top-left and teal bottom-right. */
+  --gs-atmosphere:
+    radial-gradient(60% 55% at 82% -10%, rgb(27 80 57 / 0.12), transparent 70%),
+    radial-gradient(50% 60% at -6% 28%, rgb(27 80 57 / 0.09), transparent 70%),
+    radial-gradient(55% 45% at 58% 118%, rgb(78 205 196 / 0.12), transparent 70%);
+  --gs-grain-opacity: 0.025;
+
+  --glass-card-bg:
+    linear-gradient(158deg, rgb(255 255 255 / 0.8), rgb(255 255 255 / 0.58) 58%, rgb(255 255 255 / 0.68)),
+    rgb(247 248 244 / 0.4);
+  --glass-card-border: rgb(18 21 18 / 0.08);
+  --glass-card-border-hover: rgb(27 80 57 / 0.28);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --glass-shadow: 0 1px 2px rgb(18 21 18 / 0.04), 0 14px 34px -20px rgb(27 80 57 / 0.3);
+  --glass-shadow-hover: 0 1px 2px rgb(18 21 18 / 0.05), 0 20px 44px -22px rgb(27 80 57 / 0.42);
+
+  --glass-float-bg:
+    linear-gradient(158deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.1)),
+    rgb(251 252 249 / 0.88);
+  --glass-float-shadow: 0 28px 64px -24px rgb(18 21 18 / 0.3), 0 2px 8px rgb(18 21 18 / 0.06);
+
+  --glass-chrome-bg: rgb(239 241 235 / 0.74);
+  --glass-chrome-bar-bg: rgb(247 248 244 / 0.7);
+  --glass-blur: 22px;
+  --glass-saturate: 165%;
+
+  /* The liquid rim: bright where light enters (top-left), gone by mid-edge. */
+  --glass-rim: linear-gradient(135deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.2) 38%, transparent 60%, rgb(27 80 57 / 0.14));
+  --glass-scrim: rgb(18 21 18 / 0.26);
+  --glass-scrim-blur: 6px;
+
+  /* Active nav marker: emerald on paper (lime is 1.15:1 here). */
+  --gs-nav-marker: #1b5039;
+  --gs-selection: rgb(27 80 57 / 0.18);
+
+  /* Motion. Primitives express the house feel; everything else references them. */
+  --motion-ease-emphasized: var(--motion-ease-out-expo);
+  --motion-ease-spring: cubic-bezier(0.22, 1.25, 0.36, 1);
+  --motion-route-enter: 380ms;
+  --motion-route-travel: 8px;
+  --motion-float-enter: 220ms;
+  --motion-hover-lift: 180ms;
+  --motion-press: 90ms;
+  --motion-stagger-step: 45ms;
+
+  --gs-btn-primary-glow: 0 10px 24px -10px rgb(27 80 57 / 0.55);
+  /* Key data (headline numbers): the brand accent, readable on each theme. */
+  --gs-key-data: #1b5039;
+  --gs-btn-primary-sheen: inset 0 1px 0 rgb(255 255 255 / 0.22);
+}
+
+.dark {
+  /* Two emerald radials on the void (brand v2 atmosphere). */
+  --gs-atmosphere:
+    radial-gradient(60% 55% at 82% -10%, rgb(27 80 57 / 0.5), transparent 70%),
+    radial-gradient(50% 60% at -6% 28%, rgb(27 80 57 / 0.42), transparent 70%),
+    radial-gradient(55% 45% at 58% 118%, rgb(14 49 34 / 0.6), transparent 70%);
+  --gs-grain-opacity: 0.035;
+
+  --glass-card-bg:
+    linear-gradient(158deg, rgb(255 255 255 / 0.065), rgb(255 255 255 / 0.02) 58%, rgb(255 255 255 / 0.04)),
+    rgb(14 18 15 / 0.42);
+  --glass-card-border: rgb(255 255 255 / 0.07);
+  --glass-card-border-hover: rgb(200 255 0 / 0.22);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.07);
+  --glass-shadow: 0 18px 42px -26px rgb(0 0 0 / 0.75);
+  --glass-shadow-hover: 0 22px 48px -24px rgb(0 0 0 / 0.8), 0 0 0 1px rgb(200 255 0 / 0.04);
+
+  --glass-float-bg:
+    linear-gradient(158deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.015)),
+    rgb(20 23 20 / 0.86);
+  --glass-float-shadow: 0 30px 70px -24px rgb(0 0 0 / 0.8), 0 2px 10px rgb(0 0 0 / 0.35);
+
+  --glass-chrome-bg: rgb(13 15 13 / 0.62);
+  --glass-chrome-bar-bg: rgb(18 18 18 / 0.55);
+
+  --glass-rim: linear-gradient(135deg, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.05) 38%, transparent 60%, rgb(200 255 0 / 0.1));
+  --glass-scrim: rgb(5 7 5 / 0.55);
+
+  --gs-nav-marker: #c8ff00;
+  --gs-selection: rgb(200 255 0 / 0.22);
+
+  --gs-btn-primary-glow: 0 10px 28px -10px rgb(200 255 0 / 0.55);
+  --gs-key-data: #c8ff00;
+  --gs-btn-primary-sheen: inset 0 1px 0 rgb(255 255 255 / 0.45);
+}
+
+@layer base {
+  body {
+    background-image: var(--gs-atmosphere);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+  }
+
+  /* Film grain: static, decorative, under everything, never animated. */
+  /* z-index -1 paints it over the canvas background and under all content
+     without giving #root a stacking context (which would trap in-app
+     overlays beneath portalled popovers). */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--gs-grain-opacity);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    background-color: var(--gs-selection);
+  }
+}
+
+@layer components {
+  .gs-glass-card {
+    position: relative;
+    background: var(--glass-card-bg);
+    border-color: var(--glass-card-border);
+    box-shadow: var(--glass-highlight), var(--glass-shadow);
+  }
+
+  /* The same liquid rim as the floats, on cards and floats alike. */
+  .gs-glass-card::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    background: var(--glass-rim);
+    opacity: 0.7;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+
+  .gs-key-data {
+    color: var(--gs-key-data);
+  }
+
+  .gs-glass-card-interactive {
+    transition-property: transform, box-shadow, border-color;
+    transition-duration: var(--motion-hover-lift);
+    transition-timing-function: var(--motion-ease-emphasized);
+  }
+  .gs-glass-card-interactive:hover {
+    transform: translateY(-2px);
+    border-color: var(--glass-card-border-hover);
+    box-shadow: var(--glass-highlight), var(--glass-shadow-hover);
+  }
+  .gs-glass-card-interactive:active {
+    transform: translateY(0);
+    transition-duration: var(--motion-press);
+  }
+
+  .gs-glass-float {
+    position: relative;
+    background: var(--glass-float-bg);
+    border-color: var(--glass-card-border);
+    box-shadow: var(--glass-highlight), var(--glass-float-shadow);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+
+  /* Liquid rim: a 1px gradient ring masked to the border box. */
+  .gs-glass-float::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    background: var(--glass-rim);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+
+  .gs-glass-chrome {
+    background: var(--glass-chrome-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+
+  .gs-glass-bar {
+    background: var(--glass-chrome-bar-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+
+  .gs-scrim {
+    background: var(--glass-scrim);
+    -webkit-backdrop-filter: blur(var(--glass-scrim-blur));
+    backdrop-filter: blur(var(--glass-scrim-blur));
+  }
+
+  /* Buttons: an instant press, a lit primary, and glass for outlines. */
+  .gs-press:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .gs-btn-primary {
+    box-shadow: var(--gs-btn-primary-sheen);
+  }
+  .gs-btn-primary:hover:not(:disabled) {
+    box-shadow: var(--gs-btn-primary-sheen), var(--gs-btn-primary-glow);
+  }
+  .gs-btn-glass {
+    background: var(--glass-card-bg);
+    border-color: var(--glass-card-border);
+    box-shadow: var(--glass-highlight);
+  }
+
+  /* Sidebar navigation: a glass pill plus a marker that grows in when active. */
+  .gs-nav-item {
+    position: relative;
+    transition-property: background-color, color, box-shadow;
+    transition-duration: var(--motion-hover-lift);
+    transition-timing-function: var(--motion-ease-emphasized);
+  }
+  .gs-nav-item::before {
+    content: "";
+    position: absolute;
+    left: -0.5rem;
+    top: 50%;
+    width: 3px;
+    height: 1.1rem;
+    border-radius: 999px;
+    background: var(--gs-nav-marker);
+    transform: translateY(-50%) scaleY(0);
+    transition: transform var(--motion-float-enter) var(--motion-ease-spring);
+  }
+  .gs-nav-item-active {
+    box-shadow: var(--glass-highlight);
+  }
+  .gs-nav-item-active::before {
+    transform: translateY(-50%) scaleY(1);
+  }
+
+  /* Staggered entrance for a group (cards in a grid): each child rises a
+     beat after the one before. Plays once, on mount; never loops. */
+  .gs-stagger > * {
+    animation: gs-rise var(--motion-route-enter) var(--motion-ease-emphasized) both;
+    animation-delay: calc(var(--gs-stagger-index, 0) * var(--motion-stagger-step));
+  }
+  .gs-stagger > :nth-child(2) { --gs-stagger-index: 1; }
+  .gs-stagger > :nth-child(3) { --gs-stagger-index: 2; }
+  .gs-stagger > :nth-child(4) { --gs-stagger-index: 3; }
+  .gs-stagger > :nth-child(5) { --gs-stagger-index: 4; }
+  .gs-stagger > :nth-child(6) { --gs-stagger-index: 5; }
+  .gs-stagger > :nth-child(7) { --gs-stagger-index: 6; }
+  .gs-stagger > :nth-child(8) { --gs-stagger-index: 7; }
+  .gs-stagger > :nth-child(9) { --gs-stagger-index: 8; }
+  .gs-stagger > :nth-child(10) { --gs-stagger-index: 9; }
+  .gs-stagger > :nth-child(11) { --gs-stagger-index: 10; }
+  .gs-stagger > :nth-child(12) { --gs-stagger-index: 11; }
+  .gs-stagger > :nth-child(n + 13) { --gs-stagger-index: 12; }
+}
+
+@keyframes gs-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-route-travel));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* No backdrop-filter, or the viewer asked for less transparency: fall back to
+   the solid semantic surfaces, which carry the audited contrast on their own. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .gs-glass-float { background: var(--popover); }
+  .gs-glass-chrome { background: var(--sidebar); }
+  .gs-glass-bar { background: var(--background); }
+  .gs-scrim { background: var(--glass-scrim); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .gs-glass-float { background: var(--popover); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .gs-glass-chrome { background: var(--sidebar); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .gs-glass-bar { background: var(--background); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .gs-glass-card { background: var(--card); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-route-enter: 0ms;
+    --motion-float-enter: 0ms;
+    --motion-hover-lift: 0ms;
+    --motion-stagger-step: 0ms;
+  }
+  .gs-glass-card-interactive:hover { transform: none; }
+  .gs-stagger > * { animation: none; }
+}
