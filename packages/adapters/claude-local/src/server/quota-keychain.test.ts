@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readClaudeToken, readIsolatedClaudeKeychainToken } from "./quota.js";
+import { readClaudeCredential, readClaudeToken, readIsolatedClaudeKeychainCredential, readIsolatedClaudeKeychainToken } from "./quota.js";
 
 const suffixedService = (dir: string) => `Claude Code-credentials-${createHash("sha256").update(dir).digest("hex").slice(0, 8)}`;
 const mocks = vi.hoisted(() => ({ read: vi.fn(), exec: vi.fn() }));
@@ -9,6 +9,7 @@ vi.mock("node:child_process", () => ({ execFile: Object.assign(vi.fn(), { [Symbo
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 describe("explicit Claude Keychain import", () => {
   it("does not consult Keychain during passive reads", async () => {
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "");
     mocks.read.mockRejectedValue(new Error("missing"));
     await expect(readClaudeToken()).resolves.toBeNull();
     expect(mocks.exec).not.toHaveBeenCalled();
@@ -62,9 +63,19 @@ describe("explicit Claude Keychain import", () => {
     expect(mocks.exec).toHaveBeenCalledTimes(1);
   });
   it("returns null for an expired credentials file without Keychain access", async () => {
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "");
     mocks.read.mockResolvedValue(JSON.stringify({ claudeAiOauth: { accessToken: "stale", expiresAt: Date.now() - 60_000 } }));
     await expect(readClaudeToken()).resolves.toBeNull();
     expect(mocks.exec).not.toHaveBeenCalled();
+  });
+  it("keeps the login's expiry for the file and Keychain readers (GRE-15)", async () => {
+    vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "");
+    const expiresAt = Date.now() + 60_000;
+    mocks.read.mockResolvedValue(JSON.stringify({ claudeAiOauth: { accessToken: "file", expiresAt } }));
+    await expect(readClaudeCredential({ allowKeychain: true })).resolves.toEqual({ token: "file", expiresAt });
+    mocks.exec.mockResolvedValue({ stdout: JSON.stringify({ claudeAiOauth: { accessToken: "isolated", expiresAt } }) });
+    await expect(readIsolatedClaudeKeychainCredential("/isolated/claude")).resolves.toEqual({ token: "isolated", expiresAt });
   });
   it("still accepts a credentials file that records no expiry", async () => {
     vi.spyOn(process, "platform", "get").mockReturnValue("darwin");

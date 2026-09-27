@@ -16,7 +16,8 @@ import { applyConnectorSkills, prepareConnectorSkillDelivery, resolveConnectorAs
 import { admitExplicitNativeContinuation, undeliveredLegacyUserCommentIds } from "./explicit-native-continuation.js";
 import { connectionIntentService } from "./connection-intents.js";
 import { managedAiSessionFingerprintConfig, prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings, isAiConnectionBusy, AI_AUTH_ENV_KEYS } from "./ai-connection-runtime.js";
-import { aiConnectionBindingSchema } from "@greatstone/shared";
+import { aiConnectionService } from "./ai-connections.js";
+import { aiConnectionBindingSchema, isAiAuthRequiredErrorCode } from "@greatstone/shared";
 import { executionBlockerPredicate, getExecutionBlocker } from "./execution-blocker.js";
 import { CONVERSATION_CONTINUATION_POLICY, claimedAdapterType, runUsedConversationAdapter, hasConversationContinuationPolicy, isConversationAdapter } from "./conversation-continuation.js";
 import { recordExecutionWait } from "./execution-wait.js";
@@ -25912,6 +25913,17 @@ export function heartbeatService(
     } finally {
       if (managedAiRuntime) await managedAiRuntime.cleanup().catch(() => logger.warn({ runId: run.id }, "AI connection refresh or cleanup failed"));
       let latestRun = await getRun(run.id).catch(() => null);
+      // The provider refused the managed credential. Show the connection as
+      // needing attention so the next runs stop before calling the provider.
+      if (managedAiRuntime && latestRun?.status === "failed" && isAiAuthRequiredErrorCode(latestRun.errorCode)) {
+        await aiConnectionService(db).recordCredentialRejected({
+          companyId: run.companyId,
+          connectionId: managedAiRuntime.attribution.connectionId,
+          grantId: managedAiRuntime.attribution.grantId,
+          identity: managedAiRuntime.identity,
+          runId: run.id,
+        }).catch((error) => logger.warn({ err: error, runId: run.id }, "Could not mark the AI connection as needing attention"));
+      }
       try {
         if (latestRun && isHeartbeatRunTerminalStatus(latestRun.status)) {
           await db

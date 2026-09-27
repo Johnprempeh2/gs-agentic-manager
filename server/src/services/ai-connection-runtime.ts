@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { HttpError, unprocessable } from "../errors.js";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -9,7 +8,7 @@ import {
   AI_CONNECTION_CAPABILITIES,
   type AiConnectionBinding,
 } from "@greatstone/shared";
-import { aiConnectionService } from "./ai-connections.js";
+import { aiConnectionService, aiCredentialGeneration } from "./ai-connections.js";
 import { secretService } from "./secrets.js";
 import { decideCodexAuthMerge } from "@greatstone/adapter-codex-local/server";
 import type { AdapterExecutionTarget } from "@greatstone/adapter-utils/execution-target";
@@ -293,10 +292,7 @@ export async function prepareManagedAiRuntime(
       });
       env.OPENCODE_DISABLE_PROJECT_CONFIG = "true";
     }
-    const generation = createHash("sha256")
-      .update(value)
-      .digest("hex")
-      .slice(0, 16);
+    const generation = aiCredentialGeneration(value);
     const identity = `${selection.grant.id}:${input.responsibleUserId ?? "shared"}:${generation}`;
     return {
       config: {

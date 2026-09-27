@@ -1,14 +1,26 @@
 import { readLocalAiCredentialFile } from "./local-ai-credential-file.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readClaudeToken, readIsolatedClaudeKeychainToken, fetchClaudeQuota } from "@greatstone/adapter-claude-local/server";
+import { readClaudeCredential, readIsolatedClaudeKeychainCredential, parseClaudeCredential, fetchClaudeQuota, type ClaudeCredential } from "@greatstone/adapter-claude-local/server";
 import { readCodexAuthInfo, fetchCodexQuota } from "@greatstone/adapter-codex-local/server";
 import { parseGrokAuthPayload, hasUsableGrokAuthValue } from "@greatstone/adapter-grok-local/server";
-import type { AiProvider } from "@greatstone/shared";
+import type { AiCredentialInfo, AiProvider } from "@greatstone/shared";
 import { unprocessable } from "../errors.js";
 
 /** Read an owned login home, or an explicitly authorized local-operator import. */
 export async function readVerifiedLocalAiCredential(provider: AiProvider, loginHome?: string): Promise<string> {
+  return (await readVerifiedLocalAiCredentialWithInfo(provider, loginHome)).credential;
+}
+
+/**
+ * As {@link readVerifiedLocalAiCredential}, with where the credential came from
+ * and when it expires. A Claude login import copies only the short-lived access
+ * token (not the refresh token), so its expiry is when runs start failing.
+ */
+export async function readVerifiedLocalAiCredentialWithInfo(
+  provider: AiProvider,
+  loginHome?: string,
+): Promise<{ credential: string; info?: AiCredentialInfo }> {
   if (provider === "openrouter") throw unprocessable("OpenRouter requires an API key.");
   if ((provider === "openai" || provider === "xai") && !loginHome)
     throw unprocessable("Start a separate local sign-in for this connection before connecting.");
@@ -16,32 +28,35 @@ export async function readVerifiedLocalAiCredential(provider: AiProvider, loginH
     if (provider === "anthropic") {
       // Never change process.env or fall back to the server account when an
       // authenticated user's isolated login is missing or invalid.
-      let token: string | null = null;
+      let login: ClaudeCredential | null = null;
       if (loginHome) {
         for (const name of [".credentials.json", "credentials.json"]) {
           const raw = await readLocalAiCredentialFile(path.join(loginHome, name)).catch(() => null);
-          if (!raw) continue;
-          let parsed;
-          try { parsed = JSON.parse(raw); } catch { continue; }
-          const value = parsed?.claudeAiOauth?.accessToken;
-          if (typeof value === "string" && value.length) { token = value; break; }
+          login = raw ? parseClaudeCredential(raw) : null;
+          if (login) break;
         }
         // On macOS the CLI stores the isolated login in the auth home's own
         // suffixed Keychain item rather than a credentials file. The helper
         // never consults the unsuffixed operator item.
-        if (!token) token = await readIsolatedClaudeKeychainToken(loginHome);
+        if (!login) login = await readIsolatedClaudeKeychainCredential(loginHome);
       } else {
-        token = await readClaudeToken({ allowKeychain: true });
+        login = await readClaudeCredential({ allowKeychain: true });
       }
-      if (!token) throw new Error("Missing login");
-      await fetchClaudeQuota(token);
-      return token;
+      if (!login) throw new Error("Missing login");
+      await fetchClaudeQuota(login.token);
+      return {
+        credential: login.token,
+        info: {
+          source: "imported_login",
+          expiresAt: login.expiresAt == null ? null : new Date(login.expiresAt).toISOString(),
+        },
+      };
     }
     if (provider === "openai") {
       const auth = await readCodexAuthInfo(loginHome);
       if (!auth?.accessToken || !auth.refreshToken || !auth.idToken) throw new Error("Missing login");
       await fetchCodexQuota(auth.accessToken, auth.accountId);
-      return JSON.stringify({ tokens: { access_token: auth.accessToken, refresh_token: auth.refreshToken, id_token: auth.idToken, account_id: auth.accountId }, last_refresh: auth.lastRefresh });
+      return { credential: JSON.stringify({ tokens: { access_token: auth.accessToken, refresh_token: auth.refreshToken, id_token: auth.idToken, account_id: auth.accountId }, last_refresh: auth.lastRefresh }) };
     }
     const raw = await fs.readFile(path.join(loginHome!, "auth.json"), "utf8");
     const payload = parseGrokAuthPayload(JSON.parse(raw));
@@ -52,7 +67,7 @@ export async function readVerifiedLocalAiCredential(provider: AiProvider, loginH
     });
     await response.body?.cancel();
     if (!response.ok) throw new Error("Invalid login");
-    return raw;
+    return { credential: raw };
   } catch {
     // Provider/CLI errors may contain credential material; never return them.
     throw unprocessable(provider === "anthropic" && !loginHome
