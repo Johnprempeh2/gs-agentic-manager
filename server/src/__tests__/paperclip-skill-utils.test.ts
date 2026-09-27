@@ -548,7 +548,7 @@ describe("paperclip skill utils", () => {
     expect(skillBody).toContain("name: create-issue-interaction-ui");
     expect(normalizedLowerSkillBody).toContain("developer/maintainer skill");
     expect(normalizedLowerSkillBody).toContain(
-      "not the operational agents that run inside a deployed paperclip company",
+      "not the operational agents that run inside a deployed gs agentic manager company",
     );
     expect(skillBody).toContain("packages/shared/src/constants.ts");
     expect(skillBody).toContain("server/src/services/issue-thread-interactions.ts");
