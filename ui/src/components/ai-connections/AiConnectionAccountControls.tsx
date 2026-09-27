@@ -5,6 +5,7 @@ import { RevokeGrantDialog } from "@/pages/apps/app-detail/IdentitiesSection";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AI_PROVIDERS, aiMethodLabel, type AiConnectionSummary } from "./model";
+import { AiCredentialLifetime } from "./AiCredentialLifetime";
 
 /** AI-only account controls; identity, access and navigation belong to AppDetail. */
 export function AiConnectionAccountControls({
@@ -53,6 +54,13 @@ export function AiConnectionAccountControls({
         <div className="min-w-0 text-sm">
           <p className="font-medium">{aiMethodLabel(account.provider, account.method)}</p>
           {account.accountLabel && <p className="break-words text-xs text-muted-foreground">{account.accountLabel}</p>}
+          {!available && account.unavailableReason && (
+            <p role="alert" className="mt-1 flex items-start gap-2 text-xs text-destructive">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              <span>{account.unavailableReason}</span>
+            </p>
+          )}
+          {available && <AiCredentialLifetime credential={account.credential} className="mt-1" />}
         </div>
         {!readOnly && grant.capabilities?.canRevoke && (
           <div className="flex flex-wrap items-center gap-2">
