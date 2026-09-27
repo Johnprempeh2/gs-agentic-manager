@@ -111,6 +111,27 @@ test("S1: wake to first useful action ignores harness bookkeeping and untimed ru
   assert.equal(s1.runsWithoutUsefulAction, 1, "r3 had only human activity; r4 is still running and excluded");
 });
 
+test("S1: tool discovery at session start is bookkeeping; the split needs a prompt-sent time", () => {
+  const at = (hours, seconds) => new Date(Date.parse(hoursAgo(hours)) + seconds * 1000).toISOString();
+  const runs = [
+    { id: "r1", status: "succeeded", wakeRequestedAt: hoursAgo(3), createdAt: hoursAgo(3), promptSentAt: at(3, 2) },
+    { id: "r2", status: "succeeded", wakeRequestedAt: hoursAgo(2), createdAt: hoursAgo(2) },
+  ];
+  const activity = [
+    { runId: "r1", actorType: "agent", action: "tool_gateway.session_created", createdAt: at(3, 1) },
+    { runId: "r1", actorType: "agent", action: "tool_gateway.discovery", createdAt: at(3, 3) },
+    { runId: "r1", actorType: "agent", action: "tool_gateway.call_completed", createdAt: at(3, 5) },
+    { runId: "r1", actorType: "agent", action: "issue.comment_added", createdAt: at(3, 20) },
+    { runId: "r2", actorType: "agent", action: "tool_gateway.discovery", createdAt: at(2, 1) },
+    { runId: "r2", actorType: "agent", action: "tool_gateway.approval_requested", createdAt: at(2, 8) },
+  ];
+  const s1 = computeWakeLatency(base({ runs, activity }));
+  assert.deepEqual(s1.samplesMs, [8_000, 20_000], "discovery and gateway calls skipped; an approval request counts");
+  assert.equal(s1.split.sampleSize, 1, "r2 has no prompt-sent time");
+  assert.equal(s1.split.setupMedianMs, 2_000);
+  assert.equal(s1.split.agentMedianMs, 18_000);
+});
+
 test("percentile uses nearest rank", () => {
   const values = Array.from({ length: 20 }, (_, index) => index + 1);
   assert.equal(percentile(values, 95), 19);
