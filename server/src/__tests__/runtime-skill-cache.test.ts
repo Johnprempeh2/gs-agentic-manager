@@ -131,6 +131,16 @@ describe("runtime skill revision cache", () => {
     if (corruption === "symlink") expect(await fs.readFile(path.join(root, "outside.txt"), "utf8")).toBe("outside");
   });
 
+  // Regression (GRE-8): macOS returns EACCES when renaming a 0555 directory; Linux allows it.
+  it("publishes a read-only staging tree by rename and leaves the published entry read-only", async () => {
+    const spec = runtimeSkillCacheSpec(root, skill)!;
+    expect(await resolveRuntimeSkillCache(spec, reader())).toBe(path.join(spec.entry, "files"));
+    expect(await fs.readdir(spec.root)).toEqual([spec.fingerprint]);
+    expect((await fs.lstat(spec.entry)).mode & 0o777).toBe(0o555);
+    expect((await fs.lstat(path.join(spec.entry, "files"))).mode & 0o777).toBe(0o555);
+    expect((await fs.lstat(path.join(spec.entry, "manifest.json"))).mode & 0o777).toBe(0o444);
+  });
+
   it("does not publish partial builds and retries after a failed upstream read", async () => {
     const spec = runtimeSkillCacheSpec(root, skill)!;
     const read = reader().mockRejectedValueOnce(new Error("offline"));

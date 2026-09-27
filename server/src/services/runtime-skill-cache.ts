@@ -165,6 +165,14 @@ async function setTreeMode(directory: string, readonly: boolean): Promise<void> 
   if (readonly) await fs.chmod(directory, 0o555);
 }
 
+// macOS (APFS/HFS+) refuses to rename a directory its owner cannot write (EACCES), unlike Linux.
+// Unlock only the moved root; its read-only contents are unaffected, and matches() never checks the root mode.
+async function moveDirectory(from: string, to: string): Promise<void> {
+  const stat = await fs.lstat(from);
+  if (stat.isDirectory() && !stat.isSymbolicLink()) await fs.chmod(from, 0o700);
+  await fs.rename(from, to);
+}
+
 async function removeTree(directory: string): Promise<void> {
   await setTreeMode(directory, false);
   await fs.rm(directory, { recursive: true, force: true });
@@ -202,9 +210,10 @@ export async function resolveRuntimeSkillCache(
         if (!await matches(spec, staging)) throw new Error("Runtime skill cache validation failed");
         // Lifecycle mutations can update the DB while this builder owns the filesystem lock.
         if (!await stillInstalled()) throw new Error("Skill was renamed or removed during preparation");
-        await fs.rename(spec.entry, path.join(spec.root, `.invalid-${spec.fingerprint}-${randomUUID()}`))
+        await moveDirectory(spec.entry, path.join(spec.root, `.invalid-${spec.fingerprint}-${randomUUID()}`))
           .catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
-        await fs.rename(staging, spec.entry);
+        await moveDirectory(staging, spec.entry);
+        await fs.chmod(spec.entry, 0o555);
         return path.join(spec.entry, "files");
       } finally { await removeTree(staging); }
     });
