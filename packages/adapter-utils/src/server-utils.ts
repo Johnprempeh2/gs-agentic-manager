@@ -216,6 +216,7 @@ export const DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE = [
   "",
   "Execution contract:",
   "- Start actionable work in this heartbeat; do not stop at a plan unless the issue asks for planning.",
+  "- Acknowledge first: if the work needs more than one step, make your first tool call a one-line comment on the issue that says what you will do next. Do not read files, fetch the issue, or open skills before it; the wake payload and task context already have what you need to write it.",
   "- Leave durable progress in comments, documents, or work products, then update the issue to a clear final disposition before ending the heartbeat.",
   "- Comments, documents, screenshots, work products, and `Remaining` bullets are evidence, not valid liveness paths by themselves.",
   "- Final disposition checklist: mark `done` when complete; use `in_review` only with a real reviewer, approval, interaction, or monitor path; use `blocked` only with first-class blockers or a named unblock owner/action; create delegated follow-up issues with blockers when another agent owns the next step; keep `in_progress` only when a live continuation path exists.",
