@@ -784,13 +784,11 @@ describe("TaskChatComposer", () => {
       '[data-testid="task-chat-composer-assignee"]',
     )!;
 
+    // Greatstone: the composer is floating glass (both themes) whose brand
+    // focus glow lives in the gs-composer class, not a Tailwind ring.
     expect(composer.classList).toContain("border");
-    expect(composer.classList).toContain("border-border");
-    expect(composer.classList).toContain("bg-card");
-    expect(composer.classList).toContain("shadow-(--shadow-task-composer)");
-    expect(composer.classList).toContain("dark:border-0");
-    expect(composer.classList).toContain("dark:bg-muted");
-    expect(composer.classList).toContain("dark:shadow-none");
+    expect(composer.classList).toContain("gs-glass-float");
+    expect(composer.classList).toContain("gs-composer");
     expect(composer.className).not.toContain("focus-within:ring");
     expect(mode.classList).not.toContain("border");
     expect(mode.className).not.toContain("ring-");
@@ -954,8 +952,10 @@ describe("TaskChatComposer", () => {
     expect(assignee.classList).toContain("border-0");
     expect(assignee.classList).toContain("shadow-none");
     expect(send.classList).toContain("rounded-full");
-    expect(send.classList).toContain("bg-foreground");
-    expect(send.classList).toContain("text-background");
+    // Greatstone: send is the lit primary, with an explicit muted disabled state.
+    expect(send.classList).toContain("gs-btn-primary");
+    expect(send.classList).toContain("bg-primary");
+    expect(send.classList).toContain("disabled:bg-muted");
     expect(send.classList).toContain("disabled:opacity-100");
   });
 

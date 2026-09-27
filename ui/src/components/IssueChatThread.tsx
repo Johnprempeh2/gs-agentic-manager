@@ -2106,7 +2106,8 @@ function IssueChatUserMessage({
               : isCurrentUser
                 ? // Liveness blue (--liveness-blue, decoupled from --status-task-in_progress
                   // in DECISION-SHEET.md A6) for the human's own messages (PAP-95 rev 5).
-                  "bg-(--liveness-blue) text-white"
+                  // Greatstone: the human's own messages are the emerald stone.
+                  "gs-human-bubble"
                 : "bg-muted",
           pending && "opacity-80",
         )}

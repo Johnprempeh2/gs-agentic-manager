@@ -402,9 +402,9 @@
   --side-panel-tab-radius: var(--radius-xl);
   --side-panel-control-radius: var(--radius-xl);
   --side-panel-launcher-width: var(--sz-320px);
-  --side-panel-bg: var(--background);
+  --side-panel-bg: var(--gs-panel-bg); /* Greatstone: a translucent panel over the atmosphere */
   --side-panel-fg: var(--foreground);
-  --streamlined-task-detail-bg: var(--background);
+  --streamlined-task-detail-bg: transparent; /* let the atmosphere reach the task thread */
   --side-panel-tab-active-bg: color-mix(in oklab, var(--accent) 88%, var(--background));
   --side-panel-tab-hover-bg: color-mix(in oklab, var(--accent) 58%, transparent);
   --radius-task-composer: 16px;
@@ -474,9 +474,9 @@
   --dashboard-run-accent: #c8ff00;
   --background: #121212;
   --foreground: #f5f5f5;
-  --side-panel-bg: var(--background);
+  --side-panel-bg: var(--gs-panel-bg); /* Greatstone: a translucent panel over the atmosphere */
   --side-panel-fg: #f5f5f5;
-  --streamlined-task-detail-bg: var(--background);
+  --streamlined-task-detail-bg: transparent; /* let the atmosphere reach the task thread */
   --card: #121212;
   --card-foreground: #f5f5f5;
   --popover: #1a1c1a;
@@ -2465,9 +2465,10 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    reads on dark surfaces. A single hue covers both modes. */
 .status-chip {
   background-color: color-mix(in srgb, var(--sc) 15%, white);
-  /* 60% (was 82%): amber/green/grey chips measured 2.8 to 3.0:1 at 82%; every
-     status clears AA at 60% (lowest: todo/paused 4.84:1) and keeps its hue. */
-  color: color-mix(in srgb, var(--sc) 60%, black);
+  /* 55% (upstream 82%): amber/green/grey chips measured 2.8 to 3.0:1 at 82%, and
+     the brand teal chip measured 4.46:1 at 60% against the worst light wash. At
+     55% every status clears AA (lowest around 5.5:1) and keeps its hue. */
+  color: color-mix(in srgb, var(--sc) 55%, black);
   border-color: var(--sc);
 }
 .dark .status-chip {
@@ -2512,7 +2513,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --hex-737373: #737373; /* ActivityCharts.tsx — run activity 'other' segment tint. */
   --project-none: #64748b; /* Semantic rename of --hex-64748b (DECISION-SHEET.md A3, value unchanged). 'No project assigned' muted-slate fallback (TOKEN-AUDIT.md 1.3) across Routines/MarkdownEditor/RoutineRunVariablesDialog/RoutineList/IssueColumns/editable-sections; also ActivityCharts.tsx status 'backlog'. */
   --project-seed: #6366f1; /* Semantic rename of --hex-6366f1 (DECISION-SHEET.md A3, value unchanged). Project-color-fallback indigo seed default (ProjectDetail/PipelineSettings/IssueProperties/NewIssueDialog) — new-project-color-picker-seed family per TOKEN-AUDIT.md 1.3. */
-  --liveness-blue: #2563eb; /* DECISION-SHEET.md A6: IssueChatThread.tsx human-message 'liveness blue' bubble (PAP-95 rev 5). Same value as --status-task-in_progress by coincidence, decoupled on purpose so a future status-hue change doesn't drag the chat bubble along. */
+  --liveness-blue: var(--color-blue-600); /* DECISION-SHEET.md A6: IssueChatThread.tsx human-message 'liveness blue' bubble (PAP-95 rev 5). Same value as --status-task-in_progress by coincidence, decoupled on purpose so a future status-hue change doesn't drag the chat bubble along. */
   --app-logo-tile-1: #ff4f00;
   --app-logo-tile-2: #24292f;
   --app-logo-tile-3: #4a154b;

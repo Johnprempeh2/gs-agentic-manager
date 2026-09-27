@@ -238,7 +238,7 @@ function TaskChatBubbleContent({
           className={cn(
             "break-words py-2 text-sm",
             isHuman
-              ? "max-w-(--pct-85) rounded-2xl rounded-br-sm bg-(--liveness-blue) px-3.5 text-white"
+              ? "gs-human-bubble max-w-(--pct-85) rounded-2xl rounded-br-sm px-3.5"
               : "w-full bg-transparent px-1 text-foreground",
           )}
         >

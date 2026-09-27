@@ -130,7 +130,7 @@ export function TaskChatDescriptionBubble({ brief }: TaskChatDescriptionBubblePr
           className={cn(
             "max-w-(--pct-85) break-words px-3.5 py-2 text-sm",
             isHuman
-              ? "rounded-2xl rounded-br-sm bg-(--liveness-blue) text-white"
+              ? "gs-human-bubble rounded-2xl rounded-br-sm"
               : "rounded-2xl rounded-bl-sm bg-(--bubble-agent) text-foreground",
           )}
         >
@@ -138,7 +138,7 @@ export function TaskChatDescriptionBubble({ brief }: TaskChatDescriptionBubblePr
             collapsedHeight={FOLD_COLLAPSED_HEIGHT_PX}
             // The curtain's fade is a mask (background-agnostic); only the
             // toggle's muted colors need a lift on the solid blue bubble.
-            toggleClassName={isHuman ? "text-white/80 hover:text-white hover:bg-white/10" : undefined}
+            toggleClassName={isHuman ? "gs-on-accent-toggle" : undefined}
           >
             <MarkdownBody
               // On the solid --liveness-blue human bubble, keep prose body text

@@ -1246,13 +1246,13 @@ export function AgentDetail() {
         </div>
       ) : null}
       {/* Header */}
-      <header className="flex flex-wrap items-center justify-between gap-5 border-b border-border pb-6">
+      <header className="gs-hero flex flex-wrap items-center justify-between gap-5 pb-6">
         <div className="flex min-w-0 items-center gap-4">
-          <div role="img" aria-label={`${agent.name} avatar`} className="shrink-0">
+          <div role="img" aria-label={`${agent.name} avatar`} className="gs-hero-avatar shrink-0">
             <AgentCharacter agent={agent} state={characterStateForAgent(agent.status)} size={96} trackingScope="page" />
           </div>
           <div className="min-w-0 space-y-1">
-            <h1 className="truncate text-2xl font-semibold tracking-tight">{agent.name}</h1>
+            <h1 className="truncate text-3xl font-extrabold tracking-tight">{agent.name}</h1>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {agent.adapterType === "claude_local" || agent.adapterType === "codex_local"
                 ? <img src={`/brands/${agent.adapterType === "claude_local" ? "claude" : "codex"}-color.svg`} className="size-4" alt="" />
@@ -1737,7 +1737,7 @@ export function AgentOverview({
       <LatestRunCard runs={runs} agentId={agentRouteId} issuesById={issuesById} />
 
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-lg border border-border p-4" aria-labelledby="agent-identity-heading">
+        <section className="gs-glass-card rounded-xl border p-4" aria-labelledby="agent-identity-heading">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h3 id="agent-identity-heading" className="text-sm font-medium">Identity</h3>
             <StatusBadge status={agent.status} />
@@ -1756,7 +1756,7 @@ export function AgentOverview({
           </div>
         </section>
 
-        <section className="rounded-lg border border-border p-4" aria-labelledby="agent-runtime-heading">
+        <section className="gs-glass-card rounded-xl border p-4" aria-labelledby="agent-runtime-heading">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h3 id="agent-runtime-heading" className="text-sm font-medium">Harness / Runtime</h3>
             <Link className="text-xs text-muted-foreground hover:text-foreground" to={agentDetailHref(agentRouteId, "runtime")}>Configure</Link>
@@ -1771,7 +1771,7 @@ export function AgentOverview({
           </div>
         </section>
 
-        <section className="rounded-lg border border-border p-4" aria-labelledby="agent-capabilities-heading">
+        <section className="gs-glass-card rounded-xl border p-4" aria-labelledby="agent-capabilities-heading">
           <h3 id="agent-capabilities-heading" className="mb-3 text-sm font-medium">Capabilities</h3>
           {agent.capabilities?.trim() ? (
             <MarkdownBody className="text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{agent.capabilities}</MarkdownBody>
@@ -1780,7 +1780,7 @@ export function AgentOverview({
           )}
         </section>
 
-        <section className="rounded-lg border border-border p-4" aria-labelledby="agent-skills-heading">
+        <section className="gs-glass-card rounded-xl border p-4" aria-labelledby="agent-skills-heading">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 id="agent-skills-heading" className="text-sm font-medium">Skills</h3>
             <Link className="text-xs text-muted-foreground hover:text-foreground" to={agentDetailHref(agentRouteId, "skills")}>Manage</Link>

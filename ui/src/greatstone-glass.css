@@ -65,6 +65,12 @@
   --motion-bar-stagger: 28ms;
 
   --gs-btn-primary-glow: 0 10px 24px -10px rgb(27 80 57 / 0.55);
+  --gs-panel-bg: rgb(251 252 249 / 0.7);
+  --gs-focus-glow: 0 0 0 1px rgb(27 80 57 / 0.45), 0 0 0 5px rgb(27 80 57 / 0.1);
+  /* Human messages are the emerald stone: identical on paper and on the void. */
+  --gs-human-bubble-bg: linear-gradient(160deg, #22604a, #1b5039 58%, #174632);
+  --gs-human-bubble-fg: #f5f7f2;
+  --gs-human-bubble-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 10px 26px -16px rgb(27 80 57 / 0.75);
   --gs-hairline: linear-gradient(90deg, transparent, rgb(27 80 57 / 0.22) 18%, rgb(78 205 196 / 0.18) 50%, rgb(27 80 57 / 0.22) 82%, transparent);
   --gs-glow: rgb(27 80 57 / 0.14);
   --gs-glow-strong: rgb(27 80 57 / 0.35);
@@ -106,6 +112,9 @@
 
   --gs-btn-primary-glow: 0 10px 28px -10px rgb(200 255 0 / 0.55);
   --gs-key-data: #c8ff00;
+  --gs-panel-bg: rgb(13 15 13 / 0.6);
+  --gs-focus-glow: 0 0 0 1px rgb(200 255 0 / 0.4), 0 0 0 5px rgb(200 255 0 / 0.08);
+  --gs-human-bubble-shadow: inset 0 1px 0 rgb(200 255 0 / 0.16), 0 12px 30px -16px rgb(0 0 0 / 0.7);
   --gs-hairline: linear-gradient(90deg, transparent, rgb(200 255 0 / 0.2) 18%, rgb(78 205 196 / 0.14) 50%, rgb(200 255 0 / 0.2) 82%, transparent);
   --gs-glow: rgb(200 255 0 / 0.12);
   --gs-glow-strong: rgb(200 255 0 / 0.45);
@@ -281,6 +290,57 @@
   .gs-stagger > :nth-child(11) { --gs-stagger-index: 10; }
   .gs-stagger > :nth-child(12) { --gs-stagger-index: 11; }
   .gs-stagger > :nth-child(n + 13) { --gs-stagger-index: 12; }
+
+  /* Hero headers (agent pages): a brand glow seated behind the avatar and the
+     gradient hairline underneath. Static: the character itself is the motion. */
+  .gs-hero {
+    position: relative;
+  }
+  .gs-hero::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    pointer-events: none;
+    background: var(--gs-hairline);
+  }
+  .gs-hero-avatar {
+    position: relative;
+    isolation: isolate;
+  }
+  .gs-hero-avatar::before {
+    content: "";
+    position: absolute;
+    inset: -30%;
+    z-index: -1;
+    border-radius: 999px;
+    pointer-events: none;
+    background: radial-gradient(closest-side, var(--gs-glow-strong), transparent);
+    opacity: 0.55;
+  }
+
+  /* The task composer: floating glass that lights up in the brand when focused. */
+  .gs-composer {
+    transition: box-shadow var(--motion-hover-lift) var(--motion-ease-emphasized);
+  }
+  .gs-composer:focus-within {
+    box-shadow: var(--glass-highlight), var(--glass-float-shadow), var(--gs-focus-glow);
+  }
+
+  /* Human messages: the emerald stone. */
+  .gs-human-bubble {
+    background: var(--gs-human-bubble-bg);
+    color: var(--gs-human-bubble-fg);
+    box-shadow: var(--gs-human-bubble-shadow);
+  }
+  .gs-on-accent-toggle {
+    color: inherit;
+  }
+  .gs-on-accent-toggle:hover {
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
+  }
 
   /* List rows: a lit glass hover with the brand marker growing in at the edge.
      The band itself snaps (no transition): a fading band leaves a trail of

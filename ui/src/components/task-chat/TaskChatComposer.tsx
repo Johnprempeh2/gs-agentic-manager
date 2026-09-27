@@ -1127,7 +1127,7 @@ export function TaskChatComposer({
     <div
       className={cn(
         streamlined
-          ? "paperclip-task-chat-composer rounded-(--radius-task-composer) border border-border bg-card p-(--sz-18px) shadow-(--shadow-task-composer) dark:border-0 dark:bg-muted dark:shadow-none"
+          ? "paperclip-task-chat-composer gs-glass-float gs-composer rounded-(--radius-task-composer) border p-(--sz-18px)"
           : "paperclip-task-chat-composer rounded-xl bg-card p-(--sz-18px)",
         mobile && "p-2",
       )}
@@ -1605,7 +1605,7 @@ export function TaskChatComposer({
               className={cn(
                 "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:scale-100",
                 streamlined
-                  ? "bg-foreground text-background disabled:bg-foreground disabled:text-background disabled:opacity-100"
+                  ? "gs-btn-primary bg-primary text-primary-foreground disabled:bg-muted disabled:text-subtle-foreground disabled:shadow-none disabled:opacity-100"
                   : "bg-primary text-primary-foreground disabled:bg-muted disabled:text-muted-foreground",
               )}
               data-testid={

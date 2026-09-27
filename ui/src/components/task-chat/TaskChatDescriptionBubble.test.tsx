@@ -74,14 +74,14 @@ describe("TaskChatDescriptionBubble (PAP-375)", () => {
     });
   }
 
-  it("renders a human-created task as the blue user bubble, right-aligned, without an author header", () => {
+  it("renders a human-created task as the emerald user bubble, right-aligned, without an author header", () => {
     render(makeBrief({ createdAt: "2026-08-02T14:34:00.000Z" }));
     const bubble = container.querySelector('[data-testid="task-chat-description-bubble"]');
     expect(bubble).not.toBeNull();
     expect(bubble?.getAttribute("data-author")).toBe("human");
     expect(bubble?.className).toContain("items-end");
     expect(bubble?.querySelector('[data-slot="agent-avatar"]')).toBeNull();
-    const body = bubble?.querySelector(".bg-\\(--liveness-blue\\)");
+    const body = bubble?.querySelector(".gs-human-bubble");
     expect(body).not.toBeNull();
     expect(body?.textContent).toContain("Ship the widget by");
     // Markdown renders (bold), not raw asterisks.
