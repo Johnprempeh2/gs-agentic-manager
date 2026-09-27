@@ -99,6 +99,7 @@ tag=$tag
 commit=$commit
 pid=$pid
 port=$PREVIEW_PORT
+source_repo=$(dirname "$source_git")
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 

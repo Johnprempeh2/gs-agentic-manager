@@ -42,11 +42,19 @@ RUNS="$(active_runs "$LIVE_URL")"
 PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || git -C "$LIVE_DIR" rev-parse --short HEAD)"
 
 # Back up the live database before anything moves. The backup only reads.
-LIVE_DB_URL="$(live_database_url)" || die "the live database is not running; cannot back it up. Nothing was changed."
-BACKUP_DIR="$BACKUP_ROOT/release-$(date +%Y-%m-%dT%H%M%S)-$TAG"
-BACKUP_FILE="$(gs_db backup --source-url "$LIVE_DB_URL" --dir "$BACKUP_DIR" --prefix "before-$TAG" | tail -n 1)"
-[ -s "$BACKUP_FILE" ] || die "the database backup failed; nothing was changed."
-say "Backed up the live database (on $PREVIOUS) to $BACKUP_FILE"
+if LIVE_DB_URL="$(live_database_url)"; then
+  BACKUP_DIR="$BACKUP_ROOT/release-$(date +%Y-%m-%dT%H%M%S)-$TAG"
+  BACKUP_FILE="$(gs_db backup --source-url "$LIVE_DB_URL" --dir "$BACKUP_DIR" --prefix "before-$TAG" | tail -n 1)"
+  [ -s "$BACKUP_FILE" ] || die "the database backup failed; nothing was changed."
+  say "Backed up the live database (on $PREVIOUS) to $BACKUP_FILE"
+elif [ "$MODE" = rollback ] && [ -s "${GSAM_RELEASE_EXISTING_BACKUP:-}" ]; then
+  # A rollback after a failed one-click release: the failed version may have
+  # taken the database down. Keep the backup taken before that release.
+  BACKUP_FILE="$GSAM_RELEASE_EXISTING_BACKUP"
+  say "The live database is not running; keeping the backup from before the failed release: $BACKUP_FILE"
+else
+  die "the live database is not running; cannot back it up. Nothing was changed."
+fi
 
 if [ "$MODE" = release ]; then
   base="live-$(date +%Y-%m-%d)"
@@ -71,16 +79,24 @@ say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD)
 
 # The live server runs under dev-runner's "restart required" supervisor. It
 # notices the changed files within a few seconds, then restarts on request.
-RESTART=""
-for _ in $(seq 1 15); do
-  sleep 2
-  RESTART="$(curl -sS -m 10 -X POST "$LIVE_URL/api/health/dev-server/restart" 2>&1 || true)"
-  case "$RESTART" in *restart_requested*) break ;; esac
-done
-case "$RESTART" in
-  *restart_requested*) say "Asked the live server to restart" ;;
-  *) die "the live server did not accept a restart ($RESTART). Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
-esac
+if [ -z "$STARTED_BEFORE" ]; then
+  # No live server answered before the switch (for example a rollback after a
+  # failed version): start it instead of asking it to restart.
+  [ -x "$GS_ROOT/start-live.sh" ] || die "the live server is not running and there is no $GS_ROOT/start-live.sh. Live code is on $LIVE_TAG; start the live server by hand."
+  "$GS_ROOT/start-live.sh" </dev/null || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: scripts/greatstone-release.sh $PREVIOUS"
+  say "Started the live server"
+else
+  RESTART=""
+  for _ in $(seq 1 15); do
+    sleep 2
+    RESTART="$(curl -sS -m 10 -X POST "$LIVE_URL/api/health/dev-server/restart" 2>&1 || true)"
+    case "$RESTART" in *restart_requested*) break ;; esac
+  done
+  case "$RESTART" in
+    *restart_requested*) say "Asked the live server to restart" ;;
+    *) die "the live server did not accept a restart ($RESTART). Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
+  esac
+fi
 
 # "commit" follows the checkout at once, so success also needs a new process.
 for _ in $(seq 1 90); do

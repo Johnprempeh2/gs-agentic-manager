@@ -60,16 +60,21 @@ health_field() {
 # folder, so it changes on checkout, before the server restarts.
 health_commit() { health_field "$1" commit; }
 
-# Counts queued or running agent runs across every company on <url>.
+# Counts queued or running agent runs across every company on <url>. While a
+# task drain holds new runs (the one-click release sets one), queued runs cannot
+# start, so only running ones count. A server that does not answer runs nothing.
 active_runs() {
   node --input-type=module -e '
     const base = process.argv[1];
     const get = async (p) => (await fetch(base + p)).json();
+    try { await fetch(base + "/api/health"); } catch { console.log(0); process.exit(0); }
+    let draining = false;
+    try { draining = (await get("/api/instance/task-drain")).draining === true; } catch {}
     let active = 0;
     for (const company of await get("/api/companies")) {
       const runs = await get(`/api/companies/${company.id}/heartbeat-runs?limit=50`);
       const list = Array.isArray(runs) ? runs : (runs.runs ?? runs.items ?? []);
-      active += list.filter((r) => r.status === "running" || r.status === "queued").length;
+      active += list.filter((r) => r.status === "running" || (!draining && r.status === "queued")).length;
     }
     console.log(active);
   ' "$1"
