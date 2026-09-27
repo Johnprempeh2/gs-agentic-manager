@@ -2732,6 +2732,71 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     expect(byId.get(unblockedId)?.blockedBy).toEqual([]);
   });
 
+  it("includes blocks summaries (issues this one blocks) when includeBlocks is set", async () => {
+    const companyId = randomUUID();
+    const userBlockerId = randomUUID();
+    const agentIssueId = randomUUID();
+    const otherIssueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(issues).values([
+      {
+        id: userBlockerId,
+        companyId,
+        title: "Operator must sign contract",
+        status: "todo",
+        priority: "high",
+        assigneeUserId: "user-john",
+      },
+      {
+        id: agentIssueId,
+        companyId,
+        title: "Agent waits for contract",
+        status: "blocked",
+        priority: "medium",
+      },
+      {
+        id: otherIssueId,
+        companyId,
+        title: "Unrelated operator task",
+        status: "todo",
+        priority: "low",
+        assigneeUserId: "user-john",
+      },
+    ]);
+
+    await db.insert(issueRelations).values({
+      companyId,
+      issueId: userBlockerId,
+      relatedIssueId: agentIssueId,
+      type: "blocks",
+    });
+
+    const defaultResult = await svc.list(companyId, { assigneeUserId: "user-john" });
+    expect(defaultResult.find((issue) => issue.id === userBlockerId)?.blocks).toBeUndefined();
+
+    const result = await svc.list(companyId, { assigneeUserId: "user-john", includeBlocks: true });
+    const byId = new Map(result.map((issue) => [issue.id, issue]));
+
+    expect(byId.has(agentIssueId)).toBe(false);
+    expect(byId.get(userBlockerId)?.blocks).toEqual([
+      expect.objectContaining({
+        id: agentIssueId,
+        title: "Agent waits for contract",
+        status: "blocked",
+        priority: "medium",
+      }),
+    ]);
+    expect(byId.get(userBlockerId)?.blockedBy).toBeUndefined();
+    expect(byId.get(otherIssueId)?.blocks).toEqual([]);
+  });
+
   it("trims list payload fields that can grow large on issue index routes", async () => {
     const companyId = randomUUID();
     const issueId = randomUUID();
