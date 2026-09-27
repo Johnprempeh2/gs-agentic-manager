@@ -98,6 +98,13 @@ describe("selectAgentArtifactAttachments", () => {
     expect(selectAgentArtifactAttachments([agent, user], [])).toEqual([agent]);
   });
 
+  it("keeps task-level user uploads that are not bound to a comment (GRE-41)", () => {
+    // New Task dialog uploads land on the issue with a user author and no
+    // comment, so the thread never shows them. The Artifacts surfaces must.
+    const newTaskUpload = makeAttachment({ id: "new-task-file", createdByUserId: "user-1" });
+    expect(selectAgentArtifactAttachments([newTaskUpload], [])).toEqual([newTaskUpload]);
+  });
+
   it("dedupes attachments already promoted to work products", () => {
     // The promotion metadata schema requires a UUID attachmentId.
     const promotedId = "00000000-0000-4000-8000-000000000001";
