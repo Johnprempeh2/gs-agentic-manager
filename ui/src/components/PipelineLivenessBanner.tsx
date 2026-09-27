@@ -146,7 +146,7 @@ export function PipelineLivenessBanner({
             </p>
           ) : null}
           {view.helperNote ? (
-            <p className="text-xs italic opacity-70">{view.helperNote}</p>
+            <p className="text-xs italic">{view.helperNote}</p>
           ) : null}
           {retryError ? (
             <p role="alert" className="text-sm font-medium text-destructive">

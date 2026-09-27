@@ -896,7 +896,7 @@ export function BoardChat() {
                   <BrandThinkingIcon className="inline-block h-3.5 w-3.5 shrink-0" />
                   <span>{statusText || "Thinking..."}</span>
                   {elapsedSec > 0 && (
-                    <span className="opacity-50">{elapsedSec.toFixed(1)}s</span>
+                    <span className="text-subtle-foreground">{elapsedSec.toFixed(1)}s</span>
                   )}
                 </div>
               )}

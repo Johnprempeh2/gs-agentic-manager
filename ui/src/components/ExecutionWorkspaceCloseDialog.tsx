@@ -117,7 +117,7 @@ export function ExecutionWorkspaceCloseDialog({
                     ? "Close is allowed with warnings"
                     : "Close is ready"}
               </div>
-              <div className="mt-1 text-xs opacity-80">
+              <div className="mt-1 text-xs">
                 {readiness.isSharedWorkspace
                   ? "This is a shared workspace session. Archiving it removes this session record but keeps the underlying project workspace."
                   : readiness.git?.workspacePath && readiness.git.repoRoot && readiness.git.workspacePath !== readiness.git.repoRoot

@@ -3167,7 +3167,7 @@ function AdapterEnvironmentResult({
     <div className={`rounded-md border px-2.5 py-2 text-(length:--text-micro) ${statusClass}`}>
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium">{statusLabel}</span>
-        <span className="opacity-80">
+        <span>
           {new Date(result.testedAt).toLocaleTimeString()}
         </span>
       </div>
@@ -3177,13 +3177,13 @@ function AdapterEnvironmentResult({
             key={`${check.code}-${idx}`}
             className="leading-relaxed break-words"
           >
-            <span className="font-medium uppercase tracking-wide opacity-80">
+            <span className="font-medium uppercase tracking-wide">
               {check.level}
             </span>
             <span className="mx-1 opacity-60">·</span>
             <span>{check.message}</span>
             {check.detail && (
-              <span className="block opacity-75 break-all">
+              <span className="block break-all">
                 ({check.detail})
               </span>
             )}

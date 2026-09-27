@@ -160,7 +160,7 @@ export function BlockedInboxView({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <div className="flex-1 space-y-1">
             <p className="text-sm font-medium">Couldn't load the Blocked tab.</p>
-            <p className="text-xs opacity-80">
+            <p className="text-xs">
               Other Inbox tabs still work. {message}
             </p>
           </div>

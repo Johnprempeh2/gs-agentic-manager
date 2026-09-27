@@ -25,7 +25,7 @@ export function WorktreeBanner() {
       }}
     >
       <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap">
-        <span className="shrink-0 opacity-70">Worktree</span>
+        <span className="shrink-0">Worktree</span>
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-70" aria-hidden="true" />
         <button
           type="button"

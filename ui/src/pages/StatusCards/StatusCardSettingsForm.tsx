@@ -286,8 +286,8 @@ export function StatusCardSettingsForm({
           </TooltipTrigger>
           <TooltipContent className="max-w-(--sz-18rem) text-left">
             <p>{costEstimate.primary}</p>
-            {costEstimate.note ? <p className="mt-1 opacity-80">{costEstimate.note}</p> : null}
-            <p className="mt-1 opacity-80">Rough estimate from typical update sizes; actual cost is tracked per update.</p>
+            {costEstimate.note ? <p className="mt-1">{costEstimate.note}</p> : null}
+            <p className="mt-1">Rough estimate from typical update sizes; actual cost is tracked per update.</p>
           </TooltipContent>
         </Tooltip>
       </div>

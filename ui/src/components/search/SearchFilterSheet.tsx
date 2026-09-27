@@ -57,7 +57,7 @@ function ChipToggleGroup({
               ) : null}
               <span>{option.label}</span>
               {typeof option.count === "number" ? (
-                <span className={cn("tabular-nums", isActive ? "opacity-80" : "text-subtle-foreground")}>
+                <span className={cn("tabular-nums", isActive ? undefined : "text-subtle-foreground")}>
                   {option.count}
                 </span>
               ) : null}

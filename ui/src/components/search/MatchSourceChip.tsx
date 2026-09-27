@@ -42,7 +42,7 @@ export function MatchSourceChip({ kind, count, label, className }: MatchSourceCh
       data-kind={kind}
     >
       {text}
-      {showCount ? <span className="opacity-80">×{count}</span> : null}
+      {showCount ? <span>×{count}</span> : null}
     </span>
   );
 }

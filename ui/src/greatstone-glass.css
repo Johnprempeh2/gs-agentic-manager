@@ -94,6 +94,10 @@
   --gs-tab-pill-border: rgb(18 21 18 / 0.06);
   --gs-tab-pill-shadow: inset 0 1px 0 rgb(255 255 255 / 1), 0 1px 2px rgb(18 21 18 / 0.06), 0 6px 16px -8px rgb(27 80 57 / 0.35);
   --gs-switch-on-glow: 0 0 0 3px rgb(27 80 57 / 0.1);
+  /* Form fields: the focused border is --ring (full strength, carries the
+     3:1 focus contrast); the halo and glow around it are atmosphere. */
+  --gs-field-halo: rgb(27 80 57 / 0.16);
+  --gs-field-glow: 0 6px 18px -8px rgb(27 80 57 / 0.35);
   /* Toast tone rails come from the retuned palette, so they follow the brand. */
   --gs-toast-info: var(--color-sky-600);
   --gs-toast-success: var(--color-emerald-600);
@@ -149,6 +153,8 @@
   --gs-tab-pill-border: rgb(255 255 255 / 0.1);
   --gs-tab-pill-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 8px 18px -10px rgb(0 0 0 / 0.8);
   --gs-switch-on-glow: 0 0 14px -2px rgb(200 255 0 / 0.35);
+  --gs-field-halo: rgb(200 255 0 / 0.16);
+  --gs-field-glow: 0 0 20px -6px rgb(200 255 0 / 0.4);
   --gs-toast-info: var(--color-sky-400);
   --gs-toast-success: var(--color-emerald-400);
   --gs-toast-warn: var(--color-amber-400);

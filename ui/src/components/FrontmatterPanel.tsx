@@ -366,7 +366,7 @@ export function FrontmatterPanel({
                           value="fields"
                           disabled
                           aria-disabled="true"
-                          className="px-2 py-0.5 text-xs opacity-50"
+                          className="px-2 py-0.5 text-xs"
                         >
                           Fields
                         </TabsTrigger>

@@ -3660,7 +3660,7 @@ function ReviewDecisionPanel({
             <AlertTriangle className="mt-1 h-5 w-5 shrink-0" />
             <div>
               <p className="text-2xl font-semibold leading-tight">In review</p>
-              <p className="mt-1 text-sm opacity-80">
+              <p className="mt-1 text-sm">
                 Decide where this item goes next.
               </p>
             </div>
@@ -3700,7 +3700,7 @@ function ReviewDecisionPanel({
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block">{action.label}</span>
-                    <span className="block truncate text-xs font-normal opacity-75">
+                    <span className="block truncate text-xs font-normal">
                       Move to {action.targetStageName}
                     </span>
                   </span>
@@ -3710,11 +3710,11 @@ function ReviewDecisionPanel({
           </div>
 
           {nextItemTitle ? (
-            <p className="text-xs opacity-75">
+            <p className="text-xs">
               Next in this review queue: <span className="font-medium">{nextItemTitle}</span>
             </p>
           ) : (
-            <p className="text-xs opacity-75">No other item is waiting in this pipeline review queue.</p>
+            <p className="text-xs">No other item is waiting in this pipeline review queue.</p>
           )}
         </div>
       </div>

@@ -891,7 +891,7 @@ function IssueChatFallbackThread({
             <p className="font-medium">
               Chat renderer hit an internal state error.
             </p>
-            <p className="text-xs opacity-80">
+            <p className="text-xs">
               Showing a safe fallback transcript instead of crashing the tasks
               page.
             </p>

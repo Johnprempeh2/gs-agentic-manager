@@ -346,7 +346,7 @@ function RiskBanner({ team }: { team: CatalogTeam }) {
         {unsafe.map((s) => (
           <li key={`${s.type}:${s.ref}`} className="font-mono">
             {s.ref}{" "}
-            <span className="not-italic font-sans opacity-80">
+            <span className="not-italic font-sans">
               ({sourceWarningCode(s) === "unsupported_in_ui" ? "unsupported in browser install" : "unpinned"})
             </span>
           </li>
@@ -1367,7 +1367,7 @@ function TeamInstallerDialog({
               <div>
                 <p className="font-medium">Install failed</p>
                 <p className="mt-0.5 text-xs">{applyError}</p>
-                <p className="mt-1 text-xs opacity-80">
+                <p className="mt-1 text-xs">
                   Partial state is not rolled back. Review the organization activity log before retrying.
                 </p>
               </div>

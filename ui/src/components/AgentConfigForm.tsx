@@ -3593,19 +3593,19 @@ export function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmen
     <div className={`rounded-md border px-3 py-2 text-xs ${statusClass}`}>
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium">{statusLabel}</span>
-        <span className="text-(length:--text-micro) opacity-80">
+        <span className="text-(length:--text-micro)">
           {new Date(result.testedAt).toLocaleTimeString()}
         </span>
       </div>
       <div className="mt-2 space-y-1.5">
         {result.checks.map((check, idx) => (
           <div key={`${check.code}-${idx}`} className="text-(length:--text-micro) leading-relaxed break-words">
-            <span className="font-medium uppercase tracking-wide opacity-80">
+            <span className="font-medium uppercase tracking-wide">
               {check.level}
             </span>
             <span className="mx-1 opacity-60">·</span>
             <span>{check.message}</span>
-            {check.detail && <span className="block opacity-75 break-all">({check.detail})</span>}
+            {check.detail && <span className="block break-all">({check.detail})</span>}
             {check.hint && <span className="block opacity-90 break-words">Hint: {check.hint}</span>}
           </div>
         ))}

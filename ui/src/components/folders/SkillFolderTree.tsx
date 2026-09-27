@@ -437,7 +437,7 @@ export function SkillFolderRail({
                   className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
                 >
                   <span className="max-w-32 truncate">{tag.slug}</span>
-                  <span className="text-(length:--text-micro) opacity-70">{tag.count}</span>
+                  <span className="text-(length:--text-micro)">{tag.count}</span>
                 </button>
               ))}
           </div>

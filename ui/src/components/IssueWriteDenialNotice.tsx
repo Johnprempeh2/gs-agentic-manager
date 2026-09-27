@@ -91,7 +91,7 @@ export function IssueWriteDenialNotice({
           <p className="font-medium leading-5">
             {copy.title}
             {/* Naming the boundary is obligation 1 of plan §6. */}
-            <span className="ml-1.5 font-normal opacity-80">({copy.boundary})</span>
+            <span className="ml-1.5 font-normal">({copy.boundary})</span>
           </p>
           <p className="leading-5">{copy.description}</p>
           {/* Inline flow, not flex rows: a flex `dd` is an unbreakable line box,

@@ -927,13 +927,13 @@ function Activity({
           <div>
             {health.message && <p>{health.message}</p>}
             {health.previousHealth && (
-              <p className="mt-1 text-xs opacity-80">
+              <p className="mt-1 text-xs">
                 <span className="font-medium">Last reported health:</span>{" "}
                 {health.previousHealth}
               </p>
             )}
             {health.error && (
-              <p className="mt-1 text-xs opacity-80">
+              <p className="mt-1 text-xs">
                 <span className="font-medium">{health.errorLabel}:</span>{" "}
                 {health.error}
               </p>
