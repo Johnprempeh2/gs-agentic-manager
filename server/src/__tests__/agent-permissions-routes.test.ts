@@ -1818,6 +1818,45 @@ describe.sequential("agent permission routes", () => {
     expect(res.body.permissions.canCreateSkills).toBe(false);
   });
 
+  it("sets and clears the agents:configure and skills:create grants from the permission toggles", async () => {
+    mockAgentService.updatePermissions.mockResolvedValue({
+      ...baseAgent,
+      permissions: { canCreateAgents: false },
+    });
+
+    const app = await createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    const res = await requestApp(app, (baseUrl) => request(baseUrl)
+      .patch(`/api/agents/${agentId}/permissions`)
+      .send({ canCreateAgents: false, canAssignTasks: true, canConfigureAgents: true, canChangeSkills: false }));
+
+    expect(res.status).toBe(200);
+    expect(mockAgentService.updatePermissions).toHaveBeenCalledWith(agentId, {
+      canCreateAgents: false,
+      canAssignTasks: true,
+    });
+    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+      companyId, "agent", agentId, "agents:configure", true, "board-user",
+    );
+    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
+      companyId, "agent", agentId, "skills:create", false, "board-user",
+    );
+
+    mockAccessService.setPrincipalPermission.mockClear();
+    await requestApp(app, (baseUrl) => request(baseUrl)
+      .patch(`/api/agents/${agentId}/permissions`)
+      .send({ canCreateAgents: false, canAssignTasks: true }));
+    const touchedKeys = mockAccessService.setPrincipalPermission.mock.calls.map((call) => call[3]);
+    expect(touchedKeys).not.toContain("agents:configure");
+    expect(touchedKeys).not.toContain("skills:create");
+  });
+
   it("rejects CEO permission updates outside the caller company scope", async () => {
     const app = await createApp({
       type: "agent",

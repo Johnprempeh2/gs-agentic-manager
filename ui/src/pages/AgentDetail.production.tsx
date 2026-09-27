@@ -2200,6 +2200,12 @@ function ConfigurationTab({
 
   const canCreateAgents = Boolean(agent.permissions?.canCreateAgents);
   const canCreateSkills = agent.permissions?.canCreateSkills !== false;
+  // These two read the real unscoped grants the server checks for
+  // agent_config:update and skill_config:update, not legacy flags.
+  const hasUnscopedGrant = (permissionKey: string) =>
+    (agent.access?.grants ?? []).some((grant) => grant.permissionKey === permissionKey && !grant.scope);
+  const canConfigureAgents = hasUnscopedGrant("agents:configure");
+  const canChangeSkills = hasUnscopedGrant("skills:create");
   const canAssignTasks = Boolean(agent.access?.canAssignTasks);
   const taskAssignSource = agent.access?.taskAssignSource ?? "none";
   const taskAssignLocked = agent.role === "ceo" || canCreateAgents;
@@ -2284,18 +2290,39 @@ function ConfigurationTab({
           </div>
           <div className="flex items-center justify-between gap-4 text-sm">
             <div className="space-y-1">
-              <div>Can create/import skills</div>
+              <div>Can change other agents</div>
               <p className="text-xs text-muted-foreground">
-                Lets this agent install, import, create, and scan company skills without creating agents.
+                Lets this agent change other agents' settings and skill assignments.
               </p>
             </div>
             <ToggleSwitch
-              checked={canCreateSkills}
+              checked={canConfigureAgents}
               onCheckedChange={() =>
                 updatePermissions.mutate({
                   canCreateAgents,
-                  canCreateSkills: !canCreateSkills,
+                  canCreateSkills,
                   canAssignTasks,
+                  canConfigureAgents: !canConfigureAgents,
+                })
+              }
+              disabled={updatePermissions.isPending}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 text-sm">
+            <div className="space-y-1">
+              <div>Can change company skills</div>
+              <p className="text-xs text-muted-foreground">
+                Lets this agent create, import, and edit company skills directly instead of suggesting changes.
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={canChangeSkills}
+              onCheckedChange={() =>
+                updatePermissions.mutate({
+                  canCreateAgents,
+                  canCreateSkills,
+                  canAssignTasks,
+                  canChangeSkills: !canChangeSkills,
                 })
               }
               disabled={updatePermissions.isPending}

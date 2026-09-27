@@ -30,6 +30,7 @@ import {
 import { agentInstructionsService } from "../services/agent-instructions.ts";
 import { agentService } from "../services/agents.ts";
 import { approvalService } from "../services/approvals.ts";
+import { authorizationService } from "../services/authorization.ts";
 import {
   builtInAgentService,
   deriveBuiltInAgentStatus,
@@ -659,6 +660,46 @@ describeEmbeddedPostgres("built-in agents", () => {
     expect(coachGrantKeys).toEqual(expect.arrayContaining(["agents:suggest-changes", "skills:suggest-changes"]));
     expect(coachGrantKeys).not.toContain("agents:configure");
     expect(coachGrantKeys).not.toContain("skills:create");
+  });
+
+  it("grants default change permissions to a non-CEO root agent so it can reconfigure peers", async () => {
+    const companyId = await seedCompany({ requireApproval: false });
+    const agentsSvc = agentService(db);
+    const root = await agentsSvc.create(companyId, {
+      name: "Everest",
+      role: "general",
+      status: "idle",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    const peer = await agentsSvc.create(companyId, {
+      name: "Ridge",
+      role: "engineer",
+      status: "idle",
+      reportsTo: root.id,
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+
+    await reconcileBuiltInAgentsOnStartup(db);
+
+    const rootGrantKeys = await permissionKeysForAgent(root.id);
+    expect(rootGrantKeys).toEqual(expect.arrayContaining(["agents:configure", "skills:create"]));
+    expect(await permissionKeysForAgent(peer.id)).not.toContain("agents:configure");
+
+    const authz = authorizationService(db);
+    for (const action of ["agent_config:update", "skill_config:update"] as const) {
+      await expect(authz.decide({
+        actor: { type: "agent", agentId: root.id, companyId, source: "agent_key" },
+        action,
+        resource: { type: "agent", companyId, agentId: peer.id },
+        scope: { requiresChangeGrant: true },
+      })).resolves.toMatchObject({ allowed: true, reason: "allow_direct_change" });
+    }
   });
 
   it("recreates missing managed resource bindings idempotently during concurrent reconcile", async () => {

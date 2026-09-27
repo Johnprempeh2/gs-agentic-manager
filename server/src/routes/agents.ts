@@ -7,6 +7,7 @@ import { aiConnectionService } from "../services/ai-connections.js";
 import { defaultAiConnectionForHire } from "../services/agent-ai-connection-default.js";
 import { assertAiConnectionCreateAccess, canInstallSharedAiConnectionForNewAgent, responsibleUserForAiRequest, validateAiApiKey } from "./ai-connections.js";
 import { isAiConnectionCompatible } from "@greatstone/shared";
+import type { PermissionKey } from "@greatstone/shared";
 import { applyConnectorSkills, resolveConnectorAssignments, annotateConnectorSkills, isConnectorSkill } from "../services/connector-runtime.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
 import { paperclipRunnerTransitionConfig, normalizeLegacyRunnerProvider, isPaperclipRunnerProvider } from "@greatstone/adapter-utils";
@@ -4941,7 +4942,8 @@ export function agentRoutes(
       await assertBoardCanManageAgentsForCompany(req, existing.companyId);
     }
 
-    const agent = await svc.updatePermissions(id, req.body);
+    const { canConfigureAgents, canChangeSkills, ...permissionFlags } = req.body;
+    const agent = await svc.updatePermissions(id, permissionFlags);
     if (!agent) {
       res.status(404).json({ error: "Agent not found" });
       return;
@@ -4950,6 +4952,15 @@ export function agentRoutes(
     const effectiveCanAssignTasks =
       agent.role === "ceo" || Boolean(agent.permissions?.canCreateAgents) || req.body.canAssignTasks;
     await access.ensureMembership(agent.companyId, "agent", agent.id, "member", "active");
+    const grantedByUserId = req.actor.type === "board" ? (req.actor.userId ?? null) : null;
+    const changeGrants: Array<[PermissionKey, boolean | undefined]> = [
+      ["agents:configure", canConfigureAgents],
+      ["skills:create", canChangeSkills],
+    ];
+    for (const [permissionKey, enabled] of changeGrants) {
+      if (typeof enabled !== "boolean") continue;
+      await access.setPrincipalPermission(agent.companyId, "agent", agent.id, permissionKey, enabled, grantedByUserId);
+    }
     await access.setPrincipalPermission(
       agent.companyId,
       "agent",
@@ -4974,6 +4985,8 @@ export function agentRoutes(
         canCreateAgents: agent.permissions?.canCreateAgents ?? false,
         canCreateSkills: agent.permissions?.canCreateSkills ?? true,
         canAssignTasks: effectiveCanAssignTasks,
+        ...(typeof canConfigureAgents === "boolean" ? { canConfigureAgents } : {}),
+        ...(typeof canChangeSkills === "boolean" ? { canChangeSkills } : {}),
         trustPreset: agent.permissions?.trustPreset ?? "standard",
       },
     });

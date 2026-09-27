@@ -284,6 +284,10 @@ export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
   canCreateSkills: z.boolean().optional(),
   canAssignTasks: z.boolean(),
+  // Grant-backed toggles: set or clear the unscoped agents:configure and
+  // skills:create grants that agent_config:update / skill_config:update check.
+  canConfigureAgents: z.boolean().optional(),
+  canChangeSkills: z.boolean().optional(),
   trustPreset: trustPresetSchema.optional(),
   authorizationPolicy: trustAuthorizationPolicySchema.optional(),
 });
