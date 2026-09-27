@@ -67,6 +67,9 @@ cmd_start() {
 
   # Data: a fresh copy every start. Files are copied read-only from live; the
   # database comes from a read-only backup of the running live database.
+  # rsync -a keeps the modes of read-only folders (the skills runtime cache),
+  # so the old copy must be made writable before it can be removed.
+  [ -d "$PREVIEW_DATA_DIR" ] && chmod -R u+w "$PREVIEW_DATA_DIR"
   rm -rf "$PREVIEW_DATA_DIR" "$PREVIEW_ROOT/seed"
   mkdir -p "$PREVIEW_DATA_DIR" "$PREVIEW_ROOT/seed"
   rsync -a \
