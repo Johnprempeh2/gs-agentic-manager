@@ -78,7 +78,7 @@ export function SidePanelTab({
       style={appearance === "default" && hasStableWidth ? { width: stableWidth.width } : undefined}
       className={cn(
         appearance === "streamlined-task"
-          ? "group/side-panel-tab relative mx-1.5 flex h-7 min-w-0 flex-1 basis-0 items-center rounded-md border border-transparent"
+          ? "gs-panel-tab group/side-panel-tab relative mx-1.5 flex h-7 min-w-0 flex-1 basis-0 items-center rounded-md border border-transparent"
           : "group/side-panel-tab relative flex h-(--side-panel-tab-height) min-w-0 shrink-0 items-center rounded-(--side-panel-tab-radius) border border-transparent",
         "side-panel-tab-motion",
         active
