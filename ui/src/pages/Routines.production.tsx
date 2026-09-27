@@ -64,6 +64,7 @@ import {
   selectedFolderFromList,
   type FolderSelection,
 } from "../components/folders/FolderControls";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const concurrencyPolicies = ["coalesce_if_active", "always_enqueue", "skip_if_active"];
 const catchUpPolicies = ["skip_missed", "enqueue_missed_with_cap"];
@@ -985,6 +986,7 @@ export function Routines() {
                 ref={titleInputRef}
                 className="w-full resize-none overflow-hidden bg-transparent text-xl font-semibold outline-none placeholder:text-subtle-foreground"
                 placeholder="Routine title"
+                {...noContactAutofill("routine")}
                 rows={1}
                 value={draft.title}
                 onChange={(event) => {

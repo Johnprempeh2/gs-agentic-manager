@@ -23,6 +23,7 @@ import { DraftInput } from "./agent-config-primitives";
 import { InlineEditor } from "./InlineEditor";
 import { EnvironmentVariablesEditor } from "./environment-variables-editor";
 import { Badge } from "@/components/ui/badge";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 interface ProjectPropertiesProps {
   project: Project;
@@ -427,6 +428,7 @@ export function ProjectProperties({ project, repositories, onUpdate, onFieldUpda
               immediate
               className="w-full rounded border border-border bg-transparent px-2 py-1 text-sm outline-none"
               placeholder="Project name"
+              {...noContactAutofill("project")}
             />
           ) : (
             <span className="text-sm">{project.name}</span>

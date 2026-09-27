@@ -1269,6 +1269,9 @@ describe("NewIssueDialog", () => {
 
     const titleInput = container.querySelector('textarea[placeholder="Task title"]');
     const descriptionInput = container.querySelector('textarea[aria-label="Add description..."]');
+    // Safari offers contacts for "title" boxes unless the name contains "search".
+    expect(titleInput?.getAttribute("autocomplete")).toBe("off");
+    expect(titleInput?.getAttribute("name")).toBe("search_task");
     const bodyScrollRegion = Array.from(container.querySelectorAll("div")).find((element) =>
       typeof element.className === "string" && element.className.includes("overscroll-contain"),
     );

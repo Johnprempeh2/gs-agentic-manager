@@ -872,6 +872,45 @@ describe("IssueDocumentsSection", () => {
     queryClient.clear();
   });
 
+  it("keeps Safari contact AutoFill off the new document title box", async () => {
+    const issue = createIssue();
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    mockIssuesApi.listDocuments.mockResolvedValue([]);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+
+    const newDocumentButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("New document"),
+    );
+    await act(async () => {
+      newDocumentButton?.click();
+    });
+
+    const titleInput = container.querySelector('input[placeholder="Optional title"]');
+    expect(titleInput?.getAttribute("autocomplete")).toBe("off");
+    expect(titleInput?.getAttribute("name")).toBe("search_document");
+
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+  });
+
   it("forwards externalReferences to the rendered document body so URL decoration applies", async () => {
     const issue = createIssue();
     const root = createRoot(container);

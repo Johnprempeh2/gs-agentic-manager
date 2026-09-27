@@ -21,6 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -363,6 +364,7 @@ function QueuePicker({
                 if (event.key === "Escape") setCreating(false);
               }}
               placeholder="New queue name…"
+              {...noContactAutofill("queue")}
               className="w-full rounded-sm border border-border bg-background px-2 py-1 text-xs"
             />
             <div className="flex justify-end gap-1">
