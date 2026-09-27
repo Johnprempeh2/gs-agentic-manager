@@ -46,7 +46,7 @@ else
   while git rev-parse --verify --quiet "refs/tags/$base.$n" >/dev/null; do n=$((n + 1)); done
   TAG="$base.$n"
   git tag -a "$TAG" origin/main -m "Live release $TAG"
-  git push --quiet origin "refs/tags/$TAG"
+  GSAM_RELEASE=1 git push --quiet origin "refs/tags/$TAG"
   say "Tagged origin/main as $TAG"
 fi
 

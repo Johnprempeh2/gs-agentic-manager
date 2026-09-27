@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Local guard for the Greatstone repo (see doc/GREATSTONE-WAY-OF-WORKING.md).
+# GitHub Free cannot protect a private repo's main branch, so this hook does it
+# for every checkout and worktree on this machine. Install or refresh it with:
+#   cp scripts/git-hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"
+remote="$1"
+zero="0000000000000000000000000000000000000000"
+if [ "$remote" = "public-fork" ]; then
+  echo "pre-push: never push to public-fork (the public GS-Clip fork only tracks upstream)." >&2
+  exit 1
+fi
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      echo "pre-push: main only changes through a merged pull request on GitHub." >&2
+      exit 1 ;;
+    refs/tags/*)
+      if [ "${GSAM_RELEASE:-}" != "1" ]; then
+        echo "pre-push: tags are created by scripts/greatstone-release.sh only." >&2
+        exit 1
+      fi ;;
+  esac
+  if [ "$local_sha" = "$zero" ]; then
+    echo "pre-push: deleting $remote_ref is not allowed from this machine." >&2
+    exit 1
+  fi
+done
+exit 0

@@ -52,6 +52,12 @@ The repository is private: `Johnprempeh2/gs-agentic-manager` (remote
 - Commit secrets, tokens, `.env` files, client names or personal data.
 - Widen a task on your own. Propose follow-up work as a new issue instead.
 
+A `pre-push` hook in the dev checkout (shared by every worktree) enforces the
+first four rules on this machine: it refuses pushes to `main`, tags that do not
+come from the release script, deletions, and any push to `public-fork`.
+GitHub Free cannot protect a private repo's `main` on the server; with GitHub
+Pro, add a branch rule that requires a pull request and the "Fork CI" check.
+
 ## When something is unclear or blocked
 
 Say so on the issue in one or two sentences, set it to `blocked`, and name who
