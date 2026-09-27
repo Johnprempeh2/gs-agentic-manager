@@ -4,10 +4,13 @@ import type {
   CompanySkillSharingScope,
 } from "@greatstone/shared";
 
+// Skill tile accents: Greatstone families (emerald first, the default for a
+// new skill). The tile's letter is white, so every accent is dark enough to
+// carry it: the lightest (ember) is 5.18:1, the rest 5.3:1 to 9.3:1.
 export const SKILL_CREATE_ACCENTS = [
-  "#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444",
-  "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#22c55e",
-  "#3b82f6", "#a855f7",
+  "#1b5039", "#0f766e", "#0e7490", "#6d28d9", "#b42318",
+  "#26724f", "#86198f", "#155e75", "#c2410c", "#4338ca",
+  "#92400e", "#3f5f3a",
 ];
 
 export type SkillCreateDraft = {

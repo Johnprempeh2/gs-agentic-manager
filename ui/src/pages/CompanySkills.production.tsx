@@ -846,7 +846,7 @@ function SkillCard({
       className={cn(
         // Quiet interactive-card affordance (DECISION-SHEET: one recipe for
         // clickable cards): pointer cursor, border darkens, slight lift.
-        "group flex h-full min-h-(--sz-11_5rem) flex-col rounded-lg border border-border bg-card p-4 text-left cursor-pointer transition-colors hover:border-foreground/20 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "gs-glass-card gs-glass-card-interactive group flex h-full min-h-(--sz-11_5rem) flex-col rounded-lg border p-4 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         card.required && "bg-muted/30",
       )}
     >
