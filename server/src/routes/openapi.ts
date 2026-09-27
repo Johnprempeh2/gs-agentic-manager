@@ -9422,6 +9422,19 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/health/live-release",
+  tags: ["health"],
+  summary: "Is a commit live? The running commit, its live-* tag, the last recorded live start, and whether ?ref= is contained",
+  responses: {
+    200: r.ok(),
+    400: { description: "ref is not a commit SHA or an rc-* / live-* tag" },
+    401: r.unauthorized,
+    404: r.notFound,
+  },
+});
+
+registerCurrentRoute({
   method: "post",
   path: "/api/health/dev-server/restart",
   tags: ["health"],

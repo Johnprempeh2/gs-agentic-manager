@@ -93,6 +93,7 @@ import {
   ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
   ISSUE_DISPOSITION_REPAIR_RETRY_REASON,
   PROVIDER_QUOTA_MONITOR_SERVICE_NAME,
+  LIVE_RELEASE_MONITOR_SERVICE_NAME,
   envBindingSchema,
   isEnvironmentDriverSupportedForAdapter,
   isToolConnectionAttentionHealth,
@@ -11540,6 +11541,8 @@ export function heartbeatService(
       runId: string | null;
       clearOnClientError: boolean;
       activitySource: "manual" | "scheduled";
+      /** Added to the wake payload, run context and activity (e.g. the live release). */
+      extraContext?: Record<string, unknown>;
     },
   ) {
     if (!claimed.assigneeAgentId || !claimed.monitorNextCheckAt) {
@@ -11563,6 +11566,7 @@ export function heartbeatService(
       timeoutAt: monitor?.timeoutAt ?? null,
       maxAttempts: monitor?.maxAttempts ?? null,
       recoveryPolicy: monitor?.recoveryPolicy ?? null,
+      ...(input.extraContext ?? {}),
     };
     const executionState =
       claimed.status === "in_review"
@@ -11957,6 +11961,78 @@ export function heartbeatService(
       triggered,
       skipped,
     };
+  }
+
+  /**
+   * Fires, ahead of schedule, every monitor that waits for a release
+   * (serviceName LIVE_RELEASE_MONITOR_SERVICE_NAME) once live runs a commit
+   * that contains what it waits for. A monitor with no externalRef waits for
+   * any release. A monitor whose ref is not live yet, or cannot be checked,
+   * keeps its own nextCheckAt as the deadline. Monitors are one-shot, so a
+   * second call for the same release wakes nobody.
+   */
+  async function wakeLiveReleaseMonitors(input: {
+    liveRelease: Record<string, unknown> & { commit: string };
+    isRefLive: (ref: string) => boolean | null;
+    now?: Date;
+  }) {
+    const now = input.now ?? new Date();
+    const staleClaimThreshold = new Date(now.getTime() - 5 * 60 * 1000);
+    const waitingConditions = () =>
+      and(
+        sql`${issues.monitorNextCheckAt} is not null`,
+        sql`${issues.executionPolicy} -> 'monitor' ->> 'serviceName' = ${LIVE_RELEASE_MONITOR_SERVICE_NAME}`,
+        isNull(issues.assigneeUserId),
+        sql`${issues.assigneeAgentId} is not null`,
+        inArray(issues.status, ["in_progress", "in_review"]),
+        or(
+          isNull(issues.monitorWakeRequestedAt),
+          lt(issues.monitorWakeRequestedAt, staleClaimThreshold),
+        ),
+      );
+    const waiting = await db
+      .select(issueMonitorDispatchColumns)
+      .from(issues)
+      .innerJoin(companies, eq(companies.id, issues.companyId))
+      .where(and(eq(companies.status, "active"), waitingConditions()))
+      .orderBy(asc(issues.monitorNextCheckAt));
+
+    const triggeredIssueIds: string[] = [];
+    for (const row of waiting) {
+      // Normalized monitor projections redact externalRef; read the stored policy.
+      const ref = readNonEmptyString(
+        parseObject(parseObject(row.executionPolicy).monitor).externalRef,
+      );
+      if (ref && input.isRefLive(ref) !== true) continue;
+
+      const claimed = await db
+        .update(issues)
+        .set({ monitorWakeRequestedAt: now, updatedAt: now })
+        .where(and(eq(issues.id, row.id), waitingConditions()))
+        .returning()
+        .then((rows) => (rows[0] ?? null) as IssueMonitorDispatchRow | null);
+      if (!claimed) continue;
+
+      try {
+        const result = await dispatchClaimedIssueMonitor(claimed, {
+          now,
+          source: "automation",
+          triggerDetail: "system",
+          wakeReason: "issue_monitor_due",
+          actorType: "system",
+          actorId: "live_release",
+          agentId: null,
+          runId: null,
+          clearOnClientError: true,
+          activitySource: "scheduled",
+          extraContext: { liveRelease: { ...input.liveRelease, waitedFor: ref ?? null } },
+        });
+        if (result.outcome === "triggered") triggeredIssueIds.push(claimed.id);
+      } catch (err) {
+        logger.error({ err, issueId: claimed.id }, "live release monitor wake failed");
+      }
+    }
+    return { checked: waiting.length, triggeredIssueIds };
   }
 
   async function getOldestRunForSession(agentId: string, sessionId: string) {
@@ -29825,6 +29901,7 @@ export function heartbeatService(
     wakeup: trackWakeup,
     dispatchPendingNativeStatusWakeups,
     triggerIssueMonitor,
+    wakeLiveReleaseMonitors,
 
     reportRunActivity: clearDetachedRunWarning,
 

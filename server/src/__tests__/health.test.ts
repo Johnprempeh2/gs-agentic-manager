@@ -584,3 +584,34 @@ describe("GET /health", () => {
     });
   });
 });
+
+describe("GET /health/live-release (GRE-50)", () => {
+  function createActorApp(actorType: string | null) {
+    const app = express();
+    app.use((req, _res, next) => {
+      if (actorType) (req as unknown as { actor: { type: string } }).actor = { type: actorType };
+      next();
+    });
+    app.use(
+      "/health",
+      healthRoutes(createHealthyDb(), {
+        deploymentMode: "authenticated",
+        deploymentExposure: "private",
+        authReady: true,
+        companyDeletionEnabled: true,
+        serverInfo: testServerInfo,
+      }),
+    );
+    return app;
+  }
+
+  it("requires a signed-in caller", async () => {
+    expect((await request(createActorApp(null)).get("/health/live-release?ref=abcdef1")).status).toBe(401);
+    expect((await request(createActorApp("none")).get("/health/live-release?ref=abcdef1")).status).toBe(401);
+  });
+
+  it("accepts only a commit SHA or a release tag as ref", async () => {
+    const res = await request(createActorApp("agent")).get("/health/live-release").query({ ref: "--output=/tmp/x" });
+    expect(res.status).toBe(400);
+  });
+});

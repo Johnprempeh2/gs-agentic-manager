@@ -132,6 +132,16 @@ describe("normalizeIssueExecutionPolicy", () => {
       },
     });
   });
+
+  it("keeps the commit a live-release monitor waits for and redacts anything else", () => {
+    const monitor = (serviceName: string, externalRef: string) =>
+      normalizeIssueExecutionPolicy({ monitor: { nextCheckAt: "2026-10-01T00:00:00.000Z", serviceName, externalRef }, stages: [] })
+        ?.monitor?.externalRef;
+    expect(monitor("GSAM live release", "f70ae74dc")).toBe("f70ae74dc");
+    expect(monitor("GSAM live release", "rc-2026-09-27.3")).toBe("rc-2026-09-27.3");
+    expect(monitor("GSAM live release", "https://example.test/deploy?token=secret")).toBe("[redacted]");
+    expect(monitor("Vendor deploy", "f70ae74dc")).toBe("[redacted]");
+  });
 });
 
 describe("parseIssueExecutionState", () => {
