@@ -16,6 +16,7 @@ import {
   issueWorkProducts,
   issues,
   joinRequests,
+  toolConnections,
 } from "@greatstone/db";
 import type {
   AttentionItem,
@@ -270,6 +271,13 @@ async function sourceIssueId(
       const row = await db.select({ id: joinRequests.id })
         .from(joinRequests)
         .where(and(eq(joinRequests.companyId, companyId), eq(joinRequests.id, sourceId)))
+        .then((rows) => rows[0] ?? null);
+      return { exists: Boolean(row), issueId: null };
+    }
+    case "ai_connection_alert": {
+      const row = await db.select({ id: toolConnections.id })
+        .from(toolConnections)
+        .where(and(eq(toolConnections.companyId, companyId), eq(toolConnections.id, sourceId)))
         .then((rows) => rows[0] ?? null);
       return { exists: Boolean(row), issueId: null };
     }
