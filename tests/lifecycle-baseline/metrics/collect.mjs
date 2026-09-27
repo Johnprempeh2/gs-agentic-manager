@@ -65,8 +65,10 @@ const snapshot = await sql.begin("read only", async (tx) => {
     select ia.issue_id as "issueId", a.status from issue_approvals ia join approvals a on a.id = ia.approval_id
     where a.status in ('pending', 'revision_requested') ${scope("ia.company_id")}`;
   const recoveryActions = await tx`
-    select source_issue_id as "sourceIssueId", resolved_at as "resolvedAt", status, owner_type as "ownerType"
-    from issue_recovery_actions where resolved_at is null ${scope("company_id")}`;
+    select source_issue_id as "sourceIssueId", resolved_at as "resolvedAt", status, owner_type as "ownerType",
+      cause, evidence->'automaticRecovery'->>'replay' as replay
+    from issue_recovery_actions
+    where (resolved_at is null or evidence->'automaticRecovery'->>'replay' = 'blocked') ${scope("company_id")}`;
   const treeHolds = await tx`
     select root_issue_id as "rootIssueId", status from issue_tree_holds where status = 'active' ${scope("company_id")}`;
   const relations = await tx`

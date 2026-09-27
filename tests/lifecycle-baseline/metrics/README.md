@@ -28,8 +28,15 @@ is covered when any of these holds:
 - it has a live path of its own:
   - a queued or retry-scheduled run, or a running run with output in the last
     4 hours (`staleRunHours`, the server's
-    `ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS`); a silent `running` run is hung;
-  - a queued, claimed or deferred wake;
+    `ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS`); a silent `running` run is hung.
+    Under an execution hold (below) a queued or retry-scheduled run is not a
+    path: dispatch cancels it as stale;
+  - a queued or claimed wake;
+  - a deferred wake (`deferred_issue_execution`), only while the issue also has
+    a live run from the line above and no execution hold. A deferred wake moves
+    only when the run holding the issue lock releases and the drain promotes
+    it. A dead holder's lock is swept without a drain, and under a hold release
+    skips the drain, so otherwise nothing will move it (GRE-23 D1, D2);
   - a pending interaction or a pending approval;
   - an unresolved recovery action with `status = 'active'` (an `escalated`
     action waits on the board with no owner and no wake, so it is not a path);
@@ -41,6 +48,11 @@ is covered when any of these holds:
 - an active tree hold sits on it or an ancestor (a human deliberately stopped it);
 - an open child is covered (the parent waits on its children); or
 - an open blocker is covered (followed through chains).
+
+An **execution hold** is a recovery action whose `cause` is one of the shared
+`EXECUTION_RECONCILIATION_CAUSES` (copied into `EXECUTION_HOLD_CAUSES`) and
+that is `active`, `escalated`, or resolved with
+`evidence.automaticRecovery.replay = 'blocked'`.
 
 Runs are matched to issues on `context_snapshot.issueId`, `taskId` or
 `native_issue_id`; wakes on `payload.issueId`, `taskId` or
@@ -84,6 +96,12 @@ also includes the wake-to-start queue delay, so W3 can see where the time goes.
   that stay stranded show up.
 - Small instances give small samples. Every report states its sample size;
   budgets require a minimum sample (see `tests/metrics-budgets`).
+- The execution hold skips one server carve-out: a
+  `legacy_execution_requires_reconciliation` action on a legacy conversation
+  run is not a hold on the server (`conversationRecoveryActionPredicate`).
+  R1 treats it as one, so it can call such a tree stranded when a comment
+  would still resume it. That errs toward reporting a strand. The cause list
+  is copied by hand, so a new cause needs adding here too.
 - The definitions are independent of `server/src/services/recovery/*`. That is
   deliberate: the recovery code is what W2 changes, and the number must not be
   graded by the code it judges.

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { readFileSync } from "node:fs";
+import { EXECUTION_HOLD_CAUSES, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -20,7 +21,11 @@ test("R1: an agent-assigned open tree with no path is stranded; each live path c
     runByNativeIssue: { runs: [{ id: "r", nativeIssueId: "child", status: "queued", createdAt: hoursAgo(5) }] },
     wake: { wakeRequests: [{ issueId: "child", status: "queued" }] },
     claimedWake: { wakeRequests: [{ taskId: "child", status: "claimed" }] },
-    deferredWakeContext: { wakeRequests: [{ contextIssueId: "child", status: "deferred_issue_execution" }] },
+    // A deferred wake is live only behind a live holder (see D1); the fixture carries one.
+    deferredWakeContext: {
+      runs: [{ id: "h", issueId: "child", status: "running", createdAt: hoursAgo(1), startedAt: hoursAgo(1), lastOutputAt: hoursAgo(0.9) }],
+      wakeRequests: [{ contextIssueId: "child", status: "deferred_issue_execution" }],
+    },
     interaction: { interactions: [{ issueId: "child", status: "pending" }] },
     approval: { approvals: [{ issueId: "child", status: "pending" }] },
     recovery: { recoveryActions: [{ sourceIssueId: "child", resolvedAt: null, status: "active", ownerType: "agent" }] },
@@ -118,11 +123,9 @@ test("R1 blind spot B4: a live branch does not hide a dead sibling", () => {
 // GRE-23: two more strands behind a deferred wake. Enqueue never defers behind
 // a dead lock (heartbeat.ts enqueueWakeup clears it first), so a deferred wake
 // only moves when its live holder releases and the drain promotes it
-// (wake-queue use-cases.ts runReleaseDrain). Each is `todo` until Summit
-// changes the definition; drop the flag with the fix.
-const deferredStrand = (id) => ({ todo: `GRE-23 strand ${id}: R1 definition change pending (Summit)` });
+// (wake-queue use-cases.ts runReleaseDrain). GRE-24 changed the definition.
 
-test("R1 strand D1: a deferred wake whose holder died without a drain is not a live path", deferredStrand("D1"), () => {
+test("R1 strand D1: a deferred wake whose holder died without a drain is not a live path", () => {
   // sweepStaleIssueLocks clears a lock held by a terminal or missing run with a
   // bare update and never drains the queue (recovery/service.ts). The only
   // later promoter, resumeQueuedRuns, takes comment or interaction wakes on a
@@ -137,7 +140,7 @@ test("R1 strand D1: a deferred wake whose holder died without a drain is not a l
   assert.equal(computeStrandedTrees(base({ issues, runs: [holder], wakeRequests })).total, 0, "a live holder will drain it on release");
 });
 
-test("R1 strand D2: a deferred wake behind an execution hold is not a live path", deferredStrand("D2"), () => {
+test("R1 strand D2: a deferred wake behind an execution hold is not a live path", () => {
   // settleUnrecoverableExecutions resolves the recovery action but keeps
   // evidence.automaticRecovery.replay = 'blocked' and sets the issue blocked
   // (execution-recovery-resolution.ts). executionBlockerPredicate still counts
@@ -152,6 +155,21 @@ test("R1 strand D2: a deferred wake behind an execution hold is not a live path"
   assert.equal(computeStrandedTrees(base({ issues, wakeRequests, recoveryActions: [replayBlocked] })).total, 1);
   const escalated = { sourceIssueId: "root", resolvedAt: null, status: "escalated", ownerType: "board", cause: "execution_recovery_budget_exhausted" };
   assert.equal(computeStrandedTrees(base({ issues, wakeRequests, recoveryActions: [escalated] })).total, 1);
+  // Under the hold a live holder does not help: release skips the drain, and
+  // dispatch cancels a queued or retry run as stale. A running run still counts.
+  const running = { id: "h", issueId: "root", status: "running", createdAt: hoursAgo(1), startedAt: hoursAgo(1), lastOutputAt: hoursAgo(0.9) };
+  const queued = { id: "q", issueId: "root", status: "queued", createdAt: hoursAgo(1) };
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, runs: [queued], recoveryActions: [replayBlocked] })).total, 1, "a queued run under a hold is cancelled at dispatch");
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, runs: [running], recoveryActions: [replayBlocked] })).total, 0, "a running run is still working");
+  // Only a reconciliation cause makes a hold; replay-blocked evidence alone does not.
+  const otherCause = { ...replayBlocked, cause: "stranded_assigned_issue" };
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, runs: [queued], recoveryActions: [otherCause] })).total, 0);
+});
+
+test("R1: the execution-hold causes match the shared EXECUTION_RECONCILIATION_CAUSES", () => {
+  const source = readFileSync(new URL("../../../packages/shared/src/types/execution-projection.ts", import.meta.url), "utf8");
+  const list = source.match(/EXECUTION_RECONCILIATION_CAUSES = \[([^\]]*)\]/)[1];
+  assert.deepEqual([...EXECUTION_HOLD_CAUSES].sort(), [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort());
 });
 
 test("R1: a hold on a subtree covers the issues beneath it only", () => {

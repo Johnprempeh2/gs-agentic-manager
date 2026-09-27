@@ -6,6 +6,15 @@
 export const OPEN_ISSUE_STATUSES = new Set(["todo", "in_progress", "in_review", "blocked"]);
 export const LIVE_RUN_STATUSES = new Set(["queued", "running", "scheduled_retry"]);
 export const LIVE_WAKE_STATUSES = new Set(["queued", "deferred_issue_execution", "claimed"]);
+// Causes that make a recovery action an execution hold (shared EXECUTION_RECONCILIATION_CAUSES).
+export const EXECUTION_HOLD_CAUSES = new Set([
+  "uncertain_provider_action", "uncertain_external_action", "uncertain_control_plane_action",
+  "completed_action_context_missing", "continuation_evidence_incomplete", "execution_finalization_deadline_exceeded",
+  "execution_recovery_budget_exhausted", "provider_effect_inventory_unavailable", "provider_failure_meaning_unverified",
+  "provider_ownership_unverified", "native_provider_terminal_failed", "native_event_replay_conflict",
+  "native_session_cleanup_quarantined", "native_session_retry_exhausted", "native_restart_recovery_blocked",
+  "native_continuation_requires_reconciliation", "legacy_execution_requires_reconciliation",
+]);
 export const FAILED_RUN_STATUSES = new Set(["failed", "timed_out", "interrupted"]);
 // Agent-attributed activity that is harness bookkeeping, not progress on the task.
 export const NON_USEFUL_AGENT_ACTIONS = new Set(["issue.checked_out", "issue.read_marked", "issue.released"]);
@@ -77,12 +86,32 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
   const wakeIssueIds = (wake) => [wake.issueId, wake.taskId, wake.contextIssueId, wake.contextTaskId];
   // A running run that has been silent past the stale threshold is hung, not live.
   const runQuietSince = (run) => ms(run.lastOutputAt ?? run.startedAt ?? run.createdAt);
+  // An execution hold: a reconciliation-cause recovery action that is active,
+  // escalated, or resolved with replay blocked. Under it, release skips the
+  // drain and dispatch cancels queued and retry runs as stale.
+  const executionHeld = new Set((snapshot.recoveryActions ?? [])
+    .filter((action) => EXECUTION_HOLD_CAUSES.has(action.cause) && (["active", "escalated"].includes(action.status) || action.replay === "blocked"))
+    .map((action) => action.sourceIssueId));
+  const liveRunIssues = new Set();
   for (const run of snapshot.runs) {
     if (!LIVE_RUN_STATUSES.has(run.status)) continue;
     if (run.status === "running" && nowMs - (runQuietSince(run) ?? nowMs) >= staleRunHours * 3_600_000) continue;
-    addLive(runIssueIds(run), `run:${run.status}`);
+    const ids = runIssueIds(run).filter((id) => id && (run.status === "running" || !executionHeld.has(id)));
+    addLive(ids, `run:${run.status}`);
+    for (const issueId of ids) liveRunIssues.add(issueId);
   }
-  for (const wake of snapshot.wakeRequests ?? []) if (LIVE_WAKE_STATUSES.has(wake.status)) addLive(wakeIssueIds(wake), `wake:${wake.status}`);
+  for (const wake of snapshot.wakeRequests ?? []) {
+    if (!LIVE_WAKE_STATUSES.has(wake.status)) continue;
+    // A deferred wake moves only when a live run on the issue releases the lock
+    // and the drain promotes it. With no live run, or under an execution hold,
+    // nothing will drain it.
+    if (wake.status === "deferred_issue_execution") {
+      const ids = wakeIssueIds(wake).filter((id) => liveRunIssues.has(id) && !executionHeld.has(id));
+      addLive(ids, "wake:deferred_issue_execution");
+      continue;
+    }
+    addLive(wakeIssueIds(wake), `wake:${wake.status}`);
+  }
   for (const interaction of snapshot.interactions ?? []) if (interaction.status === "pending") addLive([interaction.issueId], "interaction:pending");
   for (const approval of snapshot.approvals ?? []) if (["pending", "revision_requested"].includes(approval.status)) addLive([approval.issueId], `approval:${approval.status}`);
   // Only an active recovery action has an owner and a wake; an escalated one waits on the board.
