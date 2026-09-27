@@ -1,4 +1,4 @@
-import type { Issue, IssueRelationIssueSummary, IssueStatus } from "@greatstone/shared";
+import type { AttentionItem, Issue, IssueRelationIssueSummary, IssueStatus } from "@greatstone/shared";
 
 /**
  * My tasks (GRE-29): split the signed-in user's assigned issues into
@@ -92,4 +92,85 @@ export function selectMyTasks(issues: readonly Issue[], currentUserId: string | 
     return bucket && bucket.length > 0 ? [{ status, issues: bucket }] : [];
   });
   return { blocking, assigned };
+}
+
+/**
+ * My tasks as one list (GRE-42): the tasks the user blocks, the tasks behind
+ * their open decisions, and the tasks assigned to them, each listed once with
+ * every reason it is there. The first reason (in MY_TASKS_REASONS order) is
+ * the group the row sits in.
+ */
+
+export const MY_TASKS_REASONS = ["blocking", "decision", "assigned"] as const;
+export type MyTasksReason = (typeof MY_TASKS_REASONS)[number];
+
+export const MY_TASKS_REASON_LABELS: Record<MyTasksReason, string> = {
+  blocking: "Blocking",
+  decision: "Decision",
+  assigned: "Assigned",
+};
+
+export const MY_TASKS_REASON_GROUP_LABELS: Record<MyTasksReason, string> = {
+  blocking: "You are blocking",
+  decision: "Waiting on your decision",
+  assigned: "Assigned to you",
+};
+
+type DecisionItem = Pick<AttentionItem, "id" | "subject" | "relatedIssue">;
+
+export interface MyTasksMerge<TItem extends DecisionItem = DecisionItem> {
+  issues: Issue[];
+  reasonsById: Map<string, MyTasksReason[]>;
+  /** Decisions with no task behind them, or whose task could not be loaded. */
+  decisionsWithoutIssue: TItem[];
+}
+
+/** The task a decision is about: the subject itself, or the task it hangs off. */
+export function decisionIssueId(item: DecisionItem): string | null {
+  if (item.subject.kind === "issue") return item.subject.id;
+  return item.relatedIssue?.kind === "issue" ? item.relatedIssue.id : null;
+}
+
+/**
+ * `decisionIssues` holds the loaded task per decision issue id: an Issue when
+ * loaded, `null` when loading failed. Ids missing from the map are still
+ * loading; their decisions are left out until they resolve.
+ */
+export function mergeMyTasks<TItem extends DecisionItem>(input: {
+  issues: readonly Issue[];
+  decisions: readonly TItem[];
+  decisionIssues: ReadonlyMap<string, Issue | null>;
+  currentUserId: string | null | undefined;
+}): MyTasksMerge<TItem> {
+  const reasonsById = new Map<string, MyTasksReason[]>();
+  const byId = new Map<string, Issue>();
+  const decisionsWithoutIssue: TItem[] = [];
+  const add = (issue: Issue, reason: MyTasksReason) => {
+    if (!byId.has(issue.id)) byId.set(issue.id, issue);
+    const reasons = reasonsById.get(issue.id) ?? [];
+    if (!reasons.includes(reason)) reasons.push(reason);
+    reasonsById.set(issue.id, reasons);
+  };
+
+  const selection = selectMyTasks(input.issues, input.currentUserId);
+  for (const entry of selection.blocking) add(entry.issue, "blocking");
+  for (const item of input.decisions) {
+    const issueId = decisionIssueId(item);
+    if (!issueId) {
+      decisionsWithoutIssue.push(item);
+      continue;
+    }
+    const issue = byId.get(issueId) ?? input.issues.find((candidate) => candidate.id === issueId)
+      ?? input.decisionIssues.get(issueId);
+    if (issue) add(issue, "decision");
+    else if (issue === null) decisionsWithoutIssue.push(item);
+  }
+  for (const group of selection.assigned) {
+    for (const issue of group.issues) add(issue, "assigned");
+  }
+
+  for (const reasons of reasonsById.values()) {
+    reasons.sort((a, b) => MY_TASKS_REASONS.indexOf(a) - MY_TASKS_REASONS.indexOf(b));
+  }
+  return { issues: [...byId.values()], reasonsById, decisionsWithoutIssue };
 }

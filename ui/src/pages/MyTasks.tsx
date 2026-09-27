@@ -1,32 +1,43 @@
-import { useEffect, useMemo, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { Agent, AttentionItem, IssueRelationIssueSummary } from "@greatstone/shared";
-import { Link } from "@/lib/router";
+import { useCallback, useEffect, useMemo } from "react";
+import { useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import type { AttentionItem, Issue } from "@greatstone/shared";
+import { CheckCircle2, CircleDot } from "lucide-react";
+import { Link, useLocation } from "@/lib/router";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
+import { projectsApi } from "../api/projects";
 import { attentionApi } from "../api/attention";
 import { authApi } from "../api/auth";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { attentionBadgeCount } from "../lib/attention";
-import { issueUrl } from "../lib/utils";
+import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import {
   MY_TASKS_OPEN_STATUSES,
-  MY_TASKS_STATUS_LABELS,
-  selectMyTasks,
-  type MyTasksBlockingEntry,
+  MY_TASKS_REASONS,
+  MY_TASKS_REASON_GROUP_LABELS,
+  MY_TASKS_REASON_LABELS,
+  decisionIssueId,
+  mergeMyTasks,
 } from "../lib/myTasks";
-import { IssueRow } from "../components/IssueRow";
+import { IssuesList, type IssuesCustomGrouping } from "../components/IssuesList";
 import { IssueGroupHeader } from "../components/IssueGroupHeader";
-import { StatusIcon } from "../components/StatusIcon";
+import { EntityRow } from "../components/EntityRow";
+import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { resolveIssuesPresentation } from "./Issues";
+import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 
-const DECISION_PREVIEW_LIMIT = 5;
+/** Tasks behind decisions are fetched one by one; the Decisions page holds the rest. */
+const DECISION_ISSUE_FETCH_LIMIT = 50;
 
 export function MyTasks() {
+  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
+  const issuesPresentation = resolveIssuesPresentation(streamlinedUiEnabled);
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const location = useLocation();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "My tasks" }]);
@@ -55,194 +66,158 @@ export function MyTasks() {
   });
 
   // Same query as the sidebar Decisions badge, so the two share one cache entry.
-  const { data: attentionFeed } = useQuery({
+  const { data: attentionFeed, isLoading: attentionLoading } = useQuery({
     queryKey: queryKeys.attention(selectedCompanyId!),
     queryFn: () => attentionApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const decisions = useMemo(() => attentionFeed?.items ?? [], [attentionFeed]);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
-  const agentMap = useMemo(() => {
-    const map = new Map<string, Agent>();
-    for (const agent of agents ?? []) map.set(agent.id, agent);
-    return map;
-  }, [agents]);
 
-  const selection = useMemo(() => selectMyTasks(issues ?? [], currentUserId), [issues, currentUserId]);
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!, { includeArchived: true }),
+    queryFn: () => projectsApi.list(selectedCompanyId!, { includeArchived: true }),
+    enabled: !!selectedCompanyId,
+  });
+
+  // Decision tasks are usually assigned to an agent, so they are not in the list above.
+  const decisionIssueIds = useMemo(() => {
+    const assignedIds = new Set((issues ?? []).map((issue) => issue.id));
+    const ids = new Set<string>();
+    for (const item of decisions) {
+      const id = decisionIssueId(item);
+      if (id && !assignedIds.has(id)) ids.add(id);
+    }
+    return [...ids].slice(0, DECISION_ISSUE_FETCH_LIMIT);
+  }, [decisions, issues]);
+  const combineDecisionIssues = useCallback(
+    (results: UseQueryResult<Issue>[]) => {
+      const map = new Map<string, Issue | null>();
+      results.forEach((result, index) => {
+        const id = decisionIssueIds[index];
+        if (!id) return;
+        if (result.data) map.set(id, result.data);
+        else if (result.isError) map.set(id, null);
+      });
+      return map;
+    },
+    [decisionIssueIds],
+  );
+  const decisionIssues = useQueries({
+    queries: decisionIssueIds.map((id) => ({
+      queryKey: queryKeys.issues.detail(id),
+      queryFn: () => issuesApi.get(id),
+      enabled: !!selectedCompanyId && !isLoading,
+      retry: false,
+    })),
+    combine: combineDecisionIssues,
+  });
+
+  const merged = useMemo(
+    () => mergeMyTasks({ issues: issues ?? [], decisions, decisionIssues, currentUserId }),
+    [issues, decisions, decisionIssues, currentUserId],
+  );
+
+  const issueTagsById = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const [id, reasons] of merged.reasonsById) {
+      map.set(id, reasons.map((reason) => MY_TASKS_REASON_LABELS[reason]));
+    }
+    return map;
+  }, [merged.reasonsById]);
+
+  const reasonGrouping = useMemo<IssuesCustomGrouping>(
+    () => ({
+      label: "Reason",
+      groups: MY_TASKS_REASONS.map((reason) => ({ key: reason, label: MY_TASKS_REASON_GROUP_LABELS[reason] })),
+      groupKeyForIssue: (issue) => merged.reasonsById.get(issue.id)?.[0] ?? "assigned",
+    }),
+    [merged.reasonsById],
+  );
+
+  const issueLinkState = useMemo(
+    () =>
+      createIssueDetailLocationState(
+        "My tasks",
+        `${location.pathname}${location.search}${location.hash}`,
+        "issues",
+      ),
+    [location.pathname, location.search, location.hash],
+  );
+
+  const updateIssue = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),
+    onSuccess: (_issue, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ["issues", selectedCompanyId, "my-tasks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(id) });
+    },
+  });
 
   if (!selectedCompanyId) {
-    return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+    return <EmptyState icon={CircleDot} message="Select an organization to view your tasks." />;
   }
-  if (isLoading) {
+  if (isLoading || attentionLoading) {
     return <PageSkeleton variant="list" />;
   }
 
-  const decisionCount = attentionBadgeCount(attentionFeed);
-  const decisionItems = (attentionFeed?.items ?? []).slice(0, DECISION_PREVIEW_LIMIT);
-  const assignedCount = selection.assigned.reduce((sum, group) => sum + group.issues.length, 0);
+  const nothingNeedsYou = merged.issues.length === 0 && merged.decisionsWithoutIssue.length === 0;
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <h1 className="text-xl font-bold">My tasks</h1>
+    <div className="space-y-6">
       {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
 
-      <MyTasksSection title="You are blocking" count={selection.blocking.length}>
-        {selection.blocking.length === 0 ? (
-          <SectionEmpty>Nothing is waiting on you.</SectionEmpty>
-        ) : (
-          <div className="space-y-3">
-            {selection.blocking.map((entry) => (
-              <BlockingEntry key={entry.issue.id} entry={entry} agentMap={agentMap} />
-            ))}
-          </div>
-        )}
-      </MyTasksSection>
+      {nothingNeedsYou ? (
+        <EmptyState icon={CheckCircle2} message="Nothing needs you right now." />
+      ) : (
+        <>
+          {merged.issues.length > 0 && (
+            <IssuesList
+              issues={merged.issues}
+              agents={agents}
+              projects={projects}
+              viewStateKey="paperclip:my-tasks-view"
+              rowPresentation={issuesPresentation.rowPresentation}
+              toolbarPresentation={issuesPresentation.toolbarPresentation}
+              issueLinkState={issueLinkState}
+              searchWithinLoadedIssues
+              customGrouping={reasonGrouping}
+              issueTagsById={issueTagsById}
+              onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+            />
+          )}
+          {merged.decisionsWithoutIssue.length > 0 && (
+            <DecisionsWithoutIssue items={merged.decisionsWithoutIssue} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
-      <MyTasksSection
-        title="Waiting on your decision"
-        count={decisionCount}
+function DecisionsWithoutIssue({ items }: { items: AttentionItem[] }) {
+  return (
+    <section aria-label="Decisions not tied to a task">
+      <IssueGroupHeader
+        label="Decisions not tied to a task"
         trailing={
           <Link to="/decisions" className="text-xs text-muted-foreground hover:text-foreground hover:underline">
             Open decisions
           </Link>
         }
-      >
-        {decisionItems.length === 0 ? (
-          <SectionEmpty>No decisions waiting on you.</SectionEmpty>
-        ) : (
-          <ul className="space-y-1">
-            {decisionItems.map((item) => (
-              <DecisionPreviewRow key={item.id} item={item} />
-            ))}
-            {decisionCount > decisionItems.length && (
-              <li className="pl-1 text-xs text-muted-foreground">
-                <Link to="/decisions" className="hover:underline">
-                  {decisionCount - decisionItems.length} more in Decisions
-                </Link>
-              </li>
-            )}
-          </ul>
-        )}
-      </MyTasksSection>
-
-      <MyTasksSection title="Assigned to you" count={assignedCount}>
-        {selection.assigned.length === 0 ? (
-          <SectionEmpty>No other open tasks assigned to you.</SectionEmpty>
-        ) : (
-          <div className="space-y-3">
-            {selection.assigned.map((group) => (
-              <div key={group.status}>
-                <IssueGroupHeader
-                  label={MY_TASKS_STATUS_LABELS[group.status]}
-                  trailing={<span className="text-xs tabular-nums text-muted-foreground">{group.issues.length}</span>}
-                />
-                {group.issues.map((issue) => (
-                  <IssueRow key={issue.id} issue={issue} showDivider />
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
-      </MyTasksSection>
-    </div>
-  );
-}
-
-function MyTasksSection({
-  title,
-  count,
-  trailing,
-  children,
-}: {
-  title: string;
-  count: number;
-  trailing?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-2" aria-label={title}>
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">
-          {title} <span className="tabular-nums text-muted-foreground">{count}</span>
-        </h2>
-        {trailing}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function SectionEmpty({ children }: { children: ReactNode }) {
-  return (
-    <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
-      {children}
-    </p>
-  );
-}
-
-function BlockingEntry({ entry, agentMap }: { entry: MyTasksBlockingEntry; agentMap: Map<string, Agent> }) {
-  return (
-    <div className="rounded-md border border-border">
-      <IssueRow
-        issue={entry.issue}
-        titleSuffix={
-          entry.waitingOnReview ? (
-            <span className="ml-2 text-xs text-muted-foreground">Review waiting on you</span>
-          ) : undefined
-        }
       />
-      {entry.blockedIssues.length > 0 && (
-        <ul className="space-y-0.5 border-t border-border px-3 py-2">
-          {entry.blockedIssues.map((blocked) => (
-            <BlockedIssueLine key={blocked.id} blocked={blocked} agentMap={agentMap} />
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function BlockedIssueLine({
-  blocked,
-  agentMap,
-}: {
-  blocked: IssueRelationIssueSummary;
-  agentMap: Map<string, Agent>;
-}) {
-  const assignee = blocked.assigneeAgentId
-    ? (agentMap.get(blocked.assigneeAgentId)?.name ?? "Agent")
-    : blocked.assigneeUserId
-      ? "A person"
-      : "Unassigned";
-  return (
-    <li className="flex min-w-0 items-center gap-2 text-xs">
-      <span className="text-muted-foreground">Blocks</span>
-      <StatusIcon status={blocked.status} />
-      <Link to={issueUrl(blocked)} className="min-w-0 truncate hover:underline">
-        {blocked.identifier && <span className="mr-1 font-mono text-muted-foreground">{blocked.identifier}</span>}
-        {blocked.title}
-      </Link>
-      <span className="ml-auto shrink-0 text-muted-foreground">{assignee}</span>
-    </li>
-  );
-}
-
-function DecisionPreviewRow({ item }: { item: AttentionItem }) {
-  const label = item.subject.title ?? item.subject.identifier ?? item.whyNow;
-  return (
-    <li className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-sm">
-      {item.subject.href ? (
-        <Link to={item.subject.href} className="min-w-0 truncate hover:underline">
-          {label}
-        </Link>
-      ) : (
-        <span className="min-w-0 truncate">{label}</span>
-      )}
-      <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground">{item.whyNow}</span>
-    </li>
+      {items.map((item) => (
+        <EntityRow
+          key={item.id}
+          to="/decisions"
+          title={item.subject.title ?? item.subject.identifier ?? item.whyNow}
+          trailing={<span className="max-w-64 truncate text-xs text-muted-foreground">{item.whyNow}</span>}
+        />
+      ))}
+    </section>
   );
 }
