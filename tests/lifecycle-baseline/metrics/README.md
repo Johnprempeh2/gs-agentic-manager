@@ -21,22 +21,39 @@ timings only, never titles, comment bodies or run output.
 
 **R1 — stranded task trees per week.** A tree is a root issue plus all its
 descendants. An open issue is `todo`, `in_progress`, `in_review` or `blocked`.
-`backlog` counts as parked on purpose, not open. A tree is stranded when:
+`backlog` counts as parked on purpose, not open. Coverage is decided per open
+issue, not per tree, so a live branch cannot hide a dead sibling. An open issue
+is covered when any of these holds:
 
-- it has at least one open issue;
-- no open issue has a live path. A live path is any of: a queued, running or
-  retry-scheduled run; a queued or deferred wake; a pending interaction; a
-  pending approval; an unresolved recovery action; a scheduled monitor; an
-  assignee agent with a timer heartbeat that can be invoked; or a blocker
-  (followed through chains) that itself has a path;
-- no open issue is assigned to a human (humans act without being woken);
-- no active tree hold covers it (a human deliberately stopped it); and
-- nothing in the tree has changed for 30 minutes (the grace period).
+- it has a live path of its own:
+  - a queued or retry-scheduled run, or a running run with output in the last
+    4 hours (`staleRunHours`, the server's
+    `ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS`); a silent `running` run is hung;
+  - a queued, claimed or deferred wake;
+  - a pending interaction or a pending approval;
+  - an unresolved recovery action with `status = 'active'` (an `escalated`
+    action waits on the board with no owner and no wake, so it is not a path);
+  - a monitor whose next check is in the future or overdue by less than the
+    grace period (the server's `hasScheduledIssueMonitorPath` uses "in the
+    future");
+  - an assignee agent with a timer heartbeat that can be invoked;
+- it is assigned to a human (humans act without being woken);
+- an active tree hold sits on it or an ancestor (a human deliberately stopped it);
+- an open child is covered (the parent waits on its children); or
+- an open blocker is covered (followed through chains).
+
+Runs are matched to issues on `context_snapshot.issueId`, `taskId` or
+`native_issue_id`; wakes on `payload.issueId`, `taskId` or
+`_paperclipWakeContext.issueId`/`taskId`. A tree is stranded when at least one
+open issue is uncovered and nothing in the tree has changed for 30 minutes (the
+grace period). A monitor re-claim bumps `issues.updated_at` every 5 minutes
+without doing anything, so when that claim is an issue's last write, its
+activity time is the moment the monitor fell due.
 
 An agent assignee alone is **not** a live path: agents act only when woken. The
 weekly number counts stranded trees whose last activity falls in the window,
 i.e. trees that stopped this week. The report also lists every stranded tree
-of any age.
+of any age, with the uncovered issues in it.
 
 **R2 — run failure rate and unattended recovery.** Among runs that finished in
 the window, failure rate is `failed + timed_out + interrupted` divided by those

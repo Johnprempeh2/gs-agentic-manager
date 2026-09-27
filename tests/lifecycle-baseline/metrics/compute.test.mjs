@@ -13,19 +13,28 @@ test("R1: an agent-assigned open tree with no path is stranded; each live path c
   assert.equal(r1.weekly, 1);
   assert.deepEqual(r1.stranded[0].openIssues.map((entry) => entry.identifier), ["ROOT", "CHILD"]);
 
+  // Paths sit on the leaf: the parent waits on its child, so the child covers it.
   const cleared = {
     run: { runs: [{ id: "r", issueId: "child", status: "queued", createdAt: hoursAgo(5) }] },
-    wake: { wakeRequests: [{ issueId: "root", status: "queued" }] },
+    runByTaskId: { runs: [{ id: "r", taskId: "child", status: "queued", createdAt: hoursAgo(5) }] },
+    runByNativeIssue: { runs: [{ id: "r", nativeIssueId: "child", status: "queued", createdAt: hoursAgo(5) }] },
+    wake: { wakeRequests: [{ issueId: "child", status: "queued" }] },
+    claimedWake: { wakeRequests: [{ taskId: "child", status: "claimed" }] },
+    deferredWakeContext: { wakeRequests: [{ contextIssueId: "child", status: "deferred_issue_execution" }] },
     interaction: { interactions: [{ issueId: "child", status: "pending" }] },
-    approval: { approvals: [{ issueId: "root", status: "pending" }] },
-    recovery: { recoveryActions: [{ sourceIssueId: "root", resolvedAt: null }] },
+    approval: { approvals: [{ issueId: "child", status: "pending" }] },
+    recovery: { recoveryActions: [{ sourceIssueId: "child", resolvedAt: null, status: "active", ownerType: "agent" }] },
+    monitor: { issues: [issue("root", { status: "in_progress" }), issue("child", { parentId: "root", status: "blocked", monitorNextCheckAt: hoursAgo(-1) })] },
     hold: { treeHolds: [{ rootIssueId: "root", status: "active" }] },
     timer: { agents: [{ id: "a1", status: "idle", timerHeartbeat: true }] },
-    human: { issues: [issue("root", { status: "in_progress", assigneeUserId: "u1" }), issue("child", { parentId: "root", status: "blocked" })] },
+    human: { issues: [issue("root", { status: "in_progress" }), issue("child", { parentId: "root", status: "blocked", assigneeUserId: "u1" })] },
   };
   for (const [name, extra] of Object.entries(cleared)) {
     assert.equal(computeStrandedTrees({ ...snapshot, ...extra }).total, 0, name);
   }
+  // A path on the parent does not cover the child beneath it.
+  const parentOnly = computeStrandedTrees({ ...snapshot, wakeRequests: [{ issueId: "root", status: "queued" }] });
+  assert.deepEqual(parentOnly.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["CHILD"]);
 });
 
 test("R1: a paused agent's timer heartbeat is not a live path", () => {
@@ -53,11 +62,9 @@ test("R1: closed, backlog, recently active and old trees are handled", () => {
   assert.equal(r1.weekly, 0, "the old tree stopped before the window");
 });
 
-// GRE-21 audit: strands the server can produce that R1 currently reads as live.
-// Each is `todo` until Summit changes the definition; drop the flag with the fix.
-const blindSpot = (id) => ({ todo: `GRE-21 blind spot ${id}: R1 definition change pending (Summit)` });
+// GRE-21 audit: strands the server can produce that R1 used to read as live.
 
-test("R1 blind spot B1: a recovery action escalated to the board is not a live path", blindSpot("B1"), () => {
+test("R1 blind spot B1: a recovery action escalated to the board is not a live path", () => {
   // Budget exhaustion sets status 'escalated', owner 'board', no owner ids, no
   // wake policy, and leaves resolved_at null (issue-recovery-actions.ts:326-362).
   const issues = [issue("root", { status: "blocked" })];
@@ -67,24 +74,34 @@ test("R1 blind spot B1: a recovery action escalated to the board is not a live p
   assert.equal(computeStrandedTrees(base({ issues, recoveryActions: [escalated] })).total, 1);
 });
 
-test("R1 blind spot B2: a running run silent past the stale-run threshold is not a live path", blindSpot("B2"), () => {
+test("R1 blind spot B2: a running run silent past the stale-run threshold is not a live path", () => {
   // The active-run watchdog only folds silent runs whose issue is already
   // done/cancelled; the orphan reaper only acts on lost processes. A hung
   // process on an open issue stays 'running' indefinitely.
   const issues = [issue("root", { status: "in_progress" })];
   const hung = { id: "r", issueId: "root", status: "running", createdAt: hoursAgo(6), startedAt: hoursAgo(6), lastOutputAt: hoursAgo(6) };
   assert.equal(computeStrandedTrees(base({ issues, runs: [hung] })).total, 1);
+  const talking = { ...hung, lastOutputAt: hoursAgo(3.5) };
+  assert.equal(computeStrandedTrees(base({ issues, runs: [talking] })).total, 0, "output inside the threshold keeps it live");
 });
 
-test("R1 blind spot B3: an overdue monitor that never fired is not a live path", blindSpot("B3"), () => {
+test("R1 blind spot B3: an overdue monitor that never fired is not a live path", () => {
   // Server liveness treats a monitor as a path only while next_check_at is in
   // the future (issue-graph-liveness.ts:197). A dispatch that throws keeps the
   // column set and is only logged (heartbeat.ts tickDueIssueMonitors).
   const issues = [issue("root", { status: "in_progress", monitorNextCheckAt: hoursAgo(3) })];
   assert.equal(computeStrandedTrees(base({ issues })).total, 1);
+  const justDue = [issue("root", { status: "in_progress", monitorNextCheckAt: hoursAgo(0.25) })];
+  assert.equal(computeStrandedTrees(base({ issues: justDue })).total, 0, "overdue by less than the grace period is still live");
+  // tickDueIssueMonitors re-claims every 5 minutes and bumps updated_at each
+  // time; that write is not activity, so the tree still counts as stopped.
+  const reclaimed = [issue("root", { status: "in_progress", monitorNextCheckAt: hoursAgo(3), monitorWakeRequestedAt: hoursAgo(0.05), updatedAt: hoursAgo(0.05) })];
+  const r1 = computeStrandedTrees(base({ issues: reclaimed }));
+  assert.equal(r1.total, 1);
+  assert.equal(r1.stranded[0].lastActivityAt, hoursAgo(3));
 });
 
-test("R1 blind spot B4: a live branch does not hide a dead sibling", blindSpot("B4"), () => {
+test("R1 blind spot B4: a live branch does not hide a dead sibling", () => {
   // The parent waits on its children, so a live child covers it. A sibling
   // with no path of its own is still stranded; nothing will wake it.
   const issues = [
@@ -95,6 +112,18 @@ test("R1 blind spot B4: a live branch does not hide a dead sibling", blindSpot("
   const runs = [{ id: "r", issueId: "live", status: "running", createdAt: hoursAgo(1), startedAt: hoursAgo(1), lastOutputAt: hoursAgo(0.9) }];
   const r1 = computeStrandedTrees(base({ issues, runs }));
   assert.equal(r1.total, 1);
+  assert.deepEqual(r1.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["DEAD"]);
+});
+
+test("R1: a hold on a subtree covers the issues beneath it only", () => {
+  const issues = [
+    issue("root", { status: "in_progress" }),
+    issue("held", { parentId: "root", status: "blocked" }),
+    issue("under", { parentId: "held", status: "todo" }),
+    issue("other", { parentId: "root", status: "todo" }),
+  ];
+  const r1 = computeStrandedTrees(base({ issues, treeHolds: [{ rootIssueId: "held", status: "active" }] }));
+  assert.deepEqual(r1.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["OTHER"]);
 });
 
 test("R2: failure rate excludes cancellations; recovery is split by human intervention", () => {

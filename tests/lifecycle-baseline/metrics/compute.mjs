@@ -5,7 +5,7 @@
 
 export const OPEN_ISSUE_STATUSES = new Set(["todo", "in_progress", "in_review", "blocked"]);
 export const LIVE_RUN_STATUSES = new Set(["queued", "running", "scheduled_retry"]);
-export const LIVE_WAKE_STATUSES = new Set(["queued", "deferred_issue_execution"]);
+export const LIVE_WAKE_STATUSES = new Set(["queued", "deferred_issue_execution", "claimed"]);
 export const FAILED_RUN_STATUSES = new Set(["failed", "timed_out", "interrupted"]);
 // Agent-attributed activity that is harness bookkeeping, not progress on the task.
 export const NON_USEFUL_AGENT_ACTIONS = new Set(["issue.checked_out", "issue.read_marked", "issue.released"]);
@@ -39,15 +39,18 @@ function isHumanIntervention(row) {
 /**
  * R1 — stranded task trees.
  *
- * A tree is a root issue plus all descendants. It is stranded when it has at
- * least one open issue, no open issue has a live path, no open issue has a
- * human owner, no active tree hold covers it, and nothing in the tree has moved
- * for `graceMinutes`. `weekly` counts stranded trees whose last activity falls
- * inside the window, i.e. trees that stopped during the window.
+ * A tree is a root issue plus all descendants. Coverage is decided per open
+ * issue: an open issue is covered when it has a live path of its own, a human
+ * owner, an active hold on it or an ancestor, an open child that is covered, or
+ * an open blocker that is covered. A tree is stranded when at least one open
+ * issue is uncovered and nothing in the tree has moved for `graceMinutes`.
+ * `weekly` counts stranded trees whose last activity falls inside the window,
+ * i.e. trees that stopped during the window.
  */
-export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinutes = 30 } = {}) {
+export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinutes = 30, staleRunHours = 4 } = {}) {
   const nowMs = ms(now ?? snapshot.now);
   const windowStart = nowMs - windowDays * 86_400_000;
+  const graceMs = graceMinutes * 60_000;
   const issues = snapshot.issues.filter((issue) => !issue.hiddenAt);
   const byId = new Map(issues.map((issue) => [issue.id, issue]));
   const rootOf = (issue) => {
@@ -59,43 +62,85 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
     }
     return current;
   };
+  const isOpen = (issue) => Boolean(issue) && OPEN_ISSUE_STATUSES.has(issue.status);
 
   const liveReasons = new Map();
-  const addLive = (issueId, reason) => {
-    if (!issueId || !byId.has(issueId)) return;
-    if (!liveReasons.has(issueId)) liveReasons.set(issueId, new Set());
-    liveReasons.get(issueId).add(reason);
+  const addLive = (issueIds, reason) => {
+    for (const issueId of new Set(issueIds)) {
+      if (!issueId || !byId.has(issueId)) continue;
+      if (!liveReasons.has(issueId)) liveReasons.set(issueId, new Set());
+      liveReasons.get(issueId).add(reason);
+    }
   };
-  for (const run of snapshot.runs) if (LIVE_RUN_STATUSES.has(run.status)) addLive(run.issueId, `run:${run.status}`);
-  for (const wake of snapshot.wakeRequests ?? []) if (LIVE_WAKE_STATUSES.has(wake.status)) addLive(wake.issueId, `wake:${wake.status}`);
-  for (const interaction of snapshot.interactions ?? []) if (interaction.status === "pending") addLive(interaction.issueId, "interaction:pending");
-  for (const approval of snapshot.approvals ?? []) if (["pending", "revision_requested"].includes(approval.status)) addLive(approval.issueId, `approval:${approval.status}`);
-  for (const recovery of snapshot.recoveryActions ?? []) if (!recovery.resolvedAt) addLive(recovery.sourceIssueId, "recovery:open");
-  for (const issue of issues) if (issue.monitorNextCheckAt) addLive(issue.id, "monitor:scheduled");
+  // Runs and wakes name their issue in several places; the server matches on any.
+  const runIssueIds = (run) => [run.issueId, run.taskId, run.nativeIssueId];
+  const wakeIssueIds = (wake) => [wake.issueId, wake.taskId, wake.contextIssueId, wake.contextTaskId];
+  // A running run that has been silent past the stale threshold is hung, not live.
+  const runQuietSince = (run) => ms(run.lastOutputAt ?? run.startedAt ?? run.createdAt);
+  for (const run of snapshot.runs) {
+    if (!LIVE_RUN_STATUSES.has(run.status)) continue;
+    if (run.status === "running" && nowMs - (runQuietSince(run) ?? nowMs) >= staleRunHours * 3_600_000) continue;
+    addLive(runIssueIds(run), `run:${run.status}`);
+  }
+  for (const wake of snapshot.wakeRequests ?? []) if (LIVE_WAKE_STATUSES.has(wake.status)) addLive(wakeIssueIds(wake), `wake:${wake.status}`);
+  for (const interaction of snapshot.interactions ?? []) if (interaction.status === "pending") addLive([interaction.issueId], "interaction:pending");
+  for (const approval of snapshot.approvals ?? []) if (["pending", "revision_requested"].includes(approval.status)) addLive([approval.issueId], `approval:${approval.status}`);
+  // Only an active recovery action has an owner and a wake; an escalated one waits on the board.
+  for (const recovery of snapshot.recoveryActions ?? []) {
+    if (!recovery.resolvedAt && recovery.status === "active") addLive([recovery.sourceIssueId], "recovery:active");
+  }
+  // A monitor is a path while its next check is ahead, or overdue by less than the grace period.
+  for (const issue of issues) {
+    const next = ms(issue.monitorNextCheckAt);
+    if (next != null && next > nowMs - graceMs) addLive([issue.id], "monitor:scheduled");
+  }
 
   const agents = new Map((snapshot.agents ?? []).map((agent) => [agent.id, agent]));
   for (const issue of issues) {
     const agent = issue.assigneeAgentId ? agents.get(issue.assigneeAgentId) : null;
     // A timer heartbeat is a live path only when the agent can actually be invoked.
     if (agent?.timerHeartbeat && !["paused", "terminated", "pending_approval", "error"].includes(agent.status)) {
-      addLive(issue.id, "agent:timer_heartbeat");
-    }
-  }
-  const hasPath = (issue) => liveReasons.has(issue.id) || Boolean(issue.assigneeUserId);
-  // A blocked issue waiting on a blocker that itself has a path is not stranded;
-  // propagate through blocker chains until nothing changes.
-  for (let changed = true; changed;) {
-    changed = false;
-    for (const relation of snapshot.relations ?? []) {
-      const blocker = byId.get(relation.blockerIssueId);
-      if (!blocker || !OPEN_ISSUE_STATUSES.has(blocker.status) || !hasPath(blocker)) continue;
-      if (liveReasons.get(relation.blockedIssueId)?.has("blocker:live")) continue;
-      addLive(relation.blockedIssueId, "blocker:live");
-      changed = byId.has(relation.blockedIssueId) || changed;
+      addLive([issue.id], "agent:timer_heartbeat");
     }
   }
 
-  const heldRoots = new Set((snapshot.treeHolds ?? []).filter((hold) => hold.status === "active").map((hold) => hold.rootIssueId));
+  const heldIds = new Set((snapshot.treeHolds ?? []).filter((hold) => hold.status === "active").map((hold) => hold.rootIssueId));
+  const isHeld = (issue) => {
+    const seen = new Set();
+    for (let current = issue; current && !seen.has(current.id); current = byId.get(current.parentId)) {
+      if (heldIds.has(current.id)) return true;
+      seen.add(current.id);
+    }
+    return false;
+  };
+  const open = issues.filter(isOpen);
+  const openChildren = new Map();
+  for (const issue of open) {
+    if (!issue.parentId || !byId.has(issue.parentId)) continue;
+    if (!openChildren.has(issue.parentId)) openChildren.set(issue.parentId, []);
+    openChildren.get(issue.parentId).push(issue.id);
+  }
+  const openBlockers = new Map();
+  for (const relation of snapshot.relations ?? []) {
+    if (!isOpen(byId.get(relation.blockerIssueId))) continue;
+    if (!openBlockers.has(relation.blockedIssueId)) openBlockers.set(relation.blockedIssueId, []);
+    openBlockers.get(relation.blockedIssueId).push(relation.blockerIssueId);
+  }
+  const covered = new Set(open.filter((issue) => liveReasons.has(issue.id) || issue.assigneeUserId || isHeld(issue)).map((issue) => issue.id));
+  // A parent waits on its open children and a blocked issue on its blockers:
+  // either is covered once what it waits on is covered. Iterate to a fixed point.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const issue of open) {
+      if (covered.has(issue.id)) continue;
+      const waitsOn = [...(openChildren.get(issue.id) ?? []), ...(openBlockers.get(issue.id) ?? [])];
+      if (waitsOn.some((id) => covered.has(id))) {
+        covered.add(issue.id);
+        changed = true;
+      }
+    }
+  }
+
   const lastActivity = new Map();
   const touch = (issueId, at) => {
     const issue = byId.get(issueId);
@@ -104,28 +149,39 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
     const root = rootOf(issue).id;
     lastActivity.set(root, Math.max(lastActivity.get(root) ?? 0, value));
   };
-  for (const issue of issues) touch(issue.id, issue.updatedAt);
-  for (const run of snapshot.runs) touch(run.issueId, run.finishedAt ?? run.startedAt ?? run.createdAt);
+  for (const issue of issues) {
+    // Re-claiming an overdue monitor bumps updated_at every few minutes without
+    // doing anything; when that claim is the last write, the issue stopped when
+    // the monitor fell due.
+    const reclaimOnly = issue.monitorNextCheckAt && issue.monitorWakeRequestedAt
+      && ms(issue.monitorNextCheckAt) <= nowMs && ms(issue.updatedAt) === ms(issue.monitorWakeRequestedAt);
+    touch(issue.id, reclaimOnly ? issue.monitorNextCheckAt : issue.updatedAt);
+  }
+  for (const run of snapshot.runs) {
+    const at = run.finishedAt ?? new Date(Math.max(...[run.lastOutputAt, run.startedAt, run.createdAt].map(ms).filter((v) => v != null), 0));
+    for (const issueId of new Set(runIssueIds(run))) touch(issueId, at);
+  }
 
   const trees = new Map();
   for (const issue of issues) {
     const root = rootOf(issue);
     if (!trees.has(root.id)) trees.set(root.id, { root, open: [] });
-    if (OPEN_ISSUE_STATUSES.has(issue.status)) trees.get(root.id).open.push(issue);
+    if (isOpen(issue)) trees.get(root.id).open.push(issue);
   }
 
+  const summary = (issue) => ({ id: issue.id, identifier: issue.identifier, status: issue.status, assigneeAgentId: issue.assigneeAgentId ?? null });
   const stranded = [];
-  for (const { root, open } of trees.values()) {
-    if (open.length === 0 || heldRoots.has(root.id)) continue;
-    if (open.some((issue) => liveReasons.has(issue.id))) continue;
-    if (open.some((issue) => issue.assigneeUserId)) continue;
+  for (const { root, open: treeOpen } of trees.values()) {
+    const uncovered = treeOpen.filter((issue) => !covered.has(issue.id));
+    if (uncovered.length === 0) continue;
     const last = lastActivity.get(root.id) ?? 0;
-    if (nowMs - last < graceMinutes * 60_000) continue;
+    if (nowMs - last < graceMs) continue;
     stranded.push({
       rootIssueId: root.id,
       rootIdentifier: root.identifier,
       companyId: root.companyId,
-      openIssues: open.map((issue) => ({ id: issue.id, identifier: issue.identifier, status: issue.status, assigneeAgentId: issue.assigneeAgentId ?? null })),
+      openIssues: treeOpen.map(summary),
+      uncoveredIssues: uncovered.map(summary),
       lastActivityAt: last ? new Date(last).toISOString() : null,
       stoppedInWindow: last >= windowStart,
     });
@@ -133,6 +189,7 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
   return {
     windowDays,
     graceMinutes,
+    staleRunHours,
     treesWithOpenWork: [...trees.values()].filter((tree) => tree.open.length > 0).length,
     weekly: stranded.filter((tree) => tree.stoppedInWindow).length,
     total: stranded.length,
