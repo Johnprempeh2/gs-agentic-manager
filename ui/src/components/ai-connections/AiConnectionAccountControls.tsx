@@ -60,7 +60,9 @@ export function AiConnectionAccountControls({
               <span>{account.unavailableReason}</span>
             </p>
           )}
-          {available && <AiCredentialLifetime credential={account.credential} className="mt-1" />}
+          {(available || !account.unavailableReason) && (
+            <AiCredentialLifetime credential={account.credential} connection={account} className="mt-1" />
+          )}
         </div>
         {!readOnly && grant.capabilities?.canRevoke && (
           <div className="flex flex-wrap items-center gap-2">
