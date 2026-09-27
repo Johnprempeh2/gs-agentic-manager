@@ -156,6 +156,46 @@ export type AiConnectionResolution =
   | { ok: true; attribution: AiConnectionAttribution }
   | { ok: false; reason: AiConnectionUnavailableReason; message: string };
 
+/**
+ * Where a stored AI credential came from. An imported Claude login copies only
+ * the short-lived access token; `claude setup-token` issues one that lasts
+ * about a year; a pasted API key does not expire.
+ */
+export const AI_CREDENTIAL_SOURCES = ["imported_login", "setup_token", "pasted"] as const;
+export type AiCredentialSource = (typeof AI_CREDENTIAL_SOURCES)[number];
+export interface AiCredentialInfo {
+  source: AiCredentialSource;
+  /** ISO time the provider says the credential stops working, when known. */
+  expiresAt: string | null;
+}
+/** Stored on the AI tool connection's config. Never holds credential material. */
+export const aiCredentialRecordSchema = z.object({
+  source: z.enum(AI_CREDENTIAL_SOURCES),
+  expiresAt: z.string().datetime().nullable(),
+  recordedAt: z.string().datetime(),
+});
+/** The board is warned this long before a known expiry. */
+export const AI_CREDENTIAL_EXPIRY_WARNING_MS = 60 * 60 * 1000;
+export type AiCredentialExpiryState = "unknown" | "valid" | "expiring_soon" | "expired";
+export function aiCredentialExpiryState(
+  expiresAt: string | null | undefined,
+  now = new Date(),
+): AiCredentialExpiryState {
+  const at = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  if (!Number.isFinite(at)) return "unknown";
+  if (at <= now.getTime()) return "expired";
+  return at - now.getTime() <= AI_CREDENTIAL_EXPIRY_WARNING_MS ? "expiring_soon" : "valid";
+}
+/** Read the credential record from an AI connection config; malformed records are ignored. */
+export function readAiCredentialRecord(config: Record<string, unknown> | undefined) {
+  const parsed = aiCredentialRecordSchema.safeParse(config?.aiCredential);
+  return parsed.success ? parsed.data : null;
+}
+/** Run error codes that mean the provider refused the credential. Env-test probe codes are excluded. */
+export function isAiAuthRequiredErrorCode(code: string | null | undefined): boolean {
+  return typeof code === "string" && /^[a-z]+_auth_required$/.test(code);
+}
+
 export interface AiManagedConnectionSummary {
   id: string;
   grantId: string;
@@ -170,6 +210,7 @@ export interface AiManagedConnectionSummary {
   isDefault: boolean;
   status: "connected" | "needs_attention" | "expired" | "revoked";
   unavailableReason?: string;
+  credential?: AiCredentialInfo;
 }
 export const createAiConnectionSchema = z
   .object({
@@ -221,6 +262,8 @@ export const localAiConnectionSchema = aiConnectionLoginIntentSchema.extend({
 export const localAiLoginStartSchema = aiConnectionLoginIntentSchema.extend({ restart: z.boolean().optional() });
 export interface LocalAiLoginStatus {
   status: "ready" | "sign_in_required" | "expired";
+  /** The verified login's lifetime, so the connect screen can warn before saving. */
+  credential?: AiCredentialInfo;
 }
 export interface LocalAiLoginAttempt {
   sessionId: string;
