@@ -38,15 +38,16 @@ const snapshot = await sql.begin("read only", async (tx) => {
   const issues = await tx`
     select id, company_id as "companyId", identifier, parent_id as "parentId", status,
       assignee_agent_id as "assigneeAgentId", assignee_user_id as "assigneeUserId",
-      monitor_next_check_at as "monitorNextCheckAt", hidden_at as "hiddenAt",
+      monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt", hidden_at as "hiddenAt",
       updated_at as "updatedAt", completed_at as "completedAt"
     from issues where true ${scope("company_id")}`;
   const runs = await tx`
     select r.id, r.company_id as "companyId", r.agent_id as "agentId", r.status,
-      r.context_snapshot->>'issueId' as "issueId", r.error_code as "errorCode",
+      r.context_snapshot->>'issueId' as "issueId", r.context_snapshot->>'taskId' as "taskId",
+      r.native_issue_id as "nativeIssueId", r.error_code as "errorCode",
       coalesce(r.error ilike '%terminal access failure%', false) as "errorMentionsAccessFailure",
       r.retry_of_run_id as "retryOfRunId",
-      r.created_at as "createdAt", r.started_at as "startedAt", r.finished_at as "finishedAt",
+      r.created_at as "createdAt", r.started_at as "startedAt", r.last_output_at as "lastOutputAt", r.finished_at as "finishedAt",
       w.requested_at as "wakeRequestedAt",
       (select max(e.created_at) from heartbeat_run_events e
         where e.run_id = r.id and e.event_type = 'run.phase.timing' and e.payload->>'phase' = 'prepare_turn') as "promptSentAt"
@@ -57,16 +58,21 @@ const snapshot = await sql.begin("read only", async (tx) => {
       run_id as "runId", created_at as "createdAt"
     from activity_log where created_at >= ${since} ${scope("company_id")}`;
   const wakeRequests = await tx`
-    select status, payload->>'issueId' as "issueId" from agent_wakeup_requests
-    where status in ('queued', 'deferred_issue_execution') ${scope("company_id")}`;
+    select status, payload->>'issueId' as "issueId", payload->>'taskId' as "taskId",
+      payload->'_paperclipWakeContext'->>'issueId' as "contextIssueId",
+      payload->'_paperclipWakeContext'->>'taskId' as "contextTaskId"
+    from agent_wakeup_requests
+    where status in ('queued', 'deferred_issue_execution', 'claimed') ${scope("company_id")}`;
   const interactions = await tx`
     select issue_id as "issueId", status from issue_thread_interactions where status = 'pending' ${scope("company_id")}`;
   const approvals = await tx`
     select ia.issue_id as "issueId", a.status from issue_approvals ia join approvals a on a.id = ia.approval_id
     where a.status in ('pending', 'revision_requested') ${scope("ia.company_id")}`;
   const recoveryActions = await tx`
-    select source_issue_id as "sourceIssueId", resolved_at as "resolvedAt" from issue_recovery_actions
-    where resolved_at is null ${scope("company_id")}`;
+    select source_issue_id as "sourceIssueId", resolved_at as "resolvedAt", status, owner_type as "ownerType",
+      cause, evidence->'automaticRecovery'->>'replay' as replay
+    from issue_recovery_actions
+    where (resolved_at is null or evidence->'automaticRecovery'->>'replay' = 'blocked') ${scope("company_id")}`;
   const treeHolds = await tx`
     select root_issue_id as "rootIssueId", status from issue_tree_holds where status = 'active' ${scope("company_id")}`;
   const relations = await tx`
@@ -115,7 +121,7 @@ const markdown = [
   "## Stranded trees",
   "",
   ...(metrics.r1.stranded.length
-    ? metrics.r1.stranded.map((tree) => `- ${tree.rootIdentifier ?? tree.rootIssueId}: ${tree.openIssues.map((issue) => `${issue.identifier} (${issue.status})`).join(", ")}; last activity ${tree.lastActivityAt}`)
+    ? metrics.r1.stranded.map((tree) => `- ${tree.rootIdentifier ?? tree.rootIssueId}: uncovered ${tree.uncoveredIssues.map((issue) => `${issue.identifier} (${issue.status})`).join(", ")} of ${tree.openIssues.length} open; last activity ${tree.lastActivityAt}`)
     : ["None."]),
   "",
 ].join("\n");

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAuthFailures, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { readFileSync } from "node:fs";
+import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -13,19 +14,32 @@ test("R1: an agent-assigned open tree with no path is stranded; each live path c
   assert.equal(r1.weekly, 1);
   assert.deepEqual(r1.stranded[0].openIssues.map((entry) => entry.identifier), ["ROOT", "CHILD"]);
 
+  // Paths sit on the leaf: the parent waits on its child, so the child covers it.
   const cleared = {
     run: { runs: [{ id: "r", issueId: "child", status: "queued", createdAt: hoursAgo(5) }] },
-    wake: { wakeRequests: [{ issueId: "root", status: "queued" }] },
+    runByTaskId: { runs: [{ id: "r", taskId: "child", status: "queued", createdAt: hoursAgo(5) }] },
+    runByNativeIssue: { runs: [{ id: "r", nativeIssueId: "child", status: "queued", createdAt: hoursAgo(5) }] },
+    wake: { wakeRequests: [{ issueId: "child", status: "queued" }] },
+    claimedWake: { wakeRequests: [{ taskId: "child", status: "claimed" }] },
+    // A deferred wake is live only behind a live holder (see D1); the fixture carries one.
+    deferredWakeContext: {
+      runs: [{ id: "h", issueId: "child", status: "running", createdAt: hoursAgo(1), startedAt: hoursAgo(1), lastOutputAt: hoursAgo(0.9) }],
+      wakeRequests: [{ contextIssueId: "child", status: "deferred_issue_execution" }],
+    },
     interaction: { interactions: [{ issueId: "child", status: "pending" }] },
-    approval: { approvals: [{ issueId: "root", status: "pending" }] },
-    recovery: { recoveryActions: [{ sourceIssueId: "root", resolvedAt: null }] },
+    approval: { approvals: [{ issueId: "child", status: "pending" }] },
+    recovery: { recoveryActions: [{ sourceIssueId: "child", resolvedAt: null, status: "active", ownerType: "agent" }] },
+    monitor: { issues: [issue("root", { status: "in_progress" }), issue("child", { parentId: "root", status: "blocked", monitorNextCheckAt: hoursAgo(-1) })] },
     hold: { treeHolds: [{ rootIssueId: "root", status: "active" }] },
     timer: { agents: [{ id: "a1", status: "idle", timerHeartbeat: true }] },
-    human: { issues: [issue("root", { status: "in_progress", assigneeUserId: "u1" }), issue("child", { parentId: "root", status: "blocked" })] },
+    human: { issues: [issue("root", { status: "in_progress" }), issue("child", { parentId: "root", status: "blocked", assigneeUserId: "u1" })] },
   };
   for (const [name, extra] of Object.entries(cleared)) {
     assert.equal(computeStrandedTrees({ ...snapshot, ...extra }).total, 0, name);
   }
+  // A path on the parent does not cover the child beneath it.
+  const parentOnly = computeStrandedTrees({ ...snapshot, wakeRequests: [{ issueId: "root", status: "queued" }] });
+  assert.deepEqual(parentOnly.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["CHILD"]);
 });
 
 test("R1: a paused agent's timer heartbeat is not a live path", () => {
@@ -51,6 +65,122 @@ test("R1: closed, backlog, recently active and old trees are handled", () => {
   const r1 = computeStrandedTrees(snapshot);
   assert.equal(r1.total, 1, "only the old tree is stranded; fresh is inside the grace period");
   assert.equal(r1.weekly, 0, "the old tree stopped before the window");
+});
+
+// GRE-21 audit: strands the server can produce that R1 used to read as live.
+
+test("R1 blind spot B1: a recovery action escalated to the board is not a live path", () => {
+  // Budget exhaustion sets status 'escalated', owner 'board', no owner ids, no
+  // wake policy, and leaves resolved_at null (issue-recovery-actions.ts:326-362).
+  const issues = [issue("root", { status: "blocked" })];
+  const active = { sourceIssueId: "root", resolvedAt: null, status: "active", ownerType: "agent" };
+  assert.equal(computeStrandedTrees(base({ issues, recoveryActions: [active] })).total, 0, "an active recovery action is live");
+  const escalated = { sourceIssueId: "root", resolvedAt: null, status: "escalated", ownerType: "board" };
+  assert.equal(computeStrandedTrees(base({ issues, recoveryActions: [escalated] })).total, 1);
+});
+
+test("R1 blind spot B2: a running run silent past the stale-run threshold is not a live path", () => {
+  // The active-run watchdog only folds silent runs whose issue is already
+  // done/cancelled; the orphan reaper only acts on lost processes. A hung
+  // process on an open issue stays 'running' indefinitely.
+  const issues = [issue("root", { status: "in_progress" })];
+  const hung = { id: "r", issueId: "root", status: "running", createdAt: hoursAgo(6), startedAt: hoursAgo(6), lastOutputAt: hoursAgo(6) };
+  assert.equal(computeStrandedTrees(base({ issues, runs: [hung] })).total, 1);
+  const talking = { ...hung, lastOutputAt: hoursAgo(3.5) };
+  assert.equal(computeStrandedTrees(base({ issues, runs: [talking] })).total, 0, "output inside the threshold keeps it live");
+});
+
+test("R1 blind spot B3: an overdue monitor that never fired is not a live path", () => {
+  // Server liveness treats a monitor as a path only while next_check_at is in
+  // the future (issue-graph-liveness.ts:197). A dispatch that throws keeps the
+  // column set and is only logged (heartbeat.ts tickDueIssueMonitors).
+  const issues = [issue("root", { status: "in_progress", monitorNextCheckAt: hoursAgo(3) })];
+  assert.equal(computeStrandedTrees(base({ issues })).total, 1);
+  const justDue = [issue("root", { status: "in_progress", monitorNextCheckAt: hoursAgo(0.25) })];
+  assert.equal(computeStrandedTrees(base({ issues: justDue })).total, 0, "overdue by less than the grace period is still live");
+  // tickDueIssueMonitors re-claims every 5 minutes and bumps updated_at each
+  // time; that write is not activity, so the tree still counts as stopped.
+  const reclaimed = [issue("root", { status: "in_progress", monitorNextCheckAt: hoursAgo(3), monitorWakeRequestedAt: hoursAgo(0.05), updatedAt: hoursAgo(0.05) })];
+  const r1 = computeStrandedTrees(base({ issues: reclaimed }));
+  assert.equal(r1.total, 1);
+  assert.equal(r1.stranded[0].lastActivityAt, hoursAgo(3));
+});
+
+test("R1 blind spot B4: a live branch does not hide a dead sibling", () => {
+  // The parent waits on its children, so a live child covers it. A sibling
+  // with no path of its own is still stranded; nothing will wake it.
+  const issues = [
+    issue("root", { status: "in_progress" }),
+    issue("live", { parentId: "root", status: "in_progress" }),
+    issue("dead", { parentId: "root", status: "todo" }),
+  ];
+  const runs = [{ id: "r", issueId: "live", status: "running", createdAt: hoursAgo(1), startedAt: hoursAgo(1), lastOutputAt: hoursAgo(0.9) }];
+  const r1 = computeStrandedTrees(base({ issues, runs }));
+  assert.equal(r1.total, 1);
+  assert.deepEqual(r1.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["DEAD"]);
+});
+
+// GRE-23: two more strands behind a deferred wake. Enqueue never defers behind
+// a dead lock (heartbeat.ts enqueueWakeup clears it first), so a deferred wake
+// only moves when its live holder releases and the drain promotes it
+// (wake-queue use-cases.ts runReleaseDrain). GRE-24 changed the definition.
+
+test("R1 strand D1: a deferred wake whose holder died without a drain is not a live path", () => {
+  // sweepStaleIssueLocks clears a lock held by a terminal or missing run with a
+  // bare update and never drains the queue (recovery/service.ts). The only
+  // later promoter, resumeQueuedRuns, takes comment or interaction wakes on a
+  // legacy run only (heartbeat.ts); an assignment, mention or dependency wake
+  // stays deferred. hasActiveExecutionPath counts it as live, so
+  // reconcileStrandedAssignedIssues skips the issue too.
+  const issues = [issue("root", { status: "in_progress" })];
+  const failed = { id: "r", issueId: "root", status: "failed", createdAt: hoursAgo(5), finishedAt: hoursAgo(5) };
+  const wakeRequests = [{ issueId: "root", status: "deferred_issue_execution" }];
+  assert.equal(computeStrandedTrees(base({ issues, runs: [failed], wakeRequests })).total, 1);
+  const holder = { id: "h", issueId: "root", status: "running", createdAt: hoursAgo(1), startedAt: hoursAgo(1), lastOutputAt: hoursAgo(0.9) };
+  assert.equal(computeStrandedTrees(base({ issues, runs: [holder], wakeRequests })).total, 0, "a live holder will drain it on release");
+});
+
+test("R1 strand D2: a deferred wake behind an execution hold is not a live path", () => {
+  // settleUnrecoverableExecutions resolves the recovery action but keeps
+  // evidence.automaticRecovery.replay = 'blocked' and sets the issue blocked
+  // (execution-recovery-resolution.ts). executionBlockerPredicate still counts
+  // that resolved row as a hold (execution-blocker.ts), so release returns
+  // "released" without draining (wake-queue adapters/postgres.ts
+  // withIssueExecutionLock) and dispatch cancels any queued run as stale
+  // (run-dispatch adapters/postgres.ts decideCurrentRunStaleness). The wake
+  // waits for a person who is not the assignee. An escalated hold is the same.
+  const issues = [issue("root", { status: "blocked" })];
+  const wakeRequests = [{ issueId: "root", status: "deferred_issue_execution" }];
+  const replayBlocked = { sourceIssueId: "root", resolvedAt: hoursAgo(5), status: "resolved", cause: "uncertain_provider_action", replay: "blocked" };
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, recoveryActions: [replayBlocked] })).total, 1);
+  const escalated = { sourceIssueId: "root", resolvedAt: null, status: "escalated", ownerType: "board", cause: "execution_recovery_budget_exhausted" };
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, recoveryActions: [escalated] })).total, 1);
+  // Under the hold a live holder does not help: release skips the drain, and
+  // dispatch cancels a queued or retry run as stale. A running run still counts.
+  const running = { id: "h", issueId: "root", status: "running", createdAt: hoursAgo(1), startedAt: hoursAgo(1), lastOutputAt: hoursAgo(0.9) };
+  const queued = { id: "q", issueId: "root", status: "queued", createdAt: hoursAgo(1) };
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, runs: [queued], recoveryActions: [replayBlocked] })).total, 1, "a queued run under a hold is cancelled at dispatch");
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, runs: [running], recoveryActions: [replayBlocked] })).total, 0, "a running run is still working");
+  // Only a reconciliation cause makes a hold; replay-blocked evidence alone does not.
+  const otherCause = { ...replayBlocked, cause: "stranded_assigned_issue" };
+  assert.equal(computeStrandedTrees(base({ issues, wakeRequests, runs: [queued], recoveryActions: [otherCause] })).total, 0);
+});
+
+test("R1: the execution-hold causes match the shared EXECUTION_RECONCILIATION_CAUSES", () => {
+  const source = readFileSync(new URL("../../../packages/shared/src/types/execution-projection.ts", import.meta.url), "utf8");
+  const list = source.match(/EXECUTION_RECONCILIATION_CAUSES = \[([^\]]*)\]/)[1];
+  assert.deepEqual([...EXECUTION_HOLD_CAUSES].sort(), [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort());
+});
+
+test("R1: a hold on a subtree covers the issues beneath it only", () => {
+  const issues = [
+    issue("root", { status: "in_progress" }),
+    issue("held", { parentId: "root", status: "blocked" }),
+    issue("under", { parentId: "held", status: "todo" }),
+    issue("other", { parentId: "root", status: "todo" }),
+  ];
+  const r1 = computeStrandedTrees(base({ issues, treeHolds: [{ rootIssueId: "held", status: "active" }] }));
+  assert.deepEqual(r1.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["OTHER"]);
 });
 
 test("R2: failure rate excludes cancellations; recovery is split by human intervention", () => {
