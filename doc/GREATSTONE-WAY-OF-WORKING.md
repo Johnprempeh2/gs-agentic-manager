@@ -4,11 +4,12 @@ This is the brief for every agent (and human) that changes the platform. The
 agents run on this platform, so a careless change can break the app they live
 in. The rule behind everything below: **build in isolation, John releases.**
 
-## The three places
+## The places
 
 | Place | Path | What it is | Who may change it |
 |---|---|---|---|
 | Live app | `~/GSAM/live` (code) and `~/GSAM/data` (data), served at http://localhost:3100 | The copy John and the agents use every day. Always a tagged release. | Nobody edits it. John updates it with `scripts/greatstone-release.sh`. |
+| Preview | `~/GSAM/preview` (its own code clone and a copy of the data), served at http://localhost:3200 | A release candidate on a copy of the live data, agents off. Thrown away after each check. | Keystone starts and stops it with `scripts/greatstone-preview.sh`. |
 | Dev checkout | `~/Desktop/Code/gs-clip` | The repository your worktrees come from. | Nobody works in it directly. It is the root for worktrees. |
 | Your worktree | `~/Desktop/Code/gs-clip/.gsam/worktrees/<branch>` | One folder and one branch per task, created for you when you start the task. | You, for that task only. |
 
@@ -36,10 +37,9 @@ to it.
    hand. Link the GRE issue. Put the pull request link on the issue and set it
    to `in_review`.
 6. **Checks and review.** Fork CI runs the fast lanes on every pull request. If
-   they fail, fix on the same branch and push again. John reviews and merges.
-7. **Release.** John tags a release and updates the live app when no agent is
-   running. If the release misbehaves, he moves the live app back to the
-   previous tag.
+   they fail, fix on the same branch and push again. Keystone (or John) reviews
+   and merges; nobody merges their own pull request.
+7. **Release.** Merged changes go live only through the release flow below.
 
 ## Never
 
@@ -67,14 +67,93 @@ Pro, add a branch rule that requires a pull request and the "Fork CI" check.
 Say so on the issue in one or two sentences, set it to `blocked`, and name who
 must act. Do not work around a missing permission.
 
-## Releasing (John)
+## Releasing: try first, then agree
 
-After merging, from the dev checkout:
+Merging does not change the live app. A version goes live in these steps.
+
+1. **Ready check (Keystone).** For each open pull request: Fork CI is green,
+   the tests the pull request names pass again, the issue's "Done when" list is
+   met, and the diff does not touch `~/GSAM/`, secrets or client data. Keystone
+   posts "Ready to merge" or "Not ready, because ..." on the issue.
+2. **Merge (Keystone).** `gh pr merge` when the verdict is "Ready to merge" and
+   CI is green. Keystone never merges its own pull requests; John merges those.
+3. **Candidate (Keystone).** Tag the merged `main` as a candidate and write the
+   release note (each change, its issue, what to check) on a release issue:
+
+   ```sh
+   git fetch origin && git tag -a rc-YYYY-MM-DD.N origin/main -m "Release candidate rc-YYYY-MM-DD.N"
+   ```
+
+   The tag stays local until the release; the release script pushes it.
+4. **Preview (Keystone).** Start the candidate on a copy of the live data:
+
+   ```sh
+   scripts/greatstone-preview.sh start rc-YYYY-MM-DD.N   # http://localhost:3200
+   scripts/greatstone-preview.sh status                  # tag, commit, agent runs since start
+   ```
+
+   Go through each "what to check" line and record pass or fail with evidence on
+   the release issue. `status` must show 0 agent runs.
+5. **Agree (John).** John tries the preview too, then says "release" or
+   "not yet" on the release issue. "Not yet" leaves live as it is; the fixes
+   become new issues and a new candidate.
+6. **Release (John).** From the dev checkout, when no agent is running:
+
+   ```sh
+   scripts/greatstone-release.sh rc-YYYY-MM-DD.N
+   ```
+
+   The script checks that the tag is on `origin/main` and is the commit the
+   preview runs, refuses while an agent run is active, backs up the live
+   database to `~/GSAM/backups/release-<time>-<tag>/`, tags the same commit as
+   `live-YYYY-MM-DD.N`, moves `~/GSAM/live` to it, restarts the live server,
+   waits for the new server to report the tag's commit, and stops the preview.
+   It prints the rollback command and the backup file.
+7. **Check live (Keystone).** `curl -s http://localhost:3100/api/health`: the
+   `commit` is the tag's commit. Spot-check the changes, then close the release
+   issue.
+
+### Rollback (John)
 
 ```sh
-scripts/greatstone-release.sh            # tags origin/main and updates the live app
-scripts/greatstone-release.sh <tag>      # moves the live app to an existing tag (rollback)
+scripts/greatstone-release.sh live-YYYY-MM-DD.N   # the previous live tag, printed by the release
 ```
 
-The script refuses while an agent run is active, installs dependencies in the
-live checkout, and restarts the live server.
+This moves live back to that tag the same way (backup first, then restart). It
+does not undo database migrations. If the older code cannot run on the newer
+database, restore the backup the release printed; ask Keystone for the steps.
+
+### What the preview does and does not do
+
+- **Code:** its own clone in `~/GSAM/preview/code`, fetched from the local
+  repository, checked out at the tag, installed and started with the same
+  command as live (`pnpm dev:once`, which builds what it needs).
+- **Data:** a fresh copy on every `start`. Files are copied from `~/GSAM/data`
+  without the database, the `secrets/` folder, locks and backups. The database
+  is copied with a read-only backup of the running live database, so live does
+  not need to be quiet or stopped; the copy is one consistent snapshot. Paths
+  into `~/GSAM/data` inside the copy (for example agent instruction files) are
+  pointed at the preview's own folder. Nothing is written under `~/GSAM/data`,
+  and the preview never talks to port 3100. If the live database is not
+  running, `start` refuses instead of starting it.
+- **Agents off:** `HEARTBEAT_SCHEDULER_ENABLED=false` turns off timer
+  heartbeats and routines; `GSAM_RESTORE_IN_PROGRESS=true` makes every agent
+  wake (assignment, comment, "run now") a skipped wake, so no agent run can
+  start.
+- **No outside effects:** the live secrets key is not copied, so stored
+  credentials (GitHub, chat, email, tool connections) cannot be used. In the
+  copy, workspace dev servers are set to stopped, pending tool actions are
+  cancelled, tool connections, chat endpoints and plugins are turned off, and
+  telemetry and database backups are off.
+- **Take care:** execution workspaces in the copy still point at the real task
+  worktrees under the dev checkout. Do not archive or clean up workspaces in
+  the preview.
+- `stop` stops only the preview process group and its database. The code and
+  data folders stay until the next `start` replaces them.
+
+### Sandbox test of the scripts
+
+Every path can be moved, so the scripts can be tried without the real
+`~/GSAM/`: set `GSAM_ROOT` (fake GSAM home with `live/`, `data/`, `backups/`,
+`preview/`), `GSAM_LIVE_URL` (a fake live server), and `GSAM_RELEASE_REPO` (a
+clone whose `origin` is a local bare repository, so no tag reaches GitHub).

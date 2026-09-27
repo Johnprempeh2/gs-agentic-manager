@@ -49,9 +49,10 @@ live_database_url() {
 }
 
 # Prints one field of <url>/api/health (a dotted path such as
-# serverInfo.processStartedAt), or nothing.
+# serverInfo.processStartedAt), or nothing. Never fails, so that it can be
+# polled while the server restarts.
 health_field() {
-  curl -fsS -m 5 "$1/api/health" 2>/dev/null \
+  { curl -fsS -m 5 "$1/api/health" 2>/dev/null || true; } \
     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{let v=JSON.parse(s);for(const k of process.argv[1].split("."))v=v?.[k];console.log(v??"")}catch{console.log("")}})' "$2"
 }
 
