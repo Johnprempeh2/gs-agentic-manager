@@ -320,6 +320,10 @@ export function classifyClaudeTerminalSessionFailure(
   failure: AcpxTerminalSessionFailure,
   now: Date,
 ): AcpxTerminalFailureClassification | null {
+  // `access` is claude-agent-acp's typed category for a rejected or expired
+  // login. Retrying cannot repair it, so report the same code as the Claude CLI
+  // lane; recovery hands it to the board instead of burning retries.
+  if (failure.category === "access") return { errorCode: CLAUDE_AUTH_REQUIRED_ERROR_CODE };
   // `limit` also includes context, turn, rate and configured budget limits.
   // Only the provider's quota wording qualifies for a quota wait.
   if (failure.category !== "limit") return null;
