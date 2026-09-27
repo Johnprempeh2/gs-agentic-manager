@@ -1003,6 +1003,25 @@ describe("realizeExecutionWorkspace", () => {
     expect(await readGit(workspace.cwd, ["rev-parse", "HEAD"])).toBe(originHead);
   });
 
+  // GRE-3: two workspaces realized at once in the same repo raced on
+  // `.git/config.lock`, because `worktree add -b <branch> origin/master` wrote
+  // upstream tracking config. The run failed with setup_failed.
+  it("creates a fresh worktree while another git process holds .git/config.lock", async () => {
+    const { repoRoot } = await createClonedRepoWithRemote();
+    const originHead = await readGit(repoRoot, ["rev-parse", "origin/master"]);
+    const configLock = path.join(repoRoot, ".git", "config.lock");
+    await fs.writeFile(configLock, "", "utf8");
+
+    try {
+      const workspace = await realizeWorktreeForTest(repoRoot, null);
+
+      expect(workspace.created).toBe(true);
+      expect(await readGit(workspace.cwd, ["rev-parse", "HEAD"])).toBe(originHead);
+    } finally {
+      await fs.rm(configLock, { force: true });
+    }
+  });
+
   it("maps a configured local branch base ref to origin/<branch> for fresh worktrees", async () => {
     const { repoRoot } = await createClonedRepoWithRemote();
     const originHead = await readGit(repoRoot, ["rev-parse", "origin/master"]);
