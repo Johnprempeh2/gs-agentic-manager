@@ -277,10 +277,62 @@ export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
   };
 }
 
+/**
+ * A run failed because the provider refused the login. Newer servers code it
+ * `<provider>_auth_required`; older ones coded the ACP "terminal access
+ * failure" as a generic turn failure, so the collector also passes a flag for
+ * that error text. Stated here, not imported from the recovery code.
+ */
+export function isAuthFailure(run) {
+  if (!FAILED_RUN_STATUSES.has(run.status)) return false;
+  return /^[a-z]+_auth_required$/.test(run.errorCode ?? "") || run.errorMentionsAccessFailure === true;
+}
+
+/**
+ * R2 detail — rejected logins. A dead credential should hand the task to the
+ * board at once: no automatic retries and no `Bounded retry exhausted` event.
+ * Counts auth-failed runs that finished in the window, retry runs scheduled
+ * from them, and retry exhaustion events in the window that follow one.
+ */
+export function computeAuthFailures(snapshot, { now, windowDays = 7 } = {}) {
+  const nowMs = ms(now ?? snapshot.now);
+  const windowStart = nowMs - windowDays * 86_400_000;
+  const inWindow = (value) => {
+    const at = ms(value);
+    return at != null && at >= windowStart && at <= nowMs;
+  };
+  const runs = new Map(snapshot.runs.map((run) => [run.id, run]));
+  const failed = snapshot.runs.filter((run) => inWindow(run.finishedAt) && isAuthFailure(run));
+  const failedIds = new Set(failed.map((run) => run.id));
+  const retries = snapshot.runs.filter((run) => run.retryOfRunId && failedIds.has(run.retryOfRunId));
+  const exhaustions = (snapshot.retryExhaustions ?? []).filter((event) => inWindow(event.createdAt));
+  const fromAuth = exhaustions.filter((event) => {
+    const run = runs.get(event.runId);
+    return run != null && isAuthFailure(run);
+  });
+  return {
+    windowDays,
+    authFailedRuns: failed.length,
+    byErrorCode: Object.fromEntries(
+      [...new Set(failed.map((run) => run.errorCode ?? "none"))].map((code) => [code, failed.filter((run) => (run.errorCode ?? "none") === code).length]),
+    ),
+    retriesAfterAuthFailure: retries.length,
+    retryExhaustions: exhaustions.length,
+    retryExhaustionsFromAuthFailures: fromAuth.length,
+    exhaustedAuthRuns: fromAuth.map((event) => ({
+      runId: event.runId,
+      issueId: runs.get(event.runId)?.issueId ?? null,
+      errorCode: runs.get(event.runId)?.errorCode ?? null,
+      at: new Date(event.createdAt).toISOString(),
+    })),
+  };
+}
+
 export function computeAll(snapshot, options = {}) {
   return {
     r1: computeStrandedTrees(snapshot, options),
     r2: computeRunFailures(snapshot, options),
+    auth: computeAuthFailures(snapshot, options),
     s1: computeWakeLatency(snapshot, options),
   };
 }
