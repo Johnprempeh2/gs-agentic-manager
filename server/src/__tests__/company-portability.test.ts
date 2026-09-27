@@ -2746,7 +2746,7 @@ describe("company portability", () => {
     companySvc.list.mockResolvedValue([
       { name: "Imported GS Agentic Manager" },
       // Case-insensitive: an existing "(2)" in any casing blocks that suffix.
-      { name: "imported paperclip (2)" },
+      { name: "imported gs agentic manager (2)" },
     ]);
     companySvc.create.mockResolvedValue({
       id: "company-imported",
@@ -6139,9 +6139,9 @@ describe("dedupeImportedCompanyName", () => {
   });
 
   it("suffixes past every taken candidate, case-insensitively", () => {
-    expect(dedupeImportedCompanyName("GS Agentic Manager", ["paperclip"])).toBe("GS Agentic Manager (2)");
+    expect(dedupeImportedCompanyName("GS Agentic Manager", ["gs agentic manager"])).toBe("GS Agentic Manager (2)");
     expect(dedupeImportedCompanyName("GS Agentic Manager", ["GS Agentic Manager", "GS Agentic Manager (2)"])).toBe("GS Agentic Manager (3)");
-    expect(dedupeImportedCompanyName("GS Agentic Manager", ["PAPERCLIP", "paperclip (2)"])).toBe("GS Agentic Manager (3)");
+    expect(dedupeImportedCompanyName("GS Agentic Manager", ["GS AGENTIC MANAGER", "gs agentic manager (2)"])).toBe("GS Agentic Manager (3)");
   });
 
   it("ignores surrounding whitespace in existing names", () => {
