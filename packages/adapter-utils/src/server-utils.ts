@@ -559,6 +559,15 @@ type PaperclipWakeIssue = {
   status: string | null;
   workMode: string | null;
   priority: string | null;
+  attachments?: PaperclipWakeAttachment[];
+};
+
+type PaperclipWakeAttachment = {
+  id: string;
+  filename: string;
+  contentType: string | null;
+  byteSize: number | null;
+  contentPath: string;
 };
 
 type PaperclipWakeExecutionPrincipal = {
@@ -926,6 +935,11 @@ function normalizePaperclipWakeIssue(
   const workMode = asString(issue.workMode, "").trim() || null;
   const priority = asString(issue.priority, "").trim() || null;
   if (!id && !identifier && !title) return null;
+  const attachments = Array.isArray(issue.attachments)
+    ? issue.attachments
+        .map((entry) => normalizePaperclipWakeAttachment(entry))
+        .filter((entry): entry is PaperclipWakeAttachment => Boolean(entry))
+    : [];
   return {
     id,
     identifier,
@@ -935,6 +949,28 @@ function normalizePaperclipWakeIssue(
     status,
     workMode,
     priority,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  };
+}
+
+function normalizePaperclipWakeAttachment(
+  value: unknown,
+): PaperclipWakeAttachment | null {
+  const attachment = parseObject(value);
+  const id = asString(attachment.id, "").trim();
+  const contentPath = asString(attachment.contentPath, "").trim();
+  if (!id || !contentPath) return null;
+  const byteSize =
+    typeof attachment.byteSize === "number" &&
+    Number.isFinite(attachment.byteSize)
+      ? attachment.byteSize
+      : null;
+  return {
+    id,
+    filename: asString(attachment.filename, "").trim() || "attachment",
+    contentType: asString(attachment.contentType, "").trim() || null,
+    byteSize,
+    contentPath,
   };
 }
 
@@ -2520,6 +2556,24 @@ function renderPaperclipWakePromptBody(
     lines.push(
       "- issue description: omitted from this resume delta; fetch the issue if you need the latest brief",
     );
+  }
+  const taskAttachments = normalized.issue?.attachments ?? [];
+  if (taskAttachments.length > 0 && !resumeOmitsIssueDescription) {
+    lines.push(
+      "",
+      "Task attachments (uploaded with the task; download with an authenticated GET on the content path):",
+    );
+    for (const attachment of taskAttachments) {
+      const details = [
+        attachment.contentType,
+        attachment.byteSize !== null ? `${attachment.byteSize} bytes` : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      lines.push(
+        `- ${JSON.stringify(attachment.filename)}${details ? ` (${details})` : ""}: ${attachment.contentPath}`,
+      );
+    }
   }
   if (normalized.checkboxSelection) {
     if (normalized.checkboxSelection.prompt) {

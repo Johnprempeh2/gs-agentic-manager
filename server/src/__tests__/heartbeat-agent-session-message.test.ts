@@ -14,6 +14,12 @@ describe("agent session wake messages", () => {
         select: () => ({
           from: () => ({
             where: async () => [],
+            // Task-level attachment lookup.
+            innerJoin: () => ({
+              where: () => ({
+                orderBy: () => ({ limit: async () => [] }),
+              }),
+            }),
           }),
         }),
       } as never,
