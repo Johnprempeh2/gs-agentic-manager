@@ -23,6 +23,7 @@ import {
   workspaceOperations,
   workspaceRuntimeServices,
 } from "@greatstone/db";
+import { ENV_PREFIX, LEGACY_ENV_PREFIX } from "@greatstone/shared/legacy-env";
 import { eq } from "drizzle-orm";
 import {
   buildWorkspaceRuntimeDesiredStatePatch,
@@ -436,15 +437,16 @@ function createWorkspaceOperationRecorderDouble() {
   return { recorder, operations };
 }
 
-// Agent runs export GSAM_*/PAPERCLIP_* run context plus a BASH_ENV hook that
-// re-exports PATH in every non-interactive bash. Left in place, those leak into
-// provision-worktree.sh (the hook hides each test's fake pnpm) and into the
-// runtime under test, so the results depend on who launched vitest.
+// Agent runs export run context (under both the current and the legacy env
+// prefix) plus a BASH_ENV hook that re-exports PATH in every non-interactive
+// bash. Left in place, those leak into provision-worktree.sh (the hook hides
+// each test's fake pnpm) and into the runtime under test, so the results depend
+// on who launched vitest.
 const inheritedRunEnv = new Map<string, string | undefined>();
 
 beforeAll(() => {
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("GSAM_") || key.startsWith("PAPERCLIP_") || key === "BASH_ENV" || key === "ENV") {
+    if (key.startsWith(ENV_PREFIX) || key.startsWith(LEGACY_ENV_PREFIX) || key === "BASH_ENV" || key === "ENV") {
       inheritedRunEnv.set(key, process.env[key]);
       delete process.env[key];
     }
