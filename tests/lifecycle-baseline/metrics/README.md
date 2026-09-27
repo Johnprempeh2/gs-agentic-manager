@@ -122,3 +122,49 @@ useful action (model time and the agent's own tool calls). Runs without a
 - The definitions are independent of `server/src/services/recovery/*`. That is
   deliberate: the recovery code is what W2 changes, and the number must not be
   graded by the code it judges.
+
+## Time lost to platform faults — L1 to L4 (GRE-37)
+
+These count the three faults from the GRE-32 assessment, so the fixes in
+GRE-34, GRE-35 and GRE-36 can be checked with a before and after number.
+`lost-time.mjs` holds the definitions; `lost-time-collect.mjs` reads a database
+the same way as `collect.mjs` (read only, loopback hosts only).
+
+```sh
+pnpm metrics:lost-time                                 # local embedded instance, last 7 days
+pnpm metrics:lost-time --company <id> --since 2026-09-27T00:00:00Z --now 2026-09-28T00:00:00Z
+pnpm metrics:lost-time --silence-minutes 20            # threshold for L1 manual cancels (default 20)
+```
+
+It writes `.lifecycle-baseline/metrics/lost-time/<stamp>/lost-time.{json,md}`.
+Reports hold identifiers, rule names and timings, never comment bodies.
+
+- **L1 — runs stopped as silent or hung, and their minutes.** A run finished
+  in the window counts when a watchdog stopped it (`run_silent_timeout`,
+  `process_lost`, or status `timed_out`), or when a person cancelled it
+  (`errorCode = 'cancelled'`) after it ran at least the silence threshold.
+  The two are reported apart: after GRE-34, hangs should move from "person"
+  to "watchdog" and their minutes should drop to about the threshold.
+- **L2 — recovery moved an issue to `blocked` while an interaction was
+  pending.** A recovery move is a system `issue.updated` activity row with a
+  `recovery.*` source and status `blocked`. It counts when an interaction on
+  that issue was created before the move and resolved after it (or not yet).
+- **L3 — runs cancelled by `issue_reassigned`, and their minutes.** Minutes
+  run from start to cancel; a run cancelled while queued adds zero.
+- **L4 — human comments that ask for or relay status, or recover a run.** A
+  simple text rule (`HUMAN_COMMENT_RULES`): *asks status* ("why is…",
+  "taking… long"), *relays status* ("been merged", "I fixed"), *recovers a
+  run* ("hung", "last run failed", "token expired"). Best effort: it misses
+  wording it does not know and can match a comment that is not a relay. Each
+  counted comment is listed by id so the rule can be audited.
+
+Each report gives finished runs and agent-minutes in the window, and L1/L3 as a
+share of agent-minutes. Compare windows of the same length, and compare shares
+as well as raw counts: a busier week has more runs to lose.
+
+Limits: before GRE-34 there is no silence signal in the database
+(`last_output_at` is written again during cancel, and run events are sparse
+during a turn), so L1 relies on the manual-cancel rule. A long run a person
+cancels for another reason also counts. If GRE-34 or GRE-36 ship a different
+stop code than the ones above, add it to `SILENT_STOP_CODES` or
+`REASSIGN_STOP_CODE` before taking the after number.
