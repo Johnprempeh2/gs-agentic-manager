@@ -1,75 +1,97 @@
 #!/usr/bin/env bash
 # Release GS Agentic Manager to the live app (see doc/GREATSTONE-WAY-OF-WORKING.md).
 #
-#   scripts/greatstone-release.sh          tag origin/main as live-YYYY-MM-DD.N and release it
-#   scripts/greatstone-release.sh <tag>    release an existing tag (also the rollback path)
+#   scripts/greatstone-release.sh rc-YYYY-MM-DD.N     release the candidate that was checked in the preview
+#   scripts/greatstone-release.sh live-YYYY-MM-DD.N   move live back to an earlier release (rollback)
 #
 # Run from the dev checkout. The live app is a separate clone that only ever
-# sits on a tag; this script is the one thing that moves it.
+# sits on a live-* tag; this script is the one thing that moves it. Before it
+# moves live it backs up the live database to ~/GSAM/backups/. After a
+# successful release it stops the preview.
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/greatstone-common.sh"
 
-LIVE_DIR="${GSAM_LIVE_DIR:-$HOME/GSAM/live}"
-LIVE_URL="${GSAM_LIVE_URL:-http://localhost:3100}"
-export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
-export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-
-say() { printf '%s\n' "$*"; }
 die() { printf 'release: %s\n' "$*" >&2; exit 1; }
+
+TAG="${1:-}"
+case "$TAG" in
+  rc-*) MODE=release ;;
+  live-*) MODE=rollback ;;
+  *) die "usage: greatstone-release.sh <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
+esac
 
 [ -d "$LIVE_DIR/.git" ] || die "no live checkout at $LIVE_DIR"
 [ -z "$(git -C "$LIVE_DIR" status --porcelain)" ] || die "the live checkout has local changes; nothing may edit it. Inspect $LIVE_DIR before releasing."
 
-active_runs() {
-  # Counts queued or running agent runs across every company on the live app.
-  node --input-type=module -e '
-    const base = process.argv[1];
-    const get = async (p) => (await fetch(base + p)).json();
-    let active = 0;
-    for (const company of await get("/api/companies")) {
-      const runs = await get(`/api/companies/${company.id}/heartbeat-runs?limit=50`);
-      const list = Array.isArray(runs) ? runs : (runs.runs ?? runs.items ?? []);
-      active += list.filter((r) => r.status === "running" || r.status === "queued").length;
-    }
-    console.log(active);
-  ' "$LIVE_URL"
-}
+git -C "$RELEASE_REPO" fetch --quiet --tags origin
+git -C "$RELEASE_REPO" fetch --quiet origin main
+TARGET="$(git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$TAG^{commit}")" || die "unknown tag $TAG"
+[ "$(git -C "$LIVE_DIR" rev-parse HEAD)" != "$TARGET" ] || die "live is already on $TAG ($TARGET); nothing to do."
 
-git fetch --quiet --tags origin
-
-if [ $# -ge 1 ]; then
-  TAG="$1"
-  git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null || die "unknown tag $TAG"
-else
-  git fetch --quiet origin main
-  base="live-$(date +%Y-%m-%d)"
-  n=1
-  while git rev-parse --verify --quiet "refs/tags/$base.$n" >/dev/null; do n=$((n + 1)); done
-  TAG="$base.$n"
-  git tag -a "$TAG" origin/main -m "Live release $TAG"
-  GSAM_RELEASE=1 git push --quiet origin "refs/tags/$TAG"
-  say "Tagged origin/main as $TAG"
+if [ "$MODE" = release ]; then
+  git -C "$RELEASE_REPO" merge-base --is-ancestor "$TARGET" origin/main \
+    || die "$TAG ($TARGET) is not on origin/main; only merged code is released."
+  if preview_running && [ "$(preview_state commit)" != "$TARGET" ]; then
+    die "the preview runs $(preview_state tag) ($(preview_state commit)), not $TAG. Release the tag you checked, or check $TAG in the preview first."
+  fi
 fi
 
-RUNS="$(active_runs)"
+RUNS="$(active_runs "$LIVE_URL")"
 [ "$RUNS" = "0" ] || die "$RUNS agent run(s) are active; release again when the agents are idle."
 
-TARGET="$(git rev-parse "$TAG^{commit}")"
+PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || git -C "$LIVE_DIR" rev-parse --short HEAD)"
+
+# Back up the live database before anything moves. The backup only reads.
+LIVE_DB_URL="$(live_database_url)" || die "the live database is not running; cannot back it up. Nothing was changed."
+BACKUP_DIR="$BACKUP_ROOT/release-$(date +%Y-%m-%dT%H%M%S)-$TAG"
+BACKUP_FILE="$(gs_db backup --source-url "$LIVE_DB_URL" --dir "$BACKUP_DIR" --prefix "before-$TAG" | tail -n 1)"
+[ -s "$BACKUP_FILE" ] || die "the database backup failed; nothing was changed."
+say "Backed up the live database (on $PREVIOUS) to $BACKUP_FILE"
+
+if [ "$MODE" = release ]; then
+  base="live-$(date +%Y-%m-%d)"
+  n=1
+  while git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$base.$n" >/dev/null; do n=$((n + 1)); done
+  LIVE_TAG="$base.$n"
+  git -C "$RELEASE_REPO" tag -a "$LIVE_TAG" "$TARGET" -m "Live release $LIVE_TAG (candidate $TAG)"
+  GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG"
+  say "Tagged $TAG as $LIVE_TAG"
+else
+  LIVE_TAG="$TAG"
+fi
+
+STARTED_BEFORE="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
 git -C "$LIVE_DIR" fetch --quiet --tags origin
-git -C "$LIVE_DIR" checkout --quiet --detach "$TAG"
-say "Live checkout is on $TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD))"
-(cd "$LIVE_DIR" && pnpm install --frozen-lockfile --prefer-offline --reporter=silent)
+git -C "$LIVE_DIR" checkout --quiet --detach "$LIVE_TAG"
+say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD))"
+# Non-interactive so a pnpm store change cannot hang on a hidden prompt. Such a
+# change purges node_modules under the running server; see the runbook.
+(cd "$LIVE_DIR" && pnpm install --frozen-lockfile --prefer-offline \
+  --config.confirm-modules-purge=false --reporter=silent </dev/null)
 
-# The live server runs under dev-runner's "restart required" supervisor, which
-# notices the changed files within a few seconds and restarts on request.
-sleep 5
-curl -fsS -X POST "$LIVE_URL/api/dev-server/restart" >/dev/null 2>&1 || true
+# The live server runs under dev-runner's "restart required" supervisor. It
+# notices the changed files within a few seconds, then restarts on request.
+RESTART=""
+for _ in $(seq 1 15); do
+  sleep 2
+  RESTART="$(curl -sS -m 10 -X POST "$LIVE_URL/api/health/dev-server/restart" 2>&1 || true)"
+  case "$RESTART" in *restart_requested*) break ;; esac
+done
+case "$RESTART" in
+  *restart_requested*) say "Asked the live server to restart" ;;
+  *) die "the live server did not accept a restart ($RESTART). Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
+esac
 
+# "commit" follows the checkout at once, so success also needs a new process.
 for _ in $(seq 1 90); do
   sleep 2
-  commit="$(curl -fsS "$LIVE_URL/api/health" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).commit||"")}catch{console.log("")}})')"
-  if [ "$commit" = "$TARGET" ]; then
-    say "Live app at $LIVE_URL is running $TAG."
+  STARTED_NOW="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
+  if [ -n "$STARTED_NOW" ] && [ "$STARTED_NOW" != "$STARTED_BEFORE" ] && [ "$(health_commit "$LIVE_URL")" = "$TARGET" ]; then
+    say "Live app at $LIVE_URL is running $LIVE_TAG ($TARGET), server started $STARTED_NOW."
+    "$GS_SCRIPT_DIR/greatstone-preview.sh" stop
+    say "Roll back with: scripts/greatstone-release.sh $PREVIOUS"
+    say "Database backup from before this release: $BACKUP_FILE"
     exit 0
   fi
 done
-die "the live app did not report $TAG within 3 minutes; check the server log. Roll back with: scripts/greatstone-release.sh <previous tag>"
+die "the live app did not report $LIVE_TAG within 3 minutes; check the server log. Roll back with: scripts/greatstone-release.sh $PREVIOUS (database backup: $BACKUP_FILE)"
