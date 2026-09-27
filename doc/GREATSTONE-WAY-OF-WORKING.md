@@ -9,7 +9,7 @@ in. The rule behind everything below: **build in isolation, John releases.**
 | Place | Path | What it is | Who may change it |
 |---|---|---|---|
 | Live app | `~/GSAM/live` (code) and `~/GSAM/data` (data), served at http://localhost:3100 | The copy John and the agents use every day. Always a tagged release. | Nobody edits it. John updates it with `scripts/greatstone-release.sh`. |
-| Preview | `~/GSAM/preview` (its own code clone and a copy of the data), served at http://localhost:3200 | A release candidate on a copy of the live data, agents off. Thrown away after each check. | Keystone starts and stops it with `scripts/greatstone-preview.sh`. |
+| Preview | `~/GSAM/preview` (its own code clone and a copy of the data), served at http://localhost:3200 | A release candidate on a copy of the live data, agents off. Thrown away after each check. | Flint (or Keystone) starts and stops it with `scripts/greatstone-preview.sh`. |
 | Dev checkout | `~/Desktop/Code/gs-clip` | The repository your worktrees come from. | Nobody works in it directly. It is the root for worktrees. |
 | Your worktree | `~/Desktop/Code/gs-clip/.gsam/worktrees/<branch>` | One folder and one branch per task, created for you when you start the task. | You, for that task only. |
 
@@ -34,12 +34,33 @@ to it.
 5. **Pull request.** `git push -u origin <branch>`, then
    `gh pr create --base main`. The description says: what changed, why, the
    exact tests you ran and their results, and anything John should check by
-   hand. Link the GRE issue. Put the pull request link on the issue and set it
-   to `in_review`.
+   hand. Link the GRE issue. Put the pull request link on the issue, add
+   Keystone as the reviewer (`executionPolicy` with one `review` stage whose
+   participant is agent Keystone), and set the issue to `in_review`.
 6. **Checks and review.** Fork CI runs the fast lanes on every pull request. If
-   they fail, fix on the same branch and push again. Keystone (or John) reviews
-   and merges; nobody merges their own pull request.
+   they fail, fix on the same branch and push again. Keystone reviews and
+   merges (see "The merge rule"); nobody merges their own pull request.
 7. **Release.** Merged changes go live only through the release flow below.
+
+## The merge rule
+
+- **Every pull request goes to Keystone.** The owner adds Keystone as the
+  `review` stage participant and sets the issue to `in_review`.
+- **Routine changes: Keystone merges.** After the ready check says "Ready to
+  merge" and CI is green, Keystone merges and sets the issue to `done`. John
+  does not merge routine pull requests.
+- **Big changes: John agrees first.** A change is big if it adds or changes a
+  database migration; touches login, permissions, secrets, tokens, or GitHub or
+  Claude access; changes the release or preview scripts, CI, or the push guard;
+  removes or renames something John uses every day; or changes more than about
+  1,000 lines outside tests. If unsure, it is big. Keystone does the ready
+  check, then posts a confirmation card for John on the issue (what changes,
+  why it is big, what could break, how to roll back). Keystone merges only
+  after John accepts; if he rejects, the issue goes back to its owner.
+- **Keystone's own pull requests go to Flint.** Keystone never merges its own
+  work. It sets Flint (release verifier) as the `review` stage participant.
+  Flint does the ready check and merges; for a big change, Flint posts the card
+  for John and merges after he accepts.
 
 ## Never
 
@@ -76,7 +97,8 @@ Merging does not change the live app. A version goes live in these steps.
    met, and the diff does not touch `~/GSAM/`, secrets or client data. Keystone
    posts "Ready to merge" or "Not ready, because ..." on the issue.
 2. **Merge (Keystone).** `gh pr merge` when the verdict is "Ready to merge" and
-   CI is green. Keystone never merges its own pull requests; John merges those.
+   CI is green; big changes only after John accepts the card. Keystone never
+   merges its own pull requests; Flint checks and merges those.
 3. **Candidate (Keystone).** Tag the merged `main` as a candidate and write the
    release note (each change, its issue, what to check) on a release issue:
 
@@ -85,7 +107,11 @@ Merging does not change the live app. A version goes live in these steps.
    ```
 
    The tag stays local until the release; the release script pushes it.
-4. **Preview (Keystone).** Start the candidate on a copy of the live data:
+4. **Preview (Flint).** Keystone hands the release issue to Flint with the
+   `rc-*` tag and the release note. Flint starts the candidate on a copy of the
+   live data, checks it, stops it, and hands the issue back with a verdict.
+   Keystone reads the evidence before asking John; if Flint is busy or stuck,
+   Keystone may run the check itself.
 
    ```sh
    scripts/greatstone-preview.sh start rc-YYYY-MM-DD.N   # http://localhost:3200
@@ -109,9 +135,11 @@ Merging does not change the live app. A version goes live in these steps.
    `live-YYYY-MM-DD.N`, moves `~/GSAM/live` to it, restarts the live server,
    waits for the new server to report the tag's commit, and stops the preview.
    It prints the rollback command and the backup file.
-7. **Check live (Keystone).** `curl -s http://localhost:3100/api/health`: the
-   `commit` is the tag's commit. Spot-check the changes, then close the release
-   issue.
+7. **Check live (Flint, then Keystone).** Flint runs
+   `curl -s http://localhost:3100/api/health`: the `commit` is the tag's
+   commit. Flint spot-checks the changes in live and reports on the release
+   issue. Keystone closes it, or gives John the rollback command if live is
+   broken.
 
 ### Rollback (John)
 
