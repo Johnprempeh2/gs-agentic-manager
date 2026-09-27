@@ -65,7 +65,9 @@ export function EntityRow({
     // line); otherwise the shell itself is the single flex row.
     secondaryRow ? "block" : "flex items-center gap-3",
     "px-4 py-2 text-sm border-b border-border last:border-b-0 transition-colors",
-    isClickable && "cursor-pointer hover:bg-accent/50",
+    // Clickable rows carry the brand marker that grows in on hover and stays
+    // lit while selected (see .gs-row in greatstone-glass.css).
+    isClickable && "gs-row relative cursor-pointer hover:bg-accent/50",
     selected && "bg-accent/30",
     className
   );
@@ -137,14 +139,19 @@ export function EntityRow({
 
   if (to) {
     return (
-      <Link to={to} className={cn("no-underline text-inherit", shellClasses)} onClick={onClick}>
+      <Link
+        to={to}
+        className={cn("no-underline text-inherit", shellClasses)}
+        onClick={onClick}
+        data-selected={selected ? "true" : undefined}
+      >
         {body}
       </Link>
     );
   }
 
   return (
-    <div className={shellClasses} onClick={onClick}>
+    <div className={shellClasses} onClick={onClick} data-selected={selected ? "true" : undefined}>
       {body}
     </div>
   );

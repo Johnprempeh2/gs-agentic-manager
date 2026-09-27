@@ -220,8 +220,8 @@ export function CompanySettings() {
       </div>
 
       {/* General */}
-      <div className="max-w-2xl space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+      <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5">
+        <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
           General
         </div>
         <div className="space-y-3">
@@ -255,8 +255,8 @@ export function CompanySettings() {
       </div>
 
       {/* Appearance */}
-      <div className="max-w-2xl space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+      <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5">
+        <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Appearance
         </div>
         <div className="space-y-3">
@@ -339,8 +339,8 @@ export function CompanySettings() {
       )}
 
       {/* Hiring */}
-      <div className="max-w-2xl space-y-4" data-testid="company-settings-team-section">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+      <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5" data-testid="company-settings-team-section">
+        <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Hiring
         </div>
         <div>
@@ -375,7 +375,7 @@ export function CompanySettings() {
         <div className="text-xs font-medium text-destructive uppercase tracking-wide">
           Danger Zone
         </div>
-        <div className="space-y-3 bg-destructive/5 px-4 py-4">
+        <div className="space-y-3 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-4">
           <p className="text-sm text-muted-foreground">
             Archive this organization to hide it from the sidebar. This persists in
             the database.

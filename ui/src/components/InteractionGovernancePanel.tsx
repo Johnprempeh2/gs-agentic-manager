@@ -237,8 +237,8 @@ export function InteractionGovernancePanel({
   errorMessage?: string | null;
 }) {
   return (
-    <div className="space-y-4" data-testid="company-settings-interaction-governance-section">
-      <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+    <div className="gs-glass-card space-y-4 rounded-xl border p-5" data-testid="company-settings-interaction-governance-section">
+      <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
         Interaction governance
       </div>
       <div className="space-y-4">

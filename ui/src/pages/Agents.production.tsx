@@ -492,11 +492,11 @@ export function Agents() {
         <div className="flex items-center gap-2">
           {/* View toggle */}
           {!forceListView && (
-            <div className="flex items-center border border-border" role="group" aria-label="View mode">
+            <div className="gs-toolbar-cluster flex items-center gap-0.5" role="group" aria-label="View mode">
               <button
                 className={cn(
-                  "p-1.5 transition-colors",
-                  effectiveView === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"
+                  "gs-press rounded-md p-1.5 transition-colors",
+                  effectiveView === "list" ? "text-foreground" : "text-muted-foreground hover:bg-accent/50"
                 )}
                 onClick={() => setView("list")}
                 title="List view"
@@ -507,8 +507,8 @@ export function Agents() {
               </button>
               <button
                 className={cn(
-                  "p-1.5 transition-colors",
-                  effectiveView === "org" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"
+                  "gs-press rounded-md p-1.5 transition-colors",
+                  effectiveView === "org" ? "text-foreground" : "text-muted-foreground hover:bg-accent/50"
                 )}
                 onClick={() => setView("org")}
                 title="Org chart view"

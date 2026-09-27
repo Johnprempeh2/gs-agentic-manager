@@ -492,12 +492,12 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
           />
         </Tabs>
         <div className="flex items-center gap-2">
-          {!forceListView ? <div className="flex items-center overflow-hidden rounded-md border border-border" role="group" aria-label="Agent view">
+          {!forceListView ? <div className="gs-toolbar-cluster flex items-center gap-0.5" role="group" aria-label="Agent view">
               <Button
                 type="button"
                 size="icon-sm"
-                variant={effectiveView === "list" ? "secondary" : "ghost"}
-                className="rounded-none"
+                variant="ghost"
+                className="rounded-md"
                 onClick={() => setView("list")}
                 title="List view"
                 aria-label="List view"
@@ -508,8 +508,8 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
               <Button
                 type="button"
                 size="icon-sm"
-                variant={effectiveView === "org" ? "secondary" : "ghost"}
-                className="rounded-none border-l border-border"
+                variant="ghost"
+                className="rounded-md"
                 onClick={() => setView("org")}
                 title="Org chart view"
                 aria-label="Org chart view"
