@@ -7,8 +7,10 @@ import {
   focusProgress,
   initialFocusQueue,
   isFocusPending,
+  loadFocusSession,
   markFocusGone,
   reviewSkippedFocus,
+  saveFocusSession,
   selectFocusItem,
   skipFocusItem,
   stepFocus,
@@ -47,14 +49,40 @@ export function DecisionsFocusView({
   onShowList,
 }: DecisionsFocusViewProps) {
   const { pushToast } = useToastActions();
+  // Restore this browser session's Focus run, so Open task → Back keeps the count.
+  const [restored] = useState(() => loadFocusSession<AttentionItem>(companyId));
   // Keep every row this session has shown, so answered tabs stay (crossed out)
   // after the feed drops them.
-  const [seenItems, setSeenItems] = useState<Map<string, AttentionItem>>(() => new Map());
-  const [queue, setQueue] = useState<FocusQueueState>(initialFocusQueue);
+  const [seenItems, setSeenItems] = useState<Map<string, AttentionItem>>(
+    () => new Map((restored?.items ?? []).map((item) => [item.id, item])),
+  );
+  const [queue, setQueue] = useState<FocusQueueState>(() => restored?.queue ?? initialFocusQueue);
   const queueRef = useRef(queue);
   queueRef.current = queue;
   const pushToastRef = useRef(pushToast);
   pushToastRef.current = pushToast;
+
+  useEffect(() => {
+    saveFocusSession(companyId, {
+      queue,
+      items: queue.order.map((id) => seenItems.get(id)).filter(Boolean) as AttentionItem[],
+    });
+  }, [companyId, queue, seenItems]);
+
+  // Both paths that find the open question closed (feed refetch, card refetch)
+  // land here; the toast shows once per question.
+  const toastedGoneRef = useRef(new Set<string>());
+  const toastAnsweredElsewhere = useCallback((id: string) => {
+    if (toastedGoneRef.current.has(id)) return;
+    toastedGoneRef.current.add(id);
+    pushToastRef.current({
+      id: `focus-gone-${id}`,
+      title: "Answered elsewhere",
+      body: "That question was closed on another screen, so Focus moved on.",
+      tone: "info",
+      ttlMs: 5000,
+    });
+  }, []);
 
   const openIdsKey = items.map((item) => item.id).join("|");
   useEffect(() => {
@@ -66,13 +94,7 @@ export function DecisionsFocusView({
     const before = queueRef.current;
     const after = syncFocusQueue(before, items.map((item) => item.id));
     if (before.currentId && before.currentId !== after.currentId && after.gone.includes(before.currentId)) {
-      pushToastRef.current({
-        id: `focus-gone-${before.currentId}`,
-        title: "Answered elsewhere",
-        body: "That question was closed on another screen, so Focus moved on.",
-        tone: "info",
-        ttlMs: 5000,
-      });
+      toastAnsweredElsewhere(before.currentId);
     }
     setQueue(after);
     // `openIdsKey` stands in for `items`: rows re-create on every refetch.
@@ -80,7 +102,15 @@ export function DecisionsFocusView({
   }, [openIdsKey]);
 
   const handleAnswered = useCallback((id: string) => setQueue((state) => answerFocusItem(state, id)), []);
-  const handleGone = useCallback((id: string) => setQueue((state) => markFocusGone(state, id)), []);
+  const handleGone = useCallback(
+    (id: string) => {
+      const before = queueRef.current;
+      if (!isFocusPending(before, id)) return;
+      if (before.currentId === id) toastAnsweredElsewhere(id);
+      setQueue((state) => markFocusGone(state, id));
+    },
+    [toastAnsweredElsewhere],
+  );
   const handleSkip = useCallback(() => setQueue((state) => skipFocusItem(state)), []);
   const handleStep = useCallback((direction: 1 | -1) => setQueue((state) => stepFocus(state, direction)), []);
 
