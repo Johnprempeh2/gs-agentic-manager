@@ -51,10 +51,19 @@ issue. Failures with no issue are counted separately.
 **S1 — wake to first useful agent action.** The start point is the wake
 request's `requested_at`, or the run's `created_at` if the run has no wake
 request. The end point is the first agent activity row for that run that is
-not harness bookkeeping: `environment.*` leases, checkout, read markers and
-release don't count. Only finished runs are counted. Runs with no useful
-action are counted but not timed. Median and p95 use nearest rank. The report
-also includes the wake-to-start queue delay, so W3 can see where the time goes.
+not harness bookkeeping: `environment.*` leases, checkout, read markers,
+release and `tool_gateway.*` audit rows don't count. The one exception is a
+gateway approval or elicitation request, which the user sees. Gateway tool
+calls don't count because the audit row can't tell a read from a write.
+Only finished runs are counted. Runs with no useful action are counted but not
+timed. Median and p95 use nearest rank.
+
+To show where the time goes, the report also gives the wake-to-start queue
+delay and splits each timed run at the moment the prompt was sent (the run's
+`prepare_turn` phase event): **setup** is wake → prompt sent (queue,
+workspace, adapter start, prompt build); **agent** is prompt sent → first
+useful action (model time and the agent's own tool calls). Runs without a
+`prepare_turn` event are left out of the split only.
 
 ## Known limits
 

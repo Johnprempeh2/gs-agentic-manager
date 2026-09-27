@@ -45,7 +45,9 @@ const snapshot = await sql.begin("read only", async (tx) => {
     select r.id, r.company_id as "companyId", r.agent_id as "agentId", r.status,
       r.context_snapshot->>'issueId' as "issueId", r.error_code as "errorCode",
       r.created_at as "createdAt", r.started_at as "startedAt", r.finished_at as "finishedAt",
-      w.requested_at as "wakeRequestedAt"
+      w.requested_at as "wakeRequestedAt",
+      (select max(e.created_at) from heartbeat_run_events e
+        where e.run_id = r.id and e.event_type = 'run.phase.timing' and e.payload->>'phase' = 'prepare_turn') as "promptSentAt"
     from heartbeat_runs r left join agent_wakeup_requests w on w.id = r.wakeup_request_id
     where (r.finished_at is null or r.finished_at >= ${since} or r.created_at >= ${since}) ${scope("r.company_id")}`;
   const activity = await tx`
@@ -101,6 +103,8 @@ const markdown = [
   `| R2 | Failures recovered without a human | ${pct(metrics.r2.unattendedRecoveryShare)} | ${metrics.r2.recoveredWithoutHuman} auto, ${metrics.r2.recoveredWithHuman} human, ${metrics.r2.unresolved} unresolved, ${metrics.r2.failedWithoutIssue} without issue |`,
   `| S1 | Wake → first useful action, median | ${fmt(metrics.s1.medianMs, " ms")} | n=${metrics.s1.sampleSize} (${metrics.s1.runsWithoutUsefulAction} runs without a useful action) |`,
   `| S1 | Wake → first useful action, p95 | ${fmt(metrics.s1.p95Ms, " ms")} | n=${metrics.s1.sampleSize}; queue delay median ${fmt(metrics.s1.queueDelayMedianMs, " ms")} |`,
+  `| S1 | of which setup (wake → prompt sent), median | ${fmt(metrics.s1.split.setupMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.setupP95Ms, " ms")} |`,
+  `| S1 | of which agent (prompt sent → first useful action), median | ${fmt(metrics.s1.split.agentMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.agentP95Ms, " ms")} |`,
   "",
   "## Stranded trees",
   "",
