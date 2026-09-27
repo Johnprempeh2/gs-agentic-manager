@@ -25,9 +25,9 @@ export function EmptyState({
   hideActionIcon = false,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="bg-muted/50 p-4 mb-4">
-        <Icon className="h-10 w-10 text-subtle-foreground" />
+    <div className="gs-empty flex flex-col items-center justify-center py-16 text-center">
+      <div className="gs-empty-tile gs-glass-card mb-5 rounded-2xl border p-4">
+        <Icon className="brand-mark h-9 w-9" aria-hidden="true" />
       </div>
       {title ? (
         <>
@@ -41,7 +41,7 @@ export function EmptyState({
         </>
       )}
       {action && onAction && (
-        <Button onClick={onAction}>
+        <Button onClick={onAction} className={title || description ? undefined : "mt-3"}>
           {!hideActionIcon && <Plus className="h-4 w-4 mr-1.5" />}
           {action}
         </Button>

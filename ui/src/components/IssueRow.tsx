@@ -222,7 +222,7 @@ export function IssueRow({
         data-slot="task-row"
         data-unread={isUnread ? "true" : undefined}
         className={cn(
-          "group relative flex min-w-0 items-start gap-2 rounded-lg py-2.5 pr-2 text-sm no-underline text-inherit sm:items-center sm:py-2",
+          "gs-row group relative flex min-w-0 items-start gap-2 rounded-lg py-2.5 pr-2 text-sm no-underline text-inherit sm:items-center sm:py-2",
           showUnreadSlot ? "pl-4" : "pl-2 sm:pl-4",
           "[&_button]:relative [&_button]:z-10",
           selected ? "bg-accent/50 hover:bg-accent/50" : "hover:bg-accent/50",

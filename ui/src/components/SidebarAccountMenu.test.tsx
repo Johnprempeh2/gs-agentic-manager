@@ -118,8 +118,8 @@ describe("SidebarAccountMenu", () => {
     await flushReact();
 
     const accountSurface = container.firstElementChild;
-    expect(accountSurface?.className).toContain("bg-border/50");
-    expect(accountSurface?.className).toContain("dark:bg-muted");
+    // Same token as the streamlined nav's rest surface (.primary-sidebar-surface).
+    expect(accountSurface?.className).toContain("bg-sidebar");
     expect(accountSurface?.className).not.toContain("border-t");
     expect(accountSurface?.className).not.toContain("border-r");
     expect(accountSurface?.className).not.toContain("border-border");

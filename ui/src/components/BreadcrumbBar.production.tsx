@@ -56,7 +56,7 @@ export function BreadcrumbBar() {
 
   if (isMobile && mobileToolbar) {
     return (
-      <div className="border-b border-border px-2 h-12 shrink-0 flex items-center">
+      <div className="gs-page-bar px-2 h-12 shrink-0 flex items-center">
         {mobileToolbar}
       </div>
     );
@@ -64,7 +64,7 @@ export function BreadcrumbBar() {
 
   if (breadcrumbs.length === 0) {
     return (
-      <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center justify-end">
+      <div className="gs-page-bar px-4 md:px-6 h-12 shrink-0 flex items-center justify-end">
         {globalToolbarSlots}
       </div>
     );
@@ -85,11 +85,11 @@ export function BreadcrumbBar() {
   // Single breadcrumb = page title (uppercase)
   if (breadcrumbs.length === 1) {
     return (
-      <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center">
+      <div className="gs-page-bar px-4 md:px-6 h-12 shrink-0 flex items-center">
         {menuButton}
         <div className="min-w-0 overflow-hidden flex-1">
           {breadcrumbs[0].leading || breadcrumbs[0].identifier ? (
-            <h1 className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider">
+            <h1 className="gs-page-title flex items-center gap-1.5 text-base font-bold tracking-tight">
               {breadcrumbs[0].leading && (
                 <span className="flex shrink-0 items-center">{breadcrumbs[0].leading}</span>
               )}
@@ -97,7 +97,7 @@ export function BreadcrumbBar() {
               <span className="truncate">{breadcrumbs[0].label}</span>
             </h1>
           ) : (
-            <h1 className="text-sm font-semibold uppercase tracking-wider truncate">
+            <h1 className="gs-page-title text-base font-bold tracking-tight truncate">
               {breadcrumbs[0].label}
             </h1>
           )}
@@ -109,7 +109,7 @@ export function BreadcrumbBar() {
 
   // Multiple breadcrumbs = breadcrumb trail
   return (
-    <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center">
+    <div className="gs-page-bar px-4 md:px-6 h-12 shrink-0 flex items-center">
       {menuButton}
       <div className="min-w-0 overflow-hidden flex-1">
         <Breadcrumb className="min-w-0 overflow-hidden">

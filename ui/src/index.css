@@ -1,6 +1,7 @@
 @import "./motion-tokens.css";
 @import "tailwindcss";
 @import "./greatstone-glass.css";
+@import "./greatstone-palette.css";
 @plugin "@tailwindcss/typography";
 
 @font-face {
@@ -275,9 +276,9 @@
      modes. Values mirror the PAP-75 brand palette (gray inert, blue liveness,
      amber queued, violet review, green done, red blocked). */
   --status-agent-idle: #a8aeb2;
-  --status-agent-running: #2563eb;
+  --status-agent-running: var(--color-blue-600); /* Greatstone live: emerald on paper, lime on the void (greatstone-palette.css) */
   --status-agent-paused: #f59e0b;
-  --status-agent-error: #dc2626;
+  --status-agent-error: var(--color-red-600);
   /* Dashboard agent card: translucent running treatment from the Paper design. */
   --dashboard-run-accent: #1b5039; /* Greatstone: a live run glows emerald on paper, lime on the void */
   --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 4%, transparent);
@@ -289,10 +290,10 @@
   --dashboard-activity-list-columns: var(--dashboard-list-leading-width) minmax(0, 1fr) var(--dashboard-list-id-width) var(--dashboard-list-time-width);
   --status-task-backlog: #a8aeb2;
   --status-task-todo: #f59e0b;
-  --status-task-in_progress: #2563eb;
-  --status-task-in_review: #7c3aed;
-  --status-task-done: #22c55e;
-  --status-task-blocked: #dc2626;
+  --status-task-in_progress: var(--color-blue-600);
+  --status-task-in_review: var(--color-violet-600);
+  --status-task-done: var(--color-green-500);
+  --status-task-blocked: var(--color-red-600);
   --status-task-cancelled: #a8aeb2;
 
   /* Task status ICON hues (PAP-238 3b) — AA-tuned (every glyph ≥ 3:1 against
@@ -309,7 +310,7 @@
   --status-task-icon-todo: #cc7a00;       /* amber darkened — clears 3:1 */
   --status-task-icon-in_progress: var(--color-blue-600); /* matches nav dots and live labels */
   --status-task-icon-in_review: var(--status-task-in_review);     /* #7c3aed (light) */
-  --status-task-icon-done: #16a34a;       /* green darkened — clears 3:1 */
+  --status-task-icon-done: var(--color-green-600); /* brand teal (greatstone-palette.css), clears 3:1 */
   --status-task-icon-blocked: var(--status-task-blocked);         /* #dc2626 both modes */
   --status-task-icon-cancelled: #52585d;
   --status-task-icon-in_queue: var(--status-task-icon-in_progress); /* blocked shape, same mode-aware blue */
@@ -432,7 +433,7 @@
      .status-chip color-mix recipe. */
   --tc-mode-agent: var(--status-task-backlog);
   --tc-mode-plan: var(--status-task-todo);
-  --tc-mode-ask: #3b82f6;
+  --tc-mode-ask: var(--color-blue-500);
 
   /* Agent-comment comparison fill used by TaskChatLab. The chosen production
      treatment sits directly on the page surface; this token keeps the darker
@@ -528,8 +529,8 @@
   --status-task-icon-backlog: #9a958a;
   --status-task-icon-todo: #fbbf24;
   --status-task-icon-in_progress: var(--color-blue-400); /* matches nav dots and live labels */
-  --status-task-icon-in_review: #9474f0;  /* deeper than violet-400, reads purple */
-  --status-task-icon-done: #34d06f;
+  --status-task-icon-in_review: var(--color-violet-400);
+  --status-task-icon-done: var(--color-green-400);
   --status-task-icon-cancelled: #9a958a;
 }
 
@@ -1100,12 +1101,14 @@
 }
 /* Sidebar actions cover the trailing live label without moving row content,
    fading into the row surface like the task-detail tab close control. */
+/* Greatstone: the streamlined sidebar is the brand's deep surface (solid on
+   purpose: hover rows and menu fades mask with this exact colour, so a
+   translucent sidebar would show mismatched patches). A hairline of light on
+   the inner edge gives it the glass edge without the transparency. */
 .primary-sidebar-surface {
-  --sidebar-action-rest-surface: color-mix(in srgb, var(--border) 50%, var(--background));
+  --sidebar-action-rest-surface: var(--sidebar);
   background-color: var(--sidebar-action-rest-surface);
-}
-.dark .primary-sidebar-surface {
-  --sidebar-action-rest-surface: var(--muted);
+  box-shadow: inset -1px 0 0 var(--glass-card-border);
 }
 .sidebar-action-row {
   --sidebar-action-surface: var(--sidebar-action-rest-surface, var(--background));

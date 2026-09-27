@@ -138,7 +138,7 @@ export function RunActivityChart(props: RunChartProps) {
 
   return (
     <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
+      <div className="gs-bars flex items-end gap-(--sz-3px) h-20">
         {days.map(day => {
           const entry = grouped.get(day) ?? emptyRunDay(day);
           const total = entry.total;
@@ -146,7 +146,7 @@ export function RunActivityChart(props: RunChartProps) {
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={runDayTooltip(entry)}>
               {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                <div className="gs-bar flex flex-col-reverse gap-px overflow-hidden rounded-t-sm" style={{ height: `${heightPct}%`, minHeight: 2 }}>
                   {entry.succeeded > 0 && <div style={{ flex: entry.succeeded, backgroundColor: runSegmentColors.succeeded }} />}
                   {entry.recovered > 0 && <div style={{ flex: entry.recovered, backgroundColor: runSegmentColors.recovered }} />}
                   {entry.failed > 0 && <div style={{ flex: entry.failed, backgroundColor: runSegmentColors.failed }} />}
@@ -192,7 +192,7 @@ export function PriorityChart({ issues }: { issues: { priority: string; createdA
 
   return (
     <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
+      <div className="gs-bars flex items-end gap-(--sz-3px) h-20">
         {days.map(day => {
           const entry = grouped.get(day)!;
           const total = Object.values(entry).reduce((a, b) => a + b, 0);
@@ -200,7 +200,7 @@ export function PriorityChart({ issues }: { issues: { priority: string; createdA
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
               {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                <div className="gs-bar flex flex-col-reverse gap-px overflow-hidden rounded-t-sm" style={{ height: `${heightPct}%`, minHeight: 2 }}>
                   {priorityOrder.map(p => entry[p] > 0 ? (
                     <div key={p} style={{ flex: entry[p], backgroundColor: priorityColors[p] }} />
                   ) : null)}
@@ -267,7 +267,7 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
 
   return (
     <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
+      <div className="gs-bars flex items-end gap-(--sz-3px) h-20">
         {days.map(day => {
           const entry = grouped.get(day)!;
           const total = Object.values(entry).reduce((a, b) => a + b, 0);
@@ -275,7 +275,7 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
               {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                <div className="gs-bar flex flex-col-reverse gap-px overflow-hidden rounded-t-sm" style={{ height: `${heightPct}%`, minHeight: 2 }}>
                   {statusOrder.map(s => (entry[s] ?? 0) > 0 ? (
                     <div key={s} style={{ flex: entry[s], backgroundColor: statusColors[s] ?? "var(--hex-6b7280)" }} />
                   ) : null)}
@@ -303,7 +303,7 @@ export function SuccessRateChart(props: RunChartProps) {
 
   return (
     <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
+      <div className="gs-bars flex items-end gap-(--sz-3px) h-20">
         {days.map(day => {
           const entry = grouped.get(day) ?? emptyRunDay(day);
           // Recovered runs ultimately succeeded, so they count toward the rate
@@ -314,7 +314,7 @@ export function SuccessRateChart(props: RunChartProps) {
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${entry.total > 0 ? Math.round(rate * 100) : 0}% (${effectiveSucceeded}/${entry.total})`}>
               {entry.total > 0 ? (
-                <div style={{ height: `${rate * 100}%`, minHeight: 2, backgroundColor: color }} />
+                <div className="gs-bar rounded-t-sm" style={{ height: `${rate * 100}%`, minHeight: 2, backgroundColor: color }} />
               ) : (
                 <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
               )}

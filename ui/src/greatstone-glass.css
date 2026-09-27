@@ -61,8 +61,13 @@
   --motion-hover-lift: 180ms;
   --motion-press: 90ms;
   --motion-stagger-step: 45ms;
+  --motion-bar-grow: 620ms;
+  --motion-bar-stagger: 28ms;
 
   --gs-btn-primary-glow: 0 10px 24px -10px rgb(27 80 57 / 0.55);
+  --gs-hairline: linear-gradient(90deg, transparent, rgb(27 80 57 / 0.22) 18%, rgb(78 205 196 / 0.18) 50%, rgb(27 80 57 / 0.22) 82%, transparent);
+  --gs-glow: rgb(27 80 57 / 0.14);
+  --gs-glow-strong: rgb(27 80 57 / 0.35);
   /* Key data (headline numbers): the brand accent, readable on each theme. */
   --gs-key-data: #1b5039;
   --gs-btn-primary-sheen: inset 0 1px 0 rgb(255 255 255 / 0.22);
@@ -101,6 +106,9 @@
 
   --gs-btn-primary-glow: 0 10px 28px -10px rgb(200 255 0 / 0.55);
   --gs-key-data: #c8ff00;
+  --gs-hairline: linear-gradient(90deg, transparent, rgb(200 255 0 / 0.2) 18%, rgb(78 205 196 / 0.14) 50%, rgb(200 255 0 / 0.2) 82%, transparent);
+  --gs-glow: rgb(200 255 0 / 0.12);
+  --gs-glow-strong: rgb(200 255 0 / 0.45);
   --gs-btn-primary-sheen: inset 0 1px 0 rgb(255 255 255 / 0.45);
 }
 
@@ -273,6 +281,106 @@
   .gs-stagger > :nth-child(11) { --gs-stagger-index: 10; }
   .gs-stagger > :nth-child(12) { --gs-stagger-index: 11; }
   .gs-stagger > :nth-child(n + 13) { --gs-stagger-index: 12; }
+
+  /* List rows: a lit glass hover with the brand marker growing in at the edge.
+     The band itself snaps (no transition): a fading band leaves a trail of
+     half-lit rows when the mouse sweeps down a list. Only the marker moves. */
+  .gs-row::before {
+    content: "";
+    position: absolute;
+    left: 0.25rem;
+    top: 50%;
+    width: 2px;
+    height: 55%;
+    border-radius: 999px;
+    pointer-events: none;
+    background: var(--gs-nav-marker);
+    transform: translateY(-50%) scaleY(0);
+    transition: transform var(--motion-float-enter) var(--motion-ease-spring);
+  }
+  .gs-row:hover {
+    box-shadow: var(--glass-highlight);
+  }
+  .gs-row:hover::before,
+  .gs-row:focus-within::before {
+    transform: translateY(-50%) scaleY(1);
+  }
+
+  /* Page bar: the brand gradient hairline instead of a flat border, and a
+     gem marker leading the page title. */
+  .gs-page-bar {
+    position: relative;
+  }
+  .gs-page-bar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    pointer-events: none;
+    background: var(--gs-hairline);
+  }
+  .gs-page-title::before {
+    content: "";
+    display: inline-block;
+    flex-shrink: 0;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin-right: 0.6rem;
+    vertical-align: 0.12em;
+    border-radius: 2px;
+    transform: rotate(45deg);
+    background: var(--gs-nav-marker);
+    box-shadow: 0 0 10px var(--gs-glow-strong);
+  }
+
+  /* Empty states: the icon on a glass tile with a soft brand glow, rising in once. */
+  .gs-empty {
+    animation: gs-rise var(--motion-route-enter) var(--motion-ease-emphasized) both;
+  }
+  .gs-empty-tile {
+    isolation: isolate;
+  }
+  .gs-empty-tile::before {
+    content: "";
+    position: absolute;
+    inset: -1.75rem;
+    z-index: -1;
+    border-radius: 999px;
+    pointer-events: none;
+    background: radial-gradient(closest-side, var(--gs-glow), transparent);
+  }
+
+  /* Chart bars grow up from the baseline once, left to right, when a chart
+     first appears; hovering a day lifts it. Data arriving, not decoration. */
+  .gs-bars .gs-bar {
+    transform-origin: bottom;
+    animation: gs-grow var(--motion-bar-grow) var(--motion-ease-emphasized) both;
+    animation-delay: calc(var(--gs-stagger-index, 0) * var(--motion-bar-stagger));
+    transition: filter var(--motion-hover-lift) var(--motion-ease-standard);
+  }
+  .gs-bars > :nth-child(2) { --gs-stagger-index: 1; }
+  .gs-bars > :nth-child(3) { --gs-stagger-index: 2; }
+  .gs-bars > :nth-child(4) { --gs-stagger-index: 3; }
+  .gs-bars > :nth-child(5) { --gs-stagger-index: 4; }
+  .gs-bars > :nth-child(6) { --gs-stagger-index: 5; }
+  .gs-bars > :nth-child(7) { --gs-stagger-index: 6; }
+  .gs-bars > :nth-child(8) { --gs-stagger-index: 7; }
+  .gs-bars > :nth-child(9) { --gs-stagger-index: 8; }
+  .gs-bars > :nth-child(10) { --gs-stagger-index: 9; }
+  .gs-bars > :nth-child(11) { --gs-stagger-index: 10; }
+  .gs-bars > :nth-child(12) { --gs-stagger-index: 11; }
+  .gs-bars > :nth-child(13) { --gs-stagger-index: 12; }
+  .gs-bars > :nth-child(14) { --gs-stagger-index: 13; }
+  .gs-bars > :hover .gs-bar {
+    filter: brightness(1.18) saturate(1.1);
+  }
+}
+
+@keyframes gs-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
 }
 
 @keyframes gs-rise {
@@ -308,7 +416,11 @@
     --motion-float-enter: 0ms;
     --motion-hover-lift: 0ms;
     --motion-stagger-step: 0ms;
+    --motion-bar-grow: 0ms;
+    --motion-bar-stagger: 0ms;
   }
   .gs-glass-card-interactive:hover { transform: none; }
   .gs-stagger > * { animation: none; }
+  .gs-bars .gs-bar { animation: none; }
+  .gs-empty { animation: none; }
 }

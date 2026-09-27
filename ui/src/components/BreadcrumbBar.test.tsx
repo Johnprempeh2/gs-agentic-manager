@@ -189,8 +189,8 @@ describe("BreadcrumbBar", () => {
     const identifier = container.querySelector('[data-slot="task-title-identifier"]');
     expect(identifier).toBeTruthy();
     expect(identifier?.className).not.toContain("absolute");
-    expect(identifier?.closest(".relative")?.className).toContain("border-b");
-    expect(identifier?.closest(".relative")?.className).toContain("border-border");
+    // The bottom divider is the Greatstone gradient hairline (gs-page-bar).
+    expect(identifier?.closest(".relative")?.className).toContain("gs-page-bar");
     expect(identifier?.closest(".relative")?.className).toContain("h-(--sz-60px)");
 
     const title = Array.from(container.querySelectorAll("span"))

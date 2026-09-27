@@ -82,7 +82,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
 
   if (isMobile && mobileToolbar) {
     return (
-      <div className="h-(--sz-60px) shrink-0 flex items-center border-b border-border px-2">
+      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-2">
         {mobileToolbar}
       </div>
     );
@@ -90,7 +90,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
 
   if (breadcrumbs.length === 0) {
     return (
-      <div className="h-(--sz-60px) shrink-0 flex items-center justify-end border-b border-border px-4 md:px-6">
+      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center justify-end px-4 md:px-6">
         {globalToolbarSlots}
       </div>
     );
@@ -111,7 +111,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
   const currentCrumb = breadcrumbs[breadcrumbs.length - 1];
   if (isMobile && breadcrumbs[0]?.label === "Tasks" && currentCrumb.identifier) {
     return (
-      <div className="h-(--sz-60px) shrink-0 flex items-center border-b border-border px-4">
+      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-4">
         {menuButton}
         <h1 className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm">
           {currentCrumb.leading ? (
@@ -192,11 +192,11 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
   // Other single-crumb pages keep their existing page-title presentation.
   if (breadcrumbs.length === 1 && !taskDetailLayout) {
     return (
-      <div className="h-(--sz-60px) shrink-0 flex items-center border-b border-border px-4 md:px-6">
+      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-4 md:px-6">
         {menuButton}
         <div className="min-w-0 overflow-hidden flex-1">
           {breadcrumbs[0].leading || breadcrumbs[0].identifier ? (
-            <h1 className="flex items-baseline gap-1.5 text-sm font-semibold uppercase tracking-wider">
+            <h1 className="gs-page-title flex items-baseline gap-1.5 text-lg font-bold tracking-tight">
               {breadcrumbs[0].leading && (
                 <span className="flex shrink-0 items-center self-center">{breadcrumbs[0].leading}</span>
               )}
@@ -204,7 +204,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
               <span className="truncate">{breadcrumbs[0].label}</span>
             </h1>
           ) : (
-            <h1 className="text-sm font-semibold uppercase tracking-wider truncate">
+            <h1 className="gs-page-title text-lg font-bold tracking-tight truncate">
               {breadcrumbs[0].label}
             </h1>
           )}
@@ -218,7 +218,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
   return (
     <div
       className={cn(
-        "relative h-(--sz-60px) shrink-0 flex items-center border-b border-border",
+        "gs-page-bar relative h-(--sz-60px) shrink-0 flex items-center",
         "px-4 md:px-6",
       )}
     >
