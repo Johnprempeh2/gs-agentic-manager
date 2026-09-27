@@ -14,6 +14,7 @@ import {
   type ExecutionWorkspace,
   type Issue,
   type IssueLabel,
+  type Project,
 } from "@greatstone/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "../../api/access";
@@ -33,6 +34,7 @@ import { queryKeys } from "../../lib/queryKeys";
 import { buildCompanyUserInlineOptions, buildCompanyUserLabelMap, buildCompanyUserProfileMap, isAgentTaskTarget } from "../../lib/company-members";
 import { ISSUE_OVERRIDE_ADAPTER_TYPES, type IssueModelLane } from "../../lib/issue-assignee-overrides";
 import { useProjectOrder } from "../../hooks/useProjectOrder";
+import { quickCreateProjectLabel, useQuickCreateProject } from "../../hooks/useQuickCreateProject";
 import {
   getRecentAssigneeIds,
   sortAgentsByRecency,
@@ -362,6 +364,8 @@ export function IssueProperties({
   } | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
+  const [projectNamingNew, setProjectNamingNew] = useState(false);
+  const [projectCreateError, setProjectCreateError] = useState<string | null>(null);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [workspacePickerStep, setWorkspacePickerStep] = useState<"mode" | "reuse">("mode");
   const [workspaceSearch, setWorkspaceSearch] = useState("");
@@ -431,6 +435,7 @@ export function IssueProperties({
     () => (projects ?? []).filter((p) => !p.archivedAt || p.id === issue.projectId),
     [projects, issue.projectId],
   );
+  const quickCreateProject = useQuickCreateProject(companyId);
   const { orderedProjects } = useProjectOrder({
     projects: activeProjects,
     companyId,
@@ -1969,15 +1974,58 @@ export function IssueProperties({
     recentProjectIds,
   );
 
+  const selectProject = (project: Project) => {
+    const defaultMode = defaultExecutionWorkspaceModeForProject(project);
+    trackRecentProject(project.id);
+    onUpdate({
+      projectId: project.id,
+      projectWorkspaceId: defaultProjectWorkspaceIdForProject(project),
+      executionWorkspaceId: null,
+      executionWorkspacePreference: workspaceIsolationControlsVisible ? defaultMode : null,
+      executionWorkspaceSettings: workspaceIsolationControlsVisible && project.executionWorkspacePolicy?.enabled
+        ? { mode: defaultMode }
+        : null,
+    });
+  };
+  const resetProjectPicker = () => {
+    setProjectSearch("");
+    setProjectNamingNew(false);
+    setProjectCreateError(null);
+  };
+  const createProjectFromPicker = useMutation({
+    mutationFn: (name: string) => quickCreateProject(name),
+    onMutate: () => setProjectCreateError(null),
+    onSuccess: (project) => {
+      selectProject(project);
+      setProjectOpen(false);
+      resetProjectPicker();
+    },
+    onError: (error) => {
+      setProjectCreateError(error instanceof Error && error.message ? error.message : "Could not create project. Try again.");
+    },
+  });
+
+  const projectCreateName = projectSearch.trim();
+  const showProjectCreate = createProjectFromPicker.isPending || (projectCreateName
+    ? !orderedProjects.some((project) => project.name.trim().toLowerCase() === projectCreateName.toLowerCase())
+    : !projectNamingNew);
+
   const projectContent = (
     <>
       <input
         className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-subtle-foreground"
-        placeholder="Search projects..."
+        placeholder={projectNamingNew ? "Name the new project..." : "Search projects..."}
         value={projectSearch}
-        onChange={(e) => setProjectSearch(e.target.value)}
+        readOnly={createProjectFromPicker.isPending}
+        onChange={(e) => {
+          setProjectSearch(e.target.value);
+          setProjectCreateError(null);
+        }}
         autoFocus={!inline}
       />
+      {projectCreateError ? (
+        <p role="alert" className="px-2 pb-1 text-xs text-destructive">{projectCreateError}</p>
+      ) : null}
       <div className="max-h-48 overflow-y-auto overscroll-contain">
         {projectPickerOptions
           .filter((option) => {
@@ -1994,17 +2042,7 @@ export function IssueProperties({
               )}
               onClick={() => {
                 if (option.kind === "project") {
-                  const defaultMode = defaultExecutionWorkspaceModeForProject(option.project);
-                  trackRecentProject(option.project.id);
-                  onUpdate({
-                    projectId: option.project.id,
-                    projectWorkspaceId: defaultProjectWorkspaceIdForProject(option.project),
-                    executionWorkspaceId: null,
-                    executionWorkspacePreference: workspaceIsolationControlsVisible ? defaultMode : null,
-                    executionWorkspaceSettings: workspaceIsolationControlsVisible && option.project.executionWorkspacePolicy?.enabled
-                      ? { mode: defaultMode }
-                      : null,
-                  });
+                  selectProject(option.project);
                 } else {
                   onUpdate({
                     projectId: null,
@@ -2027,6 +2065,27 @@ export function IssueProperties({
               {option.name}
             </button>
           ))}
+        {showProjectCreate ? (
+          <button
+            type="button"
+            data-project-picker-create=""
+            disabled={createProjectFromPicker.isPending}
+            className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap disabled:opacity-60"
+            onClick={() => {
+              if (!projectCreateName) {
+                setProjectNamingNew(true);
+                setProjectCreateError(null);
+                return;
+              }
+              createProjectFromPicker.mutate(projectCreateName);
+            }}
+          >
+            <Plus className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="truncate">
+              {createProjectFromPicker.isPending ? "Creating…" : quickCreateProjectLabel(projectCreateName)}
+            </span>
+          </button>
+        ) : null}
       </div>
     </>
   );
@@ -2391,7 +2450,11 @@ export function IssueProperties({
           inline={inline}
           label="Project"
           open={projectOpen}
-          onOpenChange={(open) => { setProjectOpen(open); if (!open) setProjectSearch(""); }}
+          onOpenChange={(open) => {
+            if (!open && createProjectFromPicker.isPending) return;
+            setProjectOpen(open);
+            if (!open) resetProjectPicker();
+          }}
           triggerContent={projectTrigger}
           triggerClassName="min-w-0 max-w-full"
           popoverClassName="w-fit min-w-(--sz-11rem)"

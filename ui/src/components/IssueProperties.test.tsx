@@ -24,6 +24,7 @@ const mockAgentsApi = vi.hoisted(() => ({
 
 const mockProjectsApi = vi.hoisted(() => ({
   list: vi.fn(),
+  create: vi.fn(),
 }));
 
 const mockExecutionWorkspacesApi = vi.hoisted(() => ({
@@ -471,6 +472,7 @@ describe("IssueProperties", () => {
     mockAgentsApi.list.mockResolvedValue([]);
     mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockProjectsApi.list.mockResolvedValue([]);
+    mockProjectsApi.create.mockReset();
     mockExecutionWorkspacesApi.list.mockResolvedValue([]);
     mockExecutionWorkspacesApi.controlRuntimeCommands.mockReset();
     mockIssuesApi.list.mockResolvedValue([]);
@@ -1105,6 +1107,116 @@ describe("IssueProperties", () => {
     expect(container.textContent).toContain("No matches.");
 
     act(() => root.unmount());
+  });
+
+  describe("creating a project from the project picker", () => {
+    async function typeProjectSearch(value: string) {
+      const input = container.querySelector('input[placeholder="Search projects..."]') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await flush();
+    }
+
+    function createRow() {
+      return container.querySelector<HTMLButtonElement>("[data-project-picker-create]");
+    }
+
+    it("offers New project when empty and no create row for an existing name", async () => {
+      mockProjectsApi.list.mockResolvedValue([createProject({ id: "project-1", name: "Alpha" })]);
+      const onUpdate = vi.fn();
+      const root = renderProperties(container, { issue: createIssue(), childIssues: [], onUpdate });
+      await flush();
+
+      expect(createRow()?.textContent).toBe("New project");
+      await act(async () => {
+        createRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flush();
+      expect(container.querySelector('input[placeholder="Name the new project..."]')).not.toBeNull();
+      expect(mockProjectsApi.create).not.toHaveBeenCalled();
+
+      const input = container.querySelector('input[placeholder="Name the new project..."]') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "ALPHA");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await flush();
+      expect(createRow()).toBeNull();
+      expect(onUpdate).not.toHaveBeenCalled();
+
+      act(() => root.unmount());
+    });
+
+    it("creates the typed project and moves the task to it", async () => {
+      const alpha = createProject({ id: "project-1", name: "Alpha" });
+      const created = createProject({
+        id: "project-new",
+        name: "Inbox triage",
+        workspaces: [],
+        primaryWorkspace: null,
+        executionWorkspacePolicy: null,
+      });
+      mockProjectsApi.list.mockResolvedValue([alpha]);
+      mockProjectsApi.create.mockImplementation(async () => {
+        mockProjectsApi.list.mockResolvedValue([alpha, created]);
+        return created;
+      });
+      const onUpdate = vi.fn();
+      const { root, queryClient } = renderPropertiesWithQueryClient(container, {
+        issue: createIssue({ projectId: "project-1" }),
+        childIssues: [],
+        onUpdate,
+      });
+      await flush();
+      const listCallsBeforeCreate = mockProjectsApi.list.mock.calls.length;
+
+      await typeProjectSearch("Inbox triage");
+      expect(createRow()?.textContent).toBe('Create project "Inbox triage"');
+      await act(async () => {
+        createRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flush();
+
+      expect(mockProjectsApi.create).toHaveBeenCalledWith("company-1", { name: "Inbox triage", status: "planned" });
+      expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        projectId: "project-new",
+        projectWorkspaceId: null,
+        executionWorkspaceId: null,
+      }));
+      expect(
+        (queryClient.getQueryData(queryKeys.projects.list("company-1", { includeArchived: true })) as Project[])
+          .map((project) => project.id),
+      ).toContain("project-new");
+      expect(mockProjectsApi.list.mock.calls.length).toBeGreaterThan(listCallsBeforeCreate);
+
+      act(() => root.unmount());
+    });
+
+    it("shows a create failure inline and leaves the task unchanged", async () => {
+      mockProjectsApi.list.mockResolvedValue([createProject({ id: "project-1", name: "Alpha" })]);
+      mockProjectsApi.create.mockRejectedValue(new Error("Project service unavailable"));
+      const onUpdate = vi.fn();
+      const root = renderProperties(container, {
+        issue: createIssue({ projectId: "project-1" }),
+        childIssues: [],
+        onUpdate,
+      });
+      await flush();
+
+      await typeProjectSearch("Inbox triage");
+      await act(async () => {
+        createRow()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flush();
+
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe("Project service unavailable");
+      expect(createRow()?.textContent).toBe('Create project "Inbox triage"');
+      expect(onUpdate).not.toHaveBeenCalled();
+
+      act(() => root.unmount());
+    });
   });
 
   it("exposes the add-subtask action from the relationships picker", async () => {

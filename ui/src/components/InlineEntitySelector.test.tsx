@@ -263,4 +263,49 @@ describe("InlineEntitySelector", () => {
       root.unmount();
     });
   });
+  it("creates from unmatched search text on Enter and selects the new id", async () => {
+    const root = createRoot(container);
+    const onChange = vi.fn();
+    const onCreate = vi.fn(async (name: string) => `project:${name}`);
+
+    act(() => {
+      root.render(
+        <InlineEntitySelector
+          value=""
+          options={[{ id: "project-1", label: "Alpha" }]}
+          placeholder="Project"
+          noneLabel="No project"
+          searchPlaceholder="Search projects..."
+          emptyMessage="No projects found."
+          onChange={onChange}
+          onCreate={onCreate}
+          createLabel={(name) => (name ? `Create project "${name}"` : "New project")}
+        />,
+      );
+    });
+
+    const trigger = container.querySelector("button") as HTMLButtonElement | null;
+    await act(async () => {
+      trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const searchInput = document.querySelector('input[placeholder="Search projects..."]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(searchInput, "Inbox");
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(document.querySelector("[data-inline-entity-create]")?.textContent).toBe('Create project "Inbox"');
+
+    await act(async () => {
+      searchInput.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+      await Promise.resolve();
+    });
+
+    expect(onCreate).toHaveBeenCalledWith("Inbox");
+    expect(onChange).toHaveBeenCalledWith("project:Inbox");
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });
