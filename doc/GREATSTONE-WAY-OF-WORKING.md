@@ -123,18 +123,43 @@ Merging does not change the live app. A version goes live in these steps.
 5. **Agree (John).** John tries the preview too, then says "release" or
    "not yet" on the release issue. "Not yet" leaves live as it is; the fixes
    become new issues and a new candidate.
-6. **Release (John).** From the dev checkout, when no agent is running:
+6. **Release (John accepts, the platform does it).** After Flint's verdict,
+   Keystone posts an **"Update live?"** confirmation card on the release issue:
+   a `request_confirmation` with `idempotencyKey` `live-release:rc-YYYY-MM-DD.N`.
+   When John accepts it, the live server:
+
+   - holds new agent runs (the task drain) and waits until no agent run is
+     running, at most 60 minutes. If runs are still going then, it stops, says
+     so on the issue and lets runs go again; live is unchanged.
+   - starts `scripts/greatstone-live-release.sh` from the dev checkout (the one
+     the preview was started from, or `GSAM_RELEASE_REPO`). It runs in its own
+     process, so it survives the live server restarting. It runs
+     `scripts/greatstone-release.sh rc-YYYY-MM-DD.N`, the same command as by
+     hand: the tag is on `origin/main` and is the preview's commit, database
+     backup to `~/GSAM/backups/`, `live-*` tag, `~/GSAM/live` moved, restart,
+     and `/api/health` must report the tag's commit from a new process.
+   - if that fails after live moved, rolls back with the same script to the
+     `live-*` tag live was on before, without asking.
+   - posts one short comment on the release issue: released (with the new
+     `live-*` tag, commit, backup file and rollback command), not released
+     (live unchanged), rolled back (with the reason and the backup file), or
+     rollback failed (John runs the rollback command it names). Then runs go
+     again. The logs stay in the job folder the comment names.
+
+   Rejecting the card, or answering "not yet", changes nothing. Only a person
+   can accept the card; an agent accepting it releases nothing. The card works
+   only on the server that runs from `~/GSAM/live`; on a preview or a sandbox
+   it says so and does nothing.
+
+   **By hand (fallback).** If the card cannot be used, John runs from the dev
+   checkout, when no agent is running:
 
    ```sh
    scripts/greatstone-release.sh rc-YYYY-MM-DD.N
    ```
 
-   The script checks that the tag is on `origin/main` and is the commit the
-   preview runs, refuses while an agent run is active, backs up the live
-   database to `~/GSAM/backups/release-<time>-<tag>/`, tags the same commit as
-   `live-YYYY-MM-DD.N`, moves `~/GSAM/live` to it, restarts the live server,
-   waits for the new server to report the tag's commit, and stops the preview.
-   It prints the rollback command and the backup file.
+   It does the same checks and steps and prints the rollback command and the
+   backup file.
 7. **Check live (Flint, then Keystone).** Flint runs
    `curl -s http://localhost:3100/api/health`: the `commit` is the tag's
    commit. Flint spot-checks the changes in live and reports on the release
@@ -143,13 +168,20 @@ Merging does not change the live app. A version goes live in these steps.
 
 ### Rollback (John)
 
+A one-click release rolls back by itself when live does not come up on the
+candidate, and says so on the release issue with the backup file. To move live
+back later, or when the comment says the automatic rollback failed:
+
 ```sh
-scripts/greatstone-release.sh live-YYYY-MM-DD.N   # the previous live tag, printed by the release
+scripts/greatstone-release.sh live-YYYY-MM-DD.N   # the previous live tag, named in the release comment
 ```
 
-This moves live back to that tag the same way (backup first, then restart). It
-does not undo database migrations. If the older code cannot run on the newer
-database, restore the backup the release printed; ask Keystone for the steps.
+This moves live back to that tag the same way (backup first, then restart). If
+the live server is down it starts it with `~/GSAM/start-live.sh`. If the live
+database is down too, a rollback after a one-click release keeps the backup
+taken before that release. It does not undo database migrations. If the older
+code cannot run on the newer database, restore the backup the release printed;
+ask Keystone for the steps.
 
 Run the release from your own terminal, not from an agent run. Both scripts
 run `pnpm install` without questions. If the pnpm store is not the one live was
