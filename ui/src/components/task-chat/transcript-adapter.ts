@@ -733,6 +733,7 @@ export function transcriptToTaskChatItems(
             rawName: entry.name ?? undefined,
             target: summarizeToolInput(entry.input),
             status: "in_progress",
+            startedAt: entry.ts,
           });
           toolIndexById.set(toolCallId, items.length - 1);
           lastToolIndex = items.length - 1;

@@ -182,6 +182,15 @@ describe("accepted native response-wake answers", () => {
 });
 
 describe("completion tool feed visibility", () => {
+  it("stamps a tool with its call time and keeps it through later updates", () => {
+    const items = transcriptToTaskChatItems([
+      { kind: "tool_call", ts: "2026-09-27T11:17:01.000Z", toolUseId: "write-1", name: "Write", input: { file_path: "plan.md" } },
+      { kind: "tool_call", ts: "2026-09-27T11:19:30.000Z", toolUseId: "write-1", name: "tool call", input: {} },
+    ], { runId: "step-timer", running: true });
+    const toolItem = items.find((item) => item.kind === "tool");
+    expect(toolItem).toMatchObject({ status: "in_progress", startedAt: "2026-09-27T11:17:01.000Z" });
+  });
+
   it("keeps the full bounded notice text available when expanded", () => {
     const summary = `${"Configuration context. ".repeat(30)}Use the project settings to fix this.`;
     const [notice] = transcriptToTaskChatItems([{

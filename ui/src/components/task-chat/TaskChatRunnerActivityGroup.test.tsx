@@ -73,6 +73,38 @@ describe("TaskChatRunnerActivityGroup", () => {
   const viewport = () =>
     container.querySelector('[data-testid="task-chat-activity-viewport"]')!;
 
+  it("shows how long a long-running step has taken, and nothing for a quick or finished one", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-27T12:00:00.000Z"));
+      const writing = (status: TaskChatToolItem["status"], startedAt: string) => ({
+        ...tool("write", status),
+        name: "Write",
+        rawName: "Write",
+        target: "plan.md",
+        startedAt,
+      });
+      const elapsed = () =>
+        container.querySelector('[data-testid="task-chat-step-elapsed"]');
+
+      render([writing("in_progress", "2026-09-27T11:59:55.000Z")]);
+      expect(elapsed()).toBeNull();
+
+      render([writing("in_progress", "2026-09-27T11:57:20.000Z")]);
+      expect(elapsed()?.textContent).toBe("2m 40s");
+      expect(elapsed()?.getAttribute("aria-hidden")).toBe("true");
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(elapsed()?.textContent).toBe("2m 45s");
+
+      render([writing("completed", "2026-09-27T11:57:20.000Z")]);
+      expect(elapsed()).toBeNull();
+      render([writing("in_progress", "2026-09-27T11:57:20.000Z")], "settled", false);
+      expect(elapsed()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rolls to each new item once while status and token updates keep the current row mounted", () => {
     render([tool("one")]);
     const first = viewport().querySelector('[data-activity-row="one"]');

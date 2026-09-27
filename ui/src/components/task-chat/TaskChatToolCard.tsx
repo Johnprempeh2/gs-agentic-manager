@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { TaskChatToolItem } from "./task-chat-model";
 import { toolTaxonomy } from "./tool-taxonomy";
+import { useRunningStepElapsed } from "./step-elapsed";
 
 const STATUS_ICON = {
   pending: { Icon: Loader2, spin: false, tone: "text-muted-foreground" },
@@ -34,6 +35,7 @@ export function TaskChatToolCard({ item }: { item: TaskChatToolItem }) {
   const RowIcon = toolTaxonomy(item.rawName ?? item.name).icon;
   const [showDetail, setShowDetail] = useTaskChatExpansion(item.id, false);
   const expandable = Boolean(item.target || item.detail || item.diff);
+  const elapsed = useRunningStepElapsed(item.startedAt, item.status === "in_progress");
 
   return (
     <div data-testid="task-chat-tool-card" className="flex min-w-0 max-w-full flex-col text-xs">
@@ -89,6 +91,14 @@ export function TaskChatToolCard({ item }: { item: TaskChatToolItem }) {
               )}
               aria-hidden
             />
+          ) : null}
+          {elapsed ? (
+            <span
+              className="font-mono text-(length:--text-micro) tabular-nums text-muted-foreground"
+              data-testid="task-chat-step-elapsed"
+            >
+              {elapsed}
+            </span>
           ) : null}
           <Icon
             className={cn("h-3.5 w-3.5", tone, spin && "animate-spin")}

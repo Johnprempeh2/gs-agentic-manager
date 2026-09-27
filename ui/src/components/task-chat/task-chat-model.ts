@@ -199,6 +199,8 @@ export interface TaskChatToolItem {
   diff?: TaskChatDiff;
   /** Resolved permission decision badge, when one applied. */
   decision?: "allowed" | "rejected";
+  /** Transcript timestamp of the call, so a long-running step can show how long it has run. */
+  startedAt?: string;
 }
 
 /**

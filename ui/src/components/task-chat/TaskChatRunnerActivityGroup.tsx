@@ -23,6 +23,7 @@ import {
 } from "./TaskChatProtocolActivityRow";
 import { TaskChatUsageReadout } from "./TaskChatUsageReadout";
 import { toolActivityPresentation } from "./tool-taxonomy";
+import { useRunningStepElapsed } from "./step-elapsed";
 
 type Activity = TaskChatActivityPhaseItem["items"][number];
 
@@ -110,6 +111,10 @@ function ActivityContent({
   active: boolean;
 }) {
   const row = presentation(item, active);
+  const elapsed = useRunningStepElapsed(
+    item.kind === "tool" ? item.startedAt : undefined,
+    Boolean(row?.running),
+  );
   if (!row) return null;
   const Icon = row.icon;
   return (
@@ -151,6 +156,17 @@ function ActivityContent({
           </span>
         ) : null}
       </span>
+      {elapsed ? (
+        // Hidden from assistive tech: the rolling viewport is a polite live
+        // region, and a per-second timer would be read out every tick.
+        <span
+          aria-hidden="true"
+          className="ml-auto shrink-0 pl-2 font-mono text-xs tabular-nums text-muted-foreground"
+          data-testid="task-chat-step-elapsed"
+        >
+          {elapsed}
+        </span>
+      ) : null}
     </span>
   );
 }
