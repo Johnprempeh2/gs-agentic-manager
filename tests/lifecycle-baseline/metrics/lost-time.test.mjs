@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyHumanComment, computeFalseStalls, computeHungRuns, computeLostTime, computeReassignCancels } from "./lost-time.mjs";
+import { classifyHumanComment, computeFalseStalls, computeHungRuns, computeLostTime, computeReassignCancels, computeRecoveryWakesOnPendingCard } from "./lost-time.mjs";
 
 const now = "2026-09-27T23:00:00.000Z";
 const at = (hhmm) => `2026-09-27T${hhmm}:00.000Z`;
@@ -103,4 +103,38 @@ test("computeLostTime: agent comments are ignored and shares use finished agent-
   assert.equal(result.l4HumanComments.humanComments, 1);
   assert.equal(result.l4HumanComments.count, 1);
   assert.equal(result.l1HungRuns.shareOfAgentMinutesPct, 0);
+});
+
+test("L5: a recovery run counts only when it starts while a waking card on its issue is pending", () => {
+  const recovery = (id, issueId, startedAt, source = "issue.continuation_recovery", fields = {}) => ({ id, issueId, issueIdentifier: issueId, source, status: "succeeded", createdAt: startedAt, startedAt, ...fields });
+  const card = (id, issueId, createdAt, resolvedAt, continuationPolicy = "wake_assignee") => ({ id, issueId, kind: "request_confirmation", continuationPolicy, createdAt, resolvedAt });
+  const snapshot = base({
+    recoveryRuns: [
+      recovery("d3fcd0dd", "GRE-48", at("12:00")), // card pending, resolved later
+      recovery("a4e8465f", "GRE-34", at("13:00"), "issue.execution_review_recovery"), // card still pending
+      recovery("queued", "GRE-39", null, "issue.assignment_recovery", { createdAt: at("14:00"), startedAt: null }), // never started: uses createdAt
+      recovery("no-card", "GRE-4", at("15:00")),
+      recovery("card-later", "GRE-5", at("09:00")), // card created after the run started
+      recovery("card-resolved", "GRE-6", at("16:00")), // card resolved before the run
+      recovery("policy-none", "GRE-7", at("16:00")), // card does not wake the assignee
+      recovery("other-source", "GRE-48", at("12:30"), "issue.comment"), // not a recovery source
+      recovery("before-window", "GRE-48", "2026-09-26T12:00:00.000Z"),
+    ],
+    interactions: [
+      card("c1", "GRE-48", at("11:00"), at("20:00")),
+      card("c2", "GRE-34", at("12:00"), null, "wake_assignee_on_accept"),
+      card("c3", "GRE-39", at("13:00"), null),
+      card("c5", "GRE-5", at("10:00"), null),
+      card("c6", "GRE-6", at("10:00"), at("11:00")),
+      card("c7", "GRE-7", at("10:00"), null, "none"),
+    ],
+  });
+  const l5 = computeRecoveryWakesOnPendingCard(snapshot, window);
+  assert.equal(l5.recoveryRuns, 7);
+  assert.deepEqual(l5.runs.map((row) => row.id), ["d3fcd0dd", "a4e8465f", "queued"]);
+  assert.equal(l5.count, 3);
+  assert.equal(l5.bySource["issue.continuation_recovery"], 1);
+  assert.equal(l5.bySource["issue.execution_review_recovery"], 1);
+  assert.deepEqual(l5.runs[1].pendingInteractions, [{ id: "c2", kind: "request_confirmation", continuationPolicy: "wake_assignee_on_accept" }]);
+  assert.equal(computeLostTime(base(), { now, windowDays: 1 }).l5RecoveryWakesOnPendingCard.count, 0);
 });

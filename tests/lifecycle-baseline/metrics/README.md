@@ -157,6 +157,18 @@ Reports hold identifiers, rule names and timings, never comment bodies.
   run* ("hung", "last run failed", "token expired"). Best effort: it misses
   wording it does not know and can match a comment that is not a relay. Each
   counted comment is listed by id so the rule can be audited.
+- **L5 — recovery runs started while a waking card was pending (GRE-53).** A
+  run counts when `contextSnapshot.source` is one of `RECOVERY_WAKE_SOURCES`
+  (`issue.interaction_continuation_recovery`, `issue.execution_review_recovery`,
+  `issue.continuation_recovery`, `issue.assignment_recovery`,
+  `issue.productive_terminal_continuation_recovery`,
+  `issue.successful_run_handoff_interrupted_retry`,
+  `issue.deliberate_wait_disposition_repair`) and, when it started (or was
+  created, if it never started), an interaction on its issue with
+  `continuation_policy` `wake_assignee` or `wake_assignee_on_accept` was
+  created before and resolved after (or not yet). Runs are picked by start
+  time, finished or not. Baseline 11 on 2026-09-27; GRE-35 and GRE-51 should
+  bring it to 0.
 
 Each report gives finished runs and agent-minutes in the window, and L1/L3 as a
 share of agent-minutes. Compare windows of the same length, and compare shares

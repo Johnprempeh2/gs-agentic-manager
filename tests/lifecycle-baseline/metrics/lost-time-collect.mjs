@@ -11,7 +11,7 @@ import { createRequire } from "node:module";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { DEFAULT_SILENCE_MINUTES, computeLostTime } from "./lost-time.mjs";
+import { DEFAULT_SILENCE_MINUTES, RECOVERY_WAKE_SOURCES, computeLostTime } from "./lost-time.mjs";
 
 const root = resolve(import.meta.dirname, "../../..");
 const argv = process.argv.slice(2);
@@ -52,15 +52,23 @@ const snapshot = await sql.begin("read only", async (tx) => {
     where a.entity_type = 'issue' and a.action = 'issue.updated' and a.actor_type = 'system'
       and a.created_at >= ${since} and a.created_at <= ${now} ${scope("a.company_id")}`;
   const interactions = await tx`
-    select id, issue_id::text as "issueId", kind, status, created_at as "createdAt", resolved_at as "resolvedAt"
+    select id, issue_id::text as "issueId", kind, status, continuation_policy as "continuationPolicy",
+      created_at as "createdAt", resolved_at as "resolvedAt"
     from issue_thread_interactions where created_at <= ${now} ${scope("company_id")}`;
+  // L5 reads recovery runs by start time, finished or not.
+  const recoveryRuns = await tx`
+    select r.id, r.status, r.context_snapshot->>'source' as source, r.created_at as "createdAt", r.started_at as "startedAt",
+      coalesce(r.context_snapshot->>'issueId', r.context_snapshot->>'taskId') as "issueId", i.identifier as "issueIdentifier"
+    from heartbeat_runs r left join issues i on i.id::text = coalesce(r.context_snapshot->>'issueId', r.context_snapshot->>'taskId')
+    where r.context_snapshot->>'source' in ${sql(RECOVERY_WAKE_SOURCES)}
+      and coalesce(r.started_at, r.created_at) >= ${since} and coalesce(r.started_at, r.created_at) <= ${now} ${scope("r.company_id")}`;
   const comments = await tx`
     select c.id, c.issue_id::text as "issueId", c.author_user_id as "authorUserId", c.body, c.created_at as "createdAt",
       i.identifier as "issueIdentifier"
     from issue_comments c join issues i on i.id = c.issue_id
     where c.author_user_id is not null and c.deleted_at is null
       and c.created_at >= ${since} and c.created_at <= ${now} ${scope("c.company_id")}`;
-  return { now, runs, activity, interactions, comments };
+  return { now, runs, activity, interactions, comments, recoveryRuns };
 });
 await sql.end();
 
@@ -76,7 +84,7 @@ const report = {
   ...metrics,
 };
 
-const { totals, l1HungRuns: l1, l2FalseStalls: l2, l3ReassignCancels: l3, l4HumanComments: l4 } = metrics;
+const { totals, l1HungRuns: l1, l2FalseStalls: l2, l3ReassignCancels: l3, l4HumanComments: l4, l5RecoveryWakesOnPendingCard: l5 } = metrics;
 const pct = (value) => (value == null ? "n/a" : `${value}%`);
 const runLine = (run) => `- ${run.issueIdentifier ?? "no issue"} · run \`${run.id.slice(0, 8)}\` · ${run.status}/${run.errorCode ?? "-"} · ${run.minutes} min`;
 const markdown = [
@@ -93,6 +101,7 @@ const markdown = [
   `| L3 | Runs cancelled by \`issue_reassigned\` | ${l3.count} | ${l3.overFiveMinutes} ran ≥ 5 min |`,
   `| L3 | Minutes in those runs | ${l3.minutes} | ${pct(l3.shareOfAgentMinutesPct)} of agent-minutes; longest ${l3.maxMinutes} min |`,
   `| L4 | Human comments that ask for or relay status, or recover a run | ${l4.count} | of ${l4.humanComments} human comments; ask ${l4.byRule.asksStatus}, relay ${l4.byRule.relaysStatus}, recover ${l4.byRule.recoversRun} |`,
+  `| L5 | Recovery runs started while a waking card was pending | ${l5.count} | of ${l5.recoveryRuns} recovery runs |`,
   "",
   "## L1 runs",
   "",
@@ -112,6 +121,12 @@ const markdown = [
   "",
   ...(l4.comments.length
     ? l4.comments.map((comment) => `- ${comment.issueIdentifier} ${new Date(comment.createdAt).toISOString().slice(0, 16)} [${comment.rules.join(", ")}] comment \`${String(comment.id).slice(0, 8)}\``)
+    : ["None."]),
+  "",
+  "## L5 recovery runs on a pending card",
+  "",
+  ...(l5.runs.length
+    ? l5.runs.map((row) => `- ${row.issueIdentifier ?? "no issue"} · run \`${row.id.slice(0, 8)}\` · ${row.source} · ${row.status} · started ${row.startedAt}; pending ${row.pendingInteractions.map((entry) => `${entry.kind} \`${entry.id.slice(0, 8)}\` (${entry.continuationPolicy})`).join(", ")}`)
     : ["None."]),
   "",
 ].join("\n");

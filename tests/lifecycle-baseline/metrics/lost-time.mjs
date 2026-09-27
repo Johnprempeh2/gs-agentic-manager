@@ -5,6 +5,7 @@
 //   L2 — issues moved to `blocked` by recovery while a pending interaction existed (fault D)
 //   L3 — runs cancelled by `issue_reassigned`, and their minutes (fault E)
 //   L4 — human comments that ask for or relay status, or recover a run (best effort)
+//   L5 — recovery runs started while the issue waited on a pending card (GRE-53)
 //
 // The snapshot comes from lost-time-collect.mjs; tests build it by hand.
 
@@ -140,6 +141,50 @@ export function computeHumanComments(snapshot, { since, now }) {
   };
 }
 
+// L5. Recovery wakes on an issue that only waits for a pending card (GRE-53).
+// GRE-35 and GRE-51 stop these; after a release with both, this should be 0.
+export const RECOVERY_WAKE_SOURCES = [
+  "issue.interaction_continuation_recovery",
+  "issue.execution_review_recovery",
+  "issue.continuation_recovery",
+  "issue.assignment_recovery",
+  "issue.productive_terminal_continuation_recovery",
+  "issue.successful_run_handoff_interrupted_retry",
+  "issue.deliberate_wait_disposition_repair",
+];
+export const WAKING_CONTINUATION_POLICIES = ["wake_assignee", "wake_assignee_on_accept"];
+
+// A run counts when its source is a recovery source and it started (or was
+// created, if it never started) while an interaction on its issue with a
+// waking continuation policy was pending: created before that moment and
+// resolved after it, or not yet.
+export function computeRecoveryWakesOnPendingCard(snapshot, { since, now }) {
+  const recovery = (snapshot.recoveryRuns ?? []).filter(
+    (run) => RECOVERY_WAKE_SOURCES.includes(run.source) && inWindow(run.startedAt ?? run.createdAt, since, now),
+  );
+  const rows = recovery.map((run) => {
+    const startedAt = time(run.startedAt ?? run.createdAt);
+    const pending = snapshot.interactions.filter(
+      (interaction) =>
+        interaction.issueId === run.issueId &&
+        WAKING_CONTINUATION_POLICIES.includes(interaction.continuationPolicy) &&
+        time(interaction.createdAt) <= startedAt &&
+        (interaction.resolvedAt == null || time(interaction.resolvedAt) > startedAt),
+    );
+    return {
+      id: run.id,
+      issueIdentifier: run.issueIdentifier ?? run.issueId ?? null,
+      source: run.source,
+      status: run.status,
+      startedAt: new Date(startedAt).toISOString(),
+      pendingInteractions: pending.map((interaction) => ({ id: interaction.id, kind: interaction.kind, continuationPolicy: interaction.continuationPolicy })),
+    };
+  });
+  const runs = rows.filter((row) => row.pendingInteractions.length > 0);
+  const bySource = Object.fromEntries(RECOVERY_WAKE_SOURCES.map((source) => [source, runs.filter((row) => row.source === source).length]));
+  return { recoveryRuns: rows.length, count: runs.length, bySource, runs };
+}
+
 // Denominators, so a window with more work is not read as a regression.
 export function computeRunTotals(snapshot, { since, now }) {
   const finished = snapshot.runs.filter((run) => inWindow(run.finishedAt, since, now));
@@ -161,5 +206,6 @@ export function computeLostTime(snapshot, { now, windowDays, since: sinceOverrid
     l2FalseStalls: computeFalseStalls(snapshot, window),
     l3ReassignCancels: { ...reassigned, shareOfAgentMinutesPct: share(reassigned.minutes) },
     l4HumanComments: computeHumanComments(snapshot, window),
+    l5RecoveryWakesOnPendingCard: computeRecoveryWakesOnPendingCard(snapshot, window),
   };
 }
