@@ -14,7 +14,8 @@ in. The rule behind everything below: **build in isolation, John releases.**
 
 The repository is private: `Johnprempeh2/gs-agentic-manager` (remote
 `origin`, default branch `main`). The public fork `Johnprempeh2/GS-Clip`
-(remote `public-fork`) only tracks upstream Paperclip. Never push to it.
+(remote `public-fork`) only tracks the upstream open-source project. Never push
+to it.
 
 ## How a change travels
 
