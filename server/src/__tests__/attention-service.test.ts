@@ -11,6 +11,7 @@ import {
   budgetIncidents,
   budgetPolicies,
   companies,
+  connectionGrants,
   createDb,
   decisionQueueItems,
   decisionQueues,
@@ -34,6 +35,8 @@ import {
   joinRequests,
   projects,
   projectWorkspaces,
+  toolApplications,
+  toolConnections,
 } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
@@ -1994,6 +1997,60 @@ describeEmbeddedPostgres("attention service", () => {
       decideBy: "2026-08-03",
       expiresAt: "2026-08-03T12:00:00.000Z",
     });
+  });
+
+  it("warns the board before a Claude token expires, again at expiry, and when a run's login is rejected (GRE-15)", async () => {
+    const { companyId } = await seedCompany("ATC");
+    const expiresAt = "2026-09-27T18:50:00.000Z";
+    const recordedAt = "2026-09-27T12:09:00.000Z";
+    const [app] = await db.insert(toolApplications).values({ companyId, name: "Claude", type: "mcp_http" }).returning();
+    const shared = randomUUID();
+    const personal = randomUUID();
+    const aiConfig = { ai: { provider: "anthropic", method: "subscription" }, aiCredential: { source: "imported_login", expiresAt, recordedAt } };
+    await db.insert(toolConnections).values([shared, personal].map((id) => ({
+      id, companyId, applicationId: app.id, name: id === shared ? "Company Claude" : "Someone's Claude", uid: `ai-${id}`,
+      connectionPurpose: "ai", transport: "runtime_auth", status: "active", enabled: true, healthStatus: "ok", config: aiConfig,
+    })));
+    await db.insert(connectionGrants).values([
+      { companyId, connectionId: shared, kind: "organization" },
+      { companyId, connectionId: personal, kind: "user", subjectUserId: "other-user" },
+    ]);
+    try {
+      const feedAt = async (at: string) => (await attentionService(db, { now: () => Date.parse(at) })
+        .list(companyId, { userId: "board-user", limit: 100 })).items.filter((item) => item.sourceKind === "ai_connection_alert");
+
+      expect(await feedAt("2026-09-27T17:30:00.000Z")).toEqual([]);
+
+      const [soon] = await feedAt("2026-09-27T18:20:00.000Z");
+      expect(soon).toMatchObject({
+        severity: "medium",
+        subject: { kind: "ai_connection", id: shared, status: "expiring_soon", metadata: { credentialSource: "imported_login", expiresAt } },
+        activityAt: "2026-09-27T17:50:00.000Z",
+      });
+      expect((soon.detail as { summaryExcerpt: string }).summaryExcerpt).toContain("2026-09-27 18:50 UTC");
+      expect((soon.detail as { summaryExcerpt: string }).summaryExcerpt).toContain("claude setup-token");
+
+      const expired = await feedAt("2026-09-27T19:50:00.000Z");
+      // The owner's personal account never reaches another user's inbox.
+      expect(expired.map((item) => item.subject.id)).toEqual([shared]);
+      expect(expired[0]).toMatchObject({ severity: "high", subject: { status: "expired" } });
+      // A dismissed "expires soon" row must not hide the "expired" row.
+      expect(expired[0].dedupKey).not.toBe(soon.dedupKey);
+
+      await db.update(toolConnections).set({ healthStatus: "error", healthMessage: "The provider rejected this account's login during a run." })
+        .where(eq(toolConnections.id, shared));
+      const [rejected] = await feedAt("2026-09-27T10:00:00.000Z");
+      expect(rejected).toMatchObject({ severity: "high", subject: { status: "rejected" } });
+
+      // Reconnecting with a new token clears the alert.
+      await db.update(toolConnections).set({ healthStatus: "ok", healthMessage: null, config: { ...aiConfig, aiCredential: { source: "setup_token", expiresAt: null, recordedAt: "2026-09-27T20:29:00.000Z" } } })
+        .where(eq(toolConnections.id, shared));
+      expect(await feedAt("2026-09-27T20:30:00.000Z")).toEqual([]);
+    } finally {
+      await db.delete(connectionGrants).where(eq(connectionGrants.companyId, companyId));
+      await db.delete(toolConnections).where(eq(toolConnections.companyId, companyId));
+      await db.delete(toolApplications).where(eq(toolApplications.companyId, companyId));
+    }
   });
 
   it("serves the route for board users and rejects agent callers", async () => {

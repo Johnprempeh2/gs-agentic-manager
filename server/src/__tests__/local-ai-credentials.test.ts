@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readVerifiedLocalAiCredential } from "../services/local-ai-credentials.js";
+import { readVerifiedLocalAiCredential, readVerifiedLocalAiCredentialWithInfo } from "../services/local-ai-credentials.js";
 const mocks = vi.hoisted(() => ({ claude: vi.fn(), claudeIsolatedKeychain: vi.fn(), claudeQuota: vi.fn(), codex: vi.fn(), codexQuota: vi.fn(), readFile: vi.fn(), credentialFile: vi.fn() }));
-vi.mock("@greatstone/adapter-claude-local/server", () => ({ readClaudeToken: mocks.claude, readIsolatedClaudeKeychainToken: mocks.claudeIsolatedKeychain, fetchClaudeQuota: mocks.claudeQuota }));
+// Fixtures return either a bare token or a { token, expiresAt } login.
+const asLogin = (value: unknown) => typeof value === "string" ? { token: value, expiresAt: null } : value ?? null;
+vi.mock("@greatstone/adapter-claude-local/server", async (importActual) => ({
+  readClaudeCredential: async (...args: unknown[]) => asLogin(await mocks.claude(...args)),
+  readIsolatedClaudeKeychainCredential: async (...args: unknown[]) => asLogin(await mocks.claudeIsolatedKeychain(...args)),
+  parseClaudeCredential: (await importActual<typeof import("@greatstone/adapter-claude-local/server")>()).parseClaudeCredential,
+  fetchClaudeQuota: mocks.claudeQuota,
+}));
 vi.mock("@greatstone/adapter-codex-local/server", () => ({ readCodexAuthInfo: mocks.codex, fetchCodexQuota: mocks.codexQuota }));
 vi.mock("../services/local-ai-credential-file.js", () => ({ readLocalAiCredentialFile: mocks.credentialFile }));
 vi.mock("node:fs/promises", () => ({ default: { readFile: mocks.readFile } }));
@@ -47,6 +54,21 @@ describe("explicit local subscription import", () => {
     await expect(readVerifiedLocalAiCredential("anthropic", "/isolated/claude")).resolves.toBe("alternate-token");
     expect(mocks.credentialFile).toHaveBeenLastCalledWith("/isolated/claude/credentials.json");
     expect(mocks.claude).not.toHaveBeenCalled();
+  });
+  it("records an imported Claude login as short-lived with its expiry (GRE-15)", async () => {
+    const expiresAt = Date.parse("2026-09-27T18:50:00.000Z") + 365 * 24 * 60 * 60 * 1000;
+    mocks.credentialFile.mockResolvedValue(JSON.stringify({ claudeAiOauth: { accessToken: "isolated-claude", refreshToken: "never-copied", expiresAt } }));
+    const result = await readVerifiedLocalAiCredentialWithInfo("anthropic", "/isolated/claude");
+    expect(result).toEqual({ credential: "isolated-claude", info: { source: "imported_login", expiresAt: new Date(expiresAt).toISOString() } });
+    expect(JSON.stringify(result.info)).not.toContain("isolated-claude");
+    mocks.claude.mockResolvedValue({ token: "host-claude", expiresAt });
+    await expect(readVerifiedLocalAiCredentialWithInfo("anthropic")).resolves.toEqual({
+      credential: "host-claude", info: { source: "imported_login", expiresAt: new Date(expiresAt).toISOString() },
+    });
+    mocks.claude.mockResolvedValue("no-expiry-claude");
+    await expect(readVerifiedLocalAiCredentialWithInfo("anthropic")).resolves.toEqual({
+      credential: "no-expiry-claude", info: { source: "imported_login", expiresAt: null },
+    });
   });
   it("verifies Claude's local credential, including explicit Keychain access", async () => {
     mocks.claude.mockResolvedValue("fixture-claude");

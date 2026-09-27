@@ -692,7 +692,8 @@ export function agentRoutes(
     store: setupTokenCleanupStore,
     completeCredential: async (input) => {
       if (!input.scope.aiConnection) return setupTokenSecretWriter(input);
-      await aiConnectionService(db).save(input.scope.companyId, input.scope.ownerUserId, input.scope.aiConnection, input.token, input.sessionId);
+      // `claude setup-token` issues a long-lived token; the CLI does not report its expiry.
+      await aiConnectionService(db).save(input.scope.companyId, input.scope.ownerUserId, input.scope.aiConnection, input.token, input.sessionId, undefined, { source: "setup_token", expiresAt: null });
     },
     rateLimiter: setupTokenRateLimiter,
   });

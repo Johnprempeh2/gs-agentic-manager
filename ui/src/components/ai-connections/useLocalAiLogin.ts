@@ -8,6 +8,7 @@ export function useLocalAiLogin(companyId: string | null, intent: AiConnectionLo
   const active = Boolean(companyId && enabled);
   const [attempt, setAttempt] = useState<LocalAiLoginAttempt | null>(null);
   const [status, setStatus] = useState<LocalAiLoginStatus["status"] | null>(null);
+  const [credential, setCredential] = useState<LocalAiLoginStatus["credential"]>();
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const latestIntent = useRef(intent);
@@ -27,6 +28,7 @@ export function useLocalAiLogin(companyId: string | null, intent: AiConnectionLo
     setAttempt(null);
     setError(null);
     setStatus(null);
+    setCredential(undefined);
     if (!active || !companyId) return;
     let cancelled = false;
     let checking = false;
@@ -54,6 +56,7 @@ export function useLocalAiLogin(companyId: string | null, intent: AiConnectionLo
         });
         if (cancelled) return;
         setStatus(next.status);
+        setCredential(next.credential);
         setError(next.status === "expired" ? "This sign-in attempt expired. Start sign-in again." : null);
         // Stop polling a verified account. Focus still rechecks after a terminal
         // visit; awaiting terminal login never requires repeated Connect clicks.
@@ -80,6 +83,7 @@ export function useLocalAiLogin(companyId: string | null, intent: AiConnectionLo
     isolated,
     command: attempt?.command,
     status,
+    credential,
     preparing: active && !status && !error,
     error,
     retry: () => { restartRequested.current = true; cancelCurrent(); setGeneration((value) => value + 1); },

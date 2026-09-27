@@ -7,7 +7,7 @@ import type { AiConnectionLoginIntent, LocalAiLoginAttempt, LocalAiLoginStatus }
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { notFound, unprocessable } from "../errors.js";
 import { aiConnectionService } from "./ai-connections.js";
-import { readVerifiedLocalAiCredential } from "./local-ai-credentials.js";
+import { readVerifiedLocalAiCredentialWithInfo } from "./local-ai-credentials.js";
 import { logActivity } from "./activity-log.js";
 
 const LOCAL_LOGIN_METHOD = "local_subscription";
@@ -140,8 +140,8 @@ export function localAiLoginService(db: Db) {
       directory = loginHome(id);
     }
     try {
-      await readVerifiedLocalAiCredential(intent.provider, directory);
-      return { status: "ready" };
+      const { info } = await readVerifiedLocalAiCredentialWithInfo(intent.provider, directory);
+      return info ? { status: "ready", credential: info } : { status: "ready" };
     } catch {
       return { status: "sign_in_required" };
     }
@@ -162,13 +162,13 @@ export function localAiLoginService(db: Db) {
       if (session.connectionMethod !== LOCAL_LOGIN_METHOD || session.status !== "waiting_for_user" ||
           !session.expiresAt || session.expiresAt.getTime() <= Date.now())
         throw unprocessable("This sign-in attempt has expired or was cancelled. Start sign-in again.");
-      const credential = await readVerifiedLocalAiCredential(intent.provider, loginHome(id));
+      const { credential, info } = await readVerifiedLocalAiCredentialWithInfo(intent.provider, loginHome(id));
       await tx.update(adapterAuthSessions).set({ status: "promoting", updatedAt: new Date() })
         .where(eq(adapterAuthSessions.id, id));
       // Nested transaction is a savepoint on this same connection. Holding the
       // attempt lock makes completion/cancellation/restart retries idempotent.
       const saved = await aiConnectionService(tx as unknown as Db)
-        .save(companyId, userId, intent, credential, id, session.createdAt);
+        .save(companyId, userId, intent, credential, id, session.createdAt, info);
       await tx.update(adapterAuthSessions).set({
         status: "authenticated", connectionMethod: LOCAL_LOGIN_METHOD,
         finishedAt: new Date(), updatedAt: new Date(),

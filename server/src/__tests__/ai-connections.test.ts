@@ -503,7 +503,8 @@ describe("managed AI connections", () => {
     } finally { network.mockRestore(); }
   });
   it("imports only for the local operator and preserves identity and permissions on reconnect", async () => {
-    const reader = vi.spyOn(localCredentials, "readVerifiedLocalAiCredential").mockResolvedValue("fixture-local-token");
+    const localExpiry = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
+    const reader = vi.spyOn(localCredentials, "readVerifiedLocalAiCredentialWithInfo").mockResolvedValue({ credential: "fixture-local-token", info: { source: "imported_login", expiresAt: localExpiry } });
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
@@ -521,11 +522,15 @@ describe("managed AI connections", () => {
       expect(reader).not.toHaveBeenCalled();
       const checked = await request(app).post(`${url}/check`).set("x-local", "yes").send(payload);
       expect(checked.status).toBe(200);
-      expect(checked.body).toEqual({ status: "ready" });
+      // The connect screen learns the imported token is short-lived before saving.
+      expect(checked.body).toEqual({ status: "ready", credential: { source: "imported_login", expiresAt: localExpiry } });
       expect((await service.list(companyId, "alice")).some(c => c.name === payload.name)).toBe(false);
       const connected = await request(app).post(url).set("x-local", "yes").send(payload);
       expect(connected.status).toBe(201);
       expect(JSON.stringify(connected.body)).not.toContain("fixture-local-token");
+      expect((await service.list(companyId, "alice")).find(c => c.id === connected.body.connectionId)).toMatchObject({
+        status: "connected", credential: { source: "imported_login", expiresAt: localExpiry },
+      });
       const before = await db.select().from(toolConnectionInstalls).where(eq(toolConnectionInstalls.connectionId, connected.body.connectionId));
       expect(before.map(i => [i.targetType, i.targetId])).toEqual([["agent", agentId]]);
       const reconnected = await request(app).post(url).set("x-local", "yes").send({ ...payload, connectionId: connected.body.connectionId, allAgents: true });
@@ -551,7 +556,7 @@ describe("managed AI connections", () => {
     } finally { reader.mockRestore(); }
   });
   it.each(["anthropic", "openai"] as const)("blocks server-host %s login on a public deployment without a trusted host", async provider => {
-    const reader = vi.spyOn(localCredentials, "readVerifiedLocalAiCredential");
+    const reader = vi.spyOn(localCredentials, "readVerifiedLocalAiCredentialWithInfo");
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
@@ -574,7 +579,7 @@ describe("managed AI connections", () => {
   it.each(["anthropic", "openai"] as const)("lets authenticated users connect only their own isolated %s login", async provider => {
     const owner = `self-hosted-${provider}`;
     await db.insert(companyMemberships).values({ companyId, principalId: owner, principalType: "user", status: "active", membershipRole: "member" });
-    const reader = vi.spyOn(localCredentials, "readVerifiedLocalAiCredential").mockResolvedValue("isolated-fixture-token");
+    const reader = vi.spyOn(localCredentials, "readVerifiedLocalAiCredentialWithInfo").mockResolvedValue({ credential: "isolated-fixture-token" });
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
@@ -813,4 +818,64 @@ describe("AI connection recovery delivery", () => {
       }
     }, 30000,
   );
+});
+
+
+describe("Claude token lifetime (GRE-15)", () => {
+  const subscriptionBinding = { provider: "anthropic", method: "subscription", mode: "responsible_user" } as const;
+  async function member(prefix: string) {
+    const userId = `${prefix}-${randomUUID()}`;
+    await db.insert(companyMemberships).values({ companyId, principalId: userId, principalType: "user", status: "active", membershipRole: "member" });
+    return userId;
+  }
+  const intent = (name: string, connectionId?: string) => ({ provider: "anthropic" as const, method: "subscription" as const, ownership: "personal" as const, name, loginSessionId: "fixture", allAgents: true, agentIds: [], ...(connectionId ? { connectionId } : {}) });
+  const account = async (userId: string, connectionId: string) => (await service.list(companyId, userId)).find(c => c.id === connectionId);
+
+  it("records where the token came from and its expiry, never the token", async () => {
+    const userId = await member("lifetime");
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    const saved = await service.save(companyId, userId, intent("Imported login"), "sk-ant-oat-imported", undefined, undefined, { source: "imported_login", expiresAt });
+    const [connection] = await db.select().from(toolConnections).where(eq(toolConnections.id, saved.connectionId));
+    expect(connection.config.aiCredential).toMatchObject({ source: "imported_login", expiresAt });
+    expect(JSON.stringify(connection.config)).not.toContain("sk-ant-oat-imported");
+    expect(await account(userId, saved.connectionId)).toMatchObject({ status: "connected", credential: { source: "imported_login", expiresAt } });
+    const api = await service.save(companyId, userId, { provider: "anthropic", method: "api_key", ownership: "personal", name: "Pasted key", apiKey: "fixture", allAgents: true, agentIds: [] }, "fixture-pasted");
+    expect((await account(userId, api.connectionId))?.credential).toEqual({ source: "pasted", expiresAt: null });
+  });
+
+  it("shows an expired token as needing attention and refuses it before any provider call", async () => {
+    const userId = await member("expired");
+    const expiresAt = new Date(Date.now() - 60 * 1000).toISOString();
+    const saved = await service.save(companyId, userId, intent("Expired login"), "sk-ant-oat-expired", undefined, undefined, { source: "imported_login", expiresAt });
+    const listed = await account(userId, saved.connectionId);
+    expect(listed?.status).toBe("needs_attention");
+    expect(listed?.unavailableReason).toContain(`expired at ${expiresAt}`);
+    expect(listed?.unavailableReason).toContain("claude setup-token");
+    await expect(service.select({ ...input, userId, binding: subscriptionBinding })).rejects.toMatchObject({
+      details: { code: "ai_connection_unavailable", connectionId: saved.connectionId },
+    });
+    await expect(prepareManagedAiRuntime(db, { ...input, binding: subscriptionBinding, responsibleUserId: userId, config: {} })).rejects.toThrow("expired");
+    // Rotating to a setup-token clears the expiry and restores the connection.
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, saved.grantId));
+    await service.save(companyId, userId, intent("Expired login", saved.connectionId), "sk-ant-oat-long-lived", undefined, new Date(grant.updatedAt.getTime() + 1), { source: "setup_token", expiresAt: null });
+    expect(await account(userId, saved.connectionId)).toMatchObject({ status: "connected", credential: { source: "setup_token", expiresAt: null } });
+    expect((await service.select({ ...input, userId, binding: subscriptionBinding })).grant.id).toBe(saved.grantId);
+  });
+
+  it("marks the connection once when a run's token is rejected, and not after a rotation", async () => {
+    const userId = await member("rejected");
+    const saved = await service.save(companyId, userId, intent("Rejected login"), "sk-ant-oat-rejected", undefined, undefined, { source: "imported_login", expiresAt: null });
+    const runtime = await prepareManagedAiRuntime(db, { ...input, binding: subscriptionBinding, responsibleUserId: userId, config: {} });
+    await runtime.cleanup();
+    const runId = randomUUID();
+    await db.insert(heartbeatRuns).values({ id: runId, companyId, agentId, status: "failed", errorCode: "claude_auth_required", responsibleUserId: userId });
+    const ref = { companyId, connectionId: saved.connectionId, grantId: saved.grantId, runId };
+    // A run that used an older credential cannot mark the current one.
+    expect(await service.recordCredentialRejected({ ...ref, identity: `${saved.grantId}:${userId}:0000000000000000` })).toBe(false);
+    expect((await account(userId, saved.connectionId))?.status).toBe("connected");
+    expect(await service.recordCredentialRejected({ ...ref, identity: runtime.identity })).toBe(true);
+    expect(await service.recordCredentialRejected({ ...ref, identity: runtime.identity })).toBe(false);
+    expect(await account(userId, saved.connectionId)).toMatchObject({ status: "needs_attention", unavailableReason: expect.stringContaining("rejected") });
+    await expect(service.select({ ...input, userId, binding: subscriptionBinding })).rejects.toMatchObject({ details: { code: "ai_connection_unavailable" } });
+  });
 });

@@ -87,6 +87,10 @@ function trimToLatestUsagePanel(text: string): string | null {
 }
 
 async function readClaudeTokenFromFile(credPath: string): Promise<string | null> {
+  return (await readClaudeCredentialFromFile(credPath))?.token ?? null;
+}
+
+async function readClaudeCredentialFromFile(credPath: string): Promise<ClaudeCredential | null> {
   let raw: string;
   try {
     raw = await fs.readFile(credPath, "utf8");
@@ -99,16 +103,16 @@ async function readClaudeTokenFromFile(credPath: string): Promise<string | null>
   // whose token has expired is a stale leftover. Skip it so the caller can
   // fall through to a live credential instead of failing with a dead token.
   if (credential.expiresAt != null && credential.expiresAt <= Date.now()) return null;
-  return credential.token;
+  return credential;
 }
 
-interface ClaudeCredential {
+export interface ClaudeCredential {
   token: string;
   /** Epoch milliseconds, when the credential file records one. */
   expiresAt: number | null;
 }
 
-function parseClaudeCredential(raw: string): ClaudeCredential | null {
+export function parseClaudeCredential(raw: string): ClaudeCredential | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -123,10 +127,6 @@ function parseClaudeCredential(raw: string): ClaudeCredential | null {
   if (typeof token !== "string" || token.length === 0) return null;
   const expiresAt = (oauth as Record<string, unknown>)["expiresAt"];
   return { token, expiresAt: typeof expiresAt === "number" && Number.isFinite(expiresAt) ? expiresAt : null };
-}
-
-function parseClaudeCredentialToken(raw: string): string | null {
-  return parseClaudeCredential(raw)?.token ?? null;
 }
 
 interface ClaudeAuthStatus {
@@ -171,9 +171,13 @@ function isolatedKeychainService(configDir: string): string {
 }
 
 async function readClaudeTokenFromKeychain(service: string): Promise<string | null> {
+  return (await readClaudeCredentialFromKeychain(service))?.token ?? null;
+}
+
+async function readClaudeCredentialFromKeychain(service: string): Promise<ClaudeCredential | null> {
   try {
     const { stdout } = await execFileAsync("/usr/bin/security", ["find-generic-password", "-s", service, "-w"], { timeout: 10000, maxBuffer: 1024 * 1024 });
-    return parseClaudeCredentialToken(stdout);
+    return parseClaudeCredential(stdout);
   } catch { return null; }
 }
 
@@ -184,26 +188,40 @@ async function readClaudeTokenFromKeychain(service: string): Promise<string | nu
  * machine-level login. Returns null off macOS.
  */
 export async function readIsolatedClaudeKeychainToken(loginHome: string): Promise<string | null> {
+  return (await readIsolatedClaudeKeychainCredential(loginHome))?.token ?? null;
+}
+
+/** As {@link readIsolatedClaudeKeychainToken}, keeping the login's expiry. */
+export async function readIsolatedClaudeKeychainCredential(loginHome: string): Promise<ClaudeCredential | null> {
   if (process.platform !== "darwin") return null;
-  return readClaudeTokenFromKeychain(isolatedKeychainService(loginHome));
+  return readClaudeCredentialFromKeychain(isolatedKeychainService(loginHome));
 }
 
 export async function readClaudeToken(options: { allowKeychain?: boolean } = {}): Promise<string | null> {
+  return (await readClaudeCredential(options))?.token ?? null;
+}
+
+/**
+ * As {@link readClaudeToken}, keeping the login's expiry. A login import copies
+ * only the short-lived access token, so the expiry is what tells the caller how
+ * long the copy will work.
+ */
+export async function readClaudeCredential(options: { allowKeychain?: boolean } = {}): Promise<ClaudeCredential | null> {
   const configDir = claudeConfigDir();
   for (const filename of [".credentials.json", "credentials.json"]) {
-    const token = await readClaudeTokenFromFile(path.join(configDir, filename));
-    if (token) return token;
+    const credential = await readClaudeCredentialFromFile(path.join(configDir, filename));
+    if (credential) return credential;
   }
   if (process.platform !== "darwin") return null;
   // A custom auth home owns exactly one Keychain item: the suffixed one the
   // CLI created for that directory. It must never fall through to the
   // unsuffixed item, which belongs to a different account.
   if (process.env.CLAUDE_CONFIG_DIR?.trim()) {
-    return readClaudeTokenFromKeychain(isolatedKeychainService(configDir));
+    return readClaudeCredentialFromKeychain(isolatedKeychainService(configDir));
   }
   // Only an explicit local-account import may consult the user's Keychain.
   if (options.allowKeychain) {
-    return readClaudeTokenFromKeychain("Claude Code-credentials");
+    return readClaudeCredentialFromKeychain("Claude Code-credentials");
   }
   return null;
 }

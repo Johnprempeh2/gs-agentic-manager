@@ -4,6 +4,8 @@ import { Copy, Check, Loader2 } from "lucide-react";
 
 import { Button } from "./ui/button";
 import { copyTextToClipboard } from "../lib/clipboard";
+import type { AiCredentialInfo } from "@greatstone/shared";
+import { AiCredentialLifetime } from "./ai-connections/AiCredentialLifetime";
 import {
   CARD_REVEAL_FIELD,
   CARD_REVEAL_INSTRUCTION,
@@ -469,7 +471,7 @@ export function ProviderApiKeyCard({
 /** Shared instructions for local subscription setup in every authentication host. */
 export function LocalProviderLoginInstructions({ adapterType, login }: {
   adapterType: string;
-  login?: { isolated?: boolean; command?: string; preparing: boolean; status?: "ready" | "sign_in_required" | "expired" | null; error: string | null; retry: () => void };
+  login?: { isolated?: boolean; command?: string; preparing: boolean; status?: "ready" | "sign_in_required" | "expired" | null; credential?: AiCredentialInfo; error: string | null; retry: () => void };
 }) {
   const [showCommand, setShowCommand] = useState(false);
   const provider = adapterType === "claude_local" ? "Claude Code" : adapterType === "grok_local" ? "Grok CLI" : "Codex CLI";
@@ -480,6 +482,7 @@ export function LocalProviderLoginInstructions({ adapterType, login }: {
   return <div className="min-w-0 max-w-full space-y-3 text-sm text-muted-foreground">
     {ready ? <>
       <p role="status" className="flex items-center gap-2 text-foreground"><Check className="size-4 shrink-0 text-(--status-task-icon-done)" />{provider} is signed in. Click Connect to use this account.</p>
+      <AiCredentialLifetime credential={login?.credential} />
       {!showCommand && <button type="button" className="underline underline-offset-4" onClick={() => setShowCommand(true)}>Use a different account</button>}
     </> : <p>{isolated ? `Sign in to ${provider} for this connection on the machine running GS Agentic Manager. Your existing terminal login stays separate.` : `Connect uses your local ${provider} account on the machine running GS Agentic Manager.`}</p>}
     {(!ready || showCommand) && !login?.error && <>

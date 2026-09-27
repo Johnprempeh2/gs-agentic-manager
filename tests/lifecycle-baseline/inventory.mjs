@@ -8,6 +8,8 @@ export const lanes = {
       "tests/lifecycle-baseline/accounting.test.ts",
       "server/src/services/execution-recovery-attempt.test.ts",
       "server/src/services/recovery/legacy-continuation.test.ts",
+      // GRE-15: a rejected login is a board-owned blocker, never a retried transient.
+      "server/src/services/recovery/provider-failure-classification.test.ts",
       `${server}run-liveness.test.ts`,
       `${server}heartbeat-context-summary.test.ts`,
       `${native}native-execution-input.test.ts`,
