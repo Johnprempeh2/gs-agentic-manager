@@ -339,19 +339,19 @@ export function issueAgeBucketsCrossed(
 function IssueDateSeparator({ label }: { label: string }) {
   return (
     <div
-      className="flex items-center gap-3 px-3 py-1.5 sm:pl-0 sm:pr-4"
+      className="gs-date-sep flex items-center gap-3 px-3 py-1.5 sm:pl-0 sm:pr-4"
       role="separator"
       aria-label={label}
       data-issues-date-separator=""
     >
-      <span className="h-px min-w-0 flex-1 bg-border/80" aria-hidden="true" data-date-group-rule="" />
+      <span className="h-px min-w-0 flex-1" aria-hidden="true" data-date-group-rule="" />
       <span
         className="shrink-0 text-(length:--text-nano) font-medium uppercase tracking-wider text-subtle-foreground"
         data-date-group-label=""
       >
         {label}
       </span>
-      <span className="h-px min-w-0 flex-1 bg-border/80" aria-hidden="true" data-date-group-rule="" />
+      <span className="h-px min-w-0 flex-1" aria-hidden="true" data-date-group-rule="" />
     </div>
   );
 }

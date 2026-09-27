@@ -49,71 +49,74 @@ export const boardStatuses = [
 ] as const satisfies readonly IssueStatus[];
 
 const defaultKanbanColumnTone = {
-  rail: "border-border bg-muted/20",
-  railOver: "bg-accent/50 ring-1 ring-primary/20",
+  rail: "gs-lane gs-lane-neutral border-transparent",
+  railOver: "gs-lane-over",
   header: "text-muted-foreground",
-  count: "text-subtle-foreground",
-  body: "bg-muted/20",
-  bodyOver: "bg-accent/40",
+  count: "text-muted-foreground",
+  body: "gs-lane gs-lane-neutral",
+  bodyOver: "gs-lane gs-lane-neutral gs-lane-over",
   card: "",
 };
 
-// Every column carries a status-hued tint (matching the app-wide status
+// Every column carries its status hue (matching the app-wide status
 // vocabulary: gray backlog, amber todo, blue in-progress, violet review,
 // red blocked, green done) so no column reads as accidentally unstyled.
+// Lanes are glass (gs-lane): the hue enters as a lit top edge and a tint that
+// fades down, and deepens while a card is over the lane (gs-lane-over).
+// Counts sit in a glass pill at full tone strength, never alpha-faded.
 export const kanbanColumnTones: Partial<Record<IssueStatus, typeof defaultKanbanColumnTone>> = {
   backlog: {
-    rail: "border-border bg-muted/30",
-    railOver: "bg-muted/50 ring-1 ring-neutral-400/25",
+    rail: "gs-lane gs-lane-neutral border-transparent",
+    railOver: "gs-lane-over",
     header: "text-muted-foreground",
-    count: "text-subtle-foreground",
-    body: "bg-muted/30 ring-1 ring-inset ring-border/50",
-    bodyOver: "bg-muted/50 ring-1 ring-inset ring-neutral-400/25",
+    count: "text-muted-foreground",
+    body: "gs-lane gs-lane-neutral",
+    bodyOver: "gs-lane gs-lane-neutral gs-lane-over",
     card: "",
   },
   todo: {
-    rail: "border-amber-500/25 bg-amber-50/60 dark:bg-amber-950/20",
-    railOver: "bg-amber-100/70 ring-1 ring-amber-500/25 dark:bg-amber-950/35",
+    rail: "gs-lane gs-lane-amber border-transparent",
+    railOver: "gs-lane-over",
     header: "text-amber-700 dark:text-amber-300",
-    count: "text-amber-700/65 dark:text-amber-300/65",
-    body: "bg-amber-50/45 ring-1 ring-inset ring-amber-500/15 dark:bg-amber-950/15",
-    bodyOver: "bg-amber-100/70 ring-1 ring-inset ring-amber-500/25 dark:bg-amber-950/30",
+    count: "text-amber-700 dark:text-amber-300",
+    body: "gs-lane gs-lane-amber",
+    bodyOver: "gs-lane gs-lane-amber gs-lane-over",
     card: "",
   },
   in_progress: {
-    rail: "border-blue-500/25 bg-blue-50/60 dark:bg-blue-950/20",
-    railOver: "bg-blue-100/70 ring-1 ring-blue-500/25 dark:bg-blue-950/35",
+    rail: "gs-lane gs-lane-blue border-transparent",
+    railOver: "gs-lane-over",
     header: "text-blue-700 dark:text-blue-300",
-    count: "text-blue-700/65 dark:text-blue-300/65",
-    body: "bg-blue-50/45 ring-1 ring-inset ring-blue-500/15 dark:bg-blue-950/15",
-    bodyOver: "bg-blue-100/70 ring-1 ring-inset ring-blue-500/25 dark:bg-blue-950/30",
+    count: "text-blue-700 dark:text-blue-300",
+    body: "gs-lane gs-lane-blue",
+    bodyOver: "gs-lane gs-lane-blue gs-lane-over",
     card: "",
   },
   blocked: {
-    rail: "border-red-500/25 bg-red-50/60 dark:bg-red-950/20",
-    railOver: "bg-red-100/70 ring-1 ring-red-500/25 dark:bg-red-950/35",
+    rail: "gs-lane gs-lane-red border-transparent",
+    railOver: "gs-lane-over",
     header: "text-red-700 dark:text-red-300",
-    count: "text-red-700/65 dark:text-red-300/65",
-    body: "bg-red-50/45 ring-1 ring-inset ring-red-500/15 dark:bg-red-950/15",
-    bodyOver: "bg-red-100/70 ring-1 ring-inset ring-red-500/25 dark:bg-red-950/30",
+    count: "text-red-700 dark:text-red-300",
+    body: "gs-lane gs-lane-red",
+    bodyOver: "gs-lane gs-lane-red gs-lane-over",
     card: "",
   },
   in_review: {
-    rail: "border-violet-500/25 bg-violet-50/60 dark:bg-violet-950/20",
-    railOver: "bg-violet-100/70 ring-1 ring-violet-500/25 dark:bg-violet-950/35",
+    rail: "gs-lane gs-lane-violet border-transparent",
+    railOver: "gs-lane-over",
     header: "text-violet-700 dark:text-violet-300",
-    count: "text-violet-700/65 dark:text-violet-300/65",
-    body: "bg-violet-50/45 ring-1 ring-inset ring-violet-500/15 dark:bg-violet-950/15",
-    bodyOver: "bg-violet-100/70 ring-1 ring-inset ring-violet-500/25 dark:bg-violet-950/30",
+    count: "text-violet-700 dark:text-violet-300",
+    body: "gs-lane gs-lane-violet",
+    bodyOver: "gs-lane gs-lane-violet gs-lane-over",
     card: "",
   },
   done: {
-    rail: "border-green-500/25 bg-green-50/60 dark:bg-green-950/20",
-    railOver: "bg-green-100/70 ring-1 ring-green-500/25 dark:bg-green-950/35",
+    rail: "gs-lane gs-lane-green border-transparent",
+    railOver: "gs-lane-over",
     header: "text-green-700 dark:text-green-300",
-    count: "text-green-700/65 dark:text-green-300/65",
-    body: "bg-green-50/45 ring-1 ring-inset ring-green-500/15 dark:bg-green-950/15",
-    bodyOver: "bg-green-100/70 ring-1 ring-inset ring-green-500/25 dark:bg-green-950/30",
+    count: "text-green-700 dark:text-green-300",
+    body: "gs-lane gs-lane-green",
+    bodyOver: "gs-lane gs-lane-green gs-lane-over",
     card: "",
   },
   cancelled: {
@@ -196,7 +199,7 @@ function KanbanColumn({
       <div
         ref={setNodeRef}
         className={cn(
-          "flex min-h-(--sz-220px) w-(--sz-52px) shrink-0 flex-col items-center rounded-md border px-1.5 py-2 transition-colors",
+          "flex min-h-(--sz-220px) w-(--sz-52px) shrink-0 flex-col items-center rounded-xl border px-1.5 py-2 transition-colors",
           tone.rail,
           isOver && tone.railOver,
         )}
@@ -220,14 +223,14 @@ function KanbanColumn({
         <span className={cn("text-xs font-semibold uppercase tracking-wide", tone.header)}>
           {statusLabel(status)}
         </span>
-        <span className={cn("ml-auto text-xs tabular-nums", tone.count)}>
+        <span className={cn("gs-count-pill ml-auto text-xs tabular-nums", tone.count)}>
           {issues.length}
         </span>
       </div>
       <div
         ref={setNodeRef}
         className={cn(
-          "flex-1 min-h-(--sz-120px) rounded-md p-2 space-y-1 transition-colors",
+          "flex-1 min-h-(--sz-120px) rounded-xl p-2 space-y-2 transition-colors",
           isOver ? tone.bodyOver : tone.body,
         )}
       >
@@ -312,9 +315,9 @@ function KanbanCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "block cursor-grab active:cursor-grabbing transition-shadow",
+        "block cursor-grab active:cursor-grabbing",
         isDragging && !isOverlay ? "opacity-30" : "",
-        isOverlay ? "shadow-lg ring-1 ring-primary/20" : "hover:shadow-sm",
+        isOverlay ? "gs-drag-lift" : "gs-glass-card-interactive",
         compact ? "p-2" : "p-2.5",
         className,
       )}

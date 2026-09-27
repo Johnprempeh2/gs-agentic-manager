@@ -98,6 +98,10 @@
      3:1 focus contrast); the halo and glow around it are atmosphere. */
   --gs-field-halo: rgb(27 80 57 / 0.16);
   --gs-field-glow: 0 6px 18px -8px rgb(27 80 57 / 0.35);
+  /* Board lanes and list date separators (pass 7). */
+  --gs-lane-tint: 9%;
+  --gs-lane-tint-over: 18%;
+  --gs-date-rule: rgb(27 80 57 / 0.3);
   /* Toast tone rails come from the retuned palette, so they follow the brand. */
   --gs-toast-info: var(--color-sky-600);
   --gs-toast-success: var(--color-emerald-600);
@@ -155,6 +159,9 @@
   --gs-switch-on-glow: 0 0 14px -2px rgb(200 255 0 / 0.35);
   --gs-field-halo: rgb(200 255 0 / 0.16);
   --gs-field-glow: 0 0 20px -6px rgb(200 255 0 / 0.4);
+  --gs-lane-tint: 12%;
+  --gs-lane-tint-over: 22%;
+  --gs-date-rule: rgb(200 255 0 / 0.24);
   --gs-toast-info: var(--color-sky-400);
   --gs-toast-success: var(--color-emerald-400);
   --gs-toast-warn: var(--color-amber-400);
@@ -639,6 +646,79 @@
     background: var(--gs-toast-tone);
     box-shadow: 0 0 8px var(--gs-toast-tone);
   }
+  /* Board lanes: glass columns that carry their status as light entering
+     from the top edge (a lit bar plus a tint that fades down), instead of a
+     flat full-height wash. Hue classes keep the status vocabulary. */
+  .gs-lane {
+    position: relative;
+    border-radius: 0.875rem;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--gs-lane-wash, var(--gs-lane-tone)) var(--gs-lane-tint), transparent), transparent 11rem),
+      var(--glass-card-bg);
+    box-shadow: var(--glass-highlight), inset 0 0 0 1px var(--glass-card-border);
+    transition-property: box-shadow, background;
+    transition-duration: var(--motion-hover-lift);
+    transition-timing-function: var(--motion-ease-emphasized);
+  }
+  .gs-lane::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0.9rem;
+    right: 0.9rem;
+    height: 2px;
+    border-radius: 0 0 999px 999px;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, var(--gs-lane-tone), transparent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--gs-lane-tone) 55%, transparent);
+  }
+  /* A card is over the lane: the tint deepens and the rim lights in the hue. */
+  .gs-lane-over {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--gs-lane-wash, var(--gs-lane-tone)) var(--gs-lane-tint-over), transparent), color-mix(in srgb, var(--gs-lane-wash, var(--gs-lane-tone)) 6%, transparent)),
+      var(--glass-card-bg);
+    box-shadow: var(--glass-highlight), inset 0 0 0 1px color-mix(in srgb, var(--gs-lane-tone) 45%, transparent), 0 0 24px -10px var(--gs-lane-wash, var(--gs-lane-tone));
+  }
+  .gs-lane-neutral { --gs-lane-tone: var(--color-slate-400); }
+  .gs-lane-amber { --gs-lane-tone: var(--color-amber-500); }
+  .gs-lane-blue { --gs-lane-tone: var(--color-blue-500); }
+  .gs-lane-violet { --gs-lane-tone: var(--color-violet-500); }
+  .gs-lane-red { --gs-lane-tone: var(--color-red-500); }
+  .gs-lane-green { --gs-lane-tone: var(--color-green-500); }
+  /* On the void "live" is lime, which may light the thin edge but never wash a
+     lane that cards and copy sit on: the wash falls back to lit emerald. */
+  .dark .gs-lane-blue { --gs-lane-wash: rgb(58 140 100); }
+
+  /* Lane counts: a small glass pill instead of alpha-faded text. */
+  .gs-count-pill {
+    border-radius: 999px;
+    padding: 0 0.45rem;
+    background: var(--glass-card-bg);
+    box-shadow: var(--glass-highlight), inset 0 0 0 1px var(--glass-card-border);
+  }
+
+  /* The card being dragged lifts off the board: floating glass, a slight tilt. */
+  .gs-drag-lift {
+    rotate: 1.5deg;
+    scale: 1.03;
+    box-shadow: var(--glass-highlight), var(--glass-float-shadow);
+    animation: gs-lift var(--motion-float-enter) var(--motion-ease-spring) both;
+  }
+
+  /* List date separators: brand hairlines fading in toward a glass label. */
+  .gs-date-sep > [data-date-group-rule] {
+    background: linear-gradient(90deg, transparent, var(--gs-date-rule));
+  }
+  .gs-date-sep > [data-date-group-rule]:last-child {
+    background: linear-gradient(90deg, var(--gs-date-rule), transparent);
+  }
+  .gs-date-sep > [data-date-group-label] {
+    border-radius: 999px;
+    padding: 0.05rem 0.55rem;
+    background: var(--glass-card-bg);
+    box-shadow: var(--glass-highlight), inset 0 0 0 1px var(--glass-card-border);
+  }
+
   .gs-toast-timer {
     position: absolute;
     left: 0;
@@ -682,6 +762,13 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@keyframes gs-lift {
+  from {
+    rotate: 0deg;
+    scale: 1;
   }
 }
 
@@ -733,6 +820,7 @@
      so it stays, just without the entrance. */
   .gs-skeleton::after { animation: none; opacity: 0; }
   .gs-toast { animation: none; }
+  .gs-drag-lift { animation: none; rotate: none; scale: none; }
   .gs-check-draw path { animation: none; }
   .gs-switch:active:not(:disabled) .gs-switch-thumb { scale: none; }
   .gs-glass-card-interactive:hover { transform: none; }
