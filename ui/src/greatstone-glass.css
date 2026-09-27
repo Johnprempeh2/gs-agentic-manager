@@ -741,10 +741,17 @@
     border-color: rgb(255 255 255 / 0.08);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), var(--glass-shadow);
   }
+  /* Phones: a strip along the bottom edge only (the copy ends 5rem above it). */
   .gs-dash-hero-tide {
     z-index: -1;
-    -webkit-mask-image: linear-gradient(90deg, transparent 0, transparent 42%, #000 74%);
-    mask-image: linear-gradient(90deg, transparent 0, transparent 42%, #000 74%);
+    -webkit-mask-image: linear-gradient(0deg, #000 0, #000 1.75rem, transparent 4.5rem);
+    mask-image: linear-gradient(0deg, #000 0, #000 1.75rem, transparent 4.5rem);
+  }
+  @media (min-width: 640px) {
+    .gs-dash-hero-tide {
+      -webkit-mask-image: linear-gradient(90deg, transparent 0, transparent 42%, #000 74%);
+      mask-image: linear-gradient(90deg, transparent 0, transparent 42%, #000 74%);
+    }
   }
   .gs-dash-hero-muted {
     color: var(--gs-hero-muted);

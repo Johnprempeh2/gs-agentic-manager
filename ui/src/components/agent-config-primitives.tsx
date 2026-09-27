@@ -76,7 +76,7 @@ export function HintIcon({ text }: { text: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="inline-flex text-subtle-foreground hover:text-muted-foreground transition-colors">
+        <button type="button" className="inline-flex items-center justify-center text-subtle-foreground hover:text-muted-foreground transition-colors">
           <HelpCircle className="h-3 w-3" />
         </button>
       </TooltipTrigger>
