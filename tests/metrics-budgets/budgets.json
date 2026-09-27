@@ -1,0 +1,154 @@
+{
+  "baselineRecorded": {
+    "date": "2026-09-27",
+    "commit": "3bf9b37fe",
+    "machine": "Apple silicon Mac (darwin arm64), local; CI runners need their own calibration (see README)",
+    "task": "GRE-2 baseline document"
+  },
+  "inputs": {
+    "s2": "test-results/issue-detail-perf/metrics.json",
+    "taskChatTail": "test-results/task-chat-perf/metrics-tail-only.json",
+    "taskChatReprojected": "test-results/task-chat-perf/metrics-reprojected.json",
+    "lifecycle": ".lifecycle-baseline/metrics/latest.json"
+  },
+  "budgets": [
+    {
+      "id": "s2-issue-cold-p95-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailColdContentPaint.p95Ms",
+      "samplesPath": "s2.unthrottled.issueDetailColdContentPaint.n",
+      "minSamples": 20,
+      "baseline": 594,
+      "margin": "+150%. Median p95 of 4 runs x 20 samples (529, 557, 631, 1165 ms). The worst run was 1.96x baseline, so +100% would sit 2% above an observed run and flake. The median budget below catches smaller regressions.",
+      "max": 1500
+    },
+    {
+      "id": "s2-issue-warm-p95-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailWarmContentPaint.p95Ms",
+      "samplesPath": "s2.unthrottled.issueDetailWarmContentPaint.n",
+      "minSamples": 20,
+      "baseline": 209,
+      "margin": "+100%. Median p95 of 4 runs x 20 samples (198, 204, 213, 243 ms); worst run 1.17x baseline (1.4x in an earlier set of 4).",
+      "max": 420
+    },
+    {
+      "id": "s2-board-cold-p95-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.boardColdReady.p95Ms",
+      "samplesPath": "s2.unthrottled.boardColdReady.n",
+      "minSamples": 20,
+      "baseline": 561,
+      "margin": "+100%. Median p95 of 4 runs x 20 samples (512, 518, 603, 881 ms); worst run 1.57x baseline.",
+      "max": 1120
+    },
+    {
+      "id": "s2-issue-cold-median-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailColdContentPaint.medianMs",
+      "samplesPath": "s2.unthrottled.issueDetailColdContentPaint.n",
+      "minSamples": 20,
+      "baseline": 492,
+      "margin": "+50%. Medians of 4 runs x 20 samples: 463, 477, 507, 554 ms (worst 1.13x). Stable, so it guards regressions the noisy p95 cannot.",
+      "max": 740
+    },
+    {
+      "id": "s2-issue-warm-median-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailWarmContentPaint.medianMs",
+      "samplesPath": "s2.unthrottled.issueDetailWarmContentPaint.n",
+      "minSamples": 20,
+      "baseline": 167,
+      "margin": "+50%. Medians of 4 runs x 20 samples: 164, 166, 168, 180 ms (worst 1.08x).",
+      "max": 250
+    },
+    {
+      "id": "s2-board-cold-median-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.boardColdReady.medianMs",
+      "samplesPath": "s2.unthrottled.boardColdReady.n",
+      "minSamples": 20,
+      "baseline": 469,
+      "margin": "+50%. Medians of 4 runs x 20 samples: 421, 457, 481, 583 ms (worst 1.24x).",
+      "max": 700
+    },
+    {
+      "id": "task-chat-busy-tail-only",
+      "number": "S2",
+      "group": "ci",
+      "input": "taskChatTail",
+      "path": "mainThreadBusyPercent",
+      "baseline": 15.0,
+      "margin": "+50%. 5 runs ranged 14.3-15.6 % (spread under 10 %); one sample per CI run, so the margin covers a single unlucky run with room to spare.",
+      "max": 22.5
+    },
+    {
+      "id": "task-chat-busy-reprojected",
+      "number": "S2",
+      "group": "ci",
+      "input": "taskChatReprojected",
+      "path": "mainThreadBusyPercent",
+      "baseline": 34.3,
+      "margin": "+50%. 5 runs ranged 33.3-34.5 %; same reasoning as tail-only.",
+      "max": 51.5
+    },
+    {
+      "id": "r1-stranded-trees-weekly",
+      "number": "R1",
+      "group": "weekly",
+      "input": "lifecycle",
+      "path": "r1.weekly",
+      "baseline": 0,
+      "margin": "None. 0 is the floor, and every stranded tree is a task nobody will pick up; any breach is a real incident, not noise.",
+      "max": 0
+    },
+    {
+      "id": "r2-run-failure-rate",
+      "number": "R2",
+      "group": "weekly",
+      "input": "lifecycle",
+      "path": "r2.failureRate",
+      "samplesPath": "r2.finishedRuns",
+      "minSamples": 30,
+      "baseline": 0,
+      "margin": "Provisional. Baseline 0/6 cannot bound the rate (the 95% upper bound for 0/6 is ~40%). 10% is an interim ceiling; recalibrate once a week has at least 30 finished runs.",
+      "max": 0.1
+    },
+    {
+      "id": "s1-wake-to-action-median",
+      "number": "S1",
+      "group": "weekly",
+      "input": "lifecycle",
+      "path": "s1.medianMs",
+      "samplesPath": "s1.sampleSize",
+      "minSamples": 20,
+      "baseline": 32704,
+      "margin": "+50%, provisional. Baseline n=6; recalibrate at n>=20.",
+      "max": 49000
+    },
+    {
+      "id": "s1-wake-to-action-p95",
+      "number": "S1",
+      "group": "weekly",
+      "input": "lifecycle",
+      "path": "s1.p95Ms",
+      "samplesPath": "s1.sampleSize",
+      "minSamples": 20,
+      "baseline": 498916,
+      "margin": "+50%, provisional. Baseline n=6, so this p95 is the single slowest run; recalibrate at n>=20.",
+      "max": 750000
+    }
+  ]
+}

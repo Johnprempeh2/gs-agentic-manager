@@ -44,6 +44,8 @@ export default defineConfig({
     env: {
       ...process.env,
       NODE_ENV: "development",
+      // Time the built bundle users load (ui/dist, from `pnpm build`), not Vite's unbundled dev modules.
+      GSAM_UI_DEV_MIDDLEWARE: process.env.GSAM_UI_DEV_MIDDLEWARE ?? "false",
       PORT: String(PORT),
       GSAM_OPEN_ON_LISTEN: "false",
       GSAM_HOME,

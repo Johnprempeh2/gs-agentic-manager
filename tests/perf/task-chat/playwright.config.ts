@@ -5,6 +5,8 @@ export default defineConfig({
   testMatch: "*.spec.ts",
   workers: 1,
   timeout: 120_000,
+  // Playwright empties outputDir on start; the default (test-results/) would delete the S2 report.
+  outputDir: "../../../test-results/task-chat-perf/playwright",
   use: { baseURL: "http://127.0.0.1:4197", viewport: { width: 1440, height: 900 }, trace: "retain-on-failure" },
   webServer: {
     command: "pnpm --filter @greatstone/ui exec vite --host 127.0.0.1 --port 4197 --strictPort",

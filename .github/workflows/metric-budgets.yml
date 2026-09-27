@@ -1,0 +1,72 @@
+name: Metric budgets
+
+# W1 tracked numbers (see tests/metrics-budgets/README.md).
+# - definitions: the R1/R2/S1 calculators and the budget checker; fast, every PR.
+# - ui-budgets: measures S2 (issue detail + board p95) and task-chat main-thread
+#   load, then fails the build if a CI budget in budgets.json is broken.
+# R1, R2 and S1 need a real instance's run history, so their budgets are enforced
+# by the weekly routine (`pnpm metrics:collect && pnpm metrics:budgets --group weekly`).
+
+on:
+  pull_request:
+    paths:
+      - "ui/**"
+      - "server/**"
+      - "packages/**"
+      - "tests/perf/**"
+      - "tests/metrics-budgets/**"
+      - "tests/lifecycle-baseline/metrics/**"
+      - ".github/workflows/metric-budgets.yml"
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  definitions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - run: node --test tests/lifecycle-baseline/metrics/compute.test.mjs tests/metrics-budgets/check.test.mjs
+
+  ui-budgets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - name: Measure S2 (issue detail and board)
+        env:
+          GSAM_ISSUE_PERF_RUNS: "20"
+          # ~1 min at n=20 unthrottled; the throttled profile ran 27+ min without finishing, so it is measured on demand.
+          GSAM_ISSUE_PERF_PROFILES: unthrottled
+        run: pnpm perf:issue-detail
+      - name: Measure task-chat main-thread load
+        run: pnpm perf:task-chat
+      - name: Enforce CI budgets
+        run: pnpm metrics:budgets --group ci --budgets "${METRIC_BUDGETS_FILE:-tests/metrics-budgets/budgets.json}"
+        env:
+          METRIC_BUDGETS_FILE: ${{ vars.METRIC_BUDGETS_FILE }}
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: metric-budgets
+          path: |
+            test-results/issue-detail-perf/baseline.md
+            test-results/issue-detail-perf/baseline.json
+            test-results/issue-detail-perf/metrics.json
+            test-results/task-chat-perf/

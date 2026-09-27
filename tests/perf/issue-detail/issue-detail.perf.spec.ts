@@ -8,6 +8,8 @@ const OUTPUT_DIR = path.resolve(process.cwd(), "test-results/issue-detail-perf")
 const PAGE_READY_TIMEOUT_MS = 90_000;
 const HEADER_MEASURE = "issue-detail:navigate→header-paint";
 const CONTENT_MEASURE = "issue-detail:navigate→content-paint";
+const HEADER_MARK = "issue-detail:header-paint";
+const CONTENT_MARK = "issue-detail:content-paint";
 
 type Profile = {
   name: "unthrottled" | "fast-4g-4x-cpu";
@@ -53,9 +55,22 @@ type Seed = {
   issueId: string;
   identifier: string;
   title: string;
+  boardIssueCount: number;
+  boardMarkerTitles: string[];
 };
 
-const PROFILES: Profile[] = [
+type BoardMetrics = {
+  scenario: "S3 board cold open";
+  profile: Profile["name"];
+  run: number;
+  boardReadyMs: number;
+};
+
+// Ten per column equals the default column page size, so every seeded card renders.
+const BOARD_ISSUES_PER_STATUS = 10;
+const BOARD_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked"] as const;
+
+const ALL_PROFILES: Profile[] = [
   { name: "unthrottled" },
   {
     name: "fast-4g-4x-cpu",
@@ -65,11 +80,27 @@ const PROFILES: Profile[] = [
     cpuSlowdownRate: 4,
   },
 ];
+// GSAM_ISSUE_PERF_PROFILES=unthrottled limits a run to named profiles (CI gates unthrottled only).
+const requestedProfiles = process.env.GSAM_ISSUE_PERF_PROFILES?.split(",").map((name) => name.trim()).filter(Boolean);
+const PROFILES = requestedProfiles?.length
+  ? ALL_PROFILES.filter((profile) => requestedProfiles.includes(profile.name))
+  : ALL_PROFILES;
+if (requestedProfiles?.length && PROFILES.length !== requestedProfiles.length) {
+  throw new Error(`Unknown GSAM_ISSUE_PERF_PROFILES entry; expected any of ${ALL_PROFILES.map((profile) => profile.name).join(", ")}`);
+}
+// Each run is three fresh-browser samples (about 1 s each unthrottled, far longer throttled); leave room for seeding.
+const TEST_TIMEOUT_MS = 10 * 60_000 + RUNS * PROFILES.length * 3 * 60_000;
 
 function median(values: number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+// Nearest-rank percentile; with the default five samples p95 is the slowest sample.
+function percentile(values: number[], p: number): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)];
 }
 
 function formatMs(value: number | null): string {
@@ -106,12 +137,29 @@ async function seed(request: Page["request"]): Promise<Seed> {
     expect(commentResponse.ok(), await commentResponse.text()).toBe(true);
   }
 
+  // A populated board: every open column carries cards. One card per column is
+  // the readiness marker, so the board counts as loaded once all columns render.
+  const boardMarkerTitles: string[] = [];
+  for (const status of BOARD_STATUSES) {
+    for (let index = 1; index <= BOARD_ISSUES_PER_STATUS; index += 1) {
+      const boardTitle = `Board ${status} card ${index} ${Date.now()}`;
+      const response = await request.post(`/api/companies/${company.id}/issues`, {
+        // in_progress needs an assignee; the local-trusted board user avoids waking any agent.
+        data: { title: boardTitle, description: `Seeded board card for ${status}.`, priority: "medium", status, ...(status === "in_progress" ? { assigneeUserId: "local-board" } : {}) },
+      });
+      expect(response.ok(), await response.text()).toBe(true);
+      if (index === BOARD_ISSUES_PER_STATUS) boardMarkerTitles.push(boardTitle);
+    }
+  }
+
   return {
     companyId: company.id,
     prefix: company.issuePrefix ?? company.prefix,
     issueId: issue.id,
     identifier: issue.identifier,
     title,
+    boardIssueCount: BOARD_STATUSES.length * BOARD_ISSUES_PER_STATUS + 1,
+    boardMarkerTitles,
   };
 }
 
@@ -198,21 +246,25 @@ async function writeTrace(tracePath: string, metrics: RunMetrics, records: Map<s
   await fs.writeFile(tracePath, JSON.stringify({ traceEvents }));
 }
 
-async function readPaintMetrics(page: Page) {
+// Cold opens are timed from browser navigation start (the paint marks' startTime), not from the
+// page's own start mark: that mark is reset by any re-run of its effect (e.g. StrictMode in dev),
+// which would silently drop bundle load from the number.
+async function readPaintMetrics(page: Page, cold: boolean) {
   await page.waitForFunction((measureName) => performance.getEntriesByName(measureName).length > 0, CONTENT_MEASURE);
   await page.waitForTimeout(150);
-  return page.evaluate(({ headerMeasure, contentMeasure }) => {
+  return page.evaluate(({ headerMeasure, contentMeasure, headerMark, contentMark, cold }) => {
     const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
     const fcp = performance.getEntriesByName("first-contentful-paint")[0];
+    const sinceNavigation = (mark: string) => performance.getEntriesByName(mark, "mark")[0]?.startTime ?? NaN;
     return {
-      headerPaintMs: performance.getEntriesByName(headerMeasure)[0]?.duration ?? NaN,
-      contentPaintMs: performance.getEntriesByName(contentMeasure)[0]?.duration ?? NaN,
+      headerPaintMs: cold ? sinceNavigation(headerMark) : performance.getEntriesByName(headerMeasure)[0]?.duration ?? NaN,
+      contentPaintMs: cold ? sinceNavigation(contentMark) : performance.getEntriesByName(contentMeasure)[0]?.duration ?? NaN,
       ttfbMs: navigation ? navigation.responseStart - navigation.requestStart : null,
       fcpMs: fcp?.startTime ?? null,
       lcpMs: (window as Window & { __issuePerfLcp?: number }).__issuePerfLcp ?? null,
       contentPaintEpochMs: performance.timeOrigin + (performance.getEntriesByName(contentMeasure)[0]?.startTime ?? 0) + (performance.getEntriesByName(contentMeasure)[0]?.duration ?? 0),
     };
-  }, { headerMeasure: HEADER_MEASURE, contentMeasure: CONTENT_MEASURE });
+  }, { headerMeasure: HEADER_MEASURE, contentMeasure: CONTENT_MEASURE, headerMark: HEADER_MARK, contentMark: CONTENT_MARK, cold });
 }
 
 function summarizeNetwork(records: Map<string, NetworkRecord>, seedData: Seed, contentPaintEpochMs: number) {
@@ -258,8 +310,9 @@ async function runScenario(browser: Browser, baseURL: string, seedData: Seed, pr
     await page.goto(`/${seedData.prefix}/issues/${seedData.identifier}`);
   }
 
-  await expect(page.getByTestId("issue-detail-header")).toBeVisible({ timeout: PAGE_READY_TIMEOUT_MS });
-  const paint = await readPaintMetrics(page);
+  // The loading shell and the thread both render a header briefly; timing comes from user-timing marks.
+  await expect(page.getByTestId("issue-detail-header").first()).toBeVisible({ timeout: PAGE_READY_TIMEOUT_MS });
+  const paint = await readPaintMetrics(page, scenario.startsWith("S2"));
   const summary = summarizeNetwork(network, seedData, paint.contentPaintEpochMs);
   const { contentPaintEpochMs: _contentPaintEpochMs, ...reportedPaint } = paint;
   const scenarioPaint = scenario.startsWith("S1")
@@ -293,7 +346,44 @@ async function runScenarioWithBrowserRetry(baseURL: string, seedData: Seed, prof
   throw new Error("Unreachable browser retry state");
 }
 
-function buildMarkdown(results: RunMetrics[]): string {
+async function prepareBoardStorageState(browser: Browser, baseURL: string, seedData: Seed): Promise<string> {
+  const context = await browser.newContext({ baseURL });
+  const page = await context.newPage();
+  await page.goto(`/${seedData.prefix}/issues`);
+  await page.getByRole("button", { name: "Board view" }).click();
+  await expect(page.getByText(seedData.boardMarkerTitles[0]).first()).toBeVisible({ timeout: PAGE_READY_TIMEOUT_MS });
+  const statePath = path.join(OUTPUT_DIR, "board-storage-state.json");
+  await context.storageState({ path: statePath });
+  await context.close();
+  return statePath;
+}
+
+// Cold open of the issues board: navigation start until every open column shows its newest card.
+async function runBoardSample(browser: Browser, baseURL: string, storageState: string, seedData: Seed, profile: Profile, run: number): Promise<BoardMetrics> {
+  const context = await browser.newContext({ baseURL, storageState });
+  const page = await context.newPage();
+  await configureProfile(context, page, profile);
+  await page.goto(`/${seedData.prefix}/issues`, { waitUntil: "commit" });
+  const handle = await page.waitForFunction((titles) => {
+    const text = document.body?.innerText ?? "";
+    return titles.every((title) => text.includes(title)) ? performance.now() : false;
+  }, seedData.boardMarkerTitles, { polling: "raf", timeout: PAGE_READY_TIMEOUT_MS });
+  const boardReadyMs = Number(await handle.jsonValue());
+  await context.close();
+  expect(Number.isFinite(boardReadyMs)).toBe(true);
+  return { scenario: "S3 board cold open", profile: profile.name, run, boardReadyMs };
+}
+
+function buildMetricsSummary(results: RunMetrics[], boardResults: BoardMetrics[]) {
+  const stats = (values: number[]) => ({ n: values.length, medianMs: Math.round(median(values)), p95Ms: Math.round(percentile(values, 95)), maxMs: Math.round(Math.max(...values)) });
+  return Object.fromEntries(PROFILES.map((profile) => [profile.name, {
+    issueDetailWarmContentPaint: stats(results.filter((r) => r.profile === profile.name && r.scenario === "S1 warm in-app navigation").map((r) => r.contentPaintMs)),
+    issueDetailColdContentPaint: stats(results.filter((r) => r.profile === profile.name && r.scenario === "S2 cold open").map((r) => r.contentPaintMs)),
+    boardColdReady: stats(boardResults.filter((r) => r.profile === profile.name).map((r) => r.boardReadyMs)),
+  }]));
+}
+
+function buildMarkdown(results: RunMetrics[], boardResults: BoardMetrics[] = []): string {
   const rows = PROFILES.flatMap((profile) => ["S1 warm in-app navigation", "S2 cold open"].map((scenario) => {
     const samples = results.filter((result) => result.profile === profile.name && result.scenario === scenario);
     const nullableMedian = (values: Array<number | null>) => {
@@ -315,25 +405,50 @@ function buildMarkdown(results: RunMetrics[]): string {
     "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...rows,
     "",
+    "## Tracked number S2 (p95)",
+    "",
+    "| Profile | Measure | N | Median | p95 | Max |",
+    "| --- | --- | ---: | ---: | ---: | ---: |",
+    ...Object.entries(buildMetricsSummary(results, boardResults)).flatMap(([profile, measures]) =>
+      Object.entries(measures).map(([measure, value]) => `| ${profile} | ${measure} | ${value.n} | ${formatMs(value.medianMs)} | ${formatMs(value.p95Ms)} | ${formatMs(value.maxMs)} |`)),
+    "",
     "Raw samples and Chrome traces are in the same output directory.",
   ].join("\n");
 }
 
 test("issue-detail baseline", async ({ request, baseURL }) => {
+  test.setTimeout(TEST_TIMEOUT_MS);
   expect(baseURL).toBeTruthy();
   await fs.mkdir(OUTPUT_DIR, { recursive: true });
   const seedData = await seed(request);
   const results: RunMetrics[] = [];
+  const boardResults: BoardMetrics[] = [];
+  const setupBrowser = await chromium.launch();
+  const boardState = await prepareBoardStorageState(setupBrowser, baseURL!, seedData).finally(() => setupBrowser.close());
 
   for (const profile of PROFILES) {
     for (let run = 1; run <= RUNS; run += 1) {
       results.push(await runScenarioWithBrowserRetry(baseURL!, seedData, profile, "S1 warm in-app navigation", run));
       results.push(await runScenarioWithBrowserRetry(baseURL!, seedData, profile, "S2 cold open", run));
+      const boardBrowser = await chromium.launch();
+      try {
+        boardResults.push(await runBoardSample(boardBrowser, baseURL!, boardState, seedData, profile, run));
+      } finally {
+        await boardBrowser.close().catch(() => undefined);
+      }
     }
   }
 
-  const report = buildMarkdown(results);
-  await fs.writeFile(path.join(OUTPUT_DIR, "baseline.json"), JSON.stringify({ seed: seedData, results }, null, 2));
+  const report = buildMarkdown(results, boardResults);
+  const summary = buildMetricsSummary(results, boardResults);
+  await fs.writeFile(path.join(OUTPUT_DIR, "baseline.json"), JSON.stringify({ seed: seedData, results, boardResults }, null, 2));
+  await fs.writeFile(path.join(OUTPUT_DIR, "metrics.json"), JSON.stringify({
+    schema: "gsam.metrics.s2/v1",
+    measuredAt: new Date().toISOString(),
+    runsPerScenario: RUNS,
+    boardIssueCount: seedData.boardIssueCount,
+    s2: summary,
+  }, null, 2));
   await fs.writeFile(path.join(OUTPUT_DIR, "baseline.md"), report);
   console.log(`\n${report}\n`);
 });

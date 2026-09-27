@@ -1,4 +1,9 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+// Budget input for tests/metrics-budgets (one file per case).
+const OUTPUT_DIR = path.resolve(process.cwd(), "test-results/task-chat-perf");
 
 for (const reproject of [false, true]) {
 test(`long scrollback stays responsive (${reproject ? "reprojected history" : "tail only"})`, async ({ page }, testInfo) => {
@@ -24,6 +29,11 @@ test(`long scrollback stays responsive (${reproject ? "reprojected history" : "t
   };
   console.log(JSON.stringify(metrics));
   await testInfo.attach("performance.json", { body: JSON.stringify(metrics, null, 2), contentType: "application/json" });
+  await fs.mkdir(OUTPUT_DIR, { recursive: true });
+  await fs.writeFile(
+    path.join(OUTPUT_DIR, `metrics-${reproject ? "reprojected" : "tail-only"}.json`),
+    JSON.stringify({ schema: "gsam.metrics.task-chat/v1", measuredAt: new Date().toISOString(), ...metrics }, null, 2),
+  );
   // Read scrollback without getting pulled down by ongoing live updates.
   const scroller = page.getByTestId("task-chat-scroller");
   await scroller.hover();

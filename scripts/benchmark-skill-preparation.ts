@@ -41,7 +41,7 @@ async function measure(label: string) {
   const durationMs = performance.now() - start;
   const missingEntries = entries.filter((entry) => entry.sourceStatus === "missing").length;
   assert.equal(entries.length, 114);
-  assert.equal(missingEntries, 0);
+  assert.equal(missingEntries, 0, `Missing runtime skills: ${JSON.stringify(entries.filter((entry) => entry.sourceStatus === "missing").slice(0, 3).map((entry) => [entry.key, entry.missingDetail]))}`);
   assert.equal(inventoryRefreshes, 1);
   if (label !== "cold") { assert.equal(upstreamFetches, 0); assert.equal(rebuilds, 0); }
   // Check every synthetic supporting file against its installed revision, outside the timed section.
