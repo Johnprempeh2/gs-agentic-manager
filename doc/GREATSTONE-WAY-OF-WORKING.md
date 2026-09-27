@@ -14,7 +14,8 @@ in. The rule behind everything below: **build in isolation, John releases.**
 
 The repository is private: `Johnprempeh2/gs-agentic-manager` (remote
 `origin`, default branch `main`). The public fork `Johnprempeh2/GS-Clip`
-(remote `public-fork`) only tracks upstream Paperclip. Never push to it.
+(remote `public-fork`) only tracks the upstream open-source project. Never push
+to it.
 
 ## How a change travels
 
@@ -52,9 +53,12 @@ The repository is private: `Johnprempeh2/gs-agentic-manager` (remote
 - Commit secrets, tokens, `.env` files, client names or personal data.
 - Widen a task on your own. Propose follow-up work as a new issue instead.
 
-A `pre-push` hook in the dev checkout (shared by every worktree) enforces the
-first four rules on this machine: it refuses pushes to `main`, tags that do not
-come from the release script, deletions, and any push to `public-fork`.
+A `pre-push` hook in the dev checkout (shared by every worktree) checks pushes
+only. On this machine it refuses a push to `main`, a tag push that does not come
+from the release script, a push that deletes a branch or tag, and any push to
+`public-fork`. It does not stop edits, installs or git commands under `~/GSAM/`,
+server restarts, force-pushes to other branches, merges, or pull requests on
+`Johnprempeh2/GS-Clip`. You must keep those rules yourself.
 GitHub Free cannot protect a private repo's `main` on the server; with GitHub
 Pro, add a branch rule that requires a pull request and the "Fork CI" check.
 
