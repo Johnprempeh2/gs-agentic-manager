@@ -718,7 +718,9 @@ describe("CompanyEnvironments — test provider button", () => {
     });
     await flushReact();
 
-    expect(getEnvironmentFormPage()).toBeNull();
+    await waitForAssertion(() => {
+      expect(getEnvironmentFormPage()).toBeNull();
+    });
   });
 
   it("opens the edit form on a standalone page with existing values and closes after save", async () => {
@@ -804,14 +806,20 @@ describe("CompanyEnvironments — test provider button", () => {
     await act(async () => click(findButton(document.body, "Cancel")));
     await flushReact();
 
-    expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved environment changes?");
+    // The confirmation is asynchronous (the branded dialog in the app, the
+    // native fallback here), and its text leads with the question.
+    await waitForAssertion(() => {
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("Discard unsaved environment changes?"));
+    });
     expect(getEnvironmentFormPage()).not.toBeNull();
 
     confirmSpy.mockReturnValue(true);
     await act(async () => click(findButton(document.body, "Cancel")));
     await flushReact();
 
-    expect(getEnvironmentFormPage()).toBeNull();
+    await waitForAssertion(() => {
+      expect(getEnvironmentFormPage()).toBeNull();
+    });
   });
 
   it("keeps unload and in-app link warnings after env var changes are staged into the form", async () => {
@@ -856,8 +864,11 @@ describe("CompanyEnvironments — test provider button", () => {
     const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
     link.dispatchEvent(clickEvent);
 
-    expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved environment changes?");
+    // The click is held synchronously; the confirmation follows asynchronously.
     expect(clickEvent.defaultPrevented).toBe(true);
+    await waitForAssertion(() => {
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("Discard unsaved environment changes?"));
+    });
     expect(getEnvironmentFormPage()).not.toBeNull();
     link.remove();
   });

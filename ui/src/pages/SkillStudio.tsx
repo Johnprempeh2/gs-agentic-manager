@@ -1,3 +1,4 @@
+import { useConfirm } from "@/context/ConfirmContext";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1270,6 +1271,7 @@ function SkillPane({
   onDirtyChange: (dirty: boolean) => void;
   onEditACopy: () => void;
 }) {
+  const confirmAction = useConfirm();
   const skillId = skill.id;
   const queryClient = useQueryClient();
   const onError = useMutationErrorToast();
@@ -1320,17 +1322,16 @@ function SkillPane({
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
 
-  const selectFile = useCallback((path: string) => {
+  const selectFile = useCallback(async (path: string) => {
     if (path === selectedFile) return;
     if (
       dirty
-      && typeof window !== "undefined"
-      && !window.confirm("Discard unsaved edits and switch files?")
+      && !(await confirmAction({ title: "Discard unsaved edits?", description: "Switching files drops the changes you have not saved.", confirmLabel: "Discard and switch", tone: "destructive" }))
     ) {
       return;
     }
     setSelectedFile(path);
-  }, [dirty, selectedFile]);
+  }, [confirmAction, dirty, selectedFile]);
 
   const saveMutation = useMutation({
     mutationFn: () => companySkillsApi.updateFile(companyId, skillId, selectedFile, draft),
@@ -1650,6 +1651,7 @@ function SkillFileActions({
   onDeleteFile: () => void;
   onDeleteFolder: () => void;
 }) {
+  const confirmAction = useConfirm();
   const disabled = readOnly || pending;
   const deleteDisabled = disabled || !canDeleteFile;
   return (
@@ -1681,8 +1683,8 @@ function SkillFileActions({
               variant="ghost"
               size="icon-sm"
               disabled={deleteDisabled}
-              onClick={() => {
-                if (typeof window === "undefined" || window.confirm(`Delete ${selectedFile}?`)) {
+              onClick={async () => {
+                if (await confirmAction({ title: `Delete ${selectedFile}?`, confirmLabel: "Delete file", tone: "destructive" })) {
                   onDeleteFile();
                 }
               }}
@@ -1905,6 +1907,7 @@ function InputPane({
   onSelectInput: (id: string) => void;
   onSelectAdHoc: () => void;
 }) {
+  const confirmAction = useConfirm();
   const queryClient = useQueryClient();
   const onError = useMutationErrorToast();
   // The row's menu closes on click, so its copy confirmation goes to a toast.
@@ -1955,22 +1958,19 @@ function InputPane({
   const dirty = !adHocMode && savedInputDraftDirty(savedInputDraft, selectedInput);
   const canSaveSelectedInput = Boolean(selectedInput && dirty && draft.trim());
 
-  const confirmDiscardDirtyInput = useCallback(() => {
+  const confirmDiscardDirtyInput = useCallback(async () => {
     if (!dirty) return true;
-    return (
-      typeof window === "undefined"
-      || window.confirm("Discard unsaved changes to this input?")
-    );
-  }, [dirty]);
+    return confirmAction({ title: "Discard unsaved changes to this input?", confirmLabel: "Discard", tone: "destructive" });
+  }, [confirmAction, dirty]);
 
-  const selectSavedInput = useCallback((id: string) => {
+  const selectSavedInput = useCallback(async (id: string) => {
     if (!adHocMode && id === selectedInputId) return;
-    if (!confirmDiscardDirtyInput()) return;
+    if (!(await confirmDiscardDirtyInput())) return;
     onSelectInput(id);
   }, [adHocMode, confirmDiscardDirtyInput, onSelectInput, selectedInputId]);
 
-  const selectAdHocInput = useCallback(() => {
-    if (!adHocMode && !confirmDiscardDirtyInput()) return;
+  const selectAdHocInput = useCallback(async () => {
+    if (!adHocMode && !(await confirmDiscardDirtyInput())) return;
     onSelectAdHoc();
   }, [adHocMode, confirmDiscardDirtyInput, onSelectAdHoc]);
 
@@ -2317,6 +2317,7 @@ function RunsPane({
   filterInput: CompanySkillTestInput | null;
   onClearFilter: () => void;
 }) {
+  const confirmAction = useConfirm();
   const skillId = skill.id;
   const queryClient = useQueryClient();
   const onError = useMutationErrorToast();
@@ -2543,11 +2544,8 @@ function RunsPane({
           onCreateTemplate={() => setTemplateDialog({ mode: "create" })}
           onEditTemplate={(template) => setTemplateDialog({ mode: "edit", source: template })}
           onDuplicateTemplate={(template) => setTemplateDialog({ mode: "create", source: template })}
-          onDeleteTemplate={(template) => {
-            if (
-              typeof window !== "undefined"
-              && !window.confirm(`Delete run template "${template.name}"?`)
-            ) {
+          onDeleteTemplate={async (template) => {
+            if (!(await confirmAction({ title: `Delete run template "${template.name}"?`, confirmLabel: "Delete template", tone: "destructive" }))) {
               return;
             }
             deleteTemplateMutation.mutate(template.id);

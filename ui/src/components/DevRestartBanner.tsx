@@ -1,4 +1,6 @@
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { useEffect, useState } from "react";
+import { useConfirm } from "@/context/ConfirmContext";
 import { AlertTriangle, RotateCcw, TimerReset } from "lucide-react";
 import { healthApi, type DevServerHealthStatus } from "../api/health";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +33,8 @@ function describeReason(devServer: DevServerHealthStatus): string {
 }
 
 export function DevRestartBanner({ devServer }: { devServer?: DevServerHealthStatus }) {
+  const confirmAction = useConfirm();
+  const toastActions = useOptionalToastActions();
   const [restartPending, setRestartPending] = useState(false);
   useEffect(() => {
     if (!restartPending) return;
@@ -50,18 +54,16 @@ export function DevRestartBanner({ devServer }: { devServer?: DevServerHealthSta
   }`;
 
   async function requestRestartNow() {
-    const warning =
-      currentDevServer.activeRunCount > 0
-        ? `Restart GS Agentic Manager now? This may interrupt ${activeRunLabel}.`
-        : "Restart GS Agentic Manager now?";
-    if (!window.confirm(warning)) return;
+    if (!(await confirmAction({ title: "Restart GS Agentic Manager now?", description: currentDevServer.activeRunCount > 0 ? `This may interrupt ${activeRunLabel}.` : undefined, confirmLabel: "Restart now" }))) return;
 
     setRestartPending(true);
     try {
       await healthApi.requestDevServerRestart();
     } catch (error) {
       setRestartPending(false);
-      window.alert(error instanceof Error ? error.message : "Failed to request restart");
+      const message = error instanceof Error ? error.message : "Failed to request restart";
+      if (toastActions) toastActions.pushToast({ title: "Restart failed", body: message, tone: "error" });
+      else window.alert(message);
     }
   }
 

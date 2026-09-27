@@ -1,3 +1,4 @@
+import { useConfirm } from "@/context/ConfirmContext";
 import { AgentCharacter } from "../components/AgentCharacter";
 import { characterStateForAgent } from "@greatstone/shared";
 import { mergeRunLogChunks, readChunkSeq } from "../lib/run-log-chunks";
@@ -308,6 +309,12 @@ const LEGACY_AGENT_DETAIL_TABS = [
 ] as const;
 
 export const DISCARD_AGENT_CONFIG_CHANGES_MESSAGE = "Discard unsaved agent configuration changes?";
+const DISCARD_AGENT_CONFIG_CHANGES_OPTIONS = {
+  title: DISCARD_AGENT_CONFIG_CHANGES_MESSAGE,
+  description: "Your agent configuration changes have not been saved.",
+  confirmLabel: "Discard changes",
+  tone: "destructive",
+} as const;
 
 export function confirmAgentConfigNavigation(
   dirty: boolean,
@@ -804,9 +811,14 @@ export function AgentDetail() {
   const canFetchAgent = routeAgentRef.length > 0 && (isUuidLike(routeAgentRef) || Boolean(lookupCompanyId));
   const setSaveConfigAction = useCallback((fn: (() => void) | null) => { saveConfigActionRef.current = fn; }, []);
   const setCancelConfigAction = useCallback((fn: (() => void) | null) => { cancelConfigActionRef.current = fn; }, []);
-  const prepareAgentNavigation = useCallback(() => {
-    return confirmAgentConfigNavigation(configDirty);
-  }, [configDirty]);
+  const confirmAction = useConfirm();
+  // Set for the one navigation replayed after the discard dialog is confirmed.
+  const agentNavigationBypassRef = useRef(false);
+  // The branded dialog cannot block like window.confirm, so this resolves.
+  const prepareAgentNavigation = useCallback(async () => {
+    if (!configDirty) return true;
+    return confirmAction(DISCARD_AGENT_CONFIG_CHANGES_OPTIONS);
+  }, [configDirty, confirmAction]);
   const { data: agent, isLoading, error } = useQuery<AgentDetailRecord>({
     queryKey: [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null],
     queryFn: () => agentsApi.get(routeAgentRef, lookupCompanyId),
@@ -814,8 +826,8 @@ export function AgentDetail() {
   });
   const resolvedCompanyId = agent?.companyId ?? selectedCompanyId;
   const canonicalAgentRef = agent ? agentRouteRef(agent) : routeAgentRef;
-  const handleLegacyTabChange = useCallback((next: string) => {
-    if (!prepareAgentNavigation()) return;
+  const handleLegacyTabChange = useCallback(async (next: string) => {
+    if (!(await prepareAgentNavigation())) return;
     navigate(`/agents/${canonicalAgentRef || routeAgentRef}/${next}`);
   }, [canonicalAgentRef, navigate, prepareAgentNavigation, routeAgentRef]);
   const agentLookupRef = agent?.id ?? routeAgentRef;
@@ -1117,9 +1129,18 @@ export function AgentDetail() {
       ) {
         return;
       }
-      if (prepareAgentNavigation()) return;
+      if (agentNavigationBypassRef.current) return;
       event.preventDefault();
       event.stopPropagation();
+      void prepareAgentNavigation().then((confirmed) => {
+        if (!confirmed) return;
+        agentNavigationBypassRef.current = true;
+        try {
+          anchor.click();
+        } finally {
+          agentNavigationBypassRef.current = false;
+        }
+      });
     }
 
     document.addEventListener("click", handleDocumentClick, true);
@@ -1145,10 +1166,22 @@ export function AgentDetail() {
         return;
       }
 
-      if (prepareAgentNavigation()) return;
+      if (agentNavigationBypassRef.current) {
+        agentNavigationBypassRef.current = false;
+        return;
+      }
 
       event.stopImmediatePropagation();
-      restoring = restoreAgentConfigHistoryEntry(window.history, currentEntry, event.state?.idx);
+      const targetIndex: unknown = event.state?.idx;
+      restoring = restoreAgentConfigHistoryEntry(window.history, currentEntry, targetIndex);
+      void prepareAgentNavigation().then((confirmed) => {
+        if (!confirmed) return;
+        if (typeof targetIndex !== "number" || typeof currentEntry.index !== "number") return;
+        const delta = targetIndex - currentEntry.index;
+        if (delta === 0) return;
+        agentNavigationBypassRef.current = true;
+        window.history.go(delta);
+      });
     }
 
     window.addEventListener("popstate", handlePopState, true);
@@ -2190,6 +2223,7 @@ export function PromptsTab({
   onCancelActionChange: (cancel: (() => void) | null) => void;
   onSavingChange: (saving: boolean) => void;
 }) {
+  const confirmAction = useConfirm();
   const queryClient = useQueryClient();
   const { selectedCompanyId } = useCompany();
   const { isMobile } = useSidebar();
@@ -2920,8 +2954,8 @@ export function PromptsTab({
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    if (confirm(`Delete ${selectedOrEntryFile}?`)) {
+                  onClick={async () => {
+                    if (await confirmAction({ title: `Delete ${selectedOrEntryFile}?`, confirmLabel: "Delete file", tone: "destructive" })) {
                       deleteFile.mutate(selectedOrEntryFile, {
                         onSuccess: () => {
                           setSelectedFile(currentEntryFile);
@@ -3195,6 +3229,7 @@ function RunsTab({
 /* ---- Run Detail (expanded) ---- */
 
 function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }: { run: HeartbeatRun; agentRouteId: string; adapterType: string; adapterConfig: Record<string, unknown> }) {
+  const confirmAction = useConfirm();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data: hydratedRun } = useQuery({
@@ -3707,11 +3742,13 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                       type="button"
                       className="text-(length:--text-micro) text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-60"
                       disabled={clearSessionsForTouchedIssues.isPending}
-                      onClick={() => {
+                      onClick={async () => {
                         const issueCount = touchedIssueIds.length;
-                        const confirmed = window.confirm(
-                          `Clear session for ${issueCount} issue${issueCount === 1 ? "" : "s"} touched by this run?`,
-                        );
+                        const confirmed = await confirmAction({
+                          title: `Clear the session for ${issueCount} issue${issueCount === 1 ? "" : "s"} touched by this run?`,
+                          confirmLabel: "Clear sessions",
+                          tone: "destructive",
+                        });
                         if (!confirmed) return;
                         clearSessionsForTouchedIssues.mutate();
                       }}

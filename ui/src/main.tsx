@@ -10,6 +10,7 @@ import { CompanyProvider, useCompany } from "./context/CompanyContext";
 import { LiveUpdatesProvider } from "./context/LiveUpdatesProvider";
 import { BreadcrumbProvider } from "./context/BreadcrumbContext";
 import { PanelProvider } from "./context/PanelContext";
+import { ConfirmProvider } from "./context/ConfirmContext";
 import { SidebarProvider } from "./context/SidebarContext";
 import { DialogProvider } from "./context/DialogContext";
 import { EditorAutocompleteProvider } from "./context/EditorAutocompleteContext";
@@ -77,7 +78,9 @@ getOrCreatePaperclipReactRoot(window, rootElement).render(
                           <PanelProvider>
                             <PluginLauncherProvider>
                               <DialogProvider>
-                                <App />
+                                <ConfirmProvider>
+                                  <App />
+                                </ConfirmProvider>
                               </DialogProvider>
                             </PluginLauncherProvider>
                           </PanelProvider>

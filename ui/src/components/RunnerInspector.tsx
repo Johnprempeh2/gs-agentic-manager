@@ -1,3 +1,4 @@
+import { useConfirm } from "@/context/ConfirmContext";
 import {
   useCallback,
   useEffect,
@@ -654,6 +655,7 @@ export function RunnerInspector({
   onOpenChange: (open: boolean) => void;
   onRerunWithTrace?: () => void;
 }) {
+  const confirmAction = useConfirm();
   const [inspection, setInspection] = useState<ProviderTraceInspection | null>(null);
   const [events, setEvents] = useState<HeartbeatRunEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -896,7 +898,7 @@ export function RunnerInspector({
     if (requestedAccess?.runId !== runId || requestedAccess.allowed !== true) {
       return;
     }
-    if (!window.confirm("This exact provider frame may contain prompts, tool arguments, secrets, or reasoning. Reveal it now?")) return;
+    if (!(await confirmAction({ title: "Reveal this provider frame?", description: "The exact frame may contain prompts, tool arguments, secrets, or reasoning.", confirmLabel: "Reveal" }))) return;
     const requestedRunId = runId;
     const frame = await heartbeatsApi.revealProviderTraceFrame(
       requestedRunId,
@@ -922,7 +924,7 @@ export function RunnerInspector({
     if (requestedAccess?.runId !== runId || requestedAccess.allowed !== true) {
       return;
     }
-    if (!window.confirm("Download the exact raw trace? It may contain sensitive prompts, tool arguments, and provider-only fields.")) return;
+    if (!(await confirmAction({ title: "Download the exact raw trace?", description: "It may contain sensitive prompts, tool arguments, and provider-only fields.", confirmLabel: "Download" }))) return;
     const blob = await heartbeatsApi.downloadProviderTrace(runId);
     const currentAccess = rawTraceAccessRef.current;
     if (
@@ -941,7 +943,7 @@ export function RunnerInspector({
     if (currentAccess?.runId !== runId || currentAccess.allowed !== true) {
       return;
     }
-    if (!window.confirm("Delete this raw trace immediately? This cannot be undone.")) return;
+    if (!(await confirmAction({ title: "Delete this raw trace now?", description: "This cannot be undone.", confirmLabel: "Delete trace", tone: "destructive" }))) return;
     rawTraceAccessEpochRef.current += 1;
     const deletionAccess: RawTraceAccess = {
       ...currentAccess,

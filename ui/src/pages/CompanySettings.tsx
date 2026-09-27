@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useState } from "react";
+import { useConfirm } from "@/context/ConfirmContext";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -39,6 +40,7 @@ export function CompanySettings() {
   } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const confirmAction = useConfirm();
   const navigate = useNavigate();
   const toastActions = useOptionalToastActions();
   const cloud = useCloudInstance();
@@ -388,11 +390,14 @@ export function CompanySettings() {
                 archiveMutation.isPending ||
                 selectedCompany.status === "archived"
               }
-              onClick={() => {
+              onClick={async () => {
                 if (!selectedCompanyId) return;
-                const confirmed = window.confirm(
-                  `Archive organization "${selectedCompany.name}"? It will be hidden from the sidebar.`
-                );
+                const confirmed = await confirmAction({
+                  title: `Archive "${selectedCompany.name}"?`,
+                  description: "The organization will be hidden from the sidebar.",
+                  confirmLabel: "Archive",
+                  tone: "destructive",
+                });
                 if (!confirmed) return;
                 archiveMutation.mutate({ companyId: selectedCompanyId });
               }}

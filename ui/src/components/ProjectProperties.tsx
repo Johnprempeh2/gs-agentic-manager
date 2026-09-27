@@ -1,4 +1,5 @@
 import { useWorkspaceIsolationControls } from "@/hooks/useWorkspaceIsolationControls";
+import { useConfirm } from "@/context/ConfirmContext";
 import { useState, type ReactNode } from "react";
 import { environmentDisplayLabel, filterManagedSandboxSelectableEnvironments } from "@/lib/managed-sandbox-environment";
 import { Link } from "@/lib/router";
@@ -206,6 +207,7 @@ export function ProjectProperties({ project, repositories, onUpdate, onFieldUpda
   const { visible: workspaceIsolationControlsVisible } = useWorkspaceIsolationControls();
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
+  const confirmAction = useConfirm();
   const [executionWorkspaceAdvancedOpen, setExecutionWorkspaceAdvancedOpen] = useState(false);
   const [workspaceMode, setWorkspaceMode] = useState<"local" | null>(null);
   const [workspaceCwd, setWorkspaceCwd] = useState("");
@@ -404,12 +406,12 @@ export function ProjectProperties({ project, repositories, onUpdate, onFieldUpda
     persistCodebase({ cwd });
   };
 
-  const clearLocalWorkspace = () => {
-    const confirmed = window.confirm(
-      codebase.repoUrl
-        ? "Clear local folder from this workspace?"
-        : "Delete this workspace local folder?",
-    );
+  const clearLocalWorkspace = async () => {
+    const confirmed = await confirmAction({
+      title: codebase.repoUrl ? "Clear the local folder from this workspace?" : "Delete this workspace's local folder?",
+      confirmLabel: codebase.repoUrl ? "Clear folder" : "Delete folder",
+      tone: "destructive",
+    });
     if (!confirmed) return;
     persistCodebase({ cwd: null });
   };

@@ -1,3 +1,4 @@
+import { useConfirm } from "@/context/ConfirmContext";
 import {
   useCallback,
   useEffect,
@@ -257,6 +258,12 @@ function createEnvironmentFormFromEnvironment(environment: Environment): Environ
 }
 
 const DISCARD_ENVIRONMENT_CHANGES_MESSAGE = "Discard unsaved environment changes?";
+const DISCARD_ENVIRONMENT_CHANGES_OPTIONS = {
+  title: DISCARD_ENVIRONMENT_CHANGES_MESSAGE,
+  description: "Your environment changes have not been saved.",
+  confirmLabel: "Discard changes",
+  tone: "destructive",
+} as const;
 
 function stableJsonStringify(value: unknown): string {
   if (Array.isArray(value)) {
@@ -864,6 +871,7 @@ function EnvironmentImageTemplatePanel({
   providerCapability: EnvironmentProviderCapability | null | undefined;
   providerDisplayName: string;
 }) {
+  const confirmAction = useConfirm();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const state = capabilityState(providerCapability);
@@ -1011,7 +1019,7 @@ function EnvironmentImageTemplatePanel({
         if (error instanceof ApiError && error.status === 409) {
           const conflict = (error.body as { details?: EnvironmentCustomImageRelinkConflict } | null)?.details;
           const warning = conflict ? relinkDriftWarning(conflict) : error.message;
-          if (!window.confirm(`${warning}\n\nRelink this image anyway?`)) {
+          if (!(await confirmAction({ title: "Relink this image anyway?", description: warning, confirmLabel: "Relink image" }))) {
             throw new RelinkConfirmationDeclined();
           }
           return await environmentsApi.relinkCustomImageTemplate(environment.id, companyId, {
@@ -1298,6 +1306,9 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
+  const confirmAction = useConfirm();
+  // Set for the one re-dispatched click after the discard dialog is confirmed.
+  const discardNavigationBypassRef = useRef(false);
   const isEnvironmentFormPage = mode === "create" || mode === "edit";
   const editingEnvironmentId = mode === "edit" ? routeEnvironmentId ?? null : null;
   const [environmentForm, setEnvironmentForm] = useState<EnvironmentFormState>(createEmptyEnvironmentForm);
@@ -1710,12 +1721,8 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
     selectedCompanyId,
   ]);
 
-  function confirmDiscardEnvironmentChanges() {
-    return (
-      !environmentHasUnsavedChanges ||
-      typeof window === "undefined" ||
-      window.confirm(DISCARD_ENVIRONMENT_CHANGES_MESSAGE)
-    );
+  async function confirmDiscardEnvironmentChanges() {
+    return !environmentHasUnsavedChanges || confirmAction(DISCARD_ENVIRONMENT_CHANGES_OPTIONS);
   }
 
   // The form page is routed, so leaving it (tab close, reload, or an in-app
@@ -1756,9 +1763,20 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
         return;
       }
 
-      if (window.confirm(DISCARD_ENVIRONMENT_CHANGES_MESSAGE)) return;
+      // The branded dialog cannot block, so hold the navigation, ask, and on
+      // confirm replay the same click with a one-time bypass.
+      if (discardNavigationBypassRef.current) return;
       event.preventDefault();
       event.stopPropagation();
+      void confirmAction(DISCARD_ENVIRONMENT_CHANGES_OPTIONS).then((confirmed) => {
+        if (!confirmed) return;
+        discardNavigationBypassRef.current = true;
+        try {
+          anchor.click();
+        } finally {
+          discardNavigationBypassRef.current = false;
+        }
+      });
     }
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -1767,11 +1785,11 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
       window.removeEventListener("beforeunload", handleBeforeUnload);
       document.removeEventListener("click", handleDocumentClick, true);
     };
-  }, [environmentHasUnsavedChanges]);
+  }, [confirmAction, environmentHasUnsavedChanges]);
 
-  function closeEnvironmentForm() {
+  async function closeEnvironmentForm() {
     if (environmentMutation.isPending) return;
-    if (!confirmDiscardEnvironmentChanges()) return;
+    if (!(await confirmDiscardEnvironmentChanges())) return;
     initializedFormKeyRef.current = null;
     setEnvironmentForm(createEmptyEnvironmentForm());
     setEnvironmentFormBaselineKey(null);

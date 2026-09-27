@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { createElement, type ReactNode } from "react";
+import { act, createElement, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -424,11 +424,15 @@ describe("RunnerInspector", () => {
     expect(revealMock).toHaveBeenCalledWith("run-1", 1);
     expect(downloadMock).toHaveBeenCalledWith("run-1");
 
-    flushSync(() =>
+    // The confirmation resolves asynchronously before the delete is sent and
+    // the privileged controls are withdrawn, so flush inside act.
+    await act(async () => {
       buttons()
         .find((button) => button.textContent?.includes("Delete trace"))
-        ?.click(),
-    );
+        ?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(deleteMock).toHaveBeenCalledWith("run-1");
     expect(container.textContent).not.toContain("Reveal exact frame");
     expect(container.textContent).not.toContain("Download exact trace");

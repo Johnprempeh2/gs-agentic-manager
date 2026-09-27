@@ -1,3 +1,5 @@
+import { useConfirm } from "@/context/ConfirmContext";
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { DispositionRecoveryNotice } from "../components/DispositionRecoveryNotice";
 import { SetupPrompt } from "./apps/chat/SetupPrompt";
 import { MediaArtifactCard } from "@/components/artifacts/MediaArtifactCard";
@@ -453,6 +455,8 @@ function AgentChatPickerExample() {
 }
 
 export function DesignGuide() {
+  const toastActions = useOptionalToastActions();
+  const confirmAction = useConfirm();
   const [wizardStep, setWizardStep] = useState(0);
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("medium");
@@ -601,6 +605,32 @@ export function DesignGuide() {
             <BrandTideHero />
           </div>
           <DashboardHero companyName="Northwind Labs" />
+        </SubSection>
+        <SubSection title="Confirmations">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            useConfirm() replaces window.confirm: the glass alert dialog, the stone for an
+            ordinary ask, a coral warning for a destructive one.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const ok = await confirmAction({ title: "Duplicate Chief of Staff?", description: "The copy will be named Chief of Staff 2.", confirmLabel: "Duplicate" });
+                toastActions?.pushToast({ title: ok ? "Confirmed" : "Cancelled", tone: "info" });
+              }}
+            >
+              Ordinary confirm
+            </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const ok = await confirmAction({ title: "Discard unsaved agent configuration changes?", description: "Your agent configuration changes have not been saved.", confirmLabel: "Discard changes", tone: "destructive" });
+                toastActions?.pushToast({ title: ok ? "Discarded" : "Kept", tone: "info" });
+              }}
+            >
+              Destructive confirm
+            </Button>
+          </div>
         </SubSection>
         <SubSection title="Empty state with the stone">
           <EmptyState icon={BrandStoneIcon} message="Inbox zero." />
@@ -880,7 +910,7 @@ export function DesignGuide() {
             <IssueReferencePill issue={{ id: "demo-2", identifier: "PAP-456", title: "With in_progress status", status: "in_progress" }} />
             <IssueReferencePill issue={{ id: "demo-3", identifier: "PAP-789", title: "Done status", status: "done" }} />
             <IssueReferencePill issue={{ id: "demo-4", identifier: "PAP-101", title: "Blocked status", status: "blocked" }} />
-            <IssueReferencePill onRemove={() => window.alert("Blocker removed")} issue={{ id: "demo-blocker", identifier: "PAP-303", title: "Hover or focus to remove blocker", status: "in_review" }} />
+            <IssueReferencePill onRemove={() => toastActions?.pushToast({ title: "Blocker removed", tone: "info" })} issue={{ id: "demo-blocker", identifier: "PAP-303", title: "Hover or focus to remove blocker", status: "in_review" }} />
             <IssueReferencePill strikethrough issue={{ id: "demo-5", identifier: "PAP-202", title: "Removed (strikethrough)", status: "todo" }} />
           </div>
         </SubSection>

@@ -1,4 +1,5 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { useConfirm } from "@/context/ConfirmContext";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,6 +25,7 @@ export function ApprovalDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const confirmAction = useConfirm();
   const [commentBody, setCommentBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showRawPayload, setShowRawPayload] = useState(false);
@@ -312,8 +314,8 @@ export function ApprovalDetail() {
               size="sm"
               variant="outline"
               className="text-destructive border-destructive/40"
-              onClick={() => {
-                if (!window.confirm("Delete this disapproved agent? This cannot be undone.")) return;
+              onClick={async () => {
+                if (!(await confirmAction({ title: "Delete this disapproved agent?", description: "This cannot be undone.", confirmLabel: "Delete agent", tone: "destructive" }))) return;
                 deleteAgentMutation.mutate(linkedAgentId);
               }}
               disabled={deleteAgentMutation.isPending}

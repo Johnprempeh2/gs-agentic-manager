@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useConfirm } from "@/context/ConfirmContext";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -340,6 +341,7 @@ export function ImportFromVaultDialog({
 }: ImportFromVaultDialogProps) {
   const queryClient = useQueryClient();
   const toast = useToastActions();
+  const confirmAction = useConfirm();
   const awsVaults = useMemo(() => awsVaultOptions(providerConfigs), [providerConfigs]);
   const eligible = useMemo(() => eligibleVaults(providerConfigs), [providerConfigs]);
   const noEligibleVaults = eligible.length === 0;
@@ -610,12 +612,14 @@ export function ImportFromVaultDialog({
     });
   }
 
-  function handleClose(force = false) {
+  async function handleClose(force = false) {
     if (importMutation.isPending) return;
     if (!force && step !== "result" && selection.size > 0 && !importResult) {
-      const ok = window.confirm(
-        `Discard ${selection.size} pending import${selection.size === 1 ? "" : "s"}?`,
-      );
+      const ok = await confirmAction({
+        title: `Discard ${selection.size} pending import${selection.size === 1 ? "" : "s"}?`,
+        confirmLabel: "Discard",
+        tone: "destructive",
+      });
       if (!ok) return;
     }
     onOpenChange(false);

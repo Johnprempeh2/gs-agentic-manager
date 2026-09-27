@@ -1,3 +1,4 @@
+import { useConfirm } from "@/context/ConfirmContext";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@/lib/router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -192,8 +193,11 @@ export function AgentActionButtons({
   canRunWithProviderTrace?: boolean;
   /** Whether the caller currently has an unsaved draft that navigation would discard. */
   hasPendingNavigationChanges?: boolean;
-  /** Return false to stop an action whose success would navigate away. */
-  onBeforeNavigate?: () => boolean;
+  /**
+   * Return (or resolve) false to stop an action whose success would navigate
+   * away. May ask the user first, so it can return a promise.
+   */
+  onBeforeNavigate?: () => boolean | Promise<boolean>;
   /**
    * When set, pausing prompts a confirmation dialog first (e.g. for built-in
    * agents that power a feature). Omit for the immediate-pause default.
@@ -217,6 +221,7 @@ export function AgentActionButtons({
   const queryClient = useQueryClient();
   const { openNewIssue } = useDialogActions();
   const { pushToast } = useToastActions();
+  const confirmAction = useConfirm();
   const [moreOpen, setMoreOpen] = useState(false);
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
   const pendingNavigationChangesRef = useRef(hasPendingNavigationChanges);
@@ -226,16 +231,16 @@ export function AgentActionButtons({
   pendingNavigationChangesRef.current = hasPendingNavigationChanges;
   beforeNavigateRef.current = onBeforeNavigate;
 
-  function confirmNavigationStart(startedDirtyRef: React.MutableRefObject<boolean>) {
+  async function confirmNavigationStart(startedDirtyRef: React.MutableRefObject<boolean>) {
     startedDirtyRef.current = pendingNavigationChangesRef.current;
-    return beforeNavigateRef.current?.() !== false;
+    return (await beforeNavigateRef.current?.()) !== false;
   }
 
-  function confirmLateNavigationChanges(startedDirtyRef: React.MutableRefObject<boolean>) {
+  async function confirmLateNavigationChanges(startedDirtyRef: React.MutableRefObject<boolean>) {
     return (
       !pendingNavigationChangesRef.current ||
       startedDirtyRef.current ||
-      beforeNavigateRef.current?.() !== false
+      (await beforeNavigateRef.current?.()) !== false
     );
   }
 
@@ -278,15 +283,15 @@ export function AgentActionButtons({
         case "terminate": return agentsApi.terminate(agent.id, resolvedCompanyId ?? undefined);
       }
     },
-    onSuccess: (data, action) => {
+    onSuccess: async (data, action) => {
       onActionError?.(null);
       invalidateAgent();
       if (action === "terminate") {
-        if (!confirmLateNavigationChanges(agentActionStartedDirtyRef)) return;
+        if (!(await confirmLateNavigationChanges(agentActionStartedDirtyRef))) return;
         onTerminateSuccess?.(data as Agent);
       }
       if (action === "invoke" && navigateToRunOnInvoke && data && typeof data === "object" && "id" in data) {
-        if (!confirmLateNavigationChanges(agentActionStartedDirtyRef)) return;
+        if (!(await confirmLateNavigationChanges(agentActionStartedDirtyRef))) return;
         navigate(`/agents/${canonicalAgentRef}/runs/${(data as HeartbeatRun).id}`);
       }
     },
@@ -300,11 +305,11 @@ export function AgentActionButtons({
       agentsApi.invoke(agent.id, resolvedCompanyId ?? undefined, {
         debug: { providerTrace: "raw" },
       }),
-    onSuccess: (run) => {
+    onSuccess: async (run) => {
       onActionError?.(null);
       invalidateAgent();
       if (navigateToRunOnInvoke) {
-        if (!confirmLateNavigationChanges(agentActionStartedDirtyRef)) return;
+        if (!(await confirmLateNavigationChanges(agentActionStartedDirtyRef))) return;
         navigate(`/agents/${canonicalAgentRef}/runs/${run.id}`);
       }
     },
@@ -336,7 +341,7 @@ export function AgentActionButtons({
         await queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
       }
       pushToast({ title: "Agent duplicated", body: createdAgent.name, tone: "success" });
-      if (!confirmLateNavigationChanges(duplicateStartedDirtyRef)) return;
+      if (!(await confirmLateNavigationChanges(duplicateStartedDirtyRef))) return;
       navigate(`/agents/${agentRouteRef(createdAgent)}/dashboard`);
     },
     onError: (err) => {
@@ -346,14 +351,18 @@ export function AgentActionButtons({
     },
   });
 
-  const handleDuplicateAgent = useCallback(() => {
+  const handleDuplicateAgent = useCallback(async () => {
     if (duplicateAgent.isPending) return;
     const nextName = duplicateAgentName(agent.name);
-    const confirmed = window.confirm(`Duplicate ${agent.name} as ${nextName}?`);
     setMoreOpen(false);
-    if (!confirmed || !confirmNavigationStart(duplicateStartedDirtyRef)) return;
+    const confirmed = await confirmAction({
+      title: `Duplicate ${agent.name}?`,
+      description: `The copy will be named ${nextName}.`,
+      confirmLabel: "Duplicate",
+    });
+    if (!confirmed || !(await confirmNavigationStart(duplicateStartedDirtyRef))) return;
     duplicateAgent.mutate();
-  }, [agent.name, duplicateAgent]);
+  }, [agent.name, confirmAction, duplicateAgent]);
 
   const resetTaskSession = useMutation({
     mutationFn: () => agentsApi.resetSession(agent.id, null, resolvedCompanyId ?? undefined),
@@ -401,8 +410,8 @@ export function AgentActionButtons({
         <span className="hidden sm:inline">{assignLabel}</span>
       </Button>
       {showRun && <RunButton
-        onClick={() => {
-          if (navigateToRunOnInvoke && !confirmNavigationStart(agentActionStartedDirtyRef)) return;
+        onClick={async () => {
+          if (navigateToRunOnInvoke && !(await confirmNavigationStart(agentActionStartedDirtyRef))) return;
           agentAction.mutate("invoke");
         }}
         disabled={assignAndRunDisabled}
@@ -413,8 +422,8 @@ export function AgentActionButtons({
         <Button
           variant="outline"
           size={size}
-          onClick={() => {
-            if (navigateToRunOnInvoke && !confirmNavigationStart(agentActionStartedDirtyRef)) return;
+          onClick={async () => {
+            if (navigateToRunOnInvoke && !(await confirmNavigationStart(agentActionStartedDirtyRef))) return;
             providerTraceAction.mutate();
           }}
           disabled={assignAndRunDisabled}
@@ -507,9 +516,9 @@ export function AgentActionButtons({
           {!hideTerminate && (
             <button
               className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
-              onClick={() => {
+              onClick={async () => {
                 setMoreOpen(false);
-                if (onTerminateSuccess && !confirmNavigationStart(agentActionStartedDirtyRef)) return;
+                if (onTerminateSuccess && !(await confirmNavigationStart(agentActionStartedDirtyRef))) return;
                 agentAction.mutate("terminate");
               }}
             >
