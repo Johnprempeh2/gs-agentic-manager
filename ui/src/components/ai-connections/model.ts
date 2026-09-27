@@ -124,12 +124,21 @@ export function bindingProblem(
  * Plain wording for how long a stored credential lasts. An imported Claude
  * login is a short-lived access token; `claude setup-token` lasts about a year.
  * Returns null when there is nothing to say (API keys, non-Claude logins).
+ * A Claude subscription saved before credential records existed has no record,
+ * so nothing can warn before its token stops; say so and how to fix it.
  */
 export function describeAiCredentialLifetime(
   credential: AiCredentialInfo | undefined,
   now = new Date(),
+  connection?: { provider: AiProvider; method: AiAuthMethod },
 ): { tone: "muted" | "warning" | "danger"; text: string } | null {
-  if (!credential) return null;
+  if (!credential) {
+    if (connection?.provider !== "anthropic" || connection.method !== "subscription") return null;
+    return {
+      tone: "warning",
+      text: "Token expiry unknown: this connection was saved before expiry tracking, so you will not be warned before it stops. Reconnect to track it. claude setup-token gives a token that lasts about a year.",
+    };
+  }
   if (credential.source === "setup_token")
     return { tone: "muted", text: "Long-lived token from claude setup-token. It lasts about a year." };
   if (credential.source !== "imported_login") return null;

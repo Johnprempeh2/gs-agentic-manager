@@ -1,11 +1,16 @@
 import { TriangleAlert } from "lucide-react";
-import type { AiCredentialInfo } from "@greatstone/shared";
+import type { AiAuthMethod, AiCredentialInfo, AiProvider } from "@greatstone/shared";
 import { cn } from "@/lib/utils";
 import { describeAiCredentialLifetime } from "./model";
 
 /** How long the connected token lasts, shown at connect time and on the connection. */
-export function AiCredentialLifetime({ credential, className }: { credential?: AiCredentialInfo; className?: string }) {
-  const lifetime = describeAiCredentialLifetime(credential);
+export function AiCredentialLifetime({ credential, connection, className }: {
+  credential?: AiCredentialInfo;
+  /** Pass for a saved connection, so one with no credential record still gets a line. */
+  connection?: { provider: AiProvider; method: AiAuthMethod };
+  className?: string;
+}) {
+  const lifetime = describeAiCredentialLifetime(credential, undefined, connection);
   if (!lifetime) return null;
   return (
     <p
