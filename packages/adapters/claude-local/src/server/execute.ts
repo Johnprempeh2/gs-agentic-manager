@@ -92,7 +92,12 @@ import { resolveClaudeDesiredSkillNames } from "./skills.js";
 import { isBedrockModelId } from "./models.js";
 import { prepareClaudePromptBundle } from "./prompt-cache.js";
 import { buildClaudeExecutionPermissionArgs, claudeSandboxPermissionEnv } from "./permissions.js";
-import { resolveClaudeModel, SANDBOX_INSTALL_COMMAND } from "../index.js";
+import {
+  FALLBACK_CLAUDE_LOCAL_MODEL,
+  isImplicitClaudeDefaultModel,
+  resolveClaudeModel,
+  SANDBOX_INSTALL_COMMAND,
+} from "../index.js";
 import {
   createClaudeAcpExecutor,
   resolveClaudeExecutionEngineForRun,
@@ -488,7 +493,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ),
   );
   const modelEnv = executionTargetIsRemote ? env : effectiveEnv;
-  const model = resolveClaudeModel(config.model, modelEnv);
+  let model = resolveClaudeModel(config.model, modelEnv);
+  const modelIsImplicitDefault = isImplicitClaudeDefaultModel(config.model, modelEnv);
   const billingType = resolveClaudeBillingType(effectiveEnv);
   const claudeSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredSkillNames = new Set(resolveClaudeDesiredSkillNames(config, claudeSkillEntries));
@@ -1273,10 +1279,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         timeoutSec,
         graceSec,
       });
-      if (
-        !detectedCliVersion ||
-        !claudeCliVersionAtLeast(detectedCliVersion, minimumCliVersion)
-      ) {
+      const cliTooOld = !detectedCliVersion || !claudeCliVersionAtLeast(detectedCliVersion, minimumCliVersion);
+      if (cliTooOld && modelIsImplicitDefault) {
+        // Nobody chose this model: run on the previous default rather than
+        // failing an agent over a Claude Code upgrade it never asked for.
+        await onLog(
+          "stderr",
+          `[paperclip] Default model ${model} needs Claude Code ${minimumCliVersion} or newer (${detectedCliVersion ? `detected ${detectedCliVersion}` : "version unknown"}); using ${FALLBACK_CLAUDE_LOCAL_MODEL} for this run. Upgrade Claude Code to use ${model}.\n`,
+        );
+        model = FALLBACK_CLAUDE_LOCAL_MODEL;
+      } else if (cliTooOld) {
         const detected = detectedCliVersion
           ? `detected ${detectedCliVersion}`
           : "could not determine the installed version";

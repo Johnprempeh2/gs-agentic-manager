@@ -34,7 +34,12 @@ import {
 import { isBedrockModelId } from "./models.js";
 import { buildClaudeProbePermissionArgs, claudeSandboxPermissionEnv } from "./permissions.js";
 import { prepareSandboxClaudeProbeRuntime } from "./claude-config.js";
-import { resolveClaudeModel, SANDBOX_INSTALL_COMMAND } from "../index.js";
+import {
+  FALLBACK_CLAUDE_LOCAL_MODEL,
+  isImplicitClaudeDefaultModel,
+  resolveClaudeModel,
+  SANDBOX_INSTALL_COMMAND,
+} from "../index.js";
 import { resolveClaudeExecutionEngineForRun, testClaudeAcpEnvironment } from "./acp.js";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./auth-check.js";
 import {
@@ -244,7 +249,9 @@ export async function testEnvironment(
         check.code !== "claude_managed_config_dir_failed",
     );
   let configuredModelIsCompatible = true;
-  const configuredModel = resolveClaudeModel(config.model, considerHostEnv ? { ...process.env, ...env } : env);
+  const modelEnvForProbe = considerHostEnv ? { ...process.env, ...env } : env;
+  let configuredModel = resolveClaudeModel(config.model, modelEnvForProbe);
+  const configuredModelIsImplicitDefault = isImplicitClaudeDefaultModel(config.model, modelEnvForProbe);
   const minimumCliVersion =
     claudeCommandLooksLike(command, "claude") &&
     (!hasBedrock || isBedrockModelId(configuredModel))
@@ -256,6 +263,17 @@ export async function testEnvironment(
     localRuntimeCommand,
   );
   if (
+    canRunProbe &&
+    minimumCliVersion &&
+    versionProbeCommand &&
+    !versionProbeMatchesRuntime &&
+    configuredModelIsImplicitDefault
+  ) {
+    // The runtime executable cannot be version-checked here, but execution
+    // checks it before launch and falls back for an unchosen default, so the
+    // login probe still runs, on the model every Claude Code accepts.
+    configuredModel = FALLBACK_CLAUDE_LOCAL_MODEL;
+  } else if (
     canRunProbe &&
     minimumCliVersion &&
     versionProbeCommand &&
@@ -281,10 +299,21 @@ export async function testEnvironment(
       timeoutSec: 45,
       graceSec: 5,
     });
-    if (
-      !detectedCliVersion ||
-      !claudeCliVersionAtLeast(detectedCliVersion, minimumCliVersion)
-    ) {
+    const cliTooOld = !detectedCliVersion || !claudeCliVersionAtLeast(detectedCliVersion, minimumCliVersion);
+    if (cliTooOld && configuredModelIsImplicitDefault) {
+      // Mirrors execute: an agent that never chose a model runs on the
+      // previous default, so this is advice, not a blocker.
+      checks.push({
+        code: "claude_cli_default_model_fallback",
+        level: "warn",
+        message: `The default model ${configuredModel} needs Claude Code ${minimumCliVersion} or newer; runs will use ${FALLBACK_CLAUDE_LOCAL_MODEL} until Claude Code is upgraded.`,
+        detail: detectedCliVersion
+          ? `Detected Claude Code ${detectedCliVersion}.`
+          : "Could not determine the installed Claude Code version.",
+        hint: `Upgrade Claude Code to run on ${configuredModel}.`,
+      });
+      configuredModel = FALLBACK_CLAUDE_LOCAL_MODEL;
+    } else if (cliTooOld) {
       configuredModelIsCompatible = false;
       checks.push({
         code: "claude_cli_version_incompatible",

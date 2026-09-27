@@ -1,4 +1,20 @@
-export const DEFAULT_CLAUDE_LOCAL_MODEL = "claude-opus-5";
+export const DEFAULT_CLAUDE_LOCAL_MODEL = "claude-opus-5-5";
+/**
+ * The previous default. The CLI lane runs whatever Claude Code the operator
+ * installed, so when the default model needs a newer CLI than the one found,
+ * an agent that never chose a model runs on this instead of failing.
+ */
+export const FALLBACK_CLAUDE_LOCAL_MODEL = "claude-opus-5";
+
+/** True when no model was chosen in config or ANTHROPIC_MODEL, so the default applies. */
+export function isImplicitClaudeDefaultModel(
+  model: unknown,
+  env: Record<string, unknown> = {},
+): boolean {
+  const configured = typeof model === "string" ? model.trim() : "";
+  const environmentModel = typeof env.ANTHROPIC_MODEL === "string" ? env.ANTHROPIC_MODEL.trim() : "";
+  return !configured && !environmentModel && resolveClaudeModel(model, env) === DEFAULT_CLAUDE_LOCAL_MODEL;
+}
 
 /** Resolve GS Agentic Manager's default without replacing an explicit provider model. */
 export function resolveClaudeModel(
@@ -59,7 +75,7 @@ Core fields:
 - engine (string, optional): defaults to ACP, including legacy unset/"auto" values. Missing prerequisites and execution failures fail the run without changing engines. Set "cli" to explicitly select the CLI engine.
 - cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
 - instructionsFilePath (string, optional): absolute path to a markdown instructions file injected at runtime
-- model (string, optional): Claude model id. Missing or blank defaults to ${DEFAULT_CLAUDE_LOCAL_MODEL} in both CLI and ACP, including existing agents. Explicit model IDs and ANTHROPIC_MODEL overrides are preserved. Bedrock/Vertex without an explicit model retain their provider default.
+- model (string, optional): Claude model id. Missing or blank defaults to ${DEFAULT_CLAUDE_LOCAL_MODEL} in both CLI and ACP, including existing agents. On the CLI lane, an unset model falls back to ${FALLBACK_CLAUDE_LOCAL_MODEL} when the installed Claude Code is too old for the default. Explicit model IDs and ANTHROPIC_MODEL overrides are preserved. Bedrock/Vertex without an explicit model retain their provider default.
 - effort (string, optional): model-specific reasoning effort passed via --effort (low|medium|high; current Opus, Sonnet 5, and Fable models also support xhigh|max)
 - chrome (boolean, optional): pass --chrome when running Claude
 - promptTemplate (string, optional): run prompt template

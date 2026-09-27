@@ -19,6 +19,7 @@ async function writeFailingClaudeCommand(
   const payload = JSON.stringify(options.resultEvent);
   const exit = options.exitCode ?? 1;
   const script = `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("2.1.283 (Claude Code)"); process.exit(0); }
 console.log(${JSON.stringify(payload)});
 process.exit(${exit});
 `;
@@ -32,6 +33,7 @@ async function writeTextFailingClaudeCommand(
 ): Promise<void> {
   const exit = options.exitCode ?? 1;
   const script = `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("2.1.283 (Claude Code)"); process.exit(0); }
 if (${JSON.stringify(options.stdout ?? "")}) {
   process.stdout.write(${JSON.stringify(options.stdout ?? "")});
 }
@@ -46,6 +48,7 @@ process.exit(${exit});
 
 async function writeFakeClaudeCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("2.1.283 (Claude Code)"); process.exit(0); }
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -87,6 +90,7 @@ console.log(JSON.stringify({ type: "result", session_id: "11111111-1111-4111-811
 
 async function writeHelpWithoutEffortClaudeCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("2.1.283 (Claude Code)"); process.exit(0); }
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -125,6 +129,7 @@ console.log(JSON.stringify({ type: "result", session_id: "33333333-3333-4333-833
 
 async function writeHelpWithEffortClaudeCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("2.1.283 (Claude Code)"); process.exit(0); }
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -184,6 +189,7 @@ afterEach(() => {
 
 async function writePoisonedMessageIdClaudeCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("2.1.283 (Claude Code)"); process.exit(0); }
 const fs = require("node:fs");
 
 const capturePath = process.env.GSAM_TEST_CAPTURE_PATH;
@@ -220,6 +226,7 @@ console.log(JSON.stringify({ type: "result", session_id: "bbbbbbbb-bbbb-4bbb-8bb
 
 async function writeAlwaysPoisonedMessageIdClaudeCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("2.1.283 (Claude Code)"); process.exit(0); }
 const fs = require("node:fs");
 
 const capturePath = process.env.GSAM_TEST_CAPTURE_PATH;
@@ -250,6 +257,7 @@ process.exit(1);
 
 async function writeRetryThenSucceedClaudeCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("2.1.283 (Claude Code)"); process.exit(0); }
 const fs = require("node:fs");
 
 const capturePath = process.env.GSAM_TEST_CAPTURE_PATH;
@@ -352,9 +360,9 @@ function createLocalSandboxRunner() {
 
 describe("claude execute", () => {
   it.each([
-    [undefined, "claude-opus-5"],
-    ["", "claude-opus-5"],
-    ["  ", "claude-opus-5"],
+    [undefined, "claude-opus-5-5"],
+    ["", "claude-opus-5-5"],
+    ["  ", "claude-opus-5-5"],
     ["claude-sonnet-4-5", "claude-sonnet-4-5"],
   ])("passes the resolved model to the CLI for %j", async (model, expected) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-claude-default-"));

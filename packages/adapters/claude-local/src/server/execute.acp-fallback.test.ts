@@ -107,7 +107,11 @@ describe("claude_local ACP startup fallback", () => {
 
     await execute(ctx as never);
 
-    expect(runAdapterExecutionTargetProcess).toHaveBeenCalledTimes(1);
+    // A `--version` probe for the default model's minimum Claude Code precedes the run.
+    const runCalls = runAdapterExecutionTargetProcess.mock.calls.filter(
+      (call) => !((call as unknown[])[3] as string[]).includes("--version"),
+    );
+    expect(runCalls).toHaveLength(1);
     expect(runAdapterExecutionTargetProcess).toHaveBeenCalledWith(
       expect.any(String),
       null,

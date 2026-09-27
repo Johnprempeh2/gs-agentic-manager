@@ -29,7 +29,7 @@ subscription quota exhaustion merely because ACP labels them `limit`.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `cwd` | string | Yes | Working directory for the agent process (absolute path; created automatically if missing when permissions allow) |
-| `model` | string | No | Claude model to use (default: `claude-opus-5`) |
+| `model` | string | No | Claude model to use (default: `claude-opus-5-5`) |
 | `promptTemplate` | string | No | Prompt used for all runs |
 | `env` | object | No | Environment variables (supports secret refs) |
 | `timeoutSec` | number | No | Process timeout (0 = no timeout) |
@@ -39,11 +39,17 @@ subscription quota exhaustion merely because ACP labels them `limit`.
 
 ## Default model
 
-An omitted, empty, or whitespace-only `model` uses Claude Opus 5
-(`claude-opus-5`) on both the CLI and ACP engines. This also applies to existing
+An omitted, empty, or whitespace-only `model` uses Claude Opus 5.5
+(`claude-opus-5-5`) on both the CLI and ACP engines. This also applies to existing
 agents with an unset model, including agents created through the API and agents
 running in sandboxes. No database migration is needed. The editor shows the
 GS Agentic Manager default and leaves the setting unset until you select a model.
+
+Opus 5.5 needs Claude Code 2.1.280 or newer. The ACP engine bundles a
+compatible runtime. The CLI engine runs the Claude Code you installed, so when
+that is older and the agent never chose a model, the run uses Claude Opus 5
+(`claude-opus-5`) and logs why. An agent that explicitly selects Opus 5.5 still
+fails on an older CLI, with an upgrade message.
 
 An explicit `model` takes precedence over `ANTHROPIC_MODEL`. When only
 `ANTHROPIC_MODEL` is configured, the adapter keeps that override. Bedrock and

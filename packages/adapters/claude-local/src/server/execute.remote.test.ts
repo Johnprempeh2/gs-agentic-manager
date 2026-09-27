@@ -80,6 +80,12 @@ vi.mock("@greatstone/adapter-utils/execution-target", async () => {
 import { execute } from "./execute.js";
 import { resetClaudeCliCapabilitiesCacheForTests } from "./cli-capabilities.js";
 
+// The default model needs a minimum Claude Code version, so a `--version`
+// probe precedes the run itself; assertions here are about the run.
+function claudeRunCalls() {
+  return runChildProcess.mock.calls.filter((call) => !(call[2] as string[]).includes("--version"));
+}
+
 describe("claude remote execution", () => {
   const cleanupDirs: string[] = [];
 
@@ -188,11 +194,11 @@ describe("claude remote execution", () => {
       remoteDir: `${managedRemoteWorkspace}/.paperclip-runtime/claude/mcp-config`,
       followSymlinks: true,
     }));
-    expect(runChildProcess).toHaveBeenCalledTimes(1);
-    const call = runChildProcess.mock.calls[0] as unknown as
+    expect(claudeRunCalls()).toHaveLength(1);
+    const call = claudeRunCalls()[0] as unknown as
       | [string, string, string[], { env: Record<string, string>; remoteExecution?: { remoteCwd: string } | null }]
       | undefined;
-    expect(call?.[2]).toEqual(expect.arrayContaining(["--model", "claude-opus-5"]));
+    expect(call?.[2]).toEqual(expect.arrayContaining(["--model", "claude-opus-5-5"]));
     expect(call?.[2]).toContain("--dangerously-skip-permissions");
     expect(call?.[2]).not.toContain("--allowedTools");
     expect(call?.[2]).toContain("--append-system-prompt-file");
@@ -279,8 +285,8 @@ describe("claude remote execution", () => {
       onLog: async () => {},
     });
 
-    expect(runChildProcess).toHaveBeenCalledTimes(1);
-    const call = runChildProcess.mock.calls[0] as unknown as [string, string, string[]] | undefined;
+    expect(claudeRunCalls()).toHaveLength(1);
+    const call = claudeRunCalls()[0] as unknown as [string, string, string[]] | undefined;
     expect(call?.[2]).not.toContain("--resume");
   });
 
@@ -341,10 +347,49 @@ describe("claude remote execution", () => {
       onLog: async () => {},
     });
 
-    expect(runChildProcess).toHaveBeenCalledTimes(1);
-    const call = runChildProcess.mock.calls[0] as unknown as [string, string, string[]] | undefined;
+    expect(claudeRunCalls()).toHaveLength(1);
+    const call = claudeRunCalls()[0] as unknown as [string, string, string[]] | undefined;
     expect(call?.[2]).toContain("--resume");
     expect(call?.[2]).toContain("12345678-1234-4abc-9def-123456789012");
+  });
+
+  it.each([
+    [{}, "2.1.200 (Claude Code)\n", "claude-opus-5", undefined],
+    [{}, "2.1.283 (Claude Code)\n", "claude-opus-5-5", undefined],
+    [{ model: "claude-opus-5-5" }, "2.1.200 (Claude Code)\n", null, "claude_cli_version_incompatible"],
+  ])("resolves config %j on Claude Code %j to %s", async (modelConfig, versionOutput, expectedModel, expectedErrorCode) => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-claude-default-fallback-"));
+    cleanupDirs.push(rootDir);
+    const workspaceDir = path.join(rootDir, "workspace");
+    await mkdir(workspaceDir, { recursive: true });
+    runChildProcess.mockResolvedValueOnce({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stdout: versionOutput,
+      stderr: "",
+      pid: 123,
+      startedAt: new Date().toISOString(),
+    });
+    const logs: string[] = [];
+
+    const result = await execute({
+      runId: "run-default-model-fallback",
+      agent: { id: "agent-1", companyId: "company-1", name: "Claude Coder", adapterType: "claude_local", adapterConfig: {} },
+      runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
+      config: { engine: "cli", command: "claude", ...modelConfig },
+      context: { paperclipWorkspace: { cwd: workspaceDir, source: "project_primary" } },
+      onLog: async (_stream: string, chunk: string) => { logs.push(chunk); },
+    } as never);
+
+    expect(result.errorCode ?? undefined).toBe(expectedErrorCode);
+    const run = claudeRunCalls()[0] as unknown as [string, string, string[]] | undefined;
+    if (expectedModel) {
+      expect(run?.[2]).toEqual(expect.arrayContaining(["--model", expectedModel]));
+    } else {
+      expect(run).toBeUndefined();
+    }
+    expect(logs.some((line) => line.includes("using claude-opus-5 for this run"))).toBe(expectedModel === "claude-opus-5");
   });
 
   it("forwards the duplex_channel_lost transport code on the unparsed Claude result path", async () => {
@@ -357,6 +402,15 @@ describe("claude remote execution", () => {
     // process result, and the CLI stdout has no parsed Claude result. This
     // drives `toAdapterResult` into the unparsed branch, which must forward the
     // transport code rather than drop it to a provider classification.
+    runChildProcess.mockResolvedValueOnce({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stdout: "2.1.280 (Claude Code)\n",
+      stderr: "",
+      pid: 123,
+      startedAt: new Date().toISOString(),
+    });
     runChildProcess.mockResolvedValueOnce({
       exitCode: 1,
       signal: null,

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { claudeLocalReasoningEffortsForModel, DEFAULT_CLAUDE_LOCAL_MODEL, resolveClaudeModel } from "./index.js";
+import {
+  claudeLocalReasoningEffortsForModel,
+  DEFAULT_CLAUDE_LOCAL_MODEL,
+  isImplicitClaudeDefaultModel,
+  resolveClaudeModel,
+} from "./index.js";
 import { minimumClaudeCliVersionForModel } from "./server/cli-capabilities.js";
 
 describe("Claude model defaults", () => {
@@ -16,9 +21,18 @@ describe("Claude model defaults", () => {
     expect(claudeLocalReasoningEffortsForModel("custom-model")).toEqual(["low", "medium", "high"]);
   });
 
-  it.each([undefined, null, "", "  "])("uses Opus 5 for an unset model (%j)", (model) => {
-    expect(DEFAULT_CLAUDE_LOCAL_MODEL).toBe("claude-opus-5");
-    expect(resolveClaudeModel(model)).toBe("claude-opus-5");
+  it.each([undefined, null, "", "  "])("uses Opus 5.5 for an unset model (%j)", (model) => {
+    expect(DEFAULT_CLAUDE_LOCAL_MODEL).toBe("claude-opus-5-5");
+    expect(resolveClaudeModel(model)).toBe("claude-opus-5-5");
+  });
+
+  it("treats only an unchosen model as the implicit default", () => {
+    expect(isImplicitClaudeDefaultModel(undefined)).toBe(true);
+    expect(isImplicitClaudeDefaultModel("  ")).toBe(true);
+    // Explicitly picking the default model is a choice: it must fail loudly on an old CLI.
+    expect(isImplicitClaudeDefaultModel("claude-opus-5-5")).toBe(false);
+    expect(isImplicitClaudeDefaultModel("", { ANTHROPIC_MODEL: "claude-opus-5-5" })).toBe(false);
+    expect(isImplicitClaudeDefaultModel("", { CLAUDE_CODE_USE_BEDROCK: "1" })).toBe(false);
   });
 
   it("keeps explicit model IDs ahead of environment overrides", () => {
