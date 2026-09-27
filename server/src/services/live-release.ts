@@ -16,6 +16,14 @@
 // Rejecting the card does nothing: only an accepted card reaches this file.
 // Every wait has a deadline, and the hold file has an expiry, so a lost
 // launcher or a crashed server cannot hold agent runs forever.
+//
+// Live start record (GRE-50). However live moved (this card or John running
+// greatstone-release.sh by hand), the live server that starts on a new commit
+// records it in live.json (commit, tag, time) and announces it once: an
+// activity entry per company, a wake for each issue waiting for a release, and
+// the withdrawal of "is it released?" cards it now answers. A restart on the
+// same commit does nothing. live.json is written only after the announcement,
+// so a crash in between repeats it at the next start; each step is idempotent.
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -24,17 +32,36 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq, sql } from "drizzle-orm";
 import { heartbeatRuns, type Db } from "@greatstone/db";
+import { LIVE_RELEASE_REF_PATTERN } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { getServerInfoSnapshot } from "../server-info.js";
 import { applyTaskDrain, getTaskDrainStatus, stopTaskDrain } from "./heartbeat.js";
 import { issueService } from "./issues.js";
+import { announceLiveRelease } from "./live-release-announce.js";
 
 export const LIVE_RELEASE_KEY_PREFIX = "live-release:";
 const RC_TAG_RE = /^rc-\d{4}-\d{2}-\d{2}\.\d+$/;
+/** What an agent may ask about: a commit SHA, or an rc-* / live-* tag. */
+export function isReleaseRef(ref: string | null | undefined): ref is string {
+  return typeof ref === "string" && LIVE_RELEASE_REF_PATTERN.test(ref);
+}
+
+/** One live start on a new commit. */
+export interface LiveReleaseEvent {
+  commit: string;
+  /** The live-* tag on the commit, if any. */
+  tag: string | null;
+  startedAt: string;
+  previousCommit: string | null;
+  previousTag: string | null;
+}
 
 export const LIVE_RELEASE_WAIT_FOR_RUNS_MS = 60 * 60 * 1000;
 export const LIVE_RELEASE_SWITCH_MS = 30 * 60 * 1000;
 export const LIVE_RELEASE_TICK_MS = 10 * 1000;
+export const LIVE_RELEASE_RECORD_ATTEMPTS = 3;
+export const LIVE_RELEASE_RECORD_RETRY_MS = 60 * 1000;
 
 export type LiveReleaseOutcome = "released" | "not_released" | "rolled_back" | "rollback_failed";
 
@@ -86,6 +113,12 @@ export interface LiveReleaseDeps {
   /** Starts the launcher; it detaches itself and returns at once. */
   startLauncher(input: { launcher: string; jobDir: string; rcTag: string; releaseRepo: string }): void;
   isProcessAlive(pid: number): boolean;
+  /** The commit this server runs, and its live-* tag. Null when unknown. */
+  readRunningCommit(): { commit: string; tag: string | null } | null;
+  /** Whether `ref` (checked with isReleaseRef) is contained in `commit`; null when git cannot tell. */
+  containsRef(commit: string, ref: string): boolean | null;
+  /** Records and announces a new live commit. Must be safe to repeat. */
+  announce(event: LiveReleaseEvent, isRefLive: (ref: string) => boolean | null): Promise<void>;
 }
 
 export function parseLiveReleaseKey(idempotencyKey: string | null | undefined): string | null {
@@ -159,6 +192,7 @@ export function describeLiveReleaseResult(job: LiveReleaseJob, result: LiveRelea
 export function createLiveReleaseService(deps: LiveReleaseDeps) {
   const jobsDir = path.join(deps.stateDir, "jobs");
   const holdFile = path.join(deps.stateDir, "hold.json");
+  const liveFile = path.join(deps.stateDir, "live.json");
   let queue: Promise<unknown> = Promise.resolve();
   // One step at a time, so an accept and a tick never act on the same job at once.
   const serial = <T>(work: () => Promise<T>): Promise<T> => {
@@ -352,7 +386,46 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     return true;
   };
 
-  return { onConfirmationAccepted, tick, restoreHold, listJobs, holdFile };
+  /** The last live start this server recorded, or null. */
+  const lastLiveStart = () => readJson<LiveReleaseEvent>(liveFile);
+
+  /**
+   * At server start: when this is the live server and it runs a commit
+   * live.json does not have yet, announce it, then record it.
+   */
+  const recordLiveStart = () =>
+    serial(async () => {
+      if (enabledProblem()) return null;
+      const running = deps.readRunningCommit();
+      if (!running) return null;
+      const last = lastLiveStart();
+      if (last?.commit === running.commit) return null;
+      const event: LiveReleaseEvent = {
+        commit: running.commit,
+        tag: running.tag,
+        startedAt: deps.now().toISOString(),
+        previousCommit: last?.commit ?? null,
+        previousTag: last?.tag ?? null,
+      };
+      await deps.announce(event, (ref) => (isReleaseRef(ref) ? deps.containsRef(event.commit, ref) : null));
+      fs.mkdirSync(deps.stateDir, { recursive: true });
+      writeJson(liveFile, event);
+      return event;
+    });
+
+  /** "Is `ref` live?" against the commit this server runs. */
+  const isLive = (ref: string | null) => {
+    const running = deps.readRunningCommit();
+    return {
+      commit: running?.commit ?? null,
+      tag: running?.tag ?? null,
+      lastLiveStart: lastLiveStart(),
+      ref,
+      live: running && ref && isReleaseRef(ref) ? deps.containsRef(running.commit, ref) : null,
+    };
+  };
+
+  return { onConfirmationAccepted, tick, restoreHold, listJobs, holdFile, recordLiveStart, lastLiveStart, isLive };
 }
 
 function serverRepoRoot(): string | null {
@@ -367,15 +440,38 @@ function serverRepoRoot(): string | null {
   }
 }
 
+function git(repo: string | null, args: string[]): string | null {
+  if (!repo) return null;
+  try {
+    return execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10_000 }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/** git merge-base --is-ancestor: true / false, or null when git cannot tell (unknown ref, no repo). */
+function repoContainsRef(repo: string | null, commit: string, ref: string): boolean | null {
+  if (!repo || !isReleaseRef(ref)) return null;
+  const sha = git(repo, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+  if (!sha) return null;
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", sha, commit], { cwd: repo, stdio: "ignore", timeout: 10_000 });
+    return true;
+  } catch (err) {
+    return (err as { status?: number }).status === 1 ? false : null;
+  }
+}
+
 function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseDeps {
   // Same defaults as scripts/greatstone-common.sh.
   const gsamRoot = env.GSAM_ROOT?.trim() || path.join(os.homedir(), "GSAM");
   const liveDir = env.GSAM_LIVE_DIR?.trim() || path.join(gsamRoot, "live");
   const issues = issueService(db);
+  const repoRoot = serverRepoRoot();
   return {
     stateDir: path.join(resolvePaperclipInstanceRoot(), "live-release"),
     liveDir,
-    serverRepoRoot: serverRepoRoot(),
+    serverRepoRoot: repoRoot,
     resolveReleaseRepo: () =>
       env.GSAM_RELEASE_REPO?.trim() || readKeyValueFile(path.join(gsamRoot, "preview", "preview.state"), "source_repo"),
     now: () => new Date(),
@@ -411,6 +507,18 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
         return false;
       }
     },
+    readRunningCommit: () => {
+      // The same commit /api/health reports.
+      const info = getServerInfoSnapshot().git;
+      if (!info.available) return null;
+      const tags = git(repoRoot, ["tag", "--points-at", info.fullSha, "--list", "live-*", "--sort=-creatordate"]);
+      return { commit: info.fullSha, tag: tags?.split("\n")[0]?.trim() || null };
+    },
+    containsRef: (commit, ref) => repoContainsRef(repoRoot, commit, ref),
+    announce: async (event, isRefLive) => {
+      const result = await announceLiveRelease(db, event, isRefLive);
+      logger.info({ commit: event.commit, ...result }, "live release: announced");
+    },
   };
 }
 
@@ -425,8 +533,27 @@ export function liveReleaseService(db: Db) {
 export function startLiveReleaseTicker(db: Db) {
   const svc = liveReleaseService(db);
   if (svc.restoreHold()) logger.info("live release: holding agent runs until the release in progress reports");
+  let recordTimer: NodeJS.Timeout | null = null;
+  const record = (attempt: number) => {
+    svc
+      .recordLiveStart()
+      .then((event) => {
+        if (event) logger.info({ commit: event.commit, tag: event.tag }, "live release: recorded a live start on a new commit");
+      })
+      .catch((err) => {
+        const retry = attempt < LIVE_RELEASE_RECORD_ATTEMPTS;
+        logger.error({ err, attempt }, `live release: failed to record the live start; ${retry ? "retrying" : "it repeats at the next start"}`);
+        if (!retry) return;
+        recordTimer = setTimeout(() => record(attempt + 1), LIVE_RELEASE_RECORD_RETRY_MS);
+        recordTimer.unref?.();
+      });
+  };
+  record(1);
   void svc.tick();
   const timer = setInterval(() => void svc.tick(), LIVE_RELEASE_TICK_MS);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    if (recordTimer) clearTimeout(recordTimer);
+  };
 }

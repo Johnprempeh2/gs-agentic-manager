@@ -528,6 +528,13 @@ export const ISSUE_EXECUTION_MONITOR_KINDS = ["external_service"] as const;
 export type IssueExecutionMonitorKind = (typeof ISSUE_EXECUTION_MONITOR_KINDS)[number];
 
 export const PROVIDER_QUOTA_MONITOR_SERVICE_NAME = "AI provider quota";
+// An issue waits for a release by scheduling a monitor with this serviceName
+// (externalRef: the commit or rc-* tag it needs). When live starts on a
+// commit that contains it, the monitor fires early (GRE-50).
+export const LIVE_RELEASE_MONITOR_SERVICE_NAME = "GSAM live release";
+// A release ref: a commit SHA, or an rc-* / live-* tag. Such a ref is kept (not
+// redacted) as a live-release monitor's externalRef; it holds no secret.
+export const LIVE_RELEASE_REF_PATTERN = /^(?:[0-9a-f]{7,40}|(?:rc|live)-\d{4}-\d{2}-\d{2}\.\d+)$/i;
 
 export const ISSUE_EXECUTION_MONITOR_RECOVERY_POLICIES = [
   "wake_owner",

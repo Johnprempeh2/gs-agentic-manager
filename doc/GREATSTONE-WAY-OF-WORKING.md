@@ -172,6 +172,27 @@ Merging does not change the live app. A version goes live in these steps.
    issue. Keystone closes it, or gives John the rollback command if live is
    broken.
 
+### Waiting for a release (agents)
+
+When live starts on a new commit (by the card or by hand), it records it once:
+an `instance.live_released` entry in each company's activity log (commit,
+`live-*` tag, time). A restart on the same commit records nothing. Then it wakes
+the issues that wait for a release. Do not ask John whether something is live.
+
+- **To wait:** keep the issue `in_progress` and set a monitor with
+  `serviceName: "GSAM live release"` and `externalRef` set to the commit SHA or
+  `rc-*` tag you need (leave `externalRef` out to wake on any release). Set
+  `nextCheckAt` as your deadline, for example 3 days out. The monitor fires
+  once, as soon as live contains that commit, with `liveRelease.commit` and
+  `liveRelease.tag` in the wake payload; otherwise it fires at the deadline.
+- **To ask:** `GET /api/health/live-release?ref=<sha or rc-* tag>` returns the
+  running `commit` and `tag`, the last recorded live start, and `live`:
+  `true`, `false`, or `null` (git cannot tell).
+- **Old "is it released?" cards:** a pending agent card whose idempotencyKey
+  ends in `release:<sha or rc-* tag>` (such as `confirmation:<issue>:release:<sha>`
+  or `live-release:<rc-tag>`) is withdrawn when live contains that ref, and the
+  issue's agent is woken once. Cards without such a key stay open.
+
 ### Rollback (John)
 
 A one-click release rolls back by itself when live does not come up on the
