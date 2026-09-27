@@ -77,7 +77,7 @@ const {
     })),
     reconcileResolvedDependencyWakes: vi.fn(async () => ({ healed: 0 })),
     reconcileTaskWatchdogs: vi.fn(async () => ({ triggered: 0 })),
-    scanSilentActiveRuns: vi.fn(async () => ({ created: 0, escalated: 0 })),
+    scanSilentActiveRuns: vi.fn(async () => ({ created: 0, escalated: 0, silentStops: { stopped: 0, retried: 0, escalated: 0, runIds: [] } })),
     sweepStaleIssueLocks: vi.fn(async () => ({ cleared: 0 })),
     sweepPendingCleanupLeases: vi.fn(async () => ({ swept: 0, destroyed: 0, capped: 0 })),
     sweepExpiredRuntimeStatuses: vi.fn(() => 0),

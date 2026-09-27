@@ -241,6 +241,7 @@ export type StrandedRecoveryCause =
   | "process_lost"
   | "provider_quota"
   | "codex_output_inactivity_monitor"
+  | "run_silent_timeout"
   | "workspace_validation_failed"
   | "configuration_incomplete"
   | "native_session_interrupted"
@@ -264,6 +265,7 @@ export function shouldRouteRecoveryToOriginalAgent(
     cause === "process_lost" ||
     cause === SUCCESSFUL_RUN_MISSING_STATE_REASON ||
     cause === "codex_output_inactivity_monitor" ||
+    cause === "run_silent_timeout" ||
     NATIVE_RUNNER_RECOVERY_CAUSES.has(cause)
   );
 }
@@ -298,6 +300,8 @@ function recoveryCauseTitle(cause: StrandedRecoveryCause) {
       return "retries exhausted";
     case "codex_output_inactivity_monitor":
       return "output-inactivity retry exhausted";
+    case "run_silent_timeout":
+      return "silent-run retry exhausted";
     case "workspace_validation_failed":
       return "workspace validation failed";
     case "configuration_incomplete":
@@ -395,6 +399,7 @@ function resolveStrandedRecoveryCause(
   if (latestRun?.errorCode === "codex_output_inactivity_monitor") {
     return "codex_output_inactivity_monitor";
   }
+  if (latestRun?.errorCode === "run_silent_timeout") return "run_silent_timeout";
   if (
     NATIVE_RUNNER_RECOVERY_CAUSES.has(
       latestRun?.errorCode as StrandedRecoveryCause,
@@ -2537,7 +2542,8 @@ export function recoveryService(
             ? "Board operator: inspect the retry history, then explicitly retry the original owner, reassign, or intentionally resolve the task."
             : recoveryCause === "provider_quota"
               ? "Wait for provider quota recovery, then retry the original assignee; do not wake a takeover owner."
-              : recoveryCause === "codex_output_inactivity_monitor"
+              : recoveryCause === "codex_output_inactivity_monitor" ||
+                  recoveryCause === "run_silent_timeout"
                 ? "Board operator: inspect the inactivity evidence, then explicitly retry the original owner, reassign, or intentionally resolve the task."
                 : recoveryCause === "workspace_validation_failed"
                   ? readWorkspaceValidationPayload(input.latestRun)?.reason ===

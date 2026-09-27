@@ -140,6 +140,7 @@ import {
   issueDocuments,
   executionWorkspaces,
   heartbeatRunEvents,
+  heartbeatRunWatchdogDecisions,
   heartbeatRuns,
   issueApprovals,
   issueAttachments,
@@ -499,6 +500,16 @@ import {
   type StrandedRecoveryNoticeSeed,
 } from "./recovery/stranded-notice.js";
 import { withRecoveryContext } from "./recovery/status-only-context.js";
+import {
+  FRESH_SESSION_ON_RETRY_KEY,
+  RUN_SILENT_TIMEOUT_ERROR_CODE,
+  RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+  formatSilenceMinutes,
+  isRunSilentPastTimeout,
+  resolveRunSilentTimeoutMs,
+  runRequiresFreshSession,
+} from "./run-silent-timeout.js";
+import { silenceAgeMs as runSilenceAgeMs } from "../modules/active-run-watchdog/domain/policy.js";
 import {
   ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS as RECOVERY_ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS,
   recoveryService,
@@ -12690,6 +12701,25 @@ export function heartbeatService(
     });
   }
 
+  async function clearFreshSessionRunTaskSession(
+    run: Pick<typeof heartbeatRuns.$inferSelect, "companyId" | "agentId" | "contextSnapshot">,
+  ) {
+    const taskKey = deriveTaskKey(parseObject(run.contextSnapshot), null);
+    if (!taskKey) return 0;
+    return clearTaskSessions(run.companyId, run.agentId, { taskKey });
+  }
+
+  // GRE-34: the executor can re-save a stopped run's session after the stop
+  // cleared it. A saved session whose last run was a silent/hung stop is
+  // never resumed, whichever write landed last.
+  async function taskSessionLastRunRequiresFreshSession(
+    taskSession: { lastRunId: string | null } | null,
+  ) {
+    if (!taskSession?.lastRunId) return false;
+    const lastRun = await getRun(taskSession.lastRunId);
+    return runRequiresFreshSession(lastRun);
+  }
+
   async function ensureRuntimeState(agent: typeof agents.$inferSelect) {
     const existing = await getRuntimeState(agent.id);
     if (existing) return existing;
@@ -19693,14 +19723,218 @@ export function heartbeatService(
     );
   }
 
+  function runIssueId(run: typeof heartbeatRuns.$inferSelect) {
+    const context = parseObject(run.contextSnapshot);
+    return (
+      readNonEmptyString(context.issueId) ??
+      readNonEmptyString(context.taskId) ??
+      run.nativeIssueId ??
+      null
+    );
+  }
+
+  async function hasActiveWatchdogQuietDecision(
+    run: typeof heartbeatRuns.$inferSelect,
+    now: Date,
+  ) {
+    const rows = await db
+      .select({ id: heartbeatRunWatchdogDecisions.id })
+      .from(heartbeatRunWatchdogDecisions)
+      .where(
+        and(
+          eq(heartbeatRunWatchdogDecisions.companyId, run.companyId),
+          eq(heartbeatRunWatchdogDecisions.runId, run.id),
+          or(
+            and(
+              inArray(heartbeatRunWatchdogDecisions.decision, ["snooze", "continue"]),
+              gt(heartbeatRunWatchdogDecisions.snoozedUntil, now),
+            ),
+            eq(heartbeatRunWatchdogDecisions.decision, "dismissed_false_positive"),
+          ),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  // Counts earlier silent-timeout stops on this issue since its last
+  // successful run. One fresh retry per hang; a second hang escalates.
+  async function priorSilentTimeoutStopsForIssue(
+    run: typeof heartbeatRuns.$inferSelect,
+    issueId: string,
+  ) {
+    const issueMatch = sql`(${heartbeatRuns.contextSnapshot}->>'issueId' = ${issueId}
+      or ${heartbeatRuns.contextSnapshot}->>'taskId' = ${issueId}
+      or ${heartbeatRuns.nativeIssueId}::text = ${issueId})`;
+    const [lastSuccess] = await db
+      .select({ createdAt: heartbeatRuns.createdAt })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          eq(heartbeatRuns.status, "succeeded"),
+          issueMatch,
+        ),
+      )
+      .orderBy(desc(heartbeatRuns.createdAt))
+      .limit(1);
+    const rows = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          eq(heartbeatRuns.errorCode, RUN_SILENT_TIMEOUT_ERROR_CODE),
+          sql`${heartbeatRuns.id} <> ${run.id}`,
+          issueMatch,
+          lastSuccess ? gt(heartbeatRuns.createdAt, lastSuccess.createdAt) : undefined,
+        ),
+      )
+      .limit(1);
+    return rows.length;
+  }
+
+  /**
+   * GRE-34: stop running runs that have written no output for their agent's
+   * silent timeout (default 20 min, `runtimeConfig.heartbeat.silentTimeoutSec`).
+   * The first stop on an issue drops the saved adapter session and queues one
+   * fresh-session retry; a repeat hang escalates the issue to `blocked` through
+   * the normal stranded-issue path, which names the recovery owner.
+   */
+  async function stopSilentRuns(opts?: { now?: Date; companyId?: string }) {
+    const now = opts?.now ?? new Date();
+    const result = { stopped: 0, retried: 0, escalated: 0, runIds: [] as string[] };
+    const cutoff = await getWorktreeExecutionCutoff();
+    const candidates = await db
+      .select({ run: heartbeatRuns, agent: agents })
+      .from(heartbeatRuns)
+      .innerJoin(agents, eq(agents.id, heartbeatRuns.agentId))
+      .where(
+        and(
+          eq(heartbeatRuns.status, "running"),
+          eq(agents.companyId, heartbeatRuns.companyId),
+          opts?.companyId ? eq(heartbeatRuns.companyId, opts.companyId) : undefined,
+        ),
+      );
+
+    for (const { run, agent } of candidates) {
+      const timeoutMs = resolveRunSilentTimeoutMs(agent.runtimeConfig);
+      if (!isRunSilentPastTimeout(run, timeoutMs, now)) continue;
+      if (await hasActiveWatchdogQuietDecision(run, now)) continue;
+
+      const issueId = runIssueId(run);
+      const issue = issueId
+        ? await db
+            .select()
+            .from(issues)
+            .where(and(eq(issues.id, issueId), eq(issues.companyId, run.companyId)))
+            .then((rows) => rows[0] ?? null)
+        : null;
+      if (issue && cutoff && issue.createdAt < cutoff) continue;
+      // A blocked source is intentionally quiet (same rule as the recovery scan).
+      if (issue?.status === "blocked") continue;
+
+      const silenceMs = runSilenceAgeMs(run, now) ?? timeoutMs!;
+      const silence = formatSilenceMinutes(silenceMs);
+      const repeatHang = issue
+        ? (await priorSilentTimeoutStopsForIssue(run, issue.id)) > 0
+        : false;
+      const retryEligible =
+        issue !== null &&
+        !repeatHang &&
+        issue.assigneeAgentId === agent.id &&
+        ["todo", "in_progress", "in_review"].includes(issue.status);
+
+      const stopped = await cancelRunInternal(
+        run.id,
+        `No output for ${silence}; stopped by the silent-run watchdog.`,
+        {
+          errorCode: RUN_SILENT_TIMEOUT_ERROR_CODE,
+          resultJson: {
+            [FRESH_SESSION_ON_RETRY_KEY]: true,
+            silentTimeout: {
+              silenceMs,
+              timeoutMs,
+              lastOutputAt: run.lastOutputAt?.toISOString() ?? null,
+              stoppedAt: now.toISOString(),
+            },
+          },
+          eventMessage: `run stopped: no output for ${silence} (${RUN_SILENT_TIMEOUT_ERROR_CODE})`,
+          eventPayload: { errorCode: RUN_SILENT_TIMEOUT_ERROR_CODE, silenceMs, timeoutMs },
+          // This path owns the successor: one fresh retry, or escalation.
+          suppressImmediateRecovery: issue !== null,
+        },
+      );
+      if (!stopped || stopped.errorCode !== RUN_SILENT_TIMEOUT_ERROR_CODE) continue;
+      result.stopped += 1;
+      result.runIds.push(run.id);
+      if (!issue) continue;
+
+      if (retryEligible) {
+        const wake = await enqueueWakeup(agent.id, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+          idempotencyKey: `${RUN_SILENT_TIMEOUT_ERROR_CODE}:${run.id}`,
+          requestedByActorType: "system",
+          requestedByActorId: "heartbeat.silent_run_watchdog",
+          payload: { issueId: issue.id },
+          contextSnapshot: {
+            issueId: issue.id,
+            taskId: issue.id,
+            wakeReason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+            forceFreshSession: true,
+            retryOfRunId: run.id,
+            silentTimeoutRetryOfRunId: run.id,
+          },
+        });
+        if (wake) {
+          result.retried += 1;
+          await issuesSvc.addComment(
+            issue.id,
+            `Stopped run \`${run.id.slice(0, 8)}\`: no output for ${silence} (\`${RUN_SILENT_TIMEOUT_ERROR_CODE}\`). ` +
+              "Started a fresh retry in a new session.",
+            { runId: run.id },
+            { authorType: "system" },
+          );
+          continue;
+        }
+      }
+
+      const previousStatus = issue.status as "todo" | "in_progress" | "in_review";
+      if (!["todo", "in_progress", "in_review"].includes(previousStatus)) continue;
+      const escalated = await recovery.escalateStrandedAssignedIssue({
+        issue,
+        previousStatus,
+        latestRun: stopped,
+        recoveryCause: RUN_SILENT_TIMEOUT_ERROR_CODE,
+        notice: {
+          body:
+            `Stopped run \`${run.id.slice(0, 8)}\`: no output for ${silence} (\`${RUN_SILENT_TIMEOUT_ERROR_CODE}\`). ` +
+            (repeatHang
+              ? "The fresh-session retry also hung. "
+              : "No automatic retry path was available. ") +
+            "Moving it to `blocked` so it is visible for intervention.",
+          title: "Silent run stopped",
+          tone: "danger",
+        },
+      });
+      if (escalated) result.escalated += 1;
+    }
+
+    return result;
+  }
+
   async function scanSilentActiveRuns(opts?: {
     now?: Date;
     companyId?: string;
   }) {
-    return recovery.scanSilentActiveRuns({
+    const silentStops = await stopSilentRuns(opts);
+    const scanned = await recovery.scanSilentActiveRuns({
       ...opts,
       issueCreatedAtGte: await getWorktreeExecutionCutoff(),
     });
+    return { ...scanned, silentStops };
   }
 
   async function reconcileTaskWatchdogs(opts?: {
@@ -21470,10 +21704,19 @@ export function heartbeatService(
         preserveLegacySessionWithoutConfigMetadata:
           acceptedPlanContinuationWake && !acceptedPlanWakeRoutingDecision,
       });
+      const lastRunRequiresFreshSession =
+        await taskSessionLastRunRequiresFreshSession(taskSession);
       const resetTaskSession =
-        shouldResetTaskSessionForWake(context) || sessionConfigFreshness.reset;
+        shouldResetTaskSessionForWake(context) ||
+        sessionConfigFreshness.reset ||
+        lastRunRequiresFreshSession;
       const sessionResetReason =
-        sessionConfigFreshness.reasons.join("; ") || null;
+        [
+          ...sessionConfigFreshness.reasons,
+          ...(lastRunRequiresFreshSession
+            ? ["previous run was stopped after going silent"]
+            : []),
+        ].join("; ") || null;
       const taskSessionForRun = resetTaskSession ? null : taskSession;
       const previousSessionParams =
         explicitResumeSessionParams ??
@@ -28829,6 +29072,18 @@ export function heartbeatService(
       return run;
     const agent = await getAgent(run.agentId);
     const errorCode = options.errorCode ?? "cancelled";
+    // GRE-34: stopping a run that was already silent past its agent's timeout
+    // means its adapter session is suspect. Mark it so the retry starts fresh.
+    if (
+      agent &&
+      options.resultJson?.[FRESH_SESSION_ON_RETRY_KEY] !== true &&
+      isRunSilentPastTimeout(run, resolveRunSilentTimeoutMs(agent.runtimeConfig), new Date())
+    ) {
+      options = {
+        ...options,
+        resultJson: { ...(options.resultJson ?? {}), [FRESH_SESSION_ON_RETRY_KEY]: true },
+      };
+    }
 
     const pendingProcessCancellation = processRunCancellationSettlements.get(
       run.id,
@@ -29066,6 +29321,9 @@ export function heartbeatService(
         }
       })();
       const cancelled = cancellation.run;
+      if (cancelled && options.resultJson?.[FRESH_SESSION_ON_RETRY_KEY] === true) {
+        await clearFreshSessionRunTaskSession(cancelled);
+      }
 
       if (cancellation.updated && cancelled) {
         await setWakeupStatus(run.wakeupRequestId, "cancelled", {

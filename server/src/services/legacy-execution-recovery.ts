@@ -46,6 +46,11 @@ export function legacyExecutionNeedsReconciliation(
   if ((run.errorCode === "workspace_git_scan_timeout" || run.errorCode === "workspace_git_scan_saturated") &&
       evidence?.kind === "bootstrap" && evidence.providerWorkStarted === false) return false;
   if (executionFailureRetryCount(run) >= 2) return true;
+  // GRE-34: the silent-run watchdog stopped a run that wrote nothing for its
+  // whole timeout, dropped its session, and owns one fresh-session retry (a
+  // repeat hang escalates to the board). Like a fresh conversation turn, the
+  // new session re-reads the task and decides what remains; it replays nothing.
+  if (run.status === "cancelled" && run.errorCode === "run_silent_timeout") return false;
   return !(
     evidence?.kind === "bootstrap" && evidence.providerWorkStarted === false
   );
