@@ -139,6 +139,31 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     } finally { select.mockRestore(); vi.unstubAllGlobals(); }
   });
 
+  // Regression (GRE-9): claude_local lists with materializeMissing=false, so a
+  // pinned GitHub skill stayed "missing" with its URL printed as a local path.
+  it("prepares a pinned GitHub skill for a non-materializing adapter such as claude_local", async () => {
+    const { companyId, key } = await createPinnedRuntimeFixture();
+    const upstream = vi.fn(async (url: string | URL) => new Response(String(url)));
+    vi.stubGlobal("fetch", upstream);
+    try {
+      const before = (await svc.listRuntimeSkillEntries(companyId, { materializeMissing: false }))
+        .find((entry) => entry.key === key)!;
+      expect(before.sourceStatus).toBe("missing");
+      expect(before.missingDetail).toContain(`https://github.com/acme/cache @ ${"a".repeat(40)}`);
+      expect(before.missingDetail).not.toContain(process.cwd());
+      expect(upstream).not.toHaveBeenCalled();
+
+      const synced = (await svc.listRuntimeSkillEntries(companyId, { materializeMissing: false, prepareRemoteCache: true }))
+        .find((entry) => entry.key === key)!;
+      expect(synced.sourceStatus).toBe("available");
+      expect(await fs.readFile(path.join(synced.source, "SKILL.md"), "utf8")).toContain("a".repeat(40));
+
+      const listed = (await svc.listRuntimeSkillEntries(companyId, { materializeMissing: false }))
+        .find((entry) => entry.key === key)!;
+      expect(listed).toEqual(synced);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("deduplicates runtime downloads for twenty concurrent service callers and isolates companies", async () => {
     const first = await createPinnedRuntimeFixture();
     const second = await createPinnedRuntimeFixture();

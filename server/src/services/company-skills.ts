@@ -370,6 +370,9 @@ export type ProjectSkillScanTarget = {
 
 type RuntimeSkillEntryOptions = {
   materializeMissing?: boolean;
+  // Build the pinned remote-skill cache even when materializeMissing is false.
+  // Symlinking adapters (claude_local) still need these files on disk.
+  prepareRemoteCache?: boolean;
   versionSelections?: Map<string, string | null>;
 };
 
@@ -2364,7 +2367,16 @@ async function resolveExistingSkillDirectory(skillDir: string | null) {
   return dirStat?.isDirectory() && skillFileStat?.isFile() ? skillDir : null;
 }
 
-function buildMissingRuntimeSourceDetail(skill: Pick<CompanySkill, "name" | "sourceLocator" | "metadata">) {
+function buildMissingRuntimeSourceDetail(
+  skill: Pick<CompanySkill, "name" | "sourceType" | "sourceLocator" | "sourceRef" | "metadata">,
+) {
+  // Remote locators are URLs; path.resolve would join them to the server cwd.
+  if (skill.sourceType !== "local_path" && skill.sourceType !== "catalog") {
+    const origin = skill.sourceLocator
+      ? `${skill.sourceLocator}${skill.sourceRef ? ` @ ${skill.sourceRef}` : ""}`
+      : "its remote source";
+    return `Company skill "${skill.name}" is in the library, but its runtime copy from ${origin} has not been prepared yet. It is fetched on the agent's next run or skill sync.`;
+  }
   const marker = getMissingSourceMarker(skill.metadata);
   const sourcePath = asString(marker?.sourcePath) ?? normalizeSourceLocatorDirectory(skill.sourceLocator);
   if (sourcePath) {
@@ -5944,7 +5956,7 @@ export function companySkillService(db: Db) {
       if (cache) {
         const cachedSource = await resolveRuntimeSkillCache(cache,
           async (relativePath) => (await readLoadedSkillFile(skill, relativePath)).content,
-          options.materializeMissing !== false,
+          options.prepareRemoteCache ?? options.materializeMissing !== false,
           async () => (await getById(companyId, skill.id))?.key === skill.key);
         return cachedSource
           ? { status: "available", source: cachedSource }

@@ -3022,7 +3022,7 @@ export function agentRoutes(
     adapterConfig: Record<string, unknown>,
     requestedDesiredSkills: AgentDesiredSkillEntry[] | undefined,
     mode: AgentSkillAssignmentMode,
-    options: { tolerateUnknownDesiredSkills?: boolean } = {},
+    options: { tolerateUnknownDesiredSkills?: boolean; prepareRemoteCache?: boolean } = {},
   ) {
     if (!requestedDesiredSkills) {
       return {
@@ -3085,6 +3085,7 @@ export function agentRoutes(
     // persisted and explicitly removable without reaching adapter runtimes.
     const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(companyId, {
       materializeMissing: shouldMaterializeRuntimeSkillsForAdapter(adapterType),
+      prepareRemoteCache: options.prepareRemoteCache,
       versionSelections: skillVersionSelectionMap(
         desiredSkillEntries.filter((entry) => resolvedKeys.has(entry.key)),
       ),
@@ -3931,7 +3932,9 @@ export function agentRoutes(
         // Toggling a resolvable skill must not fail just because the agent
         // already carries stale desired keys (e.g. a skill removed from the
         // library). Preserve those keys so they remain visible/removable.
-        { tolerateUnknownDesiredSkills: true },
+        // An explicit sync also fetches pinned remote skills, so they show
+        // configured before the first run instead of missing.
+        { tolerateUnknownDesiredSkills: true, prepareRemoteCache: true },
       );
       if (!desiredSkills || !desiredSkillEntries || !runtimeSkillEntries) {
         throw unprocessable("Skill sync requires desiredSkills.");
