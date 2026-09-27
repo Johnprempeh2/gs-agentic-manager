@@ -41,32 +41,21 @@ export function replaceResolvedInteraction(
 }
 
 /**
- * Lazily fetches the full issue-thread interaction referenced by an attention
- * row and renders the existing {@link IssueThreadInteractionCard} inline, so
- * confirmations and questions are answerable in-row without leaving the queue
- * (converged PAP-12628). Reviews never reach here — they deep-link.
+ * The mutations every inline interaction answer goes through: resolve on the
+ * original card, then refresh the thread and the attention feed. Shared by the
+ * Decisions list rows and Decisions Focus mode (GRE-55) so both answer paths
+ * stay one path.
  */
-export function AttentionInteractionResolver({
+export function useInteractionResolutionMutations({
   companyId,
   issueId,
-  interactionId,
-  agentMap,
-  currentUserId,
-  userLabelMap,
   onResolved,
-}: AttentionInteractionResolverProps) {
+}: {
+  companyId: string;
+  issueId: string;
+  onResolved?: () => void;
+}) {
   const queryClient = useQueryClient();
-
-  const { data: interactions, isLoading, error } = useQuery({
-    queryKey: queryKeys.issues.interactions(issueId),
-    queryFn: () => issuesApi.listInteractions(issueId),
-    enabled: !!issueId,
-  });
-
-  const interaction = useMemo<IssueThreadInteraction | null>(() => {
-    const match = (interactions ?? []).find((entry) => entry.id === interactionId);
-    return match && isIssueThreadInteraction(match) ? match : null;
-  }, [interactions, interactionId]);
 
   const invalidate = (resolvedInteraction?: IssueThreadInteraction) => {
     // The accept route returns the fully stitched interaction (including
@@ -124,6 +113,38 @@ export function AttentionInteractionResolver({
     }) => issuesApi.submitInteractionVerdicts(issueId, input.interactionId, input.verdicts),
     onSuccess: invalidate,
   });
+
+  return { acceptMutation, rejectMutation, respondMutation, cancelMutation, verdictsMutation };
+}
+
+/**
+ * Lazily fetches the full issue-thread interaction referenced by an attention
+ * row and renders the existing {@link IssueThreadInteractionCard} inline, so
+ * confirmations and questions are answerable in-row without leaving the queue
+ * (converged PAP-12628). Reviews never reach here — they deep-link.
+ */
+export function AttentionInteractionResolver({
+  companyId,
+  issueId,
+  interactionId,
+  agentMap,
+  currentUserId,
+  userLabelMap,
+  onResolved,
+}: AttentionInteractionResolverProps) {
+  const { data: interactions, isLoading, error } = useQuery({
+    queryKey: queryKeys.issues.interactions(issueId),
+    queryFn: () => issuesApi.listInteractions(issueId),
+    enabled: !!issueId,
+  });
+
+  const interaction = useMemo<IssueThreadInteraction | null>(() => {
+    const match = (interactions ?? []).find((entry) => entry.id === interactionId);
+    return match && isIssueThreadInteraction(match) ? match : null;
+  }, [interactions, interactionId]);
+
+  const { acceptMutation, rejectMutation, respondMutation, cancelMutation, verdictsMutation } =
+    useInteractionResolutionMutations({ companyId, issueId, onResolved });
 
   if (isLoading) {
     return (
