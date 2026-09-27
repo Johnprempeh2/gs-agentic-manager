@@ -18,6 +18,10 @@ export const EXECUTION_HOLD_CAUSES = new Set([
 export const FAILED_RUN_STATUSES = new Set(["failed", "timed_out", "interrupted"]);
 // Agent-attributed activity that is harness bookkeeping, not progress on the task.
 export const NON_USEFUL_AGENT_ACTIONS = new Set(["issue.checked_out", "issue.read_marked", "issue.released"]);
+// Tool gateway audit rows the user can see. Every other `tool_gateway.*` row is
+// session bookkeeping (tool discovery at session start) or a tool call the log
+// can't tell apart from a read, so it does not count as a useful action.
+export const USEFUL_TOOL_GATEWAY_ACTIONS = new Set(["tool_gateway.approval_requested", "tool_gateway.elicitation_requested"]);
 // Human activity that does not intervene in the work (reading, inspecting).
 export const PASSIVE_USER_ACTIONS = new Set(["issue.read_marked", "resource_membership.starred"]);
 
@@ -38,7 +42,8 @@ export function median(values) {
 }
 
 function isUsefulAgentAction(action) {
-  return !action.startsWith("environment.") && !NON_USEFUL_AGENT_ACTIONS.has(action);
+  if (action.startsWith("environment.") || NON_USEFUL_AGENT_ACTIONS.has(action)) return false;
+  return !action.startsWith("tool_gateway.") || USEFUL_TOOL_GATEWAY_ACTIONS.has(action);
 }
 
 function isHumanIntervention(row) {
@@ -301,7 +306,12 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
  * Wake: the wakeup request's requestedAt, or the run's createdAt when the run
  * has no wakeup request. First useful action: the first agent-attributed
  * activity row for the run that is not harness bookkeeping (environment leases,
- * checkout, read markers). Runs with no useful action are counted, not timed.
+ * checkout, read markers, tool discovery). Runs with no useful action are
+ * counted, not timed.
+ *
+ * Timed runs are also split at the moment the prompt was sent (the run's
+ * `promptSentAt`, when recorded): setup is wake → prompt sent (queue, workspace,
+ * adapter start, prompt build); agent is prompt sent → first useful action.
  */
 export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
   const nowMs = ms(now ?? snapshot.now);
@@ -314,6 +324,8 @@ export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
   }
   const samples = [];
   const queueDelays = [];
+  const setups = [];
+  const agentTimes = [];
   let withoutUsefulAction = 0;
   let considered = 0;
   for (const run of snapshot.runs) {
@@ -325,6 +337,11 @@ export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
     const first = firstUseful.get(run.id);
     if (first == null) { withoutUsefulAction += 1; continue; }
     samples.push(first - wake);
+    const promptSent = ms(run.promptSentAt);
+    if (promptSent != null && promptSent >= wake && promptSent <= first) {
+      setups.push(promptSent - wake);
+      agentTimes.push(first - promptSent);
+    }
   }
   return {
     windowDays,
@@ -335,6 +352,13 @@ export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
     p95Ms: percentile(samples, 95),
     maxMs: samples.length ? Math.max(...samples) : null,
     queueDelayMedianMs: median(queueDelays),
+    split: {
+      sampleSize: setups.length,
+      setupMedianMs: median(setups),
+      setupP95Ms: percentile(setups, 95),
+      agentMedianMs: median(agentTimes),
+      agentP95Ms: percentile(agentTimes, 95),
+    },
     samplesMs: [...samples].sort((a, b) => a - b),
   };
 }

@@ -24,6 +24,7 @@ import {
   issueExecutionWorkspaceModeForExistingWorkspace,
 } from "../lib/project-workspace-defaults";
 import { useProjectOrder } from "../hooks/useProjectOrder";
+import { quickCreateProjectLabel, useQuickCreateProject } from "../hooks/useQuickCreateProject";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
@@ -1279,6 +1280,12 @@ export function NewIssueDialog() {
   const stagedDocuments = stagedFiles.filter((file) => file.kind === "document");
   const stagedAttachments = stagedFiles.filter((file) => file.kind === "attachment");
 
+  const quickCreateProject = useQuickCreateProject(effectiveCompanyId);
+  const createProjectFromPicker = useCallback(
+    async (name: string) => (await quickCreateProject(name)).id,
+    [quickCreateProject],
+  );
+
   const handleProjectChange = useCallback((nextProjectId: string) => {
     if (nextProjectId) trackRecentProject(nextProjectId);
     setProjectId(nextProjectId);
@@ -1583,6 +1590,9 @@ export function NewIssueDialog() {
                 searchPlaceholder="Search projects..."
                 emptyMessage="No projects found."
                 onChange={handleProjectChange}
+                onCreate={createProjectFromPicker}
+                createLabel={quickCreateProjectLabel}
+                createNamePlaceholder="Name the new project..."
                 onConfirm={() => {
                   descriptionEditorRef.current?.focus();
                 }}
