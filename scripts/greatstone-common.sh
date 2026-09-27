@@ -48,11 +48,16 @@ live_database_url() {
   printf 'postgres://paperclip:paperclip@127.0.0.1:%s/paperclip\n' "$port"
 }
 
-# Prints the "commit" field of <url>/api/health, or nothing.
-health_commit() {
+# Prints one field of <url>/api/health (a dotted path such as
+# serverInfo.processStartedAt), or nothing.
+health_field() {
   curl -fsS -m 5 "$1/api/health" 2>/dev/null \
-    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).commit||"")}catch{console.log("")}})'
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{let v=JSON.parse(s);for(const k of process.argv[1].split("."))v=v?.[k];console.log(v??"")}catch{console.log("")}})' "$2"
 }
+
+# The "commit" of a running server. It is read from git in the server's
+# folder, so it changes on checkout, before the server restarts.
+health_commit() { health_field "$1" commit; }
 
 # Counts queued or running agent runs across every company on <url>.
 active_runs() {
