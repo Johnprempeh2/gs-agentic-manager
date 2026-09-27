@@ -34,6 +34,7 @@ import { getStorageService } from "../../storage/index.js";
 import type { StorageService } from "../../storage/types.js";
 import { readProcessStartedAt } from "../hot-restart.js";
 import { issueService } from "../issues.js";
+import { decodeLsofNameField } from "./lsof-name-field.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./native-review-participant.js";
 
 export type RemoteWorkspaceFileReader = (input: Pick<NativeRunnerFileHandoffInput, "contentRef" | "byteSize" | "sha256">) => Promise<Buffer>;
@@ -252,17 +253,20 @@ async function openedFilePath(fd: number): Promise<string> {
         },
       );
     }).catch(() => null);
+    // latin1 maps each output byte to one character, so fields split on NUL
+    // convert back to their exact bytes for decoding.
     const paths = output
       ? output
-          .toString("utf8")
+          .toString("latin1")
           .split("\0")
           .filter((field) => field.startsWith("n"))
-          .map((field) => field.slice(1))
+          .map((field) => decodeLsofNameField(Buffer.from(field.slice(1), "latin1")))
       : [];
-    if (paths.length !== 1 || !path.isAbsolute(paths[0]!)) {
+    const reported = paths.length === 1 ? paths[0] : null;
+    if (!reported || !path.isAbsolute(reported)) {
       throw new Error("paperclip_runner_file_handoff_descriptor_unverifiable");
     }
-    return realpath(paths[0]!);
+    return realpath(reported);
   }
   const candidates = [`/proc/self/fd/${fd}`, `/dev/fd/${fd}`];
   for (const candidate of candidates) {
