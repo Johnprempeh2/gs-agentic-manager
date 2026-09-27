@@ -1566,7 +1566,7 @@ async function startServerWithDatabaseTeardown(
         }
 
         const scanned = await heartbeat.scanSilentActiveRuns();
-        if (scanned.created > 0 || scanned.escalated > 0) {
+        if (scanned.created > 0 || scanned.escalated > 0 || scanned.silentStops.stopped > 0) {
           logger.warn({ ...scanned }, "startup active-run output watchdog created review work");
         }
 
@@ -1804,7 +1804,7 @@ async function startServerWithDatabaseTeardown(
             })
             .then(async () => {
               const scanned = await heartbeat.scanSilentActiveRuns();
-              if (scanned.created > 0 || scanned.escalated > 0) {
+              if (scanned.created > 0 || scanned.escalated > 0 || scanned.silentStops.stopped > 0) {
                 logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
               }
             })
