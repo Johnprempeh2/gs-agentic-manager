@@ -5,6 +5,7 @@ import {
   decideWakeAdmission,
   decideWakeOutcome,
   deriveImmediateRecoveryContextLabels,
+  isRecoveryOnlyWake,
 } from "../domain/policy.js";
 import {
   EXECUTION_REVIEW_PARTICIPANT_RECOVERY_RETRY_REASON,
@@ -191,6 +192,29 @@ async function runReleaseDrain(
         companyId: run.companyId,
         wakeId: candidate.id,
         reason: "Delegation closing note refers to completed child work",
+        now: input.now,
+      });
+      continue;
+    }
+
+    // A recovery wake can wait behind a run for minutes. If that run posted
+    // a card that wakes the assignee on answer, the card is now the issue's
+    // next step and the recovery wake would only cost a "no change" run
+    // (GRE-51). This is the same pending-card check the release tail uses
+    // (GRE-35). Once the card expires or is withdrawn, the sweep recovers
+    // the issue again.
+    if (
+      isRecoveryOnlyWake({
+        contextSource: readNonEmptyString(candidate.deferredContextSeed.source),
+        requestedByActorType: candidate.requestedByActorType,
+        hasCommentIds: candidate.queuedCommentIds.length > 0 || candidate.deferredCommentIds.length > 0,
+      }) &&
+      await ports.transaction.hasPendingWakeInteraction({ companyId: run.companyId, issueId: issue.id })
+    ) {
+      await ports.transaction.cancelDeferredWake({
+        companyId: run.companyId,
+        wakeId: candidate.id,
+        reason: "Recovery wake not needed: the issue waits on a pending card that wakes the assignee",
         now: input.now,
       });
       continue;

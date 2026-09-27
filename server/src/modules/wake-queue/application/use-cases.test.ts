@@ -767,6 +767,117 @@ describe("releaseIssueExecution", () => {
       expect(transaction.queueReviewParticipantRecoveryRun).toHaveBeenCalledTimes(1);
     });
   });
+
+  // GRE-4, 2026-09-27: the sweep queued a recovery wake behind a running
+  // run. That run posted a card for John and ended; the recovery wake was
+  // then promoted and the agent posted "Recovery wake. No new input".
+  describe("deferred recovery wake while the issue waits on a pending card (GRE-51)", () => {
+    function recoveryWake(overrides: Partial<DeferredWakeCandidate> = {}): DeferredWakeCandidate {
+      return wakeCandidate({
+        id: "wake-recovery",
+        agentId: ISSUE.assigneeAgentId!,
+        reason: "issue_continuation_needed",
+        wakeReason: "issue_continuation_needed",
+        requestedByActorType: "system",
+        requestedByActorId: null,
+        payload: { interactionId: "old-card" },
+        preservesIndependentContinuation: true,
+        deferredContextSeed: {
+          source: "issue.interaction_continuation_recovery",
+          wakeReason: "issue_continuation_needed",
+          retryReason: "issue_continuation_needed",
+          interactionId: "old-card",
+        },
+        ...overrides,
+      });
+    }
+
+    async function releaseWith(candidate: DeferredWakeCandidate, pendingCard: boolean) {
+      const queue = [candidate];
+      const transaction = createFakeTransaction({
+        findNextDeferredWake: vi.fn(async () => queue.shift() ?? null),
+        getQueuedCommentLiveness: vi.fn(async () => ({
+          liveNonSelfCommentIds: candidate.queuedCommentIds,
+          containedSelfAuthoredComment: false,
+        })),
+        hasPendingWakeInteraction: vi.fn(async () => pendingCard),
+      });
+      const run: RunSnapshot = { ...RUN, status: "succeeded", contextSnapshot: { issueId: ISSUE.id } };
+      const release = createReleaseIssueExecution({
+        issueLock: createFakeIssueLock(createFakeHost(), transaction, ISSUE, run),
+        recovery: createFakeRecovery(),
+      });
+      const result = await release({ companyId: RUN.companyId, runId: run.id, now: new Date() });
+      return { result, transaction };
+    }
+
+    it.each([
+      "issue.interaction_continuation_recovery",
+      "issue.execution_review_recovery",
+      "issue.continuation_recovery",
+      "issue.assignment_recovery",
+    ])("drops a %s wake while a wake-on-answer card is pending", async (source) => {
+      const { result, transaction } = await releaseWith(
+        recoveryWake({ deferredContextSeed: { source, wakeReason: "issue_continuation_needed" } }),
+        true,
+      );
+
+      expect(transaction.hasPendingWakeInteraction).toHaveBeenCalledWith({ companyId: RUN.companyId, issueId: ISSUE.id });
+      expect(transaction.cancelDeferredWake).toHaveBeenCalledWith(expect.objectContaining({ wakeId: "wake-recovery" }));
+      expect(transaction.claimDeferredWakeForPromotion).not.toHaveBeenCalled();
+      expect(transaction.finalizePromotedWake).not.toHaveBeenCalled();
+      expect(result.outcome.kind).not.toBe("promoted");
+    });
+
+    it("promotes the recovery wake once the card is no longer pending (expired or withdrawn)", async () => {
+      const { result, transaction } = await releaseWith(recoveryWake(), false);
+
+      expect(result.outcome.kind).toBe("promoted");
+      expect(transaction.cancelDeferredWake).not.toHaveBeenCalled();
+    });
+
+    it("promotes when a user comment was merged into the wake", async () => {
+      const { result, transaction } = await releaseWith(
+        recoveryWake({
+          queuedCommentIds: ["user-comment"],
+          deferredCommentIds: ["user-comment"],
+          deferredContextSeed: {
+            source: "issue.interaction_continuation_recovery",
+            wakeReason: "issue_continuation_needed",
+            wakeCommentIds: ["user-comment"],
+          },
+        }),
+        true,
+      );
+
+      expect(result.outcome.kind).toBe("promoted");
+      expect(transaction.cancelDeferredWake).not.toHaveBeenCalled();
+    });
+
+    // A later wake merged into a deferred wake overwrites its context source.
+    it.each([
+      ["a finished child issue", "issue.children_completed", "issue_children_completed"],
+      ["a cleared blocker", "issue.blockers_resolved", "issue_blockers_resolved"],
+    ])("promotes when %s was merged into the wake", async (_label, source, wakeReason) => {
+      const { result, transaction } = await releaseWith(
+        recoveryWake({ wakeReason, deferredContextSeed: { source, wakeReason } }),
+        true,
+      );
+
+      expect(result.outcome.kind).toBe("promoted");
+      expect(transaction.cancelDeferredWake).not.toHaveBeenCalled();
+    });
+
+    it("does not touch a non-recovery wake from an agent or user", async () => {
+      const { result, transaction } = await releaseWith(
+        recoveryWake({ requestedByActorType: "agent", requestedByActorId: "other-agent" }),
+        true,
+      );
+
+      expect(result.outcome.kind).toBe("promoted");
+      expect(transaction.hasPendingWakeInteraction).not.toHaveBeenCalled();
+    });
+  });
 });
 
 const ACTIVE_EXECUTION_RUN: WakeAdmissionActiveExecutionRun = {

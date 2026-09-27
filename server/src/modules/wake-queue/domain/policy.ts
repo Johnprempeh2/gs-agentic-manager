@@ -195,6 +195,40 @@ export function decideWakeOutcome(facts: DeferredWakeOutcomeFacts): DeferredWake
   return { kind: "promote" };
 }
 
+/** Context `source` values of the wakes the stranded-work recovery sweep queues. */
+const RECOVERY_WAKE_SOURCES: ReadonlySet<string> = new Set([
+  "issue.assignment_recovery",
+  "issue.continuation_recovery",
+  "issue.deliberate_wait_disposition_repair",
+  "issue.execution_review_recovery",
+  "issue.interaction_continuation_recovery",
+  "issue.productive_terminal_continuation_recovery",
+  "issue.successful_run_handoff_interrupted_retry",
+]);
+
+export type RecoveryOnlyWakeFacts = {
+  /** `source` of the deferred wake's context. A wake merged in later overwrites it with its own source. */
+  contextSource: string | null;
+  requestedByActorType: "user" | "agent" | "system" | null;
+  /** True when the wake carries any queued or context comment id. */
+  hasCommentIds: boolean;
+};
+
+/**
+ * True when a deferred wake is only a recovery nudge: queued by the system
+ * recovery sweep, with no comment and no other wake merged into it. Such a
+ * wake adds nothing while the issue waits on a pending card that already
+ * wakes the assignee when answered (GRE-51).
+ */
+export function isRecoveryOnlyWake(facts: RecoveryOnlyWakeFacts): boolean {
+  return (
+    facts.requestedByActorType === "system" &&
+    !facts.hasCommentIds &&
+    facts.contextSource !== null &&
+    RECOVERY_WAKE_SOURCES.has(facts.contextSource)
+  );
+}
+
 /** Shared between the review-participant and immediate branches; the caller derives every field from the same expression regardless of which branch applies. */
 export type ReleaseRecoverySharedFacts = {
   hasExistingExecutionPath: boolean;
