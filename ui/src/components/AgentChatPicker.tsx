@@ -4,6 +4,7 @@ import { AgentIcon } from "@/components/AgentIconPicker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 export interface AgentChatPickerProps {
   agents: Agent[];
@@ -39,6 +40,7 @@ function AgentChatPickerResults({ agents, onSelect, loading, error, onRetry }: O
       <CommandInput
         aria-label="Search agents by name or role"
         placeholder="Search by name or role…"
+        {...noContactAutofill("agents")}
         value={search}
         onValueChange={setSearch}
       />

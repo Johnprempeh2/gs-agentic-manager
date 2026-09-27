@@ -27,6 +27,7 @@ import {
   isGatewayOn,
   latestTokenActivity,
 } from "./gateway-helpers";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 export function GatewaysList() {
   const navigate = useNavigate();
@@ -158,6 +159,7 @@ export function GatewaysList() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search by name, app, or owner"
+                {...noContactAutofill("gateways")}
                 className="pl-9"
                 aria-label="Search gateways"
               />

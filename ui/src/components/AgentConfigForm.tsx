@@ -106,6 +106,7 @@ import {
   type CreateConfigValues,
 } from "@greatstone/adapter-utils";
 import { Badge } from "@/components/ui/badge";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 /* ---- Props ---- */
 
@@ -1459,6 +1460,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 immediate
                 className={inputClass}
                 placeholder="Agent name"
+                {...noContactAutofill("agent")}
               />
             </Field>
             <Field label="Title" hint={help.title}>

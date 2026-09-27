@@ -965,6 +965,11 @@ describe("Routines page", () => {
     expect(projectSelectorCall).toBeTruthy();
     expect(projectSelectorCall?.[0].options?.map((option) => option.id)).toEqual(["project-1", "project-2"]);
 
+    // Safari offers contacts for "title" boxes unless the name contains "search".
+    const titleInput = document.querySelector('textarea[placeholder="Routine title"]');
+    expect(titleInput?.getAttribute("autocomplete")).toBe("off");
+    expect(titleInput?.getAttribute("name")).toBe("search_routine");
+
     await act(async () => {
       root.unmount();
     });

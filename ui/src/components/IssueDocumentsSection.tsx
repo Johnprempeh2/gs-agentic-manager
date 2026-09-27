@@ -40,6 +40,7 @@ import { DocumentDiffModal } from "./DocumentDiffModal";
 import { DocumentFrameHeader, type DocumentFrameHeaderRevisionActor } from "./DocumentFrameHeader";
 import { SourceTrustBadge } from "./SourceTrustBadge";
 import { Badge } from "@/components/ui/badge";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 type DraftState = {
   key: string;
@@ -940,6 +941,7 @@ export function IssueDocumentsSection({
                 setDraft((current) => current ? { ...current, title: event.target.value } : current)
               }
               placeholder="Optional title"
+              {...noContactAutofill("document")}
             />
           )}
           <MarkdownEditor
@@ -1267,6 +1269,7 @@ export function IssueDocumentsSection({
                         setDraft((current) => current ? { ...current, title: event.target.value } : current);
                       }}
                       placeholder="Optional title"
+                      {...noContactAutofill("document")}
                     />
                   )}
                   <div

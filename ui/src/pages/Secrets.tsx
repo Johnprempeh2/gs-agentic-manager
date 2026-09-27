@@ -129,6 +129,7 @@ import {
   UserSecretChip,
 } from "./secrets/user-secret-presentation";
 import type { MyUserSecretEntry } from "../api/secrets";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 type CreateMode = "managed" | "external";
 // "value" writes a new secret value (for external references: through to the
@@ -1856,6 +1857,7 @@ export function Secrets() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search by name, key, ref"
+                {...noContactAutofill("secrets")}
                 className="pl-7 text-xs sm:text-sm"
                 aria-label="Search secrets"
                 data-page-search-target="true"
@@ -1934,6 +1936,7 @@ export function Secrets() {
                     if (event.key === "Escape") closeNewFolder();
                   }}
                   placeholder="Folder name"
+                  {...noContactAutofill("folder")}
                   aria-label="Folder name"
                   aria-invalid={Boolean(newFolderError)}
                   autoFocus

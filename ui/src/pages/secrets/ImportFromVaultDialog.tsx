@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/select";
 import { EmptyState } from "../../components/EmptyState";
 import { cn } from "../../lib/utils";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 type Step = "select" | "review" | "result";
 
@@ -951,6 +952,7 @@ function SelectStep(props: SelectStepProps) {
             value={searchInput}
             onChange={(event) => onSearchInput(event.target.value)}
             placeholder="Search by name, ARN, tag"
+            {...noContactAutofill("vault")}
             className="pl-7 pr-7 text-xs"
             aria-label="Search remote secrets"
             data-testid="vault-search"

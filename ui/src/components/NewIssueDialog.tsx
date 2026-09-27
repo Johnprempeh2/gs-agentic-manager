@@ -197,6 +197,7 @@ import {
   ISSUE_OVERRIDE_ADAPTER_TYPES,
   type IssueModelLane,
 } from "../lib/issue-assignee-overrides";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const STAGED_FILE_ACCEPT = "image/*,application/pdf,text/plain,text/markdown,application/json,text/csv,text/html,.md,.markdown";
 
@@ -404,6 +405,7 @@ const IssueTitleTextarea = memo(function IssueTitleTextarea({
     <textarea
       className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-subtle-foreground"
       placeholder="Task title"
+      {...noContactAutofill("task")}
       rows={1}
       value={draftValue}
       onChange={(e) => {

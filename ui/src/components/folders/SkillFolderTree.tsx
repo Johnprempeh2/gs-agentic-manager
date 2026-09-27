@@ -57,6 +57,7 @@ import {
   type FolderTreeNode,
   type SkillFolderTreeModel,
 } from "./skill-folder-tree";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 export {
   buildSkillFolderTree,
@@ -1048,6 +1049,7 @@ function InlineNewFolder({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Folder name"
+        {...noContactAutofill("folder")}
         autoFocus
         className="h-7 flex-1 text-sm"
         onKeyDown={(event) => {
