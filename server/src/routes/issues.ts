@@ -8111,6 +8111,9 @@ export function issueRoutes(
       includeBlockedBy:
         req.query.includeBlockedBy === "true" ||
         req.query.includeBlockedBy === "1",
+      includeBlocks:
+        req.query.includeBlocks === "true" ||
+        req.query.includeBlocks === "1",
       includeBlockedInboxAttention:
         req.query.includeBlockedInboxAttention === "true" ||
         req.query.includeBlockedInboxAttention === "1",

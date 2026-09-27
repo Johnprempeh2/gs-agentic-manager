@@ -99,6 +99,7 @@ export type IssueListFilters = {
   createdFromIssueId?: string;
   includeRoutineExecutions?: boolean;
   includeBlockedBy?: boolean;
+  includeBlocks?: boolean;
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
@@ -141,6 +142,7 @@ function issueListSearchParams(filters?: IssueListFilters) {
   if (filters?.includeRoutineExecutions)
     params.set("includeRoutineExecutions", "true");
   if (filters?.includeBlockedBy) params.set("includeBlockedBy", "true");
+  if (filters?.includeBlocks) params.set("includeBlocks", "true");
   if (filters?.includeBlockedInboxAttention)
     params.set("includeBlockedInboxAttention", "true");
   if (filters?.includeLiveDescendantSummary)

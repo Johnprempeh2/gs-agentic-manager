@@ -1820,6 +1820,8 @@ export interface IssueFilters {
   excludeRoutineExecutions?: boolean;
   includePluginOperations?: boolean;
   includeBlockedBy?: boolean;
+  /** Attach `blocks`: the issues each listed issue blocks. */
+  includeBlocks?: boolean;
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
@@ -5064,11 +5066,32 @@ async function lastActivityStatsForIssues(
   return [...byIssueId.values()];
 }
 
-async function blockedByMapForIssues(
+function blockedByMapForIssues(
   dbOrTx: any,
   companyId: string,
   issueIds: string[],
 ): Promise<Map<string, IssueRelationIssueSummary[]>> {
+  return blockRelationMapForIssues(dbOrTx, companyId, issueIds, "blockedBy");
+}
+
+/** Issues that each listed issue blocks (the inverse of `blockedByMapForIssues`). */
+function blocksMapForIssues(
+  dbOrTx: any,
+  companyId: string,
+  issueIds: string[],
+): Promise<Map<string, IssueRelationIssueSummary[]>> {
+  return blockRelationMapForIssues(dbOrTx, companyId, issueIds, "blocks");
+}
+
+async function blockRelationMapForIssues(
+  dbOrTx: any,
+  companyId: string,
+  issueIds: string[],
+  direction: "blockedBy" | "blocks",
+): Promise<Map<string, IssueRelationIssueSummary[]>> {
+  // A "blocks" relation row reads issueId blocks relatedIssueId.
+  const currentColumn = direction === "blockedBy" ? issueRelations.relatedIssueId : issueRelations.issueId;
+  const otherColumn = direction === "blockedBy" ? issueRelations.issueId : issueRelations.relatedIssueId;
   const map = new Map<string, IssueRelationIssueSummary[]>();
   const uniqueIssueIds = [...new Set(issueIds)];
   if (uniqueIssueIds.length === 0) return map;
@@ -5083,7 +5106,7 @@ async function blockedByMapForIssues(
   )) {
     const rows = await dbOrTx
       .select({
-        currentIssueId: issueRelations.relatedIssueId,
+        currentIssueId: currentColumn,
         relatedId: issues.id,
         identifier: issues.identifier,
         title: issues.title,
@@ -5093,19 +5116,19 @@ async function blockedByMapForIssues(
         assigneeUserId: issues.assigneeUserId,
       })
       .from(issueRelations)
-      .innerJoin(issues, eq(issueRelations.issueId, issues.id))
+      .innerJoin(issues, eq(otherColumn, issues.id))
       .where(
         and(
           eq(issueRelations.companyId, companyId),
           eq(issueRelations.type, "blocks"),
-          inArray(issueRelations.relatedIssueId, issueIdChunk),
+          inArray(currentColumn, issueIdChunk),
         ),
       );
 
     for (const row of rows) {
-      const blockedBy = map.get(row.currentIssueId);
-      if (!blockedBy) continue;
-      blockedBy.push({
+      const related = map.get(row.currentIssueId);
+      if (!related) continue;
+      related.push({
         id: row.relatedId,
         identifier: row.identifier,
         title: row.title,
@@ -5117,8 +5140,8 @@ async function blockedByMapForIssues(
     }
   }
 
-  for (const blockedBy of map.values()) {
-    blockedBy.sort((a, b) => a.title.localeCompare(b.title));
+  for (const related of map.values()) {
+    related.sort((a, b) => a.title.localeCompare(b.title));
   }
 
   return map;
@@ -7869,6 +7892,7 @@ export function issueService(db: Db) {
       const contextUserId =
         unreadForUserId ?? touchedByUserId ?? inboxArchivedByUserId;
       const includeBlockedBy = filters?.includeBlockedBy === true;
+      const includeBlocks = filters?.includeBlocks === true;
       const includeBlockedInboxAttention =
         filters?.includeBlockedInboxAttention === true;
       const includeLiveDescendantSummary =
@@ -8045,6 +8069,7 @@ export function issueService(db: Db) {
         lastActivityRows,
         archiveRows,
         blockedByMap,
+        blocksMap,
         liveDescendantCountByIssueId,
       ] = await Promise.all([
         contextUserId
@@ -8059,6 +8084,9 @@ export function issueService(db: Db) {
           : Promise.resolve([]),
         includeBlockedBy
           ? blockedByMapForIssues(db, companyId, issueIds)
+          : Promise.resolve(new Map<string, IssueRelationIssueSummary[]>()),
+        includeBlocks
+          ? blocksMapForIssues(db, companyId, issueIds)
           : Promise.resolve(new Map<string, IssueRelationIssueSummary[]>()),
         includeLiveDescendantSummary
           ? liveDescendantCountMapForIssues(db, companyId, issueIds)
@@ -8099,6 +8127,7 @@ export function issueService(db: Db) {
             ...(includeBlockedBy
               ? { blockedBy: blockedByMap.get(row.id) ?? [] }
               : {}),
+            ...(includeBlocks ? { blocks: blocksMap.get(row.id) ?? [] } : {}),
             lastActivityAt,
             ...(blockerAttentionByIssueId.has(row.id)
               ? { blockerAttention: blockerAttentionByIssueId.get(row.id) }
@@ -8142,6 +8171,7 @@ export function issueService(db: Db) {
           ...(includeBlockedBy
             ? { blockedBy: blockedByMap.get(row.id) ?? [] }
             : {}),
+          ...(includeBlocks ? { blocks: blocksMap.get(row.id) ?? [] } : {}),
           lastActivityAt,
           ...(blockerAttentionByIssueId.has(row.id)
             ? { blockerAttention: blockerAttentionByIssueId.get(row.id) }

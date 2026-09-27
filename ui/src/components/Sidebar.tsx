@@ -20,6 +20,7 @@ import {
   MessagesSquare,
   GanttChartSquare,
   LayoutGrid,
+  UserCheck,
   Users,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -176,6 +177,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
             alert={inboxBadge.failedRuns > 0}
           />
+          <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />
           {showDecisions ? (
             <SidebarNavItem
               to="/decisions"
