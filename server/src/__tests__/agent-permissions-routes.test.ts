@@ -714,6 +714,31 @@ describe.sequential("agent permission routes", () => {
     expect(mockAgentService.update).not.toHaveBeenCalled();
   });
 
+  it("persists a Greatstone palette sent as the agent's appearance and rejects unknown palettes", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+    const appearance = { schemaVersion: 1, characterVersion: "cap-v1", paletteId: "gs-emerald" };
+
+    const res = await requestApp(app, (baseUrl) => request(baseUrl)
+      .patch(`/api/agents/${agentId}`)
+      .send({ appearance }));
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockAgentService.update).toHaveBeenCalledWith(agentId, { appearance }, expect.anything());
+
+    mockAgentService.update.mockClear();
+    const rejected = await requestApp(app, (baseUrl) => request(baseUrl)
+      .patch(`/api/agents/${agentId}`)
+      .send({ appearance: { ...appearance, paletteId: "gs-not-a-palette" } }));
+    expect(rejected.status).toBe(400);
+    expect(mockAgentService.update).not.toHaveBeenCalled();
+  });
+
   it("allows instance administrators to enable agent-scoped raw provider traces", async () => {
     const app = await createApp({
       type: "board",

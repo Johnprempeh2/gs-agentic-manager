@@ -68,6 +68,38 @@ export const CAP_V1_COLORS = {
     "a": "#7516cf",
     "b": "#00e8d1"
   },
+  "gs-lime": {
+    "a": "#c8ff00",
+    "b": "#26724f"
+  },
+  "gs-emerald": {
+    "a": "#1b5039",
+    "b": "#8fe8bc"
+  },
+  "gs-void": {
+    "a": "#3a4a40",
+    "b": "#c8ff00"
+  },
+  "gs-tide": {
+    "a": "#1f6f78",
+    "b": "#6ff0e4"
+  },
+  "gs-lagoon": {
+    "a": "#c8ff00",
+    "b": "#4ecdc4"
+  },
+  "gs-paper": {
+    "a": "#f7f8f4",
+    "b": "#4ecdc4"
+  },
+  "gs-orchid": {
+    "a": "#b197fc",
+    "b": "#4ecdc4"
+  },
+  "gs-sunrise": {
+    "a": "#ffc857",
+    "b": "#c8ff00"
+  },
   "muted-dream": {
     "a": "#a6aaad",
     "b": "#44464a"

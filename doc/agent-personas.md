@@ -2,8 +2,12 @@
 
 Agents have a persisted visual identity independent of prompts and runtime
 configuration: `{ schemaVersion: 1, characterVersion: "cap-v1", paletteId }`.
-The cap-v1 library contains 17 permanent palettes and a presentation-only gray
-Muted dream palette. The character itself is one ClipLab studio export —
+The cap-v1 library contains 25 permanent palettes (the 17 original "Classic"
+palettes plus 8 Greatstone `gs-*` palettes) and a presentation-only gray
+Muted dream palette. New agents draw from the Greatstone set; the legacy hash
+for rows without a stored appearance still runs over the original 17 only
+(`LEGACY_AGENT_PALETTE_IDS`). Users change an agent's colour from the picker
+on the agent page. The character itself is one ClipLab studio export —
 `ui/src/assets/cliplab/onboarding.character.json` (end cap, custom idle,
 sleepy-to-wake) — mirrored into the shared package as
 `packages/shared/src/cliplab/character.ts` by
@@ -75,7 +79,7 @@ the TS palette data; `--check` detects drift. This does not generate images.
 
 Storybook: **Agents / Personas**. Run with
 `GSAM_STORYBOOK_API_URL=http://localhost:<isolated-port> pnpm storybook`.
-`pnpm build-storybook` automatically packages all finite avatar presets (17
+`pnpm build-storybook` automatically packages all finite avatar presets (25
 palettes plus muted gray, nine poses, eleven logical sizes, both densities).
 The build uses the same bounded Node worker pool, SVG renderer, and Sharp pipeline
 as the API. Storybook-only URL resolution points to relative PNG paths under the

@@ -15,7 +15,8 @@ import { AiConnectionDesignExamples } from "@/components/ai-connections/AiConnec
 import { SavedProviderKeySelect } from "../components/onboarding/SavedProviderKeySelect";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { AgentCharacter } from "@/components/AgentCharacter";
-import { AGENT_PALETTE_IDS, appearanceForPalette } from "@greatstone/shared";
+import { AGENT_PALETTE_GROUPS, agentPaletteLabel, appearanceForPalette } from "@greatstone/shared";
+import { AgentAppearancePicker, AgentPaletteGrid, agentPaletteDescription } from "@/components/AgentAppearancePicker";
 import { RepositoryEditor } from "@/components/RepositoryEditor";
 import { TaskChatRunnerActivityGroup } from "@/components/task-chat/TaskChatRunnerActivityGroup";
 import { TaskChatMarker } from "@/components/task-chat/TaskChatMarker";
@@ -36,6 +37,7 @@ import {
   LayoutDashboard,
   ListTodo,
   Mail,
+  Palette,
   Plus,
   Search,
   Settings,
@@ -458,6 +460,7 @@ export function DesignGuide() {
   const toastActions = useOptionalToastActions();
   const confirmAction = useConfirm();
   const [wizardStep, setWizardStep] = useState(0);
+  const [pickerAppearance, setPickerAppearance] = useState(() => appearanceForPalette("gs-lime"));
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("medium");
   const [selectValue, setSelectValue] = useState("in_progress");
@@ -1541,11 +1544,42 @@ export function DesignGuide() {
       {/* ============================================================ */}
       <Section title="Agent personas">
         <SubSection title="Stable palette identities">
-          <div className="flex flex-wrap gap-3">{AGENT_PALETTE_IDS.map(palette => <AgentAvatar key={palette} appearance={appearanceForPalette(palette)} size={48} label={palette} />)}</div>
+          <p className="text-sm text-muted-foreground">Every palette is permanent: an agent keeps its stored palette until someone changes it. New hires get a random Greatstone palette. Agents saved before appearances existed keep the classic palette their id hashed to.</p>
+          {AGENT_PALETTE_GROUPS.map(group => (
+            <div key={group.id} className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{group.label}</p>
+              <div className="flex flex-wrap gap-3">
+                {group.paletteIds.map(palette => (
+                  <div key={palette} className="flex w-16 flex-col items-center gap-1">
+                    <AgentAvatar appearance={appearanceForPalette(palette)} size={48} label={agentPaletteLabel(palette)} />
+                    <span className="text-center text-xs text-muted-foreground">{agentPaletteLabel(palette)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </SubSection>
+        <SubSection title="Colour picker">
+          <p className="text-sm text-muted-foreground">On an agent's page the header character is the trigger: <code className="font-mono text-xs">AgentAppearanceEditor</code> opens <code className="font-mono text-xs">AgentAppearancePicker</code> and PATCHes only <code className="font-mono text-xs">appearance</code>. The palettes are one native radio group (Tab in, arrow keys to move), Greatstone first, with a live preview and explicit Save.</p>
+          <div className="flex flex-wrap items-start gap-6">
+            <AgentAppearancePicker value={pickerAppearance} agentName="Atlas" onSave={setPickerAppearance}>
+              <button type="button" aria-label="Change Atlas's colour" className="gs-hero-avatar group relative shrink-0 cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
+                <AgentAvatar appearance={pickerAppearance} size={96} />
+                <span aria-hidden="true" className="absolute bottom-0 right-0 flex size-7 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm group-hover:text-foreground">
+                  <Palette className="size-3.5" />
+                </span>
+              </button>
+            </AgentAppearancePicker>
+            <div className="w-72 rounded-md border border-border p-3">
+              <p className="mb-2 text-xs text-muted-foreground">The grid on its own (<code className="font-mono text-xs">AgentPaletteGrid</code>)</p>
+              <AgentPaletteGrid value={pickerAppearance.paletteId} onChange={palette => setPickerAppearance(appearanceForPalette(palette))} />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">Selected: {agentPaletteDescription(pickerAppearance.paletteId)}</p>
         </SubSection>
         <SubSection title="Onboarding and live character">
           <p className="text-sm text-muted-foreground">Place one live character beside the agent name. Onboarding uses a larger padded frame. Onboarding and agent headers follow the pointer across the page; other placements track within their region. Full-page examples are in Storybook under Agents / Personas / Full pages.</p>
-          <div className="flex gap-4"><AgentCharacter muted state="sleepy" motion="still" size={128} /><AgentCharacter size={128} /></div>
+          <div className="flex gap-4"><AgentCharacter muted state="sleepy" motion="still" size={128} /><AgentCharacter appearance={appearanceForPalette("gs-lime")} size={128} /></div>
         </SubSection>
       </Section>
       <Section title="Human identity">

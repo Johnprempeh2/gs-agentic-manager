@@ -300,6 +300,17 @@ All follow the property row pattern: `text-xs text-muted-foreground` label on le
 **File:** `AgentConfigForm.tsx`
 **Usage:** Full agent creation/editing form with adapter type selection.
 
+### AgentAppearancePicker / AgentPaletteGrid
+
+**File:** `AgentAppearancePicker.tsx`
+**Exports:** AgentAppearancePicker, AgentPaletteGrid, agentPaletteDescription
+**Usage:** Change an agent's colour. `AgentAppearancePicker` is a popover (trigger passed as `children`, rendered `asChild`) with a live preview, every palette as one native radio group (Greatstone group first, then Classic) and explicit Save / Cancel; `onSave(appearance)` may return a promise, and a rejection keeps the popover open with the message. `AgentPaletteGrid` is the radio grid on its own. Palette ids, groups and labels come from `@greatstone/shared` (`AGENT_PALETTE_GROUPS`, `agentPaletteLabel`); never hardcode palette colours in components.
+
+### AgentAppearanceEditor
+
+**File:** `AgentAppearanceEditor.tsx`
+**Usage:** The agent page header character as the picker trigger. PATCHes only `{ appearance }` and refreshes the agent detail, list and org queries so every avatar of the agent follows.
+
 ---
 
 ## Utilities & Hooks

@@ -3171,7 +3171,10 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   display: none;
 }
 
-/* Immutable ClipLab cap-v1 artwork tokens. New artwork gets a new version. */
+/* Immutable ClipLab cap-v1 artwork tokens. New artwork gets a new version;
+   new palettes may be added, existing values never change (avatar PNGs are
+   cached immutably by palette id). Run scripts/sync-agent-palette-tokens.mjs
+   after editing. */
 :root {
   --agent-cap-v1-bubblegum-sky-a: #8bd4ff;
   --agent-cap-v1-bubblegum-sky-b: #ff51bf;
@@ -3207,6 +3210,25 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --agent-cap-v1-turquoise-cherry-b: #ff4f64;
   --agent-cap-v1-ultraviolet-tide-a: #7516cf;
   --agent-cap-v1-ultraviolet-tide-b: #00e8d1;
+  /* Greatstone set: brand void, lime, emerald, teal, paper and purple. Each
+     pair keeps a light middle so the character's dark face stays readable,
+     and neither end is the flat void, so the body holds on both themes. */
+  --agent-cap-v1-gs-lime-a: #c8ff00;
+  --agent-cap-v1-gs-lime-b: #26724f;
+  --agent-cap-v1-gs-emerald-a: #1b5039;
+  --agent-cap-v1-gs-emerald-b: #8fe8bc;
+  --agent-cap-v1-gs-void-a: #3a4a40;
+  --agent-cap-v1-gs-void-b: #c8ff00;
+  --agent-cap-v1-gs-tide-a: #1f6f78;
+  --agent-cap-v1-gs-tide-b: #6ff0e4;
+  --agent-cap-v1-gs-lagoon-a: #c8ff00;
+  --agent-cap-v1-gs-lagoon-b: #4ecdc4;
+  --agent-cap-v1-gs-paper-a: #f7f8f4;
+  --agent-cap-v1-gs-paper-b: #4ecdc4;
+  --agent-cap-v1-gs-orchid-a: #b197fc;
+  --agent-cap-v1-gs-orchid-b: #4ecdc4;
+  --agent-cap-v1-gs-sunrise-a: #ffc857;
+  --agent-cap-v1-gs-sunrise-b: #c8ff00;
   --agent-cap-v1-muted-dream-a: #a6aaad;
   --agent-cap-v1-muted-dream-b: #44464a;
 }

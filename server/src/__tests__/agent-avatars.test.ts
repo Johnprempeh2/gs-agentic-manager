@@ -114,6 +114,26 @@ describe("on-demand agent avatars", () => {
     const png = await pool.render(request);
     expect(await sharp(png).metadata()).toMatchObject({ width: 48, height: 48, format: "png", hasAlpha: true });
   }, 20_000);
+  it("renders and serves the Greatstone palettes in their own colours", async () => {
+    const pool = createAgentAvatarPool(1); cleanups.push(() => pool.close());
+    const gsRequest = { ...request, appearance: appearanceForPalette("gs-lime"), size: 48 as const, scale: 1 as const };
+    const [lime, classic] = await Promise.all([pool.render(gsRequest), pool.render({ ...gsRequest, appearance: appearanceForPalette("arctic-blue") })]);
+    expect(avatarCacheKey(gsRequest)).toBe("generated-agent-avatars/cap-v1/gs-lime/rest-48-1.png");
+    // Centre pixel of the body: lime-to-emerald is green-dominant, arctic blue is blue-dominant.
+    const pixel = async (png: Buffer) => { const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true }); const i = (24 * info.width + 24) * info.channels; return [...data.subarray(i, i + 3)]; };
+    const [lr, lg, lb] = await pixel(lime);
+    const [, , cb] = await pixel(classic);
+    expect(lg).toBeGreaterThan(lb);
+    expect(lg).toBeGreaterThan(lr / 2);
+    expect(cb).toBeGreaterThan(lb);
+    const render = vi.fn(async () => Buffer.from("png-bytes"));
+    const base = (await serve(createAgentAvatarService(await storage(), render))).replace("/arctic-blue/", "/");
+    const served = await fetch(base.replace("/cap-v1/", "/cap-v1/gs-lime/") + "?size=48");
+    expect(served.status).toBe(200); await served.arrayBuffer();
+    expect(render).toHaveBeenCalledWith(expect.objectContaining({ appearance: appearanceForPalette("gs-lime"), muted: false }));
+    const unknown = await fetch(base.replace("/cap-v1/", "/cap-v1/gs-not-a-palette/"));
+    expect(unknown.status).toBe(400); await unknown.text();
+  }, 20_000);
   it("serves public images with content ETags and validates the finite request space", async () => {
     const render = vi.fn(async () => Buffer.from("png-bytes"));
     const url = await serve(createAgentAvatarService(await storage(), render));

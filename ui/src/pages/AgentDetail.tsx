@@ -1,6 +1,5 @@
 import { useConfirm } from "@/context/ConfirmContext";
-import { AgentCharacter } from "../components/AgentCharacter";
-import { characterStateForAgent } from "@greatstone/shared";
+import { AgentAppearanceEditor } from "../components/AgentAppearanceEditor";
 import { mergeRunLogChunks, readChunkSeq } from "../lib/run-log-chunks";
 import { getPageVisibility, usePageVisibility } from "../lib/page-visibility";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
@@ -1281,9 +1280,7 @@ export function AgentDetail() {
       {/* Header */}
       <header className="gs-hero flex flex-wrap items-center justify-between gap-5 pb-6">
         <div className="flex min-w-0 items-center gap-4">
-          <div role="img" aria-label={`${agent.name} avatar`} className="gs-hero-avatar shrink-0">
-            <AgentCharacter agent={agent} state={characterStateForAgent(agent.status)} size={96} trackingScope="page" />
-          </div>
+          <AgentAppearanceEditor agent={agent} companyId={resolvedCompanyId} />
           <div className="min-w-0 space-y-1">
             <h1 className="truncate text-3xl font-extrabold tracking-tight">{agent.name}</h1>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

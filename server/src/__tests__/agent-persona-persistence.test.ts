@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { agents, companies, createDb } from "@greatstone/db";
-import { agentAppearanceSchema, appearanceForPalette, legacyAgentAppearance } from "@greatstone/shared";
+import { GREATSTONE_AGENT_PALETTE_IDS, agentAppearanceSchema, appearanceForPalette, legacyAgentAppearance } from "@greatstone/shared";
 import { startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { agentService } from "../services/agents.js";
 
@@ -22,6 +22,7 @@ describe("persisted agent personas", () => {
     const service = agentService(db);
     const random = await service.create(companyId, { name: "Random", role: "engineer", adapterType: "process" });
     expect(agentAppearanceSchema.safeParse(random.appearance).success).toBe(true);
+    expect(GREATSTONE_AGENT_PALETTE_IDS).toContain(random.appearance?.paletteId);
     const appearance = appearanceForPalette("arctic-blue");
     const original = await service.create(companyId, { name: "Draft", role: "engineer", adapterType: "process", appearance });
     expect(original.appearance).toEqual(appearance);
@@ -34,6 +35,16 @@ describe("persisted agent personas", () => {
     expect((await agentService(db).getById(original.id))?.avatarUrl).toContain("/arctic-blue/rest.png?size=512");
     const [row] = await db.select().from(agents).where(eq(agents.id, original.id));
     expect(row.appearance).toEqual(appearance);
+  });
+  it("changes an existing agent's colour to a Greatstone palette and keeps it through other edits", async () => {
+    const service = agentService(db);
+    const agent = await service.create(companyId, { name: "Recolour", role: "engineer", adapterType: "process", appearance: appearanceForPalette("violet-ember") });
+    const recoloured = await service.update(agent.id, { appearance: appearanceForPalette("gs-tide") }, { recordRevision: { source: "test" } });
+    expect(recoloured?.appearance).toEqual(appearanceForPalette("gs-tide"));
+    await service.update(agent.id, { name: "Recolour renamed" });
+    const reloaded = await agentService(db).getById(agent.id);
+    expect(reloaded?.appearance).toEqual(appearanceForPalette("gs-tide"));
+    expect(reloaded?.avatarUrl).toContain("/cap-v1/gs-tide/rest.png");
   });
   it("backfills legacy IDs with exactly the same persisted identity as the runtime fallback", async () => {
     const ids = Array.from({ length: 20 }, () => randomUUID());
