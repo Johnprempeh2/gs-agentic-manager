@@ -125,8 +125,10 @@ export function Stepper({
               // quantity — how much of the arc is done — which three discrete
               // steps do not have. At 6px they carry the row on their own now
               // that no label sits under them.
-              "size-1.5 shrink-0 rounded-full transition-colors",
-              segment <= step ? "bg-foreground" : "bg-border",
+              // Greatstone: the current step is a stretched lime ("now") pill,
+              // completed steps take the brand colour, the rest stay neutral.
+              "gs-step-dot h-1.5 shrink-0 rounded-full",
+              segment === step ? "gs-step-current" : segment < step ? "gs-step-done" : "gs-step-todo",
               jumpable ? "cursor-pointer" : "cursor-default",
             )}
           />

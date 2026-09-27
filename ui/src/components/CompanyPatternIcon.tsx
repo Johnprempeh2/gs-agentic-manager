@@ -74,6 +74,34 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   ];
 }
 
+// Greatstone hue families (emerald, teal, sea, purple, orchid, coral). A company
+// keeps a stable family from its name. Amber is left out: darkened far enough
+// to carry white text it turns brown.
+const BRAND_HUES = [152, 176, 196, 266, 296, 14] as const;
+
+// The initial is white, so every pixel under it must stay at or below this
+// WCAG relative luminance: 1.05 / (0.15 + 0.05) = 5.25:1 before the drop shadow.
+const MAX_PATTERN_LUMINANCE = 0.15;
+
+function relativeLuminance([r, g, b]: [number, number, number]): number {
+  const channel = (value: number) => {
+    const v = value / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+/** Lowers HSL lightness until the colour is dark enough to carry white text. */
+function legibleHsl(h: number, s: number, l: number): [number, number, number] {
+  let lightness = l;
+  let rgb = hslToRgb(h, s, lightness);
+  while (lightness > 0 && relativeLuminance(rgb) > MAX_PATTERN_LUMINANCE) {
+    lightness -= 1;
+    rgb = hslToRgb(h, s, lightness);
+  }
+  return rgb;
+}
+
 function makeCompanyPatternDataUrl(seed: string, logicalSize = 22, cellSize = 2): string {
   if (typeof document === "undefined") return "";
 
@@ -86,16 +114,18 @@ function makeCompanyPatternDataUrl(seed: string, logicalSize = 22, cellSize = 2)
 
   const rand = mulberry32(hashString(seed));
 
-  const hue = Math.floor(rand() * 360);
-  const [offR, offG, offB] = hslToRgb(
+  const hue = BRAND_HUES[Math.floor(rand() * BRAND_HUES.length)]! + Math.floor(rand() * 13) - 6;
+  // A deep field with lit dots: the dither still reads as a gradient, and the
+  // brightest dot stays dark enough for the white initial.
+  const [offR, offG, offB] = legibleHsl(
     hue,
-    54 + Math.floor(rand() * 14),
-    36 + Math.floor(rand() * 12),
+    48 + Math.floor(rand() * 14),
+    17 + Math.floor(rand() * 6),
   );
-  const [onR, onG, onB] = hslToRgb(
+  const [onR, onG, onB] = legibleHsl(
     hue + (rand() > 0.5 ? 10 : -10),
-    86 + Math.floor(rand() * 10),
-    82 + Math.floor(rand() * 10),
+    62 + Math.floor(rand() * 16),
+    52 + Math.floor(rand() * 8),
   );
 
   const center = (logicalSize - 1) / 2;

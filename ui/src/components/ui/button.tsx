@@ -4,22 +4,25 @@ import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+// Disabled states are explicit per variant (muted surface, subtle text) rather
+// than a blanket opacity fade: a fade drops text below AA by construction and
+// turned the lime primary into an unreadable olive.
 const buttonVariants = cva(
-  "gs-press inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-(--tp-color-background-color-border-color-box-shadow-opacity) disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-(length:--rad-3) aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "gs-press inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-(--tp-color-background-color-border-color-box-shadow-opacity) disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-(length:--rad-3) aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
     variants: {
       variant: {
-        default: "gs-btn-primary bg-primary text-primary-foreground hover:bg-primary/90",
-        cta: "bg-foreground text-background hover:bg-foreground/90",
+        default: "gs-btn-primary bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-subtle-foreground disabled:shadow-none",
+        cta: "bg-foreground text-background hover:bg-foreground/90 disabled:bg-muted disabled:text-subtle-foreground",
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60 disabled:bg-muted disabled:text-subtle-foreground",
         outline:
-          "border gs-btn-glass hover:bg-accent hover:text-accent-foreground",
+          "border gs-btn-glass hover:bg-accent hover:text-accent-foreground disabled:text-subtle-foreground",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:text-subtle-foreground",
         ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
+          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 disabled:text-subtle-foreground",
+        link: "text-primary underline-offset-4 hover:underline disabled:text-subtle-foreground",
       },
       size: {
         default: "h-10 px-4 py-2 has-[>svg]:px-3",

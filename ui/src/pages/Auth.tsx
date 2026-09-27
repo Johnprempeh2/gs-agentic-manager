@@ -5,7 +5,7 @@ import { authApi } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
 import { getRememberedInvitePath } from "../lib/invite-memory";
 import { Button } from "@/components/ui/button";
-import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
+import { BrandTideHero } from "@/components/BrandTideHero";
 import { BrandLoading } from "@/components/BrandLoading";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BrandLockup } from "../components/BrandLockup";
@@ -81,7 +81,7 @@ export function AuthPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex bg-background">
+    <div className="gs-onboarding-ground fixed inset-0 flex">
       <div className="absolute top-4 right-4 z-10">
         <ThemeToggle />
       </div>
@@ -201,9 +201,9 @@ export function AuthPage() {
         </div>
       </div>
 
-      {/* Right half — ASCII art animation (hidden on mobile) */}
+      {/* Right half: the Greatstone tide with the stone (hidden on mobile) */}
       <div className="hidden md:block w-1/2 overflow-hidden">
-        <AsciiArtAnimation />
+        <BrandTideHero />
       </div>
     </div>
   );

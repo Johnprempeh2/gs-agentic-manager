@@ -1,4 +1,5 @@
 import { healthApi } from "@/api/health";
+import { BrandLockup } from "./BrandLockup";
 import { LocalProviderLoginInstructions } from "./AdapterLoginChrome";
 import { useLocalAiLogin } from "./ai-connections/useLocalAiLogin";
 import { aiConnectionsApi } from "@/api/ai-connections";
@@ -2389,7 +2390,7 @@ function OnboardingWizardInner({
         {/* Plain div instead of DialogOverlay — Radix's overlay wraps in
             RemoveScroll which blocks wheel events on our custom (non-DialogContent)
             scroll container. A plain div preserves the background without scroll-locking. */}
-        <div className="fixed inset-0 z-50 bg-background" />
+        <div className="gs-onboarding-ground fixed inset-0 z-50" />
         {/* A deliberate hook for "the wizard mounted".
 
             The tests that assert it opens used to prove it by finding any text
@@ -2403,6 +2404,9 @@ function OnboardingWizardInner({
           className="fixed inset-0 z-50 flex"
           onKeyDown={handleKeyDown}
         >
+          <div className="gs-onboarding-brand pointer-events-none absolute left-6 top-6 hidden sm:block">
+            <BrandLockup className="h-6 text-base" />
+          </div>
           {/* Form column — the wizard opens directly on step 1, so there is no
               front-door choice ahead of it, and it fills the width on every
               step (the mission step's half-width split is gone). */}

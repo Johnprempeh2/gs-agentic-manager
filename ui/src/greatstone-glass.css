@@ -66,6 +66,11 @@
 
   --gs-btn-primary-glow: 0 10px 24px -10px rgb(27 80 57 / 0.55);
   --gs-panel-bg: rgb(251 252 249 / 0.7);
+  /* Hero ground for onboarding and sign-in: the atmosphere plus a glow seated
+     behind the form. Emerald only; lime never sits behind copy. */
+  --gs-onboarding-glow: rgb(27 80 57 / 0.09);
+  --gs-void: #121212;
+  --gs-lime: #c8ff00;
   --gs-focus-glow: 0 0 0 1px rgb(27 80 57 / 0.45), 0 0 0 5px rgb(27 80 57 / 0.1);
   /* Human messages are the emerald stone: identical on paper and on the void. */
   --gs-human-bubble-bg: linear-gradient(160deg, #22604a, #1b5039 58%, #174632);
@@ -113,6 +118,7 @@
   --gs-btn-primary-glow: 0 10px 28px -10px rgb(200 255 0 / 0.55);
   --gs-key-data: #c8ff00;
   --gs-panel-bg: rgb(13 15 13 / 0.6);
+  --gs-onboarding-glow: rgb(27 80 57 / 0.38);
   --gs-focus-glow: 0 0 0 1px rgb(200 255 0 / 0.4), 0 0 0 5px rgb(200 255 0 / 0.08);
   --gs-human-bubble-shadow: inset 0 1px 0 rgb(200 255 0 / 0.16), 0 12px 30px -16px rgb(0 0 0 / 0.7);
   --gs-hairline: linear-gradient(90deg, transparent, rgb(200 255 0 / 0.2) 18%, rgb(78 205 196 / 0.14) 50%, rgb(200 255 0 / 0.2) 82%, transparent);
@@ -291,6 +297,54 @@
   .gs-stagger > :nth-child(12) { --gs-stagger-index: 11; }
   .gs-stagger > :nth-child(n + 13) { --gs-stagger-index: 12; }
 
+  /* Onboarding and sign-in ground: the full atmosphere, a glow seated behind
+     the form, and the grain (these screens cover <body>, so they carry their own). */
+  .gs-onboarding-ground {
+    isolation: isolate;
+    background-color: var(--background);
+    background-image:
+      radial-gradient(38% 42% at 50% 44%, var(--gs-onboarding-glow), transparent 72%),
+      var(--gs-atmosphere);
+  }
+  .gs-onboarding-ground::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--gs-grain-opacity);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .gs-onboarding-brand {
+    animation: gs-rise var(--motion-route-enter) var(--motion-ease-emphasized) both;
+  }
+
+  /* Onboarding progress: the current step stretches into a lime pill. */
+  .gs-step-dot {
+    width: 0.375rem;
+    transition-property: width, background-color, box-shadow;
+    transition-duration: var(--motion-float-enter);
+    transition-timing-function: var(--motion-ease-spring);
+  }
+  .gs-step-current {
+    width: 1.5rem;
+    background-color: var(--gs-nav-marker);
+    box-shadow: 0 0 12px var(--gs-glow-strong);
+  }
+  .gs-step-done {
+    background-color: var(--brand-mark);
+  }
+  .gs-step-todo {
+    background-color: var(--border);
+  }
+
+  /* The tide hero panel stays on the void in both themes: it is the brand
+     image, so its stone is always lime. */
+  .gs-tide-hero {
+    background-color: var(--gs-void);
+    box-shadow: inset 1px 0 0 rgb(255 255 255 / 0.06);
+  }
+
   /* Hero headers (agent pages): a brand glow seated behind the avatar and the
      gradient hairline underneath. Static: the character itself is the motion. */
   .gs-hero {
@@ -438,6 +492,13 @@
   }
 }
 
+/* Unlayered and more specific than index.css's unlayered .brand-mark: the
+   stone on the tide hero is always lime, whichever theme the page is in. */
+.gs-tide-hero .gs-tide-hero-mark {
+  color: var(--gs-lime);
+  filter: drop-shadow(0 0 18px rgb(200 255 0 / 0.25));
+}
+
 @keyframes gs-grow {
   from { transform: scaleY(0); }
   to { transform: scaleY(1); }
@@ -483,4 +544,5 @@
   .gs-stagger > * { animation: none; }
   .gs-bars .gs-bar { animation: none; }
   .gs-empty { animation: none; }
+  .gs-onboarding-brand { animation: none; }
 }
