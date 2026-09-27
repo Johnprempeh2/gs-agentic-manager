@@ -48,6 +48,14 @@ between. Reading, starring and trace inspection do not count as acting. The
 unattended share is auto-recovered failures divided by failures that have an
 issue. Failures with no issue are counted separately.
 
+**R2 detail — rejected logins.** A failed run whose login the provider
+refused: its error code is `<provider>_auth_required`, or (servers before
+GRE-15) its error text says "terminal access failure". Only that boolean is
+read, never the text. The report counts these runs, the retry runs scheduled
+from them, and the `Bounded retry exhausted` events in the window that follow
+one. After GRE-15 the last two should be zero: a dead login goes straight to
+`blocked` with a board-owned recovery action.
+
 **S1 — wake to first useful agent action.** The start point is the wake
 request's `requested_at`, or the run's `created_at` if the run has no wake
 request. The end point is the first agent activity row for that run that is
