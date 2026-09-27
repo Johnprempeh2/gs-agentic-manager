@@ -46,6 +46,17 @@ export interface ExecutionContinuationEnvelope {
   completedWork: string | null;
   /** Start a new turn from history; never replay prior tool calls automatically. */
   interruptedRunId?: string;
+  /** What the previous assignee's run left behind when the task was reassigned. Evidence only. */
+  handover?: {
+    fromRunId: string;
+    fromAgentId: string;
+    runStatus: string;
+    runSummary: string | null;
+    lastComment: { id: string; body: string; createdAt: string } | null;
+    branchName: string | null;
+    /** Null when the workspace could not be read. */
+    changedFiles: string[] | null;
+  } | null;
   /** Completed mutations are context, never instructions to replay them. */
   completedActions?: Array<{
     runId: string;

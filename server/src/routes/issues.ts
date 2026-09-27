@@ -2,6 +2,7 @@ import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractio
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
+import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { extractIssueReferenceIdentifiers, requiresExecutionReconciliation } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
@@ -2862,10 +2863,12 @@ function buildExecutionStageWakeup(input: {
   previousState: ParsedExecutionState | null;
   nextState: ParsedExecutionState | null;
   interruptedRunId: string | null;
+  handoffFromRunId?: string | null;
   requestedByActorType: "user" | "agent";
   requestedByActorId: string;
 }) {
   const { issueId, previousState, nextState, interruptedRunId } = input;
+  const handoffFromRunId = input.handoffFromRunId ?? null;
   if (!nextState) return null;
 
   if (nextState.status === "pending") {
@@ -2904,6 +2907,7 @@ function buildExecutionStageWakeup(input: {
           mutation: "update",
           executionStage,
           ...(interruptedRunId ? { interruptedRunId } : {}),
+          ...(handoffFromRunId ? { handoffFromRunId } : {}),
         },
         requestedByActorType: input.requestedByActorType,
         requestedByActorId: input.requestedByActorId,
@@ -2914,6 +2918,7 @@ function buildExecutionStageWakeup(input: {
           source: "issue.execution_stage",
           executionStage,
           ...(interruptedRunId ? { interruptedRunId } : {}),
+          ...(handoffFromRunId ? { handoffFromRunId } : {}),
         },
       },
     };
@@ -2950,6 +2955,7 @@ function buildExecutionStageWakeup(input: {
           mutation: "update",
           executionStage,
           ...(interruptedRunId ? { interruptedRunId } : {}),
+          ...(handoffFromRunId ? { handoffFromRunId } : {}),
         },
         requestedByActorType: input.requestedByActorType,
         requestedByActorId: input.requestedByActorId,
@@ -2960,6 +2966,7 @@ function buildExecutionStageWakeup(input: {
           source: "issue.execution_stage",
           executionStage,
           ...(interruptedRunId ? { interruptedRunId } : {}),
+          ...(handoffFromRunId ? { handoffFromRunId } : {}),
         },
       },
     };
@@ -3588,6 +3595,24 @@ export function issueRoutes(
       }
     },
   });
+  // A self-handoff run may finish its turn, but not keep working forever on a
+  // task it no longer owns. The run's own timeouts still apply if this timer
+  // is lost to a restart. cancelRun is a no-op once the run has finished.
+  const scheduleSelfHandoffGraceStop = (runId: string, issueId: string, graceMs: number) => {
+    const timer = setTimeout(() => {
+      void (async () => {
+        const run = await heartbeat.getRun(runId);
+        if (!run || run.status !== "running") return;
+        await heartbeat.cancelRun(runId, "Stopped after the self-handoff grace period ended", {
+          errorCode: "issue_reassigned",
+          resultJson: { reassignmentStopConfirmed: true, handoffGraceExpired: true },
+          eventMessage: "run stopped after self-handoff grace period",
+          eventPayload: { issueId },
+        });
+      })().catch((err) => logger.warn({ err, runId, issueId }, "self-handoff grace stop failed"));
+    }, graceMs);
+    timer.unref?.();
+  };
   const stopRunnerGoalForOwnershipChange = async (input: {
     companyId: string;
     issueId: string;
@@ -13075,6 +13100,7 @@ export function issueRoutes(
           .json({ error: "Issue follow-up blocked by unresolved blockers" });
         return;
       }
+      let handoffFromRunId: string | null = null;
       let interruptedRunId: string | null = null;
       const closedExecutionWorkspace =
         await getClosedIssueExecutionWorkspace(existing);
@@ -13468,14 +13494,37 @@ export function issueRoutes(
           agentId: existing.assigneeAgentId,
         });
         const runToStopForReassignment = await resolveActiveIssueRun(existing);
-        if (runToStopForReassignment) {
+        const reassignmentStop = runToStopForReassignment
+          ? decideReassignmentRunStop({
+              runId: runToStopForReassignment.id,
+              runAgentId: runToStopForReassignment.agentId,
+              runtimeMode: runToStopForReassignment.runtimeMode ?? null,
+              processStartedAt: runToStopForReassignment.processStartedAt ?? null,
+              actorAgentId: actor.agentId ?? null,
+              actorRunId: actor.runId ?? null,
+            })
+          : null;
+        if (runToStopForReassignment && reassignmentStop?.kind === "let_finish") {
+          // GRE-36: the run handed its own task over. Let it finish this turn;
+          // the new assignee's wake waits behind it and gets its summary.
+          handoffFromRunId = runToStopForReassignment.id;
+          scheduleSelfHandoffGraceStop(runToStopForReassignment.id, existing.id, reassignmentStop.graceMs);
+        } else if (runToStopForReassignment) {
+          const beforeStart = reassignmentStop?.kind === "withdraw_before_start";
           const cancelled = await heartbeat.cancelRun(
             runToStopForReassignment.id,
-            "Cancelled before issue reassignment",
+            beforeStart
+              ? "Withdrawn before its provider started because the issue was reassigned"
+              : "Cancelled before issue reassignment",
             {
               errorCode: "issue_reassigned",
-              resultJson: { reassignmentStopConfirmed: true },
-              eventMessage: "run cancelled before issue reassignment",
+              resultJson: {
+                reassignmentStopConfirmed: true,
+                ...(beforeStart ? { reassignmentStage: "before_provider_start" } : {}),
+              },
+              eventMessage: beforeStart
+                ? "run withdrawn before provider start for issue reassignment"
+                : "run cancelled before issue reassignment",
               eventPayload: { issueId: existing.id },
             },
           );
@@ -13488,7 +13537,8 @@ export function issueRoutes(
               },
             );
           }
-          interruptedRunId = cancelled.id;
+          // Nothing ran yet, so there is no work to hand over.
+          if (!beforeStart) interruptedRunId = cancelled.id;
         }
       }
 
@@ -14532,6 +14582,7 @@ export function issueRoutes(
         previousState: previousExecutionState,
         nextState: nextExecutionState,
         interruptedRunId,
+        handoffFromRunId,
         requestedByActorType: actor.actorType,
         requestedByActorId: actor.actorId,
       });
@@ -14639,6 +14690,7 @@ export function issueRoutes(
                 ? { resumeIntent: true, followUpRequested: true }
                 : {}),
               ...(interruptedRunId ? { interruptedRunId } : {}),
+              ...(handoffFromRunId ? { handoffFromRunId } : {}),
             },
             requestedByActorType: actor.actorType,
             requestedByActorId: actor.actorId,
@@ -14656,6 +14708,7 @@ export function issueRoutes(
                 ? { resumeIntent: true, followUpRequested: true }
                 : {}),
               ...(interruptedRunId ? { interruptedRunId } : {}),
+              ...(handoffFromRunId ? { handoffFromRunId } : {}),
             },
           });
         }
