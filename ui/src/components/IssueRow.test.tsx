@@ -328,6 +328,32 @@ describe("IssueRow", () => {
     });
   });
 
+  it("marks the selected row so the brand marker stays lit in both layouts", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<IssueRow issue={createIssue()} selected />);
+    });
+    const legacyRow = container.firstElementChild as HTMLElement | null;
+    expect(legacyRow?.dataset.selected).toBe("true");
+    expect(legacyRow?.className).toContain("gs-row");
+
+    act(() => {
+      root.render(<IssueRow issue={createIssue()} presentation="task" selected />);
+    });
+    const taskRow = container.querySelector('[data-slot="task-row"]') as HTMLElement | null;
+    expect(taskRow?.dataset.selected).toBe("true");
+
+    act(() => {
+      root.render(<IssueRow issue={createIssue()} presentation="task" />);
+    });
+    expect((container.querySelector('[data-slot="task-row"]') as HTMLElement | null)?.dataset.selected).toBeUndefined();
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("neutralizes selected status and unread dot accents", () => {
     const root = createRoot(container);
 

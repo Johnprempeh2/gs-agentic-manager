@@ -221,6 +221,7 @@ export function IssueRow({
         onMouseEnter={onMouseEnter}
         data-slot="task-row"
         data-unread={isUnread ? "true" : undefined}
+        data-selected={selected ? "true" : undefined}
         className={cn(
           "gs-row group relative flex min-w-0 items-start gap-2 rounded-lg py-2.5 pr-2 text-sm no-underline text-inherit sm:items-center sm:py-2",
           showUnreadSlot ? "pl-4" : "pl-2 sm:pl-4",
@@ -350,11 +351,12 @@ export function IssueRow({
   return (
     <div
       onMouseEnter={onMouseEnter}
+      data-selected={selected ? "true" : undefined}
       className={cn(
         // No color transition on the row band: hover/selection must snap
         // instantly. A fade (transition-colors) leaves a trail of fading bands
         // when scrubbing the mouse fast across the list.
-        "group relative flex items-start gap-2 rounded-lg py-2.5 pr-3 text-sm no-underline text-inherit sm:items-center sm:py-2 sm:pl-1",
+        "gs-row group relative flex items-start gap-2 rounded-lg py-2.5 pr-3 text-sm no-underline text-inherit sm:items-center sm:py-2 sm:pl-1",
         showUnreadSlot ? "pl-4" : "pl-2",
         "[&_button]:relative [&_button]:z-10",
         // Divider + hover/selected/checklist wash live on the ROOT row band so

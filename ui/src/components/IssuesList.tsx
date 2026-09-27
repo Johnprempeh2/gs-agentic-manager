@@ -1747,9 +1747,9 @@ function StreamlinedIssuesList({
         controls={(
           <>
           {/* View mode toggle */}
-          <div className="flex items-center border border-border rounded-md overflow-hidden mr-1" role="group" aria-label="View mode">
+          <div className="gs-toolbar-divider flex items-center gap-0.5" role="group" aria-label="View mode">
             <button
-              className={`flex h-8 w-8 items-center justify-center transition-colors ${viewState.viewMode === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "list" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
               onClick={() => updateView({ viewMode: "list" })}
               title="List view"
               aria-label="List view"
@@ -1758,7 +1758,7 @@ function StreamlinedIssuesList({
               <List className="h-3.5 w-3.5" />
             </button>
             <button
-              className={`flex h-8 w-8 items-center justify-center transition-colors ${viewState.viewMode === "board" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "board" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
               onClick={() => updateView({ viewMode: "board" })}
               title="Board view"
               aria-label="Board view"

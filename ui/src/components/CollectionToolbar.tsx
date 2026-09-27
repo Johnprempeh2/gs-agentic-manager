@@ -53,7 +53,7 @@ export function CollectionToolbar({
         {(controls || actions) ? (
           <div className="flex min-w-0 flex-wrap items-center gap-1 sm:ml-auto sm:flex-nowrap">
             {controls ? (
-              <div data-slot="collection-toolbar-controls" className="flex min-w-0 flex-wrap items-center gap-1">
+              <div data-slot="collection-toolbar-controls" className="gs-toolbar-cluster flex min-w-0 flex-wrap items-center gap-0.5">
                 {controls}
               </div>
             ) : null}

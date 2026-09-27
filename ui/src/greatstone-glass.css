@@ -461,8 +461,14 @@
     box-shadow: var(--glass-highlight);
   }
   .gs-row:hover::before,
-  .gs-row:focus-within::before {
+  .gs-row:focus-within::before,
+  .gs-row[data-selected="true"]::before {
     transform: translateY(-50%) scaleY(1);
+  }
+  /* The keyboard-selected row keeps its marker lit and carries the glass rim,
+     so selection reads without the pointer. */
+  .gs-row[data-selected="true"] {
+    box-shadow: var(--glass-highlight), inset 0 0 0 1px var(--glass-card-border);
   }
 
   /* Page bar: the brand gradient hairline instead of a flat border, and a
@@ -764,6 +770,39 @@
 .gs-tide-hero .gs-tide-hero-mark {
   color: var(--gs-lime);
   filter: drop-shadow(0 0 18px rgb(200 255 0 / 0.25));
+}
+
+/* Collection toolbar controls: one glass capsule instead of a row of boxed
+   icon buttons. Unlayered and scoped to the capsule, because it has to flatten
+   the Button utilities (border, fill, shadow) inside it. A pressed or active
+   control is the same glass pill the tabs use. */
+.gs-toolbar-cluster {
+  padding: 3px;
+  border-radius: 0.75rem;
+  background: var(--glass-card-bg);
+  box-shadow: var(--glass-highlight), inset 0 0 0 1px var(--glass-card-border);
+}
+.gs-toolbar-cluster button[data-variant="outline"] {
+  border-color: transparent;
+  box-shadow: none;
+}
+/* Shorthand on purpose: outline buttons paint glass as a background-image. */
+.gs-toolbar-cluster button[data-variant="outline"]:not(.bg-accent):not([aria-pressed="true"]) {
+  background: transparent;
+}
+.gs-toolbar-cluster button[data-variant="outline"]:not(.bg-accent):not([aria-pressed="true"]):hover {
+  background: var(--accent);
+}
+.gs-toolbar-cluster button.bg-accent,
+.gs-toolbar-cluster button[aria-pressed="true"] {
+  background: var(--gs-tab-pill-bg);
+  box-shadow: var(--gs-tab-pill-shadow);
+  color: var(--foreground);
+}
+.gs-toolbar-divider {
+  margin-right: 2px;
+  padding-right: 3px;
+  box-shadow: inset -1px 0 0 var(--glass-card-border);
 }
 
 /* Same specificity rule as the tide hero: the band's stone is always lime. */
