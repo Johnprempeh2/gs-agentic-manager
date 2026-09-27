@@ -1256,6 +1256,49 @@ describe("renderPaperclipWakePrompt", () => {
     );
   });
 
+  it("preserves and renders task attachments in structured wake payloads", () => {
+    const payload = {
+      reason: "issue_assigned",
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-46",
+        title: "Read the uploaded brief",
+        description: "See the attached file.",
+        descriptionTruncated: false,
+        status: "todo",
+        attachments: [
+          {
+            id: "att-1",
+            filename: "brief\n.pdf",
+            contentType: "application/pdf",
+            byteSize: 2048,
+            contentPath: "/api/attachments/att-1/content",
+          },
+          { id: "", contentPath: "/api/attachments/bad/content" },
+        ],
+      },
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      comments: [],
+      fallbackFetchNeeded: false,
+    };
+
+    expect(
+      JSON.parse(stringifyPaperclipWakePayload(payload) ?? "{}").issue
+        .attachments,
+    ).toEqual([
+      {
+        id: "att-1",
+        filename: "brief\n.pdf",
+        contentType: "application/pdf",
+        byteSize: 2048,
+        contentPath: "/api/attachments/att-1/content",
+      },
+    ]);
+    expect(renderPaperclipWakePrompt(payload)).toContain(
+      '- "brief\\n.pdf" (application/pdf, 2048 bytes): /api/attachments/att-1/content',
+    );
+  });
+
   it("renders the simplified-english interaction directive only when the payload enables it", () => {
     const payload = {
       reason: "issue_commented",

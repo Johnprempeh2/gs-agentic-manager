@@ -7809,8 +7809,12 @@ export async function buildPaperclipWakePayload(input: {
       ? [comment.id]
       : [],
   );
+  // Task-level attachments (issueCommentId null) are the New Task uploads.
+  // They share the inline attachment cap with comment attachments.
+  const includeTaskAttachments =
+    !conversationMode && Boolean(issueId) && issueSummary?.id === issueId;
   const attachmentRows =
-    !issueId || attachmentCommentIds.length === 0
+    !issueId || (attachmentCommentIds.length === 0 && !includeTaskAttachments)
       ? []
       : await input.db
           .select({
@@ -7832,36 +7836,46 @@ export async function buildPaperclipWakePayload(input: {
             and(
               eq(issueAttachments.companyId, input.companyId),
               eq(issueAttachments.issueId, issueId),
-              inArray(issueAttachments.issueCommentId, attachmentCommentIds),
+              or(
+                includeTaskAttachments
+                  ? isNull(issueAttachments.issueCommentId)
+                  : undefined,
+                attachmentCommentIds.length > 0
+                  ? inArray(issueAttachments.issueCommentId, attachmentCommentIds)
+                  : undefined,
+              ),
             ),
           )
           .orderBy(asc(issueAttachments.createdAt), asc(issueAttachments.id))
           .limit(MAX_INLINE_WAKE_ATTACHMENTS + 1);
   if (attachmentRows.length > MAX_INLINE_WAKE_ATTACHMENTS) truncated = true;
-  const attachmentsByCommentId = new Map<
-    string,
-    Array<{
-      id: string;
-      filename: string;
-      contentType: string;
-      byteSize: number;
-      contentPath: string;
-    }>
-  >();
+  type InlineWakeAttachment = {
+    id: string;
+    filename: string;
+    contentType: string;
+    byteSize: number;
+    contentPath: string;
+  };
+  const taskAttachments: InlineWakeAttachment[] = [];
+  const attachmentsByCommentId = new Map<string, InlineWakeAttachment[]>();
   for (const attachment of attachmentRows.slice(
     0,
     MAX_INLINE_WAKE_ATTACHMENTS,
   )) {
-    if (!attachment.issueCommentId) continue;
-    const descriptors =
-      attachmentsByCommentId.get(attachment.issueCommentId) ?? [];
-    descriptors.push({
+    const descriptor = {
       id: attachment.id,
       filename: attachment.filename?.trim() || "attachment",
       contentType: attachment.contentType,
       byteSize: attachment.byteSize,
       contentPath: `/api/attachments/${attachment.id}/content`,
-    });
+    };
+    if (!attachment.issueCommentId) {
+      taskAttachments.push(descriptor);
+      continue;
+    }
+    const descriptors =
+      attachmentsByCommentId.get(attachment.issueCommentId) ?? [];
+    descriptors.push(descriptor);
     attachmentsByCommentId.set(attachment.issueCommentId, descriptors);
   }
   for (const comment of comments) {
@@ -8072,6 +8086,7 @@ export async function buildPaperclipWakePayload(input: {
           status: issueSummary.status,
           priority: issueSummary.priority,
           workMode: issueSummary.workMode,
+          attachments: taskAttachments,
         }
       : null,
     agentMessage: agentMessageText
