@@ -1417,6 +1417,9 @@ describe("renderPaperclipWakePrompt", () => {
       "do not stop at a plan",
     );
     expect(DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE).toContain(
+      "make your first tool call a one-line comment on the issue",
+    );
+    expect(DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE).toContain(
       "clear final disposition",
     );
     expect(DEFAULT_GSAM_AGENT_PROMPT_TEMPLATE).toContain(
