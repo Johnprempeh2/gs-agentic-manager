@@ -18,6 +18,9 @@ export const lanes = {
       `${server}run-continuations.test.ts`,
       `${server}disposition-repair.test.ts`,
       `${server}issue-thread-interaction-routes.test.ts`,
+      // GRE-36: a reassignment hands work over instead of dropping it.
+      "server/src/services/reassignment-handover.test.ts",
+      `${server}issue-reassignment-handoff-routes.test.ts`,
     ],
   },
   runner: {
@@ -42,6 +45,8 @@ export const lanes = {
       `${server}native-finalization-recovery.test.ts`,
       `${native}native-safe-replacement.test.ts`,
       `${server}issue-thread-interactions-service.test.ts`,
+      // GRE-36: the new assignee's wake carries the old run's progress.
+      "server/src/services/reassignment-handover-payload.test.ts",
     ],
   },
   grading: {
