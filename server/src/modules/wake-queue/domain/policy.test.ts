@@ -293,6 +293,7 @@ const baseReleaseRecoveryFacts: ReleaseRecoveryFacts = {
   shared: {
     hasExistingExecutionPath: false,
     hasPersistedMonitor: false,
+    hasPendingWakeInteraction: false,
     suppressedByPauseHold: false,
     isStrandedRecoveryOrigin: false,
     recoveryAgentPresent: true,
@@ -409,6 +410,32 @@ describe("decideReleaseRecovery", () => {
         ...baseReleaseRecoveryFacts,
         reviewParticipant: { ...baseReleaseRecoveryFacts.reviewParticipant, applies: true },
         shared: { ...baseReleaseRecoveryFacts.shared, hasPersistedMonitor: true },
+      },
+      expected: { kind: "released" },
+    },
+    {
+      name: "released: a review-participant recovery run ended waiting on a pending card that wakes the issue (GRE-35)",
+      facts: {
+        ...baseReleaseRecoveryFacts,
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true },
+        shared: { ...baseReleaseRecoveryFacts.shared, hasPendingWakeInteraction: true },
+      },
+      expected: { kind: "released" },
+    },
+    {
+      name: "blocked: a review-participant recovery run ended and no pending card is left (GRE-35)",
+      facts: {
+        ...baseReleaseRecoveryFacts,
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true },
+      },
+      expected: { kind: "blocked", notice: "execution_review_participant" },
+    },
+    {
+      name: "released: immediate recovery applies but a pending card will wake the assignee",
+      facts: {
+        ...baseReleaseRecoveryFacts,
+        immediate: { ...baseReleaseRecoveryFacts.immediate, applies: true },
+        shared: { ...baseReleaseRecoveryFacts.shared, hasPendingWakeInteraction: true },
       },
       expected: { kind: "released" },
     },
