@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Issue, IssueRelationIssueSummary } from "@greatstone/shared";
-import { selectMyTasks } from "./myTasks";
+import type { AttentionItem, AttentionSubject, Issue, IssueRelationIssueSummary } from "@greatstone/shared";
+import { mergeMyTasks, selectMyTasks } from "./myTasks";
 
 const ME = "user-john";
 
@@ -151,5 +151,82 @@ describe("selectMyTasks", () => {
       blocking: [],
       assigned: [],
     });
+  });
+});
+
+function subject(kind: AttentionSubject["kind"], id: string): AttentionSubject {
+  return { kind, id, companyId: "company-1", title: `Subject ${id}`, identifier: null, status: null, href: null };
+}
+
+function decision(
+  id: string,
+  subjectRef: AttentionSubject,
+  relatedIssue: AttentionSubject | null = null,
+): Pick<AttentionItem, "id" | "subject" | "relatedIssue"> {
+  return { id, subject: subjectRef, relatedIssue };
+}
+
+describe("mergeMyTasks", () => {
+  it("lists blocking, decision and assigned tasks once each, with their reason", () => {
+    const decisionTask = makeIssue("agent-task", { assigneeUserId: null, assigneeAgentId: "agent-ridge" });
+    const result = mergeMyTasks({
+      issues: [makeIssue("blocker", { blocks: [blockedSummary("10")] }), makeIssue("plain")],
+      decisions: [decision("d1", subject("interaction", "i1"), subject("issue", "agent-task"))],
+      decisionIssues: new Map([["agent-task", decisionTask]]),
+      currentUserId: ME,
+    });
+
+    expect(result.issues.map((issue) => issue.id)).toEqual(["blocker", "agent-task", "plain"]);
+    expect(Object.fromEntries(result.reasonsById)).toEqual({
+      blocker: ["blocking"],
+      "agent-task": ["decision"],
+      plain: ["assigned"],
+    });
+    expect(result.decisionsWithoutIssue).toEqual([]);
+  });
+
+  it("keeps one row with every reason when a task has more than one", () => {
+    const task = makeIssue("both", { blocks: [blockedSummary("10")] });
+    const assigned = makeIssue("assigned-too");
+    const result = mergeMyTasks({
+      issues: [task, assigned],
+      decisions: [
+        decision("d1", subject("issue", "both")),
+        decision("d2", subject("approval", "a1"), subject("issue", "both")),
+        decision("d3", subject("issue", "assigned-too")),
+      ],
+      decisionIssues: new Map(),
+      currentUserId: ME,
+    });
+
+    expect(result.issues.map((issue) => issue.id)).toEqual(["both", "assigned-too"]);
+    expect(result.reasonsById.get("both")).toEqual(["blocking", "decision"]);
+    expect(result.reasonsById.get("assigned-too")).toEqual(["decision", "assigned"]);
+  });
+
+  it("keeps decisions without a task, or whose task failed to load, and waits on ones still loading", () => {
+    const noTask = decision("d1", subject("approval", "a1"));
+    const failed = decision("d2", subject("issue", "gone"));
+    const loading = decision("d3", subject("issue", "slow"));
+    const result = mergeMyTasks({
+      issues: [],
+      decisions: [noTask, failed, loading],
+      decisionIssues: new Map([["gone", null]]),
+      currentUserId: ME,
+    });
+
+    expect(result.issues).toEqual([]);
+    expect(result.decisionsWithoutIssue).toEqual([noTask, failed]);
+  });
+
+  it("still shows decision tasks without a signed-in user", () => {
+    const result = mergeMyTasks({
+      issues: [makeIssue("mine")],
+      decisions: [decision("d1", subject("issue", "x"))],
+      decisionIssues: new Map([["x", makeIssue("x")]]),
+      currentUserId: null,
+    });
+
+    expect(result.issues.map((issue) => issue.id)).toEqual(["x"]);
   });
 });
