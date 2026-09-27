@@ -541,6 +541,18 @@ async function runReleaseRecoveryTail(
         })
       : false;
 
+  // A pending card that wakes the assignee on answer is the issue's next
+  // step (GRE-35): a reviewer waiting on the user's confirmation is not a
+  // stalled review. Once the card expires or is withdrawn it is no longer
+  // pending, so this recovery runs again as before.
+  const hasPendingWakeInteraction =
+    reviewParticipantApplies || immediateApplies
+      ? await transaction.hasPendingWakeInteraction({
+          companyId: issue.companyId,
+          issueId: issue.id,
+        })
+      : false;
+
   const hasExplicitBlockerPath =
     immediateApplies && !reviewParticipantApplies
       ? await transaction.hasExplicitBlockerPath({
@@ -565,6 +577,7 @@ async function runReleaseRecoveryTail(
       ISSUE_DISPOSITION_REPAIR_RETRY_REASON &&
     !hasExistingExecutionPath &&
     !issue.monitorNextCheckAt &&
+    !hasPendingWakeInteraction &&
     !hasExplicitBlockerPath &&
     !suppressedByPauseHold &&
     !isStrandedRecoveryOrigin
@@ -599,6 +612,7 @@ async function runReleaseRecoveryTail(
     shared: {
       hasExistingExecutionPath,
       hasPersistedMonitor: Boolean(issue.monitorNextCheckAt),
+      hasPendingWakeInteraction,
       suppressedByPauseHold,
       isStrandedRecoveryOrigin,
       recoveryAgentPresent: recoveryAgent !== null,

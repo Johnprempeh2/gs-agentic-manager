@@ -188,6 +188,8 @@ export interface WakeQueueTransaction {
     excludeRunId: string;
     agentId: string | null;
   }): Promise<boolean>;
+  /** A pending interaction on this issue that wakes the assignee when the user answers it. */
+  hasPendingWakeInteraction(input: { companyId: string; issueId: string }): Promise<boolean>;
   /** An open, non-hidden issue that still lists this issue as a `blocks` predecessor. */
   hasExplicitBlockerPath(input: { companyId: string; issueId: string }): Promise<boolean>;
   isAutomaticRecoverySuppressedByPauseHold(input: { companyId: string; issueId: string }): Promise<boolean>;

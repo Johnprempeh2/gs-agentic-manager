@@ -120,6 +120,7 @@ function createFakeTransaction(overrides: Partial<WakeQueueTransaction> = {}): W
     finalizePromotedWake: vi.fn(async (input) => runSummary(input.wakeId)),
     hasExistingExecutionPath: vi.fn(async () => false),
     hasExplicitBlockerPath: vi.fn(async () => false),
+    hasPendingWakeInteraction: vi.fn(async () => false),
     isAutomaticRecoverySuppressedByPauseHold: vi.fn(async () => false),
     isImmediateRecoverySourceBlocked: vi.fn(async () => false),
     queueReviewParticipantRecoveryRun: vi.fn(async () => runSummary("review-recovery")),
@@ -692,6 +693,79 @@ describe("releaseIssueExecution", () => {
     expect(result.outcome.kind).toBe("blocked");
     expect(result.outcome.kind === "blocked" && result.outcome.noticeKind).toBe("immediate_execution_path");
     expect(recovery.escalateStrandedAssignedIssue).toHaveBeenCalledTimes(1);
+  });
+
+  // GRE-26: the reviewer posted a confirmation card for the user and ended
+  // its run. The card wakes the issue when answered, so the review is waiting,
+  // not stalled, and must stay in_review.
+  describe("review stage waiting on a pending confirmation card (GRE-35)", () => {
+    const REVIEW_ISSUE: IssueSnapshot = {
+      ...ISSUE,
+      status: "in_review",
+      executionState: {
+        status: "pending",
+        currentStageType: "review",
+        currentParticipant: { type: "agent", agentId: RUN.agentId },
+      },
+    };
+
+    async function releaseReviewRun(input: { retryReason?: string; pendingCard: boolean }) {
+      const run: RunSnapshot = {
+        ...RUN,
+        status: "succeeded",
+        contextSnapshot: {
+          issueId: REVIEW_ISSUE.id,
+          wakeReason: "execution_review_requested",
+          ...(input.retryReason ? { retryReason: input.retryReason } : {}),
+        },
+      };
+      const transaction = createFakeTransaction({
+        hasPendingWakeInteraction: vi.fn(async () => input.pendingCard),
+      });
+      const recovery = createFakeRecovery();
+      const release = createReleaseIssueExecution({
+        issueLock: createFakeIssueLock(createFakeHost(), transaction, REVIEW_ISSUE, run),
+        recovery,
+      });
+      const result = await release({ companyId: RUN.companyId, runId: run.id, now: new Date() });
+      return { result, transaction, recovery };
+    }
+
+    it("does not block a review-recovery run that ended waiting on the card", async () => {
+      const { result, transaction, recovery } = await releaseReviewRun({
+        retryReason: "execution_review_participant_recovery",
+        pendingCard: true,
+      });
+
+      expect(result.outcome.kind).toBe("released");
+      expect(recovery.escalateStrandedAssignedIssue).not.toHaveBeenCalled();
+      expect(transaction.queueReviewParticipantRecoveryRun).not.toHaveBeenCalled();
+    });
+
+    it("does not queue a review retry when the first review run ends waiting on the card", async () => {
+      const { result, transaction } = await releaseReviewRun({ pendingCard: true });
+
+      expect(result.outcome.kind).toBe("released");
+      expect(transaction.queueReviewParticipantRecoveryRun).not.toHaveBeenCalled();
+    });
+
+    it("still blocks once the card is no longer pending (expired or withdrawn)", async () => {
+      const { result, recovery } = await releaseReviewRun({
+        retryReason: "execution_review_participant_recovery",
+        pendingCard: false,
+      });
+
+      expect(result.outcome.kind).toBe("blocked");
+      expect(result.outcome.kind === "blocked" && result.outcome.noticeKind).toBe("execution_review_participant");
+      expect(recovery.escalateStrandedAssignedIssue).toHaveBeenCalledTimes(1);
+    });
+
+    it("still queues the review retry once the card is no longer pending", async () => {
+      const { result, transaction } = await releaseReviewRun({ pendingCard: false });
+
+      expect(result.outcome.kind).not.toBe("released");
+      expect(transaction.queueReviewParticipantRecoveryRun).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
