@@ -47,6 +47,18 @@ import { DecisionQueueRail } from "../components/DecisionQueueRail";
 import { DecisionDateChips, type AttentionCustomRange } from "../components/DecisionDateChips";
 import { DecisionResolver } from "../components/DecisionResolver";
 import { IssueGroupHeader } from "../components/IssueGroupHeader";
+import { DecisionsFocusView } from "../components/decisions-focus/DecisionsFocusView";
+import { ToggleSwitch } from "../components/ui/toggle-switch";
+import { isFocusItem } from "../lib/focus-items";
+import {
+  loadDecisionsView,
+  loadFocusPrefs,
+  saveDecisionsView,
+  saveFocusPrefs,
+  type DecisionsView,
+  type FocusPrefs,
+} from "../lib/focus-prefs";
+import { cn } from "../lib/utils";
 
 /** Curtain rows never expand; module-level so memoized rows see one identity. */
 const noopToggleExpand = () => {};
@@ -108,6 +120,9 @@ export function WhatNeedsMe() {
   const [agingOpen, setAgingOpen] = useState(false);
   const [decidedOpen, setDecidedOpen] = useState(false);
   const [expiredOpen, setExpiredOpen] = useState(false);
+  // List | Focus (GRE-55). Both saved in the browser.
+  const [view, setView] = useState<DecisionsView>(() => loadDecisionsView());
+  const [focusPrefs, setFocusPrefs] = useState<FocusPrefs>(() => loadFocusPrefs());
 
   // Date-range chips (PAP-16032 §4.2) — resolve to server-side activity bounds.
   const [dateRange, setDateRange] = useState<AttentionDateRangeId>("all");
@@ -387,6 +402,21 @@ export function WhatNeedsMe() {
     setAutoExpandDone(true);
   }, [deskItems, autoExpandDone, sortOrder]);
 
+  // Focus queue: open questions, confirmations and suggested tasks, in the
+  // desk's sort order. Aging ones count too — they are still open.
+  const focusItems = useMemo(
+    () => sortAttentionItems(activeItems.filter(isFocusItem), sortOrder),
+    [activeItems, sortOrder],
+  );
+  const updateView = (next: DecisionsView) => {
+    setView(next);
+    saveDecisionsView(next);
+  };
+  const updateFocusPrefs = useCallback((next: FocusPrefs) => {
+    setFocusPrefs(next);
+    saveFocusPrefs(next);
+  }, []);
+
   const updateGroupBy = (next: AttentionGroupBy) => {
     setGroupBy(next);
     saveAttentionGroupBy(next);
@@ -462,6 +492,8 @@ export function WhatNeedsMe() {
     setExpandedId((prev) => (prev === item.id ? null : item.id));
   }, []);
   useEffect(() => {
+    // Focus mode owns the keyboard while it is on screen.
+    if (view === "focus") return;
     const handleKeyDown = (event: KeyboardEvent) => {
       const action = resolveAttentionQueueKeyAction({
         defaultPrevented: event.defaultPrevented,
@@ -504,7 +536,7 @@ export function WhatNeedsMe() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleDismiss, keyboardItems, navigate, selectedAttentionId]);
+  }, [handleDismiss, keyboardItems, navigate, selectedAttentionId, view]);
 
   if (!selectedCompanyId) {
     return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
@@ -516,10 +548,44 @@ export function WhatNeedsMe() {
 
   const hasAnything = activeItems.length > 0 || snoozedItems.length > 0 || dismissedItems.length > 0;
 
+  const viewSwitch = <DecisionsViewSwitch view={view} onChange={updateView} />;
+
+  if (view === "focus") {
+    return (
+      <div className="max-w-5xl space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl font-bold">Decisions</h1>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <ToggleSwitch
+                checked={focusPrefs.autoRead}
+                onCheckedChange={(autoRead) => updateFocusPrefs({ ...focusPrefs, autoRead })}
+                aria-label="Read each question aloud"
+              />
+              Read each question aloud
+            </label>
+            {viewSwitch}
+          </div>
+        </div>
+        {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
+        <DecisionsFocusView
+          items={focusItems}
+          companyId={selectedCompanyId}
+          agentMap={agentMap}
+          currentUserId={currentUserId}
+          prefs={focusPrefs}
+          onPrefsChange={updateFocusPrefs}
+          onShowList={() => updateView("list")}
+        />
+      </div>
+    );
+  }
+
   return (
     <div ref={rootRef} className="max-w-3xl space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold">Decisions</h1>
+        <div className="flex items-center gap-2">
         <DecisionsToolbar
           visibleCount={visibleCount}
           filterOptions={filterOptions}
@@ -530,6 +596,8 @@ export function WhatNeedsMe() {
           sortOrder={sortOrder}
           onSortOrderChange={updateSortOrder}
         />
+        {viewSwitch}
+        </div>
       </div>
 
       {/* Queue quicklinks + date-range chips (§4.1–§4.2). The rail self-hides
@@ -756,6 +824,36 @@ export function WhatNeedsMe() {
           )}
         </Curtain>
       </div>
+    </div>
+  );
+}
+
+/** List | Focus switch at the top of the Decisions page (GRE-55). */
+export function DecisionsViewSwitch({
+  view,
+  onChange,
+}: {
+  view: DecisionsView;
+  onChange: (view: DecisionsView) => void;
+}) {
+  return (
+    <div className="inline-flex shrink-0 rounded-md border border-border p-0.5" role="group" aria-label="Decisions view">
+      {(["list", "focus"] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={view === option}
+          onClick={() => onChange(option)}
+          className={cn(
+            "gs-press rounded-sm px-3 py-1 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
+            view === option
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          {option === "list" ? "List" : "Focus"}
+        </button>
+      ))}
     </div>
   );
 }
