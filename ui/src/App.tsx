@@ -54,6 +54,7 @@ import { CompanyActivity } from "./pages/audit/CompanyActivity";
 import { AuditHub } from "./pages/audit/AuditHub";
 import { Inbox } from "./pages/Inbox";
 import { WhatNeedsMe } from "./pages/WhatNeedsMe";
+import { MyTasks } from "./pages/MyTasks";
 import { DecisionQueuePage } from "./pages/DecisionQueuePage";
 import { BoardChat } from "./pages/BoardChat";
 import { CompanySettings } from "./pages/CompanySettings";
@@ -417,6 +418,7 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
       ) : null}
       <Route path="decisions" element={<WhatNeedsMe />} />
+      <Route path="my-tasks" element={<MyTasks />} />
       <Route path="decisions/queues/:key" element={<DecisionQueuePage />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
       <Route path="inbox/mine" element={<Inbox />} />
@@ -798,6 +800,7 @@ export function App() {
             </>
           ) : null}
           <Route path="decisions" element={<UnprefixedBoardRedirect />} />
+          <Route path="my-tasks" element={<UnprefixedBoardRedirect />} />
           <Route path="u/:userSlug" element={<UnprefixedBoardRedirect />} />
           <Route path="skills/studio" element={<UnprefixedBoardRedirect />} />
           <Route path="skills/studio/new" element={<UnprefixedBoardRedirect />} />
