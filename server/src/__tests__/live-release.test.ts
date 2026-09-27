@@ -6,9 +6,12 @@ import {
   LIVE_RELEASE_SWITCH_MS,
   LIVE_RELEASE_WAIT_FOR_RUNS_MS,
   createLiveReleaseService,
+  isReleaseRef,
   parseLiveReleaseKey,
   type LiveReleaseDeps,
+  type LiveReleaseEvent,
 } from "../services/live-release.ts";
+import { parseReleaseQuestionRef } from "../services/live-release-announce.ts";
 
 // Everything runs in a temp sandbox: no ~/GSAM path is read or written.
 let root: string;
@@ -18,6 +21,8 @@ let comments: string[];
 let holds: Array<{ startedAt: Date; expiresAt: Date }>;
 let lifted: Date[];
 let launches: Array<{ jobDir: string; rcTag: string }>;
+let runningCommit: { commit: string; tag: string | null } | null;
+let announced: LiveReleaseEvent[];
 
 function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
   return {
@@ -37,6 +42,11 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
       fs.writeFileSync(path.join(jobDir, "launcher.pid"), `${process.pid}\n`);
     },
     isProcessAlive: () => true,
+    readRunningCommit: () => runningCommit,
+    containsRef: (_commit, ref) => ref === "aaaaaaa",
+    announce: async (event) => {
+      announced.push(event);
+    },
     ...overrides,
   };
 }
@@ -67,6 +77,8 @@ beforeEach(() => {
   holds = [];
   lifted = [];
   launches = [];
+  runningCommit = { commit: "a".repeat(40), tag: "live-2026-09-28.1" };
+  announced = [];
 });
 
 afterEach(() => {
@@ -222,5 +234,74 @@ describe("one-click release", () => {
     await svc.onConfirmationAccepted({ ...accepted("live-release:rc-2026-09-27.3"), interaction: { ...accepted().interaction, id: "interaction-2", idempotencyKey: "live-release:rc-2026-09-27.3" } });
     expect(comments.at(-1)).toMatch(/release of rc-2026-09-27.2 is still in progress/);
     expect(holds).toHaveLength(1);
+  });
+});
+
+describe("live start record (GRE-50)", () => {
+  it("records one release event when live starts on a new commit", async () => {
+    const svc = createLiveReleaseService(deps());
+    const event = await svc.recordLiveStart();
+    expect(event).toEqual({
+      commit: "a".repeat(40),
+      tag: "live-2026-09-28.1",
+      startedAt: clock.toISOString(),
+      previousCommit: null,
+      previousTag: null,
+    });
+    expect(announced).toEqual([event]);
+    expect(svc.lastLiveStart()).toEqual(event);
+  });
+
+  it("does nothing on a restart on the same commit", async () => {
+    await createLiveReleaseService(deps()).recordLiveStart();
+    advance(60_000);
+    // A new service object is what a restarted server builds.
+    const restarted = createLiveReleaseService(deps());
+    expect(await restarted.recordLiveStart()).toBeNull();
+    expect(announced).toHaveLength(1);
+  });
+
+  it("records the next commit with the one before it", async () => {
+    await createLiveReleaseService(deps()).recordLiveStart();
+    runningCommit = { commit: "b".repeat(40), tag: null };
+    const event = await createLiveReleaseService(deps()).recordLiveStart();
+    expect(event).toMatchObject({ commit: "b".repeat(40), previousCommit: "a".repeat(40), previousTag: "live-2026-09-28.1" });
+    expect(announced).toHaveLength(2);
+  });
+
+  it("records nothing unless the server runs from the live checkout", async () => {
+    fs.mkdirSync(path.join(root, "worktree"));
+    const svc = createLiveReleaseService(deps({ serverRepoRoot: path.join(root, "worktree") }));
+    expect(await svc.recordLiveStart()).toBeNull();
+    expect(announced).toEqual([]);
+  });
+
+  it("repeats the announcement at the next start when it failed", async () => {
+    const failing = createLiveReleaseService(deps({ announce: async () => { throw new Error("db down"); } }));
+    await expect(failing.recordLiveStart()).rejects.toThrow("db down");
+    expect(failing.lastLiveStart()).toBeNull();
+    expect(await createLiveReleaseService(deps()).recordLiveStart()).not.toBeNull();
+    expect(announced).toHaveLength(1);
+  });
+
+  it("answers 'is ref live?' only for commit SHAs and release tags", async () => {
+    let asked: string[] = [];
+    const svc = createLiveReleaseService(deps({ containsRef: (_c, ref) => (asked.push(ref), ref === "aaaaaaa") }));
+    expect(svc.isLive("aaaaaaa")).toMatchObject({ commit: "a".repeat(40), live: true });
+    expect(svc.isLive("bbbbbbb").live).toBe(false);
+    expect(svc.isLive("HEAD; rm -rf /").live).toBeNull();
+    expect(svc.isLive(null).live).toBeNull();
+    expect(asked).toEqual(["aaaaaaa", "bbbbbbb"]);
+    expect(isReleaseRef("rc-2026-09-27.3")).toBe(true);
+    expect(isReleaseRef("--output=x")).toBe(false);
+  });
+
+  it("reads the ref an 'is it released?' card asks about from its key", () => {
+    expect(parseReleaseQuestionRef("confirmation:ec25d65d:release:f70ae74dc")).toBe("f70ae74dc");
+    expect(parseReleaseQuestionRef("confirmation:465d8346:release:rc-2026-09-27.3")).toBe("rc-2026-09-27.3");
+    expect(parseReleaseQuestionRef("live-release:rc-2026-09-27.2")).toBe("rc-2026-09-27.2");
+    expect(parseReleaseQuestionRef("confirmation:x:pr6-released")).toBeNull();
+    expect(parseReleaseQuestionRef("confirmation:ec25d65d:release-go:after-hold-1")).toBeNull();
+    expect(parseReleaseQuestionRef(null)).toBeNull();
   });
 });
