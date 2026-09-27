@@ -211,16 +211,14 @@ function FocusQuestionBody({
         />
       ) : (
         <>
-          <div className="rounded-lg border border-border">
-            <AttentionInteractionResolver
-              companyId={companyId}
-              issueId={issueId}
-              interactionId={interaction.id}
-              agentMap={agentMap}
-              currentUserId={currentUserId}
-              onResolved={answered}
-            />
-          </div>
+          <AttentionInteractionResolver
+            companyId={companyId}
+            issueId={issueId}
+            interactionId={interaction.id}
+            agentMap={agentMap}
+            currentUserId={currentUserId}
+            onResolved={answered}
+          />
           <FocusFooter
             taskHref={item.subject.href ?? task?.href ?? null}
             onSkip={onSkip}
