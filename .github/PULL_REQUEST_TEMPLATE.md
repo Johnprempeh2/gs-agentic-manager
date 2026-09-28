@@ -55,6 +55,8 @@
 
 -
 
+**Where to see it:** <!-- The page to open and how to reach it from the sidebar, for example: Sidebar → Decisions, then the Focus switch (`/decisions`). Or write: no visible change. scripts/greatstone-changes.mjs copies this line to the release card. -->
+
 ## Verification
 
 <!--
