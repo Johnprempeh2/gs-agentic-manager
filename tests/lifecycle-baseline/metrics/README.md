@@ -102,6 +102,17 @@ workspace, adapter start, prompt build); **agent** is prompt sent → first
 useful action (model time and the agent's own tool calls). Runs without a
 `prepare_turn` event are left out of the split only.
 
+**S1-work — wake to first useful non-comment action** (`s1.work` in
+`metrics.json`). Same start point and same useful-action filter as S1, but the
+clock stops at the first useful action that is not `issue.comment_added`: a
+status change, document, new issue, approval request and so on. Timed runs
+that only commented are counted (`runsWithCommentsOnly`) but not timed.
+
+**A speed claim needs both S1 and S1-work.** Since GRE-4 agents post a
+one-line comment first, which moves S1 without the real work getting any
+faster (S1 median 40.5 s → 12.1 s while wake → first non-comment action stayed
+at 48 s). A fix that improves S1 but not S1-work has only moved the comment.
+
 ## Known limits
 
 - "Useful action" means the first *visible* write, such as a comment, status

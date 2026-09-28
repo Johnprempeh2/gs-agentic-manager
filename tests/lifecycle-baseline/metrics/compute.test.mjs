@@ -287,6 +287,26 @@ test("S1: tool discovery at session start is bookkeeping; the split needs a prom
   assert.equal(s1.split.agentMedianMs, 18_000);
 });
 
+test("S1-work: a comment first stops S1; the first non-comment action stops S1-work", () => {
+  const at = (hours, seconds) => new Date(Date.parse(hoursAgo(hours)) + seconds * 1000).toISOString();
+  const runs = [
+    { id: "r1", status: "succeeded", wakeRequestedAt: hoursAgo(3), createdAt: hoursAgo(3) },
+    { id: "r2", status: "succeeded", wakeRequestedAt: hoursAgo(2), createdAt: hoursAgo(2) },
+  ];
+  const activity = [
+    { runId: "r1", actorType: "agent", action: "issue.checked_out", createdAt: at(3, 1) },
+    { runId: "r1", actorType: "agent", action: "issue.comment_added", createdAt: at(3, 5) },
+    { runId: "r1", actorType: "agent", action: "issue.updated", createdAt: at(3, 40) },
+    { runId: "r2", actorType: "agent", action: "issue.comment_added", createdAt: at(2, 7) },
+  ];
+  const s1 = computeWakeLatency(base({ runs, activity }));
+  assert.deepEqual(s1.samplesMs, [5_000, 7_000], "S1 stops at each run's first comment");
+  assert.equal(s1.work.sampleSize, 1, "r2 only commented");
+  assert.equal(s1.work.runsWithCommentsOnly, 1);
+  assert.equal(s1.work.medianMs, 40_000, "S1-work stops at r1's issue.updated");
+  assert.equal(s1.work.p95Ms, 40_000);
+});
+
 test("percentile uses nearest rank", () => {
   const values = Array.from({ length: 20 }, (_, index) => index + 1);
   assert.equal(percentile(values, 95), 19);
