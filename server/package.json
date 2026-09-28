@@ -13,7 +13,8 @@
   },
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./auth/reset-password": "./src/auth/reset-password.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -21,6 +22,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./auth/reset-password": {
+        "types": "./dist/auth/reset-password.d.ts",
+        "import": "./dist/auth/reset-password.js"
       }
     },
     "main": "./dist/index.js",
