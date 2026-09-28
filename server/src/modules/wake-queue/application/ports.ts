@@ -190,6 +190,13 @@ export interface WakeQueueTransaction {
   }): Promise<boolean>;
   /** A pending interaction on this issue that wakes the assignee when the user answers it. */
   hasPendingWakeInteraction(input: { companyId: string; issueId: string }): Promise<boolean>;
+  /** The reviewer commented recently or a child/blocker check issue is being worked, within the retry budget (GRE-97). */
+  isReviewerWaitingOnCheck(input: {
+    companyId: string;
+    issueId: string;
+    reviewerAgentId: string;
+    now: Date;
+  }): Promise<boolean>;
   /** An open, non-hidden issue that still lists this issue as a `blocks` predecessor. */
   hasExplicitBlockerPath(input: { companyId: string; issueId: string }): Promise<boolean>;
   isAutomaticRecoverySuppressedByPauseHold(input: { companyId: string; issueId: string }): Promise<boolean>;
@@ -255,10 +262,18 @@ export type StrandedRecoveryInPlaceEscalationInput = {
   latestRun: RunSnapshot;
 };
 
+export type ReviewWaitDeferralInput = {
+  issue: IssueSnapshot;
+  latestRun: RunSnapshot;
+  reviewerAgentId: string;
+};
+
 /** Wraps `services/recovery`'s stranded-issue escalation, called only after the release transaction commits. */
 export interface RecoveryEscalationPort {
   escalateStrandedAssignedIssue(input: StrandedAssignedIssueEscalationInput): Promise<void>;
   escalateStrandedRecoveryIssueInPlace(input: StrandedRecoveryInPlaceEscalationInput): Promise<void>;
+  /** Schedules a monitor that wakes the waiting reviewer again later (GRE-97). */
+  scheduleReviewWaitMonitor(input: ReviewWaitDeferralInput): Promise<void>;
 }
 
 export type { PostCommitEffect, ReleaseOutcome };

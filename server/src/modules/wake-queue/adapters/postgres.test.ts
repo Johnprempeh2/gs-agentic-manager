@@ -263,7 +263,7 @@ describeEmbeddedPostgres("wake-queue postgres adapter", () => {
     }).where(eq(issues.id, issueId));
     const release = createReleaseIssueExecution({
       issueLock: createPostgresWakeQueueAdapter(db, stubDeps),
-      recovery: { escalateStrandedAssignedIssue: async () => {}, escalateStrandedRecoveryIssueInPlace: async () => {} },
+      recovery: { escalateStrandedAssignedIssue: async () => {}, escalateStrandedRecoveryIssueInPlace: async () => {}, scheduleReviewWaitMonitor: async () => {} },
     });
     try {
       await settings.updateExperimental({ enableAgentChat: false });
@@ -302,6 +302,7 @@ describeEmbeddedPostgres("wake-queue postgres adapter", () => {
         recovery: {
           escalateStrandedAssignedIssue: async () => { throw new Error("unexpected escalation"); },
           escalateStrandedRecoveryIssueInPlace: async () => { throw new Error("unexpected escalation"); },
+          scheduleReviewWaitMonitor: async () => { throw new Error("unexpected review wait"); },
         },
       });
       const result = await release({ companyId, runId, now: new Date() });

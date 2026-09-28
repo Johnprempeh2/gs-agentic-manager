@@ -121,6 +121,7 @@ function createFakeTransaction(overrides: Partial<WakeQueueTransaction> = {}): W
     hasExistingExecutionPath: vi.fn(async () => false),
     hasExplicitBlockerPath: vi.fn(async () => false),
     hasPendingWakeInteraction: vi.fn(async () => false),
+    isReviewerWaitingOnCheck: vi.fn(async () => false),
     isAutomaticRecoverySuppressedByPauseHold: vi.fn(async () => false),
     isImmediateRecoverySourceBlocked: vi.fn(async () => false),
     queueReviewParticipantRecoveryRun: vi.fn(async () => runSummary("review-recovery")),
@@ -142,6 +143,7 @@ function createFakeRecovery(): RecoveryEscalationPort {
   return {
     escalateStrandedAssignedIssue: vi.fn(async () => {}),
     escalateStrandedRecoveryIssueInPlace: vi.fn(async () => {}),
+    scheduleReviewWaitMonitor: vi.fn(async () => {}),
   };
 }
 
@@ -765,6 +767,80 @@ describe("releaseIssueExecution", () => {
 
       expect(result.outcome.kind).not.toBe("released");
       expect(transaction.queueReviewParticipantRecoveryRun).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // GRE-80, 2026-09-28 07:57: Keystone's review-recovery run commented that it
+  // waits on CI and on Flint's check (child GRE-88, in progress), then ended.
+  // The release path blocked the issue "so the board can inspect".
+  describe("review stage waiting on CI or a check (GRE-97)", () => {
+    const REVIEW_ISSUE: IssueSnapshot = {
+      ...ISSUE,
+      status: "in_review",
+      executionState: {
+        status: "pending",
+        currentStageType: "review",
+        currentParticipant: { type: "agent", agentId: RUN.agentId },
+      },
+    };
+
+    async function releaseReviewRecoveryRun(input: { reviewerWaiting: boolean; retryReason?: string | null }) {
+      const retryReason = input.retryReason === undefined ? "execution_review_participant_recovery" : input.retryReason;
+      const run: RunSnapshot = {
+        ...RUN,
+        status: "succeeded",
+        contextSnapshot: {
+          issueId: REVIEW_ISSUE.id,
+          wakeReason: "execution_review_requested",
+          ...(retryReason ? { retryReason } : {}),
+        },
+      };
+      const transaction = createFakeTransaction({
+        isReviewerWaitingOnCheck: vi.fn(async () => input.reviewerWaiting),
+      });
+      const recovery = createFakeRecovery();
+      const release = createReleaseIssueExecution({
+        issueLock: createFakeIssueLock(createFakeHost(), transaction, REVIEW_ISSUE, run),
+        recovery,
+      });
+      const now = new Date("2026-09-28T07:57:19Z");
+      const result = await release({ companyId: RUN.companyId, runId: run.id, now });
+      return { result, transaction, recovery, run, now };
+    }
+
+    it("does not block a waiting reviewer; it schedules a wake for later", async () => {
+      const { result, transaction, recovery, run, now } = await releaseReviewRecoveryRun({ reviewerWaiting: true });
+
+      expect(transaction.isReviewerWaitingOnCheck).toHaveBeenCalledWith({
+        companyId: REVIEW_ISSUE.companyId,
+        issueId: REVIEW_ISSUE.id,
+        reviewerAgentId: RUN.agentId,
+        now,
+      });
+      expect(result.outcome.kind).toBe("review_wait_deferred");
+      expect(recovery.escalateStrandedAssignedIssue).not.toHaveBeenCalled();
+      expect(recovery.scheduleReviewWaitMonitor).toHaveBeenCalledWith({
+        issue: REVIEW_ISSUE,
+        latestRun: run,
+        reviewerAgentId: RUN.agentId,
+      });
+      expect(transaction.queueReviewParticipantRecoveryRun).not.toHaveBeenCalled();
+    });
+
+    it("still blocks a real stall: no reviewer comment, no check, no monitor", async () => {
+      const { result, recovery } = await releaseReviewRecoveryRun({ reviewerWaiting: false });
+
+      expect(result.outcome.kind).toBe("blocked");
+      expect(result.outcome.kind === "blocked" && result.outcome.noticeKind).toBe("execution_review_participant");
+      expect(recovery.escalateStrandedAssignedIssue).toHaveBeenCalledTimes(1);
+      expect(recovery.scheduleReviewWaitMonitor).not.toHaveBeenCalled();
+    });
+
+    it("keeps the immediate retry for the first review run and does not read the wait evidence", async () => {
+      const { result, transaction } = await releaseReviewRecoveryRun({ reviewerWaiting: true, retryReason: null });
+
+      expect(result.outcome.kind).toBe("queued_review_participant_recovery");
+      expect(transaction.isReviewerWaitingOnCheck).not.toHaveBeenCalled();
     });
   });
 

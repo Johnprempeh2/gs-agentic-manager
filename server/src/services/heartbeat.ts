@@ -492,6 +492,7 @@ import {
   SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
   readContinuationAttempt,
 } from "./recovery/index.js";
+import { REVIEW_WAIT_MONITOR_SERVICE_NAME } from "./recovery/review-wait.js";
 import {
   buildConfigurationIncompleteRecoveryNoticeSeed,
   buildExecutionReviewParticipantRecoveryNoticeSeed,
@@ -9757,6 +9758,15 @@ export function heartbeatService(
           latestRun: rows.runRow,
         });
       },
+      scheduleReviewWaitMonitor: async (input) => {
+        const rows = await loadStrandedEscalationRows(input);
+        if (!rows) return;
+        await recovery.scheduleReviewWaitMonitor({
+          issue: rows.issueRow,
+          latestRun: rows.runRow,
+          reviewerAgentId: input.reviewerAgentId,
+        });
+      },
     },
   });
 
@@ -11614,22 +11624,28 @@ export function heartbeatService(
     const isProviderQuotaReviewMonitor =
       monitor?.serviceName === PROVIDER_QUOTA_MONITOR_SERVICE_NAME &&
       Boolean(reviewParticipantAgentId);
-    const targetAgentId = isProviderQuotaReviewMonitor
+    // A review-wait monitor (GRE-97) wakes the waiting reviewer, not the assignee.
+    const isReviewWaitMonitor =
+      monitor?.serviceName === REVIEW_WAIT_MONITOR_SERVICE_NAME &&
+      Boolean(reviewParticipantAgentId);
+    const isReviewParticipantMonitor = isProviderQuotaReviewMonitor || isReviewWaitMonitor;
+    const targetAgentId = isReviewParticipantMonitor
       ? reviewParticipantAgentId
       : claimed.assigneeAgentId;
     if (!targetAgentId) {
       throw conflict("Issue monitor has no agent target");
     }
-    const wakeReason = isProviderQuotaReviewMonitor
+    const wakeReason = isReviewParticipantMonitor
       ? EXECUTION_REVIEW_PARTICIPANT_RECOVERY_WAKE_REASON
       : input.wakeReason;
-    const reviewRecoveryContext = isProviderQuotaReviewMonitor
+    const reviewRecoveryContext = isReviewParticipantMonitor
       ? {
           retryReason: EXECUTION_REVIEW_PARTICIPANT_RECOVERY_RETRY_REASON,
           currentStageId: executionState?.currentStageId ?? null,
           currentStageType: executionState?.currentStageType ?? null,
-          reviewRecoveryInstruction:
-            "The previous reviewer run reached provider quota. Resume this execution-review stage now that the quota wait has elapsed.",
+          reviewRecoveryInstruction: isReviewWaitMonitor
+            ? "You were waiting on CI or a check for this execution-review stage. Check it again now: submit the review decision, or say what you still wait on."
+            : "The previous reviewer run reached provider quota. Resume this execution-review stage now that the quota wait has elapsed.",
         }
       : {};
 
@@ -11727,7 +11743,7 @@ export function heartbeatService(
           requestedByActorId: input.actorId,
           contextSnapshot: {
             issueId: claimed.id,
-            source: isProviderQuotaReviewMonitor
+            source: isReviewParticipantMonitor
               ? "issue.execution_review_recovery"
               : "issue.monitor",
             wakeReason,
