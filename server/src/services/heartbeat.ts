@@ -20138,12 +20138,18 @@ export function heartbeatService(
     }
   }
 
-  async function countRunningRunsForAdmission() {
+  async function listRunningRunIdsForAdmission() {
     const rows = await db
       .select({ id: heartbeatRuns.id })
       .from(heartbeatRuns)
       .where(eq(heartbeatRuns.status, "running"));
-    const running = new Set(rows.map((row) => row.id));
+    return rows.map((row) => row.id);
+  }
+
+  // Synchronous on purpose: the caller must reserve its slots in the same
+  // tick, or a start gate for another agent can read the same count.
+  function countRunningRunsForAdmission(dbRunningRunIds: string[]) {
+    const running = new Set(dbRunningRunIds);
     for (const runId of runAdmissionAdmittedRunIds) running.add(runId);
     return running.size + runAdmissionReservedSlots;
   }
@@ -20297,13 +20303,14 @@ export function heartbeatService(
       const admissionSettings = resolveRunAdmissionSettings(
         await instanceSettings.getGeneral(),
       );
-      const [instanceRunningCount, memory] = await Promise.all([
-        countRunningRunsForAdmission(),
+      const [dbRunningRunIds, memory] = await Promise.all([
+        listRunningRunIdsForAdmission(),
         memoryReader().catch(() => null),
       ]);
+      // No await from here until the slots are reserved below.
       const admission = evaluateRunAdmission({
         settings: admissionSettings,
-        runningCount: instanceRunningCount,
+        runningCount: countRunningRunsForAdmission(dbRunningRunIds),
         memory,
       });
       if (!admission.admit) {
@@ -20330,18 +20337,24 @@ export function heartbeatService(
         return { ...none, hold };
       }
 
-      const policy = parseHeartbeatPolicy(agent);
-      const runningCount = await countRunningRunsForAgent(agentId);
-      const availableSlots = Math.min(
-        Math.max(0, policy.maxConcurrentRuns - runningCount),
+      // Reserve in the same tick as the check so concurrent start gates for
+      // other agents see these slots as taken, then shrink to what the
+      // per-agent limit allows.
+      let reservedSlots = Math.min(
         admission.slots,
         startOptions.maxToStart ?? Number.POSITIVE_INFINITY,
       );
-      if (availableSlots <= 0) return none;
-      // Reserve synchronously (no await since the count) so concurrent start
-      // gates for other agents see these slots as taken.
-      runAdmissionReservedSlots += availableSlots;
+      runAdmissionReservedSlots += reservedSlots;
       try {
+        const policy = parseHeartbeatPolicy(agent);
+        const runningCount = await countRunningRunsForAgent(agentId);
+        const availableSlots = Math.min(
+          Math.max(0, policy.maxConcurrentRuns - runningCount),
+          reservedSlots,
+        );
+        runAdmissionReservedSlots -= reservedSlots - availableSlots;
+        reservedSlots = availableSlots;
+        if (availableSlots <= 0) return none;
         const runs = await claimQueuedRunsForAgent(
           agent,
           availableSlots,
@@ -20349,7 +20362,7 @@ export function heartbeatService(
         );
         return { runs, hold: null };
       } finally {
-        runAdmissionReservedSlots -= availableSlots;
+        runAdmissionReservedSlots -= reservedSlots;
       }
     });
   }
@@ -30158,6 +30171,7 @@ export function heartbeatService(
     retryScheduledRetryNow,
 
     resumeQueuedRuns,
+    startNextQueuedRunForAgent,
 
     scheduleBoundedRetry: async (
       runId: string,

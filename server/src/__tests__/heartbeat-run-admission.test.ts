@@ -94,6 +94,7 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
   let db!: ReturnType<typeof createDb>;
   let heartbeat!: ReturnType<typeof heartbeatService>;
   let memory: MemorySnapshot | null = null;
+  let beforeMemoryRead: (() => Promise<void>) | null = null;
   let tempDb: Awaited<
     ReturnType<typeof startEmbeddedPostgresTestDatabase>
   > | null = null;
@@ -103,12 +104,18 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
       "paperclip-heartbeat-run-admission-",
     );
     db = createDb(tempDb.connectionString);
-    heartbeat = heartbeatService(db, { memoryReader: async () => memory });
+    heartbeat = heartbeatService(db, {
+      memoryReader: async () => {
+        await beforeMemoryRead?.();
+        return memory;
+      },
+    });
   }, 20_000);
 
   afterEach(async () => {
     // Lift the guard so held runs drain and finish before the tables reset.
     memory = null;
+    beforeMemoryRead = null;
     await db.delete(instanceSettings);
     await heartbeat.resumeQueuedRuns();
     adapterGate.releaseAll();
@@ -234,6 +241,50 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
     ).toBe(true);
     current = await statuses([busyRuns[2]!]);
     expect(current.get(busyRuns[2]!)).toBe("queued");
+    expect(adapterGate.state.maxActive).toBe(2);
+  });
+
+  it("lets only one of two concurrent start gates take the last instance slot", async () => {
+    await setAdmission({ maxConcurrentRuns: 2 });
+    const companyId = await seedCompany();
+    const first = await seedAgent(companyId, 5);
+    const second = await seedAgent(companyId, 5);
+    const third = await seedAgent(companyId, 5);
+    const t0 = Date.now() - 60_000;
+    const firstRun = await queueRun(companyId, first, new Date(t0));
+    await heartbeat.startNextQueuedRunForAgent(first);
+    await waitFor(async () => adapterGate.state.active === 1);
+
+    // cap = running + 1. The start lock is per agent, so both gates run at
+    // once. Hold each gate's memory read until both have read the running
+    // count, so the gates overlap on every run of the test.
+    let arrived = 0;
+    let releaseReads!: () => void;
+    const bothArrived = new Promise<void>((resolve) => {
+      releaseReads = resolve;
+    });
+    beforeMemoryRead = async () => {
+      arrived += 1;
+      if (arrived === 2) releaseReads();
+      await bothArrived;
+    };
+    const secondRun = await queueRun(companyId, second, new Date(t0 + 1_000));
+    const thirdRun = await queueRun(companyId, third, new Date(t0 + 2_000));
+    const [secondStarted, thirdStarted] = await Promise.all([
+      heartbeat.startNextQueuedRunForAgent(second),
+      heartbeat.startNextQueuedRunForAgent(third),
+    ]);
+    beforeMemoryRead = null;
+
+    expect(secondStarted.length + thirdStarted.length).toBe(1);
+    const current = await statuses([firstRun, secondRun, thirdRun]);
+    expect(
+      [...current.values()].filter((status) => status === "running"),
+    ).toHaveLength(2);
+    expect(
+      [...current.values()].filter((status) => status === "queued"),
+    ).toHaveLength(1);
+    await waitFor(async () => adapterGate.state.active === 2);
     expect(adapterGate.state.maxActive).toBe(2);
   });
 
