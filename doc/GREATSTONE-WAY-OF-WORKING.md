@@ -246,6 +246,10 @@ uses the same store, so this does not happen there.
 
 ### Sandbox test of the scripts
 
+By default the scripts use `GSAM` in the home folder of the user account, not
+`$HOME`, so they find the real `~/GSAM/` from an agent run too (agent runs set
+`HOME` to a temp folder). You do not need to set `GSAM_ROOT` for a real check.
+
 Every path can be moved, so the scripts can be tried without the real
 `~/GSAM/`: set `GSAM_ROOT` (fake GSAM home with `live/`, `data/`, `backups/`,
 `preview/`), `GSAM_LIVE_URL` (a fake live server), and `GSAM_RELEASE_REPO` (a

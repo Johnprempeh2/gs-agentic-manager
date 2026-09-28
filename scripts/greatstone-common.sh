@@ -8,10 +8,14 @@
 #   GSAM_LIVE_URL       live server               (default http://localhost:3100)
 #   GSAM_PREVIEW_PORT   preview server port       (default 3200)
 #   GSAM_RELEASE_REPO   git repo that holds the rc-*/live-* tags (default: this checkout)
+#
+# ~ is the home folder of the user account, not $HOME: agent runs set HOME to
+# a temp folder, and the scripts must still find the real ~/GSAM.
 
 GS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GS_TOOLS_ROOT="$(cd "$GS_SCRIPT_DIR/.." && pwd)"
-GS_ROOT="${GSAM_ROOT:-$HOME/GSAM}"
+GS_USER_HOME="$(perl -e 'print((getpwuid($<))[7])' 2>/dev/null || true)"
+GS_ROOT="${GSAM_ROOT:-${GS_USER_HOME:-$HOME}/GSAM}"
 LIVE_DIR="${GSAM_LIVE_DIR:-$GS_ROOT/live}"
 LIVE_DATA_DIR="${GSAM_LIVE_DATA_DIR:-$GS_ROOT/data}"
 LIVE_URL="${GSAM_LIVE_URL:-http://localhost:3100}"
