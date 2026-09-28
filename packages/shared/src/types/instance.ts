@@ -39,6 +39,17 @@ export interface InstanceGeneralSettings {
    * Kubernetes sandbox provider and denies local/ssh execution.
    */
   executionMode?: InstanceExecutionMode;
+  /**
+   * Instance-wide run admission guard. Absent fields use the server defaults
+   * (6 concurrent runs, 2048 MB available-memory floor).
+   */
+  runAdmission?: RunAdmissionSettingsInput;
+}
+
+export interface RunAdmissionSettingsInput {
+  maxConcurrentRuns?: number;
+  /** 0 disables the memory check. */
+  minAvailableMemoryMb?: number;
 }
 
 export interface InstanceExperimentalSettings {
