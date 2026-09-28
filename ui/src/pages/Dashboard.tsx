@@ -1,4 +1,3 @@
-import { AgentIdentity } from "../components/AgentIdentity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "@/lib/router";
 import {
@@ -23,11 +22,10 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
-import { StatusIcon } from "../components/StatusIcon";
+import { DASHBOARD_OPEN_TASK_STATUSES, DashboardOverview } from "../components/DashboardOverview";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 
 import { ActivityRow } from "../components/ActivityRow";
-import { timeAgo } from "../lib/timeAgo";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
@@ -37,16 +35,11 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
-import type { Agent, Issue } from "@greatstone/shared";
+import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
-
-function getRecentIssues(issues: Issue[]): Issue[] {
-  return [...issues]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-}
 
 export type PausedAgentBanner =
   | { kind: "imported"; pausedImportedAgentIds: string[] }
@@ -85,7 +78,7 @@ export function Dashboard() {
   // `isFetching` is read alongside the data: a cached list is served while its
   // refetch runs, and an empty one from before the first hire must not pass
   // for the company's current state — see `shouldRouteAgentlessCompanyToOnboarding`.
-  const { data: agents, isFetching: agentsRefreshing } = useQuery({
+  const { data: agents, isFetching: agentsRefreshing, isLoading: agentsLoading, error: agentsError } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -194,6 +187,18 @@ export function Dashboard() {
     enabled: !!selectedCompanyId,
   });
 
+  // Open work for the overview, fetched by status so a long history of done
+  // tasks cannot push it past the list's default page.
+  const {
+    data: openIssues,
+    isLoading: openIssuesLoading,
+    error: openIssuesError,
+  } = useQuery({
+    queryKey: [...queryKeys.issues.list(selectedCompanyId!), "dashboard-open"] as const,
+    queryFn: () => issuesApi.list(selectedCompanyId!, { status: DASHBOARD_OPEN_TASK_STATUSES.join(",") }),
+    enabled: !!selectedCompanyId,
+  });
+
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(selectedCompanyId!, { includeArchived: true }),
     queryFn: () => projectsApi.list(selectedCompanyId!, { includeArchived: true }),
@@ -211,7 +216,6 @@ export function Dashboard() {
     [companyMembers?.users],
   );
 
-  const recentIssues = issues ? getRecentIssues(issues) : [];
   const recentActivity = useMemo(() => (activity ?? []).slice(0, 10), [activity]);
 
   useEffect(() => {
@@ -288,11 +292,6 @@ export function Dashboard() {
     for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
     return map;
   }, [issues]);
-
-  const agentName = (id: string | null) => {
-    if (!id || !agents) return null;
-    return agents.find((a) => a.id === id)?.name ?? null;
-  };
 
   if (!selectedCompanyId) {
     if (companies.length === 0) {
@@ -378,6 +377,15 @@ export function Dashboard() {
           </button>
         </div>
       )}
+
+      <DashboardOverview
+        agents={agents}
+        openIssues={openIssues}
+        agentsLoading={agentsLoading}
+        issuesLoading={openIssuesLoading}
+        agentsError={agentsError}
+        issuesError={openIssuesError}
+      />
 
       <ActiveAgentsPanel companyId={selectedCompanyId!} />
 
@@ -484,7 +492,7 @@ export function Dashboard() {
             itemClassName="rounded-lg border bg-card p-4 shadow-sm"
           />
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div>
             {/* Recent Activity */}
             {recentActivity.length > 0 && (
               <div className="min-w-0">
@@ -507,56 +515,6 @@ export function Dashboard() {
               </div>
             )}
 
-            {/* Recent Tasks */}
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                Recent Tasks
-              </h3>
-              {recentIssues.length === 0 ? (
-                <Card className="block p-4">
-                  <p className="text-sm text-muted-foreground">No tasks yet.</p>
-                </Card>
-              ) : (
-                <Card className="@container block py-0 divide-y divide-border overflow-hidden">
-                  {recentIssues.slice(0, 10).map((issue) => (
-                    <Link
-                      key={issue.id}
-                      to={`/issues/${issue.identifier ?? issue.id}`}
-                      className="dashboard-list-row text-sm cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit block"
-                    >
-                      <div className="flex items-start gap-2 @xl:grid @xl:grid-cols-(--dashboard-task-list-columns) @xl:items-baseline">
-                        <span className="flex size-6 shrink-0 items-center justify-end @xl:self-center">
-                          <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} />
-                        </span>
-                        <span className="flex min-w-0 flex-1 flex-col gap-1 @xl:contents">
-                          <span className="flex min-w-0 items-baseline gap-2 @xl:contents">
-                            <span className="min-w-0 flex-1 truncate text-sm leading-6" title={issue.title}>
-                              {issue.title}
-                            </span>
-                            <span className="ml-auto shrink-0 truncate text-right font-mono text-(length:--text-micro) text-muted-foreground @xl:col-start-4 @xl:row-start-1 @xl:w-(--dashboard-list-id-width)">
-                              {issue.identifier ?? issue.id.slice(0, 8)}
-                            </span>
-                          </span>
-                          <span className="flex min-h-6 min-w-0 items-center gap-2 @xl:contents">
-                            <span className="flex min-w-0 flex-1 items-center @xl:col-start-3 @xl:row-start-1 @xl:self-center">
-                              {issue.assigneeAgentId && (() => {
-                                const name = agentName(issue.assigneeAgentId);
-                                return name
-                                  ? <AgentIdentity agent={agents?.find(agent => agent.id === issue.assigneeAgentId) ?? { id: issue.assigneeAgentId ?? undefined, name }} size="sm" className="max-w-32" />
-                                  : null;
-                              })()}
-                            </span>
-                            <span className="ml-auto w-(--dashboard-list-time-width) shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">
-                              {timeAgo(issue.updatedAt)}
-                            </span>
-                          </span>
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                </Card>
-              )}
-            </div>
           </div>
 
         </>
