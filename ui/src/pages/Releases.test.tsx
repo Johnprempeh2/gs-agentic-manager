@@ -6,22 +6,34 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReleaseProgressState } from "@/api/releases";
 import { ConfirmProvider } from "@/context/ConfirmContext";
-import { releaseProgressFixture, releasesOverviewFixture } from "@/fixtures/releaseFixtures";
+import {
+  KEYSTONE_AGENT_ID,
+  flaggedRunFixture,
+  releaseProgressFixture,
+  releasesOverviewFixture,
+  restartReportFixture,
+} from "@/fixtures/releaseFixtures";
 import { Releases, ReleasesView } from "./Releases";
 
 const mockReleasesApi = vi.hoisted(() => ({
   overview: vi.fn(),
-  release: vi.fn(),
+  releaseNow: vi.fn(),
   rollback: vi.fn(),
   cancel: vi.fn(),
+  override: vi.fn(),
+  setFinishBeforeUpdate: vi.fn(),
 }));
 const mockAccessApi = vi.hoisted(() => ({ getCurrentBoardAccess: vi.fn() }));
+const mockAgentsApi = vi.hoisted(() => ({ list: vi.fn() }));
+const mockHeartbeatsApi = vi.hoisted(() => ({ liveRunsForCompany: vi.fn() }));
 
 vi.mock("@/api/releases", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/releases")>()),
   releasesApi: mockReleasesApi,
 }));
 vi.mock("@/api/access", () => ({ accessApi: mockAccessApi }));
+vi.mock("@/api/agents", () => ({ agentsApi: mockAgentsApi }));
+vi.mock("@/api/heartbeats", () => ({ heartbeatsApi: mockHeartbeatsApi }));
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "company-1" }),
 }));
@@ -86,11 +98,17 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   mockReleasesApi.overview.mockResolvedValue(releasesOverviewFixture());
-  mockReleasesApi.release.mockResolvedValue({ progress: releaseProgressFixture("checking") });
+  mockReleasesApi.releaseNow.mockResolvedValue({ progress: releaseProgressFixture("checking") });
   mockReleasesApi.rollback.mockResolvedValue({
     progress: releaseProgressFixture("checking", { kind: "rollback", targetTag: "live-2026-09-14.1" }),
   });
   mockReleasesApi.cancel.mockResolvedValue({ progress: releaseProgressFixture("cancelled") });
+  mockReleasesApi.override.mockResolvedValue({
+    progress: releaseProgressFixture("holding", { overridden: true, waitingForFlaggedRuns: 0 }),
+  });
+  mockReleasesApi.setFinishBeforeUpdate.mockResolvedValue({ runId: "x", finishBeforeUpdate: true });
+  mockAgentsApi.list.mockResolvedValue([{ id: KEYSTONE_AGENT_ID, name: "Keystone" }]);
+  mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
 });
 
 afterEach(async () => {
@@ -106,7 +124,7 @@ describe("Releases page", () => {
     await render(<Releases />);
 
     expect(document.body.textContent).toContain("Releases are for the board");
-    expect(buttonByText("Release Release from the app")).toBeUndefined();
+    expect(buttonByText("Release now")).toBeUndefined();
     expect(mockReleasesApi.overview).not.toHaveBeenCalled();
   });
 
@@ -118,7 +136,8 @@ describe("Releases page", () => {
     expect(mockReleasesApi.overview).not.toHaveBeenCalled();
   });
 
-  it("shows live, candidate and history to the board", async () => {
+
+  it("shows live, next version and history to the board", async () => {
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue(BOARD);
     await render(<Releases />);
 
@@ -129,13 +148,9 @@ describe("Releases page", () => {
     expect(live.textContent).toContain("Healthy");
     expect(live.textContent).toContain("John");
 
-    const candidate = document.querySelector('[data-testid="release-candidate"]')!;
-    expect(candidate.textContent).toContain("Release from the app");
-    expect(candidate.textContent).toContain("Fork CI passed");
-    expect(candidate.textContent).toContain("Flint check passed");
-    expect(candidate.textContent).toContain("Features");
-    expect(candidate.textContent).toContain("Fixes");
-    expect(buttonByText("Release Release from the app")).toBeTruthy();
+    expect(document.querySelector('[data-testid="release-next"]')).toBeTruthy();
+    expect(document.body.textContent).not.toContain("Ready to go live");
+    expect(buttonByText("Release now")).toBeTruthy();
 
     const history = document.querySelector('[data-testid="release-history"]')!;
     expect(history.textContent).toContain("RAM management");
@@ -147,46 +162,109 @@ describe("Releases page", () => {
       document.querySelector('[data-testid="release-history-live-2026-09-14.1"]')?.textContent,
     ).toContain("Roll back to this version");
   });
+
+  it("says in plain words when release is off on this server", async () => {
+    await render(
+      <ReleasesView
+        companyId="company-1"
+        overview={releasesOverviewFixture({ disabledReason: "This server does not run from the live checkout." })}
+        fetchError={null}
+      />,
+    );
+    const banner = document.querySelector('[data-testid="release-disabled"]')!;
+    expect(banner.textContent).toContain("Release is off on this server.");
+    expect(banner.textContent).toContain("This server does not run from the live checkout.");
+    expect(buttonByText("Release now")?.disabled).toBe(true);
+    expect(buttonByText("Roll back to this version")?.disabled).toBe(true);
+  });
 });
 
-describe("Release confirm", () => {
-  it("says what changes and that runs pause and live restarts", async () => {
+describe("Next version", () => {
+  it("lists the changes, the title and the changelog", async () => {
     await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
-    await click(buttonByText("Release Release from the app"));
+
+    const next = document.querySelector('[data-testid="release-next"]')!;
+    expect(next.textContent).toContain("Next version");
+    expect(next.textContent).toContain("Release from the app");
+    expect(next.textContent).toContain("Since live-2026-09-21.1");
+    expect(next.textContent).toContain("main at 4f2a9d1");
+    expect(next.textContent).toContain("Fork CI passed");
+    expect(next.textContent).toContain("Features");
+    expect(next.textContent).toContain("What's new in the sidebar");
+    expect(next.textContent).toContain("Fixes");
+    expect(next.textContent).toContain("3 changes merged");
+
+    const changes = [...next.querySelectorAll('[data-testid="release-next-changes"] li')].map((li) => li.textContent);
+    expect(changes).toHaveLength(3);
+    expect(changes[0]).toContain("Releases page and What's new in the sidebar");
+    expect(changes[0]).toContain("#51 · GRE-122");
+    expect(changes[2]).toContain("Fix");
+  });
+
+  it("shows who set the title; the board sees it but cannot edit it (Keystone edits it)", async () => {
+    await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
+
+    const source = document.querySelector('[data-testid="release-next-title-source"]')!;
+    expect(source.textContent).toContain("Title set by Keystone");
+    const next = document.querySelector('[data-testid="release-next"]')!;
+    expect(next.querySelector("input, textarea")).toBeNull();
+    expect([...next.querySelectorAll("button")].map((b) => b.textContent?.trim())).toEqual(["Release now"]);
+  });
+
+  it("says the title is a proposal until Keystone changes it", async () => {
+    const base = releasesOverviewFixture();
+    const overview = releasesOverviewFixture({ next: { ...base.next!, titleEditedBy: null, titleEditedAt: null } });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    expect(document.querySelector('[data-testid="release-next-title-source"]')?.textContent).toBe(
+      "Title proposed from the pull request titles. Keystone can change it.",
+    );
+  });
+
+  it("says main is the same as live when there is nothing new", async () => {
+    await render(
+      <ReleasesView companyId="company-1" overview={releasesOverviewFixture({ next: null })} fetchError={null} />,
+    );
+    const next = document.querySelector('[data-testid="release-next"]')!;
+    expect(next.textContent).toContain("Main is the same as live.");
+    expect(buttonByText("Release now")?.disabled).toBe(true);
+  });
+});
+
+describe("Release now confirm", () => {
+  it("says the tag is cut from origin/main, CI is checked, runs are held and resume", async () => {
+    await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
+    await click(buttonByText("Release now"));
 
     const dialog = confirmDialog();
     expect(dialog?.textContent).toContain("Release Release from the app?");
-    expect(dialog?.textContent).toContain(
-      "Live moves from Run limits (live-2026-09-21.1) to Release from the app (rc-2026-09-28.1).",
-    );
+    expect(dialog?.textContent).toContain("Live moves from Run limits (live-2026-09-21.1) to Release from the app.");
     expect(dialog?.textContent).toContain("Releases page with one-click release and rollback");
     expect(dialog?.textContent).toContain("Fix: Update live card works after the preview is stopped");
-    expect(dialog?.textContent).toContain("New agent runs pause");
-    expect(dialog?.textContent).toContain("Live then restarts");
-    expect(mockReleasesApi.release).not.toHaveBeenCalled();
+    expect(dialog?.textContent).toContain("The tag is cut from origin/main.");
+    expect(dialog?.textContent).toContain("Fork CI on main is checked first");
+    expect(dialog?.textContent).toContain("New runs are held.");
+    expect(dialog?.textContent).toContain("Running runs are checkpointed and resume after the update");
+    expect(mockReleasesApi.releaseNow).not.toHaveBeenCalled();
 
-    const confirmButton = [...dialog!.querySelectorAll("button")].find(
-      (button) => button.textContent === "Release Release from the app",
-    );
-    await click(confirmButton);
-    expect(mockReleasesApi.release).toHaveBeenCalledWith("company-1", "rc-2026-09-28.1");
+    await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Release now"));
+    expect(mockReleasesApi.releaseNow).toHaveBeenCalledWith("company-1");
   });
 
   it("does nothing when the release is cancelled in the dialog", async () => {
     await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
-    await click(buttonByText("Release Release from the app"));
+    await click(buttonByText("Release now"));
     await click([...confirmDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Cancel"));
-    expect(mockReleasesApi.release).not.toHaveBeenCalled();
+    expect(mockReleasesApi.releaseNow).not.toHaveBeenCalled();
   });
 
-  it("shows a pre-flight refusal in plain words", async () => {
-    mockReleasesApi.release.mockRejectedValue(new Error("The release checkout has local changes."));
+  it("shows a refusal in plain words", async () => {
+    mockReleasesApi.releaseNow.mockRejectedValue(new Error("Fork CI on main has not passed."));
     await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
-    await click(buttonByText("Release Release from the app"));
-    await click([...confirmDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Release Release from the app"));
+    await click(buttonByText("Release now"));
+    await click([...confirmDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Release now"));
 
     const alert = [...document.querySelectorAll('[role="alert"]')].map((node) => node.textContent);
-    expect(alert).toContain("The release checkout has local changes.");
+    expect(alert).toContain("Fork CI on main has not passed.");
   });
 });
 
@@ -200,7 +278,7 @@ describe("Rollback confirm", () => {
     expect(dialog?.textContent).toContain(
       "Live moves from Run limits (live-2026-09-21.1) back to RAM management (live-2026-09-14.1).",
     );
-    expect(dialog?.textContent).toContain("New agent runs pause");
+    expect(dialog?.textContent).toContain("New runs are held.");
     expect(mockReleasesApi.rollback).not.toHaveBeenCalled();
 
     await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Roll back"));
@@ -211,7 +289,7 @@ describe("Rollback confirm", () => {
 describe("Release progress", () => {
   const cases: [ReleaseProgressState, string][] = [
     ["checking", "Releasing Release from the app (rc-2026-09-28.1): checking"],
-    ["holding", "holding new runs, 3 still running"],
+    ["holding", "holding new runs, waiting for 1 run marked finish before update"],
     ["switching", "switching live"],
     ["restarting", "restarting live"],
     ["healthy", "Release from the app (rc-2026-09-28.1) is live and healthy"],
@@ -234,7 +312,7 @@ describe("Release progress", () => {
     if (state === "failed") expect(panel.textContent).toContain("Tag rc-2026-09-28.1 has no title.");
     // Release and rollback wait while a job runs.
     const inProgress = ["checking", "holding", "switching", "restarting"].includes(state);
-    expect(buttonByText("Release Release from the app")?.disabled).toBe(inProgress);
+    expect(buttonByText("Release now")?.disabled).toBe(inProgress);
   });
 
   it("cancels while holding", async () => {
@@ -249,5 +327,90 @@ describe("Release progress", () => {
     await render(<ReleasesView companyId="company-1" overview={overview} fetchError="Failed to fetch" />);
     expect(document.body.textContent).toContain("This page reconnects on its own.");
     expect([...document.querySelectorAll('[role="alert"]')].map((n) => n.textContent)).not.toContain("Failed to fetch");
+  });
+});
+
+describe("Runs marked finish before update", () => {
+  it("lists flagged runs with the progress and releases without waiting after a confirm", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("holding"),
+      flaggedRuns: [flaggedRunFixture()],
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+
+    const flagged = document.querySelector('[data-testid="release-progress-flagged"]')!;
+    expect(flagged.textContent).toContain("Ridge");
+    expect(flagged.textContent).toContain("on GRE-130");
+    expect(flagged.textContent).toContain("Mid database migration");
+
+    await click(buttonByText("Release without waiting"));
+    const dialog = confirmDialog();
+    expect(dialog?.textContent).toContain("1 run marked finish before update is still running.");
+    expect(mockReleasesApi.override).not.toHaveBeenCalled();
+    await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Release without waiting"));
+    expect(mockReleasesApi.override).toHaveBeenCalledWith("company-1");
+  });
+
+  it("hides the override when nothing is waited for", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("holding", { waitingForFlaggedRuns: 1, overridden: true }),
+      flaggedRuns: [flaggedRunFixture()],
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    expect(buttonByText("Release without waiting")).toBeUndefined();
+    expect(document.querySelector('[data-testid="release-progress"] [role="status"]')?.textContent).toContain(
+      "not waiting for flagged runs",
+    );
+  });
+
+  it("lets the board mark a running run and clear a flagged one", async () => {
+    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([
+      { id: "run-running-1", status: "running", agentId: "agent-mica", agentName: "Mica" },
+      { id: "run-queued-1", status: "queued", agentId: "agent-flint", agentName: "Flint" },
+      { id: "4d5e6f70-flagged-run", status: "running", agentId: "agent-ridge", agentName: "Ridge" },
+    ]);
+    const overview = releasesOverviewFixture({ flaggedRuns: [flaggedRunFixture()] });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+
+    const card = document.querySelector('[data-testid="release-flagged-runs"]')!;
+    // Queued runs are not listed; the flagged run shows once.
+    expect(card.textContent).not.toContain("Flint");
+    expect(card.querySelectorAll("li")).toHaveLength(2);
+
+    const flaggedRow = card.querySelector('[data-testid="release-run-4d5e6f70-flagged-run"]')!;
+    expect(flaggedRow.textContent).toContain("Finish before update");
+    await click([...flaggedRow.querySelectorAll("button")].find((b) => b.textContent === "Clear"));
+    expect(mockReleasesApi.setFinishBeforeUpdate).toHaveBeenCalledWith("4d5e6f70-flagged-run", false);
+
+    const runningRow = card.querySelector('[data-testid="release-run-run-running-1"]')!;
+    await click([...runningRow.querySelectorAll("button")].find((b) => b.textContent === "Mark finish before update"));
+    expect(mockReleasesApi.setFinishBeforeUpdate).toHaveBeenCalledWith("run-running-1", true);
+  });
+});
+
+describe("Restart report", () => {
+  it("shows what resumed and what was lost on the progress panel", async () => {
+    const overview = releasesOverviewFixture({ progress: releaseProgressFixture("healthy") });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+
+    const report = document.querySelector('[data-testid="release-progress"] [data-testid="restart-report"]')!;
+    expect(report.textContent).toContain("2 runs resumed after the update (1 kept running, 1 continued from a checkpoint).");
+    expect(report.textContent).toContain("1 run lost and need recovery: 9c8d7e6");
+  });
+
+  it("shows the report on that release in History", async () => {
+    await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
+    const liveEntry = document.querySelector('[data-testid="release-history-live-2026-09-21.1"]')!;
+    expect(liveEntry.querySelector('[data-testid="restart-report"]')?.textContent).toContain("2 runs resumed");
+    const older = document.querySelector('[data-testid="release-history-live-2026-09-14.1"]')!;
+    expect(older.querySelector('[data-testid="restart-report"]')).toBeNull();
+  });
+
+  it("says nothing was lost when no runs were lost", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("healthy", { restartReport: restartReportFixture({ lostRunIds: [] }) }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    expect(document.querySelector('[data-testid="release-progress"]')?.textContent).toContain("Nothing was lost.");
   });
 });
