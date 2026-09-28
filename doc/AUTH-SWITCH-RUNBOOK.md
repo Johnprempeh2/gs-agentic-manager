@@ -11,6 +11,11 @@ Tailscale or the home network.
 **John does the live move.** Agents prepare and test it; they never run these
 steps on `~/GSAM/`. Do it like a release: when no agent is running.
 
+**This is the one run-book for the switch** (Everest, GRE-125). The password
+re-check itself is built in GRE-133; its design notes are in
+[`LOGIN-MODE-SWITCH.md`](LOGIN-MODE-SWITCH.md) (PR #54). Where the two
+differ on how to switch, follow this page.
+
 ## What changes and what does not
 
 | | Before | After |
@@ -33,15 +38,22 @@ Side effects to know about:
 
 ## Before you start (gates)
 
-1. **GRE-136 is released.** Until then the release scripts cannot restart live
-   or count running agents in login mode, so every release would fail. Do not
-   switch before GRE-136 is on live.
-2. **This change (GRE-125) is released,** so `~/GSAM/live` has
-   `gsam auth mode` and `gsam auth reset-password`. Check:
-   `cd ~/GSAM/live && pnpm gsam auth mode --help`.
-3. **No agent is running.** The dashboard shows no running agents, and nothing
+Four changes must all be on live before the switch. If one is missing, stop.
+
+| Gate | What it gives | Without it |
+|---|---|---|
+| PR #54 (GRE-133) | The password re-check (`POST /api/reauth`) | Release, rollback and promote have no password step |
+| PR #55 (GRE-125, this run-book) | `gsam auth mode` and `gsam auth reset-password` | No switch command and no password reset |
+| PR #56 (GRE-136) | Release scripts send a board key in login mode | Every release fails at restart |
+| GRE-122 | The Releases page asks for the password when the server answers `reauth_required` | Release buttons fail with no prompt |
+
+Check the commands are there: `cd ~/GSAM/live && pnpm gsam auth mode --help`.
+
+Also:
+
+1. **No agent is running.** The dashboard shows no running agents, and nothing
    is queued to start in the next few minutes.
-4. **For the phone:** Tailscale is on for the Mac and the phone. Find the Mac's
+2. **For the phone:** Tailscale is on for the Mac and the phone. Find the Mac's
    name and address: `tailscale status --self` and `tailscale ip -4`.
    (For the home network instead, use the Mac's `.local` name or LAN address.)
 
@@ -117,6 +129,25 @@ while curl -fsS -m 2 http://localhost:3100/api/health >/dev/null 2>&1; do sleep 
 `http://localhost:3100`. On the phone (Tailscale on), open
 `http://my-mac.tailnet-name.ts.net:3100` and sign in.
 
+**8. Make the release key (once).** Releases in login mode need a board key
+for the restart, the `serverInfo` read and the running-agent count (GRE-136).
+Signed in as the board owner:
+
+```sh
+cd ~/GSAM/live
+pnpm gsam auth login --api-base http://localhost:3100
+pnpm gsam token board create --name live-release --never-expires --api-base http://localhost:3100 --json
+# copy the "token" value (pcp_board_...), then:
+( umask 077; pbpaste > ~/GSAM/release-board-key )
+chmod 600 ~/GSAM/release-board-key
+```
+
+The file must be mode 0600 and never go into a repository or an issue.
+Without it, a release in login mode stops before anything moves and says so.
+To replace the key: `pnpm gsam token board revoke <keyId>`, then write the new
+one to the same file. Full notes: `doc/GREATSTONE-WAY-OF-WORKING.md`,
+"Live in login mode: the release key (John, once)".
+
 ## Check it worked
 
 | Check | How | Expected |
@@ -127,6 +158,19 @@ while curl -fsS -m 2 http://localhost:3100/api/health >/dev/null 2>&1; do sleep 
 | You are the board | Signed in, open the dashboard and Instance settings | Both load |
 | Agents still work | Assign a small task to an agent | The agent runs and comments as itself |
 | Phone | Open the Tailscale address on the phone | Sign-in page, then the app |
+| Other host names refused | `curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: example.com' http://localhost:3100/api/health` | `403` |
+| Release key | `ls -l ~/GSAM/release-board-key` | `-rw-------` |
+| Password re-check | Releases page: start a release or rollback | Asks for your password first |
+
+## The password re-check (GRE-133)
+
+- Release, rollback and "Promote to Stable" each ask for the password. One
+  entry is good for one action, for 5 minutes, on that device.
+- 5 wrong passwords lock the re-check for 15 minutes. Wait, or reset the
+  password (below).
+- Agents never pass it (403), and a board API key cannot pass it. The release
+  key from step 8 only lets the scripts restart live and count runs.
+- Code: `server/src/services/release-reauth.ts`, route `POST /api/reauth`.
 
 If any check fails, use the way back below.
 
@@ -143,6 +187,11 @@ pnpm gsam auth reset-password --data-dir ~/GSAM/data --email you@example.com
 `--generate` makes and prints a password instead. `--password-stdin` reads it
 from a pipe.
 
+**Password re-check locked or in the way.** Wait 15 minutes after 5 wrong
+tries, or reset the password above. If the re-check itself is broken, switch
+back to `local_trusted` (next): there the release actions stay board-only with
+no password, so releases work again.
+
 **Switch back to `local_trusted`.** One command and a restart. Nothing is
 deleted: your account stays, and the built-in board user gets its admin role
 back at start. Switching to login mode again later needs no new account or
@@ -155,6 +204,12 @@ pkill -TERM -f "dev-runner.ts dev --data-dir $HOME/GSAM/data"
 while curl -fsS -m 2 http://localhost:3100/api/health >/dev/null 2>&1; do sleep 1; done
 ~/GSAM/start-live.sh
 ```
+
+Then check: `/api/health` shows `"deploymentMode":"local_trusted"`,
+`http://localhost:3100` opens with no login, and one small agent task runs.
+Phone access stops (`local_trusted` answers on `localhost` only). The file
+`~/GSAM/release-board-key` can stay; it does no harm, and it works again if
+you switch back to login mode.
 
 **Undo one edit exactly.** Each `gsam auth mode` run that changes the file
 saves the previous one as `.env.before-auth-mode-<time>` in
