@@ -82,6 +82,10 @@ from the release script, a push that deletes a branch or tag, and any push to
 `public-fork`. It does not stop edits, installs or git commands under `~/GSAM/`,
 server restarts, force-pushes to other branches, merges, or pull requests on
 `Johnprempeh2/GS-Clip`. You must keep those rules yourself.
+A `pre-commit` hook, installed automatically when an agent worktree is created
+(`scripts/git-hooks/install.sh`), refuses a commit when the branch or worktree
+is not the run's `GSAM_WORKSPACE_BRANCH` / `GSAM_WORKSPACE_WORKTREE_PATH`; it
+does nothing at a terminal where those are not set.
 GitHub Free cannot protect a private repo's `main` on the server; with GitHub
 Pro, add a branch rule that requires a pull request and the "Fork CI" check.
 

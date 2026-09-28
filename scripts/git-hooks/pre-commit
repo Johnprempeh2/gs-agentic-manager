@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Local guard for the Greatstone repo (see doc/GREATSTONE-WAY-OF-WORKING.md).
+# An agent run is given its branch and worktree in GSAM_WORKSPACE_BRANCH and
+# GSAM_WORKSPACE_WORKTREE_PATH. Refuse a commit made anywhere else, so one
+# run's work cannot land on another run's branch. People at a terminal do not
+# have GSAM_WORKSPACE_BRANCH set, so the hook does nothing for them.
+# scripts/git-hooks/install.sh installs it; provision-worktree.sh runs that for
+# every new agent worktree.
+expected_branch="${GSAM_WORKSPACE_BRANCH:-}"
+[ -n "$expected_branch" ] || exit 0
+
+current_branch="$(git symbolic-ref --short -q HEAD || true)"
+if [ "$current_branch" != "$expected_branch" ]; then
+  echo "pre-commit: this run's branch is '$expected_branch' but the commit is on '${current_branch:-detached HEAD}'; commit from your own worktree." >&2
+  exit 1
+fi
+
+expected_worktree="${GSAM_WORKSPACE_WORKTREE_PATH:-}"
+if [ -n "$expected_worktree" ]; then
+  current_worktree="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  canonical() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"; }
+  if [ "$(canonical "$current_worktree")" != "$(canonical "$expected_worktree")" ]; then
+    echo "pre-commit: this run's worktree is '$expected_worktree' but the commit is in '$current_worktree'; commit from your own worktree." >&2
+    exit 1
+  fi
+fi
+exit 0

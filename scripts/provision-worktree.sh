@@ -67,6 +67,13 @@ source_env_path="$(dirname "$source_config_path")/.env"
 
 mkdir -p "$paperclip_dir"
 
+# Commit guard: refuse commits on a branch that is not this run's branch. A
+# failed install must not stop the worktree from being provisioned.
+git_hooks_installer="$worktree_cwd/scripts/git-hooks/install.sh"
+if [[ -f "$git_hooks_installer" ]]; then
+  bash "$git_hooks_installer" "$worktree_cwd" >&2 || echo "git-hooks: pre-commit guard install failed; continuing." >&2
+fi
+
 base_cli_runner_path="$base_cwd/cli/node_modules/tsx/dist/cli.mjs"
 base_cli_entry_path="$base_cwd/cli/src/index.ts"
 
