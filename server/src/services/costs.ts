@@ -1,8 +1,18 @@
-import { agentAvatarUrl, resolveAgentAppearance } from "@greatstone/shared";
-import { and, desc, eq, gte, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
+import {
+  API_PRICE_TABLE_CHECKED_AT,
+  agentAvatarUrl,
+  computeApiEquivalentCents,
+  resolveAgentAppearance,
+  type ApiEquivalentModelRow,
+  type ApiEquivalentProviderRow,
+  type ApiEquivalentSummary,
+  type CreateCompanySubscription,
+  type UpdateCompanySubscription,
+} from "@greatstone/shared";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
-import { activityLog, agents, companies, costEvents, heartbeatRuns, issues, projects } from "@greatstone/db";
+import { activityLog, agents, companies, companySubscriptions, costEvents, heartbeatRuns, issues, projects } from "@greatstone/db";
 import { notFound, unprocessable } from "../errors.js";
 import { budgetService, type BudgetServiceHooks } from "./budgets.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
@@ -48,6 +58,37 @@ async function getMonthlySpendTotal(
     .from(costEvents)
     .where(and(...conditions));
   return Number(row?.total ?? 0);
+}
+
+/**
+ * Subscription price for a period, prorated by day within each calendar month
+ * the period touches, so a subscription is compared with the usage of the same
+ * days. A full calendar month costs exactly the monthly price.
+ */
+export function proratedSubscriptionCents(monthlyPriceCents: number, from: Date, to: Date): number {
+  if (monthlyPriceCents <= 0 || to.getTime() <= from.getTime()) return 0;
+  let total = 0;
+  let cursor = from.getTime();
+  const end = to.getTime();
+  while (cursor < end) {
+    const at = new Date(cursor);
+    const monthStart = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1);
+    const monthEnd = Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 1);
+    const sliceEnd = Math.min(end, monthEnd);
+    total += monthlyPriceCents * ((sliceEnd - cursor) / (monthEnd - monthStart));
+    cursor = sliceEnd;
+  }
+  return total;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function assertSubscriptionId(subscriptionId: string) {
+  if (!UUID_PATTERN.test(subscriptionId)) throw notFound("Subscription not found");
+}
+
+function normalizeProviderKey(value: string) {
+  return value.trim().toLowerCase();
 }
 
 export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
@@ -468,6 +509,197 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         const appearance = resolveAgentAppearance(row.agentAppearance, row.agentId);
         return { ...row, agentAppearance: appearance, avatarUrl: agentAvatarUrl(appearance, 512) };
       });
+    },
+
+    listSubscriptions: async (companyId: string) => {
+      const subscriptions = await db
+        .select()
+        .from(companySubscriptions)
+        .where(eq(companySubscriptions.companyId, companyId))
+        .orderBy(asc(companySubscriptions.provider), asc(companySubscriptions.createdAt));
+
+      // providers that ran on a subscription but have no saved plan yet
+      const seen = await db
+        .select({
+          provider: costEvents.provider,
+          biller: costEvents.biller,
+          lastSeenAt: sql<Date>`max(${costEvents.occurredAt})`,
+        })
+        .from(costEvents)
+        .where(
+          and(
+            eq(costEvents.companyId, companyId),
+            inArray(costEvents.billingType, [...SUBSCRIPTION_BILLING_TYPES]),
+          ),
+        )
+        .groupBy(costEvents.provider, costEvents.biller)
+        .orderBy(costEvents.provider, costEvents.biller);
+
+      const savedProviders = new Set(subscriptions.map((row) => normalizeProviderKey(row.provider)));
+      const detected = seen
+        .filter((row) => !savedProviders.has(normalizeProviderKey(row.provider)))
+        .map((row) => ({ ...row, lastSeenAt: new Date(row.lastSeenAt) }));
+      return { subscriptions, detected };
+    },
+
+    createSubscription: async (companyId: string, data: CreateCompanySubscription) => {
+      const [row] = await db
+        .insert(companySubscriptions)
+        .values({ ...data, provider: normalizeProviderKey(data.provider), companyId })
+        .returning();
+      return row;
+    },
+
+    updateSubscription: async (companyId: string, subscriptionId: string, data: UpdateCompanySubscription) => {
+      assertSubscriptionId(subscriptionId);
+      const [row] = await db
+        .update(companySubscriptions)
+        .set({
+          ...data,
+          ...(data.provider !== undefined ? { provider: normalizeProviderKey(data.provider) } : {}),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(companySubscriptions.companyId, companyId), eq(companySubscriptions.id, subscriptionId)))
+        .returning();
+      if (!row) throw notFound("Subscription not found");
+      return row;
+    },
+
+    deleteSubscription: async (companyId: string, subscriptionId: string) => {
+      assertSubscriptionId(subscriptionId);
+      const [row] = await db
+        .delete(companySubscriptions)
+        .where(and(eq(companySubscriptions.companyId, companyId), eq(companySubscriptions.id, subscriptionId)))
+        .returning();
+      if (!row) throw notFound("Subscription not found");
+      return row;
+    },
+
+    /**
+     * Actual API spend, subscription cost and what the same tokens would cost
+     * under API billing, for one period. Like the other cost reports, no range
+     * means all time.
+     */
+    apiEquivalent: async (companyId: string, range?: CostDateRange, now = new Date()): Promise<ApiEquivalentSummary> => {
+      const monthWindow = currentUtcMonthWindow(now);
+      const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
+      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+
+      const isSubscription = sql`${costEvents.billingType} in (${sql.join(SUBSCRIPTION_BILLING_TYPES.map((value) => sql`${value}`), sql`, `)})`;
+      const [usageRows, subscriptions, firstEvent] = await Promise.all([
+        db
+          .select({
+            provider: costEvents.provider,
+            model: costEvents.model,
+            costCents: sumAsNumber(costEvents.costCents),
+            inputTokens: sumAsNumber(costEvents.inputTokens),
+            cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+            outputTokens: sumAsNumber(costEvents.outputTokens),
+            subscriptionTokens: sql<number>`coalesce(sum(case when ${isSubscription} then ${costEvents.inputTokens} + ${costEvents.cachedInputTokens} + ${costEvents.outputTokens} else 0 end), 0)::double precision`,
+          })
+          .from(costEvents)
+          .where(and(...conditions))
+          .groupBy(costEvents.provider, costEvents.model)
+          .orderBy(costEvents.provider, costEvents.model),
+        db.select().from(companySubscriptions).where(eq(companySubscriptions.companyId, companyId)),
+        range?.from
+          ? Promise.resolve(null)
+          : db
+            .select({ first: sql<Date | null>`min(${costEvents.occurredAt})` })
+            .from(costEvents)
+            .where(eq(costEvents.companyId, companyId))
+            .then((rows) => rows[0]?.first ?? null),
+      ]);
+
+      // Period used to prorate subscriptions: the requested range; an open
+      // start runs from the first cost event (or this month when there is none).
+      const periodFrom = range?.from ?? (firstEvent ? new Date(firstEvent) : monthWindow.start);
+      const periodTo = range?.to && range.to.getTime() < now.getTime() ? range.to : now;
+
+      const byModel: ApiEquivalentModelRow[] = usageRows.map((row) => {
+        const usage = {
+          inputTokens: Number(row.inputTokens),
+          cachedInputTokens: Number(row.cachedInputTokens),
+          outputTokens: Number(row.outputTokens),
+        };
+        return {
+          provider: row.provider,
+          model: row.model,
+          ...usage,
+          subscriptionTokens: Number(row.subscriptionTokens),
+          actualApiSpendCents: Number(row.costCents),
+          apiEquivalentCents: computeApiEquivalentCents({ provider: row.provider, model: row.model, ...usage }),
+        };
+      });
+
+      const providers = new Map<string, ApiEquivalentProviderRow>();
+      const providerRow = (provider: string) => {
+        const key = normalizeProviderKey(provider);
+        let entry = providers.get(key);
+        if (!entry) {
+          entry = {
+            provider: key,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            actualApiSpendCents: 0,
+            subscriptionCostCents: 0,
+            apiEquivalentCents: 0,
+            unpricedTokens: 0,
+          };
+          providers.set(key, entry);
+        }
+        return entry;
+      };
+
+      const unpricedModels = new Set<string>();
+      for (const row of byModel) {
+        const entry = providerRow(row.provider);
+        entry.inputTokens += row.inputTokens;
+        entry.cachedInputTokens += row.cachedInputTokens;
+        entry.outputTokens += row.outputTokens;
+        entry.actualApiSpendCents += row.actualApiSpendCents;
+        const tokens = row.inputTokens + row.cachedInputTokens + row.outputTokens;
+        if (row.apiEquivalentCents === null) {
+          entry.unpricedTokens += tokens;
+          if (tokens > 0) unpricedModels.add(`${row.provider}/${row.model}`);
+        } else {
+          entry.apiEquivalentCents += row.apiEquivalentCents;
+        }
+      }
+      for (const subscription of subscriptions) {
+        providerRow(subscription.provider).subscriptionCostCents += proratedSubscriptionCents(
+          subscription.monthlyPriceCents,
+          periodFrom,
+          periodTo,
+        );
+      }
+
+      const byProvider = [...providers.values()].sort((a, b) => a.provider.localeCompare(b.provider));
+      const sum = (pick: (row: ApiEquivalentProviderRow) => number) =>
+        byProvider.reduce((total, row) => total + pick(row), 0);
+      const actualApiSpendCents = sum((row) => row.actualApiSpendCents);
+      const subscriptionCostCents = sum((row) => row.subscriptionCostCents);
+      const apiEquivalentCents = sum((row) => row.apiEquivalentCents);
+      const paidCents = actualApiSpendCents + subscriptionCostCents;
+
+      return {
+        companyId,
+        from: periodFrom.toISOString(),
+        to: periodTo.toISOString(),
+        priceTableCheckedAt: API_PRICE_TABLE_CHECKED_AT,
+        actualApiSpendCents,
+        subscriptionCostCents,
+        paidCents,
+        apiEquivalentCents,
+        savingCents: apiEquivalentCents - paidCents,
+        totalTokens: sum((row) => row.inputTokens + row.cachedInputTokens + row.outputTokens),
+        unpricedTokens: sum((row) => row.unpricedTokens),
+        unpricedModels: [...unpricedModels].sort(),
+        byProvider,
+        byModel,
+      };
     },
 
     byProject: async (companyId: string, range?: CostDateRange) => {

@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import {
   createDb,
   companies,
+  companySubscriptions,
   agents,
   activityLog,
   costEvents,
@@ -15,7 +16,7 @@ import {
   issues,
   projects,
 } from "@greatstone/db";
-import { costService } from "../services/costs.ts";
+import { costService, proratedSubscriptionCents } from "../services/costs.ts";
 import { financeService } from "../services/finance.ts";
 import {
   getEmbeddedPostgresTestSupport,
@@ -86,6 +87,11 @@ const mockCostService = vi.hoisted(() => ({
   }),
   windowSpend: vi.fn().mockResolvedValue([]),
   byProject: vi.fn().mockResolvedValue([]),
+  apiEquivalent: vi.fn().mockResolvedValue({ apiEquivalentCents: 0 }),
+  listSubscriptions: vi.fn().mockResolvedValue({ subscriptions: [], detected: [] }),
+  createSubscription: vi.fn(),
+  updateSubscription: vi.fn(),
+  deleteSubscription: vi.fn(),
 }));
 const mockFinanceService = vi.hoisted(() => ({
   createEvent: vi.fn(),
@@ -313,6 +319,60 @@ describe("cost routes", () => {
     expect(mockAgentService.update).not.toHaveBeenCalled();
   });
 
+  it("lets the board add a subscription and logs it", async () => {
+    mockCostService.createSubscription.mockResolvedValue({
+      id: "sub-1",
+      companyId: "company-1",
+      provider: "anthropic",
+      plan: "Claude Max 20x",
+      monthlyPriceCents: 20_000,
+    });
+    const res = await request(createApp())
+      .post("/api/companies/company-1/costs/subscriptions")
+      .send({ provider: "anthropic", plan: "Claude Max 20x", monthlyPriceCents: 20_000 });
+    expect(res.status).toBe(201);
+    expect(mockCostService.createSubscription).toHaveBeenCalledWith("company-1", {
+      provider: "anthropic",
+      plan: "Claude Max 20x",
+      monthlyPriceCents: 20_000,
+    });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: "company.subscription_created" }),
+    );
+  });
+
+  it("rejects a subscription with a negative price", async () => {
+    const res = await request(createApp())
+      .post("/api/companies/company-1/costs/subscriptions")
+      .send({ provider: "anthropic", plan: "Claude Max", monthlyPriceCents: -1 });
+    expect(res.status).toBe(400);
+    expect(mockCostService.createSubscription).not.toHaveBeenCalled();
+  });
+
+  it("rejects subscription changes from agents", async () => {
+    const app = createAppWithActor({ type: "agent", agentId: "agent-1", companyId: "company-1", runId: "run-1" });
+    const create = await request(app)
+      .post("/api/companies/company-1/costs/subscriptions")
+      .send({ provider: "anthropic", plan: "Claude Max", monthlyPriceCents: 100 });
+    const remove = await request(app).delete("/api/companies/company-1/costs/subscriptions/sub-1");
+    expect(create.status).toBe(403);
+    expect(remove.status).toBe(403);
+    expect(mockCostService.createSubscription).not.toHaveBeenCalled();
+    expect(mockCostService.deleteSubscription).not.toHaveBeenCalled();
+  });
+
+  it("passes the date range to the API-equivalent report", async () => {
+    const res = await request(createApp())
+      .get("/api/companies/company-1/costs/api-equivalent")
+      .query({ from: "2026-04-01T00:00:00.000Z" });
+    expect(res.status).toBe(200);
+    expect(mockCostService.apiEquivalent).toHaveBeenCalledWith("company-1", {
+      from: new Date("2026-04-01T00:00:00.000Z"),
+      to: undefined,
+    });
+  });
+
   it("rejects agent budget updates from the target agent without changing the budget policy", async () => {
     const app = createAppWithActor({
       type: "agent",
@@ -418,6 +478,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
 
   afterEach(async () => {
     await db.delete(financeEvents);
+    await db.delete(companySubscriptions);
     await db.delete(costEvents);
     await db.delete(activityLog);
     await db.delete(heartbeatRuns);
@@ -932,5 +993,177 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     expect(summary.estimatedDebitCents).toBe(2_000_000_000);
     expect(byKindRow?.debitCents).toBe(4_000_000_000);
     expect(byKindRow?.netCents).toBe(4_000_000_000);
+  });
+
+  it("reports actual API spend, subscription cost and API-equivalent cost for mixed billing types", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Mixed Agent",
+      role: "engineer",
+      status: "active",
+      adapterType: "claude_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+
+    const base = { companyId, agentId };
+    await db.insert(costEvents).values([
+      {
+        // subscription: 1M in @ $5 + 2M cache reads @ $0.50 + 100k out @ $25 = $8.50
+        ...base,
+        provider: "anthropic",
+        biller: "anthropic",
+        billingType: "subscription_included",
+        model: "claude-opus-4-6",
+        inputTokens: 1_000_000,
+        cachedInputTokens: 2_000_000,
+        outputTokens: 100_000,
+        costCents: 0,
+        occurredAt: new Date("2026-04-05T00:00:00.000Z"),
+      },
+      {
+        // metered API: billed $3.00, API-equivalent 1M in @ $3 = $3.00
+        ...base,
+        provider: "anthropic",
+        biller: "anthropic",
+        billingType: "metered_api",
+        model: "claude-sonnet-4-5-20250929",
+        inputTokens: 1_000_000,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        costCents: 300,
+        occurredAt: new Date("2026-04-06T00:00:00.000Z"),
+      },
+      {
+        // subscription, cached inside input: 200k @ $1.25 + 800k @ $0.125 + 50k out @ $10 = $0.85
+        ...base,
+        provider: "openai",
+        biller: "chatgpt",
+        billingType: "subscription_included",
+        model: "gpt-5",
+        inputTokens: 1_000_000,
+        cachedInputTokens: 800_000,
+        outputTokens: 50_000,
+        costCents: 0,
+        occurredAt: new Date("2026-04-07T00:00:00.000Z"),
+      },
+      {
+        // unknown model: tokens counted, price not guessed
+        ...base,
+        provider: "openai",
+        biller: "chatgpt",
+        billingType: "subscription_included",
+        model: "gpt-5.6-terra",
+        inputTokens: 1_000,
+        cachedInputTokens: 0,
+        outputTokens: 500,
+        costCents: 0,
+        occurredAt: new Date("2026-04-08T00:00:00.000Z"),
+      },
+      {
+        // outside the period
+        ...base,
+        provider: "anthropic",
+        biller: "anthropic",
+        billingType: "metered_api",
+        model: "claude-opus-4-6",
+        inputTokens: 5_000_000,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        costCents: 2_500,
+        occurredAt: new Date("2026-03-20T00:00:00.000Z"),
+      },
+    ]);
+
+    const anthropicPlan = await costs.createSubscription(companyId, {
+      provider: "Anthropic",
+      plan: "Claude Max 20x",
+      monthlyPriceCents: 20_000,
+    });
+    expect(anthropicPlan.provider).toBe("anthropic");
+
+    // openai ran on a subscription but has no saved plan yet: it is detected
+    const beforeOpenAi = await costs.listSubscriptions(companyId);
+    expect(beforeOpenAi.subscriptions.map((row) => row.plan)).toEqual(["Claude Max 20x"]);
+    expect(beforeOpenAi.detected.map((row) => `${row.provider}/${row.biller}`)).toEqual(["openai/chatgpt"]);
+
+    const openAiPlan = await costs.createSubscription(companyId, {
+      provider: "openai",
+      plan: "ChatGPT Plus",
+      monthlyPriceCents: 2_000,
+    });
+    await costs.updateSubscription(companyId, openAiPlan.id, { plan: "ChatGPT Pro", monthlyPriceCents: 20_000 });
+    expect((await costs.listSubscriptions(companyId)).detected).toEqual([]);
+
+    const summary = await costs.apiEquivalent(
+      companyId,
+      { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
+      new Date("2026-05-10T00:00:00.000Z"),
+    );
+
+    expect(summary.actualApiSpendCents).toBe(300);
+    expect(summary.subscriptionCostCents).toBeCloseTo(40_000, 6);
+    expect(summary.apiEquivalentCents).toBeCloseTo(850 + 300 + 85, 6);
+    expect(summary.paidCents).toBeCloseTo(40_300, 6);
+    expect(summary.savingCents).toBeCloseTo(1_235 - 40_300, 6);
+    expect(summary.unpricedTokens).toBe(1_500);
+    expect(summary.unpricedModels).toEqual(["openai/gpt-5.6-terra"]);
+    expect(summary.totalTokens).toBe(3_100_000 + 1_000_000 + 1_850_000 + 1_500);
+
+    const byModel = Object.fromEntries(summary.byModel.map((row) => [row.model, row]));
+    expect(byModel["gpt-5.6-terra"]?.apiEquivalentCents).toBeNull();
+    expect(byModel["claude-opus-4-6"]?.subscriptionTokens).toBe(3_100_000);
+    expect(byModel["claude-sonnet-4-5-20250929"]?.subscriptionTokens).toBe(0);
+
+    // provider rows add up to the totals
+    const sum = (pick: (row: (typeof summary.byProvider)[number]) => number) =>
+      summary.byProvider.reduce((total, row) => total + pick(row), 0);
+    expect(summary.byProvider.map((row) => row.provider)).toEqual(["anthropic", "openai"]);
+    expect(sum((row) => row.apiEquivalentCents)).toBeCloseTo(summary.apiEquivalentCents, 6);
+    expect(sum((row) => row.actualApiSpendCents)).toBe(summary.actualApiSpendCents);
+    expect(sum((row) => row.subscriptionCostCents)).toBeCloseTo(summary.subscriptionCostCents, 6);
+
+    await costs.deleteSubscription(companyId, anthropicPlan.id);
+    const afterDelete = await costs.apiEquivalent(
+      companyId,
+      { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
+      new Date("2026-05-10T00:00:00.000Z"),
+    );
+    expect(afterDelete.subscriptionCostCents).toBeCloseTo(20_000, 6);
+    await expect(costs.deleteSubscription(companyId, "not-a-uuid")).rejects.toThrow("Subscription not found");
+  });
+});
+
+describe("proratedSubscriptionCents", () => {
+  it("charges the full monthly price for a full calendar month", () => {
+    expect(
+      proratedSubscriptionCents(20_000, new Date("2026-02-01T00:00:00.000Z"), new Date("2026-03-01T00:00:00.000Z")),
+    ).toBeCloseTo(20_000, 6);
+  });
+
+  it("prorates by day within each month a period touches", () => {
+    // 15 of 30 April days + 10 of 31 May days
+    const cents = proratedSubscriptionCents(
+      3_000,
+      new Date("2026-04-16T00:00:00.000Z"),
+      new Date("2026-05-11T00:00:00.000Z"),
+    );
+    expect(cents).toBeCloseTo(1_500 + (3_000 * 10) / 31, 6);
+  });
+
+  it("is zero for an empty period or a zero price", () => {
+    const at = new Date("2026-04-16T00:00:00.000Z");
+    expect(proratedSubscriptionCents(3_000, at, at)).toBe(0);
+    expect(proratedSubscriptionCents(0, at, new Date("2026-05-16T00:00:00.000Z"))).toBe(0);
   });
 });
