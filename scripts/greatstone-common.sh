@@ -84,6 +84,23 @@ active_runs() {
   ' "$1"
 }
 
+# Prints the title (line 1 of the message) of rc tag <tag> in <repo>. Fails
+# with the reason when the tag has no title: a lightweight tag, an empty first
+# line, or a placeholder such as "Release candidate rc-...". Must match
+# titleProblem in scripts/greatstone-candidate.mjs.
+rc_tag_title() {
+  local repo="$1" tag="$2" type title
+  type="$(git -C "$repo" cat-file -t "refs/tags/$tag" 2>/dev/null)" || { say "unknown tag $tag"; return 1; }
+  [ "$type" = tag ] || { say "$tag has no title: it is a lightweight tag. Cut it with scripts/greatstone-candidate.mjs"; return 1; }
+  title="$(git -C "$repo" for-each-ref --format='%(contents:subject)' "refs/tags/$tag")"
+  title="$(printf '%s' "$title" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  if [ -z "$title" ] || [ "$title" = "$tag" ] || printf '%s' "$title" | grep -qiE '^(release candidate([^[:alnum:]]|$)|rc-[0-9])'; then
+    say "$tag has no title (line 1 is \"$title\"). Cut it with scripts/greatstone-candidate.mjs --title \"...\""
+    return 1
+  fi
+  say "$title"
+}
+
 # Reads one key from the preview state file.
 preview_state() {
   [ -f "$PREVIEW_STATE_FILE" ] || return 0

@@ -20,6 +20,11 @@ case "$TAG" in
   *) die "usage: greatstone-release.sh <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
 esac
 
+# A candidate carries a title and changelog; the live-* tag gets the same message.
+if [ "$MODE" = release ]; then
+  TITLE="$(rc_tag_title "$RELEASE_REPO" "$TAG")" || die "$TITLE"
+fi
+
 [ -d "$LIVE_DIR/.git" ] || die "no live checkout at $LIVE_DIR"
 [ -z "$(git -C "$LIVE_DIR" status --porcelain)" ] || die "the live checkout has local changes; nothing may edit it. Inspect $LIVE_DIR before releasing."
 
@@ -61,9 +66,10 @@ if [ "$MODE" = release ]; then
   n=1
   while git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$base.$n" >/dev/null; do n=$((n + 1)); done
   LIVE_TAG="$base.$n"
-  git -C "$RELEASE_REPO" tag -a "$LIVE_TAG" "$TARGET" -m "Live release $LIVE_TAG (candidate $TAG)"
+  git -C "$RELEASE_REPO" for-each-ref --format='%(contents:subject)%0a%0a%(contents:body)' "refs/tags/$TAG" \
+    | git -C "$RELEASE_REPO" tag -a "$LIVE_TAG" "$TARGET" --cleanup=whitespace -F -
   GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG"
-  say "Tagged $TAG as $LIVE_TAG"
+  say "Tagged $TAG as $LIVE_TAG: $TITLE"
 else
   LIVE_TAG="$TAG"
 fi
