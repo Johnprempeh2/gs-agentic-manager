@@ -10,6 +10,7 @@ import {
   createDb,
   heartbeatRuns,
   issueApprovals,
+  issueRecoveryActions,
   issueRelations,
   issueThreadInteractions,
   issues,
@@ -49,6 +50,7 @@ describeEmbeddedPostgres("issue blocker attention", () => {
     await db.delete(heartbeatRuns);
     await db.delete(agentWakeupRequests);
     await db.delete(issueRelations);
+    await db.delete(issueRecoveryActions);
     await db.delete(issues);
     await db.delete(agents);
     await db.delete(companies);
@@ -742,6 +744,57 @@ describeEmbeddedPostgres("issue blocker attention", () => {
     await expect(svc.list(companyId, { attention: "blocked", q: owner })).resolves.toEqual([]);
     await expect(svc.count(companyId, { attention: "blocked", q: action })).resolves.toBe(0);
     await expect(svc.count(companyId, { attention: "blocked", q: "Public context" })).resolves.toBe(1);
+  });
+
+  // GRE-72: the GRE-37 shape. The assignee cleared its blockers and named
+  // itself as unblock owner, so nothing would wake it again.
+  it("flags a self-parked blocked issue with no blocker, monitor or interaction", async () => {
+    const { companyId, agentId } = await createCompany("BIP");
+    const workerId = randomUUID();
+    await db.insert(agents).values({
+      id: workerId,
+      companyId,
+      name: "BIP Worker",
+      role: "qa",
+      status: "idle",
+      reportsTo: agentId,
+    });
+    const parkedId = await insertIssue({
+      companyId,
+      identifier: "BIP-1",
+      title: "Waiting for a release",
+      status: "blocked",
+      assigneeAgentId: workerId,
+    });
+    await db.update(issues).set({
+      unblockDescriptor: { owner: { agentId: workerId }, action: "Measure after the release." },
+    }).where(eq(issues.id, parkedId));
+
+    const [row] = await svc.list(companyId, { attention: "blocked" });
+    expect(row?.id).toBe(parkedId);
+    expect(row?.blockedInboxAttention).toMatchObject({
+      state: "needs_attention",
+      reason: "blocked_without_action_path",
+      severity: "high",
+      owner: { type: "agent", agentId },
+      action: { label: "Name unblock path" },
+    });
+
+    // The recovery path parks exhausted work the same way, but its open
+    // recovery action already owns the next step.
+    await db.insert(issueRecoveryActions).values({
+      companyId,
+      sourceIssueId: parkedId,
+      kind: "stranded_issue",
+      status: "escalated",
+      ownerType: "board",
+      cause: "execution_recovery_budget_exhausted",
+      fingerprint: "bip-1",
+      nextAction: "Restore a live path.",
+    });
+    const after = await svc.list(companyId, { attention: "blocked" });
+    expect(after.find((issue) => issue.id === parkedId)?.blockedInboxAttention?.reason)
+      .not.toBe("blocked_without_action_path");
   });
 
   it("excludes healthy active blockers from blocked inbox attention", async () => {
