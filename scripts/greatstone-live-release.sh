@@ -62,7 +62,7 @@ say "$(date -u +%FT%TZ) release $TAG (live on ${PREVIOUS:-$BEFORE})"
 "$RELEASE" "$TAG" >"$JOB_DIR/release.log" 2>&1
 STATUS=$?
 BACKUP="$(sed -n 's/^Backed up the live database (on .*) to //p' "$JOB_DIR/release.log" | tail -n 1)"
-LIVE_TAG="$(sed -n 's/^Tagged .* as \(live-.*\)$/\1/p' "$JOB_DIR/release.log" | tail -n 1)"
+LIVE_TAG="$(sed -n 's/^Tagged .* as \(live-[^ :]*\).*$/\1/p' "$JOB_DIR/release.log" | tail -n 1)"
 
 if [ "$STATUS" -eq 0 ]; then
   write_result released "" "$LIVE_TAG" "$(health_commit "$LIVE_URL")" "$BACKUP"

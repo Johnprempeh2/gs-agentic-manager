@@ -112,8 +112,18 @@ Merging does not change the live app. A version goes live in these steps.
    digest. One candidate per day; a newer merge waits for the next day. Tag it:
 
    ```sh
-   git fetch origin && git tag -a rc-YYYY-MM-DD.N origin/main -m "Release candidate rc-YYYY-MM-DD.N"
+   git fetch origin
+   node scripts/greatstone-candidate.mjs rc-YYYY-MM-DD.N --title "Decisions in the sidebar and RAM-aware run limits"
    ```
+
+   The tag is annotated. Line 1 is the title: short, plain English, what this
+   release brings. The script writes the changelog under it from the merged
+   pull requests since the last `live-*` tag, in two groups, `Features` and
+   `Fixes`, one line each: `- <summary> (#<PR>, GRE-<n>)`. A pull request whose
+   title starts with "fix" is a fix. Add `--print` to see the message first.
+   The release refuses an `rc-*` tag without a title (a lightweight tag, or a
+   placeholder such as "Release candidate rc-..."), and the `live-*` tag it
+   makes gets the rc tag's message. The app shows the title and changelog.
 
    The tag stays local until the release; the release script pushes it.
 
