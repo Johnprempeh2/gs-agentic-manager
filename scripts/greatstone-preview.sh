@@ -3,6 +3,8 @@
 #
 #   scripts/greatstone-preview.sh start <tag>   run <tag> at http://localhost:3200 on a copy of the live data
 #   scripts/greatstone-preview.sh status        say what the preview runs and whether any agent run started
+#   scripts/greatstone-preview.sh switch-tests  run the tests of every Experimental switch that is on
+#                                               (the preview has live's values); fails when one fails
 #   scripts/greatstone-preview.sh stop          stop the preview (only the preview)
 #
 # The preview lives in ~/GSAM/preview: code/ is its own clone at <tag>, data/
@@ -145,6 +147,19 @@ cmd_status() {
   ' "$PREVIEW_URL" "$started" || say "  agent runs: could not ask the preview"
 }
 
+# The preview is a copy of the live data, so its Experimental switches are the
+# ones on in live. Runs the candidate's test files for each switch that is on
+# (tests/release-switch-tests/switch-tests.json) and fails, naming the switch
+# and the test, when one fails (GRE-101). The report is saved next to the log.
+cmd_switch_tests() {
+  preview_running || die "no preview is running; start the candidate first."
+  local report="$PREVIEW_ROOT/switch-tests-$(preview_state tag).json" code=0
+  node "$GS_TOOLS_ROOT/tests/release-switch-tests/run.mjs" \
+    --repo "$PREVIEW_CODE_DIR" --settings-url "$PREVIEW_URL" --json "$report" || code=$?
+  say "Report: $report"
+  return "$code"
+}
+
 cmd_stop() {
   if ! preview_running; then
     say "No preview is running."
@@ -177,6 +192,7 @@ cmd_stop() {
 case "${1:-}" in
   start) shift; cmd_start "$@" ;;
   status) cmd_status ;;
+  switch-tests) cmd_switch_tests ;;
   stop) cmd_stop ;;
-  *) die "usage: greatstone-preview.sh start <tag> | status | stop" ;;
+  *) die "usage: greatstone-preview.sh start <tag> | status | switch-tests | stop" ;;
 esac

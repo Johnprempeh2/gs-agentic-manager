@@ -125,10 +125,15 @@ Merging does not change the live app. A version goes live in these steps.
    ```sh
    scripts/greatstone-preview.sh start rc-YYYY-MM-DD.N   # http://localhost:3200
    scripts/greatstone-preview.sh status                  # tag, commit, agent runs since start
+   scripts/greatstone-preview.sh switch-tests            # tests of every Experimental switch on in live
    ```
 
    Go through each "what to check" line and record pass or fail with evidence on
-   the release issue. `status` must show 0 agent runs.
+   the release issue. `status` must show 0 agent runs. `switch-tests` must pass:
+   it runs the test files of each switch that is on in the preview (a copy of
+   live, so live's switches), from `tests/release-switch-tests/switch-tests.json`.
+   A failure names the switch, the test file and the test, and fails the
+   candidate. A new switch needs an entry in that file.
 5. **Agree (John).** John tries the preview too, then says "release" or
    "not yet" on the release issue. "Not yet" leaves live as it is; the fixes
    become new issues and a new candidate.
