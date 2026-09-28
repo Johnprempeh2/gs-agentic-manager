@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import {
   createSystemMemoryReader,
@@ -8,6 +9,7 @@ import {
   parseDarwinPressureLevel,
   parseLinuxMemAvailableBytes,
   parseVmStatAvailableBytes,
+  readInstanceSystemMemory,
   resolveRunAdmissionSettings,
 } from "../services/run-admission.js";
 
@@ -132,5 +134,26 @@ describe("run admission (GRE-105)", () => {
     now = 5_000;
     await reader();
     expect(read).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("instance system memory (GRE-114)", () => {
+  it("reports total RAM with the admission guard's available reading", async () => {
+    const memory = await readInstanceSystemMemory(async () => ({
+      availableBytes: 5 * GB,
+      pressure: "normal",
+    }));
+    expect(memory).toEqual({
+      totalBytes: os.totalmem(),
+      availableBytes: 5 * GB,
+      pressure: "normal",
+    });
+  });
+
+  it("reports null available memory when it cannot be read", async () => {
+    const memory = await readInstanceSystemMemory(async () => null);
+    expect(memory.availableBytes).toBeNull();
+    expect(memory.pressure).toBe("unknown");
+    expect(memory.totalBytes).toBeGreaterThan(0);
   });
 });

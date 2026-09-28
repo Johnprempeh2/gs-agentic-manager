@@ -13,6 +13,10 @@ import {
   isCloudManagedInstance,
 } from "../services/cloud-instance.js";
 import { getHiddenSettings } from "../services/settings-visibility.js";
+import {
+  createSystemMemoryReader,
+  readInstanceSystemMemory,
+} from "../services/run-admission.js";
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
 import {
@@ -122,6 +126,7 @@ export function instanceSettingsRoutes(db: Db) {
   const svc = instanceSettingsService(db);
   const environments = environmentService(db);
   const heartbeat = heartbeatService(db);
+  const readSystemMemory = createSystemMemoryReader();
 
   router.get("/instance/settings", async (req, res) => {
     assertBoardOrgAccess(req);
@@ -246,6 +251,12 @@ export function instanceSettingsRoutes(db: Db) {
       res.json(updated.general);
     },
   );
+
+  // Read-only host memory for the run-cap suggestion on the Settings page.
+  router.get("/instance/system-memory", async (req, res) => {
+    assertBoardOrgAccess(req);
+    res.json(await readInstanceSystemMemory(readSystemMemory));
+  });
 
   router.get("/instance/settings/experimental", async (req, res) => {
     // Experimental settings are readable by any authenticated org member
