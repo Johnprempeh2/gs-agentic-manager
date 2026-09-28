@@ -21,6 +21,8 @@ set -euo pipefail
 source "$(dirname "\${BASH_SOURCE[0]}")/greatstone-common.sh"
 TAG="$1"
 echo "$TAG" >> "$GSAM_ROOT/calls.log"
+echo "from_app=\${GSAM_RELEASE_FROM_APP:-} phase_file=\${GSAM_RELEASE_PHASE_FILE:-}" >> "$GSAM_ROOT/env.log"
+release_phase switching
 case "$TAG" in
   rc-*)
     [ "\${STUB_RC:-ok}" = refuse ] && { echo "release: 1 agent run(s) are active; release again when the agents are idle." >&2; exit 1; }
@@ -83,6 +85,9 @@ test("a release that comes up reports released", (t) => {
   assert.equal(result.previousTag, "live-2026-09-01.1");
   assert.deepEqual(calls, ["rc-2026-09-27.2"]);
   assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2"));
+  // App mode (hot restart, no preview check) and the phase file for the server.
+  assert.equal(readFileSync(join(box.root, "env.log"), "utf8").trim(), `from_app=1 phase_file=${join(box.job, "phase")}`);
+  assert.equal(readFileSync(join(box.job, "phase"), "utf8").trim(), "switching");
 });
 
 test("a failed health check rolls back to the previous live tag and keeps the backup path", (t) => {

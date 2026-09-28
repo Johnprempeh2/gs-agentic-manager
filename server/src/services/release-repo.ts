@@ -118,7 +118,8 @@ export async function prepareReleaseRepo(repo: string | null): Promise<{ ok: tru
     return fail(`git status failed in the release repo (${firstLine(err)})`);
   }
   if (changed) {
-    const files = changed.split("\n").slice(0, 3).map((l) => l.slice(3)).join(", ");
+    // git() trims the output, so the first line may have lost its leading space.
+    const files = changed.split("\n").slice(0, 3).map((l) => l.trim().replace(/^\S+\s+/, "")).join(", ");
     return fail(`the release repo ${repo} has local changes (${files}); commit or discard them first`);
   }
   if (branch !== "main") return fail(`the release repo ${repo} is on ${branch || "a detached HEAD"}, not main; switch it to main first`);
