@@ -105,6 +105,7 @@ port=$PREVIEW_PORT
 source_repo=$(dirname "$source_git")
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
+  record_release_repo "$(dirname "$source_git")"
 
   for _ in $(seq 1 150); do
     sleep 2
