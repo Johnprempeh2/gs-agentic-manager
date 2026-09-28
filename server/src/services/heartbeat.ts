@@ -605,6 +605,14 @@ import {
   touchHeartbeatRunRuntimeStatus,
 } from "./heartbeat-run-runtime-status.js";
 import {
+  createSystemMemoryReader,
+  evaluateRunAdmission,
+  orderAgentsByOldestQueuedRun,
+  resolveRunAdmissionSettings,
+  RUN_ADMISSION_RECHECK_MS,
+  type MemoryReader,
+} from "./run-admission.js";
+import {
   findMissingHotRestartSnapshotRunIds,
   readHotRestartIntent,
   readProcessStartedAt,
@@ -1274,6 +1282,22 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
 // Routes and the scheduler construct separate heartbeatService instances, but
 // they must agree on in-process adapter executions when reaping stale runs.
 const activeRunExecutions = new Set<string>();
+// Instance-wide run admission (GRE-105), shared across service instances like
+// activeRunExecutions. Slots reserved by a start gate that is still claiming,
+// plus runs this process admitted that have not finished executing. Counting
+// admitted runs in memory closes the window where a concurrent start gate reads
+// the running count before another gate's claim has committed.
+let runAdmissionReservedSlots = 0;
+const runAdmissionAdmittedRunIds = new Set<string>();
+// Queued runs currently held by the admission guard, keyed by run id.
+const runAdmissionHeldRuns = new Map<
+  string,
+  { reason: string; message: string; publishedAt: number }
+>();
+let runAdmissionRecheckTimer: {
+  timer: ReturnType<typeof setTimeout>;
+  dueAt: number;
+} | null = null;
 // A legacy process adapter's signal exit can race the operator cancellation CAS while
 // its owned process group is still being joined. Keep that exit from becoming
 // a successful result (or a competing failure) before Stop settles. This is an
@@ -9309,6 +9333,12 @@ export interface HeartbeatServiceOptions {
     runId: string;
     issueId: string;
   }) => Promise<void>;
+  /**
+   * Reads available system memory for run admission. Defaults to the system
+   * reader; under vitest it defaults to "unknown" (fail open) so suites do not
+   * depend on the test machine's free RAM.
+   */
+  memoryReader?: MemoryReader;
 }
 
 export async function cancelHeartbeatNativeRun(input: {
@@ -9434,6 +9464,9 @@ export function heartbeatService(
     enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
   });
   const runtimeEnv = options.runtimeEnv ?? process.env;
+  const memoryReader: MemoryReader =
+    options.memoryReader ??
+    (runtimeEnv.VITEST ? async () => null : createSystemMemoryReader());
   const inWorktreeRuntime = isTruthyRuntimeEnvValue(
     runtimeEnv.GSAM_IN_WORKTREE,
   );
@@ -19593,22 +19626,7 @@ export function heartbeatService(
       });
     }
 
-    const queuedRuns = await db
-      .select({ agentId: heartbeatRuns.agentId })
-      .from(heartbeatRuns)
-      .innerJoin(companies, eq(companies.id, heartbeatRuns.companyId))
-      .where(
-        and(
-          eq(heartbeatRuns.status, "queued"),
-          eq(companies.status, "active"),
-          cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
-        ),
-      );
-
-    const agentIds = [...new Set(queuedRuns.map((r) => r.agentId))];
-    for (const agentId of agentIds) {
-      await startNextQueuedRunForAgent(agentId);
-    }
+    await drainQueuedRunsFairly();
   }
 
   async function recoverActiveSessionGoals() {
@@ -20120,13 +20138,148 @@ export function heartbeatService(
     }
   }
 
+  async function countRunningRunsForAdmission() {
+    const rows = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.status, "running"));
+    const running = new Set(rows.map((row) => row.id));
+    for (const runId of runAdmissionAdmittedRunIds) running.add(runId);
+    return running.size + runAdmissionReservedSlots;
+  }
+
+  function markQueuedRunsHeldForAdmission(
+    runs: Array<{
+      id: string;
+      companyId: string;
+      agentId: string;
+      contextSnapshot: unknown;
+    }>,
+    hold: { reason: string; message: string },
+  ) {
+    const now = Date.now();
+    for (const run of runs) {
+      const prior = runAdmissionHeldRuns.get(run.id);
+      if (!prior || prior.reason !== hold.reason) {
+        logger.info(
+          { runId: run.id, agentId: run.agentId, reason: hold.reason },
+          `run admission hold: ${hold.message}`,
+        );
+      }
+      // Republish on change, and well inside the runtime-status TTL so the
+      // "Held: ..." line stays visible while the run waits.
+      if (
+        prior?.message === hold.message &&
+        now - prior.publishedAt < RUN_ADMISSION_RECHECK_MS * 3
+      ) {
+        continue;
+      }
+      runAdmissionHeldRuns.set(run.id, { ...hold, publishedAt: now });
+      const status = setHeartbeatRunRuntimeStatus({
+        companyId: run.companyId,
+        issueId:
+          readNonEmptyString(parseObject(run.contextSnapshot).issueId) ?? null,
+        agentId: run.agentId,
+        runId: run.id,
+        phase: "run_activity",
+        message: hold.message,
+      });
+      if (status) publishHeartbeatRunRuntimeProgress(status);
+    }
+  }
+
+  function releaseRunAdmissionHold(runId: string) {
+    if (!runAdmissionHeldRuns.delete(runId)) return;
+    clearHeartbeatRunRuntimeStatus(runId);
+  }
+
+  // One pending re-check at a time; a sooner request (a run just finished)
+  // replaces a later one (the periodic low-memory re-check).
+  function scheduleRunAdmissionRecheck(delayMs = RUN_ADMISSION_RECHECK_MS) {
+    if (shutdownInProgress) return;
+    const dueAt = Date.now() + delayMs;
+    if (runAdmissionRecheckTimer) {
+      if (runAdmissionRecheckTimer.dueAt <= dueAt) return;
+      clearTimeout(runAdmissionRecheckTimer.timer);
+    }
+    const timer = setTimeout(() => {
+      if (runAdmissionRecheckTimer?.timer === timer) {
+        runAdmissionRecheckTimer = null;
+      }
+      void drainQueuedRunsFairly().catch((err) => {
+        logger.warn({ err }, "run admission re-check failed");
+      });
+    }, delayMs);
+    timer.unref?.();
+    runAdmissionRecheckTimer = { timer, dueAt };
+  }
+
+  // Start queued runs across agents, oldest waiting agent first, one run per
+  // agent per pass, so one busy agent cannot take every free instance slot.
+  // Stops at the first admission hold and marks the rest of the queue held.
+  async function drainQueuedRunsFairly() {
+    if ((await getSchedulingSuppression()).suppressed) return;
+    const cutoff = await getWorktreeExecutionCutoff();
+    const queuedRuns = await db
+      .select({
+        id: heartbeatRuns.id,
+        companyId: heartbeatRuns.companyId,
+        agentId: heartbeatRuns.agentId,
+        createdAt: heartbeatRuns.createdAt,
+        contextSnapshot: heartbeatRuns.contextSnapshot,
+      })
+      .from(heartbeatRuns)
+      .innerJoin(companies, eq(companies.id, heartbeatRuns.companyId))
+      .where(
+        and(
+          eq(heartbeatRuns.status, "queued"),
+          eq(companies.status, "active"),
+          cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
+        ),
+      );
+    for (const runId of runAdmissionHeldRuns.keys()) {
+      if (!queuedRuns.some((run) => run.id === runId)) {
+        releaseRunAdmissionHold(runId);
+      }
+    }
+    const agentIds = orderAgentsByOldestQueuedRun(queuedRuns);
+    const startedRunIds = new Set<string>();
+    for (;;) {
+      let progressed = false;
+      for (const agentId of agentIds) {
+        const result = await startQueuedRunsForAgent(agentId, { maxToStart: 1 });
+        for (const run of result.runs) startedRunIds.add(run.id);
+        if (result.hold) {
+          markQueuedRunsHeldForAdmission(
+            queuedRuns.filter((run) => !startedRunIds.has(run.id)),
+            result.hold,
+          );
+          return;
+        }
+        if (result.runs.length > 0) progressed = true;
+      }
+      if (!progressed) return;
+    }
+  }
+
   async function startNextQueuedRunForAgent(agentId: string) {
-    if ((await getSchedulingSuppression()).suppressed) return [];
+    return (await startQueuedRunsForAgent(agentId)).runs;
+  }
+
+  async function startQueuedRunsForAgent(
+    agentId: string,
+    startOptions: { maxToStart?: number } = {},
+  ): Promise<{
+    runs: Array<typeof heartbeatRuns.$inferSelect>;
+    hold: { reason: string; message: string } | null;
+  }> {
+    const none = { runs: [], hold: null };
+    if ((await getSchedulingSuppression()).suppressed) return none;
     const cutoff = await getWorktreeExecutionCutoff();
 
     return withAgentStartLock(agentId, async () => {
       const agent = await getAgent(agentId);
-      if (!agent) return [];
+      if (!agent) return none;
       const invokability = await getAgentInvokability(agent);
       if (!invokability.invokable) {
         if (shouldCancelRunsForNonInvokableAgent(invokability)) {
@@ -20135,15 +20288,79 @@ export function heartbeatService(
             `Cancelled because the agent is not invokable: ${invokability.reason}`,
           );
         }
-        return [];
+        return none;
       }
+
+      // Instance-wide admission (GRE-105): global run cap, then free memory.
+      // A hold keeps the run queued; the re-check timer and run completion
+      // drain it again. Never fail or cancel a run here.
+      const admissionSettings = resolveRunAdmissionSettings(
+        await instanceSettings.getGeneral(),
+      );
+      const [instanceRunningCount, memory] = await Promise.all([
+        countRunningRunsForAdmission(),
+        memoryReader().catch(() => null),
+      ]);
+      const admission = evaluateRunAdmission({
+        settings: admissionSettings,
+        runningCount: instanceRunningCount,
+        memory,
+      });
+      if (!admission.admit) {
+        const hold = { reason: admission.reason, message: admission.message };
+        const heldRuns = await db
+          .select({
+            id: heartbeatRuns.id,
+            companyId: heartbeatRuns.companyId,
+            agentId: heartbeatRuns.agentId,
+            contextSnapshot: heartbeatRuns.contextSnapshot,
+          })
+          .from(heartbeatRuns)
+          .where(
+            and(
+              eq(heartbeatRuns.agentId, agentId),
+              eq(heartbeatRuns.status, "queued"),
+              cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
+            ),
+          );
+        if (heldRuns.length > 0) {
+          markQueuedRunsHeldForAdmission(heldRuns, hold);
+          scheduleRunAdmissionRecheck();
+        }
+        return { ...none, hold };
+      }
+
       const policy = parseHeartbeatPolicy(agent);
       const runningCount = await countRunningRunsForAgent(agentId);
-      const availableSlots = Math.max(
-        0,
-        policy.maxConcurrentRuns - runningCount,
+      const availableSlots = Math.min(
+        Math.max(0, policy.maxConcurrentRuns - runningCount),
+        admission.slots,
+        startOptions.maxToStart ?? Number.POSITIVE_INFINITY,
       );
-      if (availableSlots <= 0) return [];
+      if (availableSlots <= 0) return none;
+      // Reserve synchronously (no await since the count) so concurrent start
+      // gates for other agents see these slots as taken.
+      runAdmissionReservedSlots += availableSlots;
+      try {
+        const runs = await claimQueuedRunsForAgent(
+          agent,
+          availableSlots,
+          cutoff,
+        );
+        return { runs, hold: null };
+      } finally {
+        runAdmissionReservedSlots -= availableSlots;
+      }
+    });
+  }
+
+  async function claimQueuedRunsForAgent(
+    agent: NonNullable<Awaited<ReturnType<typeof getAgent>>>,
+    availableSlots: number,
+    cutoff: Date | null,
+  ): Promise<Array<typeof heartbeatRuns.$inferSelect>> {
+    const agentId = agent.id;
+    {
 
       const queuedRuns = await db
         .select()
@@ -20235,7 +20452,12 @@ export function heartbeatService(
       for (const queuedRun of prioritizedRuns) {
         if (claimedRuns.length >= availableSlots) break;
         const claimed = await claimQueuedRun(queuedRun, companyAgents);
-        if (claimed) claimedRuns.push(claimed);
+        if (claimed) {
+          claimedRuns.push(claimed);
+          // Counted by the admission gate until its execution settles.
+          runAdmissionAdmittedRunIds.add(claimed.id);
+          releaseRunAdmissionHold(claimed.id);
+        }
       }
       if (claimedRuns.length === 0) return [];
 
@@ -20245,6 +20467,11 @@ export function heartbeatService(
             { err, runId: claimedRun.id },
             "queued heartbeat execution failed",
           );
+        }).finally(() => {
+          runAdmissionAdmittedRunIds.delete(claimedRun.id);
+          // A finished run frees an instance slot another agent may be
+          // waiting on; the run's own follow-up only drains its own agent.
+          if (runAdmissionHeldRuns.size > 0) scheduleRunAdmissionRecheck(0);
         });
         // Register the in-flight execution so drainActiveRunExecutions() can await
         // it. executeRun resolves only after its finally block finishes flushing
@@ -20258,7 +20485,7 @@ export function heartbeatService(
         });
       }
       return claimedRuns;
-    });
+    }
   }
 
   // Await every background heartbeat execution that is currently in flight. A
@@ -20279,6 +20506,10 @@ export function heartbeatService(
       clearTimeout(timer);
     }
     nativeSessionResumeDispatchTimers.clear();
+    if (runAdmissionRecheckTimer) {
+      clearTimeout(runAdmissionRecheckTimer.timer);
+      runAdmissionRecheckTimer = null;
+    }
     while (
       activeWakeupPromises.size > 0 ||
       activeRunExecutionPromises.size > 0
