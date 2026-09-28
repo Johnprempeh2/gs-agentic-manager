@@ -1,5 +1,6 @@
 // Releases page API guards (GRE-121): board only, agents get 403; the release
 // manager agent may edit only the next title; an agent may flag only its own run.
+// In login mode release and rollback also need the password re-check (GRE-136).
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,28 +25,42 @@ const svc = vi.hoisted(() => ({
 }));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
+const GOOD = "sandbox-test-pass";
+let reauth: import("../services/release-reauth.js").ReleaseReauth;
+
 async function createApp(actor: Record<string, unknown>) {
   vi.doMock("../services/live-release.js", () => ({ liveReleaseService: () => svc }));
   vi.doMock("../services/index.js", () => ({ logActivity: mockLogActivity }));
-  const [{ releaseRoutes }, { errorHandler }] = await Promise.all([
+  const [{ releaseRoutes }, { errorHandler }, { createReleaseReauth }] = await Promise.all([
     vi.importActual<typeof import("../routes/releases.js")>("../routes/releases.js"),
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+    vi.importActual<typeof import("../services/release-reauth.js")>("../services/release-reauth.js"),
   ]);
+  reauth = createReleaseReauth({ verifyPassword: async (_userId, password) => password === GOOD });
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", releaseRoutes({} as any));
+  app.use("/api", releaseRoutes({} as any, reauth));
   app.use(errorHandler);
   return app;
 }
 
-const board = { type: "board", userId: "john", companyIds: [companyId], source: "session", isInstanceAdmin: false };
+const board = { type: "board", userId: "john", sessionId: "sess-1", companyIds: [companyId], source: "session", isInstanceAdmin: false };
+const localBoard = { type: "board", userId: "local-board", source: "local_implicit", isInstanceAdmin: true };
+const otherBoard = { ...board, userId: "stranger", companyIds: [] };
 const agent = { type: "agent", agentId, companyId, source: "agent_jwt", runId };
 const keystone = { type: "agent", agentId: keystoneId, companyId, source: "agent_jwt", runId: otherRunId };
 const base = `/api/companies/${companyId}/releases`;
+const REAUTH = "x-gsam-reauth";
+
+async function token(action: "release" | "rollback", userId = "john", sessionId: string | null = "sess-1") {
+  const result = await reauth.issue({ userId, sessionId, action, password: GOOD });
+  if (!result.ok) throw new Error("expected a token");
+  return result.token;
+}
 
 describe("release routes", () => {
   beforeEach(() => {
@@ -84,15 +99,15 @@ describe("release routes", () => {
     const app = await createApp(board);
     expect((await request(app).get(base)).status).toBe(200);
 
-    const release = await request(app).post(`${base}/release`).send({ tag: "rc-2026-09-28.1" });
+    const release = await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ tag: "rc-2026-09-28.1" });
     expect(release.status).toBe(202);
     expect(release.body).toEqual({ progress });
     expect(svc.start).toHaveBeenLastCalledWith({ kind: "release", tag: "rc-2026-09-28.1", title: null, actor: { actorType: "user", actorId: "john" } });
 
-    await request(app).post(`${base}/release`).send({ title: "From main" });
+    await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ title: "From main" });
     expect(svc.start).toHaveBeenLastCalledWith({ kind: "release", tag: null, title: "From main", actor: { actorType: "user", actorId: "john" } });
 
-    expect((await request(app).post(`${base}/rollback`).send({ tag: "live-2026-09-20.1" })).status).toBe(202);
+    expect((await request(app).post(`${base}/rollback`).set(REAUTH, await token("rollback")).send({ tag: "live-2026-09-20.1" })).status).toBe(202);
     expect(svc.start).toHaveBeenLastCalledWith({ kind: "rollback", tag: "live-2026-09-20.1", actor: { actorType: "user", actorId: "john" } });
     expect((await request(app).post(`${base}/cancel`)).body.progress.state).toBe("cancelled");
     expect((await request(app).post(`${base}/override`)).body.progress.state).toBe("switching");
@@ -102,9 +117,62 @@ describe("release routes", () => {
   it("returns a pre-flight failure as { error } with its status", async () => {
     svc.start.mockResolvedValue({ ok: false, status: 409, error: "the release repo /dev has local changes (x.ts); commit or discard them first" });
     const app = await createApp(board);
-    const res = await request(app).post(`${base}/release`).send({ tag: "rc-2026-09-28.1" });
+    const res = await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ tag: "rc-2026-09-28.1" });
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: "the release repo /dev has local changes (x.ts); commit or discard them first" });
+  });
+
+  describe("password re-check (login mode)", () => {
+    it.each([
+      ["release", { tag: "rc-2026-09-28.1" }],
+      ["rollback", { tag: "live-2026-09-20.1" }],
+    ] as const)("%s without the token gets 403 reauth_required and does not start", async (action, body) => {
+      const app = await createApp(board);
+      const res = await request(app).post(`${base}/${action}`).send(body);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("reauth_required");
+      expect(svc.start).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["release", { tag: "rc-2026-09-28.1" }],
+      ["rollback", { tag: "live-2026-09-20.1" }],
+    ] as const)("%s passes with a fresh token, once", async (action, body) => {
+      const app = await createApp(board);
+      const t = await token(action);
+      expect((await request(app).post(`${base}/${action}`).set(REAUTH, t).send(body)).status).toBe(202);
+      const again = await request(app).post(`${base}/${action}`).set(REAUTH, t).send(body);
+      expect(again.status).toBe(403);
+      expect(again.body.code).toBe("reauth_required");
+      expect(svc.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("a release token does not pass a rollback", async () => {
+      const app = await createApp(board);
+      const res = await request(app).post(`${base}/rollback`).set(REAUTH, await token("release")).send({ tag: "live-2026-09-20.1" });
+      expect(res.status).toBe(403);
+      expect(svc.start).not.toHaveBeenCalled();
+    });
+
+    it("a board user of another company is refused before the re-check, even with a token", async () => {
+      const app = await createApp(otherBoard);
+      const res = await request(app).post(`${base}/release`).set(REAUTH, await token("release", "stranger")).send({});
+      expect(res.status).toBe(403);
+      expect(res.body.code).not.toBe("reauth_required");
+      expect(svc.start).not.toHaveBeenCalled();
+    });
+
+    it("local_trusted releases and rolls back with no password", async () => {
+      const app = await createApp(localBoard);
+      expect((await request(app).post(`${base}/release`).send({ tag: "rc-2026-09-28.1" })).status).toBe(202);
+      expect((await request(app).post(`${base}/rollback`).send({ tag: "live-2026-09-20.1" })).status).toBe(202);
+    });
+
+    it("cancel and override still need only the board", async () => {
+      const app = await createApp(board);
+      expect((await request(app).post(`${base}/cancel`)).status).toBe(200);
+      expect((await request(app).post(`${base}/override`)).status).toBe(200);
+    });
   });
 
   it("refuses another company's board and agents", async () => {

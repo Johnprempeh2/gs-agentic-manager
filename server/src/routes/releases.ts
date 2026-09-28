@@ -5,19 +5,24 @@
 //
 // Every action goes through liveReleaseService, the same service the
 // "Update live?" card uses; nothing here repeats release logic.
+//
+// Release and rollback also ask for the password again in login mode
+// (GRE-133, wired by GRE-136): the company and board checks run first, then
+// the shared `assertReleaseReauth`.
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@greatstone/db";
 import { isUuidLike } from "@greatstone/shared";
 import { badRequest, forbidden, notFound } from "../errors.js";
 import { logActivity } from "../services/index.js";
 import { liveReleaseService } from "../services/live-release.js";
+import { assertReleaseReauth, releaseReauth, type ReleaseReauth } from "../services/release-reauth.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 type ActionResult =
   | { ok: true; progress: unknown }
   | { ok: false; status: 403 | 409 | 422; error: string };
 
-export function releaseRoutes(db: Db) {
+export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db)) {
   const router = Router();
   const svc = liveReleaseService(db);
 
@@ -60,6 +65,7 @@ export function releaseRoutes(db: Db) {
   router.post("/companies/:companyId/releases/release", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertBoardFor(req, companyId);
+    assertReleaseReauth(req, "release", reauth);
     const tag = typeof req.body?.tag === "string" && req.body.tag.trim() ? req.body.tag.trim() : null;
     const title = typeof req.body?.title === "string" ? req.body.title : null;
     const result = await svc.start({ kind: "release", tag, title, actor: userActor(req) });
@@ -70,6 +76,7 @@ export function releaseRoutes(db: Db) {
   router.post("/companies/:companyId/releases/rollback", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertBoardFor(req, companyId);
+    assertReleaseReauth(req, "rollback", reauth);
     const tag = typeof req.body?.tag === "string" ? req.body.tag.trim() : null;
     const result = await svc.start({ kind: "rollback", tag, actor: userActor(req) });
     if (result.ok) await log(req, companyId, "release.rollback_started", { tag: result.job.tag });
