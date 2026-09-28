@@ -614,6 +614,10 @@ import {
   type MemoryReader,
 } from "./run-admission.js";
 import {
+  recordRunAdmissionHold,
+  recordRunAdmissionRelease,
+} from "./run-admission-recommendation.js";
+import {
   findMissingHotRestartSnapshotRunIds,
   readHotRestartIntent,
   readProcessStartedAt,
@@ -20183,6 +20187,7 @@ export function heartbeatService(
     for (const run of runs) {
       const prior = runAdmissionHeldRuns.get(run.id);
       if (!prior || prior.reason !== hold.reason) {
+        recordRunAdmissionHold(run.id, hold.reason, now);
         logger.info(
           { runId: run.id, agentId: run.agentId, reason: hold.reason },
           `run admission hold: ${hold.message}`,
@@ -20212,6 +20217,7 @@ export function heartbeatService(
 
   function releaseRunAdmissionHold(runId: string) {
     if (!runAdmissionHeldRuns.delete(runId)) return;
+    recordRunAdmissionRelease(runId);
     clearHeartbeatRunRuntimeStatus(runId);
   }
 
