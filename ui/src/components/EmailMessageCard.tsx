@@ -19,7 +19,10 @@ export function EmailThreadProvider({
   issueId: string;
   children: ReactNode;
 }) {
-  const { enabled } = useChatConnectorsEnabled();
+  const { enabled: connectorsEnabled } = useChatConnectorsEnabled();
+  // An unsaved agent chat has no task yet: its id is "" or a "chat:" draft id.
+  const enabled =
+    connectorsEnabled && Boolean(companyId && issueId) && !issueId.startsWith("chat:");
   const thread = useQuery({
     queryKey: ["email-thread", companyId, issueId],
     queryFn: () => emailApi.thread(companyId, issueId),
