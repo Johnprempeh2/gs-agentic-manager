@@ -1376,9 +1376,18 @@ describe.each(["unchanged", "newer_active", "stale_idle"] as const)(
       // The persisted GS Agentic Manager Runner run above remains recoverable while the
       // flag is off. Switching the agent back to a direct adapter now proves a
       // fresh run ignores the stale native profile and stays on the legacy path.
+      // The placeholder API key satisfies the codex_local pre-dispatch
+      // credential gate so the test does not depend on a host Codex login; the
+      // adapter is mocked, so the key is never used.
       await db
         .update(agents)
-        .set({ adapterType: "codex_local" })
+        .set({
+          adapterType: "codex_local",
+          adapterConfig: {
+            workspaceStrategy: { type: "project_primary" },
+            env: { OPENAI_API_KEY: "test-placeholder-key" },
+          },
+        })
         .where(eq(agents.id, agentId));
       await db.insert(issues).values({
         id: freshIssueId,
