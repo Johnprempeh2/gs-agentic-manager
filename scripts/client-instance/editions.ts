@@ -22,13 +22,17 @@ export const MANAGED_FEATURES_ON = [
   "enableStreamlinedLeftNavigation",
   "enableWorkspaceBranchReconcileForward",
   "enableWorkspaceDirtyQuarantineRepair",
-  "enableManagedSandboxOnly",
   "enableIsolatedWorkspaces",
   "enableIsolatedWorkspacesByDefault",
 ] as const satisfies readonly InstanceFeatureKey[];
 
-/** Section 5, Managed, "Features off" (the named beta features). */
+/**
+ * Section 5, Managed, "Features off": the named beta features, plus
+ * enableManagedSandboxOnly (off since revision 5, GRE-160: with it on and no
+ * sandbox provider, every agent run is refused).
+ */
 export const MANAGED_FEATURES_OFF = [
+  "enableManagedSandboxOnly",
   "enablePipelines",
   "enableCases",
   "enableAgentChat",
@@ -124,6 +128,9 @@ export function buildEditionValues(input: EditionInput): EditionValues {
     }
     if (key === "enableOwnerInstanceAdmin") {
       throw new Error(`"${key}" gives instance admin powers and is never part of Managed plus`);
+    }
+    if (key === "enableManagedSandboxOnly") {
+      throw new Error(`"${key}" needs a sandbox provider and is off in both editions (GRE-160)`);
     }
   }
 
