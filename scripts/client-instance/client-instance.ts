@@ -460,6 +460,13 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   if (client) {
     const clientCompanies = (await client.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
     check(Array.isArray(clientCompanies) && clientCompanies.length === 1, "the client log-in sees its one company");
+    // Releases are hidden on every client edition (GRE-129): 403 even for the client's board log-in.
+    const companyId = (clientCompanies[0] as { id?: string } | undefined)?.id;
+    const releases = await client.request("GET", `/api/companies/${companyId}/releases`);
+    check(
+      releases.status === 403 && releases.text.includes("settings_operator_managed"),
+      `instance.releases: the client log-in gets 403 on GET /api/companies/:id/releases (-> ${releases.status})`,
+    );
     const res = await client.request("PATCH", "/api/instance/settings/experimental", { enablePipelines: true });
     check(res.status === 403, `the client log-in is not an instance admin (PATCH experimental -> ${res.status})`);
   }

@@ -44,6 +44,15 @@ test("hidden settings are exactly section 5", () => {
   );
 });
 
+test("both editions hide Releases (GRE-129)", () => {
+  for (const values of [
+    buildEditionValues({ edition: "managed", catalogVersion }),
+    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases"], catalogVersion }),
+  ]) {
+    assert.ok(values.hiddenSettings.split(",").includes("instance.releases"));
+  }
+});
+
 test("the same input gives the same values", () => {
   const a = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases", "enablePipelines"], catalogVersion });
   const b = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enablePipelines", "enableCases"], catalogVersion });
