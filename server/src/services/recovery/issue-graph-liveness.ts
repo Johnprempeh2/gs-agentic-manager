@@ -1,4 +1,4 @@
-import { getAgentWorkEligibility, isAgentInvokable } from "@greatstone/shared";
+import { getAgentWorkEligibility, isAgentInvokable, type IssueUnblockDescriptor } from "@greatstone/shared";
 import { buildIssueGraphLivenessIncidentKey } from "./origins.js";
 
 export type IssueLivenessSeverity = "warning" | "critical";
@@ -8,6 +8,7 @@ export type IssueLivenessState =
   | "blocked_by_assigned_backlog_issue"
   | "blocked_by_uninvokable_assignee"
   | "blocked_by_cancelled_issue"
+  | "blocked_without_action_path"
   | "invalid_review_participant"
   | "in_review_without_action_path";
 
@@ -31,6 +32,7 @@ export interface IssueLivenessIssueInput {
   executionState?: Record<string, unknown> | null;
   monitorNextCheckAt?: Date | string | null;
   monitorAttemptCount?: number | null;
+  unblockDescriptor?: IssueUnblockDescriptor | null;
 }
 
 export interface IssueLivenessRelationInput {
@@ -526,6 +528,45 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
       hasWaitingPath(issue.companyId, issue.id, openRecoveryIssues);
   }
 
+  function hasUnresolvedBlocker(issue: IssueLivenessIssueInput) {
+    return (blockersByBlockedIssueId.get(issue.id) ?? []).some((relation) => {
+      if (relation.companyId !== issue.companyId) return false;
+      const blocker = issuesById.get(relation.blockerIssueId);
+      return Boolean(blocker && blocker.companyId === issue.companyId && blocker.status !== "done");
+    });
+  }
+
+  // GRE-72: a `blocked` issue with no unresolved blocker is waiting on
+  // something the graph cannot see. An unblock descriptor wakes its agent
+  // owner once, at the transition; after that only a human owner, monitor,
+  // interaction, approval, run, wake or recovery action can move it.
+  function blockedWithoutActionPathFinding(
+    source: IssueLivenessIssueInput,
+    parked: IssueLivenessIssueInput,
+    dependencyPath: IssueLivenessIssueInput[],
+  ): IssueLivenessFinding | null {
+    if (parked.status !== "blocked" || !parked.assigneeAgentId) return null;
+    if (hasUnresolvedBlocker(parked) || hasExplicitWaitingPath(parked)) return null;
+    const descriptorOwner = parked.unblockDescriptor?.owner;
+    if (descriptorOwner === "board" || (descriptorOwner && "userId" in descriptorOwner)) return null;
+
+    // The assignee parked it, so it is not its own way out: start at its manager.
+    const ownerCandidates = ownerCandidatesForRecoveryIssue(parked, input.agents, agentsById)
+      .filter((candidate) => candidate.agentId !== parked.assigneeAgentId);
+    return finding({
+      issue: source,
+      state: "blocked_without_action_path",
+      reason: `${issueLabel(parked)} is blocked with no unresolved blocker, human owner, monitor, interaction, approval, wake, active run, or recovery action owning the next action.`,
+      dependencyPath,
+      recoveryIssue: parked,
+      recommendedOwnerCandidateAgentIds: ownerCandidates.map((candidate) => candidate.agentId),
+      recommendedOwnerCandidates: ownerCandidates,
+      recommendedAction:
+        `Make ${issueLabel(parked)}'s wait explicit: link the issue it waits on as a blocker, schedule a monitor, ask a question or request approval, or return it to active work.`,
+      blockerIssueId: parked.id,
+    });
+  }
+
   function reviewFinding(
     source: IssueLivenessIssueInput,
     reviewIssue: IssueLivenessIssueInput,
@@ -621,6 +662,11 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
 
     if (hasExplicitWaitingPath(blocker)) return null;
 
+    if (blocker.status === "blocked") {
+      const parked = blockedWithoutActionPathFinding(source, blocker, dependencyPath);
+      if (parked) return parked;
+    }
+
     if (blocker.status === "in_review") {
       return reviewFinding(source, blocker, dependencyPath);
     }
@@ -711,11 +757,7 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
   }
 
   for (const issue of input.issues) {
-    const hasUnresolvedBlockerEdge = (blockersByBlockedIssueId.get(issue.id) ?? []).some((relation) => {
-      if (relation.companyId !== issue.companyId) return false;
-      const blocker = issuesById.get(relation.blockerIssueId);
-      return Boolean(blocker && blocker.companyId === issue.companyId && blocker.status !== "done");
-    });
+    const hasUnresolvedBlockerEdge = hasUnresolvedBlocker(issue);
     const shouldInspectBlockedChain = issue.status === "blocked" || (
       issue.status !== "done" &&
       issue.status !== "cancelled" &&
@@ -726,7 +768,8 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
     let chainFinding: IssueLivenessFinding | null = null;
     if (shouldInspectBlockedChain) {
       if (unresolvedBlockers.has(issue.id)) continue;
-      chainFinding = firstBlockedChainFinding(issue, issue, [issue], new Set());
+      chainFinding = firstBlockedChainFinding(issue, issue, [issue], new Set())
+        ?? blockedWithoutActionPathFinding(issue, issue, [issue]);
       if (chainFinding) findings.push(chainFinding);
     }
 

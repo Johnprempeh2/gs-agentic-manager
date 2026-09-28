@@ -21,6 +21,8 @@ export const lanes = {
       // GRE-36: a reassignment hands work over instead of dropping it.
       "server/src/services/reassignment-handover.test.ts",
       `${server}issue-reassignment-handoff-routes.test.ts`,
+      // GRE-72: a blocked issue with no blocker, monitor or interaction is flagged.
+      "server/src/services/recovery/blocked-without-action-path.test.ts",
     ],
   },
   runner: {
