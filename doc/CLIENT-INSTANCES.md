@@ -43,7 +43,16 @@ scripts/client-instance.sh create --root /path/to/instances/c001 --edition manag
 # Managed plus: list ONLY features whose Beacon verdict on GRE-81 has passed
 scripts/client-instance.sh create --root /path/to/instances/c002 \
   --edition managed-plus --passed-features enablePipelines,enableCases
+
+# Greatstone's own install (no edition values; never for a client)
+scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition internal
 ```
+
+Managed and Managed plus pin `enableManagedSandboxOnly` on. Agents then run
+only in a managed sandbox from a sandbox provider plugin (e2b, Daytona, Modal
+and similar). An instance without one refuses every run. `internal` sets no
+edition values, so agents run on the host. `verify` then checks only health,
+the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
 free from 55400), `--company-name`, `--client-email`.
@@ -51,9 +60,10 @@ free from 55400), `--company-name`, `--client-email`.
 `create` does, in order:
 
 1. Checks the edition against this build (unknown or wrong-tier features stop it).
-2. Writes the folder, then starts the server once **without**
-   `GSAM_MANAGED_CONFIG` (the app refuses company creation while it is set)
-   and makes: one operator log-in (instance admin, for Greatstone), one
+2. Writes the folder, then starts the server once **without** either
+   edition value (the app refuses company creation while
+   `GSAM_MANAGED_CONFIG` is set, and invites while `company.invites` is
+   hidden) and makes: one operator log-in (instance admin, for Greatstone), one
    company, one client log-in (board owner of that company, not instance admin).
 3. Stops, closes sign-up (`auth.disableSignUp: true`), then starts with both
    edition values.
@@ -86,9 +96,9 @@ refused. A refused request
 changes nothing. If one is accepted, the script puts the old value back and
 fails.
 
-Hidden settings with no 403 route in the app (UI only): `instance.environments`,
-`company.secrets`, `company.export`, `company.invites`. The check proves they are
-hidden in the UI; their APIs stay live for agents.
+`instance.environments`, `company.secrets`, `company.export` and
+`company.invites` also return 403 since GRE-107. `verify` proves they are
+hidden; it does not yet send a change request to each of them.
 
 ## Back up
 
