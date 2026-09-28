@@ -264,7 +264,7 @@ function ListenBar({
         {playing ? <Pause /> : <Play />}
       </Button>
       <AudioLines aria-hidden className={cn("size-6 shrink-0 text-primary", playing && "animate-pulse")} />
-      <div className="min-w-0 flex-1" aria-live="polite">
+      <div className="min-w-0 flex-1 basis-48" aria-live="polite">
         <p className="text-sm font-semibold">
           {status}
           {currentIndex != null && (
