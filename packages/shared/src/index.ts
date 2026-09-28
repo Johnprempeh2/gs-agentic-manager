@@ -915,6 +915,7 @@ export type {
   InstanceExperimentalSettingsWithManaged,
   InstanceGeneralSettings,
   InstanceSettings,
+  InstanceSystemMemory,
   ManagedExperimentalFeatureKey,
   ManagedSettingMetadata,
   BackupRetentionPolicy,
@@ -1765,6 +1766,8 @@ export {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
+  DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
   GSAM_CLOUD_MANAGED_BY,
 } from "./types/instance.js";
 

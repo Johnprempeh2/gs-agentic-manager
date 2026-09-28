@@ -649,6 +649,31 @@ describe("instance settings routes", () => {
     expect(mockInstanceSettingsService.getGeneral).not.toHaveBeenCalled();
   });
 
+  it("returns host memory to board users and rejects users without company access", async () => {
+    const boardApp = await createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      isInstanceAdmin: false,
+      companyIds: ["company-1"],
+    });
+    const res = await request(boardApp).get("/api/instance/system-memory");
+    expect(res.status).toBe(200);
+    expect(res.body.totalBytes).toBeGreaterThan(0);
+    expect(["normal", "warn", "critical", "unknown"]).toContain(res.body.pressure);
+
+    const outsiderApp = await createApp({
+      type: "board",
+      userId: "user-2",
+      source: "session",
+      isInstanceAdmin: false,
+      companyIds: [],
+      memberships: [],
+    });
+    const denied = await request(outsiderApp).get("/api/instance/system-memory");
+    expect(denied.status).toBe(403);
+  });
+
   it("rejects non-admin board users from updating general settings", async () => {
     const app = await createApp({
       type: "board",

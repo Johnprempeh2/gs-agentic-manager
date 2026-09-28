@@ -94,7 +94,8 @@ Daytona snapshot for future leases.
   `instance.experimental` floors every experimental toggle write.
 - Any Instance → General section: `instance.general.censorUsernameInLogs`,
   `instance.general.keyboardShortcuts`, `instance.general.backupRetention`,
-  `instance.general.feedbackDataSharingPreference` (each also rejects
+  `instance.general.feedbackDataSharingPreference`,
+  `instance.general.runAdmission` (each also rejects
   value-changing writes via `PATCH /api/instance/settings/general`), plus the
   UI-only `instance.general.deploymentStatus` and `instance.general.signOut`.
 - Any experimental toggle: `instance.experimental.<flagKey>` (e.g.

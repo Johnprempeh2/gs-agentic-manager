@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
-import type { InstanceGeneralSettings } from "@greatstone/shared";
+import {
+  DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
+  DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
+  type InstanceGeneralSettings,
+  type InstanceSystemMemory,
+} from "@greatstone/shared";
 
 /**
  * Instance-wide run admission (GRE-105).
@@ -19,8 +24,10 @@ import type { InstanceGeneralSettings } from "@greatstone/shared";
  * reader never strands work.
  */
 
-export const DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS = 6;
-export const DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB = 2048;
+export {
+  DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
+  DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
+};
 export const RUN_ADMISSION_RECHECK_MS = 15_000;
 const MEMORY_SNAPSHOT_CACHE_MS = 2_000;
 const MEMORY_READ_TIMEOUT_MS = 2_000;
@@ -191,6 +198,21 @@ export function createSystemMemoryReader(
       cached = { at, value: readUncached() };
     }
     return cached.value;
+  };
+}
+
+/**
+ * Host memory for the Settings page (GRE-114): total RAM plus the same
+ * available/pressure reading the admission guard uses.
+ */
+export async function readInstanceSystemMemory(
+  readMemory: MemoryReader,
+): Promise<InstanceSystemMemory> {
+  const snapshot = await readMemory();
+  return {
+    totalBytes: os.totalmem(),
+    availableBytes: snapshot?.availableBytes ?? null,
+    pressure: snapshot?.pressure ?? "unknown",
   };
 }
 

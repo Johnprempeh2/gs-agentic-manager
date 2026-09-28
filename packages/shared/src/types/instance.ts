@@ -52,6 +52,17 @@ export interface RunAdmissionSettingsInput {
   minAvailableMemoryMb?: number;
 }
 
+export const DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS = 6;
+export const DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB = 2048;
+
+/** Host memory as seen by the run admission guard (GRE-114). */
+export interface InstanceSystemMemory {
+  totalBytes: number;
+  /** Null when the server cannot read available memory. */
+  availableBytes: number | null;
+  pressure: "normal" | "warn" | "critical" | "unknown";
+}
+
 export interface InstanceExperimentalSettings {
   enableEnvironments: boolean;
   /**
