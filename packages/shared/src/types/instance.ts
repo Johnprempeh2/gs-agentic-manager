@@ -1,4 +1,5 @@
 import type { FeedbackDataSharingPreference } from "./feedback.js";
+import type { AiAccessRoute } from "../ai-connections.js";
 
 export const DAILY_RETENTION_PRESETS = [3, 7, 14] as const;
 export const WEEKLY_RETENTION_PRESETS = [1, 2, 4] as const;
@@ -44,6 +45,11 @@ export interface InstanceGeneralSettings {
    * (6 concurrent runs, 2048 MB available-memory floor).
    */
   runAdmission?: RunAdmissionSettingsInput;
+  /**
+   * Install-wide AI access route (GRE-139). Absent/null = each agent's own
+   * harness and AI connection. Set = every Claude/Codex agent uses this route.
+   */
+  aiAccessRoute?: AiAccessRoute | null;
 }
 
 export interface RunAdmissionSettingsInput {
