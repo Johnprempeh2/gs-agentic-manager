@@ -65,7 +65,7 @@ import {
   workTimelineService,
 } from "../services/index.js";
 import { isCloudManagedInstance } from "../services/cloud-instance.js";
-import { getHiddenSettings } from "../services/settings-visibility.js";
+import { getHiddenSettings, hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import type { StorageService } from "../storage/types.js";
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo, hasCompanyAccess } from "./authz.js";
 import { COMPANY_IMPORT_ROUTE_PATH } from "./company-import-paths.js";
@@ -523,7 +523,11 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
     res.json(traces);
   });
 
-  router.post("/:companyId/export", async (req, res) => {
+  // Floor: hiding the company Export page (`company.export`) also rejects the
+  // export routes. The fidelity report (a GET) stays open.
+  const exportFloor = hiddenSettingWriteFloor("company.export", "Company export");
+
+  router.post("/:companyId/export", exportFloor, async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertSameCompanyCeoAgentOrBoard(req, companyId, "company exports");
     const body = companyPortabilityExportSchema.parse(req.body);
@@ -552,8 +556,9 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
    *   `GSAM_HIDDEN_SETTINGS` → `settings_operator_managed`): hiding the
    *   page also disables its API, so the hide is real rather than cosmetic.
    *
-   * Export routes stay open either way — they are the tenant's
-   * data-portability escape hatch.
+   * Export routes stay open on cloud-managed instances — they are the
+   * tenant's data-portability escape hatch — and close only when the
+   * operator hides the Export page (`company.export`, see `exportFloor`).
    */
   const importFloor = (_req: Request, _res: Response, next: NextFunction) => {
     if (isCloudManagedInstance()) {
@@ -1118,7 +1123,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
     }
   });
 
-  router.post("/:companyId/exports/preview", async (req, res) => {
+  router.post("/:companyId/exports/preview", exportFloor, async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertSameCompanyCeoAgentOrBoard(req, companyId, "company exports");
     const body = companyPortabilityExportSchema.parse(req.body);
@@ -1127,7 +1132,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
     res.json(preview);
   });
 
-  router.post("/:companyId/exports", async (req, res) => {
+  router.post("/:companyId/exports", exportFloor, async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertSameCompanyCeoAgentOrBoard(req, companyId, "company exports");
     const body = companyPortabilityExportSchema.parse(req.body);
