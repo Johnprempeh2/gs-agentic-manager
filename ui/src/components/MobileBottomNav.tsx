@@ -1,12 +1,16 @@
 import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { NavLink, useLocation } from "@/lib/router";
 import {
   House,
   CircleCheck,
   SquarePen,
-  Users,
+  ListChecks,
   Inbox,
 } from "lucide-react";
+import { attentionApi } from "../api/attention";
+import { attentionBadgeCount } from "../lib/attention";
+import { queryKeys } from "../lib/queryKeys";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
@@ -40,13 +44,29 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialogActions();
   const inboxBadge = useInboxBadge(selectedCompanyId);
+  // Same query key as the sidebar Decisions badge, so both share one cache entry.
+  const { data: attentionFeed } = useQuery({
+    queryKey: queryKeys.attention(selectedCompanyId!),
+    queryFn: () => attentionApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 60_000,
+  });
+  const attentionCount = attentionBadgeCount(attentionFeed);
 
   const items = useMemo<MobileNavItem[]>(
     () => [
       { type: "link", to: "/dashboard", label: "Home", icon: House },
       { type: "link", to: "/issues", label: "Tasks", icon: CircleCheck },
       { type: "action", label: "New Task", icon: SquarePen, onClick: () => openNewIssue() },
-      { type: "link", to: "/agents/all", label: "Agents", icon: Users },
+      // Decisions replaced Agents (GRE-66): the bar holds the places a person
+      // acts from; Agents stays one tap away in the sidebar drawer.
+      {
+        type: "link",
+        to: "/decisions",
+        label: "Decisions",
+        icon: ListChecks,
+        badge: attentionCount,
+      },
       {
         type: "link",
         to: "/inbox",
@@ -55,7 +75,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
         badge: inboxBadge.inbox,
       },
     ],
-    [openNewIssue, inboxBadge.inbox],
+    [openNewIssue, inboxBadge.inbox, attentionCount],
   );
 
   return (
