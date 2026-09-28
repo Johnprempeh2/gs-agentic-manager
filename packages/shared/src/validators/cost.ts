@@ -30,15 +30,3 @@ export const updateBudgetSchema = z.object({
 });
 
 export type UpdateBudget = z.infer<typeof updateBudgetSchema>;
-
-export const createCompanySubscriptionSchema = z.object({
-  provider: z.string().trim().min(1).max(100),
-  plan: z.string().trim().min(1).max(200),
-  monthlyPriceCents: z.number().int().nonnegative().max(100_000_000),
-});
-
-export type CreateCompanySubscription = z.infer<typeof createCompanySubscriptionSchema>;
-
-export const updateCompanySubscriptionSchema = createCompanySubscriptionSchema.partial();
-
-export type UpdateCompanySubscription = z.infer<typeof updateCompanySubscriptionSchema>;

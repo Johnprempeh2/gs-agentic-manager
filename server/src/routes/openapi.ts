@@ -115,8 +115,6 @@ import {
   createFinanceEventSchema,
   updateBudgetSchema,
   upsertBudgetPolicySchema,
-  createCompanySubscriptionSchema,
-  updateCompanySubscriptionSchema,
   resolveBudgetIncidentSchema,
   // Sidebar
   upsertSidebarOrderPreferenceSchema,
@@ -5154,8 +5152,6 @@ const costSummaryPaths = [
   "finance-events",
   "window-spend",
   "quota-windows",
-  "api-equivalent",
-  "subscriptions",
 ] as const;
 
 for (const segment of costSummaryPaths) {
@@ -5179,39 +5175,6 @@ registry.registerPath({
     body: jsonBody(createCostEventSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/costs/subscriptions",
-  tags: ["costs"],
-  summary: "Add a model subscription the company pays for",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    body: jsonBody(createCompanySubscriptionSchema),
-  },
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/companies/{companyId}/costs/subscriptions/{subscriptionId}",
-  tags: ["costs"],
-  summary: "Edit a model subscription",
-  request: {
-    params: z.object({ companyId: z.string(), subscriptionId: z.string() }),
-    body: jsonBody(updateCompanySubscriptionSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "delete",
-  path: "/api/companies/{companyId}/costs/subscriptions/{subscriptionId}",
-  tags: ["costs"],
-  summary: "Remove a model subscription",
-  request: { params: z.object({ companyId: z.string(), subscriptionId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({

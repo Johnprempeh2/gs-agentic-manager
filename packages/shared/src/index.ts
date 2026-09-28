@@ -1251,12 +1251,6 @@ export type {
   CostByAgentModel,
   CostWindowSpendRow,
   CostByProject,
-  CompanySubscription,
-  DetectedSubscriptionProvider,
-  CompanySubscriptionsResult,
-  ApiEquivalentModelRow,
-  ApiEquivalentProviderRow,
-  ApiEquivalentSummary,
   FinanceEvent,
   FinanceSummary,
   FinanceByBiller,
@@ -2320,8 +2314,6 @@ export {
   type RunRoutine,
   type RotateRoutineTriggerSecret,
   createCostEventSchema,
-  createCompanySubscriptionSchema,
-  updateCompanySubscriptionSchema,
   createFinanceEventSchema,
   updateBudgetSchema,
   ASSET_NAMESPACE_MAX_LENGTH,
@@ -2352,8 +2344,6 @@ export {
   searchAdminUsersQuerySchema,
   updateUserCompanyAccessSchema,
   type CreateCostEvent,
-  type CreateCompanySubscription,
-  type UpdateCompanySubscription,
   type CreateFinanceEvent,
   type UpdateBudget,
   type CreateAssetImageMetadata,
@@ -2778,15 +2768,6 @@ export {
   rewriteUrlHostToLoopback,
 } from "./runtime-exposure/loopback-bind.js";
 export { ACCOUNT_HANDLE_MAX_LENGTH, toAccountHandle } from "./account-handle.js";
-export {
-  API_PRICE_TABLE,
-  API_PRICE_TABLE_CHECKED_AT,
-  computeApiEquivalentCents,
-  normalizeModelForPricing,
-  resolveApiPrice,
-  type ApiEquivalentInput,
-  type ApiModelPrice,
-} from "./api-pricing.js";
 export type { ExecutionContinuationEnvelope } from "./types/execution-continuation.js";
 export type { ExecutionProjection, ExecutionReconciliation, ExecutionBlocker } from "./types/execution-projection.js";
 

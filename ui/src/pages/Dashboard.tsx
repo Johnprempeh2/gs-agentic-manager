@@ -38,7 +38,6 @@ import { InlineBanner } from "../components/InlineBanner";
 import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
-import { DashboardCostCard } from "../components/DashboardCostCard";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
 
@@ -463,10 +462,6 @@ export function Dashboard() {
                 </span>
               }
             />
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
-            <DashboardCostCard companyId={selectedCompanyId!} />
           </div>
 
           <SmokeLabDashboardCard companyId={selectedCompanyId!} />

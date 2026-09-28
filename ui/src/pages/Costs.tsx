@@ -13,7 +13,6 @@ import type {
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Coins, DollarSign, ReceiptText } from "lucide-react";
 import { budgetsApi } from "../api/budgets";
 import { costsApi } from "../api/costs";
-import { ApiEquivalentCard } from "../components/ApiEquivalentCard";
 import { BillerSpendCard } from "../components/BillerSpendCard";
 import { BudgetIncidentCard } from "../components/BudgetIncidentCard";
 import { BudgetPolicyCard } from "../components/BudgetPolicyCard";
@@ -26,7 +25,6 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { ProviderQuotaCard } from "../components/ProviderQuotaCard";
 import { StatusBadge } from "../components/StatusBadge";
-import { SubscriptionsCard } from "../components/SubscriptionsCard";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { useDateRange, PRESET_KEYS, PRESET_LABELS } from "../hooks/useDateRange";
@@ -265,18 +263,6 @@ export function Costs({
       return { summary, byAgent, byProject, byAgentModel };
     },
     enabled: !!selectedCompanyId && customReady && showSummaryChrome,
-  });
-
-  const { data: apiEquivalentData } = useQuery({
-    queryKey: queryKeys.apiEquivalent(companyId, from || undefined, to || undefined),
-    queryFn: () => costsApi.apiEquivalent(companyId, from || undefined, to || undefined),
-    enabled: !!selectedCompanyId && customReady && showSummaryChrome,
-  });
-
-  const { data: subscriptionsData } = useQuery({
-    queryKey: queryKeys.subscriptions(companyId),
-    queryFn: () => costsApi.subscriptions(companyId),
-    enabled: !!selectedCompanyId && showSummaryChrome,
   });
 
   const { data: financeData, isLoading: financeLoading, error: financeError } = useQuery({
@@ -697,11 +683,6 @@ export function Costs({
                   ))}
                 </div>
               ) : null}
-
-              <div className="grid gap-4 xl:grid-cols-(--gtc-31)">
-                {apiEquivalentData ? <ApiEquivalentCard summary={apiEquivalentData} /> : <div />}
-                {subscriptionsData ? <SubscriptionsCard companyId={companyId} data={subscriptionsData} /> : <div />}
-              </div>
 
               <div className="grid gap-4 xl:grid-cols-(--gtc-31)">
                 <Card>
