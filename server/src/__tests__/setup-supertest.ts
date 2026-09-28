@@ -34,6 +34,16 @@ const SupertestTest = require("supertest/lib/test.js") as SupertestTestConstruct
   process.env.CODEX_HOME = codexHome;
 }
 
+// src/config.ts finds the nearest ancestor .gsam/config.json and loads the
+// .gsam/.env beside it. In a dev worktree that file sets GSAM_IN_WORKTREE=true
+// (plus the worktree's GSAM_HOME and secrets), which suppresses every heartbeat
+// wakeup and makes run-execution suites fail only on developer machines. Point
+// the config at an empty temp dir so tests never inherit a local instance.
+if (!process.env.GSAM_CONFIG) {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-config-"));
+  process.env.GSAM_CONFIG = path.join(configDir, "config.json");
+}
+
 // The automatic Tailscale HTTPS default (PAP-17158) probes for a real host
 // broker socket, so leaving it enabled would make every test that starts a
 // service named `paperclip-dev` behave differently on a broker-capable host

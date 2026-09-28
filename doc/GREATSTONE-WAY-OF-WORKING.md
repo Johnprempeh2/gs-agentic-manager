@@ -116,6 +116,18 @@ Merging does not change the live app. A version goes live in these steps.
    ```
 
    The tag stays local until the release; the release script pushes it.
+
+   The release note starts with the change list. Do not write it by hand:
+
+   ```sh
+   node scripts/greatstone-changes.mjs rc-YYYY-MM-DD.N   # merges since the last live-* tag
+   ```
+
+   It prints one line per merged pull request: the issue link, what changed,
+   the page to open on port 3200 and how to reach it from the sidebar, or
+   "No visible change". The page comes from the pull request's
+   **Where to see it:** line; without that line the script guesses it from the
+   changed UI files. Fix a wrong guess in the pull request, not in the list.
 4. **Preview (Flint).** Keystone hands the release issue to Flint with the
    `rc-*` tag and the release note. Flint starts the candidate on a copy of the
    live data, checks it, stops it, and hands the issue back with a verdict.
@@ -133,15 +145,17 @@ Merging does not change the live app. A version goes live in these steps.
    it runs the test files of each switch that is on in the preview (a copy of
    live, so live's switches), from `tests/release-switch-tests/switch-tests.json`.
    A failure names the switch, the test file and the test, and fails the
-   candidate. A new switch needs an entry in that file.
+   candidate. A new switch needs an entry in that file. The preview check comment
+   starts with the change list from `scripts/greatstone-changes.mjs`, so John
+   knows which page to open.
 5. **Agree (John).** John tries the preview too, then says "release" or
    "not yet" on the release issue. "Not yet" leaves live as it is; the fixes
    become new issues and a new candidate.
 6. **Release (John accepts, the platform does it).** After Flint's verdict,
    Keystone posts an **"Update live?"** confirmation card on the release issue:
    a `request_confirmation` with `idempotencyKey` `live-release:rc-YYYY-MM-DD.N`.
-   The card lists the big changes first. It is the only card John gets for the
-   release. When John accepts it, the live server:
+   The card starts with the change list from `scripts/greatstone-changes.mjs`,
+   big changes first. It is the only card John gets for the release. When John accepts it, the live server:
 
    - holds new agent runs (the task drain) and waits until no agent run is
      running, at most 60 minutes. If runs are still going then, it stops, says

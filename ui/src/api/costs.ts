@@ -1,4 +1,9 @@
 import type {
+  ApiEquivalentSummary,
+  CompanySubscription,
+  CompanySubscriptionsResult,
+  CreateCompanySubscription,
+  UpdateCompanySubscription,
   CostSummary,
   CostByAgent,
   CostByProviderModel,
@@ -45,6 +50,16 @@ export const costsApi = {
     api.get<FinanceEvent[]>(`/companies/${companyId}/costs/finance-events${dateParamsWithLimit(from, to, limit)}`),
   windowSpend: (companyId: string) =>
     api.get<CostWindowSpendRow[]>(`/companies/${companyId}/costs/window-spend`),
+  apiEquivalent: (companyId: string, from?: string, to?: string) =>
+    api.get<ApiEquivalentSummary>(`/companies/${companyId}/costs/api-equivalent${dateParams(from, to)}`),
+  subscriptions: (companyId: string) =>
+    api.get<CompanySubscriptionsResult>(`/companies/${companyId}/costs/subscriptions`),
+  createSubscription: (companyId: string, data: CreateCompanySubscription) =>
+    api.post<CompanySubscription>(`/companies/${companyId}/costs/subscriptions`, data),
+  updateSubscription: (companyId: string, subscriptionId: string, data: UpdateCompanySubscription) =>
+    api.patch<CompanySubscription>(`/companies/${companyId}/costs/subscriptions/${subscriptionId}`, data),
+  deleteSubscription: (companyId: string, subscriptionId: string) =>
+    api.delete<CompanySubscription>(`/companies/${companyId}/costs/subscriptions/${subscriptionId}`),
   quotaWindows: (companyId: string) =>
     api.get<ProviderQuotaResult[]>(`/companies/${companyId}/costs/quota-windows`),
 };

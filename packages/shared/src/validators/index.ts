@@ -706,8 +706,12 @@ export {
 export {
   createCostEventSchema,
   updateBudgetSchema,
+  createCompanySubscriptionSchema,
+  updateCompanySubscriptionSchema,
   type CreateCostEvent,
   type UpdateBudget,
+  type CreateCompanySubscription,
+  type UpdateCompanySubscription,
 } from "./cost.js";
 
 export {
