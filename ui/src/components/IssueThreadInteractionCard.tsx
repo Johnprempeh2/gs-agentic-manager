@@ -44,6 +44,7 @@ import { ProposalJustification } from "../pages/secrets/proposal-review";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { AppLogo } from "@/pages/apps/AppLogo";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
+import { ReauthCancelledError } from "./ReauthDialog";
 
 const OTHER_ANSWER_ID = "__paperclip_other__";
 
@@ -62,7 +63,9 @@ const InteractionAudienceContext = createContext<InteractionAudienceDescription 
  */
 function useResolutionErrorMessage() {
   const audience = useContext(InteractionAudienceContext);
-  return (error: unknown) => interactionResolutionErrorMessage(error, audience);
+  // Closing the password prompt (GRE-164) is not an error; the card stays open.
+  return (error: unknown) =>
+    error instanceof ReauthCancelledError ? null : interactionResolutionErrorMessage(error, audience);
 }
 
 /**

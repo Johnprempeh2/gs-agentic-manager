@@ -329,7 +329,8 @@ import {
   type IssueThreadInteractionResolverRestriction,
 } from "../services/issue-thread-interaction-resolution.js";
 import { resolveSelectedSuggestedTasks } from "../services/issue-thread-interactions.js";
-import { liveReleaseService } from "../services/live-release.js";
+import { LIVE_RELEASE_KEY_PREFIX, liveReleaseService } from "../services/live-release.js";
+import { assertReleaseReauth, releaseReauth } from "../services/release-reauth.js";
 import {
   crossIssueInfluenceLimitError,
   crossIssueInfluenceRunContextError,
@@ -16123,6 +16124,24 @@ export function issueRoutes(
       if (!suggestedTaskEffectsAuthorized) return;
 
       const actor = getActorInfo(req);
+      // An "Update live?" card starts a release (GRE-164): only a board user,
+      // and in login mode only after the password re-check. Checked before the
+      // card is resolved, so a refused try leaves the card open for John.
+      if (
+        current.kind === "request_confirmation" &&
+        current.idempotencyKey?.startsWith(LIVE_RELEASE_KEY_PREFIX)
+      ) {
+        if (req.actor.type !== "board") {
+          await svc.addComment(
+            issue.id,
+            "Not released: only a board user can accept an \"Update live?\" card. The card stays open. Live is unchanged.",
+            {},
+            { authorType: "system" },
+          );
+          throw forbidden("Only a board user can accept an \"Update live?\" card");
+        }
+        assertReleaseReauth(req, "release", releaseReauth(db));
+      }
       if (
         current.kind === "request_confirmation" &&
         current.payload.toolAction

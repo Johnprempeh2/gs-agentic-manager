@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ASSIGNEE_AGENT_ID = "11111111-1111-4111-8111-111111111111";
 const UNRELATED_AGENT_ID = "33333333-3333-4333-8333-333333333333";
@@ -3356,5 +3356,131 @@ describe.sequential("issue thread interaction routes", () => {
     expect(mockInteractionService.answerQuestions).toHaveBeenCalledTimes(1);
     expect(mockDbTransaction).not.toHaveBeenCalled();
     expect(mockCrossIssueInfluence.inserted).toEqual([]);
+  });
+
+  // GRE-164: an accepted "Update live?" card starts a release, so it takes the
+  // same guard as the Releases page: board only, and in login mode a fresh
+  // `release` password re-check.
+  describe.sequential("\"Update live?\" card accept", () => {
+    const liveRelease = { onConfirmationAccepted: vi.fn(async () => null) };
+    const TAG = "rc-2026-09-29.1";
+    const john = {
+      type: "board",
+      userId: "john",
+      sessionId: "sess-1",
+      source: "session",
+      companyIds: ["company-1"],
+      isInstanceAdmin: false,
+    };
+    let reauth: import("../services/release-reauth.js").ReleaseReauth;
+
+    function liveCard(status: "pending" | "accepted") {
+      return {
+        id: "interaction-live",
+        companyId: "company-1",
+        issueId: ISSUE_ID,
+        kind: "request_confirmation",
+        status,
+        idempotencyKey: `live-release:${TAG}`,
+        createdByAgentId: CREATED_AGENT_ID,
+        sourceRunId: RUN_1,
+        requestedResolverPolicy: "anyone",
+        effectiveResolverPolicy: "anyone",
+        continuationPolicy: "none",
+        payload: { version: 1, prompt: `Update live to ${TAG}?` },
+        result: status === "accepted" ? { version: 1, outcome: "accepted" } : null,
+      };
+    }
+
+    beforeEach(async () => {
+      // Runs after the suite's own beforeEach; drop its cached route import so
+      // the two mocks below apply.
+      vi.resetModules();
+      const { createReleaseReauth } = await vi.importActual<typeof import("../services/release-reauth.js")>(
+        "../services/release-reauth.js",
+      );
+      reauth = createReleaseReauth({ verifyPassword: async (userId, password) => userId === "john" && password === "pw" });
+      vi.doMock("../services/release-reauth.js", async () => ({
+        ...(await vi.importActual<typeof import("../services/release-reauth.js")>("../services/release-reauth.js")),
+        releaseReauth: () => reauth,
+      }));
+      vi.doMock("../services/live-release.js", async () => ({
+        ...(await vi.importActual<typeof import("../services/live-release.js")>("../services/live-release.js")),
+        liveReleaseService: () => liveRelease,
+      }));
+      liveRelease.onConfirmationAccepted.mockReset();
+      liveRelease.onConfirmationAccepted.mockResolvedValue(null);
+      mockIssueService.addComment.mockResolvedValue({ id: "comment-1" });
+      mockInteractionService.getForIssue.mockResolvedValue(liveCard("pending"));
+      mockInteractionService.acceptInteraction.mockResolvedValue({ interaction: liveCard("accepted"), createdIssues: [] });
+    });
+
+    afterEach(() => {
+      vi.doUnmock("../services/release-reauth.js");
+      vi.doUnmock("../services/live-release.js");
+    });
+
+    const accept = (app: express.Express, token?: string) => {
+      const req = request(app).post(`/api/issues/${ISSUE_ID}/interactions/interaction-live/accept`);
+      if (token) req.set("X-GSAM-Reauth", token);
+      return req.send({});
+    };
+
+    it("an agent gets 403, no release, and a comment on the issue; the card stays open", async () => {
+      const app = await createApp({ type: "agent", agentId: ASSIGNEE_AGENT_ID, companyId: "company-1", runId: RUN_2 });
+      const res = await accept(app);
+      expect(res.status).toBe(403);
+      expect(mockInteractionService.acceptInteraction).not.toHaveBeenCalled();
+      expect(liveRelease.onConfirmationAccepted).not.toHaveBeenCalled();
+      expect(mockIssueService.addComment).toHaveBeenCalledWith(
+        ISSUE_ID,
+        expect.stringMatching(/only a board user/),
+        {},
+        { authorType: "system" },
+      );
+    });
+
+    it("a signed-in board user without a re-check token gets 403 reauth_required and no release", async () => {
+      const app = await createApp(john);
+      const res = await accept(app);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("reauth_required");
+      expect(mockInteractionService.acceptInteraction).not.toHaveBeenCalled();
+      expect(liveRelease.onConfirmationAccepted).not.toHaveBeenCalled();
+    });
+
+    it("a signed-in board user with a fresh release token starts the release once; the token is not good twice", async () => {
+      const issued = await reauth.issue({ userId: "john", sessionId: "sess-1", action: "release", password: "pw" });
+      if (!issued.ok) throw new Error("test token not issued");
+      const app = await createApp(john);
+      const res = await accept(app, issued.token);
+      expect(res.status).toBe(200);
+      expect(mockInteractionService.acceptInteraction).toHaveBeenCalledTimes(1);
+      expect(liveRelease.onConfirmationAccepted).toHaveBeenCalledTimes(1);
+      expect(liveRelease.onConfirmationAccepted).toHaveBeenCalledWith(
+        expect.objectContaining({ issueId: ISSUE_ID, interaction: expect.objectContaining({ idempotencyKey: `live-release:${TAG}` }) }),
+      );
+
+      const again = await accept(app, issued.token);
+      expect(again.status).toBe(403);
+      expect(again.body.code).toBe("reauth_required");
+      expect(liveRelease.onConfirmationAccepted).toHaveBeenCalledTimes(1);
+    });
+
+    it("a rollback token does not accept the card", async () => {
+      const issued = await reauth.issue({ userId: "john", sessionId: "sess-1", action: "rollback", password: "pw" });
+      if (!issued.ok) throw new Error("test token not issued");
+      const app = await createApp(john);
+      const res = await accept(app, issued.token);
+      expect(res.status).toBe(403);
+      expect(liveRelease.onConfirmationAccepted).not.toHaveBeenCalled();
+    });
+
+    it("local_trusted works as before: no password, release starts once", async () => {
+      const app = await createApp();
+      const res = await accept(app);
+      expect(res.status).toBe(200);
+      expect(liveRelease.onConfirmationAccepted).toHaveBeenCalledTimes(1);
+    });
   });
 });
