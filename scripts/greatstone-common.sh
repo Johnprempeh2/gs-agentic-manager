@@ -8,6 +8,12 @@
 #   GSAM_LIVE_URL       live server               (default http://localhost:3100)
 #   GSAM_PREVIEW_PORT   preview server port       (default 3200)
 #   GSAM_RELEASE_REPO   git repo that holds the rc-*/live-* tags (default: this checkout)
+#   GSAM_LIVE_BOARD_KEY_FILE  board API key for the live server (default $GSAM_ROOT/release-board-key)
+#
+# When live runs in login mode (authenticated), the restart request, the
+# serverInfo read and the active-run count need a board login. The scripts send
+# the board API key in GSAM_LIVE_BOARD_KEY_FILE (mode 0600, never in the repo).
+# With no file they send no login, as in local_trusted (GRE-136).
 #
 # ~ is the home folder of the user account, not $HOME: agent runs set HOME to
 # a temp folder, and the scripts must still find the real ~/GSAM.
@@ -28,12 +34,33 @@ PREVIEW_LOG="$PREVIEW_ROOT/preview.log"
 PREVIEW_PORT="${GSAM_PREVIEW_PORT:-3200}"
 PREVIEW_URL="http://localhost:$PREVIEW_PORT"
 RELEASE_REPO="${GSAM_RELEASE_REPO:-$GS_TOOLS_ROOT}"
+LIVE_BOARD_KEY_FILE="${GSAM_LIVE_BOARD_KEY_FILE:-$GS_ROOT/release-board-key}"
 INSTANCE_ID="default"
 
 export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 say() { printf '%s\n' "$*"; }
+
+# Fails with the reason when the board key file exists but others can read it
+# or it is empty. No file is fine (local_trusted).
+live_board_key_check() {
+  [ -e "$LIVE_BOARD_KEY_FILE" ] || return 0
+  local mode
+  mode="$(perl -e 'printf "%o", (stat shift)[2] & 0777' "$LIVE_BOARD_KEY_FILE")"
+  [ "$mode" = 600 ] || [ "$mode" = 400 ] || { say "$LIVE_BOARD_KEY_FILE has mode $mode; run: chmod 600 $LIVE_BOARD_KEY_FILE"; return 1; }
+  [ -n "$(tr -d '[:space:]' <"$LIVE_BOARD_KEY_FILE")" ] || { say "$LIVE_BOARD_KEY_FILE is empty"; return 1; }
+}
+
+# curl with the live board key, when there is one. The key goes in through a
+# file descriptor, never on a command line that ps can show.
+live_curl() {
+  if [ -s "$LIVE_BOARD_KEY_FILE" ]; then
+    curl -H @<(printf 'Authorization: Bearer %s\n' "$(tr -d '[:space:]' <"$LIVE_BOARD_KEY_FILE")") "$@"
+  else
+    curl "$@"
+  fi
+}
 
 # Runs scripts/greatstone-db.ts with this checkout's dependencies.
 gs_db() {
@@ -54,9 +81,9 @@ live_database_url() {
 
 # Prints one field of <url>/api/health (a dotted path such as
 # serverInfo.processStartedAt), or nothing. Never fails, so that it can be
-# polled while the server restarts.
+# polled while the server restarts. In login mode, serverInfo needs the board key.
 health_field() {
-  { curl -fsS -m 5 "$1/api/health" 2>/dev/null || true; } \
+  { live_curl -fsS -m 5 "$1/api/health" 2>/dev/null || true; } \
     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{let v=JSON.parse(s);for(const k of process.argv[1].split("."))v=v?.[k];console.log(v??"")}catch{console.log("")}})' "$2"
 }
 
@@ -67,13 +94,26 @@ health_commit() { health_field "$1" commit; }
 # Counts queued or running agent runs across every company on <url>. While a
 # task drain holds new runs (the one-click release sets one), queued runs cannot
 # start, so only running ones count. A server that does not answer runs nothing.
+# Fails with the reason when the server refuses the request (login mode and no
+# or a bad board key).
 active_runs() {
   node --input-type=module -e '
-    const base = process.argv[1];
-    const get = async (p) => (await fetch(base + p)).json();
+    import { readFileSync } from "node:fs";
+    const [base, keyFile] = process.argv.slice(1);
+    let key = "";
+    try { key = readFileSync(keyFile, "utf8").trim(); } catch {}
+    const headers = key ? { authorization: `Bearer ${key}` } : {};
+    const get = async (p) => {
+      const res = await fetch(base + p, { headers });
+      if (!res.ok) {
+        console.error(`GET ${p} answered ${res.status} ${(await res.text()).slice(0, 200)}`);
+        process.exit(1);
+      }
+      return res.json();
+    };
     try { await fetch(base + "/api/health"); } catch { console.log(0); process.exit(0); }
     let draining = false;
-    try { draining = (await get("/api/instance/task-drain")).draining === true; } catch {}
+    try { draining = (await (await fetch(base + "/api/instance/task-drain", { headers })).json()).draining === true; } catch {}
     let active = 0;
     for (const company of await get("/api/companies")) {
       const runs = await get(`/api/companies/${company.id}/heartbeat-runs?limit=50`);
@@ -81,7 +121,7 @@ active_runs() {
       active += list.filter((r) => r.status === "running" || (!draining && r.status === "queued")).length;
     }
     console.log(active);
-  ' "$1"
+  ' "$1" "$LIVE_BOARD_KEY_FILE"
 }
 
 # Prints the title (line 1 of the message) of rc tag <tag> in <repo>. Fails
