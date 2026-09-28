@@ -10,6 +10,7 @@ import {
   type ReleaseProgressState,
   type ReleasesOverview,
 } from "@/api/releases";
+import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReleaseChangelog } from "@/components/ReleaseChangelog";
@@ -423,9 +424,12 @@ export function Releases() {
   if (releases.isLoading) return <PageSkeleton variant="list" />;
 
   if (!releases.data) {
+    const notOnServer = releases.error instanceof ApiError && releases.error.status === 404;
     return (
       <p role="alert" className="mx-auto max-w-3xl text-sm text-destructive">
-        {errorText(releases.error) ?? "Releases are not available."}
+        {notOnServer
+          ? "This server cannot release from the app yet."
+          : (errorText(releases.error) ?? "Releases are not available.")}
       </p>
     );
   }
