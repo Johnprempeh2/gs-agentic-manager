@@ -5,7 +5,7 @@ import {
   DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
   type InstanceGeneralSettings,
 } from "@greatstone/shared";
-import { instanceSettingsApi } from "@/api/instanceSettings";
+import { instanceSettingsApi, type RunAdmissionRecommendation } from "@/api/instanceSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +48,19 @@ export function RunAdmissionSettingsSection({
     queryFn: () => instanceSettingsApi.getSystemMemory(),
     retry: false,
   });
+
+  const recommendationQuery = useQuery({
+    queryKey: queryKeys.instance.runAdmissionRecommendation,
+    queryFn: () => instanceSettingsApi.getRunAdmissionRecommendation(),
+    retry: false,
+  });
+  const recommendation = recommendationQuery.data;
+  // With no runs or holds yet, the RAM-based suggestion above is all there is.
+  const hasUsage = recommendation
+    ? recommendation.usage.runsStarted > 0 ||
+      recommendation.usage.holds.globalCap.runs > 0 ||
+      recommendation.usage.holds.lowMemory.runs > 0
+    : false;
 
   const cap = parseWholeNumber(capInput, RUN_CAP_MIN, RUN_CAP_MAX);
   const floor = parseWholeNumber(floorInput, 0, RAM_FLOOR_MAX_MB);
@@ -162,6 +175,20 @@ export function RunAdmissionSettingsSection({
           )}
         </div>
 
+        {recommendation && hasUsage ? (
+          <UsageRecommendation
+            recommendation={recommendation}
+            savedCap={savedCap}
+            savedFloor={savedFloor}
+            disabled={disabled}
+            onApply={(next) => {
+              setCapInput(String(next.maxConcurrentRuns));
+              setFloorInput(String(next.minAvailableMemoryMb));
+              onSave(next);
+            }}
+          />
+        ) : null}
+
         <div className="flex items-center gap-2">
           <Button type="submit" size="sm" disabled={!canSave}>
             Save run limits
@@ -183,5 +210,86 @@ export function RunAdmissionSettingsSection({
         </div>
       </form>
     </section>
+  );
+}
+
+function UsageRecommendation({
+  recommendation,
+  savedCap,
+  savedFloor,
+  disabled,
+  onApply,
+}: {
+  recommendation: RunAdmissionRecommendation;
+  savedCap: number;
+  savedFloor: number;
+  disabled: boolean;
+  onApply: (next: Required<RunAdmission>) => void;
+}) {
+  const { suggested } = recommendation;
+  const matchesSaved =
+    suggested.maxConcurrentRuns === savedCap && suggested.minAvailableMemoryMb === savedFloor;
+  const rows = [
+    { label: "Run cap", current: String(savedCap), suggested: String(suggested.maxConcurrentRuns) },
+    {
+      label: "RAM floor",
+      current: `${savedFloor} MB`,
+      suggested: `${suggested.minAvailableMemoryMb} MB`,
+    },
+  ];
+
+  return (
+    <div
+      className="space-y-3 rounded-lg border border-border bg-muted/30 px-3 py-3 text-sm"
+      data-testid="run-admission-recommendation"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="font-medium">Recommended from your usage</h3>
+          <p className="text-xs text-muted-foreground">
+            Based on the last {recommendation.windowDays} days. Nothing changes until you apply it.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={disabled || matchesSaved}
+          onClick={() =>
+            onApply({
+              maxConcurrentRuns: suggested.maxConcurrentRuns,
+              minAvailableMemoryMb: suggested.minAvailableMemoryMb,
+            })
+          }
+        >
+          {matchesSaved ? "Applied" : "Apply"}
+        </Button>
+      </div>
+      <table className="w-full max-w-sm text-left">
+        <thead className="text-xs text-muted-foreground">
+          <tr>
+            <th scope="col" className="py-1 font-normal">Setting</th>
+            <th scope="col" className="py-1 font-normal">Current</th>
+            <th scope="col" className="py-1 font-normal">Suggested</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <th scope="row" className="py-1 font-normal text-muted-foreground">{row.label}</th>
+              <td className="py-1">{row.current}</td>
+              <td className="py-1 font-medium">{row.suggested}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {recommendation.reasons.length > 0 ? (
+        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+          {recommendation.reasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
