@@ -2976,6 +2976,24 @@ for (const route of [
   });
 }
 
+registry.registerPath({
+  method: "post",
+  path: "/api/reauth",
+  tags: ["auth"],
+  summary: "Enter the password again for one release, rollback or promote (login mode only)",
+  request: {
+    body: jsonBody(z.object({ action: z.enum(["release", "rollback", "promote"]), password: z.string() })),
+  },
+  responses: {
+    200: r.ok(),
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+    422: r.unprocessable,
+    429: r.tooManyRequests,
+  },
+});
+
 // Releases page (GRE-121). Board only, except the next title (board or the
 // release manager agent) and the run flag (an agent on its own run, or the board).
 const releaseCompanyParams = z.object({ companyId: z.string() });
