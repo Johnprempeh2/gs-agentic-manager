@@ -6297,6 +6297,22 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/instance/system-memory",
+  tags: ["instance"],
+  summary: "Get read-only host memory for the run-cap suggestion",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/instance/run-admission/recommendation",
+  tags: ["instance"],
+  summary: "Get a read-only suggestion for the instance run-admission settings",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/instance/settings/experimental",
   tags: ["instance"],
   summary: "Get experimental instance settings",
