@@ -268,6 +268,32 @@ installed with (agent runs each get their own store), pnpm deletes and
 reinstalls `node_modules` under the running live server. Your terminal always
 uses the same store, so this does not happen there.
 
+### Live in login mode: the release key (John, once)
+
+In `local_trusted` the scripts need no login. When live runs in login mode
+(`authenticated`, GRE-125), three calls need a board login: the restart request,
+the `serverInfo` read in `/api/health`, and the active-run count. The scripts
+send a board API key from `~/GSAM/release-board-key` (or
+`GSAM_LIVE_BOARD_KEY_FILE`). The release from the app runs the same script, so
+it uses the same file. With no file the scripts send no login, as before.
+
+Make the key once, after you claim the board, signed in as the board owner:
+
+```sh
+pnpm gsam auth login --api-base http://localhost:3100
+pnpm gsam token board create --name live-release --never-expires --api-base http://localhost:3100 --json
+# copy the "token" value (pcp_board_...), then:
+( umask 077; pbpaste > ~/GSAM/release-board-key )
+chmod 600 ~/GSAM/release-board-key
+```
+
+The file must be mode 0600 and must never go into a repository. A release
+stops before anything moves if the file is readable by others, if the key is
+wrong, or if live hides `serverInfo` (login mode and no key). To replace the key,
+revoke the old one (`pnpm gsam token board revoke <keyId>`) and write the new
+one to the same file. `scripts/release-auth-sandbox-check.sh` tests all of this
+on a throwaway sandbox, in both modes.
+
 ### What the preview does and does not do
 
 - **Code:** its own clone in `~/GSAM/preview/code`, fetched from the local

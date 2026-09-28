@@ -27,6 +27,7 @@ esac
 # with Fork CI green, so it need not be the one in the preview.
 FROM_APP="${GSAM_RELEASE_FROM_APP:-}"
 record_release_repo "$RELEASE_REPO"
+KEY_PROBLEM="$(live_board_key_check)" || die "$KEY_PROBLEM"
 
 # A candidate carries a title and changelog; the live-* tag gets the same message.
 if [ "$MODE" = release ]; then
@@ -50,8 +51,16 @@ if [ "$MODE" = release ]; then
 fi
 
 if [ "$FROM_APP" != 1 ]; then
-  RUNS="$(active_runs "$LIVE_URL")"
+  RUNS="$(active_runs "$LIVE_URL")" || die "cannot count the active agent runs on $LIVE_URL (see above). In login mode, put a board API key in $LIVE_BOARD_KEY_FILE (see the runbook)."
   [ "$RUNS" = "0" ] || die "$RUNS agent run(s) are active; release again when the agents are idle, or release from the app."
+fi
+
+# A server in login mode hides serverInfo from a caller with no board login.
+# Without it the script cannot tell the old process from the new one, and would
+# take a running live server for a stopped one. (A wrong key gets 401 on every
+# route, so "is it up" is asked with no key.)
+if curl -fsS -m 5 -o /dev/null "$LIVE_URL/api/health" 2>/dev/null && [ -z "$(health_field "$LIVE_URL" serverInfo.processStartedAt)" ]; then
+  die "the live server at $LIVE_URL runs but does not show serverInfo: it runs in login mode and $LIVE_BOARD_KEY_FILE holds no valid board API key (see the runbook). Nothing was changed."
 fi
 
 PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || git -C "$LIVE_DIR" rev-parse --short HEAD)"
@@ -110,11 +119,12 @@ else
   RESTART=""
   for _ in $(seq 1 15); do
     sleep 2
-    RESTART="$(curl -sS -m 10 -X POST "$LIVE_URL/api/health/dev-server/restart" 2>&1 || true)"
-    case "$RESTART" in *restart_requested*) break ;; esac
+    RESTART="$(live_curl -sS -m 10 -X POST "$LIVE_URL/api/health/dev-server/restart" 2>&1 || true)"
+    case "$RESTART" in *restart_requested*|*board_access_required*) break ;; esac
   done
   case "$RESTART" in
     *restart_requested*) say "Asked the live server to restart" ;;
+    *board_access_required*) die "the live server refused the restart: it runs in login mode and $LIVE_BOARD_KEY_FILE holds no valid board API key. Live code is on $LIVE_TAG but the old server still runs; fix the key and restart live, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
     *) die "the live server did not accept a restart ($RESTART). Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
   esac
 fi
