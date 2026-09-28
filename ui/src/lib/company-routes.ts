@@ -15,6 +15,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "tasks",
   "routines",
   "goals",
+  "releases",
   "artifacts",
   "tools",
   "approvals",

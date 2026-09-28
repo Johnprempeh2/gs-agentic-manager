@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   UserCheck,
   Users,
+  Rocket,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -49,6 +50,8 @@ import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarBrandSignature } from "./SidebarBrandSignature";
+import { SidebarReleaseFooter } from "./SidebarReleaseFooter";
+import { useCanRelease } from "../hooks/useReleases";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { primarySidebarStyles } from "./primary-sidebar-styles";
 
@@ -64,6 +67,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const rail = collapsed && !peeking;
   const inboxBadge = useInboxBadge(selectedCompanyId);
+  // Releasing is the board's decision (GRE-119): agents never see the page.
+  const { canRelease } = useCanRelease(selectedCompanyId);
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -244,6 +249,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
             <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
             <SidebarNavItem to="/activity" label="Audit" icon={History} />
+            {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
           </SidebarSection>
         ) : null}
 
@@ -265,6 +271,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
               <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
               <SidebarNavItem to="/activity" label="Activity" icon={History} />
+              {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
               <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
             </SidebarSection>
           </>
@@ -278,6 +285,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           missingBehavior="placeholder"
         />
         <SidebarBrandSignature rail={rail} />
+        <SidebarReleaseFooter companyId={selectedCompanyId} rail={rail} />
       </nav>
     </aside>
   );
