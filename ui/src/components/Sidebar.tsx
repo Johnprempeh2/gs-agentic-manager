@@ -96,9 +96,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   const goalsLinkPending = experimentalSettings === undefined;
   const showGoalsLink = experimentalSettings?.enableGoalsSidebarLink === true;
-  // Decisions (attention home) is an experimental surface (PAP-13481): the nav
-  // item is hidden entirely until the flag is enabled (same no-flash pattern as
-  // showWorkspacesLink — it defaults hidden, so no placeholder is needed).
+  // Decisions (attention home, PAP-13481) is on by default for self-hosted
+  // (GRE-64); the server resolves an unset flag to true. It stays hidden while
+  // settings load so an instance that turned it off never sees it flash.
   const showDecisions = experimentalSettings?.enableDecisions === true;
   const { data: attentionFeed } = useQuery({
     queryKey: queryKeys.attention(selectedCompanyId!),
@@ -146,7 +146,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
                 data-slot="icon-button"
                 aria-label={rail ? "New Task" : undefined}
                 className={cn(
-                  "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring",
                 )}
               >
                 <SquarePen className="h-4 w-4 shrink-0" />

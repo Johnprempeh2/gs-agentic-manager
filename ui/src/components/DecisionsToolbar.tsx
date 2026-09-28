@@ -56,7 +56,7 @@ export function DecisionsToolbar({
   return (
     <div className="flex items-center gap-2">
       {visibleCount > 0 && (
-        <span className="text-sm text-muted-foreground">
+        <span className="whitespace-nowrap text-sm text-muted-foreground">
           {visibleCount} {visibleCount === 1 ? "decision" : "decisions"}
         </span>
       )}

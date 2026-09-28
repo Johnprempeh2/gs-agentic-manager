@@ -583,9 +583,9 @@ export function WhatNeedsMe() {
 
   return (
     <div ref={rootRef} className="max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">Decisions</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
         <DecisionsToolbar
           visibleCount={visibleCount}
           filterOptions={filterOptions}

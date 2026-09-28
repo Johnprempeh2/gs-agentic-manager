@@ -42,6 +42,8 @@ describe("applyCloudCatalogDefaults", () => {
       managedConfig(),
     );
     expect(experimental.enableNativeRunner).toBe(false);
+    // Decisions is on by default for self-hosted only (GRE-64).
+    expect(experimental.enableDecisions).toBe(false);
     // Flags with matching defaults are untouched.
     expect(experimental.enableStreamlinedUi).toBe(true);
   });

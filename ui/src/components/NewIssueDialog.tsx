@@ -2072,11 +2072,11 @@ export function NewIssueDialog() {
                             </Badge>
                             <span className="truncate text-sm">{file.file.name}</span>
                           </div>
-                          <div className="mt-1 flex items-center gap-2 text-(length:--text-micro) text-muted-foreground">
-                            <FileText className="h-3.5 w-3.5" />
-                            <span>{file.title || file.file.name}</span>
+                          <div className="mt-1 flex min-w-0 items-center gap-2 text-(length:--text-micro) text-muted-foreground">
+                            <FileText className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{file.title || file.file.name}</span>
                             <span>•</span>
-                            <span>{formatFileSize(file.file)}</span>
+                            <span className="shrink-0">{formatFileSize(file.file)}</span>
                           </div>
                         </div>
                         <Button
@@ -2086,6 +2086,7 @@ export function NewIssueDialog() {
                           onClick={() => removeStagedFile(file.id)}
                           disabled={createIssue.isPending}
                           title="Remove document"
+                          aria-label="Remove document"
                         >
                           <X className="h-3.5 w-3.5" />
                         </Button>
@@ -2106,7 +2107,7 @@ export function NewIssueDialog() {
                             <PaperclipIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <span className="truncate text-sm">{file.file.name}</span>
                           </div>
-                          <div className="mt-1 text-(length:--text-micro) text-muted-foreground">
+                          <div className="mt-1 truncate text-(length:--text-micro) text-muted-foreground">
                             {file.file.type || "application/octet-stream"} • {formatFileSize(file.file)}
                           </div>
                         </div>
@@ -2117,6 +2118,7 @@ export function NewIssueDialog() {
                           onClick={() => removeStagedFile(file.id)}
                           disabled={createIssue.isPending}
                           title="Remove attachment"
+                          aria-label="Remove attachment"
                         >
                           <X className="h-3.5 w-3.5" />
                         </Button>
