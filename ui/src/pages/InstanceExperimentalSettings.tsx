@@ -226,7 +226,6 @@ export function InstanceExperimentalSettings() {
   const statusCardsManaged = managedKeys.enableStatusCards?.managed === true;
   const statusCardsBlockedByManagedSummaries = summariesManaged && !enableSummaries;
   const summariesRequiredByManagedStatusCards = statusCardsManaged && enableStatusCards;
-  const enableDecisions = experimentalQuery.data?.enableDecisions === true;
   const enableGoalsSidebarLink = experimentalQuery.data?.enableGoalsSidebarLink === true;
   const enableCases = experimentalQuery.data?.enableCases === true;
   const enableServerInfoDebugView = experimentalQuery.data?.enableServerInfoDebugView === true;
@@ -363,17 +362,6 @@ export function InstanceExperimentalSettings() {
             ariaLabel="Toggle conference room chat experimental setting"
           />
         ) : null}
-
-        <ExperimentalToggleCard
-          title="Decisions"
-          description="Show the Decisions item in the main sidebar — the attention home that surfaces the tasks awaiting your input. On by default; turn off to hide it."
-          checked={enableDecisions}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableDecisions: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableDecisions"
-          managed={managedKeys.enableDecisions}
-          ariaLabel="Toggle decisions experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Enable Environments"

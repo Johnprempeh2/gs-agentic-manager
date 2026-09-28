@@ -371,22 +371,16 @@ describe("Sidebar", () => {
     });
   });
 
-  it("hides Decisions when the setting is turned off", async () => {
+  it("shows Decisions even when the stored setting is off (GRE-66)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: false });
     const root = await renderSidebar();
 
-    expect(container.textContent).not.toContain("Decisions");
-
-    flushSync(() => {
-      root.unmount();
-    });
-  });
-
-  it("does not poll attention until Decisions is enabled", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: false });
-    const root = await renderSidebar();
-
-    expect(mockAttentionApi.list).not.toHaveBeenCalled();
+    const primaryNavLinks = [...container.querySelectorAll("nav > div:first-child a")];
+    const decisionsLink = primaryNavLinks.find(
+      (anchor) => anchor.textContent?.trim() === "Decisions",
+    );
+    expect(decisionsLink?.getAttribute("href")).toBe("/decisions");
+    expect(mockAttentionApi.list).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
       root.unmount();
