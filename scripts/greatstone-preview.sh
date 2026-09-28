@@ -156,6 +156,11 @@ cmd_switch_tests() {
   local report="$PREVIEW_ROOT/switch-tests-$(preview_state tag).json" code=0
   node "$GS_TOOLS_ROOT/tests/release-switch-tests/run.mjs" \
     --repo "$PREVIEW_CODE_DIR" --settings-url "$PREVIEW_URL" --json "$report" || code=$?
+  if [ ! -f "$report" ]; then
+    say "No report was written to $report; the switch tests did not run."
+    [ "$code" -ne 0 ] || code=1
+    return "$code"
+  fi
   say "Report: $report"
   return "$code"
 }

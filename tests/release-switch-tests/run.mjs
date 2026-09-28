@@ -25,7 +25,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_REPO = realpathSync(resolve(HERE, "../.."));
@@ -247,6 +247,9 @@ export async function main(argv, { run = runVitest, prepare = prepareRepo, fetch
   return report.verdict === "passed" ? 0 : 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+// Compare real paths: started through a symlink (macOS /var -> /private/var),
+// argv[1] is not the real path that import.meta.url holds, and main() would be
+// skipped with exit 0 and no report.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   process.exitCode = await main(process.argv.slice(2));
 }

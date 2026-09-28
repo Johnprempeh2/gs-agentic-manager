@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -163,4 +164,13 @@ test("missing switch values is a usage error, not a pass", async () => {
   const fetchImpl = async () => new Response("forbidden", { status: 403 });
   assert.equal(await main(["--settings-url", "http://localhost:3200"], { fetchImpl, log: (l) => logs.push(l) }), 2);
   assert.match(logs.join("\n"), /answered 403/);
+});
+
+test("started through a symlinked path, the runner still runs main()", () => {
+  // macOS /var -> /private/var: argv[1] is not the real path of the script.
+  const link = join(mkdtempSync(join(tmpdir(), "switch-tests-link-")), "dir");
+  symlinkSync(HERE, link, "dir");
+  const out = spawnSync(process.execPath, [join(link, "run.mjs")], { encoding: "utf8" });
+  assert.equal(out.status, 2, `stdout: ${out.stdout}\nstderr: ${out.stderr}`);
+  assert.match(out.stdout, /switch-tests:/);
 });
