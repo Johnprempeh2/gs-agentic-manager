@@ -342,6 +342,7 @@ describe("Runs marked finish before update", () => {
     expect(flagged.textContent).toContain("Ridge");
     expect(flagged.textContent).toContain("on GRE-130");
     expect(flagged.textContent).toContain("Mid database migration");
+    expect(flagged.textContent).toContain("Marked by Ridge");
 
     await click(buttonByText("Release without waiting"));
     const dialog = confirmDialog();
@@ -395,7 +396,7 @@ describe("Restart report", () => {
 
     const report = document.querySelector('[data-testid="release-progress"] [data-testid="restart-report"]')!;
     expect(report.textContent).toContain("2 runs resumed after the update (1 kept running, 1 continued from a checkpoint).");
-    expect(report.textContent).toContain("1 run lost and need recovery: 9c8d7e6");
+    expect(report.textContent).toContain("1 run lost (needs recovery): 9c8d7e6");
   });
 
   it("shows the report on that release in History", async () => {

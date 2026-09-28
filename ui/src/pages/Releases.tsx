@@ -90,7 +90,7 @@ export function RestartReportSummary({ report }: { report: RestartReport }) {
         <p className="text-muted-foreground">Nothing was lost.</p>
       ) : (
         <p className="text-destructive">
-          {plural(lost.length, "run")} lost and need recovery:{" "}
+          {plural(lost.length, "run")} lost (needs recovery):{" "}
           {lost.map((id, index) => (
             <span key={id}>
               {index > 0 ? ", " : ""}
@@ -146,7 +146,11 @@ function progressHeadline(progress: ReleaseProgress): string {
 }
 
 function FlaggedRunLine({ run, agentNames }: { run: FlaggedRun; agentNames: Map<string, string> }) {
-  const by = actorLabel(run.flaggedBy, agentNames);
+  // An agent usually flags its own run; name it even when the agent list lacks it.
+  const by =
+    run.flaggedBy === `agent:${run.agentId}` && run.agentName
+      ? run.agentName
+      : actorLabel(run.flaggedBy, agentNames);
   return (
     <>
       <span className="font-medium text-foreground">{run.agentName ?? agentNames.get(run.agentId) ?? "Agent"}</span>
