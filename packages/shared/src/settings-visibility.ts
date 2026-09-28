@@ -15,6 +15,8 @@ import { INSTANCE_FEATURE_KEYS, type InstanceFeatureKey } from "./feature-catalo
  * (individually or via the whole Experimental page), the company Import
  * page (whose whole route surface is floored), and the Environments, Secrets,
  * Export, and Invites pages (their write routes are floored; reads stay open).
+ * `instance.releases` hides the board Releases page and floors every release
+ * route, reads included: a client edition never releases or sees our tags.
  * Company Members and the Secrets sub-sections are UI-visibility keys only.
  *
  * Nothing is hidden by default: with the variable unset, UI and API behave
@@ -38,6 +40,7 @@ export const HIDEABLE_INSTANCE_PAGES = [
   "instance.experimental",
   "instance.plugins",
   "instance.adapters",
+  "instance.releases",
 ] as const;
 
 export type HideableInstancePage = (typeof HIDEABLE_INSTANCE_PAGES)[number];

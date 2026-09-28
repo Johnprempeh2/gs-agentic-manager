@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { accessApi } from "@/api/access";
 import { FINAL_RELEASE_STATES, releasesApi, type ReleasesOverview } from "@/api/releases";
+import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { canBoardManageRuntime } from "@/lib/recovery-reconcile";
 import { queryKeys } from "@/lib/queryKeys";
 
@@ -9,7 +10,8 @@ export const RELEASE_PROGRESS_POLL_MS = 2_000;
 
 /**
  * Releasing is John's decision (GRE-119): the page, its buttons and the sidebar
- * "What's new" only show for board users. The server stays authoritative.
+ * "What's new" only show for board users. Client editions hide Releases for
+ * everyone (`instance.releases`, GRE-129). The server stays authoritative.
  */
 export function useCanRelease(companyId: string | null | undefined): { canRelease: boolean; isLoading: boolean } {
   const boardAccess = useQuery({
@@ -17,8 +19,9 @@ export function useCanRelease(companyId: string | null | undefined): { canReleas
     queryFn: () => accessApi.getCurrentBoardAccess(),
     retry: false,
   });
+  const { hidden, loaded } = useHiddenSettings();
   return {
-    canRelease: canBoardManageRuntime(companyId, boardAccess.data),
+    canRelease: loaded && !hidden.has("instance.releases") && canBoardManageRuntime(companyId, boardAccess.data),
     isLoading: boardAccess.isLoading,
   };
 }

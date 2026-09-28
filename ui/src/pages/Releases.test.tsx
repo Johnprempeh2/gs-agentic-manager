@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReleaseProgressState } from "@/api/releases";
 import { ConfirmProvider } from "@/context/ConfirmContext";
 import { releaseProgressFixture, releasesOverviewFixture } from "@/fixtures/releaseFixtures";
+import { queryKeys } from "@/lib/queryKeys";
 import { Releases, ReleasesView } from "./Releases";
 
 const mockReleasesApi = vi.hoisted(() => ({
@@ -42,6 +43,8 @@ const AGENT_OR_VIEWER = {
 
 let container: HTMLDivElement;
 let root: Root;
+/** Health as CloudAccessGate caches it; a client edition lists `instance.releases`. */
+let health: Record<string, unknown>;
 
 async function flush() {
   for (let i = 0; i < 5; i += 1) {
@@ -53,6 +56,7 @@ async function flush() {
 
 async function render(node: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(queryKeys.health, health);
   root = createRoot(container);
   await act(async () => {
     root.render(
@@ -85,6 +89,7 @@ function confirmDialog() {
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
+  health = { status: "ok" };
   mockReleasesApi.overview.mockResolvedValue(releasesOverviewFixture());
   mockReleasesApi.release.mockResolvedValue({ progress: releaseProgressFixture("checking") });
   mockReleasesApi.rollback.mockResolvedValue({
@@ -101,6 +106,23 @@ afterEach(async () => {
 });
 
 describe("Releases page", () => {
+  it("shows no page and no release buttons on a client edition, even for the board (GRE-129)", async () => {
+    health = { status: "ok", hiddenSettings: ["instance.releases"] };
+    mockAccessApi.getCurrentBoardAccess.mockResolvedValue(BOARD);
+    await render(<Releases />);
+
+    expect(buttonByText("Release Release from the app")).toBeUndefined();
+    expect(mockReleasesApi.overview).not.toHaveBeenCalled();
+  });
+
+  it("shows the page and its buttons to the board on our own install (GRE-129)", async () => {
+    mockAccessApi.getCurrentBoardAccess.mockResolvedValue(BOARD);
+    await render(<Releases />);
+
+    expect(mockReleasesApi.overview).toHaveBeenCalledWith("company-1");
+    expect(document.body.textContent).not.toContain("Releases are for the board");
+  });
+
   it("hides the page and its buttons from non-board viewers", async () => {
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue(AGENT_OR_VIEWER);
     await render(<Releases />);
