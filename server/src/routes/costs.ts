@@ -14,6 +14,9 @@ import { validate } from "../middleware/validate.js";
 import {
   budgetService,
   costService,
+  costLedgerService,
+  costLedgerToCsv,
+  parseLedgerMonth,
   financeService,
   companyService,
   agentService,
@@ -59,6 +62,7 @@ export function costRoutes(
     cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
   };
   const costs = costService(db, budgetHooks);
+  const ledger = costLedgerService(db);
   const finance = financeService(db);
   const budgets = budgetService(db, budgetHooks);
   const companies = companyService(db);
@@ -234,6 +238,25 @@ export function costRoutes(
     const range = parseCostDateRange(req.query);
     const summary = await costs.apiEquivalent(companyId, range);
     res.json(summary);
+  });
+
+  router.get("/companies/:companyId/costs/ledger", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    const month = parseLedgerMonth(req.query.month);
+    res.json(await ledger.monthly(companyId, month));
+  });
+
+  router.get("/companies/:companyId/costs/ledger/export", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    const month = parseLedgerMonth(req.query.month);
+    const result = await ledger.monthly(companyId, month);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="cost-ledger-${result.month}.csv"`);
+    res.send(costLedgerToCsv(result));
   });
 
   router.get("/companies/:companyId/costs/subscriptions", async (req, res) => {

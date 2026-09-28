@@ -202,3 +202,71 @@ export interface ApiEquivalentSummary {
   byProvider: ApiEquivalentProviderRow[];
   byModel: ApiEquivalentModelRow[];
 }
+
+/**
+ * How a ledger amount was produced: `billed` is the cost the run recorded;
+ * `api_equivalent` is a seat-plan run priced at published API rates.
+ */
+export type CostLedgerBasis = "billed" | "api_equivalent";
+
+/** one agent + provider + tool + model + billing type, for one month */
+export interface CostLedgerLine {
+  agentId: string;
+  agentName: string | null;
+  provider: string;
+  biller: string;
+  /** the agent's adapter type (claude_local, codex_local, ...) */
+  tool: string;
+  model: string;
+  billingType: string;
+  /** true for subscription (seat-plan) runs */
+  seatPlan: boolean;
+  basis: CostLedgerBasis;
+  runCount: number;
+  eventCount: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  /** sum of cost_events.cost_cents as recorded */
+  billedCents: number;
+  /** null when the model has no published price in the price table */
+  apiEquivalentCents: number | null;
+  /** billedCents for billed lines, apiEquivalentCents for seat-plan lines (0 when unpriced) */
+  ledgerCents: number;
+  /** tokens on seat-plan lines whose model has no published price */
+  unpricedTokens: number;
+}
+
+export interface CostLedgerTotal {
+  key: string;
+  label: string | null;
+  runCount: number;
+  eventCount: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  billedCents: number;
+  /** priced lines only */
+  apiEquivalentCents: number;
+  /** ledger amount from billed lines */
+  billedLedgerCents: number;
+  /** ledger amount from seat-plan lines priced at API rates */
+  apiEquivalentLedgerCents: number;
+  ledgerCents: number;
+  unpricedTokens: number;
+}
+
+export interface CostLedger {
+  companyId: string;
+  /** YYYY-MM, UTC */
+  month: string;
+  from: string;
+  /** exclusive */
+  to: string;
+  priceTableCheckedAt: string;
+  lines: CostLedgerLine[];
+  byAgent: CostLedgerTotal[];
+  byProvider: CostLedgerTotal[];
+  byTool: CostLedgerTotal[];
+  totals: CostLedgerTotal;
+}
