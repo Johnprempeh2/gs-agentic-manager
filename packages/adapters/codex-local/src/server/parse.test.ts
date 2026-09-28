@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyCodexAuthRefreshFailure,
+  isCodexApiKeyRejected,
   extractCodexRetryNotBefore,
   isCodexHarnessCrash,
   isCodexProviderQuotaError,
@@ -163,6 +164,20 @@ describe("classifyCodexAuthRefreshFailure", () => {
   it("does not classify bare 401 or quota messages as auth-refresh failures", () => {
     expect(classifyCodexAuthRefreshFailure({ errorMessage: "chatgpt wham api returned 401" })).toBeNull();
     expect(classifyCodexAuthRefreshFailure({ errorMessage: "You've hit your usage limit for GPT-5." })).toBeNull();
+  });
+});
+
+describe("isCodexApiKeyRejected (GRE-139)", () => {
+  it("detects OpenAI's rejection of an API key", () => {
+    expect(isCodexApiKeyRejected({
+      stderr: 'unexpected status 401 Unauthorized: {"error":{"message":"Incorrect API key provided: sk-proj-****","code":"invalid_api_key"}}',
+    })).toBe(true);
+  });
+
+  it("ignores refresh, quota and bare 401 failures", () => {
+    expect(isCodexApiKeyRejected({ errorMessage: "OAuth failed: refresh token has expired" })).toBe(false);
+    expect(isCodexApiKeyRejected({ errorMessage: "You've hit your usage limit for GPT-5." })).toBe(false);
+    expect(isCodexApiKeyRejected({ errorMessage: "chatgpt wham api returned 401" })).toBe(false);
   });
 });
 
