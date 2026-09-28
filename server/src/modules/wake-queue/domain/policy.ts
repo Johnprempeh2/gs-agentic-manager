@@ -250,6 +250,12 @@ export type ReleaseRecoveryReviewParticipantFacts = {
   applies: boolean;
   /** True when the finishing run was itself a review-participant-recovery retry. */
   isExecutionReviewParticipantRecoveryRun: boolean;
+  /**
+   * The reviewer is waiting, not stalled (GRE-97): it commented recently or a
+   * child/blocker check issue is being worked, within the retry budget.
+   * Only read when the retry run ended without a decision.
+   */
+  reviewerWaitingOnCheck: boolean;
 };
 
 export type ReleaseRecoveryImmediateFacts = {
@@ -285,6 +291,8 @@ export type ReleaseRecoveryDecision =
   | { kind: "blocked_recovery_in_place" }
   | { kind: "blocked"; notice: ReleaseRecoveryBlockedNoticeKind }
   | { kind: "queue_review_participant_recovery" }
+  /** Wake the reviewer again later through a scheduled monitor instead of blocking. */
+  | { kind: "defer_review_wait" }
   | { kind: "queue_recovery" };
 
 export type ImmediateRecoveryContextLabels = {
@@ -429,11 +437,13 @@ export function decideReleaseRecovery(facts: ReleaseRecoveryFacts): ReleaseRecov
     if (shared.isStrandedRecoveryOrigin) {
       return { kind: "blocked_recovery_in_place" };
     }
-    const shouldBlock =
-      !shared.recoveryAgentInvokable ||
-      !shared.recoveryAgentPresent ||
-      reviewParticipant.isExecutionReviewParticipantRecoveryRun;
-    if (shouldBlock) {
+    if (!shared.recoveryAgentInvokable || !shared.recoveryAgentPresent) {
+      return { kind: "blocked", notice: "execution_review_participant" };
+    }
+    if (reviewParticipant.isExecutionReviewParticipantRecoveryRun) {
+      // The retry also ended without a decision. A reviewer waiting on CI or
+      // a check is not a stall (GRE-97): wake it again later instead.
+      if (reviewParticipant.reviewerWaitingOnCheck) return { kind: "defer_review_wait" };
       return { kind: "blocked", notice: "execution_review_participant" };
     }
     return { kind: "queue_review_participant_recovery" };

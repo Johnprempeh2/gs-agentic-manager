@@ -577,6 +577,28 @@ async function runReleaseRecoveryTail(
         })
       : false;
 
+  // Read only where the review lane would otherwise block a retry that ended
+  // without a decision (GRE-97): a reviewer that just commented it waits on
+  // CI, or has a check issue being worked, is woken again later instead.
+  const reviewerWaitingOnCheck =
+    reviewParticipantApplies &&
+    currentParticipant !== null &&
+    isExecutionReviewParticipantRecoveryRun(run) &&
+    !suppressImmediateRecovery &&
+    !hasExistingExecutionPath &&
+    !issue.monitorNextCheckAt &&
+    !hasPendingWakeInteraction &&
+    !suppressedByPauseHold &&
+    !isStrandedRecoveryOrigin &&
+    recoveryAgent?.invokable === true
+      ? await transaction.isReviewerWaitingOnCheck({
+          companyId: issue.companyId,
+          issueId: issue.id,
+          reviewerAgentId: currentParticipant.agentId,
+          now: input.now,
+        })
+      : false;
+
   const hasExplicitBlockerPath =
     immediateApplies && !reviewParticipantApplies
       ? await transaction.hasExplicitBlockerPath({
@@ -617,6 +639,7 @@ async function runReleaseRecoveryTail(
       applies: reviewParticipantApplies,
       isExecutionReviewParticipantRecoveryRun:
         isExecutionReviewParticipantRecoveryRun(run),
+      reviewerWaitingOnCheck,
     },
     immediate: {
       applies: immediateApplies,
@@ -655,6 +678,15 @@ async function runReleaseRecoveryTail(
         issue,
         previousStatus: statusForBlock(issue),
       },
+      postCommitEffects,
+    };
+  }
+
+  if (decision.kind === "defer_review_wait") {
+    // Unreachable without a participant: the fact is false when there is none.
+    if (!currentParticipant) return { outcome: { kind: "released" }, postCommitEffects };
+    return {
+      outcome: { kind: "review_wait_deferred", issue, reviewerAgentId: currentParticipant.agentId },
       postCommitEffects,
     };
   }
@@ -1011,6 +1043,12 @@ export function createReleaseIssueExecution(deps: {
         issue: result.outcome.issue,
         previousStatus: result.outcome.previousStatus,
         latestRun: result.run,
+      });
+    } else if (result.outcome.kind === "review_wait_deferred") {
+      await deps.recovery.scheduleReviewWaitMonitor({
+        issue: result.outcome.issue,
+        latestRun: result.run,
+        reviewerAgentId: result.outcome.reviewerAgentId,
       });
     }
 

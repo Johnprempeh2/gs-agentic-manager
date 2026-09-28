@@ -138,6 +138,12 @@ import {
 import { withRecoveryContext } from "./status-only-context.js";
 import { isAutomaticRecoverySuppressedByPauseHold } from "./pause-hold-guard.js";
 import {
+  REVIEW_WAIT_ACTIVITY_SOURCE,
+  REVIEW_WAIT_MONITOR_SERVICE_NAME,
+  REVIEW_WAIT_RECHECK_MS,
+  isReviewerWaitingOnCheck,
+} from "./review-wait.js";
+import {
   collectDispositionRepairSourceState,
   dispositionRepairDelayMs,
   DISPOSITION_REPAIR_MAX_ATTEMPTS,
@@ -4295,6 +4301,113 @@ export function recoveryService(
     return updated;
   }
 
+  // A reviewer waiting on CI or a check (GRE-97) is woken again later by a
+  // monitor instead of the issue moving to `blocked`. The monitor is a
+  // persisted live path, so neither recovery lane blocks while it is set.
+  async function scheduleReviewWaitMonitor(input: {
+    issue: typeof issues.$inferSelect;
+    latestRun: NonNullable<LatestIssueRun>;
+    reviewerAgentId: string;
+  }) {
+    if (input.issue.status !== "in_review" || input.issue.monitorNextCheckAt)
+      return null;
+    if (getAdapterFailureRecoveryTargetAgentId(input.issue) !== input.reviewerAgentId)
+      return null;
+
+    const nextCheckAt = new Date(Date.now() + REVIEW_WAIT_RECHECK_MS);
+    const previousPolicy = normalizeIssueExecutionPolicy(
+      input.issue.executionPolicy ?? null,
+    );
+    const policy = {
+      ...(previousPolicy ?? {
+        mode: "normal" as const,
+        commentRequired: true,
+        stages: [],
+      }),
+      monitor: {
+        nextCheckAt: nextCheckAt.toISOString(),
+        notes: "The reviewer is waiting on CI or a check; wake the active review participant again.",
+        scheduledBy: "assignee" as const,
+        kind: "external_service" as const,
+        serviceName: REVIEW_WAIT_MONITOR_SERVICE_NAME,
+        externalRef: input.latestRun.id,
+        timeoutAt: null,
+        maxAttempts: null,
+        recoveryPolicy: "wake_owner" as const,
+      },
+    };
+    const transition = applyIssueMonitorPolicyTransition({
+      issue: input.issue,
+      policy,
+      previousPolicy,
+      requestedStatus: input.issue.status,
+      requestedAssigneePatch: {},
+      actor: { agentId: null, userId: null },
+      monitorExplicitlyUpdated: true,
+    });
+    const updated = await issuesSvc.update(input.issue.id, {
+      ...transition.patch,
+      executionPolicy: policy,
+    });
+    if (!updated) return null;
+
+    await logActivity(db, {
+      companyId: input.issue.companyId,
+      actorType: "system",
+      actorId: "recovery",
+      agentId: null,
+      runId: input.latestRun.id,
+      action: "issue.monitor_scheduled",
+      entityType: "issue",
+      entityId: input.issue.id,
+      details: {
+        identifier: input.issue.identifier,
+        source: REVIEW_WAIT_ACTIVITY_SOURCE,
+        latestRunId: input.latestRun.id,
+        nextCheckAt: nextCheckAt.toISOString(),
+        targetAgentId: input.reviewerAgentId,
+      },
+    });
+
+    return updated;
+  }
+
+  /** True when the reviewer is waiting on CI or a check and a review-wait monitor now wakes it later. */
+  async function deferReviewWait(
+    issue: typeof issues.$inferSelect,
+    latestRun: NonNullable<LatestIssueRun>,
+    reviewerAgentId: string,
+    now: Date,
+  ) {
+    const waiting = await isReviewerWaitingOnCheck(db, {
+      companyId: issue.companyId,
+      issueId: issue.id,
+      reviewerAgentId,
+      now,
+    });
+    if (!waiting) return false;
+    return (
+      (await scheduleReviewWaitMonitor({ issue, latestRun, reviewerAgentId })) !==
+      null
+    );
+  }
+
+  function hasPendingReviewWaitMonitor(
+    issue: typeof issues.$inferSelect,
+    now: Date,
+  ) {
+    if (
+      !issue.monitorNextCheckAt ||
+      issue.monitorNextCheckAt.getTime() <= now.getTime()
+    )
+      return false;
+    const monitor = parseObject(parseObject(issue.executionPolicy).monitor);
+    return (
+      readNonEmptyString(monitor.serviceName) ===
+      REVIEW_WAIT_MONITOR_SERVICE_NAME
+    );
+  }
+
   function getAdapterFailureRecoveryTargetAgentId(
     issue: typeof issues.$inferSelect,
   ) {
@@ -4365,6 +4478,7 @@ export function recoveryService(
       escalated: 0,
       waitingOnReviewResolved: 0,
       providerQuotaMonitored: 0,
+      reviewWaitDeferred: 0,
       recentProgressExempted: 0,
       operatorCancelExempted: 0,
       onboardingFirstTaskExempted: 0,
@@ -4697,7 +4811,9 @@ export function recoveryService(
           issue,
           providerQuotaMonitorRun,
           recoveryNow,
-        )
+        ) ||
+        (issue.status === "in_review" &&
+          hasPendingReviewWaitMonitor(issue, recoveryNow))
       ) {
         result.skipped += 1;
         continue;
@@ -5027,6 +5143,18 @@ export function recoveryService(
             EXECUTION_REVIEW_PARTICIPANT_RECOVERY_REASON,
           )
         ) {
+          if (
+            await deferReviewWait(
+              issue,
+              participantLatestRun,
+              participantAgentId,
+              recoveryNow,
+            )
+          ) {
+            result.reviewWaitDeferred += 1;
+            result.issueIds.push(issue.id);
+            continue;
+          }
           const updated = await escalateStrandedAssignedIssue({
             issue,
             previousStatus: "in_review",
@@ -5082,6 +5210,18 @@ export function recoveryService(
           reviewOutcome.retryExhausted &&
           !(await hasActiveExecutionPath(issue.companyId, issue.id, null))
         ) {
+          if (
+            await deferReviewWait(
+              issue,
+              participantLatestRun,
+              participantAgentId,
+              recoveryNow,
+            )
+          ) {
+            result.reviewWaitDeferred += 1;
+            result.issueIds.push(issue.id);
+            continue;
+          }
           // Same exhaustion as the other lanes: the reviewer run's bounded
           // retries are spent, so escalate as the review-recovery failure it
           // is instead of skipping on every sweep with no live path. The
@@ -6236,6 +6376,7 @@ export function recoveryService(
     buildRunOutputSilence,
     escalateStrandedRecoveryIssueInPlace,
     escalateStrandedAssignedIssue,
+    scheduleReviewWaitMonitor,
     recordWatchdogDecision,
     scanSilentActiveRuns,
     reconcileStrandedAssignedIssues,

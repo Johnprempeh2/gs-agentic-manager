@@ -281,6 +281,7 @@ const baseReleaseRecoveryFacts: ReleaseRecoveryFacts = {
   reviewParticipant: {
     applies: false,
     isExecutionReviewParticipantRecoveryRun: false,
+    reviewerWaitingOnCheck: false,
   },
   immediate: {
     applies: false,
@@ -417,7 +418,7 @@ describe("decideReleaseRecovery", () => {
       name: "released: a review-participant recovery run ended waiting on a pending card that wakes the issue (GRE-35)",
       facts: {
         ...baseReleaseRecoveryFacts,
-        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true },
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: false },
         shared: { ...baseReleaseRecoveryFacts.shared, hasPendingWakeInteraction: true },
       },
       expected: { kind: "released" },
@@ -426,7 +427,24 @@ describe("decideReleaseRecovery", () => {
       name: "blocked: a review-participant recovery run ended and no pending card is left (GRE-35)",
       facts: {
         ...baseReleaseRecoveryFacts,
-        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true },
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: false },
+      },
+      expected: { kind: "blocked", notice: "execution_review_participant" },
+    },
+    {
+      name: "defer_review_wait: a review-participant recovery run ended while the reviewer waits on CI or a check (GRE-97)",
+      facts: {
+        ...baseReleaseRecoveryFacts,
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: true },
+      },
+      expected: { kind: "defer_review_wait" },
+    },
+    {
+      name: "blocked: a waiting reviewer that is no longer invokable cannot be woken later (GRE-97)",
+      facts: {
+        ...baseReleaseRecoveryFacts,
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: true },
+        shared: { ...baseReleaseRecoveryFacts.shared, recoveryAgentInvokable: false },
       },
       expected: { kind: "blocked", notice: "execution_review_participant" },
     },
