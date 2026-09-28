@@ -108,6 +108,7 @@ import {
 } from "./routes/instance-database-backups.js";
 import { llmRoutes } from "./routes/llms.js";
 import { authRoutes } from "./routes/auth.js";
+import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
@@ -641,6 +642,9 @@ export async function createApp(
   const agentAvatars = agentAvatarRoutes();
   api.use(agentAvatars.router);
   api.use(boardMutationGuard());
+  // Password re-check for release, rollback and promote (GRE-133). After the
+  // mutation guard so a cross-site page cannot post a password.
+  api.use(releaseReauthRoutes(db));
   api.use(
     "/health",
     healthRoutes(db, {
