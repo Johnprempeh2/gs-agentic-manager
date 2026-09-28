@@ -20,6 +20,14 @@ case "$TAG" in
   *) die "usage: greatstone-release.sh <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
 esac
 
+# GSAM_RELEASE_FROM_APP=1: started by the live server (the Releases page, GRE-121).
+# The server already held new runs and waited for runs flagged "finish before
+# update"; the restart below is a hot restart, so other running runs are kept
+# (adopted, or checkpointed and resumed). The candidate is cut from origin/main
+# with Fork CI green, so it need not be the one in the preview.
+FROM_APP="${GSAM_RELEASE_FROM_APP:-}"
+record_release_repo "$RELEASE_REPO"
+
 # A candidate carries a title and changelog; the live-* tag gets the same message.
 if [ "$MODE" = release ]; then
   TITLE="$(rc_tag_title "$RELEASE_REPO" "$TAG")" || die "$TITLE"
@@ -36,13 +44,15 @@ TARGET="$(git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$TAG^{com
 if [ "$MODE" = release ]; then
   git -C "$RELEASE_REPO" merge-base --is-ancestor "$TARGET" origin/main \
     || die "$TAG ($TARGET) is not on origin/main; only merged code is released."
-  if preview_running && [ "$(preview_state commit)" != "$TARGET" ]; then
+  if [ "$FROM_APP" != 1 ] && preview_running && [ "$(preview_state commit)" != "$TARGET" ]; then
     die "the preview runs $(preview_state tag) ($(preview_state commit)), not $TAG. Release the tag you checked, or check $TAG in the preview first."
   fi
 fi
 
-RUNS="$(active_runs "$LIVE_URL")"
-[ "$RUNS" = "0" ] || die "$RUNS agent run(s) are active; release again when the agents are idle."
+if [ "$FROM_APP" != 1 ]; then
+  RUNS="$(active_runs "$LIVE_URL")"
+  [ "$RUNS" = "0" ] || die "$RUNS agent run(s) are active; release again when the agents are idle, or release from the app."
+fi
 
 PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || git -C "$LIVE_DIR" rev-parse --short HEAD)"
 
@@ -74,6 +84,7 @@ else
   LIVE_TAG="$TAG"
 fi
 
+release_phase switching
 STARTED_BEFORE="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
 git -C "$LIVE_DIR" fetch --quiet --tags origin
 git -C "$LIVE_DIR" checkout --quiet --detach "$LIVE_TAG"
@@ -85,6 +96,10 @@ say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD)
 
 # The live server runs under dev-runner's "restart required" supervisor. It
 # notices the changed files within a few seconds, then restarts on request.
+# That restart is a hot restart (POST /api/health/dev-server/restart writes the
+# hot-restart intent): detached runs are adopted, ACP runs are checkpointed into
+# conversation retries, and the new server writes hot-restart-report.json.
+release_phase restarting
 if [ -z "$STARTED_BEFORE" ]; then
   # No live server answered before the switch (for example a rollback after a
   # failed version): start it instead of asking it to restart.

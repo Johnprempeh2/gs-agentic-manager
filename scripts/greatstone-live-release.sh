@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # One-click release launcher (see doc/GREATSTONE-WAY-OF-WORKING.md, step 6).
 #
-#   greatstone-live-release.sh <job-dir> <rc-tag> <release-repo>
+#   greatstone-live-release.sh <job-dir> <rc-tag|live-tag> <release-repo>
 #
-# The live server starts this when John accepts an "Update live?" card, after
-# it has held new agent runs and seen none running. It does not repeat any
+# The live server starts this when John releases or rolls back from the
+# Releases page (or accepts an "Update live?" card), after it has held new
+# agent runs and waited for runs flagged "finish before update". It does not repeat any
 # release logic: it runs <release-repo>/scripts/greatstone-release.sh, the same
 # command John runs by hand. If that fails after live moved, it rolls back with
 # the same script to the live-* tag live was on before. The outcome goes to
@@ -16,7 +17,7 @@
 set -uo pipefail
 
 JOB_DIR="${1:?job dir}"
-TAG="${2:?rc tag}"
+TAG="${2:?rc or live tag}"
 RELEASE_REPO="${3:?release repo}"
 
 if [ "${GSAM_LIVE_RELEASE_FOREGROUND:-}" != 1 ]; then
@@ -26,6 +27,9 @@ if [ "${GSAM_LIVE_RELEASE_FOREGROUND:-}" != 1 ]; then
 fi
 
 export GSAM_RELEASE_REPO="$RELEASE_REPO"
+# Hot restart, no preview check: see greatstone-release.sh.
+export GSAM_RELEASE_FROM_APP=1
+export GSAM_RELEASE_PHASE_FILE="$JOB_DIR/phase"
 RELEASE="$RELEASE_REPO/scripts/greatstone-release.sh"
 
 # write_result <outcome> <message> [<live-tag>] [<commit>] [<backup-file>]

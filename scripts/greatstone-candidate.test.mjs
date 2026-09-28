@@ -67,6 +67,20 @@ test("cuts an annotated rc tag with the title and both groups", (t) => {
   assert.throws(() => cutCandidate(dir, { tag: "rc-2026-09-02.1", title: "Again", ref: "main" }), /already exists/);
 });
 
+test("--json prints the changes for the live server and --print makes no tag", (t) => {
+  const dir = fakeRepo();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const out = execFileSync("node", [join(scriptsDir, "greatstone-candidate.mjs"), "rc-2026-09-02.1", "--title", "Next", "--ref", "main", "--print", "--json"], { cwd: dir, encoding: "utf8" });
+  const result = JSON.parse(out);
+  assert.equal(result.tagged, false);
+  assert.equal(result.since, "live-2026-09-01.1");
+  assert.deepEqual(result.changes.map(({ pr, issue, kind, line }) => ({ pr, issue, kind, line })), [
+    { pr: 40, issue: "GRE-55", kind: "feature", line: "Decisions: Focus mode (#40, GRE-55)" },
+    { pr: 41, issue: "GRE-72", kind: "fix", line: "Flag a blocked issue (#41, GRE-72)" },
+  ]);
+  assert.equal(spawnSync("git", ["rev-parse", "--verify", "--quiet", "refs/tags/rc-2026-09-02.1"], { cwd: dir }).status, 1);
+});
+
 test("refuses a candidate without a title or without changes", (t) => {
   const dir = fakeRepo();
   t.after(() => rmSync(dir, { recursive: true, force: true }));

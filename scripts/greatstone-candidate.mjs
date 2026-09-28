@@ -2,7 +2,7 @@
 // Cut a release candidate tag with a title and changelog (GRE-120; see
 // doc/GREATSTONE-WAY-OF-WORKING.md).
 //
-//   node scripts/greatstone-candidate.mjs <rc-tag> --title "<title>" [--ref origin/main] [--since <live-tag>] [--print]
+//   node scripts/greatstone-candidate.mjs <rc-tag> --title "<title>" [--ref origin/main] [--since <live-tag>] [--print] [--json]
 //
 // It makes <rc-tag> an annotated tag on <ref> (default origin/main). The tag
 // message is the title, then the merged pull requests since the last live-*
@@ -11,7 +11,8 @@
 // "fix" (after any "type(scope):" or "GRE-n:" prefix) is a fix; every other
 // one is a feature. The title is required: the
 // release script refuses an rc tag without one. --print shows the message and
-// makes no tag. The tag stays local; the release script pushes it.
+// makes no tag. --json prints the result as JSON (the live server reads it for
+// the Releases page, GRE-121). The tag stays local; the release script pushes it.
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { issueId, mergedChanges, whatChanged } from "./greatstone-changes.mjs";
@@ -71,7 +72,14 @@ export function cutCandidate(cwd, { tag, title, ref = "origin/main", since = nul
   if (changes.length === 0) throw new Error(`nothing merged since ${from}; no candidate needed`);
   const message = tagMessage(title, changes);
   if (!print) execFileSync("git", ["tag", "-a", tag, sha, "-F", "-"], { cwd, input: message, stdio: ["pipe", "ignore", "pipe"] });
-  return { sha, since: from, message };
+  const summary = changes.map((c) => ({
+    sha: c.sha,
+    pr: c.pr,
+    issue: issueId(c.title, c.branch),
+    kind: changeKind(c.title) === "fixes" ? "fix" : "feature",
+    line: noteLine(c).slice(2),
+  }));
+  return { sha, since: from, message, changes: summary };
 }
 
 function main(argv) {
@@ -82,11 +90,17 @@ function main(argv) {
   const ref = opt("--ref") || "origin/main";
   const since = opt("--since");
   const print = flag("--print");
+  const json = flag("--json");
   if (args.length !== 1) {
-    process.stderr.write('usage: greatstone-candidate.mjs <rc-tag> --title "<title>" [--ref origin/main] [--since <live-tag>] [--print]\n');
+    process.stderr.write('usage: greatstone-candidate.mjs <rc-tag> --title "<title>" [--ref origin/main] [--since <live-tag>] [--print] [--json]\n');
     process.exit(2);
   }
-  const { sha, since: from, message } = cutCandidate(process.cwd(), { tag: args[0], title, ref, since, print });
+  const result = cutCandidate(process.cwd(), { tag: args[0], title, ref, since, print });
+  const { sha, since: from, message } = result;
+  if (json) {
+    process.stdout.write(`${JSON.stringify({ tag: args[0], tagged: !print, ...result })}\n`);
+    return;
+  }
   process.stdout.write(`${print ? "Would tag" : "Tagged"} ${args[0]} on ${sha.slice(0, 9)} (changes since ${from}):\n\n${message}`);
 }
 

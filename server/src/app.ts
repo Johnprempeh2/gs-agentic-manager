@@ -50,6 +50,7 @@ import { inboxAgentPolicyRoutes } from "./routes/inbox-agent-policy.js";
 import { builtInAgentRoutes } from "./routes/built-in-agents.js";
 import { folderRoutes } from "./routes/folders.js";
 import { summarySlotRoutes } from "./routes/summary-slots.js";
+import { releaseRoutes } from "./routes/releases.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
@@ -665,6 +666,7 @@ export async function createApp(
   api.use(inboxAgentPolicyRoutes(db));
   api.use(builtInAgentRoutes(db));
   api.use(summarySlotRoutes(db));
+  api.use(releaseRoutes(db));
   api.use(statusCardRoutes(db));
   api.use(teamsCatalogRoutes(db));
   // The setup-token login session service. The router builds it and hands it

@@ -101,6 +101,22 @@ rc_tag_title() {
   say "$title"
 }
 
+# Records <dir> as the release repo in $GS_ROOT/release.conf, where the live
+# server finds it to release from the app (GRE-121). Nothing removes this file,
+# so it survives `greatstone-preview.sh stop` (GRE-71).
+RELEASE_CONF_FILE="$GS_ROOT/release.conf"
+record_release_repo() {
+  mkdir -p "$GS_ROOT"
+  printf 'release_repo=%s\n' "$1" >"$RELEASE_CONF_FILE.tmp" && mv "$RELEASE_CONF_FILE.tmp" "$RELEASE_CONF_FILE"
+}
+
+# Writes the release phase (switching, restarting) for the one-click release,
+# when the launcher asked for it. The server shows it as progress.
+release_phase() {
+  [ -n "${GSAM_RELEASE_PHASE_FILE:-}" ] || return 0
+  printf '%s\n' "$1" >"$GSAM_RELEASE_PHASE_FILE"
+}
+
 # Reads one key from the preview state file.
 preview_state() {
   [ -f "$PREVIEW_STATE_FILE" ] || return 0

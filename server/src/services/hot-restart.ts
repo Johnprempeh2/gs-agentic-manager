@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -641,4 +642,14 @@ export function shouldHonorHotRestartIntentForProcess(
   pid = process.pid,
 ) {
   return !intent.drainRequired && intent.previousServerPid === pid;
+}
+
+/** The last hot-restart report, or null. Sync, for the release tick. */
+export function readHotRestartReportSync(homeDir?: string): HotRestartReport | null {
+  try {
+    const value = JSON.parse(readFileSync(resolveHotRestartReportPath(homeDir), "utf8")) as HotRestartReport;
+    return value && value.version === 1 && typeof value.requestedAt === "string" ? value : null;
+  } catch {
+    return null;
+  }
 }
