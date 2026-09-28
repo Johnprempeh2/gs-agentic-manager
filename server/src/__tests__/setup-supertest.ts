@@ -24,7 +24,11 @@ type SupertestTestConstructor = {
 const require = createRequire(import.meta.url);
 const SupertestTest = require("supertest/lib/test.js") as SupertestTestConstructor;
 
-if (!process.env.CODEX_HOME) {
+// Always replace an inherited CODEX_HOME. Agent runs and previews export one
+// that has no Codex login, and keeping it made every codex_local heartbeat test
+// fail the pre-dispatch gate with codex_credentials_missing (GRE-109). Tests
+// that need a specific home set it themselves.
+{
   const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-codex-home-"));
   fs.writeFileSync(path.join(codexHome, "auth.json"), '{"OPENAI_API_KEY":"sk-vitest"}\n', { mode: 0o600 });
   process.env.CODEX_HOME = codexHome;
