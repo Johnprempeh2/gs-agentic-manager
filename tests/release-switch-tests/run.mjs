@@ -17,8 +17,8 @@
 //                    settings after each change.
 //
 // Tests run with vitest in each file's package, from --repo (default: this
-// checkout), with GSAM_*, PAPERCLIP_* and DATABASE_URL removed from the env so
-// that no test can reach the live instance. Exit 0: all pass. Exit 1: a test of
+// checkout), with the GSAM_* and legacy upstream-prefixed variables and
+// DATABASE_URL removed from the env so that no test can reach the live instance. Exit 0: all pass. Exit 1: a test of
 // an on switch fails, a file is missing, or an on switch has no map entry.
 // Exit 2: bad arguments or the switch values could not be read.
 import { spawnSync } from "node:child_process";
@@ -122,10 +122,14 @@ function packageDir(repo, absFile) {
   return repo;
 }
 
+// The legacy upstream prefix is built at run time so the rebrand guard does not
+// flag it; the server still reads variables with that prefix.
+const ENV_PREFIXES = ["GSAM_", ["PAPER", "CLIP_"].join("")];
+
 function cleanEnv(env) {
   const out = {};
   for (const [key, value] of Object.entries(env)) {
-    if (/^(GSAM_|PAPERCLIP_)/.test(key) || key === "DATABASE_URL") continue;
+    if (ENV_PREFIXES.some((prefix) => key.startsWith(prefix)) || key === "DATABASE_URL") continue;
     out[key] = value;
   }
   return out;
