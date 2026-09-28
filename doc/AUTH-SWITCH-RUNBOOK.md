@@ -172,6 +172,8 @@ restore; do not restore by hand while agents run.
 sandbox from a worktree (`pnpm dev:once --data-dir ./tmp/...`, clean
 environment, free port). It checks:
 
+- in every mode, a real agent run: the server starts the agent, and the
+  agent's own call to the API with its injected run key answers 200;
 - `local_trusted` start, with an agent key and a run token working;
 - after `gsam auth mode authenticated`: board-only routes refuse a request with
   no session (401/403), the agent key and the run token made *before* the

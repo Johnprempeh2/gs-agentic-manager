@@ -20,6 +20,8 @@ esac
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/auth-switch-check.XXXXXX")"
 JAR="$WORK/cookies"
+PROBE="$WORK/run-probe"
+: >"$PROBE"
 FAILURES=0
 RUNNER_PID=""
 LOG_N=0
@@ -59,7 +61,6 @@ stop_server() {
     sleep 1
   done
   kill -KILL $pids 2>/dev/null || true
-  wait "$RUNNER_PID" 2>/dev/null || true
   RUNNER_PID=""
   stop_sandbox_postgres
 }
@@ -83,6 +84,7 @@ start_server() {
   LOG="$WORK/server-$LOG_N.log"
   (cd "$ROOT" && clean PORT="$PORT" pnpm dev:once --data-dir "$DATA_DIR" >"$LOG" 2>&1) &
   RUNNER_PID=$!
+  disown "$RUNNER_PID"
   for _ in $(seq 1 120); do
     sleep 2
     if curl -fsS -m 2 "$BASE/api/health" >/dev/null 2>&1; then return 0; fi
@@ -115,6 +117,26 @@ mode_is() {
   got="$(curl -fsS "$BASE/api/health" | json_field deploymentMode)"
   [ "$got" = "$1" ] && pass "server runs $1" || fail "server runs $got, wanted $1"
 }
+# Starts one real heartbeat run of the sandbox agent (board request; pass
+# curl auth args) and checks the run's own API call answered 200.
+agent_run_works() {
+  local label="$1" before
+  shift
+  before="$(wc -l <"$PROBE")"
+  status_of -X POST -H 'content-type: application/json' -H "origin: $BASE" -d '{}' "$@" \
+    "$BASE/api/agents/$AGENT_ID/heartbeat/invoke" >/dev/null
+  for _ in $(seq 1 60); do
+    [ "$(wc -l <"$PROBE")" -gt "$before" ] && break
+    sleep 1
+  done
+  local got
+  got="$(tail -n 1 "$PROBE")"
+  if [ "$(wc -l <"$PROBE")" -gt "$before" ] && [ "$got" = 200 ]; then
+    pass "$label (run's own API call: 200)"
+  else
+    fail "$label: run's own API call answered '${got:-nothing}'"
+  fi
+}
 sign_in() {
   rm -f "$JAR"
   status_of -c "$JAR" -X POST -H 'content-type: application/json' -H "origin: $BASE" \
@@ -134,15 +156,19 @@ start_server
 mode_is local_trusted
 COMPANY_ID="$(curl -fsS -X POST -H 'content-type: application/json' -H "origin: $BASE" \
   -d '{"name":"Sandbox Co"}' "$BASE/api/companies" | json_field id)"
+# The agent's "work" is one call to the API with the run key the server
+# injects, so each run records whether an agent run can still reach the API.
+AGENT_BODY="$(PROBE="$PROBE" node -e 'console.log(JSON.stringify({name:"Worker",role:"engineer",adapterType:"process",
+  adapterConfig:{command:"sh",args:["-c","curl -s -o /dev/null -w \"%{http_code}\\n\" -H \"authorization: Bearer $GSAM_API_KEY\" \"$GSAM_API_URL/api/agents/me\" >> "+process.env.PROBE]}}))')"
 AGENT_ID="$(curl -fsS -X POST -H 'content-type: application/json' -H "origin: $BASE" \
-  -d '{"name":"Worker","role":"engineer","adapterType":"process","adapterConfig":{"command":"true"}}' \
-  "$BASE/api/companies/$COMPANY_ID/agents" | json_field id)"
+  -d "$AGENT_BODY" "$BASE/api/companies/$COMPANY_ID/agents" | json_field id)"
 AGENT_KEY="$(curl -fsS -X POST -H 'content-type: application/json' -H "origin: $BASE" \
   -d '{"name":"sandbox key"}' "$BASE/api/agents/$AGENT_ID/keys" | json_field token)"
 RUN_TOKEN="$(cd "$ROOT/server" && clean GSAM_HOME="$DATA_DIR" GSAM_INSTANCE_ID=default \
   pnpm -s exec tsx ../scripts/auth-switch-sandbox-run-token.mts "$AGENT_ID" "$COMPANY_ID")"
 expect_status "agent key works before the switch" 200 -H "authorization: Bearer $AGENT_KEY" "$BASE/api/agents/me"
 expect_status "run token works before the switch" 200 -H "authorization: Bearer $RUN_TOKEN" "$BASE/api/agents/me"
+agent_run_works "agent run works before the switch"
 stop_server
 
 say "2. gsam auth mode authenticated, restart"
@@ -172,6 +198,7 @@ expect_status "sign-in with the first password" 200 -X POST -H 'content-type: ap
   -d "{\"email\":\"$OWNER_EMAIL\",\"password\":\"$FIRST_PASSWORD\"}" -c "$JAR" "$BASE/api/auth/sign-in/email"
 expect_status "signed-in owner reads board routes" 200 -b "$JAR" "$BASE/api/instance/settings/general"
 expect_status "signed-in owner sees the company" 200 -b "$JAR" "$BASE/api/companies/$COMPANY_ID/agents"
+agent_run_works "agent run works in login mode" -b "$JAR"
 stop_server
 
 say "4. gsam auth mode authenticated --sign-up closed, restart"
@@ -202,6 +229,7 @@ expect_status "board routes open again with no login" 200 "$BASE/api/instance/se
 expect_status "company visible with no login" 200 "$BASE/api/companies/$COMPANY_ID/agents"
 expect_status "agent key still works" 200 -H "authorization: Bearer $AGENT_KEY" "$BASE/api/agents/me"
 expect_status "run token still works" 200 -H "authorization: Bearer $RUN_TOKEN" "$BASE/api/agents/me"
+agent_run_works "agent run works after the way back"
 stop_server
 
 echo
