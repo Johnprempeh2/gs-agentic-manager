@@ -84,6 +84,7 @@ export type ReleaseOutcome =
   | { kind: "promoted"; run: RunSummary }
   | { kind: "queued_review_participant_recovery"; run: RunSummary }
   | { kind: "queued_recovery"; run: RunSummary }
+  | { kind: "review_wait_deferred"; issue: IssueSnapshot; reviewerAgentId: string }
   | {
       kind: "blocked";
       issue: IssueSnapshot;
