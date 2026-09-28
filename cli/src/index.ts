@@ -12,6 +12,8 @@ import { addAllowedHostname } from "./commands/allowed-hostname.js";
 import { heartbeatRun } from "./commands/heartbeat-run.js";
 import { runCommand } from "./commands/run.js";
 import { bootstrapCeoInvite } from "./commands/auth-bootstrap-ceo.js";
+import { setAuthMode } from "./commands/auth-mode.js";
+import { resetBoardPassword } from "./commands/auth-reset-password.js";
 import { dbBackupCommand } from "./commands/db-backup.js";
 import { registerEnvLabCommands } from "./commands/env-lab.js";
 import { registerContextCommands } from "./commands/client/context.js";
@@ -276,6 +278,34 @@ auth
   .option("--expires-hours <hours>", "Invite expiration window in hours", (value) => Number(value))
   .option("--base-url <url>", "Public base URL used to print invite link")
   .action(bootstrapCeoInvite);
+
+auth
+  .command("mode")
+  .description("Switch this install between local_trusted and authenticated + private (edits the instance .env)")
+  .argument("<mode>", "authenticated or local_trusted")
+  .option("-c, --config <path>", "Path to config file")
+  .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+  .option("--bind <bind>", "Authenticated only: lan (default), loopback or tailnet")
+  .option(
+    "--allowed-hostname <host>",
+    "Authenticated only: extra hostname to allow, such as a Tailscale name (repeatable)",
+    (value: string, previous: string[] = []) => [...previous, value],
+  )
+  .option("--sign-up <policy>", "Authenticated only: open or closed")
+  .action((mode: string, opts) => {
+    setAuthMode(mode, opts);
+  });
+
+auth
+  .command("reset-password")
+  .description("Set a new password for a board user and sign them out everywhere")
+  .requiredOption("--email <email>", "Email of the user")
+  .option("-c, --config <path>", "Path to config file")
+  .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+  .option("--db-url <url>", "Database connection string (default: found from the install)")
+  .option("--password-stdin", "Read the new password from stdin", false)
+  .option("--generate", "Generate a password and print it", false)
+  .action(resetBoardPassword);
 
 registerClientAuthCommands(auth);
 
