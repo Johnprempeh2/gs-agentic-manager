@@ -55,7 +55,10 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
     onSuccess: async () => {
       setActionError(null);
       signOutMutation.reset();
-      await queryClient.invalidateQueries({ queryKey: queryKeys.instance.generalSettings });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.instance.generalSettings }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.instance.runAdmissionRecommendation }),
+      ]);
     },
     onError: (error) => {
       setActionError(error instanceof Error ? error.message : "Failed to update general settings.");

@@ -13,6 +13,7 @@ const mockInstanceSettingsApi = vi.hoisted(() => ({
   getGeneral: vi.fn(),
   updateGeneral: vi.fn(),
   getSystemMemory: vi.fn(),
+  getRunAdmissionRecommendation: vi.fn(),
 }));
 const mockNavigateTopLevel = vi.hoisted(() => vi.fn());
 
@@ -271,6 +272,32 @@ describe("InstanceGeneralSettings operator-hidden sections", () => {
   });
 });
 
+const NO_USAGE_RECOMMENDATION = {
+  windowDays: 7,
+  current: { maxConcurrentRuns: 4, minAvailableMemoryMb: 3072 },
+  suggested: { maxConcurrentRuns: 26, minAvailableMemoryMb: 3072 },
+  reasons: ["No runs in the last 7 days; the suggestion uses the RAM rule only."],
+  usage: {
+    runsStarted: 0,
+    peakConcurrentRuns: 0,
+    holds: { globalCap: { runs: 0 }, lowMemory: { runs: 0 } },
+  },
+};
+
+const USAGE_RECOMMENDATION = {
+  ...NO_USAGE_RECOMMENDATION,
+  suggested: { maxConcurrentRuns: 5, minAvailableMemoryMb: 3072 },
+  reasons: [
+    "RAM rule: (16384 MB total - 3072 MB floor) / 500 MB per run = 26 runs.",
+    "4 runs waited on the run cap while free RAM stayed above the floor; raise the cap by one to 5.",
+  ],
+  usage: {
+    runsStarted: 40,
+    peakConcurrentRuns: 4,
+    holds: { globalCap: { runs: 4 }, lowMemory: { runs: 0 } },
+  },
+};
+
 describe("InstanceGeneralSettings run limits (GRE-114)", () => {
   const GB = 1024 * 1024 * 1024;
   let container: HTMLDivElement;
@@ -295,6 +322,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
       availableBytes: 5 * GB,
       pressure: "normal",
     });
+    mockInstanceSettingsApi.getRunAdmissionRecommendation.mockResolvedValue(NO_USAGE_RECOMMENDATION);
   });
 
   afterEach(() => {
@@ -432,5 +460,111 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
     });
     await vi.waitFor(() => expect(container.textContent).toContain("Backup retention"));
     expect(container.textContent).not.toContain("Run limits");
+  });
+});
+
+describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
+  const GB = 1024 * 1024 * 1024;
+  let container: HTMLDivElement;
+  let root: Root | null;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = null;
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mockInstanceSettingsApi.getGeneral.mockResolvedValue({
+      censorUsernameInLogs: false,
+      keyboardShortcuts: false,
+      feedbackDataSharingPreference: "not_allowed",
+      backupRetention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+      runAdmission: { maxConcurrentRuns: 4, minAvailableMemoryMb: 3072 },
+    });
+    mockInstanceSettingsApi.updateGeneral.mockResolvedValue(undefined);
+    mockInstanceSettingsApi.getSystemMemory.mockResolvedValue({
+      totalBytes: 16 * GB,
+      availableBytes: 5 * GB,
+      pressure: "normal",
+    });
+  });
+
+  afterEach(() => {
+    flushSync(() => root?.unmount());
+    queryClient.clear();
+    container.remove();
+    vi.clearAllMocks();
+  });
+
+  async function renderPage() {
+    mockHealthApi.get.mockResolvedValue(SELF_HOSTED_HEALTH);
+    queryClient.setQueryData(queryKeys.health, SELF_HOSTED_HEALTH);
+    root = createRoot(container);
+    flushSync(() => {
+      root?.render(
+        <QueryClientProvider client={queryClient}>
+          <InstanceGeneralSettings />
+        </QueryClientProvider>,
+      );
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("Run limits"));
+  }
+
+  function box() {
+    return container.querySelector<HTMLElement>('[data-testid="run-admission-recommendation"]');
+  }
+
+  function applyButton() {
+    return Array.from(box()?.querySelectorAll("button") ?? [])
+      .find((button) => button.textContent?.trim() === "Apply");
+  }
+
+  it("shows suggested vs current and the reasons, and saves only on Apply", async () => {
+    mockInstanceSettingsApi.getRunAdmissionRecommendation.mockResolvedValue(USAGE_RECOMMENDATION);
+    await renderPage();
+
+    await vi.waitFor(() => expect(box()).not.toBeNull());
+    const text = box()!.textContent ?? "";
+    expect(text).toContain("Recommended from your usage");
+    const capRow = Array.from(box()!.querySelectorAll("tbody tr"))
+      .find((row) => row.querySelector("th")?.textContent === "Run cap");
+    expect(Array.from(capRow!.querySelectorAll("td")).map((cell) => cell.textContent)).toEqual(["4", "5"]);
+    expect(text).toContain("raise the cap by one to 5.");
+    expect(mockInstanceSettingsApi.updateGeneral).not.toHaveBeenCalled();
+
+    flushSync(() => applyButton()!.click());
+
+    await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());
+    expect(mockInstanceSettingsApi.updateGeneral.mock.calls[0]?.[0]).toEqual({
+      runAdmission: { maxConcurrentRuns: 5, minAvailableMemoryMb: 3072 },
+    });
+    const capLabel = Array.from(container.querySelectorAll("label"))
+      .find((el) => el.textContent === "Run cap");
+    expect(container.querySelector<HTMLInputElement>(`#${CSS.escape(capLabel!.getAttribute("for")!)}`)!.value)
+      .toBe("5");
+  });
+
+  it("shows only the RAM-based suggestion when there is no usage data yet", async () => {
+    mockInstanceSettingsApi.getRunAdmissionRecommendation.mockResolvedValue(NO_USAGE_RECOMMENDATION);
+    await renderPage();
+
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(
+        "16 GB machine minus 3 GB floor, about 500 MB per run: suggested 26 runs",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(mockInstanceSettingsApi.getRunAdmissionRecommendation).toHaveBeenCalled(),
+    );
+    expect(box()).toBeNull();
+    expect(container.textContent).not.toContain("Recommended from your usage");
+  });
+
+  it("falls back to the RAM-based suggestion when the recommendation cannot load", async () => {
+    mockInstanceSettingsApi.getRunAdmissionRecommendation.mockRejectedValue(new Error("nope"));
+    await renderPage();
+
+    await vi.waitFor(() => expect(container.textContent).toContain("suggested 26 runs"));
+    expect(box()).toBeNull();
   });
 });
