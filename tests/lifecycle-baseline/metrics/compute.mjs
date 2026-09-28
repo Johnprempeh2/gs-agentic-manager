@@ -312,20 +312,30 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
  * Timed runs are also split at the moment the prompt was sent (the run's
  * `promptSentAt`, when recorded): setup is wake → prompt sent (queue, workspace,
  * adapter start, prompt build); agent is prompt sent → first useful action.
+ *
+ * S1-work is the same clock stopped at the first useful action that is not a
+ * comment (`issue.comment_added`). An early "on it" comment moves S1 but not
+ * S1-work, so a speed claim needs both (GRE-74).
  */
 export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
   const nowMs = ms(now ?? snapshot.now);
   const windowStart = nowMs - windowDays * 86_400_000;
   const firstUseful = new Map();
+  const firstWork = new Map();
+  const keepEarliest = (map, runId, at) => {
+    if (!map.has(runId) || at < map.get(runId)) map.set(runId, at);
+  };
   for (const row of snapshot.activity ?? []) {
     if (!row.runId || row.actorType !== "agent" || !isUsefulAgentAction(row.action)) continue;
     const at = ms(row.createdAt);
-    if (!firstUseful.has(row.runId) || at < firstUseful.get(row.runId)) firstUseful.set(row.runId, at);
+    keepEarliest(firstUseful, row.runId, at);
+    if (row.action !== "issue.comment_added") keepEarliest(firstWork, row.runId, at);
   }
   const samples = [];
   const queueDelays = [];
   const setups = [];
   const agentTimes = [];
+  const workSamples = [];
   let withoutUsefulAction = 0;
   let considered = 0;
   for (const run of snapshot.runs) {
@@ -337,6 +347,8 @@ export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
     const first = firstUseful.get(run.id);
     if (first == null) { withoutUsefulAction += 1; continue; }
     samples.push(first - wake);
+    const work = firstWork.get(run.id);
+    if (work != null) workSamples.push(work - wake);
     const promptSent = ms(run.promptSentAt);
     if (promptSent != null && promptSent >= wake && promptSent <= first) {
       setups.push(promptSent - wake);
@@ -358,6 +370,12 @@ export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
       setupP95Ms: percentile(setups, 95),
       agentMedianMs: median(agentTimes),
       agentP95Ms: percentile(agentTimes, 95),
+    },
+    work: {
+      sampleSize: workSamples.length,
+      runsWithCommentsOnly: samples.length - workSamples.length,
+      medianMs: median(workSamples),
+      p95Ms: percentile(workSamples, 95),
     },
     samplesMs: [...samples].sort((a, b) => a - b),
   };
