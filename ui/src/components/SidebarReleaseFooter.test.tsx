@@ -108,4 +108,11 @@ describe("SidebarReleaseFooter", () => {
     await render(true);
     expect(footer()).toBeNull();
   });
+
+  it("names an untitled live version by its tag", async () => {
+    const base = releasesOverviewFixture();
+    mockReleasesApi.overview.mockResolvedValue(releasesOverviewFixture({ live: { ...base.live!, title: null } }));
+    await render();
+    expect(footer()?.textContent).toBe("live-2026-09-21.1");
+  });
 });
