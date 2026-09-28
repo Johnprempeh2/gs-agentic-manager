@@ -1,4 +1,10 @@
-import { parseHiddenSettingsList } from "@greatstone/shared";
+import type { RequestHandler } from "express";
+import {
+  parseHiddenSettingsList,
+  SETTINGS_OPERATOR_MANAGED_ERROR_CODE,
+  type HideableSettingKey,
+} from "@greatstone/shared";
+import { forbidden } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 
 /**
@@ -34,4 +40,22 @@ export function getHiddenSettings(
   }
   cache = { raw, hidden: new Set(hidden) };
   return cache.hidden;
+}
+
+/**
+ * Route middleware that floors writes to an operator-hidden settings surface:
+ * any non-read method gets a 403 with `SETTINGS_OPERATOR_MANAGED_ERROR_CODE`
+ * while `key` is in GSAM_HIDDEN_SETTINGS. Reads stay open so other pages that
+ * list the same records keep working. Mount it with `router.use(path, ...)`
+ * before the routes it guards.
+ */
+export function hiddenSettingWriteFloor(key: HideableSettingKey, surface: string): RequestHandler {
+  return (req, _res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && getHiddenSettings().has(key)) {
+      throw forbidden(`${surface} is managed by the hosting operator on this instance`, {
+        code: SETTINGS_OPERATOR_MANAGED_ERROR_CODE,
+      });
+    }
+    next();
+  };
 }

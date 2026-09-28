@@ -21,6 +21,7 @@ import { logActivity, secretService } from "../services/index.js";
 import { createSecretProposalsService } from "../services/secret-proposals.js";
 import { getConfiguredSecretProvider } from "../secrets/configured-provider.js";
 import { forbidden, notFound, unauthorized, unprocessable } from "../errors.js";
+import { hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import { accessService } from "../services/access.js";
 import { heartbeatService } from "../services/heartbeat.js";
@@ -109,6 +110,18 @@ function isCompanyScopedSecret(secret: { scope?: string | null }) {
 export function secretRoutes(db: Db, deps: SecretRoutesDeps = {}) {
   const router = Router();
   const svc = secretService(db);
+
+  // Floor: hiding the company Secrets page (`company.secrets`) also rejects
+  // board writes to secrets, provider configs, user-secret definitions, and
+  // proposal decisions. Agent runtime routes (`/agents/me/...`) and each
+  // user's own credentials (`/me/user-secrets`) stay open so runs keep working.
+  const secretsFloor = hiddenSettingWriteFloor("company.secrets", "Secret management");
+  router.use("/companies/:companyId/secrets", secretsFloor);
+  router.use("/secrets", secretsFloor);
+  router.use("/companies/:companyId/secret-provider-configs", secretsFloor);
+  router.use("/secret-provider-configs", secretsFloor);
+  router.use("/companies/:companyId/user-secret-definitions", secretsFloor);
+  router.use("/companies/:companyId/secret-proposals", secretsFloor);
   const proposals = createSecretProposalsService(db);
   const access = accessService(db);
   const issues = deps.issues ?? issueService(db);
