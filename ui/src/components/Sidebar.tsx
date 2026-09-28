@@ -96,9 +96,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   const goalsLinkPending = experimentalSettings === undefined;
   const showGoalsLink = experimentalSettings?.enableGoalsSidebarLink === true;
-  // Decisions (attention home) is an experimental surface (PAP-13481): the nav
-  // item is hidden entirely until the flag is enabled (same no-flash pattern as
-  // showWorkspacesLink — it defaults hidden, so no placeholder is needed).
+  // Decisions (attention home, PAP-13481) is on by default for self-hosted
+  // (GRE-64); the server resolves an unset flag to true. It stays hidden while
+  // settings load so an instance that turned it off never sees it flash.
   const showDecisions = experimentalSettings?.enableDecisions === true;
   const { data: attentionFeed } = useQuery({
     queryKey: queryKeys.attention(selectedCompanyId!),

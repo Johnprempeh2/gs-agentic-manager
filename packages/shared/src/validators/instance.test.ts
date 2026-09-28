@@ -128,10 +128,10 @@ describe("instance experimental settings validators", () => {
     });
   });
 
-  it("defaults the decisions sidebar link off", () => {
+  it("defaults the decisions sidebar link on", () => {
     const settings = instanceExperimentalSettingsSchema.parse({});
 
-    expect(settings.enableDecisions).toBe(false);
+    expect(settings.enableDecisions).toBe(true);
   });
 
   it("accepts decisions patches", () => {

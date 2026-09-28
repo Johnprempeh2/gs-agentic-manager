@@ -57,7 +57,7 @@ describe("instance settings service", () => {
       enableBetaSkills: false,
       enableSummaries: false,
       enableStatusCards: false,
-      enableDecisions: false,
+      enableDecisions: true,
       enableGoalsSidebarLink: true,
       enableServerInfoDebugView: true,
       enablePaperclipDeveloperMode: true,
@@ -167,12 +167,13 @@ describe("instance settings service", () => {
     ).toBe(false);
   });
 
-  it("defaults enableDecisions to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableDecisions).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableDecisions).toBe(false);
+  it("defaults enableDecisions to true for empty and legacy stored settings", () => {
+    expect(normalizeExperimentalSettings(undefined).enableDecisions).toBe(true);
+    expect(normalizeExperimentalSettings({}).enableDecisions).toBe(true);
     expect(
       normalizeExperimentalSettings({ enableStreamlinedLeftNavigation: true }).enableDecisions,
-    ).toBe(false);
+    ).toBe(true);
+    expect(normalizeExperimentalSettings({ enableDecisions: false }).enableDecisions).toBe(false);
   });
 
   it("defaults workspace branch repair settings to true for empty and legacy stored settings", () => {

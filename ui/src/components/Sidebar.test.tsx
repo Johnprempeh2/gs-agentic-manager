@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { instanceExperimentalSettingsSchema } from "@greatstone/shared";
 import { Sidebar } from "./Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -350,6 +351,31 @@ describe("Sidebar", () => {
     const root = await renderSidebar();
 
     expect(container.textContent).not.toContain("Workspaces");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows Decisions with the default experimental settings (GRE-64)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue(
+      instanceExperimentalSettingsSchema.parse({}),
+    );
+    const root = await renderSidebar();
+
+    const primaryNavLinks = [...container.querySelectorAll("nav > div:first-child a")];
+    expect(primaryNavLinks.some((anchor) => anchor.textContent?.trim() === "Decisions")).toBe(true);
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("hides Decisions when the setting is turned off", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: false });
+    const root = await renderSidebar();
+
+    expect(container.textContent).not.toContain("Decisions");
 
     flushSync(() => {
       root.unmount();
