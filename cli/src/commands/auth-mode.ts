@@ -106,6 +106,19 @@ function timestampSuffix(now = new Date()) {
   return now.toISOString().replace(/[:.]/g, "-");
 }
 
+/** Never overwrites an earlier backup, even for two runs in the same millisecond. */
+function writeBackup(basePath: string, contents: string): string {
+  for (let attempt = 0; ; attempt += 1) {
+    const candidate = attempt === 0 ? basePath : `${basePath}-${attempt}`;
+    try {
+      fs.writeFileSync(candidate, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST" || attempt >= 100) throw error;
+    }
+  }
+}
+
 export function setAuthMode(
   mode: string,
   opts: {
@@ -154,8 +167,7 @@ export function setAuthMode(
   const next = updateEnvFileContents(previous ?? "# GS Agentic Manager environment variables\n", entries);
   let backupPath: string | null = null;
   if (previous !== null && previous !== next) {
-    backupPath = `${envPath}.before-auth-mode-${timestampSuffix()}`;
-    fs.writeFileSync(backupPath, previous, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    backupPath = writeBackup(`${envPath}.before-auth-mode-${timestampSuffix()}`, previous);
   }
   const changed = writeEnvFileAtomicallyIfChanged(envPath, previous, next);
 
