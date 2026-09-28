@@ -115,6 +115,16 @@ vi.mock("./SidebarStarredProjects", () => ({
   SidebarStarredProjects: () => <div data-testid="sidebar-starred-projects" />,
 }));
 
+const mockCanRelease = vi.hoisted(() => ({ value: false }));
+
+vi.mock("../hooks/useReleases", () => ({
+  useCanRelease: () => ({ canRelease: mockCanRelease.value, isLoading: false }),
+}));
+
+vi.mock("./SidebarReleaseFooter", () => ({
+  SidebarReleaseFooter: () => <div data-testid="sidebar-release-footer" />,
+}));
+
 vi.mock("./SidebarRecentTasks", () => ({
   SidebarRecentTasks: () => <div data-testid="sidebar-recent-tasks">Recent Tasks</div>,
 }));
@@ -179,6 +189,27 @@ describe("Sidebar", () => {
     flushSync(() => {
       root.unmount();
     });
+  });
+
+  it("shows Releases only to the board (GRE-122)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    const releasesLink = () =>
+      [...container.querySelectorAll("nav a")].find((anchor) => anchor.textContent?.trim() === "Releases");
+
+    mockCanRelease.value = false;
+    let root = await renderSidebar();
+    expect(releasesLink()).toBeUndefined();
+    flushSync(() => {
+      root.unmount();
+    });
+
+    mockCanRelease.value = true;
+    root = await renderSidebar();
+    expect(releasesLink()?.getAttribute("href")).toBe("/releases");
+    flushSync(() => {
+      root.unmount();
+    });
+    mockCanRelease.value = false;
   });
 
   it("shows Search as a nav item instead of a header icon", async () => {
