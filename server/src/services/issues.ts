@@ -4687,6 +4687,7 @@ async function listIssueReviewAttentionMap(
       executionState: issue.executionState,
       monitorNextCheckAt: issue.monitorNextCheckAt,
       monitorAttemptCount: issue.monitorAttemptCount,
+      unblockDescriptor: issue.unblockDescriptor,
     })),
     relations: [],
     agents: agentRows,
@@ -5605,6 +5606,7 @@ async function listIssueBlockedInboxAttentionMap(
     interactionRows,
     approvalRows,
     handoffMap,
+    recoveryActionRows,
   ] = await Promise.all([
     graphIssueIds.length === 0
       ? Promise.resolve([])
@@ -5734,6 +5736,23 @@ async function listIssueBlockedInboxAttentionMap(
     listSuccessfulRunHandoffMapForIssues(dbOrTx, companyId, rowIssueIds, {
       hydrateLiveness: false,
     }),
+    // An open recovery action already owns its source issue's next step (the
+    // recovery path parks exhausted work as `blocked` with no blocker).
+    graphIssueIds.length === 0
+      ? Promise.resolve([])
+      : dbOrTx
+          .select({
+            issueId: issueRecoveryActions.sourceIssueId,
+            status: issueRecoveryActions.status,
+          })
+          .from(issueRecoveryActions)
+          .where(
+            and(
+              eq(issueRecoveryActions.companyId, companyId),
+              inArray(issueRecoveryActions.status, ["active", "escalated"]),
+              inArray(issueRecoveryActions.sourceIssueId, graphIssueIds),
+            ),
+          ),
   ]);
 
   const pendingInteractions = (
@@ -5790,7 +5809,12 @@ async function listIssueBlockedInboxAttentionMap(
         });
       }
       return entries;
-    });
+    })
+    .concat(
+      (recoveryActionRows as Array<{ issueId: string; status: string }>).map(
+        (row) => ({ companyId, issueId: row.issueId, status: row.status }),
+      ),
+    );
 
   const findings = classifyIssueGraphLiveness({
     issues: graphIssues.map((issue) => ({
@@ -5813,6 +5837,7 @@ async function listIssueBlockedInboxAttentionMap(
       executionState: issue.executionState,
       monitorNextCheckAt: issue.monitorNextCheckAt,
       monitorAttemptCount: issue.monitorAttemptCount,
+      unblockDescriptor: issue.unblockDescriptor,
     })),
     relations: graphRelations,
     agents: companyAgents,
@@ -6068,6 +6093,7 @@ async function listIssueBlockedInboxAttentionMap(
           reason: finding.state as IssueBlockedInboxAttention["reason"],
           severity:
             finding.state === "blocked_by_assigned_backlog_issue" ||
+            finding.state === "blocked_without_action_path" ||
             finding.state === "in_review_without_action_path"
               ? "high"
               : finding.severity === "critical"
@@ -6095,6 +6121,8 @@ async function listIssueBlockedInboxAttentionMap(
                   return "Assign active owner";
                 case "blocked_by_cancelled_issue":
                   return "Replace blocker";
+                case "blocked_without_action_path":
+                  return "Name unblock path";
                 case "invalid_review_participant":
                   return "Repair review participant";
                 case "in_review_without_action_path":
