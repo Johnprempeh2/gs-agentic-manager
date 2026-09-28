@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReleaseProgressState } from "@/api/releases";
+import { ApiError } from "@/api/client";
 import { ConfirmProvider } from "@/context/ConfirmContext";
 import {
   KEYSTONE_AGENT_ID,
@@ -23,6 +24,7 @@ const mockReleasesApi = vi.hoisted(() => ({
   override: vi.fn(),
   setFinishBeforeUpdate: vi.fn(),
 }));
+const mockReauthApi = vi.hoisted(() => ({ confirm: vi.fn() }));
 const mockAccessApi = vi.hoisted(() => ({ getCurrentBoardAccess: vi.fn() }));
 const mockAgentsApi = vi.hoisted(() => ({ list: vi.fn() }));
 const mockHeartbeatsApi = vi.hoisted(() => ({ liveRunsForCompany: vi.fn() }));
@@ -30,6 +32,10 @@ const mockHeartbeatsApi = vi.hoisted(() => ({ liveRunsForCompany: vi.fn() }));
 vi.mock("@/api/releases", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/releases")>()),
   releasesApi: mockReleasesApi,
+}));
+vi.mock("@/api/reauth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/reauth")>()),
+  reauthApi: mockReauthApi,
 }));
 vi.mock("@/api/access", () => ({ accessApi: mockAccessApi }));
 vi.mock("@/api/agents", () => ({ agentsApi: mockAgentsApi }));
@@ -86,6 +92,26 @@ async function click(element: Element | undefined) {
   expect(element).toBeTruthy();
   await act(async () => {
     (element as HTMLElement).click();
+  });
+  await flush();
+}
+
+function reauthDialog() {
+  return document.querySelector('[data-slot="reauth-dialog"]');
+}
+
+async function typePassword(value: string) {
+  const input = reauthDialog()!.querySelector('input[type="password"]') as HTMLInputElement;
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    setValue.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function submitPassword() {
+  await act(async () => {
+    reauthDialog()!.querySelector("form")!.requestSubmit();
   });
   await flush();
 }
@@ -179,12 +205,14 @@ describe("Releases page", () => {
   });
 });
 
-describe("Next version", () => {
+describe("Dev (next version)", () => {
   it("lists the changes, the title and the changelog", async () => {
     await render(<ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />);
 
     const next = document.querySelector('[data-testid="release-next"]')!;
-    expect(next.textContent).toContain("Next version");
+    // The channel is named Dev (GRE-132), with "next version" as the subline.
+    expect(next.querySelector('[data-slot="card-title"]')?.textContent).toBe("Dev · next version");
+    expect(next.textContent).not.toContain("Next version");
     expect(next.textContent).toContain("Release from the app");
     expect(next.textContent).toContain("Since live-2026-09-21.1");
     expect(next.textContent).toContain("main at 4f2a9d1");
@@ -247,7 +275,7 @@ describe("Release now confirm", () => {
     expect(mockReleasesApi.releaseNow).not.toHaveBeenCalled();
 
     await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Release now"));
-    expect(mockReleasesApi.releaseNow).toHaveBeenCalledWith("company-1");
+    expect(mockReleasesApi.releaseNow).toHaveBeenCalledWith("company-1", undefined);
   });
 
   it("does nothing when the release is cancelled in the dialog", async () => {
@@ -282,7 +310,7 @@ describe("Rollback confirm", () => {
     expect(mockReleasesApi.rollback).not.toHaveBeenCalled();
 
     await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Roll back"));
-    expect(mockReleasesApi.rollback).toHaveBeenCalledWith("company-1", "live-2026-09-14.1");
+    expect(mockReleasesApi.rollback).toHaveBeenCalledWith("company-1", "live-2026-09-14.1", undefined);
   });
 });
 
@@ -413,5 +441,99 @@ describe("Restart report", () => {
     });
     await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
     expect(document.querySelector('[data-testid="release-progress"]')?.textContent).toContain("Nothing was lost.");
+  });
+});
+
+describe("Password prompt (login mode)", () => {
+  const reauthRequired = () => new ApiError("Password needed.", 403, { code: "reauth_required" });
+  const view = () => <ReleasesView companyId="company-1" overview={releasesOverviewFixture()} fetchError={null} />;
+
+  async function confirmRelease() {
+    await click(buttonByText("Release now"));
+    await click([...confirmDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Release now"));
+  }
+
+  it("asks for the password on 403 reauth_required and retries with the token header", async () => {
+    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReauthApi.confirm.mockResolvedValue({ token: "tok-1", expiresAt: "2026-09-28T23:10:00.000Z" });
+    await render(view());
+    await confirmRelease();
+
+    expect(reauthDialog()?.textContent).toContain("Enter your password");
+    expect(reauthDialog()?.textContent).toContain("To release a version");
+    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(1);
+
+    await typePassword("secret");
+    await submitPassword();
+
+    expect(mockReauthApi.confirm).toHaveBeenCalledWith("release", "secret");
+    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(2);
+    expect(mockReleasesApi.releaseNow).toHaveBeenLastCalledWith("company-1", { headers: { "X-GSAM-Reauth": "tok-1" } });
+    expect(reauthDialog()).toBeNull();
+  });
+
+  it("says a wrong password in plain words and keeps the prompt open", async () => {
+    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReauthApi.confirm.mockRejectedValue(new ApiError("x", 403, { code: "reauth_invalid_password" }));
+    await render(view());
+    await confirmRelease();
+    await typePassword("wrong");
+    await submitPassword();
+
+    expect(reauthDialog()?.textContent).toContain("That password is not right. Try again.");
+    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("says when too many wrong passwords locked it for 15 minutes", async () => {
+    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReauthApi.confirm.mockRejectedValue(new ApiError("x", 429, { code: "reauth_locked" }));
+    await render(view());
+    await confirmRelease();
+    await typePassword("wrong");
+    await submitPassword();
+
+    expect(reauthDialog()?.textContent).toContain("Too many wrong passwords. Try again in 15 minutes.");
+    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries with no header when the server says no password is needed", async () => {
+    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    mockReauthApi.confirm.mockRejectedValue(new ApiError("x", 409, { code: "reauth_not_needed" }));
+    await render(view());
+    await confirmRelease();
+    await typePassword("secret");
+    await submitPassword();
+
+    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(2);
+    expect(mockReleasesApi.releaseNow).toHaveBeenLastCalledWith("company-1", undefined);
+    expect(reauthDialog()).toBeNull();
+  });
+
+  it("does not release and shows no error when the prompt is cancelled", async () => {
+    mockReleasesApi.releaseNow.mockRejectedValueOnce(reauthRequired());
+    await render(view());
+    await confirmRelease();
+    await click([...reauthDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Cancel"));
+
+    expect(reauthDialog()).toBeNull();
+    expect(mockReleasesApi.releaseNow).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("asks for the password on rollback too", async () => {
+    mockReleasesApi.rollback.mockRejectedValueOnce(reauthRequired());
+    mockReauthApi.confirm.mockResolvedValue({ token: "tok-2", expiresAt: "2026-09-28T23:10:00.000Z" });
+    await render(view());
+    await click(buttonByText("Roll back to this version"));
+    await click([...confirmDialog()!.querySelectorAll("button")].find((b) => b.textContent === "Roll back"));
+
+    expect(reauthDialog()?.textContent).toContain("To roll back");
+    await typePassword("secret");
+    await submitPassword();
+
+    expect(mockReauthApi.confirm).toHaveBeenCalledWith("rollback", "secret");
+    expect(mockReleasesApi.rollback).toHaveBeenLastCalledWith("company-1", "live-2026-09-14.1", {
+      headers: { "X-GSAM-Reauth": "tok-2" },
+    });
   });
 });

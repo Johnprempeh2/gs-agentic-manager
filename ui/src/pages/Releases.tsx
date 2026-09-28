@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReleaseChangelog } from "@/components/ReleaseChangelog";
 import { PageSkeleton } from "@/components/PageSkeleton";
+import { ReauthCancelledError, useReauth } from "@/components/ReauthDialog";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { useConfirm } from "@/context/ConfirmContext";
@@ -378,7 +379,7 @@ function FinishBeforeUpdateCard({
 // ── Page ────────────────────────────────────────────────────────────────────
 
 function errorText(error: unknown): string | null {
-  if (!error) return null;
+  if (!error || error instanceof ReauthCancelledError) return null;
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
@@ -403,6 +404,7 @@ export function ReleasesView({
   fetchError: string | null;
 }) {
   const confirm = useConfirm();
+  const { withReauth, dialog: reauthDialog } = useReauth();
   const queryClient = useQueryClient();
   const agentNames = useAgentNames(companyId);
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
@@ -417,11 +419,11 @@ export function ReleasesView({
   };
 
   const releaseMutation = useMutation({
-    mutationFn: () => releasesApi.releaseNow(companyId),
+    mutationFn: () => withReauth("release", (options) => releasesApi.releaseNow(companyId, options)),
     onSuccess: applyProgress,
   });
   const rollbackMutation = useMutation({
-    mutationFn: (tag: string) => releasesApi.rollback(companyId, tag),
+    mutationFn: (tag: string) => withReauth("rollback", (options) => releasesApi.rollback(companyId, tag, options)),
     onSuccess: applyProgress,
   });
   const cancelMutation = useMutation({
@@ -494,6 +496,7 @@ export function ReleasesView({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" data-testid="releases-page">
+      {reauthDialog}
       {fetchError && !inProgress ? (
         <p role="alert" className="text-sm text-destructive">
           {fetchError}
@@ -550,8 +553,12 @@ export function ReleasesView({
 
       <Card className="gap-4 py-5" data-testid="release-next">
         <CardHeader className="px-5">
-          <CardDescription>Next version</CardDescription>
-          <CardTitle className="text-lg">{next ? next.proposedTitle : "Nothing new on main"}</CardTitle>
+          <CardTitle className="text-base">
+            Dev <span className="text-sm font-normal text-muted-foreground">· next version</span>
+          </CardTitle>
+          <p className="text-lg font-semibold leading-none text-foreground" data-testid="release-next-name">
+            {next ? next.proposedTitle : "Nothing new on main"}
+          </p>
           {next ? (
             <CardDescription data-testid="release-next-title-source">
               {titleBy && next.titleEditedAt

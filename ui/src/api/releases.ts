@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, type RequestOptions } from "./client";
 
 // Release from the app (GRE-119). The shape is the one in GRE-121 (PR #53);
 // the server owns every release decision, the UI only shows it.
@@ -118,10 +118,11 @@ export interface ReleasesOverview {
 export const releasesApi = {
   overview: (companyId: string) => api.get<ReleasesOverview>(`/companies/${companyId}/releases`),
   /** Cuts the next rc-* from origin/main and releases it. */
-  releaseNow: (companyId: string) =>
-    api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/release`, {}),
-  rollback: (companyId: string, tag: string) =>
-    api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/rollback`, { tag }),
+  /** `options.headers` carries the one-use `X-GSAM-Reauth` token in login mode. */
+  releaseNow: (companyId: string, options?: RequestOptions) =>
+    api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/release`, {}, options),
+  rollback: (companyId: string, tag: string, options?: RequestOptions) =>
+    api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/rollback`, { tag }, options),
   cancel: (companyId: string) =>
     api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/cancel`, {}),
   override: (companyId: string) =>
