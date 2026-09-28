@@ -209,6 +209,8 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       backupRetention: parsed.data.backupRetention ?? DEFAULT_BACKUP_RETENTION,
       // Absent => unrestricted; only carry through an explicit policy.
       ...(parsed.data.executionMode ? { executionMode: parsed.data.executionMode } : {}),
+      // Absent => server defaults; only carry through explicit limits.
+      ...(parsed.data.runAdmission ? { runAdmission: parsed.data.runAdmission } : {}),
     };
   }
   return {
