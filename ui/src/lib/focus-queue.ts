@@ -133,7 +133,8 @@ export interface FocusSession<Item> {
 }
 
 export function focusSessionKey(companyId: string) {
-  return `paperclip:attention:focus-session:${companyId}`;
+  // v2 (GRE-264): the queue holds Decisions cards, not attention rows.
+  return `paperclip:attention:focus-session:v2:${companyId}`;
 }
 
 function isIdList(value: unknown): value is string[] {

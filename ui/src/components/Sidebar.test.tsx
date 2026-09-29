@@ -13,8 +13,8 @@ const mockHeartbeatsApi = vi.hoisted(() => ({
   liveRunsForCompany: vi.fn(),
 }));
 
-const mockAttentionApi = vi.hoisted(() => ({
-  list: vi.fn(),
+const mockDecisionsFeedApi = vi.hoisted(() => ({
+  count: vi.fn(),
 }));
 
 const mockInstanceSettingsApi = vi.hoisted(() => ({
@@ -71,8 +71,8 @@ vi.mock("../api/heartbeats", () => ({
   heartbeatsApi: mockHeartbeatsApi,
 }));
 
-vi.mock("../api/attention", () => ({
-  attentionApi: mockAttentionApi,
+vi.mock("../api/decisionsFeed", () => ({
+  decisionsFeedApi: mockDecisionsFeedApi,
 }));
 
 vi.mock("../api/instanceSettings", () => ({
@@ -164,7 +164,7 @@ describe("Sidebar", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
-    mockAttentionApi.list.mockResolvedValue({ items: [] });
+    mockDecisionsFeedApi.count.mockResolvedValue({ companyId: "company-1", generatedAt: "2026-09-29T00:00:00.000Z", count: 0 });
     mockSidebar.isMobile = false;
     mockSidebar.collapsed = false;
     mockSidebar.collapseLocked = false;
@@ -411,7 +411,7 @@ describe("Sidebar", () => {
       (anchor) => anchor.textContent?.trim() === "Decisions",
     );
     expect(decisionsLink?.getAttribute("href")).toBe("/decisions");
-    expect(mockAttentionApi.list).toHaveBeenCalledWith("company-1");
+    expect(mockDecisionsFeedApi.count).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
       root.unmount();
