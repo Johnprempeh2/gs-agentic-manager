@@ -420,8 +420,17 @@ test("a release by hand refuses release scripts older than origin/main and makes
 // whose scripts match origin/main; the backup tool is a stub. `pnpm install`
 // fails after the live checkout moved (live has no lockfile; where the script
 // finds no pnpm of its own, a stub fails).
-test("a release that fails after tagging pushes no live tag and deletes the local one", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "gs-failed-release-"));
+// An empty workspace: greatstone-common.sh puts its own node (and pnpm) first
+// on PATH, so with these files the real `pnpm install` passes offline.
+const EMPTY_WORKSPACE = {
+  ".gitignore": "node_modules/\n",
+  "package.json": '{ "name": "sandbox", "private": true }\n',
+  "pnpm-lock.yaml": "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n",
+};
+
+// base: files the old release has; rc: files the rc commit adds on top.
+function releaseSandbox(t, pnpmScript, { base = {}, rc = {} } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "gs-release-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const origin = join(root, "origin.git");
   git(root, "init", "--quiet", "--bare", "-b", "main", origin);
@@ -432,9 +441,18 @@ test("a release that fails after tagging pushes no live tag and deletes the loca
   for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh"]) {
     copyFileSync(join(scriptsDir, f), join(dev, "scripts", f));
   }
+  const addFiles = (files) => {
+    for (const [path, body] of Object.entries(files)) {
+      mkdirSync(join(dev, path, ".."), { recursive: true });
+      writeFileSync(join(dev, path), body);
+      git(dev, "add", path);
+    }
+  };
   git(dev, "add", "scripts");
+  addFiles(base);
   git(dev, "commit", "--quiet", "-m", "old");
   git(dev, "tag", "-a", "live-2026-09-01.1", "-m", "Old release");
+  addFiles(rc);
   git(dev, "commit", "--quiet", "--allow-empty", "-m", "new");
   git(dev, "tag", "-a", "rc-2026-09-29.1", "-m", RC_MESSAGE);
   git(dev, "push", "--quiet", "origin", "HEAD:main", "live-2026-09-01.1");
@@ -454,11 +472,25 @@ fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--pre
 
   const bin = join(root, "bin");
   mkdirSync(bin);
-  writeFileSync(join(bin, "pnpm"), "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n", { mode: 0o755 });
+  writeFileSync(join(bin, "pnpm"), pnpmScript, { mode: 0o755 });
+  const env = (liveUrl) => ({
+    ...process.env,
+    GSAM_ROOT: root,
+    GSAM_RELEASE_REPO: dev,
+    GSAM_LIVE_URL: liveUrl,
+    GSAM_LIVE_BOARD_KEY_FILE: join(root, "no-key"),
+    GSAM_RELEASE_FROM_APP: "1",
+    GSAM_RELEASE_POLL_SECONDS: "0.05",
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+  return { root, origin, dev, live, env };
+}
 
+test("a release that fails after tagging pushes no live tag and deletes the local one", (t) => {
+  const { origin, dev, live, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
   const run = spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], {
     encoding: "utf8",
-    env: { ...process.env, GSAM_ROOT: root, GSAM_RELEASE_REPO: dev, GSAM_LIVE_URL: "http://127.0.0.1:9", GSAM_RELEASE_FROM_APP: "1", PATH: `${bin}:${process.env.PATH}` },
+    env: env("http://127.0.0.1:9"),
   });
   assert.notEqual(run.status, 0);
   assert.match(run.stdout, /^Tagged rc-2026-09-29.1 as live-2026-09-29.1:/m);
@@ -468,6 +500,63 @@ fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--pre
   assert.equal(git(live, "tag", "--list", "live-2026-09-29.1"), "");
   assert.equal(git(origin, "tag", "--list", "live-*"), "live-2026-09-01.1");
   assert.equal(git(origin, "tag", "--list", "rc-*"), "");
+});
+
+// GRE-243: a release of only doc/ (or ui/) changes no file dev-runner watches,
+// so the live server answers every restart with restart_not_required. Its
+// "commit" follows the live checkout, like the real one.
+function fakeRestartNotRequired(live) {
+  const seen = { restarts: 0 };
+  const server = http.createServer((req, res) => {
+    if (req.method === "POST" && req.url === "/api/health/dev-server/restart") {
+      seen.restarts += 1;
+      res.writeHead(409, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "restart_not_required" }));
+      return;
+    }
+    if (req.url === "/api/health") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "ok", commit: git(live, "rev-parse", "HEAD"), serverInfo: { processStartedAt: "2026-09-29T08:00:00.000Z" } }));
+      return;
+    }
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end("{}");
+  });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, seen, url: `http://127.0.0.1:${server.address().port}` })));
+}
+
+// Async: the fake server answers from this process.
+function runAsync(args, env) {
+  return new Promise((resolve) => {
+    const child = spawn("bash", args, { env });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+test("a docs-only release and its rollback end healthy with no restart", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  const fake = await fakeRestartNotRequired(box.live);
+  t.after(() => fake.server.close());
+  const script = join(box.dev, "scripts", "greatstone-release.sh");
+
+  const release = await runAsync([script, "rc-2026-09-29.1"], box.env(fake.url));
+  assert.equal(release.status, 0, release.stderr);
+  assert.match(release.stdout, /^The live server needs no restart: live-2026-09-29.1 changes no file the server runs from/m);
+  assert.match(release.stdout, /^Live app at .* is running live-2026-09-29.1 /m);
+  assert.equal(git(box.live, "rev-parse", "HEAD"), git(box.dev, "rev-parse", "rc-2026-09-29.1^{commit}"));
+  // Healthy, so the tags are pushed and History may offer the version.
+  assert.equal(git(box.origin, "tag", "--list", "live-2026-09-29.1"), "live-2026-09-29.1");
+  assert.equal(git(box.origin, "tag", "--list", "rc-*"), "rc-2026-09-29.1");
+
+  const rollback = await runAsync([script, "live-2026-09-01.1"], box.env(fake.url));
+  assert.equal(rollback.status, 0, rollback.stderr);
+  assert.match(rollback.stdout, /^The live server needs no restart: live-2026-09-01.1 /m);
+  assert.equal(git(box.live, "rev-parse", "HEAD"), git(box.dev, "rev-parse", "live-2026-09-01.1^{commit}"));
+  assert.equal(fake.seen.restarts, 30);
 });
 
 test("drop_unpushed_live_tag keeps a live tag origin already has", (t) => {
