@@ -864,6 +864,7 @@ describe("Claude token lifetime (GRE-15)", () => {
 
   it("marks the connection once when a run's token is rejected, and not after a rotation", async () => {
     const userId = await member("rejected");
+    const service = aiConnectionService(db, { checkCredential: async () => "rejected" });
     const saved = await service.save(companyId, userId, intent("Rejected login"), "sk-ant-oat-rejected", undefined, undefined, { source: "imported_login", expiresAt: null });
     const runtime = await prepareManagedAiRuntime(db, { ...input, binding: subscriptionBinding, responsibleUserId: userId, config: {} });
     await runtime.cleanup();
@@ -877,5 +878,67 @@ describe("Claude token lifetime (GRE-15)", () => {
     expect(await service.recordCredentialRejected({ ...ref, identity: runtime.identity })).toBe(false);
     expect(await account(userId, saved.connectionId)).toMatchObject({ status: "needs_attention", unavailableReason: expect.stringContaining("rejected") });
     await expect(service.select({ ...input, userId, binding: subscriptionBinding })).rejects.toMatchObject({ details: { code: "ai_connection_unavailable" } });
+  });
+
+  // GRE-236: one ACP "access" failure at the end of a working run marked the
+  // shared Claude subscription as rejected and stopped every agent, although
+  // the one-year setup token was fine.
+  describe("confirms a run's credential refusal before stopping every agent", () => {
+    async function failedRun(userId: string, name: string, check: "valid" | "rejected" | "unknown") {
+      const checked: string[] = [];
+      const service = aiConnectionService(db, { checkCredential: async (_metadata, credential) => { checked.push(credential); return check; } });
+      const saved = await service.save(companyId, userId, intent(name), `sk-ant-oat-${name}`, undefined, undefined, { source: "setup_token", expiresAt: null });
+      const runtime = await prepareManagedAiRuntime(db, { ...input, binding: subscriptionBinding, responsibleUserId: userId, config: {} });
+      await runtime.cleanup();
+      const run = async () => {
+        const runId = randomUUID();
+        await db.insert(heartbeatRuns).values({
+          id: runId, companyId, agentId, status: "failed", errorCode: "claude_auth_required", responsibleUserId: userId, finishedAt: new Date(),
+          contextSnapshot: { aiConnection: runtime.attribution },
+        });
+        return { companyId, connectionId: saved.connectionId, grantId: saved.grantId, identity: runtime.identity, runId };
+      };
+      return { service, saved, run, checked };
+    }
+    const health = async (connectionId: string) =>
+      (await db.select({ healthStatus: toolConnections.healthStatus }).from(toolConnections).where(eq(toolConnections.id, connectionId)))[0]?.healthStatus;
+
+    it("keeps the connection healthy when the stored credential still validates", async () => {
+      const userId = await member("still-valid");
+      const { service, saved, run, checked } = await failedRun(userId, "still-valid", "valid");
+      expect(await service.recordCredentialRejected({ ...(await run()), afterOutput: true })).toBe(false);
+      expect(await service.recordCredentialRejected({ ...(await run()), afterOutput: false })).toBe(false);
+      expect(checked).toEqual(["sk-ant-oat-still-valid", "sk-ant-oat-still-valid"]);
+      expect(await health(saved.connectionId)).toBe("ok");
+      // Other agents keep running on the same account.
+      const next = await prepareManagedAiRuntime(db, { ...input, binding: subscriptionBinding, responsibleUserId: userId, config: {} });
+      await next.cleanup();
+      expect(next.attribution.connectionId).toBe(saved.connectionId);
+    });
+
+    it("marks the connection when the provider rejects the stored credential (GRE-15)", async () => {
+      const userId = await member("revoked");
+      const { service, saved, run } = await failedRun(userId, "revoked", "rejected");
+      expect(await service.recordCredentialRejected({ ...(await run()), afterOutput: true })).toBe(true);
+      expect(await health(saved.connectionId)).toBe("error");
+      await expect(prepareManagedAiRuntime(db, { ...input, binding: subscriptionBinding, responsibleUserId: userId, config: {} }))
+        .rejects.toMatchObject({ details: { code: "ai_connection_unavailable" } });
+    });
+
+    it("without a check, ignores a single refusal after output but not one at session start", async () => {
+      const userId = await member("unchecked-start");
+      const { service, saved, run } = await failedRun(userId, "unchecked-start", "unknown");
+      expect(await service.recordCredentialRejected({ ...(await run()), afterOutput: false })).toBe(true);
+      expect(await health(saved.connectionId)).toBe("error");
+    });
+
+    it("without a check, marks the connection on a second refusal in the window", async () => {
+      const userId = await member("unchecked-repeat");
+      const { service, saved, run } = await failedRun(userId, "unchecked-repeat", "unknown");
+      expect(await service.recordCredentialRejected({ ...(await run()), afterOutput: true })).toBe(false);
+      expect(await health(saved.connectionId)).toBe("ok");
+      expect(await service.recordCredentialRejected({ ...(await run()), afterOutput: true })).toBe(true);
+      expect(await health(saved.connectionId)).toBe("error");
+    });
   });
 });
