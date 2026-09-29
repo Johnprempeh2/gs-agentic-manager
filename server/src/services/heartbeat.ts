@@ -409,6 +409,7 @@ import { visibleIssueCondition } from "./issue-visibility.js";
 import { ISSUE_BLOCKERS_RESOLVED_WAKE_REASON } from "./issue-dependency-wakeups.js";
 import {
   buildIssueMonitorClearedPatch,
+  buildIssueMonitorRestoredPatch,
   buildIssueMonitorTriggeredPatch,
   normalizeIssueExecutionPolicy,
   parseIssueExecutionState,
@@ -29371,7 +29372,94 @@ export function heartbeatService(
     terminationGraceMs?: number;
     /** Caller is immediately scheduling an explicit successor path. */
     suppressImmediateRecovery?: boolean;
+    /** "Stop and cancel monitor": do not give back the monitor that started this run. */
+    cancelMonitor?: boolean;
   };
+
+  /** GRE-100: how long a given-back monitor waits before it fires again. */
+  const CANCELLED_MONITOR_RUN_RECHECK_MS = 15 * 60 * 1000;
+
+  /**
+   * GRE-100: a monitor is one-shot and is used up when it dispatches. When the
+   * run it started is cancelled, nothing is left to wake the assignee, so give
+   * the monitor back: re-arm it after CANCELLED_MONITOR_RUN_RECHECK_MS with the
+   * attempt count it had before. Guarded on the issue still holding that
+   * trigger (same attempt, not re-armed or cleared, same agent assignee), so a
+   * second call does nothing.
+   */
+  async function restoreIssueMonitorForCancelledRun(run: typeof heartbeatRuns.$inferSelect) {
+    const context = parseObject(run.contextSnapshot);
+    const issueId = readNonEmptyString(context.issueId);
+    const triggeredAttempt = context.monitorAttemptCount;
+    if (
+      !issueId ||
+      context.source !== "issue.monitor" ||
+      readNonEmptyString(context.wakeReason) !== "issue_monitor_due" ||
+      typeof triggeredAttempt !== "number" ||
+      !Number.isInteger(triggeredAttempt) ||
+      triggeredAttempt < 1
+    ) {
+      return false;
+    }
+    const issue = await db
+      .select()
+      .from(issues)
+      .where(and(eq(issues.id, issueId), eq(issues.companyId, run.companyId)))
+      .then((rows) => rows[0] ?? null);
+    if (
+      !issue ||
+      issue.monitorNextCheckAt ||
+      issue.monitorAttemptCount !== triggeredAttempt ||
+      issue.assigneeAgentId !== run.agentId ||
+      issue.assigneeUserId ||
+      !["in_progress", "in_review"].includes(issue.status)
+    ) {
+      return false;
+    }
+    const now = new Date();
+    const nextCheckAt = new Date(now.getTime() + CANCELLED_MONITOR_RUN_RECHECK_MS);
+    const patch = buildIssueMonitorRestoredPatch({
+      issue,
+      policy: normalizeIssueExecutionPolicy(issue.executionPolicy ?? null),
+      nextCheckAt,
+      attemptCount: triggeredAttempt - 1,
+    });
+    if (!patch) return false;
+    const restored = await db
+      .update(issues)
+      .set({ ...patch, updatedAt: now })
+      .where(
+        and(
+          eq(issues.id, issue.id),
+          isNull(issues.monitorNextCheckAt),
+          eq(issues.monitorAttemptCount, triggeredAttempt),
+          eq(issues.assigneeAgentId, run.agentId),
+          isNull(issues.assigneeUserId),
+          inArray(issues.status, ["in_progress", "in_review"]),
+        ),
+      )
+      .returning({ id: issues.id })
+      .then((rows) => rows.length > 0);
+    if (!restored) return false;
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: "system",
+      actorId: "heartbeat_scheduler",
+      agentId: null,
+      runId: run.id,
+      action: "issue.monitor_restored",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        identifier: issue.identifier,
+        reason: "monitor_run_cancelled",
+        cancelledRunId: run.id,
+        nextCheckAt: nextCheckAt.toISOString(),
+        attemptCount: triggeredAttempt - 1,
+      },
+    });
+    return true;
+  }
 
   function cancellationTerminationGraceMs(
     configuredGraceSec: number,
@@ -29665,6 +29753,13 @@ export function heartbeatService(
       const cancelled = cancellation.run;
       if (cancelled && options.resultJson?.[FRESH_SESSION_ON_RETRY_KEY] === true) {
         await clearFreshSessionRunTaskSession(cancelled);
+      }
+      if (cancelled?.status === "cancelled" && !options.cancelMonitor) {
+        try {
+          await restoreIssueMonitorForCancelledRun(cancelled);
+        } catch (err) {
+          logger.error({ err, runId: cancelled.id }, "failed to give back the issue monitor of a cancelled run");
+        }
       }
 
       if (cancellation.updated && cancelled) {
