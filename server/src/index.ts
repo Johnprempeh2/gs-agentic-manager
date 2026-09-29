@@ -127,6 +127,7 @@ import { initializeCloudRuntimeIdentity } from "./services/cloud-runtime-identit
 import { systemdNotify } from "./services/systemd-notify.js";
 import { flushInFlightRunLogMirrors } from "./services/run-log-store.js";
 import { startLiveReleaseTicker } from "./services/live-release.js";
+import { hostBlindTime } from "./services/host-blind-time.js";
 import {
   createEmbeddedPostgresSupervisor,
   type EmbeddedPostgresSupervisor,
@@ -1188,6 +1189,9 @@ async function startServerWithDatabaseTeardown(
   // Before queued runs resume: a one-click release that restarted this server
   // keeps holding new runs until its outcome is reported.
   startLiveReleaseTicker(db);
+  // GRE-181: sleep and event-loop stalls are not run silence.
+  hostBlindTime.start();
+  let silentRunStopInFlight = false;
   const startHeartbeatSchedulerInterval = (callback: () => void) => {
     heartbeatSchedulerInterval = setInterval(callback, config.heartbeatSchedulerIntervalMs);
     heartbeatSchedulerInterval?.unref?.();
@@ -1566,7 +1570,7 @@ async function startServerWithDatabaseTeardown(
         }
 
         const scanned = await heartbeat.scanSilentActiveRuns();
-        if (scanned.created > 0 || scanned.escalated > 0 || scanned.silentStops.stopped > 0) {
+        if (scanned.created > 0 || scanned.escalated > 0 || (scanned.silentStops?.stopped ?? 0) > 0) {
           logger.warn({ ...scanned }, "startup active-run output watchdog created review work");
         }
 
@@ -1767,6 +1771,25 @@ async function startServerWithDatabaseTeardown(
 
         if (heartbeatSchedulerStopped) return;
         if (!(await heartbeat.resolveSchedulingSuppression()).suppressed) {
+          // GRE-181: the silent-run stop runs on its own every tick, so a slow
+          // recovery chain below cannot delay it. Single-flight: a sweep that
+          // outlasts a tick is not started twice.
+          if (!silentRunStopInFlight) {
+            silentRunStopInFlight = true;
+            trackHeartbeatSchedulerWork(heartbeat
+              .stopSilentRuns()
+              .then((stops) => {
+                if (stops.stopped > 0 || stops.heldRetries.released > 0 || stops.heldRetries.escalated > 0) {
+                  logger.warn({ ...stops }, "periodic silent-run watchdog stopped runs or released held retries");
+                }
+              })
+              .catch((err) => {
+                logger.error({ err }, "periodic silent-run watchdog failed");
+              })
+              .finally(() => {
+                silentRunStopInFlight = false;
+              }));
+          }
           // Periodically reap orphaned runs (5-min staleness threshold) and make sure
           // persisted queued work is still being driven forward.
           trackHeartbeatSchedulerWork(heartbeat
@@ -1803,8 +1826,8 @@ async function startServerWithDatabaseTeardown(
               }
             })
             .then(async () => {
-              const scanned = await heartbeat.scanSilentActiveRuns();
-              if (scanned.created > 0 || scanned.escalated > 0 || scanned.silentStops.stopped > 0) {
+              const scanned = await heartbeat.scanSilentActiveRuns({ skipSilentStops: true });
+              if (scanned.created > 0 || scanned.escalated > 0) {
                 logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
               }
             })
