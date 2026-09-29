@@ -148,6 +148,55 @@ describe("board-chat relay CLI failure handling (GRE-234)", () => {
     expect(conciergeComments()).toEqual([]);
   });
 
+  it.each([401, 403])(
+    "stops the CLI and sends an SSE error when the company key is rejected (%i api_retry, GRE-268)",
+    async (status) => {
+      const proc = makeFakeProc({
+        stdoutLines: [
+          delta("Partial"),
+          {
+            type: "system",
+            subtype: "api_retry",
+            attempt: 1,
+            max_retries: 10,
+            retry_delay_ms: 500,
+            error_status: status,
+            error: "authentication_failed",
+          },
+        ],
+        exitCode: 143,
+      });
+      mockSpawn.mockReturnValue(proc);
+      const { boardChatRoutes } = await import("../routes/board-chat.js");
+      const app = express();
+      app.use(express.json());
+      app.use("/api", boardChatRoutes({} as any, { deploymentMode: "local_trusted" }));
+      const res = await request(app)
+        .post("/api/board/chat/stream")
+        .send({ companyId: "company-1", message: "hello" });
+      const events = parseSse(res.text);
+
+      expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
+      const error = events.find((e) => e.type === "error");
+      expect(error?.message).toContain("Claude rejected the company connection");
+      expect(events.some((e) => e.type === "done")).toBe(false);
+      expect(conciergeComments()).toEqual([]);
+    },
+  );
+
+  it("keeps running through a non-auth api_retry (for example a 529)", async () => {
+    const events = await runChat({
+      stdoutLines: [
+        { type: "system", subtype: "api_retry", attempt: 1, error_status: 529 },
+        delta("Recovered."),
+      ],
+      exitCode: 0,
+    });
+
+    expect(events.some((e) => e.type === "error")).toBe(false);
+    expect(conciergeComments()).toEqual([["issue-1", "Recovered.", { userId: "board-concierge" }]]);
+  });
+
   it("streams and saves the reply for a normal run", async () => {
     const events = await runChat({
       stdoutLines: [
@@ -180,6 +229,10 @@ describe("board-chat relay Claude connection (GRE-254)", () => {
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
     "CLAUDE_CONFIG_DIR",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "ANTHROPIC_MODEL",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDECODE",
   ] as const;
   const savedEnv: Record<string, string | undefined> = {};
 
@@ -223,6 +276,22 @@ describe("board-chat relay Claude connection (GRE-254)", () => {
     expect(env.CLAUDE_CONFIG_DIR).not.toBe("host-CLAUDE_CONFIG_DIR");
     expect(env.GSAM_COMPANY_ID).toBe("company-1");
     expect(events.at(-1)).toMatchObject({ type: "done" });
+  });
+
+  it("drops host custom headers, model override and Claude session vars from the spawn env (GRE-268)", async () => {
+    mockResolveCredential.mockResolvedValue({
+      envKey: "CLAUDE_CODE_OAUTH_TOKEN",
+      value: COMPANY_TOKEN,
+    });
+
+    await runChat(normalRun);
+
+    const env = mockSpawn.mock.calls[0][2].env as NodeJS.ProcessEnv;
+    expect(env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+    expect(env.ANTHROPIC_MODEL).toBeUndefined();
+    expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+    expect(env.CLAUDECODE).toBeUndefined();
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(COMPANY_TOKEN);
   });
 
   it("puts an API-key connection in ANTHROPIC_API_KEY and drops the host OAuth token", async () => {
