@@ -140,6 +140,8 @@ test("GS Agentic Manager Runner pins the qualified ACPX host callbacks", () => {
   ]) assert.match(acpxRuntimePatch, new RegExp(callback));
   assert.match(claudeAcpPatch, /usage: \{/);
   assert.match(claudeAcpPatch, /cache_creation_input_tokens/);
+  // GRE-245: a real model's summary quoting "Please run /login" is not a login failure.
+  assert.match(claudeAcpPatch, /\+\s+if \(isLoginRequiredResult\(message\.result, lastAssistantModel\)\) \{/);
 });
 
 test("published packages preserve the patched embedded-postgres runtime", () => {
