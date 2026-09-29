@@ -212,6 +212,8 @@ import {
   IssueMonitorComposerStrip,
   hasVisibleMonitorSurface,
 } from "../components/IssueMonitorBanner";
+import { NotNowButton } from "../components/decisions-feed/NotNowButton";
+import { TabledBanner } from "../components/decisions-feed/TabledBanner";
 import { IssueScheduledRetryCard } from "../components/IssueScheduledRetryCard";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import {
@@ -7131,6 +7133,13 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
               <Archive className="h-4 w-4" />
             </Button>
           )}
+          {!issue.tabledAt && !isTerminalIssue ? (
+            <NotNowButton
+              companyId={issue.companyId}
+              issueId={issue.id}
+              issueLabel={issue.identifier}
+            />
+          ) : null}
           {fileViewerEnabled ? (
             <Button
               variant="ghost"
@@ -7313,6 +7322,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       {taskChatShellEnabled && !streamlinedTaskDetailEnabled
         ? subTasksTree
         : null}
+
+      <TabledBanner issue={issue} />
 
       <IssueMonitorBanner
         issue={issue}
