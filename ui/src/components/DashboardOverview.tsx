@@ -12,6 +12,7 @@ import { agentUrl, cn } from "../lib/utils";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { timeAgo } from "../lib/timeAgo";
+import type { LiveAgent } from "../hooks/useLiveAgents";
 
 /** Statuses the dashboard counts as "open work happening now". */
 export const DASHBOARD_OPEN_TASK_STATUSES = ["in_progress", "in_review", "blocked"] as const;
@@ -20,6 +21,19 @@ export const DASHBOARD_OPEN_TASK_LIMIT = 10;
 export interface DashboardAgentRow {
   agent: Agent;
   currentTask: Issue | null;
+  /** True when the agent has a running run (see `selectLiveAgents`). */
+  live: boolean;
+  /** The task its running run works on, even when that task is not in the open list. */
+  liveIssueId: string | null;
+}
+
+/**
+ * The status the row shows. Liveness comes from running runs only, so the
+ * dashboard and the sidebar "N live" count agree even while `agent.status` lags.
+ */
+export function dashboardAgentRowStatus(row: Pick<DashboardAgentRow, "agent" | "live">): string {
+  if (row.live) return "running";
+  return row.agent.status === "running" ? "idle" : row.agent.status;
 }
 
 // Running agents first so "what is happening now" reads top-down; errors next
@@ -42,14 +56,18 @@ function byNewestActivity(a: Issue, b: Issue): number {
 }
 
 /**
- * Pair every non-terminated agent with the task it works on now: its
- * in-progress assignment, preferring one a run holds, then the newest.
+ * Pair every non-terminated agent with the task it works on now: the task of
+ * its running run when it is live, else its in-progress assignment,
+ * preferring one a run holds, then the newest.
  */
 export function deriveDashboardAgentRows(
   agents: Agent[] | undefined,
   openIssues: Issue[] | undefined,
+  liveAgents: LiveAgent[] = [],
 ): DashboardAgentRow[] {
   if (!agents) return [];
+  const liveByAgent = new Map(liveAgents.map((live) => [live.agentId, live]));
+  const issueById = new Map((openIssues ?? []).map((issue) => [issue.id, issue]));
   const inProgressByAgent = new Map<string, Issue[]>();
   for (const issue of openIssues ?? []) {
     if (issue.status !== "in_progress" || !issue.assigneeAgentId) continue;
@@ -65,11 +83,14 @@ export function deriveDashboardAgentRows(
         const bHeld = b.executionRunId || b.checkoutRunId ? 0 : 1;
         return aHeld - bHeld || byNewestActivity(a, b);
       });
-      return { agent, currentTask: candidates[0] ?? null };
+      const live = liveByAgent.get(agent.id);
+      const liveIssueId = live?.issueId ?? null;
+      const liveTask = liveIssueId ? issueById.get(liveIssueId) ?? null : null;
+      return { agent, currentTask: liveTask ?? candidates[0] ?? null, live: Boolean(live), liveIssueId };
     })
     .sort(
       (a, b) =>
-        (AGENT_STATUS_ORDER[a.agent.status] ?? 5) - (AGENT_STATUS_ORDER[b.agent.status] ?? 5)
+        (AGENT_STATUS_ORDER[dashboardAgentRowStatus(a)] ?? 5) - (AGENT_STATUS_ORDER[dashboardAgentRowStatus(b)] ?? 5)
         || a.agent.name.localeCompare(b.agent.name),
     );
 }
@@ -116,6 +137,8 @@ function MessageCard({ children, tone = "muted" }: { children: ReactNode; tone?:
 export interface DashboardOverviewProps {
   agents: Agent[] | undefined;
   openIssues: Issue[] | undefined;
+  /** From `useLiveAgents`, the same source as the sidebar "N live" count. */
+  liveAgents?: LiveAgent[];
   agentsLoading?: boolean;
   issuesLoading?: boolean;
   agentsError?: Error | null;
@@ -125,12 +148,14 @@ export interface DashboardOverviewProps {
 export function DashboardOverview({
   agents,
   openIssues,
+  liveAgents = [],
   agentsLoading = false,
   issuesLoading = false,
   agentsError = null,
   issuesError = null,
 }: DashboardOverviewProps) {
-  const agentRows = deriveDashboardAgentRows(agents, openIssues);
+  const agentRows = deriveDashboardAgentRows(agents, openIssues, liveAgents);
+  const liveCount = agentRows.filter((row) => row.live).length;
   const openTasks = selectDashboardOpenTasks(openIssues);
   const agentById = new Map((agents ?? []).map((agent) => [agent.id, agent]));
 
@@ -140,9 +165,16 @@ export function DashboardOverview({
         <SectionHeader
           title="Agents"
           action={(
-            <Link to="/agents" className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
-              View all agents
-            </Link>
+            <span className="flex items-baseline gap-3">
+              {liveCount > 0 ? (
+                <span className="text-xs font-medium tabular-nums text-foreground" data-testid="dashboard-live-count">
+                  {liveCount} live
+                </span>
+              ) : null}
+              <Link to="/agents" className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+                View all agents
+              </Link>
+            </span>
           )}
         />
         {agentsLoading && !agents ? (
@@ -153,10 +185,13 @@ export function DashboardOverview({
           <MessageCard>No agents yet.</MessageCard>
         ) : (
           <Card className="block divide-y divide-border overflow-hidden py-0">
-            {agentRows.map(({ agent, currentTask }) => (
+            {agentRows.map((row) => {
+              const { agent, currentTask, live, liveIssueId } = row;
+              return (
               <div
                 key={agent.id}
                 data-testid="dashboard-agent-row"
+                data-live={live ? "true" : undefined}
                 className="flex min-w-0 flex-col gap-1.5 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-3"
               >
                 <div className="flex min-w-0 items-center gap-2 sm:w-48 sm:shrink-0">
@@ -166,7 +201,7 @@ export function DashboardOverview({
                   >
                     <AgentIdentity agent={agent} size="sm" className="max-w-full" />
                   </Link>
-                  <AgentStatusBadge status={agent.status} />
+                  <AgentStatusBadge status={dashboardAgentRowStatus(row)} />
                 </div>
                 {currentTask ? (
                   <Link
@@ -180,11 +215,21 @@ export function DashboardOverview({
                     </span>
                     <span className="min-w-0 truncate">{currentTask.title}</span>
                   </Link>
+                ) : live && liveIssueId ? (
+                  <Link
+                    to={createIssueDetailPath(liveIssueId)}
+                    className="min-w-0 flex-1 truncate rounded-sm text-sm text-inherit no-underline hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Open current task
+                  </Link>
                 ) : (
-                  <span className="min-w-0 flex-1 text-sm text-muted-foreground">No current task</span>
+                  <span className="min-w-0 flex-1 text-sm text-muted-foreground">
+                    {live ? "Running without a task" : "No current task"}
+                  </span>
                 )}
               </div>
-            ))}
+              );
+            })}
           </Card>
         )}
       </section>

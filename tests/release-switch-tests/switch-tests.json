@@ -1,0 +1,168 @@
+{
+  "_about": "Experimental switch -> vitest files. The release candidate check runs the files of every switch that is on in live (run.mjs, GRE-101). One entry per boolean key of INSTANCE_FEATURE_CATALOG (packages/shared/src/feature-catalog.ts); run.test.mjs fails if a key is missing. Paths are repo-relative. Source: Beacon's beta scorecard on GRE-81 (28 Sep 2026). Playwright specs (tests/e2e) are not listed: they need a running app.",
+  "switches": {
+    "enableEnvironments": [
+      "server/src/__tests__/environment-routes.test.ts",
+      "server/src/__tests__/heartbeat-plugin-environment.test.ts",
+      "ui/src/components/AgentConfigForm.render.test.tsx",
+      "ui/src/components/IssueWorkspaceCard.test.tsx"
+    ],
+    "enableNativeRunner": [
+      "server/src/__tests__/native-session-resumption.test.ts",
+      "server/src/__tests__/legacy-finalization-regression.test.ts",
+      "server/src/__tests__/agent-adapter-validation-routes.test.ts"
+    ],
+    "enableManagedSandboxOnly": [
+      "server/src/__tests__/project-workspace-managed-sandbox-routes.test.ts",
+      "server/src/__tests__/environment-instance-routes.test.ts",
+      "server/src/__tests__/agent-test-environment-routes.test.ts"
+    ],
+    "enableIsolatedWorkspaces": [
+      "server/src/__tests__/heartbeat-project-repositories.test.ts",
+      "server/src/__tests__/heartbeat-workspace-branch-containment.test.ts",
+      "server/src/__tests__/heartbeat-accepted-plan-workspace-refresh.test.ts",
+      "server/src/__tests__/heartbeat-workspace-busy.test.ts",
+      "server/src/__tests__/heartbeat-workspace-finalize-branch.test.ts",
+      "server/src/__tests__/issue-runtime-workspace-binding.test.ts",
+      "ui/src/components/IsolatedWorkspacesRouteGate.test.tsx",
+      "ui/src/hooks/useWorkspaceIsolationControls.test.tsx"
+    ],
+    "enableIsolatedWorkspacesByDefault": [
+      "server/src/__tests__/heartbeat-project-repositories.test.ts",
+      "ui/src/pages/InstanceExperimentalSettings.test.tsx"
+    ],
+    "enableStreamlinedLeftNavigation": [
+      "ui/src/components/Sidebar.test.tsx",
+      "ui/src/pages/Agents.test.tsx",
+      "server/src/__tests__/managed-config.test.ts"
+    ],
+    "enableStreamlinedUi": [
+      "ui/src/components/Layout.test.tsx",
+      "ui/src/components/IssuesList.test.tsx",
+      "ui/src/components/IssueProperties.test.tsx",
+      "ui/src/components/PropertiesPanel.test.tsx",
+      "ui/src/components/Sidebar.test.tsx",
+      "ui/src/hooks/useStreamlinedUiEnabled.test.tsx"
+    ],
+    "enableApps": [
+      "server/src/__tests__/managed-config.test.ts",
+      "ui/src/components/Layout.test.tsx"
+    ],
+    "enableChatConnectors": [
+      "server/src/__tests__/chat-channels.integration.test.ts",
+      "server/src/routes/chat-channels.identity.test.ts"
+    ],
+    "enableMemoryConnectors": [
+      "packages/shared/src/memory-connectors.test.ts",
+      "server/src/__tests__/tool-access-service.test.ts",
+      "ui/src/pages/apps/Browse.test.tsx"
+    ],
+    "enableMcpAggregators": [
+      "server/src/__tests__/remote-mcp-connectors.test.ts",
+      "packages/shared/src/remote-mcp-connectors.test.ts"
+    ],
+    "enablePipelines": [
+      "ui/src/components/PipelinesExperimentalGate.test.tsx",
+      "server/src/__tests__/managed-config.test.ts"
+    ],
+    "enableCases": [
+      "server/src/__tests__/cases-routes.test.ts",
+      "ui/src/components/IssueCasesPanel.test.tsx"
+    ],
+    "enableAgentChat": [
+      "server/src/__tests__/agent-conversations.test.ts"
+    ],
+    "enableConferenceRoomChat": [
+      "server/src/__tests__/board-chat-route-feature-flag.test.ts",
+      "ui/src/components/ConferenceRoomChatGate.test.tsx"
+    ],
+    "enableClassicTaskInterface": [
+      "ui/src/components/IssueProperties.test.tsx"
+    ],
+    "enableIssuePlanDecompositions": [
+      "ui/src/pages/IssueDetail.test.tsx",
+      "ui/src/pages/Agents.test.tsx"
+    ],
+    "enableExperimentalFileViewer": [
+      "ui/src/pages/IssueDetail.test.tsx",
+      "ui/src/components/CommandPalette.test.tsx"
+    ],
+    "enableStatusCards": [
+      "server/src/__tests__/status-cards.test.ts",
+      "ui/src/components/Sidebar.test.tsx"
+    ],
+    "enableExternalObjects": [
+      "server/src/__tests__/external-object-routes.test.ts",
+      "server/src/__tests__/issue-comment-cancel-routes.test.ts",
+      "ui/src/components/IssuesList.test.tsx"
+    ],
+    "enableSmokeLab": [
+      "server/src/__tests__/smoke-lab.test.ts",
+      "ui/src/pages/tools/SmokeLabTab.test.tsx",
+      "ui/src/components/SmokeLabDashboardCard.test.tsx"
+    ],
+    "enableBuiltInAgents": [
+      "server/src/__tests__/built-in-agent-routes.test.ts",
+      "ui/src/components/BuiltInAgentGate.test.tsx",
+      "ui/src/components/SidebarAgents.test.tsx"
+    ],
+    "enableBetaSkills": [
+      "server/src/__tests__/heartbeat-runtime-skills.test.ts",
+      "server/src/__tests__/agent-skills-routes.test.ts",
+      "ui/src/pages/agent-skills/AgentSkillsTab.test.ts"
+    ],
+    "enableSummaries": [
+      "server/src/__tests__/summary-slot-routes.test.ts",
+      "ui/src/components/SummarySlotCard.test.tsx",
+      "ui/src/components/SummarySlotCard.status.test.tsx"
+    ],
+    "enableDecisions": [
+      "ui/src/components/Sidebar.test.tsx",
+      "server/src/__tests__/managed-config.test.ts"
+    ],
+    "enableGoalsSidebarLink": [
+      "ui/src/components/Sidebar.test.tsx"
+    ],
+    "enableSimplifiedEnglishInteractions": [
+      "ui/src/pages/InstanceExperimentalSettings.test.tsx"
+    ],
+    "enableServerInfoDebugView": [
+      "ui/src/components/SidebarServerInfo.test.tsx"
+    ],
+    "enablePaperclipDeveloperMode": [
+      "ui/src/pages/InstanceExperimentalSettings.test.tsx"
+    ],
+    "autoRestartDevServerWhenIdle": [
+      "server/src/__tests__/health-dev-server-token.test.ts"
+    ],
+    "enableWorkspaceBranchReconcileForward": [
+      "server/src/__tests__/heartbeat-workspace-branch-containment.test.ts",
+      "server/src/__tests__/workspace-runtime.test.ts"
+    ],
+    "enableWorkspaceDirtyQuarantineRepair": [
+      "server/src/__tests__/workspace-runtime.test.ts"
+    ],
+    "enableOwnerInstanceAdmin": [
+      "server/src/__tests__/authorization-service.test.ts",
+      "server/src/middleware/cloud-tenant-actor.test.ts"
+    ],
+    "enableSandboxDuplexBridge": [
+      "server/src/__tests__/environment-execution-target-duplex-kill-switch.test.ts",
+      "server/src/__tests__/environment-runtime-duplex-bridge-input.test.ts",
+      "server/src/__tests__/file-delivery-bridges.test.ts",
+      "packages/adapter-utils/src/execution-target-sandbox.test.ts"
+    ],
+    "enableRunnerPreviewIngress": [
+      "packages/adapter-utils/src/runner-connectivity.test.ts",
+      "server/src/__tests__/managed-config.test.ts"
+    ],
+    "enableWorktreeRunExecution": [
+      "server/src/__tests__/heartbeat-worktree-suppression.test.ts",
+      "server/src/__tests__/routines-service.test.ts",
+      "cli/src/__tests__/test-drive.test.ts"
+    ],
+    "enableFirstTaskPlanProposal": [
+      "server/src/__tests__/issue-onboarding-first-task-routes.test.ts"
+    ]
+  }
+}

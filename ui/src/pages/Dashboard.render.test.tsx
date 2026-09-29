@@ -43,6 +43,9 @@ vi.mock("../hooks/useSharedPolling", () => ({
   useSharedPollingQuery: () => null,
   usePublishSharedQueryData: () => undefined,
 }));
+vi.mock("../hooks/useLiveAgents", () => ({
+  useLiveAgents: () => ({ liveAgents: [], runs: [], isLoading: false }),
+}));
 
 // Children with their own data or canvas needs are stubbed; this test is about
 // which blocks the page lays out, not how each one draws.
