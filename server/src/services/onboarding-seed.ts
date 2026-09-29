@@ -260,6 +260,16 @@ export function onboardingSeedService(db: Db) {
       }
     }
 
+    //    The mission goal is created before the agent, so on a first push it
+    //    has no owner yet. Hand it to the main agent; never take over a goal
+    //    someone already owns.
+    if (goalId && agentId) {
+      const goal = await goalSvc.getById(goalId);
+      if (goal && !goal.ownerAgentId) {
+        await goalSvc.update(goalId, { ownerAgentId: agentId });
+      }
+    }
+
     // 3. First task → an issue in the Onboarding project, assigned to the
     //    lead so the dashboard opens with work on it.
     //
