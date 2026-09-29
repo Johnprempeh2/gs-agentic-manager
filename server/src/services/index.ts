@@ -48,6 +48,11 @@ export {
   type IssueReviewVerdictActor,
 } from "./issue-review-policy.js";
 export { issueTreeControlService } from "./issue-tree-control.js";
+export {
+  bringBackTabledIssue,
+  issueTablingService,
+  returnDueTabledIssues,
+} from "./issue-tabling.js";
 export { issueApprovalService } from "./issue-approvals.js";
 export { issueReferenceService } from "./issue-references.js";
 export { issueRecoveryActionService } from "./issue-recovery-actions.js";

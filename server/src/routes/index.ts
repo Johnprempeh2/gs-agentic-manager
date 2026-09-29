@@ -12,6 +12,7 @@ export { agentRoutes } from "./agents.js";
 export { projectRoutes } from "./projects.js";
 export { issueRoutes } from "./issues.js";
 export { issueTreeControlRoutes } from "./issue-tree-control.js";
+export { issueTablingRoutes } from "./issue-tabling.js";
 export {
   fileResourceRoutes,
   createFileResourceAvailabilityLimiter,

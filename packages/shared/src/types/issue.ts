@@ -827,6 +827,13 @@ export interface Issue {
   completedAt: Date | null;
   cancelledAt: Date | null;
   hiddenAt: Date | null;
+  /** "Not now": set while the task is tabled (parked, no agent wakes). */
+  tabledAt?: Date | null;
+  /** Optional return date; null means tabled until brought back. */
+  tabledUntil?: Date | null;
+  tabledByUserId?: string | null;
+  /** Status the task returns to when it comes back. */
+  tabledFromStatus?: IssueStatus | null;
   sourceTrust?: SourceTrustMetadata | null;
   labelIds?: string[];
   labels?: IssueLabel[];

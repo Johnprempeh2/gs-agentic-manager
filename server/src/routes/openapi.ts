@@ -163,6 +163,7 @@ import {
   updateInboxAgentPolicySchema,
   // Issue tree
   createIssueTreeHoldSchema,
+  tableIssueSchema,
   previewIssueTreeControlSchema,
   releaseIssueTreeHoldSchema,
   // Issue interactions
@@ -7668,6 +7669,37 @@ registry.registerPath({
     params: z.object({ id: z.string(), holdId: z.string() }),
     body: jsonBody(releaseIssueTreeHoldSchema),
   },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+// "Not now" (GRE-262): table a task, bring it back, list tabled tasks.
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/table",
+  tags: ["issues"],
+  summary: "Table a task (Not now): park it in backlog with an optional return date; no agent wakes until it returns",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(tableIssueSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/bring-back",
+  tags: ["issues"],
+  summary: "Bring a tabled task back to the status it had before it was tabled",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/tabled-issues",
+  tags: ["issues"],
+  summary: "List tabled tasks (soonest return date first, then open-ended)",
+  request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 

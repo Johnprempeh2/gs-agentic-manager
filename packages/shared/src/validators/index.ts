@@ -539,6 +539,8 @@ export {
   type CompanySearchQuery,
 } from "./search.js";
 
+export { tableIssueSchema, type TableIssue } from "./issue-tabling.js";
+
 export {
   createIssueTreeHoldSchema,
   issueTreeControlModeSchema,
