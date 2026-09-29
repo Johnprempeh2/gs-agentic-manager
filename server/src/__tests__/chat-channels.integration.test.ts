@@ -16128,18 +16128,20 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         .from(chatConversations)
         .where(eq(chatConversations.endpointId, endpoint.id));
       expect(rows).toHaveLength(1);
-    });
+    }, { timeout: 10_000 });
     const [conversation] = await db
       .select()
       .from(chatConversations)
       .where(eq(chatConversations.endpointId, endpoint.id));
+    // The drain posts 8 comments; under a loaded test pool the default 1s
+    // wait can see only part of them (GRE-205).
     await vi.waitFor(async () => {
       const rows = await db
         .select({ id: issueComments.id })
         .from(issueComments)
         .where(eq(issueComments.issueId, conversation.issueId));
       expect(rows).toHaveLength(8);
-    });
+    }, { timeout: 10_000 });
     const comments = await db
       .select({ id: issueComments.id, body: issueComments.body })
       .from(issueComments)
