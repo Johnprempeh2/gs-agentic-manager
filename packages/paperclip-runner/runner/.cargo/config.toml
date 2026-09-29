@@ -1,0 +1,14 @@
+# Every checkout on a machine may share one cargo build-dir (GRE-210; see
+# server/src/runner-build-dir.ts). Cargo names the build files of this
+# workspace's own crates by their path relative to the workspace, so two
+# worktrees would share one slot: a worktree whose sources are older than the
+# other worktree's last build is then judged fresh and gets the other
+# worktree's code. A workspace wrapper at an absolute path is part of the build
+# hash, and this relative path resolves to a different absolute path in each
+# checkout, so each checkout keeps its own build files for these crates while
+# all checkouts share the dependencies.
+#
+# The wrapper is a POSIX shell script. Where there is no POSIX shell, set
+# CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER="" to turn it off.
+[build]
+rustc-workspace-wrapper = ".cargo/checkout-rustc"

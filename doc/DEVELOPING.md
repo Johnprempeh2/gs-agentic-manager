@@ -754,6 +754,23 @@ After `worktree init`, both the server and the CLI auto-load the repo-local `.gs
 
 `pnpm dev` now fails fast in a linked git worktree when `.gsam/.env` is missing, instead of silently booting against the default instance/port. If that happens, run `gsam worktree init` in the worktree first.
 
+### Shared Rust build folder
+
+All checkouts on one machine (task worktrees, the preview and the live checkout) share one cargo build folder for the native runner (`packages/paperclip-runner/runner`). `pnpm dev` and workspace provision commands set `CARGO_BUILD_BUILD_DIR` to `~/Library/Caches/gsam-cargo-build` on macOS (`$XDG_CACHE_HOME/gsam-cargo-build` or `~/.cache/gsam-cargo-build` on Linux). A new worktree reuses the compiled dependencies and only compiles the runner's own crates. Each checkout keeps its own small `runner/target/{debug,release}` with only the final binaries, so no checkout runs another checkout's `paperclip-runnerd`. `runner/.cargo/config.toml` keeps each checkout's own crates apart inside the shared folder.
+
+- A value you set yourself (`CARGO_BUILD_BUILD_DIR` or `CARGO_TARGET_DIR`) wins. CI (`CI` set) keeps its per-checkout `target`.
+- Two checkouts can build at the same time. Cargo locks the shared folder; the second build waits with `Blocking waiting for file lock on build directory`.
+- To build by hand with the shared folder, export the same value first: `export CARGO_BUILD_BUILD_DIR=~/Library/Caches/gsam-cargo-build`.
+- The shared folder only grows. To free it, delete it when no build runs: `rm -rf ~/Library/Caches/gsam-cargo-build`. The next build recompiles once.
+
+Worktrees made before this change still hold a full `runner/target` (about 1 GB each). Remove them when no build or server runs in that worktree; the next build puts only the final binaries back:
+
+```sh
+for t in /path/to/gs-clip/.gsam/worktrees/*/packages/paperclip-runner/runner/target; do
+  du -sh "$t" && rm -rf "$t"
+done
+```
+
 ### Lean worktrees and deferred seeding
 
 Seeding a worktree database is the heaviest part of `worktree init`. That work can be deferred so a worktree is cheap to create and only pays the seed cost the first time it is actually used — the CLI/dev-time analog of the server's lazy runtime provisioning (see the board-operator guide's "Lazy runtime provisioning" section).

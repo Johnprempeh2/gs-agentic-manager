@@ -75,6 +75,7 @@ import { resolvePaperclipConfigPath } from "../paths.ts";
 import type { WorkspaceOperation } from "@greatstone/shared";
 import type { WorkspaceOperationRecorder } from "../services/workspace-operations.ts";
 import { deriveWorktreeInstanceId } from "../services/workspace-instance-cleanup.ts";
+import { applySharedRunnerBuildDir } from "../runner-build-dir.ts";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -1557,6 +1558,7 @@ describe("realizeExecutionWorkspace", () => {
         "printf '%s\\n' \"$GSAM_WORKSPACE_BRANCH\" > .paperclip-provision-branch",
         "printf '%s\\n' \"$GSAM_WORKSPACE_BASE_CWD\" > .paperclip-provision-base",
         "printf '%s\\n' \"$GSAM_WORKSPACE_CREATED\" > .paperclip-provision-created",
+        "printf '%s\\n' \"${CARGO_BUILD_BUILD_DIR-unset}\" > .paperclip-provision-cargo-build-dir",
       ].join("\n"),
       "utf8",
     );
@@ -1599,6 +1601,10 @@ describe("realizeExecutionWorkspace", () => {
     );
     await expect(fs.readFile(path.join(workspace.cwd, ".paperclip-provision-created"), "utf8")).resolves.toBe(
       "true\n",
+    );
+    // GRE-210: a provision that builds the runner uses the shared cargo build-dir.
+    await expect(fs.readFile(path.join(workspace.cwd, ".paperclip-provision-cargo-build-dir"), "utf8")).resolves.toBe(
+      `${applySharedRunnerBuildDir({ ...process.env }).CARGO_BUILD_BUILD_DIR ?? "unset"}\n`,
     );
 
     const reused = await realizeExecutionWorkspace({
