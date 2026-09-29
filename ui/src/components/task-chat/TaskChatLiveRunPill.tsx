@@ -48,6 +48,7 @@ export function TaskChatLiveRunPill({
   startedAtMs,
   finishedAtMs,
   toolSummary,
+  statusMessage = null,
 }: {
   status: string;
   execution?: ExecutionProjection | null;
@@ -56,8 +57,11 @@ export function TaskChatLiveRunPill({
   /** Run finish in ms once terminal; drives the settled elapsed readout. */
   finishedAtMs?: number | null;
   toolSummary: string | null;
+  /** Runtime status line; a queued run held by admission shows it instead of "Working" (GRE-198). */
+  statusMessage?: string | null;
 }) {
-  const active = !isTerminalRunStatus(status);
+  const waiting = status === "queued" && Boolean(statusMessage);
+  const active = !isTerminalRunStatus(status) && !waiting;
   // One shared page-wide ticker drives the live elapsed readout, matching the
   // default view's `useLiveElapsed`.
   useSecondTick(active && startedAtMs != null);
@@ -68,8 +72,10 @@ export function TaskChatLiveRunPill({
     ? formatDurationWords(elapsedMs)
     : null;
   const failed = ["failed", "timed_out", "cancelled", "interrupted"].includes(status);
-  const verb = active ? "Working" : failed ? "Stopped" : "Worked";
-  const suffix = elapsed ? `for ${elapsed}` : null;
+  const verb = waiting
+    ? statusMessage
+    : active ? "Working" : failed ? "Stopped" : "Worked";
+  const suffix = elapsed && !waiting ? `for ${elapsed}` : null;
 
   return (
     <div
@@ -83,7 +89,7 @@ export function TaskChatLiveRunPill({
           </span>
         ) : (
           <span className="flex size-5 shrink-0 items-center justify-center">
-            <span className={cn("h-1.5 w-1.5 rounded-full", (failed || active) ? "bg-muted-foreground/40" : "bg-emerald-500/70")} />
+            <span className={cn("h-1.5 w-1.5 rounded-full", (failed || waiting) ? "bg-muted-foreground/40" : "bg-emerald-500/70")} />
           </span>
         )}
         {active ? <span className={cn("shimmer-text")}>{verb}</span> : verb}

@@ -541,9 +541,12 @@ export const queryKeys = {
     projectSummary: (projectId: string) =>
       ["external-objects", "project-summary", projectId] as const,
   },
+  releases: (companyId: string) => ["releases", companyId] as const,
+  clientVersion: (companyId: string) => ["client-version", companyId] as const,
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
+    checkIns: (id: string) => ["goals", "check-ins", id] as const,
   },
   artifacts: {
     list: (
@@ -613,6 +616,8 @@ export const queryKeys = {
     settings: ["instance", "settings"] as const,
     generalSettings: ["instance", "general-settings"] as const,
     experimentalSettings: ["instance", "experimental-settings"] as const,
+    systemMemory: ["instance", "system-memory"] as const,
+    runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
   },
   health: ["health"] as const,
   cloud: {

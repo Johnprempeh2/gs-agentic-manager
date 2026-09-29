@@ -37,6 +37,7 @@ import type {
 } from "@greatstone/shared";
 import { api, ApiError, type RequestOptions } from "./client";
 import { CommentSubmissionUnknownError } from "../lib/comment-submit-result";
+import { sendWithBlockedDependentsHandoff } from "../lib/blocked-dependents-handoff";
 
 function hasCommentReceipt(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -260,14 +261,15 @@ export const issuesApi = {
     ),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Issue>(`/companies/${companyId}/issues`, data),
-  update: (id: string, data: Record<string, unknown>) => {
-    const response = api.patch<IssueUpdateResponse>(`/issues/${id}`, data);
-    return typeof data.comment === "string"
-      ? confirmedCommentResponse(response, (value) =>
-          hasCommentReceipt(value?.comment),
-        )
-      : response;
-  },
+  update: (id: string, data: Record<string, unknown>) =>
+    sendWithBlockedDependentsHandoff(id, data, (payload) => {
+      const response = api.patch<IssueUpdateResponse>(`/issues/${id}`, payload);
+      return typeof payload.comment === "string"
+        ? confirmedCommentResponse(response, (value) =>
+            hasCommentReceipt(value?.comment),
+          )
+        : response;
+    }),
   decideStalledReview: (id: string, data: StalledReviewDecision) =>
     api.post<StalledReviewDecisionResponse>(
       `/issues/${id}/stalled-review-decision`,
@@ -433,10 +435,12 @@ export const issuesApi = {
       selectedOptionIds?: string[];
       rememberAction?: boolean;
     },
+    options?: RequestOptions,
   ) =>
     api.post<IssueThreadInteraction>(
       `/issues/${id}/interactions/${interactionId}/accept`,
       data ?? {},
+      options,
     ),
   rejectInteraction: (id: string, interactionId: string, reason?: string) =>
     api.post<IssueThreadInteraction>(

@@ -1,6 +1,7 @@
 import { settleSlackConversation } from "../slack-conversation-lifecycle.js";
 import { externalConversationStateSql } from "../slack-conversation-state.js";
 import { executionRetryAccounting } from "../execution-recovery-attempt.js";
+import { isSilentRetryHoldPending } from "../run-silent-timeout.js";
 import {
   decideLegacyContinuation, legacyDispositionEpisode, legacyDispositionFingerprint,
   LEGACY_DISPOSITION_REPAIR_INSTRUCTION, type LegacyDispositionEpisode,
@@ -235,6 +236,7 @@ type LatestIssueRun =
       | "createdAt"
     > & {
       resultJson?: unknown;
+      finishedAt?: Date | null;
     })
   | null;
 type SuccessfulLatestIssueRun = NonNullable<LatestIssueRun> & {
@@ -938,6 +940,13 @@ export function recoveryService(
     transientRetryBudgetSpent?: (
       run: typeof heartbeatRuns.$inferSelect,
     ) => boolean;
+    /**
+     * GRE-200: the run was lost to host sleep (lease or startup deadline
+     * passed while the host was dark). `scheduleRecoveryRetry` resumes it in
+     * a lane that does not spend the failure budget, so the sweep must not
+     * classify it as non-retryable or count it toward escalation.
+     */
+    isHostSleepLoss?: (run: NonNullable<LatestIssueRun>) => boolean;
     liveRunExecutions?: Readonly<{ has(id: string): boolean }>;
     beforeOrphanedRunTerminalWrite?: (runId: string) => Promise<void>;
   },
@@ -977,6 +986,7 @@ export function recoveryService(
         livenessState: heartbeatRuns.livenessState,
         resultJson: heartbeatRuns.resultJson,
         startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
         createdAt: heartbeatRuns.createdAt,
       })
       .from(heartbeatRuns)
@@ -1007,6 +1017,7 @@ export function recoveryService(
         livenessState: heartbeatRuns.livenessState,
         resultJson: heartbeatRuns.resultJson,
         startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
         createdAt: heartbeatRuns.createdAt,
       })
       .from(heartbeatRuns)
@@ -1838,6 +1849,7 @@ export function recoveryService(
         livenessState: heartbeatRuns.livenessState,
         resultJson: heartbeatRuns.resultJson,
         startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
         createdAt: heartbeatRuns.createdAt,
       })
       .from(heartbeatRuns)
@@ -4648,6 +4660,14 @@ export function recoveryService(
         continue;
       }
 
+      // GRE-181: the silent-run watchdog holds this issue's fresh retry while
+      // the host is overloaded; it sends the retry or escalates on its own
+      // deadline. A continuation from here would start the same hang.
+      if (isSilentRetryHoldPending(latestRun, new Date())) {
+        result.skipped += 1;
+        continue;
+      }
+
       if (await hasPendingWakeInteraction(issue.companyId, issue.id)) {
         result.skipped += 1;
         continue;
@@ -5516,7 +5536,10 @@ export function recoveryService(
         }
         continue;
       }
-      if (isUnsuccessfulTerminalIssueRun(latestRun)) {
+      if (
+        isUnsuccessfulTerminalIssueRun(latestRun) &&
+        !(latestRun && deps.isHostSleepLoss?.(latestRun))
+      ) {
         const classification = classifyContinuationFailure(latestRun);
 
         if (

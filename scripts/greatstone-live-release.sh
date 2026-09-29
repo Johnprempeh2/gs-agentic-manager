@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # One-click release launcher (see doc/GREATSTONE-WAY-OF-WORKING.md, step 6).
 #
-#   greatstone-live-release.sh <job-dir> <rc-tag> <release-repo>
+#   greatstone-live-release.sh <job-dir> <rc-tag|live-tag> <release-repo>
 #
-# The live server starts this when John accepts an "Update live?" card, after
-# it has held new agent runs and seen none running. It does not repeat any
+# The live server starts this when John releases or rolls back from the
+# Releases page (or accepts an "Update live?" card), after it has held new
+# agent runs and waited for runs flagged "finish before update". It does not repeat any
 # release logic: it runs <release-repo>/scripts/greatstone-release.sh, the same
 # command John runs by hand. If that fails after live moved, it rolls back with
 # the same script to the live-* tag live was on before. The outcome goes to
@@ -16,7 +17,7 @@
 set -uo pipefail
 
 JOB_DIR="${1:?job dir}"
-TAG="${2:?rc tag}"
+TAG="${2:?rc or live tag}"
 RELEASE_REPO="${3:?release repo}"
 
 if [ "${GSAM_LIVE_RELEASE_FOREGROUND:-}" != 1 ]; then
@@ -26,6 +27,9 @@ if [ "${GSAM_LIVE_RELEASE_FOREGROUND:-}" != 1 ]; then
 fi
 
 export GSAM_RELEASE_REPO="$RELEASE_REPO"
+# Hot restart, no preview check: see greatstone-release.sh.
+export GSAM_RELEASE_FROM_APP=1
+export GSAM_RELEASE_PHASE_FILE="$JOB_DIR/phase"
 RELEASE="$RELEASE_REPO/scripts/greatstone-release.sh"
 
 # write_result <outcome> <message> [<live-tag>] [<commit>] [<backup-file>]
@@ -55,6 +59,17 @@ fi
 # shellcheck source=greatstone-common.sh
 source "$RELEASE_REPO/scripts/greatstone-common.sh"
 
+# Preflight before the release script backs up or tags anything (GRE-180). An
+# older release repo has no such check; greatstone-release.sh runs it too.
+if declare -F live_index_lock_check >/dev/null; then
+  if ! LOCK_NOTE="$(live_index_lock_check)"; then
+    write_result not_released "$LOCK_NOTE"
+    say "$(date -u +%FT%TZ) not released: $LOCK_NOTE"
+    exit 1
+  fi
+  [ -z "$LOCK_NOTE" ] || say "$(date -u +%FT%TZ) $LOCK_NOTE"
+fi
+
 BEFORE="$(git -C "$LIVE_DIR" rev-parse HEAD 2>/dev/null || true)"
 PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || true)"
 
@@ -62,7 +77,7 @@ say "$(date -u +%FT%TZ) release $TAG (live on ${PREVIOUS:-$BEFORE})"
 "$RELEASE" "$TAG" >"$JOB_DIR/release.log" 2>&1
 STATUS=$?
 BACKUP="$(sed -n 's/^Backed up the live database (on .*) to //p' "$JOB_DIR/release.log" | tail -n 1)"
-LIVE_TAG="$(sed -n 's/^Tagged .* as \(live-.*\)$/\1/p' "$JOB_DIR/release.log" | tail -n 1)"
+LIVE_TAG="$(sed -n 's/^Tagged .* as \(live-[^ :]*\).*$/\1/p' "$JOB_DIR/release.log" | tail -n 1)"
 
 if [ "$STATUS" -eq 0 ]; then
   write_result released "" "$LIVE_TAG" "$(health_commit "$LIVE_URL")" "$BACKUP"

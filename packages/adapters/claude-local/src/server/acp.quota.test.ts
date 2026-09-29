@@ -150,6 +150,23 @@ it.each([
   });
   expect(result.errorFamily).toBeUndefined();
   expect(result.retryNotBefore).toBeUndefined();
-  expect(JSON.stringify(result)).not.toContain(title);
+  // GRE-236: the run keeps the provider's own (redacted) reason so an operator
+  // can tell a dead token from another refusal; the run log still does not.
+  expect(result.resultJson).toMatchObject({ providerReason: title });
   expect(logs).not.toContain(title);
+});
+
+// GRE-236: the provider reason is redacted and bounded before it reaches the run.
+it("redacts credentials and bounds the provider reason of an access failure", () => {
+  const token = "sk-ant-oat01-" + "a".repeat(40);
+  const result = classifyClaudeTerminalSessionFailure({
+    category: "access",
+    title: "Invalid bearer token",
+    details: `Authorization: Bearer ${token}\n${"x".repeat(500)}`,
+  }, now);
+  expect(result?.errorCode).toBe("claude_auth_required");
+  expect(result?.providerReason).toMatch(/^Invalid bearer token - /);
+  expect(result?.providerReason).not.toContain(token);
+  expect(result?.providerReason).not.toContain("\n");
+  expect(result?.providerReason?.length).toBeLessThanOrEqual(300);
 });

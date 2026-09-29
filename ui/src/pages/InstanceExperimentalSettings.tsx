@@ -8,7 +8,7 @@ import type {
   ManagedSettingMetadata,
   PatchInstanceExperimentalSettings,
 } from "@greatstone/shared";
-import { experimentalSettingKey } from "@greatstone/shared";
+import { experimentalSettingKey, isRetiredInstanceFeatureKey } from "@greatstone/shared";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { getWorktreeInstanceId, isWorktreeRuntime } from "../lib/worktree-branding";
@@ -56,9 +56,6 @@ function formatActivationTimestamp(iso: string): string {
   return parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-// PAP-11233: keep Conference Room code intact, but hide the user-facing opt-in for now.
-const SHOW_CONFERENCE_ROOM_EXPERIMENTAL_SETTING = false;
-
 function ManagedByCloudBadge() {
   return (
     <Badge variant="outline" className="text-muted-foreground">
@@ -67,6 +64,9 @@ function ManagedByCloudBadge() {
     </Badge>
   );
 }
+
+/** Greatstone (GRE-191): switches whose feature is now always on. */
+const GRADUATED_SETTING_KEYS: ReadonlySet<InstanceFeatureKey> = new Set(["enableGoalsSidebarLink"]);
 
 function ExperimentalToggleCard({
   title,
@@ -93,6 +93,10 @@ function ExperimentalToggleCard({
   const { hidden: hiddenSettings } = useHiddenSettings();
   const isManaged = managed?.managed === true;
   if (hiddenSettings.has(experimentalSettingKey(settingKey))) return null;
+  // Greatstone (GRE-196): retired switches are hidden; their code stays in place.
+  if (isRetiredInstanceFeatureKey(settingKey)) return null;
+  // Greatstone (GRE-191): graduated switches are hidden; the feature is always on.
+  if (GRADUATED_SETTING_KEYS.has(settingKey)) return null;
   return (
     <Card className="block bg-transparent p-5">
       <div className="flex items-start justify-between gap-4">
@@ -237,7 +241,8 @@ export function InstanceExperimentalSettings() {
     experimentalQuery.data?.enableFirstTaskPlanProposal === true;
   const enableSmokeLab = experimentalQuery.data?.enableSmokeLab === true;
   const autoRestartDevServerWhenIdle = experimentalQuery.data?.autoRestartDevServerWhenIdle === true;
-  const isVisible = (key: InstanceFeatureKey) => !hiddenSettings.has(experimentalSettingKey(key));
+  const isVisible = (key: InstanceFeatureKey) =>
+    !isRetiredInstanceFeatureKey(key) && !GRADUATED_SETTING_KEYS.has(key) && !hiddenSettings.has(experimentalSettingKey(key));
   const showWorktreeRunExecution = inWorktree && isVisible("enableWorktreeRunExecution");
   const showDeveloperSection = showWorktreeRunExecution || ([
     "autoRestartDevServerWhenIdle",
@@ -350,18 +355,17 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle chat connectors experimental setting"
         />
 
-        {SHOW_CONFERENCE_ROOM_EXPERIMENTAL_SETTING ? (
-          <ExperimentalToggleCard
-            title="Conference Room Chat"
-            description="Adds a Conference Room — one chat where you and your whole team work together — plus the live activity feed and the redesigned onboarding. Also restyles task threads as chat bubbles. Turn off anytime to restore the classic UI."
-            checked={enableConferenceRoomChat}
-            onCheckedChange={(checked) => toggleMutation.mutate({ enableConferenceRoomChat: checked })}
-            disabled={toggleMutation.isPending}
-            settingKey="enableConferenceRoomChat"
-            managed={managedKeys.enableConferenceRoomChat}
-            ariaLabel="Toggle conference room chat experimental setting"
-          />
-        ) : null}
+        {/* Greatstone (GRE-230): upstream hid this opt-in (PAP-11233); John turns it on and off here. */}
+        <ExperimentalToggleCard
+          title="Conference Room Chat"
+          description="Adds a Conference Room — one chat where you and your whole team work together — plus the live activity feed and the redesigned onboarding. Also restyles task threads as chat bubbles. Turn off anytime to restore the classic UI."
+          checked={enableConferenceRoomChat}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableConferenceRoomChat: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableConferenceRoomChat"
+          managed={managedKeys.enableConferenceRoomChat}
+          ariaLabel="Toggle conference room chat experimental setting"
+        />
 
         <ExperimentalToggleCard
           title="Enable Environments"

@@ -723,7 +723,9 @@ async function expectForwardBranchReconciled(input: {
   expectsExistingRecordUpdate: boolean;
   expectedResolvedRecoveryActionFingerprint?: string | null;
 }) {
-  const finishedRun = await waitForRunToFinish(input.heartbeat, input.runId, 10_000);
+  // Reconcile runs several git commands; alongside workspace-runtime.test.ts
+  // they can take well over 10s, so allow a longer wait than the default.
+  const finishedRun = await waitForRunToFinish(input.heartbeat, input.runId, 40_000);
   expect(finishedRun).toMatchObject({
     status: "succeeded",
     errorCode: null,
@@ -1217,5 +1219,189 @@ describeEmbeddedPostgres("heartbeat workspace branch containment", () => {
       expectedResolvedRecoveryActionFingerprint,
     });
     expect(adapterExecute).toHaveBeenCalledTimes(1);
-  }, 30_000);
+  }, 60_000);
+
+  it("runs an open issue bound to an archived workspace in a fresh worktree and says so once (GRE-229)", async () => {
+    const repoRoot = await createGitRepo();
+    tempRoots.push(repoRoot);
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const projectWorkspaceId = randomUUID();
+    const agentId = randomUUID();
+    const doneIssueId = randomUUID();
+    const openIssueId = randomUUID();
+    const archivedWorkspaceId = randomUUID();
+    const runId = randomUUID();
+    const wakeupRequestId = randomUUID();
+    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+    const archivedPath = path.join(repoRoot, ".gsam", "worktrees", `${issuePrefix}-1-fresh`);
+    const now = new Date();
+
+    await instanceSettingsService(db).updateExperimental({
+      enableIsolatedWorkspaces: true,
+      enableWorkspaceBranchReconcileForward: false,
+    });
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Acme",
+      issuePrefix,
+      status: "active",
+      defaultResponsibleUserId: "responsible-user",
+    });
+    await db.insert(projects).values({
+      id: projectId,
+      companyId,
+      name: "Archived reuse",
+      status: "active",
+      executionWorkspacePolicy: {
+        enabled: true,
+        defaultMode: "isolated_workspace",
+        workspaceStrategy: { type: "git_worktree", baseRef: "HEAD", branchTemplate: "{{issue.identifier}}-fresh" },
+      },
+    });
+    await db.insert(projectWorkspaces).values({
+      id: projectWorkspaceId,
+      companyId,
+      projectId,
+      name: "Primary",
+      cwd: repoRoot,
+      isPrimary: true,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "CodexCoder",
+      role: "engineer",
+      status: "idle",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: { heartbeat: { wakeOnDemand: true, maxConcurrentRuns: 1 } },
+      permissions: {},
+    });
+    // The done issue's workspace was archived by the reaper and its worktree removed.
+    await db.insert(executionWorkspaces).values({
+      id: archivedWorkspaceId,
+      companyId,
+      projectId,
+      projectWorkspaceId,
+      mode: "isolated_workspace",
+      strategyType: "git_worktree",
+      name: `${issuePrefix}-1-fresh`,
+      status: "archived",
+      closedAt: now,
+      cleanupReason: "issue_terminal",
+      cwd: archivedPath,
+      baseRef: "HEAD",
+      branchName: `${issuePrefix}-1-fresh`,
+      providerType: "git_worktree",
+      providerRef: archivedPath,
+      metadata: { createdByRuntime: true, gitBranchOwnershipVersion: 1 },
+    });
+    await db.insert(agentWakeupRequests).values({
+      id: wakeupRequestId,
+      companyId,
+      agentId,
+      source: "assignment",
+      triggerDetail: "system",
+      reason: "issue_assigned",
+      payload: { issueId: openIssueId },
+      status: "queued",
+      runId,
+    });
+    await db.insert(heartbeatRuns).values({
+      id: runId,
+      companyId,
+      agentId,
+      invocationSource: "assignment",
+      triggerDetail: "system",
+      status: "queued",
+      wakeupRequestId,
+      contextSnapshot: { issueId: openIssueId, taskId: openIssueId, wakeReason: "issue_assigned" },
+      responsibleUserId: "responsible-user",
+    });
+
+    await db.insert(issues).values([
+      {
+        id: doneIssueId,
+        companyId,
+        projectId,
+        projectWorkspaceId,
+        title: "Done issue that owned the workspace",
+        status: "done",
+        workMode: "standard",
+        priority: "medium",
+        issueNumber: 1,
+        identifier: `${issuePrefix}-1`,
+        executionWorkspaceId: archivedWorkspaceId,
+        completedAt: now,
+      },
+      {
+        id: openIssueId,
+        companyId,
+        projectId,
+        projectWorkspaceId,
+        title: "Open issue that reuses the workspace",
+        status: "in_progress",
+        workMode: "standard",
+        priority: "medium",
+        assigneeAgentId: agentId,
+        checkoutRunId: runId,
+        executionRunId: runId,
+        executionAgentNameKey: "codexcoder",
+        executionLockedAt: now,
+        responsibleUserId: "responsible-user",
+        issueNumber: 2,
+        identifier: `${issuePrefix}-2`,
+        executionWorkspaceId: archivedWorkspaceId,
+        executionWorkspacePreference: "reuse_existing",
+        executionWorkspaceSettings: { mode: "isolated_workspace" },
+        startedAt: now,
+      },
+    ]);
+    await db
+      .update(executionWorkspaces)
+      .set({ sourceIssueId: doneIssueId })
+      .where(eq(executionWorkspaces.id, archivedWorkspaceId));
+    let adapterCwd: string | null = null;
+    adapterExecute.mockImplementationOnce(async (adapterInput) => {
+      adapterCwd = readAdapterWorkspace(adapterInput).cwd;
+      return {
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        summary: "Ran in the fallback workspace.",
+        provider: "test",
+        model: "test-model",
+      };
+    });
+
+    const heartbeat = heartbeatService(db);
+    await heartbeat.resumeQueuedRuns();
+    const finishedRun = await waitForRunToFinish(heartbeat, runId, 30_000);
+
+    expect(finishedRun?.errorCode ?? null).not.toBe("setup_failed");
+    expect(finishedRun?.status).toBe("succeeded");
+    expect(adapterExecute).toHaveBeenCalledTimes(1);
+    expect(adapterCwd).not.toBeNull();
+    expect(adapterCwd).not.toBe(archivedPath);
+
+    const [openIssue] = await db
+      .select({ executionWorkspaceId: issues.executionWorkspaceId })
+      .from(issues)
+      .where(eq(issues.id, openIssueId));
+    expect(openIssue?.executionWorkspaceId).toEqual(expect.any(String));
+    expect(openIssue?.executionWorkspaceId).not.toBe(archivedWorkspaceId);
+    const [freshWorkspace] = await db
+      .select({ status: executionWorkspaces.status, cwd: executionWorkspaces.cwd })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, openIssue!.executionWorkspaceId!));
+    expect(freshWorkspace).toMatchObject({ status: "active", cwd: adapterCwd });
+
+    const fallbackComments = (await readContainmentComments(db, [openIssueId]))
+      .filter((comment) => comment.body.includes("that workspace is archived"));
+    expect(fallbackComments).toHaveLength(1);
+    expect(fallbackComments[0]).toMatchObject({ authorType: "system" });
+    expect(fallbackComments[0]!.body).toContain(archivedWorkspaceId);
+    expect(fallbackComments[0]!.body).toContain(openIssue!.executionWorkspaceId!);
+  }, 60_000);
 });

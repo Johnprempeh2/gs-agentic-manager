@@ -25,6 +25,28 @@ function runMinutes(run) {
   return minutesBetween(run.startedAt ?? run.createdAt, run.finishedAt);
 }
 
+// Stopping a run makes the dying process flush a last burst of output (tool
+// call, status, error) a few seconds before `finishedAt`, which also moves the
+// row's `lastOutputAt`. Output this close to the finish is the stop's own, not
+// a sign the run was working.
+export const STOP_FLUSH_SECONDS = 60;
+
+// Minutes with no output when the run was stopped, measured up to the start
+// of the stop flush. The clock starts where the silent-run watchdog's does
+// (GRE-34): last output, then process start, then run start, then creation.
+// `outputTimes` (run-log chunk times) gives the exact answer; without it the
+// row's `lastOutputAt` is used, which the stop flush can hide. A start time
+// inside the flush is skipped: a stop can stamp `processStartedAt` again (GRE-3's
+// run d267e002 shows 18:49:15 after a hang from 14:23).
+function silentMinutesAtStop(run) {
+  const cutoff = time(run.finishedAt) - STOP_FLUSH_SECONDS * 1000;
+  const start = [run.processStartedAt, run.startedAt, run.createdAt].find((value) => value != null && time(value) <= cutoff) ?? run.finishedAt;
+  if (!run.outputTimes) return minutesBetween(run.lastOutputAt ?? start, run.finishedAt);
+  const before = run.outputTimes.map(time).filter((value) => value < cutoff);
+  const last = Math.max(time(start) ?? 0, ...before);
+  return Math.max(0, (cutoff - last) / MINUTE);
+}
+
 function summariseRuns(runs) {
   const minutes = runs.map(runMinutes);
   return {
@@ -38,6 +60,8 @@ function summariseRuns(runs) {
       status: run.status,
       errorCode: run.errorCode ?? null,
       minutes: round1(runMinutes(run)),
+      silentMinutes: round1(silentMinutesAtStop(run)),
+      silenceSource: run.outputTimes ? "run_log" : "run_row",
       finishedAt: run.finishedAt,
     })),
   };
@@ -46,18 +70,24 @@ function summariseRuns(runs) {
 // L1. Two kinds, reported apart so the fix shows up as a shift between them:
 // - caught by a watchdog: a silent-stop code, or the run timed out;
 // - caught by a human: a manual cancel (`errorCode = 'cancelled'`) of a run
-//   that had been going for at least the silence threshold. Today nothing
-//   stops a hung run, so a person cancelling a long run is the signal.
+//   that had written no output for at least the silence threshold when it was
+//   cancelled, ignoring the stop flush (GRE-182). A long run that was still
+//   writing is not a hang, so a bulk cancel of working runs does not count.
+//   The rule stays next to the watchdog because an agent can turn the
+//   watchdog off and older windows predate it.
 export function computeHungRuns(snapshot, { since, now, silenceMinutes = DEFAULT_SILENCE_MINUTES }) {
   const finished = snapshot.runs.filter((run) => inWindow(run.finishedAt, since, now));
   const watchdog = finished.filter((run) => SILENT_STOP_CODES.includes(run.errorCode) || run.status === "timed_out");
-  const humanCancelled = finished.filter(
-    (run) => run.status === "cancelled" && run.errorCode === "cancelled" && runMinutes(run) >= silenceMinutes,
-  );
+  const manualCancels = finished.filter((run) => run.status === "cancelled" && run.errorCode === "cancelled");
+  const humanCancelled = manualCancels.filter((run) => silentMinutesAtStop(run) >= silenceMinutes);
   const watchdogSummary = summariseRuns(watchdog);
   const humanSummary = summariseRuns(humanCancelled);
   return {
     silenceMinutes,
+    stopFlushSeconds: STOP_FLUSH_SECONDS,
+    // Long manual cancels left out because the run was still writing, so the
+    // exclusion can be audited.
+    manualCancelsNotCounted: manualCancels.filter((run) => !humanCancelled.includes(run) && runMinutes(run) >= silenceMinutes).length,
     count: watchdog.length + humanCancelled.length,
     minutes: round1(watchdogSummary.minutes + humanSummary.minutes),
     caughtByWatchdog: watchdogSummary,

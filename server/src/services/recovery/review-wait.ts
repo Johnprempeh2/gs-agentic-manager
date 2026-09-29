@@ -1,6 +1,6 @@
-import { and, count, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, notExists, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { activityLog, issueComments, issueRelations, issues } from "@greatstone/db";
+import { activityLog, heartbeatRuns, issueComments, issueRelations, issues } from "@greatstone/db";
 
 // A reviewer that is waiting on CI or on another agent's check is not a
 // stalled review (GRE-97). On GRE-80 the reviewer commented "waiting on CI and
@@ -14,6 +14,12 @@ export const REVIEW_WAIT_ACTIVITY_WINDOW_MS = 30 * 60 * 1000;
 export const REVIEW_WAIT_RECHECK_MS = 30 * 60 * 1000;
 /** Retry budget: at most this many deferrals per issue in the budget window, then block as before. */
 export const REVIEW_WAIT_MAX_DEFERRALS = 8;
+/**
+ * Budget when the only evidence is a reviewer comment (GRE-218). Agents comment
+ * on every run, so a comment alone is weak evidence; a real CI wait ends within
+ * about an hour. A wait on a check issue keeps REVIEW_WAIT_MAX_DEFERRALS.
+ */
+export const REVIEW_WAIT_COMMENT_ONLY_MAX_DEFERRALS = 2;
 export const REVIEW_WAIT_BUDGET_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 export const REVIEW_WAIT_MONITOR_SERVICE_NAME = "Review wait";
@@ -45,7 +51,8 @@ export function decideReviewWait(evidence: ReviewWaitEvidence, now: Date): Revie
     now.getTime() - evidence.latestReviewerCommentAt.getTime() <= REVIEW_WAIT_ACTIVITY_WINDOW_MS;
   const hasActiveCheck = evidence.activeCheckIssueCount > 0;
   if (!commentedRecently && !hasActiveCheck) return { kind: "stalled", reason: "no_activity" };
-  if (evidence.priorDeferrals >= REVIEW_WAIT_MAX_DEFERRALS) return { kind: "stalled", reason: "budget_exhausted" };
+  const maxDeferrals = hasActiveCheck ? REVIEW_WAIT_MAX_DEFERRALS : REVIEW_WAIT_COMMENT_ONLY_MAX_DEFERRALS;
+  if (evidence.priorDeferrals >= maxDeferrals) return { kind: "stalled", reason: "budget_exhausted" };
   return { kind: "waiting", reason: hasActiveCheck ? "active_check_issue" : "reviewer_comment" };
 }
 
@@ -53,6 +60,11 @@ export async function readReviewWaitEvidence(
   db: Db,
   input: { companyId: string; issueId: string; reviewerAgentId: string; now: Date },
 ): Promise<ReviewWaitEvidence> {
+  // The run summary the heartbeat posts for a finished run is authored as the
+  // reviewer, but it is the run's own output, not the reviewer saying it waits
+  // (GRE-204). Counting it made every review retry that ended without a
+  // decision look like a wait, so the retry never blocked. The run's
+  // `presentationDecision` names the comment the heartbeat materialized.
   const latestComment = await db
     .select({ createdAt: issueComments.createdAt })
     .from(issueComments)
@@ -62,6 +74,18 @@ export async function readReviewWaitEvidence(
         eq(issueComments.issueId, input.issueId),
         eq(issueComments.authorAgentId, input.reviewerAgentId),
         isNull(issueComments.deletedAt),
+        notExists(
+          db
+            .select({ id: heartbeatRuns.id })
+            .from(heartbeatRuns)
+            .where(
+              and(
+                eq(heartbeatRuns.id, issueComments.createdByRunId),
+                sql`${heartbeatRuns.resultJson} -> 'presentationDecision' ->> 'commentId' = ${issueComments.id}::text`,
+                sql`${heartbeatRuns.resultJson} -> 'presentationDecision' -> 'reasonCodes' @> '["resolved_response_materialized"]'::jsonb`,
+              ),
+            ),
+        ),
       ),
     )
     .orderBy(desc(issueComments.createdAt))

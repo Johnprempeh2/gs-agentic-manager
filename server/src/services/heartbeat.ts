@@ -318,6 +318,7 @@ import { secretService, type MissingRuntimeBinding } from "./secrets.js";
 import {
   resolveDefaultAgentWorkspaceDir,
   resolveManagedProjectWorkspaceDir,
+  resolvePaperclipInstanceRoot,
 } from "../home-paths.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -507,12 +508,30 @@ import {
   FRESH_SESSION_ON_RETRY_KEY,
   RUN_SILENT_TIMEOUT_ERROR_CODE,
   RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+  SILENT_RETRY_MAX_DEFER_MS,
+  awakeSilenceAgeMs,
+  evaluateSilentRetryPressure,
   formatSilenceMinutes,
   isRunSilentPastTimeout,
+  readSilentRetryHold,
   resolveRunSilentTimeoutMs,
   runRequiresFreshSession,
+  type SilentRetryPressure,
 } from "./run-silent-timeout.js";
-import { silenceAgeMs as runSilenceAgeMs } from "../modules/active-run-watchdog/domain/policy.js";
+import {
+  NO_HOST_BLIND_TIME,
+  hostBlindTime as processHostBlindTime,
+  type HostBlindTimeTracker,
+} from "./host-blind-time.js";
+import {
+  FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY,
+  HOST_SLEEP_RETRY_DELAY_MS,
+  HOST_SLEEP_RETRY_MAX_ATTEMPTS,
+  HOST_SLEEP_RETRY_REASON,
+  HOST_SLEEP_RETRY_WAKE_REASON,
+  isHostSleepLoss,
+} from "./host-sleep-loss.js";
+import os from "node:os";
 import {
   ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS as RECOVERY_ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS,
   recoveryService,
@@ -606,6 +625,20 @@ import {
   sweepExpiredHeartbeatRunRuntimeStatuses,
   touchHeartbeatRunRuntimeStatus,
 } from "./heartbeat-run-runtime-status.js";
+import {
+  createSystemDiskReader,
+  createSystemMemoryReader,
+  evaluateRunAdmission,
+  orderAgentsByOldestQueuedRun,
+  resolveRunAdmissionSettings,
+  RUN_ADMISSION_RECHECK_MS,
+  type DiskReader,
+  type MemoryReader,
+} from "./run-admission.js";
+import {
+  recordRunAdmissionHold,
+  recordRunAdmissionRelease,
+} from "./run-admission-recommendation.js";
 import {
   findMissingHotRestartSnapshotRunIds,
   readHotRestartIntent,
@@ -1276,6 +1309,22 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
 // Routes and the scheduler construct separate heartbeatService instances, but
 // they must agree on in-process adapter executions when reaping stale runs.
 const activeRunExecutions = new Set<string>();
+// Instance-wide run admission (GRE-105), shared across service instances like
+// activeRunExecutions. Slots reserved by a start gate that is still claiming,
+// plus runs this process admitted that have not finished executing. Counting
+// admitted runs in memory closes the window where a concurrent start gate reads
+// the running count before another gate's claim has committed.
+let runAdmissionReservedSlots = 0;
+const runAdmissionAdmittedRunIds = new Set<string>();
+// Queued runs currently held by the admission guard, keyed by run id.
+const runAdmissionHeldRuns = new Map<
+  string,
+  { reason: string; message: string; publishedAt: number }
+>();
+let runAdmissionRecheckTimer: {
+  timer: ReturnType<typeof setTimeout>;
+  dueAt: number;
+} | null = null;
 // A legacy process adapter's signal exit can race the operator cancellation CAS while
 // its owned process group is still being joined. Keep that exit from becoming
 // a successful result (or a competing failure) before Stop settles. This is an
@@ -5896,6 +5945,9 @@ export type ExecutionWorkspaceReuseRequestForIssue = {
   requestedExecutionWorkspaceId: string | null;
   requestedShouldReuseExisting: boolean;
   existingExecutionWorkspaceAvailable: boolean;
+  // The issue asked to reuse a workspace that is already archived. The run
+  // realizes a fresh workspace instead of failing at setup (GRE-229).
+  archivedWorkspaceFallback: boolean;
 };
 
 /**
@@ -5931,14 +5983,22 @@ export function resolveExecutionWorkspaceReuseRequestForIssue(input: {
     requestedExistingBranch === null ||
     readNonEmptyString(input.existingExecutionWorkspaceBranchName) ===
       requestedExistingBranch;
-  const requestedShouldReuseExisting =
+  const reuseRequested =
     input.issueExecutionWorkspacePreference === "reuse_existing" &&
     requestedExecutionWorkspaceId !== null &&
     existingWorkspaceMatchesRequestedBranch;
+  // An archived workspace cannot be restored: its worktree may already be
+  // removed. Realize a fresh workspace so the open issue keeps a way forward,
+  // and let the caller rebind the issue and say so once.
+  const archivedWorkspaceFallback =
+    reuseRequested && input.existingExecutionWorkspaceStatus === "archived";
+  const requestedShouldReuseExisting =
+    reuseRequested && !archivedWorkspaceFallback;
 
   return {
     requestedExecutionWorkspaceId,
     requestedShouldReuseExisting,
+    archivedWorkspaceFallback,
     existingExecutionWorkspaceAvailable:
       requestedShouldReuseExisting &&
       input.existingExecutionWorkspaceStatus !== null &&
@@ -5964,6 +6024,22 @@ export function resolveExecutionWorkspaceReuseProvisioningPolicy(input: {
       input.workspaceConfigFreshness.shouldRefreshConfigSnapshot,
     shouldPersistLatestWorkspaceConfigMetadata: !replacementClassDrift,
   };
+}
+
+export function formatArchivedWorkspaceFallbackComment(input: {
+  archivedWorkspaceId: string | null;
+  workspace: { id: string; branchName?: string | null; cwd?: string | null };
+}) {
+  const lines = [
+    `This issue was bound to execution workspace \`${input.archivedWorkspaceId ?? "unknown"}\`, but that workspace is archived, so it could not be reused.`,
+    "This run started in a fresh workspace instead, and the issue now uses it.",
+    "",
+    `- Workspace: \`${input.workspace.id}\``,
+  ];
+  if (input.workspace.branchName) lines.push(`- Branch: \`${input.workspace.branchName}\``);
+  if (input.workspace.cwd) lines.push(`- Worktree: \`${input.workspace.cwd}\``);
+  lines.push("", "Work that was only in the archived worktree is not in the new one. Check the old branch if you need it.");
+  return lines.join("\n");
 }
 
 function formatInheritedExecutionWorkspaceReuseFailure(input: {
@@ -9311,6 +9387,30 @@ export interface HeartbeatServiceOptions {
     runId: string;
     issueId: string;
   }) => Promise<void>;
+  /**
+   * Reads available system memory for run admission. Defaults to the system
+   * reader; under vitest it defaults to "unknown" (fail open) so suites do not
+   * depend on the test machine's free RAM.
+   */
+  memoryReader?: MemoryReader;
+  /**
+   * GRE-207: reads free disk for run admission. Defaults to the fullest of
+   * the data dir and home volumes (worktrees live under home); under vitest
+   * it defaults to "unknown" (fail open).
+   */
+  diskReader?: DiskReader;
+  /**
+   * GRE-181: host blind time (sleep, stalled event loop) subtracted from run
+   * silence. Defaults to the process tracker; under vitest to none.
+   */
+  hostBlindTime?: HostBlindTimeTracker;
+  /** GRE-181: host CPU load for the silent-retry hold. Null fails open. */
+  hostLoadReader?: () => { load1: number; cpus: number } | null;
+}
+
+function readHostLoad() {
+  // Windows reports [0, 0, 0]; that reads as no load, which fails open.
+  return { load1: os.loadavg()[0] ?? 0, cpus: os.availableParallelism?.() ?? os.cpus().length };
 }
 
 export async function cancelHeartbeatNativeRun(input: {
@@ -9436,6 +9536,26 @@ export function heartbeatService(
     enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
   });
   const runtimeEnv = options.runtimeEnv ?? process.env;
+  const memoryReader: MemoryReader =
+    options.memoryReader ??
+    (runtimeEnv.VITEST ? async () => null : createSystemMemoryReader());
+  const diskReader: DiskReader =
+    options.diskReader ??
+    (runtimeEnv.VITEST
+      ? async () => null
+      : createSystemDiskReader(() => [resolvePaperclipInstanceRoot(), os.homedir()]));
+  const hostBlindTime =
+    options.hostBlindTime ?? (runtimeEnv.VITEST ? NO_HOST_BLIND_TIME : processHostBlindTime);
+  // GRE-200: sample first, so a gap the sampler has not seen yet (the lease
+  // timer and the sampler both fire on wake, in either order) still counts.
+  const runLostToHostSleep = (
+    run: Parameters<typeof isHostSleepLoss>[0],
+  ) => {
+    hostBlindTime.sample();
+    return isHostSleepLoss(run, hostBlindTime.blindMsBetween);
+  };
+  const hostLoadReader =
+    options.hostLoadReader ?? (runtimeEnv.VITEST ? () => null : readHostLoad);
   const inWorktreeRuntime = isTruthyRuntimeEnvValue(
     runtimeEnv.GSAM_IN_WORKTREE,
   );
@@ -9519,6 +9639,7 @@ export function heartbeatService(
   };
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
+    noticeHardStop: noticeBudgetHardStop,
   };
   const budgets = budgetService(db, budgetHooks);
   const recovery = recoveryService(db, {
@@ -9541,6 +9662,7 @@ export function heartbeatService(
     transientRetryBudgetSpent: (run) =>
       executionFailureRetryCount(run) >=
       BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS,
+    isHostSleepLoss: runLostToHostSleep,
   });
   const runDispatch = createRunDispatch(db);
 
@@ -15363,6 +15485,24 @@ export function heartbeatService(
     },
   ) {
     const now = opts?.now ?? new Date();
+    // GRE-200: a run lost to host sleep is resumed in the sleep lane, which
+    // does not spend the failure budget. The lane has its own bound; once it
+    // is spent the loss falls through to the normal failure budget.
+    if (
+      !opts?.retryReason &&
+      runLostToHostSleep(run) &&
+      executionRetryAttemptCount(run, HOST_SLEEP_RETRY_REASON) <
+        HOST_SLEEP_RETRY_MAX_ATTEMPTS
+    ) {
+      return scheduleBoundedRetryForRun(run, agent, {
+        ...opts,
+        now,
+        retryReason: HOST_SLEEP_RETRY_REASON,
+        wakeReason: HOST_SLEEP_RETRY_WAKE_REASON,
+        maxAttempts: HOST_SLEEP_RETRY_MAX_ATTEMPTS,
+        delayMs: HOST_SLEEP_RETRY_DELAY_MS,
+      });
+    }
     const retryReason =
       opts?.retryReason ?? BOUNDED_TRANSIENT_HEARTBEAT_RETRY_REASON;
     const wakeReason =
@@ -15573,6 +15713,9 @@ export function heartbeatService(
           : {}),
         ...(retryReason === AI_CONNECTION_BUSY_RETRY_REASON
           ? { failureRetriesBeforeAiConnectionWait: executionFailureRetryCount(run) }
+          : {}),
+        ...(retryReason === HOST_SLEEP_RETRY_REASON
+          ? { [FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY]: executionFailureRetryCount(run) }
           : {}),
         ...(shouldQuarantineWorkspaceForRetry
           ? {
@@ -19610,22 +19753,7 @@ export function heartbeatService(
       });
     }
 
-    const queuedRuns = await db
-      .select({ agentId: heartbeatRuns.agentId })
-      .from(heartbeatRuns)
-      .innerJoin(companies, eq(companies.id, heartbeatRuns.companyId))
-      .where(
-        and(
-          eq(heartbeatRuns.status, "queued"),
-          eq(companies.status, "active"),
-          cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
-        ),
-      );
-
-    const agentIds = [...new Set(queuedRuns.map((r) => r.agentId))];
-    for (const agentId of agentIds) {
-      await startNextQueuedRunForAgent(agentId);
-    }
+    await drainQueuedRunsFairly();
   }
 
   async function recoverActiveSessionGoals() {
@@ -19893,10 +20021,200 @@ export function heartbeatService(
    * The first stop on an issue drops the saved adapter session and queues one
    * fresh-session retry; a repeat hang escalates the issue to `blocked` through
    * the normal stranded-issue path, which names the recovery owner.
+   *
+   * GRE-181: silence counts only time the server could watch (host blind time
+   * is subtracted), and a fresh retry is held while the host is overloaded;
+   * `releaseHeldSilentRetries` sends it later or escalates after a deadline.
    */
+  // `stoppingRunId` is about to be stopped, so it does not hold a run slot.
+  async function readSilentRetryPressure(now: Date, stoppingRunId?: string): Promise<SilentRetryPressure> {
+    const admissionSettings = resolveRunAdmissionSettings(await instanceSettings.getGeneral());
+    const [dbRunningRunIds, memory, disk] = await Promise.all([
+      listRunningRunIdsForAdmission(),
+      memoryReader().catch(() => null),
+      diskReader().catch(() => null),
+    ]);
+    const stoppingHoldsSlot =
+      stoppingRunId !== undefined &&
+      (dbRunningRunIds.includes(stoppingRunId) || runAdmissionAdmittedRunIds.has(stoppingRunId));
+    const admission = evaluateRunAdmission({
+      settings: admissionSettings,
+      runningCount: countRunningRunsForAdmission(dbRunningRunIds) - (stoppingHoldsSlot ? 1 : 0),
+      memory,
+      disk,
+    });
+    let load: { load1: number; cpus: number } | null = null;
+    try {
+      load = hostLoadReader();
+    } catch {
+      load = null;
+    }
+    return evaluateSilentRetryPressure({
+      now: now.getTime(),
+      lastResumeAt: hostBlindTime.lastResumeAt(),
+      admission,
+      load,
+    });
+  }
+
+  async function queueSilentRetry(agentId: string, issueId: string, stoppedRunId: string) {
+    return enqueueWakeup(agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+      idempotencyKey: `${RUN_SILENT_TIMEOUT_ERROR_CODE}:${stoppedRunId}`,
+      requestedByActorType: "system",
+      requestedByActorId: "heartbeat.silent_run_watchdog",
+      payload: { issueId },
+      contextSnapshot: {
+        issueId,
+        taskId: issueId,
+        wakeReason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+        forceFreshSession: true,
+        retryOfRunId: stoppedRunId,
+        silentTimeoutRetryOfRunId: stoppedRunId,
+      },
+    });
+  }
+
+  // Resolves a held retry once; false when another sweep already resolved it.
+  async function resolveSilentRetryHold(
+    runId: string,
+    resolution: "retried" | "escalated" | "superseded",
+    now: Date,
+  ) {
+    const patch = JSON.stringify({ retryResolvedAt: now.toISOString(), retryResolution: resolution });
+    const rows = await db
+      .update(heartbeatRuns)
+      .set({
+        resultJson: sql`jsonb_set(coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb), '{silentTimeout}',
+          coalesce(${heartbeatRuns.resultJson}->'silentTimeout', '{}'::jsonb) || ${patch}::jsonb)`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(heartbeatRuns.id, runId),
+          sql`${heartbeatRuns.resultJson}->'silentTimeout'->>'retryResolvedAt' is null`,
+        ),
+      )
+      .returning({ id: heartbeatRuns.id });
+    return rows.length > 0;
+  }
+
+  async function hasNewerIssueRun(run: typeof heartbeatRuns.$inferSelect, issueId: string) {
+    const rows = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          sql`${heartbeatRuns.id} <> ${run.id}`,
+          gt(heartbeatRuns.createdAt, run.createdAt),
+          sql`(${heartbeatRuns.contextSnapshot}->>'issueId' = ${issueId}
+            or ${heartbeatRuns.contextSnapshot}->>'taskId' = ${issueId})`,
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * GRE-181: send a held fresh-session retry once the host has recovered. A
+   * held retry whose issue moved on (reassigned, closed, blocked, or woken by
+   * something else) is dropped. After `SILENT_RETRY_MAX_DEFER_MS` of awake
+   * waiting the issue escalates to `blocked`, which names the recovery owner.
+   */
+  async function releaseHeldSilentRetries(
+    now: Date,
+    pressure: () => Promise<SilentRetryPressure>,
+    companyId?: string,
+  ) {
+    const result = { released: 0, escalated: 0, superseded: 0, held: 0 };
+    const heldRuns = await db
+      .select()
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.status, "cancelled"),
+          eq(heartbeatRuns.errorCode, RUN_SILENT_TIMEOUT_ERROR_CODE),
+          sql`${heartbeatRuns.resultJson}->'silentTimeout'->>'retryDeferredAt' is not null`,
+          sql`${heartbeatRuns.resultJson}->'silentTimeout'->>'retryResolvedAt' is null`,
+          companyId ? eq(heartbeatRuns.companyId, companyId) : undefined,
+        ),
+      );
+    for (const run of heldRuns) {
+      const hold = readSilentRetryHold(run.resultJson);
+      const issueId = runIssueId(run);
+      const issue = issueId
+        ? await db
+            .select()
+            .from(issues)
+            .where(and(eq(issues.id, issueId), eq(issues.companyId, run.companyId)))
+            .then((rows) => rows[0] ?? null)
+        : null;
+      if (
+        !issue ||
+        issue.assigneeAgentId !== run.agentId ||
+        !["todo", "in_progress", "in_review"].includes(issue.status) ||
+        (await hasNewerIssueRun(run, issue.id))
+      ) {
+        if (await resolveSilentRetryHold(run.id, "superseded", now)) result.superseded += 1;
+        continue;
+      }
+
+      const current = await pressure();
+      if (!current.overloaded) {
+        const wake = await queueSilentRetry(run.agentId, issue.id, run.id);
+        if (wake && (await resolveSilentRetryHold(run.id, "retried", now))) {
+          result.released += 1;
+          await issuesSvc.addComment(
+            issue.id,
+            `The host has recovered. Started the held fresh retry for stopped run \`${run.id.slice(0, 8)}\` in a new session.`,
+            { runId: run.id },
+            { authorType: "system" },
+          );
+        }
+        continue;
+      }
+
+      const deferredAt = Date.parse(hold.retryDeferredAt ?? "");
+      const from = Number.isFinite(deferredAt) ? deferredAt : now.getTime();
+      const awakeWaitMs =
+        now.getTime() - from - hostBlindTime.blindMsBetween(from, now.getTime());
+      if (awakeWaitMs < SILENT_RETRY_MAX_DEFER_MS) {
+        result.held += 1;
+        continue;
+      }
+      const escalated = await recovery.escalateStrandedAssignedIssue({
+        issue,
+        previousStatus: issue.status as "todo" | "in_progress" | "in_review",
+        latestRun: run,
+        recoveryCause: RUN_SILENT_TIMEOUT_ERROR_CODE,
+        notice: {
+          body:
+            `The fresh retry for stopped run \`${run.id.slice(0, 8)}\` waited ${formatSilenceMinutes(awakeWaitMs)} ` +
+            `for the host to recover (${current.message}). Moving it to \`blocked\` so it is visible for intervention.`,
+          title: "Silent run retry held",
+          tone: "danger",
+        },
+      });
+      if (escalated) result.escalated += 1;
+      await resolveSilentRetryHold(run.id, "escalated", now);
+    }
+    return result;
+  }
+
   async function stopSilentRuns(opts?: { now?: Date; companyId?: string }) {
     const now = opts?.now ?? new Date();
-    const result = { stopped: 0, retried: 0, escalated: 0, runIds: [] as string[] };
+    hostBlindTime.sample();
+    const result = {
+      stopped: 0,
+      retried: 0,
+      retriesHeld: 0,
+      escalated: 0,
+      runIds: [] as string[],
+      heldRetries: { released: 0, escalated: 0, superseded: 0, held: 0 },
+    };
     const cutoff = await getWorktreeExecutionCutoff();
     const candidates = await db
       .select({ run: heartbeatRuns, agent: agents })
@@ -19912,7 +20230,9 @@ export function heartbeatService(
 
     for (const { run, agent } of candidates) {
       const timeoutMs = resolveRunSilentTimeoutMs(agent.runtimeConfig);
-      if (!isRunSilentPastTimeout(run, timeoutMs, now)) continue;
+      if (timeoutMs === null) continue;
+      const silenceAge = awakeSilenceAgeMs(run, now, hostBlindTime.blindMsBetween);
+      if (!silenceAge || silenceAge.awakeMs < timeoutMs) continue;
       if (await hasActiveWatchdogQuietDecision(run, now)) continue;
 
       const issueId = runIssueId(run);
@@ -19927,7 +20247,7 @@ export function heartbeatService(
       // A blocked source is intentionally quiet (same rule as the recovery scan).
       if (issue?.status === "blocked") continue;
 
-      const silenceMs = runSilenceAgeMs(run, now) ?? timeoutMs!;
+      const silenceMs = silenceAge.awakeMs;
       const silence = formatSilenceMinutes(silenceMs);
       const repeatHang = issue
         ? (await priorSilentTimeoutStopsForIssue(run, issue.id)) > 0
@@ -19937,6 +20257,10 @@ export function heartbeatService(
         !repeatHang &&
         issue.assigneeAgentId === agent.id &&
         ["todo", "in_progress", "in_review"].includes(issue.status);
+      // Decided before the stop and written with it, so stranded-issue
+      // recovery never sees this stop without its hold.
+      const retryPressure = retryEligible ? await readSilentRetryPressure(now, run.id) : null;
+      const heldPressure = retryPressure?.overloaded ? retryPressure : null;
 
       const stopped = await cancelRunInternal(
         run.id,
@@ -19947,13 +20271,23 @@ export function heartbeatService(
             [FRESH_SESSION_ON_RETRY_KEY]: true,
             silentTimeout: {
               silenceMs,
+              wallSilenceMs: silenceAge.wallMs,
+              blindMs: silenceAge.blindMs,
               timeoutMs,
               lastOutputAt: run.lastOutputAt?.toISOString() ?? null,
               stoppedAt: now.toISOString(),
+              ...(heldPressure
+                ? { retryDeferredAt: now.toISOString(), retryDeferReason: heldPressure.reason }
+                : {}),
             },
           },
           eventMessage: `run stopped: no output for ${silence} (${RUN_SILENT_TIMEOUT_ERROR_CODE})`,
-          eventPayload: { errorCode: RUN_SILENT_TIMEOUT_ERROR_CODE, silenceMs, timeoutMs },
+          eventPayload: {
+            errorCode: RUN_SILENT_TIMEOUT_ERROR_CODE,
+            silenceMs,
+            wallSilenceMs: silenceAge.wallMs,
+            timeoutMs,
+          },
           // This path owns the successor: one fresh retry, or escalation.
           suppressImmediateRecovery: issue !== null,
         },
@@ -19963,24 +20297,21 @@ export function heartbeatService(
       result.runIds.push(run.id);
       if (!issue) continue;
 
+      if (retryEligible && heldPressure) {
+        result.retriesHeld += 1;
+        await issuesSvc.addComment(
+          issue.id,
+          `Stopped run \`${run.id.slice(0, 8)}\`: no output for ${silence} (\`${RUN_SILENT_TIMEOUT_ERROR_CODE}\`). ` +
+            `The host is overloaded (${heldPressure.message}), so the fresh retry waits until it recovers. ` +
+            `If it has not recovered after ${formatSilenceMinutes(SILENT_RETRY_MAX_DEFER_MS)}, the issue moves to \`blocked\`.`,
+          { runId: run.id },
+          { authorType: "system" },
+        );
+        continue;
+      }
+
       if (retryEligible) {
-        const wake = await enqueueWakeup(agent.id, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
-          idempotencyKey: `${RUN_SILENT_TIMEOUT_ERROR_CODE}:${run.id}`,
-          requestedByActorType: "system",
-          requestedByActorId: "heartbeat.silent_run_watchdog",
-          payload: { issueId: issue.id },
-          contextSnapshot: {
-            issueId: issue.id,
-            taskId: issue.id,
-            wakeReason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
-            forceFreshSession: true,
-            retryOfRunId: run.id,
-            silentTimeoutRetryOfRunId: run.id,
-          },
-        });
+        const wake = await queueSilentRetry(agent.id, issue.id, run.id);
         if (wake) {
           result.retried += 1;
           await issuesSvc.addComment(
@@ -20015,14 +20346,21 @@ export function heartbeatService(
       if (escalated) result.escalated += 1;
     }
 
+    result.heldRetries = await releaseHeldSilentRetries(
+      now,
+      () => readSilentRetryPressure(now),
+      opts?.companyId,
+    );
     return result;
   }
 
   async function scanSilentActiveRuns(opts?: {
     now?: Date;
     companyId?: string;
+    /** GRE-181: the scheduler runs the stop sweep on its own every tick. */
+    skipSilentStops?: boolean;
   }) {
-    const silentStops = await stopSilentRuns(opts);
+    const silentStops = opts?.skipSilentStops ? null : await stopSilentRuns(opts);
     const scanned = await recovery.scanSilentActiveRuns({
       ...opts,
       issueCreatedAtGte: await getWorktreeExecutionCutoff(),
@@ -20137,13 +20475,156 @@ export function heartbeatService(
     }
   }
 
+  async function listRunningRunIdsForAdmission() {
+    const rows = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.status, "running"));
+    return rows.map((row) => row.id);
+  }
+
+  // Synchronous on purpose: the caller must reserve its slots in the same
+  // tick, or a start gate for another agent can read the same count.
+  function countRunningRunsForAdmission(dbRunningRunIds: string[]) {
+    const running = new Set(dbRunningRunIds);
+    for (const runId of runAdmissionAdmittedRunIds) running.add(runId);
+    return running.size + runAdmissionReservedSlots;
+  }
+
+  function markQueuedRunsHeldForAdmission(
+    runs: Array<{
+      id: string;
+      companyId: string;
+      agentId: string;
+      contextSnapshot: unknown;
+    }>,
+    hold: { reason: string; message: string },
+  ) {
+    const now = Date.now();
+    for (const run of runs) {
+      const prior = runAdmissionHeldRuns.get(run.id);
+      if (!prior || prior.reason !== hold.reason) {
+        recordRunAdmissionHold(run.id, hold.reason, now);
+        logger.info(
+          { runId: run.id, agentId: run.agentId, reason: hold.reason },
+          `run admission hold: ${hold.message}`,
+        );
+      }
+      // Republish on change, and well inside the runtime-status TTL so the
+      // "Waiting: ..." line stays visible while the run waits.
+      if (
+        prior?.message === hold.message &&
+        now - prior.publishedAt < RUN_ADMISSION_RECHECK_MS * 3
+      ) {
+        continue;
+      }
+      runAdmissionHeldRuns.set(run.id, { ...hold, publishedAt: now });
+      const status = setHeartbeatRunRuntimeStatus({
+        companyId: run.companyId,
+        issueId:
+          readNonEmptyString(parseObject(run.contextSnapshot).issueId) ?? null,
+        agentId: run.agentId,
+        runId: run.id,
+        phase: "run_activity",
+        message: hold.message,
+      });
+      if (status) publishHeartbeatRunRuntimeProgress(status);
+    }
+  }
+
+  function releaseRunAdmissionHold(runId: string) {
+    if (!runAdmissionHeldRuns.delete(runId)) return;
+    recordRunAdmissionRelease(runId);
+    clearHeartbeatRunRuntimeStatus(runId);
+  }
+
+  // One pending re-check at a time; a sooner request (a run just finished)
+  // replaces a later one (the periodic low-memory re-check).
+  function scheduleRunAdmissionRecheck(delayMs = RUN_ADMISSION_RECHECK_MS) {
+    if (shutdownInProgress) return;
+    const dueAt = Date.now() + delayMs;
+    if (runAdmissionRecheckTimer) {
+      if (runAdmissionRecheckTimer.dueAt <= dueAt) return;
+      clearTimeout(runAdmissionRecheckTimer.timer);
+    }
+    const timer = setTimeout(() => {
+      if (runAdmissionRecheckTimer?.timer === timer) {
+        runAdmissionRecheckTimer = null;
+      }
+      void drainQueuedRunsFairly().catch((err) => {
+        logger.warn({ err }, "run admission re-check failed");
+      });
+    }, delayMs);
+    timer.unref?.();
+    runAdmissionRecheckTimer = { timer, dueAt };
+  }
+
+  // Start queued runs across agents, oldest waiting agent first, one run per
+  // agent per pass, so one busy agent cannot take every free instance slot.
+  // Stops at the first admission hold and marks the rest of the queue held.
+  async function drainQueuedRunsFairly() {
+    if ((await getSchedulingSuppression()).suppressed) return;
+    const cutoff = await getWorktreeExecutionCutoff();
+    const queuedRuns = await db
+      .select({
+        id: heartbeatRuns.id,
+        companyId: heartbeatRuns.companyId,
+        agentId: heartbeatRuns.agentId,
+        createdAt: heartbeatRuns.createdAt,
+        contextSnapshot: heartbeatRuns.contextSnapshot,
+      })
+      .from(heartbeatRuns)
+      .innerJoin(companies, eq(companies.id, heartbeatRuns.companyId))
+      .where(
+        and(
+          eq(heartbeatRuns.status, "queued"),
+          eq(companies.status, "active"),
+          cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
+        ),
+      );
+    for (const runId of runAdmissionHeldRuns.keys()) {
+      if (!queuedRuns.some((run) => run.id === runId)) {
+        releaseRunAdmissionHold(runId);
+      }
+    }
+    const agentIds = orderAgentsByOldestQueuedRun(queuedRuns);
+    const startedRunIds = new Set<string>();
+    for (;;) {
+      let progressed = false;
+      for (const agentId of agentIds) {
+        const result = await startQueuedRunsForAgent(agentId, { maxToStart: 1 });
+        for (const run of result.runs) startedRunIds.add(run.id);
+        if (result.hold) {
+          markQueuedRunsHeldForAdmission(
+            queuedRuns.filter((run) => !startedRunIds.has(run.id)),
+            result.hold,
+          );
+          return;
+        }
+        if (result.runs.length > 0) progressed = true;
+      }
+      if (!progressed) return;
+    }
+  }
+
   async function startNextQueuedRunForAgent(agentId: string) {
-    if ((await getSchedulingSuppression()).suppressed) return [];
+    return (await startQueuedRunsForAgent(agentId)).runs;
+  }
+
+  async function startQueuedRunsForAgent(
+    agentId: string,
+    startOptions: { maxToStart?: number } = {},
+  ): Promise<{
+    runs: Array<typeof heartbeatRuns.$inferSelect>;
+    hold: { reason: string; message: string } | null;
+  }> {
+    const none = { runs: [], hold: null };
+    if ((await getSchedulingSuppression()).suppressed) return none;
     const cutoff = await getWorktreeExecutionCutoff();
 
     return withAgentStartLock(agentId, async () => {
       const agent = await getAgent(agentId);
-      if (!agent) return [];
+      if (!agent) return none;
       const invokability = await getAgentInvokability(agent);
       if (!invokability.invokable) {
         if (shouldCancelRunsForNonInvokableAgent(invokability)) {
@@ -20152,15 +20633,89 @@ export function heartbeatService(
             `Cancelled because the agent is not invokable: ${invokability.reason}`,
           );
         }
-        return [];
+        return none;
       }
-      const policy = parseHeartbeatPolicy(agent);
-      const runningCount = await countRunningRunsForAgent(agentId);
-      const availableSlots = Math.max(
-        0,
-        policy.maxConcurrentRuns - runningCount,
+
+      // Instance-wide admission (GRE-105): global run cap, free memory, then
+      // free disk (GRE-207).
+      // A hold keeps the run queued; the re-check timer and run completion
+      // drain it again. Never fail or cancel a run here.
+      const admissionSettings = resolveRunAdmissionSettings(
+        await instanceSettings.getGeneral(),
       );
-      if (availableSlots <= 0) return [];
+      const [dbRunningRunIds, memory, disk] = await Promise.all([
+        listRunningRunIdsForAdmission(),
+        memoryReader().catch(() => null),
+        diskReader().catch(() => null),
+      ]);
+      // No await from here until the slots are reserved below.
+      const admission = evaluateRunAdmission({
+        settings: admissionSettings,
+        runningCount: countRunningRunsForAdmission(dbRunningRunIds),
+        memory,
+        disk,
+      });
+      if (!admission.admit) {
+        const hold = { reason: admission.reason, message: admission.message };
+        const heldRuns = await db
+          .select({
+            id: heartbeatRuns.id,
+            companyId: heartbeatRuns.companyId,
+            agentId: heartbeatRuns.agentId,
+            contextSnapshot: heartbeatRuns.contextSnapshot,
+          })
+          .from(heartbeatRuns)
+          .where(
+            and(
+              eq(heartbeatRuns.agentId, agentId),
+              eq(heartbeatRuns.status, "queued"),
+              cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
+            ),
+          );
+        if (heldRuns.length > 0) {
+          markQueuedRunsHeldForAdmission(heldRuns, hold);
+          scheduleRunAdmissionRecheck();
+        }
+        return { ...none, hold };
+      }
+
+      // Reserve in the same tick as the check so concurrent start gates for
+      // other agents see these slots as taken, then shrink to what the
+      // per-agent limit allows.
+      let reservedSlots = Math.min(
+        admission.slots,
+        startOptions.maxToStart ?? Number.POSITIVE_INFINITY,
+      );
+      runAdmissionReservedSlots += reservedSlots;
+      try {
+        const policy = parseHeartbeatPolicy(agent);
+        const runningCount = await countRunningRunsForAgent(agentId);
+        const availableSlots = Math.min(
+          Math.max(0, policy.maxConcurrentRuns - runningCount),
+          reservedSlots,
+        );
+        runAdmissionReservedSlots -= reservedSlots - availableSlots;
+        reservedSlots = availableSlots;
+        if (availableSlots <= 0) return none;
+        const runs = await claimQueuedRunsForAgent(
+          agent,
+          availableSlots,
+          cutoff,
+        );
+        return { runs, hold: null };
+      } finally {
+        runAdmissionReservedSlots -= reservedSlots;
+      }
+    });
+  }
+
+  async function claimQueuedRunsForAgent(
+    agent: NonNullable<Awaited<ReturnType<typeof getAgent>>>,
+    availableSlots: number,
+    cutoff: Date | null,
+  ): Promise<Array<typeof heartbeatRuns.$inferSelect>> {
+    const agentId = agent.id;
+    {
 
       const queuedRuns = await db
         .select()
@@ -20252,7 +20807,12 @@ export function heartbeatService(
       for (const queuedRun of prioritizedRuns) {
         if (claimedRuns.length >= availableSlots) break;
         const claimed = await claimQueuedRun(queuedRun, companyAgents);
-        if (claimed) claimedRuns.push(claimed);
+        if (claimed) {
+          claimedRuns.push(claimed);
+          // Counted by the admission gate until its execution settles.
+          runAdmissionAdmittedRunIds.add(claimed.id);
+          releaseRunAdmissionHold(claimed.id);
+        }
       }
       if (claimedRuns.length === 0) return [];
 
@@ -20262,6 +20822,11 @@ export function heartbeatService(
             { err, runId: claimedRun.id },
             "queued heartbeat execution failed",
           );
+        }).finally(() => {
+          runAdmissionAdmittedRunIds.delete(claimedRun.id);
+          // A finished run frees an instance slot another agent may be
+          // waiting on; the run's own follow-up only drains its own agent.
+          if (runAdmissionHeldRuns.size > 0) scheduleRunAdmissionRecheck(0);
         });
         // Register the in-flight execution so drainActiveRunExecutions() can await
         // it. executeRun resolves only after its finally block finishes flushing
@@ -20275,7 +20840,7 @@ export function heartbeatService(
         });
       }
       return claimedRuns;
-    });
+    }
   }
 
   // Await every background heartbeat execution that is currently in flight. A
@@ -20296,6 +20861,10 @@ export function heartbeatService(
       clearTimeout(timer);
     }
     nativeSessionResumeDispatchTimers.clear();
+    if (runAdmissionRecheckTimer) {
+      clearTimeout(runAdmissionRecheckTimer.timer);
+      runAdmissionRecheckTimer = null;
+    }
     while (
       activeWakeupPromises.size > 0 ||
       activeRunExecutionPromises.size > 0
@@ -21318,8 +21887,16 @@ export function heartbeatService(
           existingExecutionWorkspaceStatus:
             existingExecutionWorkspace?.status ?? null,
         });
+      // A native recovery run resumes a provider session inside the persisted
+      // workspace, so it keeps failing loudly on an archived binding rather than
+      // resuming in a different directory.
+      const archivedWorkspaceFallback =
+        workspaceReuseRequest.archivedWorkspaceFallback &&
+        !nativeRecoveryExecutionWorkspaceId;
       const requestedShouldReuseExisting =
-        workspaceReuseRequest.requestedShouldReuseExisting;
+        workspaceReuseRequest.requestedShouldReuseExisting ||
+        (workspaceReuseRequest.archivedWorkspaceFallback &&
+          !archivedWorkspaceFallback);
       const reusableExistingExecutionWorkspace =
         workspaceReuseRequest.existingExecutionWorkspaceAvailable
           ? existingExecutionWorkspace
@@ -22439,6 +23016,26 @@ export function heartbeatService(
         );
       }
       await bindIssueToPersistedExecutionWorkspace(persistedExecutionWorkspace);
+      // Say once that the run left the archived workspace. The issue is now
+      // bound to the fresh workspace, so the next run reuses it and does not
+      // reach this branch again.
+      if (
+        archivedWorkspaceFallback &&
+        issueId &&
+        persistedExecutionWorkspace &&
+        issueExecutionWorkspaceIdForRun === persistedExecutionWorkspace.id
+      ) {
+        await issuesSvc.addComment(
+          issueId,
+          formatArchivedWorkspaceFallbackComment({
+            archivedWorkspaceId:
+              workspaceReuseRequest.requestedExecutionWorkspaceId,
+            workspace: persistedExecutionWorkspace,
+          }),
+          { runId: run.id },
+          { authorType: "system" },
+        );
+      }
       const projectRepositoryPaths: string[] = [];
       if (executionWorkspace.projectId && resolvedWorkspace.source === "project_primary" && !resolvedWorkspace.baseCwdFallback) {
         const repositoryRows = await db.select().from(projectWorkspaces).where(and(
@@ -25535,8 +26132,9 @@ export function heartbeatService(
               });
             }
           } else if (
-            outcome === "failed" &&
-            readTransientRecoveryContractFromRun(livenessRun)
+            (outcome === "failed" &&
+              readTransientRecoveryContractFromRun(livenessRun)) ||
+            runLostToHostSleep(livenessRun)
           ) {
             await scheduleBoundedRetryForRun(livenessRun, agent);
           } else if (
@@ -25682,7 +26280,8 @@ export function heartbeatService(
           keepIdleOnFailure:
             outcome === "failed" &&
             ((finalizedRun
-              ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota"
+              ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota" ||
+                runLostToHostSleep(finalizedRun)
               : runErrorCode === "provider_quota") ||
               isWorkspaceSyncConflictFailure(adapterResult.errorMessage)),
           wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
@@ -25955,10 +26554,12 @@ export function heartbeatService(
           ) {
             await finalizeIssueCommentPolicy(livenessRun, agent);
           }
-          await scheduleInteractionContinuationInfrastructureRetryIfEligible(
-            livenessRun,
-            agent,
-          );
+          await (runLostToHostSleep(livenessRun)
+            ? scheduleBoundedRetryForRun(livenessRun, agent)
+            : scheduleInteractionContinuationInfrastructureRetryIfEligible(
+                livenessRun,
+                agent,
+              ));
           await releaseIssueExecutionAndPromote(livenessRun, {
             // Native recovery owns the original heartbeat run through
             // exhaustion. Once its durable coordinator has classified a
@@ -26014,7 +26615,8 @@ export function heartbeatService(
           wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
           keepIdleOnFailure:
             Boolean(nonRetryablePreflightFailureCode(err)) ||
-            isWorkspaceSyncConflictFailure(message),
+            isWorkspaceSyncConflictFailure(message) ||
+            runLostToHostSleep(failedRun),
         });
       }
     } catch (outerErr) {
@@ -26214,7 +26816,8 @@ export function heartbeatService(
             // No provider work began. Retry temporary host scan failures with
             // the existing durable failure budget, before releasing execution.
             // Generic recovery must not grant a second budget on exhaustion.
-            await (isTransientWorkspaceGitScanCode(livenessRun.errorCode)
+            await (isTransientWorkspaceGitScanCode(livenessRun.errorCode) ||
+              runLostToHostSleep(livenessRun)
               ? scheduleBoundedRetryForRun(livenessRun, failedAgent)
               : scheduleInteractionContinuationInfrastructureRetryIfEligible(livenessRun, failedAgent)
             ).catch((retryError) => {
@@ -26257,15 +26860,19 @@ export function heartbeatService(
             // Keep the failed run and its safe provider refusal authoritative,
             // but return the agent to idle so clients do not also announce a
             // misleading agent-wide error for the same rejected chat turn.
-            keepIdleOnFailure: Boolean(nonRetryablePreflightCode),
+            keepIdleOnFailure:
+              Boolean(nonRetryablePreflightCode) ||
+              runLostToHostSleep(failedRun),
           }).catch(() => undefined);
         }
       }
     } finally {
       if (managedAiRuntime) await managedAiRuntime.cleanup().catch(() => logger.warn({ runId: run.id }, "AI connection refresh or cleanup failed"));
       let latestRun = await getRun(run.id).catch(() => null);
-      // The provider refused the managed credential. Show the connection as
-      // needing attention so the next runs stop before calling the provider.
+      // The provider refused the managed credential. Once the refusal is
+      // confirmed, show the connection as needing attention so the next runs
+      // stop before calling the provider. An unconfirmed refusal fails only
+      // this run (GRE-236).
       if (managedAiRuntime && latestRun?.status === "failed" && isAiAuthRequiredErrorCode(latestRun.errorCode)) {
         await aiConnectionService(db).recordCredentialRejected({
           companyId: run.companyId,
@@ -26273,6 +26880,7 @@ export function heartbeatService(
           grantId: managedAiRuntime.attribution.grantId,
           identity: managedAiRuntime.identity,
           runId: run.id,
+          afterOutput: (readRawUsageTotals(latestRun.usageJson)?.outputTokens ?? 0) > 0,
         }).catch((error) => logger.warn({ err: error, runId: run.id }, "Could not mark the AI connection as needing attention"));
       }
       try {
@@ -29711,6 +30319,36 @@ export function heartbeatService(
     await cancelPendingWakeupsForBudgetScope(scope);
   }
 
+  /**
+   * An agent stopped by its budget says so on each task it holds (GRE-141).
+   * The task keeps its assignee; the board raises the budget or reassigns it.
+   */
+  async function noticeBudgetHardStop(scope: BudgetEnforcementScope) {
+    if (scope.scopeType !== "agent") return;
+    const agent = await getAgent(scope.scopeId);
+    if (!agent) return;
+    const openIssues = await db
+      .select({ id: issues.id })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, scope.companyId),
+          eq(issues.assigneeAgentId, scope.scopeId),
+          inArray(issues.status, ["todo", "in_progress"]),
+        ),
+      );
+    for (const issue of openIssues) {
+      await issuesSvc.addComment(
+        issue.id,
+        `Stopped: agent ${agent.name} reached its monthly budget and is paused. ` +
+          "It keeps this task and does no more work on it. " +
+          "To continue, a board member raises the agent's budget on the Costs page or gives the task to another agent.",
+        {},
+        { authorType: "system" },
+      );
+    }
+  }
+
   return {
     waitForRunExecutionDrain: async (
       runId: string,
@@ -30038,6 +30676,7 @@ export function heartbeatService(
     retryScheduledRetryNow,
 
     resumeQueuedRuns,
+    startNextQueuedRunForAgent,
 
     scheduleBoundedRetry: async (
       runId: string,
@@ -30073,6 +30712,7 @@ export function heartbeatService(
     reconcileResolvedDependencyWakes,
 
     scanSilentActiveRuns,
+    stopSilentRuns,
 
     reconcileTaskWatchdogs,
 
@@ -30180,6 +30820,7 @@ export function heartbeatService(
       cancelInvocationsForAgentsInternal(agentIds, reason),
 
     cancelBudgetScopeWork,
+    noticeBudgetHardStop,
 
     getRunIssueSummary: async (runId: string) => {
       const [run] = await db

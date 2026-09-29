@@ -99,6 +99,7 @@ import {
   type PersistedExposureRowSnapshot,
 } from "./runtime-exposure/port-reservation.js";
 import { resolveTailscaleDnsName } from "./runtime-exposure/tailscale-hostname.js";
+import { applySharedRunnerBuildDir } from "../runner-build-dir.js";
 
 export function resolveShell(): string {
   const fallback = process.platform === "win32" ? "sh" : "/bin/sh";
@@ -2577,9 +2578,31 @@ async function refreshUnstartedWorktreeToBase(input: {
     return { refreshed: false, baseRefSha: null };
   }
 
+  // A stale `index.lock` (left by a crashed git process) makes the reset fail
+  // with a raw git error. Name the worktree and the lock so an operator can act.
+  const indexLockPath = await runGit(["rev-parse", "--git-path", "index.lock"], input.worktreePath)
+    .then((lockPath) => path.resolve(input.worktreePath, lockPath))
+    .catch(() => null);
+  if (indexLockPath && existsSync(indexLockPath)) {
+    throw new WorkspaceRuntimeValidationFailure(
+      `Cannot refresh reused git worktree "${input.worktreePath}": git index lock "${indexLockPath}" exists. ` +
+        "Another git process is running there, or one crashed and left the lock behind. " +
+        "Stop any git process in that worktree, then delete the lock file and retry the run. No work was changed.",
+      {
+        workspaceValidation: {
+          reason: "git_index_locked",
+          worktreePath: input.worktreePath,
+          indexLockPath,
+        },
+      },
+    );
+  }
+
+  // `--keep`, not `--hard`: if a file appears between the clean-tree guard
+  // above and this reset, git refuses to overwrite it instead of discarding it.
   await recordGitOperation(input.recorder, {
     phase: "worktree_prepare",
-    args: ["reset", "--hard", input.currentBaseRefSha],
+    args: ["reset", "--keep", input.currentBaseRefSha],
     cwd: input.worktreePath,
     metadata: {
       repoRoot: input.repoRoot,
@@ -2591,7 +2614,7 @@ async function refreshUnstartedWorktreeToBase(input: {
       refreshedUnstartedWorktree: true,
     },
     successMessage: `Refreshed unstarted git worktree at ${input.worktreePath} to ${input.baseRef} (${formatShortSha(input.currentBaseRefSha)})\n`,
-    failureLabel: `git reset --hard ${input.currentBaseRefSha}`,
+    failureLabel: `git reset --keep ${input.currentBaseRefSha}`,
   });
 
   return { refreshed: true, baseRefSha: input.currentBaseRefSha };
@@ -2879,7 +2902,7 @@ function buildWorkspaceCommandEnv(input: {
   agent: ExecutionWorkspaceAgentRef;
   created: boolean;
 }) {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  const env: NodeJS.ProcessEnv = applySharedRunnerBuildDir({ ...process.env });
   env.GSAM_WORKSPACE_CWD = input.worktreePath;
   env.GSAM_WORKSPACE_PATH = input.worktreePath;
   env.GSAM_WORKSPACE_WORKTREE_PATH = input.worktreePath;
@@ -4037,6 +4060,9 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
   expectedBranchHeadSha?: string | null;
   runCleanupCommands?: boolean;
   forceWorktreeRemoval?: boolean;
+  // False keeps the branch ref after the worktree is removed. The terminal
+  // reaper passes false for a branch that is pushed but not merged.
+  deleteBranch?: boolean;
 }) {
   const warnings: string[] = [];
   const workspacePath = input.workspace.providerRef ?? input.workspace.cwd;
@@ -4069,7 +4095,8 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
   // with branch-level ownership semantics. Unmarked legacy rows fail closed:
   // their worktrees are removable, but their branch refs are operator-owned.
   const createdByRuntime = input.workspace.metadata?.createdByRuntime === true;
-  const branchCreatedByRuntime = isRuntimeOwnedGitBranch(input.workspace.metadata);
+  const shouldDeleteBranch = input.deleteBranch !== false
+    && isRuntimeOwnedGitBranch(input.workspace.metadata);
   const cleanupCommands = input.runCleanupCommands === false
     ? []
     : [
@@ -4156,7 +4183,7 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
         }
       }
     }
-    if (branchCreatedByRuntime && input.workspace.branchName) {
+    if (shouldDeleteBranch && input.workspace.branchName) {
       if (!repoRoot) {
         warnings.push(`Could not resolve git repo root to delete branch "${input.workspace.branchName}".`);
       } else {

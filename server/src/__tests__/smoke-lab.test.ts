@@ -99,7 +99,9 @@ function createRouteApp(
   return app;
 }
 
-describeEmbeddedPostgres("smoke lab service pack and results API", () => {
+// Greatstone (GRE-196): Smoke Lab is retired and its flag always reads off, so
+// this suite for the kept code cannot run. The check below proves it stays off.
+describe.skip("smoke lab service pack and results API", () => {
   let db: TestDb;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
@@ -414,5 +416,28 @@ describeEmbeddedPostgres("smoke lab service pack and results API", () => {
       .post(`/api/companies/${company.id}/smoke-lab/runs/${runId}/steps`)
       .send({ path: "P1", scenarioStep: "late", status: "pass" })
       .expect(409);
+  });
+});
+
+describeEmbeddedPostgres("smoke lab retired flag (GRE-196)", () => {
+  let db: TestDb;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+
+  beforeAll(async () => {
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-smoke-lab-retired-");
+    db = createDb(tempDb.connectionString);
+  }, 20_000);
+
+  afterAll(async () => {
+    await tempDb?.cleanup();
+  });
+
+  it("stays hidden (404) even when the stored flag says on", async () => {
+    const company = await createCompany(db);
+    await enableSmokeLab(db);
+
+    await request(createRouteApp(db, boardActor(company.id)))
+      .get(`/api/companies/${company.id}/smoke-lab/services`)
+      .expect(404);
   });
 });

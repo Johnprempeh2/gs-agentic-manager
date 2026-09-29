@@ -46,6 +46,7 @@ import { RoutineDetail } from "./pages/RoutineDetail";
 import { UserProfile } from "./pages/UserProfile";
 import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
+import { Releases } from "./pages/Releases";
 import { Artifacts } from "./pages/Artifacts";
 import { GoalDetail } from "./pages/GoalDetail";
 import { Approvals } from "./pages/Approvals";
@@ -375,6 +376,9 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         </Route>
       </Route>
       <Route path="goals" element={<Goals />} />
+      <Route element={<HiddenSettingsPageGate pageKey="instance.releases" redirectTo="/dashboard" />}>
+        <Route path="releases" element={<Releases />} />
+      </Route>
       <Route path="goals/:goalId" element={<GoalDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />

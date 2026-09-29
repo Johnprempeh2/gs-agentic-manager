@@ -84,8 +84,6 @@ export function Sidebar() {
   const showApps = experimentalSettings?.enableApps === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
-  const goalsLinkPending = experimentalSettings === undefined;
-  const showGoalsLink = experimentalSettings?.enableGoalsSidebarLink === true;
   const { data: attentionFeed } = useQuery({
     queryKey: queryKeys.attention(selectedCompanyId!),
     queryFn: () => attentionApi.list(selectedCompanyId!),
@@ -188,15 +186,8 @@ export function Sidebar() {
           {showPipelines ? (
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
           ) : null}
-          {showGoalsLink ? (
-            <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-          ) : goalsLinkPending ? (
-            <div
-              data-testid="sidebar-goals-placeholder"
-              className="h-8 pointer-coarse:h-7"
-              aria-hidden="true"
-            />
-          ) : null}
+          {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
+          <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (

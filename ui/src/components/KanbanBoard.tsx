@@ -158,7 +158,14 @@ interface KanbanBoardProps {
   collapsedStatuses?: string[];
   initialVisibleCount?: number;
   revealIncrement?: number;
-  onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
+  /** Lanes to render, in order. Defaults to every board status. */
+  statuses?: readonly IssueStatus[];
+  /** Show the task key (GRE-123) on cards. The dashboard shows titles only. */
+  showIdentifiers?: boolean;
+  /** Lanes share the row's width instead of a fixed width each. */
+  fillWidth?: boolean;
+  /** Without it the board is read-only: cards link out but cannot be dragged. */
+  onUpdateIssue?: (id: string, data: Record<string, unknown>) => void;
 }
 
 /* ── Droppable Column ── */
@@ -171,6 +178,9 @@ function KanbanColumn({
   subtreeLiveCounts,
   compactCards = false,
   collapsed = false,
+  showIdentifiers = true,
+  fillWidth = false,
+  readOnly = false,
   visibleCount,
   revealIncrement,
   onShowMore,
@@ -182,6 +192,9 @@ function KanbanColumn({
   subtreeLiveCounts?: ReadonlyMap<string, number>;
   compactCards?: boolean;
   collapsed?: boolean;
+  showIdentifiers?: boolean;
+  fillWidth?: boolean;
+  readOnly?: boolean;
   visibleCount: number;
   revealIncrement: number;
   onShowMore: () => void;
@@ -217,7 +230,13 @@ function KanbanColumn({
   }
 
   return (
-    <div className="flex flex-col shrink-0 min-w-(--sz-260px) w-(--sz-260px)">
+    <div
+      className={cn(
+        "flex flex-col",
+        fillWidth ? "min-w-(--sz-220px) flex-1 basis-0" : "shrink-0 min-w-(--sz-260px) w-(--sz-260px)",
+      )}
+      data-testid={`kanban-column-${status}`}
+    >
       <div className="flex items-center gap-2 px-3 py-2 mb-1">
         <StatusIcon status={status} />
         <span className={cn("text-xs font-semibold uppercase tracking-wide", tone.header)}>
@@ -247,6 +266,8 @@ function KanbanColumn({
               isLive={liveIssueIds?.has(issue.id)}
               subtreeLiveCount={subtreeLiveCounts?.get(issue.id) ?? 0}
               compact={compactCards}
+              showIdentifier={showIdentifiers}
+              readOnly={readOnly}
               className={tone.card}
             />
           ))}
@@ -279,6 +300,8 @@ function KanbanCard({
   subtreeLiveCount = 0,
   isOverlay,
   compact = false,
+  showIdentifier = true,
+  readOnly = false,
   className,
 }: {
   issue: Issue;
@@ -287,6 +310,8 @@ function KanbanCard({
   subtreeLiveCount?: number;
   isOverlay?: boolean;
   compact?: boolean;
+  showIdentifier?: boolean;
+  readOnly?: boolean;
   className?: string;
 }) {
   const {
@@ -296,12 +321,14 @@ function KanbanCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: issue.id, data: { issue } });
+  } = useSortable({ id: issue.id, data: { issue }, disabled: readOnly });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
   };
+
+  const handoffRequired = isSuccessfulRunHandoffRequired(issue);
 
   const agentName = (id: string | null) => {
     if (!id || !agents) return null;
@@ -315,7 +342,8 @@ function KanbanCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "block cursor-grab active:cursor-grabbing",
+        "block",
+        !readOnly && "cursor-grab active:cursor-grabbing",
         isDragging && !isOverlay ? "opacity-30" : "",
         isOverlay ? "gs-drag-lift" : "gs-glass-card-interactive",
         compact ? "p-2" : "p-2.5",
@@ -331,11 +359,14 @@ function KanbanCard({
           if (isDragging) e.preventDefault();
         }}
       >
+        {showIdentifier || handoffRequired || isLive || subtreeLiveCount > 0 ? (
         <div className={`flex items-start gap-1.5 ${compact ? "mb-1" : "mb-1.5"}`}>
-          <span className="text-xs text-muted-foreground font-mono shrink-0">
-            {issue.identifier ?? issue.id.slice(0, 8)}
-          </span>
-          {isSuccessfulRunHandoffRequired(issue) ? (
+          {showIdentifier ? (
+            <span className="text-xs text-muted-foreground font-mono shrink-0">
+              {issue.identifier ?? issue.id.slice(0, 8)}
+            </span>
+          ) : null}
+          {handoffRequired ? (
             <Badge variant="outline"
               className="border-amber-400/45 bg-amber-50/60 px-1.5 text-(length:--text-nano) text-amber-700 dark:border-amber-300/35 dark:bg-amber-400/10 dark:text-amber-300"
               title="This task needs a next step"
@@ -364,6 +395,7 @@ function KanbanCard({
             </Badge>
           )}
         </div>
+        ) : null}
         <p className={`${compact ? "mb-1.5 text-xs" : "mb-2 text-sm"} leading-snug line-clamp-2`}>{issue.title}</p>
         <div className="flex items-center gap-2 min-w-0">
           {/* PAP-411: priority UI hidden behind SHOW_TASK_PRIORITY_UI. */}
@@ -394,8 +426,12 @@ export function KanbanBoard({
   collapsedStatuses = [],
   initialVisibleCount = KANBAN_COLUMN_INITIAL_VISIBLE_LIMIT,
   revealIncrement = KANBAN_COLUMN_REVEAL_INCREMENT,
+  statuses = boardStatuses,
+  showIdentifiers = true,
+  fillWidth = false,
   onUpdateIssue,
 }: KanbanBoardProps) {
+  const readOnly = !onUpdateIssue;
   const [activeId, setActiveId] = useState<string | null>(null);
   const paginationKey = `${initialVisibleCount}:${revealIncrement}`;
   const [visibleState, setVisibleState] = useState<{
@@ -450,7 +486,7 @@ export function KanbanBoard({
     const targetStatus = resolveKanbanTargetStatus(over.id as string, issues);
 
     if (targetStatus && targetStatus !== issue.status) {
-      onUpdateIssue(issueId, { status: targetStatus });
+      onUpdateIssue?.(issueId, { status: targetStatus });
     }
   }
 
@@ -466,7 +502,7 @@ export function KanbanBoard({
       onDragEnd={handleDragEnd}
     >
       <div className="flex gap-3 overflow-x-auto pb-4 -mx-2 px-2">
-        {boardStatuses.map((status) => (
+        {statuses.map((status) => (
           <KanbanColumn
             key={status}
             status={status}
@@ -475,6 +511,9 @@ export function KanbanBoard({
             liveIssueIds={liveIssueIds}
             subtreeLiveCounts={subtreeLiveCounts}
             compactCards={compactCards}
+            showIdentifiers={showIdentifiers}
+            fillWidth={fillWidth}
+            readOnly={readOnly}
             // Compact mode (any lane explicitly collapsed) also collapses
             // empty lanes to the same labeled rail, so an empty In Progress
             // reads like the other rails instead of a lone expanded column.
@@ -498,7 +537,7 @@ export function KanbanBoard({
       </div>
       <DragOverlay>
         {activeIssue ? (
-          <KanbanCard issue={activeIssue} agents={agents} isOverlay compact={compactCards} />
+          <KanbanCard issue={activeIssue} agents={agents} isOverlay compact={compactCards} showIdentifier={showIdentifiers} />
         ) : null}
       </DragOverlay>
     </DndContext>

@@ -61,13 +61,16 @@ const apiPrefixes: Record<string, string> = {
   "plugins.ts": "/api",
   "projects.ts": "/api",
   "project-tools.ts": "/api",
+  "release-reauth.ts": "/api",
   "resource-memberships.ts": "/api",
   "remote-agent-profiles.ts": "/api",
   "routines.ts": "/api",
+  "run-admission-recommendation.ts": "/api",
   "secrets.ts": "/api",
   "sidebar-badges.ts": "/api",
   "sidebar-preferences.ts": "/api",
   "summary-slots.ts": "/api",
+  "releases.ts": "/api",
   "status-cards.ts": "/api",
   "teams-catalog.ts": "/api",
   "tool-access.ts": "/api",
@@ -953,7 +956,7 @@ describe("heartbeat run ID OpenAPI contract", () => {
         checked++;
       }
     }
-    expect(checked).toBe(12);
+    expect(checked).toBe(13);
   });
 });
 

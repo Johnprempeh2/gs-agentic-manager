@@ -35,6 +35,17 @@ test("Managed pins exactly the section 5 features", () => {
   assert.deepEqual(values.expectOn, [...MANAGED_FEATURES_ON].sort());
 });
 
+test("agents can run without a sandbox provider (GRE-160)", () => {
+  for (const edition of ["managed", "managed-plus"] as const) {
+    const values = buildEditionValues({ edition, catalogVersion });
+    const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
+    assert.ok(parsed);
+    assert.equal(parsed.features.enableManagedSandboxOnly, false, edition);
+    assert.equal(parsed.features.enableIsolatedWorkspaces, true, edition);
+    assert.ok(values.expectOff.includes("enableManagedSandboxOnly"));
+  }
+});
+
 test("hidden settings are exactly section 5", () => {
   const values = buildEditionValues({ edition: "managed", catalogVersion });
   assert.equal(values.hiddenSettings, MANAGED_HIDDEN_SETTINGS.join(","));
@@ -42,6 +53,15 @@ test("hidden settings are exactly section 5", () => {
     buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases"], catalogVersion }).hiddenSettings,
     values.hiddenSettings,
   );
+});
+
+test("both editions hide Releases (GRE-129)", () => {
+  for (const values of [
+    buildEditionValues({ edition: "managed", catalogVersion }),
+    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases"], catalogVersion }),
+  ]) {
+    assert.ok(values.hiddenSettings.split(",").includes("instance.releases"));
+  }
 });
 
 test("the same input gives the same values", () => {
@@ -79,6 +99,10 @@ test("rejects features without a place in section 5", () => {
   assert.throws(
     () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableOwnerInstanceAdmin"], catalogVersion }),
     /never part of Managed plus/,
+  );
+  assert.throws(
+    () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableManagedSandboxOnly"], catalogVersion }),
+    /off in both editions/,
   );
   assert.throws(() => buildEditionValues({ edition: "self-run" as never, catalogVersion }), /Unknown edition/);
 });

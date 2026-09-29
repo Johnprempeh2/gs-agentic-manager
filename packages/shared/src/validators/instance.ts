@@ -22,6 +22,15 @@ export const backupRetentionPolicySchema = z.object({
   monthlyMonths: presetSchema(MONTHLY_RETENTION_PRESETS, "monthlyMonths").default(DEFAULT_BACKUP_RETENTION.monthlyMonths),
 });
 
+export const runAdmissionSettingsSchema = z.object({
+  // Instance-wide cap on concurrently running agent runs (GRE-105).
+  maxConcurrentRuns: z.number().int().min(1).max(1000).optional(),
+  // Hold queued runs while available RAM is below this floor. 0 disables it.
+  minAvailableMemoryMb: z.number().int().min(0).max(1_048_576).optional(),
+  // Hold queued runs while free disk (data dir, worktrees) is below this. 0 disables it.
+  minFreeDiskGb: z.number().int().min(0).max(100_000).optional(),
+}).strict();
+
 export const instanceGeneralSettingsSchema = z.object({
   censorUsernameInLogs: z.boolean().default(false),
   keyboardShortcuts: z.boolean().default(false),
@@ -32,6 +41,8 @@ export const instanceGeneralSettingsSchema = z.object({
   // Execution policy. Absent/"any" = unrestricted; "kubernetes" forces the
   // Kubernetes sandbox provider and denies local/ssh execution (cloud_tenant).
   executionMode: z.enum(["kubernetes", "any"]).optional(),
+  // Run admission guard. Absent => built-in defaults (see run-admission.ts).
+  runAdmission: runAdmissionSettingsSchema.optional(),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = z

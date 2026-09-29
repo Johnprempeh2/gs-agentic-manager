@@ -57,6 +57,7 @@ import {
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
+import { getInstallLimits } from "./services/install-limits.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { setupRunnerPrpWebSocketServer } from "./realtime/runner-prp-ws.js";
@@ -109,6 +110,7 @@ import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
+import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
@@ -127,6 +129,7 @@ import { initializeCloudRuntimeIdentity } from "./services/cloud-runtime-identit
 import { systemdNotify } from "./services/systemd-notify.js";
 import { flushInFlightRunLogMirrors } from "./services/run-log-store.js";
 import { startLiveReleaseTicker } from "./services/live-release.js";
+import { hostBlindTime } from "./services/host-blind-time.js";
 import {
   createEmbeddedPostgresSupervisor,
   type EmbeddedPostgresSupervisor,
@@ -800,6 +803,15 @@ async function startServerWithDatabaseTeardown(
     throw err;
   }
 
+  // Client install limits (GSAM_INSTALL_LIMITS, GRE-141): fail closed like the two above.
+  try {
+    const installLimits = getInstallLimits();
+    if (installLimits) logger.warn({ installLimits }, "client install limits active");
+  } catch (err) {
+    logger.error({ err }, "invalid GSAM_INSTALL_LIMITS; refusing to start (fail closed)");
+    throw err;
+  }
+
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
@@ -1070,6 +1082,10 @@ async function startServerWithDatabaseTeardown(
       logger.error({ err }, "startup reconciliation of codex_local managed homes failed");
     });
 
+  // Remove per-run AI homes with no live run and day-old test temp folders,
+  // now and daily, so the temp folder cannot fill the disk (GRE-209).
+  startTempFolderSweeper(logger);
+
   void reconcileBuiltInAgentsOnStartup(db as any)
     .then((result) => {
       if (
@@ -1188,6 +1204,9 @@ async function startServerWithDatabaseTeardown(
   // Before queued runs resume: a one-click release that restarted this server
   // keeps holding new runs until its outcome is reported.
   startLiveReleaseTicker(db);
+  // GRE-181: sleep and event-loop stalls are not run silence.
+  hostBlindTime.start();
+  let silentRunStopInFlight = false;
   const startHeartbeatSchedulerInterval = (callback: () => void) => {
     heartbeatSchedulerInterval = setInterval(callback, config.heartbeatSchedulerIntervalMs);
     heartbeatSchedulerInterval?.unref?.();
@@ -1354,6 +1373,7 @@ async function startServerWithDatabaseTeardown(
           const skipped =
             result.skippedActiveRun
             + result.skippedNonTerminalTree
+            + result.skippedOpenLinkedIssue
             + result.skippedUndelivered
             + result.skippedRace
             + result.skippedCooldown;
@@ -1440,15 +1460,44 @@ async function startServerWithDatabaseTeardown(
       "worktree run-execution cutoff state",
     );
     const heartbeatSchedulingSuppression = await heartbeat.resolveSchedulingSuppression();
+    // A release hold (task drain) holds new run admission only (GRE-242). The
+    // restart recovery re-attaches runs that lived through the hot restart and
+    // writes hot-restart-report.json, so it runs under the hold too. Admission
+    // work waits: the periodic recovery runs it once the hold lifts, and the
+    // session-goal recovery below is deferred to that first tick.
+    const startupRestartRecoveryAllowed =
+      !heartbeatSchedulingSuppression.suppressed ||
+      heartbeatSchedulingSuppression.reason === "task_drain";
+    let sessionGoalRecoveryDeferred = false;
+    const recoverSessionGoals = async (phase: "startup" | "deferred") => {
+      const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
+      if (
+        recoveredGoalActions.enqueued > 0 ||
+        recoveredGoalActions.invalid > 0
+      ) {
+        logger.warn(
+          { ...recoveredGoalActions, phase },
+          "startup session-goal action outbox recovery reconciled pending controls",
+        );
+      }
+      const recoveredGoals = await heartbeat.recoverActiveSessionGoals();
+      if (recoveredGoals.enqueued > 0) {
+        logger.warn(
+          { ...recoveredGoals, phase },
+          "startup session-goal recovery resumed durable agent goals",
+        );
+      }
+    };
 
-    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
-    // into a dead "running" row during startup recovery.
     if (heartbeatSchedulingSuppression.suppressed) {
       logger.warn(
         { reason: heartbeatSchedulingSuppression.reason },
         "heartbeat scheduling suppressed for this runtime instance",
       );
-    } else {
+    }
+    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
+    // into a dead "running" row during startup recovery.
+    if (startupRestartRecoveryAllowed) {
       const startupHeartbeatRecovery = (async () => {
         // Legacy remote recovery releases sandbox leases. Wait for provider
         // workers before cleanup or retry admission, including unmanaged installs.
@@ -1514,25 +1563,14 @@ async function startServerWithDatabaseTeardown(
           }
         }
 
+        if (heartbeatSchedulingSuppression.suppressed) {
+          sessionGoalRecoveryDeferred = true;
+          return;
+        }
+
         const promotion = await heartbeat.promoteDueScheduledRetries();
         await heartbeat.resumeQueuedRuns();
-        const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
-        if (
-          recoveredGoalActions.enqueued > 0 ||
-          recoveredGoalActions.invalid > 0
-        ) {
-          logger.warn(
-            recoveredGoalActions,
-            "startup session-goal action outbox recovery reconciled pending controls",
-          );
-        }
-        const recoveredGoals = await heartbeat.recoverActiveSessionGoals();
-        if (recoveredGoals.enqueued > 0) {
-          logger.warn(
-            recoveredGoals,
-            "startup session-goal recovery resumed durable agent goals",
-          );
-        }
+        await recoverSessionGoals("startup");
         const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
         if (
           promotion.promoted > 0 ||
@@ -1566,7 +1604,7 @@ async function startServerWithDatabaseTeardown(
         }
 
         const scanned = await heartbeat.scanSilentActiveRuns();
-        if (scanned.created > 0 || scanned.escalated > 0 || scanned.silentStops.stopped > 0) {
+        if (scanned.created > 0 || scanned.escalated > 0 || (scanned.silentStops?.stopped ?? 0) > 0) {
           logger.warn({ ...scanned }, "startup active-run output watchdog created review work");
         }
 
@@ -1767,6 +1805,25 @@ async function startServerWithDatabaseTeardown(
 
         if (heartbeatSchedulerStopped) return;
         if (!(await heartbeat.resolveSchedulingSuppression()).suppressed) {
+          // GRE-181: the silent-run stop runs on its own every tick, so a slow
+          // recovery chain below cannot delay it. Single-flight: a sweep that
+          // outlasts a tick is not started twice.
+          if (!silentRunStopInFlight) {
+            silentRunStopInFlight = true;
+            trackHeartbeatSchedulerWork(heartbeat
+              .stopSilentRuns()
+              .then((stops) => {
+                if (stops.stopped > 0 || stops.heldRetries.released > 0 || stops.heldRetries.escalated > 0) {
+                  logger.warn({ ...stops }, "periodic silent-run watchdog stopped runs or released held retries");
+                }
+              })
+              .catch((err) => {
+                logger.error({ err }, "periodic silent-run watchdog failed");
+              })
+              .finally(() => {
+                silentRunStopInFlight = false;
+              }));
+          }
           // Periodically reap orphaned runs (5-min staleness threshold) and make sure
           // persisted queued work is still being driven forward.
           trackHeartbeatSchedulerWork(heartbeat
@@ -1774,6 +1831,10 @@ async function startServerWithDatabaseTeardown(
             .then(() => heartbeat.promoteDueScheduledRetries())
             .then(async (promotion) => {
               await heartbeat.resumeQueuedRuns();
+              if (sessionGoalRecoveryDeferred) {
+                await recoverSessionGoals("deferred");
+                sessionGoalRecoveryDeferred = false;
+              }
               const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
               if (
                 promotion.promoted > 0 ||
@@ -1803,8 +1864,8 @@ async function startServerWithDatabaseTeardown(
               }
             })
             .then(async () => {
-              const scanned = await heartbeat.scanSilentActiveRuns();
-              if (scanned.created > 0 || scanned.escalated > 0 || scanned.silentStops.stopped > 0) {
+              const scanned = await heartbeat.scanSilentActiveRuns({ skipSilentStops: true });
+              if (scanned.created > 0 || scanned.escalated > 0) {
                 logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
               }
             })

@@ -56,7 +56,7 @@ import {
   badRequest,
   tooManyRequests
 } from "../errors.js";
-import { getHiddenSettings } from "../services/settings-visibility.js";
+import { getHiddenSettings, hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import { runtimeCanonicalOrigin } from "../services/cloud-runtime-identity.js";
 
 /**
@@ -66,6 +66,13 @@ import { runtimeCanonicalOrigin } from "../services/cloud-runtime-identity.js";
  * the operator's own control plane. Applies to the Access page's reads too;
  * invite and company-membership routes are company-scoped and stay open.
  */
+/**
+ * Floor: hiding the company Invites page (`company.invites`) also rejects
+ * invite creation and revocation. Accepting an invite and reading one by
+ * token stay open for the invitee.
+ */
+const invitesFloor = hiddenSettingWriteFloor("company.invites", "Invite management");
+
 function assertAccessAdminVisible() {
   if (getHiddenSettings().has("instance.access")) {
     throw forbidden("Instance user administration is managed by the hosting operator on this instance", {
@@ -3319,6 +3326,7 @@ export function accessRoutes(
 
   router.post(
     "/companies/:companyId/invites",
+    invitesFloor,
     validate(createCompanyInviteSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
@@ -3375,6 +3383,7 @@ export function accessRoutes(
 
   router.post(
     "/companies/:companyId/openclaw/invite-prompt",
+    invitesFloor,
     validate(createOpenClawInvitePromptSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
@@ -4133,7 +4142,7 @@ export function accessRoutes(
     }
   );
 
-  router.post("/invites/:inviteId/revoke", async (req, res) => {
+  router.post("/invites/:inviteId/revoke", invitesFloor, async (req, res) => {
     const id = req.params.inviteId as string;
     const invite = await db
       .select()

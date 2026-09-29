@@ -21,6 +21,7 @@ import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
 import { ToastViewport } from "./ToastViewport";
+import { BlockedDependentsDialogHost } from "./BlockedDependentsDialog";
 import { AnnouncementWell } from "./AnnouncementWell";
 import { PluginAppShellOverlays } from "./PluginAppShellOverlays";
 import { MobileBottomNav } from "./MobileBottomNav";
@@ -787,6 +788,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       <NewAgentDialog />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <ToastViewport />
+      <BlockedDependentsDialogHost />
       <AnnouncementWell health={health} />
       <PluginAppShellOverlays localTrusted={health?.deploymentMode === "local_trusted"} />
       </div>

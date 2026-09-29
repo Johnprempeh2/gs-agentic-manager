@@ -1,5 +1,5 @@
 import { HttpError, unprocessable } from "../errors.js";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
@@ -10,6 +10,7 @@ import {
 } from "@greatstone/shared";
 import { aiConnectionService, aiCredentialGeneration } from "./ai-connections.js";
 import { secretService } from "./secrets.js";
+import { MANAGED_AI_HOME_PREFIX, claimManagedAiHome, removeManagedAiHome } from "./managed-ai-home-sweep.js";
 import { decideCodexAuthMerge } from "@greatstone/adapter-codex-local/server";
 import type { AdapterExecutionTarget } from "@greatstone/adapter-utils/execution-target";
 import { runAdapterExecutionTargetProcess } from "@greatstone/adapter-utils/execution-target";
@@ -254,9 +255,10 @@ export async function prepareManagedAiRuntime(
     home = await mkdtemp(
       path.join(
         os.tmpdir(),
-        `paperclip-ai-${input.companyId}-${selection.grant.id}-`,
+        `${MANAGED_AI_HOME_PREFIX}${input.companyId}-${selection.grant.id}-`,
       ),
     );
+    await claimManagedAiHome(home);
     const providerHome = path.join(home, "provider");
     await mkdir(providerHome, { mode: 0o700 });
     const env: Record<string, unknown> = {
@@ -373,12 +375,12 @@ export async function prepareManagedAiRuntime(
               });
           }
         } finally {
-          if (home) await rm(home, { recursive: true, force: true });
+          if (home) await removeManagedAiHome(home);
         }
       },
     };
   } catch (error) {
-    if (home) await rm(home, { recursive: true, force: true });
+    if (home) await removeManagedAiHome(home);
     throw error;
   }
 }

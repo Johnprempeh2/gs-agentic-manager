@@ -222,6 +222,26 @@ describe("KanbanBoard", () => {
     expect(container.textContent).toContain("Live");
   });
 
+  it("renders only the chosen lanes, without task keys, read-only when no updater is given", () => {
+    const { container } = renderBoard({
+      issues: [createIssue(1, "todo"), createIssue(2, "done")],
+      statuses: ["todo", "in_progress"],
+      showIdentifiers: false,
+      fillWidth: true,
+      onUpdateIssue: undefined,
+    });
+
+    expect(container.querySelector('[data-testid="kanban-column-todo"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="kanban-column-in_progress"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="kanban-column-done"]')).toBeNull();
+    expect(container.textContent).toContain("Issue 1");
+    expect(container.textContent).not.toContain("Issue 2");
+    expect(container.textContent).not.toContain("PAP-1");
+    const card = container.querySelector('a[href="/issues/PAP-1"]')?.parentElement;
+    expect(card?.className).not.toContain("cursor-grab");
+    expect(container.querySelector('[data-testid="kanban-column-todo"]')?.className).toContain("flex-1");
+  });
+
   it("resolves drop targets from status rails and cards", () => {
     const issues = [
       createIssue(1, "todo"),

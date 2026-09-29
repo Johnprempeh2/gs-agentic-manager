@@ -49,6 +49,7 @@ import {
 } from "./ui/dropdown-menu";
 import { AttentionInteractionResolver } from "./AttentionInteractionResolver";
 import { DecisionResolver } from "./DecisionResolver";
+import { ReauthCancelledError, useReauth } from "./ReauthDialog";
 import { StalledReviewActions } from "./StalledReviewActions";
 import { readIssueReviewPolicyMetadata } from "../lib/review-policy";
 
@@ -487,6 +488,8 @@ function CompactDecisionActions({
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const actions = collectCompactActions(item);
+  // An "Update live?" card asks for the password in login mode (GRE-164).
+  const { withReauth, dialog: reauthDialog } = useReauth();
 
   const decision = useMutation<unknown, Error, CompactDecisionAction>({
     mutationFn: (action: CompactDecisionAction) => {
@@ -503,7 +506,11 @@ function CompactDecisionActions({
       if (item.sourceKind === "issue_thread_interaction") {
         const issueId = item.subject.metadata?.issueId;
         if (typeof issueId !== "string") throw new Error("Missing issue reference for this decision.");
-        if (action === "accept") return issuesApi.acceptInteraction(issueId, item.subject.id);
+        if (action === "accept") {
+          return withReauth("release", (options) =>
+            issuesApi.acceptInteraction(issueId, item.subject.id, undefined, options),
+          );
+        }
         return issuesApi.rejectInteraction(issueId, item.subject.id);
       }
       throw new Error("This decision must be completed from its detail view.");
@@ -521,6 +528,7 @@ function CompactDecisionActions({
       });
     },
     onError: (error, action) => {
+      if (error instanceof ReauthCancelledError) return;
       // A policy denial is permanent, so it keeps the server's reason and names
       // the real responder instead of asking for a retry that will fail again.
       pushToast({
@@ -556,6 +564,7 @@ function CompactDecisionActions({
           {label}
         </Button>
       ))}
+      {reauthDialog}
     </div>
   );
 }

@@ -12,10 +12,12 @@ import { INSTANCE_FEATURE_KEYS, type InstanceFeatureKey } from "./feature-catalo
  * routes are also floored with a 403 carrying
  * `SETTINGS_OPERATOR_MANAGED_ERROR_CODE`: the Access, Plugins, and Adapters
  * pages, every field-backed General section, every experimental toggle
- * (individually or via the whole Experimental page), and the company Import
- * page (whose whole route surface is floored). The other company pages are
- * UI-visibility keys only: their APIs (memberships, invites, secrets,
- * exports) stay live for agents and integrations.
+ * (individually or via the whole Experimental page), the company Import
+ * page (whose whole route surface is floored), and the Environments, Secrets,
+ * Export, and Invites pages (their write routes are floored; reads stay open).
+ * `instance.releases` hides the board Releases page and floors every release
+ * route, reads included: a client edition never releases or sees our tags.
+ * Company Members and the Secrets sub-sections are UI-visibility keys only.
  *
  * Nothing is hidden by default: with the variable unset, UI and API behave
  * exactly as before this mechanism existed.
@@ -38,6 +40,7 @@ export const HIDEABLE_INSTANCE_PAGES = [
   "instance.experimental",
   "instance.plugins",
   "instance.adapters",
+  "instance.releases",
 ] as const;
 
 export type HideableInstancePage = (typeof HIDEABLE_INSTANCE_PAGES)[number];
@@ -45,8 +48,9 @@ export type HideableInstancePage = (typeof HIDEABLE_INSTANCE_PAGES)[number];
 /**
  * Company-level settings pages that can be hidden (nav entry + tab + route).
  * The company General page is deliberately not hideable: it is the settings
- * root and the redirect target for hidden pages. `company.import` also floors
- * the import API routes; the rest only hide UI surfaces.
+ * root and the redirect target for hidden pages. `company.import` floors the
+ * import API routes; `company.invites`, `company.secrets`, and
+ * `company.export` floor their write routes; `company.members` is UI only.
  */
 export const HIDEABLE_COMPANY_PAGES = [
   "company.members",
@@ -82,6 +86,7 @@ export const HIDEABLE_GENERAL_SECTIONS = [
   "instance.general.keyboardShortcuts",
   "instance.general.backupRetention",
   "instance.general.feedbackDataSharingPreference",
+  "instance.general.runAdmission",
   "instance.general.signOut",
 ] as const;
 

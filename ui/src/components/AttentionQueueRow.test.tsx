@@ -606,7 +606,7 @@ describe("AttentionQueueRow", () => {
     act(() => approve?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(issuesApi.acceptInteraction).toHaveBeenCalledWith("issue-1", "interaction-1");
+    expect(issuesApi.acceptInteraction).toHaveBeenCalledWith("issue-1", "interaction-1", undefined, undefined);
     expect(onToggleExpand).not.toHaveBeenCalled();
   });
 

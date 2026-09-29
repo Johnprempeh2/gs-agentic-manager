@@ -5,6 +5,14 @@ import {
   resolvePaperclipConfigPathForInstance,
   resolvePaperclipInstanceId,
 } from "../packages/shared/src/home-paths.ts";
+import { toLegacyEnvKey } from "../packages/shared/src/legacy-env.ts";
+
+// Legacy names are listed too: the server re-adopts them as GSAM_*.
+const PARENT_SERVER_ENV_KEYS = ["GSAM_API_URL", "GSAM_API_KEY"];
+const INHERITED_PARENT_SERVER_ENV_KEYS = [
+  ...PARENT_SERVER_ENV_KEYS,
+  ...PARENT_SERVER_ENV_KEYS.map(toLegacyEnvKey),
+];
 
 export interface AppliedDevRunnerOptions {
   forwardedArgs: string[];
@@ -68,6 +76,14 @@ export function applyDevRunnerOptions(
   }
   if (!hasExplicitContext) {
     env.GSAM_CONTEXT = path.resolve(dataDir, "context.json");
+  }
+
+  // A sandbox is usually started from an agent shell, which carries the
+  // parent server's API URL and agent key. The server prefers an inherited
+  // GSAM_API_URL over its own listen port, so without this every agent the
+  // sandbox runs would call the parent (live) server instead. (GRE-219)
+  for (const key of INHERITED_PARENT_SERVER_ENV_KEYS) {
+    delete env[key];
   }
 
   return { forwardedArgs, dataDir };

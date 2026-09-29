@@ -11,6 +11,7 @@ import { LogOut, SlidersHorizontal } from "lucide-react";
 import { healthApi } from "@/api/health";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { ModeBadge } from "@/components/access/ModeBadge";
+import { RunAdmissionSettingsSection } from "@/components/RunAdmissionSettingsSection";
 import { Button } from "../components/ui/button";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -54,7 +55,10 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
     onSuccess: async () => {
       setActionError(null);
       signOutMutation.reset();
-      await queryClient.invalidateQueries({ queryKey: queryKeys.instance.generalSettings });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.instance.generalSettings }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.instance.runAdmissionRecommendation }),
+      ]);
     },
     onError: (error) => {
       setActionError(error instanceof Error ? error.message : "Failed to update general settings.");
@@ -82,10 +86,12 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
   const showDeploymentStatus = !hiddenSettings.has("instance.general.deploymentStatus");
   const showCensorUsernameInLogs = !hiddenSettings.has("instance.general.censorUsernameInLogs");
   const showBackupRetention = !hiddenSettings.has("instance.general.backupRetention");
+  const showRunAdmission = !hiddenSettings.has("instance.general.runAdmission");
   const showFeedbackDataSharing = !hiddenSettings.has("instance.general.feedbackDataSharingPreference");
   const showSignOut = !hiddenSettings.has("instance.general.signOut");
   const visibleTopics = [
     ...(showCensorUsernameInLogs ? ["log display"] : []),
+    ...(showRunAdmission ? ["run limits"] : []),
     ...(showBackupRetention ? ["backup retention"] : []),
     ...(showFeedbackDataSharing ? ["data sharing"] : []),
   ];
@@ -173,6 +179,14 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
           />
         </div>
       </section>
+      )}
+
+      {showRunAdmission && (
+        <RunAdmissionSettingsSection
+          runAdmission={generalQuery.data?.runAdmission}
+          disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+          onSave={(runAdmission) => updateGeneralMutation.mutate({ runAdmission })}
+        />
       )}
 
       {showBackupRetention && (

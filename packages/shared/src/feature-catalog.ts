@@ -338,6 +338,25 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
 export const INSTANCE_FEATURE_KEYS = Object.keys(INSTANCE_FEATURE_CATALOG).sort() as InstanceFeatureKey[];
 
 /**
+ * Greatstone: flags retired from Settings > Experimental (GRE-193 / GRE-196).
+ * The feature code stays in place so upstream merges stay easy, but the
+ * switch is hidden and the flag always reads as off — a stored or managed
+ * "on" value cannot turn it back on.
+ */
+export const RETIRED_INSTANCE_FEATURE_KEYS = [
+  "enableClassicTaskInterface",
+  "enableSmokeLab",
+  "enablePaperclipDeveloperMode",
+  "autoRestartDevServerWhenIdle",
+] as const satisfies readonly InstanceFeatureKey[];
+
+export type RetiredInstanceFeatureKey = (typeof RETIRED_INSTANCE_FEATURE_KEYS)[number];
+
+export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstanceFeatureKey {
+  return (RETIRED_INSTANCE_FEATURE_KEYS as readonly string[]).includes(key);
+}
+
+/**
  * Shape of the `feature-catalog.json` release artifact the cloud harness
  * imports per app release and validates feature writes against.
  */

@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } f
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import { createMigrationStatusTracker } from "./dev-runner-migration-status.ts";
 import { createCapturedOutputBuffer, parseJsonResponseWithLimit } from "./dev-runner-output.ts";
 import {
   paperclipRunnerBinaryNeedsBuild,
@@ -16,6 +17,7 @@ import { applyDevRunnerOptions } from "./dev-runner-options.ts";
 import { collectWatchedSnapshot as collectDevServerWatchedSnapshot, diffSnapshots } from "./dev-runner-snapshot.mjs";
 import { createDevServiceIdentity, repoRoot } from "./dev-service-profile.ts";
 import { bootstrapDevRunnerWorktreeEnv, isWorktreeSeedPending } from "../server/src/dev-runner-worktree.ts";
+import { applySharedRunnerBuildDir } from "../server/src/runner-build-dir.ts";
 import {
   readDevServerRestartRequest,
   removeDevServerRestartRequest,
@@ -51,6 +53,9 @@ if (worktreeEnvBootstrap.missingEnv) {
   );
   process.exit(1);
 }
+// Before any child starts: the runner build below, the server and, through the
+// server, every local agent run and worktree provision inherit it (GRE-210).
+applySharedRunnerBuildDir(process.env);
 if (isWorktreeSeedPending(repoRoot)) {
   console.error(
     "[paperclip] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`.",
@@ -326,6 +331,8 @@ function writeDevServerStatus() {
       changedPathsSample: changedPaths.slice(0, changedPathSampleLimit),
       pendingMigrations,
       lastRestartAt,
+      // Lets the server tell a live supervisor from a stale file (GRE-166).
+      supervisorPid: process.pid,
     }, null, 2)}\n`,
     "utf8",
   );
@@ -411,60 +418,41 @@ async function runPnpm(args: string[], options: {
   });
 }
 
-async function getMigrationStatusPayload() {
-  const status = await runPnpm(
-    ["--silent", "--filter", "@greatstone/db", "exec", "tsx", "src/migration-status.ts", "--json"],
-    { env },
-  );
-  if (status.code !== 0) {
-    process.stderr.write(
-      status.stderr ||
-        status.stdout ||
-        `[paperclip] Command failed with code ${status.code}: pnpm --filter @greatstone/db exec tsx src/migration-status.ts --json\n`,
-    );
-    process.exit(status.code);
-  }
+const migrationStatus = createMigrationStatusTracker({
+  runCheck: () =>
+    runPnpm(
+      ["--silent", "--filter", "@greatstone/db", "exec", "tsx", "src/migration-status.ts", "--json"],
+      { env },
+    ),
+  onFatal: (failure) => {
+    process.stderr.write(failure.detail);
+    process.exit(failure.code);
+  },
+  warn: (message) => {
+    process.stderr.write(message);
+  },
+});
 
-  // pnpm can interleave its own reporter lines (e.g. "Unsupported engine"
-  // warnings) into stdout, so parse the last line that is a JSON object
-  // instead of trusting the whole stream.
-  const jsonLines = status.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("{"));
-  for (let index = jsonLines.length - 1; index >= 0; index -= 1) {
-    try {
-      return JSON.parse(jsonLines[index]) as { status?: string; pendingMigrations?: string[] };
-    } catch {
-      // keep scanning earlier JSON-looking lines
-    }
-  }
-  process.stderr.write(
-    status.stderr ||
-      status.stdout ||
-      "[paperclip] migration-status returned invalid JSON payload\n",
-  );
-  throw new Error("Unable to parse migration-status JSON output");
-}
-
-async function refreshPendingMigrations() {
-  const payload = await getMigrationStatusPayload();
-  pendingMigrations =
-    payload.status === "needsMigrations" && Array.isArray(payload.pendingMigrations)
-      ? payload.pendingMigrations.filter((entry) => typeof entry === "string" && entry.trim().length > 0)
-      : [];
+// Only the startup preflight may exit on a failed check; once a server child
+// runs, a failure is retried on the next scan instead (GRE-166).
+async function refreshPendingMigrations(options: { fatal?: boolean } = {}) {
+  const payload = await migrationStatus.refresh({ fatal: options.fatal ?? false });
+  pendingMigrations = migrationStatus.pendingMigrations;
   writeDevServerStatus();
   return payload;
 }
 
-async function maybePreflightMigrations(options: { interactive?: boolean; autoApply?: boolean; exitOnDecline?: boolean } = {}) {
+async function maybePreflightMigrations(
+  options: { interactive?: boolean; autoApply?: boolean; exitOnDecline?: boolean; fatal?: boolean } = {},
+): Promise<boolean> {
   const interactive = options.interactive ?? mode === "watch";
   const autoApply = options.autoApply ?? env.GSAM_MIGRATION_AUTO_APPLY === "true";
   const exitOnDecline = options.exitOnDecline ?? mode === "watch";
 
-  const payload = await refreshPendingMigrations();
+  const payload = await refreshPendingMigrations({ fatal: options.fatal ?? true });
+  if (!payload) return false;
   if (payload.status !== "needsMigrations" || pendingMigrations.length === 0) {
-    return;
+    return true;
   }
 
   let shouldApply = autoApply;
@@ -496,7 +484,7 @@ async function maybePreflightMigrations(options: { interactive?: boolean; autoAp
       );
       process.exit(1);
     }
-    return;
+    return true;
   }
 
   const exit = await runPnpm(["db:migrate"], {
@@ -506,13 +494,13 @@ async function maybePreflightMigrations(options: { interactive?: boolean; autoAp
   });
   if (exit.signal) {
     exitForSignal(exit.signal);
-    return;
+    return false;
   }
   if (exit.code !== 0) {
     process.exit(exit.code);
   }
 
-  await refreshPendingMigrations();
+  return (await refreshPendingMigrations({ fatal: options.fatal ?? true })) !== null;
 }
 
 async function buildPluginSdk() {
@@ -663,12 +651,14 @@ async function scanForBackendChanges() {
     const nextSnapshot = collectWatchedSnapshot();
     const changed = diffSnapshots(previousSnapshot, nextSnapshot);
     previousSnapshot = nextSnapshot;
-    if (changed.length === 0) return;
+    if (changed.length === 0 && !migrationStatus.retryPending) return;
 
-    for (const relativePath of changed) {
-      dirtyPaths.add(relativePath);
+    if (changed.length > 0) {
+      for (const relativePath of changed) {
+        dirtyPaths.add(relativePath);
+      }
+      lastChangedAt = new Date().toISOString();
     }
-    lastChangedAt = new Date().toISOString();
     await refreshPendingMigrations();
   } finally {
     scanInFlight = false;
@@ -798,11 +788,15 @@ async function maybeAutoRestartChild() {
   }
 
   try {
-    await maybePreflightMigrations({
+    const migrationsReady = await maybePreflightMigrations({
       autoApply: true,
       interactive: false,
       exitOnDecline: false,
+      fatal: false,
     });
+    // The check failed (for example mid `pnpm install`); keep the current
+    // child and let the next poll retry the restart.
+    if (!migrationsReady) return;
     await stopChildForRestart();
     const restartRequestConsumed = manualRestartRequest
       ? removeDevServerRestartRequest(
@@ -876,6 +870,12 @@ async function shutdown(signal: NodeJS.Signals) {
   }
   process.exit(exit.code ?? 0);
 }
+
+// Whatever ends the supervisor, do not leave a status file that tells the
+// server a supervisor is still listening (GRE-166).
+process.on("exit", () => {
+  clearDevServerStatus();
+});
 
 process.on("SIGINT", () => {
   void shutdown("SIGINT");

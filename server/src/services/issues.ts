@@ -194,6 +194,7 @@ import {
 import { buildIssueChanges } from "./issue-change-receipt.js";
 import { projectSafeChatPublication } from "./chat-publication-projection.js";
 import { issueThreadInteractionAttentionAgentAllowed } from "./issue-thread-interaction-resolution.js";
+import { listOpenBlockedDependents } from "./issue-blocker-handoff.js";
 
 const ALL_ISSUE_STATUSES = [
   "backlog",
@@ -9093,6 +9094,12 @@ export function issueService(db: Db) {
     ) => {
       return listIssueReviewAttentionMap(dbOrTx, companyId, issueRows);
     },
+
+    listOpenBlockedDependents: (
+      companyId: string,
+      blockerIssueId: string,
+      dbOrTx: any = db,
+    ) => listOpenBlockedDependents(dbOrTx, companyId, blockerIssueId),
 
     listWakeableBlockedDependents: async (blockerIssueId: string) => {
       const blockerIssue = await db

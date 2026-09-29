@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, notExists, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   executionWorkspaces,
@@ -69,6 +69,19 @@ type RuntimeServiceReadDb = Pick<Db, "select">;
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 const execFileAsync = promisify(execFile);
 const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
+
+// Matches the issues that are not done or cancelled and are bound to the
+// workspace, including reuse_existing bindings from issues outside the source
+// issue's tree. The manual archive readiness check and the terminal reaper both
+// use this filter, so the reaper never archives a workspace that the manual
+// archive would refuse (GRE-229).
+function openLinkedIssueFilter(workspace: { id: string; companyId: string }) {
+  return and(
+    eq(issues.companyId, workspace.companyId),
+    eq(issues.executionWorkspaceId, workspace.id),
+    notInArray(issues.status, [...TERMINAL_ISSUE_STATUSES]),
+  );
+}
 
 // Return the timestamp when an issue became terminal. A `done` issue uses
 // `completedAt`. A `cancelled` issue uses `cancelledAt`. The reaper cooldown
@@ -230,7 +243,8 @@ export type ExecutionWorkspaceServiceOptions = {
   beforeTerminalWorkspaceCleanup?: (workspace: ExecutionWorkspaceRow) => Promise<void>;
   // The terminal-workspace reaper waits this many days after an issue tree
   // becomes terminal before it archives the workspace. A value of 0 disables
-  // the cooldown. The default is 7 days.
+  // the cooldown. The default is 0, so a closed issue's workspace is archived
+  // on the next sweep (GRE-208).
   workspaceReaperCooldownDays?: number;
   inspectGitCloseReadiness?: (workspace: ExecutionWorkspace) => Promise<{
     git: ExecutionWorkspaceCloseGitReadiness | null;
@@ -421,6 +435,85 @@ async function runExpensiveGitStatus(input: {
 async function readGitStdout(args: string[], cwd: string): Promise<string | null> {
   const output = await runGit(args, cwd);
   return output.stdout.trim() || null;
+}
+
+// The metadata key that records the one notice the terminal reaper posts when it
+// keeps a finished workspace because archiving it would lose work.
+export const TERMINAL_WORKSPACE_KEPT_NOTICE_METADATA_KEY = "terminalCleanupKeptNotice";
+const TERMINAL_WORKSPACE_KEPT_NOTICE_LIST_LIMIT = 10;
+
+// Count the commits on HEAD that no remote-tracking ref contains. Zero means
+// every commit is on a remote branch (the base, such as origin/main, or the
+// workspace's own pushed branch), so removing the worktree loses no commit.
+// Null means git could not answer, so the caller must keep the workspace. The
+// listed commits also leave out the base ref, so the notice names only the
+// workspace's own work and not local base history that no remote has.
+async function inspectUnpushedCommits(workspacePath: string, baseRef: string | null): Promise<{
+  count: number;
+  commits: string[];
+} | null> {
+  const countCommits = async (exclude: string[]) => {
+    const raw = await readGitStdout(["rev-list", "--count", "HEAD", "--not", "--remotes", ...exclude], workspacePath);
+    const count = raw ? Number.parseInt(raw, 10) : 0;
+    if (!Number.isFinite(count)) throw new Error(`Unexpected rev-list count "${raw}"`);
+    return count;
+  };
+  try {
+    const count = await countCommits([]);
+    if (count === 0) return { count: 0, commits: [] };
+    const ownExclude = baseRef && (await countCommits([baseRef]).catch(() => 0)) > 0 ? [baseRef] : [];
+    const ownCount = ownExclude.length > 0 ? await countCommits(ownExclude) : count;
+    const log = await readGitStdout(
+      ["log", `-n${TERMINAL_WORKSPACE_KEPT_NOTICE_LIST_LIMIT}`, "--format=%h %s", "HEAD", "--not", "--remotes", ...ownExclude],
+      workspacePath,
+    );
+    return { count: ownCount, commits: log ? log.split(/\r?\n/) : [] };
+  } catch {
+    return null;
+  }
+}
+
+async function listUncommittedChanges(workspacePath: string): Promise<{ count: number; entries: string[] }> {
+  try {
+    const output = (await runGit(["status", "--porcelain=v1", "--untracked-files=all"], workspacePath)).stdout;
+    const lines = output.split(/\r?\n/).filter((line) => line.length > 0);
+    return { count: lines.length, entries: lines.slice(0, TERMINAL_WORKSPACE_KEPT_NOTICE_LIST_LIMIT) };
+  } catch {
+    return { count: 0, entries: [] };
+  }
+}
+
+export function formatTerminalWorkspaceKeptNotice(input: {
+  workspacePath: string;
+  branchName: string | null;
+  uncommitted: { count: number; entries: string[] } | null;
+  unpushed: { count: number; commits: string[] } | null;
+}) {
+  const lines = [
+    "This issue is closed, but its workspace was kept because removing it would lose work.",
+    "",
+    `- Worktree: \`${input.workspacePath}\``,
+    `- Branch: \`${formatBranchForMessage(input.branchName)}\``,
+  ];
+  const listBlock = (entries: string[], total: number) => {
+    const block = ["", "```", ...entries];
+    if (total > entries.length) block.push(`... and ${total - entries.length} more`);
+    block.push("```");
+    return block;
+  };
+  if (input.uncommitted && input.uncommitted.count > 0) {
+    lines.push("", `**Uncommitted changes (${input.uncommitted.count} files, including untracked):**`);
+    lines.push(...listBlock(input.uncommitted.entries, input.uncommitted.count));
+  }
+  if (input.unpushed && input.unpushed.count > 0) {
+    lines.push("", `**Commits not merged or pushed to any remote branch (${input.unpushed.count}):**`);
+    lines.push(...listBlock(input.unpushed.commits, input.unpushed.count));
+  }
+  lines.push(
+    "",
+    "Commit and push the work (or discard it), and the workspace is cleaned up automatically. This notice is posted once.",
+  );
+  return lines.join("\n");
 }
 
 function stableStringify(value: unknown): string {
@@ -1284,7 +1377,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
   // disables the cooldown.
   const workspaceReaperCooldownMs = Math.max(
     0,
-    (opts.workspaceReaperCooldownDays ?? 7) * 24 * 60 * 60 * 1000,
+    (opts.workspaceReaperCooldownDays ?? 0) * 24 * 60 * 60 * 1000,
   );
   const pullRequestStateCache = new Map<
     string,
@@ -1348,6 +1441,18 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           )
         `,
       ));
+  }
+
+  async function listOpenLinkedIssues(workspace: Pick<ExecutionWorkspaceRow, "id" | "companyId">) {
+    return db
+      .select({
+        id: issues.id,
+        identifier: issues.identifier,
+        title: issues.title,
+        status: issues.status,
+      })
+      .from(issues)
+      .where(openLinkedIssueFilter(workspace));
   }
 
   async function listDeliveryPullRequestProducts(
@@ -1671,6 +1776,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     workspace: ExecutionWorkspaceRow,
     expectedHeadSha: string | null,
     capturedGeneration: number,
+    options: { deleteBranch: boolean } = { deleteBranch: true },
   ): Promise<{ cleaned: boolean; warnings: string[]; skippedReopened?: boolean }> {
     // The gateway holds the per-workspace lifecycle lock across the destructive
     // actions. A reopen takes the same lock, so a reopen cannot rebuild the
@@ -1689,11 +1795,15 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         message: "execution workspace cleanup skipped because it was reopened",
       },
       onSkip: () => ({ cleaned: false, warnings: [], skippedReopened: true }),
-      write: () => runTerminalWorkspaceCleanup(workspace, expectedHeadSha),
+      write: () => runTerminalWorkspaceCleanup(workspace, expectedHeadSha, options),
     });
   }
 
-  async function runTerminalWorkspaceCleanup(workspace: ExecutionWorkspaceRow, expectedHeadSha: string | null) {
+  async function runTerminalWorkspaceCleanup(
+    workspace: ExecutionWorkspaceRow,
+    expectedHeadSha: string | null,
+    options: { deleteBranch: boolean },
+  ) {
     const [
       {
         acquireGitWorktreeCleanupLock,
@@ -1754,6 +1864,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         // verified HEAD so a raced ref update fails closed.
         runCleanupCommands: false,
         forceWorktreeRemoval: false,
+        deleteBranch: options.deleteBranch,
       });
       if (cleanup.cleaned && workspace.mode === "shared_workspace") {
         await db
@@ -1818,6 +1929,60 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           .where(eq(executionWorkspaces.id, input.workspaceId));
         return true;
       },
+    });
+  }
+
+  // Post the kept-workspace notice on the source issue at most once per
+  // workspace. The lifecycle lock serializes the flag check, the comment, and the
+  // flag write, so overlapping sweeps or a retried sweep never post it twice.
+  async function postTerminalWorkspaceKeptNoticeOnce(
+    workspace: ExecutionWorkspaceRow,
+    git: ExecutionWorkspaceCloseGitReadiness,
+    reason: { uncommitted: boolean; unpushed: { count: number; commits: string[] } | null },
+  ): Promise<boolean> {
+    if (!workspace.sourceIssueId || !git.workspacePath) return false;
+    const metadata = workspace.metadata as Record<string, unknown> | null;
+    if (metadata?.[TERMINAL_WORKSPACE_KEPT_NOTICE_METADATA_KEY]) return false;
+    const uncommitted = reason.uncommitted ? await listUncommittedChanges(git.workspacePath) : null;
+    const body = formatTerminalWorkspaceKeptNotice({
+      workspacePath: git.workspacePath,
+      branchName: git.branchName ?? workspace.branchName,
+      uncommitted,
+      unpushed: reason.unpushed,
+    });
+    const { issueService } = await import("./issues.js");
+    return db.transaction(async (tx) => {
+      await acquireExecutionWorkspaceLifecycleLock(tx, workspace.id);
+      const fresh = await tx
+        .select({ metadata: executionWorkspaces.metadata })
+        .from(executionWorkspaces)
+        .where(eq(executionWorkspaces.id, workspace.id))
+        .then((rows) => rows[0] ?? null);
+      const freshMetadata = (fresh?.metadata as Record<string, unknown> | null) ?? null;
+      if (!fresh || freshMetadata?.[TERMINAL_WORKSPACE_KEPT_NOTICE_METADATA_KEY]) return false;
+      const comment = await issueService(db).addComment(
+        workspace.sourceIssueId!,
+        body,
+        {},
+        { authorType: "system" },
+        tx,
+      );
+      await tx
+        .update(executionWorkspaces)
+        .set({
+          metadata: {
+            ...(freshMetadata ?? {}),
+            [TERMINAL_WORKSPACE_KEPT_NOTICE_METADATA_KEY]: {
+              postedAt: now().toISOString(),
+              commentId: comment?.id ?? null,
+              uncommittedCount: uncommitted?.count ?? 0,
+              unpushedCount: reason.unpushed?.count ?? 0,
+            },
+          },
+          updatedAt: now(),
+        })
+        .where(eq(executionWorkspaces.id, workspace.id));
+      return true;
     });
   }
 
@@ -2356,7 +2521,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         isTerminal: TERMINAL_ISSUE_STATUSES.has(issue.status),
       }));
 
-      const blockingIssues = linkedIssueSummaries.filter((issue) => !issue.isTerminal);
+      const blockingIssues = await listOpenLinkedIssues(workspace);
       if (blockingIssues.length > 0) {
         const linkedIssueMessage =
           blockingIssues.length === 1
@@ -2539,11 +2704,13 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           cleanupFailed: 0,
           skippedActiveRun: 0,
           skippedNonTerminalTree: 0,
+          skippedOpenLinkedIssue: 0,
           skippedUndelivered: 0,
           skippedRace: 0,
           skippedReopened: 0,
           skippedCooldown: 0,
           clearedStaleReopenPending: 0,
+          keptNoticePosted: 0,
         };
       }
       terminalSweepInProgress = true;
@@ -2603,11 +2770,13 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         cleanupFailed: 0,
         skippedActiveRun: 0,
         skippedNonTerminalTree: 0,
+        skippedOpenLinkedIssue: 0,
         skippedUndelivered: 0,
         skippedRace: 0,
         skippedReopened: 0,
         skippedCooldown: 0,
         clearedStaleReopenPending: 0,
+        keptNoticePosted: 0,
       };
 
       for (const workspace of candidates) {
@@ -2637,14 +2806,43 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           result.skippedNonTerminalTree += 1;
           continue;
         }
-        if (assessment.workspaceDirty) {
-          result.skippedUndelivered += 1;
+        // An open issue outside the source tree can still be bound to this
+        // workspace, for example through reuse_existing. The manual archive
+        // refuses such a workspace, so the reaper keeps it too. It skips in
+        // every mode, because archiving it strands the open issue's next run.
+        if ((await listOpenLinkedIssues(workspace)).length > 0) {
+          result.skippedOpenLinkedIssue += 1;
           continue;
         }
-        if (
-          assessment.deliveryState !== "merged_via_pr"
-          && assessment.deliveryState !== "merged_by_ancestry"
-        ) {
+        // Archive only when removing the worktree loses nothing: no uncommitted
+        // or untracked files, and every commit is merged or on a remote branch.
+        // A pushed branch that is not merged is archived, but its branch ref is
+        // kept. Otherwise keep the workspace and tell the owner once what would
+        // be lost.
+        const merged =
+          assessment.deliveryState === "merged_via_pr"
+          || assessment.deliveryState === "merged_by_ancestry";
+        const unpushed = !merged && git?.repoRoot && git.workspacePath
+          ? await inspectUnpushedCommits(git.workspacePath, git.baseRef)
+          : null;
+        const pushedOnly = !merged && unpushed?.count === 0;
+        if (assessment.workspaceDirty || (!merged && !pushedOnly)) {
+          // Name the unpushed commits only when git confirmed them and no merged
+          // pull request is pending a lookup, so the notice never guesses.
+          const confirmedUnpushed = unpushed && unpushed.count > 0 && assessment.deliveryState === "unmerged"
+            ? unpushed
+            : null;
+          if (
+            git
+            && (assessment.workspaceDirty || confirmedUnpushed)
+            && !(await workspaceHasActiveRun(workspace))
+            && await postTerminalWorkspaceKeptNoticeOnce(workspace, git, {
+              uncommitted: assessment.workspaceDirty,
+              unpushed: confirmedUnpushed,
+            })
+          ) {
+            result.keptNoticePosted += 1;
+          }
           result.skippedUndelivered += 1;
           continue;
         }
@@ -2790,6 +2988,12 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
                 )
                 SELECT 1 FROM issue_tree WHERE status NOT IN ('done', 'cancelled')
               )`,
+              // Re-check under the lock that no open issue is bound to the
+              // workspace, so an issue that binds after the loop check above
+              // still keeps it.
+              notExists(
+                tx.select({ one: sql`1` }).from(issues).where(openLinkedIssueFilter(workspace)),
+              ),
               // Re-check the cooldown under the lifecycle lock. This predicate
               // matches the loop check above: block the archive when any issue in
               // the tree became terminal after the cutoff. The tree walk mirrors
@@ -2837,6 +3041,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           details: {
             sourceIssueId: archived.sourceIssueId,
             deliveryState: assessment.deliveryState,
+            branchKept: pushedOnly,
             cleanupEligibleAt: archived.cleanupEligibleAt?.toISOString() ?? null,
             cleanupReason: ISSUE_TERMINAL_WORKSPACE_CLEANUP_REASON,
           },
@@ -2846,7 +3051,12 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           archived.metadata as Record<string, unknown> | null,
         );
         try {
-          const cleanup = await cleanupTerminalWorkspace(archived, assessment.workspaceHeadSha, capturedGeneration);
+          const cleanup = await cleanupTerminalWorkspace(
+            archived,
+            assessment.workspaceHeadSha,
+            capturedGeneration,
+            { deleteBranch: !pushedOnly },
+          );
           if (cleanup.skippedReopened) result.skippedReopened += 1;
           else if (!cleanup.cleaned) result.cleanupFailed += 1;
           else result.archived += 1;

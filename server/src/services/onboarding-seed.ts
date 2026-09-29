@@ -11,6 +11,8 @@ import { projectService } from "./projects.js";
 import { issueService } from "./issues.js";
 import { readBuiltInAgentMarker } from "./built-in-agent-metadata.js";
 import { logActivity, publishActivity, type ActivityPublication } from "./activity-log.js";
+import { ensureGoalCheckInRoutine } from "./goal-check-in-routine.js";
+import { logger } from "../middleware/logger.js";
 
 /**
  * The project the seeded first task lands in, matching the name the tenant's
@@ -257,6 +259,28 @@ export function onboardingSeedService(db: Db) {
           lastHeartbeatAt: null,
         });
         agentId = created.id;
+      }
+    }
+
+    //    The mission goal is created before the agent, so on a first push it
+    //    has no owner yet. Hand it to the main agent; never take over a goal
+    //    someone already owns.
+    if (goalId && agentId) {
+      const goal = await goalSvc.getById(goalId);
+      if (goal && !goal.ownerAgentId) {
+        await goalSvc.update(goalId, { ownerAgentId: agentId });
+      }
+    }
+
+    //    The lead agent gets the daily goal check-in routine. It runs in a
+    //    savepoint: a company without a board user yet cannot own a routine,
+    //    and that must not fail the seed.
+    if (agentId) {
+      const leadAgentId = agentId;
+      try {
+        await dbx.transaction((sp) => ensureGoalCheckInRoutine(sp as unknown as Db, companyId, leadAgentId));
+      } catch (err) {
+        logger.warn({ err, companyId, agentId }, "onboarding seed: goal check-in routine not created");
       }
     }
 

@@ -2,29 +2,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../config.ts";
 
 // The terminal-workspace reaper reads GSAM_WORKSPACE_REAPER_COOLDOWN_DAYS.
-// These tests lock the parser contract: the default is 7 days, an explicit 0
-// means immediate reaping, and empty, whitespace-only, negative, or non-numeric
-// values fall back to the default. An empty or whitespace-only value must not
-// become 0, because that would delete terminal workspaces immediately.
+// These tests lock the parser contract: the default is 0 (archive on the next
+// sweep after close, GRE-208), a positive number sets a cooldown, and empty,
+// whitespace-only, negative, or non-numeric values fall back to the default.
+// Immediate reaping is safe because the reaper only archives a worktree whose
+// work is committed and merged or pushed.
 
 describe("workspace reaper cooldown config parsing", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it("uses the 7 day default when the variable is not set", () => {
+  it("uses the default of 0 when the variable is not set", () => {
     vi.stubEnv("GSAM_WORKSPACE_REAPER_COOLDOWN_DAYS", undefined);
-    expect(loadConfig().workspaceReaperCooldownDays).toBe(7);
+    expect(loadConfig().workspaceReaperCooldownDays).toBe(0);
   });
 
-  it("uses the 7 day default for an empty value", () => {
+  it("uses the default of 0 for an empty value", () => {
     vi.stubEnv("GSAM_WORKSPACE_REAPER_COOLDOWN_DAYS", "");
-    expect(loadConfig().workspaceReaperCooldownDays).toBe(7);
+    expect(loadConfig().workspaceReaperCooldownDays).toBe(0);
   });
 
-  it("uses the 7 day default for a whitespace-only value", () => {
+  it("uses the default of 0 for a whitespace-only value", () => {
     vi.stubEnv("GSAM_WORKSPACE_REAPER_COOLDOWN_DAYS", "   ");
-    expect(loadConfig().workspaceReaperCooldownDays).toBe(7);
+    expect(loadConfig().workspaceReaperCooldownDays).toBe(0);
   });
 
   it("keeps an explicit 0 as immediate reaping", () => {
@@ -42,13 +43,13 @@ describe("workspace reaper cooldown config parsing", () => {
     expect(loadConfig().workspaceReaperCooldownDays).toBe(3);
   });
 
-  it("uses the 7 day default for a negative value", () => {
+  it("uses the default of 0 for a negative value", () => {
     vi.stubEnv("GSAM_WORKSPACE_REAPER_COOLDOWN_DAYS", "-1");
-    expect(loadConfig().workspaceReaperCooldownDays).toBe(7);
+    expect(loadConfig().workspaceReaperCooldownDays).toBe(0);
   });
 
-  it("uses the 7 day default for a non-numeric value", () => {
+  it("uses the default of 0 for a non-numeric value", () => {
     vi.stubEnv("GSAM_WORKSPACE_REAPER_COOLDOWN_DAYS", "soon");
-    expect(loadConfig().workspaceReaperCooldownDays).toBe(7);
+    expect(loadConfig().workspaceReaperCooldownDays).toBe(0);
   });
 });
