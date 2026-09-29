@@ -35,8 +35,15 @@ const LOG_FILE = "server.log";
 const FORBIDDEN_PORTS = new Set([3100, 3200, 54329]);
 const OPERATOR_EMAIL = "operator@instance.invalid";
 
+/**
+ * `internal` is for Greatstone's own installs only (for example the GRE-157
+ * pilot): the same isolation, but no edition values. Never use it for a client.
+ */
+type InstanceEdition = Edition | "internal";
+const INSTANCE_EDITIONS: readonly InstanceEdition[] = [...EDITIONS, "internal"];
+
 interface InstanceState {
-  edition: Edition;
+  edition: InstanceEdition;
   passedBetaFeatures: string[];
   port: number;
   dbPort: number;
@@ -163,7 +170,8 @@ function catalogVersion(): string {
   return pkg.version || "0.0.0";
 }
 
-function editionValues(state: InstanceState): EditionValues {
+function editionValues(state: InstanceState): EditionValues | null {
+  if (state.edition === "internal") return null;
   return buildEditionValues({
     edition: state.edition,
     passedBetaFeatures: state.passedBetaFeatures,
@@ -221,20 +229,22 @@ async function health(state: InstanceState): Promise<Record<string, unknown> | n
 }
 
 /**
- * Start the server. `provision` starts it once without GSAM_MANAGED_CONFIG,
+ * Start the server. `provision` starts it once without either edition value,
  * only to make the operator, the company and the client log-in: the app
- * refuses company creation while GSAM_MANAGED_CONFIG is set. Every normal
- * start sets both edition values.
+ * refuses company creation while GSAM_MANAGED_CONFIG is set, and invites
+ * while `company.invites` is hidden. Every normal start sets both values.
  */
 async function startServer(root: string, state: InstanceState, mode: "normal" | "provision") {
   if (readPid(root)) die(`the instance at ${root} is already running (pid ${readPid(root)})`);
   if (!(await portFree(state.port))) die(`port ${state.port} is in use by another process`);
   if (!(await portFree(state.dbPort))) die(`database port ${state.dbPort} is in use by another process`);
   const values = editionValues(state);
-  const env = cleanEnv(root, state, {
-    GSAM_HIDDEN_SETTINGS: values.hiddenSettings,
-    ...(mode === "normal" ? { GSAM_MANAGED_CONFIG: values.managedConfig } : {}),
-  });
+  // Setup sets neither value: hidden settings now floor invites with a 403.
+  const env = cleanEnv(
+    root,
+    state,
+    mode === "normal" && values ? { GSAM_HIDDEN_SETTINGS: values.hiddenSettings, GSAM_MANAGED_CONFIG: values.managedConfig } : {},
+  );
   env.GSAM_MIGRATION_AUTO_APPLY = "true";
   env.GSAM_MIGRATION_PROMPT = "never";
   // Serve the built UI when this checkout has one, else the UI dev middleware.
@@ -387,72 +397,82 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
 
   const healthBody = (await health(state)) ?? {};
   check(healthBody.status === "ok", `health is ok on port ${state.port}`);
-  const expectedHidden = parseHiddenSettingsList(values.hiddenSettings).hidden;
-  const shownHidden = new Set(Array.isArray(healthBody.hiddenSettings) ? (healthBody.hiddenSettings as string[]) : []);
-  const missingHidden = expectedHidden.filter((key) => !shownHidden.has(key));
-  check(missingHidden.length === 0, `all ${expectedHidden.length} hidden settings are hidden${missingHidden.length ? ` (missing: ${missingHidden.join(", ")})` : ""}`);
+  if (values) {
+    const expectedHidden = parseHiddenSettingsList(values.hiddenSettings).hidden;
+    const shownHidden = new Set(Array.isArray(healthBody.hiddenSettings) ? (healthBody.hiddenSettings as string[]) : []);
+    const missingHidden = expectedHidden.filter((key) => !shownHidden.has(key));
+    check(missingHidden.length === 0, `all ${expectedHidden.length} hidden settings are hidden${missingHidden.length ? ` (missing: ${missingHidden.join(", ")})` : ""}`);
 
-  // Features.
-  const experimental = await operator.expect("GET", "/api/instance/settings/experimental", undefined, [200]);
-  for (const key of values.expectOn) check(experimental[key] === true, `feature ${key} is on`);
-  for (const key of values.expectOff) check(experimental[key] === false, `feature ${key} is off`);
-  const managedKeys = (experimental.managedKeys ?? {}) as Record<string, unknown>;
-  check(Object.keys(managedKeys).length > 0, "GSAM_MANAGED_CONFIG is applied (managed keys reported)");
+    // Features.
+    const experimental = await operator.expect("GET", "/api/instance/settings/experimental", undefined, [200]);
+    for (const key of values.expectOn) check(experimental[key] === true, `feature ${key} is on`);
+    for (const key of values.expectOff) check(experimental[key] === false, `feature ${key} is off`);
+    const managedKeys = (experimental.managedKeys ?? {}) as Record<string, unknown>;
+    check(Object.keys(managedKeys).length > 0, "GSAM_MANAGED_CONFIG is applied (managed keys reported)");
 
-  // Each hidden setting: a change request must fail with 403. When the request
-  // is not refused, the change is put back and the check fails.
-  const floored = async (label: string, method: string, route: string, body: unknown, codes: string[], revert?: () => Promise<unknown>) => {
-    const res = await operator.request(method, route, body);
-    const matched = codes.find((code) => res.text.includes(code));
-    const ok = res.status === 403 && matched !== undefined;
-    if (!ok && res.status < 300 && revert) await revert();
-    check(ok, `${label}: ${method} ${route} -> ${res.status}${matched ? ` ${matched}` : ""}`);
-  };
-  const OPERATOR_MANAGED = ["settings_operator_managed"];
+    // Each hidden setting: a change request must fail with 403. When the request
+    // is not refused, the change is put back and the check fails.
+    const floored = async (label: string, method: string, route: string, body: unknown, codes: string[], revert?: () => Promise<unknown>) => {
+      const res = await operator.request(method, route, body);
+      const matched = codes.find((code) => res.text.includes(code));
+      const ok = res.status === 403 && matched !== undefined;
+      if (!ok && res.status < 300 && revert) await revert();
+      check(ok, `${label}: ${method} ${route} -> ${res.status}${matched ? ` ${matched}` : ""}`);
+    };
+    const OPERATOR_MANAGED = ["settings_operator_managed"];
 
-  for (const key of INSTANCE_FEATURE_KEYS) {
-    const current = experimental[key] === true;
+    for (const key of INSTANCE_FEATURE_KEYS) {
+      const current = experimental[key] === true;
+      await floored(
+        `instance.experimental.${key}`,
+        "PATCH",
+        "/api/instance/settings/experimental",
+        { [key]: !current },
+        OPERATOR_MANAGED,
+        () => operator.request("PATCH", "/api/instance/settings/experimental", { [key]: current }),
+      );
+    }
+    const general = await operator.expect("GET", "/api/instance/settings/general", undefined, [200]);
+    const currentRetention = { ...DEFAULT_BACKUP_RETENTION, ...(general.backupRetention ?? {}) };
+    const otherDaily = DAILY_RETENTION_PRESETS.find((days) => days !== currentRetention.dailyDays);
     await floored(
-      `instance.experimental.${key}`,
+      "instance.general.backupRetention",
       "PATCH",
-      "/api/instance/settings/experimental",
-      { [key]: !current },
+      "/api/instance/settings/general",
+      { backupRetention: { ...currentRetention, dailyDays: otherDaily } },
       OPERATOR_MANAGED,
-      () => operator.request("PATCH", "/api/instance/settings/experimental", { [key]: current }),
+      () => operator.request("PATCH", "/api/instance/settings/general", { backupRetention: currentRetention }),
     );
+    const otherFeedback = FEEDBACK_DATA_SHARING_PREFERENCES.find((p) => p !== general.feedbackDataSharingPreference);
+    await floored(
+      "instance.general.feedbackDataSharingPreference",
+      "PATCH",
+      "/api/instance/settings/general",
+      { feedbackDataSharingPreference: otherFeedback },
+      OPERATOR_MANAGED,
+      () => operator.request("PATCH", "/api/instance/settings/general", { feedbackDataSharingPreference: general.feedbackDataSharingPreference }),
+    );
+    await floored(
+      "instance.adapters",
+      "PATCH",
+      "/api/adapters/claude_local",
+      { disabled: true },
+      OPERATOR_MANAGED,
+      () => operator.request("PATCH", "/api/adapters/claude_local", { disabled: false }),
+    );
+    await floored("instance.plugins", "POST", "/api/plugins/install", { packageName: "sandbox-check-not-a-plugin" }, OPERATOR_MANAGED);
+    await floored("instance.access", "GET", "/api/admin/users", undefined, OPERATOR_MANAGED);
+    // A managed instance refuses import before the hidden-settings floor runs.
+    await floored("company.import", "POST", "/api/companies/import/preview", {}, [...OPERATOR_MANAGED, "cloud_managed"]);
+
+    // Floored since GRE-107; this check does not yet send a change request to each.
+    const hiddenOnly = ["instance.environments", "company.secrets", "company.export", "company.invites"];
+    for (const key of hiddenOnly) {
+      check(shownHidden.has(key), `${key} is hidden (403 not checked here)`);
+    }
+  } else {
+    check(!Array.isArray(healthBody.hiddenSettings) || healthBody.hiddenSettings.length === 0, "internal: no hidden settings");
   }
-  const general = await operator.expect("GET", "/api/instance/settings/general", undefined, [200]);
-  const currentRetention = { ...DEFAULT_BACKUP_RETENTION, ...(general.backupRetention ?? {}) };
-  const otherDaily = DAILY_RETENTION_PRESETS.find((days) => days !== currentRetention.dailyDays);
-  await floored(
-    "instance.general.backupRetention",
-    "PATCH",
-    "/api/instance/settings/general",
-    { backupRetention: { ...currentRetention, dailyDays: otherDaily } },
-    OPERATOR_MANAGED,
-    () => operator.request("PATCH", "/api/instance/settings/general", { backupRetention: currentRetention }),
-  );
-  const otherFeedback = FEEDBACK_DATA_SHARING_PREFERENCES.find((p) => p !== general.feedbackDataSharingPreference);
-  await floored(
-    "instance.general.feedbackDataSharingPreference",
-    "PATCH",
-    "/api/instance/settings/general",
-    { feedbackDataSharingPreference: otherFeedback },
-    OPERATOR_MANAGED,
-    () => operator.request("PATCH", "/api/instance/settings/general", { feedbackDataSharingPreference: general.feedbackDataSharingPreference }),
-  );
-  await floored(
-    "instance.adapters",
-    "PATCH",
-    "/api/adapters/claude_local",
-    { disabled: true },
-    OPERATOR_MANAGED,
-    () => operator.request("PATCH", "/api/adapters/claude_local", { disabled: false }),
-  );
-  await floored("instance.plugins", "POST", "/api/plugins/install", { packageName: "sandbox-check-not-a-plugin" }, OPERATOR_MANAGED);
-  await floored("instance.access", "GET", "/api/admin/users", undefined, OPERATOR_MANAGED);
-  // A managed instance refuses import before the hidden-settings floor runs.
-  await floored("company.import", "POST", "/api/companies/import/preview", {}, [...OPERATOR_MANAGED, "cloud_managed"]);
 
   // Company and client log-in.
   const companies = (await operator.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
@@ -471,11 +491,6 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   });
   check(signUp.status >= 400, `new sign-ups are refused (-> ${signUp.status})`);
 
-  // Settings that only hide the UI: say so, do not claim a 403.
-  const uiOnly = ["instance.environments", "company.secrets", "company.export", "company.invites"];
-  for (const key of uiOnly) {
-    check(shownHidden.has(key), `${key} is hidden in the UI (the app has no 403 route for it)`);
-  }
 
   const failed = results.filter((r) => !r.ok);
   for (const r of results) say(`${r.ok ? "PASS" : "FAIL"} ${r.line}`);
@@ -502,8 +517,9 @@ function backupNow(root: string, state: InstanceState): string {
 
 async function cmdCreate(opts: Record<string, string>) {
   const root = resolveRoot(opts.root);
-  const edition = (opts.edition ?? "managed") as Edition;
-  if (!EDITIONS.includes(edition)) die(`--edition must be one of: ${EDITIONS.join(", ")}`);
+  const edition = (opts.edition ?? "managed") as InstanceEdition;
+  if (!INSTANCE_EDITIONS.includes(edition)) die(`--edition must be one of: ${INSTANCE_EDITIONS.join(", ")}`);
+  if (edition === "internal" && opts["passed-features"] !== undefined) die("internal takes no --passed-features");
   const passed = (opts["passed-features"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   if (edition === "managed-plus" && opts["passed-features"] === undefined) {
     die("managed-plus needs --passed-features: the beta features whose Beacon verdict (GRE-81) has passed (\"\" for none)");
