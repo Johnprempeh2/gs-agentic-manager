@@ -21,6 +21,7 @@ import {
   runAdapterExecutionTargetProcess,
 } from "@greatstone/adapter-utils/execution-target";
 import type { AdapterExecutionTarget } from "@greatstone/adapter-utils/execution-target";
+import { redactDiagnosticText } from "@greatstone/adapter-utils/command-redaction";
 import {
   DEFAULT_ACP_ENGINE_MODE,
   DEFAULT_ACP_ENGINE_NON_INTERACTIVE_PERMISSIONS,
@@ -316,6 +317,19 @@ async function prepareClaudeRemoteManagedHome(
   return { stagedRuntime, teardown: registerWorkspaceSyncBack(stagedRuntime) };
 }
 
+const CLAUDE_PROVIDER_REASON_MAX_CHARS = 300;
+
+/** The provider's failure text with secrets removed, one line, bounded. */
+export function claudeProviderReason(failure: AcpxTerminalSessionFailure): string | null {
+  const text = redactDiagnosticText([failure.title, failure.details].filter(Boolean).join(" - "))
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  return text.length > CLAUDE_PROVIDER_REASON_MAX_CHARS
+    ? `${text.slice(0, CLAUDE_PROVIDER_REASON_MAX_CHARS - 3)}...`
+    : text;
+}
+
 export function classifyClaudeTerminalSessionFailure(
   failure: AcpxTerminalSessionFailure,
   now: Date,
@@ -323,7 +337,13 @@ export function classifyClaudeTerminalSessionFailure(
   // `access` is claude-agent-acp's typed category for a rejected or expired
   // login. Retrying cannot repair it, so report the same code as the Claude CLI
   // lane; recovery hands it to the board instead of burning retries.
-  if (failure.category === "access") return { errorCode: CLAUDE_AUTH_REQUIRED_ERROR_CODE };
+  //
+  // The category alone does not prove the token is dead, so keep the
+  // provider's own words (redacted, bounded) for the server and the operator.
+  if (failure.category === "access") {
+    const providerReason = claudeProviderReason(failure);
+    return { errorCode: CLAUDE_AUTH_REQUIRED_ERROR_CODE, ...(providerReason ? { providerReason } : {}) };
+  }
   // `limit` also includes context, turn, rate and configured budget limits.
   // Only the provider's quota wording qualifies for a quota wait.
   if (failure.category !== "limit") return null;
