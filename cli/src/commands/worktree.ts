@@ -2481,12 +2481,22 @@ async function runWorktreeInit(opts: WorktreeInitOptions): Promise<void> {
       };
     },
   );
-  markWorktreeSeedPending({
-    configPath: paths.configPath,
-    sourceConfigPath,
-    targetInstanceId: instanceId,
-    seedMode,
-  });
+  if (opts.seed !== false) {
+    markWorktreeSeedPending({
+      configPath: paths.configPath,
+      sourceConfigPath,
+      targetInstanceId: instanceId,
+      seedMode,
+    });
+  } else {
+    // --no-seed means an empty database is intended. A pending manifest here
+    // would make dev-runner refuse to start with no way to seed (GRE-272).
+    // Managed provisioning writes its own pending manifest after this call.
+    const seedMarkers = resolveWorktreeSeedMarkerPaths(paths.configPath);
+    rmSync(seedMarkers.manifest, { force: true });
+    rmSync(seedMarkers.pending, { force: true });
+    rmSync(seedMarkers.complete, { force: true });
+  }
   const sourceEnvEntries = readPaperclipEnvEntries(resolvePaperclipEnvFile(sourceConfigPath));
   const existingAgentJwtSecret =
     nonEmpty(sourceEnvEntries.GSAM_AGENT_JWT_SECRET) ??
