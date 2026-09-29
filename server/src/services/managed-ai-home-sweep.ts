@@ -1,4 +1,4 @@
-import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -38,6 +38,33 @@ export async function claimManagedAiHome(home: string) {
   );
 }
 
+/** Give the owner write access to every folder under `dir` (symlinks are not followed). */
+async function makeTreeWritable(dir: string): Promise<void> {
+  const info = await lstat(dir).catch(() => null);
+  if (!info?.isDirectory()) return;
+  if ((info.mode & 0o700) !== 0o700) await chmod(dir, info.mode | 0o700).catch(() => undefined);
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isDirectory()) await makeTreeWritable(path.join(dir, entry.name));
+  }
+}
+
+/**
+ * Remove a folder tree even when it holds read-only folders. Runtime-context
+ * bundles are chmod 0o555 (GRE-217), and `rm --force` cannot unlink entries
+ * inside a folder without write access.
+ */
+export async function removeTree(dir: string) {
+  try {
+    await rm(dir, { recursive: true, force: true });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EACCES" && code !== "EPERM") throw error;
+    await makeTreeWritable(dir);
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 export async function removeManagedAiHome(
   home: string,
   opts: { lateWriteRetryMs?: number } = {},
@@ -48,10 +75,10 @@ export async function removeManagedAiHome(
     setTimeout(() => {
       // Skip if the path was reused by a new claim (mkdtemp names are random,
       // so this is defensive only).
-      if (!activeHomes.has(home)) void rm(home, { recursive: true, force: true }).catch(() => undefined);
+      if (!activeHomes.has(home)) void removeTree(home).catch(() => undefined);
     }, retryMs).unref();
   }
-  await rm(home, { recursive: true, force: true });
+  await removeTree(home);
 }
 
 function pidIsAlive(pid: number) {
@@ -107,7 +134,7 @@ export async function sweepStaleManagedAiHomes(
     if (!path.basename(dir).startsWith(MANAGED_AI_HOME_PREFIX)) continue;
     const info = await stat(dir).catch(() => null);
     if (!info || !(await isStaleManagedAiHome(dir, info.mtimeMs, now))) continue;
-    await rm(dir, { recursive: true, force: true }).then(
+    await removeTree(dir).then(
       () => result.removed.push(dir),
       () => result.failed.push(dir),
     );
@@ -127,7 +154,7 @@ export async function sweepStaleTestTempDirs(
     if (!TEST_TEMP_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
     const info = await stat(dir).catch(() => null);
     if (!info || now - info.mtimeMs <= maxAgeMs) continue;
-    await rm(dir, { recursive: true, force: true }).then(
+    await removeTree(dir).then(
       () => result.removed.push(dir),
       () => result.failed.push(dir),
     );

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -39,6 +39,14 @@ afterAll(async () => {
 });
 
 const exists = (target: string) => stat(target).then(() => true, () => false);
+
+// GRE-217: runtime-context bundles are chmod 0o555 with 0o444 files.
+async function addReadOnlyBundle(home: string) {
+  const bundle = path.join(home, ".gsam", "instances", "default", "runtime-context-assets", "bundles", "34cb1c81");
+  await mkdir(bundle, { recursive: true });
+  await writeFile(path.join(bundle, "AGENTS.md"), "bundle", { mode: 0o444 });
+  await chmod(bundle, 0o555);
+}
 
 async function fixture() {
   const companyId = randomUUID();
@@ -143,6 +151,14 @@ describe("removeManagedAiHome", () => {
     await mkdir(path.join(home, "Library", "Caches", "claude-cli-nodejs"), { recursive: true });
     await expect.poll(() => exists(home), { timeout: 2_000 }).toBe(false);
   });
+
+  it("removes a home that holds a read-only runtime-context bundle", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "gsam-ai-read-only-"));
+    await claimManagedAiHome(home);
+    await addReadOnlyBundle(home);
+    await removeManagedAiHome(home, { lateWriteRetryMs: 0 });
+    expect(await exists(home)).toBe(false);
+  });
 });
 
 describe("temp folder sweeps", () => {
@@ -184,6 +200,17 @@ describe("temp folder sweeps", () => {
     expect(result.removed.sort()).toEqual([crashed, residue, ownFinished, unownedOld].sort());
     for (const kept of [freshResidue, otherLiveServer, unownedRecent, ownLive, unrelated]) expect(await exists(kept)).toBe(true);
     await removeManagedAiHome(ownLive, { lateWriteRetryMs: 0 });
+  });
+
+  it("removes stale homes that hold a read-only runtime-context bundle", async () => {
+    const deadPid = 2 ** 22 + 12346;
+    const home = await makeDir("paperclip-ai-c-g-read-only", { ageHours: 0, provider: true, ownerPid: deadPid });
+    await addReadOnlyBundle(home);
+
+    const result = await sweepStaleManagedAiHomes({ tmpDir, now });
+
+    expect(result).toEqual({ removed: [home], failed: [] });
+    expect(await exists(home)).toBe(false);
   });
 
   it("removes test temp folders older than one day only", async () => {
