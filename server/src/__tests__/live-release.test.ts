@@ -422,6 +422,33 @@ describe("progress after the switch", () => {
     expect(svc.listJobs()[0]).toMatchObject({ state: "failed", reason: "the database backup failed; nothing was changed." });
   });
 
+  it("clears the failure once live runs the failed rc's commit (GRE-179)", async () => {
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    writeResult(launches[0].jobDir, { outcome: "not_released", message: "the database backup failed; nothing was changed." });
+    await svc.tick();
+    // Released by hand afterwards: live now runs the rc commit.
+    runningCommit = { commit: "b".repeat(40), tag: "live-2026-09-27.1" };
+    expect((await svc.overview("co-1")).progress).toBeNull();
+  });
+
+  it("clears the failure of an old job with no commit when the rc tag's commit is live (GRE-179)", async () => {
+    const dir = path.join(root, "instance", "live-release", "jobs", "old");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "job.json"), JSON.stringify({ id: "old", kind: "release", tag: "rc-2026-09-26.1", state: "failed", reason: "boom", createdAt: clock.toISOString(), updatedAt: clock.toISOString() }));
+    tags = [{ tag: "rc-2026-09-26.1", commit: "d".repeat(40), date: clock.toISOString(), annotated: true, message: "Old\n" }];
+    runningCommit = { commit: "d".repeat(40), tag: "live-2026-09-26.1" };
+    expect((await createLiveReleaseService(deps()).overview("co-1")).progress).toBeNull();
+  });
+
+  it("still shows the failure while live runs another commit (GRE-179)", async () => {
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    writeResult(launches[0].jobDir, { outcome: "not_released", message: "the database backup failed; nothing was changed." });
+    await svc.tick();
+    expect((await svc.overview("co-1")).progress).toMatchObject({ state: "failed", targetTag: "rc-2026-09-27.2", reason: "the database backup failed; nothing was changed." });
+  });
+
   it("keeps the hold across the live restart until the outcome is reported", async () => {
     const before = createLiveReleaseService(deps());
     await before.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
