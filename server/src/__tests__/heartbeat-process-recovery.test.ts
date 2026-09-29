@@ -3498,6 +3498,75 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     });
   });
 
+  // GRE-246: the new server has no stdout for an adopted child, so when the
+  // child exits its result is gone. The loss must say so, not look like a
+  // bare crash, and the bounded retry is the only way the work finishes.
+  it("marks an adopted run whose child exits after the restart as lost with an uncaptured-output message", async () => {
+    const child = spawnAliveProcess();
+    childProcesses.add(child);
+    expect(child.pid).toBeGreaterThan(0);
+    const { runId } = await seedRunFixture({
+      agentStatus: "running",
+      processPid: child.pid ?? null,
+      processGroupId: null,
+      contextSnapshot: {
+        executionEngine: "cli",
+        processTopology: "detached",
+      },
+    });
+
+    await withTempPaperclipHome(async () => {
+      const heartbeat = heartbeatService(db);
+      await writeHotRestartIntent({
+        previousServerPid: process.pid,
+        previousServerVersion: "old-version",
+        requestedAt: new Date("2026-03-19T00:05:00.000Z"),
+      });
+      await heartbeat.prepareHotRestartShutdown(
+        "SIGTERM",
+        new Date("2026-03-19T00:06:00.000Z"),
+      );
+      const adoption = await heartbeat.reconcileHotRestartAdoption(
+        new Date("2026-03-19T00:07:00.000Z"),
+      );
+      expect(adoption.adoptedRunIds).toEqual([runId]);
+
+      child.kill("SIGKILL");
+      await new Promise((resolve) => child.once("exit", resolve));
+
+      const reap = await heartbeat.reapOrphanedRuns();
+      expect(reap.runIds).toEqual([runId]);
+      const run = await db
+        .select()
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null);
+      expect(run?.status).toBe("failed");
+      expect(run?.errorCode).toBe("process_lost");
+      expect(run?.error).toBe(
+        `Process lost -- child pid ${child.pid} is no longer running after hot-restart adoption; its output after the restart was not captured; retrying once`,
+      );
+      expect(run?.resultJson).toMatchObject({ hotRestart: { adopted: true } });
+
+      const retries = await db
+        .select()
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.retryOfRunId, runId));
+      expect(retries).toHaveLength(1);
+      const events = await db
+        .select()
+        .from(heartbeatRunEvents)
+        .where(eq(heartbeatRunEvents.runId, runId));
+      expect(
+        events.some(
+          (event) =>
+            (event.payload as Record<string, unknown> | null)
+              ?.adoptedAfterHotRestart === true,
+        ),
+      ).toBe(true);
+    });
+  });
+
   it.skipIf(process.platform === "win32")(
     "keeps process-group-only hot-restart adoptions out of process_lost reaping",
     async () => {

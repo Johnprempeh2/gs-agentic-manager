@@ -38,13 +38,12 @@ import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { attentionApi } from "../api/attention";
-import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
 import { attentionBadgeCount } from "../lib/attention";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
-import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+import { useLiveAgents } from "../hooks/useLiveAgents";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
@@ -73,28 +72,10 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
-  const liveRunsQueryKey = queryKeys.liveRuns(selectedCompanyId!);
-  const sharedLiveRuns = useSharedPollingQuery({
-    companyId: selectedCompanyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
-    enabled: !!selectedCompanyId,
-    // Event-sourced via LiveUpdatesProvider (GitHub issue 9627) + reconnect reconcile — no
-    // interval poll needed. Polling here also re-armed React Query's timer on
-    // every live-event cache write, a major source of steady-state churn.
-    refetchInterval: false,
-    leaderOnly: true,
-  });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
-  });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
-  const liveRunCount = liveRuns?.length ?? 0;
+  const { liveAgents } = useLiveAgents(selectedCompanyId);
+  const liveRunCount = liveAgents.length;
   const liveIssueIds = new Set(
-    (liveRuns ?? []).flatMap((run) => run.issueId ? [run.issueId] : []),
+    liveAgents.flatMap((agent) => agent.runs.flatMap((run) => run.issueId ? [run.issueId] : [])),
   );
   const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
