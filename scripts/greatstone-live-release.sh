@@ -59,6 +59,17 @@ fi
 # shellcheck source=greatstone-common.sh
 source "$RELEASE_REPO/scripts/greatstone-common.sh"
 
+# Preflight before the release script backs up or tags anything (GRE-180). An
+# older release repo has no such check; greatstone-release.sh runs it too.
+if declare -F live_index_lock_check >/dev/null; then
+  if ! LOCK_NOTE="$(live_index_lock_check)"; then
+    write_result not_released "$LOCK_NOTE"
+    say "$(date -u +%FT%TZ) not released: $LOCK_NOTE"
+    exit 1
+  fi
+  [ -z "$LOCK_NOTE" ] || say "$(date -u +%FT%TZ) $LOCK_NOTE"
+fi
+
 BEFORE="$(git -C "$LIVE_DIR" rev-parse HEAD 2>/dev/null || true)"
 PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || true)"
 

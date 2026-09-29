@@ -3,9 +3,9 @@
 // the live checkout and the release repository are fakes; nothing under
 // ~/GSAM is read or written, and no live server is contacted.
 import assert from "node:assert/strict";
-import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -72,7 +72,8 @@ function launch(box, env = {}) {
     },
   });
   const result = JSON.parse(readFileSync(join(box.job, "result.json"), "utf8"));
-  const calls = readFileSync(join(box.root, "calls.log"), "utf8").trim().split("\n");
+  const callsLog = join(box.root, "calls.log");
+  const calls = existsSync(callsLog) ? readFileSync(callsLog, "utf8").trim().split("\n") : [];
   return { run, result, calls, head: git(box.live, "rev-parse", "HEAD") };
 }
 
@@ -118,6 +119,116 @@ test("a failed rollback says so", (t) => {
   const { result } = launch(box, { STUB_RC: "health", STUB_ROLLBACK: "fail" });
   assert.equal(result.outcome, "rollback_failed");
   assert.match(result.message, /rollback: the live database is not running/);
+});
+
+// GRE-180: a leftover .git/index.lock in live made the checkout fail after the
+// backup and the tag. The stub's `git checkout` fails the same way while a lock
+// is there, so "released" also proves the lock went before the stub ran.
+const HOUR_AGO = new Date(Date.now() - 3600_000);
+function writeLock(box, { content = "", mtime = HOUR_AGO } = {}) {
+  const lock = join(realpathSync(box.live), ".git", "index.lock");
+  writeFileSync(lock, content);
+  utimesSync(lock, mtime, mtime);
+  return lock;
+}
+
+// Starts a process group (killed on cleanup) and waits until lsof sees it.
+async function holdWith(t, command, args, cwd) {
+  const child = spawn(command, args, { cwd, detached: true, stdio: "ignore" });
+  t.after(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} });
+  await new Promise((r) => setTimeout(r, 500));
+  return child;
+}
+
+test("a stale empty index.lock in live is removed before the release script runs", (t) => {
+  const box = sandbox();
+  t.after(() => rmSync(box.root, { recursive: true, force: true }));
+  const lock = writeLock(box);
+  const { run, result, calls, head } = launch(box);
+  assert.equal(result.outcome, "released");
+  assert.equal(existsSync(lock), false);
+  assert.match(run.stdout, new RegExp(`Removed a stale ${lock} \\(empty, \\d+s old, no git process\\)`));
+  assert.deepEqual(calls, ["rc-2026-09-27.2"]);
+  assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2"));
+});
+
+for (const [name, setup] of [
+  ["a fresh index.lock", (t, box) => writeLock(box, { mtime: new Date() })],
+  ["a non-empty index.lock", (t, box) => writeLock(box, { content: "DIRC" })],
+  ["an index.lock open in a process", async (t, box) => {
+    const lock = writeLock(box);
+    await holdWith(t, "bash", ["-c", 'exec 3<"$1"; sleep 30', "_", lock]);
+    return lock;
+  }],
+  ["an index.lock with a git process in live", async (t, box) => {
+    const lock = writeLock(box);
+    await holdWith(t, "git", ["-c", "alias.hold=!sleep 30", "hold"], box.live);
+    return lock;
+  }],
+]) {
+  test(`${name} stops the release before any backup or tag and names the file`, async (t) => {
+    const box = sandbox();
+    t.after(() => rmSync(box.root, { recursive: true, force: true }));
+    const lock = await setup(t, box);
+    const { result, calls, head } = launch(box);
+    assert.equal(result.outcome, "not_released");
+    assert.ok(result.message.startsWith(`${lock} `), result.message);
+    assert.match(result.message, /Nothing was changed\.$/);
+    assert.equal(result.backupFile, null);
+    // The release script (backup, tag, checkout) never ran.
+    assert.deepEqual(calls, []);
+    assert.equal(existsSync(join(box.root, "backups")), false);
+    assert.equal(existsSync(lock), true);
+    assert.equal(head, box.oldHead);
+  });
+}
+
+// The real greatstone-release.sh (run by hand, or with an older launcher) checks
+// too, before its backup and tag. Its release repo is a temp git repo with no
+// origin, so a run that gets past the check stops at the fetch.
+function releaseRepo(box) {
+  const repo = join(box.root, "release");
+  mkdirSync(join(repo, "scripts"), { recursive: true });
+  for (const f of ["greatstone-release.sh", "greatstone-common.sh"]) copyFileSync(join(scriptsDir, f), join(repo, "scripts", f));
+  git(repo, "init", "--quiet");
+  git(repo, "add", ".");
+  git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "--quiet", "-m", "scripts");
+  git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "tag", "-a", "rc-2026-09-27.2", "-m", "Faster board");
+  return repo;
+}
+
+function runRelease(box, repo) {
+  const env = { ...process.env, GSAM_ROOT: box.root, GSAM_LIVE_URL: "http://127.0.0.1:9", GSAM_LIVE_BOARD_KEY_FILE: join(box.root, "no-key") };
+  delete env.GSAM_RELEASE_REPO;
+  return spawnSync("bash", [join(repo, "scripts", "greatstone-release.sh"), "rc-2026-09-27.2"], { encoding: "utf8", env });
+}
+
+test("greatstone-release.sh refuses a fresh index.lock before the backup and the tag", (t) => {
+  const box = sandbox();
+  t.after(() => rmSync(box.root, { recursive: true, force: true }));
+  const repo = releaseRepo(box);
+  const lock = writeLock(box, { mtime: new Date() });
+  const run = runRelease(box, repo);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, new RegExp(`^release: ${lock} is \\d+s old \\(under 600s\\)`, "m"));
+  assert.doesNotMatch(run.stdout, /Backed up|Tagged/);
+  assert.equal(existsSync(join(box.root, "backups")), false);
+  assert.equal(git(repo, "tag", "-l", "live-*"), "");
+  assert.equal(existsSync(lock), true);
+});
+
+test("greatstone-release.sh removes a stale empty index.lock before the backup and the tag", (t) => {
+  const box = sandbox();
+  t.after(() => rmSync(box.root, { recursive: true, force: true }));
+  const repo = releaseRepo(box);
+  const lock = writeLock(box);
+  const run = runRelease(box, repo);
+  assert.match(run.stdout, new RegExp(`^Removed a stale ${lock} `, "m"));
+  assert.equal(existsSync(lock), false);
+  // No origin in the sandbox: it stops at the fetch, still before backup and tag.
+  assert.notEqual(run.status, 0);
+  assert.doesNotMatch(run.stdout, /Backed up|Tagged/);
+  assert.equal(git(repo, "tag", "-l", "live-*"), "");
 });
 
 test("without the foreground flag it detaches and records its pid", async (t) => {

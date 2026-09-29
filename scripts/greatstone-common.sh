@@ -52,6 +52,32 @@ live_board_key_check() {
   [ -n "$(tr -d '[:space:]' <"$LIVE_BOARD_KEY_FILE")" ] || { say "$LIVE_BOARD_KEY_FILE is empty"; return 1; }
 }
 
+# Checks the live checkout for a leftover .git/index.lock before anything is
+# backed up or tagged: with it, the checkout that moves live fails after the
+# backup and the new live-* tag exist (GRE-180). A lock that is empty, older
+# than GSAM_INDEX_LOCK_STALE_SECONDS (default 600), not open in any process
+# and with no git process in the live checkout is left over from a crash; it
+# is removed and said so. Any other lock fails with the reason and the path.
+# When lsof is missing no process check is possible, so the lock stays.
+live_index_lock_check() {
+  local git_dir lock age max="${GSAM_INDEX_LOCK_STALE_SECONDS:-600}"
+  git_dir="$(git -C "$LIVE_DIR" rev-parse --absolute-git-dir 2>/dev/null)" || return 0
+  lock="$git_dir/index.lock"
+  [ -e "$lock" ] || return 0
+  command -v lsof >/dev/null 2>&1 \
+    || { say "$lock exists and lsof is missing, so it cannot be checked; remove it by hand once no git command runs in $LIVE_DIR. Nothing was changed."; return 1; }
+  [ ! -s "$lock" ] || { say "$lock exists and is not empty: a git command may be running in $LIVE_DIR. Nothing was changed."; return 1; }
+  age="$(perl -e 'printf "%d", time - (stat shift)[9]' "$lock")"
+  [ "$age" -ge "$max" ] || { say "$lock is ${age}s old (under ${max}s): a git command may be running in $LIVE_DIR. Nothing was changed."; return 1; }
+  [ -z "$(lsof -t -- "$lock" 2>/dev/null)" ] || { say "$lock is open in process $(lsof -t -- "$lock" 2>/dev/null | tr '\n' ' '); a git command runs in $LIVE_DIR. Nothing was changed."; return 1; }
+  if lsof -a -c git -d cwd -Fn 2>/dev/null | grep -qxF "n$(cd "$LIVE_DIR" && pwd -P)"; then
+    say "$lock exists and a git process runs in $LIVE_DIR. Nothing was changed."
+    return 1
+  fi
+  rm -f -- "$lock" || { say "$lock is stale but could not be removed. Nothing was changed."; return 1; }
+  say "Removed a stale $lock (empty, ${age}s old, no git process)."
+}
+
 # curl with the live board key, when there is one. The key goes in through a
 # file descriptor, never on a command line that ps can show.
 live_curl() {
