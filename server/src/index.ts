@@ -83,6 +83,7 @@ import {
   reconcileCodexLocalManagedHomesOnStartup,
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
+  returnDueTabledIssues,
   statusCardService,
   toolAccessService,
   workspaceOperationService,
@@ -1727,6 +1728,17 @@ async function startServerWithDatabaseTeardown(
           })
           .catch((err) => {
             logger.error({ err }, "routine scheduler tick failed");
+          }));
+
+        if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork(returnDueTabledIssues(db, { heartbeat })
+          .then((result) => {
+            if (result.returned > 0) {
+              logger.info({ ...result }, "brought back tabled issues on their return date");
+            }
+          })
+          .catch((err) => {
+            logger.error({ err }, "tabled issue return sweep failed");
           }));
 
         if (heartbeatSchedulerStopped) return;
