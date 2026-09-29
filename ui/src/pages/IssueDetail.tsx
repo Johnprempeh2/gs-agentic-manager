@@ -1,6 +1,7 @@
 import { useUserPreferences } from "../hooks/useUserPreferences";
 import { DispositionRecoveryProvider } from "../components/DispositionRecoveryNotice";
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { ReauthCancelledError, useReauth } from "@/components/ReauthDialog";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { clearLegacyChatMessageRequests } from "@/lib/chat-message-request";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
@@ -4661,6 +4662,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       }
     },
   });
+  // An "Update live?" card asks for the password in login mode (GRE-164).
+  const { withReauth, dialog: reauthDialog } = useReauth();
   const acceptInteraction = useMutation({
     mutationFn: ({
       interaction,
@@ -4673,11 +4676,14 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       selectedOptionIds?: string[];
       rememberAction?: boolean;
     }) =>
-      issuesApi.acceptInteraction(issueId!, interaction.id, {
-        selectedClientKeys,
-        selectedOptionIds,
-        rememberAction,
-      }),
+      withReauth("release", (options) =>
+        issuesApi.acceptInteraction(
+          issueId!,
+          interaction.id,
+          { selectedClientKeys, selectedOptionIds, rememberAction },
+          options,
+        ),
+      ),
     onSuccess: (interaction) => {
       upsertInteractionInCache(interaction);
       if (
@@ -4712,6 +4718,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       });
     },
     onError: (err) => {
+      if (err instanceof ReauthCancelledError) return;
       pushToast({
         title: "Accept failed",
         body:
@@ -8256,6 +8263,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
             />
           ) : null}
           <ScrollToBottom />
+          {reauthDialog}
         </div>
       </IssueGalleryContext.Provider>
     </FileViewerProvider>

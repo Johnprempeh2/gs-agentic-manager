@@ -271,6 +271,16 @@ export function readPersistedDevServerStatus(
       string,
       unknown
     >;
+    // A supervisor that died without cleanup leaves this file behind; do not
+    // report it as listening, or restarts get "restart_not_required" (GRE-166).
+    if (
+      typeof raw.supervisorPid === "number" &&
+      Number.isInteger(raw.supervisorPid) &&
+      raw.supervisorPid > 0 &&
+      !processIsAlive(raw.supervisorPid)
+    ) {
+      return null;
+    }
     const changedPathsSample = normalizeStringArray(
       raw.changedPathsSample,
     ).slice(0, 5);

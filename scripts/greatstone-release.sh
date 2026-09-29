@@ -123,10 +123,11 @@ else
   for _ in $(seq 1 15); do
     sleep 2
     RESTART="$(live_curl -sS -m 10 -X POST "$LIVE_URL/api/health/dev-server/restart" 2>&1 || true)"
-    case "$RESTART" in *restart_requested*|*board_access_required*) break ;; esac
+    case "$RESTART" in *restart_requested*|*board_access_required*|*dev_server_supervisor_unavailable*) break ;; esac
   done
   case "$RESTART" in
     *restart_requested*) say "Asked the live server to restart" ;;
+    *dev_server_supervisor_unavailable*) die "the live server has no dev-runner supervisor, so it cannot restart itself. Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
     *board_access_required*) die "the live server refused the restart: it runs in login mode and $LIVE_BOARD_KEY_FILE holds no valid board API key. Live code is on $LIVE_TAG but the old server still runs; fix the key and restart live, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
     *) die "the live server did not accept a restart ($RESTART). Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
   esac
