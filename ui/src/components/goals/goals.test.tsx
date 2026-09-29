@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { GoalCheckIn, GoalMilestone } from "@greatstone/shared";
 import { buildScoreboard } from "@/lib/goal-journey";
 import { makeGoal } from "@/lib/goal-journey.fixtures";
@@ -20,7 +21,12 @@ vi.mock("@/context/ThemeContext", () => ({
   useTheme: () => ({ theme: "light", toggleTheme: () => {} }),
 }));
 
-const render = (node: ReactNode) => renderToStaticMarkup(<MemoryRouter>{node}</MemoryRouter>);
+const render = (node: ReactNode) =>
+  renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>{node}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 
 const agentsById = new Map([["ag1", { id: "ag1", name: "Everest", appearance: null }]]);
 
@@ -75,6 +81,47 @@ describe("GoalScoreboardView", () => {
     expect(html).toContain('data-testid="goal-sub-tile"');
     expect(html).toContain("Write the docs");
     expect(html).toContain("No check-ins yet");
+  });
+
+  it("writes the main blocker as a plain sentence with the ticket as a link and '+N more' to the goal page", () => {
+    const stuck = {
+      kind: "issue",
+      issueId: "i1",
+      identifier: "GRE-131",
+      title: "client-instance.sh: upgrade <stable tag> and a tested restore",
+      goalId: "g1",
+      reason: "waiting_on_issue",
+      waitingOn: { issueId: "i2", identifier: "GRE-130", title: "Restore test", status: "in_progress" },
+      actor: { type: "agent", id: "ag1", name: "Everest" },
+      note: null,
+      holdsUpCount: 1,
+    } as const;
+    const entries = buildScoreboard([
+      makeGoal({ id: "g1", blockers: [stuck, { ...stuck, issueId: "i3", identifier: "GRE-132" }] }),
+    ]);
+    const html = render(<GoalScoreboardView entries={entries} agentsById={agentsById} />);
+    const sentence = html.match(/<p class="line-clamp-2"[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    expect(sentence).toContain("Upgrade stable tag and a tested restore waits for Everest to finish");
+    expect(sentence).not.toMatch(/\.sh|&lt;|`|GRE-\d+/);
+    expect(html).toContain('href="/issues/GRE-131"');
+    expect(html).toContain('href="/issues/GRE-130"');
+    expect(html).toContain('href="/goals/g1#goal-blockers"');
+    expect(html).toContain("+1 more blocker");
+  });
+
+  it("says there is no blocker when a goal is at risk only because tasks are open", () => {
+    const entries = buildScoreboard(
+      [
+        makeGoal({
+          targetDate: "2026-01-01",
+          progress: { percent: 13, source: "issues", done: 1, open: 7, blocked: 0, total: 8 },
+        }),
+      ],
+      { now: new Date(2026, 8, 29) },
+    );
+    const html = render(<GoalScoreboardView entries={entries} agentsById={agentsById} />);
+    expect(html).toContain("No blocker. 7 of 8 tasks still open.");
+    expect(html).not.toContain("Main blocker:");
   });
 
   it("has a 'No goals yet' empty state", () => {

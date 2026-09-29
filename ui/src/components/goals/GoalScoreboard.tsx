@@ -5,19 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn, relativeTime } from "@/lib/utils";
 import {
-  blockerText,
   formatTargetDate,
   remainingLabel,
   type GoalHealth,
   type ScoreboardEntry,
 } from "@/lib/goal-journey";
 import { AgentAvatar } from "../AgentAvatar";
+import { MainBlocker } from "./GoalBlockers";
 import {
   GoalHealthPill,
   GoalPercent,
   GoalProgressBar,
   GoalProgressRing,
-  healthStyle,
 } from "./GoalHealth";
 
 export type AgentsById = ReadonlyMap<string, Pick<Agent, "id" | "name" | "appearance">>;
@@ -31,21 +30,6 @@ const LEVEL_LABEL: Record<string, string> = {
 
 function goalHref(goal: Pick<GoalWithProgress, "id">) {
   return `/goals/${goal.id}`;
-}
-
-function MainBlocker({ goal, health }: { goal: GoalWithProgress; health: GoalHealth }) {
-  const [first, ...rest] = goal.blockers;
-  if (!first) return null;
-  return (
-    <p
-      className="border-l-2 border-[var(--sc)] py-0.5 pl-2.5 text-sm text-muted-foreground"
-      style={healthStyle(health === "blocked" ? "blocked" : "at_risk")}
-      data-testid="goal-main-blocker"
-    >
-      <span className="font-semibold text-foreground">Main blocker:</span> {blockerText(first)}
-      {rest.length > 0 ? <span className="text-subtle-foreground"> · +{rest.length} more</span> : null}
-    </p>
-  );
 }
 
 function SubGoalTile({
