@@ -249,6 +249,7 @@ import {
 } from "../services/native-runtime/provider-profile.js";
 import { managedAgentProfileService } from "../services/managed-agent-profiles.js";
 import { remoteAgentProfileService } from "../services/remote-agent-profiles.js";
+import { ensureGoalCheckInRoutine } from "../services/goal-check-in-routine.js";
 
 const AGENT_SKILL_ASSIGNMENT_MODES = ["add", "remove", "replace"] as const;
 
@@ -2680,6 +2681,19 @@ export function agentRoutes(
     return path.resolve(cwd, trimmed);
   }
 
+  /**
+   * A new lead agent gets the daily goal check-in routine. Other agents are
+   * skipped. A failure here (for example, no board user to own the routine)
+   * must not fail the hire, so it is only logged.
+   */
+  async function ensureGoalCheckInRoutineForNewAgent(companyId: string, agentId: string) {
+    try {
+      await ensureGoalCheckInRoutine(db, companyId, agentId);
+    } catch (err) {
+      logger.warn({ err, companyId, agentId }, "goal check-in routine not created for new agent");
+    }
+  }
+
   async function materializeDefaultInstructionsBundleForNewAgent<T extends {
     id: string;
     companyId: string;
@@ -4639,6 +4653,7 @@ export function agentRoutes(
         createdAgent,
         onboardingFirstAgentBundle ?? instructionsBundle,
       );
+      await ensureGoalCheckInRoutineForNewAgent(companyId, agent.id);
 
       let approval: Awaited<ReturnType<typeof approvalsSvc.getById>> | null = null;
       const actor = getActorInfo(req);
@@ -4881,6 +4896,7 @@ export function agentRoutes(
       createdAgent,
       onboardingFirstAgentBundle ?? instructionsBundle,
     );
+    await ensureGoalCheckInRoutineForNewAgent(companyId, agent.id);
 
     const actor = getActorInfo(req);
     await logActivity(db, {
