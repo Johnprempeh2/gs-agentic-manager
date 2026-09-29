@@ -1231,6 +1231,51 @@ export function buildIssueMonitorClearedPatch(input: {
   };
 }
 
+/**
+ * GRE-100: gives a one-shot monitor back after the run it started was
+ * cancelled. Re-arms it at `nextCheckAt` and restores the attempt count from
+ * before that dispatch. Returns null when the monitor is no longer in the
+ * triggered state (re-armed or cleared since), so a repeat call is a no-op.
+ * The stored externalRef was redacted at dispatch and cannot be restored.
+ */
+export function buildIssueMonitorRestoredPatch(input: {
+  issue: IssueLike;
+  policy: IssueExecutionPolicy | null;
+  nextCheckAt: Date;
+  attemptCount: number;
+}) {
+  const existingState = parseIssueExecutionState(input.issue.executionState);
+  const previous = existingState?.monitor ?? null;
+  if (!previous || previous.status !== "triggered") return null;
+
+  const monitor: IssueExecutionMonitorPolicy = {
+    nextCheckAt: input.nextCheckAt.toISOString(),
+    notes: previous.notes ?? null,
+    scheduledBy: previous.scheduledBy ?? "assignee",
+    kind: previous.kind ?? null,
+    serviceName: normalizeMonitorText(previous.serviceName),
+    externalRef: null,
+    timeoutAt: previous.timeoutAt ?? null,
+    maxAttempts: previous.maxAttempts ?? null,
+    recoveryPolicy: previous.recoveryPolicy ?? null,
+  };
+  const basePolicy: IssueExecutionPolicy = input.policy ?? { mode: "normal", commentRequired: true, stages: [] };
+  const nextMonitorState: IssueExecutionMonitorState = {
+    ...buildScheduledMonitorState(previous, monitor),
+    attemptCount: input.attemptCount,
+  };
+
+  return {
+    executionPolicy: { ...basePolicy, monitor } as Record<string, unknown>,
+    executionState: executionStateWithMonitor(existingState, nextMonitorState) as Record<string, unknown> | null,
+    monitorNextCheckAt: input.nextCheckAt,
+    monitorWakeRequestedAt: null,
+    monitorAttemptCount: input.attemptCount,
+    monitorNotes: monitor.notes ?? null,
+    monitorScheduledBy: monitor.scheduledBy,
+  };
+}
+
 export function applyIssueExecutionPolicyTransition(input: TransitionInput): TransitionResult {
   const stageResult = applyIssueExecutionStageTransition(input);
   const monitorPatch = applyMonitorTransition(input, stageResult.patch);

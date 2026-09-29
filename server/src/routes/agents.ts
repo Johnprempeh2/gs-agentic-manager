@@ -6829,6 +6829,9 @@ export function agentRoutes(
     // Recovery reads this to stand down instead of classifying the cancelled
     // run as agent stranding and re-waking the agent the operator just stopped.
     const run = await heartbeat.cancelRun(runId, "Cancelled by a board operator", {
+      // GRE-100: a stop gives a monitor-started run's monitor back unless the
+      // operator asked to stop and cancel the monitor too.
+      cancelMonitor: req.body?.cancelMonitor === true,
       resultJson: {
         cancelledByActorType: "user",
         cancelledByUserId: req.actor.userId ?? null,

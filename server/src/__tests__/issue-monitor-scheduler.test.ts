@@ -554,4 +554,85 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
     expect(JSON.stringify(activity.map((row) => row.details))).not.toContain("provider.example");
     expect(activity.find((row) => row.action === "issue.monitor_triggered")?.details).not.toHaveProperty("externalRef");
   });
+
+  describe("GRE-100: cancelling a monitor-started run", () => {
+    async function startMonitorRun(input?: { maxAttempts?: number }) {
+      const fixture = await seedFixture({
+        monitorAttemptCount: 2,
+        monitor: input?.maxAttempts ? { maxAttempts: input.maxAttempts } : undefined,
+      });
+      // Keep the monitor-started run alive long enough to be stopped.
+      await db.update(agents).set({
+        adapterConfig: { command: process.execPath, args: ["-e", "setTimeout(() => {}, 30000)"], cwd: process.cwd() },
+      }).where(eq(agents.id, fixture.agentId));
+      const heartbeat = heartbeatService(db);
+      await heartbeat.tickTimers(new Date("2026-04-11T12:31:00.000Z"));
+      const run = await db.select().from(heartbeatRuns)
+        .where(eq(heartbeatRuns.agentId, fixture.agentId))
+        .then((rows) => rows[0]!);
+      expect(run.contextSnapshot).toMatchObject({ source: "issue.monitor", monitorAttemptCount: 3 });
+      const triggered = await db.select().from(issues).where(eq(issues.id, fixture.issueId)).then((rows) => rows[0]!);
+      expect(triggered.monitorNextCheckAt).toBeNull();
+      expect(triggered.monitorAttemptCount).toBe(3);
+      return { ...fixture, heartbeat, runId: run.id };
+    }
+
+    it("gives the monitor back: next check still set and attempt count unchanged", async () => {
+      const { issueId, heartbeat, runId } = await startMonitorRun({ maxAttempts: 5 });
+      const before = Date.now();
+
+      await heartbeat.cancelRun(runId, "Cancelled by a board operator", {
+        resultJson: { cancelledByActorType: "user" },
+      });
+
+      const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      expect(issue.monitorNextCheckAt).not.toBeNull();
+      expect(issue.monitorNextCheckAt!.getTime()).toBeGreaterThan(before);
+      expect(issue.monitorAttemptCount).toBe(2);
+      const monitor = normalizeIssueExecutionPolicy(issue.executionPolicy ?? null)?.monitor;
+      expect(monitor).toMatchObject({
+        nextCheckAt: issue.monitorNextCheckAt!.toISOString(),
+        notes: "Check deploy",
+        scheduledBy: "assignee",
+        maxAttempts: 5,
+      });
+      expect(parseIssueExecutionState(issue.executionState)?.monitor).toMatchObject({
+        status: "scheduled",
+        attemptCount: 2,
+        nextCheckAt: issue.monitorNextCheckAt!.toISOString(),
+      });
+      const actions = await db.select().from(activityLog).where(eq(activityLog.entityId, issueId))
+        .then((rows) => rows.map((row) => row.action));
+      expect(actions.filter((action) => action === "issue.monitor_restored")).toHaveLength(1);
+
+      // Idempotent: a repeat stop of the finished run changes nothing.
+      await heartbeat.cancelRun(runId, "Cancelled by a board operator");
+      const again = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      expect(again.monitorNextCheckAt?.toISOString()).toBe(issue.monitorNextCheckAt!.toISOString());
+      expect(again.monitorAttemptCount).toBe(2);
+    });
+
+    it("keeps the monitor used up when the operator chose stop and cancel monitor", async () => {
+      const { issueId, heartbeat, runId } = await startMonitorRun();
+
+      await heartbeat.cancelRun(runId, "Cancelled by a board operator", { cancelMonitor: true });
+
+      const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      expect(issue.monitorNextCheckAt).toBeNull();
+      expect(issue.monitorAttemptCount).toBe(3);
+      expect(normalizeIssueExecutionPolicy(issue.executionPolicy ?? null)?.monitor ?? null).toBeNull();
+    });
+
+    it("does not give the monitor back once the issue is re-armed", async () => {
+      const { issueId, heartbeat, runId } = await startMonitorRun();
+      const rearmedAt = new Date("2026-05-01T00:00:00.000Z");
+      await db.update(issues).set({ monitorNextCheckAt: rearmedAt }).where(eq(issues.id, issueId));
+
+      await heartbeat.cancelRun(runId, "Cancelled by a board operator");
+
+      const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      expect(issue.monitorNextCheckAt?.toISOString()).toBe(rearmedAt.toISOString());
+      expect(issue.monitorAttemptCount).toBe(3);
+    });
+  });
 });
