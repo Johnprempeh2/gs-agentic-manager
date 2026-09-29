@@ -42,6 +42,8 @@ export interface ReleaseHistoryEntry {
   releasedBy: string | null;
   changelog: ReleaseChangelog;
   candidateTag?: string | null;
+  /** The stable-* tag on this release's commit, once promoted to Stable (GRE-127). */
+  stableTag?: string | null;
   restartReport: RestartReport | null;
 }
 
@@ -123,6 +125,13 @@ export const releasesApi = {
     api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/release`, {}, options),
   rollback: (companyId: string, tag: string, options?: RequestOptions) =>
     api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/rollback`, { tag }, options),
+  /** Tags a live-* release as stable-*; `notes` (the client notes) are the tag message. */
+  promote: (companyId: string, liveTag: string, notes: string, options?: RequestOptions) =>
+    api.post<{ stable: { tag: string; commit: string; liveTag: string } }>(
+      `/companies/${companyId}/releases/promote`,
+      { liveTag, notes },
+      options,
+    ),
   cancel: (companyId: string) =>
     api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/cancel`, {}),
   override: (companyId: string) =>
