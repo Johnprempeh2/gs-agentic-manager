@@ -4,6 +4,7 @@ import type { AddressInfo, Server as NetServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { Server as TlsServer } from "node:tls";
+import { afterAll } from "vitest";
 
 type SupertestServer = NetServer & {
   address(): ReturnType<NetServer["address"]>;
@@ -24,6 +25,13 @@ type SupertestTestConstructor = {
 const require = createRequire(import.meta.url);
 const SupertestTest = require("supertest/lib/test.js") as SupertestTestConstructor;
 
+// Temp folders made here are removed after each test file, so repeated test
+// runs do not fill the temp folder (GRE-209). Workers are killed rather than
+// exiting, so a process "exit" handler would not run.
+function removeAfterFile(dir: string) {
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+}
+
 // Always replace an inherited CODEX_HOME. Agent runs and previews export one
 // that has no Codex login, and keeping it made every codex_local heartbeat test
 // fail the pre-dispatch gate with codex_credentials_missing (GRE-109). Tests
@@ -32,6 +40,7 @@ const SupertestTest = require("supertest/lib/test.js") as SupertestTestConstruct
   const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-codex-home-"));
   fs.writeFileSync(path.join(codexHome, "auth.json"), '{"OPENAI_API_KEY":"sk-vitest"}\n', { mode: 0o600 });
   process.env.CODEX_HOME = codexHome;
+  removeAfterFile(codexHome);
 }
 
 // src/config.ts finds the nearest ancestor .gsam/config.json and loads the
@@ -42,6 +51,7 @@ const SupertestTest = require("supertest/lib/test.js") as SupertestTestConstruct
 if (!process.env.GSAM_CONFIG) {
   const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-config-"));
   process.env.GSAM_CONFIG = path.join(configDir, "config.json");
+  removeAfterFile(configDir);
 }
 
 // The automatic Tailscale HTTPS default (PAP-17158) probes for a real host
