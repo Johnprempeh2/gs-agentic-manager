@@ -2,6 +2,7 @@ import { connectionIntentService } from "../services/connection-intents.js";
 import { connectionIntentDeliveryService } from "../services/connection-intent-delivery.js";
 import { issueRecoveryActionService } from "../services/issue-recovery-actions.js";
 import * as localCredentials from "../services/local-ai-credentials.js";
+import * as setupTokens from "../services/claude-setup-token.js";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, access, readFile, writeFile } from "node:fs/promises";
@@ -554,6 +555,67 @@ describe("managed AI connections", () => {
       expect((await request(app).delete(`${attempts}/${prepared.body.sessionId}`).set("x-local", "yes").send()).status).toBe(200);
       expect((await request(app).post(url).set("x-local", "yes").send({ ...codex, localSessionId: prepared.body.sessionId })).status).toBe(422);
     } finally { reader.mockRestore(); }
+  });
+  it("reconnects a Claude subscription with a pasted setup-token only after the hello probe accepts it (GRE-244)", async () => {
+    const owner = "setup-token-owner";
+    await db.insert(companyMemberships).values({ companyId, principalId: owner, principalType: "user", status: "active", membershipRole: "member" });
+    const realVerify = setupTokens.verifyClaudeSetupToken;
+    let probeCode = "claude_hello_probe_passed";
+    const probe = vi.fn(async () => ({ adapterType: "claude_local", status: "pass" as const, testedAt: new Date().toISOString(), checks: [{ code: probeCode, level: "info" as const, message: "fixture" }] }));
+    const verify = vi.spyOn(setupTokens, "verifyClaudeSetupToken").mockImplementation((company, token) => realVerify(company, token, probe));
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.actor = { type: "board", source: "local_implicit", userId: String(req.headers["x-test-user"] ?? owner), companyIds: [companyId], memberships: [{ companyId, status: "active", membershipRole: req.headers["x-viewer"] ? "viewer" : "member" }] };
+      next();
+    });
+    app.use("/api", aiConnectionRoutes(db));
+    app.use((error: { status?: number; message: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => { res.status(error.status ?? 500).json({ error: error.message }); });
+    const url = `/api/companies/${companyId}/ai-connections/setup-token`;
+    // An imported login that has expired: the connection needs attention.
+    const expiredAt = new Date(Date.now() - 60_000).toISOString();
+    const intent = { provider: "anthropic" as const, method: "subscription" as const, name: "Pasted setup token", ownership: "personal" as const, agentIds: [], allAgents: true };
+    const saved = await service.save(companyId, owner, intent, "fixture-imported-token", undefined, undefined, { source: "imported_login", expiresAt: expiredAt });
+    const listed = async () => (await service.list(companyId, owner)).find(c => c.id === saved.connectionId);
+    expect(await listed()).toMatchObject({ status: "needs_attention" });
+    const payload = { ...intent, connectionId: saved.connectionId };
+    const goodToken = "sk-ant-oat01-fixture_good-token";
+    try {
+      // Not a setup-token: refused before the probe runs, nothing saved.
+      const malformed = await request(app).post(url).send({ ...payload, token: "not-a-token" });
+      expect(malformed.status).toBe(422);
+      expect(malformed.body.error).toContain("does not look like a token");
+      expect(probe).not.toHaveBeenCalled();
+      // The hello probe refuses the token: a clear error, and nothing changes.
+      probeCode = "claude_hello_probe_auth_required";
+      const refused = await request(app).post(url).send({ ...payload, token: "sk-ant-oat01-fixture_bad-token" });
+      expect(refused.status).toBe(422);
+      expect(refused.body.error).toContain("Claude did not accept this token");
+      expect(JSON.stringify(refused.body)).not.toContain("fixture_bad-token");
+      expect(await listed()).toMatchObject({ status: "needs_attention", credential: { source: "imported_login", expiresAt: expiredAt } });
+      // Only the owner may paste into this account; viewers never reach the probe.
+      probe.mockClear();
+      expect((await request(app).post(url).set("x-test-user", "bob").send({ ...payload, token: goodToken })).status).toBe(403);
+      expect((await request(app).post(url).set("x-viewer", "yes").send({ ...payload, token: goodToken })).status).toBe(403);
+      // Schema validation refuses any provider but Claude (400 in the real app).
+      expect((await request(app).post(url).send({ ...payload, provider: "openai", token: goodToken })).status).not.toBe(201);
+      expect(probe).not.toHaveBeenCalled();
+      // A valid token is saved as a year-long setup token and attention clears.
+      probeCode = "claude_hello_probe_passed";
+      const connected = await request(app).post(url).send({ ...payload, token: `  ${goodToken}  ` });
+      expect(connected.status, JSON.stringify(connected.body)).toBe(201);
+      expect(connected.headers["cache-control"]).toBe("no-store");
+      expect(connected.body).toEqual(saved);
+      expect(JSON.stringify(connected.body)).not.toContain(goodToken);
+      const account = await listed();
+      expect(account).toMatchObject({ status: "connected", credential: { source: "setup_token" } });
+      const lifetime = Date.parse(account!.credential!.expiresAt!) - Date.now();
+      expect(lifetime).toBeGreaterThan(364 * 24 * 60 * 60 * 1000);
+      expect(lifetime).toBeLessThanOrEqual(365 * 24 * 60 * 60 * 1000);
+      expect(JSON.stringify(await service.list(companyId, owner))).not.toContain(goodToken);
+      const runtime = await prepareManagedAiRuntime(db, { ...input, binding: { provider: "anthropic", method: "subscription", mode: "responsible_user" }, responsibleUserId: owner, config: {} });
+      expect((runtime.config.env as Record<string, string>).CLAUDE_CODE_OAUTH_TOKEN).toBe(goodToken);
+    } finally { verify.mockRestore(); }
   });
   it.each(["anthropic", "openai"] as const)("blocks server-host %s login on a public deployment without a trusted host", async provider => {
     const reader = vi.spyOn(localCredentials, "readVerifiedLocalAiCredentialWithInfo");

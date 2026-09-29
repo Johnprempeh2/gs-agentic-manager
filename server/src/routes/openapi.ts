@@ -9,6 +9,7 @@ import {
   createAiConnectionSchema,
   aiConnectionLoginIntentSchema,
   localAiConnectionSchema,
+  aiConnectionSetupTokenSchema,
   localAiLoginStartSchema,
   emailEndpointSetupSchema,
   emailConnectionSchema,
@@ -1327,6 +1328,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/ai-connections/local",
   "POST /api/companies/{companyId}/ai-connections/local/attempts",
   "POST /api/companies/{companyId}/ai-connections/local/check",
+  "POST /api/companies/{companyId}/ai-connections/setup-token",
   "DELETE /api/companies/{companyId}/ai-connections/local/attempts/{sessionId}",
   "PUT /api/companies/{companyId}/ai-connections/default",
   "GET /api/companies/{companyId}/ai-connections/{connectionId}/active-runs",
@@ -11595,6 +11597,14 @@ registerCurrentRoute({
   tags: ["ai-connections"],
   summary: "Verify and save the local operator's CLI subscription account",
   body: localAiConnectionSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/ai-connections/setup-token",
+  tags: ["ai-connections"],
+  summary: "Check a pasted claude setup-token with the hello probe, then save it",
+  body: aiConnectionSetupTokenSchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
 });
 registerCurrentRoute({

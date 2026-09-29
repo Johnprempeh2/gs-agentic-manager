@@ -260,6 +260,12 @@ export const localAiConnectionSchema = aiConnectionLoginIntentSchema.extend({
   localSessionId: z.string().uuid().optional(),
 });
 export const localAiLoginStartSchema = aiConnectionLoginIntentSchema.extend({ restart: z.boolean().optional() });
+/** A pasted `claude setup-token` value for a Claude subscription on a local install. */
+export const aiConnectionSetupTokenSchema = aiConnectionLoginIntentSchema.extend({
+  provider: z.literal("anthropic"),
+  token: z.string().trim().min(1).max(4096),
+});
+export type AiConnectionSetupToken = z.infer<typeof aiConnectionSetupTokenSchema>;
 export interface LocalAiLoginStatus {
   status: "ready" | "sign_in_required" | "expired";
   /** The verified login's lifetime, so the connect screen can warn before saving. */

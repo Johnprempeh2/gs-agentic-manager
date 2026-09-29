@@ -1,6 +1,7 @@
 import { supportsLocalAiLogin } from "../services/local-ai-login-policy.js";
 import { readVerifiedLocalAiCredentialWithInfo } from "../services/local-ai-credentials.js";
 import { localAiLoginService } from "../services/local-ai-login.js";
+import { verifyClaudeSetupToken } from "../services/claude-setup-token.js";
 import { z } from "zod";
 import { Router, type Request } from "express";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -17,6 +18,7 @@ import {
   aiConnectionLoginIntentSchema,
   localAiConnectionSchema,
   localAiLoginStartSchema,
+  aiConnectionSetupTokenSchema,
   isAiConnectionCompatible,
   type AiConnectionLoginIntent,
   type AiProvider,
@@ -309,6 +311,22 @@ export function aiConnectionRoutes(db: Db, options: Parameters<typeof supportsLo
       }
       const attemptStartedAt = new Date();
       const { credential, info } = await readVerifiedLocalAiCredentialWithInfo(input.provider);
+      res.status(201).json(await service.save(companyId, userId, input, credential, undefined, attemptStartedAt, info));
+    },
+  );
+  // A pasted `claude setup-token` value. The hello probe runs on this host, so
+  // it is offered only where server-host subscription sign-in is.
+  router.post(
+    "/companies/:companyId/ai-connections/setup-token",
+    validate(aiConnectionSetupTokenSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const { token, ...input } = aiConnectionSetupTokenSchema.parse(req.body);
+      assertLocalLoginAvailable();
+      const userId = await assertAiConnectionCreateAccess(db, req, companyId, input);
+      const attemptStartedAt = new Date();
+      const { credential, info } = await verifyClaudeSetupToken(companyId, token);
+      res.setHeader("Cache-Control", "no-store");
       res.status(201).json(await service.save(companyId, userId, input, credential, undefined, attemptStartedAt, info));
     },
   );
