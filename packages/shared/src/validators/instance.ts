@@ -27,6 +27,8 @@ export const runAdmissionSettingsSchema = z.object({
   maxConcurrentRuns: z.number().int().min(1).max(1000).optional(),
   // Hold queued runs while available RAM is below this floor. 0 disables it.
   minAvailableMemoryMb: z.number().int().min(0).max(1_048_576).optional(),
+  // Hold queued runs while free disk (data dir, worktrees) is below this. 0 disables it.
+  minFreeDiskGb: z.number().int().min(0).max(100_000).optional(),
 }).strict();
 
 export const instanceGeneralSettingsSchema = z.object({
