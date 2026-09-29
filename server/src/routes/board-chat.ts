@@ -353,6 +353,10 @@ export function boardChatRoutes(
     // board-concierge comment (GRE-234).
     let cliErrorText: string | null = null;
     let lastStderr = "";
+    // A rejected company key makes the CLI retry the 401 many times and the
+    // relay would only time out with no error text (GRE-268). The first
+    // 401/403 `api_retry` event ends the run as a failure.
+    let authRejected = false;
 
     const handleLine = (line: string) => {
       if (!line.trim()) return;
@@ -366,6 +370,17 @@ export function boardChatRoutes(
       // Unwrap partial-message stream events.
       const inner = event.type === "stream_event" ? event.event : event;
       if (!inner || typeof inner !== "object") return;
+
+      if (
+        (event.type === "api_retry" || event.subtype === "api_retry") &&
+        (event.error_status === 401 || event.error_status === 403)
+      ) {
+        if (!authRejected) {
+          authRejected = true;
+          if (proc.exitCode === null && !proc.killed) proc.kill("SIGTERM");
+        }
+        return;
+      }
 
       if (inner.type === "content_block_delta" && inner.delta?.text) {
         streamedViaDelta = true;
@@ -423,11 +438,14 @@ export function boardChatRoutes(
       // as before.
       const killedByRelay = killed || proc.killed;
       const failed =
+        authRejected ||
         cliErrorText !== null ||
         (!killedByRelay && exitCode !== null && exitCode !== 0);
       if (failed) {
         const detail = (
-          cliErrorText ?? (lastStderr || `The claude CLI exited with code ${exitCode}`)
+          authRejected
+            ? "Claude rejected the company connection. Check AI connections."
+            : (cliErrorText ?? (lastStderr || `The claude CLI exited with code ${exitCode}`))
         ).slice(0, 500);
         console.error("[board/chat/stream failed]", { exitCode, detail });
         if (res.writable) {

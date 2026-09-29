@@ -55,10 +55,19 @@ export async function resolveBoardChatClaudeCredential(
 }
 
 /**
+ * Host variables the relay also drops (GRE-268): custom headers can carry a
+ * proxy auth header, the model override would replace the relay's choice, and
+ * `CLAUDECODE` / `CLAUDE_CODE_*` belong to whatever Claude session started the
+ * server.
+ */
+const BOARD_CHAT_EXTRA_STRIP_KEYS = ["ANTHROPIC_CUSTOM_HEADERS", "ANTHROPIC_MODEL", "CLAUDECODE"];
+const BOARD_CHAT_STRIP_PREFIXES = ["CLAUDE_CODE_"];
+
+/**
  * The relay's CLI environment: the server's environment with every inherited
- * AI credential and provider override removed, the company credential set, and
- * a fresh config directory so the host's Claude login and settings (for
- * example an apiKeyHelper) cannot take precedence.
+ * AI credential, provider override and Claude session variable removed, the
+ * company credential set, and a fresh config directory so the host's Claude
+ * login and settings (for example an apiKeyHelper) cannot take precedence.
  */
 export function boardChatClaudeEnv(
   baseEnv: NodeJS.ProcessEnv,
@@ -68,5 +77,9 @@ export function boardChatClaudeEnv(
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   for (const key of AI_AUTH_ENV_KEYS) delete env[key];
+  for (const key of BOARD_CHAT_EXTRA_STRIP_KEYS) delete env[key];
+  for (const key of Object.keys(env)) {
+    if (BOARD_CHAT_STRIP_PREFIXES.some((prefix) => key.startsWith(prefix))) delete env[key];
+  }
   return { ...env, ...extra, CLAUDE_CONFIG_DIR: configDir, [credential.envKey]: credential.value };
 }
