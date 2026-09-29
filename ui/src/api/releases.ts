@@ -117,7 +117,16 @@ export interface ReleasesOverview {
   disabledReason: string | null;
 }
 
+/** The version a client install runs and the client notes of its stable-* tag (GRE-128). */
+export interface ClientVersion {
+  label: string | null;
+  stableTag: string | null;
+  /** The stable tag message; null when there is none to show. */
+  notes: string | null;
+}
+
 export const releasesApi = {
+  clientVersion: (companyId: string) => api.get<ClientVersion>(`/companies/${companyId}/version`),
   overview: (companyId: string) => api.get<ReleasesOverview>(`/companies/${companyId}/releases`),
   /** Cuts the next rc-* from origin/main and releases it. */
   /** `options.headers` carries the one-use `X-GSAM-Reauth` token in login mode. */
