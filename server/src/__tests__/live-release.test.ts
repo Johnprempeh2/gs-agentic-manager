@@ -37,6 +37,7 @@ let restartReport: HotRestartReport | null;
 let tags: ReleaseTagInfo[];
 /** "ancestor>commit" pairs that git merge-base --is-ancestor accepts; "?" in a pair means git cannot tell. */
 let ancestry: Set<string>;
+let stableTagsMade: Array<{ tag: string; commit: string; notes: string }>;
 
 const CUT: CandidateCut = {
   tag: "rc-x",
@@ -83,6 +84,15 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
       return { ...CUT, tag: input.tag };
     },
     nextTagName: async () => "rc-2026-09-28.3",
+    nextStableTagName: async () => {
+      let n = 1;
+      while (tags.some((t) => t.tag === `stable-2026-09-29.${n}`)) n += 1;
+      return `stable-2026-09-29.${n}`;
+    },
+    createStableTag: async (_repo, input) => {
+      stableTagsMade.push(input);
+      tags = [{ tag: input.tag, commit: input.commit, date: null, annotated: true, message: input.notes }, ...tags];
+    },
     readForkCi: async () => ({ status: forkCi, url: "https://ci/run/1" }),
     readTags: async () => tags,
     readMainCommit: async () => mainCommit,
@@ -157,6 +167,7 @@ beforeEach(() => {
   restartReport = null;
   tags = [];
   ancestry = new Set();
+  stableTagsMade = [];
 });
 
 afterEach(() => {
@@ -745,5 +756,71 @@ describe("live start record (GRE-50)", () => {
     expect(parseReleaseQuestionRef("confirmation:x:pr6-released")).toBeNull();
     expect(parseReleaseQuestionRef("confirmation:ec25d65d:release-go:after-hold-1")).toBeNull();
     expect(parseReleaseQuestionRef(null)).toBeNull();
+  });
+});
+
+describe("promote to Stable (GRE-127)", () => {
+  const liveTag = (tag: string, commit: string): ReleaseTagInfo => ({ tag, commit, date: null, annotated: true, message: "Title" });
+
+  beforeEach(() => {
+    tags = [liveTag("live-2026-09-28.1", "a".repeat(40)), liveTag("live-2026-09-27.1", "b".repeat(40))];
+  });
+
+  it("tags the live release's commit with the trimmed notes and shows it on the history", async () => {
+    const svc = createLiveReleaseService(deps());
+    const result = await svc.promote({ liveTag: "live-2026-09-27.1", notes: "  Faster board.  " });
+    expect(result).toEqual({ ok: true, stable: { tag: "stable-2026-09-29.1", commit: "b".repeat(40), liveTag: "live-2026-09-27.1" } });
+    expect(stableTagsMade).toEqual([{ tag: "stable-2026-09-29.1", commit: "b".repeat(40), notes: "Faster board." }]);
+    const { history } = await svc.overview("co-1");
+    expect(history.map((h) => [h.tag, h.stableTag])).toEqual([
+      ["live-2026-09-28.1", null],
+      ["live-2026-09-27.1", "stable-2026-09-29.1"],
+    ]);
+  });
+
+  it("a second promote the same day gets .2; the same release twice is refused", async () => {
+    const svc = createLiveReleaseService(deps());
+    await svc.promote({ liveTag: "live-2026-09-27.1", notes: "One." });
+    expect(await svc.promote({ liveTag: "live-2026-09-28.1", notes: "Two." })).toMatchObject({ ok: true, stable: { tag: "stable-2026-09-29.2" } });
+    expect(await svc.promote({ liveTag: "live-2026-09-28.1", notes: "Again." })).toEqual({
+      ok: false,
+      status: 409,
+      error: "live-2026-09-28.1 is already on Stable as stable-2026-09-29.2",
+    });
+  });
+
+  it.each([
+    [{ liveTag: "rc-2026-09-28.1", notes: "x" }, 422, /live-YYYY-MM-DD.N/],
+    [{ liveTag: "live-2026-01-01.1", notes: "x" }, 422, /does not exist/],
+    [{ liveTag: "live-2026-09-28.1", notes: "Faster board (#51)" }, 422, /pull request number/],
+    [{ liveTag: "live-2026-09-28.1", notes: "Faster board, GRE-121" }, 422, /issue number/],
+    [{ liveTag: "live-2026-09-28.1", notes: "" }, 422, /write the client notes/],
+  ])("refuses %j and makes no tag", async (input, status, error) => {
+    const svc = createLiveReleaseService(deps());
+    const result = await svc.promote(input);
+    expect(result).toMatchObject({ ok: false, status });
+    expect(!result.ok && result.error).toMatch(error);
+    expect(stableTagsMade).toEqual([]);
+  });
+
+  it("is off unless the server runs from the live checkout, and stops on a pre-flight problem", async () => {
+    fs.mkdirSync(path.join(root, "worktree"));
+    const off = createLiveReleaseService(deps({ serverRepoRoot: path.join(root, "worktree") }));
+    expect(await off.promote({ liveTag: "live-2026-09-28.1", notes: "x" })).toMatchObject({ ok: false, status: 409, error: expect.stringMatching(/^promote is off/) });
+    prepareProblem = "the release repo /dev has local changes (x.ts); commit or discard them first";
+    const svc = createLiveReleaseService(deps());
+    expect(await svc.promote({ liveTag: "live-2026-09-28.1", notes: "x" })).toEqual({ ok: false, status: 409, error: prepareProblem });
+    expect(stableTagsMade).toEqual([]);
+  });
+
+  it("returns a failed tag or push as 502", async () => {
+    const svc = createLiveReleaseService(
+      deps({
+        createStableTag: async () => {
+          throw new Error("could not push tag stable-2026-09-29.1 to origin (denied); nothing was changed");
+        },
+      }),
+    );
+    expect(await svc.promote({ liveTag: "live-2026-09-28.1", notes: "x" })).toMatchObject({ ok: false, status: 502, error: expect.stringMatching(/nothing was changed/) });
   });
 });

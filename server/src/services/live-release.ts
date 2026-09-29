@@ -52,8 +52,12 @@ import {
   LIVE_TAG_RE,
   NOTHING_MERGED_RE,
   RC_TAG_RE,
+  STABLE_TAG_RE,
   checkReleaseTarget,
+  clientNotesProblem,
+  createStableTag,
   nextCandidateTagName,
+  nextStableTagName,
   prepareReleaseRepo,
   readForkCi,
   readReleaseTags,
@@ -222,6 +226,8 @@ export interface ReleasesOverview {
     releasedBy: string | null;
     changelog: Changelog;
     candidateTag: string | null;
+    /** The stable-* tag on this release's commit, once promoted (GRE-127). */
+    stableTag: string | null;
     restartReport: RestartReportSummary | null;
   }>;
   next: NextVersion | null;
@@ -234,6 +240,10 @@ export interface ReleasesOverview {
 export type StartReleaseResult =
   | { ok: true; job: LiveReleaseJob; progress: ReleaseProgress }
   | { ok: false; status: 403 | 409 | 422; error: string };
+
+export type PromoteResult =
+  | { ok: true; stable: { tag: string; commit: string; liveTag: string } }
+  | { ok: false; status: 403 | 409 | 422 | 502; error: string };
 
 interface LiveReleaseHold {
   jobId: string;
@@ -282,6 +292,10 @@ export interface LiveReleaseDeps {
   /** scripts/greatstone-candidate.mjs; `print` makes no tag. */
   runCandidate(repo: string, input: { tag: string; title: string; since: string | null; print: boolean }): Promise<CandidateCut>;
   nextTagName(repo: string): Promise<string>;
+  /** The next free stable-YYYY-MM-DD.N name (GRE-127). */
+  nextStableTagName(repo: string): Promise<string>;
+  /** Adds the annotated stable tag and pushes it; a failure changes nothing. */
+  createStableTag(repo: string, input: { tag: string; commit: string; notes: string }): Promise<void>;
   readForkCi(repo: string, commit: string): Promise<{ status: CiStatus; url: string | null }>;
   readTags(repo: string): Promise<ReleaseTagInfo[]>;
   /** The main commit last fetched (origin/main), without fetching. */
@@ -438,6 +452,8 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
   /** The pre-flight in progress; never stored, since a failed one changes nothing. */
   let checking: ReleaseProgress | null = null;
   const cache = new Map<string, { at: number; value: unknown }>();
+  /** Bumped when this server adds a tag, so the page sees it at once. */
+  let tagsVersion = 0;
   const cached = async <T>(key: string, load: () => Promise<T>): Promise<T> => {
     const hit = cache.get(key);
     const now = deps.now().getTime();
@@ -897,7 +913,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     const disabledReason = enabledProblem();
     const running = deps.readRunningCommit();
     const repo = deps.resolveReleaseRepo();
-    const tags = repo ? await cached(`tags:${jobs.length}:${latest?.updatedAt ?? ""}`, () => deps.readTags(repo).catch(() => [])) : [];
+    const tags = repo ? await cached(`tags:${tagsVersion}:${jobs.length}:${latest?.updatedAt ?? ""}`, () => deps.readTags(repo).catch(() => [])) : [];
     // A failure is moot once live runs the version it names, by a later card or by hand (GRE-179).
     const failedTarget = latest && (latest.state === "failed" || latest.state === "rolled_back")
       ? (latest.commit ?? tags.find((t) => t.tag === latest.tag)?.commit ?? null)
@@ -909,6 +925,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
 
     const liveTags = tags.filter((t) => LIVE_TAG_RE.test(t.tag));
     const rcTags = tags.filter((t) => RC_TAG_RE.test(t.tag));
+    const stableTags = tags.filter((t) => STABLE_TAG_RE.test(t.tag));
     // A live tag with no notes of its own shows those of the rc tag on its commit
     // (GRE-178). The tag itself is never moved or re-written.
     const liveNotes = (message: string | null, tag: string, commit: string | null): ReleaseNotes => {
@@ -931,6 +948,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         releasedBy: releasedBy(t.tag),
         changelog,
         candidateTag: rcTags.find((rc) => rc.commit === t.commit)?.tag ?? null,
+        stableTag: stableTags.find((st) => st.commit === t.commit)?.tag ?? null,
         restartReport: reportOf(t.tag),
       };
     });
@@ -1011,6 +1029,41 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     return { ok: true as const, flag };
   };
 
+  /**
+   * "Promote to Stable" (GRE-127): an annotated stable-YYYY-MM-DD.N tag on the
+   * commit of a live-* release, with the client notes as its message. The
+   * route checks who may (board, and the password again in login mode).
+   */
+  const promote = (input: { liveTag: unknown; notes: unknown }): Promise<PromoteResult> =>
+    serial(async () => {
+      const off = enabledProblem();
+      if (off) return { ok: false, status: 409, error: off.replace(/^release is off/, "promote is off") };
+      if (typeof input.liveTag !== "string" || !LIVE_TAG_RE.test(input.liveTag)) {
+        return { ok: false, status: 422, error: "promote needs a live-YYYY-MM-DD.N tag" };
+      }
+      const liveTag = input.liveTag;
+      const problem = clientNotesProblem(input.notes);
+      if (problem) return { ok: false, status: 422, error: problem };
+      const notes = (input.notes as string).trim();
+      const repo = deps.resolveReleaseRepo();
+      // Fetches tags, so the .N counter and the "already promoted" check see origin.
+      const prepared = await deps.prepareRepo(repo);
+      if (!prepared.ok) return { ok: false, status: 409, error: prepared.reason };
+      const tags = await deps.readTags(repo!);
+      const live = tags.find((t) => t.tag === liveTag);
+      if (!live) return { ok: false, status: 422, error: `tag ${liveTag} does not exist` };
+      const already = tags.find((t) => STABLE_TAG_RE.test(t.tag) && t.commit === live.commit);
+      if (already) return { ok: false, status: 409, error: `${liveTag} is already on Stable as ${already.tag}` };
+      const tag = await deps.nextStableTagName(repo!);
+      try {
+        await deps.createStableTag(repo!, { tag, commit: live.commit, notes });
+      } catch (err) {
+        return { ok: false, status: 502, error: err instanceof Error ? err.message : String(err) };
+      }
+      tagsVersion += 1;
+      return { ok: true, stable: { tag, commit: live.commit, liveTag } };
+    });
+
   /** Board, or the release manager agent of this company, may edit the next title. */
   const isReleaseManagerAgent = async (companyId: string, agentId: string) => {
     const agent = await deps.findAgent(agentId);
@@ -1025,6 +1078,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     findRun: deps.findRun,
     override,
     overview,
+    promote,
     setNextTitle,
     setRunFlag,
     onConfirmationAccepted,
@@ -1140,6 +1194,8 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
     checkTarget: checkReleaseTarget,
     runCandidate: runCandidateScript,
     nextTagName: (repo) => nextCandidateTagName(repo, new Date()),
+    nextStableTagName: (repo) => nextStableTagName(repo, new Date()),
+    createStableTag,
     readForkCi,
     readTags: readReleaseTags,
     readMainCommit: async (repo) => git(repo, ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]),

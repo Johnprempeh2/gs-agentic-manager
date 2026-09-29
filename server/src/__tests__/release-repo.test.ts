@@ -9,8 +9,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   checkReleaseRepo,
   checkReleaseTarget,
+  clientNotesProblem,
+  createStableTag,
   nextCandidateTagName,
+  nextStableTagName,
   prepareReleaseRepo,
+  readReleaseTags,
   resolveReleaseRepo,
 } from "../services/release-repo.ts";
 
@@ -152,6 +156,47 @@ describe("checkReleaseTarget", () => {
   it("names the next free rc tag of the day", async () => {
     expect(await nextCandidateTagName(repo, new Date(2026, 8, 2, 12))).toBe("rc-2026-09-02.4");
     expect(await nextCandidateTagName(repo, new Date(2026, 8, 3, 12))).toBe("rc-2026-09-03.1");
+  });
+});
+
+describe("stable tags (GRE-127)", () => {
+  it("adds an annotated stable tag on the live commit, with the notes as message, and pushes it", async () => {
+    const liveCommit = git(repo, "rev-parse", "live-2026-09-01.1^{commit}");
+    const tag = await nextStableTagName(repo, new Date(2026, 8, 29, 12));
+    expect(tag).toBe("stable-2026-09-29.1");
+    await createStableTag(repo, { tag, commit: liveCommit, notes: "  Faster board.\n\nClearer run history.  " });
+    expect(git(repo, "cat-file", "-t", `refs/tags/${tag}`)).toBe("tag");
+    expect(git(repo, "rev-parse", `${tag}^{commit}`)).toBe(liveCommit);
+    expect(git(repo, "for-each-ref", "--format=%(contents)", `refs/tags/${tag}`)).toBe("Faster board.\n\nClearer run history.");
+    expect(git(origin, "rev-parse", `${tag}^{commit}`)).toBe(liveCommit);
+    const info = (await readReleaseTags(repo)).find((t) => t.tag === tag);
+    expect(info).toMatchObject({ annotated: true, commit: liveCommit });
+  });
+
+  it("counts .N up for a second promote on the same day", async () => {
+    const liveCommit = git(repo, "rev-parse", "live-2026-09-01.1^{commit}");
+    const day = new Date(2026, 8, 29, 12);
+    await createStableTag(repo, { tag: await nextStableTagName(repo, day), commit: liveCommit, notes: "One." });
+    expect(await nextStableTagName(repo, day)).toBe("stable-2026-09-29.2");
+    expect(await nextStableTagName(repo, new Date(2026, 8, 30, 12))).toBe("stable-2026-09-30.1");
+  });
+
+  it("removes the local tag again when the push fails", async () => {
+    git(repo, "remote", "set-url", "origin", path.join(root, "gone.git"));
+    await expect(createStableTag(repo, { tag: "stable-2026-09-29.1", commit: git(repo, "rev-parse", "HEAD"), notes: "One." })).rejects.toThrow(
+      /could not push tag stable-2026-09-29.1.*nothing was changed/,
+    );
+    expect(git(repo, "tag", "--list", "stable-*")).toBe("");
+  });
+
+  it("refuses notes with a pull request or GRE number, or no notes", () => {
+    expect(clientNotesProblem("Faster board. Clearer run history.")).toBeNull();
+    expect(clientNotesProblem("Faster board (#123)")).toMatch(/pull request number/);
+    expect(clientNotesProblem("Faster board, GRE-123")).toMatch(/issue number/);
+    expect(clientNotesProblem("see gre-7")).toMatch(/issue number/);
+    expect(clientNotesProblem("   ")).toMatch(/write the client notes/);
+    expect(clientNotesProblem(undefined)).toMatch(/write the client notes/);
+    expect(clientNotesProblem("x".repeat(4_001))).toMatch(/longer than/);
   });
 });
 

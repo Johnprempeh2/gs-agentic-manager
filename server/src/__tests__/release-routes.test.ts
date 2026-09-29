@@ -22,6 +22,7 @@ const svc = vi.hoisted(() => ({
   setRunFlag: vi.fn(),
   isReleaseManagerAgent: vi.fn(),
   findRun: vi.fn(),
+  promote: vi.fn(),
 }));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
@@ -56,7 +57,7 @@ const keystone = { type: "agent", agentId: keystoneId, companyId, source: "agent
 const base = `/api/companies/${companyId}/releases`;
 const REAUTH = "x-gsam-reauth";
 
-async function token(action: "release" | "rollback", userId = "john", sessionId: string | null = "sess-1") {
+async function token(action: "release" | "rollback" | "promote", userId = "john", sessionId: string | null = "sess-1") {
   const result = await reauth.issue({ userId, sessionId, action, password: GOOD });
   if (!result.ok) throw new Error("expected a token");
   return result.token;
@@ -73,6 +74,7 @@ describe("release routes", () => {
     svc.setNextTitle.mockResolvedValue({ ok: true, next: { proposedTitle: "T" } });
     svc.setRunFlag.mockResolvedValue({ ok: true, flag: { runId } });
     svc.isReleaseManagerAgent.mockImplementation(async (_c: string, id: string) => id === keystoneId);
+    svc.promote.mockResolvedValue({ ok: true, stable: { tag: "stable-2026-09-29.1", commit: "abc", liveTag: "live-2026-09-20.1" } });
     svc.findRun.mockImplementation(async (id: string) => (id === runId || id === otherRunId ? { companyId, agentId, status: "running" } : null));
   });
 
@@ -83,6 +85,7 @@ describe("release routes", () => {
     ["post", `${base}/rollback`, { tag: "live-2026-09-20.1" }],
     ["post", `${base}/cancel`, {}],
     ["post", `${base}/override`, {}],
+    ["post", `${base}/promote`, { liveTag: "live-2026-09-20.1", notes: "Faster board." }],
   ] as const)("an agent gets 403 on %s %s", async (method, url, body) => {
     for (const actor of [agent, keystone]) {
       const app = await createApp(actor);
@@ -93,6 +96,7 @@ describe("release routes", () => {
     expect(svc.cancel).not.toHaveBeenCalled();
     expect(svc.override).not.toHaveBeenCalled();
     expect(svc.overview).not.toHaveBeenCalled();
+    expect(svc.promote).not.toHaveBeenCalled();
   });
 
   it("the board reads, releases, rolls back, cancels and overrides", async () => {
@@ -172,6 +176,46 @@ describe("release routes", () => {
       const app = await createApp(board);
       expect((await request(app).post(`${base}/cancel`)).status).toBe(200);
       expect((await request(app).post(`${base}/override`)).status).toBe(200);
+    });
+  });
+
+  describe("promote to Stable (GRE-127)", () => {
+    const body = { liveTag: "live-2026-09-20.1", notes: "Faster board." };
+
+    it("the board promotes with a fresh promote token and it is logged", async () => {
+      const app = await createApp(board);
+      const res = await request(app).post(`${base}/promote`).set(REAUTH, await token("promote")).send(body);
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({ stable: { tag: "stable-2026-09-29.1", commit: "abc", liveTag: "live-2026-09-20.1" } });
+      expect(svc.promote).toHaveBeenCalledWith(body);
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ action: "release.promoted_to_stable", entityId: "stable-2026-09-29.1" }),
+      );
+    });
+
+    it("login mode: no token, or a release token, gets 403 reauth_required", async () => {
+      const app = await createApp(board);
+      for (const req of [request(app).post(`${base}/promote`), request(app).post(`${base}/promote`).set(REAUTH, await token("release"))]) {
+        const res = await req.send(body);
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe("reauth_required");
+      }
+      expect(svc.promote).not.toHaveBeenCalled();
+    });
+
+    it("local_trusted promotes with the board guard only", async () => {
+      const app = await createApp(localBoard);
+      expect((await request(app).post(`${base}/promote`).send(body)).status).toBe(201);
+    });
+
+    it("returns a refusal as { error } with its status and logs nothing", async () => {
+      svc.promote.mockResolvedValue({ ok: false, status: 422, error: "the client notes contain an issue number (GRE-123); clients must not see internal numbers" });
+      const app = await createApp(localBoard);
+      const res = await request(app).post(`${base}/promote`).send({ ...body, notes: "Fix GRE-123" });
+      expect(res.status).toBe(422);
+      expect(res.body.error).toMatch(/issue number/);
+      expect(mockLogActivity).not.toHaveBeenCalled();
     });
   });
 
