@@ -5,6 +5,7 @@ import { ReauthCancelledError, useReauth } from "@/components/ReauthDialog";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { clearLegacyChatMessageRequests } from "@/lib/chat-message-request";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
+import { isBlockedDependentsHandoffCancelled } from "@/lib/blocked-dependents-handoff";
 import { Settings as ChatSettings } from "lucide-react";
 import { agentDetailHref } from "./agent-detail-navigation";
 import { deriveInitials } from "@/components/Identity";
@@ -4049,6 +4050,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           context.previousList,
         );
       }
+      // The person closed the blocked-dependents dialog; nothing failed.
+      if (isBlockedDependentsHandoffCancelled(err)) return;
       pushToast({
         title: "Task update failed",
         body:
