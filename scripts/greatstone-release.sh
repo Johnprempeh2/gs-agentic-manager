@@ -116,6 +116,8 @@ say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD)
 # hot-restart intent): detached runs are adopted, ACP runs are checkpointed into
 # conversation retries, and the new server writes hot-restart-report.json.
 release_phase restarting
+POLL_SECONDS="${GSAM_RELEASE_POLL_SECONDS:-2}"
+NEEDS_NEW_PROCESS=1
 if [ -z "$STARTED_BEFORE" ]; then
   # No live server answered before the switch (for example a rollback after a
   # failed version): start it instead of asking it to restart.
@@ -125,23 +127,32 @@ if [ -z "$STARTED_BEFORE" ]; then
 else
   RESTART=""
   for _ in $(seq 1 15); do
-    sleep 2
+    sleep "$POLL_SECONDS"
     RESTART="$(live_curl -sS -m 10 -X POST "$LIVE_URL/api/health/dev-server/restart" 2>&1 || true)"
     case "$RESTART" in *restart_requested*|*board_access_required*|*dev_server_supervisor_unavailable*) break ;; esac
   done
   case "$RESTART" in
     *restart_requested*) say "Asked the live server to restart" ;;
+    # GRE-243: for the whole wait, dev-runner saw no change to a file it
+    # watches (cli, scripts, server, the server packages, a few root files) and
+    # no pending migration: a release or rollback of only ui/, doc/ or other
+    # files. The running server already serves that code (the UI through the
+    # Vite middleware), so it ends healthy on the old process.
+    *restart_not_required*)
+      NEEDS_NEW_PROCESS=0
+      say "The live server needs no restart: $LIVE_TAG changes no file the server runs from (for example only ui/ or doc/)." ;;
     *dev_server_supervisor_unavailable*) die "the live server has no dev-runner supervisor, so it cannot restart itself. Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
     *board_access_required*) die "the live server refused the restart: it runs in login mode and $LIVE_BOARD_KEY_FILE holds no valid board API key. Live code is on $LIVE_TAG but the old server still runs; fix the key and restart live, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
     *) die "the live server did not accept a restart ($RESTART). Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
   esac
 fi
 
-# "commit" follows the checkout at once, so success also needs a new process.
+# "commit" follows the checkout at once, so success also needs a new process
+# (unless no restart was needed).
 for _ in $(seq 1 90); do
-  sleep 2
+  sleep "$POLL_SECONDS"
   STARTED_NOW="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
-  if [ -n "$STARTED_NOW" ] && [ "$STARTED_NOW" != "$STARTED_BEFORE" ] && [ "$(health_commit "$LIVE_URL")" = "$TARGET" ]; then
+  if [ -n "$STARTED_NOW" ] && { [ "$NEEDS_NEW_PROCESS" = 0 ] || [ "$STARTED_NOW" != "$STARTED_BEFORE" ]; } && [ "$(health_commit "$LIVE_URL")" = "$TARGET" ]; then
     say "Live app at $LIVE_URL is running $LIVE_TAG ($TARGET), server started $STARTED_NOW."
     if [ "$MODE" = release ]; then
       trap - EXIT

@@ -38,6 +38,7 @@ import {
   refreshRemoteTrackingBaseRef,
   releaseRuntimeServicesForRun,
   UnresolvedWorkspaceBaseRefError,
+  WorkspaceRuntimeValidationFailure,
   resetRuntimeServicesForTests,
   MANAGED_RUNTIME_PUBLIC_URL_ENV,
   resolveManagedPaperclipRuntimePublicOrigin,
@@ -1159,6 +1160,60 @@ describe("realizeExecutionWorkspace", () => {
     expect(reused.warnings).toEqual([
       expect.stringContaining("is behind origin/master by 1 commit"),
     ]);
+  });
+
+  // GRE-247: restore of a reused worktree must never discard uncommitted work.
+  it("does not reset a reused worktree with staged and modified tracked files", async () => {
+    const { sourceRepo, remotePath, repoRoot } = await createClonedRepoWithRemote();
+
+    const initial = await realizeWorktreeForTest(repoRoot, null);
+    const initialHead = await readGit(initial.cwd, ["rev-parse", "HEAD"]);
+    await fs.writeFile(path.join(initial.cwd, "README.md"), "edited, not committed\n", "utf8");
+    await fs.writeFile(path.join(initial.cwd, "staged.txt"), "staged, not committed\n", "utf8");
+    await runGit(initial.cwd, ["add", "staged.txt"]);
+
+    await advanceRemoteMaster(sourceRepo, remotePath, "auth-fix.txt");
+
+    const reused = await realizeWorktreeForTest(repoRoot, null);
+
+    expect(reused.created).toBe(false);
+    expect(await readGit(reused.cwd, ["rev-parse", "HEAD"])).toBe(initialHead);
+    await expect(fs.readFile(path.join(reused.cwd, "README.md"), "utf8")).resolves.toBe("edited, not committed\n");
+    await expect(fs.readFile(path.join(reused.cwd, "staged.txt"), "utf8")).resolves.toBe("staged, not committed\n");
+    expect(await readGit(reused.cwd, ["diff", "--cached", "--name-only"])).toBe("staged.txt");
+  });
+
+  // GRE-243: a stale index.lock in a reused worktree failed setup with a raw
+  // `git reset --hard` error. It must fail with an error that names the
+  // worktree and the lock, and leave the worktree untouched.
+  it("stops with a clear error when a clean reused worktree has a stale index.lock", async () => {
+    const { sourceRepo, remotePath, repoRoot } = await createClonedRepoWithRemote();
+
+    const initial = await realizeWorktreeForTest(repoRoot, null);
+    const initialHead = await readGit(initial.cwd, ["rev-parse", "HEAD"]);
+    const indexLockPath = path.resolve(
+      initial.cwd,
+      await readGit(initial.cwd, ["rev-parse", "--git-path", "index.lock"]),
+    );
+    await fs.writeFile(indexLockPath, "", "utf8");
+
+    await advanceRemoteMaster(sourceRepo, remotePath, "auth-fix.txt");
+
+    const error = await realizeWorktreeForTest(repoRoot, null).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(WorkspaceRuntimeValidationFailure);
+    const failure = error as WorkspaceRuntimeValidationFailure;
+    expect(failure.message).toContain(initial.cwd);
+    expect(failure.message).toContain(indexLockPath);
+    expect(failure.message).toContain("delete the lock file");
+    expect(failure.resultJson).toMatchObject({
+      workspaceValidation: { reason: "git_index_locked", worktreePath: initial.cwd, indexLockPath },
+    });
+    expect(await readGit(initial.cwd, ["rev-parse", "HEAD"])).toBe(initialHead);
+    await expect(fs.stat(indexLockPath)).resolves.toBeTruthy();
   });
 
   it("bases a fresh worktree on a remote-only branch supplied as fix/foo", async () => {
