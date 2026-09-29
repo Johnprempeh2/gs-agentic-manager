@@ -90,8 +90,12 @@ export function RestartReportSummary({ report }: { report: RestartReport }) {
         {resumed === 0 ? "No runs needed to resume." : `${plural(resumed, "run")} resumed after the update`}
         {resumed > 0 && parts.length ? ` (${parts.join(", ")}).` : resumed > 0 ? "." : ""}
       </p>
-      {lost.length === 0 ? (
+      {/* A run that kept running has no output pipe to the new server, so its
+          result is not captured when it ends. Do not call that "nothing lost". */}
+      {lost.length === 0 && report.adoptedRunIds.length === 0 ? (
         <p className="text-muted-foreground">Nothing was lost.</p>
+      ) : lost.length === 0 ? (
+        <p className="text-muted-foreground">No run stopped.</p>
       ) : (
         <p className="text-destructive">
           {plural(lost.length, "run")} lost (needs recovery):{" "}
@@ -103,6 +107,12 @@ export function RestartReportSummary({ report }: { report: RestartReport }) {
           ))}
         </p>
       )}
+      {report.adoptedRunIds.length > 0 ? (
+        <p className="text-muted-foreground" data-testid="restart-report-adopted-caveat">
+          A run that kept running does not send its result to the new version. When it ends, it is marked lost and
+          runs once more.
+        </p>
+      ) : null}
     </div>
   );
 }
