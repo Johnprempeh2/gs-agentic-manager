@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseReleaseNoteEntry, parseReleaseNotes, readReleaseNotes } from "./release-notes.js";
+import { hasOwnReleaseNotes, parseReleaseNoteEntry, parseReleaseNotes, readReleaseNotes } from "./release-notes.js";
 
 const FULL = `Decisions in the sidebar and RAM-aware run limits
 
@@ -52,6 +52,21 @@ describe("parseReleaseNotes", () => {
       tag: "live-2026-09-27.1", title: "live-2026-09-27.1", features: [], fixes: [], annotated: false,
     });
     expect(parseReleaseNotes("  \n", "rc-1").title).toBe("rc-1");
+  });
+});
+
+describe("hasOwnReleaseNotes (GRE-178)", () => {
+  it("is false for a lightweight tag and for a title that only names the tag", () => {
+    expect(hasOwnReleaseNotes(parseReleaseNotes(null, "live-2026-09-29.1"))).toBe(false);
+    expect(hasOwnReleaseNotes(parseReleaseNotes("Live release live-2026-09-29.1 (candidate rc-2026-09-29.1)\n", "live-2026-09-29.1"))).toBe(false);
+    expect(hasOwnReleaseNotes(parseReleaseNotes("Release candidate rc-2026-09-27.2\n", "rc-2026-09-27.2"))).toBe(false);
+    expect(hasOwnReleaseNotes(parseReleaseNotes("live-2026-09-29.1\n", "live-2026-09-29.1"))).toBe(false);
+  });
+
+  it("is true for a real title or any change", () => {
+    expect(hasOwnReleaseNotes(parseReleaseNotes(FULL, "live-2026-09-29.1"))).toBe(true);
+    expect(hasOwnReleaseNotes(parseReleaseNotes("First live release: the localhost app\n", "live-2026-09-27.1"))).toBe(true);
+    expect(hasOwnReleaseNotes(parseReleaseNotes("Release candidate x\n\nFixes\n- A (#1)\n", "rc-1"))).toBe(true);
   });
 });
 

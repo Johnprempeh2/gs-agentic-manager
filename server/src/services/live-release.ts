@@ -47,7 +47,7 @@ import { applyTaskDrain, getTaskDrainStatus, stopTaskDrain } from "./heartbeat.j
 import { issueService } from "./issues.js";
 import { announceLiveRelease } from "./live-release-announce.js";
 import { readHotRestartReportSync, type HotRestartReport } from "./hot-restart.js";
-import { parseReleaseNotes } from "./release-notes.js";
+import { hasOwnReleaseNotes, parseReleaseNotes, type ReleaseNotes } from "./release-notes.js";
 import {
   LIVE_TAG_RE,
   NOTHING_MERGED_RE,
@@ -383,8 +383,8 @@ export function proposeTitle(changes: Array<{ kind: "feature" | "fix"; title: st
   return title.length > NEXT_TITLE_MAX_LENGTH ? `${title.slice(0, NEXT_TITLE_MAX_LENGTH - 1)}…` : title;
 }
 
-function changelogOf(message: string | null, tag: string): { title: string; changelog: Changelog } {
-  const notes = parseReleaseNotes(message, tag);
+function changelogOf(message: string | ReleaseNotes | null, tag: string): { title: string; changelog: Changelog } {
+  const notes = typeof message === "object" && message !== null ? message : parseReleaseNotes(message, tag);
   const line = (e: { summary: string; pr: number | null; issue: string | null }) => {
     const refs = [e.pr ? `#${e.pr}` : null, e.issue].filter(Boolean);
     return refs.length ? `${e.summary} (${refs.join(", ")})` : e.summary;
@@ -909,8 +909,20 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
 
     const liveTags = tags.filter((t) => LIVE_TAG_RE.test(t.tag));
     const rcTags = tags.filter((t) => RC_TAG_RE.test(t.tag));
+    // A live tag with no notes of its own shows those of the rc tag on its commit
+    // (GRE-178). The tag itself is never moved or re-written.
+    const liveNotes = (message: string | null, tag: string, commit: string | null): ReleaseNotes => {
+      const own = parseReleaseNotes(message, tag);
+      if (hasOwnReleaseNotes(own) || !commit) return own;
+      for (const rc of rcTags) {
+        if (rc.commit !== commit) continue;
+        const notes = parseReleaseNotes(rc.message, rc.tag);
+        if (hasOwnReleaseNotes(notes)) return notes;
+      }
+      return own;
+    };
     const history = liveTags.map((t) => {
-      const { title, changelog } = changelogOf(t.message, t.tag);
+      const { title, changelog } = changelogOf(liveNotes(t.message, t.tag, t.commit), t.tag);
       return {
         tag: t.tag,
         title,
@@ -926,7 +938,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     let live: ReleasesOverview["live"] = null;
     if (running) {
       const tagInfo = running.tag ? tags.find((t) => t.tag === running.tag) : undefined;
-      const notes = running.tag ? changelogOf(tagInfo?.message ?? null, running.tag) : null;
+      const notes = running.tag ? changelogOf(liveNotes(tagInfo?.message ?? null, running.tag, tagInfo?.commit ?? running.commit), running.tag) : null;
       live = {
         tag: running.tag,
         title: notes?.title ?? null,

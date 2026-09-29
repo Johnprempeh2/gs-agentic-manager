@@ -27,6 +27,7 @@ case "$TAG" in
   rc-*)
     [ "\${STUB_RC:-ok}" = refuse ] && { echo "release: 1 agent run(s) are active; release again when the agents are idle." >&2; exit 1; }
     echo "Backed up the live database (on live-2026-09-01.1) to $GSAM_ROOT/backups/before-$TAG.sql.gz"
+    tag_live_release "$LIVE_DIR" "$TAG" live-2026-09-27.1 "$(git -C "$LIVE_DIR" rev-parse "$TAG^{commit}")"
     echo "Tagged $TAG as live-2026-09-27.1"
     git -C "$LIVE_DIR" checkout --quiet --detach "$TAG"
     [ "\${STUB_RC:-ok}" = health ] && { echo "release: the live app did not report live-2026-09-27.1 within 3 minutes; check the server log." >&2; exit 1; }
@@ -39,16 +40,23 @@ case "$TAG" in
 esac
 `;
 
+// An rc tag as scripts/greatstone-candidate.mjs cuts it: a title and a changelog.
+const RC_MESSAGE = "Releases page and RAM-aware run limits\n\nFeatures\n- Releases page (#53, GRE-121)\n\nFixes\n- Flag a blocked issue (#41, GRE-72)";
+const configure = (dir) => {
+  for (const [k, v] of [["user.email", "t@t"], ["user.name", "t"], ["commit.gpgsign", "false"], ["tag.gpgsign", "false"]]) git(dir, "config", k, v);
+};
+
 function sandbox() {
   const root = mkdtempSync(join(tmpdir(), "gs-live-release-"));
   const live = join(root, "live");
   mkdirSync(live);
   git(live, "init", "--quiet");
-  git(live, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "--quiet", "--allow-empty", "-m", "old");
+  configure(live);
+  git(live, "commit", "--quiet", "--allow-empty", "-m", "old");
   git(live, "tag", "live-2026-09-01.1");
   const oldHead = git(live, "rev-parse", "HEAD");
-  git(live, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "--quiet", "--allow-empty", "-m", "new");
-  git(live, "tag", "rc-2026-09-27.2");
+  git(live, "commit", "--quiet", "--allow-empty", "-m", "new");
+  git(live, "tag", "-a", "rc-2026-09-27.2", "-m", RC_MESSAGE);
   git(live, "checkout", "--quiet", "--detach", "live-2026-09-01.1");
 
   const repo = join(root, "dev");
@@ -85,7 +93,9 @@ test("a release that comes up reports released", (t) => {
   assert.equal(result.liveTag, "live-2026-09-27.1");
   assert.equal(result.previousTag, "live-2026-09-01.1");
   assert.deepEqual(calls, ["rc-2026-09-27.2"]);
-  assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2"));
+  assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2^{commit}"));
+  // The live tag carries the rc title and changelog (GRE-120, GRE-178).
+  assert.equal(git(box.live, "for-each-ref", "--format=%(contents)", "refs/tags/live-2026-09-27.1"), RC_MESSAGE);
   // App mode (hot restart, no preview check) and the phase file for the server.
   assert.equal(readFileSync(join(box.root, "env.log"), "utf8").trim(), `from_app=1 phase_file=${join(box.job, "phase")}`);
   assert.equal(readFileSync(join(box.job, "phase"), "utf8").trim(), "switching");
@@ -337,4 +347,70 @@ test("live_board_key_check accepts no file and a 0600 file, refuses a 0644 or em
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// A release by hand (GRE-178): John runs scripts/greatstone-release.sh from the
+// dev checkout, with no app and no launcher. origin is a bare repo in the
+// sandbox; "other" pushes a newer release script the dev checkout has not pulled.
+function manualSandbox() {
+  const root = mkdtempSync(join(tmpdir(), "gs-manual-release-"));
+  const origin = join(root, "origin.git");
+  git(root, "init", "--quiet", "--bare", "-b", "main", origin);
+  const dev = join(root, "dev");
+  git(root, "clone", "--quiet", origin, dev);
+  configure(dev);
+  mkdirSync(join(dev, "scripts"));
+  writeFileSync(join(dev, "scripts", "greatstone-release.sh"), "# v1\n");
+  git(dev, "add", "scripts/greatstone-release.sh");
+  git(dev, "commit", "--quiet", "-m", "v1");
+  git(dev, "tag", "-a", "rc-2026-09-29.1", "-m", RC_MESSAGE);
+  git(dev, "push", "--quiet", "origin", "HEAD:main", "rc-2026-09-29.1");
+  git(root, "clone", "--quiet", origin, join(root, "live"));
+  const release = () =>
+    spawnSync("bash", [join(scriptsDir, "greatstone-release.sh"), "rc-2026-09-29.1"], {
+      encoding: "utf8",
+      env: { ...process.env, GSAM_ROOT: root, GSAM_RELEASE_REPO: dev, GSAM_LIVE_URL: "http://127.0.0.1:9", GSAM_RELEASE_FROM_APP: "" },
+    });
+  const pushNewerScript = () => {
+    const other = join(root, "other");
+    git(root, "clone", "--quiet", origin, other);
+    configure(other);
+    writeFileSync(join(other, "scripts", "greatstone-release.sh"), "# v2: copies the rc notes\n");
+    git(other, "commit", "--quiet", "-am", "v2");
+    git(other, "push", "--quiet", "origin", "HEAD:main");
+  };
+  const liveTags = () => git(dev, "tag", "--list", "live-*");
+  return { root, dev, release, pushNewerScript, liveTags };
+}
+
+test("a release by hand copies the rc title and changelog to the live tag", (t) => {
+  const box = manualSandbox();
+  t.after(() => rmSync(box.root, { recursive: true, force: true }));
+  const commit = git(box.dev, "rev-parse", "rc-2026-09-29.1^{commit}");
+  const run = spawnSync("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; tag_live_release "$@"`, "_", box.dev, "rc-2026-09-29.1", "live-2026-09-29.1", commit], {
+    encoding: "utf8",
+    env: { ...process.env, GSAM_ROOT: box.root, GSAM_RELEASE_FROM_APP: "" },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(git(box.dev, "cat-file", "-t", "refs/tags/live-2026-09-29.1"), "tag");
+  assert.equal(git(box.dev, "rev-parse", "live-2026-09-29.1^{commit}"), commit);
+  assert.equal(git(box.dev, "for-each-ref", "--format=%(contents)", "refs/tags/live-2026-09-29.1"), RC_MESSAGE);
+  // greatstone-release.sh makes its live tag with this function, by hand and from the app.
+  assert.match(readFileSync(join(scriptsDir, "greatstone-release.sh"), "utf8"), /^\s*tag_live_release "\$RELEASE_REPO" "\$TAG" "\$LIVE_TAG" "\$TARGET"$/m);
+});
+
+test("a release by hand refuses release scripts older than origin/main and makes no tag", (t) => {
+  const box = manualSandbox();
+  t.after(() => rmSync(box.root, { recursive: true, force: true }));
+  // Current scripts pass the check and stop at the next one (live is on the rc commit).
+  const current = box.release();
+  assert.equal(current.status, 1);
+  assert.match(current.stderr, /release: live is already on rc-2026-09-29.1/);
+
+  box.pushNewerScript();
+  const stale = box.release();
+  assert.equal(stale.status, 1);
+  assert.match(stale.stderr, /release: the release scripts in .*dev are not the ones on origin\/main \(scripts\/greatstone-release.sh\); run: git -C .*dev pull --ff-only origin main/);
+  assert.equal(box.liveTags(), "");
+  assert.equal(readFileSync(join(box.dev, "scripts", "greatstone-release.sh"), "utf8"), "# v1\n");
 });

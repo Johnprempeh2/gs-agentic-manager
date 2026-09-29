@@ -76,6 +76,18 @@ export function parseReleaseNotes(message: string | null | undefined, tag: strin
 }
 
 /**
+ * False when a tag carries no notes of its own: a lightweight tag, or a title
+ * that only names the tag with no changes under it. Release scripts older than
+ * GRE-120 wrote "Live release live-… (candidate rc-…)" on every live tag (GRE-178).
+ */
+export function hasOwnReleaseNotes(notes: ReleaseNotes): boolean {
+  if (!notes.annotated) return false;
+  if (notes.features.length || notes.fixes.length) return true;
+  const title = notes.title;
+  return !(title === notes.tag || /^(live release|release candidate)\b/i.test(title) || /^(rc|live)-\d/i.test(title));
+}
+
+/**
  * Reads the notes of `tag` from the git repository at `repo`. Returns null when
  * the tag does not exist. A lightweight tag gives the fallback (tag name as the
  * title, no changes).

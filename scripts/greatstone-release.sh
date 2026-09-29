@@ -42,6 +42,7 @@ LOCK_NOTE="$(live_index_lock_check)" || die "$LOCK_NOTE"
 
 git -C "$RELEASE_REPO" fetch --quiet --tags origin
 git -C "$RELEASE_REPO" fetch --quiet origin main
+STALE="$(release_scripts_current "$RELEASE_REPO")" || die "$STALE"
 TARGET="$(git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$TAG^{commit}")" || die "unknown tag $TAG"
 [ "$(git -C "$LIVE_DIR" rev-parse HEAD)" != "$TARGET" ] || die "live is already on $TAG ($TARGET); nothing to do."
 
@@ -88,8 +89,7 @@ if [ "$MODE" = release ]; then
   n=1
   while git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$base.$n" >/dev/null; do n=$((n + 1)); done
   LIVE_TAG="$base.$n"
-  git -C "$RELEASE_REPO" for-each-ref --format='%(contents:subject)%0a%0a%(contents:body)' "refs/tags/$TAG" \
-    | git -C "$RELEASE_REPO" tag -a "$LIVE_TAG" "$TARGET" --cleanup=whitespace -F -
+  tag_live_release "$RELEASE_REPO" "$TAG" "$LIVE_TAG" "$TARGET"
   GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG"
   say "Tagged $TAG as $LIVE_TAG: $TITLE"
 else
