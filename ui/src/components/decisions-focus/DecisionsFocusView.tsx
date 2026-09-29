@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { BrandCaughtUpMark } from "../BrandPageTitle";
 import type { Agent, AttentionItem } from "@greatstone/shared";
 import { useToastActions } from "../../context/ToastContext";
 import {
@@ -222,9 +222,7 @@ function FocusCaughtUp({
 }) {
   return (
     <div className="mx-auto flex max-w-3xl flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 py-16 text-center">
-      <div className="mb-4 rounded-full bg-accent p-4">
-        <CheckCircle2 className="size-10 text-primary" />
-      </div>
+      <BrandCaughtUpMark />
       <p className="text-lg font-semibold">You are all caught up.</p>
       <p className="mt-1 text-sm text-muted-foreground">
         {skippedCount > 0

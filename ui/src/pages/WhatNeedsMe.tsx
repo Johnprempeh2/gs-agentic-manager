@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Inbox } from "lucide-react";
+import { Inbox } from "lucide-react";
+import { BrandCaughtUpMark, BrandPageTitle } from "../components/BrandPageTitle";
 import type { Agent, AttentionItem, AttentionSubject } from "@greatstone/shared";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { attentionApi } from "../api/attention";
@@ -554,7 +555,7 @@ export function WhatNeedsMe() {
     return (
       <div className="max-w-5xl space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-bold">Decisions</h1>
+          <BrandPageTitle>Decisions</BrandPageTitle>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm font-medium">
               <ToggleSwitch
@@ -584,7 +585,7 @@ export function WhatNeedsMe() {
   return (
     <div ref={rootRef} className="max-w-3xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-bold">Decisions</h1>
+        <BrandPageTitle>Decisions</BrandPageTitle>
         <div className="flex flex-wrap items-center gap-2">
         <DecisionsToolbar
           visibleCount={visibleCount}
@@ -914,9 +915,7 @@ function CaughtUpNote({ filtered }: { filtered: boolean }) {
 function ZeroState() {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
-      <div className="mb-4 rounded-full bg-green-500/10 p-4">
-        <CheckCircle2 className="h-10 w-10 text-green-500" />
-      </div>
+      <BrandCaughtUpMark />
       <p className="text-lg font-semibold text-foreground">You're all caught up</p>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         <Inbox className="h-4 w-4" />
