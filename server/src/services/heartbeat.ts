@@ -19513,7 +19513,14 @@ export function heartbeatService(
           (!!run.processPid || !!run.processGroupId)) ||
           monitorDispatchLostWithoutFutureWake);
       if (!(await revokeExpiredLegacyController(db, run))) continue;
-      const baseMessage = buildProcessLossMessage(run);
+      // An adopted child's stdout pipe closed with the old server, so its
+      // result never reaches this server. Say so instead of a bare loss.
+      const adoptedAfterHotRestart = !!readHotRestartAdoptionMetadata(
+        parseObject(run.resultJson),
+      );
+      const baseMessage = adoptedAfterHotRestart
+        ? `${buildProcessLossMessage(run)} after hot-restart adoption; its output after the restart was not captured`
+        : buildProcessLossMessage(run);
       const conversationContinuationEligible = await runUsedConversationAdapter(db, run);
 
       const failureWrite = await setRunStatusFromLive(
@@ -19597,6 +19604,7 @@ export function heartbeatService(
           ...(run.processPid ? { processPid: run.processPid } : {}),
           ...(run.processGroupId ? { processGroupId: run.processGroupId } : {}),
           ...(retriedRun ? { retryRunId: retriedRun.id } : {}),
+          ...(adoptedAfterHotRestart ? { adoptedAfterHotRestart: true } : {}),
         },
       });
 

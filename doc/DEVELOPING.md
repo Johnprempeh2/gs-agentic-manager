@@ -304,6 +304,12 @@ An alive child appears in `adoptedRunIds`; a child that completed during the
 restart window appears in `finalizedWhileDownRunIds`. Either is continuous. A
 `lostRunIds` entry remains a failed deploy and must not be waived.
 
+An adopted child keeps running, but its stdout pipe closed with the old server,
+so the new server never sees its result. When the child exits, the reaper marks
+the run `failed` / `process_lost` with "after hot-restart adoption; its output
+after the restart was not captured" and queues the one bounded retry. The
+Releases page therefore does not say "Nothing was lost" when a run was adopted.
+
 For a recovery from a version that can stop embedded PostgreSQL before writing
 its shutdown snapshot, use `--drain-required` once to cross the broken boundary.
 After the fixed server is live, perform another ordinary hot restart. Require

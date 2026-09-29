@@ -473,12 +473,39 @@ describe("Restart report", () => {
     expect(older.querySelector('[data-testid="restart-report"]')).toBeNull();
   });
 
-  it("says nothing was lost when no runs were lost", async () => {
+  it("says nothing was lost only when no runs were lost or kept running", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("healthy", {
+        restartReport: restartReportFixture({
+          lostRunIds: [],
+          adoptedRunIds: [],
+          resumedRunIds: ["e5f6a7b8-run-checkpoint"],
+        }),
+      }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).toContain("Nothing was lost.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]'),
+    ).toBeNull();
+  });
+
+  // GRE-246: a kept-running run's result is not captured, so the page must not promise nothing was lost.
+  it("does not say nothing was lost when a run kept running", async () => {
     const overview = releasesOverviewFixture({
       progress: releaseProgressFixture("healthy", { restartReport: restartReportFixture({ lostRunIds: [] }) }),
     });
     await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
-    expect(document.querySelector('[data-testid="release-progress"]')?.textContent).toContain("Nothing was lost.");
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).not.toContain("Nothing was lost.");
+    expect(text).toContain("No run stopped.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]')
+        ?.textContent,
+    ).toContain(
+      "When it ends, it is marked lost and runs once more.",
+    );
   });
 });
 
