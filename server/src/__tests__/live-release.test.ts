@@ -35,6 +35,8 @@ let forkCi: "passed" | "failed" | "pending" | "unknown";
 let candidates: Array<{ tag: string; title: string; since: string | null; print: boolean }>;
 let restartReport: HotRestartReport | null;
 let tags: ReleaseTagInfo[];
+/** "ancestor>commit" pairs that git merge-base --is-ancestor accepts; "?" in a pair means git cannot tell. */
+let ancestry: Set<string>;
 
 const CUT: CandidateCut = {
   tag: "rc-x",
@@ -67,6 +69,7 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
     isProcessAlive: () => true,
     readRunningCommit: () => runningCommit,
     containsRef: (_commit, ref) => ref === "aaaaaaa",
+    isAncestor: (_repo, ancestor, commit) => (ancestry.has(`${ancestor}?${commit}`) ? null : ancestry.has(`${ancestor}>${commit}`)),
     announce: async (event) => {
       announced.push(event);
     },
@@ -153,6 +156,7 @@ beforeEach(() => {
   candidates = [];
   restartReport = null;
   tags = [];
+  ancestry = new Set();
 });
 
 afterEach(() => {
@@ -531,6 +535,42 @@ describe("release now from origin/main", () => {
     mainCommit = "a".repeat(40);
     const result = await createLiveReleaseService(deps()).start({ kind: "release", tag: null, actor: JOHN });
     expect(result).toEqual({ ok: false, status: 409, error: "live already runs origin/main; nothing to release" });
+  });
+});
+
+describe("candidate (GRE-172)", () => {
+  const LIVE = "a".repeat(40);
+  const OLD = "d".repeat(40);
+  const NEW = "e".repeat(40);
+  const rc = (tag: string, commit: string): ReleaseTagInfo => ({ tag, commit, date: clock.toISOString(), annotated: true, message: `Title of ${tag}\n` });
+
+  it("does not offer an rc tag that is an ancestor of live", async () => {
+    tags = [rc("rc-2026-09-28.2", OLD)];
+    ancestry = new Set([`${OLD}>${LIVE}`]);
+    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toBeNull();
+  });
+
+  it("offers the newest rc tag that is newer than live, skipping older ones", async () => {
+    tags = [rc("rc-2026-09-29.1", NEW), rc("rc-2026-09-28.2", OLD)];
+    ancestry = new Set([`${OLD}>${LIVE}`, `${LIVE}>${NEW}`]);
+    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toMatchObject({ tag: "rc-2026-09-29.1", commit: NEW });
+
+    tags = [rc("rc-2026-09-28.2", OLD), rc("rc-2026-09-29.1", NEW)];
+    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toMatchObject({ tag: "rc-2026-09-29.1" });
+  });
+
+  it("does not offer the running commit, or an rc git cannot place", async () => {
+    tags = [rc("rc-2026-09-28.1", LIVE)];
+    ancestry = new Set([`${LIVE}>${LIVE}`]);
+    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toBeNull();
+
+    tags = [rc("rc-2026-09-29.1", NEW)];
+    ancestry = new Set([`${LIVE}?${NEW}`]);
+    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toBeNull();
+
+    runningCommit = null;
+    ancestry = new Set([`${LIVE}>${NEW}`]);
+    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toBeNull();
   });
 });
 

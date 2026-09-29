@@ -272,6 +272,8 @@ export interface LiveReleaseDeps {
   readRunningCommit(): { commit: string; tag: string | null } | null;
   /** Whether `ref` (checked with isReleaseRef) is contained in `commit`; null when git cannot tell. */
   containsRef(commit: string, ref: string): boolean | null;
+  /** git merge-base --is-ancestor in the release repo; null when git cannot tell. */
+  isAncestor(repo: string, ancestor: string, commit: string): boolean | null;
   /** Records and announces a new live commit. Must be safe to repeat. */
   announce(event: LiveReleaseEvent, isRefLive: (ref: string) => boolean | null): Promise<void>;
   // Release repo access (release-repo.ts); injected so tests need no git or gh.
@@ -932,7 +934,19 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     }
 
     const liveCommits = new Set(liveTags.map((t) => t.commit));
-    const newestRc = rcTags.find((t) => !liveCommits.has(t.commit) && t.commit !== running?.commit) ?? null;
+    // Only an rc strictly newer than live (GRE-172); when git cannot tell, offer none.
+    const newerThanLive = (commit: string) =>
+      running && repo && commit !== running.commit
+        ? cached(`ancestor:${running.commit}:${commit}`, async () => deps.isAncestor(repo, running.commit, commit) === true)
+        : Promise.resolve(false);
+    let newestRc: ReleaseTagInfo | null = null;
+    for (const t of rcTags) {
+      if (liveCommits.has(t.commit)) continue;
+      if (await newerThanLive(t.commit)) {
+        newestRc = t;
+        break;
+      }
+    }
     let candidate: ReleasesOverview["candidate"] = null;
     if (newestRc && repo) {
       const { title, changelog } = changelogOf(newestRc.message, newestRc.tag);
@@ -1033,8 +1047,13 @@ function repoContainsRef(repo: string | null, commit: string, ref: string): bool
   if (!repo || !isReleaseRef(ref)) return null;
   const sha = git(repo, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
   if (!sha) return null;
+  return repoIsAncestor(repo, sha, commit);
+}
+
+/** git merge-base --is-ancestor: true / false, or null when git cannot tell. */
+function repoIsAncestor(repo: string, ancestor: string, commit: string): boolean | null {
   try {
-    execFileSync("git", ["merge-base", "--is-ancestor", sha, commit], { cwd: repo, stdio: "ignore", timeout: 10_000 });
+    execFileSync("git", ["merge-base", "--is-ancestor", ancestor, commit], { cwd: repo, stdio: "ignore", timeout: 10_000 });
     return true;
   } catch (err) {
     return (err as { status?: number }).status === 1 ? false : null;
@@ -1095,6 +1114,7 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
       return { commit: info.fullSha, tag: tags?.split("\n")[0]?.trim() || null };
     },
     containsRef: (commit, ref) => repoContainsRef(repoRoot, commit, ref),
+    isAncestor: repoIsAncestor,
     announce: async (event, isRefLive) => {
       const result = await announceLiveRelease(db, event, isRefLive);
       logger.info({ commit: event.commit, ...result }, "live release: announced");
