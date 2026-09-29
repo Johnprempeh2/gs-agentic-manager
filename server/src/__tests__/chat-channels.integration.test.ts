@@ -1066,6 +1066,11 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     // The milestone scanner includes paused endpoints with active bindings.
     await db.update(chatConversations).set({ state: "completed" })
       .where(and(inArray(chatConversations.companyId, companyIds), inArray(chatConversations.state, ["active", "waiting"])));
+    // Run admission counts every running row in this shared database against
+    // the instance run cap (6). Fixture runs left running by earlier cases
+    // would hold a later case's real run in the queue (GRE-205).
+    await db.update(heartbeatRuns).set({ status: "cancelled", finishedAt: new Date() })
+      .where(and(inArray(heartbeatRuns.companyId, companyIds), inArray(heartbeatRuns.status, ["queued", "running"])));
   }
 
   async function seedCompany() {
