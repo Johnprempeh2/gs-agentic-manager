@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import type { Agent } from "@greatstone/shared";
 import { issuesApi } from "../api/issues";
+import { useReauth } from "./ReauthDialog";
 import { queryKeys } from "../lib/queryKeys";
 import {
   isIssueThreadInteraction,
@@ -56,6 +57,8 @@ export function useInteractionResolutionMutations({
   onResolved?: () => void;
 }) {
   const queryClient = useQueryClient();
+  // An "Update live?" card asks for the password in login mode (GRE-164).
+  const { withReauth, dialog: reauthDialog } = useReauth();
 
   const invalidate = (resolvedInteraction?: IssueThreadInteraction) => {
     // The accept route returns the fully stitched interaction (including
@@ -80,11 +83,18 @@ export function useInteractionResolutionMutations({
       selectedOptionIds?: string[];
       rememberAction?: boolean;
     }) =>
-      issuesApi.acceptInteraction(issueId, input.interaction.id, {
-        selectedClientKeys: input.selectedClientKeys,
-        selectedOptionIds: input.selectedOptionIds,
-        rememberAction: input.rememberAction,
-      }),
+      withReauth("release", (options) =>
+        issuesApi.acceptInteraction(
+          issueId,
+          input.interaction.id,
+          {
+            selectedClientKeys: input.selectedClientKeys,
+            selectedOptionIds: input.selectedOptionIds,
+            rememberAction: input.rememberAction,
+          },
+          options,
+        ),
+      ),
     onSuccess: invalidate,
   });
 
@@ -114,7 +124,7 @@ export function useInteractionResolutionMutations({
     onSuccess: invalidate,
   });
 
-  return { acceptMutation, rejectMutation, respondMutation, cancelMutation, verdictsMutation };
+  return { acceptMutation, rejectMutation, respondMutation, cancelMutation, verdictsMutation, reauthDialog };
 }
 
 /**
@@ -143,7 +153,7 @@ export function AttentionInteractionResolver({
     return match && isIssueThreadInteraction(match) ? match : null;
   }, [interactions, interactionId]);
 
-  const { acceptMutation, rejectMutation, respondMutation, cancelMutation, verdictsMutation } =
+  const { acceptMutation, rejectMutation, respondMutation, cancelMutation, verdictsMutation, reauthDialog } =
     useInteractionResolutionMutations({ companyId, issueId, onResolved });
 
   if (isLoading) {
@@ -163,26 +173,29 @@ export function AttentionInteractionResolver({
   }
 
   return (
-    <IssueThreadInteractionCard
-      interaction={interaction}
-      agentMap={agentMap}
-      currentUserId={currentUserId}
-      userLabelMap={userLabelMap}
-      onAcceptInteraction={(target, selectedClientKeys, selectedOptionIds, rememberAction) =>
-        acceptMutation.mutateAsync({ interaction: target, selectedClientKeys, selectedOptionIds, rememberAction }).then(() => undefined)
-      }
-      onRejectInteraction={(target, reason) =>
-        rejectMutation.mutateAsync({ interactionId: target.id, reason }).then(() => undefined)
-      }
-      onSubmitInteractionAnswers={(target: AskUserQuestionsInteraction, answers) =>
-        respondMutation.mutateAsync({ interactionId: target.id, answers }).then(() => undefined)
-      }
-      onCancelInteraction={(target: AskUserQuestionsInteraction) =>
-        cancelMutation.mutateAsync({ interactionId: target.id }).then(() => undefined)
-      }
-      onSubmitInteractionVerdicts={(target: RequestItemVerdictsInteraction, verdicts) =>
-        verdictsMutation.mutateAsync({ interactionId: target.id, verdicts }).then(() => undefined)
-      }
-    />
+    <>
+      <IssueThreadInteractionCard
+        interaction={interaction}
+        agentMap={agentMap}
+        currentUserId={currentUserId}
+        userLabelMap={userLabelMap}
+        onAcceptInteraction={(target, selectedClientKeys, selectedOptionIds, rememberAction) =>
+          acceptMutation.mutateAsync({ interaction: target, selectedClientKeys, selectedOptionIds, rememberAction }).then(() => undefined)
+        }
+        onRejectInteraction={(target, reason) =>
+          rejectMutation.mutateAsync({ interactionId: target.id, reason }).then(() => undefined)
+        }
+        onSubmitInteractionAnswers={(target: AskUserQuestionsInteraction, answers) =>
+          respondMutation.mutateAsync({ interactionId: target.id, answers }).then(() => undefined)
+        }
+        onCancelInteraction={(target: AskUserQuestionsInteraction) =>
+          cancelMutation.mutateAsync({ interactionId: target.id }).then(() => undefined)
+        }
+        onSubmitInteractionVerdicts={(target: RequestItemVerdictsInteraction, verdicts) =>
+          verdictsMutation.mutateAsync({ interactionId: target.id, verdicts }).then(() => undefined)
+        }
+      />
+      {reauthDialog}
+    </>
   );
 }

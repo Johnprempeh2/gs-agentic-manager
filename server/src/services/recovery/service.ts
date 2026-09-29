@@ -236,6 +236,7 @@ type LatestIssueRun =
       | "createdAt"
     > & {
       resultJson?: unknown;
+      finishedAt?: Date | null;
     })
   | null;
 type SuccessfulLatestIssueRun = NonNullable<LatestIssueRun> & {
@@ -939,6 +940,13 @@ export function recoveryService(
     transientRetryBudgetSpent?: (
       run: typeof heartbeatRuns.$inferSelect,
     ) => boolean;
+    /**
+     * GRE-200: the run was lost to host sleep (lease or startup deadline
+     * passed while the host was dark). `scheduleRecoveryRetry` resumes it in
+     * a lane that does not spend the failure budget, so the sweep must not
+     * classify it as non-retryable or count it toward escalation.
+     */
+    isHostSleepLoss?: (run: NonNullable<LatestIssueRun>) => boolean;
     liveRunExecutions?: Readonly<{ has(id: string): boolean }>;
     beforeOrphanedRunTerminalWrite?: (runId: string) => Promise<void>;
   },
@@ -978,6 +986,7 @@ export function recoveryService(
         livenessState: heartbeatRuns.livenessState,
         resultJson: heartbeatRuns.resultJson,
         startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
         createdAt: heartbeatRuns.createdAt,
       })
       .from(heartbeatRuns)
@@ -1008,6 +1017,7 @@ export function recoveryService(
         livenessState: heartbeatRuns.livenessState,
         resultJson: heartbeatRuns.resultJson,
         startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
         createdAt: heartbeatRuns.createdAt,
       })
       .from(heartbeatRuns)
@@ -1839,6 +1849,7 @@ export function recoveryService(
         livenessState: heartbeatRuns.livenessState,
         resultJson: heartbeatRuns.resultJson,
         startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
         createdAt: heartbeatRuns.createdAt,
       })
       .from(heartbeatRuns)
@@ -5525,7 +5536,10 @@ export function recoveryService(
         }
         continue;
       }
-      if (isUnsuccessfulTerminalIssueRun(latestRun)) {
+      if (
+        isUnsuccessfulTerminalIssueRun(latestRun) &&
+        !(latestRun && deps.isHostSleepLoss?.(latestRun))
+      ) {
         const classification = classifyContinuationFailure(latestRun);
 
         if (

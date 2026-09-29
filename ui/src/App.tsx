@@ -376,7 +376,9 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         </Route>
       </Route>
       <Route path="goals" element={<Goals />} />
-      <Route path="releases" element={<Releases />} />
+      <Route element={<HiddenSettingsPageGate pageKey="instance.releases" redirectTo="/dashboard" />}>
+        <Route path="releases" element={<Releases />} />
+      </Route>
       <Route path="goals/:goalId" element={<GoalDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />

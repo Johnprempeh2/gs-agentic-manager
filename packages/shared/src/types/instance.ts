@@ -41,7 +41,7 @@ export interface InstanceGeneralSettings {
   executionMode?: InstanceExecutionMode;
   /**
    * Instance-wide run admission guard. Absent fields use the server defaults
-   * (6 concurrent runs, 2048 MB available-memory floor).
+   * (6 concurrent runs, 2048 MB available-memory floor, 20 GB free-disk floor).
    */
   runAdmission?: RunAdmissionSettingsInput;
 }
@@ -50,10 +50,13 @@ export interface RunAdmissionSettingsInput {
   maxConcurrentRuns?: number;
   /** 0 disables the memory check. */
   minAvailableMemoryMb?: number;
+  /** Free disk floor in GB for the data dir and worktrees (GRE-207). 0 disables it. */
+  minFreeDiskGb?: number;
 }
 
 export const DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS = 6;
 export const DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB = 2048;
+export const DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB = 20;
 
 /** Host memory as seen by the run admission guard (GRE-114). */
 export interface InstanceSystemMemory {

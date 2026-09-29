@@ -1,0 +1,45 @@
+
+X GRE-96-continuos-improvement Fork CI Johnprempeh2/gs-agentic-manager#42 · 36476978527
+Triggered via pull_request about 14 hours ago
+
+JOBS
+✓ Typecheck in 7m41s (ID 109113017754)
+X Rebrand and workflow guard in 14s (ID 109113017979)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Setup Node.js
+  X Nothing left to rebrand
+  - Only fork-owned workflows
+  - Post Setup Node.js
+  ✓ Post Checkout repository
+  ✓ Complete job
+✓ Build in 4m30s (ID 109113018042)
+- Runner Rust tests in 0s (ID 109113019037)
+- Tests (${{ matrix.label }}) in 0s (ID 109113019631)
+X Fork CI in 3s (ID 109116045602)
+  ✓ Set up job
+  X Every lane passed
+  ✓ Complete job
+
+ANNOTATIONS
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Typecheck: .github#1
+
+X Process completed with exit code 1.
+Rebrand and workflow guard: .github#7
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Rebrand and workflow guard: .github#1
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Build: .github#1
+
+X Process completed with exit code 1.
+Fork CI: .github#35
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Fork CI: .github#1
+
+
+To see what failed, try: gh run view 36476978527 --log-failed
+View this run on GitHub: https://github.com/Johnprempeh2/gs-agentic-manager/actions/runs/36476978527

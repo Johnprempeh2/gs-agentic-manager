@@ -1,3 +1,5 @@
+import { FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY, HOST_SLEEP_RETRY_REASON } from "./host-sleep-loss.js";
+
 type RetryRun = {
   scheduledRetryAttempt?: number | null;
   scheduledRetryReason?: string | null;
@@ -11,6 +13,9 @@ export interface ExecutionRetryAccounting {
   failureRetries: number;
   maxTurnContinuations: number;
 }
+
+/** Lanes that wait out a resource or the host; they never spend failure retries. */
+const WAIT_LANES: readonly string[] = ["workspace_busy", "ai_connection_busy", HOST_SLEEP_RETRY_REASON];
 
 function count(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
@@ -36,13 +41,17 @@ function historicalFailureCount(run: RetryRun): number {
     const saved = count(run.contextSnapshot?.failureRetriesBeforeWorkspaceWait);
     if (saved !== null) return saved;
   }
+  if (run.scheduledRetryReason === HOST_SLEEP_RETRY_REASON) {
+    const saved = count(run.contextSnapshot?.[FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY]);
+    if (saved !== null) return saved;
+  }
   // Historical ambiguous counters remain conservative rather than resetting.
   return count(run.scheduledRetryAttempt) ?? 0;
 }
 
 export function executionRetryAccounting(run: RetryRun): ExecutionRetryAccounting {
   const saved = savedAccounting(run);
-  const nonFailureLane = ["max_turns_continuation", "issue_disposition_repair", "workspace_busy", "ai_connection_busy"].includes(run.scheduledRetryReason ?? "");
+  const nonFailureLane = ["max_turns_continuation", "issue_disposition_repair", ...WAIT_LANES].includes(run.scheduledRetryReason ?? "");
   return {
     version: 1,
     failureRetries: Math.max(saved?.failureRetries ?? 0, saved && nonFailureLane ? 0 : historicalFailureCount(run)),
@@ -51,13 +60,13 @@ export function executionRetryAccounting(run: RetryRun): ExecutionRetryAccountin
   };
 }
 
-/** Resource waits, repairs and productive continuations do not spend failures. */
+/** Resource waits, host sleep, repairs and productive continuations do not spend failures. */
 export function executionFailureRetryCount(run: RetryRun): number {
   return executionRetryAccounting(run).failureRetries;
 }
 
 export function executionRetryAttemptCount(run: RetryRun, reason: string): number {
-  if (reason === "workspace_busy" || reason === "ai_connection_busy") {
+  if (WAIT_LANES.includes(reason)) {
     return run.scheduledRetryReason === reason ? count(run.scheduledRetryAttempt) ?? 0 : 0;
   }
   const accounting = executionRetryAccounting(run);
@@ -67,6 +76,6 @@ export function executionRetryAttemptCount(run: RetryRun, reason: string): numbe
 export function accountingForScheduledRetry(run: RetryRun, reason: string, attempt: number): ExecutionRetryAccounting {
   const accounting = executionRetryAccounting(run);
   if (reason === "max_turns_continuation") accounting.maxTurnContinuations = attempt;
-  else if (reason !== "workspace_busy" && reason !== "ai_connection_busy") accounting.failureRetries = attempt;
+  else if (!WAIT_LANES.includes(reason)) accounting.failureRetries = attempt;
   return accounting;
 }

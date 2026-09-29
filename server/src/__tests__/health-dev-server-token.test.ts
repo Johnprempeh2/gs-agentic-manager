@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -233,6 +234,63 @@ describe("POST /health/dev-server/restart", () => {
       }
       if (previousHome === undefined) delete process.env.GSAM_HOME;
       else process.env.GSAM_HOME = previousHome;
+    }
+  });
+
+  // GRE-166: the supervisor exited but left a clean status file, so every
+  // restart got 409 restart_not_required and the release could not recover.
+  it("reports the supervisor unavailable when the status file's supervisor is gone", async () => {
+    const deadPid = spawnSync(process.execPath, ["-e", ""]).pid;
+    const previousFile = process.env.GSAM_DEV_SERVER_STATUS_FILE;
+    process.env.GSAM_DEV_SERVER_STATUS_FILE = createDevServerStatusFile({
+      dirty: false,
+      changedPathCount: 0,
+      changedPathsSample: [],
+      pendingMigrations: [],
+      supervisorPid: deadPid,
+    });
+
+    try {
+      const app = express();
+      app.use("/health", healthRoutes(undefined));
+
+      const res = await request(app).post("/health/dev-server/restart");
+
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: "dev_server_supervisor_unavailable" });
+    } finally {
+      if (previousFile === undefined) {
+        delete process.env.GSAM_DEV_SERVER_STATUS_FILE;
+      } else {
+        process.env.GSAM_DEV_SERVER_STATUS_FILE = previousFile;
+      }
+    }
+  });
+
+  it("still answers restart_not_required while the supervisor is alive", async () => {
+    const previousFile = process.env.GSAM_DEV_SERVER_STATUS_FILE;
+    process.env.GSAM_DEV_SERVER_STATUS_FILE = createDevServerStatusFile({
+      dirty: false,
+      changedPathCount: 0,
+      changedPathsSample: [],
+      pendingMigrations: [],
+      supervisorPid: process.pid,
+    });
+
+    try {
+      const app = express();
+      app.use("/health", healthRoutes(undefined));
+
+      const res = await request(app).post("/health/dev-server/restart");
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({ error: "restart_not_required" });
+    } finally {
+      if (previousFile === undefined) {
+        delete process.env.GSAM_DEV_SERVER_STATUS_FILE;
+      } else {
+        process.env.GSAM_DEV_SERVER_STATUS_FILE = previousFile;
+      }
     }
   });
 

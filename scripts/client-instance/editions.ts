@@ -53,6 +53,8 @@ export const MANAGED_HIDDEN_SETTINGS = [
   "instance.experimental.*",
   "instance.adapters",
   "instance.plugins",
+  // GRE-124 section 5 (John, 28 Sep): a client install has no Releases page.
+  "instance.releases",
   "instance.access",
   "instance.environments",
   "company.secrets",

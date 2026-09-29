@@ -6,7 +6,8 @@ of values the instance starts with: `GSAM_MANAGED_CONFIG` and
 Owner: Bedrock.
 
 Script: `scripts/client-instance.sh` (code in `scripts/client-instance/`).
-Run it from the checkout of the release the instance must run.
+Run it from the release folder the instance must run (see "Where the code
+runs"). The server runs from the same folder as the script you call.
 
 ## Rules
 
@@ -32,7 +33,33 @@ Everything is in one folder, `<root>`:
 | `server.log`, `server.pid` | the running server |
 
 The server gets a clean environment: nothing from your shell (agent tokens,
-`DATABASE_URL`, `GSAM_HOME`) reaches it.
+`DATABASE_URL`, `GSAM_HOME`) reaches it. It does keep your `HOME`, `PATH` and
+`TMPDIR`, so call the script through `env -i` (below). An agent run has a
+`TMPDIR` that is deleted when the run ends, and a `PATH` into `~/GSAM/live`.
+
+## Where the code runs
+
+Each release tag gets its own clone, next to the instance folders, never in
+`.gsam/worktrees/` (a worktree can be cleaned up and the instance then stops):
+
+```sh
+REL=/path/to/instances/releases/<tag>
+git clone --branch <tag> /Users/johnprempeh/Desktop/Code/gs-clip "$REL"
+git -C "$REL" remote set-url --push origin DISABLED
+(cd "$REL" && pnpm install --frozen-lockfile && pnpm --filter @greatstone/plugin-sdk build)
+```
+
+Instances on the same tag share its folder. Do not edit or `git pull` in it;
+a new release gets a new folder. Call the script with a clean environment:
+
+```sh
+env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" LANG=en_US.UTF-8 \
+  PATH=/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/bin:/bin \
+  "$REL/scripts/client-instance.sh" status --root <root>
+```
+
+Check which folder an instance runs from:
+`lsof -a -d cwd -p "$(cat <root>/server.pid)"`.
 
 ## Start a new instance
 
@@ -56,6 +83,12 @@ the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
 free from 55400), `--company-name`, `--client-email`.
+
+Run limits are not set by the script, so a new instance uses the defaults:
+at most 6 runs at once, and new runs wait while free memory is below
+2048 MB or free disk (data dir and home volume) is below 20 GB (GRE-207).
+The OS memory-pressure level does not hold runs (GRE-198). Change them in
+Instance → General → Run limits; 0 turns a floor off.
 
 `create` does, in order:
 
@@ -91,8 +124,9 @@ CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh verify --root <
 
 It checks: health; every hidden setting is reported hidden; each section 5
 "on" feature is on and each "off" feature is off; a change request to each
-floored hidden setting returns 403; exactly one company; new sign-ups are
-refused. A refused request
+floored hidden setting returns 403; exactly one company; the client log-in
+gets 403 on the release API (`instance.releases`, no Releases page on a client
+edition); new sign-ups are refused. A refused request
 changes nothing. If one is accepted, the script puts the old value back and
 fails.
 
@@ -120,11 +154,16 @@ back on: `GSAM_MANAGED_CONFIG` is never stored in the database.
 
 One instance at a time:
 
-1. `backup`.
-2. `stop`.
-3. Move the checkout the instance runs from to the release tag.
-4. `start` (migrations apply at start), then `verify`.
-5. Say on the issue which instance moved and to which tag.
+1. Make the new release folder and install it (see "Where the code runs").
+   Test it first: `create` a sandbox instance from it (`--edition internal`,
+   a scratch `--root`, spare ports), then `stop` it and delete its folder.
+2. `backup`, with the script from the old or the new folder.
+3. `stop`, then `start` with the script from the **new** folder (migrations
+   apply at start). The instance is down only between the two (about 15 s).
+4. `verify`, and check the process folder with `lsof` (above).
+5. Keep the old release folder until the instance is checked, then remove it
+   if no other instance runs from it.
+6. Say on the issue which instance moved and to which tag.
 
 ## Change the edition values
 

@@ -318,6 +318,7 @@ import { secretService, type MissingRuntimeBinding } from "./secrets.js";
 import {
   resolveDefaultAgentWorkspaceDir,
   resolveManagedProjectWorkspaceDir,
+  resolvePaperclipInstanceRoot,
 } from "../home-paths.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -522,6 +523,14 @@ import {
   hostBlindTime as processHostBlindTime,
   type HostBlindTimeTracker,
 } from "./host-blind-time.js";
+import {
+  FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY,
+  HOST_SLEEP_RETRY_DELAY_MS,
+  HOST_SLEEP_RETRY_MAX_ATTEMPTS,
+  HOST_SLEEP_RETRY_REASON,
+  HOST_SLEEP_RETRY_WAKE_REASON,
+  isHostSleepLoss,
+} from "./host-sleep-loss.js";
 import os from "node:os";
 import {
   ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS as RECOVERY_ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS,
@@ -617,11 +626,13 @@ import {
   touchHeartbeatRunRuntimeStatus,
 } from "./heartbeat-run-runtime-status.js";
 import {
+  createSystemDiskReader,
   createSystemMemoryReader,
   evaluateRunAdmission,
   orderAgentsByOldestQueuedRun,
   resolveRunAdmissionSettings,
   RUN_ADMISSION_RECHECK_MS,
+  type DiskReader,
   type MemoryReader,
 } from "./run-admission.js";
 import {
@@ -9356,6 +9367,12 @@ export interface HeartbeatServiceOptions {
    */
   memoryReader?: MemoryReader;
   /**
+   * GRE-207: reads free disk for run admission. Defaults to the fullest of
+   * the data dir and home volumes (worktrees live under home); under vitest
+   * it defaults to "unknown" (fail open).
+   */
+  diskReader?: DiskReader;
+  /**
    * GRE-181: host blind time (sleep, stalled event loop) subtracted from run
    * silence. Defaults to the process tracker; under vitest to none.
    */
@@ -9495,8 +9512,21 @@ export function heartbeatService(
   const memoryReader: MemoryReader =
     options.memoryReader ??
     (runtimeEnv.VITEST ? async () => null : createSystemMemoryReader());
+  const diskReader: DiskReader =
+    options.diskReader ??
+    (runtimeEnv.VITEST
+      ? async () => null
+      : createSystemDiskReader(() => [resolvePaperclipInstanceRoot(), os.homedir()]));
   const hostBlindTime =
     options.hostBlindTime ?? (runtimeEnv.VITEST ? NO_HOST_BLIND_TIME : processHostBlindTime);
+  // GRE-200: sample first, so a gap the sampler has not seen yet (the lease
+  // timer and the sampler both fire on wake, in either order) still counts.
+  const runLostToHostSleep = (
+    run: Parameters<typeof isHostSleepLoss>[0],
+  ) => {
+    hostBlindTime.sample();
+    return isHostSleepLoss(run, hostBlindTime.blindMsBetween);
+  };
   const hostLoadReader =
     options.hostLoadReader ?? (runtimeEnv.VITEST ? () => null : readHostLoad);
   const inWorktreeRuntime = isTruthyRuntimeEnvValue(
@@ -9604,6 +9634,7 @@ export function heartbeatService(
     transientRetryBudgetSpent: (run) =>
       executionFailureRetryCount(run) >=
       BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS,
+    isHostSleepLoss: runLostToHostSleep,
   });
   const runDispatch = createRunDispatch(db);
 
@@ -15426,6 +15457,24 @@ export function heartbeatService(
     },
   ) {
     const now = opts?.now ?? new Date();
+    // GRE-200: a run lost to host sleep is resumed in the sleep lane, which
+    // does not spend the failure budget. The lane has its own bound; once it
+    // is spent the loss falls through to the normal failure budget.
+    if (
+      !opts?.retryReason &&
+      runLostToHostSleep(run) &&
+      executionRetryAttemptCount(run, HOST_SLEEP_RETRY_REASON) <
+        HOST_SLEEP_RETRY_MAX_ATTEMPTS
+    ) {
+      return scheduleBoundedRetryForRun(run, agent, {
+        ...opts,
+        now,
+        retryReason: HOST_SLEEP_RETRY_REASON,
+        wakeReason: HOST_SLEEP_RETRY_WAKE_REASON,
+        maxAttempts: HOST_SLEEP_RETRY_MAX_ATTEMPTS,
+        delayMs: HOST_SLEEP_RETRY_DELAY_MS,
+      });
+    }
     const retryReason =
       opts?.retryReason ?? BOUNDED_TRANSIENT_HEARTBEAT_RETRY_REASON;
     const wakeReason =
@@ -15636,6 +15685,9 @@ export function heartbeatService(
           : {}),
         ...(retryReason === AI_CONNECTION_BUSY_RETRY_REASON
           ? { failureRetriesBeforeAiConnectionWait: executionFailureRetryCount(run) }
+          : {}),
+        ...(retryReason === HOST_SLEEP_RETRY_REASON
+          ? { [FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY]: executionFailureRetryCount(run) }
           : {}),
         ...(shouldQuarantineWorkspaceForRetry
           ? {
@@ -19949,9 +20001,10 @@ export function heartbeatService(
   // `stoppingRunId` is about to be stopped, so it does not hold a run slot.
   async function readSilentRetryPressure(now: Date, stoppingRunId?: string): Promise<SilentRetryPressure> {
     const admissionSettings = resolveRunAdmissionSettings(await instanceSettings.getGeneral());
-    const [dbRunningRunIds, memory] = await Promise.all([
+    const [dbRunningRunIds, memory, disk] = await Promise.all([
       listRunningRunIdsForAdmission(),
       memoryReader().catch(() => null),
+      diskReader().catch(() => null),
     ]);
     const stoppingHoldsSlot =
       stoppingRunId !== undefined &&
@@ -19960,6 +20013,7 @@ export function heartbeatService(
       settings: admissionSettings,
       runningCount: countRunningRunsForAdmission(dbRunningRunIds) - (stoppingHoldsSlot ? 1 : 0),
       memory,
+      disk,
     });
     let load: { load1: number; cpus: number } | null = null;
     try {
@@ -20429,7 +20483,7 @@ export function heartbeatService(
         );
       }
       // Republish on change, and well inside the runtime-status TTL so the
-      // "Held: ..." line stays visible while the run waits.
+      // "Waiting: ..." line stays visible while the run waits.
       if (
         prior?.message === hold.message &&
         now - prior.publishedAt < RUN_ADMISSION_RECHECK_MS * 3
@@ -20554,21 +20608,24 @@ export function heartbeatService(
         return none;
       }
 
-      // Instance-wide admission (GRE-105): global run cap, then free memory.
+      // Instance-wide admission (GRE-105): global run cap, free memory, then
+      // free disk (GRE-207).
       // A hold keeps the run queued; the re-check timer and run completion
       // drain it again. Never fail or cancel a run here.
       const admissionSettings = resolveRunAdmissionSettings(
         await instanceSettings.getGeneral(),
       );
-      const [dbRunningRunIds, memory] = await Promise.all([
+      const [dbRunningRunIds, memory, disk] = await Promise.all([
         listRunningRunIdsForAdmission(),
         memoryReader().catch(() => null),
+        diskReader().catch(() => null),
       ]);
       // No await from here until the slots are reserved below.
       const admission = evaluateRunAdmission({
         settings: admissionSettings,
         runningCount: countRunningRunsForAdmission(dbRunningRunIds),
         memory,
+        disk,
       });
       if (!admission.admit) {
         const hold = { reason: admission.reason, message: admission.message };
@@ -26019,8 +26076,9 @@ export function heartbeatService(
               });
             }
           } else if (
-            outcome === "failed" &&
-            readTransientRecoveryContractFromRun(livenessRun)
+            (outcome === "failed" &&
+              readTransientRecoveryContractFromRun(livenessRun)) ||
+            runLostToHostSleep(livenessRun)
           ) {
             await scheduleBoundedRetryForRun(livenessRun, agent);
           } else if (
@@ -26166,7 +26224,8 @@ export function heartbeatService(
           keepIdleOnFailure:
             outcome === "failed" &&
             ((finalizedRun
-              ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota"
+              ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota" ||
+                runLostToHostSleep(finalizedRun)
               : runErrorCode === "provider_quota") ||
               isWorkspaceSyncConflictFailure(adapterResult.errorMessage)),
           wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
@@ -26439,10 +26498,12 @@ export function heartbeatService(
           ) {
             await finalizeIssueCommentPolicy(livenessRun, agent);
           }
-          await scheduleInteractionContinuationInfrastructureRetryIfEligible(
-            livenessRun,
-            agent,
-          );
+          await (runLostToHostSleep(livenessRun)
+            ? scheduleBoundedRetryForRun(livenessRun, agent)
+            : scheduleInteractionContinuationInfrastructureRetryIfEligible(
+                livenessRun,
+                agent,
+              ));
           await releaseIssueExecutionAndPromote(livenessRun, {
             // Native recovery owns the original heartbeat run through
             // exhaustion. Once its durable coordinator has classified a
@@ -26498,7 +26559,8 @@ export function heartbeatService(
           wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
           keepIdleOnFailure:
             Boolean(nonRetryablePreflightFailureCode(err)) ||
-            isWorkspaceSyncConflictFailure(message),
+            isWorkspaceSyncConflictFailure(message) ||
+            runLostToHostSleep(failedRun),
         });
       }
     } catch (outerErr) {
@@ -26698,7 +26760,8 @@ export function heartbeatService(
             // No provider work began. Retry temporary host scan failures with
             // the existing durable failure budget, before releasing execution.
             // Generic recovery must not grant a second budget on exhaustion.
-            await (isTransientWorkspaceGitScanCode(livenessRun.errorCode)
+            await (isTransientWorkspaceGitScanCode(livenessRun.errorCode) ||
+              runLostToHostSleep(livenessRun)
               ? scheduleBoundedRetryForRun(livenessRun, failedAgent)
               : scheduleInteractionContinuationInfrastructureRetryIfEligible(livenessRun, failedAgent)
             ).catch((retryError) => {
@@ -26741,7 +26804,9 @@ export function heartbeatService(
             // Keep the failed run and its safe provider refusal authoritative,
             // but return the agent to idle so clients do not also announce a
             // misleading agent-wide error for the same rejected chat turn.
-            keepIdleOnFailure: Boolean(nonRetryablePreflightCode),
+            keepIdleOnFailure:
+              Boolean(nonRetryablePreflightCode) ||
+              runLostToHostSleep(failedRun),
           }).catch(() => undefined);
         }
       }

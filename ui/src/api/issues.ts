@@ -433,10 +433,12 @@ export const issuesApi = {
       selectedOptionIds?: string[];
       rememberAction?: boolean;
     },
+    options?: RequestOptions,
   ) =>
     api.post<IssueThreadInteraction>(
       `/issues/${id}/interactions/${interactionId}/accept`,
       data ?? {},
+      options,
     ),
   rejectInteraction: (id: string, interactionId: string, reason?: string) =>
     api.post<IssueThreadInteraction>(

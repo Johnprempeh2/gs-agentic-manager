@@ -26,7 +26,7 @@ describe("HiddenSettingsPageGate", () => {
   let container: HTMLDivElement;
   let root: Root | null = null;
 
-  async function renderGate(pageKey: string, health?: Record<string, unknown>) {
+  async function renderGate(pageKey: string, health?: Record<string, unknown>, redirectTo?: string) {
     root = createRoot(container);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     if (health !== undefined) {
@@ -35,7 +35,7 @@ describe("HiddenSettingsPageGate", () => {
     flushSync(() => {
       root!.render(
         <QueryClientProvider client={queryClient}>
-          <HiddenSettingsPageGate pageKey={pageKey} />
+          <HiddenSettingsPageGate pageKey={pageKey} redirectTo={redirectTo} />
         </QueryClientProvider>,
       );
     });
@@ -75,6 +75,19 @@ describe("HiddenSettingsPageGate", () => {
 
   it("renders the page when nothing is hidden at all", async () => {
     await renderGate("instance.adapters", { status: "ok" });
+
+    expect(container.querySelector('[data-testid="page-content"]')).not.toBeNull();
+  });
+
+  it("sends a hidden Releases page to the dashboard on a client edition (GRE-129)", async () => {
+    await renderGate("instance.releases", { status: "ok", hiddenSettings: ["instance.releases"] }, "/dashboard");
+
+    expect(container.querySelector('[data-testid="navigate"]')?.getAttribute("data-to")).toBe("/dashboard");
+    expect(container.querySelector('[data-testid="page-content"]')).toBeNull();
+  });
+
+  it("renders the Releases page on our own install (GRE-129)", async () => {
+    await renderGate("instance.releases", { status: "ok" }, "/dashboard");
 
     expect(container.querySelector('[data-testid="page-content"]')).not.toBeNull();
   });

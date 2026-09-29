@@ -66,13 +66,17 @@ function RunnerTurnStatus({
   startedAtMs,
   finishedAtMs,
   continuedAfterSteering = false,
+  statusMessage = null,
 }: {
   status: string;
   startedAtMs: number | null;
   finishedAtMs?: number | null;
   continuedAfterSteering?: boolean;
+  statusMessage?: string | null;
 }) {
   const terminal = isTerminalRunStatus(status);
+  // A queued run held by admission shows its hold line, not "Working" (GRE-198).
+  const waiting = status === "queued" && Boolean(statusMessage);
   useSecondTick(!terminal && startedAtMs != null);
   const elapsedMs =
     startedAtMs == null
@@ -85,7 +89,9 @@ function RunnerTurnStatus({
 
   const failed = terminalStatusFailed(status);
   const label = terminal ? (failed ? "Stopped" : "Worked") : "Working";
-  const semanticLabel = terminal
+  const semanticLabel = waiting
+    ? statusMessage
+    : terminal
     ? elapsed
       ? `${label} ${failed ? "after" : "for"} ${elapsed}`
       : label
@@ -126,6 +132,7 @@ export function TaskChatRunnerTurn({
   activityUnavailable = false,
   suppressFinal = false,
   continuedAfterSteering = false,
+  statusMessage = null,
   onRuntimeRequestDecision,
 }: {
   /** Stable identity used to clear replay-latched final text for the next turn. */
@@ -143,6 +150,8 @@ export function TaskChatRunnerTurn({
   suppressFinal?: boolean;
   /** The visible tail resumes the same native run after an accepted steer. */
   continuedAfterSteering?: boolean;
+  /** Runtime status line for the run, e.g. an admission hold. */
+  statusMessage?: string | null;
   onRuntimeRequestDecision?: (
     item: TaskChatRuntimeRequestItem,
     decision: TaskChatRuntimeRequestDecision,
@@ -222,6 +231,7 @@ export function TaskChatRunnerTurn({
           startedAtMs={startedAtMs}
           finishedAtMs={finishedAtMs}
           continuedAfterSteering={continuedAfterSteering}
+          statusMessage={statusMessage}
         />
       </div>
       {activityUnavailable ? (

@@ -723,7 +723,9 @@ async function expectForwardBranchReconciled(input: {
   expectsExistingRecordUpdate: boolean;
   expectedResolvedRecoveryActionFingerprint?: string | null;
 }) {
-  const finishedRun = await waitForRunToFinish(input.heartbeat, input.runId, 10_000);
+  // Reconcile runs several git commands; alongside workspace-runtime.test.ts
+  // they can take well over 10s, so allow a longer wait than the default.
+  const finishedRun = await waitForRunToFinish(input.heartbeat, input.runId, 40_000);
   expect(finishedRun).toMatchObject({
     status: "succeeded",
     errorCode: null,
@@ -1217,5 +1219,5 @@ describeEmbeddedPostgres("heartbeat workspace branch containment", () => {
       expectedResolvedRecoveryActionFingerprint,
     });
     expect(adapterExecute).toHaveBeenCalledTimes(1);
-  }, 30_000);
+  }, 60_000);
 });
