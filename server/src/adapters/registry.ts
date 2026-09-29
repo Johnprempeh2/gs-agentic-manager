@@ -10,6 +10,7 @@ import type { AdapterLoginCapability } from "@greatstone/adapter-utils";
 import { runAdapterExecutionTargetShellCommand } from "@greatstone/adapter-utils/execution-target";
 import {
   execute as claudeExecute,
+  recoverClaudeResultFromOutput,
   listClaudeSkills,
   syncClaudeSkills,
   listClaudeModels,
@@ -255,6 +256,7 @@ const claudeLocalAdapter: ServerAdapterModule = {
   type: "claude_local",
   runtimeToolDelivery: "native_mcp",
   execute: stampClaudeAgentIdHeader(claudeExecute),
+  recoverResultFromOutput: recoverClaudeResultFromOutput,
   testEnvironment: claudeTestEnvironment,
   acp: {
     agentId: "claude",

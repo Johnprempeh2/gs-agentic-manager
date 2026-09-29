@@ -231,7 +231,12 @@ export interface AdapterExecutionContext {
    * remote operation.
    */
   onDispatch?: () => void;
-  onSpawn?: (meta: { pid: number; processGroupId: number | null; startedAt: string }) => Promise<void>;
+  onSpawn?: (meta: AdapterSpawnMeta) => Promise<void>;
+  /**
+   * Where a local child may write its stdout/stderr files. Set by the server
+   * for adapters that implement `recoverResultFromOutput`.
+   */
+  outputCapture?: { dir: string } | null;
   authToken?: string;
   /**
    * The injected OpenTelemetry startup trace context (tracer + root
@@ -450,9 +455,29 @@ export interface AcpTargetDescriptor {
   };
 }
 
+export interface AdapterSpawnMeta {
+  pid: number;
+  processGroupId: number | null;
+  startedAt: string;
+  /** Files that hold the child's stdout/stderr when output capture is on. */
+  outputCapture?: { stdoutPath: string; stderrPath: string } | null;
+  /** Adapter data needed to rebuild the result from the captured output. */
+  recoveryContext?: Record<string, unknown> | null;
+}
+
 export interface ServerAdapterModule {
   type: string;
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
+  /**
+   * Optional: rebuild the result of a child that a new server adopted after a
+   * hot restart, from its captured output. Return null when the output has no
+   * terminal result; the run then stays lost.
+   */
+  recoverResultFromOutput?: (input: {
+    stdout: string;
+    stderr: string;
+    recoveryContext: Record<string, unknown> | null;
+  }) => AdapterExecutionResult | null;
   testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<AdapterEnvironmentTestResult>;
   acp?: AcpTargetDescriptor;
   listSkills?: (ctx: AdapterSkillContext) => Promise<AdapterSkillSnapshot>;
