@@ -47,6 +47,7 @@ import { applyTaskDrain, getTaskDrainStatus, stopTaskDrain } from "./heartbeat.j
 import { issueService } from "./issues.js";
 import { announceLiveRelease } from "./live-release-announce.js";
 import { readHotRestartReportSync, type HotRestartReport } from "./hot-restart.js";
+import { getStartupRecoveryState } from "../startup-recovery-state.js";
 import { hasOwnReleaseNotes, parseReleaseNotes, type ReleaseNotes } from "./release-notes.js";
 import {
   LIVE_TAG_RE,
@@ -297,6 +298,8 @@ export interface LiveReleaseDeps {
   /** The main commit last fetched (origin/main), without fetching. */
   readMainCommit(repo: string): Promise<string | null>;
   readRestartReport(): HotRestartReport | null;
+  /** True once this server finished startup recovery (hot-restart adoption writes its report before that). */
+  startupRecoveryReady(): boolean;
   /** Agent names and issue identifiers for the flagged-run list. */
   describeRuns(runIds: string[]): Promise<Map<string, { agentName: string | null; issueIdentifier: string | null }>>;
   findRun(runId: string): Promise<{ companyId: string; agentId: string; status: string } | null>;
@@ -712,9 +715,12 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       const result = readJson<LiveReleaseResult>(path.join(dir, "result.json"));
       if (result) {
         const report = deps.readRestartReport();
-        if (report && job.launcherStartedAt && Date.parse(report.requestedAt) >= Date.parse(job.launcherStartedAt)) {
-          job.restartReport = summarizeRestartReport(report);
-        }
+        const fresh = report && job.launcherStartedAt && Date.parse(report.requestedAt) >= Date.parse(job.launcherStartedAt);
+        // The launcher writes result.json once health shows the new process,
+        // which can be before this server's startup recovery has adopted the
+        // runs and written the report (GRE-242). Wait for it; the next tick records.
+        if (!fresh && !deps.startupRecoveryReady()) return;
+        if (fresh) job.restartReport = summarizeRestartReport(report);
         job.liveTag = result.outcome === "released" ? (result.liveTag ?? (job.kind === "rollback" ? job.tag : null)) : null;
         job.previousTag = result.previousTag ?? job.previousTag;
         const state = stateOfResult(result);
@@ -1193,6 +1199,7 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
     readTags: readReleaseTags,
     readMainCommit: async (repo) => git(repo, ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]),
     readRestartReport: () => readHotRestartReportSync(),
+    startupRecoveryReady: () => getStartupRecoveryState().phase === "ready",
     describeRuns: async (runIds) => {
       const out = new Map<string, { agentName: string | null; issueIdentifier: string | null }>();
       if (runIds.length === 0) return out;

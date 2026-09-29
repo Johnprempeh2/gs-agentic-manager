@@ -635,6 +635,57 @@ describe("startServer feedback export wiring", () => {
     }
   });
 
+  it("runs hot-restart adoption under a release hold and defers admission work until it lifts (GRE-242)", async () => {
+    loadConfigMock.mockReturnValue(buildTestConfig({
+      heartbeatSchedulerEnabled: true,
+      heartbeatSchedulerIntervalMs: 30000,
+    }));
+    // The release hold file restored at startup puts the task drain on.
+    resolveHeartbeatSchedulingSuppressionMock.mockReturnValue({
+      suppressed: true,
+      reason: "task_drain",
+    });
+    let intervalCallback: (() => void) | null = null;
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation(((callback: () => void) => {
+        intervalCallback = callback;
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      }) as typeof setInterval);
+
+    try {
+      await startServer();
+
+      expect(heartbeatServiceMock.recoverNativeRunsAfterRestart).toHaveBeenCalledTimes(1);
+      expect(heartbeatServiceMock.reconcileHotRestartAdoption).toHaveBeenCalledTimes(1);
+      expect(heartbeatServiceMock.reapOrphanedRuns).toHaveBeenCalledTimes(1);
+      expect(heartbeatServiceMock.resumeQueuedRuns).not.toHaveBeenCalled();
+      expect(heartbeatServiceMock.recoverActiveSessionGoals).not.toHaveBeenCalled();
+      expect(heartbeatServiceMock.tickTimers).not.toHaveBeenCalled();
+
+      // Still held: the periodic recovery waits.
+      intervalCallback?.();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(heartbeatServiceMock.resumeQueuedRuns).not.toHaveBeenCalled();
+
+      // The release reports and lifts the hold: the deferred session-goal
+      // recovery runs once with the periodic recovery.
+      resolveHeartbeatSchedulingSuppressionMock.mockReturnValue({ suppressed: false, reason: null });
+      intervalCallback?.();
+      await vi.waitFor(() => expect(heartbeatServiceMock.recoverActiveSessionGoals).toHaveBeenCalledTimes(1));
+      expect(heartbeatServiceMock.recoverPendingSessionGoalActions).toHaveBeenCalledTimes(1);
+      expect(heartbeatServiceMock.resumeQueuedRuns).toHaveBeenCalledTimes(1);
+
+      intervalCallback?.();
+      await vi.waitFor(() => expect(heartbeatServiceMock.resumeQueuedRuns).toHaveBeenCalledTimes(2));
+      expect(heartbeatServiceMock.recoverActiveSessionGoals).toHaveBeenCalledTimes(1);
+      // Adoption is startup-only.
+      expect(heartbeatServiceMock.reconcileHotRestartAdoption).toHaveBeenCalledTimes(1);
+    } finally {
+      setIntervalSpy.mockRestore();
+    }
+  });
+
   it("keeps external object refresh active when heartbeat scheduling is disabled", async () => {
     loadConfigMock.mockReturnValue(buildTestConfig({
       heartbeatSchedulerEnabled: false,

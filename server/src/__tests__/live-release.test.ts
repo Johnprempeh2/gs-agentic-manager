@@ -34,6 +34,7 @@ let mainCommit: string;
 let forkCi: "passed" | "failed" | "pending" | "unknown";
 let candidates: Array<{ tag: string; title: string; since: string | null; print: boolean }>;
 let restartReport: HotRestartReport | null;
+let recoveryReady: boolean;
 let tags: ReleaseTagInfo[];
 let stableTagsMade: Array<{ tag: string; commit: string; notes: string }>;
 let deletedTags: string[];
@@ -98,6 +99,7 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
     readTags: async () => tags,
     readMainCommit: async () => mainCommit,
     readRestartReport: () => restartReport,
+    startupRecoveryReady: () => recoveryReady,
     describeRuns: async (ids) => new Map(ids.map((id) => [id, { agentName: "Ridge", issueIdentifier: "GRE-99" }])),
     findRun: async () => null,
     findAgent: async () => null,
@@ -166,6 +168,7 @@ beforeEach(() => {
   forkCi = "passed";
   candidates = [];
   restartReport = null;
+  recoveryReady = true;
   tags = [];
   stableTagsMade = [];
   deletedTags = [];
@@ -429,6 +432,33 @@ describe("progress after the switch", () => {
     const overview = await createLiveReleaseService(deps()).overview("co-1");
     expect(overview.history[0]).toMatchObject({ tag: "live-2026-09-27.1", title: "Title", releasedBy: "john", changelog: { features: ["A (#1, GRE-1)"], fixes: [] } });
     expect(overview.history[0].restartReport?.lostRunIds).toEqual(["run-lost"]);
+  });
+
+  it("waits for startup recovery to write the hot-restart report before it records the outcome (GRE-242)", async () => {
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    advance(60_000);
+    recoveryReady = false;
+    writeResult(launches[0].jobDir, { outcome: "released", liveTag: "live-2026-09-27.1" });
+    await svc.tick();
+    expect(svc.listJobs()[0].state).toBe("switching");
+    expect(lifted).toHaveLength(0);
+
+    restartReport = report();
+    recoveryReady = true;
+    await svc.tick();
+    const [job] = svc.listJobs();
+    expect(job.state).toBe("healthy");
+    expect(job.restartReport?.resumedRunIds).toEqual(["run-adopted", "run-acp"]);
+    expect(lifted).toHaveLength(1);
+  });
+
+  it("records the outcome without a report once startup recovery is done", async () => {
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    writeResult(launches[0].jobDir, { outcome: "released", liveTag: "live-2026-09-27.1" });
+    await svc.tick();
+    expect(svc.listJobs()[0]).toMatchObject({ state: "healthy", restartReport: null });
   });
 
   it("ignores a hot-restart report from before this release", async () => {

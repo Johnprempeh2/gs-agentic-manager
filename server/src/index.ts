@@ -1450,15 +1450,44 @@ async function startServerWithDatabaseTeardown(
       "worktree run-execution cutoff state",
     );
     const heartbeatSchedulingSuppression = await heartbeat.resolveSchedulingSuppression();
+    // A release hold (task drain) holds new run admission only (GRE-242). The
+    // restart recovery re-attaches runs that lived through the hot restart and
+    // writes hot-restart-report.json, so it runs under the hold too. Admission
+    // work waits: the periodic recovery runs it once the hold lifts, and the
+    // session-goal recovery below is deferred to that first tick.
+    const startupRestartRecoveryAllowed =
+      !heartbeatSchedulingSuppression.suppressed ||
+      heartbeatSchedulingSuppression.reason === "task_drain";
+    let sessionGoalRecoveryDeferred = false;
+    const recoverSessionGoals = async (phase: "startup" | "deferred") => {
+      const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
+      if (
+        recoveredGoalActions.enqueued > 0 ||
+        recoveredGoalActions.invalid > 0
+      ) {
+        logger.warn(
+          { ...recoveredGoalActions, phase },
+          "startup session-goal action outbox recovery reconciled pending controls",
+        );
+      }
+      const recoveredGoals = await heartbeat.recoverActiveSessionGoals();
+      if (recoveredGoals.enqueued > 0) {
+        logger.warn(
+          { ...recoveredGoals, phase },
+          "startup session-goal recovery resumed durable agent goals",
+        );
+      }
+    };
 
-    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
-    // into a dead "running" row during startup recovery.
     if (heartbeatSchedulingSuppression.suppressed) {
       logger.warn(
         { reason: heartbeatSchedulingSuppression.reason },
         "heartbeat scheduling suppressed for this runtime instance",
       );
-    } else {
+    }
+    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
+    // into a dead "running" row during startup recovery.
+    if (startupRestartRecoveryAllowed) {
       const startupHeartbeatRecovery = (async () => {
         // Legacy remote recovery releases sandbox leases. Wait for provider
         // workers before cleanup or retry admission, including unmanaged installs.
@@ -1524,25 +1553,14 @@ async function startServerWithDatabaseTeardown(
           }
         }
 
+        if (heartbeatSchedulingSuppression.suppressed) {
+          sessionGoalRecoveryDeferred = true;
+          return;
+        }
+
         const promotion = await heartbeat.promoteDueScheduledRetries();
         await heartbeat.resumeQueuedRuns();
-        const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
-        if (
-          recoveredGoalActions.enqueued > 0 ||
-          recoveredGoalActions.invalid > 0
-        ) {
-          logger.warn(
-            recoveredGoalActions,
-            "startup session-goal action outbox recovery reconciled pending controls",
-          );
-        }
-        const recoveredGoals = await heartbeat.recoverActiveSessionGoals();
-        if (recoveredGoals.enqueued > 0) {
-          logger.warn(
-            recoveredGoals,
-            "startup session-goal recovery resumed durable agent goals",
-          );
-        }
+        await recoverSessionGoals("startup");
         const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
         if (
           promotion.promoted > 0 ||
@@ -1803,6 +1821,10 @@ async function startServerWithDatabaseTeardown(
             .then(() => heartbeat.promoteDueScheduledRetries())
             .then(async (promotion) => {
               await heartbeat.resumeQueuedRuns();
+              if (sessionGoalRecoveryDeferred) {
+                await recoverSessionGoals("deferred");
+                sessionGoalRecoveryDeferred = false;
+              }
               const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
               if (
                 promotion.promoted > 0 ||
