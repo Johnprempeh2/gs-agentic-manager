@@ -29,6 +29,7 @@ import { HttpError } from "../../../errors.js";
 import { evaluateAgentInvokabilityFromDb } from "../../../services/agent-invokability.js";
 import { issueTreeControlService, isVerifiedIssueTreeControlInteractionWake } from "../../../services/issue-tree-control.js";
 import { isAutomaticRecoverySuppressedByPauseHold } from "../../../services/recovery/pause-hold-guard.js";
+import { isReviewerWaitingOnCheck } from "../../../services/recovery/review-wait.js";
 import { classifyContinuationFailure } from "../../../services/recovery/service.js";
 import { issueService } from "../../../services/issues.js";
 import { issueRecoveryActionService } from "../../../services/issue-recovery-actions.js";
@@ -537,6 +538,10 @@ function buildTransaction(tx: Db, deps: WakeQueuePostgresAdapterDeps, db: Db, ru
         .limit(1)
         .then((rows) => rows[0] ?? null);
       return row !== null;
+    },
+
+    async isReviewerWaitingOnCheck(input) {
+      return isReviewerWaitingOnCheck(tx, input);
     },
 
     async hasExplicitBlockerPath({ companyId, issueId }) {

@@ -1,11 +1,13 @@
 import { Router } from "express";
 import type { Db } from "@greatstone/db";
 import {
+  createCompanySubscriptionSchema,
   createCostEventSchema,
   createFinanceEventSchema,
   normalizeIssueIdentifier,
   resolveBudgetIncidentSchema,
   updateBudgetSchema,
+  updateCompanySubscriptionSchema,
   upsertBudgetPolicySchema,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
@@ -223,6 +225,97 @@ export function costRoutes(
     const range = parseCostDateRange(req.query);
     const rows = await costs.byBiller(companyId, range);
     res.json(rows);
+  });
+
+  router.get("/companies/:companyId/costs/api-equivalent", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    const range = parseCostDateRange(req.query);
+    const summary = await costs.apiEquivalent(companyId, range);
+    res.json(summary);
+  });
+
+  router.get("/companies/:companyId/costs/subscriptions", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    res.json(await costs.listSubscriptions(companyId));
+  });
+
+  router.post(
+    "/companies/:companyId/costs/subscriptions",
+    validate(createCompanySubscriptionSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      const subscription = await costs.createSubscription(companyId, req.body);
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "company.subscription_created",
+        entityType: "company",
+        entityId: companyId,
+        details: {
+          subscriptionId: subscription.id,
+          provider: subscription.provider,
+          plan: subscription.plan,
+          monthlyPriceCents: subscription.monthlyPriceCents,
+        },
+      });
+      res.status(201).json(subscription);
+    },
+  );
+
+  router.patch(
+    "/companies/:companyId/costs/subscriptions/:subscriptionId",
+    validate(updateCompanySubscriptionSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      const subscription = await costs.updateSubscription(companyId, req.params.subscriptionId as string, req.body);
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "company.subscription_updated",
+        entityType: "company",
+        entityId: companyId,
+        details: {
+          subscriptionId: subscription.id,
+          provider: subscription.provider,
+          plan: subscription.plan,
+          monthlyPriceCents: subscription.monthlyPriceCents,
+        },
+      });
+      res.json(subscription);
+    },
+  );
+
+  router.delete("/companies/:companyId/costs/subscriptions/:subscriptionId", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    assertBoard(req);
+    const subscription = await costs.deleteSubscription(companyId, req.params.subscriptionId as string);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "company.subscription_deleted",
+      entityType: "company",
+      entityId: companyId,
+      details: { subscriptionId: subscription.id, provider: subscription.provider, plan: subscription.plan },
+    });
+    res.json(subscription);
   });
 
   router.get("/companies/:companyId/costs/finance-summary", async (req, res) => {

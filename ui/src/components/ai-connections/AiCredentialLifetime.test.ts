@@ -21,4 +21,13 @@ describe("describeAiCredentialLifetime (GRE-15)", () => {
     expect(describeAiCredentialLifetime(undefined, now)).toBeNull();
     expect(describeAiCredentialLifetime({ source: "setup_token", expiresAt: null }, now)?.text).toContain("about a year");
   });
+  it("warns that a Claude subscription saved without a credential record has an unknown expiry (GRE-43)", () => {
+    const lifetime = describeAiCredentialLifetime(undefined, now, { provider: "anthropic", method: "subscription" });
+    expect(lifetime?.tone).toBe("warning");
+    expect(lifetime?.text).toContain("expiry unknown");
+    expect(lifetime?.text).toContain("Reconnect");
+    expect(lifetime?.text).toContain("claude setup-token");
+    expect(describeAiCredentialLifetime(undefined, now, { provider: "anthropic", method: "api_key" })).toBeNull();
+    expect(describeAiCredentialLifetime(undefined, now, { provider: "openai", method: "subscription" })).toBeNull();
+  });
 });

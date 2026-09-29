@@ -195,6 +195,40 @@ export function decideWakeOutcome(facts: DeferredWakeOutcomeFacts): DeferredWake
   return { kind: "promote" };
 }
 
+/** Context `source` values of the wakes the stranded-work recovery sweep queues. */
+const RECOVERY_WAKE_SOURCES: ReadonlySet<string> = new Set([
+  "issue.assignment_recovery",
+  "issue.continuation_recovery",
+  "issue.deliberate_wait_disposition_repair",
+  "issue.execution_review_recovery",
+  "issue.interaction_continuation_recovery",
+  "issue.productive_terminal_continuation_recovery",
+  "issue.successful_run_handoff_interrupted_retry",
+]);
+
+export type RecoveryOnlyWakeFacts = {
+  /** `source` of the deferred wake's context. A wake merged in later overwrites it with its own source. */
+  contextSource: string | null;
+  requestedByActorType: "user" | "agent" | "system" | null;
+  /** True when the wake carries any queued or context comment id. */
+  hasCommentIds: boolean;
+};
+
+/**
+ * True when a deferred wake is only a recovery nudge: queued by the system
+ * recovery sweep, with no comment and no other wake merged into it. Such a
+ * wake adds nothing while the issue waits on a pending card that already
+ * wakes the assignee when answered (GRE-51).
+ */
+export function isRecoveryOnlyWake(facts: RecoveryOnlyWakeFacts): boolean {
+  return (
+    facts.requestedByActorType === "system" &&
+    !facts.hasCommentIds &&
+    facts.contextSource !== null &&
+    RECOVERY_WAKE_SOURCES.has(facts.contextSource)
+  );
+}
+
 /** Shared between the review-participant and immediate branches; the caller derives every field from the same expression regardless of which branch applies. */
 export type ReleaseRecoverySharedFacts = {
   hasExistingExecutionPath: boolean;
@@ -216,6 +250,12 @@ export type ReleaseRecoveryReviewParticipantFacts = {
   applies: boolean;
   /** True when the finishing run was itself a review-participant-recovery retry. */
   isExecutionReviewParticipantRecoveryRun: boolean;
+  /**
+   * The reviewer is waiting, not stalled (GRE-97): it commented recently or a
+   * child/blocker check issue is being worked, within the retry budget.
+   * Only read when the retry run ended without a decision.
+   */
+  reviewerWaitingOnCheck: boolean;
 };
 
 export type ReleaseRecoveryImmediateFacts = {
@@ -251,6 +291,8 @@ export type ReleaseRecoveryDecision =
   | { kind: "blocked_recovery_in_place" }
   | { kind: "blocked"; notice: ReleaseRecoveryBlockedNoticeKind }
   | { kind: "queue_review_participant_recovery" }
+  /** Wake the reviewer again later through a scheduled monitor instead of blocking. */
+  | { kind: "defer_review_wait" }
   | { kind: "queue_recovery" };
 
 export type ImmediateRecoveryContextLabels = {
@@ -395,11 +437,13 @@ export function decideReleaseRecovery(facts: ReleaseRecoveryFacts): ReleaseRecov
     if (shared.isStrandedRecoveryOrigin) {
       return { kind: "blocked_recovery_in_place" };
     }
-    const shouldBlock =
-      !shared.recoveryAgentInvokable ||
-      !shared.recoveryAgentPresent ||
-      reviewParticipant.isExecutionReviewParticipantRecoveryRun;
-    if (shouldBlock) {
+    if (!shared.recoveryAgentInvokable || !shared.recoveryAgentPresent) {
+      return { kind: "blocked", notice: "execution_review_participant" };
+    }
+    if (reviewParticipant.isExecutionReviewParticipantRecoveryRun) {
+      // The retry also ended without a decision. A reviewer waiting on CI or
+      // a check is not a stall (GRE-97): wake it again later instead.
+      if (reviewParticipant.reviewerWaitingOnCheck) return { kind: "defer_review_wait" };
       return { kind: "blocked", notice: "execution_review_participant" };
     }
     return { kind: "queue_review_participant_recovery" };

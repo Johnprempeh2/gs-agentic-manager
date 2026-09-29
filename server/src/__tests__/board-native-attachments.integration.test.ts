@@ -283,6 +283,66 @@ describe("Board upload receipt to native wake staging", () => {
     expect(wake?.comments[0]?.attachments ?? []).toEqual([]);
   });
 
+  it("lists New Task uploads on the assignment wake issue", async () => {
+    const { attachment, bytes } = await upload("brief.txt");
+    const wake = await buildPaperclipWakePayload({
+      db,
+      companyId,
+      agentId,
+      contextSnapshot: { issueId, wakeReason: "issue_assigned" },
+    });
+    expect(wake?.issue?.attachments).toEqual([
+      {
+        id: attachment.id,
+        filename: "brief.txt",
+        contentType: "text/plain",
+        byteSize: bytes.length,
+        contentPath: `/api/attachments/${attachment.id}/content`,
+      },
+    ]);
+    expect(wake?.truncated).toBe(false);
+  });
+
+  it("keeps task uploads on the issue and comment uploads on the comment", async () => {
+    const { attachment: taskFile } = await upload("task.txt");
+    const { attachment: commentFile } = await upload("comment.txt");
+    const response = await request(app)
+      .post(`/api/issues/${issueId}/comments`)
+      .send({ body: "See the new file.", attachmentIds: [commentFile.id] });
+    expect(response.status).toBe(201);
+    const wake = await buildPaperclipWakePayload({
+      db,
+      companyId,
+      agentId,
+      contextSnapshot: mergeCoalescedContextSnapshot(
+        {},
+        { issueId, wakeCommentId: response.body.id },
+      ),
+    });
+    expect(wake?.issue?.attachments).toEqual([
+      expect.objectContaining({ id: taskFile.id, filename: "task.txt" }),
+    ]);
+    expect(wake?.comments[0]?.attachments).toEqual([
+      expect.objectContaining({ id: commentFile.id, filename: "comment.txt" }),
+    ]);
+    expect(wake?.truncated).toBe(false);
+  });
+
+  it("applies the shared attachment cap and truncated flag to task uploads", async () => {
+    for (let index = 0; index < 21; index += 1) {
+      await upload(`file-${index}.txt`);
+    }
+    const wake = await buildPaperclipWakePayload({
+      db,
+      companyId,
+      agentId,
+      contextSnapshot: { issueId, wakeReason: "issue_assigned" },
+    });
+    expect(wake?.issue?.attachments).toHaveLength(20);
+    expect(wake?.truncated).toBe(true);
+    expect(wake?.fallbackFetchNeeded).toBe(true);
+  });
+
   it.each([
     "foreign_task",
     "foreign_company",

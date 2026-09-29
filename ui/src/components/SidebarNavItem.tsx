@@ -130,7 +130,7 @@ export function SidebarNavItem({
           "gs-nav-item",
           (active ?? isActive)
             ? "gs-nav-item-active bg-sidebar-accent text-sidebar-accent-foreground"
-            : "text-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           className,
         )
       }

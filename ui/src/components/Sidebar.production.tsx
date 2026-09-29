@@ -86,14 +86,10 @@ export function Sidebar() {
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   const goalsLinkPending = experimentalSettings === undefined;
   const showGoalsLink = experimentalSettings?.enableGoalsSidebarLink === true;
-  // Decisions (attention home) is an experimental surface (PAP-13481): the nav
-  // item is hidden entirely until the flag is enabled (same no-flash pattern as
-  // showWorkspacesLink — it defaults hidden, so no placeholder is needed).
-  const showDecisions = experimentalSettings?.enableDecisions === true;
   const { data: attentionFeed } = useQuery({
     queryKey: queryKeys.attention(selectedCompanyId!),
     queryFn: () => attentionApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && showDecisions,
+    enabled: !!selectedCompanyId,
     refetchInterval: 60_000,
   });
   const attentionCount = attentionBadgeCount(attentionFeed);
@@ -165,15 +161,16 @@ export function Sidebar() {
             alert={inboxBadge.failedRuns > 0}
           />
           <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />
-          {showDecisions ? (
-            <SidebarNavItem
-              to="/decisions"
-              label="Decisions"
-              icon={ListChecks}
-              badge={attentionCount}
-              badgeLabel="decisions"
-            />
-          ) : null}
+          {/* Decisions (attention home, PAP-13481) graduated out of
+              Experimental (GRE-66): always shown, whatever the stored
+              enableDecisions value says. */}
+          <SidebarNavItem
+            to="/decisions"
+            label="Decisions"
+            icon={ListChecks}
+            badge={attentionCount}
+            badgeLabel="decisions"
+          />
           {showStatusCards ? (
             <SidebarNavItem to="/status" label="Status" icon={LayoutGrid} textBadge="beta" />
           ) : null}

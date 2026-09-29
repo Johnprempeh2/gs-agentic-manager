@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   UserCheck,
   Users,
+  Rocket,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -49,6 +50,8 @@ import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarBrandSignature } from "./SidebarBrandSignature";
+import { SidebarReleaseFooter } from "./SidebarReleaseFooter";
+import { useCanRelease } from "../hooks/useReleases";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { primarySidebarStyles } from "./primary-sidebar-styles";
 
@@ -64,6 +67,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const rail = collapsed && !peeking;
   const inboxBadge = useInboxBadge(selectedCompanyId);
+  // Releasing is the board's decision (GRE-119): agents never see the page.
+  const { canRelease } = useCanRelease(selectedCompanyId);
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -96,14 +101,10 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   const goalsLinkPending = experimentalSettings === undefined;
   const showGoalsLink = experimentalSettings?.enableGoalsSidebarLink === true;
-  // Decisions (attention home) is an experimental surface (PAP-13481): the nav
-  // item is hidden entirely until the flag is enabled (same no-flash pattern as
-  // showWorkspacesLink — it defaults hidden, so no placeholder is needed).
-  const showDecisions = experimentalSettings?.enableDecisions === true;
   const { data: attentionFeed } = useQuery({
     queryKey: queryKeys.attention(selectedCompanyId!),
     queryFn: () => attentionApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && showDecisions,
+    enabled: !!selectedCompanyId,
     refetchInterval: 60_000,
   });
   const attentionCount = attentionBadgeCount(attentionFeed);
@@ -146,7 +147,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
                 data-slot="icon-button"
                 aria-label={rail ? "New Task" : undefined}
                 className={cn(
-                  "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring",
                 )}
               >
                 <SquarePen className="h-4 w-4 shrink-0" />
@@ -178,15 +179,16 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             alert={inboxBadge.failedRuns > 0}
           />
           <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />
-          {showDecisions ? (
-            <SidebarNavItem
-              to="/decisions"
-              label="Decisions"
-              icon={ListChecks}
-              badge={attentionCount}
-              badgeLabel="decisions"
-            />
-          ) : null}
+          {/* Decisions (attention home, PAP-13481) graduated out of
+              Experimental (GRE-66): always shown, whatever the stored
+              enableDecisions value says. */}
+          <SidebarNavItem
+            to="/decisions"
+            label="Decisions"
+            icon={ListChecks}
+            badge={attentionCount}
+            badgeLabel="decisions"
+          />
           {showStatusCards ? (
             <SidebarNavItem to="/status" label="Status" icon={LayoutGrid} textBadge="beta" />
           ) : null}
@@ -247,6 +249,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
             <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
             <SidebarNavItem to="/activity" label="Audit" icon={History} />
+            {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
           </SidebarSection>
         ) : null}
 
@@ -268,6 +271,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
               <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
               <SidebarNavItem to="/activity" label="Activity" icon={History} />
+              {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
               <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
             </SidebarSection>
           </>
@@ -281,6 +285,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           missingBehavior="placeholder"
         />
         <SidebarBrandSignature rail={rail} />
+        <SidebarReleaseFooter companyId={selectedCompanyId} rail={rail} />
       </nav>
     </aside>
   );

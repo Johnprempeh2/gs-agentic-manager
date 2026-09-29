@@ -5,6 +5,7 @@ import {
   decideWakeAdmission,
   decideWakeOutcome,
   deriveImmediateRecoveryContextLabels,
+  isRecoveryOnlyWake,
 } from "../domain/policy.js";
 import {
   EXECUTION_REVIEW_PARTICIPANT_RECOVERY_RETRY_REASON,
@@ -191,6 +192,29 @@ async function runReleaseDrain(
         companyId: run.companyId,
         wakeId: candidate.id,
         reason: "Delegation closing note refers to completed child work",
+        now: input.now,
+      });
+      continue;
+    }
+
+    // A recovery wake can wait behind a run for minutes. If that run posted
+    // a card that wakes the assignee on answer, the card is now the issue's
+    // next step and the recovery wake would only cost a "no change" run
+    // (GRE-51). This is the same pending-card check the release tail uses
+    // (GRE-35). Once the card expires or is withdrawn, the sweep recovers
+    // the issue again.
+    if (
+      isRecoveryOnlyWake({
+        contextSource: readNonEmptyString(candidate.deferredContextSeed.source),
+        requestedByActorType: candidate.requestedByActorType,
+        hasCommentIds: candidate.queuedCommentIds.length > 0 || candidate.deferredCommentIds.length > 0,
+      }) &&
+      await ports.transaction.hasPendingWakeInteraction({ companyId: run.companyId, issueId: issue.id })
+    ) {
+      await ports.transaction.cancelDeferredWake({
+        companyId: run.companyId,
+        wakeId: candidate.id,
+        reason: "Recovery wake not needed: the issue waits on a pending card that wakes the assignee",
         now: input.now,
       });
       continue;
@@ -553,6 +577,28 @@ async function runReleaseRecoveryTail(
         })
       : false;
 
+  // Read only where the review lane would otherwise block a retry that ended
+  // without a decision (GRE-97): a reviewer that just commented it waits on
+  // CI, or has a check issue being worked, is woken again later instead.
+  const reviewerWaitingOnCheck =
+    reviewParticipantApplies &&
+    currentParticipant !== null &&
+    isExecutionReviewParticipantRecoveryRun(run) &&
+    !suppressImmediateRecovery &&
+    !hasExistingExecutionPath &&
+    !issue.monitorNextCheckAt &&
+    !hasPendingWakeInteraction &&
+    !suppressedByPauseHold &&
+    !isStrandedRecoveryOrigin &&
+    recoveryAgent?.invokable === true
+      ? await transaction.isReviewerWaitingOnCheck({
+          companyId: issue.companyId,
+          issueId: issue.id,
+          reviewerAgentId: currentParticipant.agentId,
+          now: input.now,
+        })
+      : false;
+
   const hasExplicitBlockerPath =
     immediateApplies && !reviewParticipantApplies
       ? await transaction.hasExplicitBlockerPath({
@@ -593,6 +639,7 @@ async function runReleaseRecoveryTail(
       applies: reviewParticipantApplies,
       isExecutionReviewParticipantRecoveryRun:
         isExecutionReviewParticipantRecoveryRun(run),
+      reviewerWaitingOnCheck,
     },
     immediate: {
       applies: immediateApplies,
@@ -631,6 +678,15 @@ async function runReleaseRecoveryTail(
         issue,
         previousStatus: statusForBlock(issue),
       },
+      postCommitEffects,
+    };
+  }
+
+  if (decision.kind === "defer_review_wait") {
+    // Unreachable without a participant: the fact is false when there is none.
+    if (!currentParticipant) return { outcome: { kind: "released" }, postCommitEffects };
+    return {
+      outcome: { kind: "review_wait_deferred", issue, reviewerAgentId: currentParticipant.agentId },
       postCommitEffects,
     };
   }
@@ -987,6 +1043,12 @@ export function createReleaseIssueExecution(deps: {
         issue: result.outcome.issue,
         previousStatus: result.outcome.previousStatus,
         latestRun: result.run,
+      });
+    } else if (result.outcome.kind === "review_wait_deferred") {
+      await deps.recovery.scheduleReviewWaitMonitor({
+        issue: result.outcome.issue,
+        latestRun: result.run,
+        reviewerAgentId: result.outcome.reviewerAgentId,
       });
     }
 

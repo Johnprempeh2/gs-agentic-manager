@@ -209,6 +209,8 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       backupRetention: parsed.data.backupRetention ?? DEFAULT_BACKUP_RETENTION,
       // Absent => unrestricted; only carry through an explicit policy.
       ...(parsed.data.executionMode ? { executionMode: parsed.data.executionMode } : {}),
+      // Absent => server defaults; only carry through explicit limits.
+      ...(parsed.data.runAdmission ? { runAdmission: parsed.data.runAdmission } : {}),
     };
   }
   return {
@@ -249,7 +251,7 @@ export function normalizeExperimentalSettings(raw: unknown): InstanceExperimenta
       enableBetaSkills: parsed.data.enableBetaSkills ?? false,
       enableSummaries: parsed.data.enableSummaries ?? false,
       enableStatusCards: parsed.data.enableStatusCards ?? false,
-      enableDecisions: parsed.data.enableDecisions ?? false,
+      enableDecisions: parsed.data.enableDecisions ?? true,
       enableGoalsSidebarLink: parsed.data.enableGoalsSidebarLink ?? false,
       enableServerInfoDebugView: parsed.data.enableServerInfoDebugView ?? false,
       enablePaperclipDeveloperMode: parsed.data.enablePaperclipDeveloperMode ?? false,
@@ -292,7 +294,7 @@ export function normalizeExperimentalSettings(raw: unknown): InstanceExperimenta
     enableBetaSkills: false,
     enableSummaries: false,
     enableStatusCards: false,
-    enableDecisions: false,
+    enableDecisions: true,
     enableGoalsSidebarLink: false,
     enableServerInfoDebugView: false,
     enablePaperclipDeveloperMode: false,

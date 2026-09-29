@@ -37,9 +37,11 @@ export function getAttachmentBackedWorkProductAttachmentIds(
 }
 
 /**
- * Agent-authored attachments minus the ones already promoted to
- * attachment-backed work products (`metadata.attachmentId`), so the Artifacts
- * tab lists each file once.
+ * Attachments the Artifacts surfaces own: agent-authored files plus any file
+ * not bound to a comment (e.g. New Task dialog uploads, GRE-41), which the
+ * thread never renders. Comment uploads stay thread-only. Files already
+ * promoted to attachment-backed work products (`metadata.attachmentId`) are
+ * dropped so each file is listed once.
  */
 export function selectAgentArtifactAttachments(
   attachments: IssueAttachment[] | null | undefined,
@@ -47,7 +49,8 @@ export function selectAgentArtifactAttachments(
 ): IssueAttachment[] {
   const promoted = getAttachmentBackedWorkProductAttachmentIds(workProducts);
   return (attachments ?? []).filter(
-    (attachment) => isAgentAttachment(attachment) && !promoted.has(attachment.id),
+    (attachment) =>
+      (isAgentAttachment(attachment) || !attachment.issueCommentId) && !promoted.has(attachment.id),
   );
 }
 

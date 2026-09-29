@@ -248,6 +248,23 @@ no healthy connection. Preview-era Codex/Grok managed connections without the
 isolated-subscription marker require reconnect before another managed execution;
 unmanaged legacy agents retain their existing authentication paths.
 
+### Claude token expiry
+
+Connect time stores a credential record (`config.aiCredential`: source and
+expiry, never the token). The connection page and Inbox warn from it an hour
+before a known expiry and once it has expired. A Claude subscription saved before
+this record existed has none, so nothing can warn before its token stops. Its
+connection page says "Token expiry unknown". To fix it, open the connection and
+click **Reconnect**. Reconnect keeps the connection ID and agent bindings and
+writes the record:
+
+- A local reconnect imports the current Claude Code login. The page then shows
+  "Short-lived token copied from your Claude login" with its expiry, and warns an
+  hour before it. Run `claude auth login` first if that login has lapsed.
+- For a token that lasts about a year, sign in through `claude setup-token` (the
+  setup-token sign-in on a sandbox environment). The page then reads "Long-lived
+  token from claude setup-token".
+
 ## Verification
 
 `server/src/__tests__/ai-connections.test.ts` exercises storage, isolation,

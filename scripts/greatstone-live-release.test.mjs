@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,8 @@ set -euo pipefail
 source "$(dirname "\${BASH_SOURCE[0]}")/greatstone-common.sh"
 TAG="$1"
 echo "$TAG" >> "$GSAM_ROOT/calls.log"
+echo "from_app=\${GSAM_RELEASE_FROM_APP:-} phase_file=\${GSAM_RELEASE_PHASE_FILE:-}" >> "$GSAM_ROOT/env.log"
+release_phase switching
 case "$TAG" in
   rc-*)
     [ "\${STUB_RC:-ok}" = refuse ] && { echo "release: 1 agent run(s) are active; release again when the agents are idle." >&2; exit 1; }
@@ -83,6 +85,9 @@ test("a release that comes up reports released", (t) => {
   assert.equal(result.previousTag, "live-2026-09-01.1");
   assert.deepEqual(calls, ["rc-2026-09-27.2"]);
   assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2"));
+  // App mode (hot restart, no preview check) and the phase file for the server.
+  assert.equal(readFileSync(join(box.root, "env.log"), "utf8").trim(), `from_app=1 phase_file=${join(box.job, "phase")}`);
+  assert.equal(readFileSync(join(box.job, "phase"), "utf8").trim(), "switching");
 });
 
 test("a failed health check rolls back to the previous live tag and keeps the backup path", (t) => {
@@ -133,9 +138,16 @@ test("without the foreground flag it detaches and records its pid", async (t) =>
   assert.fail("the detached launcher wrote no result");
 });
 
-// active_runs: queued runs count unless a task drain holds them.
-function fakeLive(draining) {
+// active_runs: queued runs count unless a task drain holds them. With
+// requireKey, the fake acts like login mode: every route but /api/health
+// answers 403 unless the request carries that board key (GRE-136).
+function fakeLive(draining, requireKey = null) {
   const server = http.createServer((req, res) => {
+    if (requireKey && req.url !== "/api/health" && req.headers.authorization !== `Bearer ${requireKey}`) {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Board access required" }));
+      return;
+    }
     const body = {
       "/api/health": { status: "ok" },
       "/api/instance/task-drain": { draining },
@@ -149,8 +161,12 @@ function fakeLive(draining) {
 }
 
 // Async: the fake server answers from this process, so a sync call would deadlock.
-async function activeRuns(url) {
-  const { stdout } = await promisify(execFile)("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; active_runs "$1"`, "_", url], { encoding: "utf8" });
+// keyFile defaults to a path that does not exist, so a real ~/GSAM key is never read.
+async function activeRuns(url, keyFile = join(tmpdir(), "gre-136-no-such-key")) {
+  const { stdout } = await promisify(execFile)("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; active_runs "$1"`, "_", url], {
+    encoding: "utf8",
+    env: { ...process.env, GSAM_LIVE_BOARD_KEY_FILE: keyFile },
+  });
   return stdout.trim();
 }
 
@@ -168,4 +184,46 @@ test("active_runs counts only running runs while a drain holds new runs", async 
 
 test("active_runs is 0 when the live server does not answer", async () => {
   assert.equal(await activeRuns("http://127.0.0.1:9"), "0");
+});
+
+test("active_runs sends the board key from the key file in login mode", async (t) => {
+  const server = await fakeLive(false, "pcp_board_test");
+  const dir = mkdtempSync(join(tmpdir(), "gre-136-"));
+  t.after(() => { server.close(); rmSync(dir, { recursive: true, force: true }); });
+  const keyFile = join(dir, "release-board-key");
+  writeFileSync(keyFile, "pcp_board_test\n", { mode: 0o600 });
+  assert.equal(await activeRuns(`http://127.0.0.1:${server.address().port}`, keyFile), "3");
+});
+
+test("active_runs fails with the reason when login mode refuses it", async (t) => {
+  const server = await fakeLive(false, "pcp_board_test");
+  t.after(() => server.close());
+  await assert.rejects(activeRuns(`http://127.0.0.1:${server.address().port}`), (err) => {
+    assert.match(err.stderr, /GET \/api\/companies answered 403/);
+    assert.equal(err.stdout.trim(), "");
+    return true;
+  });
+});
+
+test("live_board_key_check accepts no file and a 0600 file, refuses a 0644 or empty file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "gre-136-"));
+  try {
+    const keyFile = join(dir, "release-board-key");
+    const check = () => spawnSync("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; live_board_key_check`], {
+      encoding: "utf8",
+      env: { ...process.env, GSAM_LIVE_BOARD_KEY_FILE: keyFile },
+    });
+    assert.equal(check().status, 0);
+    writeFileSync(keyFile, "pcp_board_test\n", { mode: 0o600 });
+    assert.equal(check().status, 0);
+    chmodSync(keyFile, 0o644);
+    const loose = check();
+    assert.equal(loose.status, 1);
+    assert.match(loose.stdout, /mode 644; run: chmod 600/);
+    writeFileSync(keyFile, "\n");
+    chmodSync(keyFile, 0o600);
+    assert.match(check().stdout, /is empty/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

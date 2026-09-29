@@ -541,6 +541,7 @@ export const queryKeys = {
     projectSummary: (projectId: string) =>
       ["external-objects", "project-summary", projectId] as const,
   },
+  releases: (companyId: string) => ["releases", companyId] as const,
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
@@ -613,6 +614,8 @@ export const queryKeys = {
     settings: ["instance", "settings"] as const,
     generalSettings: ["instance", "general-settings"] as const,
     experimentalSettings: ["instance", "experimental-settings"] as const,
+    systemMemory: ["instance", "system-memory"] as const,
+    runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
   },
   health: ["health"] as const,
   cloud: {
@@ -672,6 +675,9 @@ export const queryKeys = {
   activity: (companyId: string) => ["activity", companyId] as const,
   costs: (companyId: string, from?: string, to?: string) =>
     ["costs", companyId, from, to] as const,
+  apiEquivalent: (companyId: string, from?: string, to?: string) =>
+    ["api-equivalent", companyId, from, to] as const,
+  subscriptions: (companyId: string) => ["cost-subscriptions", companyId] as const,
   usageByProvider: (companyId: string, from?: string, to?: string) =>
     ["usage-by-provider", companyId, from, to] as const,
   usageByBiller: (companyId: string, from?: string, to?: string) =>

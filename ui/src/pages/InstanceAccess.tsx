@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { companyDirectoryQueryOptions, useAccountIdentity } from "@/api/companies-query";
 import { useToast } from "@/context/ToastContext";
 import { queryKeys } from "@/lib/queryKeys";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 export function InstanceAccess() {
   const { userId: accountUserId, settled: accountSettled } = useAccountIdentity();
@@ -136,6 +137,7 @@ export function InstanceAccess() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search by name or email"
+              {...noContactAutofill("members")}
             />
           </label>
           <div className="space-y-2">

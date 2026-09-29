@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { ProjectRepositoryInput, repositoryOptionsKey } from "./ProjectRepositoryInput";
 import { ConnectionSetupFlow } from "@/features/connections/ConnectionSetupFlow";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 export function NewProjectDialog() {
   const { newProjectOpen, closeNewProject } = useDialog();
@@ -49,7 +50,7 @@ export function NewProjectForm({ companyId, onClose }: { companyId: string; onCl
           </div>
           <div className="flex items-center gap-3 rounded-lg border border-input px-3 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
             <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <input ref={input} aria-label="Project name" value={name} disabled={create.isPending} onChange={(event) => setName(event.target.value)} placeholder="Project name" required
+            <input ref={input} aria-label="Project name" value={name} disabled={create.isPending} onChange={(event) => setName(event.target.value)} placeholder="Project name" required {...noContactAutofill("project")}
               className="h-10 w-full min-w-0 border-0 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm" />
           </div>
         </div>

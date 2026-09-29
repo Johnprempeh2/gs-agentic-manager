@@ -173,6 +173,7 @@ import {
 } from "lucide-react";
 import { GithubIcon } from "../components/icons/github-icon";
 import type { FolderListItem, FolderListResult } from "@greatstone/shared";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 type SkillTreeNode = {
   name: string;
@@ -1567,6 +1568,7 @@ function NewSkillWizard({
               });
             }}
             placeholder="Skill name"
+            {...noContactAutofill("skill")}
             className="h-9"
           />
           <Input

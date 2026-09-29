@@ -314,8 +314,8 @@ export function IssueProperties({
     || paneTabStandaloneDocuments.length > 0;
   // Artifacts covers the same three sources the tab body composes: work
   // products, documents (redundant with the Plan tab, intentionally), and
-  // agent-created attachments. User comment uploads stay thread-only and
-  // no longer summon the tab.
+  // agent-created or task-level attachments. User comment uploads stay
+  // thread-only and no longer summon the tab.
   const hasArtifactsTab =
     (paneTabWorkProducts?.length ?? 0) > 0
     || paneTabStandaloneDocuments.length > 0

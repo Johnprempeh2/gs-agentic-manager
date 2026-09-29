@@ -115,6 +115,8 @@ import {
   createFinanceEventSchema,
   updateBudgetSchema,
   upsertBudgetPolicySchema,
+  createCompanySubscriptionSchema,
+  updateCompanySubscriptionSchema,
   resolveBudgetIncidentSchema,
   // Sidebar
   upsertSidebarOrderPreferenceSchema,
@@ -1315,6 +1317,11 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "GET /api/companies/{companyId}/releases",
+  "POST /api/companies/{companyId}/releases/release",
+  "POST /api/companies/{companyId}/releases/rollback",
+  "POST /api/companies/{companyId}/releases/cancel",
+  "POST /api/companies/{companyId}/releases/override",
   "GET /api/companies/{companyId}/ai-connections",
   "POST /api/companies/{companyId}/ai-connections",
   "POST /api/companies/{companyId}/ai-connections/local",
@@ -1604,6 +1611,8 @@ const CREATED_OPERATIONS = new Set([
 ]);
 
 const ACCEPTED_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/releases/release",
+  "POST /api/companies/{companyId}/releases/rollback",
   "POST /api/companies/{companyId}/email/send",
   "POST /api/companies/import",
   "POST /api/health/dev-server/restart",
@@ -2966,6 +2975,104 @@ for (const route of [
     },
   });
 }
+
+registry.registerPath({
+  method: "post",
+  path: "/api/reauth",
+  tags: ["auth"],
+  summary: "Enter the password again for one release, rollback or promote (login mode only)",
+  request: {
+    body: jsonBody(z.object({ action: z.enum(["release", "rollback", "promote"]), password: z.string() })),
+  },
+  responses: {
+    200: r.ok(),
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+    422: r.unprocessable,
+    429: r.tooManyRequests,
+  },
+});
+
+// Releases page (GRE-121). Board only, except the next title (board or the
+// release manager agent) and the run flag (an agent on its own run, or the board).
+const releaseCompanyParams = z.object({ companyId: z.string() });
+const releaseResponses = {
+  400: r.badRequest,
+  401: r.unauthorized,
+  403: r.forbidden,
+  409: r.conflict,
+  422: r.unprocessable,
+};
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/releases",
+  tags: ["releases"],
+  summary: "Live version, candidate, next version from main, history, flagged runs and release progress",
+  request: { params: releaseCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/releases/release",
+  tags: ["releases"],
+  summary: "Release live: an rc-* tag, or with no tag cut one from origin/main (Fork CI must be green)",
+  request: {
+    params: releaseCompanyParams,
+    body: jsonBody(z.object({ tag: z.string().optional(), title: z.string().optional() })),
+  },
+  responses: { 202: r.ok(), ...releaseResponses },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/releases/rollback",
+  tags: ["releases"],
+  summary: "Roll live back to an earlier live-* tag through the same path",
+  request: { params: releaseCompanyParams, body: jsonBody(z.object({ tag: z.string() })) },
+  responses: { 202: r.ok(), ...releaseResponses },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/releases/cancel",
+  tags: ["releases"],
+  summary: "Cancel a release that is still holding; live stays as it is",
+  request: { params: releaseCompanyParams },
+  responses: { 200: r.ok(), ...releaseResponses },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/releases/override",
+  tags: ["releases"],
+  summary: "Release without waiting for runs flagged finish-before-update",
+  request: { params: releaseCompanyParams },
+  responses: { 200: r.ok(), ...releaseResponses },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/releases/next",
+  tags: ["releases"],
+  summary: "Edit the proposed title of the next version (board or the release manager agent)",
+  request: { params: releaseCompanyParams, body: jsonBody(z.object({ title: z.string() })) },
+  responses: { 200: r.ok(), ...releaseResponses },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/heartbeat-runs/{runId}/finish-before-update",
+  tags: ["releases"],
+  summary: "Set or clear the finish-before-update flag on a running run",
+  request: {
+    params: z.object({ runId: heartbeatRunIdParamSchema }),
+    body: jsonBody(z.object({ enabled: z.boolean(), reason: z.string().optional() })),
+  },
+  responses: { 200: r.ok(), 404: r.notFound, ...releaseResponses },
+});
 
 const summarySlotParams = z.object({
   companyId: z.string(),
@@ -5152,6 +5259,8 @@ const costSummaryPaths = [
   "finance-events",
   "window-spend",
   "quota-windows",
+  "api-equivalent",
+  "subscriptions",
 ] as const;
 
 for (const segment of costSummaryPaths) {
@@ -5175,6 +5284,39 @@ registry.registerPath({
     body: jsonBody(createCostEventSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/costs/subscriptions",
+  tags: ["costs"],
+  summary: "Add a model subscription the company pays for",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(createCompanySubscriptionSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/costs/subscriptions/{subscriptionId}",
+  tags: ["costs"],
+  summary: "Edit a model subscription",
+  request: {
+    params: z.object({ companyId: z.string(), subscriptionId: z.string() }),
+    body: jsonBody(updateCompanySubscriptionSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/costs/subscriptions/{subscriptionId}",
+  tags: ["costs"],
+  summary: "Remove a model subscription",
+  request: { params: z.object({ companyId: z.string(), subscriptionId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -6169,6 +6311,22 @@ registry.registerPath({
   summary: "Update general instance settings",
   request: { body: jsonBody(patchInstanceGeneralSettingsSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/instance/system-memory",
+  tags: ["instance"],
+  summary: "Get read-only host memory for the run-cap suggestion",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/instance/run-admission/recommendation",
+  tags: ["instance"],
+  summary: "Get a read-only suggestion for the instance run-admission settings",
+  responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
@@ -9419,6 +9577,19 @@ registerCurrentRoute({
   path: "/api/adapters/{type}",
   tags: ["adapters"],
   summary: "Get adapter registration details",
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/health/live-release",
+  tags: ["health"],
+  summary: "Is a commit live? The running commit, its live-* tag, the last recorded live start, and whether ?ref= is contained",
+  responses: {
+    200: r.ok(),
+    400: { description: "ref is not a commit SHA or an rc-* / live-* tag" },
+    401: r.unauthorized,
+    404: r.notFound,
+  },
 });
 
 registerCurrentRoute({

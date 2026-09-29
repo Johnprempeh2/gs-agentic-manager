@@ -385,26 +385,11 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     });
   });
 
-  it("renders and patches the Decisions experimental toggle", async () => {
+  it("no longer shows a Decisions toggle (graduated, GRE-66)", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Decisions");
-    expect(container.textContent).toContain(
-      "Show the Decisions item in the main sidebar",
-    );
-
-    const toggle = container.querySelector<HTMLButtonElement>(DECISIONS_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableDecisions: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector(DECISIONS_TOGGLE_SELECTOR)).toBeNull();
+    expect(container.textContent).not.toContain("Show the Decisions item in the main sidebar");
   });
 
   it("renders and patches the Goals Sidebar Link experimental toggle", async () => {

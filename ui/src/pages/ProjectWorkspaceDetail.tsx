@@ -22,6 +22,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useManagedSandboxOnly } from "../hooks/useManagedSandboxOnly";
 import { queryKeys } from "../lib/queryKeys";
 import { projectRouteRef, projectWorkspaceUrl } from "../lib/utils";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 type WorkspaceFormState = {
   name: string;
@@ -501,6 +502,7 @@ export function ProjectWorkspaceDetail() {
                   value={form.name}
                   onChange={(event) => setForm((current) => current ? { ...current, name: event.target.value } : current)}
                   placeholder="Workspace name"
+                  {...noContactAutofill("workspace")}
                 />
               </Field>
 

@@ -197,6 +197,7 @@ import {
   ISSUE_OVERRIDE_ADAPTER_TYPES,
   type IssueModelLane,
 } from "../lib/issue-assignee-overrides";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const STAGED_FILE_ACCEPT = "image/*,application/pdf,text/plain,text/markdown,application/json,text/csv,text/html,.md,.markdown";
 
@@ -404,6 +405,7 @@ const IssueTitleTextarea = memo(function IssueTitleTextarea({
     <textarea
       className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-subtle-foreground"
       placeholder="Task title"
+      {...noContactAutofill("task")}
       rows={1}
       value={draftValue}
       onChange={(e) => {
@@ -643,7 +645,7 @@ export function NewIssueDialog() {
       ...data
     }: { companyId: string; stagedFiles: StagedIssueFile[] } & Record<string, unknown>) => {
       const issue = await issuesApi.create(companyId, data);
-      const failures: string[] = [];
+      const failures: Array<{ name: string; reason: string }> = [];
 
       for (const stagedFile of pendingStagedFiles) {
         try {
@@ -658,8 +660,11 @@ export function NewIssueDialog() {
           } else {
             await issuesApi.uploadAttachment(companyId, issue.id, stagedFile.file);
           }
-        } catch {
-          failures.push(stagedFile.file.name);
+        } catch (error) {
+          failures.push({
+            name: stagedFile.file.name,
+            reason: error instanceof Error && error.message ? error.message : "Upload failed",
+          });
         }
       }
 
@@ -678,7 +683,7 @@ export function NewIssueDialog() {
         const issueRef = issue.identifier ?? issue.id;
         pushToast({
           title: `Created ${issueRef} with upload warnings`,
-          body: `${failures.length} staged ${failures.length === 1 ? "file" : "files"} could not be added.`,
+          body: `Could not add ${failures.map((failure) => `${failure.name} (${failure.reason})`).join(", ")}.`,
           tone: "warn",
           action: prefix
             ? { label: `Open ${issueRef}`, href: `/${prefix}/issues/${issueRef}` }
@@ -2067,11 +2072,11 @@ export function NewIssueDialog() {
                             </Badge>
                             <span className="truncate text-sm">{file.file.name}</span>
                           </div>
-                          <div className="mt-1 flex items-center gap-2 text-(length:--text-micro) text-muted-foreground">
-                            <FileText className="h-3.5 w-3.5" />
-                            <span>{file.title || file.file.name}</span>
+                          <div className="mt-1 flex min-w-0 items-center gap-2 text-(length:--text-micro) text-muted-foreground">
+                            <FileText className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{file.title || file.file.name}</span>
                             <span>•</span>
-                            <span>{formatFileSize(file.file)}</span>
+                            <span className="shrink-0">{formatFileSize(file.file)}</span>
                           </div>
                         </div>
                         <Button
@@ -2081,6 +2086,7 @@ export function NewIssueDialog() {
                           onClick={() => removeStagedFile(file.id)}
                           disabled={createIssue.isPending}
                           title="Remove document"
+                          aria-label="Remove document"
                         >
                           <X className="h-3.5 w-3.5" />
                         </Button>
@@ -2101,7 +2107,7 @@ export function NewIssueDialog() {
                             <PaperclipIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <span className="truncate text-sm">{file.file.name}</span>
                           </div>
-                          <div className="mt-1 text-(length:--text-micro) text-muted-foreground">
+                          <div className="mt-1 truncate text-(length:--text-micro) text-muted-foreground">
                             {file.file.type || "application/octet-stream"} • {formatFileSize(file.file)}
                           </div>
                         </div>
@@ -2112,6 +2118,7 @@ export function NewIssueDialog() {
                           onClick={() => removeStagedFile(file.id)}
                           disabled={createIssue.isPending}
                           title="Remove attachment"
+                          aria-label="Remove attachment"
                         >
                           <X className="h-3.5 w-3.5" />
                         </Button>

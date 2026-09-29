@@ -23,6 +23,7 @@ import {
   workspaceOperations,
   workspaceRuntimeServices,
 } from "@greatstone/db";
+import { ENV_PREFIX, LEGACY_ENV_PREFIX } from "@greatstone/shared/legacy-env";
 import { eq } from "drizzle-orm";
 import {
   buildWorkspaceRuntimeDesiredStatePatch,
@@ -435,6 +436,29 @@ function createWorkspaceOperationRecorderDouble() {
 
   return { recorder, operations };
 }
+
+// Agent runs export run context (under both the current and the legacy env
+// prefix) plus a BASH_ENV hook that re-exports PATH in every non-interactive
+// bash. Left in place, those leak into provision-worktree.sh (the hook hides
+// each test's fake pnpm) and into the runtime under test, so the results depend
+// on who launched vitest.
+const inheritedRunEnv = new Map<string, string | undefined>();
+
+beforeAll(() => {
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith(ENV_PREFIX) || key.startsWith(LEGACY_ENV_PREFIX) || key === "BASH_ENV" || key === "ENV") {
+      inheritedRunEnv.set(key, process.env[key]);
+      delete process.env[key];
+    }
+  }
+});
+
+afterAll(() => {
+  for (const [key, value] of inheritedRunEnv) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+});
 
 afterEach(async () => {
   await Promise.all(
@@ -4023,6 +4047,8 @@ describe("realizeExecutionWorkspace", () => {
     const instanceId = deriveWorktreeInstanceId(workspace.cwd);
     const instanceRoot = path.join(worktreesDir, "instances", instanceId);
     await fs.mkdir(path.join(instanceRoot, "db"), { recursive: true });
+    // Cleanup reports the resolved path (macOS tmpdir is a /var -> /private/var symlink).
+    const canonicalInstanceRoot = await fs.realpath(instanceRoot);
     await fs.mkdir(path.join(workspace.cwd, ".gsam"), { recursive: true });
     await fs.writeFile(
       path.join(workspace.cwd, ".gsam", ".env"),
@@ -4064,7 +4090,7 @@ describe("realizeExecutionWorkspace", () => {
     expect(operations[0]?.command).toBe("printf 'cleanup ok\\n'");
     expect(operations[1]?.metadata).toMatchObject({
       cleanupAction: "remove_worktree_instance",
-      instanceRoot,
+      instanceRoot: canonicalInstanceRoot,
     });
     expect(operations[2]?.metadata).toMatchObject({
       cleanupAction: "worktree_remove",
@@ -9659,7 +9685,8 @@ describe("realizeExecutionWorkspace with an exact existing branch", () => {
 
     const workspace = await realizeExistingBranch(repoRoot, "feature/legacy-checkout");
 
-    expect(workspace.cwd).toBe(path.resolve(legacyPath));
+    // git reports worktree paths resolved (macOS tmpdir is a /var -> /private/var symlink).
+    expect(await fs.realpath(workspace.cwd)).toBe(await fs.realpath(legacyPath));
     expect(workspace.branchName).toBe("feature/legacy-checkout");
     expect(workspace.created).toBe(false);
     expect(await readGit(workspace.cwd, ["rev-parse", "HEAD"])).toBe(branchTip);

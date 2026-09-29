@@ -236,7 +236,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
       "Show the Decisions item in the main sidebar — the attention home that surfaces tasks awaiting input.",
     tier: "preference",
     cloudDefault: false,
-    selfHostedDefault: false,
+    selfHostedDefault: true,
   },
   enableGoalsSidebarLink: {
     title: "Goals Sidebar Link",

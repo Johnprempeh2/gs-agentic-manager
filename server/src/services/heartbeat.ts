@@ -93,6 +93,7 @@ import {
   ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
   ISSUE_DISPOSITION_REPAIR_RETRY_REASON,
   PROVIDER_QUOTA_MONITOR_SERVICE_NAME,
+  LIVE_RELEASE_MONITOR_SERVICE_NAME,
   envBindingSchema,
   isEnvironmentDriverSupportedForAdapter,
   isToolConnectionAttentionHealth,
@@ -408,6 +409,7 @@ import { visibleIssueCondition } from "./issue-visibility.js";
 import { ISSUE_BLOCKERS_RESOLVED_WAKE_REASON } from "./issue-dependency-wakeups.js";
 import {
   buildIssueMonitorClearedPatch,
+  buildIssueMonitorRestoredPatch,
   buildIssueMonitorTriggeredPatch,
   normalizeIssueExecutionPolicy,
   parseIssueExecutionState,
@@ -491,6 +493,7 @@ import {
   SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
   readContinuationAttempt,
 } from "./recovery/index.js";
+import { REVIEW_WAIT_MONITOR_SERVICE_NAME } from "./recovery/review-wait.js";
 import {
   buildConfigurationIncompleteRecoveryNoticeSeed,
   buildExecutionReviewParticipantRecoveryNoticeSeed,
@@ -603,6 +606,18 @@ import {
   sweepExpiredHeartbeatRunRuntimeStatuses,
   touchHeartbeatRunRuntimeStatus,
 } from "./heartbeat-run-runtime-status.js";
+import {
+  createSystemMemoryReader,
+  evaluateRunAdmission,
+  orderAgentsByOldestQueuedRun,
+  resolveRunAdmissionSettings,
+  RUN_ADMISSION_RECHECK_MS,
+  type MemoryReader,
+} from "./run-admission.js";
+import {
+  recordRunAdmissionHold,
+  recordRunAdmissionRelease,
+} from "./run-admission-recommendation.js";
 import {
   findMissingHotRestartSnapshotRunIds,
   readHotRestartIntent,
@@ -1273,6 +1288,22 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
 // Routes and the scheduler construct separate heartbeatService instances, but
 // they must agree on in-process adapter executions when reaping stale runs.
 const activeRunExecutions = new Set<string>();
+// Instance-wide run admission (GRE-105), shared across service instances like
+// activeRunExecutions. Slots reserved by a start gate that is still claiming,
+// plus runs this process admitted that have not finished executing. Counting
+// admitted runs in memory closes the window where a concurrent start gate reads
+// the running count before another gate's claim has committed.
+let runAdmissionReservedSlots = 0;
+const runAdmissionAdmittedRunIds = new Set<string>();
+// Queued runs currently held by the admission guard, keyed by run id.
+const runAdmissionHeldRuns = new Map<
+  string,
+  { reason: string; message: string; publishedAt: number }
+>();
+let runAdmissionRecheckTimer: {
+  timer: ReturnType<typeof setTimeout>;
+  dueAt: number;
+} | null = null;
 // A legacy process adapter's signal exit can race the operator cancellation CAS while
 // its owned process group is still being joined. Keep that exit from becoming
 // a successful result (or a competing failure) before Stop settles. This is an
@@ -7820,8 +7851,12 @@ export async function buildPaperclipWakePayload(input: {
       ? [comment.id]
       : [],
   );
+  // Task-level attachments (issueCommentId null) are the New Task uploads.
+  // They share the inline attachment cap with comment attachments.
+  const includeTaskAttachments =
+    !conversationMode && Boolean(issueId) && issueSummary?.id === issueId;
   const attachmentRows =
-    !issueId || attachmentCommentIds.length === 0
+    !issueId || (attachmentCommentIds.length === 0 && !includeTaskAttachments)
       ? []
       : await input.db
           .select({
@@ -7843,36 +7878,46 @@ export async function buildPaperclipWakePayload(input: {
             and(
               eq(issueAttachments.companyId, input.companyId),
               eq(issueAttachments.issueId, issueId),
-              inArray(issueAttachments.issueCommentId, attachmentCommentIds),
+              or(
+                includeTaskAttachments
+                  ? isNull(issueAttachments.issueCommentId)
+                  : undefined,
+                attachmentCommentIds.length > 0
+                  ? inArray(issueAttachments.issueCommentId, attachmentCommentIds)
+                  : undefined,
+              ),
             ),
           )
           .orderBy(asc(issueAttachments.createdAt), asc(issueAttachments.id))
           .limit(MAX_INLINE_WAKE_ATTACHMENTS + 1);
   if (attachmentRows.length > MAX_INLINE_WAKE_ATTACHMENTS) truncated = true;
-  const attachmentsByCommentId = new Map<
-    string,
-    Array<{
-      id: string;
-      filename: string;
-      contentType: string;
-      byteSize: number;
-      contentPath: string;
-    }>
-  >();
+  type InlineWakeAttachment = {
+    id: string;
+    filename: string;
+    contentType: string;
+    byteSize: number;
+    contentPath: string;
+  };
+  const taskAttachments: InlineWakeAttachment[] = [];
+  const attachmentsByCommentId = new Map<string, InlineWakeAttachment[]>();
   for (const attachment of attachmentRows.slice(
     0,
     MAX_INLINE_WAKE_ATTACHMENTS,
   )) {
-    if (!attachment.issueCommentId) continue;
-    const descriptors =
-      attachmentsByCommentId.get(attachment.issueCommentId) ?? [];
-    descriptors.push({
+    const descriptor = {
       id: attachment.id,
       filename: attachment.filename?.trim() || "attachment",
       contentType: attachment.contentType,
       byteSize: attachment.byteSize,
       contentPath: `/api/attachments/${attachment.id}/content`,
-    });
+    };
+    if (!attachment.issueCommentId) {
+      taskAttachments.push(descriptor);
+      continue;
+    }
+    const descriptors =
+      attachmentsByCommentId.get(attachment.issueCommentId) ?? [];
+    descriptors.push(descriptor);
     attachmentsByCommentId.set(attachment.issueCommentId, descriptors);
   }
   for (const comment of comments) {
@@ -8083,6 +8128,7 @@ export async function buildPaperclipWakePayload(input: {
           status: issueSummary.status,
           priority: issueSummary.priority,
           workMode: issueSummary.workMode,
+          attachments: taskAttachments,
         }
       : null,
     agentMessage: agentMessageText
@@ -9293,6 +9339,12 @@ export interface HeartbeatServiceOptions {
     runId: string;
     issueId: string;
   }) => Promise<void>;
+  /**
+   * Reads available system memory for run admission. Defaults to the system
+   * reader; under vitest it defaults to "unknown" (fail open) so suites do not
+   * depend on the test machine's free RAM.
+   */
+  memoryReader?: MemoryReader;
 }
 
 export async function cancelHeartbeatNativeRun(input: {
@@ -9418,6 +9470,9 @@ export function heartbeatService(
     enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
   });
   const runtimeEnv = options.runtimeEnv ?? process.env;
+  const memoryReader: MemoryReader =
+    options.memoryReader ??
+    (runtimeEnv.VITEST ? async () => null : createSystemMemoryReader());
   const inWorktreeRuntime = isTruthyRuntimeEnvValue(
     runtimeEnv.GSAM_IN_WORKTREE,
   );
@@ -9706,6 +9761,15 @@ export function heartbeatService(
           issue: rows.issueRow,
           previousStatus: input.previousStatus,
           latestRun: rows.runRow,
+        });
+      },
+      scheduleReviewWaitMonitor: async (input) => {
+        const rows = await loadStrandedEscalationRows(input);
+        if (!rows) return;
+        await recovery.scheduleReviewWaitMonitor({
+          issue: rows.issueRow,
+          latestRun: rows.runRow,
+          reviewerAgentId: input.reviewerAgentId,
         });
       },
     },
@@ -11525,6 +11589,8 @@ export function heartbeatService(
       runId: string | null;
       clearOnClientError: boolean;
       activitySource: "manual" | "scheduled";
+      /** Added to the wake payload, run context and activity (e.g. the live release). */
+      extraContext?: Record<string, unknown>;
     },
   ) {
     if (!claimed.assigneeAgentId || !claimed.monitorNextCheckAt) {
@@ -11548,6 +11614,7 @@ export function heartbeatService(
       timeoutAt: monitor?.timeoutAt ?? null,
       maxAttempts: monitor?.maxAttempts ?? null,
       recoveryPolicy: monitor?.recoveryPolicy ?? null,
+      ...(input.extraContext ?? {}),
     };
     const executionState =
       claimed.status === "in_review"
@@ -11562,22 +11629,28 @@ export function heartbeatService(
     const isProviderQuotaReviewMonitor =
       monitor?.serviceName === PROVIDER_QUOTA_MONITOR_SERVICE_NAME &&
       Boolean(reviewParticipantAgentId);
-    const targetAgentId = isProviderQuotaReviewMonitor
+    // A review-wait monitor (GRE-97) wakes the waiting reviewer, not the assignee.
+    const isReviewWaitMonitor =
+      monitor?.serviceName === REVIEW_WAIT_MONITOR_SERVICE_NAME &&
+      Boolean(reviewParticipantAgentId);
+    const isReviewParticipantMonitor = isProviderQuotaReviewMonitor || isReviewWaitMonitor;
+    const targetAgentId = isReviewParticipantMonitor
       ? reviewParticipantAgentId
       : claimed.assigneeAgentId;
     if (!targetAgentId) {
       throw conflict("Issue monitor has no agent target");
     }
-    const wakeReason = isProviderQuotaReviewMonitor
+    const wakeReason = isReviewParticipantMonitor
       ? EXECUTION_REVIEW_PARTICIPANT_RECOVERY_WAKE_REASON
       : input.wakeReason;
-    const reviewRecoveryContext = isProviderQuotaReviewMonitor
+    const reviewRecoveryContext = isReviewParticipantMonitor
       ? {
           retryReason: EXECUTION_REVIEW_PARTICIPANT_RECOVERY_RETRY_REASON,
           currentStageId: executionState?.currentStageId ?? null,
           currentStageType: executionState?.currentStageType ?? null,
-          reviewRecoveryInstruction:
-            "The previous reviewer run reached provider quota. Resume this execution-review stage now that the quota wait has elapsed.",
+          reviewRecoveryInstruction: isReviewWaitMonitor
+            ? "You were waiting on CI or a check for this execution-review stage. Check it again now: submit the review decision, or say what you still wait on."
+            : "The previous reviewer run reached provider quota. Resume this execution-review stage now that the quota wait has elapsed.",
         }
       : {};
 
@@ -11675,7 +11748,7 @@ export function heartbeatService(
           requestedByActorId: input.actorId,
           contextSnapshot: {
             issueId: claimed.id,
-            source: isProviderQuotaReviewMonitor
+            source: isReviewParticipantMonitor
               ? "issue.execution_review_recovery"
               : "issue.monitor",
             wakeReason,
@@ -11942,6 +12015,78 @@ export function heartbeatService(
       triggered,
       skipped,
     };
+  }
+
+  /**
+   * Fires, ahead of schedule, every monitor that waits for a release
+   * (serviceName LIVE_RELEASE_MONITOR_SERVICE_NAME) once live runs a commit
+   * that contains what it waits for. A monitor with no externalRef waits for
+   * any release. A monitor whose ref is not live yet, or cannot be checked,
+   * keeps its own nextCheckAt as the deadline. Monitors are one-shot, so a
+   * second call for the same release wakes nobody.
+   */
+  async function wakeLiveReleaseMonitors(input: {
+    liveRelease: Record<string, unknown> & { commit: string };
+    isRefLive: (ref: string) => boolean | null;
+    now?: Date;
+  }) {
+    const now = input.now ?? new Date();
+    const staleClaimThreshold = new Date(now.getTime() - 5 * 60 * 1000);
+    const waitingConditions = () =>
+      and(
+        sql`${issues.monitorNextCheckAt} is not null`,
+        sql`${issues.executionPolicy} -> 'monitor' ->> 'serviceName' = ${LIVE_RELEASE_MONITOR_SERVICE_NAME}`,
+        isNull(issues.assigneeUserId),
+        sql`${issues.assigneeAgentId} is not null`,
+        inArray(issues.status, ["in_progress", "in_review"]),
+        or(
+          isNull(issues.monitorWakeRequestedAt),
+          lt(issues.monitorWakeRequestedAt, staleClaimThreshold),
+        ),
+      );
+    const waiting = await db
+      .select(issueMonitorDispatchColumns)
+      .from(issues)
+      .innerJoin(companies, eq(companies.id, issues.companyId))
+      .where(and(eq(companies.status, "active"), waitingConditions()))
+      .orderBy(asc(issues.monitorNextCheckAt));
+
+    const triggeredIssueIds: string[] = [];
+    for (const row of waiting) {
+      // Normalized monitor projections redact externalRef; read the stored policy.
+      const ref = readNonEmptyString(
+        parseObject(parseObject(row.executionPolicy).monitor).externalRef,
+      );
+      if (ref && input.isRefLive(ref) !== true) continue;
+
+      const claimed = await db
+        .update(issues)
+        .set({ monitorWakeRequestedAt: now, updatedAt: now })
+        .where(and(eq(issues.id, row.id), waitingConditions()))
+        .returning()
+        .then((rows) => (rows[0] ?? null) as IssueMonitorDispatchRow | null);
+      if (!claimed) continue;
+
+      try {
+        const result = await dispatchClaimedIssueMonitor(claimed, {
+          now,
+          source: "automation",
+          triggerDetail: "system",
+          wakeReason: "issue_monitor_due",
+          actorType: "system",
+          actorId: "live_release",
+          agentId: null,
+          runId: null,
+          clearOnClientError: true,
+          activitySource: "scheduled",
+          extraContext: { liveRelease: { ...input.liveRelease, waitedFor: ref ?? null } },
+        });
+        if (result.outcome === "triggered") triggeredIssueIds.push(claimed.id);
+      } catch (err) {
+        logger.error({ err, issueId: claimed.id }, "live release monitor wake failed");
+      }
+    }
+    return { checked: waiting.length, triggeredIssueIds };
   }
 
   async function getOldestRunForSession(agentId: string, sessionId: string) {
@@ -19502,22 +19647,7 @@ export function heartbeatService(
       });
     }
 
-    const queuedRuns = await db
-      .select({ agentId: heartbeatRuns.agentId })
-      .from(heartbeatRuns)
-      .innerJoin(companies, eq(companies.id, heartbeatRuns.companyId))
-      .where(
-        and(
-          eq(heartbeatRuns.status, "queued"),
-          eq(companies.status, "active"),
-          cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
-        ),
-      );
-
-    const agentIds = [...new Set(queuedRuns.map((r) => r.agentId))];
-    for (const agentId of agentIds) {
-      await startNextQueuedRunForAgent(agentId);
-    }
+    await drainQueuedRunsFairly();
   }
 
   async function recoverActiveSessionGoals() {
@@ -20029,13 +20159,156 @@ export function heartbeatService(
     }
   }
 
+  async function listRunningRunIdsForAdmission() {
+    const rows = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.status, "running"));
+    return rows.map((row) => row.id);
+  }
+
+  // Synchronous on purpose: the caller must reserve its slots in the same
+  // tick, or a start gate for another agent can read the same count.
+  function countRunningRunsForAdmission(dbRunningRunIds: string[]) {
+    const running = new Set(dbRunningRunIds);
+    for (const runId of runAdmissionAdmittedRunIds) running.add(runId);
+    return running.size + runAdmissionReservedSlots;
+  }
+
+  function markQueuedRunsHeldForAdmission(
+    runs: Array<{
+      id: string;
+      companyId: string;
+      agentId: string;
+      contextSnapshot: unknown;
+    }>,
+    hold: { reason: string; message: string },
+  ) {
+    const now = Date.now();
+    for (const run of runs) {
+      const prior = runAdmissionHeldRuns.get(run.id);
+      if (!prior || prior.reason !== hold.reason) {
+        recordRunAdmissionHold(run.id, hold.reason, now);
+        logger.info(
+          { runId: run.id, agentId: run.agentId, reason: hold.reason },
+          `run admission hold: ${hold.message}`,
+        );
+      }
+      // Republish on change, and well inside the runtime-status TTL so the
+      // "Held: ..." line stays visible while the run waits.
+      if (
+        prior?.message === hold.message &&
+        now - prior.publishedAt < RUN_ADMISSION_RECHECK_MS * 3
+      ) {
+        continue;
+      }
+      runAdmissionHeldRuns.set(run.id, { ...hold, publishedAt: now });
+      const status = setHeartbeatRunRuntimeStatus({
+        companyId: run.companyId,
+        issueId:
+          readNonEmptyString(parseObject(run.contextSnapshot).issueId) ?? null,
+        agentId: run.agentId,
+        runId: run.id,
+        phase: "run_activity",
+        message: hold.message,
+      });
+      if (status) publishHeartbeatRunRuntimeProgress(status);
+    }
+  }
+
+  function releaseRunAdmissionHold(runId: string) {
+    if (!runAdmissionHeldRuns.delete(runId)) return;
+    recordRunAdmissionRelease(runId);
+    clearHeartbeatRunRuntimeStatus(runId);
+  }
+
+  // One pending re-check at a time; a sooner request (a run just finished)
+  // replaces a later one (the periodic low-memory re-check).
+  function scheduleRunAdmissionRecheck(delayMs = RUN_ADMISSION_RECHECK_MS) {
+    if (shutdownInProgress) return;
+    const dueAt = Date.now() + delayMs;
+    if (runAdmissionRecheckTimer) {
+      if (runAdmissionRecheckTimer.dueAt <= dueAt) return;
+      clearTimeout(runAdmissionRecheckTimer.timer);
+    }
+    const timer = setTimeout(() => {
+      if (runAdmissionRecheckTimer?.timer === timer) {
+        runAdmissionRecheckTimer = null;
+      }
+      void drainQueuedRunsFairly().catch((err) => {
+        logger.warn({ err }, "run admission re-check failed");
+      });
+    }, delayMs);
+    timer.unref?.();
+    runAdmissionRecheckTimer = { timer, dueAt };
+  }
+
+  // Start queued runs across agents, oldest waiting agent first, one run per
+  // agent per pass, so one busy agent cannot take every free instance slot.
+  // Stops at the first admission hold and marks the rest of the queue held.
+  async function drainQueuedRunsFairly() {
+    if ((await getSchedulingSuppression()).suppressed) return;
+    const cutoff = await getWorktreeExecutionCutoff();
+    const queuedRuns = await db
+      .select({
+        id: heartbeatRuns.id,
+        companyId: heartbeatRuns.companyId,
+        agentId: heartbeatRuns.agentId,
+        createdAt: heartbeatRuns.createdAt,
+        contextSnapshot: heartbeatRuns.contextSnapshot,
+      })
+      .from(heartbeatRuns)
+      .innerJoin(companies, eq(companies.id, heartbeatRuns.companyId))
+      .where(
+        and(
+          eq(heartbeatRuns.status, "queued"),
+          eq(companies.status, "active"),
+          cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
+        ),
+      );
+    for (const runId of runAdmissionHeldRuns.keys()) {
+      if (!queuedRuns.some((run) => run.id === runId)) {
+        releaseRunAdmissionHold(runId);
+      }
+    }
+    const agentIds = orderAgentsByOldestQueuedRun(queuedRuns);
+    const startedRunIds = new Set<string>();
+    for (;;) {
+      let progressed = false;
+      for (const agentId of agentIds) {
+        const result = await startQueuedRunsForAgent(agentId, { maxToStart: 1 });
+        for (const run of result.runs) startedRunIds.add(run.id);
+        if (result.hold) {
+          markQueuedRunsHeldForAdmission(
+            queuedRuns.filter((run) => !startedRunIds.has(run.id)),
+            result.hold,
+          );
+          return;
+        }
+        if (result.runs.length > 0) progressed = true;
+      }
+      if (!progressed) return;
+    }
+  }
+
   async function startNextQueuedRunForAgent(agentId: string) {
-    if ((await getSchedulingSuppression()).suppressed) return [];
+    return (await startQueuedRunsForAgent(agentId)).runs;
+  }
+
+  async function startQueuedRunsForAgent(
+    agentId: string,
+    startOptions: { maxToStart?: number } = {},
+  ): Promise<{
+    runs: Array<typeof heartbeatRuns.$inferSelect>;
+    hold: { reason: string; message: string } | null;
+  }> {
+    const none = { runs: [], hold: null };
+    if ((await getSchedulingSuppression()).suppressed) return none;
     const cutoff = await getWorktreeExecutionCutoff();
 
     return withAgentStartLock(agentId, async () => {
       const agent = await getAgent(agentId);
-      if (!agent) return [];
+      if (!agent) return none;
       const invokability = await getAgentInvokability(agent);
       if (!invokability.invokable) {
         if (shouldCancelRunsForNonInvokableAgent(invokability)) {
@@ -20044,15 +20317,86 @@ export function heartbeatService(
             `Cancelled because the agent is not invokable: ${invokability.reason}`,
           );
         }
-        return [];
+        return none;
       }
-      const policy = parseHeartbeatPolicy(agent);
-      const runningCount = await countRunningRunsForAgent(agentId);
-      const availableSlots = Math.max(
-        0,
-        policy.maxConcurrentRuns - runningCount,
+
+      // Instance-wide admission (GRE-105): global run cap, then free memory.
+      // A hold keeps the run queued; the re-check timer and run completion
+      // drain it again. Never fail or cancel a run here.
+      const admissionSettings = resolveRunAdmissionSettings(
+        await instanceSettings.getGeneral(),
       );
-      if (availableSlots <= 0) return [];
+      const [dbRunningRunIds, memory] = await Promise.all([
+        listRunningRunIdsForAdmission(),
+        memoryReader().catch(() => null),
+      ]);
+      // No await from here until the slots are reserved below.
+      const admission = evaluateRunAdmission({
+        settings: admissionSettings,
+        runningCount: countRunningRunsForAdmission(dbRunningRunIds),
+        memory,
+      });
+      if (!admission.admit) {
+        const hold = { reason: admission.reason, message: admission.message };
+        const heldRuns = await db
+          .select({
+            id: heartbeatRuns.id,
+            companyId: heartbeatRuns.companyId,
+            agentId: heartbeatRuns.agentId,
+            contextSnapshot: heartbeatRuns.contextSnapshot,
+          })
+          .from(heartbeatRuns)
+          .where(
+            and(
+              eq(heartbeatRuns.agentId, agentId),
+              eq(heartbeatRuns.status, "queued"),
+              cutoff ? gte(heartbeatRuns.createdAt, cutoff) : undefined,
+            ),
+          );
+        if (heldRuns.length > 0) {
+          markQueuedRunsHeldForAdmission(heldRuns, hold);
+          scheduleRunAdmissionRecheck();
+        }
+        return { ...none, hold };
+      }
+
+      // Reserve in the same tick as the check so concurrent start gates for
+      // other agents see these slots as taken, then shrink to what the
+      // per-agent limit allows.
+      let reservedSlots = Math.min(
+        admission.slots,
+        startOptions.maxToStart ?? Number.POSITIVE_INFINITY,
+      );
+      runAdmissionReservedSlots += reservedSlots;
+      try {
+        const policy = parseHeartbeatPolicy(agent);
+        const runningCount = await countRunningRunsForAgent(agentId);
+        const availableSlots = Math.min(
+          Math.max(0, policy.maxConcurrentRuns - runningCount),
+          reservedSlots,
+        );
+        runAdmissionReservedSlots -= reservedSlots - availableSlots;
+        reservedSlots = availableSlots;
+        if (availableSlots <= 0) return none;
+        const runs = await claimQueuedRunsForAgent(
+          agent,
+          availableSlots,
+          cutoff,
+        );
+        return { runs, hold: null };
+      } finally {
+        runAdmissionReservedSlots -= reservedSlots;
+      }
+    });
+  }
+
+  async function claimQueuedRunsForAgent(
+    agent: NonNullable<Awaited<ReturnType<typeof getAgent>>>,
+    availableSlots: number,
+    cutoff: Date | null,
+  ): Promise<Array<typeof heartbeatRuns.$inferSelect>> {
+    const agentId = agent.id;
+    {
 
       const queuedRuns = await db
         .select()
@@ -20144,7 +20488,12 @@ export function heartbeatService(
       for (const queuedRun of prioritizedRuns) {
         if (claimedRuns.length >= availableSlots) break;
         const claimed = await claimQueuedRun(queuedRun, companyAgents);
-        if (claimed) claimedRuns.push(claimed);
+        if (claimed) {
+          claimedRuns.push(claimed);
+          // Counted by the admission gate until its execution settles.
+          runAdmissionAdmittedRunIds.add(claimed.id);
+          releaseRunAdmissionHold(claimed.id);
+        }
       }
       if (claimedRuns.length === 0) return [];
 
@@ -20154,6 +20503,11 @@ export function heartbeatService(
             { err, runId: claimedRun.id },
             "queued heartbeat execution failed",
           );
+        }).finally(() => {
+          runAdmissionAdmittedRunIds.delete(claimedRun.id);
+          // A finished run frees an instance slot another agent may be
+          // waiting on; the run's own follow-up only drains its own agent.
+          if (runAdmissionHeldRuns.size > 0) scheduleRunAdmissionRecheck(0);
         });
         // Register the in-flight execution so drainActiveRunExecutions() can await
         // it. executeRun resolves only after its finally block finishes flushing
@@ -20167,7 +20521,7 @@ export function heartbeatService(
         });
       }
       return claimedRuns;
-    });
+    }
   }
 
   // Await every background heartbeat execution that is currently in flight. A
@@ -20188,6 +20542,10 @@ export function heartbeatService(
       clearTimeout(timer);
     }
     nativeSessionResumeDispatchTimers.clear();
+    if (runAdmissionRecheckTimer) {
+      clearTimeout(runAdmissionRecheckTimer.timer);
+      runAdmissionRecheckTimer = null;
+    }
     while (
       activeWakeupPromises.size > 0 ||
       activeRunExecutionPromises.size > 0
@@ -29014,7 +29372,94 @@ export function heartbeatService(
     terminationGraceMs?: number;
     /** Caller is immediately scheduling an explicit successor path. */
     suppressImmediateRecovery?: boolean;
+    /** "Stop and cancel monitor": do not give back the monitor that started this run. */
+    cancelMonitor?: boolean;
   };
+
+  /** GRE-100: how long a given-back monitor waits before it fires again. */
+  const CANCELLED_MONITOR_RUN_RECHECK_MS = 15 * 60 * 1000;
+
+  /**
+   * GRE-100: a monitor is one-shot and is used up when it dispatches. When the
+   * run it started is cancelled, nothing is left to wake the assignee, so give
+   * the monitor back: re-arm it after CANCELLED_MONITOR_RUN_RECHECK_MS with the
+   * attempt count it had before. Guarded on the issue still holding that
+   * trigger (same attempt, not re-armed or cleared, same agent assignee), so a
+   * second call does nothing.
+   */
+  async function restoreIssueMonitorForCancelledRun(run: typeof heartbeatRuns.$inferSelect) {
+    const context = parseObject(run.contextSnapshot);
+    const issueId = readNonEmptyString(context.issueId);
+    const triggeredAttempt = context.monitorAttemptCount;
+    if (
+      !issueId ||
+      context.source !== "issue.monitor" ||
+      readNonEmptyString(context.wakeReason) !== "issue_monitor_due" ||
+      typeof triggeredAttempt !== "number" ||
+      !Number.isInteger(triggeredAttempt) ||
+      triggeredAttempt < 1
+    ) {
+      return false;
+    }
+    const issue = await db
+      .select()
+      .from(issues)
+      .where(and(eq(issues.id, issueId), eq(issues.companyId, run.companyId)))
+      .then((rows) => rows[0] ?? null);
+    if (
+      !issue ||
+      issue.monitorNextCheckAt ||
+      issue.monitorAttemptCount !== triggeredAttempt ||
+      issue.assigneeAgentId !== run.agentId ||
+      issue.assigneeUserId ||
+      !["in_progress", "in_review"].includes(issue.status)
+    ) {
+      return false;
+    }
+    const now = new Date();
+    const nextCheckAt = new Date(now.getTime() + CANCELLED_MONITOR_RUN_RECHECK_MS);
+    const patch = buildIssueMonitorRestoredPatch({
+      issue,
+      policy: normalizeIssueExecutionPolicy(issue.executionPolicy ?? null),
+      nextCheckAt,
+      attemptCount: triggeredAttempt - 1,
+    });
+    if (!patch) return false;
+    const restored = await db
+      .update(issues)
+      .set({ ...patch, updatedAt: now })
+      .where(
+        and(
+          eq(issues.id, issue.id),
+          isNull(issues.monitorNextCheckAt),
+          eq(issues.monitorAttemptCount, triggeredAttempt),
+          eq(issues.assigneeAgentId, run.agentId),
+          isNull(issues.assigneeUserId),
+          inArray(issues.status, ["in_progress", "in_review"]),
+        ),
+      )
+      .returning({ id: issues.id })
+      .then((rows) => rows.length > 0);
+    if (!restored) return false;
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: "system",
+      actorId: "heartbeat_scheduler",
+      agentId: null,
+      runId: run.id,
+      action: "issue.monitor_restored",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        identifier: issue.identifier,
+        reason: "monitor_run_cancelled",
+        cancelledRunId: run.id,
+        nextCheckAt: nextCheckAt.toISOString(),
+        attemptCount: triggeredAttempt - 1,
+      },
+    });
+    return true;
+  }
 
   function cancellationTerminationGraceMs(
     configuredGraceSec: number,
@@ -29308,6 +29753,13 @@ export function heartbeatService(
       const cancelled = cancellation.run;
       if (cancelled && options.resultJson?.[FRESH_SESSION_ON_RETRY_KEY] === true) {
         await clearFreshSessionRunTaskSession(cancelled);
+      }
+      if (cancelled?.status === "cancelled" && !options.cancelMonitor) {
+        try {
+          await restoreIssueMonitorForCancelledRun(cancelled);
+        } catch (err) {
+          logger.error({ err, runId: cancelled.id }, "failed to give back the issue monitor of a cancelled run");
+        }
       }
 
       if (cancellation.updated && cancelled) {
@@ -29810,6 +30262,7 @@ export function heartbeatService(
     wakeup: trackWakeup,
     dispatchPendingNativeStatusWakeups,
     triggerIssueMonitor,
+    wakeLiveReleaseMonitors,
 
     reportRunActivity: clearDetachedRunWarning,
 
@@ -29835,6 +30288,7 @@ export function heartbeatService(
     retryScheduledRetryNow,
 
     resumeQueuedRuns,
+    startNextQueuedRunForAgent,
 
     scheduleBoundedRetry: async (
       runId: string,

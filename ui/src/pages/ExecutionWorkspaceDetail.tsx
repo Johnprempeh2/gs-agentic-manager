@@ -48,6 +48,7 @@ import {
   routineHasWorkspaceSpecificVariables,
   sortWorkspaceRoutinesByName,
 } from "../lib/workspace-routines";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 type WorkspaceFormState = {
   name: string;
@@ -1144,6 +1145,7 @@ export function ExecutionWorkspaceDetail() {
                       value={form.name}
                       onChange={(event) => setForm((current) => current ? { ...current, name: event.target.value } : current)}
                       placeholder="Execution workspace name"
+                      {...noContactAutofill("workspace")}
                     />
                   </Field>
                 </div>

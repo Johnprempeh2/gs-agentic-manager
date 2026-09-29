@@ -19,6 +19,7 @@ import {
 import { conflict, forbidden, unprocessable } from "../errors.js";
 import { isCloudManagedInstance } from "../services/cloud-instance.js";
 import { getManagedInstanceConfig, SECRET_LIKE_CONFIG_KEY_PATTERN } from "../services/managed-config.js";
+import { hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import { parseExecutionPolicyBootstrapEnv } from "../services/execution-policy-bootstrap.js";
 import { isExecutionForcedToKubernetes } from "../services/execution-allowlist.js";
 import { validate } from "../middleware/validate.js";
@@ -331,6 +332,14 @@ export function environmentRoutes(
 ) {
   const router = Router();
   const svc = environmentService(db);
+
+  // Floor: hiding the Environments page (`instance.environments`) also
+  // rejects environment writes (create, update, delete, probe, custom image).
+  // Reads stay open for the agent and project environment pickers.
+  const environmentsFloor = hiddenSettingWriteFloor("instance.environments", "Environment management");
+  router.use("/companies/:companyId/environments", environmentsFloor);
+  router.use("/environments", environmentsFloor);
+  router.use("/environment-custom-image-setup-sessions", environmentsFloor);
   const environmentRuntime = environmentRuntimeService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
   });

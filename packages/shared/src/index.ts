@@ -452,6 +452,8 @@ export {
   ISSUE_MONITOR_SCHEDULED_BY,
   ISSUE_EXECUTION_MONITOR_KINDS,
   PROVIDER_QUOTA_MONITOR_SERVICE_NAME,
+  LIVE_RELEASE_MONITOR_SERVICE_NAME,
+  LIVE_RELEASE_REF_PATTERN,
   ISSUE_EXECUTION_MONITOR_RECOVERY_POLICIES,
   ISSUE_EXECUTION_STATE_STATUSES,
   ISSUE_EXECUTION_MONITOR_STATE_STATUSES,
@@ -913,6 +915,7 @@ export type {
   InstanceExperimentalSettingsWithManaged,
   InstanceGeneralSettings,
   InstanceSettings,
+  InstanceSystemMemory,
   ManagedExperimentalFeatureKey,
   ManagedSettingMetadata,
   BackupRetentionPolicy,
@@ -1249,6 +1252,12 @@ export type {
   CostByAgentModel,
   CostWindowSpendRow,
   CostByProject,
+  CompanySubscription,
+  DetectedSubscriptionProvider,
+  CompanySubscriptionsResult,
+  ApiEquivalentModelRow,
+  ApiEquivalentProviderRow,
+  ApiEquivalentSummary,
   FinanceEvent,
   FinanceSummary,
   FinanceByBiller,
@@ -1757,6 +1766,8 @@ export {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
+  DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
   GSAM_CLOUD_MANAGED_BY,
 } from "./types/instance.js";
 
@@ -2312,6 +2323,8 @@ export {
   type RunRoutine,
   type RotateRoutineTriggerSecret,
   createCostEventSchema,
+  createCompanySubscriptionSchema,
+  updateCompanySubscriptionSchema,
   createFinanceEventSchema,
   updateBudgetSchema,
   ASSET_NAMESPACE_MAX_LENGTH,
@@ -2342,6 +2355,8 @@ export {
   searchAdminUsersQuerySchema,
   updateUserCompanyAccessSchema,
   type CreateCostEvent,
+  type CreateCompanySubscription,
+  type UpdateCompanySubscription,
   type CreateFinanceEvent,
   type UpdateBudget,
   type CreateAssetImageMetadata,
@@ -2766,6 +2781,15 @@ export {
   rewriteUrlHostToLoopback,
 } from "./runtime-exposure/loopback-bind.js";
 export { ACCOUNT_HANDLE_MAX_LENGTH, toAccountHandle } from "./account-handle.js";
+export {
+  API_PRICE_TABLE,
+  API_PRICE_TABLE_CHECKED_AT,
+  computeApiEquivalentCents,
+  normalizeModelForPricing,
+  resolveApiPrice,
+  type ApiEquivalentInput,
+  type ApiModelPrice,
+} from "./api-pricing.js";
 export type { ExecutionContinuationEnvelope } from "./types/execution-continuation.js";
 export type { ExecutionProjection, ExecutionReconciliation, ExecutionBlocker } from "./types/execution-projection.js";
 

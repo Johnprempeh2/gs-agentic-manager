@@ -32,6 +32,15 @@ describe("AnnouncementCard", () => {
     expect(dismiss).not.toHaveBeenCalled();
     await cleanup();
   });
+  it("uses the popup material, not the see-through card material", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    const { div, cleanup } = await animatedCard();
+    const region = div.querySelector('[role="region"]')!;
+    expect(region.classList).toContain("gs-glass-float");
+    expect(region.classList).toContain("bg-popover");
+    expect(region.classList).not.toContain("gs-glass-card");
+    await cleanup();
+  });
   it("does not load animation when reduced motion is requested", async () => {
     vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);

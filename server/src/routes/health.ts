@@ -35,6 +35,7 @@ import {
   WORKSPACE_READINESS_USER_ID_HEADER,
 } from "../auth/workspace-login-handoff.js";
 import { serverVersion } from "../version.js";
+import { isReleaseRef, liveReleaseService } from "../services/live-release.js";
 import { getStartupRecoveryState } from "../startup-recovery-state.js";
 import { nativeRestartRecoverySummary } from "../services/native-runtime/native-restart-recovery.js";
 import {
@@ -135,6 +136,27 @@ export function healthRoutes(
   },
 ) {
   const router = Router();
+
+  // "Is commit X live?" (GRE-50): the commit and live-* tag this server runs,
+  // the last live start it recorded, and whether ?ref= (a commit SHA or an
+  // rc-*/live-* tag) is contained in the running commit (null: git cannot tell).
+  router.get("/live-release", (req, res) => {
+    const actorType = "actor" in req ? req.actor?.type : null;
+    if (!actorType || actorType === "none") {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (!db) {
+      res.status(404).json({ error: "live_release_unavailable" });
+      return;
+    }
+    const ref = typeof req.query.ref === "string" ? req.query.ref.trim() : "";
+    if (ref && !isReleaseRef(ref)) {
+      res.status(400).json({ error: "ref must be a commit SHA (7-40 hex characters) or an rc-* / live-* tag" });
+      return;
+    }
+    res.json(liveReleaseService(db).isLive(ref || null));
+  });
 
   router.post("/dev-server/restart", async (req, res) => {
     const actorType = "actor" in req ? req.actor?.type : null;

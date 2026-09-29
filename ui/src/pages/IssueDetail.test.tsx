@@ -208,6 +208,14 @@ vi.mock("../api/decisions", () => ({
   decisionsApi: mockDecisionsApi,
 }));
 
+const mockEmailApi = vi.hoisted(() => ({
+  thread: vi.fn(),
+}));
+
+vi.mock("@/api/email", () => ({
+  emailApi: mockEmailApi,
+}));
+
 vi.mock("../api/instanceSettings", () => ({
   instanceSettingsApi: mockInstanceSettingsApi,
 }));
@@ -1436,6 +1444,29 @@ describe("IssueDetail", () => {
     await flushReact();
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockIssuesApi.markRead).toHaveBeenCalledWith(canonical.id);
+  });
+
+  it("does not request created tasks or the email thread for an unsaved agent chat", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableStreamlinedUi: true,
+      enableChatConnectors: true,
+    });
+    mockIssuesApi.listAll.mockClear();
+    mockEmailApi.thread.mockClear();
+    const agent = createAgent();
+    await act(async () => {
+      root.render(<QueryClientProvider client={queryClient}><TaskDetailSurface conversation={{ agent, issue: null, ensureIssue: vi.fn() }} /></QueryClientProvider>);
+    });
+    await flushReact();
+    expect(mockIssueChatThreadRender).toHaveBeenCalled();
+    for (const [, filters] of mockIssuesApi.listAll.mock.calls) {
+      expect(String(filters?.createdFromIssueId ?? "")).not.toMatch(/^chat:/);
+      expect(String(filters?.descendantOf ?? "")).not.toMatch(/^chat:/);
+    }
+    for (const [, issueId] of mockEmailApi.thread.mock.calls) {
+      expect(issueId).toBeTruthy();
+      expect(String(issueId)).not.toMatch(/^chat:/);
+    }
   });
 
   it.each(["message", "attachment"])("creates an unused conversation only for the first %s and updates its canonical cache", async (kind) => {

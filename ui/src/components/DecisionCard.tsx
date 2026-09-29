@@ -320,7 +320,7 @@ export function DecisionCard({
   return (
     <div
       className={cn(
-        "rounded-2xl border bg-background/82 p-4 text-sm",
+        "rounded-xl border bg-background/82 p-4 text-sm",
         SHELL[tone],
         dimmed && "opacity-80",
         className,
@@ -380,7 +380,7 @@ export function DecisionCard({
 
       {/* Body */}
       {decision.body?.trim() && (
-        <div className="mt-3 text-sm leading-6 text-foreground/90">
+        <div className="mt-3 text-sm leading-6 text-foreground">
           <MarkdownBody>{decision.body}</MarkdownBody>
         </div>
       )}
@@ -455,7 +455,7 @@ export function DecisionCard({
                   onClick={() => runOption(option)}
                   className={cn(
                     "w-full rounded-sm border px-4 py-3 text-left transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50",
-                    disabled && "cursor-not-allowed opacity-60",
+                    disabled && "cursor-not-allowed text-subtle-foreground",
                     destructive
                       ? "border-rose-500/70 bg-rose-500/5 text-foreground hover:border-rose-500 hover:bg-rose-500/10"
                       : "border-border/70 bg-transparent text-foreground hover:border-sky-500/70 hover:bg-sky-500/10",
@@ -607,7 +607,7 @@ export function DecisionCard({
                   return (
                     <li key={row.key} className="flex items-start gap-2">
                       {RESULT_ICON[row.status]}
-                      <span className="min-w-0 flex-1 text-sm text-foreground/90">{row.summary}</span>
+                      <span className="min-w-0 flex-1 text-sm text-foreground">{row.summary}</span>
                       <IssueLink ref={row.link} />
                     </li>
                   );

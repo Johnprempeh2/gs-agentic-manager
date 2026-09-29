@@ -25,6 +25,7 @@ import {
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const levelLabels: Record<string, string> = {
   company: "Organization",
@@ -155,6 +156,7 @@ export function NewGoalDialog() {
           <input
             className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-subtle-foreground"
             placeholder="Goal title"
+            {...noContactAutofill("goal")}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => {

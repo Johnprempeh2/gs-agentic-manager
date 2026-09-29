@@ -122,9 +122,11 @@
       "path": "r2.failureRate",
       "samplesPath": "r2.finishedRuns",
       "minSamples": 30,
-      "baseline": 0,
-      "margin": "Provisional. Baseline 0/6 cannot bound the rate (the 95% upper bound for 0/6 is ~40%). 10% is an interim ceiling; recalibrate once a week has at least 30 finished runs.",
-      "max": 0.1
+      "baseline": 0.0394,
+      "baselineSamples": 203,
+      "baselineWindow": "week to 2026-09-28 (8 failed of 203 finished runs; GRE-69)",
+      "margin": "About 2x baseline (3.9% -> 8%), accepted by John on GRE-69. At n=203 the 95% upper bound for 8/203 is ~7.6%, so a normal week sits under the limit and a doubling of the failure rate breaches it.",
+      "max": 0.08
     },
     {
       "id": "s1-wake-to-action-median",
@@ -134,9 +136,11 @@
       "path": "s1.medianMs",
       "samplesPath": "s1.sampleSize",
       "minSamples": 20,
-      "baseline": 32704,
-      "margin": "+50%, provisional. Baseline n=6; recalibrate at n>=20.",
-      "max": 49000
+      "baseline": 36414,
+      "baselineSamples": 190,
+      "baselineWindow": "week to 2026-09-28 (GRE-69)",
+      "margin": "+51% (36 414 -> 55 000 ms), accepted by John on GRE-69. The median of 190 wakes is stable week to week; the margin allows ordinary load variation while catching a sustained slowdown.",
+      "max": 55000
     },
     {
       "id": "s1-wake-to-action-p95",
@@ -147,7 +151,9 @@
       "samplesPath": "s1.sampleSize",
       "minSamples": 20,
       "baseline": 498916,
-      "margin": "+50%, provisional. Baseline n=6, so this p95 is the single slowest run; recalibrate at n>=20.",
+      "baselineSamples": 190,
+      "baselineWindow": "week to 2026-09-28 (GRE-69)",
+      "margin": "+50% (498 916 -> 750 000 ms), unchanged limit accepted by John on GRE-69. Now measured on n=190, so the p95 is a real tail rather than the single slowest run.",
       "max": 750000
     }
   ]

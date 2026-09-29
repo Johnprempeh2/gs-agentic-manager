@@ -17,8 +17,10 @@ die() { printf 'preview: %s\n' "$*" >&2; exit 1; }
 
 # The preview server gets only these variables; nothing from the caller's
 # shell (GSAM_HOME, GSAM_CONFIG, DATABASE_URL, agent tokens) can leak in.
+# HOME is the account home, not the agent's temp HOME, and GSAM_ROOT is the
+# root this script uses, so the Releases page finds release.conf (GRE-171).
 PREVIEW_ENV=(
-  HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-}" SHELL=/bin/bash LANG="${LANG:-en_US.UTF-8}"
+  HOME="${GS_USER_HOME:-$HOME}" GSAM_ROOT="$GS_ROOT" USER="${USER:-}" LOGNAME="${LOGNAME:-}" SHELL=/bin/bash LANG="${LANG:-en_US.UTF-8}"
   TMPDIR="${TMPDIR:-/tmp}" PATH="$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0
   PORT="$PREVIEW_PORT"
   HEARTBEAT_SCHEDULER_ENABLED=false
@@ -67,6 +69,9 @@ cmd_start() {
 
   # Data: a fresh copy every start. Files are copied read-only from live; the
   # database comes from a read-only backup of the running live database.
+  # rsync -a keeps the modes of read-only folders (the skills runtime cache),
+  # so the old copy must be made writable before it can be removed.
+  [ -d "$PREVIEW_DATA_DIR" ] && chmod -R u+w "$PREVIEW_DATA_DIR"
   rm -rf "$PREVIEW_DATA_DIR" "$PREVIEW_ROOT/seed"
   mkdir -p "$PREVIEW_DATA_DIR" "$PREVIEW_ROOT/seed"
   rsync -a \
@@ -102,6 +107,7 @@ port=$PREVIEW_PORT
 source_repo=$(dirname "$source_git")
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
+  record_release_repo "$(dirname "$source_git")"
 
   for _ in $(seq 1 150); do
     sleep 2

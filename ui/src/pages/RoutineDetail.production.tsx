@@ -67,6 +67,7 @@ import type {
   RoutineEnvConfig,
   RoutineVariable,
 } from "@greatstone/shared";
+import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const LAST_SECTION_STORAGE_KEY = "paperclip.routineLastSection";
 
@@ -814,6 +815,7 @@ export function RoutineDetail() {
               data-autosize-title
               className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent text-base font-semibold leading-7 outline-none placeholder:text-subtle-foreground"
               placeholder="Routine title"
+              {...noContactAutofill("routine")}
               rows={1}
               value={editDraft.title}
               onChange={(event) => {

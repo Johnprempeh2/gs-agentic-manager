@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { instanceExperimentalSettingsSchema } from "@greatstone/shared";
 import { Sidebar } from "./Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -114,6 +115,16 @@ vi.mock("./SidebarStarredProjects", () => ({
   SidebarStarredProjects: () => <div data-testid="sidebar-starred-projects" />,
 }));
 
+const mockCanRelease = vi.hoisted(() => ({ value: false }));
+
+vi.mock("../hooks/useReleases", () => ({
+  useCanRelease: () => ({ canRelease: mockCanRelease.value, isLoading: false }),
+}));
+
+vi.mock("./SidebarReleaseFooter", () => ({
+  SidebarReleaseFooter: () => <div data-testid="sidebar-release-footer" />,
+}));
+
 vi.mock("./SidebarRecentTasks", () => ({
   SidebarRecentTasks: () => <div data-testid="sidebar-recent-tasks">Recent Tasks</div>,
 }));
@@ -178,6 +189,27 @@ describe("Sidebar", () => {
     flushSync(() => {
       root.unmount();
     });
+  });
+
+  it("shows Releases only to the board (GRE-122)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    const releasesLink = () =>
+      [...container.querySelectorAll("nav a")].find((anchor) => anchor.textContent?.trim() === "Releases");
+
+    mockCanRelease.value = false;
+    let root = await renderSidebar();
+    expect(releasesLink()).toBeUndefined();
+    flushSync(() => {
+      root.unmount();
+    });
+
+    mockCanRelease.value = true;
+    root = await renderSidebar();
+    expect(releasesLink()?.getAttribute("href")).toBe("/releases");
+    flushSync(() => {
+      root.unmount();
+    });
+    mockCanRelease.value = false;
   });
 
   it("shows Search as a nav item instead of a header icon", async () => {
@@ -356,11 +388,30 @@ describe("Sidebar", () => {
     });
   });
 
-  it("does not poll attention until Decisions is enabled", async () => {
+  it("shows Decisions with the default experimental settings (GRE-64)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue(
+      instanceExperimentalSettingsSchema.parse({}),
+    );
+    const root = await renderSidebar();
+
+    const primaryNavLinks = [...container.querySelectorAll("nav > div:first-child a")];
+    expect(primaryNavLinks.some((anchor) => anchor.textContent?.trim() === "Decisions")).toBe(true);
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows Decisions even when the stored setting is off (GRE-66)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: false });
     const root = await renderSidebar();
 
-    expect(mockAttentionApi.list).not.toHaveBeenCalled();
+    const primaryNavLinks = [...container.querySelectorAll("nav > div:first-child a")];
+    const decisionsLink = primaryNavLinks.find(
+      (anchor) => anchor.textContent?.trim() === "Decisions",
+    );
+    expect(decisionsLink?.getAttribute("href")).toBe("/decisions");
+    expect(mockAttentionApi.list).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
       root.unmount();

@@ -10,7 +10,12 @@ import type {
   IssueExecutionState,
   IssueMonitorScheduledBy,
 } from "@greatstone/shared";
-import { issueExecutionPolicySchema, issueExecutionStateSchema } from "@greatstone/shared";
+import {
+  LIVE_RELEASE_MONITOR_SERVICE_NAME,
+  LIVE_RELEASE_REF_PATTERN,
+  issueExecutionPolicySchema,
+  issueExecutionStateSchema,
+} from "@greatstone/shared";
 import { unprocessable } from "../errors.js";
 
 type AssigneeLike = {
@@ -90,6 +95,18 @@ function normalizeMonitorText(value: string | null | undefined) {
 
 export function redactIssueMonitorExternalRef(value: string | null | undefined) {
   return normalizeMonitorText(value) ? REDACTED_ISSUE_MONITOR_EXTERNAL_REF : null;
+}
+
+/**
+ * A live-release monitor keeps its commit SHA or rc-* tag, so the release can
+ * tell whether live contains it (GRE-50). Every other ref is redacted.
+ */
+function storedIssueMonitorExternalRef(serviceName: string | null | undefined, value: string | null | undefined) {
+  const ref = normalizeMonitorText(value);
+  if (normalizeMonitorText(serviceName) === LIVE_RELEASE_MONITOR_SERVICE_NAME && ref && LIVE_RELEASE_REF_PATTERN.test(ref)) {
+    return ref;
+  }
+  return redactIssueMonitorExternalRef(ref);
 }
 
 function monitorMetadataFromPolicy(monitor: IssueExecutionMonitorPolicy) {
@@ -391,7 +408,7 @@ export function normalizeIssueExecutionPolicy(input: unknown): IssueExecutionPol
       scheduledBy: parsed.data.monitor.scheduledBy,
       kind: parsed.data.monitor.kind ?? null,
       serviceName: normalizeMonitorText(parsed.data.monitor.serviceName),
-      externalRef: redactIssueMonitorExternalRef(parsed.data.monitor.externalRef),
+      externalRef: storedIssueMonitorExternalRef(parsed.data.monitor.serviceName, parsed.data.monitor.externalRef),
       timeoutAt: parsed.data.monitor.timeoutAt ?? null,
       maxAttempts: parsed.data.monitor.maxAttempts ?? null,
       recoveryPolicy: parsed.data.monitor.recoveryPolicy ?? null,
@@ -1211,6 +1228,51 @@ export function buildIssueMonitorClearedPatch(input: {
     executionState: executionStateWithMonitor(existingState, nextMonitorState) as Record<string, unknown> | null,
     monitorNextCheckAt: null,
     monitorWakeRequestedAt: null,
+  };
+}
+
+/**
+ * GRE-100: gives a one-shot monitor back after the run it started was
+ * cancelled. Re-arms it at `nextCheckAt` and restores the attempt count from
+ * before that dispatch. Returns null when the monitor is no longer in the
+ * triggered state (re-armed or cleared since), so a repeat call is a no-op.
+ * The stored externalRef was redacted at dispatch and cannot be restored.
+ */
+export function buildIssueMonitorRestoredPatch(input: {
+  issue: IssueLike;
+  policy: IssueExecutionPolicy | null;
+  nextCheckAt: Date;
+  attemptCount: number;
+}) {
+  const existingState = parseIssueExecutionState(input.issue.executionState);
+  const previous = existingState?.monitor ?? null;
+  if (!previous || previous.status !== "triggered") return null;
+
+  const monitor: IssueExecutionMonitorPolicy = {
+    nextCheckAt: input.nextCheckAt.toISOString(),
+    notes: previous.notes ?? null,
+    scheduledBy: previous.scheduledBy ?? "assignee",
+    kind: previous.kind ?? null,
+    serviceName: normalizeMonitorText(previous.serviceName),
+    externalRef: null,
+    timeoutAt: previous.timeoutAt ?? null,
+    maxAttempts: previous.maxAttempts ?? null,
+    recoveryPolicy: previous.recoveryPolicy ?? null,
+  };
+  const basePolicy: IssueExecutionPolicy = input.policy ?? { mode: "normal", commentRequired: true, stages: [] };
+  const nextMonitorState: IssueExecutionMonitorState = {
+    ...buildScheduledMonitorState(previous, monitor),
+    attemptCount: input.attemptCount,
+  };
+
+  return {
+    executionPolicy: { ...basePolicy, monitor } as Record<string, unknown>,
+    executionState: executionStateWithMonitor(existingState, nextMonitorState) as Record<string, unknown> | null,
+    monitorNextCheckAt: input.nextCheckAt,
+    monitorWakeRequestedAt: null,
+    monitorAttemptCount: input.attemptCount,
+    monitorNotes: monitor.notes ?? null,
+    monitorScheduledBy: monitor.scheduledBy,
   };
 }
 

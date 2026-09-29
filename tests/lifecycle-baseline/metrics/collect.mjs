@@ -115,6 +115,8 @@ const markdown = [
   `| R2 | Rejected-login failures | ${metrics.auth.authFailedRuns} | ${metrics.auth.retriesAfterAuthFailure} retries after them; ${metrics.auth.retryExhaustionsFromAuthFailures} of ${metrics.auth.retryExhaustions} \`Bounded retry exhausted\` events follow one |`,
   `| S1 | Wake → first useful action, median | ${fmt(metrics.s1.medianMs, " ms")} | n=${metrics.s1.sampleSize} (${metrics.s1.runsWithoutUsefulAction} runs without a useful action) |`,
   `| S1 | Wake → first useful action, p95 | ${fmt(metrics.s1.p95Ms, " ms")} | n=${metrics.s1.sampleSize}; queue delay median ${fmt(metrics.s1.queueDelayMedianMs, " ms")} |`,
+  `| S1-work | Wake → first useful non-comment action, median | ${fmt(metrics.s1.work.medianMs, " ms")} | n=${metrics.s1.work.sampleSize} (${metrics.s1.work.runsWithCommentsOnly} timed runs only commented) |`,
+  `| S1-work | Wake → first useful non-comment action, p95 | ${fmt(metrics.s1.work.p95Ms, " ms")} | n=${metrics.s1.work.sampleSize} |`,
   `| S1 | of which setup (wake → prompt sent), median | ${fmt(metrics.s1.split.setupMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.setupP95Ms, " ms")} |`,
   `| S1 | of which agent (prompt sent → first useful action), median | ${fmt(metrics.s1.split.agentMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.agentP95Ms, " ms")} |`,
   "",
