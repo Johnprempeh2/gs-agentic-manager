@@ -317,6 +317,41 @@ export async function readForkCi(repo: string, commit: string): Promise<{ status
   }
 }
 
+/** The Releases page fetches main at most this often, and waits this long for it (GRE-249). */
+export const MAIN_FETCH_INTERVAL_MS = 30_000;
+export const MAIN_FETCH_TIMEOUT_MS = 5_000;
+const mainFetches = new Map<string, { at: number; pending: Promise<void> | null }>();
+
+/**
+ * The origin/main commit, after a short `git fetch origin main` so a new
+ * merge shows within one refresh (GRE-249). One fetch per repo per interval;
+ * page loads in between, or while a fetch runs, share it. A failed or
+ * timed-out fetch falls back to the last fetched commit.
+ */
+export async function readReleaseMainCommit(repo: string, now = Date.now()): Promise<string | null> {
+  let state = mainFetches.get(repo);
+  if (!state || (!state.pending && now - state.at >= MAIN_FETCH_INTERVAL_MS)) {
+    const next = { at: now, pending: null as Promise<void> | null };
+    next.pending = git(repo, ["fetch", "--quiet", "origin", "main"], MAIN_FETCH_TIMEOUT_MS)
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        next.pending = null;
+      });
+    mainFetches.set(repo, next);
+    state = next;
+  }
+  if (state.pending) await state.pending;
+  return git(repo, ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]).catch(() => null);
+}
+
+/** Tests only: forget when each repo last fetched main. */
+export function resetMainFetchesForTest() {
+  mainFetches.clear();
+}
+
 export interface ReleaseTagInfo {
   tag: string;
   commit: string;

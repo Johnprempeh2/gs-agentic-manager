@@ -62,6 +62,7 @@ import {
   nextStableTagName,
   prepareReleaseRepo,
   readForkCi,
+  readReleaseMainCommit,
   readReleaseTags,
   resolveReleaseRepo as resolveReleaseRepoFrom,
   runCandidateScript,
@@ -295,7 +296,7 @@ export interface LiveReleaseDeps {
   createStableTag(repo: string, input: { tag: string; commit: string; notes: string }): Promise<void>;
   readForkCi(repo: string, commit: string): Promise<{ status: CiStatus; url: string | null }>;
   readTags(repo: string): Promise<ReleaseTagInfo[]>;
-  /** The main commit last fetched (origin/main), without fetching. */
+  /** origin/main after a short, rate-limited fetch (GRE-249). */
   readMainCommit(repo: string): Promise<string | null>;
   readRestartReport(): HotRestartReport | null;
   /** True once this server finished startup recovery (hot-restart adoption writes its report before that). */
@@ -1197,7 +1198,7 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
     createStableTag,
     readForkCi,
     readTags: readReleaseTags,
-    readMainCommit: async (repo) => git(repo, ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]),
+    readMainCommit: (repo) => readReleaseMainCommit(repo),
     readRestartReport: () => readHotRestartReportSync(),
     startupRecoveryReady: () => getStartupRecoveryState().phase === "ready",
     describeRuns: async (runIds) => {
