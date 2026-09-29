@@ -218,7 +218,10 @@ vi.mock("detect-port", () => ({
   default: detectPortMock,
 }));
 
-vi.mock("@greatstone/db", () => ({
+// Spread the real module so schema tables imported by startup services
+// (documents, issueDocuments, ...) stay defined; only stub DB side effects.
+vi.mock("@greatstone/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@greatstone/db")>()),
   createDb: createDbMock,
   ensurePostgresDatabase: vi.fn(),
   getPostgresDataDirectory: vi.fn(),
