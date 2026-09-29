@@ -6,7 +6,8 @@ of values the instance starts with: `GSAM_MANAGED_CONFIG` and
 Owner: Bedrock.
 
 Script: `scripts/client-instance.sh` (code in `scripts/client-instance/`).
-Run it from the checkout of the release the instance must run.
+Run it from the release folder the instance must run (see "Where the code
+runs"). The server runs from the same folder as the script you call.
 
 ## Rules
 
@@ -32,7 +33,33 @@ Everything is in one folder, `<root>`:
 | `server.log`, `server.pid` | the running server |
 
 The server gets a clean environment: nothing from your shell (agent tokens,
-`DATABASE_URL`, `GSAM_HOME`) reaches it.
+`DATABASE_URL`, `GSAM_HOME`) reaches it. It does keep your `HOME`, `PATH` and
+`TMPDIR`, so call the script through `env -i` (below). An agent run has a
+`TMPDIR` that is deleted when the run ends, and a `PATH` into `~/GSAM/live`.
+
+## Where the code runs
+
+Each release tag gets its own clone, next to the instance folders, never in
+`.gsam/worktrees/` (a worktree can be cleaned up and the instance then stops):
+
+```sh
+REL=/path/to/instances/releases/<tag>
+git clone --branch <tag> /Users/johnprempeh/Desktop/Code/gs-clip "$REL"
+git -C "$REL" remote set-url --push origin DISABLED
+(cd "$REL" && pnpm install --frozen-lockfile && pnpm --filter @greatstone/plugin-sdk build)
+```
+
+Instances on the same tag share its folder. Do not edit or `git pull` in it;
+a new release gets a new folder. Call the script with a clean environment:
+
+```sh
+env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" LANG=en_US.UTF-8 \
+  PATH=/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/bin:/bin \
+  "$REL/scripts/client-instance.sh" status --root <root>
+```
+
+Check which folder an instance runs from:
+`lsof -a -d cwd -p "$(cat <root>/server.pid)"`.
 
 ## Start a new instance
 
@@ -121,11 +148,16 @@ back on: `GSAM_MANAGED_CONFIG` is never stored in the database.
 
 One instance at a time:
 
-1. `backup`.
-2. `stop`.
-3. Move the checkout the instance runs from to the release tag.
-4. `start` (migrations apply at start), then `verify`.
-5. Say on the issue which instance moved and to which tag.
+1. Make the new release folder and install it (see "Where the code runs").
+   Test it first: `create` a sandbox instance from it (`--edition internal`,
+   a scratch `--root`, spare ports), then `stop` it and delete its folder.
+2. `backup`, with the script from the old or the new folder.
+3. `stop`, then `start` with the script from the **new** folder (migrations
+   apply at start). The instance is down only between the two (about 15 s).
+4. `verify`, and check the process folder with `lsof` (above).
+5. Keep the old release folder until the instance is checked, then remove it
+   if no other instance runs from it.
+6. Say on the issue which instance moved and to which tag.
 
 ## Change the edition values
 
