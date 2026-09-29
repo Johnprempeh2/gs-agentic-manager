@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
   DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
+  DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB,
   type InstanceGeneralSettings,
 } from "@greatstone/shared";
 import { instanceSettingsApi, type RunAdmissionRecommendation } from "@/api/instanceSettings";
@@ -23,6 +24,8 @@ import {
 
 type RunAdmission = NonNullable<InstanceGeneralSettings["runAdmission"]>;
 
+const DISK_FLOOR_MAX_GB = 100_000;
+
 export function RunAdmissionSettingsSection({
   runAdmission,
   disabled,
@@ -34,14 +37,18 @@ export function RunAdmissionSettingsSection({
 }) {
   const capId = useId();
   const floorId = useId();
+  const diskId = useId();
   const savedCap = runAdmission?.maxConcurrentRuns ?? DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS;
   const savedFloor = runAdmission?.minAvailableMemoryMb ?? DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB;
   const [capInput, setCapInput] = useState(String(savedCap));
+  const savedDiskFloor = runAdmission?.minFreeDiskGb ?? DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB;
   const [floorInput, setFloorInput] = useState(String(savedFloor));
+  const [diskInput, setDiskInput] = useState(String(savedDiskFloor));
 
   // Follow the saved values after a save or refetch.
   useEffect(() => setCapInput(String(savedCap)), [savedCap]);
   useEffect(() => setFloorInput(String(savedFloor)), [savedFloor]);
+  useEffect(() => setDiskInput(String(savedDiskFloor)), [savedDiskFloor]);
 
   const memoryQuery = useQuery({
     queryKey: queryKeys.instance.systemMemory,
@@ -64,8 +71,9 @@ export function RunAdmissionSettingsSection({
 
   const cap = parseWholeNumber(capInput, RUN_CAP_MIN, RUN_CAP_MAX);
   const floor = parseWholeNumber(floorInput, 0, RAM_FLOOR_MAX_MB);
-  const dirty = cap !== savedCap || floor !== savedFloor;
-  const canSave = !disabled && dirty && cap !== null && floor !== null;
+  const diskFloor = parseWholeNumber(diskInput, 0, DISK_FLOOR_MAX_GB);
+  const dirty = cap !== savedCap || floor !== savedFloor || diskFloor !== savedDiskFloor;
+  const canSave = !disabled && dirty && cap !== null && floor !== null && diskFloor !== null;
   // The suggestion follows the floor being typed, falling back to the saved one.
   const suggestionFloor = floor ?? savedFloor;
   const memory = memoryQuery.data;
@@ -77,20 +85,20 @@ export function RunAdmissionSettingsSection({
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!canSave || cap === null || floor === null) return;
-          // Send both fields: the server replaces the whole runAdmission object.
-          onSave({ maxConcurrentRuns: cap, minAvailableMemoryMb: floor });
+          if (!canSave || cap === null || floor === null || diskFloor === null) return;
+          // Send every field: the server replaces the whole runAdmission object.
+          onSave({ maxConcurrentRuns: cap, minAvailableMemoryMb: floor, minFreeDiskGb: diskFloor });
         }}
       >
         <div className="space-y-1.5">
           <h2 className="text-sm font-semibold">Run limits</h2>
           <p className="max-w-2xl text-sm text-muted-foreground">
             Limit how many agent runs this instance starts at once. Extra runs wait in the queue
-            and start when a slot or memory frees up. They are never failed or cancelled.
+            and start when a slot, memory, or disk space frees up. They are never failed or cancelled.
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor={capId}>Run cap</Label>
             <Input
@@ -131,6 +139,27 @@ export function RunAdmissionSettingsSection({
               {floor === null
                 ? `Enter a whole number of MB from 0 to ${RAM_FLOOR_MAX_MB}.`
                 : `Hold new runs while free RAM is below this. 0 turns the check off. Default ${DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB}.`}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor={diskId}>Disk floor (GB)</Label>
+            <Input
+              id={diskId}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={DISK_FLOOR_MAX_GB}
+              step={1}
+              value={diskInput}
+              disabled={disabled}
+              aria-invalid={diskFloor === null}
+              aria-describedby={`${diskId}-help`}
+              onChange={(event) => setDiskInput(event.target.value)}
+            />
+            <p id={`${diskId}-help`} className="text-xs text-muted-foreground">
+              {diskFloor === null
+                ? `Enter a whole number of GB from 0 to ${DISK_FLOOR_MAX_GB}.`
+                : `Hold new runs while free disk for data and worktrees is below this. Running runs keep going. 0 turns the check off. Default ${DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB}.`}
             </p>
           </div>
         </div>
@@ -184,7 +213,8 @@ export function RunAdmissionSettingsSection({
             onApply={(next) => {
               setCapInput(String(next.maxConcurrentRuns));
               setFloorInput(String(next.minAvailableMemoryMb));
-              onSave(next);
+              // The recommendation covers cap and RAM only; keep the saved disk floor.
+              onSave({ ...next, minFreeDiskGb: savedDiskFloor });
             }}
           />
         ) : null}
@@ -202,6 +232,7 @@ export function RunAdmissionSettingsSection({
               onClick={() => {
                 setCapInput(String(savedCap));
                 setFloorInput(String(savedFloor));
+                setDiskInput(String(savedDiskFloor));
               }}
             >
               Reset
@@ -224,7 +255,7 @@ function UsageRecommendation({
   savedCap: number;
   savedFloor: number;
   disabled: boolean;
-  onApply: (next: Required<RunAdmission>) => void;
+  onApply: (next: Omit<Required<RunAdmission>, "minFreeDiskGb">) => void;
 }) {
   const { suggested } = recommendation;
   const matchesSaved =

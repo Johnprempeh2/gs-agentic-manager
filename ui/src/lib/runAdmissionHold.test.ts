@@ -11,6 +11,15 @@ describe("runAdmissionWaitMessage (GRE-198)", () => {
     ).toBe("Waiting: low memory (1.6 GB free, floor 2 GB)");
   });
 
+  it("returns the low-disk hold line (GRE-207)", () => {
+    expect(
+      runAdmissionWaitMessage({
+        status: "queued",
+        currentStatusMessage: "Waiting: low disk (12 GB free, floor 20 GB)",
+      }),
+    ).toBe("Waiting: low disk (12 GB free, floor 20 GB)");
+  });
+
   it("ignores running runs and queued runs without a hold line", () => {
     expect(
       runAdmissionWaitMessage({

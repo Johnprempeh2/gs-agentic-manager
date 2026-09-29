@@ -86,8 +86,9 @@ free from 55400), `--company-name`, `--client-email`.
 
 Run limits are not set by the script, so a new instance uses the defaults:
 at most 6 runs at once, and new runs wait while free memory is below
-2048 MB. The OS memory-pressure level does not hold runs (GRE-198). Change
-them in Instance → General → Run limits.
+2048 MB or free disk (data dir and home volume) is below 20 GB (GRE-207).
+The OS memory-pressure level does not hold runs (GRE-198). Change them in
+Instance → General → Run limits; 0 turns a floor off.
 
 `create` does, in order:
 

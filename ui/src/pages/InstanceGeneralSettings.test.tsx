@@ -378,7 +378,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
     );
   });
 
-  it("sends both fields when only the cap changes", async () => {
+  it("sends every field when only the cap changes", async () => {
     await renderPage();
     const save = buttonNamed("Save run limits")!;
     expect(save.disabled).toBe(true);
@@ -389,11 +389,11 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
 
     await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());
     expect(mockInstanceSettingsApi.updateGeneral.mock.calls[0]?.[0]).toEqual({
-      runAdmission: { maxConcurrentRuns: 8, minAvailableMemoryMb: 3072 },
+      runAdmission: { maxConcurrentRuns: 8, minAvailableMemoryMb: 3072, minFreeDiskGb: 20 },
     });
   });
 
-  it("sends both fields when only the RAM floor changes", async () => {
+  it("sends every field when only the RAM floor changes", async () => {
     await renderPage();
 
     typeInto(inputLabelled("RAM floor (MB)"), "0");
@@ -401,7 +401,20 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
 
     await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());
     expect(mockInstanceSettingsApi.updateGeneral.mock.calls[0]?.[0]).toEqual({
-      runAdmission: { maxConcurrentRuns: 4, minAvailableMemoryMb: 0 },
+      runAdmission: { maxConcurrentRuns: 4, minAvailableMemoryMb: 0, minFreeDiskGb: 20 },
+    });
+  });
+
+  it("edits the disk floor, defaulting to 20 GB, and 0 turns it off (GRE-207)", async () => {
+    await renderPage();
+    expect(inputLabelled("Disk floor (GB)").value).toBe("20");
+
+    typeInto(inputLabelled("Disk floor (GB)"), "0");
+    flushSync(() => buttonNamed("Save run limits")!.click());
+
+    await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());
+    expect(mockInstanceSettingsApi.updateGeneral.mock.calls[0]?.[0]).toEqual({
+      runAdmission: { maxConcurrentRuns: 4, minAvailableMemoryMb: 3072, minFreeDiskGb: 0 },
     });
   });
 
@@ -536,7 +549,7 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
 
     await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());
     expect(mockInstanceSettingsApi.updateGeneral.mock.calls[0]?.[0]).toEqual({
-      runAdmission: { maxConcurrentRuns: 5, minAvailableMemoryMb: 3072 },
+      runAdmission: { maxConcurrentRuns: 5, minAvailableMemoryMb: 3072, minFreeDiskGb: 20 },
     });
     const capLabel = Array.from(container.querySelectorAll("label"))
       .find((el) => el.textContent === "Run cap");
