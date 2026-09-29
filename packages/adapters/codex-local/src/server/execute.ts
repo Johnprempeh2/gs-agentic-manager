@@ -61,6 +61,7 @@ import {
 import {
   parseCodexJsonl,
   classifyCodexAuthRefreshFailure,
+  isCodexApiKeyRejected,
   extractCodexRetryNotBefore,
   isCodexHarnessCrash,
   isCodexProviderQuotaError,
@@ -1468,9 +1469,18 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
               errorMessage: fallbackErrorMessage,
             })
           : null;
+      const apiKeyRejected =
+        (attempt.proc.exitCode ?? 0) !== 0 &&
+        !authRefreshFailure &&
+        isCodexApiKeyRejected({
+          stdout: attempt.proc.stdout,
+          stderr: attempt.proc.stderr,
+          errorMessage: fallbackErrorMessage,
+        });
       const providerQuota =
         (attempt.proc.exitCode ?? 0) !== 0 &&
         !authRefreshFailure &&
+        !apiKeyRejected &&
         isCodexProviderQuotaError({
           stdout: attempt.proc.stdout,
           stderr: attempt.proc.stderr,
@@ -1479,6 +1489,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const transientUpstream =
         (attempt.proc.exitCode ?? 0) !== 0 &&
         !authRefreshFailure &&
+        !apiKeyRejected &&
         !providerQuota &&
         isCodexTransientUpstreamError({
           stdout: attempt.proc.stdout,
@@ -1487,6 +1498,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         });
       const harnessCrash =
         !authRefreshFailure &&
+        !apiKeyRejected &&
         !providerQuota &&
         !transientUpstream &&
         isCodexHarnessCrash({
@@ -1514,6 +1526,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
             ? attempt.proc.errorCode
             : authRefreshFailure
             ? authRefreshFailure
+            : apiKeyRejected
+            ? "codex_auth_required"
             : providerQuota
             ? "provider_quota"
             : transientUpstream

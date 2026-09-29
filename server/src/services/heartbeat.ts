@@ -15,9 +15,10 @@ import { hasRemoteTerminationReceipt, remoteExecutionHasStopped, remoteTerminati
 import { applyConnectorSkills, prepareConnectorSkillDelivery, resolveConnectorAssignments } from "./connector-runtime.js";
 import { admitExplicitNativeContinuation, undeliveredLegacyUserCommentIds } from "./explicit-native-continuation.js";
 import { connectionIntentService } from "./connection-intents.js";
+import { agentAiAccessRoute, applyAiAccessRoute, readAiAccessRoute, resolveAiAccessRouteBinding } from "./ai-access-route.js";
 import { managedAiSessionFingerprintConfig, prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings, isAiConnectionBusy, AI_AUTH_ENV_KEYS } from "./ai-connection-runtime.js";
 import { aiConnectionService } from "./ai-connections.js";
-import { aiConnectionBindingSchema, isAiAuthRequiredErrorCode } from "@greatstone/shared";
+import { AI_ACCESS_ROUTE_DEFINITIONS, aiConnectionBindingSchema, isAiAuthRequiredErrorCode } from "@greatstone/shared";
 import { executionBlockerPredicate, getExecutionBlocker } from "./execution-blocker.js";
 import { CONVERSATION_CONTINUATION_POLICY, claimedAdapterType, runUsedConversationAdapter, hasConversationContinuationPolicy, isConversationAdapter } from "./conversation-continuation.js";
 import { recordExecutionWait } from "./execution-wait.js";
@@ -167,7 +168,7 @@ import {
   toolProfiles,
   workspaceOperations,
 } from "@greatstone/db";
-import { conflict, HttpError, notFound } from "../errors.js";
+import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import {
   getStartupTraceContext,
   getStartupTracer,
@@ -9812,7 +9813,7 @@ export function heartbeatService(
         .where(and(eq(agents.id, input.agentId), eq(agents.companyId, input.companyId)))
         .then((rows) => rows[0] ?? null);
       if (!agent) return null;
-      return resolveSessionBeforeForWakeup(agent, input.taskKey);
+      return resolveSessionBeforeForWakeup(await withAiAccessRoute(agent), input.taskKey);
     },
     // These four helpers stay in this file today; the wake-queue module
     // receives them here so it never imports this file, the service it is
@@ -10679,12 +10680,21 @@ export function heartbeatService(
     return unsafeTextProjectionPromise;
   }
 
+  // The install-wide AI access route (GRE-139) decides the harness and account
+  // type of every Claude/Codex agent. Runs, claims and session lookups all read
+  // the agent through here, so they agree on the harness.
+  async function withAiAccessRoute<T extends typeof agents.$inferSelect>(agent: T): Promise<T> {
+    return applyAiAccessRoute(agent, readAiAccessRoute(await instanceSettings.getGeneral()));
+  }
+
   async function getAgent(agentId: string) {
-    return db
+    const agent = await db
       .select()
       .from(agents)
       .where(eq(agents.id, agentId))
       .then((rows) => rows[0] ?? null);
+    // Keeps the row lookup's type and its null for a missing agent.
+    return agent && withAiAccessRoute(agent);
   }
 
   async function getAgentInvokability(
@@ -22179,7 +22189,8 @@ export function heartbeatService(
         ["local", "ssh"].includes(
           selectedEnvironmentForConfig?.driver ?? "local",
         );
-      const aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
+      const aiAccessRoute = agentAiAccessRoute(agent);
+      let aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
       const { resolvedConfig, secretKeys, secretManifest } =
         await resolveExecutionRunAdapterConfig({
           managedAiCredentials: Boolean(aiBinding),
@@ -22203,7 +22214,13 @@ export function heartbeatService(
         });
       if (aiBinding) {
         try {
+          // A route run uses the responsible user's own account or a shared
+          // one connected inside this install; never the host's login.
+          if (aiAccessRoute) aiBinding = await resolveAiAccessRouteBinding(db, { companyId: agent.companyId, responsibleUserId, route: aiAccessRoute });
           managedAiRuntime = await prepareManagedAiRuntime(db, { companyId: agent.companyId, agentId: agent.id, responsibleUserId, adapterType: agent.adapterType, binding: aiBinding, config: resolvedConfig });
+          if (aiAccessRoute && managedAiRuntime.attribution.method !== aiBinding.method) {
+            throw unprocessable(`This install uses ${AI_ACCESS_ROUTE_DEFINITIONS[aiAccessRoute].label} for AI access. Your default account uses a different sign-in method. Choose a matching default in Apps.`, { code: "ai_connection_incompatible" });
+          }
         } catch (error) {
           // Only fresh executions can receive a pre-provider wait receipt. A
           // persisted native input may already have provider effects to recover.

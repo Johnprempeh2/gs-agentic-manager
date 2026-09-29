@@ -40,7 +40,7 @@ import {
 } from "@greatstone/adapter-utils/server-utils";
 import { createWorkspaceRestoreTeardown } from "@greatstone/adapter-utils/workspace-restore-teardown";
 import { normalizeCodexModel } from "../index.js";
-import { classifyCodexAuthRefreshFailure, extractCodexRetryNotBefore } from "./parse.js";
+import { classifyCodexAuthRefreshFailure, extractCodexRetryNotBefore, isCodexApiKeyRejected } from "./parse.js";
 import { copyBackCodexAuth } from "./codex-auth-copyback.js";
 import { buildCodexAuthInboundProvision } from "./codex-auth-merge-scripts.js";
 import {
@@ -295,13 +295,14 @@ function withCodexAuthRefreshFailureClassification(result: AdapterExecutionResul
   if ((result.exitCode ?? 0) === 0) return result;
   const resultJson = parseObject(result.resultJson);
   const stopReason = asString(resultJson.stopReason, "");
-  const authFailure = classifyCodexAuthRefreshFailure({
-    errorMessage: [result.errorMessage ?? "", result.summary ?? "", stopReason]
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .join("\n"),
-  });
-  if (!authFailure) return result;
+  const errorMessage = [result.errorMessage ?? "", result.summary ?? "", stopReason]
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+  const authFailure = classifyCodexAuthRefreshFailure({ errorMessage });
+  if (!authFailure) {
+    return isCodexApiKeyRejected({ errorMessage }) ? { ...result, errorCode: "codex_auth_required" } : result;
+  }
 
   return {
     ...result,

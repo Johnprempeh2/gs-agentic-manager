@@ -7,6 +7,7 @@ import {
   DEFAULT_BACKUP_RETENTION,
 } from "../types/instance.js";
 import { feedbackDataSharingPreferenceSchema } from "./feedback.js";
+import { aiAccessRouteSchema } from "../ai-connections.js";
 import { shapeWithoutDefaults } from "./partial.js";
 
 function presetSchema<T extends readonly number[]>(presets: T, label: string) {
@@ -43,6 +44,8 @@ export const instanceGeneralSettingsSchema = z.object({
   executionMode: z.enum(["kubernetes", "any"]).optional(),
   // Run admission guard. Absent => built-in defaults (see run-admission.ts).
   runAdmission: runAdmissionSettingsSchema.optional(),
+  // Install-wide AI access route (GRE-139). Absent/null => each agent's own setting.
+  aiAccessRoute: aiAccessRouteSchema.nullable().optional(),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = z
