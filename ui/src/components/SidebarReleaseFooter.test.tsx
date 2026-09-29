@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { releasesOverviewFixture } from "@/fixtures/releaseFixtures";
+import { queryKeys } from "@/lib/queryKeys";
 import { SidebarReleaseFooter } from "./SidebarReleaseFooter";
 
 const mockReleasesApi = vi.hoisted(() => ({ overview: vi.fn() }));
@@ -28,6 +29,8 @@ vi.mock("@/lib/router", () => ({
 
 let container: HTMLDivElement;
 let root: Root;
+/** Health as CloudAccessGate caches it; a client edition lists `instance.releases`. */
+let health: Record<string, unknown>;
 
 async function flush() {
   for (let i = 0; i < 5; i += 1) {
@@ -39,6 +42,7 @@ async function flush() {
 
 async function render(rail = false) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(queryKeys.health, health);
   root = createRoot(container);
   await act(async () => {
     root.render(
@@ -57,6 +61,7 @@ function footer() {
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
+  health = { status: "ok" };
   mockReleasesApi.overview.mockResolvedValue(releasesOverviewFixture());
   mockAccessApi.getCurrentBoardAccess.mockResolvedValue({
     source: "local_implicit",
@@ -93,6 +98,13 @@ describe("SidebarReleaseFooter", () => {
 
   it("is hidden for non-board viewers", async () => {
     mockAccessApi.getCurrentBoardAccess.mockRejectedValue(new Error("Unauthorized"));
+    await render();
+    expect(footer()).toBeNull();
+    expect(mockReleasesApi.overview).not.toHaveBeenCalled();
+  });
+
+  it("is hidden on a client edition, even for the board (GRE-129)", async () => {
+    health = { status: "ok", hiddenSettings: ["instance.releases"] };
     await render();
     expect(footer()).toBeNull();
     expect(mockReleasesApi.overview).not.toHaveBeenCalled();

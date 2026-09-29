@@ -91,8 +91,9 @@ CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh verify --root <
 
 It checks: health; every hidden setting is reported hidden; each section 5
 "on" feature is on and each "off" feature is off; a change request to each
-floored hidden setting returns 403; exactly one company; new sign-ups are
-refused. A refused request
+floored hidden setting returns 403; exactly one company; the client log-in
+gets 403 on the release API (`instance.releases`, no Releases page on a client
+edition); new sign-ups are refused. A refused request
 changes nothing. If one is accepted, the script puts the old value back and
 fails.
 

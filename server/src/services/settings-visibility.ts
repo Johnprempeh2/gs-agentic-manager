@@ -59,3 +59,19 @@ export function hiddenSettingWriteFloor(key: HideableSettingKey, surface: string
     next();
   };
 }
+
+/**
+ * Route middleware that floors every request, reads included, to a surface the
+ * hosting operator hides as a whole (`instance.releases`): a 403 with
+ * `SETTINGS_OPERATOR_MANAGED_ERROR_CODE` for every actor, board users too.
+ */
+export function hiddenSettingFloor(key: HideableSettingKey, surface: string): RequestHandler {
+  return (_req, _res, next) => {
+    if (getHiddenSettings().has(key)) {
+      throw forbidden(`${surface} is managed by the hosting operator on this instance`, {
+        code: SETTINGS_OPERATOR_MANAGED_ERROR_CODE,
+      });
+    }
+    next();
+  };
+}
