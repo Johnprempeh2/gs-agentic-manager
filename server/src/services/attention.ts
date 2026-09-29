@@ -170,7 +170,7 @@ type AttentionListOptions = AttentionFeedQuery & {
   allowUnscopedAll?: boolean;
 };
 
-type AttentionServiceOptions = {
+export type AttentionServiceOptions = {
   openDecisionLimit?: number;
   now?: () => number;
 };
