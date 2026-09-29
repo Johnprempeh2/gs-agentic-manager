@@ -1,0 +1,40 @@
+
+X GRE-139-phase-1-ai-access-switchable-per-client-install-one-setting Fork CI Johnprempeh2/gs-agentic-manager#63 · 36504517766
+Triggered via pull_request about 9 hours ago
+
+JOBS
+X Typecheck in 3s (ID 109202802274)
+X Build in 2s (ID 109202802389)
+X Rebrand and workflow guard in 2s (ID 109202802393)
+- Runner Rust tests in 0s (ID 109202803225)
+- Tests (${{ matrix.label }}) in 0s (ID 109202804432)
+X Fork CI in 2s (ID 109202814679)
+
+ANNOTATIONS
+X The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
+Typecheck: .github#1
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Typecheck: .github#1
+
+X The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
+Build: .github#1
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Build: .github#1
+
+X The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
+Rebrand and workflow guard: .github#1
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Rebrand and workflow guard: .github#1
+
+X The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
+Fork CI: .github#1
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+Fork CI: .github#1
+
+
+To see what failed, try: gh run view 36504517766 --log-failed
+View this run on GitHub: https://github.com/Johnprempeh2/gs-agentic-manager/actions/runs/36504517766

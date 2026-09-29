@@ -63,6 +63,24 @@ to it.
   work. It sets Flint (release verifier) as the `review` stage participant.
   Flint does the ready check and merges; a big change is listed on the release
   card in the same way.
+- **When GitHub cannot run CI: `local-ci` (GRE-201).** "CI is green" means
+  Fork CI is green, or, only when GitHub could not start Fork CI on the pull
+  request's head, the commit status `local-ci` is green on that same head.
+  Check first with `node scripts/greatstone-local-ci.mjs detect <pr>`: exit 0
+  means GitHub did not start the jobs (the billing-stop message) or no job
+  started within 15 minutes. Then run
+  `node scripts/greatstone-local-ci.mjs run <pr>`: it runs guard, typecheck and
+  build on the Mac in `.gsam/local-ci/work`, one pull request at a time, waits
+  while the RAM guard says the host is busy, and posts `local-ci` and a comment
+  on the pull request. It refuses to run when Fork CI ran, so a real Fork CI
+  failure is never overridden: the owner fixes it. A new push needs a new check.
+  `local-ci` is only for pull requests from branches on
+  `Johnprempeh2/gs-agentic-manager` (agent pull requests). The repo is public,
+  and the check installs and builds the pull request's code on the Mac that
+  runs the live app, so `run` refuses a pull request from a fork (also with
+  `--dry-run`). A fork pull request waits for GitHub CI.
+  Note on the issue that the merge used `local-ci`. Runner and vitest lanes are
+  not part of it; they are not part of Fork CI on pull requests either.
 
 ## Never
 
@@ -86,8 +104,10 @@ A `pre-commit` hook, installed automatically when an agent worktree is created
 (`scripts/git-hooks/install.sh`), refuses a commit when the branch or worktree
 is not the run's `GSAM_WORKSPACE_BRANCH` / `GSAM_WORKSPACE_WORKTREE_PATH`; it
 does nothing at a terminal where those are not set.
-GitHub Free cannot protect a private repo's `main` on the server; with GitHub
-Pro, add a branch rule that requires a pull request and the "Fork CI" check.
+`main` has no branch protection or ruleset on GitHub (checked 29 Sep 2026), so
+a merge on `local-ci` is not blocked there. If a branch rule is added later
+that requires the "Fork CI" check, it must also accept `local-ci` (or let
+Keystone bypass it), or the fallback cannot merge.
 
 ## When something is unclear or blocked
 
@@ -103,7 +123,8 @@ Merging does not change the live app. A version goes live in these steps.
    met, and the diff does not touch `~/GSAM/`, secrets or client data. Keystone
    posts "Ready to merge" or "Not ready, because ..." on the issue.
 2. **Merge (Keystone).** `gh pr merge` when the verdict is "Ready to merge" and
-   CI is green; for a big change, also after Flint's checks pass. Keystone never
+   CI is green (Fork CI, or `local-ci` when GitHub could not start it; see
+   "The merge rule"); for a big change, also after Flint's checks pass. Keystone never
    merges its own pull requests; Flint checks and merges those.
 3. **Candidate (Keystone, once a day; optional since GRE-121).** The Releases
    page can release `origin/main` at any time and cuts the candidate itself.
