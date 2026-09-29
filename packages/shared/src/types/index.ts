@@ -799,7 +799,16 @@ export type {
   IssueTreePreviewTotals,
   IssueTreePreviewWarning,
 } from "./issue-tree-control.js";
-export type { Goal } from "./goal.js";
+export type {
+  Goal,
+  GoalBlocker,
+  GoalCheckIn,
+  GoalDetail,
+  GoalMilestone,
+  GoalProgress,
+  GoalProgressSource,
+  GoalWithProgress,
+} from "./goal.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
   BudgetPolicy,
