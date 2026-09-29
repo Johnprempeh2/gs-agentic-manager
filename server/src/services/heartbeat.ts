@@ -507,12 +507,22 @@ import {
   FRESH_SESSION_ON_RETRY_KEY,
   RUN_SILENT_TIMEOUT_ERROR_CODE,
   RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+  SILENT_RETRY_MAX_DEFER_MS,
+  awakeSilenceAgeMs,
+  evaluateSilentRetryPressure,
   formatSilenceMinutes,
   isRunSilentPastTimeout,
+  readSilentRetryHold,
   resolveRunSilentTimeoutMs,
   runRequiresFreshSession,
+  type SilentRetryPressure,
 } from "./run-silent-timeout.js";
-import { silenceAgeMs as runSilenceAgeMs } from "../modules/active-run-watchdog/domain/policy.js";
+import {
+  NO_HOST_BLIND_TIME,
+  hostBlindTime as processHostBlindTime,
+  type HostBlindTimeTracker,
+} from "./host-blind-time.js";
+import os from "node:os";
 import {
   ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS as RECOVERY_ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS,
   recoveryService,
@@ -9345,6 +9355,18 @@ export interface HeartbeatServiceOptions {
    * depend on the test machine's free RAM.
    */
   memoryReader?: MemoryReader;
+  /**
+   * GRE-181: host blind time (sleep, stalled event loop) subtracted from run
+   * silence. Defaults to the process tracker; under vitest to none.
+   */
+  hostBlindTime?: HostBlindTimeTracker;
+  /** GRE-181: host CPU load for the silent-retry hold. Null fails open. */
+  hostLoadReader?: () => { load1: number; cpus: number } | null;
+}
+
+function readHostLoad() {
+  // Windows reports [0, 0, 0]; that reads as no load, which fails open.
+  return { load1: os.loadavg()[0] ?? 0, cpus: os.availableParallelism?.() ?? os.cpus().length };
 }
 
 export async function cancelHeartbeatNativeRun(input: {
@@ -9473,6 +9495,10 @@ export function heartbeatService(
   const memoryReader: MemoryReader =
     options.memoryReader ??
     (runtimeEnv.VITEST ? async () => null : createSystemMemoryReader());
+  const hostBlindTime =
+    options.hostBlindTime ?? (runtimeEnv.VITEST ? NO_HOST_BLIND_TIME : processHostBlindTime);
+  const hostLoadReader =
+    options.hostLoadReader ?? (runtimeEnv.VITEST ? () => null : readHostLoad);
   const inWorktreeRuntime = isTruthyRuntimeEnvValue(
     runtimeEnv.GSAM_IN_WORKTREE,
   );
@@ -19915,10 +19941,198 @@ export function heartbeatService(
    * The first stop on an issue drops the saved adapter session and queues one
    * fresh-session retry; a repeat hang escalates the issue to `blocked` through
    * the normal stranded-issue path, which names the recovery owner.
+   *
+   * GRE-181: silence counts only time the server could watch (host blind time
+   * is subtracted), and a fresh retry is held while the host is overloaded;
+   * `releaseHeldSilentRetries` sends it later or escalates after a deadline.
    */
+  // `stoppingRunId` is about to be stopped, so it does not hold a run slot.
+  async function readSilentRetryPressure(now: Date, stoppingRunId?: string): Promise<SilentRetryPressure> {
+    const admissionSettings = resolveRunAdmissionSettings(await instanceSettings.getGeneral());
+    const [dbRunningRunIds, memory] = await Promise.all([
+      listRunningRunIdsForAdmission(),
+      memoryReader().catch(() => null),
+    ]);
+    const stoppingHoldsSlot =
+      stoppingRunId !== undefined &&
+      (dbRunningRunIds.includes(stoppingRunId) || runAdmissionAdmittedRunIds.has(stoppingRunId));
+    const admission = evaluateRunAdmission({
+      settings: admissionSettings,
+      runningCount: countRunningRunsForAdmission(dbRunningRunIds) - (stoppingHoldsSlot ? 1 : 0),
+      memory,
+    });
+    let load: { load1: number; cpus: number } | null = null;
+    try {
+      load = hostLoadReader();
+    } catch {
+      load = null;
+    }
+    return evaluateSilentRetryPressure({
+      now: now.getTime(),
+      lastResumeAt: hostBlindTime.lastResumeAt(),
+      admission,
+      load,
+    });
+  }
+
+  async function queueSilentRetry(agentId: string, issueId: string, stoppedRunId: string) {
+    return enqueueWakeup(agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+      idempotencyKey: `${RUN_SILENT_TIMEOUT_ERROR_CODE}:${stoppedRunId}`,
+      requestedByActorType: "system",
+      requestedByActorId: "heartbeat.silent_run_watchdog",
+      payload: { issueId },
+      contextSnapshot: {
+        issueId,
+        taskId: issueId,
+        wakeReason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
+        forceFreshSession: true,
+        retryOfRunId: stoppedRunId,
+        silentTimeoutRetryOfRunId: stoppedRunId,
+      },
+    });
+  }
+
+  // Resolves a held retry once; false when another sweep already resolved it.
+  async function resolveSilentRetryHold(
+    runId: string,
+    resolution: "retried" | "escalated" | "superseded",
+    now: Date,
+  ) {
+    const patch = JSON.stringify({ retryResolvedAt: now.toISOString(), retryResolution: resolution });
+    const rows = await db
+      .update(heartbeatRuns)
+      .set({
+        resultJson: sql`jsonb_set(coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb), '{silentTimeout}',
+          coalesce(${heartbeatRuns.resultJson}->'silentTimeout', '{}'::jsonb) || ${patch}::jsonb)`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(heartbeatRuns.id, runId),
+          sql`${heartbeatRuns.resultJson}->'silentTimeout'->>'retryResolvedAt' is null`,
+        ),
+      )
+      .returning({ id: heartbeatRuns.id });
+    return rows.length > 0;
+  }
+
+  async function hasNewerIssueRun(run: typeof heartbeatRuns.$inferSelect, issueId: string) {
+    const rows = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          sql`${heartbeatRuns.id} <> ${run.id}`,
+          gt(heartbeatRuns.createdAt, run.createdAt),
+          sql`(${heartbeatRuns.contextSnapshot}->>'issueId' = ${issueId}
+            or ${heartbeatRuns.contextSnapshot}->>'taskId' = ${issueId})`,
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * GRE-181: send a held fresh-session retry once the host has recovered. A
+   * held retry whose issue moved on (reassigned, closed, blocked, or woken by
+   * something else) is dropped. After `SILENT_RETRY_MAX_DEFER_MS` of awake
+   * waiting the issue escalates to `blocked`, which names the recovery owner.
+   */
+  async function releaseHeldSilentRetries(
+    now: Date,
+    pressure: () => Promise<SilentRetryPressure>,
+    companyId?: string,
+  ) {
+    const result = { released: 0, escalated: 0, superseded: 0, held: 0 };
+    const heldRuns = await db
+      .select()
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.status, "cancelled"),
+          eq(heartbeatRuns.errorCode, RUN_SILENT_TIMEOUT_ERROR_CODE),
+          sql`${heartbeatRuns.resultJson}->'silentTimeout'->>'retryDeferredAt' is not null`,
+          sql`${heartbeatRuns.resultJson}->'silentTimeout'->>'retryResolvedAt' is null`,
+          companyId ? eq(heartbeatRuns.companyId, companyId) : undefined,
+        ),
+      );
+    for (const run of heldRuns) {
+      const hold = readSilentRetryHold(run.resultJson);
+      const issueId = runIssueId(run);
+      const issue = issueId
+        ? await db
+            .select()
+            .from(issues)
+            .where(and(eq(issues.id, issueId), eq(issues.companyId, run.companyId)))
+            .then((rows) => rows[0] ?? null)
+        : null;
+      if (
+        !issue ||
+        issue.assigneeAgentId !== run.agentId ||
+        !["todo", "in_progress", "in_review"].includes(issue.status) ||
+        (await hasNewerIssueRun(run, issue.id))
+      ) {
+        if (await resolveSilentRetryHold(run.id, "superseded", now)) result.superseded += 1;
+        continue;
+      }
+
+      const current = await pressure();
+      if (!current.overloaded) {
+        const wake = await queueSilentRetry(run.agentId, issue.id, run.id);
+        if (wake && (await resolveSilentRetryHold(run.id, "retried", now))) {
+          result.released += 1;
+          await issuesSvc.addComment(
+            issue.id,
+            `The host has recovered. Started the held fresh retry for stopped run \`${run.id.slice(0, 8)}\` in a new session.`,
+            { runId: run.id },
+            { authorType: "system" },
+          );
+        }
+        continue;
+      }
+
+      const deferredAt = Date.parse(hold.retryDeferredAt ?? "");
+      const from = Number.isFinite(deferredAt) ? deferredAt : now.getTime();
+      const awakeWaitMs =
+        now.getTime() - from - hostBlindTime.blindMsBetween(from, now.getTime());
+      if (awakeWaitMs < SILENT_RETRY_MAX_DEFER_MS) {
+        result.held += 1;
+        continue;
+      }
+      const escalated = await recovery.escalateStrandedAssignedIssue({
+        issue,
+        previousStatus: issue.status as "todo" | "in_progress" | "in_review",
+        latestRun: run,
+        recoveryCause: RUN_SILENT_TIMEOUT_ERROR_CODE,
+        notice: {
+          body:
+            `The fresh retry for stopped run \`${run.id.slice(0, 8)}\` waited ${formatSilenceMinutes(awakeWaitMs)} ` +
+            `for the host to recover (${current.message}). Moving it to \`blocked\` so it is visible for intervention.`,
+          title: "Silent run retry held",
+          tone: "danger",
+        },
+      });
+      if (escalated) result.escalated += 1;
+      await resolveSilentRetryHold(run.id, "escalated", now);
+    }
+    return result;
+  }
+
   async function stopSilentRuns(opts?: { now?: Date; companyId?: string }) {
     const now = opts?.now ?? new Date();
-    const result = { stopped: 0, retried: 0, escalated: 0, runIds: [] as string[] };
+    hostBlindTime.sample();
+    const result = {
+      stopped: 0,
+      retried: 0,
+      retriesHeld: 0,
+      escalated: 0,
+      runIds: [] as string[],
+      heldRetries: { released: 0, escalated: 0, superseded: 0, held: 0 },
+    };
     const cutoff = await getWorktreeExecutionCutoff();
     const candidates = await db
       .select({ run: heartbeatRuns, agent: agents })
@@ -19934,7 +20148,9 @@ export function heartbeatService(
 
     for (const { run, agent } of candidates) {
       const timeoutMs = resolveRunSilentTimeoutMs(agent.runtimeConfig);
-      if (!isRunSilentPastTimeout(run, timeoutMs, now)) continue;
+      if (timeoutMs === null) continue;
+      const silenceAge = awakeSilenceAgeMs(run, now, hostBlindTime.blindMsBetween);
+      if (!silenceAge || silenceAge.awakeMs < timeoutMs) continue;
       if (await hasActiveWatchdogQuietDecision(run, now)) continue;
 
       const issueId = runIssueId(run);
@@ -19949,7 +20165,7 @@ export function heartbeatService(
       // A blocked source is intentionally quiet (same rule as the recovery scan).
       if (issue?.status === "blocked") continue;
 
-      const silenceMs = runSilenceAgeMs(run, now) ?? timeoutMs!;
+      const silenceMs = silenceAge.awakeMs;
       const silence = formatSilenceMinutes(silenceMs);
       const repeatHang = issue
         ? (await priorSilentTimeoutStopsForIssue(run, issue.id)) > 0
@@ -19959,6 +20175,10 @@ export function heartbeatService(
         !repeatHang &&
         issue.assigneeAgentId === agent.id &&
         ["todo", "in_progress", "in_review"].includes(issue.status);
+      // Decided before the stop and written with it, so stranded-issue
+      // recovery never sees this stop without its hold.
+      const retryPressure = retryEligible ? await readSilentRetryPressure(now, run.id) : null;
+      const heldPressure = retryPressure?.overloaded ? retryPressure : null;
 
       const stopped = await cancelRunInternal(
         run.id,
@@ -19969,13 +20189,23 @@ export function heartbeatService(
             [FRESH_SESSION_ON_RETRY_KEY]: true,
             silentTimeout: {
               silenceMs,
+              wallSilenceMs: silenceAge.wallMs,
+              blindMs: silenceAge.blindMs,
               timeoutMs,
               lastOutputAt: run.lastOutputAt?.toISOString() ?? null,
               stoppedAt: now.toISOString(),
+              ...(heldPressure
+                ? { retryDeferredAt: now.toISOString(), retryDeferReason: heldPressure.reason }
+                : {}),
             },
           },
           eventMessage: `run stopped: no output for ${silence} (${RUN_SILENT_TIMEOUT_ERROR_CODE})`,
-          eventPayload: { errorCode: RUN_SILENT_TIMEOUT_ERROR_CODE, silenceMs, timeoutMs },
+          eventPayload: {
+            errorCode: RUN_SILENT_TIMEOUT_ERROR_CODE,
+            silenceMs,
+            wallSilenceMs: silenceAge.wallMs,
+            timeoutMs,
+          },
           // This path owns the successor: one fresh retry, or escalation.
           suppressImmediateRecovery: issue !== null,
         },
@@ -19985,24 +20215,21 @@ export function heartbeatService(
       result.runIds.push(run.id);
       if (!issue) continue;
 
+      if (retryEligible && heldPressure) {
+        result.retriesHeld += 1;
+        await issuesSvc.addComment(
+          issue.id,
+          `Stopped run \`${run.id.slice(0, 8)}\`: no output for ${silence} (\`${RUN_SILENT_TIMEOUT_ERROR_CODE}\`). ` +
+            `The host is overloaded (${heldPressure.message}), so the fresh retry waits until it recovers. ` +
+            `If it has not recovered after ${formatSilenceMinutes(SILENT_RETRY_MAX_DEFER_MS)}, the issue moves to \`blocked\`.`,
+          { runId: run.id },
+          { authorType: "system" },
+        );
+        continue;
+      }
+
       if (retryEligible) {
-        const wake = await enqueueWakeup(agent.id, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
-          idempotencyKey: `${RUN_SILENT_TIMEOUT_ERROR_CODE}:${run.id}`,
-          requestedByActorType: "system",
-          requestedByActorId: "heartbeat.silent_run_watchdog",
-          payload: { issueId: issue.id },
-          contextSnapshot: {
-            issueId: issue.id,
-            taskId: issue.id,
-            wakeReason: RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
-            forceFreshSession: true,
-            retryOfRunId: run.id,
-            silentTimeoutRetryOfRunId: run.id,
-          },
-        });
+        const wake = await queueSilentRetry(agent.id, issue.id, run.id);
         if (wake) {
           result.retried += 1;
           await issuesSvc.addComment(
@@ -20037,14 +20264,21 @@ export function heartbeatService(
       if (escalated) result.escalated += 1;
     }
 
+    result.heldRetries = await releaseHeldSilentRetries(
+      now,
+      () => readSilentRetryPressure(now),
+      opts?.companyId,
+    );
     return result;
   }
 
   async function scanSilentActiveRuns(opts?: {
     now?: Date;
     companyId?: string;
+    /** GRE-181: the scheduler runs the stop sweep on its own every tick. */
+    skipSilentStops?: boolean;
   }) {
-    const silentStops = await stopSilentRuns(opts);
+    const silentStops = opts?.skipSilentStops ? null : await stopSilentRuns(opts);
     const scanned = await recovery.scanSilentActiveRuns({
       ...opts,
       issueCreatedAtGte: await getWorktreeExecutionCutoff(),
@@ -30324,6 +30558,7 @@ export function heartbeatService(
     reconcileResolvedDependencyWakes,
 
     scanSilentActiveRuns,
+    stopSilentRuns,
 
     reconcileTaskWatchdogs,
 

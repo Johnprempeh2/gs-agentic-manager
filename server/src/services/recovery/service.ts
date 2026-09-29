@@ -1,6 +1,7 @@
 import { settleSlackConversation } from "../slack-conversation-lifecycle.js";
 import { externalConversationStateSql } from "../slack-conversation-state.js";
 import { executionRetryAccounting } from "../execution-recovery-attempt.js";
+import { isSilentRetryHoldPending } from "../run-silent-timeout.js";
 import {
   decideLegacyContinuation, legacyDispositionEpisode, legacyDispositionFingerprint,
   LEGACY_DISPOSITION_REPAIR_INSTRUCTION, type LegacyDispositionEpisode,
@@ -4644,6 +4645,14 @@ export function recoveryService(
           issue.status === "in_review" ? agentId : null,
         )
       ) {
+        result.skipped += 1;
+        continue;
+      }
+
+      // GRE-181: the silent-run watchdog holds this issue's fresh retry while
+      // the host is overloaded; it sends the retry or escalates on its own
+      // deadline. A continuation from here would start the same hang.
+      if (isSilentRetryHoldPending(latestRun, new Date())) {
         result.skipped += 1;
         continue;
       }
