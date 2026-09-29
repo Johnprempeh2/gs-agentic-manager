@@ -35,6 +35,9 @@ if [ "$MODE" = release ]; then
 fi
 
 [ -d "$LIVE_DIR/.git" ] || die "no live checkout at $LIVE_DIR"
+# Before the backup and the tag: a stale index.lock would stop the checkout below.
+LOCK_NOTE="$(live_index_lock_check)" || die "$LOCK_NOTE"
+[ -z "$LOCK_NOTE" ] || say "$LOCK_NOTE"
 [ -z "$(git -C "$LIVE_DIR" status --porcelain)" ] || die "the live checkout has local changes; nothing may edit it. Inspect $LIVE_DIR before releasing."
 
 git -C "$RELEASE_REPO" fetch --quiet --tags origin
