@@ -68,6 +68,7 @@ import { parseIssueExecutionState } from "./issue-execution-policy.js";
 import { isProspectiveBlockedTransition } from "./routable-blocked.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 import { canonicalizeStoredResolverPolicy } from "./issue-thread-interaction-resolution.js";
+import { tabledIssueIdSet } from "./issue-tabling.js";
 import { decisionQueueService } from "./decision-queues.js";
 import {
   decisionRetentionService,
@@ -1076,6 +1077,15 @@ function readRunIssueId(contextSnapshot: Record<string, unknown> | null) {
   return typeof issueId === "string" && issueId.length > 0 ? issueId : null;
 }
 
+function attentionItemIssueIds(item: AttentionItem): string[] {
+  const ids: string[] = [];
+  if (item.subject.kind === "issue") ids.push(item.subject.id);
+  const metadataIssueId = item.subject.metadata?.issueId;
+  if (typeof metadataIssueId === "string") ids.push(metadataIssueId);
+  if (item.relatedIssue?.id) ids.push(item.relatedIssue.id);
+  return ids;
+}
+
 export function attentionService(db: Db, serviceOptions: AttentionServiceOptions = {}) {
   const openDecisionLimit = Math.min(
     Math.max(Math.trunc(serviceOptions.openDecisionLimit ?? OPEN_DECISION_DEFAULT_LIMIT), 1),
@@ -1086,15 +1096,19 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       if (options.all && !options.queue && !options.allowUnscopedAll) {
         throw badRequest("all requires a queue filter");
       }
-      const [prefix, dismissals] = await Promise.all([
+      const [prefix, dismissals, tabledIssueIds] = await Promise.all([
         companyPrefix(db, companyId),
         dismissalByKey(db, companyId, options.userId),
+        tabledIssueIdSet(db, companyId),
       ]);
       const includeDismissed = options.includeDismissed === true;
       const now = serviceOptions.now?.() ?? Date.now();
       const collected: AttentionItem[] = [];
 
       const add = (item: AttentionItem) => {
+        // "Not now" (GRE-262): every card of a tabled task leaves the feed and
+        // its counts until the task comes back.
+        if (tabledIssueIds.size > 0 && attentionItemIssueIds(item).some((id) => tabledIssueIds.has(id))) return;
         const dismissal = activeDismissalState(dismissals, item.dismissalKey, item.activityAt, now);
         if (!includeDismissed && dismissal?.isActive) return;
         collected.push({ ...item, dismissal });

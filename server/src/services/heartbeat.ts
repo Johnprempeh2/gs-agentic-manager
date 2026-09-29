@@ -606,6 +606,7 @@ import {
   writePaperclipSkillSyncPreference,
 } from "@greatstone/adapter-utils/server-utils";
 import { extractSkillMentionIds, isUuidLike } from "@greatstone/shared";
+import { isIssueTabledById } from "./issue-tabling.js";
 import { evaluateCodexCredentialReadiness } from "@greatstone/adapter-codex-local/server";
 import { environmentService } from "./environments.js";
 import { parseExecutionPolicyBootstrapEnv } from "./execution-policy-bootstrap.js";
@@ -17516,6 +17517,24 @@ export function heartbeatService(
         .limit(1);
       if (settlingOwner) return null;
     }
+    // Runs inserted without enqueueWakeup (retries, recovery, promoted
+    // deferred wakes) and runs queued just before "Not now" stop here.
+    if (issueId && isUuidLike(issueId) && await isIssueTabledById(db, issueId)) {
+      await cancelQueuedRunForTabledIssue(run, issueId);
+      await logActivity(db, {
+        companyId: run.companyId,
+        actorType: "system",
+        actorId: "system",
+        agentId: run.agentId,
+        runId: run.id,
+        action: "issue.tabled_run_cancelled",
+        entityType: "heartbeat_run",
+        entityId: run.id,
+        issueId,
+        details: { issueId, source: "heartbeat.claim_queued_run" },
+      });
+      return null;
+    }
     if (issueId) {
       const activePauseHold = await treeControlSvc.getActivePauseHoldGate(
         run.companyId,
@@ -18213,6 +18232,43 @@ export function heartbeatService(
       },
     });
 
+    return cancelled;
+  }
+
+  // Same shape as cancelQueuedRunForBlockedDependencies: claimQueuedRun holds
+  // the agent start lock, so this must not go through cancelRunInternal.
+  async function cancelQueuedRunForTabledIssue(
+    run: typeof heartbeatRuns.$inferSelect,
+    issueId: string,
+  ) {
+    const now = new Date();
+    const reason = "Cancelled because the task is tabled (Not now); it wakes again when it is brought back";
+    const cancelled = await setRunStatus(run.id, "cancelled", {
+      finishedAt: now,
+      error: reason,
+      errorCode: "issue_tabled",
+      resultJson: {
+        ...parseObject(run.resultJson),
+        stopReason: "issue_tabled",
+        effectiveTimeoutSec: 0,
+        timeoutConfigured: false,
+        timeoutSource: "tabled_gate",
+        timeoutFired: false,
+      },
+    });
+    if (!cancelled) return null;
+    await setWakeupStatus(run.wakeupRequestId, "skipped", { finishedAt: now, error: reason });
+    await db
+      .update(issues)
+      .set({ executionRunId: null, executionAgentNameKey: null, executionLockedAt: null, updatedAt: now })
+      .where(and(eq(issues.companyId, run.companyId), eq(issues.id, issueId), eq(issues.executionRunId, run.id)));
+    await appendRunEvent(cancelled, {
+      eventType: "lifecycle",
+      stream: "system",
+      level: "warn",
+      message: reason,
+      payload: { issueId },
+    });
     return cancelled;
   }
 
@@ -27636,6 +27692,15 @@ export function heartbeatService(
           "No assigned todo or in_progress issue requires this agent before timer adapter invocation.",
       });
       await markTimerHeartbeatChecked(agentId, source);
+      return null;
+    }
+
+    // "Not now" (GRE-262): a tabled task gets no wakes of any kind. The wake
+    // is dropped, not saved; bringing the task back sends one fresh wake.
+    if (issueId && isUuidLike(issueId) && await isIssueTabledById(db, issueId)) {
+      await writeSkippedRequest("issue_tabled", {
+        error: "This task is tabled (Not now). Bring it back to resume work.",
+      });
       return null;
     }
 
