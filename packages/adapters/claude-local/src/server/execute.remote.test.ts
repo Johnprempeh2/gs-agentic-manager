@@ -13,7 +13,7 @@ const {
   syncDirectoryToSsh,
   startAdapterExecutionTargetPaperclipBridge,
 } = vi.hoisted(() => ({
-  runChildProcess: vi.fn(async (_runId: string, _command: string, args: string[]): Promise<RunProcessResult> => ({
+  runChildProcess: vi.fn(async (_runId: string, _command: string, args: string[], _opts?: unknown): Promise<RunProcessResult> => ({
     exitCode: 0,
     signal: null,
     timedOut: false,
