@@ -60,10 +60,10 @@ describe("instance settings service", () => {
       enableDecisions: true,
       enableGoalsSidebarLink: true,
       enableServerInfoDebugView: true,
-      enablePaperclipDeveloperMode: true,
+      enablePaperclipDeveloperMode: false,
       enableSimplifiedEnglishInteractions: false,
       enableFirstTaskPlanProposal: false,
-      autoRestartDevServerWhenIdle: true,
+      autoRestartDevServerWhenIdle: false,
       enableWorkspaceBranchReconcileForward: true,
       enableWorkspaceDirtyQuarantineRepair: false,
       enableOwnerInstanceAdmin: false,
@@ -116,9 +116,28 @@ describe("instance settings service", () => {
     expect(
       normalizeExperimentalSettings({ enableTaskChatRedesign: true }).enableClassicTaskInterface,
     ).toBe(false);
-    expect(
-      normalizeExperimentalSettings({ enableClassicTaskInterface: true }).enableClassicTaskInterface,
-    ).toBe(true);
+  });
+
+  it("forces the 4 retired flags off, also when the stored setting says on (GRE-196)", () => {
+    const stored = {
+      enableClassicTaskInterface: true,
+      enableSmokeLab: true,
+      enablePaperclipDeveloperMode: true,
+      autoRestartDevServerWhenIdle: true,
+    };
+    expect(normalizeExperimentalSettings(stored)).toMatchObject({
+      enableClassicTaskInterface: false,
+      enableSmokeLab: false,
+      enablePaperclipDeveloperMode: false,
+      autoRestartDevServerWhenIdle: false,
+    });
+    // A patch cannot turn them back on either.
+    expect(applyExperimentalSettingsPatch({}, stored)).toMatchObject({
+      enableClassicTaskInterface: false,
+      enableSmokeLab: false,
+      enablePaperclipDeveloperMode: false,
+      autoRestartDevServerWhenIdle: false,
+    });
   });
 
   it("defaults enableSimplifiedEnglishInteractions to false for empty and legacy stored settings", () => {

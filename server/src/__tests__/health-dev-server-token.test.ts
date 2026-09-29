@@ -118,7 +118,8 @@ describe("GET /health dev-server supervisor access", () => {
           changedPathCount: 1,
           changedPathsSample: ["server/src/routes/health.ts"],
           pendingMigrations: [],
-          autoRestartEnabled: true,
+          // Greatstone (GRE-196): the retired auto-restart flag always reads off.
+          autoRestartEnabled: false,
           activeRunCount: 0,
           waitingForIdle: false,
           lastRestartAt: "2026-03-20T11:30:00.000Z",

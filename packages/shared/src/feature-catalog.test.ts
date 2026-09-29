@@ -4,8 +4,10 @@ import {
   FEATURE_TIERS,
   INSTANCE_FEATURE_CATALOG,
   INSTANCE_FEATURE_KEYS,
+  RETIRED_INSTANCE_FEATURE_KEYS,
   buildFeatureCatalogArtifact,
   featureCatalogArtifactSchema,
+  isRetiredInstanceFeatureKey,
   renderFeatureCatalogArtifact,
 } from "./feature-catalog.js";
 import { instanceExperimentalSettingsSchema } from "./validators/instance.js";
@@ -48,6 +50,22 @@ describe("INSTANCE_FEATURE_CATALOG", () => {
       expect(entry.description.trim().length, key).toBeGreaterThan(0);
       expect(FEATURE_TIERS, key).toContain(entry.tier);
     }
+  });
+});
+
+describe("RETIRED_INSTANCE_FEATURE_KEYS (GRE-196)", () => {
+  it("lists the 4 retired switches, each still a real catalog flag", () => {
+    expect([...RETIRED_INSTANCE_FEATURE_KEYS].sort()).toEqual([
+      "autoRestartDevServerWhenIdle",
+      "enableClassicTaskInterface",
+      "enablePaperclipDeveloperMode",
+      "enableSmokeLab",
+    ]);
+    for (const key of RETIRED_INSTANCE_FEATURE_KEYS) {
+      expect(INSTANCE_FEATURE_KEYS, key).toContain(key);
+      expect(isRetiredInstanceFeatureKey(key), key).toBe(true);
+    }
+    expect(isRetiredInstanceFeatureKey("enableGoalsSidebarLink")).toBe(false);
   });
 });
 

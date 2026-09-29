@@ -337,52 +337,29 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("renders and patches the Classic Task Interface experimental toggle on and off", async () => {
-    await renderPage();
-
-    expect(container.textContent).toContain("Classic Task Interface");
-    expect(container.textContent).toContain(
-      "Restores the previous task detail page",
-    );
-    expect(container.textContent).toContain(
-      "Switching takes effect immediately. No task data is affected.",
-    );
-
-    const toggle = container.querySelector<HTMLButtonElement>(
-      CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR,
-    );
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+  it("hides the 4 retired switches even when their stored flags are on (GRE-196)", async () => {
+    currentExperimentalSettings = {
+      ...currentExperimentalSettings,
       enableClassicTaskInterface: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-
-    flushSync(() => {
-      root?.unmount();
-    });
-    root = null;
-    container.textContent = "";
+      enableSmokeLab: true,
+      enablePaperclipDeveloperMode: true,
+      autoRestartDevServerWhenIdle: true,
+    };
     await renderPage();
 
-    const enabledToggle = container.querySelector<HTMLButtonElement>(
-      CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR,
-    );
-    expect(enabledToggle?.getAttribute("aria-checked")).toBe("true");
-
-    await act(async () => {
-      enabledToggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-      enableClassicTaskInterface: false,
-    });
+    const titles = [...container.querySelectorAll("h3")].map((heading) => heading.textContent);
+    for (const title of [
+      "Classic Task Interface",
+      "Smoke Lab",
+      "GS Agentic Manager Developer Mode",
+      "Auto-Restart Dev Server When Idle",
+    ]) {
+      expect(titles).not.toContain(title);
+    }
+    expect(container.querySelector(CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR)).toBeNull();
+    expect(container.querySelector(GSAM_DEVELOPER_MODE_TOGGLE_SELECTOR)).toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle smoke lab experimental setting"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle guarded dev-server auto-restart"]')).toBeNull();
   });
 
   it("no longer shows a Decisions toggle (graduated, GRE-66)", async () => {
@@ -714,29 +691,6 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     });
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
   });
-
-  it("renders and patches GS Agentic Manager Developer Mode", async () => {
-    await renderPage();
-
-    expect(container.textContent).toContain("GS Agentic Manager Developer Mode");
-    expect(container.textContent).toContain("including Honeycomb trace queries on run pages");
-
-    const toggle = container.querySelector<HTMLButtonElement>(
-      GSAM_DEVELOPER_MODE_TOGGLE_SELECTOR,
-    );
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enablePaperclipDeveloperMode: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-  });
-
 });
 
 describe("InstanceExperimentalSettings — cloud-managed keys", () => {
@@ -952,12 +906,12 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
     expect(sections.at(0)?.textContent).not.toContain("Managed Environment Only");
     expect(sections.at(-2)?.textContent).toContain("Run tasks in this worktree");
     expect(sections.at(-2)?.textContent).toContain("Managed Environment Only");
-    expect(sections.at(-2)?.textContent).toContain("Auto-Restart Dev Server When Idle");
+    expect(sections.at(-2)?.textContent).not.toContain("Auto-Restart Dev Server When Idle");
     expect(sections.at(-2)?.textContent).toContain("Server Info Debug View");
-    expect(sections.at(-2)?.textContent).toContain("Smoke Lab");
+    expect(sections.at(-2)?.textContent).not.toContain("Smoke Lab");
     expect(sections.at(-2)?.textContent).toContain("Task Plan Decomposition");
     expect(sections.at(-1)?.textContent).toContain("These features are going to be removed.");
-    expect(sections.at(-1)?.textContent).toContain("Classic Task Interface");
+    expect(sections.at(-1)?.textContent).not.toContain("Classic Task Interface");
     expect(sections.at(-1)?.textContent).toContain("Goals Sidebar Link");
   });
 
@@ -967,7 +921,8 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
 
     for (const section of container.querySelectorAll("section")) {
       const titles = [...section.querySelectorAll("h3")].map((heading) => heading.textContent ?? "");
-      expect(titles.length).toBeGreaterThan(1);
+      // Legacy keeps one card now that Classic Task Interface is retired (GRE-196).
+      expect(titles.length).toBeGreaterThan(0);
       expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" })));
     }
   });
@@ -1067,9 +1022,9 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   });
 
   it("retains a section when one of its controls is visible", async () => {
-    const visible = new Set(["enablePaperclipDeveloperMode", "enableGoalsSidebarLink"]);
+    const visible = new Set(["enableServerInfoDebugView", "enableGoalsSidebarLink"]);
     await renderPage(INSTANCE_FEATURE_KEYS.filter((key) => !visible.has(key)).map((key) => `instance.experimental.${key}`));
-    expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("GS Agentic Manager Developer Mode");
+    expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("Server Info Debug View");
     expect(container.querySelector('[aria-labelledby="legacy-heading"] h3')?.textContent).toBe("Goals Sidebar Link");
   });
 

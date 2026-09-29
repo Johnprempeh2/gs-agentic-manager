@@ -82,6 +82,26 @@ describe("applyManagedExperimentalOverlay", () => {
 });
 
 describe("instanceSettingsService managed overlay", () => {
+  it("keeps the 4 retired flags off when stored and managed values say on (GRE-196)", async () => {
+    const retired = {
+      enableClassicTaskInterface: true,
+      enableSmokeLab: true,
+      enablePaperclipDeveloperMode: true,
+      autoRestartDevServerWhenIdle: true,
+    };
+    const { db } = stubDb(settingsRow(retired));
+    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "retired", features: { enableSmokeLab: true }, plugins: { autoInstall: [] },
+    })) });
+    expect(await service.getExperimental()).toMatchObject({
+      enableClassicTaskInterface: false,
+      enableSmokeLab: false,
+      enablePaperclipDeveloperMode: false,
+      autoRestartDevServerWhenIdle: false,
+      managedKeys: {},
+    });
+  });
+
   it.each([{}, { enableMcpAggregators: false }])("keeps aggregators on with legacy stored and managed values: %j", async (stored) => {
     const { db } = stubDb(settingsRow({ ...stored, enableChatConnectors: true }));
     const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({

@@ -29,7 +29,9 @@ import {
 } from "@greatstone/shared";
 import {
   INSTANCE_FEATURE_CATALOG,
+  RETIRED_INSTANCE_FEATURE_KEYS,
   applyOperatorGeneralDefaults,
+  isRetiredInstanceFeatureKey,
   stripOperatorGeneralEchoes,
 } from "@greatstone/shared";
 import { eq } from "drizzle-orm";
@@ -221,7 +223,21 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
   };
 }
 
+/**
+ * Greatstone (GRE-196): retired flags always read as off, whatever the stored
+ * row says. The feature code stays in place; only the switch is gone.
+ */
+function forceRetiredFlagsOff(experimental: InstanceExperimentalSettings): InstanceExperimentalSettings {
+  const next: InstanceExperimentalSettings = { ...experimental };
+  for (const key of RETIRED_INSTANCE_FEATURE_KEYS) next[key] = false;
+  return next;
+}
+
 export function normalizeExperimentalSettings(raw: unknown): InstanceExperimentalSettings {
+  return forceRetiredFlagsOff(normalizeStoredExperimentalSettings(raw));
+}
+
+function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimentalSettings {
   const parsed = instanceExperimentalSettingsStorageSchema.safeParse(raw ?? {});
   if (parsed.success) {
     return {
@@ -339,6 +355,8 @@ export function applyManagedExperimentalOverlay(
     // Existing Cloud stack configs may still carry retired flags. Accept the
     // document during rollout, but never let retired flags disable Apps or MCP aggregators.
     if (key === "enableApps" || key === "enableMcpAggregators") continue;
+    // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
+    if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;
     managedKeys[key] = { managed: true, managedBy: GSAM_CLOUD_MANAGED_BY };
   }
