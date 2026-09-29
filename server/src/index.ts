@@ -57,6 +57,7 @@ import {
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
+import { getInstallLimits } from "./services/install-limits.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { setupRunnerPrpWebSocketServer } from "./realtime/runner-prp-ws.js";
@@ -799,6 +800,15 @@ async function startServerWithDatabaseTeardown(
     }
   } catch (err) {
     logger.error({ err }, "invalid GSAM_SETTING_DEFAULTS; refusing to start (fail closed)");
+    throw err;
+  }
+
+  // Client install limits (GSAM_INSTALL_LIMITS, GRE-141): fail closed like the two above.
+  try {
+    const installLimits = getInstallLimits();
+    if (installLimits) logger.warn({ installLimits }, "client install limits active");
+  } catch (err) {
+    logger.error({ err }, "invalid GSAM_INSTALL_LIMITS; refusing to start (fail closed)");
     throw err;
   }
 
