@@ -14,6 +14,12 @@ export const REVIEW_WAIT_ACTIVITY_WINDOW_MS = 30 * 60 * 1000;
 export const REVIEW_WAIT_RECHECK_MS = 30 * 60 * 1000;
 /** Retry budget: at most this many deferrals per issue in the budget window, then block as before. */
 export const REVIEW_WAIT_MAX_DEFERRALS = 8;
+/**
+ * Budget when the only evidence is a reviewer comment (GRE-218). Agents comment
+ * on every run, so a comment alone is weak evidence; a real CI wait ends within
+ * about an hour. A wait on a check issue keeps REVIEW_WAIT_MAX_DEFERRALS.
+ */
+export const REVIEW_WAIT_COMMENT_ONLY_MAX_DEFERRALS = 2;
 export const REVIEW_WAIT_BUDGET_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 export const REVIEW_WAIT_MONITOR_SERVICE_NAME = "Review wait";
@@ -45,7 +51,8 @@ export function decideReviewWait(evidence: ReviewWaitEvidence, now: Date): Revie
     now.getTime() - evidence.latestReviewerCommentAt.getTime() <= REVIEW_WAIT_ACTIVITY_WINDOW_MS;
   const hasActiveCheck = evidence.activeCheckIssueCount > 0;
   if (!commentedRecently && !hasActiveCheck) return { kind: "stalled", reason: "no_activity" };
-  if (evidence.priorDeferrals >= REVIEW_WAIT_MAX_DEFERRALS) return { kind: "stalled", reason: "budget_exhausted" };
+  const maxDeferrals = hasActiveCheck ? REVIEW_WAIT_MAX_DEFERRALS : REVIEW_WAIT_COMMENT_ONLY_MAX_DEFERRALS;
+  if (evidence.priorDeferrals >= maxDeferrals) return { kind: "stalled", reason: "budget_exhausted" };
   return { kind: "waiting", reason: hasActiveCheck ? "active_check_issue" : "reviewer_comment" };
 }
 
