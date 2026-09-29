@@ -6,7 +6,7 @@
 // Every action goes through liveReleaseService, the same service the
 // "Update live?" card uses; nothing here repeats release logic.
 //
-// Release and rollback also ask for the password again in login mode
+// Release, rollback and promote also ask for the password again in login mode
 // (GRE-133, wired by GRE-136): the company and board checks run first, then
 // the shared `assertReleaseReauth`.
 import { Router, type Request, type Response } from "express";
@@ -81,6 +81,21 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
     const result = await svc.start({ kind: "rollback", tag, actor: userActor(req) });
     if (result.ok) await log(req, companyId, "release.rollback_started", { tag: result.job.tag });
     send(res, result.ok ? { ok: true, progress: result.progress } : result, 202);
+  });
+
+  // "Promote to Stable" (GRE-127): a stable-* tag on a live-* release, with
+  // the client notes as its message.
+  router.post("/companies/:companyId/releases/promote", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertBoardFor(req, companyId);
+    assertReleaseReauth(req, "promote", reauth);
+    const result = await svc.promote({ liveTag: req.body?.liveTag, notes: req.body?.notes });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    await log(req, companyId, "release.promoted_to_stable", { tag: result.stable.tag, liveTag: result.stable.liveTag });
+    res.status(201).json({ stable: result.stable });
   });
 
   router.post("/companies/:companyId/releases/cancel", async (req, res) => {

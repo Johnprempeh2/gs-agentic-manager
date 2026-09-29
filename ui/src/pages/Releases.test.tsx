@@ -24,6 +24,7 @@ const mockReleasesApi = vi.hoisted(() => ({
   cancel: vi.fn(),
   override: vi.fn(),
   setFinishBeforeUpdate: vi.fn(),
+  promote: vi.fn(),
 }));
 const mockReauthApi = vi.hoisted(() => ({ confirm: vi.fn() }));
 const mockAccessApi = vi.hoisted(() => ({ getCurrentBoardAccess: vi.fn() }));
@@ -556,6 +557,91 @@ describe("Password prompt (login mode)", () => {
     expect(mockReauthApi.confirm).toHaveBeenCalledWith("rollback", "secret");
     expect(mockReleasesApi.rollback).toHaveBeenLastCalledWith("company-1", "live-2026-09-14.1", {
       headers: { "X-GSAM-Reauth": "tok-2" },
+    });
+  });
+});
+
+describe("Promote to Stable (GRE-127)", () => {
+  function promoteDialog() {
+    return document.querySelector('[data-testid="promote-dialog"]');
+  }
+
+  async function typeNotes(value: string) {
+    const input = promoteDialog()!.querySelector("textarea") as HTMLTextAreaElement;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  async function submitNotes() {
+    await act(async () => {
+      promoteDialog()!.querySelector("form")!.requestSubmit();
+    });
+    await flush();
+  }
+
+  function withStable(stableTag: string | null) {
+    const overview = releasesOverviewFixture();
+    return { ...overview, history: overview.history.map((entry, i) => (i === 1 ? { ...entry, stableTag } : entry)) };
+  }
+
+  async function openPromote(tag: string) {
+    const row = document.querySelector(`[data-testid="release-history-${tag}"]`)!;
+    await click([...row.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Promote to Stable"));
+  }
+
+  it("marks releases already on Stable and offers promote only on the others", async () => {
+    await render(<ReleasesView companyId="company-1" overview={withStable("stable-2026-09-22.1")} fetchError={null} />);
+    const older = document.querySelector('[data-testid="release-history-live-2026-09-14.1"]')!;
+    expect(older.textContent).toContain("Stable as stable-2026-09-22.1");
+    expect([...older.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain("Promote to Stable");
+    const current = document.querySelector('[data-testid="release-history-live-2026-09-21.1"]')!;
+    expect([...current.querySelectorAll("button")].map((b) => b.textContent?.trim())).toContain("Promote to Stable");
+  });
+
+  it("asks for the client notes and sends them with the live tag", async () => {
+    mockReleasesApi.promote.mockResolvedValue({ stable: { tag: "stable-2026-09-29.1", commit: "abc", liveTag: "live-2026-09-14.1" } });
+    await render(<ReleasesView companyId="company-1" overview={withStable(null)} fetchError={null} />);
+    await openPromote("live-2026-09-14.1");
+
+    expect(promoteDialog()?.textContent).toContain("Promote RAM management to Stable?");
+    expect(promoteDialog()?.textContent).toContain("Client notes");
+    await typeNotes("Faster board.");
+    await submitNotes();
+
+    expect(mockReleasesApi.promote).toHaveBeenCalledWith("company-1", "live-2026-09-14.1", "Faster board.", undefined);
+    expect(promoteDialog()).toBeNull();
+  });
+
+  it("shows the server's refusal in the dialog and keeps it open", async () => {
+    mockReleasesApi.promote
+      .mockRejectedValue(new Error("the client notes contain an issue number (GRE-123); clients must not see internal numbers"));
+    await render(<ReleasesView companyId="company-1" overview={withStable(null)} fetchError={null} />);
+    await openPromote("live-2026-09-14.1");
+    await typeNotes("Fix GRE-123");
+    await submitNotes();
+
+    expect(promoteDialog()?.querySelector('[role="alert"]')?.textContent).toMatch(/issue number/);
+  });
+
+  it("asks for the password to promote in login mode", async () => {
+    mockReleasesApi.promote
+      .mockRejectedValueOnce(new ApiError("Password needed.", 403, { code: "reauth_required" }))
+      .mockResolvedValue({ stable: { tag: "stable-2026-09-29.1", commit: "abc", liveTag: "live-2026-09-14.1" } });
+    mockReauthApi.confirm.mockResolvedValue({ token: "tok-3", expiresAt: "2026-09-28T23:10:00.000Z" });
+    await render(<ReleasesView companyId="company-1" overview={withStable(null)} fetchError={null} />);
+    await openPromote("live-2026-09-14.1");
+    await typeNotes("Faster board.");
+    await submitNotes();
+
+    expect(reauthDialog()?.textContent).toContain("To promote a version");
+    await typePassword("secret");
+    await submitPassword();
+    expect(mockReauthApi.confirm).toHaveBeenCalledWith("promote", "secret");
+    expect(mockReleasesApi.promote).toHaveBeenLastCalledWith("company-1", "live-2026-09-14.1", "Faster board.", {
+      headers: { "X-GSAM-Reauth": "tok-3" },
     });
   });
 });

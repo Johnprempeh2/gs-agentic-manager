@@ -286,6 +286,20 @@ taken before that release. It does not undo database migrations. If the older
 code cannot run on the newer database, restore the backup the release printed;
 ask Keystone for the steps.
 
+### Promote to Stable (John)
+
+Clients follow `stable-*` tags (Stable); our live install runs `live-*` tags
+(Beta); `main` that is not tagged yet is Dev and never goes to clients. To give
+clients a version, pick it in the history on the Releases page and choose
+**Promote to Stable** (`POST /api/companies/:companyId/releases/promote` with
+`{"liveTag": "live-YYYY-MM-DD.N", "notes": "..."}`). Write the client notes:
+features only, plain words, no client names. The app refuses notes with a pull
+request number (`#123`) or a GRE number. It adds the annotated tag
+`stable-YYYY-MM-DD.N` on the same commit, with the notes as its message, and
+pushes it to origin. Live does not change. It asks for your password again in
+login mode. A release can be promoted once; a promote that fails to push
+leaves no tag.
+
 Run the release from your own terminal, not from an agent run. Both scripts
 run `pnpm install` without questions. If the pnpm store is not the one live was
 installed with (agent runs each get their own store), pnpm deletes and

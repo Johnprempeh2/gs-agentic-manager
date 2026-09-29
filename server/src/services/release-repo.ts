@@ -223,14 +223,63 @@ export async function runCandidateScript(
   }
 }
 
-/** The next free rc-YYYY-MM-DD.N name, on the local date (as the release script names live tags). */
-export async function nextCandidateTagName(repo: string, now: Date): Promise<string> {
+/** The next free <prefix>-YYYY-MM-DD.N name, on the local date (as the release script names live tags). */
+async function nextTagName(repo: string, prefix: "rc" | "stable", now: Date): Promise<string> {
   const pad = (n: number) => String(n).padStart(2, "0");
   const day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const existing = new Set((await git(repo, ["tag", "--list", `rc-${day}.*`])).split("\n").filter(Boolean));
+  const existing = new Set((await git(repo, ["tag", "--list", `${prefix}-${day}.*`])).split("\n").filter(Boolean));
   let n = 1;
-  while (existing.has(`rc-${day}.${n}`)) n += 1;
-  return `rc-${day}.${n}`;
+  while (existing.has(`${prefix}-${day}.${n}`)) n += 1;
+  return `${prefix}-${day}.${n}`;
+}
+
+export function nextCandidateTagName(repo: string, now: Date): Promise<string> {
+  return nextTagName(repo, "rc", now);
+}
+
+// Stable (GRE-127, design GRE-124 "Trimmed build"): a stable-* tag is an
+// annotated tag on the commit of a live-* release. Its message is the client
+// notes, which clients see as "What's new", so no internal numbers.
+export const STABLE_TAG_RE = /^stable-\d{4}-\d{2}-\d{2}\.\d+$/;
+export const CLIENT_NOTES_MAX_LENGTH = 4_000;
+
+/** Null when `notes` may be a stable tag message, else why not. */
+export function clientNotesProblem(notes: unknown): string | null {
+  if (typeof notes !== "string" || !notes.trim()) return "write the client notes";
+  if (notes.length > CLIENT_NOTES_MAX_LENGTH) return `the client notes are longer than ${CLIENT_NOTES_MAX_LENGTH} characters`;
+  if (/#\d+/.test(notes)) return "the client notes contain a pull request number (#123); clients must not see internal numbers";
+  if (/\bGRE-\d+/i.test(notes)) return "the client notes contain an issue number (GRE-123); clients must not see internal numbers";
+  return null;
+}
+
+export function nextStableTagName(repo: string, now: Date): Promise<string> {
+  return nextTagName(repo, "stable", now);
+}
+
+/**
+ * Adds the annotated stable tag on `commit` and pushes it to origin, where
+ * clients read it. If the push fails the local tag is removed again, so a
+ * failure changes nothing and the same promote can be tried again.
+ */
+export async function createStableTag(repo: string, input: { tag: string; commit: string; notes: string }): Promise<void> {
+  if (!STABLE_TAG_RE.test(input.tag)) throw new Error(`${input.tag} is not a stable-YYYY-MM-DD.N name`);
+  try {
+    await git(repo, ["tag", "-a", input.tag, input.commit, "-m", input.notes.trim()]);
+  } catch (err) {
+    throw new Error(`could not add tag ${input.tag} (${firstLine(err)})`);
+  }
+  try {
+    // GSAM_RELEASE=1: the pre-push guard lets only release tooling push tags.
+    await execFileAsync("git", ["push", "--quiet", "origin", `refs/tags/${input.tag}`], {
+      cwd: repo,
+      encoding: "utf8",
+      timeout: PREFLIGHT_FETCH_TIMEOUT_MS,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GSAM_RELEASE: "1" },
+    });
+  } catch (err) {
+    await gitOk(repo, ["tag", "-d", input.tag]);
+    throw new Error(`could not push tag ${input.tag} to origin (${firstLine(err)}); nothing was changed`);
+  }
 }
 
 export type CiStatus = "passed" | "failed" | "pending" | "unknown";
@@ -262,7 +311,7 @@ export interface ReleaseTagInfo {
   message: string | null;
 }
 
-/** Every rc-* and live-* tag, newest first, in one git call. */
+/** Every rc-*, live-* and stable-* tag, newest first, in one git call. */
 export async function readReleaseTags(repo: string): Promise<ReleaseTagInfo[]> {
   const out = await git(repo, [
     "for-each-ref",
@@ -270,6 +319,7 @@ export async function readReleaseTags(repo: string): Promise<ReleaseTagInfo[]> {
     "--format=%(refname:short)%1f%(objecttype)%1f%(objectname)%1f%(*objectname)%1f%(creatordate:iso-strict)%1f%(contents)%1e",
     "refs/tags/rc-*",
     "refs/tags/live-*",
+    "refs/tags/stable-*",
   ]);
   return out
     .split("\x1e")

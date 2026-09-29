@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, Rocket, RotateCcw, ShieldAlert } from "lucide-react";
+import { BadgeCheck, Check, Loader2, Rocket, RotateCcw, ShieldAlert } from "lucide-react";
 import {
   releasesApi,
   FINAL_RELEASE_STATES,
@@ -17,6 +17,9 @@ import { heartbeatsApi } from "@/api/heartbeats";
 import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { ReleaseChangelog } from "@/components/ReleaseChangelog";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ReauthCancelledError, useReauth } from "@/components/ReauthDialog";
@@ -383,6 +386,79 @@ function errorText(error: unknown): string | null {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
+/**
+ * "Promote to Stable" (GRE-127). The notes become the stable tag's message,
+ * which clients read as "What's new". The server checks them and names the tag.
+ */
+function PromoteDialog({
+  entry,
+  pending,
+  error,
+  onPromote,
+  onClose,
+}: {
+  entry: { tag: string; title: string } | null;
+  pending: boolean;
+  error: string | null;
+  onPromote: (notes: string) => void;
+  onClose: () => void;
+}) {
+  const [notes, setNotes] = useState("");
+  useEffect(() => {
+    if (entry) setNotes("");
+  }, [entry]);
+  return (
+    <Dialog open={entry !== null} onOpenChange={(open) => (!open && !pending ? onClose() : undefined)}>
+      <DialogContent className="sm:max-w-lg" data-testid="promote-dialog">
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (notes.trim()) onPromote(notes);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{entry ? `Promote ${entry.title} to Stable?` : "Promote to Stable"}</DialogTitle>
+            <DialogDescription>
+              {entry
+                ? `Clients get ${entry.title} (${entry.tag}) at their next update. Live does not change.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="promote-notes">Client notes</Label>
+            <Textarea
+              id="promote-notes"
+              rows={6}
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="What is new for clients, in plain words."
+              aria-invalid={error ? true : undefined}
+              aria-describedby="promote-notes-help"
+            />
+            <p id="promote-notes-help" className="text-xs text-muted-foreground">
+              Clients see these notes as “What's new”. Features only; no pull request or GRE numbers.
+            </p>
+            {error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending || !notes.trim()}>
+              {pending ? "Promoting…" : "Promote to Stable"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const HOT_RESTART_TEXT =
   "New runs are held. Running runs are checkpointed and resume after the update; runs marked finish before update are waited for. Live then restarts and this page reconnects on its own.";
 
@@ -408,6 +484,7 @@ export function ReleasesView({
   const queryClient = useQueryClient();
   const agentNames = useAgentNames(companyId);
   const [dismissedJobId, setDismissedJobId] = useState<string | null>(null);
+  const [promoteEntry, setPromoteEntry] = useState<{ tag: string; title: string } | null>(null);
   const { live, next, history, progress, flaggedRuns, disabledReason } = overview;
   const inProgress = isReleaseInProgress(overview);
 
@@ -425,6 +502,14 @@ export function ReleasesView({
   const rollbackMutation = useMutation({
     mutationFn: (tag: string) => withReauth("rollback", (options) => releasesApi.rollback(companyId, tag, options)),
     onSuccess: applyProgress,
+  });
+  const promoteMutation = useMutation({
+    mutationFn: ({ tag, notes }: { tag: string; notes: string }) =>
+      withReauth("promote", (options) => releasesApi.promote(companyId, tag, notes, options)),
+    onSuccess: () => {
+      setPromoteEntry(null);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.releases(companyId) });
+    },
   });
   const cancelMutation = useMutation({
     mutationFn: () => releasesApi.cancel(companyId),
@@ -497,6 +582,13 @@ export function ReleasesView({
   return (
     <div className="mx-auto max-w-3xl space-y-4" data-testid="releases-page">
       {reauthDialog}
+      <PromoteDialog
+        entry={promoteEntry}
+        pending={promoteMutation.isPending}
+        error={errorText(promoteMutation.error)}
+        onPromote={(notes) => promoteEntry && promoteMutation.mutate({ tag: promoteEntry.tag, notes })}
+        onClose={() => setPromoteEntry(null)}
+      />
       {fetchError && !inProgress ? (
         <p role="alert" className="text-sm text-destructive">
           {fetchError}
@@ -645,19 +737,42 @@ export function ReleasesView({
                       <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
                         {entry.title}
                         {isLive ? <ReleaseChip tone="done">Live</ReleaseChip> : null}
+                        {entry.stableTag ? <ReleaseChip tone="in_progress">Stable</ReleaseChip> : null}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         <span className="font-mono">{entry.tag}</span>
                         {entry.date ? ` · ${formatDateTime(entry.date)}` : ""}
                         {entry.releasedBy ? ` · by ${entry.releasedBy}` : ""}
+                        {entry.stableTag ? (
+                          <>
+                            {" · Stable as "}
+                            <span className="font-mono">{entry.stableTag}</span>
+                          </>
+                        ) : null}
                       </p>
                     </div>
-                    {!isLive ? (
-                      <Button size="sm" variant="outline" disabled={busy || off} onClick={() => void onRollback(entry)}>
-                        <RotateCcw aria-hidden />
-                        Roll back to this version
-                      </Button>
-                    ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      {!entry.stableTag ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={off || promoteMutation.isPending}
+                          onClick={() => {
+                            promoteMutation.reset();
+                            setPromoteEntry(entry);
+                          }}
+                        >
+                          <BadgeCheck aria-hidden />
+                          Promote to Stable
+                        </Button>
+                      ) : null}
+                      {!isLive ? (
+                        <Button size="sm" variant="outline" disabled={busy || off} onClick={() => void onRollback(entry)}>
+                          <RotateCcw aria-hidden />
+                          Roll back to this version
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                   <ReleaseChangelog changelog={entry.changelog} />
                   {entry.restartReport ? <RestartReportSummary report={entry.restartReport} /> : null}
