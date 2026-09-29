@@ -43,7 +43,7 @@ function feed(items: AttentionItem[], totalCount = items.length): AttentionFeed 
 }
 
 describe("selectDashboardDecisions", () => {
-  it("previews the three best-ranked items and counts the whole feed", () => {
+  it("previews the best-ranked item and counts the whole feed", () => {
     const result = selectDashboardDecisions(
       feed(
         [
@@ -56,7 +56,7 @@ describe("selectDashboardDecisions", () => {
       ),
     );
     expect(result.count).toBe(9);
-    expect(result.preview.map((entry) => entry.id)).toEqual(["a", "b", "c"]);
+    expect(result.preview.map((entry) => entry.id)).toEqual(["a"]);
   });
 });
 
@@ -75,22 +75,22 @@ describe("DashboardDecisionsBoxView", () => {
     container.remove();
   });
 
-  it("shows the count, titles without task keys, and a button to the decisions page", () => {
+  it("shows the count, the top title without its task key, and a button to the decisions page", () => {
     act(() => {
       root.render(
         <DashboardDecisionsBoxView
           feed={feed([
-            item({ id: "a", title: "Approve hire" }),
-            item({ id: "b", title: "Pick a name", sourceKind: "decision", subject: { kind: "decision", id: "dec-1", companyId: "c", title: "Pick a name", identifier: null, status: null, href: null } }),
+            item({ id: "b", rank: 2, title: "Approve hire" }),
+            item({ id: "a", rank: 1, title: "Pick a name", sourceKind: "decision", subject: { kind: "decision", id: "dec-1", companyId: "c", title: "Pick a name", identifier: null, status: null, href: null } }),
           ], 5)}
         />,
       );
     });
 
     expect(container.querySelector('[data-testid="dashboard-decisions-count"]')?.textContent).toBe("5");
-    expect(container.textContent).toContain("Approve hire");
     expect(container.textContent).toContain("Pick a name");
-    expect(container.textContent).toContain("and 3 more");
+    expect(container.textContent).not.toContain("Approve hire");
+    expect(container.textContent).toContain("and 4 more");
     expect(container.textContent).not.toContain("GRE-9");
     expect(container.querySelector('a[href="/decisions?decisionId=dec-1"]')).not.toBeNull();
     const button = Array.from(container.querySelectorAll("a")).find((link) => link.textContent?.includes("Open decisions"));

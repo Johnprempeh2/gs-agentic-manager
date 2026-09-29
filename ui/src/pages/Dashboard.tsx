@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "@/lib/router";
 import {
   onboardingStepForCompany,
@@ -8,9 +8,14 @@ import { claimOnboardingOffer } from "../lib/onboarding-auto-open";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
+import { activityApi } from "../api/activity";
+import { accessApi } from "../api/access";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
+import { projectsApi } from "../api/projects";
+import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
+import { DashboardHero } from "../components/DashboardHero";
 import { BrandStoneIcon } from "../components/BrandMark";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -20,12 +25,15 @@ import { EmptyState } from "../components/EmptyState";
 import { DASHBOARD_OPEN_TASK_STATUSES, DashboardOverview } from "../components/DashboardOverview";
 import { DashboardDecisionsBox } from "../components/DashboardDecisionsBox";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+
+import { ActivityRow } from "../components/ActivityRow";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
-import { Bot, ChevronRight, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
+import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
+import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
 import type { Agent } from "@greatstone/shared";
@@ -33,43 +41,7 @@ import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 import { DashboardCostCard } from "../components/DashboardCostCard";
 
-export const DASHBOARD_MORE_OPEN_KEY = "gsam:dashboard:more-open";
-
-function loadDashboardMoreOpen(): boolean {
-  try {
-    return localStorage.getItem(DASHBOARD_MORE_OPEN_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function saveDashboardMoreOpen(open: boolean) {
-  try {
-    localStorage.setItem(DASHBOARD_MORE_OPEN_KEY, String(open));
-  } catch {
-    // Ignore localStorage failures.
-  }
-}
-
-function greetingFor(hour: number) {
-  if (hour < 5) return "Working late";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
-}
-
-/** A one-line page header: organization name with the greeting and date beside it. */
-function DashboardHeader({ companyName, now = new Date() }: { companyName: string; now?: Date }) {
-  const dateLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(now);
-  return (
-    <header className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h1 className="min-w-0 truncate text-xl font-bold">{companyName}</h1>
-      <p className="text-sm text-muted-foreground">
-        {greetingFor(now.getHours())} · {dateLabel}
-      </p>
-    </header>
-  );
-}
+const DASHBOARD_ACTIVITY_LIMIT = 10;
 
 export type PausedAgentBanner =
   | { kind: "imported"; pausedImportedAgentIds: string[] }
@@ -100,7 +72,10 @@ export function Dashboard() {
   const { openOnboarding } = useDialogActions();
   const location = useLocation();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const [moreOpen, setMoreOpen] = useState(() => loadDashboardMoreOpen());
+  const [animatedActivityIds, setAnimatedActivityIds] = useState<Set<string>>(new Set());
+  const seenActivityIdsRef = useRef<Set<string>>(new Set());
+  const hydratedActivityRef = useRef(false);
+  const activityAnimationTimersRef = useRef<number[]>([]);
 
   // `isFetching` is read alongside the data: a cached list is served while its
   // refetch runs, and an empty one from before the first hire must not pass
@@ -194,6 +169,20 @@ export function Dashboard() {
   });
   usePublishSharedQueryData(sharedDashboard, data, dashboardUpdatedAt);
 
+  const activityQueryKey = [...queryKeys.activity(selectedCompanyId!), { limit: DASHBOARD_ACTIVITY_LIMIT }] as const;
+  const sharedActivity = useSharedPollingQuery({
+    companyId: selectedCompanyId,
+    resourceKey: `activity:limit:${DASHBOARD_ACTIVITY_LIMIT}`,
+    queryKey: activityQueryKey,
+    enabled: !!selectedCompanyId,
+  });
+  const { data: activity, dataUpdatedAt: activityUpdatedAt } = useQuery({
+    queryKey: activityQueryKey,
+    queryFn: () => activityApi.list(selectedCompanyId!, { limit: DASHBOARD_ACTIVITY_LIMIT }),
+    enabled: !!selectedCompanyId,
+  });
+  usePublishSharedQueryData(sharedActivity, activity, activityUpdatedAt);
+
   const { data: issues } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
     queryFn: () => issuesApi.list(selectedCompanyId!),
@@ -211,6 +200,100 @@ export function Dashboard() {
     queryFn: () => issuesApi.list(selectedCompanyId!, { status: DASHBOARD_OPEN_TASK_STATUSES.join(",") }),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!, { includeArchived: true }),
+    queryFn: () => projectsApi.list(selectedCompanyId!, { includeArchived: true }),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: companyMembers } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const userProfileMap = useMemo(
+    () => buildCompanyUserProfileMap(companyMembers?.users),
+    [companyMembers?.users],
+  );
+
+  const recentActivity = useMemo(() => (activity ?? []).slice(0, 10), [activity]);
+
+  useEffect(() => {
+    for (const timer of activityAnimationTimersRef.current) {
+      window.clearTimeout(timer);
+    }
+    activityAnimationTimersRef.current = [];
+    seenActivityIdsRef.current = new Set();
+    hydratedActivityRef.current = false;
+    setAnimatedActivityIds(new Set());
+  }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (recentActivity.length === 0) return;
+
+    const seen = seenActivityIdsRef.current;
+    const currentIds = recentActivity.map((event) => event.id);
+
+    if (!hydratedActivityRef.current) {
+      for (const id of currentIds) seen.add(id);
+      hydratedActivityRef.current = true;
+      return;
+    }
+
+    const newIds = currentIds.filter((id) => !seen.has(id));
+    if (newIds.length === 0) {
+      for (const id of currentIds) seen.add(id);
+      return;
+    }
+
+    setAnimatedActivityIds((prev) => {
+      const next = new Set(prev);
+      for (const id of newIds) next.add(id);
+      return next;
+    });
+
+    for (const id of newIds) seen.add(id);
+
+    const timer = window.setTimeout(() => {
+      setAnimatedActivityIds((prev) => {
+        const next = new Set(prev);
+        for (const id of newIds) next.delete(id);
+        return next;
+      });
+      activityAnimationTimersRef.current = activityAnimationTimersRef.current.filter((t) => t !== timer);
+    }, 980);
+    activityAnimationTimersRef.current.push(timer);
+  }, [recentActivity]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of activityAnimationTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, []);
+
+  const agentMap = useMemo(() => {
+    const map = new Map<string, Agent>();
+    for (const a of agents ?? []) map.set(a.id, a);
+    return map;
+  }, [agents]);
+
+  const entityNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.identifier ?? i.id.slice(0, 8));
+    for (const a of agents ?? []) map.set(`agent:${a.id}`, a.name);
+    for (const p of projects ?? []) map.set(`project:${p.id}`, p.name);
+    return map;
+  }, [issues, agents, projects]);
+
+  const entityTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
+    return map;
+  }, [issues]);
 
   if (!selectedCompanyId) {
     if (companies.length === 0) {
@@ -244,8 +327,10 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {selectedCompany ? <DashboardHeader companyName={selectedCompany.name} /> : null}
+      {selectedCompany ? <DashboardHero companyName={selectedCompany.name} /> : null}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      <DashboardDecisionsBox companyId={selectedCompanyId!} />
 
       {pausedBanner?.kind === "imported" ? (
         <InlineBanner
@@ -297,27 +382,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {data && data.budgets.activeIncidents > 0 ? (
-        <div className="flex items-start justify-between gap-3 rounded-xl border border-red-500/20 bg-(image:--gradient-extract-1) px-4 py-3">
-          <div className="flex items-start gap-2.5">
-            <PauseCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" />
-            <div>
-              <p className="text-sm font-medium text-red-950 dark:text-red-50">
-                {data.budgets.activeIncidents} active budget incident{data.budgets.activeIncidents === 1 ? "" : "s"}
-              </p>
-              <p className="text-xs text-red-900/70 dark:text-red-100/70">
-                {data.budgets.pausedAgents} agents paused · {data.budgets.pausedProjects} projects paused · {data.budgets.pendingApprovals} pending budget approvals
-              </p>
-            </div>
-          </div>
-          <Link to="/costs" className="text-sm underline underline-offset-2 text-red-900 dark:text-red-100">
-            Open budgets
-          </Link>
-        </div>
-      ) : null}
-
-      <DashboardDecisionsBox companyId={selectedCompanyId!} />
-
       <DashboardOverview
         agents={agents}
         openIssues={openIssues}
@@ -327,112 +391,141 @@ export function Dashboard() {
         issuesError={openIssuesError}
       />
 
+      <ActiveAgentsPanel companyId={selectedCompanyId!} />
+
       {data && (
-        <Collapsible
-          open={moreOpen}
-          onOpenChange={(open) => {
-            setMoreOpen(open);
-            saveDashboardMoreOpen(open);
-          }}
-        >
-          <CollapsibleTrigger className="group flex items-center gap-1.5 rounded-sm text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <ChevronRight className="h-4 w-4 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
-            Numbers and charts
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-3 space-y-6">
-            <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
-              <MetricCard
-                icon={Bot}
-                value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
-                label="Agents Enabled"
-                to="/agents"
-                description={
-                  <span>
-                    {data.agents.running} running{", "}
-                    {data.agents.paused} paused{", "}
-                    {data.agents.error} errors
-                  </span>
-                }
-              />
-              <MetricCard
-                icon={CircleDot}
-                value={data.tasks.inProgress}
-                label="Tasks In Progress"
-                to="/issues"
-                description={
-                  <span>
-                    {data.tasks.open} open{", "}
-                    {data.tasks.blocked} blocked
-                  </span>
-                }
-              />
-              <MetricCard
-                icon={DollarSign}
-                value={formatCents(data.costs.monthSpendCents)}
-                label="Month Spend"
-                to="/costs"
-                description={
-                  <span>
-                    {data.costs.monthBudgetCents > 0
-                      ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
-                      : "Unlimited budget"}
-                  </span>
-                }
-              />
-              <MetricCard
-                icon={ShieldCheck}
-                value={data.pendingApprovals + data.budgets.pendingApprovals}
-                label="Pending Approvals"
-                to="/approvals"
-                description={
-                  <span>
-                    {data.budgets.pendingApprovals > 0
-                      ? `${data.budgets.pendingApprovals} budget overrides awaiting board review`
-                      : "Awaiting board review"}
-                  </span>
-                }
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
-              <DashboardCostCard companyId={selectedCompanyId!} />
-            </div>
-
-            <SmokeLabDashboardCard companyId={selectedCompanyId!} />
-
-            <div className={cn("gs-stagger grid grid-cols-2 gap-4", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
-              <ChartCard title="Run Activity" subtitle="Last 14 days">
-                <RunActivityChart activity={data.runActivity} />
-              </ChartCard>
-              {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
-              {SHOW_TASK_PRIORITY_UI && (
-                <ChartCard title="Tasks by Priority" subtitle="Last 14 days">
-                  <PriorityChart issues={issues ?? []} />
-                </ChartCard>
-              )}
-              <ChartCard title="Tasks by Status" subtitle="Last 14 days">
-                <IssueStatusChart issues={issues ?? []} />
-              </ChartCard>
-              <ChartCard title="Success Rate" subtitle="Last 14 days">
-                <SuccessRateChart activity={data.runActivity} />
-              </ChartCard>
-            </div>
-
-            <PluginSlotOutlet
-              slotTypes={["dashboardWidget"]}
-              context={{ companyId: selectedCompanyId }}
-              className="grid gap-4 md:grid-cols-2"
-              // design-allow(card-pattern): class-string prop consumed by the plugin outlet; a component can't be passed here (C5a Run 3)
-              itemClassName="rounded-lg border bg-card p-4 shadow-sm"
-            />
-
-            <p className="text-xs text-muted-foreground">
-              <Link to="/activity" className="underline-offset-2 hover:text-foreground hover:underline">
-                See all recent activity
+        <>
+          {data.budgets.activeIncidents > 0 ? (
+            <div className="flex items-start justify-between gap-3 rounded-xl border border-red-500/20 bg-(image:--gradient-extract-1) px-4 py-3">
+              <div className="flex items-start gap-2.5">
+                <PauseCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" />
+                <div>
+                  <p className="text-sm font-medium text-red-950 dark:text-red-50">
+                    {data.budgets.activeIncidents} active budget incident{data.budgets.activeIncidents === 1 ? "" : "s"}
+                  </p>
+                  <p className="text-xs text-red-900/70 dark:text-red-100/70">
+                    {data.budgets.pausedAgents} agents paused · {data.budgets.pausedProjects} projects paused · {data.budgets.pendingApprovals} pending budget approvals
+                  </p>
+                </div>
+              </div>
+              <Link to="/costs" className="text-sm underline underline-offset-2 text-red-900 dark:text-red-100">
+                Open budgets
               </Link>
-            </p>
-          </CollapsibleContent>
-        </Collapsible>
+            </div>
+          ) : null}
+
+          <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
+            <MetricCard
+              icon={Bot}
+              value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
+              label="Agents Enabled"
+              to="/agents"
+              description={
+                <span>
+                  {data.agents.running} running{", "}
+                  {data.agents.paused} paused{", "}
+                  {data.agents.error} errors
+                </span>
+              }
+            />
+            <MetricCard
+              icon={CircleDot}
+              value={data.tasks.inProgress}
+              label="Tasks In Progress"
+              to="/issues"
+              description={
+                <span>
+                  {data.tasks.open} open{", "}
+                  {data.tasks.blocked} blocked
+                </span>
+              }
+            />
+            <MetricCard
+              icon={DollarSign}
+              value={formatCents(data.costs.monthSpendCents)}
+              label="Month Spend"
+              to="/costs"
+              description={
+                <span>
+                  {data.costs.monthBudgetCents > 0
+                    ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
+                    : "Unlimited budget"}
+                </span>
+              }
+            />
+            <MetricCard
+              icon={ShieldCheck}
+              value={data.pendingApprovals + data.budgets.pendingApprovals}
+              label="Pending Approvals"
+              to="/approvals"
+              description={
+                <span>
+                  {data.budgets.pendingApprovals > 0
+                    ? `${data.budgets.pendingApprovals} budget overrides awaiting board review`
+                    : "Awaiting board review"}
+                </span>
+              }
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
+            <DashboardCostCard companyId={selectedCompanyId!} />
+          </div>
+
+          <SmokeLabDashboardCard companyId={selectedCompanyId!} />
+
+          <div className={cn("gs-stagger grid grid-cols-2 gap-4", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
+            <ChartCard title="Run Activity" subtitle="Last 14 days">
+              <RunActivityChart activity={data.runActivity} />
+            </ChartCard>
+            {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
+            {SHOW_TASK_PRIORITY_UI && (
+              <ChartCard title="Tasks by Priority" subtitle="Last 14 days">
+                <PriorityChart issues={issues ?? []} />
+              </ChartCard>
+            )}
+            <ChartCard title="Tasks by Status" subtitle="Last 14 days">
+              <IssueStatusChart issues={issues ?? []} />
+            </ChartCard>
+            <ChartCard title="Success Rate" subtitle="Last 14 days">
+              <SuccessRateChart activity={data.runActivity} />
+            </ChartCard>
+          </div>
+
+          <PluginSlotOutlet
+            slotTypes={["dashboardWidget"]}
+            context={{ companyId: selectedCompanyId }}
+            className="grid gap-4 md:grid-cols-2"
+            // design-allow(card-pattern): class-string prop consumed by the plugin outlet; a component can't be passed here (C5a Run 3)
+            itemClassName="rounded-lg border bg-card p-4 shadow-sm"
+          />
+
+          <div>
+            {/* Recent Activity */}
+            {recentActivity.length > 0 && (
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                  Recent Activity
+                </h3>
+                <Card className="@container block py-0 divide-y divide-border overflow-hidden">
+                  {recentActivity.map((event) => (
+                    <ActivityRow
+                      key={event.id}
+                      event={event}
+                      agentMap={agentMap}
+                      userProfileMap={userProfileMap}
+                      entityNameMap={entityNameMap}
+                      entityTitleMap={entityTitleMap}
+                      className={animatedActivityIds.has(event.id) ? "activity-row-enter" : undefined}
+                    />
+                  ))}
+                </Card>
+              </div>
+            )}
+
+          </div>
+
+        </>
       )}
     </div>
   );
