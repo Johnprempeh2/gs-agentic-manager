@@ -2,7 +2,7 @@ import express from "express";
 import os from "node:os";
 import path from "node:path";
 import request from "supertest";
-import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerAdapterModule } from "../adapters/index.js";
 
 const mockAgentService = vi.hoisted(() => ({
@@ -240,6 +240,15 @@ async function unregisterTestAdapter(type: string) {
 }
 
 describe("agent routes adapter validation", () => {
+  // Transform the agents route graph once, outside any test's 15s budget. The
+  // transform cache survives vi.resetModules(), so each test only re-evaluates.
+  // Without this the first test paid the cold transform and timed out on a busy
+  // machine (GRE-276).
+  beforeAll(async () => {
+    registerModuleMocks();
+    await createApp();
+  }, 120_000);
+
   beforeEach(async () => {
     vi.resetModules();
     vi.doUnmock("../routes/agents.js");
