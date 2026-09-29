@@ -8,6 +8,7 @@ import {
   type InstanceGeneralSettings,
   type InstanceSystemMemory,
 } from "@greatstone/shared";
+import { getInstallLimits, type InstallLimits } from "./install-limits.js";
 
 /**
  * Instance-wide run admission (GRE-105).
@@ -75,11 +76,15 @@ export type RunAdmissionDecision =
 
 export function resolveRunAdmissionSettings(
   general: Pick<InstanceGeneralSettings, "runAdmission"> | null | undefined,
+  installLimits: InstallLimits | null = getInstallLimits(),
 ): RunAdmissionSettings {
   const stored = general?.runAdmission;
   return {
+    // A client install's run cap (GSAM_INSTALL_LIMITS, GRE-141) replaces the stored cap.
     maxConcurrentRuns:
-      stored?.maxConcurrentRuns ?? DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
+      installLimits?.maxConcurrentRuns ??
+      stored?.maxConcurrentRuns ??
+      DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
     minAvailableMemoryMb:
       stored?.minAvailableMemoryMb ??
       DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,

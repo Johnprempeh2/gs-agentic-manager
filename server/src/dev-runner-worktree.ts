@@ -67,6 +67,17 @@ export function isWorktreeSeedPending(rootDir: string): boolean {
     && !existsSync(path.resolve(markerDir, "seed-complete"));
 }
 
+/**
+ * The seed guard protects the worktree's own database. `--data-dir` points the
+ * runner at a separate home, config and database, so a pending worktree seed
+ * (for example after `gsam worktree init --no-seed`) cannot be affected and
+ * must not block the sandbox. (GRE-270)
+ */
+export function shouldBlockDevRunnerForPendingSeed(rootDir: string, dataDir: string | null): boolean {
+  if (dataDir) return false;
+  return isWorktreeSeedPending(rootDir);
+}
+
 function expandHomePrefix(value: string): string {
   if (value === "~") return os.homedir();
   if (value.startsWith("~/")) return path.resolve(os.homedir(), value.slice(2));

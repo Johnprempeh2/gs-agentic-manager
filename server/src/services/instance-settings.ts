@@ -213,6 +213,8 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       ...(parsed.data.executionMode ? { executionMode: parsed.data.executionMode } : {}),
       // Absent => server defaults; only carry through explicit limits.
       ...(parsed.data.runAdmission ? { runAdmission: parsed.data.runAdmission } : {}),
+      // Absent/null => each agent's own harness and AI connection (GRE-139).
+      ...(parsed.data.aiAccessRoute ? { aiAccessRoute: parsed.data.aiAccessRoute } : {}),
     };
   }
   return {

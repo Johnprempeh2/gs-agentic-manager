@@ -43,6 +43,8 @@ export type BudgetEnforcementScope = {
 
 export type BudgetServiceHooks = {
   cancelWorkForScope?: (scope: BudgetEnforcementScope) => Promise<void>;
+  /** Once per hard incident, after the scope is paused: tell the open work why it stopped. */
+  noticeHardStop?: (scope: BudgetEnforcementScope) => Promise<void>;
 };
 
 function currentUtcMonthWindow(now = new Date()) {
@@ -695,6 +697,11 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           const hardIncident = await createIncidentIfNeeded(policy, "hard", observedAmount);
           await pauseAndCancelScopeForBudget(policy);
           if (hardIncident?.created) {
+            await hooks.noticeHardStop?.({
+              companyId: policy.companyId,
+              scopeType: policy.scopeType as BudgetScopeType,
+              scopeId: policy.scopeId,
+            });
             await logActivity(db, {
               companyId: policy.companyId,
               actorType: "system",

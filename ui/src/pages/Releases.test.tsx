@@ -507,6 +507,21 @@ describe("Restart report", () => {
       "When it ends, it is marked lost and runs once more.",
     );
   });
+
+  // GRE-250: a kept-running run whose output goes to a file finishes with its real result.
+  it("says nothing was lost when every run that kept running has its output captured", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("healthy", {
+        restartReport: restartReportFixture({ lostRunIds: [], adoptedWithoutCaptureRunIds: [] }),
+      }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).toContain("Nothing was lost.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]'),
+    ).toBeNull();
+  });
 });
 
 describe("Password prompt (login mode)", () => {

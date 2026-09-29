@@ -57,6 +57,7 @@ import {
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
+import { getInstallLimits } from "./services/install-limits.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { setupRunnerPrpWebSocketServer } from "./realtime/runner-prp-ws.js";
@@ -802,6 +803,15 @@ async function startServerWithDatabaseTeardown(
     throw err;
   }
 
+  // Client install limits (GSAM_INSTALL_LIMITS, GRE-141): fail closed like the two above.
+  try {
+    const installLimits = getInstallLimits();
+    if (installLimits) logger.warn({ installLimits }, "client install limits active");
+  } catch (err) {
+    logger.error({ err }, "invalid GSAM_INSTALL_LIMITS; refusing to start (fail closed)");
+    throw err;
+  }
+
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
@@ -1532,6 +1542,9 @@ async function startServerWithDatabaseTeardown(
             "startup hot-restart adoption reconciliation failed - orphan reaper will serve as degraded backstop",
           );
         }
+        await heartbeat.sweepStaleRunOutputFiles().catch((err) => {
+          logger.warn({ err }, "startup sweep of stale run output files failed");
+        });
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
