@@ -7,6 +7,7 @@ import {
   isWorktreeSeedPending,
   isLinkedGitWorktreeCheckout,
   resolveWorktreeEnvFilePath,
+  shouldBlockDevRunnerForPendingSeed,
 } from "../dev-runner-worktree.ts";
 
 const tempRoots = new Set<string>();
@@ -64,6 +65,33 @@ describe("dev-runner worktree env bootstrap", () => {
 
     fs.writeFileSync(manifestPath, "not-json", "utf8");
     expect(isWorktreeSeedPending(root)).toBe(true);
+  });
+
+  it("lets a --data-dir sandbox start in a `worktree init --no-seed` worktree but keeps the plain guard (GRE-270)", () => {
+    const root = createTempRoot("paperclip-dev-runner-no-seed-");
+    const manifestPath = path.join(root, ".gsam", "seed-manifest.json");
+    fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+    // The manifest `gsam worktree init --no-seed` leaves for a later ensure-seeded.
+    fs.writeFileSync(manifestPath, JSON.stringify({
+      version: 2,
+      source: { instanceId: "source", configPath: "/source/config.json" },
+      snapshotAt: null,
+      seedMode: "minimal",
+      migrationRevision: null,
+      targetInstanceId: "target",
+      phase: "pending",
+      state: "pending",
+      attemptId: "attempt",
+      startedAt: null,
+      finishedAt: null,
+      diagnostics: [{ phase: "pending", status: "succeeded", at: "2026-09-29T00:00:00.000Z" }],
+    }), "utf8");
+
+    expect(shouldBlockDevRunnerForPendingSeed(root, null)).toBe(true);
+    expect(shouldBlockDevRunnerForPendingSeed(root, path.join(root, "tmp", "sandbox"))).toBe(false);
+
+    fs.rmSync(manifestPath);
+    expect(shouldBlockDevRunnerForPendingSeed(root, null)).toBe(false);
   });
 
   it("detects linked git worktrees from .git files", () => {

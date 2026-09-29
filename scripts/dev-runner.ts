@@ -16,7 +16,7 @@ import {
 import { applyDevRunnerOptions } from "./dev-runner-options.ts";
 import { collectWatchedSnapshot as collectDevServerWatchedSnapshot, diffSnapshots } from "./dev-runner-snapshot.mjs";
 import { createDevServiceIdentity, repoRoot } from "./dev-service-profile.ts";
-import { bootstrapDevRunnerWorktreeEnv, isWorktreeSeedPending } from "../server/src/dev-runner-worktree.ts";
+import { bootstrapDevRunnerWorktreeEnv, shouldBlockDevRunnerForPendingSeed } from "../server/src/dev-runner-worktree.ts";
 import { applySharedRunnerBuildDir } from "../server/src/runner-build-dir.ts";
 import {
   readDevServerRestartRequest,
@@ -56,9 +56,9 @@ if (worktreeEnvBootstrap.missingEnv) {
 // Before any child starts: the runner build below, the server and, through the
 // server, every local agent run and worktree provision inherit it (GRE-210).
 applySharedRunnerBuildDir(process.env);
-if (isWorktreeSeedPending(repoRoot)) {
+if (shouldBlockDevRunnerForPendingSeed(repoRoot, dataDir)) {
   console.error(
-    "[paperclip] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`.",
+    "[paperclip] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`, or start an isolated sandbox with `pnpm dev:once --data-dir ./tmp/sandbox`.",
   );
   process.exit(1);
 }
