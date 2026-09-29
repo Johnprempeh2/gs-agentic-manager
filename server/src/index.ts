@@ -109,6 +109,7 @@ import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
+import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
@@ -1070,6 +1071,10 @@ async function startServerWithDatabaseTeardown(
     .catch((err) => {
       logger.error({ err }, "startup reconciliation of codex_local managed homes failed");
     });
+
+  // Remove per-run AI homes with no live run and day-old test temp folders,
+  // now and daily, so the temp folder cannot fill the disk (GRE-209).
+  startTempFolderSweeper(logger);
 
   void reconcileBuiltInAgentsOnStartup(db as any)
     .then((result) => {
