@@ -5945,6 +5945,9 @@ export type ExecutionWorkspaceReuseRequestForIssue = {
   requestedExecutionWorkspaceId: string | null;
   requestedShouldReuseExisting: boolean;
   existingExecutionWorkspaceAvailable: boolean;
+  // The issue asked to reuse a workspace that is already archived. The run
+  // realizes a fresh workspace instead of failing at setup (GRE-229).
+  archivedWorkspaceFallback: boolean;
 };
 
 /**
@@ -5980,14 +5983,22 @@ export function resolveExecutionWorkspaceReuseRequestForIssue(input: {
     requestedExistingBranch === null ||
     readNonEmptyString(input.existingExecutionWorkspaceBranchName) ===
       requestedExistingBranch;
-  const requestedShouldReuseExisting =
+  const reuseRequested =
     input.issueExecutionWorkspacePreference === "reuse_existing" &&
     requestedExecutionWorkspaceId !== null &&
     existingWorkspaceMatchesRequestedBranch;
+  // An archived workspace cannot be restored: its worktree may already be
+  // removed. Realize a fresh workspace so the open issue keeps a way forward,
+  // and let the caller rebind the issue and say so once.
+  const archivedWorkspaceFallback =
+    reuseRequested && input.existingExecutionWorkspaceStatus === "archived";
+  const requestedShouldReuseExisting =
+    reuseRequested && !archivedWorkspaceFallback;
 
   return {
     requestedExecutionWorkspaceId,
     requestedShouldReuseExisting,
+    archivedWorkspaceFallback,
     existingExecutionWorkspaceAvailable:
       requestedShouldReuseExisting &&
       input.existingExecutionWorkspaceStatus !== null &&
@@ -6013,6 +6024,22 @@ export function resolveExecutionWorkspaceReuseProvisioningPolicy(input: {
       input.workspaceConfigFreshness.shouldRefreshConfigSnapshot,
     shouldPersistLatestWorkspaceConfigMetadata: !replacementClassDrift,
   };
+}
+
+export function formatArchivedWorkspaceFallbackComment(input: {
+  archivedWorkspaceId: string | null;
+  workspace: { id: string; branchName?: string | null; cwd?: string | null };
+}) {
+  const lines = [
+    `This issue was bound to execution workspace \`${input.archivedWorkspaceId ?? "unknown"}\`, but that workspace is archived, so it could not be reused.`,
+    "This run started in a fresh workspace instead, and the issue now uses it.",
+    "",
+    `- Workspace: \`${input.workspace.id}\``,
+  ];
+  if (input.workspace.branchName) lines.push(`- Branch: \`${input.workspace.branchName}\``);
+  if (input.workspace.cwd) lines.push(`- Worktree: \`${input.workspace.cwd}\``);
+  lines.push("", "Work that was only in the archived worktree is not in the new one. Check the old branch if you need it.");
+  return lines.join("\n");
 }
 
 function formatInheritedExecutionWorkspaceReuseFailure(input: {
@@ -21859,8 +21886,16 @@ export function heartbeatService(
           existingExecutionWorkspaceStatus:
             existingExecutionWorkspace?.status ?? null,
         });
+      // A native recovery run resumes a provider session inside the persisted
+      // workspace, so it keeps failing loudly on an archived binding rather than
+      // resuming in a different directory.
+      const archivedWorkspaceFallback =
+        workspaceReuseRequest.archivedWorkspaceFallback &&
+        !nativeRecoveryExecutionWorkspaceId;
       const requestedShouldReuseExisting =
-        workspaceReuseRequest.requestedShouldReuseExisting;
+        workspaceReuseRequest.requestedShouldReuseExisting ||
+        (workspaceReuseRequest.archivedWorkspaceFallback &&
+          !archivedWorkspaceFallback);
       const reusableExistingExecutionWorkspace =
         workspaceReuseRequest.existingExecutionWorkspaceAvailable
           ? existingExecutionWorkspace
@@ -22980,6 +23015,26 @@ export function heartbeatService(
         );
       }
       await bindIssueToPersistedExecutionWorkspace(persistedExecutionWorkspace);
+      // Say once that the run left the archived workspace. The issue is now
+      // bound to the fresh workspace, so the next run reuses it and does not
+      // reach this branch again.
+      if (
+        archivedWorkspaceFallback &&
+        issueId &&
+        persistedExecutionWorkspace &&
+        issueExecutionWorkspaceIdForRun === persistedExecutionWorkspace.id
+      ) {
+        await issuesSvc.addComment(
+          issueId,
+          formatArchivedWorkspaceFallbackComment({
+            archivedWorkspaceId:
+              workspaceReuseRequest.requestedExecutionWorkspaceId,
+            workspace: persistedExecutionWorkspace,
+          }),
+          { runId: run.id },
+          { authorType: "system" },
+        );
+      }
       const projectRepositoryPaths: string[] = [];
       if (executionWorkspace.projectId && resolvedWorkspace.source === "project_primary" && !resolvedWorkspace.baseCwdFallback) {
         const repositoryRows = await db.select().from(projectWorkspaces).where(and(

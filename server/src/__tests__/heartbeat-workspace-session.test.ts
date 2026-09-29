@@ -23,6 +23,7 @@ import {
   preflightLowTrustWorkspaceIsolation,
   prioritizeProjectWorkspaceCandidatesForRun,
   parseSessionCompactionPolicy,
+  formatArchivedWorkspaceFallbackComment,
   provisionExecutionWorkspaceForFreshnessDecision,
   reconcileReusedExecutionWorkspaceProjectWorkspaceId,
   resolveNativeRecoveryExecutionWorkspaceBinding,
@@ -1711,20 +1712,18 @@ describe("effective run execution workspace config freshness", () => {
     expect(realizeWorkspace).not.toHaveBeenCalled();
   });
 
-  it.each([
-    { name: "missing", status: null },
-    { name: "archived", status: "archived" },
-  ])("fails loudly when the inherited workspace row is $name", async ({ status }) => {
+  it("fails loudly when the inherited workspace row is missing", async () => {
     const reuseRequest = resolveExecutionWorkspaceReuseRequestForIssue({
       issueExecutionWorkspaceId: "workspace-old",
       issueExecutionWorkspacePreference: "reuse_existing",
-      existingExecutionWorkspaceStatus: status,
+      existingExecutionWorkspaceStatus: null,
     });
 
     expect(reuseRequest).toEqual({
       requestedExecutionWorkspaceId: "workspace-old",
       requestedShouldReuseExisting: true,
       existingExecutionWorkspaceAvailable: false,
+      archivedWorkspaceFallback: false,
     });
 
     const metadata = buildWorkspaceConfigMetadata();
@@ -1748,6 +1747,52 @@ describe("effective run execution workspace config freshness", () => {
       realizeWorkspace,
     })).rejects.toThrow(/could not be restored/);
     expect(realizeWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a fresh workspace when the inherited workspace is archived (GRE-229)", async () => {
+    const reuseRequest = resolveExecutionWorkspaceReuseRequestForIssue({
+      issueExecutionWorkspaceId: "workspace-old",
+      issueExecutionWorkspacePreference: "reuse_existing",
+      existingExecutionWorkspaceStatus: "archived",
+    });
+
+    expect(reuseRequest).toEqual({
+      requestedExecutionWorkspaceId: "workspace-old",
+      requestedShouldReuseExisting: false,
+      existingExecutionWorkspaceAvailable: false,
+      archivedWorkspaceFallback: true,
+    });
+
+    const decision = resolveExecutionWorkspaceConfigFreshness({
+      hasExistingWorkspace: false,
+      existingWorkspaceMetadata: null,
+      nextMetadata: buildWorkspaceConfigMetadata(),
+    });
+    const realizeWorkspace = vi.fn(async () => ({ id: "fresh-workspace", warnings: [] }));
+    const restoreExistingWorkspace = vi.fn(async () => ({ id: "workspace-old", warnings: [] }));
+
+    const result = await provisionExecutionWorkspaceForFreshnessDecision({
+      requestedShouldReuseExisting: reuseRequest.requestedShouldReuseExisting,
+      existingExecutionWorkspaceId: reuseRequest.requestedExecutionWorkspaceId,
+      issueRef: { id: "issue-1", identifier: "PAP-42" },
+      runId: "run-1",
+      workspaceConfigFreshness: decision,
+      restoreExistingWorkspace,
+      realizeWorkspace,
+    });
+
+    expect(result.executionWorkspace).toEqual({ id: "fresh-workspace", warnings: [] });
+    expect(result.reusedExecutionWorkspace).toBeNull();
+    expect(restoreExistingWorkspace).not.toHaveBeenCalled();
+
+    const comment = formatArchivedWorkspaceFallbackComment({
+      archivedWorkspaceId: "workspace-old",
+      workspace: { id: "fresh-workspace", branchName: "PAP-42-fresh", cwd: "/tmp/wt/PAP-42-fresh" },
+    });
+    expect(comment).toContain("`workspace-old`");
+    expect(comment).toContain("archived");
+    expect(comment).toContain("- Workspace: `fresh-workspace`");
+    expect(comment).toContain("- Branch: `PAP-42-fresh`");
   });
 
   it("does not mistake a projectless native run-id binding for a missing persisted workspace", () => {
@@ -1779,6 +1824,7 @@ describe("effective run execution workspace config freshness", () => {
         requestedExecutionWorkspaceId: "workspace-old",
         requestedShouldReuseExisting: false,
         existingExecutionWorkspaceAvailable: false,
+        archivedWorkspaceFallback: false,
       });
 
       const metadata = buildWorkspaceConfigMetadata();
@@ -1817,6 +1863,7 @@ describe("effective run execution workspace config freshness", () => {
       requestedExecutionWorkspaceId: "workspace-old",
       requestedShouldReuseExisting: true,
       existingExecutionWorkspaceAvailable: true,
+      archivedWorkspaceFallback: false,
     });
   });
 
