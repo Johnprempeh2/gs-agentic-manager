@@ -166,11 +166,11 @@ export async function sweepStaleTestTempDirs(
 export function startTempFolderSweeper(log: {
   info: (obj: object, msg: string) => void;
   warn: (obj: object, msg: string) => void;
-}) {
+}, opts: { tmpDir?: string } = {}) {
   const run = async () => {
     try {
-      const homes = await sweepStaleManagedAiHomes();
-      const tests = await sweepStaleTestTempDirs();
+      const homes = await sweepStaleManagedAiHomes({ tmpDir: opts.tmpDir });
+      const tests = await sweepStaleTestTempDirs({ tmpDir: opts.tmpDir });
       const removed = homes.removed.length + tests.removed.length;
       const failed = homes.failed.length + tests.failed.length;
       if (removed > 0 || failed > 0) {
@@ -185,7 +185,7 @@ export function startTempFolderSweeper(log: {
   };
   void run();
   const timer = setInterval(() => void run(), ONE_DAY_MS);
-  timer.unref();
+  timer.unref?.();
   return () => clearInterval(timer);
 }
 
