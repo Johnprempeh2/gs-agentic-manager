@@ -208,11 +208,14 @@ Merging does not change the live app. A version goes live in these steps.
    checkout, when no agent is running:
 
    ```sh
+   git pull --ff-only origin main
    scripts/greatstone-release.sh rc-YYYY-MM-DD.N
    ```
 
    It does the same checks and steps and prints the rollback command and the
-   backup file.
+   backup file. The new `live-*` tag gets the rc tag's title and changelog. The
+   script refuses to run when its release scripts are older than origin/main;
+   pull first.
 7. **Check live (Flint, then Keystone).** Flint runs
    `curl -s http://localhost:3100/api/health`: the `commit` is the tag's
    commit. Flint spot-checks the changes in live and reports on the release

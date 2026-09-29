@@ -141,6 +141,29 @@ rc_tag_title() {
   say "$title"
 }
 
+# Makes the annotated <live-tag> on <commit> with the message of <rc-tag>: its
+# title and changelog (GRE-120). The one place a live-* tag is made, for a
+# release from the app and a release by hand alike.
+tag_live_release() {
+  local repo="$1" rc="$2" live="$3" commit="$4"
+  git -C "$repo" for-each-ref --format='%(contents:subject)%0a%0a%(contents:body)' "refs/tags/$rc" \
+    | git -C "$repo" tag -a "$live" "$commit" --cleanup=whitespace -F -
+}
+
+# Fails with the reason when the release scripts in <repo> are not those on
+# origin/main (fetch first). A dev checkout that was not pulled runs an old
+# release script; before GRE-120 that one wrote a generic live tag message
+# with no title or changelog (GRE-178).
+RELEASE_SCRIPT_FILES=(scripts/greatstone-release.sh scripts/greatstone-common.sh scripts/greatstone-live-release.sh)
+release_scripts_current() {
+  local repo="$1" files
+  files="$(git -C "$repo" diff --name-only origin/main -- "${RELEASE_SCRIPT_FILES[@]}" 2>&1)" \
+    || { say "cannot compare the release scripts in $repo with origin/main ($files)"; return 1; }
+  [ -z "$files" ] && return 0
+  say "the release scripts in $repo are not the ones on origin/main ($(printf '%s' "$files" | tr '\n' ' ' | sed 's/ $//')); run: git -C $repo pull --ff-only origin main, then release again. Nothing was changed."
+  return 1
+}
+
 # Records <dir> as the release repo in $GS_ROOT/release.conf, where the live
 # server finds it to release from the app (GRE-121). Nothing removes this file,
 # so it survives `greatstone-preview.sh stop` (GRE-71).
