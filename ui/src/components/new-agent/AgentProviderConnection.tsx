@@ -85,6 +85,10 @@ export function AgentProviderConnection({
   const [loginPhase, setLoginPhase] = useState<"preparing" | "ready" | "waiting" | "connecting">("preparing");
   const phaseBeforeSubmit = useRef<"ready" | "waiting">("ready");
   const [apiKey, setApiKey] = useState("");
+  // A local install can take a pasted `claude setup-token` value instead of
+  // copying this machine's short-lived Claude login.
+  const [pasteSetupToken, setPasteSetupToken] = useState(false);
+  const [setupToken, setSetupToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [storedConnection, setStoredConnection] =
@@ -119,10 +123,12 @@ export function AgentProviderConnection({
     (savedKeys.subscriptions.length > 0 || (adapterType === "claude_local" && !savedSubscription && storedLogin.data))
       ? "subscription" : savedKeys.options.length ? "api" : "subscription"
   );
+  const canPasteSetupToken = Boolean(managedAccount) && adapterType === "claude_local" && canUseLocalLogin && method === "subscription";
+  const usingSetupToken = canPasteSetupToken && pasteSetupToken;
   const localLogin = useLocalAiLogin(companyId, managedAccount?.intent ?? {
     provider: aiProvider, method: "subscription", name: `My ${provider} subscription`,
     ownership: "personal", agentIds: [], allAgents: true,
-  }, canUseLocalLogin && method === "subscription" && !savedSubscription && !storedLogin.data,
+  }, canUseLocalLogin && method === "subscription" && !savedSubscription && !storedLogin.data && !usingSetupToken,
   { allowHostClaude: health.data?.deploymentMode === "local_trusted" });
   const auth = useQuery({
     queryKey: queryKeys.agents.authSignal(
@@ -149,9 +155,12 @@ export function AgentProviderConnection({
         if (method === "subscription" && !canUseLocalLogin) return;
         const result = savedManagedAccount.current ?? await (method === "api"
           ? aiConnectionsApi.create(companyId, { ...managedAccount.intent, method: "api_key", apiKey: apiKey.trim() })
-          : localLogin.connect(managedAccount.intent));
+          : usingSetupToken
+            ? aiConnectionsApi.connectSetupToken(companyId, { ...managedAccount.intent, provider: "anthropic", token: setupToken.trim() })
+            : localLogin.connect(managedAccount.intent));
         savedManagedAccount.current = result;
         setApiKey("");
+        setSetupToken("");
         if (run === epoch.current) managedAccount.onComplete({ ...result, method: method === "api" ? "api_key" : "subscription" });
         return;
       }
@@ -197,7 +206,10 @@ export function AgentProviderConnection({
         );
     } catch (cause) {
       if (run !== epoch.current) return;
-      if (managedAccount) setApiKey("");
+      if (managedAccount) {
+        setApiKey("");
+        setSetupToken("");
+      }
       setError(
         cause instanceof Error
           ? cause.message
@@ -348,8 +360,41 @@ export function AgentProviderConnection({
                   onConnected(connection);
                 }}
               />
-            ) : savedSubscription ? null : canUseLocalLogin && !storedLogin.data ? (
-              <LocalProviderLoginInstructions adapterType={adapterType} login={{ ...localLogin, retry: () => { setError(null); localLogin.retry(); } }} />
+            ) : savedSubscription ? null : usingSetupToken ? (
+              <div className="min-w-0 max-w-full space-y-3">
+                <OnboardingLoginCard instruction={<>Run <code className="font-mono">claude setup-token</code> in a terminal, then paste the token it prints. It lasts about a year.</>}>
+                  <OnboardingCardField
+                    label="Long-lived Claude token"
+                    masked
+                    autoFocus
+                    value={setupToken}
+                    placeholder="Paste token here"
+                    onChange={setSetupToken}
+                    onSubmit={() => void connect()}
+                    disabled={busy}
+                  />
+                </OnboardingLoginCard>
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground underline underline-offset-4"
+                  onClick={() => { savedManagedAccount.current = null; setPasteSetupToken(false); setSetupToken(""); setError(null); }}
+                >
+                  Use this machine’s Claude login instead
+                </button>
+              </div>
+            ) : canUseLocalLogin && !storedLogin.data ? (
+              <div className="min-w-0 max-w-full space-y-3">
+                <LocalProviderLoginInstructions adapterType={adapterType} login={{ ...localLogin, retry: () => { setError(null); localLogin.retry(); } }} />
+                {canPasteSetupToken && (
+                  <button
+                    type="button"
+                    className="text-sm text-muted-foreground underline underline-offset-4"
+                    onClick={() => { savedManagedAccount.current = null; setPasteSetupToken(true); setError(null); }}
+                  >
+                    Paste a long-lived token (from <code className="font-mono">claude setup-token</code>)
+                  </button>
+                )}
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">
                 {storedLogin.data
@@ -398,6 +443,7 @@ export function AgentProviderConnection({
           managedAccount?.disabled ||
           (Boolean(managedAccount) && method === "subscription" && !canLogin && !canUseLocalLogin) ||
           (localEnvironment && health.isPending) || localLogin.preparing || Boolean(localLogin.error) ||
+          (usingSetupToken && !setupToken.trim()) ||
           (!managedAccount && auth.isPending) ||
           savedKeys.loading ||
           (adapterType === "claude_local" && storedLogin.isPending) ||

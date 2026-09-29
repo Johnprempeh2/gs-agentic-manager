@@ -120,6 +120,10 @@ export function bindingProblem(
   return aiConnectionProblem(connection);
 }
 
+/** Where to put a `claude setup-token` value: the Reconnect paste option. */
+export const AI_SETUP_TOKEN_ADVICE =
+  "For a token that lasts about a year, run claude setup-token in a terminal, then choose Reconnect and \"Paste a long-lived token\".";
+
 /**
  * Plain wording for how long a stored credential lasts. An imported Claude
  * login is a short-lived access token; `claude setup-token` lasts about a year.
@@ -136,14 +140,19 @@ export function describeAiCredentialLifetime(
     if (connection?.provider !== "anthropic" || connection.method !== "subscription") return null;
     return {
       tone: "warning",
-      text: "Token expiry unknown: this connection was saved before expiry tracking, so you will not be warned before it stops. Reconnect to track it. claude setup-token gives a token that lasts about a year.",
+      text: `Token expiry unknown: this connection was saved before expiry tracking, so you will not be warned before it stops. ${AI_SETUP_TOKEN_ADVICE}`,
     };
   }
-  if (credential.source === "setup_token")
-    return { tone: "muted", text: "Long-lived token from claude setup-token. It lasts about a year." };
-  if (credential.source !== "imported_login") return null;
-  const renewal = "claude setup-token gives a token that lasts about a year.";
   const state = aiCredentialExpiryState(credential.expiresAt, now);
+  if (credential.source === "setup_token") {
+    if (state === "unknown") return { tone: "muted", text: "Long-lived token from claude setup-token. It lasts about a year." };
+    const until = new Date(credential.expiresAt!).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    if (state === "expired")
+      return { tone: "danger", text: `This token expired on ${until}. Runs using it stop until you reconnect. ${AI_SETUP_TOKEN_ADVICE}` };
+    return { tone: state === "expiring_soon" ? "warning" : "muted", text: `Long-lived token from claude setup-token. It expires on ${until}.` };
+  }
+  if (credential.source !== "imported_login") return null;
+  const renewal = AI_SETUP_TOKEN_ADVICE;
   if (state === "unknown")
     return { tone: "warning", text: `Short-lived token copied from your Claude login. Its expiry is unknown. ${renewal}` };
   const when = new Date(credential.expiresAt!).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });

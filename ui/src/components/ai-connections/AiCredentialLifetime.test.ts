@@ -8,7 +8,8 @@ describe("describeAiCredentialLifetime (GRE-15)", () => {
     expect(lifetime?.tone).toBe("muted");
     expect(lifetime?.text).toContain("Short-lived token");
     expect(lifetime?.text).toContain(new Date("2026-09-27T18:50:00.000Z").toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
-    expect(lifetime?.text).toContain("claude setup-token gives a token that lasts about a year");
+    expect(lifetime?.text).toContain("run claude setup-token");
+    expect(lifetime?.text).toContain("Paste a long-lived token");
   });
   it("raises the tone within the warning hour and once expired", () => {
     expect(describeAiCredentialLifetime({ source: "imported_login", expiresAt: "2026-09-27T12:50:00.000Z" }, now)?.tone).toBe("warning");
@@ -20,6 +21,12 @@ describe("describeAiCredentialLifetime (GRE-15)", () => {
     expect(describeAiCredentialLifetime({ source: "pasted", expiresAt: null }, now)).toBeNull();
     expect(describeAiCredentialLifetime(undefined, now)).toBeNull();
     expect(describeAiCredentialLifetime({ source: "setup_token", expiresAt: null }, now)?.text).toContain("about a year");
+  });
+  it("gives a pasted setup-token's expiry date (GRE-244)", () => {
+    const lifetime = describeAiCredentialLifetime({ source: "setup_token", expiresAt: "2027-09-29T12:00:00.000Z" }, now);
+    expect(lifetime?.tone).toBe("muted");
+    expect(lifetime?.text).toContain(new Date("2027-09-29T12:00:00.000Z").toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
+    expect(describeAiCredentialLifetime({ source: "setup_token", expiresAt: "2026-09-27T12:00:00.000Z" }, now)?.tone).toBe("danger");
   });
   it("warns that a Claude subscription saved without a credential record has an unknown expiry (GRE-43)", () => {
     const lifetime = describeAiCredentialLifetime(undefined, now, { provider: "anthropic", method: "subscription" });

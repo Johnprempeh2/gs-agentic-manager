@@ -20,6 +20,7 @@ const managedApi = vi.hoisted(() => ({
   checkLocalLogin: vi.fn(async () => ({ status: "sign_in_required" as const })),
   cancelLocalLogin: vi.fn(async () => ({})),
   create: vi.fn(async () => ({ connectionId: "managed-connection", grantId: "managed-grant" })),
+  connectSetupToken: vi.fn(async () => ({ connectionId: "setup-token-account", grantId: "setup-token-grant" })),
 }));
 vi.mock("@/api/ai-connections", () => ({ aiConnectionsApi: managedApi }));
 vi.mock("@/api/agents", () => ({
@@ -142,6 +143,12 @@ function click(text: string) {
   expect(button).toBeTruthy();
   flushSync(() => button.click());
 }
+function typeInto(input: HTMLInputElement, value: string) {
+  flushSync(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
 function openProvider() {
   flushSync(() =>
     (host.querySelector('[role="radio"]') as HTMLElement).click(),
@@ -198,6 +205,37 @@ describe("AgentProviderConnection reuse", () => {
     await vi.waitFor(() => expect(onComplete).toHaveBeenCalledWith({ connectionId: "local-account", grantId: "local-grant", method: "subscription" }));
     expect(managedApi.connectLocal).toHaveBeenCalledWith("c1", adapterType === "codex_local" ? { ...intent, localSessionId: "local-attempt" } : intent);
     expect(mocks.loginPanel).not.toHaveBeenCalled();
+  });
+  it("reconnects Claude with a pasted long-lived token, and keeps nothing after a rejected one (GRE-244)", async () => {
+    const onComplete = vi.fn();
+    const intent = { provider: "anthropic" as const, method: "subscription" as const, name: "My account", ownership: "personal" as const, agentIds: [], allAgents: false, connectionId: "11111111-1111-4111-8111-111111111111" };
+    await mount("claude_local", false, false, false, false, false, { intent, onComplete, fixedMethod: true }, true);
+    openProvider();
+    await vi.waitFor(() => expect(host.textContent).toContain("claude auth login"));
+    click("Paste a long-lived token");
+    expect(host.textContent).toContain("claude setup-token");
+    const field = () => host.querySelector<HTMLInputElement>('input[aria-label="Long-lived Claude token"]')!;
+    expect(field().type).toBe("password");
+    const connectButton = () => [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Connect"))!;
+    expect(connectButton().disabled).toBe(true);
+    managedApi.connectSetupToken.mockRejectedValueOnce(new Error("Claude did not accept this token. Nothing was changed."));
+    typeInto(field(), "sk-ant-oat01-fixture-bad");
+    click("Connect");
+    await vi.waitFor(() => expect(host.textContent).toContain("Claude did not accept this token"));
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(field().value).toBe("");
+    expect(host.textContent).not.toContain("sk-ant-oat01-fixture-bad");
+    typeInto(field(), "  sk-ant-oat01-fixture-good  ");
+    click("Connect");
+    await vi.waitFor(() => expect(onComplete).toHaveBeenCalledWith({ connectionId: "setup-token-account", grantId: "setup-token-grant", method: "subscription" }));
+    expect(managedApi.connectSetupToken).toHaveBeenLastCalledWith("c1", { ...intent, token: "sk-ant-oat01-fixture-good" });
+    expect(managedApi.connectLocal).not.toHaveBeenCalled();
+  });
+  it("offers the pasted token only for Claude", async () => {
+    await mount("codex_local", false, false, false, false, false, { intent: { provider: "openai", method: "subscription", name: "My account", ownership: "personal", agentIds: [], allAgents: false }, onComplete: vi.fn() }, true);
+    openProvider();
+    await vi.waitFor(() => expect(host.textContent).toContain("codex login"));
+    expect(host.textContent).not.toContain("Paste a long-lived token");
   });
   it("leaves a completed local account saved when its host is cancelled", async () => {
     let finish!: (result: { connectionId: string; grantId: string }) => void;
