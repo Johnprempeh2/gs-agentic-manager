@@ -369,26 +369,11 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("Show the Decisions item in the main sidebar");
   });
 
-  it("renders and patches the Goals Sidebar Link experimental toggle", async () => {
+  it("no longer shows a Goals Sidebar Link toggle (graduated, GRE-191)", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Goals Sidebar Link");
-    expect(container.textContent).toContain(
-      "Restore the Goals item in the main sidebar while the goals surface is being evaluated.",
-    );
-
-    const toggle = container.querySelector<HTMLButtonElement>(GOALS_SIDEBAR_LINK_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableGoalsSidebarLink: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector(GOALS_SIDEBAR_LINK_TOGGLE_SELECTOR)).toBeNull();
+    expect(container.textContent).not.toContain("Goals Sidebar Link");
   });
 
   it("hides the isolated-workspaces-by-default toggle while isolated workspaces are off", async () => {
@@ -888,7 +873,7 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
     vi.clearAllMocks();
   });
 
-  it("groups developer and legacy settings into sections", async () => {
+  it("groups developer settings into a section and drops the empty Legacy section", async () => {
     setWorktreeRuntimeMeta(true);
     await renderPage(defaultExperimentalSettings());
 
@@ -898,21 +883,19 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
     expect(headings).toEqual([
       "Experimental features",
       "GS Agentic Manager Developer Mode",
-      "Legacy",
     ]);
 
     const sections = [...container.querySelectorAll("section")];
     expect(sections.at(0)?.textContent).not.toContain("Run tasks in this worktree");
     expect(sections.at(0)?.textContent).not.toContain("Managed Environment Only");
-    expect(sections.at(-2)?.textContent).toContain("Run tasks in this worktree");
-    expect(sections.at(-2)?.textContent).toContain("Managed Environment Only");
-    expect(sections.at(-2)?.textContent).not.toContain("Auto-Restart Dev Server When Idle");
-    expect(sections.at(-2)?.textContent).toContain("Server Info Debug View");
-    expect(sections.at(-2)?.textContent).not.toContain("Smoke Lab");
-    expect(sections.at(-2)?.textContent).toContain("Task Plan Decomposition");
-    expect(sections.at(-1)?.textContent).toContain("These features are going to be removed.");
-    expect(sections.at(-1)?.textContent).not.toContain("Classic Task Interface");
-    expect(sections.at(-1)?.textContent).toContain("Goals Sidebar Link");
+    expect(sections.at(-1)?.textContent).toContain("Run tasks in this worktree");
+    expect(sections.at(-1)?.textContent).toContain("Managed Environment Only");
+    expect(sections.at(-1)?.textContent).not.toContain("Auto-Restart Dev Server When Idle");
+    expect(sections.at(-1)?.textContent).toContain("Server Info Debug View");
+    expect(sections.at(-1)?.textContent).not.toContain("Smoke Lab");
+    expect(sections.at(-1)?.textContent).toContain("Task Plan Decomposition");
+    // Classic Task Interface is retired (GRE-196) and Goals Sidebar Link graduated (GRE-191).
+    expect(container.textContent).not.toContain("These features are going to be removed.");
   });
 
   it("alphabetizes cards by their displayed title within each section", async () => {
@@ -1022,10 +1005,11 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   });
 
   it("retains a section when one of its controls is visible", async () => {
-    const visible = new Set(["enableServerInfoDebugView", "enableGoalsSidebarLink"]);
+    const visible = new Set(["enableServerInfoDebugView"]);
     await renderPage(INSTANCE_FEATURE_KEYS.filter((key) => !visible.has(key)).map((key) => `instance.experimental.${key}`));
     expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("Server Info Debug View");
-    expect(container.querySelector('[aria-labelledby="legacy-heading"] h3')?.textContent).toBe("Goals Sidebar Link");
+    // Legacy has no visible cards now that Goals Sidebar Link graduated (GRE-191).
+    expect(container.querySelector('[aria-labelledby="legacy-heading"]')).toBeNull();
   });
 
   it("shows every toggle when nothing is hidden", async () => {

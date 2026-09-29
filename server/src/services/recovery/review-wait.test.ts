@@ -5,6 +5,7 @@ import {
   agents,
   companies,
   createDb,
+  heartbeatRuns,
   issueComments,
   issueRelations,
   issues,
@@ -76,6 +77,7 @@ describeEmbeddedPostgres("readReviewWaitEvidence (GRE-97)", () => {
   afterEach(async () => {
     await db.delete(activityLog);
     await db.delete(issueComments);
+    await db.delete(heartbeatRuns);
     await db.delete(issueRelations);
     await db.delete(issues);
     await db.delete(agents);
@@ -162,6 +164,53 @@ describeEmbeddedPostgres("readReviewWaitEvidence (GRE-97)", () => {
     });
 
     expect(await isReviewerWaitingOnCheck(db, { companyId, issueId, reviewerAgentId, now: NOW })).toBe(false);
+  });
+
+  // GRE-204: the heartbeat posts each finished run's summary as a comment by
+  // the reviewer. That is the run's output, not the reviewer saying it waits.
+  it("does not count the run summary the heartbeat posted as reviewer activity", async () => {
+    const { companyId, reviewerAgentId, issueId } = await seed();
+    const runId = randomUUID();
+    const summaryCommentId = randomUUID();
+    await db.insert(heartbeatRuns).values({
+      id: runId,
+      companyId,
+      agentId: reviewerAgentId,
+      invocationSource: "automation",
+      triggerDetail: "system",
+      status: "succeeded",
+      resultJson: {
+        presentationDecision: {
+          commentAction: "create",
+          commentId: summaryCommentId,
+          reasonCodes: ["resolved_response_materialized"],
+        },
+      },
+    });
+    await db.insert(issueComments).values({
+      id: summaryCommentId,
+      companyId,
+      issueId,
+      authorAgentId: reviewerAgentId,
+      createdByRunId: runId,
+      body: "Reviewed the diff.",
+      createdAt: minutesAgo(1),
+    });
+
+    const evidence = await readReviewWaitEvidence(db, { companyId, issueId, reviewerAgentId, now: NOW });
+    expect(evidence.latestReviewerCommentAt).toBeNull();
+    expect(await isReviewerWaitingOnCheck(db, { companyId, issueId, reviewerAgentId, now: NOW })).toBe(false);
+
+    // A comment the reviewer posted itself in the same run still counts.
+    await db.insert(issueComments).values({
+      companyId,
+      issueId,
+      authorAgentId: reviewerAgentId,
+      createdByRunId: runId,
+      body: "Waiting on CI.",
+      createdAt: minutesAgo(2),
+    });
+    expect(await isReviewerWaitingOnCheck(db, { companyId, issueId, reviewerAgentId, now: NOW })).toBe(true);
   });
 
   it("stops waiting once the deferral budget is spent", async () => {

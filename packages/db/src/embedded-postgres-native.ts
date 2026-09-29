@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { reapOrphanedEmbeddedPostgresSharedMemory } from "./embedded-postgres-shared-memory.js";
 
 const require = createRequire(import.meta.url);
 
@@ -72,6 +73,10 @@ export async function ensureLinuxSharedLibraryAliases(libDir: string): Promise<s
 }
 
 export async function prepareEmbeddedPostgresNativeRuntime(): Promise<void> {
+  // Every embedded cluster start path runs through here, so free segments
+  // leaked by killed clusters before a new one asks for its own (GRE-211).
+  reapOrphanedEmbeddedPostgresSharedMemory();
+
   const nativePackageName = resolveNativePackageName();
   const packageRoot = resolveEmbeddedPostgresPackageRoot();
   if (!nativePackageName || !packageRoot) return;

@@ -9,6 +9,7 @@ import {
   goals,
   issues,
   projects,
+  routines,
 } from "@greatstone/db";
 import { onboardingSeedRoutes } from "../routes/onboarding-seed.js";
 import { logActivity } from "../services/activity-log.js";
@@ -43,6 +44,7 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
     await ctx.db.delete(activityLog);
     await ctx.db.delete(companyOnboardingSeeds);
     await ctx.db.delete(issues);
+    await ctx.db.delete(routines);
     await ctx.db.delete(projects);
     await ctx.db.delete(goals);
     await ctx.db.delete(agents);

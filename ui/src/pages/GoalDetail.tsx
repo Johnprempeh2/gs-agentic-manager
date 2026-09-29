@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
 import { assetsApi } from "../api/assets";
+import { agentsApi } from "../api/agents";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
@@ -15,11 +16,15 @@ import { StatusBadge } from "../components/StatusBadge";
 import { InlineEditor } from "../components/InlineEditor";
 import { EntityRow } from "../components/EntityRow";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { cn, projectUrl } from "../lib/utils";
+import { cn, projectUrl, relativeTime } from "../lib/utils";
+import { daysToTarget, formatTargetDate, goalHealth, remainingLabel } from "../lib/goal-journey";
+import { GoalHealthPill, GoalPercent, GoalProgressRing } from "../components/goals/GoalHealth";
+import { GoalJourneyMap } from "../components/goals/GoalJourneyMap";
+import { GoalCheckIns } from "../components/goals/GoalCheckIns";
+import { GoalOwnerPicker } from "../components/goals/GoalOwnerPicker";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, SlidersHorizontal } from "lucide-react";
-import type { Goal, Project } from "@greatstone/shared";
 
 interface GoalPropertiesToggleButtonProps {
   panelVisible: boolean;
@@ -76,6 +81,23 @@ export function GoalDetail() {
     queryFn: () => projectsApi.list(resolvedCompanyId!, { includeArchived: true }),
     enabled: !!resolvedCompanyId
   });
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(resolvedCompanyId!),
+    queryFn: () => agentsApi.list(resolvedCompanyId!),
+    enabled: !!resolvedCompanyId
+  });
+
+  const { data: checkIns } = useQuery({
+    queryKey: queryKeys.goals.checkIns(goalId!),
+    queryFn: () => goalsApi.listCheckIns(goalId!),
+    enabled: !!goalId
+  });
+
+  const agentsById = useMemo(
+    () => new Map((agents ?? []).map((agent) => [agent.id, agent])),
+    [agents]
+  );
 
   useEffect(() => {
     if (!goal?.companyId || goal.companyId === selectedCompanyId) return;
@@ -139,15 +161,29 @@ export function GoalDetail() {
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!goal) return null;
 
+  const health = goalHealth(goal);
+  const owner = goal.ownerAgentId ? agentsById.get(goal.ownerAgentId) : undefined;
+  const left = remainingLabel(goal);
+  const target = formatTargetDate(goal.targetDate);
+  const days = daysToTarget(goal.targetDate);
+  const newestCheckIn = checkIns?.[0] ?? goal.latestCheckIn;
+
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs uppercase text-muted-foreground">
             {goal.level}
           </span>
           <StatusBadge status={goal.status} />
-          <div className="ml-auto">
+          <GoalHealthPill health={health} />
+          <div className="ml-auto flex items-center gap-2">
+            <GoalOwnerPicker
+              agents={agents ?? []}
+              value={goal.ownerAgentId}
+              onChange={(ownerAgentId) => updateGoal.mutate({ ownerAgentId })}
+              disabled={updateGoal.isPending}
+            />
             <GoalPropertiesToggleButton
               panelVisible={panelVisible}
               onShowProperties={() => setPanelVisible(true)}
@@ -175,6 +211,44 @@ export function GoalDetail() {
           }}
         />
       </div>
+
+      <section
+        className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
+        aria-label="Goal at a glance"
+        data-testid="goal-kpis"
+      >
+        <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 col-span-2 lg:col-span-1">
+          <GoalProgressRing percent={goal.progress.percent} health={health} />
+          <div className="min-w-0">
+            <GoalPercent percent={goal.progress.percent} />
+            <p className="mt-1 text-xs text-muted-foreground">{owner?.name ?? "No owner"}</p>
+          </div>
+        </div>
+        <GoalKpi label="What is left" value={left ?? "No linked tasks yet"} />
+        <GoalKpi label="Target date" value={target ?? "No target date"} hint={daysHint(days)} />
+        <GoalKpi
+          label="Last check-in"
+          value={newestCheckIn ? relativeTime(newestCheckIn.createdAt) : "None yet"}
+        />
+      </section>
+
+      <section className="space-y-3" aria-labelledby="goal-journey-heading">
+        <h3 id="goal-journey-heading" className="text-sm font-semibold">
+          The journey
+        </h3>
+        <GoalJourneyMap milestones={goal.milestones ?? []} agentsById={agentsById} />
+      </section>
+
+      <section className="space-y-3" aria-labelledby="goal-recap-heading">
+        <h3 id="goal-recap-heading" className="text-sm font-semibold">
+          Recap
+        </h3>
+        <GoalCheckIns
+          checkIns={checkIns ?? (goal.latestCheckIn ? [goal.latestCheckIn] : [])}
+          agentsById={agentsById}
+          ownerName={owner?.name ?? null}
+        />
+      </section>
 
       <Tabs defaultValue="children">
         <TabsList>
@@ -222,6 +296,24 @@ export function GoalDetail() {
           )}
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+/** "12 days to go" or "3 days late". */
+export function daysHint(days: number | null): string | null {
+  if (days == null) return null;
+  const n = Math.abs(days);
+  const unit = n === 1 ? "day" : "days";
+  return days < 0 ? `${n} ${unit} late` : `${n} ${unit} to go`;
+}
+
+function GoalKpi({ label, value, hint }: { label: string; value: string; hint?: string | null }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1.5 text-base font-semibold">{value}</p>
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
