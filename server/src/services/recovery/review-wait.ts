@@ -1,6 +1,6 @@
-import { and, count, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, notExists, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { activityLog, issueComments, issueRelations, issues } from "@greatstone/db";
+import { activityLog, heartbeatRuns, issueComments, issueRelations, issues } from "@greatstone/db";
 
 // A reviewer that is waiting on CI or on another agent's check is not a
 // stalled review (GRE-97). On GRE-80 the reviewer commented "waiting on CI and
@@ -53,6 +53,11 @@ export async function readReviewWaitEvidence(
   db: Db,
   input: { companyId: string; issueId: string; reviewerAgentId: string; now: Date },
 ): Promise<ReviewWaitEvidence> {
+  // The run summary the heartbeat posts for a finished run is authored as the
+  // reviewer, but it is the run's own output, not the reviewer saying it waits
+  // (GRE-204). Counting it made every review retry that ended without a
+  // decision look like a wait, so the retry never blocked. The run's
+  // `presentationDecision` names the comment the heartbeat materialized.
   const latestComment = await db
     .select({ createdAt: issueComments.createdAt })
     .from(issueComments)
@@ -62,6 +67,18 @@ export async function readReviewWaitEvidence(
         eq(issueComments.issueId, input.issueId),
         eq(issueComments.authorAgentId, input.reviewerAgentId),
         isNull(issueComments.deletedAt),
+        notExists(
+          db
+            .select({ id: heartbeatRuns.id })
+            .from(heartbeatRuns)
+            .where(
+              and(
+                eq(heartbeatRuns.id, issueComments.createdByRunId),
+                sql`${heartbeatRuns.resultJson} -> 'presentationDecision' ->> 'commentId' = ${issueComments.id}::text`,
+                sql`${heartbeatRuns.resultJson} -> 'presentationDecision' -> 'reasonCodes' @> '["resolved_response_materialized"]'::jsonb`,
+              ),
+            ),
+        ),
       ),
     )
     .orderBy(desc(issueComments.createdAt))
