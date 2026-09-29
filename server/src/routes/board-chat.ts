@@ -305,54 +305,99 @@ export function boardChatRoutes(
     //   { type: "stream_event", event: { type: "content_block_delta", ... } }
     // We stream from those deltas for token-by-token rendering and skip the
     // terminal full `assistant` message to avoid duplicating the text.
+    // A failed CLI run (e.g. "Not logged in · Please run /login") reports its
+    // message as a `result` event with `is_error: true`. That text is an error,
+    // not a reply: it must never be streamed as a chunk or saved as a
+    // board-concierge comment (GRE-234).
+    let cliErrorText: string | null = null;
+    let lastStderr = "";
+
+    const handleLine = (line: string) => {
+      if (!line.trim()) return;
+      let event: any;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        return; // Not JSON — skip.
+      }
+
+      // Unwrap partial-message stream events.
+      const inner = event.type === "stream_event" ? event.event : event;
+      if (!inner || typeof inner !== "object") return;
+
+      if (inner.type === "content_block_delta" && inner.delta?.text) {
+        streamedViaDelta = true;
+        writeChunk(inner.delta.text);
+      } else if (
+        inner.type === "content_block_start" &&
+        inner.content_block?.type === "tool_use"
+      ) {
+        writeToolStatus(inner.content_block.name ?? "working");
+      } else if (event.type === "assistant" && event.message?.content) {
+        // Only consume the full message if we never streamed deltas
+        // (otherwise it would duplicate the already-streamed text).
+        if (!streamedViaDelta) {
+          for (const block of event.message.content) {
+            if (block.type === "text" && block.text) writeChunk(block.text);
+          }
+        }
+      } else if (event.type === "result" && event.is_error === true) {
+        cliErrorText =
+          typeof event.result === "string" && event.result.trim()
+            ? event.result.trim()
+            : "The claude CLI reported an error";
+      } else if (event.type === "result" && event.result && !fullResponse) {
+        writeChunk(event.result);
+      }
+    };
+
     let stdoutBuf = "";
     proc.stdout.on("data", (data: Buffer) => {
       stdoutBuf += data.toString();
       const lines = stdoutBuf.split("\n");
       stdoutBuf = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let event: any;
-        try {
-          event = JSON.parse(line);
-        } catch {
-          continue; // Not JSON — skip.
-        }
-
-        // Unwrap partial-message stream events.
-        const inner = event.type === "stream_event" ? event.event : event;
-        if (!inner || typeof inner !== "object") continue;
-
-        if (inner.type === "content_block_delta" && inner.delta?.text) {
-          streamedViaDelta = true;
-          writeChunk(inner.delta.text);
-        } else if (
-          inner.type === "content_block_start" &&
-          inner.content_block?.type === "tool_use"
-        ) {
-          writeToolStatus(inner.content_block.name ?? "working");
-        } else if (event.type === "assistant" && event.message?.content) {
-          // Only consume the full message if we never streamed deltas
-          // (otherwise it would duplicate the already-streamed text).
-          if (!streamedViaDelta) {
-            for (const block of event.message.content) {
-              if (block.type === "text" && block.text) writeChunk(block.text);
-            }
-          }
-        } else if (event.type === "result" && event.result && !fullResponse) {
-          writeChunk(event.result);
-        }
-      }
+      for (const line of lines) handleLine(line);
     });
 
     proc.stderr.on("data", (data: Buffer) => {
-      console.error("[board/chat/stream stderr]", data.toString());
+      const text = data.toString();
+      if (text.trim()) lastStderr = text.trim();
+      console.error("[board/chat/stream stderr]", text);
     });
 
     proc.on("close", async (exitCode) => {
       clearTimeout(timeout);
       releaseSlot();
+
+      // The final event may arrive without a trailing newline.
+      handleLine(stdoutBuf);
+      stdoutBuf = "";
+
+      // A non-zero exit or an `is_error` result is a failed run: report it as
+      // an SSE error and do not save any streamed text as a reply. When we
+      // killed the process ourselves (timeout or client disconnect) the exit
+      // status reflects our signal, so that path keeps saving partial output
+      // as before.
+      const killedByRelay = killed || proc.killed;
+      const failed =
+        cliErrorText !== null ||
+        (!killedByRelay && exitCode !== null && exitCode !== 0);
+      if (failed) {
+        const detail = (
+          cliErrorText ?? (lastStderr || `The claude CLI exited with code ${exitCode}`)
+        ).slice(0, 500);
+        console.error("[board/chat/stream failed]", { exitCode, detail });
+        if (res.writable) {
+          res.write(
+            `data: ${JSON.stringify({
+              type: "error",
+              message: `The board assistant could not respond: ${detail}`,
+            })}\n\n`,
+          );
+          res.end();
+        }
+        return;
+      }
 
       // Persist the board's reply under the "board-concierge" sentinel so the
       // UI renders it as an assistant bubble (see BoardChat `isUser` check).
