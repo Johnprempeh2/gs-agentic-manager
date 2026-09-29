@@ -13,7 +13,7 @@ const {
   syncDirectoryToSsh,
   startAdapterExecutionTargetPaperclipBridge,
 } = vi.hoisted(() => ({
-  runChildProcess: vi.fn(async (_runId: string, _command: string, args: string[]): Promise<RunProcessResult> => ({
+  runChildProcess: vi.fn(async (_runId: string, _command: string, args: string[], _opts?: unknown): Promise<RunProcessResult> => ({
     exitCode: 0,
     signal: null,
     timedOut: false,
@@ -464,6 +464,90 @@ describe("claude remote execution", () => {
     });
 
     expect(result.errorCode).toBe("duplex_channel_lost");
+  });
+
+  // GRE-250: a local run writes its output to files and saves what is needed
+  // to rebuild its result; a remote run keeps pipes.
+  describe("output capture", () => {
+    const sshTransport = {
+      remoteExecution: {
+        host: "127.0.0.1",
+        port: 2222,
+        username: "fixture",
+        remoteWorkspacePath: "/remote/workspace",
+        remoteCwd: "/remote/workspace",
+        privateKey: "PRIVATE KEY",
+        knownHosts: "[127.0.0.1]:2222 ssh-ed25519 AAAA",
+        strictHostKeyChecking: true,
+      },
+    };
+
+    async function runWithCapture(remote: boolean) {
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-claude-capture-"));
+      cleanupDirs.push(rootDir);
+      const workspaceDir = path.join(rootDir, "workspace");
+      await mkdir(workspaceDir, { recursive: true });
+      vi.stubEnv("GSAM_HOME", path.join(rootDir, "home"));
+      const defaultImpl = runChildProcess.getMockImplementation()!;
+      runChildProcess.mockImplementation(async (runId, command, args, opts) => {
+        const options = opts as unknown as {
+          outputCapture?: { dir: string } | null;
+          onSpawn?: (meta: Record<string, unknown>) => Promise<void>;
+        };
+        if (!(args as string[]).includes("--version") && options.outputCapture) {
+          await options.onSpawn?.({
+            pid: 4242,
+            processGroupId: 4242,
+            startedAt: new Date().toISOString(),
+            outputCapture: {
+              stdoutPath: path.join(options.outputCapture.dir, "r.stdout"),
+              stderrPath: path.join(options.outputCapture.dir, "r.stderr"),
+            },
+          });
+        }
+        return defaultImpl(runId, command, args as string[]);
+      });
+      const spawns: Array<Record<string, unknown>> = [];
+      await execute({
+        runId: "run-capture",
+        agent: {
+          id: "agent-1",
+          companyId: "company-1",
+          name: "Claude Coder",
+          adapterType: "claude_local",
+          adapterConfig: {},
+        },
+        runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
+        config: { engine: "cli", command: "claude", model: "claude-opus-5-5" },
+        context: { paperclipWorkspace: { cwd: workspaceDir, source: "project_primary" } },
+        ...(remote ? { executionTransport: sshTransport } : {}),
+        outputCapture: { dir: path.join(rootDir, "run-output") },
+        onSpawn: async (meta) => {
+          spawns.push(meta as unknown as Record<string, unknown>);
+        },
+        onLog: async () => {},
+      });
+      runChildProcess.mockImplementation(defaultImpl);
+      const runCall = claudeRunCalls()[0] as unknown as [string, string, string[], Record<string, unknown>];
+      return { runOptions: runCall[3], spawns, rootDir };
+    }
+
+    it("passes the capture dir to a local run and saves the recovery context at spawn", async () => {
+      const { runOptions, spawns, rootDir } = await runWithCapture(false);
+      expect(runOptions.outputCapture).toEqual({ dir: path.join(rootDir, "run-output") });
+      expect(spawns[0]?.outputCapture).toBeTruthy();
+      expect(spawns[0]?.recoveryContext).toMatchObject({
+        kind: "claude_local_result_v1",
+        model: "claude-opus-5-5",
+        fallbackSessionId: null,
+      });
+    });
+
+    it("keeps pipes for a remote run", async () => {
+      const { runOptions, spawns } = await runWithCapture(true);
+      expect(runOptions.outputCapture ?? null).toBeNull();
+      expect(spawns.every((meta) => !meta.recoveryContext)).toBe(true);
+    });
   });
 
   describe("CLI-lane model pass-through", () => {

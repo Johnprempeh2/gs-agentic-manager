@@ -129,6 +129,8 @@ export interface RestartReportSummary {
   resumedRunIds: string[];
   /** Kept running through the restart. */
   adoptedRunIds: string[];
+  /** Kept running, but with no capture file: its result is lost when it ends (GRE-250). */
+  adoptedWithoutCaptureRunIds: string[];
   /** Ended during the switch; checkpointed ACP runs are here and continue as a conversation retry. */
   finishedWhileDownRunIds: string[];
   /** Running before, unaccounted for after. Needs recovery. */
@@ -374,6 +376,9 @@ export function summarizeRestartReport(report: HotRestartReport): RestartReportS
     completedAt: report.completedAt,
     resumedRunIds: [...new Set([...report.adoptedRunIds, ...report.finalizedWhileDownRunIds])],
     adoptedRunIds: report.adoptedRunIds,
+    adoptedWithoutCaptureRunIds: report.adoptedRunIds.filter(
+      (runId) => !report.runs.some((run) => run.runId === runId && run.outputCaptured === true),
+    ),
     finishedWhileDownRunIds: report.finalizedWhileDownRunIds,
     lostRunIds: report.lostRunIds,
   };
