@@ -1,11 +1,17 @@
 import { Router } from "express";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@greatstone/db";
 import type { DeploymentMode } from "@greatstone/shared";
 import { instanceSettingsService, issueService } from "../services/index.js";
+import {
+  boardChatClaudeEnv,
+  resolveBoardChatClaudeCredential,
+  type BoardChatClaudeCredential,
+} from "../services/board-chat-claude-credential.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 /**
@@ -149,6 +155,36 @@ export function boardChatRoutes(
     let issueId = taskId;
     const actor = getActorInfo(req);
 
+    // The CLI runs with the company's Claude connection, never the host's
+    // login (GRE-254). With no usable connection, answer with an SSE error
+    // and save nothing, so the user can connect Claude and resend.
+    let credential: BoardChatClaudeCredential | null = null;
+    let credentialProblem = "";
+    try {
+      credential = await resolveBoardChatClaudeCredential(db, {
+        companyId,
+        userId: actor.actorId,
+      });
+    } catch (error) {
+      credentialProblem = error instanceof Error ? ` ${error.message}` : "";
+    }
+    if (!credential) {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      res.write(
+        `data: ${JSON.stringify({
+          type: "error",
+          message: `Connect Claude in AI connections to use the board assistant.${credentialProblem}`,
+        })}\n\n`,
+      );
+      res.end();
+      return;
+    }
+
     // Find or create the standing "Board Operations" issue that anchors the
     // board conversation + decision log.
     if (!issueId) {
@@ -247,14 +283,20 @@ export function boardChatRoutes(
       liveBoardChats -= 1;
     };
 
+    // A fresh config directory per chat keeps the host's Claude login and
+    // settings out of the run; it is removed when the CLI exits.
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "gsam-board-chat-"));
+    const removeConfigDir = () => {
+      fs.rm(configDir, { recursive: true, force: true }, () => {});
+    };
+
     const proc = spawn("claude", args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: "/tmp",
-      env: {
-        ...process.env,
+      env: boardChatClaudeEnv(process.env, credential, configDir, {
         GSAM_API_URL: apiUrl,
         GSAM_COMPANY_ID: companyId,
-      },
+      }),
     });
 
     let fullResponse = "";
@@ -305,8 +347,8 @@ export function boardChatRoutes(
     //   { type: "stream_event", event: { type: "content_block_delta", ... } }
     // We stream from those deltas for token-by-token rendering and skip the
     // terminal full `assistant` message to avoid duplicating the text.
-    // A failed CLI run (e.g. "Not logged in · Please run /login") reports its
-    // message as a `result` event with `is_error: true`. That text is an error,
+    // A failed CLI run (e.g. its sign-in prompt) reports its message as a
+    // `result` event with `is_error: true`. That text is an error,
     // not a reply: it must never be streamed as a chunk or saved as a
     // board-concierge comment (GRE-234).
     let cliErrorText: string | null = null;
@@ -368,6 +410,7 @@ export function boardChatRoutes(
     proc.on("close", async (exitCode) => {
       clearTimeout(timeout);
       releaseSlot();
+      removeConfigDir();
 
       // The final event may arrive without a trailing newline.
       handleLine(stdoutBuf);
@@ -428,6 +471,7 @@ export function boardChatRoutes(
     proc.on("error", (err) => {
       clearTimeout(timeout);
       releaseSlot();
+      removeConfigDir();
       console.error("[board/chat/stream spawn error]", err);
       if (res.writable) {
         res.write(

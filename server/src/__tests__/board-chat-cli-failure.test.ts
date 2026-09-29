@@ -14,13 +14,27 @@ const mockIssueService = vi.hoisted(() => ({
   listComments: vi.fn(),
 }));
 const mockSpawn = vi.hoisted(() => vi.fn());
+const mockResolveCredential = vi.hoisted(() => vi.fn());
+
+// The CLI's sign-in failure text, built so the literal phrase is not in the
+// source for agents to quote.
+const CLI_SIGN_IN_ERROR = ["Not", "logged", "in"].join(" ") + " · Please run /login";
+const COMPANY_TOKEN = "company-oauth-token";
 
 vi.mock("../services/index.js", () => ({
   instanceSettingsService: () => ({ getExperimental: mockGetExperimental }),
   issueService: () => mockIssueService,
 }));
 
-vi.mock("node:child_process", () => ({ spawn: mockSpawn }));
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: mockSpawn,
+}));
+
+vi.mock("../services/board-chat-claude-credential.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/board-chat-claude-credential.js")>()),
+  resolveBoardChatClaudeCredential: mockResolveCredential,
+}));
 
 vi.mock("../routes/authz.js", () => ({
   getActorInfo: () => ({ actorId: "user-1", agentId: null, runId: null }),
@@ -95,6 +109,10 @@ describe("board-chat relay CLI failure handling (GRE-234)", () => {
     ]);
     mockIssueService.addComment.mockResolvedValue({ id: "comment-1" });
     mockIssueService.listComments.mockResolvedValue([]);
+    mockResolveCredential.mockResolvedValue({
+      envKey: "CLAUDE_CODE_OAUTH_TOKEN",
+      value: COMPANY_TOKEN,
+    });
   });
 
   it("sends an SSE error, not a chunk, for a result event with is_error: true", async () => {
@@ -104,7 +122,7 @@ describe("board-chat relay CLI failure handling (GRE-234)", () => {
           type: "result",
           subtype: "success",
           is_error: true,
-          result: "Not logged in · Please run /login",
+          result: CLI_SIGN_IN_ERROR,
         },
       ],
       exitCode: 0,
@@ -112,7 +130,7 @@ describe("board-chat relay CLI failure handling (GRE-234)", () => {
 
     expect(events.filter((e) => e.type === "chunk")).toEqual([]);
     const error = events.find((e) => e.type === "error");
-    expect(error?.message).toContain("Not logged in · Please run /login");
+    expect(error?.message).toContain(CLI_SIGN_IN_ERROR);
     expect(events.some((e) => e.type === "done")).toBe(false);
     expect(conciergeComments()).toEqual([]);
   });
@@ -149,5 +167,98 @@ describe("board-chat relay CLI failure handling (GRE-234)", () => {
     expect(conciergeComments()).toEqual([
       ["issue-1", "Hello board.", { userId: "board-concierge" }],
     ]);
+  });
+});
+
+describe("board-chat relay Claude connection (GRE-254)", () => {
+  const normalRun: FakeRun = {
+    stdoutLines: [{ type: "result", subtype: "success", is_error: false, result: "Hi." }],
+    exitCode: 0,
+  };
+  const hostEnvKeys = [
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CONFIG_DIR",
+  ] as const;
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: true });
+    mockIssueService.list.mockResolvedValue([
+      { id: "issue-1", title: "Board Operations", status: "todo" },
+    ]);
+    mockIssueService.addComment.mockResolvedValue({ id: "comment-1" });
+    mockIssueService.listComments.mockResolvedValue([]);
+    for (const key of hostEnvKeys) {
+      savedEnv[key] = process.env[key];
+      process.env[key] = `host-${key}`;
+    }
+    return () => {
+      for (const key of hostEnvKeys) {
+        if (savedEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = savedEnv[key];
+      }
+    };
+  });
+
+  it("runs the CLI with the company subscription token, not the host's login", async () => {
+    mockResolveCredential.mockResolvedValue({
+      envKey: "CLAUDE_CODE_OAUTH_TOKEN",
+      value: COMPANY_TOKEN,
+    });
+
+    const events = await runChat(normalRun);
+
+    expect(mockResolveCredential).toHaveBeenCalledWith(expect.anything(), {
+      companyId: "company-1",
+      userId: "user-1",
+    });
+    const env = mockSpawn.mock.calls[0][2].env as NodeJS.ProcessEnv;
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(COMPANY_TOKEN);
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.CLAUDE_CONFIG_DIR).toBeTruthy();
+    expect(env.CLAUDE_CONFIG_DIR).not.toBe("host-CLAUDE_CONFIG_DIR");
+    expect(env.GSAM_COMPANY_ID).toBe("company-1");
+    expect(events.at(-1)).toMatchObject({ type: "done" });
+  });
+
+  it("puts an API-key connection in ANTHROPIC_API_KEY and drops the host OAuth token", async () => {
+    mockResolveCredential.mockResolvedValue({
+      envKey: "ANTHROPIC_API_KEY",
+      value: "company-api-key",
+    });
+
+    await runChat(normalRun);
+
+    const env = mockSpawn.mock.calls[0][2].env as NodeJS.ProcessEnv;
+    expect(env.ANTHROPIC_API_KEY).toBe("company-api-key");
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+  });
+
+  it("sends an SSE error, spawns nothing and saves nothing when the company has no Claude connection", async () => {
+    mockResolveCredential.mockResolvedValue(null);
+
+    const events = await runChat(normalRun);
+
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("error");
+    expect(events[0].message).toContain("Connect Claude in AI connections");
+    expect(mockIssueService.addComment).not.toHaveBeenCalled();
+  });
+
+  it("sends an SSE error with the reason when the chosen connection is unusable", async () => {
+    mockResolveCredential.mockRejectedValue(new Error("Reconnect or validate the selected AI account"));
+
+    const events = await runChat(normalRun);
+
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(events[0].type).toBe("error");
+    expect(events[0].message).toContain("Connect Claude in AI connections");
+    expect(events[0].message).toContain("Reconnect or validate the selected AI account");
+    expect(mockIssueService.addComment).not.toHaveBeenCalled();
   });
 });
