@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs rustc unchanged. Only its path matters; see config.toml next to it.
+exec "$@"

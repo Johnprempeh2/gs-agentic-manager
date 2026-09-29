@@ -99,6 +99,7 @@ import {
   type PersistedExposureRowSnapshot,
 } from "./runtime-exposure/port-reservation.js";
 import { resolveTailscaleDnsName } from "./runtime-exposure/tailscale-hostname.js";
+import { applySharedRunnerBuildDir } from "../runner-build-dir.js";
 
 export function resolveShell(): string {
   const fallback = process.platform === "win32" ? "sh" : "/bin/sh";
@@ -2879,7 +2880,7 @@ function buildWorkspaceCommandEnv(input: {
   agent: ExecutionWorkspaceAgentRef;
   created: boolean;
 }) {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  const env: NodeJS.ProcessEnv = applySharedRunnerBuildDir({ ...process.env });
   env.GSAM_WORKSPACE_CWD = input.worktreePath;
   env.GSAM_WORKSPACE_PATH = input.worktreePath;
   env.GSAM_WORKSPACE_WORKTREE_PATH = input.worktreePath;
