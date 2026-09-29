@@ -45,6 +45,8 @@ export interface ReleaseHistoryEntry {
   /** The stable-* tag on this release's commit, once promoted to Stable (GRE-127). */
   stableTag?: string | null;
   restartReport: RestartReport | null;
+  /** The release to this tag failed and live never ran it (GRE-239): no rollback or promote. */
+  neverRan?: boolean;
 }
 
 /** What the next version would contain: main since the live release. */
