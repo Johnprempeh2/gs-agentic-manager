@@ -156,7 +156,7 @@ with the client directly:
    one or two slots outside the client's working hours.
 2. The client picks a slot. Record the instance code, the tag and the slot on
    the issue. No client name.
-3. Tell the client the instance is down for about a minute in that slot.
+3. Tell the client the instance is down for a few minutes in that slot.
 4. In the slot, Bedrock runs `upgrade` (below), then says on the issue which
    instance moved and to which tag.
 
