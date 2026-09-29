@@ -358,6 +358,40 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect(card.reason).toContain("blocks 1 task");
     expect(card.nextStep).toContain("1 blocked task waits");
     expect(card.actions.map((candidate) => candidate.id)).toEqual(expect.arrayContaining(["reassign", "instruct", "cancel_task"]));
+    expect(action(card, "cancel_task").description).toContain("The task waiting on it stops waiting");
+
+    // Cancel works on a task that blocks another: the waiting task stops waiting on it.
+    await run(app(seeded.companyId), action(card, "cancel_task"));
+    const [cancelled] = await db.select().from(issues).where(eq(issues.id, blocker));
+    expect(cancelled?.status).toBe("cancelled");
+    const relations = await db.select().from(issueRelations).where(eq(issueRelations.issueId, blocker));
+    expect(relations).toEqual([]);
+    expect(cardFor(await build(seeded.companyId), blocker)).toBeNull();
+  });
+
+  it("keeps Retry on a merged card when the fixed connection left the task blocked", async () => {
+    const seeded = await seedLiveScenario({ withQuestion: true });
+    // GRE-139 waits on GRE-138, so GRE-138 also carries a blocked row.
+    const waiting = randomUUID();
+    await db.insert(issues).values({
+      id: waiting, companyId: seeded.companyId, identifier: "GRE-139", issueNumber: 139, title: "Ledger export", status: "blocked", priority: "high", assigneeAgentId: seeded.peerId,
+    });
+    await db.insert(issueRelations).values({ companyId: seeded.companyId, issueId: seeded.gre138, relatedIssueId: waiting, type: "blocks" });
+    await reconnect(seeded.connectionId, new Date(seeded.failedAt.getTime() + HOUR));
+
+    const card = cardFor(await build(seeded.companyId), seeded.gre138)!;
+
+    // The question and the blocker keep the card; the connection and recovery rows are gone.
+    expect(card.kinds).toEqual(["question", "blocked"]);
+    expect(action(card, "retry").requests).toEqual([{
+      method: "POST",
+      path: `/api/issues/${seeded.gre138}/recovery-actions/resolve`,
+      body: expect.objectContaining({ actionId: seeded.recoveryId, outcome: "restored", sourceIssueStatus: "todo" }),
+    }]);
+
+    await run(app(seeded.companyId), action(card, "retry"));
+    const [retried] = await db.select().from(issues).where(eq(issues.id, seeded.gre138));
+    expect(retried?.status).toBe("todo");
   });
 
   it("runs each action against the real endpoints", async () => {

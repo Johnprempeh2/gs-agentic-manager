@@ -464,8 +464,11 @@ function buildCard(input: {
     ?? agentRef(readString(main?.subject.metadata, "requestedByAgentId"));
 
   // A ready-to-retry card retries through the recovery the fixed connection left open.
+  // A task the fixed connection left blocked keeps Retry even when other rows
+  // (a question, a blocker) still hold the card open.
+  const retryAfterRepair = group.aiRepairedAt !== null && task?.status === "blocked";
   const recoveryItem = byKind("recovery")
-    ?? (readyToRetry ? group.cleared.find((item) => item.sourceKind === "recovery_action") ?? null : null);
+    ?? (retryAfterRepair ? group.cleared.find((item) => item.sourceKind === "recovery_action") ?? null : null);
   const recovery = recoveryItem ? input.recoveryById.get(recoveryItem.subject.id) ?? null : null;
   let reason: string;
   if (readyToRetry) {
@@ -550,7 +553,7 @@ function buildCard(input: {
           failedRunId: failedRun.subject.id,
         }),
       ]));
-    } else if (readyToRetry) {
+    } else if (retryAfterRepair) {
       actions.push(requestAction("retry", "Retry", "Move the task back to its owner to continue.", [
         request("PATCH", issuePath, { status: "todo" }),
       ]));
@@ -607,8 +610,15 @@ function buildCard(input: {
         { field: "question", type: "text", label: "Your question", required: true },
       ));
     }
-    actions.push(requestAction("cancel_task", "Cancel the task", "Stop the task for good.", [
-      request("PATCH", issuePath, { status: "cancelled" }),
+    // A cancelled blocker never resolves, so the close must say what happens to
+    // the tasks that wait on it; without it the PATCH is refused with 409.
+    const waitingNote = typeof blockedCount === "number" && blockedCount > 0
+      ? blockedCount === 1
+        ? " The task waiting on it stops waiting and can move on."
+        : ` The ${blockedCount} tasks waiting on it stop waiting and can move on.`
+      : " Any task waiting on it stops waiting and can move on.";
+    actions.push(requestAction("cancel_task", "Cancel the task", `Stop the task for good.${waitingNote}`, [
+      request("PATCH", issuePath, { status: "cancelled", blockedDependents: { action: "remove" } }),
     ]));
   } else if (!task && main) {
     if (main.subject.href && !actions.some((action) => action.type === "link")) {
