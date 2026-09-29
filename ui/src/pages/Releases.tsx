@@ -80,6 +80,9 @@ function actorLabel(by: string | null, agentNames: Map<string, string>): string 
 export function RestartReportSummary({ report }: { report: RestartReport }) {
   const resumed = report.resumedRunIds.length;
   const lost = report.lostRunIds;
+  // A kept-running run whose output goes to a capture file finishes with its
+  // real result, so only the others can still lose theirs.
+  const uncaptured = (report.adoptedWithoutCaptureRunIds ?? report.adoptedRunIds).length;
   const parts = [
     report.adoptedRunIds.length ? `${report.adoptedRunIds.length} kept running` : null,
     report.finishedWhileDownRunIds.length ? `${report.finishedWhileDownRunIds.length} continued from a checkpoint` : null,
@@ -90,9 +93,9 @@ export function RestartReportSummary({ report }: { report: RestartReport }) {
         {resumed === 0 ? "No runs needed to resume." : `${plural(resumed, "run")} resumed after the update`}
         {resumed > 0 && parts.length ? ` (${parts.join(", ")}).` : resumed > 0 ? "." : ""}
       </p>
-      {/* A run that kept running has no output pipe to the new server, so its
-          result is not captured when it ends. Do not call that "nothing lost". */}
-      {lost.length === 0 && report.adoptedRunIds.length === 0 ? (
+      {/* A kept-running run with no capture file has no output pipe to the new
+          server, so its result is lost when it ends. Do not call that "nothing lost". */}
+      {lost.length === 0 && uncaptured === 0 ? (
         <p className="text-muted-foreground">Nothing was lost.</p>
       ) : lost.length === 0 ? (
         <p className="text-muted-foreground">No run stopped.</p>
@@ -107,7 +110,7 @@ export function RestartReportSummary({ report }: { report: RestartReport }) {
           ))}
         </p>
       )}
-      {report.adoptedRunIds.length > 0 ? (
+      {uncaptured > 0 ? (
         <p className="text-muted-foreground" data-testid="restart-report-adopted-caveat">
           A run that kept running does not send its result to the new version. When it ends, it is marked lost and
           runs once more.

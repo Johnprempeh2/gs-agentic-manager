@@ -9,6 +9,7 @@ import {
   isReleaseRef,
   parseLiveReleaseKey,
   proposeTitle,
+  summarizeRestartReport,
   type LiveReleaseDeps,
   type LiveReleaseEvent,
 } from "../services/live-release.ts";
@@ -423,6 +424,7 @@ describe("progress after the switch", () => {
       completedAt: clock.toISOString(),
       resumedRunIds: ["run-adopted", "run-acp"],
       adoptedRunIds: ["run-adopted"],
+      adoptedWithoutCaptureRunIds: ["run-adopted"],
       finishedWhileDownRunIds: ["run-acp"],
       lostRunIds: ["run-lost"],
     });
@@ -882,5 +884,22 @@ describe("promote to Stable (GRE-127)", () => {
       }),
     );
     expect(await svc.promote({ liveTag: "live-2026-09-28.1", notes: "x" })).toMatchObject({ ok: false, status: 502, error: expect.stringMatching(/nothing was changed/) });
+  });
+});
+
+// GRE-250: an adopted run with a capture file keeps its result, so it is not
+// counted among the runs that can still lose theirs.
+describe("summarizeRestartReport", () => {
+  it("lists only adopted runs without output capture as at risk", () => {
+    const summary = summarizeRestartReport(
+      report({
+        adoptedRunIds: ["run-captured", "run-piped"],
+        runs: [
+          { runId: "run-captured", classification: "adopted", reason: "process_pid_alive", outputCaptured: true },
+          { runId: "run-piped", classification: "adopted", reason: "process_pid_alive", outputCaptured: false },
+        ] as unknown as HotRestartReport["runs"],
+      }),
+    );
+    expect(summary.adoptedWithoutCaptureRunIds).toEqual(["run-piped"]);
   });
 });
