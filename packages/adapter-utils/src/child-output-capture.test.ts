@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CHILD_OUTPUT_FILES_ENV,
+  freezeRunOutputCapture,
   readCapturedOutputFile,
   splitCompleteUtf8,
 } from "./child-output-capture.js";
@@ -138,6 +139,58 @@ describe("runChildProcess with file-backed output", () => {
     expect(filed.result.stdout).toBe("ok");
     expect(filed.spawns[0]?.outputCapture).toBeUndefined();
     expect(await fs.readdir(dir)).toEqual([]);
+  });
+});
+
+describe("freezeRunOutputCapture", () => {
+  it("reports exactly the bytes logged, so the rest of the file is the unlogged part", async () => {
+    const runId = randomUUID();
+    let logged = "";
+    let spawnedPaths: { stdoutPath: string } | null = null;
+    const done = runChildProcess(
+      runId,
+      process.execPath,
+      [
+        "-e",
+        [
+          "process.stdout.write('logged-before-freeze\\n');",
+          "setTimeout(() => process.stdout.write('written-after-freeze\\n'), 600);",
+          "setTimeout(() => {}, 2500);",
+        ].join(" "),
+      ],
+      {
+        cwd: process.cwd(),
+        env: {},
+        timeoutSec: 20,
+        graceSec: 1,
+        outputCapture: { dir },
+        onSpawn: async (meta) => {
+          spawnedPaths = meta.outputCapture ?? null;
+        },
+        onLog: async (_stream, chunk) => {
+          // A slow log write: the offset must count only finished writes.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          logged += chunk;
+        },
+      },
+    );
+    await waitFor(() => logged.includes("logged-before-freeze"), 3_000);
+    const progress = await freezeRunOutputCapture(runId);
+    expect(progress?.stdoutBytes).toBe(Buffer.byteLength(logged));
+    const loggedAtFreeze = logged;
+
+    // Nothing more reaches onLog after the freeze until the child exits.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    const unlogged = await readCapturedOutputFile(spawnedPaths!.stdoutPath, {
+      fromOffset: progress!.stdoutBytes,
+    });
+    expect(logged).toBe(loggedAtFreeze);
+    expect(unlogged?.text).toBe("written-after-freeze\n");
+
+    // If the server keeps running, the exit drain logs the rest once.
+    const result = await done;
+    expect(result.stdout).toBe("logged-before-freeze\nwritten-after-freeze\n");
+    expect(logged).toBe(result.stdout);
   });
 });
 

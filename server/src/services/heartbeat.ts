@@ -598,7 +598,10 @@ import {
   type SessionCompactionPolicy,
 } from "@greatstone/adapter-utils";
 import {
+  freezeRunOutputCapture,
+  readCapturedOutputFile,
   readPaperclipSkillSyncPreference,
+  removeChildOutputCaptureFiles,
   selectPaperclipTaskMarkdown,
   UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON,
   UNMANAGED_BACKGROUND_TASK_STOP_REASON,
@@ -8963,7 +8966,15 @@ function isProcessAlive(pid: number | null | undefined) {
 export async function persistHeartbeatRunProcessMetadata(
   db: Db,
   runId: string,
-  meta: { pid: number; processGroupId: number | null; startedAt: string },
+  meta: {
+    pid: number;
+    processGroupId: number | null;
+    startedAt: string;
+    // Where the child's output files are and what is needed to finish the
+    // run from them after a hot restart (GRE-250). Replaces any earlier
+    // spawn's record, so it always names the live child's files.
+    outputCapture?: RunOutputCaptureRecord | null;
+  },
 ) {
   const observedStartedAt = await readProcessStartedAt(meta.pid).catch(
     () => null,
@@ -8978,6 +8989,11 @@ export async function persistHeartbeatRunProcessMetadata(
         processStartedAt: Number.isNaN(startedAt.getTime())
           ? new Date()
           : startedAt,
+        ...(meta.outputCapture
+          ? {
+              resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || ${JSON.stringify({ outputCapture: meta.outputCapture })}::jsonb`,
+            }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(heartbeatRuns.id, runId))
@@ -9046,6 +9062,65 @@ function readHotRestartAdoptionMetadata(
   if (hotRestart.adopted !== true || typeof hotRestart.adoptedAt !== "string")
     return null;
   return hotRestart;
+}
+
+// GRE-250: a local child writes its output to files under the instance, so a
+// server that adopts it after a hot restart can still read its result.
+interface RunOutputCaptureRecord {
+  stdoutPath: string;
+  stderrPath: string;
+  recoveryContext: Record<string, unknown> | null;
+  finalizeContext: Record<string, unknown> | null;
+  // Bytes of each file already in the run log, recorded when the old server
+  // froze its tailers at hot-restart shutdown.
+  stdoutLoggedBytes?: number;
+  stderrLoggedBytes?: number;
+}
+
+const RUN_OUTPUT_FILE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function resolveRunOutputCaptureDir() {
+  return path.resolve(resolvePaperclipInstanceRoot(), "run-output");
+}
+
+function isInsideRunOutputCaptureDir(filePath: string) {
+  const dir = resolveRunOutputCaptureDir() + path.sep;
+  return path.resolve(filePath).startsWith(dir);
+}
+
+function readRunOutputCapture(
+  resultJson: Record<string, unknown> | null | undefined,
+): RunOutputCaptureRecord | null {
+  const capture = parseObject(parseObject(resultJson).outputCapture);
+  const stdoutPath = readNonEmptyString(capture.stdoutPath);
+  const stderrPath = readNonEmptyString(capture.stderrPath);
+  // Only files this server family wrote; never read or delete elsewhere.
+  if (
+    !stdoutPath ||
+    !stderrPath ||
+    !isInsideRunOutputCaptureDir(stdoutPath) ||
+    !isInsideRunOutputCaptureDir(stderrPath)
+  ) {
+    return null;
+  }
+  const readBytes = (value: unknown) =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0
+      ? value
+      : undefined;
+  return {
+    stdoutPath,
+    stderrPath,
+    recoveryContext:
+      capture.recoveryContext && typeof capture.recoveryContext === "object"
+        ? (capture.recoveryContext as Record<string, unknown>)
+        : null,
+    finalizeContext:
+      capture.finalizeContext && typeof capture.finalizeContext === "object"
+        ? (capture.finalizeContext as Record<string, unknown>)
+        : null,
+    stdoutLoggedBytes: readBytes(capture.stdoutLoggedBytes),
+    stderrLoggedBytes: readBytes(capture.stderrLoggedBytes),
+  };
 }
 
 function mergeHotRestartAdoptionResultJson(
@@ -14057,7 +14132,7 @@ export function heartbeatService(
 
   async function persistRunProcessMetadata(
     runId: string,
-    meta: { pid: number; processGroupId: number | null; startedAt: string },
+    meta: Parameters<typeof persistHeartbeatRunProcessMetadata>[2],
   ) {
     return persistHeartbeatRunProcessMetadata(db, runId, meta);
   }
@@ -14718,6 +14793,11 @@ export function heartbeatService(
       .from(heartbeatRuns)
       .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
       .where(eq(heartbeatRuns.status, "running"));
+    // Stop feeding captured output into run logs and record how far each log
+    // got, so the adopting server appends exactly the rest (GRE-250).
+    for (const { run } of activeRuns) {
+      await recordFrozenRunOutputCapture(run.id);
+    }
     const snapshotRuns = activeRuns.map(toHotRestartIntentRun);
     const intentWithVersion = {
       ...intent,
@@ -14881,7 +14961,7 @@ export function heartbeatService(
       candidate: HotRestartIntentRun,
       classification: HotRestartReportRun["classification"],
       reason: string,
-      patch?: Partial<HotRestartIntentRun>,
+      patch?: Partial<HotRestartIntentRun> & { outputCaptured?: boolean },
     ) => {
       const run = {
         ...candidate,
@@ -15065,7 +15145,12 @@ export function heartbeatService(
         candidate,
         "adopted",
         processPidAlive ? "process_pid_alive" : "process_group_alive",
-        patch,
+        {
+          ...patch,
+          outputCaptured:
+            !!readRunOutputCapture(parseObject(updated.resultJson)) &&
+            !!getServerAdapter(adapterType).recoverResultFromOutput,
+        },
       );
     }
 
@@ -19466,6 +19551,28 @@ export function heartbeatService(
         checksPersistedChildLiveness &&
         run.processGroupId &&
         isProcessGroupAlive(run.processGroupId);
+      const adoptedOutputCapture = readHotRestartAdoptionMetadata(
+        parseObject(run.resultJson),
+      )
+        ? readRunOutputCapture(parseObject(run.resultJson))
+        : null;
+      if (adoptedOutputCapture && tracksLegacyLocalChild) {
+        // GRE-250: the adopted child's output is in a file. Finish the run
+        // from its terminal result instead of calling it lost.
+        const outcome = await finishAdoptedRunFromCapturedOutput({
+          run,
+          adapterType,
+          adapterConfig,
+          capture: adoptedOutputCapture,
+          processAlive: Boolean(processPidAlive || processGroupAlive),
+          now,
+        });
+        if (outcome === "finalized") {
+          reaped.push(run.id);
+          continue;
+        }
+        if (outcome === "still_running") continue;
+      }
       if (
         (processPidAlive || processGroupAlive) &&
         readHotRestartAdoptionMetadata(parseObject(run.resultJson))
@@ -19549,6 +19656,9 @@ export function heartbeatService(
         },
       );
       if (!failureWrite.updated || !failureWrite.run) continue;
+      if (adoptedOutputCapture) {
+        await removeChildOutputCaptureFiles(adoptedOutputCapture);
+      }
       let finalizedRun: typeof heartbeatRuns.$inferSelect | null =
         failureWrite.run;
       await setWakeupStatus(run.wakeupRequestId, "failed", {
@@ -20941,6 +21051,281 @@ export function heartbeatService(
         activeWakeupPromises.delete(promise);
       });
     return promise;
+  }
+
+  async function recordFrozenRunOutputCapture(runId: string) {
+    const progress = await freezeRunOutputCapture(runId).catch((err) => {
+      logger.warn({ err, runId }, "failed to freeze run output capture");
+      return null;
+    });
+    if (!progress) return;
+    const patch = {
+      stdoutLoggedBytes: progress.stdoutBytes,
+      stderrLoggedBytes: progress.stderrBytes,
+    };
+    // Only when the record names the same files as the frozen tailers.
+    await db
+      .update(heartbeatRuns)
+      .set({
+        resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('outputCapture', coalesce(${heartbeatRuns.resultJson} -> 'outputCapture', '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb)`,
+      })
+      .where(
+        and(
+          eq(heartbeatRuns.id, runId),
+          sql`${heartbeatRuns.resultJson} -> 'outputCapture' ->> 'stdoutPath' = ${progress.stdoutPath}`,
+        ),
+      );
+  }
+
+  // GRE-250: finish a hot-restart-adopted run from the terminal result its
+  // child wrote to the capture file. "no_result" leaves the caller on the
+  // process_lost + retry-once path; "still_running" leaves the run alone.
+  async function finishAdoptedRunFromCapturedOutput(input: {
+    run: typeof heartbeatRuns.$inferSelect;
+    adapterType: string;
+    adapterConfig: unknown;
+    capture: RunOutputCaptureRecord;
+    processAlive: boolean;
+    now: Date;
+  }): Promise<"finalized" | "still_running" | "no_result"> {
+    const { capture } = input;
+    let run = input.run;
+    const adapter = getServerAdapter(input.adapterType);
+    const recoverResultFromOutput = adapter.recoverResultFromOutput;
+    if (!recoverResultFromOutput) {
+      return input.processAlive ? "still_running" : "no_result";
+    }
+    const readRecovered = async () => {
+      try {
+        const [stdout, stderr] = await Promise.all([
+          readCapturedOutputFile(capture.stdoutPath),
+          readCapturedOutputFile(capture.stderrPath, {
+            headBytes: 0,
+            tailBytes: 1024 * 1024,
+          }),
+        ]);
+        if (!stdout) return null;
+        const result = recoverResultFromOutput({
+          stdout: stdout.text,
+          stderr: stderr?.text ?? "",
+          recoveryContext: capture.recoveryContext,
+        });
+        return result ? { result, stdout, stderr } : null;
+      } catch (err) {
+        logger.warn(
+          { err, runId: run.id },
+          "failed to read captured output of adopted run",
+        );
+        return null;
+      }
+    };
+
+    let recovered = await readRecovered();
+    if (input.processAlive) {
+      if (!recovered) return "still_running";
+      // Claude can hang after writing its result. Before the restart the old
+      // server stopped it after a grace period; do the same here.
+      const graceMs = Math.max(
+        0,
+        asNumber(parseObject(input.adapterConfig).terminalResultCleanupGraceMs, 5_000),
+      );
+      if (input.now.getTime() - recovered.stdout.mtimeMs < graceMs) {
+        return "still_running";
+      }
+      // A reused pid is not our child: only stop it when its start time
+      // still matches the one recorded at spawn.
+      if (!run.processPid || !run.processStartedAt) return "still_running";
+      const observedStartedAt = await readProcessStartedAt(run.processPid).catch(
+        () => null,
+      );
+      if (
+        !observedStartedAt ||
+        Math.abs(
+          new Date(observedStartedAt).getTime() - run.processStartedAt.getTime(),
+        ) > 2_000
+      ) {
+        return "still_running";
+      }
+      await terminateHeartbeatRunProcess({
+        pid: run.processPid,
+        processGroupId: run.processGroupId,
+        graceMs: 2_000,
+      });
+      await appendRunEvent(run, {
+        eventType: "lifecycle",
+        stream: "system",
+        level: "warn",
+        message:
+          "Adopted child was still running after its final result; stopped it",
+        payload: {
+          processPid: run.processPid,
+          processGroupId: run.processGroupId ?? null,
+          stopReason: UNMANAGED_BACKGROUND_TASK_STOP_REASON,
+        },
+      });
+      recovered = (await readRecovered()) ?? recovered;
+    }
+    if (!recovered) return "no_result";
+
+    const agent = await getAgent(run.agentId);
+    if (!agent) return "no_result";
+    const context = parseObject(run.contextSnapshot);
+    const finalizeContext = parseObject(capture.finalizeContext);
+    const currentUserRedactionOptions = await getCurrentUserRedactionOptions();
+    const logHandle =
+      run.logStore && run.logRef
+        ? ({ store: run.logStore, logRef: run.logRef } as RunLogHandle)
+        : null;
+    let outputSeq = Number(run.lastOutputSeq ?? 0);
+    let stdoutExcerpt = "";
+    let stderrExcerpt = "";
+    const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
+      const sanitizedChunk = compactRunLogChunk(
+        redactCurrentUserText(chunk, currentUserRedactionOptions),
+      );
+      if (stream === "stdout")
+        stdoutExcerpt = appendExcerpt(stdoutExcerpt, sanitizedChunk);
+      else stderrExcerpt = appendExcerpt(stderrExcerpt, sanitizedChunk);
+      if (!logHandle) return;
+      outputSeq += 1;
+      await runLogStore.append(logHandle, {
+        stream,
+        chunk: sanitizedChunk,
+        ts: new Date().toISOString(),
+        seq: outputSeq,
+      });
+    };
+
+    // Append the output the old server never logged. Without frozen offsets
+    // the split point is unknown, so log nothing rather than duplicate.
+    for (const stream of ["stdout", "stderr"] as const) {
+      const loggedBytes =
+        stream === "stdout" ? capture.stdoutLoggedBytes : capture.stderrLoggedBytes;
+      if (loggedBytes === undefined) continue;
+      const unlogged = await readCapturedOutputFile(
+        stream === "stdout" ? capture.stdoutPath : capture.stderrPath,
+        { fromOffset: loggedBytes },
+      ).catch(() => null);
+      if (unlogged?.text) await onLog(stream, unlogged.text);
+    }
+    // The excerpts show the end of the output, as for a normal run.
+    stdoutExcerpt = appendExcerpt("", redactCurrentUserText(recovered.stdout.text, currentUserRedactionOptions));
+    stderrExcerpt = appendExcerpt("", redactCurrentUserText(recovered.stderr?.text ?? "", currentUserRedactionOptions));
+
+    const issueId = readNonEmptyString(context.issueId);
+    const issueContext = issueId
+      ? await getIssueExecutionContext(agent.companyId, issueId)
+      : null;
+    const runtimeSession = parseObject(finalizeContext.runtimeSession);
+    const sessionCompaction = parseObject(finalizeContext.sessionCompaction);
+    const adoption = readHotRestartAdoptionMetadata(parseObject(run.resultJson));
+    const adapterResult: AdapterExecutionResult = {
+      ...recovered.result,
+      resultJson: {
+        ...parseObject(recovered.result.resultJson),
+        ...(adoption ? { hotRestart: adoption } : {}),
+        recoveredFromCapturedOutput: true,
+      },
+    };
+    const latest = await getRun(run.id);
+    if (!latest || latest.status !== "running") return "still_running";
+    run = latest;
+
+    await finalizeLegacyRunFromAdapterResult({
+      run,
+      agent,
+      adapterResult,
+      isAborted: () => false,
+      sessionCodec: getAdapterSessionCodec(agent.adapterType),
+      previousSessionParams:
+        finalizeContext.previousSessionParams &&
+        typeof finalizeContext.previousSessionParams === "object"
+          ? (finalizeContext.previousSessionParams as Record<string, unknown>)
+          : null,
+      runtimeForAdapter: {
+        sessionId: readNonEmptyString(runtimeSession.sessionId),
+        sessionDisplayId: readNonEmptyString(runtimeSession.sessionDisplayId),
+      },
+      currentUserRedactionOptions,
+      finalizeRunLog: async () =>
+        logHandle ? await runLogStore.finalize(logHandle) : null,
+      finalizeProviderTrace: async () => {},
+      taskSessionReused: finalizeContext.taskSessionReused === true,
+      sessionCompaction: {
+        rotate: sessionCompaction.rotate === true,
+        reason: readNonEmptyString(sessionCompaction.reason),
+      },
+      configFreshnessResultMetadata:
+        finalizeContext.configFreshness &&
+        typeof finalizeContext.configFreshness === "object"
+          ? (finalizeContext.configFreshness as Record<string, unknown>)
+          : null,
+      stdoutExcerpt,
+      stderrExcerpt,
+      issueId,
+      issueRef: issueContext
+        ? {
+            id: issueContext.id,
+            identifier: issueContext.identifier,
+            title: issueContext.title,
+            workMode: issueContext.workMode,
+          }
+        : null,
+      issueContext,
+      onLog,
+      taskKey: deriveTaskKeyWithHeartbeatFallback(context, null),
+      configuredModel: readNonEmptyString(finalizeContext.configuredModel),
+      sessionConfigMetadata:
+        finalizeContext.sessionConfigMetadata &&
+        typeof finalizeContext.sessionConfigMetadata === "object"
+          ? (finalizeContext.sessionConfigMetadata as Parameters<
+              typeof attachPaperclipSessionMetadataToSessionParams
+            >[2])
+          : null,
+    });
+
+    const finalizedRun = await getRun(run.id);
+    if (!finalizedRun || finalizedRun.status === "running") return "no_result";
+    await appendRunEvent(finalizedRun, {
+      eventType: "lifecycle",
+      stream: "system",
+      level: "info",
+      message: "Finished from captured output after hot restart",
+      payload: {
+        recoveredFromCapturedOutput: true,
+        status: finalizedRun.status,
+        ...(run.processPid ? { processPid: run.processPid } : {}),
+      },
+    });
+    await releaseEnvironmentLeasesForRun({
+      runId: finalizedRun.id,
+      companyId: finalizedRun.companyId,
+      agentId: finalizedRun.agentId,
+      status: finalizedRun.status,
+      failureReason: finalizedRun.error ?? undefined,
+    });
+    await removeChildOutputCaptureFiles(capture);
+    runningProcesses.delete(run.id);
+    await startNextQueuedRunForAgent(run.agentId);
+    return "finalized";
+  }
+
+  // Remove capture files whose run finished long ago or no longer exists.
+  async function sweepStaleRunOutputFiles(now = new Date()) {
+    const dir = resolveRunOutputCaptureDir();
+    const entries = await fs.readdir(dir).catch(() => [] as string[]);
+    let removed = 0;
+    for (const name of entries) {
+      const filePath = path.join(dir, name);
+      const stat = await fs.stat(filePath).catch(() => null);
+      if (!stat || now.getTime() - stat.mtimeMs < RUN_OUTPUT_FILE_RETENTION_MS) continue;
+      const runId = name.split(".")[0] ?? "";
+      const run = isUuidLike(runId) ? await getRun(runId).catch(() => null) : null;
+      if (run && run.status === "running") continue;
+      await fs.rm(filePath, { force: true }).catch(() => undefined);
+      removed += 1;
+    }
+    return { removed };
   }
 
   // The one place a legacy (child-process) run is finalized from its adapter
@@ -26042,8 +26427,34 @@ export function heartbeatService(
                             ? meta.processGroupId
                             : null,
                         startedAt: meta.startedAt,
+                        outputCapture: meta.outputCapture
+                          ? {
+                              stdoutPath: meta.outputCapture.stdoutPath,
+                              stderrPath: meta.outputCapture.stderrPath,
+                              recoveryContext: meta.recoveryContext ?? null,
+                              finalizeContext: {
+                                previousSessionParams,
+                                runtimeSession: {
+                                  sessionId: runtimeForAdapter.sessionId,
+                                  sessionDisplayId:
+                                    runtimeForAdapter.sessionDisplayId,
+                                },
+                                taskSessionReused: taskSessionForRun != null,
+                                sessionCompaction: {
+                                  rotate: sessionCompaction.rotate,
+                                  reason: sessionCompaction.reason,
+                                },
+                                configFreshness: configFreshnessResultMetadata,
+                                configuredModel,
+                                sessionConfigMetadata,
+                              },
+                            }
+                          : null,
                       });
                     },
+                    outputCapture: adapter.recoverResultFromOutput
+                      ? { dir: resolveRunOutputCaptureDir() }
+                      : null,
                     authToken: authToken ?? undefined,
                   });
                 },
@@ -30729,6 +31140,7 @@ export function heartbeatService(
 
     prepareHotRestartShutdown,
     reconcileHotRestartAdoption,
+    sweepStaleRunOutputFiles,
     recoverNativeRunsAfterRestart,
     reapOrphanedRuns,
     sweepOrphanedActiveLeases,

@@ -1532,6 +1532,9 @@ async function startServerWithDatabaseTeardown(
             "startup hot-restart adoption reconciliation failed - orphan reaper will serve as degraded backstop",
           );
         }
+        await heartbeat.sweepStaleRunOutputFiles().catch((err) => {
+          logger.warn({ err }, "startup sweep of stale run output files failed");
+        });
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
