@@ -72,6 +72,30 @@ describe("applyDevRunnerOptions", () => {
     expect(env.GSAM_CONTEXT).toBe("/explicit/context.json");
   });
 
+  it("drops the parent server's API URL and key so sandbox agents use the sandbox port (GRE-219)", () => {
+    const env: NodeJS.ProcessEnv = {
+      GSAM_API_URL: "http://127.0.0.1:3100",
+      GSAM_API_KEY: "live-agent-key",
+      PAPERCLIP_API_URL: "http://127.0.0.1:3100",
+      PAPERCLIP_API_KEY: "live-agent-key",
+    };
+
+    applyDevRunnerOptions(["--data-dir", "/isolated/home"], env, "/unused");
+
+    expect(env.GSAM_API_URL).toBeUndefined();
+    expect(env.GSAM_API_KEY).toBeUndefined();
+    expect(env.PAPERCLIP_API_URL).toBeUndefined();
+    expect(env.PAPERCLIP_API_KEY).toBeUndefined();
+  });
+
+  it("keeps the API URL when no --data-dir is given", () => {
+    const env: NodeJS.ProcessEnv = { GSAM_API_URL: "http://127.0.0.1:3100" };
+
+    applyDevRunnerOptions(["--bind", "loopback"], env, "/unused");
+
+    expect(env.GSAM_API_URL).toBe("http://127.0.0.1:3100");
+  });
+
   it.each([["--data-dir"], ["-d"], ["--data-dir="]])(
     "rejects a missing value for %s",
     (...args) => {
