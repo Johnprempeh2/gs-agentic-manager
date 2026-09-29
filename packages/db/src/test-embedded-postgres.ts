@@ -8,6 +8,7 @@ import {
   formatEmbeddedPostgresError,
 } from "./embedded-postgres-error.js";
 import { prepareEmbeddedPostgresNativeRuntime } from "./embedded-postgres-native.js";
+import { reapOrphanedPostgresSharedMemory } from "./embedded-postgres-shared-memory.js";
 
 // Time budget (ms) for a vitest test in the embedded-Postgres cost class: a
 // test that starts an embedded Postgres cluster and runs migrations. Measured
@@ -122,6 +123,8 @@ async function createEmbeddedPostgresTestInstance(tempDirPrefix: string) {
   // The `start()` rejection carries an empty message, so we capture the output
   // in a bounded buffer and surface it in the thrown error.
   const logBuffer = createEmbeddedPostgresLogBuffer();
+  // Killed test clusters leak a SysV segment; free those before starting (GRE-211).
+  reapOrphanedPostgresSharedMemory();
   const instance = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: "paperclip",

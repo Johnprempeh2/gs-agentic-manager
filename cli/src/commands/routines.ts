@@ -7,6 +7,7 @@ import {
   applyPendingMigrations,
   createDb,
   createEmbeddedPostgresLogBuffer,
+  reapOrphanedPostgresSharedMemory,
   ensurePostgresDatabase,
   formatEmbeddedPostgresError,
   prepareEmbeddedPostgresNativeRuntime,
@@ -131,6 +132,7 @@ async function ensureEmbeddedPostgres(dataDir: string, preferredPort: number): P
 
   const port = await findAvailablePort(preferredPort);
   const logBuffer = createEmbeddedPostgresLogBuffer();
+  reapOrphanedPostgresSharedMemory();
   const instance = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: "paperclip",

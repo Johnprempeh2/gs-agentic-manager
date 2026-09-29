@@ -4,6 +4,7 @@ import path from "node:path";
 import { ensurePostgresDatabase, getPostgresDataDirectory } from "./client.js";
 import { createEmbeddedPostgresLogBuffer, formatEmbeddedPostgresError } from "./embedded-postgres-error.js";
 import { prepareEmbeddedPostgresNativeRuntime } from "./embedded-postgres-native.js";
+import { reapOrphanedPostgresSharedMemory } from "./embedded-postgres-shared-memory.js";
 import { resolveDatabaseTarget } from "./runtime-config.js";
 
 type EmbeddedPostgresInstance = {
@@ -136,6 +137,8 @@ async function ensureEmbeddedPostgresConnection(
     };
   }
 
+  // Killed clusters leak a SysV segment; free those before starting (GRE-211).
+  reapOrphanedPostgresSharedMemory();
   const instance = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: "paperclip",

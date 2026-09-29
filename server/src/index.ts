@@ -33,6 +33,7 @@ import {
   inspectMigrations,
   applyPendingMigrations,
   createEmbeddedPostgresLogBuffer,
+  reapOrphanedPostgresSharedMemory,
   prepareEmbeddedPostgresNativeRuntime,
   reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
@@ -549,6 +550,12 @@ async function startServerWithDatabaseTeardown(
         }
         port = detectedPort;
         logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
+        // Killed sandbox/test clusters leak a SysV segment and macOS allows only 32;
+        // free orphaned ones before starting a new cluster (GRE-211).
+        const reapedSegments = reapOrphanedPostgresSharedMemory();
+        if (reapedSegments.length > 0) {
+          logger.info(`Removed ${reapedSegments.length} orphaned PostgreSQL shared memory segment(s)`);
+        }
         const createEmbeddedPostgres = () => new EmbeddedPostgres({
           databaseDir: dataDir,
           user: "paperclip",

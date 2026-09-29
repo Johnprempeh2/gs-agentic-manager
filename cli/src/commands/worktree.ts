@@ -62,6 +62,7 @@ import {
   resetPostgresDatabase,
   workspaceRuntimeServices,
   createEmbeddedPostgresLogBuffer,
+  reapOrphanedPostgresSharedMemory,
   formatEmbeddedPostgresError,
   loadWithoutEmbeddedPostgresExitHooks,
   prepareEmbeddedPostgresNativeRuntime,
@@ -1135,6 +1136,7 @@ export async function ensureEmbeddedPostgres(
 
   const port = await findAvailablePort(preferredPort);
   const logBuffer = createEmbeddedPostgresLogBuffer();
+  reapOrphanedPostgresSharedMemory();
   const instance = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: "paperclip",
