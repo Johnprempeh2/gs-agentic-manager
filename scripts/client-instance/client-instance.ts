@@ -6,6 +6,9 @@
 //                                     [--company-name X] [--client-email X]
 //   scripts/client-instance.sh start|stop|status|backup --root <dir>
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+//   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
+//                                     (prints the two edition values as KEY=VALUE lines, for the
+//                                      Stable image: scripts/greatstone-stable-image.sh)
 //
 // Each instance lives in its own <root>: config, database, storage, secrets,
 // logs and backups, its own server port and its own database port. The
@@ -607,9 +610,24 @@ async function cmdVerify(root: string, state: InstanceState) {
   if (!(await verifyInstance(root, state, operator, null))) process.exit(1);
 }
 
+/**
+ * The two edition values as KEY=VALUE lines (a `docker run --env-file`). Each
+ * value is one line. Needs no instance: the Stable image check (GRE-138)
+ * starts the image with the same values a client instance gets.
+ */
+function cmdEditionEnv(opts: Record<string, string>) {
+  const edition = opts.edition as Edition;
+  if (!EDITIONS.includes(edition)) die(`--edition must be one of: ${EDITIONS.join(", ")}`);
+  const passed = (opts["passed-features"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const values = editionValues({ edition, passedBetaFeatures: passed.sort(), port: 0, dbPort: 0, createdAt: "" });
+  if (!values) die(`no edition values for ${edition}`);
+  process.stdout.write(`GSAM_MANAGED_CONFIG=${values.managedConfig}\nGSAM_HIDDEN_SETTINGS=${values.hiddenSettings}\n`);
+}
+
 async function main() {
   const { command, opts } = parseArgs(process.argv.slice(2));
   if (command === "create") return cmdCreate(opts);
+  if (command === "edition-env") return cmdEditionEnv(opts);
   const root = resolveRoot(opts.root);
   const state = readState(root);
   switch (command) {
@@ -631,7 +649,7 @@ async function main() {
     case "verify":
       return cmdVerify(root, state);
     default:
-      die("usage: create|start|stop|status|backup|verify --root <dir> (see doc/CLIENT-INSTANCES.md)");
+      die("usage: create|start|stop|status|backup|verify --root <dir>, or edition-env --edition <edition> (see doc/CLIENT-INSTANCES.md)");
   }
 }
 
