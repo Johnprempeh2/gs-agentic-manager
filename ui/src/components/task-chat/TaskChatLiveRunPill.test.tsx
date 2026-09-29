@@ -54,6 +54,23 @@ describe("TaskChatLiveRunPill", () => {
     vi.useRealTimers();
   });
 
+  it("shows the admission hold line instead of 'Working' for a held queued run (GRE-198)", () => {
+    act(() => {
+      root.render(
+        <TaskChatLiveRunPill
+          status="queued"
+          startedAtMs={Date.now() - 65_000}
+          toolSummary={null}
+          statusMessage="Waiting: low memory (1.6 GB free, floor 2 GB)"
+        />,
+      );
+    });
+    const text = container.textContent ?? "";
+    expect(text).toContain("Waiting: low memory (1.6 GB free, floor 2 GB)");
+    expect(text).not.toContain("Working");
+    expect(container.querySelector(".shimmer-text")).toBeNull();
+  });
+
   it("shimmers 'Working' with elapsed + tool summary while streaming", () => {
     const startedAtMs = Date.now() - 65_000; // ~1 minute ago
     act(() => {

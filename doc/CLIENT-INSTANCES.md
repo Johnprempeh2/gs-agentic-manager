@@ -57,6 +57,11 @@ the one company, the client log-in and closed sign-up.
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
 free from 55400), `--company-name`, `--client-email`.
 
+Run limits are not set by the script, so a new instance uses the defaults:
+at most 6 runs at once, and new runs wait while free memory is below
+2048 MB. The OS memory-pressure level does not hold runs (GRE-198). Change
+them in Instance → General → Run limits.
+
 `create` does, in order:
 
 1. Checks the edition against this build (unknown or wrong-tier features stop it).

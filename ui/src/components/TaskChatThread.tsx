@@ -2928,6 +2928,11 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                                     paperclipRunnerTail &&
                                     tailTimelineAnchors.length > 0
                                   }
+                                  statusMessage={
+                                    liveRun?.id === tailRunId
+                                      ? liveRun.currentStatusMessage
+                                      : null
+                                  }
                                   onRuntimeRequestDecision={
                                     handleRuntimeRequestDecision
                                   }
@@ -2944,12 +2949,19 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                                     startedAtMs={tailStartedAtMs}
                                     finishedAtMs={tailFinishedAtMs}
                                     toolSummary={tailToolSummary}
+                                    statusMessage={
+                                      liveRun?.id === tailRunId
+                                        ? liveRun.currentStatusMessage
+                                        : null
+                                    }
                                   />
                                   <TaskChatLiveTail
                                     items={tailItems}
                                     emptyMessage={
                                       tailStatus === "queued"
-                                        ? "Waiting to start..."
+                                        ? (liveRun?.id === tailRunId
+                                            ? liveRun.currentStatusMessage
+                                            : null) || "Waiting to start..."
                                         : (liveRun && liveRun.id === tailRunId
                                             ? liveRun.currentStatusMessage
                                             : null) ||
