@@ -318,6 +318,7 @@ import { secretService, type MissingRuntimeBinding } from "./secrets.js";
 import {
   resolveDefaultAgentWorkspaceDir,
   resolveManagedProjectWorkspaceDir,
+  resolvePaperclipInstanceRoot,
 } from "../home-paths.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -617,11 +618,13 @@ import {
   touchHeartbeatRunRuntimeStatus,
 } from "./heartbeat-run-runtime-status.js";
 import {
+  createSystemDiskReader,
   createSystemMemoryReader,
   evaluateRunAdmission,
   orderAgentsByOldestQueuedRun,
   resolveRunAdmissionSettings,
   RUN_ADMISSION_RECHECK_MS,
+  type DiskReader,
   type MemoryReader,
 } from "./run-admission.js";
 import {
@@ -9356,6 +9359,12 @@ export interface HeartbeatServiceOptions {
    */
   memoryReader?: MemoryReader;
   /**
+   * GRE-207: reads free disk for run admission. Defaults to the fullest of
+   * the data dir and home volumes (worktrees live under home); under vitest
+   * it defaults to "unknown" (fail open).
+   */
+  diskReader?: DiskReader;
+  /**
    * GRE-181: host blind time (sleep, stalled event loop) subtracted from run
    * silence. Defaults to the process tracker; under vitest to none.
    */
@@ -9495,6 +9504,11 @@ export function heartbeatService(
   const memoryReader: MemoryReader =
     options.memoryReader ??
     (runtimeEnv.VITEST ? async () => null : createSystemMemoryReader());
+  const diskReader: DiskReader =
+    options.diskReader ??
+    (runtimeEnv.VITEST
+      ? async () => null
+      : createSystemDiskReader(() => [resolvePaperclipInstanceRoot(), os.homedir()]));
   const hostBlindTime =
     options.hostBlindTime ?? (runtimeEnv.VITEST ? NO_HOST_BLIND_TIME : processHostBlindTime);
   const hostLoadReader =
@@ -19949,9 +19963,10 @@ export function heartbeatService(
   // `stoppingRunId` is about to be stopped, so it does not hold a run slot.
   async function readSilentRetryPressure(now: Date, stoppingRunId?: string): Promise<SilentRetryPressure> {
     const admissionSettings = resolveRunAdmissionSettings(await instanceSettings.getGeneral());
-    const [dbRunningRunIds, memory] = await Promise.all([
+    const [dbRunningRunIds, memory, disk] = await Promise.all([
       listRunningRunIdsForAdmission(),
       memoryReader().catch(() => null),
+      diskReader().catch(() => null),
     ]);
     const stoppingHoldsSlot =
       stoppingRunId !== undefined &&
@@ -19960,6 +19975,7 @@ export function heartbeatService(
       settings: admissionSettings,
       runningCount: countRunningRunsForAdmission(dbRunningRunIds) - (stoppingHoldsSlot ? 1 : 0),
       memory,
+      disk,
     });
     let load: { load1: number; cpus: number } | null = null;
     try {
@@ -20554,21 +20570,24 @@ export function heartbeatService(
         return none;
       }
 
-      // Instance-wide admission (GRE-105): global run cap, then free memory.
+      // Instance-wide admission (GRE-105): global run cap, free memory, then
+      // free disk (GRE-207).
       // A hold keeps the run queued; the re-check timer and run completion
       // drain it again. Never fail or cancel a run here.
       const admissionSettings = resolveRunAdmissionSettings(
         await instanceSettings.getGeneral(),
       );
-      const [dbRunningRunIds, memory] = await Promise.all([
+      const [dbRunningRunIds, memory, disk] = await Promise.all([
         listRunningRunIdsForAdmission(),
         memoryReader().catch(() => null),
+        diskReader().catch(() => null),
       ]);
       // No await from here until the slots are reserved below.
       const admission = evaluateRunAdmission({
         settings: admissionSettings,
         runningCount: countRunningRunsForAdmission(dbRunningRunIds),
         memory,
+        disk,
       });
       if (!admission.admit) {
         const hold = { reason: admission.reason, message: admission.message };

@@ -191,8 +191,14 @@ function clampCap(value: number) {
   return Math.min(MAX_CAP, Math.max(1, Math.floor(value)));
 }
 
+/** The limits the recommendation covers; the disk floor (GRE-207) is not suggested. */
+export type RecommendedRunLimits = Pick<
+  RunAdmissionSettings,
+  "maxConcurrentRuns" | "minAvailableMemoryMb"
+>;
+
 export interface RecommendationInput {
-  current: RunAdmissionSettings;
+  current: RecommendedRunLimits;
   system: { totalMemoryMb: number; availableMemoryMb: number | null; cpuCount: number };
   usage: {
     runsStarted: number;
@@ -204,7 +210,7 @@ export interface RecommendationInput {
 }
 
 export interface RunAdmissionSuggestion {
-  suggested: RunAdmissionSettings;
+  suggested: RecommendedRunLimits;
   reasons: string[];
 }
 
@@ -283,8 +289,8 @@ export function recommendRunAdmission(input: RecommendationInput): RunAdmissionS
 
 export interface RunAdmissionRecommendation {
   windowDays: number;
-  current: RunAdmissionSettings;
-  suggested: RunAdmissionSettings;
+  current: RecommendedRunLimits;
+  suggested: RecommendedRunLimits;
   reasons: string[];
   system: { totalMemoryMb: number; availableMemoryMb: number | null; cpuCount: number };
   usage: {
@@ -330,7 +336,8 @@ export function runAdmissionRecommendationService(
             ),
           ),
       ]);
-      const current = resolveRunAdmissionSettings(general);
+      const { maxConcurrentRuns, minAvailableMemoryMb } = resolveRunAdmissionSettings(general);
+      const current: RecommendedRunLimits = { maxConcurrentRuns, minAvailableMemoryMb };
 
       const intervals = rows.map((row) => ({
         startedAt: Math.max(row.startedAt!.getTime(), windowStart.getTime()),

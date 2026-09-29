@@ -20,7 +20,7 @@ import {
 import { heartbeatService } from "../services/heartbeat.ts";
 import { getHeartbeatRunRuntimeStatus } from "../services/heartbeat-run-runtime-status.ts";
 import { instanceSettingsService } from "../services/instance-settings.ts";
-import type { MemorySnapshot } from "../services/run-admission.ts";
+import type { DiskSnapshot, MemorySnapshot } from "../services/run-admission.ts";
 import { runningProcesses } from "../adapters/index.ts";
 
 // Every adapter run blocks until the test releases it, so runs stay "running"
@@ -94,6 +94,7 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
   let db!: ReturnType<typeof createDb>;
   let heartbeat!: ReturnType<typeof heartbeatService>;
   let memory: MemorySnapshot | null = null;
+  let disk: DiskSnapshot | null = null;
   let beforeMemoryRead: (() => Promise<void>) | null = null;
   let tempDb: Awaited<
     ReturnType<typeof startEmbeddedPostgresTestDatabase>
@@ -109,12 +110,14 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
         await beforeMemoryRead?.();
         return memory;
       },
+      diskReader: async () => disk,
     });
   }, 20_000);
 
   afterEach(async () => {
     // Lift the guard so held runs drain and finish before the tables reset.
     memory = null;
+    disk = null;
     beforeMemoryRead = null;
     await db.delete(instanceSettings);
     await heartbeat.resumeQueuedRuns();
@@ -203,6 +206,7 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
   async function setAdmission(runAdmission: {
     maxConcurrentRuns?: number;
     minAvailableMemoryMb?: number;
+    minFreeDiskGb?: number;
   }) {
     await instanceSettingsService(db).updateGeneral({ runAdmission });
   }
@@ -311,6 +315,35 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
     adapterGate.releaseAll();
     expect(
       await waitFor(async () => (await statuses([runId])).get(runId) === "succeeded"),
+    ).toBe(true);
+  });
+
+  it("holds new runs while disk is below the floor, keeps running runs, and starts them once space returns (GRE-207)", async () => {
+    await setAdmission({ maxConcurrentRuns: 6, minFreeDiskGb: 20 });
+    const companyId = await seedCompany();
+    const agentId = await seedAgent(companyId, 5);
+    const t0 = Date.now() - 60_000;
+    const firstRun = await queueRun(companyId, agentId, new Date(t0));
+
+    disk = { availableBytes: 50 * GB };
+    await heartbeat.resumeQueuedRuns();
+    await waitFor(async () => adapterGate.state.active === 1);
+    expect((await statuses([firstRun])).get(firstRun)).toBe("running");
+
+    disk = { availableBytes: 12.4 * GB };
+    const heldRun = await queueRun(companyId, agentId, new Date(t0 + 1_000));
+    await heartbeat.resumeQueuedRuns();
+    const current = await statuses([firstRun, heldRun]);
+    expect(current.get(firstRun)).toBe("running");
+    expect(current.get(heldRun)).toBe("queued");
+    expect(getHeartbeatRunRuntimeStatus(heldRun)?.message).toBe(
+      "Waiting: low disk (12 GB free, floor 20 GB)",
+    );
+
+    disk = { availableBytes: 25 * GB };
+    await heartbeat.resumeQueuedRuns();
+    expect(
+      await waitFor(async () => (await statuses([heldRun])).get(heldRun) === "running"),
     ).toBe(true);
   });
 

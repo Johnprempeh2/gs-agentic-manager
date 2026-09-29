@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, statfs } from "node:fs/promises";
 import os from "node:os";
 import {
   DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
   DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
+  DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB,
   type InstanceGeneralSettings,
   type InstanceSystemMemory,
 } from "@greatstone/shared";
@@ -16,26 +17,31 @@ import {
  * heartbeat start gate asks this module whether the instance has room:
  *
  * - a global cap on concurrently running runs, and
- * - a free-memory floor (GRE-198: the only memory rule).
+ * - a free-memory floor (GRE-198: the only memory rule), and
+ * - a free-disk floor on the data dir and worktree volumes (GRE-207: a full
+ *   disk fails every run with ENOSPC).
  *
  * The OS memory-pressure level is read for the Settings page but never holds
  * a run: macOS reports "warn" as its normal state on a 16 GB Mac with ordinary
  * apps open, so holding on it stranded every new run with 6 GB free.
  *
  * A "no" keeps the run `queued` (never failed or cancelled). The queue drain
- * and a short re-check timer start it again once a slot frees or memory
- * recovers. When memory cannot be read the check fails open, so a broken
- * reader never strands work.
+ * and a short re-check timer start it again once a slot frees or memory or
+ * disk recovers. When memory or disk cannot be read the check fails open, so
+ * a broken reader never strands work.
  */
 
 export {
   DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
   DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
+  DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB,
 };
 export const RUN_ADMISSION_RECHECK_MS = 15_000;
 const MEMORY_SNAPSHOT_CACHE_MS = 2_000;
 const MEMORY_READ_TIMEOUT_MS = 2_000;
+const DISK_SNAPSHOT_CACHE_MS = 10_000;
 const BYTES_PER_MB = 1024 * 1024;
+const BYTES_PER_GB = 1024 * BYTES_PER_MB;
 
 export type MemoryPressureLevel = "normal" | "warn" | "critical" | "unknown";
 
@@ -47,12 +53,21 @@ export interface MemorySnapshot {
 /** Returns null when memory cannot be read; admission then fails open. */
 export type MemoryReader = () => Promise<MemorySnapshot | null>;
 
+/** Free bytes on the fullest watched volume. */
+export interface DiskSnapshot {
+  availableBytes: number;
+}
+
+/** Returns null when disk cannot be read; admission then fails open. */
+export type DiskReader = () => Promise<DiskSnapshot | null>;
+
 export interface RunAdmissionSettings {
   maxConcurrentRuns: number;
   minAvailableMemoryMb: number;
+  minFreeDiskGb: number;
 }
 
-export type RunAdmissionHoldReason = "global_cap" | "low_memory";
+export type RunAdmissionHoldReason = "global_cap" | "low_memory" | "low_disk";
 
 export type RunAdmissionDecision =
   | { admit: true; slots: number }
@@ -68,13 +83,25 @@ export function resolveRunAdmissionSettings(
     minAvailableMemoryMb:
       stored?.minAvailableMemoryMb ??
       DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
+    minFreeDiskGb:
+      stored?.minFreeDiskGb ?? DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB,
   };
 }
 
 /** "1.6 GB"; whole numbers drop the decimal ("2 GB"). */
 function formatGb(bytes: number) {
-  const gb = (bytes / (1024 * BYTES_PER_MB)).toFixed(1);
+  const gb = (bytes / BYTES_PER_GB).toFixed(1);
   return `${gb.endsWith(".0") ? gb.slice(0, -2) : gb} GB`;
+}
+
+/**
+ * Whole GB for disk ("12 GB"), rounded down so the shown number never reads
+ * as at or above the floor while the run is held. Below 1 GB keep a decimal.
+ */
+function formatDiskGb(bytes: number) {
+  const gb = bytes / BYTES_PER_GB;
+  if (gb < 1) return `${(Math.floor(gb * 10) / 10).toFixed(1)} GB`;
+  return `${Math.floor(gb)} GB`;
 }
 
 /**
@@ -86,8 +113,10 @@ export function evaluateRunAdmission(input: {
   settings: RunAdmissionSettings;
   runningCount: number;
   memory: MemorySnapshot | null;
+  /** Omitted or null fails open (disk not read). */
+  disk?: DiskSnapshot | null;
 }): RunAdmissionDecision {
-  const { settings, runningCount, memory } = input;
+  const { settings, runningCount, memory, disk } = input;
   const slots = settings.maxConcurrentRuns - runningCount;
   if (slots <= 0) {
     return {
@@ -103,6 +132,16 @@ export function evaluateRunAdmission(input: {
         admit: false,
         reason: "low_memory",
         message: `Waiting: low memory (${formatGb(memory.availableBytes)} free, floor ${formatGb(floorBytes)})`,
+      };
+    }
+  }
+  if (disk && settings.minFreeDiskGb > 0) {
+    const floorBytes = settings.minFreeDiskGb * BYTES_PER_GB;
+    if (disk.availableBytes < floorBytes) {
+      return {
+        admit: false,
+        reason: "low_disk",
+        message: `Waiting: low disk (${formatDiskGb(disk.availableBytes)} free, floor ${formatDiskGb(floorBytes)})`,
       };
     }
   }
@@ -192,6 +231,44 @@ export function createSystemMemoryReader(
     const at = now();
     if (!cached || at - cached.at > MEMORY_SNAPSHOT_CACHE_MS) {
       cached = { at, value: readUncached() };
+    }
+    return cached.value;
+  };
+}
+
+/**
+ * Free disk on the fullest of `paths` (data dir, worktree roots). Paths that
+ * cannot be read are skipped; null when none can be read.
+ */
+export async function readFreeDiskBytes(
+  paths: string[],
+  statFs: (path: string) => Promise<{ bavail: number | bigint; bsize: number | bigint }> = statfs,
+): Promise<DiskSnapshot | null> {
+  let min: number | null = null;
+  for (const path of new Set(paths)) {
+    try {
+      const stats = await statFs(path);
+      const available = Number(stats.bavail) * Number(stats.bsize);
+      if (!Number.isFinite(available)) continue;
+      if (min === null || available < min) min = available;
+    } catch {
+      // Missing or unreadable path: skip it.
+    }
+  }
+  return min === null ? null : { availableBytes: min };
+}
+
+/** Disk reader with a short cache, like the memory reader. */
+export function createSystemDiskReader(
+  paths: () => string[],
+  now: () => number = Date.now,
+  read: (paths: string[]) => Promise<DiskSnapshot | null> = readFreeDiskBytes,
+): DiskReader {
+  let cached: { at: number; value: Promise<DiskSnapshot | null> } | null = null;
+  return () => {
+    const at = now();
+    if (!cached || at - cached.at > DISK_SNAPSHOT_CACHE_MS) {
+      cached = { at, value: read(paths()).catch(() => null) };
     }
     return cached.value;
   };
