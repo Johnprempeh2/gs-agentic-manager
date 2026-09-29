@@ -616,8 +616,10 @@ export {
 export {
   createGoalSchema,
   updateGoalSchema,
+  createGoalCheckInSchema,
   type CreateGoal,
   type UpdateGoal,
+  type CreateGoalCheckIn,
 } from "./goal.js";
 
 export {

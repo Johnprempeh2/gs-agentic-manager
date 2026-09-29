@@ -1989,6 +1989,13 @@
       "when": 1790580131642,
       "tag": "0285_peaceful_psylocke",
       "breakpoints": true
+    },
+    {
+      "idx": 286,
+      "version": "7",
+      "when": 1790667191006,
+      "tag": "0286_goal_progress_check_ins",
+      "breakpoints": true
     }
   ]
 }

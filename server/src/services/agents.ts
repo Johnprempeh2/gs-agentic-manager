@@ -15,6 +15,7 @@ import {
   heartbeatRunEvents,
   heartbeatRuns,
   issueExecutionDecisions,
+  goals,
   issues,
   issueComments,
 } from "@greatstone/db";
@@ -1065,6 +1066,7 @@ export function agentService(db: Db) {
         await issueThreadInteractionService(tx as unknown as Db)
           .cancelPendingForDeletedAddressee(existing.companyId, id);
         await tx.update(agents).set({ reportsTo: null }).where(eq(agents.reportsTo, id));
+        await tx.update(goals).set({ ownerAgentId: null }).where(eq(goals.ownerAgentId, id));
         await tx
           .update(issues)
           .set({ assigneeAgentId: null, createdByAgentId: null })

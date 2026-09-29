@@ -44,8 +44,8 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
     await ctx.db.delete(companyOnboardingSeeds);
     await ctx.db.delete(issues);
     await ctx.db.delete(projects);
-    await ctx.db.delete(agents);
     await ctx.db.delete(goals);
+    await ctx.db.delete(agents);
     await resetCompanyIssueFixtures(ctx.db);
   });
 
@@ -106,6 +106,10 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
     expect(companyIssues[0]?.description).toBe(SEED.firstTask.details);
     expect(companyIssues[0]?.assigneeAgentId).toBe(companyAgents[0]?.id);
     expect(companyIssues[0]?.goalId).toBe(companyGoals[0]?.id);
+    // The mission goal is created before the agent; setup hands it to the
+    // main agent so the first goal has an owner.
+    const [missionGoal] = await ctx.db.select().from(goals).where(eq(goals.companyId, companyId));
+    expect(missionGoal?.ownerAgentId).toBe(companyAgents[0]?.id);
 
     const companyProjects = await ctx.db.select().from(projects).where(eq(projects.companyId, companyId));
     expect(companyProjects).toHaveLength(1);
