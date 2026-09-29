@@ -1,8 +1,41 @@
+diff --git a/dist/acp-agent.d.ts b/dist/acp-agent.d.ts
+index 3b1bf3db630481d910dbdaac79199f262b646457..6c228abd5810088bc1e2a5feaf94077df29a89d7 100644
+--- a/dist/acp-agent.d.ts
++++ b/dist/acp-agent.d.ts
+@@ -726,6 +726,7 @@ export declare function isLocalCommandMetadata(content: unknown): boolean;
+  * all both paths have to match on.
+  */
+ export declare function isSyntheticLoginMessage(apiMessage: unknown): boolean;
++export declare function isLoginRequiredResult(result: unknown, lastAssistantModel: string | null): boolean;
+ /**
+  * Client-facing surface the agent calls back into. This is the subset of ACP
+  * client methods the agent actually uses, expressed as a narrow interface so
 diff --git a/dist/acp-agent.js b/dist/acp-agent.js
-index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef14627011e02b30 100644
+index 0214a509eb5e7b777a69e4e34637941c275d27b1..f2a5152ec9e15eb1c1502f5a5db16c8f64a6fd86 100644
 --- a/dist/acp-agent.js
 +++ b/dist/acp-agent.js
-@@ -2922,9 +2922,19 @@ export class ClaudeAcpAgent {
+@@ -470,6 +470,20 @@ export function isSyntheticLoginMessage(apiMessage) {
+         typeof block.text === "string" &&
+         block.text.includes("Please run /login"));
+ }
++/**
++ * True when a successful `result` is the CLI's login prompt rather than model
++ * output. The CLI only writes "Please run /login" into `result` when no real
++ * model answered the turn (the assistant message was `<synthetic>`). Once a
++ * real model has answered, `result` is that model's own text, which may quote
++ * the phrase (for example an agent writing up a login bug), so it must not
++ * fail the turn as auth_required. A mid-turn login loss still arrives as a
++ * synthetic assistant message and is caught by `isSyntheticLoginMessage`.
++ */
++export function isLoginRequiredResult(result, lastAssistantModel) {
++    return (lastAssistantModel === null &&
++        typeof result === "string" &&
++        result.includes("Please run /login"));
++}
+ /**
+  * Bridges {@link AcpClient} to the connection-scoped {@link AgentContext}
+  * exposed by `AgentApp.connect(...)` as `connection.client`. The peer handle is
+@@ -2922,9 +2936,19 @@ export class ClaudeAcpAgent {
                                              amount: message.total_cost_usd,
                                              currency: "USD",
                                          },
@@ -25,7 +58,16 @@ index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef146270
                                      },
                                  });
                              }
-@@ -5311,6 +5321,10 @@ export class ClaudeAcpAgent {
+@@ -3081,7 +3105,7 @@ export class ClaudeAcpAgent {
+                             }
+                             switch (message.subtype) {
+                                 case "success": {
+-                                    if (message.result.includes("Please run /login")) {
++                                    if (isLoginRequiredResult(message.result, lastAssistantModel)) {
+                                         await failActiveWithSessionFailure("auth_required", RequestError.authRequired(), message.result);
+                                         break;
+                                     }
+@@ -5311,6 +5335,10 @@ export class ClaudeAcpAgent {
              settingSources: ["user", "project", "local"],
              ...(thinking !== undefined && { thinking }),
              ...userProvidedOptions,
@@ -36,7 +78,7 @@ index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef146270
              ...(settings && { settings }),
              env,
              // Override certain fields that must be controlled by ACP
-@@ -5318,7 +5332,9 @@ export class ClaudeAcpAgent {
+@@ -5318,7 +5346,9 @@ export class ClaudeAcpAgent {
              includePartialMessages: true,
              forwardSubagentText,
              mcpServers: {
@@ -47,7 +89,7 @@ index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef146270
                  ...mcpServers,
                  ...(fileChangeAuditSupport
                      ? { [FILE_CHANGE_AUDIT_SERVER_NAME]: fileChangeAuditSupport.mcpServer }
-@@ -5329,6 +5345,16 @@ export class ClaudeAcpAgent {
+@@ -5329,6 +5359,16 @@ export class ClaudeAcpAgent {
              allowDangerouslySkipPermissions: ALLOW_BYPASS,
              permissionMode: initialPermissionMode,
              canUseTool: this.canUseTool(sessionId),
@@ -64,3 +106,24 @@ index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef146270
              // Forward MCP elicitation requests onto ACP elicitation. Only attached
              // when the client advertised support, so non-supporting clients keep the
              // SDK's default (auto-decline) behavior. (AskUserQuestion is handled in
+diff --git a/dist/lib.d.ts b/dist/lib.d.ts
+index 9b1cdb2c5b9fbfcc8d3a32622923a4b6801511e2..c0a9b1064c88180bd75100aa8c0166466e94853c 100644
+--- a/dist/lib.d.ts
++++ b/dist/lib.d.ts
+@@ -1,4 +1,4 @@
+-export { ClaudeAcpAgent, isLocalCommandMetadata, stripLocalCommandMetadata, runAcp, toAcpNotifications, streamEventToAcpNotifications, type ToolUpdateMeta, type NewSessionMeta, type SDKMessageFilter, } from "./acp-agent.js";
++export { ClaudeAcpAgent, isLocalCommandMetadata, isLoginRequiredResult, stripLocalCommandMetadata, runAcp, toAcpNotifications, streamEventToAcpNotifications, type ToolUpdateMeta, type NewSessionMeta, type SDKMessageFilter, } from "./acp-agent.js";
+ export { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
+ export { toolInfoFromToolUse, toDisplayPath, planEntries, toolUpdateFromToolResult, } from "./tools.js";
+ export { SettingsManager, type SettingsManagerOptions } from "./settings.js";
+diff --git a/dist/lib.js b/dist/lib.js
+index 64707a3027d21f412cfb5e3584141952e48e1591..982abc8a0134ccbf60f69240941ceb54f00577a6 100644
+--- a/dist/lib.js
++++ b/dist/lib.js
+@@ -1,5 +1,5 @@
+ // Export the main agent class and utilities for library usage
+-export { ClaudeAcpAgent, isLocalCommandMetadata, stripLocalCommandMetadata, runAcp, toAcpNotifications, streamEventToAcpNotifications, } from "./acp-agent.js";
++export { ClaudeAcpAgent, isLocalCommandMetadata, isLoginRequiredResult, stripLocalCommandMetadata, runAcp, toAcpNotifications, streamEventToAcpNotifications, } from "./acp-agent.js";
+ export { nodeToWebReadable, nodeToWebWritable, Pushable, unreachable } from "./utils.js";
+ export { toolInfoFromToolUse, toDisplayPath, planEntries, toolUpdateFromToolResult, } from "./tools.js";
+ export { SettingsManager } from "./settings.js";
