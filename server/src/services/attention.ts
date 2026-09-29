@@ -1906,7 +1906,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           : expiry === "expired" || expiry === "expiring_soon" ? expiry : null;
         if (!phase) continue;
         const renewal = metadata.data.provider === "anthropic"
-          ? " Running claude setup-token gives a token that lasts about a year."
+          ? " For a token that lasts about a year, run claude setup-token, then Reconnect and choose Paste a long-lived token."
           : "";
         const at = credential?.expiresAt
           ? `${credential.expiresAt.slice(0, 10)} ${credential.expiresAt.slice(11, 16)} UTC`

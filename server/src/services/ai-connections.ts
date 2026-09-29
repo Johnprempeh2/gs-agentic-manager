@@ -58,7 +58,7 @@ export function aiCredentialGeneration(value: string) {
 
 function credentialExpiredMessage(provider: string, expiresAt: string) {
   return provider === "anthropic"
-    ? `This Claude token expired at ${expiresAt}. Reconnect it. \`claude setup-token\` gives a token that lasts about a year.`
+    ? `This Claude token expired at ${expiresAt}. Reconnect it and choose "Paste a long-lived token": \`claude setup-token\` gives one that lasts about a year.`
     : `This credential expired at ${expiresAt}. Reconnect it.`;
 }
 
