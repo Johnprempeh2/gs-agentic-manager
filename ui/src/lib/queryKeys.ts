@@ -651,6 +651,14 @@ export const queryKeys = {
   },
   dashboard: (companyId: string) => ["dashboard", companyId] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
+  /** One Decisions feed (GRE-263). Under the `attention` prefix so every
+   *  existing attention invalidation also refreshes the feed and its count. */
+  decisionsFeed: {
+    feed: (companyId: string) => ["attention", companyId, "decisions-feed"] as const,
+    count: (companyId: string) => ["attention", companyId, "decisions-feed", "count"] as const,
+  },
+  /** Tasks set aside with "Not now" (GRE-262). */
+  tabledIssues: (companyId: string) => ["attention", companyId, "tabled-issues"] as const,
   decisions: {
     list: (companyId: string, status?: string) =>
       ["decisions", companyId, status ?? "__all-statuses__"] as const,
