@@ -522,6 +522,14 @@ import {
   hostBlindTime as processHostBlindTime,
   type HostBlindTimeTracker,
 } from "./host-blind-time.js";
+import {
+  FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY,
+  HOST_SLEEP_RETRY_DELAY_MS,
+  HOST_SLEEP_RETRY_MAX_ATTEMPTS,
+  HOST_SLEEP_RETRY_REASON,
+  HOST_SLEEP_RETRY_WAKE_REASON,
+  isHostSleepLoss,
+} from "./host-sleep-loss.js";
 import os from "node:os";
 import {
   ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS as RECOVERY_ACTIVE_RUN_OUTPUT_SUSPICION_THRESHOLD_MS,
@@ -9497,6 +9505,14 @@ export function heartbeatService(
     (runtimeEnv.VITEST ? async () => null : createSystemMemoryReader());
   const hostBlindTime =
     options.hostBlindTime ?? (runtimeEnv.VITEST ? NO_HOST_BLIND_TIME : processHostBlindTime);
+  // GRE-200: sample first, so a gap the sampler has not seen yet (the lease
+  // timer and the sampler both fire on wake, in either order) still counts.
+  const runLostToHostSleep = (
+    run: Parameters<typeof isHostSleepLoss>[0],
+  ) => {
+    hostBlindTime.sample();
+    return isHostSleepLoss(run, hostBlindTime.blindMsBetween);
+  };
   const hostLoadReader =
     options.hostLoadReader ?? (runtimeEnv.VITEST ? () => null : readHostLoad);
   const inWorktreeRuntime = isTruthyRuntimeEnvValue(
@@ -9604,6 +9620,7 @@ export function heartbeatService(
     transientRetryBudgetSpent: (run) =>
       executionFailureRetryCount(run) >=
       BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS,
+    isHostSleepLoss: runLostToHostSleep,
   });
   const runDispatch = createRunDispatch(db);
 
@@ -15426,6 +15443,24 @@ export function heartbeatService(
     },
   ) {
     const now = opts?.now ?? new Date();
+    // GRE-200: a run lost to host sleep is resumed in the sleep lane, which
+    // does not spend the failure budget. The lane has its own bound; once it
+    // is spent the loss falls through to the normal failure budget.
+    if (
+      !opts?.retryReason &&
+      runLostToHostSleep(run) &&
+      executionRetryAttemptCount(run, HOST_SLEEP_RETRY_REASON) <
+        HOST_SLEEP_RETRY_MAX_ATTEMPTS
+    ) {
+      return scheduleBoundedRetryForRun(run, agent, {
+        ...opts,
+        now,
+        retryReason: HOST_SLEEP_RETRY_REASON,
+        wakeReason: HOST_SLEEP_RETRY_WAKE_REASON,
+        maxAttempts: HOST_SLEEP_RETRY_MAX_ATTEMPTS,
+        delayMs: HOST_SLEEP_RETRY_DELAY_MS,
+      });
+    }
     const retryReason =
       opts?.retryReason ?? BOUNDED_TRANSIENT_HEARTBEAT_RETRY_REASON;
     const wakeReason =
@@ -15636,6 +15671,9 @@ export function heartbeatService(
           : {}),
         ...(retryReason === AI_CONNECTION_BUSY_RETRY_REASON
           ? { failureRetriesBeforeAiConnectionWait: executionFailureRetryCount(run) }
+          : {}),
+        ...(retryReason === HOST_SLEEP_RETRY_REASON
+          ? { [FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY]: executionFailureRetryCount(run) }
           : {}),
         ...(shouldQuarantineWorkspaceForRetry
           ? {
@@ -26019,8 +26057,9 @@ export function heartbeatService(
               });
             }
           } else if (
-            outcome === "failed" &&
-            readTransientRecoveryContractFromRun(livenessRun)
+            (outcome === "failed" &&
+              readTransientRecoveryContractFromRun(livenessRun)) ||
+            runLostToHostSleep(livenessRun)
           ) {
             await scheduleBoundedRetryForRun(livenessRun, agent);
           } else if (
@@ -26166,7 +26205,8 @@ export function heartbeatService(
           keepIdleOnFailure:
             outcome === "failed" &&
             ((finalizedRun
-              ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota"
+              ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota" ||
+                runLostToHostSleep(finalizedRun)
               : runErrorCode === "provider_quota") ||
               isWorkspaceSyncConflictFailure(adapterResult.errorMessage)),
           wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
@@ -26439,10 +26479,12 @@ export function heartbeatService(
           ) {
             await finalizeIssueCommentPolicy(livenessRun, agent);
           }
-          await scheduleInteractionContinuationInfrastructureRetryIfEligible(
-            livenessRun,
-            agent,
-          );
+          await (runLostToHostSleep(livenessRun)
+            ? scheduleBoundedRetryForRun(livenessRun, agent)
+            : scheduleInteractionContinuationInfrastructureRetryIfEligible(
+                livenessRun,
+                agent,
+              ));
           await releaseIssueExecutionAndPromote(livenessRun, {
             // Native recovery owns the original heartbeat run through
             // exhaustion. Once its durable coordinator has classified a
@@ -26498,7 +26540,8 @@ export function heartbeatService(
           wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
           keepIdleOnFailure:
             Boolean(nonRetryablePreflightFailureCode(err)) ||
-            isWorkspaceSyncConflictFailure(message),
+            isWorkspaceSyncConflictFailure(message) ||
+            runLostToHostSleep(failedRun),
         });
       }
     } catch (outerErr) {
@@ -26698,7 +26741,8 @@ export function heartbeatService(
             // No provider work began. Retry temporary host scan failures with
             // the existing durable failure budget, before releasing execution.
             // Generic recovery must not grant a second budget on exhaustion.
-            await (isTransientWorkspaceGitScanCode(livenessRun.errorCode)
+            await (isTransientWorkspaceGitScanCode(livenessRun.errorCode) ||
+              runLostToHostSleep(livenessRun)
               ? scheduleBoundedRetryForRun(livenessRun, failedAgent)
               : scheduleInteractionContinuationInfrastructureRetryIfEligible(livenessRun, failedAgent)
             ).catch((retryError) => {
@@ -26741,7 +26785,9 @@ export function heartbeatService(
             // Keep the failed run and its safe provider refusal authoritative,
             // but return the agent to idle so clients do not also announce a
             // misleading agent-wide error for the same rejected chat turn.
-            keepIdleOnFailure: Boolean(nonRetryablePreflightCode),
+            keepIdleOnFailure:
+              Boolean(nonRetryablePreflightCode) ||
+              runLostToHostSleep(failedRun),
           }).catch(() => undefined);
         }
       }
