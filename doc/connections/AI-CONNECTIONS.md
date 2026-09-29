@@ -59,6 +59,40 @@ The additive `ai_provider_defaults` table preserves the legacy per-method prefer
 Revocation retains the unavailable default; connecting another account does not
 silently replace it. Change it explicitly on the account detail page.
 
+## Install-wide AI access route
+
+One instance setting, `general.aiAccessRoute`, selects the AI access route for
+every Claude and Codex agent on the install:
+
+| Route | Harness | Account |
+| --- | --- | --- |
+| `claude_subscription` | Claude | Claude seat login |
+| `claude_api_key` | Claude | Anthropic API key |
+| `codex_subscription` | Codex | ChatGPT/Codex seat login |
+| `codex_api_key` | Codex | OpenAI API key |
+
+Absent or `null` keeps each agent's own harness and connection. An instance
+admin changes it without a code change or rebuild; the next run uses it:
+
+```sh
+curl -X PATCH "$GSAM_URL/api/instance/settings/general" \
+  -H 'Content-Type: application/json' -d '{"aiAccessRoute":"codex_subscription"}'
+```
+
+The route is applied when the heartbeat reads the agent. Stored agents are not
+changed, so clearing the setting restores them. A switch between Claude and
+Codex drops harness-only settings (model, command, flags) and uses the target
+harness's defaults. Task sessions are keyed by harness, so a switch starts a
+fresh provider session. Other adapters are not affected.
+
+A route run uses the responsible user's personal default for the route's
+provider when its sign-in method matches, else a company-shared account of that
+provider and method. It never uses the host's login: the managed runtime clears
+inherited credential variables. With no matching account the run stops with a
+configuration blocker that names the route, not a retry. A login the provider
+rejects marks the account as needing attention on every route, including a dead
+ChatGPT login and a rejected OpenAI key.
+
 ## Storage and API
 
 AI connections pair `connectionPurpose: ai` with `transport: runtime_auth`.
