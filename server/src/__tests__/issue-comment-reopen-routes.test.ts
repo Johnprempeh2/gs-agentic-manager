@@ -10,6 +10,7 @@ const mockIssueService = vi.hoisted(() => ({
   update: vi.fn(),
   addComment: vi.fn(),
   getDependencyReadiness: vi.fn(),
+  listUnresolvedBlockerIssueIds: vi.fn(),
   getCurrentScheduledRetry: vi.fn(),
   findMentionedAgents: vi.fn(),
   listWakeableBlockedDependents: vi.fn(),
@@ -326,6 +327,7 @@ describe.sequential("issue comment reopen routes", () => {
     mockIssueService.update.mockReset();
     mockIssueService.addComment.mockReset();
     mockIssueService.getDependencyReadiness.mockReset();
+    mockIssueService.listUnresolvedBlockerIssueIds.mockReset();
     mockIssueService.getCurrentScheduledRetry.mockReset();
     mockIssueService.findMentionedAgents.mockReset();
     mockIssueService.listWakeableBlockedDependents.mockReset();
@@ -450,6 +452,7 @@ describe.sequential("issue comment reopen routes", () => {
       allBlockersDone: true,
       isDependencyReady: true,
     });
+    mockIssueService.listUnresolvedBlockerIssueIds.mockResolvedValue([]);
     mockIssueService.getCurrentScheduledRetry.mockResolvedValue(null);
     mockIssueService.listWakeableBlockedDependents.mockResolvedValue([]);
     mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(
@@ -1706,6 +1709,78 @@ describe.sequential("issue comment reopen routes", () => {
       unknown
     >;
     expect(patch.status).toBe("todo");
+  });
+
+  describe("GRE-98: leaving blocked while replacing blockers in one PATCH", () => {
+    const openBlockerId = "55555555-5555-4555-8555-555555555555";
+    const reviewerAgentId = "33333333-3333-4333-8333-333333333333";
+
+    async function sendInReviewWithBlockers(blockedByIssueIds: string[]) {
+      mockIssueService.getById.mockResolvedValue(makeIssue("blocked"));
+      mockIssueService.getRelationSummaries.mockResolvedValue({
+        blockedBy: [],
+        blocks: [],
+      });
+      // The stored blocker set still links an open blocker.
+      mockIssueService.getDependencyReadiness.mockResolvedValue({
+        issueId: "11111111-1111-4111-8111-111111111111",
+        blockerIssueIds: [openBlockerId],
+        unresolvedBlockerIssueIds: [openBlockerId],
+        unresolvedBlockerCount: 1,
+        allBlockersDone: false,
+        isDependencyReady: false,
+      });
+      mockIssueService.listUnresolvedBlockerIssueIds.mockImplementation(
+        async (_companyId: string, ids: string[]) =>
+          ids.filter((id) => id === openBlockerId),
+      );
+      mockIssueService.update.mockImplementation(
+        async (_id: string, patch: Record<string, unknown>) => ({
+          ...makeIssue("blocked"),
+          ...patch,
+        }),
+      );
+
+      return request(await installActor(createApp(), agentActor()))
+        .patch("/api/issues/11111111-1111-4111-8111-111111111111")
+        .send({
+          status: "in_review",
+          blockedByIssueIds,
+          executionPolicy: {
+            stages: [
+              {
+                type: "review",
+                participants: [{ type: "agent", agentId: reviewerAgentId }],
+              },
+            ],
+          },
+          comment: "Ready for review.",
+        });
+    }
+
+    it("accepts in_review when the same PATCH removes the last open blocker", async () => {
+      const res = await sendInReviewWithBlockers([]);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockIssueService.update).toHaveBeenCalled();
+      const patch = mockIssueService.update.mock.calls[0][1] as Record<
+        string,
+        unknown
+      >;
+      expect(patch.status).toBe("in_review");
+      expect(patch.blockedByIssueIds).toEqual([]);
+    });
+
+    it("still rejects in_review when the PATCH keeps an open blocker", async () => {
+      const res = await sendInReviewWithBlockers([openBlockerId]);
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({
+        error: "Issue follow-up blocked by unresolved blockers",
+        details: { unresolvedBlockerIssueIds: [openBlockerId] },
+      });
+      expect(mockIssueService.update).not.toHaveBeenCalled();
+    });
   });
 
   it("does not implicitly reopen closed issues via POST comments when no agent is assigned", async () => {

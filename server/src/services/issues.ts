@@ -9047,6 +9047,12 @@ export function issueService(db: Db) {
       };
     },
 
+    listUnresolvedBlockerIssueIds: (
+      companyId: string,
+      blockerIssueIds: string[],
+      dbOrTx: any = db,
+    ) => listUnresolvedBlockerIssueIds(dbOrTx, companyId, blockerIssueIds),
+
     getDependencyReadiness: async (issueId: string, dbOrTx: any = db) => {
       const issue = await dbOrTx
         .select({ id: issues.id, companyId: issues.companyId })
