@@ -57,7 +57,8 @@ function formatActivationTimestamp(iso: string): string {
 }
 
 // PAP-11233: keep Conference Room code intact, but hide the user-facing opt-in for now.
-const SHOW_CONFERENCE_ROOM_EXPERIMENTAL_SETTING = false;
+// Greatstone (GRE-193): show the opt-in again so John can turn it on. Stays off by default.
+const SHOW_CONFERENCE_ROOM_EXPERIMENTAL_SETTING = true;
 
 function ManagedByCloudBadge() {
   return (

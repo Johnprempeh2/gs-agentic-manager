@@ -245,12 +245,22 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     }
   });
 
-  it("does not render the Conference Room Chat experimental setting for now", async () => {
+  it("renders the Conference Room Chat card default-off and patches it on and off (GRE-193)", async () => {
     await renderPage();
 
-    const headings = [...container.querySelectorAll("section h2")].map((h) => h.textContent);
-    expect(headings).not.toContain("Conference Room Chat");
-    expect(container.querySelector(CONFERENCE_TOGGLE_SELECTOR)).toBeNull();
+    const titles = [...container.querySelectorAll("h3")].map((h) => h.textContent);
+    expect(titles).toContain("Conference Room Chat");
+    const toggle = container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR);
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+
+    for (const enabled of [true, false]) {
+      await act(() => toggle?.click());
+      await flushReact();
+      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
+        enableConferenceRoomChat: enabled,
+      });
+      expect(toggle?.getAttribute("aria-checked")).toBe(String(enabled));
+    }
   });
 
   it("does not render the Pipelines experimental setting for now", async () => {
@@ -261,7 +271,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.querySelector('button[aria-label="Toggle pipelines experimental setting"]')).toBeNull();
   });
 
-  it("does not render the toggle even when the stored flag is currently enabled", async () => {
+  it("reflects a stored Conference Room Chat flag as checked without writing it", async () => {
     currentExperimentalSettings = {
       ...currentExperimentalSettings,
       enableConferenceRoomChat: true,
@@ -269,7 +279,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     await renderPage();
 
     const toggle = container.querySelector(CONFERENCE_TOGGLE_SELECTOR);
-    expect(toggle).toBeNull();
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
   });
 
