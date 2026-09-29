@@ -802,6 +802,10 @@ export type {
 export type {
   Goal,
   GoalBlocker,
+  GoalBlockerActor,
+  GoalBlockerReason,
+  GoalBlockerWaitingOn,
+  GoalIssueBlocker,
   GoalCheckIn,
   GoalDetail,
   GoalMilestone,

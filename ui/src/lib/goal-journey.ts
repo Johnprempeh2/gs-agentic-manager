@@ -1,4 +1,4 @@
-import type { Agent, GoalBlocker, GoalMilestone, GoalWithProgress } from "@greatstone/shared";
+import type { Agent, GoalBlocker, GoalBlockerActor, GoalMilestone, GoalWithProgress } from "@greatstone/shared";
 
 /**
  * Goals page helpers (GRE-191): one health word per goal, scoreboard order, and
@@ -81,10 +81,133 @@ export function goalHealth(goal: HealthInput, now: Date = new Date()): GoalHealt
   return "on_track";
 }
 
-export function blockerText(blocker: GoalBlocker): string {
-  if (blocker.kind === "check_in") return blocker.text;
-  return blocker.identifier ? `${blocker.title} (${blocker.identifier})` : blocker.title;
+// ── Main blocker sentence (GRE-226) ────────────────────────────────────────
+
+const FILE_EXTENSIONS = "sh|bash|zsh|ts|tsx|js|jsx|mjs|cjs|json|md|mdx|ya?ml|py|rb|go|rs|sql|toml|env|txt|css|html|lock|log|ps1";
+const FILE_NAME = new RegExp(
+  String.raw`(?:~|\.{1,2})\/[\w.@/-]+|\/?(?:[\w.@-]+\/){2,}[\w.@-]*|[\w.@/-]*\.(?:${FILE_EXTENSIONS})\b`,
+  "gi",
+);
+const TICKET_ID = /\(?\b[A-Z][A-Z0-9]{1,9}-\d+\b\)?/g;
+const HTML_TAG =
+  /<\/?(?:a|b|i|u|s|p|br|hr|em|strong|code|pre|kbd|div|span|img|ul|ol|li|h[1-6]|table|thead|tbody|tr|td|th|details|summary|sub|sup|blockquote)(?:\s*\/?|\s+[^<>]*=[^<>]*)>/gi;
+const SHORT_TITLE_CHARS = 60;
+const NOTE_CHARS = 140;
+
+/**
+ * Plain words for a card sentence: no code formatting, file names, `<tags>`,
+ * links or ticket numbers. Placeholders like `<stable tag>` keep their words.
+ */
+export function plainText(text: string): string {
+  let out = text
+    .replace(/```[\s\S]*?(?:```|$)/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/`+([^`]*)`+/g, "$1")
+    .replace(HTML_TAG, " ")
+    .replace(/<([^<>]*)>/g, "$1")
+    .replace(FILE_NAME, " ")
+    .replace(TICKET_ID, " ")
+    .replace(/(^|\s)[#>]+\s/g, "$1")
+    .replace(/(\*\*|__|\*|~~)(\S(?:.*?\S)?)\1/g, "$2")
+    .replace(/[`<>*]/g, "");
+  out = out
+    .replace(/\(\s*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:!?)])/g, "$1")
+    .replace(/([(])\s+/g, "$1")
+    .replace(/^[\s:;,.·—–-]+/, "")
+    .replace(/[\s:;,·—–-]+$/, "")
+    .trim();
+  return out ? out[0].toUpperCase() + out.slice(1) : "";
 }
+
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.—–-]+$/, "")}…`;
+}
+
+/** A task title short enough to sit inside a sentence. */
+export function shortTitle(title: string): string {
+  return clip(plainText(title) || "A task", SHORT_TITLE_CHARS);
+}
+
+function firstSentence(text: string): string {
+  const plain = plainText(text.replace(/^\s*blocked\b\s*[:.,-]?\s*/i, ""));
+  const end = plain.search(/[.!?](\s|$)/);
+  return clip(end > 0 ? plain.slice(0, end) : plain, NOTE_CHARS);
+}
+
+function endSentence(text: string): string {
+  return /[.!?…]$/.test(text) ? text : `${text}.`;
+}
+
+function actorLabel(actor: GoalBlockerActor | null, fallback: string): string {
+  if (!actor) return fallback;
+  if (actor.name) return actor.name;
+  return actor.type === "agent" ? "its agent" : "the board";
+}
+
+/**
+ * One plain sentence: what is stuck, why, and who must act next.
+ * Ticket numbers stay out of the sentence; the card shows them as links.
+ */
+export function blockerSentence(blocker: GoalBlocker): string {
+  if (blocker.kind === "check_in") return endSentence(plainText(blocker.text) || "A blocker was named in the last check-in");
+  const stuck = shortTitle(blocker.title);
+  switch (blocker.reason) {
+    case "waiting_on_issue": {
+      const waitingOn = blocker.waitingOn ? `"${shortTitle(blocker.waitingOn.title)}"` : "another task";
+      if (blocker.waitingOn?.status === "cancelled") {
+        return `${stuck} waits on ${waitingOn}, which was cancelled; someone must remove that link.`;
+      }
+      // Who must act comes early so the two-line card still shows it.
+      if (!blocker.actor) return `${stuck} waits for ${waitingOn}, which nobody owns yet.`;
+      return `${stuck} waits for ${actorLabel(blocker.actor, "")} to finish ${waitingOn}.`;
+    }
+    case "waiting_on_person":
+      return `${stuck} waits for ${actorLabel(blocker.actor, "the board")} to answer or approve.`;
+    case "no_owner":
+      return `${stuck} is blocked and nobody owns it; it needs an owner.`;
+    case "failed_run":
+      return `${stuck} stopped after a failed run; ${actorLabel(blocker.actor, "its owner")} must retry or fix it.`;
+    default: {
+      const note = blocker.note ? firstSentence(blocker.note) : "";
+      const actor = actorLabel(blocker.actor, "its owner");
+      if (note) return `${stuck} is blocked: ${endSentence(note)} ${actor} must act next.`;
+      return `${stuck} is blocked; ${actor} must say why and clear it.`;
+    }
+  }
+}
+
+export type MainBlockerSummary =
+  | { kind: "blocker"; blocker: GoalBlocker; sentence: string; moreCount: number }
+  | { kind: "open"; sentence: string };
+
+/**
+ * What the goal card says under "Main blocker". The server ranks blockers,
+ * so the first one is the main one. A goal at risk with no blocked task says
+ * so instead of naming a task.
+ */
+export function mainBlockerSummary(
+  goal: Pick<GoalWithProgress, "blockers" | "progress">,
+  health: GoalHealth,
+): MainBlockerSummary | null {
+  const [first, ...rest] = goal.blockers;
+  if (first) return { kind: "blocker", blocker: first, sentence: blockerSentence(first), moreCount: rest.length };
+  if ((health === "at_risk" || health === "blocked") && goal.progress.total > 0) {
+    const open = goal.progress.open;
+    if (open === 0) return null;
+    const noun = goal.progress.total === 1 ? "task" : "tasks";
+    return { kind: "open", sentence: `No blocker. ${open} of ${goal.progress.total} ${noun} still open.` };
+  }
+  return null;
+}
+
+/** Anchor on the goal page that lists every blocker. */
+export const GOAL_BLOCKERS_ANCHOR = "goal-blockers";
 
 /** "6 of 16 tasks left", "11 days left", or null when there is nothing to count. */
 export function remainingLabel(goal: Pick<GoalWithProgress, "progress" | "targetValue" | "currentValue" | "unit">): string | null {

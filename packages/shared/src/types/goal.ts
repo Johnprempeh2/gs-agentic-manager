@@ -34,8 +34,50 @@ export interface GoalProgress {
   total: number;
 }
 
+/**
+ * Why a blocked task cannot move, most specific first:
+ * - waiting_on_issue: an unfinished task it depends on (`waitingOn`)
+ * - waiting_on_person: an open question or approval for a person
+ * - no_owner: nobody is assigned
+ * - failed_run: its last agent run failed
+ * - unknown: none of the above; `note` carries the last comment
+ */
+export type GoalBlockerReason = "waiting_on_issue" | "waiting_on_person" | "no_owner" | "failed_run" | "unknown";
+
+/** Who must act next to clear a blocker. `name` is null when the person is not known. */
+export type GoalBlockerActor =
+  | { type: "agent"; id: string; name: string | null }
+  | { type: "user"; id: string; name: string | null };
+
+export interface GoalBlockerWaitingOn {
+  issueId: string;
+  identifier: string | null;
+  title: string;
+  status: IssueStatus;
+}
+
+export interface GoalIssueBlocker {
+  kind: "issue";
+  issueId: string;
+  identifier: string | null;
+  title: string;
+  goalId: string;
+  reason: GoalBlockerReason;
+  waitingOn: GoalBlockerWaitingOn | null;
+  actor: GoalBlockerActor | null;
+  /** Latest comment on the blocked task, as written (the UI cleans it). */
+  note: string | null;
+  /** Other tasks in this goal that cannot move until this one does. */
+  holdsUpCount: number;
+}
+
+/**
+ * Goal blockers come ranked: check-in blockers first (someone wrote them on
+ * purpose), then blocked tasks that hold up the most other goal tasks, then
+ * the oldest blocked task. The first entry is the goal's main blocker.
+ */
 export type GoalBlocker =
-  | { kind: "issue"; issueId: string; identifier: string | null; title: string; goalId: string }
+  | GoalIssueBlocker
   | { kind: "check_in"; text: string; checkInId: string };
 
 export interface GoalCheckIn {

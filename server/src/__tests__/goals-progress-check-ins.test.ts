@@ -1,12 +1,23 @@
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { activityLog, agents, goalCheckIns, goals, issues } from "@greatstone/db";
+import { eq } from "drizzle-orm";
+import { activityLog, agents, goalCheckIns, goals, issueComments, issueRelations, issues } from "@greatstone/db";
 import type { GoalDetail, GoalWithProgress } from "@greatstone/shared";
 import { goalRoutes } from "../routes/goals.js";
 import { agentService } from "../services/agents.js";
 import { goalService } from "../services/goals.js";
-import { computeGoalProgress, goalSubtreeIds, sortMilestones } from "../services/goal-progress.js";
+import {
+  collectGoalBlockers,
+  computeGoalProgress,
+  countHeldUpTasks,
+  explainBlockedIssue,
+  goalSubtreeIds,
+  sortMilestones,
+  type ActorNames,
+  type BlockedIssueFacts,
+  type GoalBlockedIssue,
+} from "../services/goal-progress.js";
 import {
   describeEmbeddedPostgres,
   resetCompanyIssueFixtures,
@@ -41,6 +52,97 @@ describe("goal progress (pure)", () => {
       { id: "5", status: "in_progress", createdAt: at(1) },
     ]);
     expect(sorted.map((row) => row.id)).toEqual(["4", "2", "5", "1"]);
+  });
+});
+
+describe("goal blockers (pure)", () => {
+  const at = (n: number) => new Date(Date.UTC(2026, 0, n));
+  const names: ActorNames = {
+    agents: new Map([["a-ridge", "Ridge"], ["a-flint", "Flint"]]),
+    users: new Map([["u-john", "John"]]),
+  };
+  const facts = (over: Partial<BlockedIssueFacts> = {}): BlockedIssueFacts => ({
+    assigneeAgentId: "a-flint",
+    assigneeUserId: null,
+    createdByUserId: "u-john",
+    openBlockers: [],
+    waitingOnPerson: false,
+    lastRunStatus: null,
+    ...over,
+  });
+  const blocked = (id: string, createdAt: Date): GoalBlockedIssue => ({
+    id,
+    identifier: id.toUpperCase(),
+    title: `Task ${id}`,
+    goalId: "g",
+    createdAt,
+    reason: "unknown",
+    waitingOn: null,
+    actor: null,
+    note: null,
+  });
+
+  it("names the unfinished task it waits on and that task's owner", () => {
+    const out = explainBlockedIssue(
+      facts({
+        openBlockers: [
+          {
+            issueId: "r",
+            identifier: "GRE-130",
+            title: "Restore test",
+            status: "in_progress",
+            assigneeAgentId: "a-ridge",
+            assigneeUserId: null,
+          },
+        ],
+        waitingOnPerson: true,
+      }),
+      names,
+    );
+    expect(out).toEqual({
+      reason: "waiting_on_issue",
+      waitingOn: { issueId: "r", identifier: "GRE-130", title: "Restore test", status: "in_progress" },
+      actor: { type: "agent", id: "a-ridge", name: "Ridge" },
+    });
+  });
+
+  it("falls through: person's answer, then no owner, then failed run, then unknown", () => {
+    expect(explainBlockedIssue(facts({ waitingOnPerson: true }), names)).toMatchObject({
+      reason: "waiting_on_person",
+      actor: { type: "user", id: "u-john", name: "John" },
+    });
+    expect(explainBlockedIssue(facts({ assigneeAgentId: null, assigneeUserId: "u-john" }), names)).toMatchObject({
+      reason: "waiting_on_person",
+      actor: { type: "user", name: "John" },
+    });
+    expect(explainBlockedIssue(facts({ assigneeAgentId: null }), names)).toEqual({
+      reason: "no_owner",
+      waitingOn: null,
+      actor: null,
+    });
+    expect(explainBlockedIssue(facts({ lastRunStatus: "timed_out" }), names)).toMatchObject({
+      reason: "failed_run",
+      actor: { type: "agent", name: "Flint" },
+    });
+    expect(explainBlockedIssue(facts({ lastRunStatus: "succeeded" }), names).reason).toBe("unknown");
+  });
+
+  it("counts held-up tasks through chains, inside the goal tree only, and survives cycles", () => {
+    const dependents = new Map([
+      ["a", [{ id: "b", goalId: "g" }, { id: "x", goalId: "other" }]],
+      ["b", [{ id: "c", goalId: "g" }]],
+      ["c", [{ id: "a", goalId: "g" }]],
+    ]);
+    expect(countHeldUpTasks("a", dependents, new Set(["g"]))).toBe(2);
+    expect(countHeldUpTasks("z", dependents, new Set(["g"]))).toBe(0);
+  });
+
+  it("ranks check-in blockers first, then most held-up, then oldest", () => {
+    const byGoal = new Map([["g", [blocked("new", at(5)), blocked("old", at(1)), blocked("hub", at(9))]]]);
+    const dependents = new Map([["hub", [{ id: "t1", goalId: "g" }, { id: "t2", goalId: "g" }]]]);
+    const ranked = collectGoalBlockers(["g"], byGoal, { id: "k", blockers: ["Need budget", "  "] }, dependents);
+    expect(ranked.map((b) => (b.kind === "issue" ? b.issueId : b.text))).toEqual(["Need budget", "hub", "old", "new"]);
+    expect(ranked[1]).toMatchObject({ kind: "issue", holdsUpCount: 2 });
   });
 });
 
@@ -114,7 +216,18 @@ describeEmbeddedPostgres("goals API: progress, blockers, check-ins, default owne
     const rootRow = (list.body as GoalWithProgress[]).find((g) => g.id === root.id)!;
     expect(rootRow.progress).toEqual({ percent: 50, source: "issues", done: 2, open: 1, blocked: 1, total: 4 });
     expect(rootRow.blockers).toEqual([
-      { kind: "issue", issueId: blocked.id, identifier: blocked.identifier, title: "Waiting on keys", goalId: child.id },
+      {
+        kind: "issue",
+        issueId: blocked.id,
+        identifier: blocked.identifier,
+        title: "Waiting on keys",
+        goalId: child.id,
+        reason: "no_owner",
+        waitingOn: null,
+        actor: null,
+        note: null,
+        holdsUpCount: 0,
+      },
     ]);
     const childRow = (list.body as GoalWithProgress[]).find((g) => g.id === child.id)!;
     expect(childRow.progress).toMatchObject({ percent: 33, done: 1, total: 3 });
@@ -225,6 +338,56 @@ describeEmbeddedPostgres("goals API: progress, blockers, check-ins, default owne
     const res = await request(routeApp(ctx.db, actor, goalRoutes)).get(`/api/goals/${goal.id}`);
     expect(res.body.blockers).toEqual([{ kind: "check_in", text: "Need budget", checkInId: latest.id }]);
     expect(res.body.latestCheckIn.id).toBe(latest.id);
+  });
+
+  it("ranks the check-in blocker first, then the task holding up the most, and says who must act", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Ranked blockers");
+    const ridge = await seedAgent(companyId, "Ridge");
+    const goal = await seedGoal(companyId);
+    const old = await seedIssue(companyId, goal.id, "blocked", "Old stuck task");
+    const install = await seedIssue(companyId, goal.id, "blocked", "Client install");
+    const launch = await seedIssue(companyId, goal.id, "todo", "Launch");
+    const restore = await seedIssue(companyId, goal.id, "in_progress", "Restore test");
+    await ctx.db.update(issues).set({ assigneeAgentId: ridge.id }).where(eq(issues.id, restore.id));
+    await ctx.db.update(issues).set({ assigneeAgentId: ridge.id }).where(eq(issues.id, old.id));
+    // restore blocks install; install blocks launch.
+    await ctx.db.insert(issueRelations).values([
+      { companyId, issueId: restore.id, relatedIssueId: install.id, type: "blocks" },
+      { companyId, issueId: install.id, relatedIssueId: launch.id, type: "blocks" },
+    ]);
+    await ctx.db.insert(issueComments).values({
+      companyId,
+      issueId: old.id,
+      authorAgentId: ridge.id,
+      body: "Blocked: need the `deploy.sh` key from John.",
+    });
+
+    const app = routeApp(ctx.db, actor, goalRoutes);
+    const before = (await request(app).get(`/api/goals/${goal.id}`)).body as GoalDetail;
+    expect(before.blockers.map((b) => (b.kind === "issue" ? b.title : b.text))).toEqual([
+      "Client install",
+      "Old stuck task",
+    ]);
+    expect(before.blockers[0]).toMatchObject({
+      reason: "waiting_on_issue",
+      holdsUpCount: 1,
+      waitingOn: { issueId: restore.id, title: "Restore test", status: "in_progress" },
+      actor: { type: "agent", id: ridge.id, name: "Ridge" },
+    });
+    expect(before.blockers[1]).toMatchObject({
+      reason: "unknown",
+      actor: { type: "agent", name: "Ridge" },
+      note: "Blocked: need the `deploy.sh` key from John.",
+    });
+
+    const checkIn = await goalService(ctx.db).createCheckIn(
+      goal,
+      { body: "stuck", blockers: ["Waiting for the client to sign"] },
+      { agentId: null, userId: "u" },
+    );
+    const after = (await request(app).get(`/api/goals/${goal.id}`)).body as GoalDetail;
+    expect(after.blockers[0]).toEqual({ kind: "check_in", text: "Waiting for the client to sign", checkInId: checkIn.id });
+    expect(after.blockers).toHaveLength(3);
   });
 
   it("hides goals and check-ins from another company", async () => {
