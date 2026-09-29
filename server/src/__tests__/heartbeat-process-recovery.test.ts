@@ -171,6 +171,22 @@ vi.mock("../services/native-runtime/native-session-executor.js", async () => {
   };
 });
 
+const mockIsReviewerWaitingOnCheck = vi.hoisted(() =>
+  vi.fn<
+    typeof import("../services/recovery/review-wait.js").isReviewerWaitingOnCheck
+  >(),
+);
+vi.mock("../services/recovery/review-wait.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../services/recovery/review-wait.js")
+  >("../services/recovery/review-wait.js");
+  mockIsReviewerWaitingOnCheck.mockImplementation(actual.isReviewerWaitingOnCheck);
+  return {
+    ...actual,
+    isReviewerWaitingOnCheck: mockIsReviewerWaitingOnCheck,
+  };
+});
+
 vi.mock("../services/local-service-supervisor.js", async () => {
   const actual = await vi.importActual<
     typeof import("../services/local-service-supervisor.js")
@@ -314,9 +330,11 @@ async function waitForRunToSettle(
   return heartbeat.getRun(runId);
 }
 
+// Every caller waits for a value to appear, so a longer default costs time
+// only on a loaded machine, where 3s was too short (GRE-212).
 async function waitForValue<T>(
   read: () => Promise<T | null | undefined>,
-  timeoutMs = 3_000,
+  timeoutMs = 8_000,
 ) {
   const deadline = Date.now() + timeoutMs;
   let latest: T | null | undefined = null;
@@ -493,6 +511,12 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     mockTerminateLocalService.mockImplementation(
       localServiceSupervisor.terminateLocalService,
     );
+    const reviewWait = await vi.importActual<
+      typeof import("../services/recovery/review-wait.js")
+    >("../services/recovery/review-wait.js");
+    mockIsReviewerWaitingOnCheck
+      .mockReset()
+      .mockImplementation(reviewWait.isReviewerWaitingOnCheck);
     mockAdapterExecute.mockImplementation(async () => ({
       exitCode: 0,
       signal: null,
@@ -1933,8 +1957,9 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
           expect(mockExecutePaperclipNativeSession).not.toHaveBeenCalled();
           release();
           if (pendingOperationDrain) {
-            await vi.waitFor(() =>
-              expect(pendingOperationDrain).toHaveBeenCalled(),
+            await vi.waitFor(
+              () => expect(pendingOperationDrain).toHaveBeenCalled(),
+              { timeout: 5_000 },
             );
             expect(physicalCleanupFinished).toBe(true);
             expect(drainFinished).toBe(false);
@@ -7186,7 +7211,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     });
     expect(next?.contextSnapshot?.wakeCommentIds).toEqual([pending!.id, go!.id]);
     expect((await db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.id, deferred!.id)))[0]).toMatchObject({ status: "coalesced", runId: next!.id });
-    await vi.waitFor(async () => expect((await heartbeat.getRun(next!.id))?.status).not.toBe("running"));
+    await vi.waitFor(async () => expect((await heartbeat.getRun(next!.id))?.status).not.toBe("running"), { timeout: 10_000 });
   });
 
   it.each(["dedicated deferred donor", "non-coalescing recipient", "persistent agent conversation"] as const)(
@@ -7324,10 +7349,12 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
           .where(eq(agents.id, agentId));
         release();
         if (next!)
-          await vi.waitFor(async () =>
-            expect((await heartbeat.getRun(next!.id))?.status).not.toBe(
-              "running",
-            ),
+          await vi.waitFor(
+            async () =>
+              expect((await heartbeat.getRun(next!.id))?.status).not.toBe(
+                "running",
+              ),
+            { timeout: 10_000 },
           );
       }
     },
@@ -7437,9 +7464,9 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
             and query ilike '%update%heartbeat_runs%'
         `);
           expect(row!.count).toBeGreaterThan(0);
-        });
+        }, { timeout: 5_000 });
         releaseRegistration();
-        await vi.waitFor(() => expect(registrationAttempted).toBe(true));
+        await vi.waitFor(() => expect(registrationAttempted).toBe(true), { timeout: 5_000 });
         // Readiness must remain behind the earlier Stop, without publishing a
         // joinable owner that would deadlock a duplicate Stop on this barrier.
         expect(adapterExecutionControls.has(runId)).toBe(false);
@@ -7451,7 +7478,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
         const result = await stopping;
         expect(result.error).toBeNull();
         expect(result.run).toMatchObject({ status: "cancelled" });
-        await vi.waitFor(() => expect(registered).toBe(true));
+        await vi.waitFor(() => expect(registered).toBe(true), { timeout: 5_000 });
         expect(context.signal?.aborted).toBe(true);
         expect(providerStarts).toBe(0);
         releaseAdapter();
@@ -7487,7 +7514,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       const heartbeat = heartbeatService(db);
       let returned = false;
       const stopping = heartbeat.cancelRun(runId).then((run) => { returned = true; return run; });
-      await vi.waitFor(() => expect(control.controller.signal.aborted).toBe(true));
+      await vi.waitFor(() => expect(control.controller.signal.aborted).toBe(true), { timeout: 5_000 });
       const repeatedStop = heartbeat.cancelRun(runId);
       // Let the duplicate request observe the still-running execution.
       await new Promise(resolve => setTimeout(resolve, 25));
@@ -9219,6 +9246,12 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const { companyId, agentId, issueId, runId, stageId } =
       await seedInReviewParticipantRunFixture();
     const heartbeat = heartbeatService(db);
+    // Each run posts its summary as a reviewer comment, and a recent reviewer
+    // comment reads as "waiting on CI or a check" (GRE-97), which defers
+    // instead of blocking. This test covers a reviewer that is not waiting;
+    // the waiting branch is covered in review-wait.test.ts and the wake-queue
+    // tests.
+    mockIsReviewerWaitingOnCheck.mockResolvedValue(false);
 
     await heartbeat.resumeQueuedRuns();
     const reviewRecoveryRun = await waitForValue(async () => {
@@ -14949,7 +14982,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
             sql`select count(*)::int as count from pg_stat_activity where datname = current_database() and ${pid} = any(pg_blocking_pids(pid))`,
           );
           expect(waiters[0]!.count).toBeGreaterThan(0);
-        });
+        }, { timeout: 5_000 });
       } finally {
         release();
       }
