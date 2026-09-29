@@ -148,7 +148,15 @@ Merging does not change the live app. A version goes live in these steps.
    placeholder such as "Release candidate rc-..."), and the `live-*` tag it
    makes gets the rc tag's message. The app shows the title and changelog.
 
-   The tag stays local until the release; the release script pushes it.
+   The tag stays local until the release. The release script pushes the
+   `rc-*` tag and its new `live-*` tag only after live is healthy on it; a
+   release that fails deletes its local `live-*` tag, so History never offers
+   a version that never ran (GRE-239). A release from the app that is cancelled,
+   or stops before the switch, deletes the `rc-*` tag it cut.
+
+   Do not cut an `rc-*` tag for the Releases page. The page shows the next
+   version from `origin/main` and cuts its own candidate at **Release now**;
+   it has no "candidate" field any more. Cut an `rc-*` only for a preview check.
 
    The release note starts with the change list. Do not write it by hand:
 
@@ -204,13 +212,15 @@ Merging does not change the live app. A version goes live in these steps.
      can **cancel** here (live unchanged) or **release without waiting**.
    - **switching**, then **restarting**: `scripts/greatstone-live-release.sh`
      runs `scripts/greatstone-release.sh <tag>` from the release repo, in its
-     own process: database backup to `~/GSAM/backups/`, `live-*` tag,
-     `~/GSAM/live` moved, then a **hot restart**. Detached runs keep running;
+     own process: database backup to `~/GSAM/backups/`, a local `live-*` tag,
+     `~/GSAM/live` moved, then a **hot restart**. The tags are pushed once
+     live is healthy. Detached runs keep running;
      ACP runs are checkpointed and continue as conversation retries; held runs
      start after. `/api/health` must report the tag's commit from a new process.
    - **healthy**, **rolled_back** (live did not come up; the script went back
      to the previous `live-*` tag by itself, with the reason), **failed**, or
-     **cancelled**. The page shows the hot-restart report: which runs resumed
+     **cancelled**. A version that failed before GRE-239 kept its `live-*`
+     tag; History marks it **Never ran** and offers no rollback. The page shows the hot-restart report: which runs resumed
      and any run that was lost. Runs go again.
 
    **Finish before update.** An agent in the middle of a commit, a migration or

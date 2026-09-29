@@ -737,6 +737,7 @@ export function ReleasesView({
                       <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
                         {entry.title}
                         {isLive ? <ReleaseChip tone="done">Live</ReleaseChip> : null}
+                        {entry.neverRan ? <ReleaseChip tone="blocked">Never ran</ReleaseChip> : null}
                         {entry.stableTag ? <ReleaseChip tone="in_progress">Stable</ReleaseChip> : null}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -752,7 +753,7 @@ export function ReleasesView({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {!entry.stableTag ? (
+                      {!entry.stableTag && !entry.neverRan ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -766,7 +767,7 @@ export function ReleasesView({
                           Promote to Stable
                         </Button>
                       ) : null}
-                      {!isLive ? (
+                      {!isLive && !entry.neverRan ? (
                         <Button size="sm" variant="outline" disabled={busy || off} onClick={() => void onRollback(entry)}>
                           <RotateCcw aria-hidden />
                           Roll back to this version

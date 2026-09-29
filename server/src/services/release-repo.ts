@@ -237,6 +237,20 @@ export function nextCandidateTagName(repo: string, now: Date): Promise<string> {
   return nextTagName(repo, "rc", now);
 }
 
+/**
+ * Deletes a local rc-* or live-* tag that origin does not have (GRE-239): one
+ * this server cut for a release that was cancelled or stopped before the
+ * switch. A pushed tag is kept. When origin cannot be asked the tag counts as
+ * unpushed: the release pushes its tags only after live is healthy.
+ */
+export async function deleteUnpushedTag(repo: string, tag: string): Promise<void> {
+  if (!/^(rc|live)-\d{4}-\d{2}-\d{2}\.\d+$/.test(tag)) throw new Error(`${tag} is not an rc-* or live-* tag`);
+  const remote = await git(repo, ["ls-remote", "--tags", "origin", `refs/tags/${tag}`], PREFLIGHT_FETCH_TIMEOUT_MS).catch(() => "");
+  if (remote) return;
+  if (!(await gitOk(repo, ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`]))) return;
+  await git(repo, ["tag", "-d", tag]);
+}
+
 // Stable (GRE-127, design GRE-124 "Trimmed build"): a stable-* tag is an
 // annotated tag on the commit of a live-* release. Its message is the client
 // notes, which clients see as "What's new", so no internal numbers.

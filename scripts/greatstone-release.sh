@@ -90,7 +90,9 @@ if [ "$MODE" = release ]; then
   while git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$base.$n" >/dev/null; do n=$((n + 1)); done
   LIVE_TAG="$base.$n"
   tag_live_release "$RELEASE_REPO" "$TAG" "$LIVE_TAG" "$TARGET"
-  GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG"
+  # The live-* tag stays local until live is healthy on it (GRE-239): a failed
+  # release deletes it, so History never offers a version that never ran.
+  trap 'drop_unpushed_live_tag "$RELEASE_REPO" "$LIVE_DIR" "$LIVE_TAG"' EXIT
   say "Tagged $TAG as $LIVE_TAG: $TITLE"
 else
   LIVE_TAG="$TAG"
@@ -99,6 +101,8 @@ fi
 release_phase switching
 STARTED_BEFORE="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
 git -C "$LIVE_DIR" fetch --quiet --tags origin
+# A new live-* tag is not on origin yet; live takes it from the release repo.
+[ "$MODE" = rollback ] || git -C "$LIVE_DIR" fetch --quiet "$RELEASE_REPO" "refs/tags/$LIVE_TAG:refs/tags/$LIVE_TAG"
 git -C "$LIVE_DIR" checkout --quiet --detach "$LIVE_TAG"
 say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD))"
 # Non-interactive so a pnpm store change cannot hang on a hidden prompt. Such a
@@ -139,6 +143,11 @@ for _ in $(seq 1 90); do
   STARTED_NOW="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
   if [ -n "$STARTED_NOW" ] && [ "$STARTED_NOW" != "$STARTED_BEFORE" ] && [ "$(health_commit "$LIVE_URL")" = "$TARGET" ]; then
     say "Live app at $LIVE_URL is running $LIVE_TAG ($TARGET), server started $STARTED_NOW."
+    if [ "$MODE" = release ]; then
+      trap - EXIT
+      GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG" \
+        || say "Could not push $TAG and $LIVE_TAG to origin; live runs $LIVE_TAG. Push them with: GSAM_RELEASE=1 git push origin $TAG $LIVE_TAG"
+    fi
     "$GS_SCRIPT_DIR/greatstone-preview.sh" stop
     say "Roll back with: scripts/greatstone-release.sh $PREVIOUS"
     say "Database backup from before this release: $BACKUP_FILE"

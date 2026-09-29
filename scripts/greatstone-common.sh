@@ -176,6 +176,20 @@ tag_live_release() {
     | git -C "$repo" tag -a "$live" "$commit" --cleanup=whitespace -F -
 }
 
+# drop_unpushed_live_tag <release-repo> <live-dir> <live-tag>
+# After a failed release (GRE-239): deletes a live-* tag that origin does not
+# have, in the release repo and in the live checkout. A pushed tag is kept.
+# The release pushes only after live is healthy, so when origin cannot be
+# asked the tag is taken as unpushed.
+drop_unpushed_live_tag() {
+  local repo="$1" live="$2" tag="$3" remote
+  case "$tag" in live-*) ;; *) return 0 ;; esac
+  remote="$(git -C "$repo" ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)" || remote=""
+  [ -z "$remote" ] || return 0
+  git -C "$repo" tag -d "$tag" >/dev/null 2>&1 && say "Deleted the unpushed tag $tag: that version did not run healthy." >&2
+  git -C "$live" tag -d "$tag" >/dev/null 2>&1 || true
+}
+
 # Fails with the reason when the release scripts in <repo> are not those on
 # origin/main (fetch first). A dev checkout that was not pulled runs an old
 # release script; before GRE-120 that one wrote a generic live tag message

@@ -414,3 +414,80 @@ test("a release by hand refuses release scripts older than origin/main and makes
   assert.equal(box.liveTags(), "");
   assert.equal(readFileSync(join(box.dev, "scripts", "greatstone-release.sh"), "utf8"), "# v1\n");
 });
+
+// GRE-239: a release that fails after it tags must not leave a live-* tag for a
+// version that never ran. The real greatstone-release.sh runs from a dev clone
+// whose scripts match origin/main; the backup tool is a stub. `pnpm install`
+// fails after the live checkout moved (live has no lockfile; where the script
+// finds no pnpm of its own, a stub fails).
+test("a release that fails after tagging pushes no live tag and deletes the local one", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gs-failed-release-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const origin = join(root, "origin.git");
+  git(root, "init", "--quiet", "--bare", "-b", "main", origin);
+  const dev = join(root, "dev");
+  git(root, "clone", "--quiet", origin, dev);
+  configure(dev);
+  mkdirSync(join(dev, "scripts"));
+  for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh"]) {
+    copyFileSync(join(scriptsDir, f), join(dev, "scripts", f));
+  }
+  git(dev, "add", "scripts");
+  git(dev, "commit", "--quiet", "-m", "old");
+  git(dev, "tag", "-a", "live-2026-09-01.1", "-m", "Old release");
+  git(dev, "commit", "--quiet", "--allow-empty", "-m", "new");
+  git(dev, "tag", "-a", "rc-2026-09-29.1", "-m", RC_MESSAGE);
+  git(dev, "push", "--quiet", "origin", "HEAD:main", "live-2026-09-01.1");
+  // Not tracked, so the release scripts still match origin/main.
+  mkdirSync(join(dev, "cli", "node_modules", "tsx", "dist"), { recursive: true });
+  writeFileSync(
+    join(dev, "cli", "node_modules", "tsx", "dist", "cli.mjs"),
+    `import fs from "node:fs"; const a = process.argv; const dir = a[a.indexOf("--dir") + 1];
+fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--prefix") + 1] + ".sql.gz"; fs.writeFileSync(f, "x"); console.log(f);\n`,
+  );
+  const live = join(root, "live");
+  git(root, "clone", "--quiet", origin, live);
+  git(live, "checkout", "--quiet", "--detach", "live-2026-09-01.1");
+  const db = join(root, "data", "instances", "default", "db");
+  mkdirSync(db, { recursive: true });
+  writeFileSync(join(db, "postmaster.pid"), `${process.pid}\n/x\n0\n5432\n`);
+
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "pnpm"), "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n", { mode: 0o755 });
+
+  const run = spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], {
+    encoding: "utf8",
+    env: { ...process.env, GSAM_ROOT: root, GSAM_RELEASE_REPO: dev, GSAM_LIVE_URL: "http://127.0.0.1:9", GSAM_RELEASE_FROM_APP: "1", PATH: `${bin}:${process.env.PATH}` },
+  });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stdout, /^Tagged rc-2026-09-29.1 as live-2026-09-29.1:/m);
+  assert.match(run.stdout, /^Live checkout is on live-2026-09-29.1 /m);
+  assert.match(run.stderr, /Deleted the unpushed tag live-2026-09-29.1/);
+  assert.equal(git(dev, "tag", "--list", "live-2026-09-29.1"), "");
+  assert.equal(git(live, "tag", "--list", "live-2026-09-29.1"), "");
+  assert.equal(git(origin, "tag", "--list", "live-*"), "live-2026-09-01.1");
+  assert.equal(git(origin, "tag", "--list", "rc-*"), "");
+});
+
+test("drop_unpushed_live_tag keeps a live tag origin already has", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gs-drop-tag-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const origin = join(root, "origin.git");
+  git(root, "init", "--quiet", "--bare", "-b", "main", origin);
+  const dev = join(root, "dev");
+  git(root, "clone", "--quiet", origin, dev);
+  configure(dev);
+  git(dev, "commit", "--quiet", "--allow-empty", "-m", "one");
+  git(dev, "tag", "live-2026-09-29.1");
+  git(dev, "push", "--quiet", "origin", "HEAD:main", "live-2026-09-29.1");
+  git(dev, "tag", "live-2026-09-29.2");
+  const drop = (tag) =>
+    spawnSync("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; drop_unpushed_live_tag "$@"`, "_", dev, join(root, "none"), tag], {
+      encoding: "utf8",
+      env: { ...process.env, GSAM_ROOT: root },
+    });
+  assert.equal(drop("live-2026-09-29.1").status, 0);
+  assert.equal(drop("live-2026-09-29.2").status, 0);
+  assert.equal(git(dev, "tag", "--list", "live-*"), "live-2026-09-29.1");
+});

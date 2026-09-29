@@ -212,6 +212,21 @@ describe("Releases page", () => {
     ).toContain("Roll back to this version");
   });
 
+  it("offers no rollback or promote for a version that never ran (GRE-239)", async () => {
+    const base = releasesOverviewFixture();
+    const failed = { ...base.history[1], tag: "live-2026-09-29.2", title: "Failed release", neverRan: true };
+    await render(
+      <ReleasesView companyId="company-1" overview={{ ...base, history: [failed, ...base.history] }} fetchError={null} />,
+    );
+    const row = document.querySelector('[data-testid="release-history-live-2026-09-29.2"]')!;
+    expect(row.textContent).toContain("Never ran");
+    expect(row.textContent).not.toContain("Roll back to this version");
+    expect(row.textContent).not.toContain("Promote to Stable");
+    expect(
+      document.querySelector('[data-testid="release-history-live-2026-09-14.1"]')?.textContent,
+    ).toContain("Roll back to this version");
+  });
+
   it("says in plain words when release is off on this server", async () => {
     await render(
       <ReleasesView
