@@ -11,6 +11,7 @@ import {
   checkReleaseTarget,
   clientNotesProblem,
   createStableTag,
+  deleteUnpushedTag,
   nextCandidateTagName,
   nextStableTagName,
   prepareReleaseRepo,
@@ -224,5 +225,19 @@ describe("release repo resolution (GRE-71)", () => {
     expect(stop.status, stop.stderr).toBe(0);
     expect(fs.existsSync(path.join(gsam, "preview", "preview.state"))).toBe(false);
     expect(resolveReleaseRepo({}, gsam)).toBe(repo);
+  });
+});
+
+describe("deleteUnpushedTag (GRE-239)", () => {
+  it("deletes a local rc tag origin does not have, keeps a pushed one, and ignores other names", async () => {
+    git(repo, "tag", "-a", "rc-2026-09-29.1", "-m", "Cut, then cancelled");
+    await timed(() => deleteUnpushedTag(repo, "rc-2026-09-29.1"));
+    expect(git(repo, "tag", "--list", "rc-2026-09-29.*")).toBe("");
+
+    await timed(() => deleteUnpushedTag(repo, "rc-2026-09-02.1"));
+    expect(git(repo, "tag", "--list", "rc-2026-09-02.1")).toBe("rc-2026-09-02.1");
+
+    await deleteUnpushedTag(repo, "rc-2026-09-30.9"); // no such tag: nothing to do
+    await expect(deleteUnpushedTag(repo, "stable-2026-09-29.1")).rejects.toThrow(/not an rc-\* or live-\* tag/);
   });
 });

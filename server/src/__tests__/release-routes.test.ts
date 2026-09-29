@@ -67,7 +67,7 @@ describe("release routes", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    svc.overview.mockResolvedValue({ live: null, candidate: null, history: [], next: null, flaggedRuns: [], progress: null });
+    svc.overview.mockResolvedValue({ live: null, history: [], next: null, flaggedRuns: [], progress: null });
     svc.start.mockResolvedValue({ ok: true, job, progress });
     svc.cancel.mockResolvedValue({ ok: true, job, progress: { ...progress, state: "cancelled" } });
     svc.override.mockResolvedValue({ ok: true, job, progress: { ...progress, state: "switching" } });
