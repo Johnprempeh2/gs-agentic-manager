@@ -16,7 +16,11 @@ import {
  * heartbeat start gate asks this module whether the instance has room:
  *
  * - a global cap on concurrently running runs, and
- * - a free-memory floor plus the OS memory-pressure level.
+ * - a free-memory floor (GRE-198: the only memory rule).
+ *
+ * The OS memory-pressure level is read for the Settings page but never holds
+ * a run: macOS reports "warn" as its normal state on a 16 GB Mac with ordinary
+ * apps open, so holding on it stranded every new run with 6 GB free.
  *
  * A "no" keeps the run `queued` (never failed or cancelled). The queue drain
  * and a short re-check timer start it again once a slot frees or memory
@@ -48,10 +52,7 @@ export interface RunAdmissionSettings {
   minAvailableMemoryMb: number;
 }
 
-export type RunAdmissionHoldReason =
-  | "global_cap"
-  | "low_memory"
-  | "memory_pressure";
+export type RunAdmissionHoldReason = "global_cap" | "low_memory";
 
 export type RunAdmissionDecision =
   | { admit: true; slots: number }
@@ -70,8 +71,10 @@ export function resolveRunAdmissionSettings(
   };
 }
 
+/** "1.6 GB"; whole numbers drop the decimal ("2 GB"). */
 function formatGb(bytes: number) {
-  return `${(bytes / (1024 * BYTES_PER_MB)).toFixed(1)} GB`;
+  const gb = (bytes / (1024 * BYTES_PER_MB)).toFixed(1);
+  return `${gb.endsWith(".0") ? gb.slice(0, -2) : gb} GB`;
 }
 
 /**
@@ -90,23 +93,16 @@ export function evaluateRunAdmission(input: {
     return {
       admit: false,
       reason: "global_cap",
-      message: `Held: instance run cap reached (${runningCount}/${settings.maxConcurrentRuns} running)`,
+      message: `Waiting: instance run cap reached (${runningCount}/${settings.maxConcurrentRuns} running)`,
     };
   }
   if (memory && settings.minAvailableMemoryMb > 0) {
-    if (memory.pressure === "warn" || memory.pressure === "critical") {
-      return {
-        admit: false,
-        reason: "memory_pressure",
-        message: `Held: low memory (system memory pressure ${memory.pressure})`,
-      };
-    }
     const floorBytes = settings.minAvailableMemoryMb * BYTES_PER_MB;
     if (memory.availableBytes < floorBytes) {
       return {
         admit: false,
         reason: "low_memory",
-        message: `Held: low memory (${formatGb(memory.availableBytes)} available, floor ${formatGb(floorBytes)})`,
+        message: `Waiting: low memory (${formatGb(memory.availableBytes)} free, floor ${formatGb(floorBytes)})`,
       };
     }
   }
