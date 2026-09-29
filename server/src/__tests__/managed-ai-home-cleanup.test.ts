@@ -13,6 +13,7 @@ import { prepareManagedAiRuntime } from "../services/ai-connection-runtime.js";
 import {
   claimManagedAiHome,
   removeManagedAiHome,
+  startTempFolderSweeper,
   sweepStaleManagedAiHomes,
   sweepStaleTestTempDirs,
 } from "../services/managed-ai-home-sweep.js";
@@ -228,5 +229,26 @@ describe("temp folder sweeps", () => {
     expect(result.removed.sort()).toEqual(old.sort());
     expect(await exists(recent)).toBe(true);
     expect(await exists(unrelated)).toBe(true);
+  });
+});
+
+describe("startTempFolderSweeper", () => {
+  // GRE-223: server startup tests mock setInterval to return a number, which
+  // has no unref(). The sweeper must still start and stop cleanly.
+  it("starts when setInterval returns a handle without unref", async () => {
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), "gsam-sweeper-start-"));
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval").mockReturnValue(1 as unknown as NodeJS.Timeout);
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(() => {});
+    try {
+      const log = { info: vi.fn(), warn: vi.fn() };
+      const stop = startTempFolderSweeper(log, { tmpDir });
+      stop();
+      expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+      expect(clearIntervalSpy).toHaveBeenCalledWith(1);
+    } finally {
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+      await rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });
