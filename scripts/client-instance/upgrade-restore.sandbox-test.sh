@@ -17,7 +17,7 @@ S="${1:?usage: $0 <empty scratch dir> [from ref] [to ref]}"
 FROM_REF="${2:-origin/main}"
 TO_REF="${3:-HEAD}"
 mkdir -p "$S"
-S="$(cd "$S" && pwd)"
+S="$(cd "$S" && pwd -P)"
 [ -z "$(ls -A "$S")" ] || { echo "FAIL $S is not empty"; exit 1; }
 mkdir -p "$S/tmp"
 

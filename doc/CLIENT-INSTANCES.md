@@ -49,8 +49,9 @@ git -C "$REL" remote set-url --push origin DISABLED
 (cd "$REL" && pnpm install --frozen-lockfile && pnpm --filter @greatstone/plugin-sdk build)
 ```
 
-Instances on the same tag share its folder. Do not edit or `git pull` in it;
-a new release gets a new folder. Call the script with a clean environment:
+`upgrade` makes this folder itself (below). Instances on the same tag share
+its folder. Do not edit or `git pull` in it; a new release gets a new folder.
+Call the script with a clean environment:
 
 ```sh
 env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" LANG=en_US.UTF-8 \
@@ -143,27 +144,83 @@ scripts/client-instance.sh backup --root <root>    # the instance must be runnin
 The file goes to `<root>/instances/default/data/backups/`. The script fails if
 the file lands anywhere else. Scheduled backups go to the same folder.
 
-## Restore (sandbox copy only)
+## Agree the update time with the client
 
-Not scripted yet: this script has no `restore` command, and a restore has not
-been tested. Until it has, do not restore a client instance. The next step
-adds `restore` and tests it on a sandbox copy. A restore cannot turn a feature
-back on: `GSAM_MANAGED_CONFIG` is never stored in the database.
+Clients run only `stable-*` tags (`stable-YYYY-MM-DD.N`), made by John with
+"Promote to Stable" on the Releases page. Until the first client, and until
+the in-app slot picker (GRE-131) exists, Greatstone agrees each update time
+with the client directly:
 
-## Upgrade (after John makes a release)
+1. When John promotes a new `stable-*` tag, Greatstone tells the client
+   "Version X is ready" with the client notes (the tag message) and offers
+   one or two slots outside the client's working hours.
+2. The client picks a slot. Record the instance code, the tag and the slot on
+   the issue. No client name.
+3. Tell the client the instance is down for about a minute in that slot.
+4. In the slot, Bedrock runs `upgrade` (below), then says on the issue which
+   instance moved and to which tag.
 
-One instance at a time:
+## Upgrade (after John promotes a Stable release)
 
-1. Make the new release folder and install it (see "Where the code runs").
-   Test it first: `create` a sandbox instance from it (`--edition internal`,
-   a scratch `--root`, spare ports), then `stop` it and delete its folder.
-2. `backup`, with the script from the old or the new folder.
-3. `stop`, then `start` with the script from the **new** folder (migrations
-   apply at start). The instance is down only between the two (about 15 s).
-4. `verify`, and check the process folder with `lsof` (above).
-5. Keep the old release folder until the instance is checked, then remove it
-   if no other instance runs from it.
-6. Say on the issue which instance moved and to which tag.
+One instance at a time, in the agreed slot, with John's go-ahead on the issue
+for a real client instance:
+
+```sh
+scripts/client-instance.sh upgrade <root> <stable tag> \
+  [--repo /Users/johnprempeh/Desktop/Code/gs-clip] [--releases <dir>]
+```
+
+Run it with a clean environment (see "Where the code runs"). It refuses any
+tag that is not a `stable-*` tag, or a tag that is not in `--repo` (default:
+the `origin` of the folder the script runs from). `--releases` defaults to
+`releases/` next to the instance folder. It does, in order, and stops with a
+clear error at the first failure:
+
+1. Makes the release folder `<releases>/<tag>` (clone, `pnpm install
+   --frozen-lockfile`, plugin SDK build), or reuses it if it is a clean
+   checkout of that tag. This is before the backup, so the instance keeps
+   running while it installs.
+2. `backup` (file `pre-upgrade-*` in the instance's own backups folder). It
+   writes the old and new release and the backup file to `lastUpgrade` in
+   `client-instance.json`.
+3. `stop`.
+4. `start` with the script from the new release folder (migrations apply at
+   start). The instance is down only between stop and start.
+5. Health check: health is `ok`, mode is `authenticated`, and the server
+   process runs from the new release folder.
+
+When a step after the backup fails, it prints the `restore` command to move
+back. After it passes, run `verify`. Keep the old release folder until you
+no longer need to move back, then remove it if no other instance runs from it.
+
+## Restore (move back after an upgrade; Greatstone only)
+
+```sh
+scripts/client-instance.sh restore <root> <backup file>
+```
+
+The backup must be the one `upgrade` made just before (the script prints it;
+it is also `lastUpgrade.backupFile` in `client-instance.json`). Any other file
+is refused. It does, in order:
+
+1. If the instance runs: a safety backup (`pre-restore-*`) of the data made
+   since the upgrade. Keep it; it is the only copy of that data.
+2. `stop`.
+3. Restores the backup into a fresh database of this instance only.
+4. `start` with the script from the release folder before the upgrade.
+5. Health check, as for `upgrade`.
+
+Then run `verify`, and say on the issue which instance moved back, to which
+tag. Files uploaded after the upgrade stay in `storage/`; only the database
+goes back. A restore cannot turn a feature back on: `GSAM_MANAGED_CONFIG` is
+never stored in the database.
+
+Tested on a sandbox instance (upgrade, then restore, then health check and
+`verify`):
+
+```sh
+scripts/client-instance/upgrade-restore.sandbox-test.sh <empty scratch dir> [from ref] [to ref]
+```
 
 ## Change the edition values
 
@@ -172,4 +229,10 @@ Edit only when section 5 of the product brief changes:
 
 ```sh
 node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/editions.test.ts
+```
+
+The tag rules for `upgrade` and `restore` have their own tests:
+
+```sh
+node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/releases.test.ts
 ```
