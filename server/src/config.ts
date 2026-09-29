@@ -283,8 +283,10 @@ export function loadConfig(): Config {
   // becomes terminal before it archives the workspace. A person can reopen the
   // work inside this window. A value of 0 disables the cooldown and restores
   // immediate reaping. A negative or non-numeric value falls back to the
-  // default. The day granularity and the default of 7 obey the
-  // GSAM_DB_BACKUP_RETENTION_DAYS precedent above.
+  // default. The day granularity obeys the GSAM_DB_BACKUP_RETENTION_DAYS
+  // precedent above. The default is 0: a done or cancelled issue's workspace is
+  // archived on the next sweep, because the reaper only archives a worktree
+  // whose work is committed and merged or pushed (GRE-208).
   const workspaceReaperCooldownDaysEnv =
     process.env.GSAM_WORKSPACE_REAPER_COOLDOWN_DAYS?.trim();
   const workspaceReaperCooldownDaysRaw = Number(workspaceReaperCooldownDaysEnv);
@@ -293,7 +295,7 @@ export function loadConfig(): Config {
       && Number.isFinite(workspaceReaperCooldownDaysRaw)
       && workspaceReaperCooldownDaysRaw >= 0
       ? workspaceReaperCooldownDaysRaw
-      : 7;
+      : 0;
   const bindValidationErrors = validateConfiguredBindMode({
     deploymentMode,
     deploymentExposure,
