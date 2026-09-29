@@ -20,6 +20,7 @@ import { EmptyState } from "../components/EmptyState";
 import { DASHBOARD_OPEN_TASK_STATUSES, DashboardOverview } from "../components/DashboardOverview";
 import { DashboardDecisionsBox } from "../components/DashboardDecisionsBox";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+import { useLiveAgents } from "../hooks/useLiveAgents";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { Bot, ChevronRight, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
@@ -212,6 +213,9 @@ export function Dashboard() {
     enabled: !!selectedCompanyId,
   });
 
+  // Same source as the sidebar "N live" count, so the two always agree (GRE-257).
+  const { liveAgents } = useLiveAgents(selectedCompanyId);
+
   if (!selectedCompanyId) {
     if (companies.length === 0) {
       return (
@@ -321,6 +325,7 @@ export function Dashboard() {
       <DashboardOverview
         agents={agents}
         openIssues={openIssues}
+        liveAgents={liveAgents}
         agentsLoading={agentsLoading}
         issuesLoading={openIssuesLoading}
         agentsError={agentsError}

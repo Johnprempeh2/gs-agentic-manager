@@ -212,6 +212,33 @@ describe("Sidebar", () => {
     mockCanRelease.value = false;
   });
 
+  it("counts live agents from running runs only, once per agent (GRE-257)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    const liveRun = (id: string, agentId: string, status = "running") => ({
+      id,
+      agentId,
+      agentName: agentId,
+      status,
+      createdAt: "2026-09-29T08:00:00Z",
+      issueId: null,
+    });
+    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([
+      liveRun("r1", "a"),
+      liveRun("r2", "a"),
+      liveRun("r3", "b"),
+      liveRun("r4", "c", "queued"),
+    ]);
+    const root = await renderSidebar();
+
+    const dashboardLink = [...container.querySelectorAll("nav a")]
+      .find((anchor) => anchor.getAttribute("href") === "/dashboard");
+    expect(dashboardLink?.textContent).toContain("2 live");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("shows Search as a nav item instead of a header icon", async () => {
     // The header's spare width goes to the workspace name (which otherwise
     // truncates at ~78px), so search lives in the nav list — still

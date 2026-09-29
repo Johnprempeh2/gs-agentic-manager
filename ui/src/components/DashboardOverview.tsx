@@ -12,6 +12,7 @@ import { KanbanBoard } from "./KanbanBoard";
 import { StatusIcon } from "./StatusIcon";
 import { agentUrl, cn } from "../lib/utils";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
+import type { LiveAgent } from "../hooks/useLiveAgents";
 
 /** Statuses the dashboard board shows, in lane order. */
 export const DASHBOARD_OPEN_TASK_STATUSES = ["todo", "in_progress", "in_review", "blocked"] as const;
@@ -43,6 +44,19 @@ export function saveDashboardBoardPageSize(pageSize: DashboardBoardPageSize) {
 export interface DashboardAgentRow {
   agent: Agent;
   currentTask: Issue | null;
+  /** True when the agent has a running run (see `selectLiveAgents`). */
+  live: boolean;
+  /** The task its running run works on, even when that task is not in the open list. */
+  liveIssueId: string | null;
+}
+
+/**
+ * The status the row shows. Liveness comes from running runs only, so the
+ * strip and the sidebar "N live" count agree even while `agent.status` lags.
+ */
+export function dashboardAgentRowStatus(row: Pick<DashboardAgentRow, "agent" | "live">): string {
+  if (row.live) return "running";
+  return row.agent.status === "running" ? "idle" : row.agent.status;
 }
 
 // Running agents first so "what is happening now" reads top-down; errors next
@@ -65,14 +79,18 @@ function byNewestActivity(a: Issue, b: Issue): number {
 }
 
 /**
- * Pair every non-terminated agent with the task it works on now: its
- * in-progress assignment, preferring one a run holds, then the newest.
+ * Pair every non-terminated agent with the task it works on now: the task of
+ * its running run when it is live, else its in-progress assignment,
+ * preferring one a run holds, then the newest.
  */
 export function deriveDashboardAgentRows(
   agents: Agent[] | undefined,
   openIssues: Issue[] | undefined,
+  liveAgents: LiveAgent[] = [],
 ): DashboardAgentRow[] {
   if (!agents) return [];
+  const liveByAgent = new Map(liveAgents.map((live) => [live.agentId, live]));
+  const issueById = new Map((openIssues ?? []).map((issue) => [issue.id, issue]));
   const inProgressByAgent = new Map<string, Issue[]>();
   for (const issue of openIssues ?? []) {
     if (issue.status !== "in_progress" || !issue.assigneeAgentId) continue;
@@ -88,11 +106,14 @@ export function deriveDashboardAgentRows(
         const bHeld = b.executionRunId || b.checkoutRunId ? 0 : 1;
         return aHeld - bHeld || byNewestActivity(a, b);
       });
-      return { agent, currentTask: candidates[0] ?? null };
+      const live = liveByAgent.get(agent.id);
+      const liveIssueId = live?.issueId ?? null;
+      const liveTask = liveIssueId ? issueById.get(liveIssueId) ?? null : null;
+      return { agent, currentTask: liveTask ?? candidates[0] ?? null, live: Boolean(live), liveIssueId };
     })
     .sort(
       (a, b) =>
-        (AGENT_STATUS_ORDER[a.agent.status] ?? 5) - (AGENT_STATUS_ORDER[b.agent.status] ?? 5)
+        (AGENT_STATUS_ORDER[dashboardAgentRowStatus(a)] ?? 5) - (AGENT_STATUS_ORDER[dashboardAgentRowStatus(b)] ?? 5)
         || a.agent.name.localeCompare(b.agent.name),
     );
 }
@@ -108,7 +129,7 @@ export function splitDashboardAgentRows(rows: DashboardAgentRow[]): {
   const working: DashboardAgentRow[] = [];
   const resting: DashboardAgentRow[] = [];
   for (const row of rows) {
-    const busy = row.agent.status === "running" || row.agent.status === "error" || row.currentTask !== null;
+    const busy = row.live || row.agent.status === "error" || row.currentTask !== null;
     (busy ? working : resting).push(row);
   }
   return { working, resting };
@@ -256,6 +277,8 @@ export function DashboardTaskBoard({ agents, openIssues, loading = false, error 
 export interface DashboardAgentStripProps {
   agents: Agent[] | undefined;
   openIssues: Issue[] | undefined;
+  /** From `useLiveAgents`, the same source as the sidebar "N live" count. */
+  liveAgents?: LiveAgent[];
   loading?: boolean;
   error?: Error | null;
 }
@@ -264,8 +287,16 @@ export interface DashboardAgentStripProps {
  * Who is working on what. Busy agents get a compact card with their current
  * task; idle and paused agents share a single line so they take no room.
  */
-export function DashboardAgentStrip({ agents, openIssues, loading = false, error = null }: DashboardAgentStripProps) {
-  const { working, resting } = splitDashboardAgentRows(deriveDashboardAgentRows(agents, openIssues));
+export function DashboardAgentStrip({
+  agents,
+  openIssues,
+  liveAgents = [],
+  loading = false,
+  error = null,
+}: DashboardAgentStripProps) {
+  const rows = deriveDashboardAgentRows(agents, openIssues, liveAgents);
+  const liveCount = rows.filter((row) => row.live).length;
+  const { working, resting } = splitDashboardAgentRows(rows);
   const pausedCount = resting.filter(({ agent }) => agent.status === "paused").length;
   const restingSummary = [
     `${resting.length - pausedCount} idle`,
@@ -274,7 +305,19 @@ export function DashboardAgentStrip({ agents, openIssues, loading = false, error
 
   return (
     <section className="min-w-0" aria-label="Agents" data-testid="dashboard-agent-strip">
-      <SectionHeader title="Agents" action={<SectionLink to="/agents">View all agents</SectionLink>} />
+      <SectionHeader
+        title="Agents"
+        action={(
+          <>
+            {liveCount > 0 ? (
+              <span className="text-xs font-medium tabular-nums text-foreground" data-testid="dashboard-live-count">
+                {liveCount} live
+              </span>
+            ) : null}
+            <SectionLink to="/agents">View all agents</SectionLink>
+          </>
+        )}
+      />
       {loading && !agents ? (
         <ListSkeleton label="Loading agents" />
       ) : error && !agents ? (
@@ -285,14 +328,17 @@ export function DashboardAgentStrip({ agents, openIssues, loading = false, error
         <Card className="block space-y-3 p-3">
           {working.length > 0 ? (
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {working.map(({ agent, currentTask }) => (
+              {working.map((row) => {
+                const { agent, currentTask, live, liveIssueId } = row;
+                return (
                 <div
                   key={agent.id}
                   data-testid="dashboard-agent-row"
+                  data-live={live ? "true" : undefined}
                   className="flex min-w-0 flex-col gap-1 rounded-lg border border-border/60 bg-background/60 px-3 py-2"
                 >
                   <div className="flex min-w-0 items-center gap-2">
-                    <AgentStatusCapsule status={agent.status} />
+                    <AgentStatusCapsule status={dashboardAgentRowStatus(row)} />
                     <Link
                       to={agentUrl(agent)}
                       className="min-w-0 flex-1 rounded-sm text-inherit no-underline hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -309,13 +355,21 @@ export function DashboardAgentStrip({ agents, openIssues, loading = false, error
                       <StatusIcon status={currentTask.status} blockerAttention={currentTask.blockerAttention} />
                       <span className="min-w-0 truncate">{currentTask.title}</span>
                     </Link>
+                  ) : live && liveIssueId ? (
+                    <Link
+                      to={createIssueDetailPath(liveIssueId)}
+                      className="min-w-0 truncate rounded-sm text-sm text-inherit no-underline hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Open current task
+                    </Link>
                   ) : (
                     <span className="text-sm text-muted-foreground">
-                      {agent.status === "error" ? "Needs a look" : "No current task"}
+                      {live ? "Running without a task" : agent.status === "error" ? "Needs a look" : "No current task"}
                     </span>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No agent is working right now.</p>
@@ -332,7 +386,7 @@ export function DashboardAgentStrip({ agents, openIssues, loading = false, error
                   to={agentUrl(agent)}
                   className="inline-flex min-w-0 items-center gap-1.5 rounded-sm text-inherit no-underline hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <AgentStatusCapsule status={agent.status} />
+                  <AgentStatusCapsule status={dashboardAgentRowStatus({ agent, live: false })} />
                   <AgentIdentity agent={agent} size="xs" className="max-w-32" />
                 </Link>
               ))}
@@ -347,6 +401,7 @@ export function DashboardAgentStrip({ agents, openIssues, loading = false, error
 export interface DashboardOverviewProps {
   agents: Agent[] | undefined;
   openIssues: Issue[] | undefined;
+  liveAgents?: LiveAgent[];
   agentsLoading?: boolean;
   issuesLoading?: boolean;
   agentsError?: Error | null;
@@ -357,6 +412,7 @@ export interface DashboardOverviewProps {
 export function DashboardOverview({
   agents,
   openIssues,
+  liveAgents,
   agentsLoading = false,
   issuesLoading = false,
   agentsError = null,
@@ -365,7 +421,13 @@ export function DashboardOverview({
   return (
     <div className="space-y-6" data-testid="dashboard-overview">
       <DashboardTaskBoard agents={agents} openIssues={openIssues} loading={issuesLoading} error={issuesError} />
-      <DashboardAgentStrip agents={agents} openIssues={openIssues} loading={agentsLoading} error={agentsError} />
+      <DashboardAgentStrip
+        agents={agents}
+        openIssues={openIssues}
+        liveAgents={liveAgents}
+        loading={agentsLoading}
+        error={agentsError}
+      />
     </div>
   );
 }
