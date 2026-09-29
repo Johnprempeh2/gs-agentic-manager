@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, notExists, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   executionWorkspaces,
@@ -69,6 +69,19 @@ type RuntimeServiceReadDb = Pick<Db, "select">;
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 const execFileAsync = promisify(execFile);
 const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
+
+// Matches the issues that are not done or cancelled and are bound to the
+// workspace, including reuse_existing bindings from issues outside the source
+// issue's tree. The manual archive readiness check and the terminal reaper both
+// use this filter, so the reaper never archives a workspace that the manual
+// archive would refuse (GRE-229).
+function openLinkedIssueFilter(workspace: { id: string; companyId: string }) {
+  return and(
+    eq(issues.companyId, workspace.companyId),
+    eq(issues.executionWorkspaceId, workspace.id),
+    notInArray(issues.status, [...TERMINAL_ISSUE_STATUSES]),
+  );
+}
 
 // Return the timestamp when an issue became terminal. A `done` issue uses
 // `completedAt`. A `cancelled` issue uses `cancelledAt`. The reaper cooldown
@@ -1430,6 +1443,18 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
       ));
   }
 
+  async function listOpenLinkedIssues(workspace: Pick<ExecutionWorkspaceRow, "id" | "companyId">) {
+    return db
+      .select({
+        id: issues.id,
+        identifier: issues.identifier,
+        title: issues.title,
+        status: issues.status,
+      })
+      .from(issues)
+      .where(openLinkedIssueFilter(workspace));
+  }
+
   async function listDeliveryPullRequestProducts(
     workspace: Pick<ExecutionWorkspaceRow, "companyId" | "sourceIssueId">,
   ) {
@@ -2496,7 +2521,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         isTerminal: TERMINAL_ISSUE_STATUSES.has(issue.status),
       }));
 
-      const blockingIssues = linkedIssueSummaries.filter((issue) => !issue.isTerminal);
+      const blockingIssues = await listOpenLinkedIssues(workspace);
       if (blockingIssues.length > 0) {
         const linkedIssueMessage =
           blockingIssues.length === 1
@@ -2679,6 +2704,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           cleanupFailed: 0,
           skippedActiveRun: 0,
           skippedNonTerminalTree: 0,
+          skippedOpenLinkedIssue: 0,
           skippedUndelivered: 0,
           skippedRace: 0,
           skippedReopened: 0,
@@ -2744,6 +2770,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         cleanupFailed: 0,
         skippedActiveRun: 0,
         skippedNonTerminalTree: 0,
+        skippedOpenLinkedIssue: 0,
         skippedUndelivered: 0,
         skippedRace: 0,
         skippedReopened: 0,
@@ -2777,6 +2804,14 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
             });
           }
           result.skippedNonTerminalTree += 1;
+          continue;
+        }
+        // An open issue outside the source tree can still be bound to this
+        // workspace, for example through reuse_existing. The manual archive
+        // refuses such a workspace, so the reaper keeps it too. It skips in
+        // every mode, because archiving it strands the open issue's next run.
+        if ((await listOpenLinkedIssues(workspace)).length > 0) {
+          result.skippedOpenLinkedIssue += 1;
           continue;
         }
         // Archive only when removing the worktree loses nothing: no uncommitted
@@ -2953,6 +2988,12 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
                 )
                 SELECT 1 FROM issue_tree WHERE status NOT IN ('done', 'cancelled')
               )`,
+              // Re-check under the lock that no open issue is bound to the
+              // workspace, so an issue that binds after the loop check above
+              // still keeps it.
+              notExists(
+                tx.select({ one: sql`1` }).from(issues).where(openLinkedIssueFilter(workspace)),
+              ),
               // Re-check the cooldown under the lifecycle lock. This predicate
               // matches the loop check above: block the archive when any issue in
               // the tree became terminal after the cutoff. The tree walk mirrors
