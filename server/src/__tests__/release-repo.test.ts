@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  MAIN_FETCH_INTERVAL_MS,
   checkReleaseRepo,
   checkReleaseTarget,
   clientNotesProblem,
@@ -15,7 +16,9 @@ import {
   nextCandidateTagName,
   nextStableTagName,
   prepareReleaseRepo,
+  readReleaseMainCommit,
   readReleaseTags,
+  resetMainFetchesForTest,
   resolveReleaseRepo,
 } from "../services/release-repo.ts";
 
@@ -81,6 +84,32 @@ async function timed<T>(work: () => Promise<T>) {
   expect(Date.now() - started).toBeLessThan(5_000);
   return value;
 }
+
+describe("readReleaseMainCommit (GRE-249)", () => {
+  beforeEach(() => resetMainFetchesForTest());
+
+  it("shows a merge to main that the release repo has not fetched yet", async () => {
+    pushFromElsewhere("merged");
+    const merged = git(origin, "rev-parse", "main");
+    expect(git(repo, "rev-parse", "origin/main")).not.toBe(merged);
+    expect(await timed(() => readReleaseMainCommit(repo))).toBe(merged);
+  });
+
+  it("fetches at most once per interval", async () => {
+    const t0 = 1_000_000;
+    await readReleaseMainCommit(repo, t0);
+    pushFromElsewhere("later");
+    const later = git(origin, "rev-parse", "main");
+    expect(await readReleaseMainCommit(repo, t0 + MAIN_FETCH_INTERVAL_MS - 1)).not.toBe(later);
+    expect(await readReleaseMainCommit(repo, t0 + MAIN_FETCH_INTERVAL_MS)).toBe(later);
+  });
+
+  it("falls back to the last fetched commit when origin cannot be reached", async () => {
+    const known = git(repo, "rev-parse", "origin/main");
+    git(repo, "remote", "set-url", "origin", path.join(root, "missing.git"));
+    expect(await timed(() => readReleaseMainCommit(repo))).toBe(known);
+  });
+});
 
 describe("prepareReleaseRepo", () => {
   it("fetches and fast-forwards a clean main to origin/main", async () => {
