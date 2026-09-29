@@ -430,7 +430,6 @@ function Queue({
                       expanded={expandedId === it.id}
                       onToggleExpand={() => setExpandedId((p) => (p === it.id ? null : it.id))}
                       onDismiss={(d) => setCleared((prev) => new Set(prev).add(d.id))}
-                      onSnooze={(d) => setCleared((prev) => new Set(prev).add(d.id))}
                     />
                   ))}
                 </div>

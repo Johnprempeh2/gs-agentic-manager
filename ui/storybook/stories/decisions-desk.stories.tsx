@@ -583,7 +583,6 @@ export const CardTriageStrip: Story = {
           expanded
           onToggleExpand={() => {}}
           onDismiss={() => {}}
-          onSnooze={() => {}}
         />
       </div>
     </PrimeDeskFixtures>

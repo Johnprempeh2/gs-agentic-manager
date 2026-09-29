@@ -23,21 +23,6 @@ import {
 } from "./ui/dropdown-menu";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
-
-/** Snooze presets shared with the row menu, resolved at click time. */
-const SNOOZE_PRESETS: ReadonlyArray<{ label: string; resolve: () => string }> = [
-  { label: "1 hour", resolve: () => new Date(Date.now() + HOUR_MS).toISOString() },
-  { label: "4 hours", resolve: () => new Date(Date.now() + 4 * HOUR_MS).toISOString() },
-  { label: "Tomorrow", resolve: () => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
-    return d.toISOString();
-  } },
-  { label: "Next week", resolve: () => new Date(Date.now() + 7 * DAY_MS).toISOString() },
-];
 
 /** Slugify a queue title into a URL-safe kebab key the API will accept. */
 function toQueueKey(title: string): string {
@@ -228,7 +213,7 @@ export function DecisionTriageStrip({ item, companyId, agents }: DecisionTriageS
         />
       </div>
 
-      {/* Snooze + route-to-agent. */}
+      {/* An old snooze can still be cleared; new ones use Not now (GRE-264). */}
       <div className="flex flex-wrap items-center gap-2">
         {item.snoozedUntil ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -243,24 +228,7 @@ export function DecisionTriageStrip({ item, companyId, agents }: DecisionTriageS
               Clear
             </button>
           </span>
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="xs" className="h-7 gap-1" disabled={pending}>
-                <AlarmClock className="h-3.5 w-3.5" />
-                Snooze
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {SNOOZE_PRESETS.map((preset) => (
-                <DropdownMenuItem key={preset.label} onClick={() => setSnooze.mutate(preset.resolve())}>
-                  {preset.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        ) : null}
 
         <AskAgentPicker
           agents={agents ?? []}

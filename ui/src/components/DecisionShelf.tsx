@@ -57,7 +57,6 @@ export function AgingItemRow({
   expanded,
   onToggleExpand,
   onDismiss,
-  onSnooze,
 }: {
   item: AttentionItem;
   companyId: string;
@@ -68,7 +67,6 @@ export function AgingItemRow({
   expanded: boolean;
   onToggleExpand: (item: AttentionItem) => void;
   onDismiss: (item: AttentionItem) => void;
-  onSnooze: (item: AttentionItem, snoozedUntil: string) => void;
 }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
@@ -112,7 +110,6 @@ export function AgingItemRow({
         expanded={expanded}
         onToggleExpand={onToggleExpand}
         onDismiss={onDismiss}
-        onSnooze={onSnooze}
         agentMap={agentMap}
         agents={agents}
         showTriage
