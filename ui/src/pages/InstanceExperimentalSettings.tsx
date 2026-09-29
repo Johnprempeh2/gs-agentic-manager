@@ -8,7 +8,7 @@ import type {
   ManagedSettingMetadata,
   PatchInstanceExperimentalSettings,
 } from "@greatstone/shared";
-import { experimentalSettingKey } from "@greatstone/shared";
+import { experimentalSettingKey, isRetiredInstanceFeatureKey } from "@greatstone/shared";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { getWorktreeInstanceId, isWorktreeRuntime } from "../lib/worktree-branding";
@@ -93,6 +93,8 @@ function ExperimentalToggleCard({
   const { hidden: hiddenSettings } = useHiddenSettings();
   const isManaged = managed?.managed === true;
   if (hiddenSettings.has(experimentalSettingKey(settingKey))) return null;
+  // Greatstone (GRE-196): retired switches are hidden; their code stays in place.
+  if (isRetiredInstanceFeatureKey(settingKey)) return null;
   return (
     <Card className="block bg-transparent p-5">
       <div className="flex items-start justify-between gap-4">
@@ -237,7 +239,8 @@ export function InstanceExperimentalSettings() {
     experimentalQuery.data?.enableFirstTaskPlanProposal === true;
   const enableSmokeLab = experimentalQuery.data?.enableSmokeLab === true;
   const autoRestartDevServerWhenIdle = experimentalQuery.data?.autoRestartDevServerWhenIdle === true;
-  const isVisible = (key: InstanceFeatureKey) => !hiddenSettings.has(experimentalSettingKey(key));
+  const isVisible = (key: InstanceFeatureKey) =>
+    !isRetiredInstanceFeatureKey(key) && !hiddenSettings.has(experimentalSettingKey(key));
   const showWorktreeRunExecution = inWorktree && isVisible("enableWorktreeRunExecution");
   const showDeveloperSection = showWorktreeRunExecution || ([
     "autoRestartDevServerWhenIdle",

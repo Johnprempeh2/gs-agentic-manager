@@ -2685,13 +2685,16 @@ export {
   FEATURE_TIERS,
   INSTANCE_FEATURE_CATALOG,
   INSTANCE_FEATURE_KEYS,
+  RETIRED_INSTANCE_FEATURE_KEYS,
   buildFeatureCatalogArtifact,
   featureCatalogArtifactSchema,
+  isRetiredInstanceFeatureKey,
   renderFeatureCatalogArtifact,
   type FeatureCatalogArtifact,
   type FeatureCatalogEntry,
   type FeatureTier,
   type InstanceFeatureKey,
+  type RetiredInstanceFeatureKey,
 } from "./feature-catalog.js";
 export {
   EXPERIMENTAL_SETTINGS_WILDCARD,
