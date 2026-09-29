@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyDevRunnerOptions } from "../../../scripts/dev-runner-options.ts";
+import { toLegacyEnvKey } from "../../../packages/shared/src/legacy-env.ts";
 
 describe("applyDevRunnerOptions", () => {
   it("turns --data-dir into isolated GS Agentic Manager paths and consumes the option", () => {
@@ -76,16 +77,16 @@ describe("applyDevRunnerOptions", () => {
     const env: NodeJS.ProcessEnv = {
       GSAM_API_URL: "http://127.0.0.1:3100",
       GSAM_API_KEY: "live-agent-key",
-      PAPERCLIP_API_URL: "http://127.0.0.1:3100",
-      PAPERCLIP_API_KEY: "live-agent-key",
+      [toLegacyEnvKey("GSAM_API_URL")]: "http://127.0.0.1:3100",
+      [toLegacyEnvKey("GSAM_API_KEY")]: "live-agent-key",
     };
 
     applyDevRunnerOptions(["--data-dir", "/isolated/home"], env, "/unused");
 
     expect(env.GSAM_API_URL).toBeUndefined();
     expect(env.GSAM_API_KEY).toBeUndefined();
-    expect(env.PAPERCLIP_API_URL).toBeUndefined();
-    expect(env.PAPERCLIP_API_KEY).toBeUndefined();
+    expect(env[toLegacyEnvKey("GSAM_API_URL")]).toBeUndefined();
+    expect(env[toLegacyEnvKey("GSAM_API_KEY")]).toBeUndefined();
   });
 
   it("keeps the API URL when no --data-dir is given", () => {

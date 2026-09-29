@@ -5,14 +5,14 @@ import {
   resolvePaperclipConfigPathForInstance,
   resolvePaperclipInstanceId,
 } from "../packages/shared/src/home-paths.ts";
+import { toLegacyEnvKey } from "../packages/shared/src/legacy-env.ts";
 
-// Legacy PAPERCLIP_* names are listed too: the server re-adopts them as GSAM_*.
+// Legacy names are listed too: the server re-adopts them as GSAM_*.
+const PARENT_SERVER_ENV_KEYS = ["GSAM_API_URL", "GSAM_API_KEY"];
 const INHERITED_PARENT_SERVER_ENV_KEYS = [
-  "GSAM_API_URL",
-  "GSAM_API_KEY",
-  "PAPERCLIP_API_URL",
-  "PAPERCLIP_API_KEY",
-] as const;
+  ...PARENT_SERVER_ENV_KEYS,
+  ...PARENT_SERVER_ENV_KEYS.map(toLegacyEnvKey),
+];
 
 export interface AppliedDevRunnerOptions {
   forwardedArgs: string[];
