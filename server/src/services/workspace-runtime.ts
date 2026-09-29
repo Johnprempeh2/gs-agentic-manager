@@ -4037,6 +4037,9 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
   expectedBranchHeadSha?: string | null;
   runCleanupCommands?: boolean;
   forceWorktreeRemoval?: boolean;
+  // False keeps the branch ref after the worktree is removed. The terminal
+  // reaper passes false for a branch that is pushed but not merged.
+  deleteBranch?: boolean;
 }) {
   const warnings: string[] = [];
   const workspacePath = input.workspace.providerRef ?? input.workspace.cwd;
@@ -4069,7 +4072,8 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
   // with branch-level ownership semantics. Unmarked legacy rows fail closed:
   // their worktrees are removable, but their branch refs are operator-owned.
   const createdByRuntime = input.workspace.metadata?.createdByRuntime === true;
-  const branchCreatedByRuntime = isRuntimeOwnedGitBranch(input.workspace.metadata);
+  const shouldDeleteBranch = input.deleteBranch !== false
+    && isRuntimeOwnedGitBranch(input.workspace.metadata);
   const cleanupCommands = input.runCleanupCommands === false
     ? []
     : [
@@ -4156,7 +4160,7 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
         }
       }
     }
-    if (branchCreatedByRuntime && input.workspace.branchName) {
+    if (shouldDeleteBranch && input.workspace.branchName) {
       if (!repoRoot) {
         warnings.push(`Could not resolve git repo root to delete branch "${input.workspace.branchName}".`);
       } else {
