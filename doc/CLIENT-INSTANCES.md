@@ -76,20 +76,51 @@ scripts/client-instance.sh create --root /path/to/instances/c002 \
 scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition internal
 ```
 
-Managed and Managed plus pin `enableManagedSandboxOnly` on. Agents then run
-only in a managed sandbox from a sandbox provider plugin (e2b, Daytona, Modal
-and similar). An instance without one refuses every run. `internal` sets no
-edition values, so agents run on the host. `verify` then checks only health,
+Managed and Managed plus pin `enableManagedSandboxOnly` off (GRE-160: with it
+on and no sandbox provider, every run is refused). `internal` sets no
+edition values. `verify` then checks only health,
 the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
-free from 55400), `--company-name`, `--client-email`.
+free from 55400), `--company-name`, `--client-email`, and the install limits
+below.
 
-Run limits are not set by the script, so a new instance uses the defaults:
-at most 6 runs at once, and new runs wait while free memory is below
-2048 MB or free disk (data dir and home volume) is below 20 GB (GRE-207).
-The OS memory-pressure level does not hold runs (GRE-198). Change them in
-Instance → General → Run limits; 0 turns a floor off.
+### Install limits (GRE-141)
+
+Every new instance gets install limits. They are settings of that instance,
+kept in `<root>/client-instance.json` and given to the server as
+`GSAM_INSTALL_LIMITS` at every start. They are spend and run caps, not prices.
+`scripts/client-instance.sh --help` shows the defaults.
+
+| Flag | Meaning |
+| --- | --- |
+| `--agent-budget-cents N` | Monthly budget of each new agent that has none (hard stop on). |
+| `--agent-daily-runs N` | Runs a day for each new agent that names no cap. |
+| `--max-concurrent-runs N` | Runs at the same time on the whole install. Replaces the Run limits cap in Instance → General. |
+
+When an agent spends its budget, it is paused, its runs stop, and it says so
+in a comment on each task it holds (`todo` or `in_progress`). The task keeps
+its assignee. The board raises the budget on the Costs page (the agent then
+starts again) or gives the task to another agent.
+
+The budget and daily cap go on agents made after the start that uses them.
+An agent's own budget, set by the board, stays. `verify` checks that every
+agent has a monthly budget.
+
+Show or change the limits of an instance (the next start uses them):
+
+```sh
+scripts/client-instance.sh limits --root <root>
+scripts/client-instance.sh limits --root <root> --agent-budget-cents N
+scripts/client-instance.sh stop --root <root> && scripts/client-instance.sh start --root <root>
+```
+
+An instance made before GRE-141 has no limits until `limits` sets them.
+
+The memory and disk floors are not set by the script: new runs wait while free
+memory is below 2048 MB or free disk (data dir and home volume) is below
+20 GB (GRE-207). The OS memory-pressure level does not hold runs (GRE-198).
+Change them in Instance → General → Run limits; 0 turns a floor off.
 
 `create` does, in order:
 
@@ -127,7 +158,8 @@ It checks: health; every hidden setting is reported hidden; each section 5
 "on" feature is on and each "off" feature is off; a change request to each
 floored hidden setting returns 403; exactly one company; the client log-in
 gets 403 on the release API (`instance.releases`, no Releases page on a client
-edition); new sign-ups are refused. A refused request
+edition); every agent has a monthly budget (when the instance has install
+limits); new sign-ups are refused. A refused request
 changes nothing. If one is accepted, the script puts the old value back and
 fails.
 

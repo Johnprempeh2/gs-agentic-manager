@@ -39,6 +39,8 @@ import {
   syncAgentAdapterEnvBindings,
 } from "./agent-secret-bindings.js";
 import { logActivity } from "./activity-log.js";
+import { budgetService } from "./budgets.js";
+import { applyInstallLimitsToNewAgent, getInstallLimits } from "./install-limits.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
 import {
@@ -876,7 +878,10 @@ export function agentService(db: Db) {
 
     getById,
 
-    create: async (companyId: string, data: Omit<typeof agents.$inferInsert, "companyId">, options?: CreateAgentOptions) => {
+    create: async (companyId: string, input: Omit<typeof agents.$inferInsert, "companyId">, options?: CreateAgentOptions) => {
+      // A client install gives every new agent a budget and a daily run cap (GRE-141).
+      const installLimits = getInstallLimits();
+      const data = applyInstallLimitsToNewAgent(input, installLimits);
       assertBuiltInAgentMetadataMutationAllowed(null, data.metadata, options);
       if (data.reportsTo) {
         await ensureManager(companyId, data.reportsTo);
@@ -903,7 +908,7 @@ export function agentService(db: Db) {
         nextConfig: adapterConfig,
         priorConfig: null,
       });
-      return db.transaction(async (tx) => {
+      const createdAgent = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
         // Consume the stored-session claim and create the fixed definition inside
         // the same transaction that inserts the binding. A rejected claim rolls
@@ -945,6 +950,20 @@ export function agentService(db: Db) {
         }
         return normalizedCreated;
       });
+      if (installLimits && createdAgent.budgetMonthlyCents > 0) {
+        // Every create path (hire, join, onboarding, built-in) gets the enforced policy, not only the field.
+        await budgetService(db).upsertPolicy(
+          companyId,
+          {
+            scopeType: "agent",
+            scopeId: createdAgent.id,
+            amount: createdAgent.budgetMonthlyCents,
+            windowKind: "calendar_month_utc",
+          },
+          null,
+        );
+      }
+      return createdAgent;
     },
 
     update: updateAgent,
