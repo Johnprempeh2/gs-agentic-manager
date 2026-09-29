@@ -6548,11 +6548,30 @@ export function issueRoutes(
     return false;
   }
 
+  async function listEffectiveUnresolvedBlockerIssueIds(
+    issue: { id: string; companyId: string },
+    replacementBlockerIssueIds?: string[] | null,
+  ): Promise<string[]> {
+    if (Array.isArray(replacementBlockerIssueIds)) {
+      return svc.listUnresolvedBlockerIssueIds(
+        issue.companyId,
+        replacementBlockerIssueIds,
+      );
+    }
+    return (await svc.getDependencyReadiness(issue.id))
+      .unresolvedBlockerIssueIds;
+  }
+
   async function assertExplicitResumeIntentAllowed(
     req: Request,
     res: Response,
     issue: Parameters<typeof decideIssueAccess>[1],
-    options: { resumeIntent?: boolean } = {},
+    options: {
+      resumeIntent?: boolean;
+      // GRE-98: when the same PATCH replaces blockedByIssueIds, check the new
+      // blocker set instead of the stored one.
+      replacementBlockerIssueIds?: string[] | null;
+    } = {},
   ) {
     if (
       await assertLowTrustControlPlaneDenied(req, res, issue.companyId, issue)
@@ -6600,13 +6619,16 @@ export function issueRoutes(
     }
 
     if (issue.status === "blocked") {
-      const readiness = await svc.getDependencyReadiness(issue.id);
-      if (readiness.unresolvedBlockerCount > 0) {
+      const unresolvedBlockerIssueIds = await listEffectiveUnresolvedBlockerIssueIds(
+        issue,
+        options.replacementBlockerIssueIds,
+      );
+      if (unresolvedBlockerIssueIds.length > 0) {
         res.status(409).json({
           error: "Issue follow-up blocked by unresolved blockers",
           details: {
             issueId: issue.id,
-            unresolvedBlockerIssueIds: readiness.unresolvedBlockerIssueIds,
+            unresolvedBlockerIssueIds,
           },
         });
         return false;
@@ -12974,10 +12996,16 @@ export function issueRoutes(
       ) {
         return;
       }
+      const replacementBlockerIssueIds = Array.isArray(
+        req.body.blockedByIssueIds,
+      )
+        ? (req.body.blockedByIssueIds as string[])
+        : null;
       if (
         resumeRequested === true &&
         !(await assertExplicitResumeIntentAllowed(req, res, existing, {
           resumeIntent: true,
+          replacementBlockerIssueIds,
         }))
       )
         return;
@@ -12991,7 +13019,11 @@ export function issueRoutes(
         req.actor.type === "agent" &&
         reopenRequested === true
       ) {
-        if (!(await assertExplicitResumeIntentAllowed(req, res, existing)))
+        if (
+          !(await assertExplicitResumeIntentAllowed(req, res, existing, {
+            replacementBlockerIssueIds,
+          }))
+        )
           return;
       }
       await assertIssueEnvironmentSelection(
@@ -13041,7 +13073,9 @@ export function issueRoutes(
       if (
         resumeRequested !== true &&
         agentStatusTransitionRequiresResumeAuthority &&
-        !(await assertExplicitResumeIntentAllowed(req, res, existing))
+        !(await assertExplicitResumeIntentAllowed(req, res, existing, {
+          replacementBlockerIssueIds,
+        }))
       ) {
         return;
       }
@@ -13088,8 +13122,12 @@ export function issueRoutes(
         : null;
       const hasUnresolvedFirstClassBlockers =
         isBlocked && effectiveMoveToTodoRequested
-          ? (await svc.getDependencyReadiness(existing.id))
-              .unresolvedBlockerCount > 0
+          ? (
+              await listEffectiveUnresolvedBlockerIssueIds(
+                existing,
+                replacementBlockerIssueIds,
+              )
+            ).length > 0
           : false;
       if (
         resumeRequested === true &&
