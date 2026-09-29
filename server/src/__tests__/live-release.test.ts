@@ -574,6 +574,39 @@ describe("candidate (GRE-172)", () => {
   });
 });
 
+describe("live tag notes (GRE-178)", () => {
+  const LIVE = "a".repeat(40);
+  const RC_MESSAGE = "Releases page and RAM-aware run limits\n\nFeatures\n- Releases page (#53, GRE-121)\n\nFixes\n- Flag a blocked issue (#41, GRE-72)\n";
+
+  it("a live tag with no notes on the same commit as an annotated rc tag shows the rc notes", async () => {
+    runningCommit = { commit: LIVE, tag: "live-2026-09-29.1" };
+    tags = [
+      { tag: "live-2026-09-29.1", commit: LIVE, date: clock.toISOString(), annotated: true, message: "Live release live-2026-09-29.1 (candidate rc-2026-09-29.1)\n" },
+      { tag: "live-2026-09-28.2", commit: "d".repeat(40), date: clock.toISOString(), annotated: false, message: null },
+      { tag: "rc-2026-09-29.1", commit: LIVE, date: clock.toISOString(), annotated: true, message: RC_MESSAGE },
+    ];
+    const overview = await createLiveReleaseService(deps()).overview("co-1");
+    const expected = {
+      title: "Releases page and RAM-aware run limits",
+      changelog: { features: ["Releases page (#53, GRE-121)"], fixes: ["Flag a blocked issue (#41, GRE-72)"] },
+    };
+    expect(overview.live).toMatchObject({ tag: "live-2026-09-29.1", ...expected });
+    expect(overview.history[0]).toMatchObject({ tag: "live-2026-09-29.1", candidateTag: "rc-2026-09-29.1", ...expected });
+    // No rc on its commit: the tag name stays the title.
+    expect(overview.history[1]).toMatchObject({ tag: "live-2026-09-28.2", title: "live-2026-09-28.2", changelog: { features: [], fixes: [] } });
+  });
+
+  it("a live tag with its own notes keeps them", async () => {
+    runningCommit = { commit: LIVE, tag: "live-2026-09-29.1" };
+    tags = [
+      { tag: "live-2026-09-29.1", commit: LIVE, date: clock.toISOString(), annotated: true, message: "Own title\n" },
+      { tag: "rc-2026-09-29.1", commit: LIVE, date: clock.toISOString(), annotated: true, message: RC_MESSAGE },
+    ];
+    const overview = await createLiveReleaseService(deps()).overview("co-1");
+    expect(overview.live).toMatchObject({ title: "Own title", changelog: { features: [], fixes: [] } });
+  });
+});
+
 describe("next version", () => {
   it("lists the changes merged since live, a proposed title and Fork CI", async () => {
     const next = (await createLiveReleaseService(deps()).overview("co-1")).next;
