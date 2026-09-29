@@ -2578,9 +2578,31 @@ async function refreshUnstartedWorktreeToBase(input: {
     return { refreshed: false, baseRefSha: null };
   }
 
+  // A stale `index.lock` (left by a crashed git process) makes the reset fail
+  // with a raw git error. Name the worktree and the lock so an operator can act.
+  const indexLockPath = await runGit(["rev-parse", "--git-path", "index.lock"], input.worktreePath)
+    .then((lockPath) => path.resolve(input.worktreePath, lockPath))
+    .catch(() => null);
+  if (indexLockPath && existsSync(indexLockPath)) {
+    throw new WorkspaceRuntimeValidationFailure(
+      `Cannot refresh reused git worktree "${input.worktreePath}": git index lock "${indexLockPath}" exists. ` +
+        "Another git process is running there, or one crashed and left the lock behind. " +
+        "Stop any git process in that worktree, then delete the lock file and retry the run. No work was changed.",
+      {
+        workspaceValidation: {
+          reason: "git_index_locked",
+          worktreePath: input.worktreePath,
+          indexLockPath,
+        },
+      },
+    );
+  }
+
+  // `--keep`, not `--hard`: if a file appears between the clean-tree guard
+  // above and this reset, git refuses to overwrite it instead of discarding it.
   await recordGitOperation(input.recorder, {
     phase: "worktree_prepare",
-    args: ["reset", "--hard", input.currentBaseRefSha],
+    args: ["reset", "--keep", input.currentBaseRefSha],
     cwd: input.worktreePath,
     metadata: {
       repoRoot: input.repoRoot,
@@ -2592,7 +2614,7 @@ async function refreshUnstartedWorktreeToBase(input: {
       refreshedUnstartedWorktree: true,
     },
     successMessage: `Refreshed unstarted git worktree at ${input.worktreePath} to ${input.baseRef} (${formatShortSha(input.currentBaseRefSha)})\n`,
-    failureLabel: `git reset --hard ${input.currentBaseRefSha}`,
+    failureLabel: `git reset --keep ${input.currentBaseRefSha}`,
   });
 
   return { refreshed: true, baseRefSha: input.currentBaseRefSha };
