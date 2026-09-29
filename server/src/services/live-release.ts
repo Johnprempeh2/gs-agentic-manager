@@ -894,11 +894,16 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
   const overview = async (companyId: string): Promise<ReleasesOverview> => {
     const jobs = listJobs();
     const latest = jobs[0] ?? null;
-    const progress = checking ?? (latest ? toProgress(latest) : null);
     const disabledReason = enabledProblem();
     const running = deps.readRunningCommit();
     const repo = deps.resolveReleaseRepo();
     const tags = repo ? await cached(`tags:${jobs.length}:${latest?.updatedAt ?? ""}`, () => deps.readTags(repo).catch(() => [])) : [];
+    // A failure is moot once live runs the version it names, by a later card or by hand (GRE-179).
+    const failedTarget = latest && (latest.state === "failed" || latest.state === "rolled_back")
+      ? (latest.commit ?? tags.find((t) => t.tag === latest.tag)?.commit ?? null)
+      : null;
+    const failureMoot = failedTarget !== null && failedTarget === running?.commit;
+    const progress = checking ?? (latest && !failureMoot ? toProgress(latest) : null);
     const releasedBy = (tag: string | null) => (tag ? (jobs.find((j) => j.liveTag === tag && j.state === "healthy")?.startedBy ?? null) : null);
     const reportOf = (tag: string) => jobs.find((j) => j.liveTag === tag)?.restartReport ?? null;
 
