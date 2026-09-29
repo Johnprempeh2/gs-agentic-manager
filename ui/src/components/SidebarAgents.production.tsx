@@ -45,6 +45,7 @@ import {
   writeAgentSortMode,
 } from "../lib/agent-order";
 import { BudgetSidebarMarker } from "./BudgetSidebarMarker";
+import { runAdmissionWaitMessage } from "@/lib/runAdmissionHold";
 import { SidebarNavItem } from "./SidebarNavItem.production";
 import { SidebarSection, type SidebarSectionRadioChoice } from "./SidebarSection";
 import { StarToggle } from "./StarToggle";
@@ -116,6 +117,7 @@ function SidebarAgentItem({
   onPauseResume,
   rail,
   runCount,
+  waitingMessage = null,
   setSidebarOpen,
   builtInStatus,
   starred = false,
@@ -132,6 +134,8 @@ function SidebarAgentItem({
   onPauseResume: (agent: Agent, action: "pause" | "resume") => void;
   rail: boolean;
   runCount: number;
+  /** Set when the agent's only live runs are held by run admission (GRE-198). */
+  waitingMessage?: string | null;
   setSidebarOpen: (open: boolean) => void;
   builtInStatus?: BuiltInAgentStatus;
   starred?: boolean;
@@ -155,7 +159,9 @@ function SidebarAgentItem({
         ? "Invalid org chain"
       : pauseResumeLabel;
   const showBuiltInLifecycle = builtInStatus === "needs_setup" || builtInStatus === "pending_approval";
+  const showWaiting = runCount === 0 && Boolean(waitingMessage);
   const trailingLabel = [
+    showWaiting ? waitingMessage : null,
     showBuiltInLifecycle ? `Built-in agent ${builtInStatus.replace(/_/g, " ")}` : null,
     hasInvalidOrgChain ? "Invalid reporting chain" : null,
   ].filter(Boolean).join(", ") || undefined;
@@ -177,8 +183,17 @@ function SidebarAgentItem({
         starred && !isMobile ? "pr-14" : "pr-8",
       )}
       trailing={
-        showBuiltInLifecycle || hasInvalidOrgChain ? (
+        showBuiltInLifecycle || hasInvalidOrgChain || showWaiting ? (
           <span className="ml-1 flex shrink-0 items-center gap-1">
+            {showWaiting ? (
+              <span
+                className="text-(length:--text-micro) text-muted-foreground"
+                title={waitingMessage ?? undefined}
+                data-testid="sidebar-agent-waiting"
+              >
+                waiting
+              </span>
+            ) : null}
             {showBuiltInLifecycle ? <BuiltInLifecycleChip status={builtInStatus} compact /> : null}
             {hasInvalidOrgChain ? (
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="Invalid reporting chain" />
@@ -355,20 +370,29 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
   });
   usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
 
-  const liveCountByAgent = useMemo(() => {
+  // Runs held by run admission are not working: they keep the agent listed
+  // but show the hold line instead of "N live" (GRE-198).
+  const { liveCountByAgent, waitingByAgent } = useMemo(() => {
     const counts = new Map<string, number>();
+    const waiting = new Map<string, string>();
     for (const run of liveRuns ?? []) {
+      const waitMessage = runAdmissionWaitMessage(run);
+      if (waitMessage) {
+        if (!waiting.has(run.agentId)) waiting.set(run.agentId, waitMessage);
+        continue;
+      }
       counts.set(run.agentId, (counts.get(run.agentId) ?? 0) + 1);
     }
-    return counts;
+    return { liveCountByAgent: counts, waitingByAgent: waiting };
   }, [liveRuns]);
   const liveAgentIds = useMemo(() => {
     const ids = new Set<string>();
     for (const [agentId, count] of liveCountByAgent) {
       if (count > 0) ids.add(agentId);
     }
+    for (const agentId of waitingByAgent.keys()) ids.add(agentId);
     return ids;
-  }, [liveCountByAgent]);
+  }, [liveCountByAgent, waitingByAgent]);
 
   const visibleAgents = useMemo(() => {
     const filtered = (agents ?? []).filter(
@@ -427,11 +451,11 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
     const nowForLiveLinger = Date.now();
     const lastSeenLiveAtByAgent = lastSeenLiveAtRef.current;
     return sortedAgents.filter((agent: Agent) => {
-      if ((liveCountByAgent.get(agent.id) ?? 0) > 0) return true;
+      if ((liveCountByAgent.get(agent.id) ?? 0) > 0 || waitingByAgent.has(agent.id)) return true;
       const lastSeenLiveAt = lastSeenLiveAtByAgent.get(agent.id);
       return lastSeenLiveAt !== undefined && nowForLiveLinger - lastSeenLiveAt <= LIVE_AGENT_LINGER_MS;
     });
-  }, [liveCountByAgent, liveLingerVersion, sortedAgents]);
+  }, [liveCountByAgent, waitingByAgent, liveLingerVersion, sortedAgents]);
   const hasActiveAgents = runningAgents.length > 0;
   const displayedAgents = !streamlined
     ? sortedAgents
@@ -482,7 +506,7 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
     const now = Date.now();
     let nextExpiryAt: number | null = null;
     for (const agent of sortedAgents) {
-      if ((liveCountByAgent.get(agent.id) ?? 0) > 0) continue;
+      if ((liveCountByAgent.get(agent.id) ?? 0) > 0 || waitingByAgent.has(agent.id)) continue;
       const lastSeenLiveAt = lastSeenLiveAtRef.current.get(agent.id);
       if (lastSeenLiveAt === undefined) continue;
       const expiresAt = lastSeenLiveAt + LIVE_AGENT_LINGER_MS;
@@ -498,7 +522,7 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [streamlined, sortedAgents, liveCountByAgent, liveLingerVersion]);
+  }, [streamlined, sortedAgents, liveCountByAgent, waitingByAgent, liveLingerVersion]);
 
   const persistSortMode = useCallback(
     (value: string) => {
@@ -621,6 +645,7 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
       onPauseResume={(targetAgent, action) => pauseResumeAgent.mutate({ agent: targetAgent, action })}
       rail={rail}
       runCount={liveCountByAgent.get(agent.id) ?? 0}
+      waitingMessage={waitingByAgent.get(agent.id) ?? null}
       setSidebarOpen={setSidebarOpen}
       builtInStatus={builtInStatusByAgentId.get(agent.id)}
       starred={isStarredRow || isStarred(membershipsQuery.data, "agent", agent.id)}

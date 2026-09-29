@@ -231,7 +231,7 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
     expect(current.get(busyRuns[1]!)).toBe("queued");
     expect(current.get(busyRuns[2]!)).toBe("queued");
     expect(getHeartbeatRunRuntimeStatus(busyRuns[1]!)?.message).toMatch(
-      /^Held: instance run cap reached/,
+      /^Waiting: instance run cap reached/,
     );
 
     // Finishing one run frees a slot; the held run starts without a manual drain.
@@ -298,17 +298,11 @@ describeEmbeddedPostgres("heartbeat run admission guard (GRE-105)", () => {
     await heartbeat.resumeQueuedRuns();
     expect((await statuses([runId])).get(runId)).toBe("queued");
     expect(getHeartbeatRunRuntimeStatus(runId)?.message).toMatch(
-      /^Held: low memory \(1\.0 GB available, floor 2\.0 GB\)/,
+      /^Waiting: low memory \(1 GB free, floor 2 GB\)/,
     );
 
-    memory = { availableBytes: 8 * GB, pressure: "warn" };
-    await heartbeat.resumeQueuedRuns();
-    expect((await statuses([runId])).get(runId)).toBe("queued");
-    expect(getHeartbeatRunRuntimeStatus(runId)?.message).toMatch(
-      /memory pressure warn/,
-    );
-
-    memory = { availableBytes: 8 * GB, pressure: "normal" };
+    // GRE-198: macOS "warn" pressure with free RAM above the floor admits.
+    memory = { availableBytes: 6 * GB, pressure: "warn" };
     await heartbeat.resumeQueuedRuns();
     expect(
       await waitFor(async () => (await statuses([runId])).get(runId) === "running"),

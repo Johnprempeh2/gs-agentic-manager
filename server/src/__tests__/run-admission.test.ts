@@ -18,6 +18,7 @@ const settings = { maxConcurrentRuns: 3, minAvailableMemoryMb: 2048 };
 
 describe("run admission (GRE-105)", () => {
   it("uses safe defaults when no setting is stored", () => {
+    expect(DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB).toBe(2048);
     expect(resolveRunAdmissionSettings({})).toEqual({
       maxConcurrentRuns: DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
       minAvailableMemoryMb: DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
@@ -54,7 +55,7 @@ describe("run admission (GRE-105)", () => {
       memory: { availableBytes: 1 * GB, pressure: "normal" },
     });
     expect(low).toMatchObject({ admit: false, reason: "low_memory" });
-    expect(low.admit ? "" : low.message).toMatch(/^Held: low memory/);
+    expect(low.admit ? "" : low.message).toMatch(/^Waiting: low memory/);
 
     expect(
       evaluateRunAdmission({
@@ -65,16 +66,30 @@ describe("run admission (GRE-105)", () => {
     ).toEqual({ admit: true, slots: 3 });
   });
 
-  it("holds on warn or critical memory pressure even with free RAM", () => {
+  it("never holds on OS memory pressure while free memory is above the floor (GRE-198)", () => {
+    // macOS reports "warn" as its normal state; John saw every run held with 6 GB free.
     for (const pressure of ["warn", "critical"] as const) {
       expect(
         evaluateRunAdmission({
           settings,
           runningCount: 0,
-          memory: { availableBytes: 8 * GB, pressure },
+          memory: { availableBytes: 6 * GB, pressure },
         }),
-      ).toMatchObject({ admit: false, reason: "memory_pressure" });
+      ).toEqual({ admit: true, slots: 3 });
     }
+  });
+
+  it("holds below the floor with a readable waiting message (GRE-198)", () => {
+    const held = evaluateRunAdmission({
+      settings,
+      runningCount: 0,
+      memory: { availableBytes: 1.6 * GB, pressure: "normal" },
+    });
+    expect(held).toEqual({
+      admit: false,
+      reason: "low_memory",
+      message: "Waiting: low memory (1.6 GB free, floor 2 GB)",
+    });
   });
 
   it("fails open when memory cannot be read, and a 0 floor disables the memory check", () => {

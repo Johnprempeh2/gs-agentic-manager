@@ -20429,7 +20429,7 @@ export function heartbeatService(
         );
       }
       // Republish on change, and well inside the runtime-status TTL so the
-      // "Held: ..." line stays visible while the run waits.
+      // "Waiting: ..." line stays visible while the run waits.
       if (
         prior?.message === hold.message &&
         now - prior.publishedAt < RUN_ADMISSION_RECHECK_MS * 3
