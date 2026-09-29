@@ -16,6 +16,7 @@ import {
   parseVmStatAvailableBytes,
   ramGuard,
   runLanes,
+  sameRepoCheck,
   summarize,
   tryLock,
   unlock,
@@ -116,8 +117,16 @@ test("lanes stop at the first failure and the summary says failure", async () =>
   }
 });
 
+test("only PRs from branches on the repo itself may run; unknown is refused", () => {
+  assert.equal(sameRepoCheck({ isCrossRepository: false, author: "app/gsam" }).ok, true);
+  const fork = sameRepoCheck({ isCrossRepository: true, author: "stranger" });
+  assert.equal(fork.ok, false);
+  assert.match(fork.reason, /fork by stranger/);
+  assert.equal(sameRepoCheck({ isCrossRepository: undefined, author: null }).ok, false);
+});
+
 // A repository with origin, PR #7 under refs/pull/7/head, and fake gh/pnpm.
-function fakeWorld({ runView }) {
+function fakeWorld({ runView, isCrossRepository = false }) {
   const dir = mkdtempSync(join(tmpdir(), "gs-local-ci-e2e-"));
   const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
   const origin = join(dir, "origin.git");
@@ -143,7 +152,7 @@ function fakeWorld({ runView }) {
 const fs = require("fs");
 const a = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(a) + "\\n");
-if (a[0] === "pr" && a[1] === "view") console.log(JSON.stringify({ headRefOid: ${JSON.stringify(sha)}, state: "OPEN", commits: [{ committedDate: "2026-09-28T23:00:00Z" }] }));
+if (a[0] === "pr" && a[1] === "view") console.log(JSON.stringify({ headRefOid: ${JSON.stringify(sha)}, state: "OPEN", commits: [{ committedDate: "2026-09-28T23:00:00Z" }], isCrossRepository: ${JSON.stringify(isCrossRepository)}, author: { login: "someone" } }));
 else if (a[0] === "run" && a[1] === "list") console.log(JSON.stringify([{ databaseId: 55, status: "completed", conclusion: "failure", createdAt: "2026-09-28T23:01:00Z", event: "pull_request" }]));
 else if (a[0] === "run" && a[1] === "view") process.stdout.write(fs.readFileSync(${JSON.stringify(join(dir, "run-view.txt"))}, "utf8"));
 `;
@@ -192,6 +201,22 @@ test("run refuses a PR whose Fork CI ran and failed; dry run posts nothing", () 
     const dry = w.cli("run", "7", "--dry-run");
     assert.equal(dry.status, 0, dry.stderr);
     assert.match(dry.stdout, /context=local-ci/);
+    assert.equal(w.ghCalls().some((c) => c[0] === "api" || c[1] === "comment"), false);
+  } finally {
+    rmSync(w.dir, { recursive: true, force: true });
+  }
+});
+
+test("run refuses a PR from a fork, also with --dry-run, before any code is fetched or run", () => {
+  const w = fakeWorld({ runView: billingStop, isCrossRepository: true });
+  try {
+    for (const args of [["run", "7"], ["run", "7", "--dry-run"]]) {
+      const r = w.cli(...args);
+      assert.equal(r.status, 3, r.stderr);
+      assert.match(r.stderr, /refused: head is on a fork by someone; local-ci only runs PRs from branches on/);
+      assert.doesNotMatch(r.stdout, /context=local-ci/);
+    }
+    assert.equal(existsSync(join(w.clone, ".gsam", "local-ci", "work")), false, "no worktree, no lanes");
     assert.equal(w.ghCalls().some((c) => c[0] === "api" || c[1] === "comment"), false);
   } finally {
     rmSync(w.dir, { recursive: true, force: true });

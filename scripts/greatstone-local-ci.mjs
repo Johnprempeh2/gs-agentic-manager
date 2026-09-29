@@ -170,9 +170,25 @@ function gh(args) {
 }
 
 function prHead(pr) {
-  const info = JSON.parse(gh(["pr", "view", String(pr), "-R", REPO, "--json", "headRefOid,state,commits"]));
+  const info = JSON.parse(gh(["pr", "view", String(pr), "-R", REPO, "--json", "headRefOid,state,commits,isCrossRepository,author"]));
   const last = info.commits?.[info.commits.length - 1];
-  return { sha: info.headRefOid, state: info.state, headAt: last?.committedDate ?? null };
+  return {
+    sha: info.headRefOid,
+    state: info.state,
+    headAt: last?.committedDate ?? null,
+    isCrossRepository: info.isCrossRepository,
+    author: info.author?.login ?? null,
+  };
+}
+
+// The repo is public and the lanes run `pnpm install` on the host of the live
+// app with HOME set, so only branches on REPO itself (agent PRs) may run here.
+// Fails closed: anything but an explicit `false` is refused.
+export function sameRepoCheck(head) {
+  if (head.isCrossRepository === false) return { ok: true, reason: null };
+  const who = head.author ? ` by ${head.author}` : "";
+  const why = head.isCrossRepository === true ? `head is on a fork${who}` : "GitHub did not say where the head is";
+  return { ok: false, reason: `${why}; local-ci only runs PRs from branches on ${REPO}` };
 }
 
 export function detect(pr, { now = new Date() } = {}) {
@@ -270,6 +286,8 @@ async function cmdRun(pr, { dryRun }) {
   const found = detect(pr);
   say(`PR #${pr} head ${found.head.sha.slice(0, 7)} (${found.head.state}): ${found.reason}`);
   if (found.head.state !== "OPEN") throw new Error(`PR #${pr} is ${found.head.state}`);
+  const origin = sameRepoCheck(found.head);
+  if (!origin.ok) throw new Error(`refused: ${origin.reason}.`); // also with --dry-run
   if (!found.fallback && !dryRun) {
     throw new Error(`fallback refused: ${found.reason}. local-ci only runs when GitHub could not start Fork CI.`);
   }

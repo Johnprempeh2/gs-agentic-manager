@@ -74,6 +74,11 @@ to it.
   while the RAM guard says the host is busy, and posts `local-ci` and a comment
   on the pull request. It refuses to run when Fork CI ran, so a real Fork CI
   failure is never overridden: the owner fixes it. A new push needs a new check.
+  `local-ci` is only for pull requests from branches on
+  `Johnprempeh2/gs-agentic-manager` (agent pull requests). The repo is public,
+  and the check installs and builds the pull request's code on the Mac that
+  runs the live app, so `run` refuses a pull request from a fork (also with
+  `--dry-run`). A fork pull request waits for GitHub CI.
   Note on the issue that the merge used `local-ci`. Runner and vitest lanes are
   not part of it; they are not part of Fork CI on pull requests either.
 
