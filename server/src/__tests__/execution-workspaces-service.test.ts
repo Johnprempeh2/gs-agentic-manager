@@ -554,6 +554,39 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(workspace).toMatchObject({ status: "archived", cleanupReason: "issue_terminal" });
   }, 20_000);
 
+  it("keeps a done issue's workspace while an open issue outside its tree reuses it (GRE-229)", async () => {
+    const seeded = await seedAncestryTerminalWorkspace();
+    const reusingIssueId = randomUUID();
+    await db.insert(issues).values({
+      id: reusingIssueId,
+      companyId: seeded.companyId,
+      projectId: seeded.projectId,
+      title: "Reuses the done issue's workspace",
+      status: "todo",
+      priority: "medium",
+      executionWorkspaceId: seeded.executionWorkspaceId,
+      executionWorkspacePreference: "reuse_existing",
+    });
+
+    const readiness = await svc.getCloseReadiness(seeded.executionWorkspaceId);
+    expect(readiness?.blockingReasons).toContain("This workspace is still linked to an open issue.");
+
+    const sweep = await svc.sweepTerminalWorkspaces();
+    const [workspace] = await db
+      .select({ status: executionWorkspaces.status, closedAt: executionWorkspaces.closedAt })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+
+    expect(sweep).toMatchObject({ archived: 0, skippedOpenLinkedIssue: 1 });
+    expect(workspace).toMatchObject({ status: "active", closedAt: null });
+    await expect(fs.access(seeded.worktreePath)).resolves.toBeUndefined();
+
+    // Once the reusing issue closes, the next sweep archives the workspace.
+    await db.update(issues).set({ status: "done" }).where(eq(issues.id, reusingIssueId));
+    const nextSweep = await svc.sweepTerminalWorkspaces();
+    expect(nextSweep).toMatchObject({ archived: 1, skippedOpenLinkedIssue: 0 });
+  }, 20_000);
+
   describe("finished workspace cleanup safety (GRE-208)", () => {
     async function markRuntimeOwnedBranch(executionWorkspaceId: string) {
       await db
