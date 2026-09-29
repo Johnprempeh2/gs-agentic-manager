@@ -226,6 +226,27 @@ describe("DashboardOverview", () => {
     expect(rowFor("Di")?.textContent).not.toContain("Running");
   });
 
+  it("labels each open task row with who it is for (GRE-258)", () => {
+    act(() => {
+      root.render(
+        <DashboardOverview
+          agents={[agent({ id: "a", name: "Ada" })]}
+          openIssues={[
+            issue({ id: "i1", title: "Agent one", assigneeAgentId: "a" }),
+            issue({ id: "i2", title: "Mine", assigneeUserId: "me" } as Partial<Issue>),
+            issue({ id: "i3", title: "Hers", assigneeUserId: "u2" } as Partial<Issue>),
+            issue({ id: "i4", title: "Nobody" }),
+          ]}
+          currentUserId="me"
+          userLabels={new Map([["u2", "Sam Lee"]])}
+        />,
+      );
+    });
+
+    const labels = [...container.querySelectorAll('[data-testid="task-owner-label"]')].map((el) => el.textContent);
+    expect(labels.sort()).toEqual(["Agent task", "Sam Lee", "Your task"]);
+  });
+
   it("shows no live count when nothing is running", () => {
     act(() => {
       root.render(<DashboardOverview agents={[agent({ id: "a", name: "Ada", status: "running" })]} openIssues={[]} />);

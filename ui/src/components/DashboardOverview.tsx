@@ -7,6 +7,7 @@ import { AgentIdentity } from "./AgentIdentity";
 import { AgentStatusBadge } from "./StatusBadge";
 import { IssueRow } from "./IssueRow";
 import { PriorityIcon } from "./PriorityIcon";
+import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { StatusIcon } from "./StatusIcon";
 import { agentUrl, cn } from "../lib/utils";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
@@ -143,6 +144,9 @@ export interface DashboardOverviewProps {
   issuesLoading?: boolean;
   agentsError?: Error | null;
   issuesError?: Error | null;
+  /** The viewer, so task rows can say "Your task" and name other people. */
+  currentUserId?: string | null;
+  userLabels?: ReadonlyMap<string, string> | null;
 }
 
 export function DashboardOverview({
@@ -153,6 +157,8 @@ export function DashboardOverview({
   issuesLoading = false,
   agentsError = null,
   issuesError = null,
+  currentUserId = null,
+  userLabels = null,
 }: DashboardOverviewProps) {
   const agentRows = deriveDashboardAgentRows(agents, openIssues, liveAgents);
   const liveCount = agentRows.filter((row) => row.live).length;
@@ -258,6 +264,7 @@ export function DashboardOverview({
                   key={issue.id}
                   issue={issue}
                   presentation="task"
+                  ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={userLabels} />}
                   metadata={(
                     <span className="flex items-center gap-2">
                       {SHOW_TASK_PRIORITY_UI ? <PriorityIcon priority={issue.priority} /> : null}
