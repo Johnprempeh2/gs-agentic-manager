@@ -159,7 +159,7 @@ test("a stale empty index.lock in live is removed before the release script runs
   assert.equal(existsSync(lock), false);
   assert.match(run.stdout, new RegExp(`Removed a stale ${lock} \\(empty, \\d+s old, no git process\\)`));
   assert.deepEqual(calls, ["rc-2026-09-27.2"]);
-  assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2"));
+  assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2^{commit}"));
 });
 
 for (const [name, setup] of [
