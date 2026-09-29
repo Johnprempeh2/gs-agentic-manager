@@ -19,7 +19,7 @@ export function BrandPageTitle({ children, className }: { children: ReactNode; c
 /** Icon tile for "all caught up" empty states: the stone on the accent disc. */
 export function BrandCaughtUpMark() {
   return (
-    <div className="mb-4 rounded-full bg-accent p-4">
+    <div className="mb-4 flex size-18 items-center justify-center rounded-full bg-accent">
       <BrandMark decorative className="h-10 w-auto" />
     </div>
   );
