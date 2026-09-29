@@ -5274,6 +5274,36 @@ for (const segment of costSummaryPaths) {
   });
 }
 
+const costLedgerMonthQuery = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/ledger",
+  tags: ["costs"],
+  summary: "Monthly cost ledger per agent, provider and tool",
+  request: { params: z.object({ companyId: z.string() }), query: costLedgerMonthQuery },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/ledger/export",
+  tags: ["costs"],
+  summary: "Export the monthly cost ledger as CSV",
+  request: { params: z.object({ companyId: z.string() }), query: costLedgerMonthQuery },
+  responses: {
+    200: {
+      description: "Monthly cost ledger CSV",
+      content: { "text/csv": { schema: z.string() } },
+    },
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
+});
+
 registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/cost-events",
