@@ -26868,8 +26868,10 @@ export function heartbeatService(
     } finally {
       if (managedAiRuntime) await managedAiRuntime.cleanup().catch(() => logger.warn({ runId: run.id }, "AI connection refresh or cleanup failed"));
       let latestRun = await getRun(run.id).catch(() => null);
-      // The provider refused the managed credential. Show the connection as
-      // needing attention so the next runs stop before calling the provider.
+      // The provider refused the managed credential. Once the refusal is
+      // confirmed, show the connection as needing attention so the next runs
+      // stop before calling the provider. An unconfirmed refusal fails only
+      // this run (GRE-236).
       if (managedAiRuntime && latestRun?.status === "failed" && isAiAuthRequiredErrorCode(latestRun.errorCode)) {
         await aiConnectionService(db).recordCredentialRejected({
           companyId: run.companyId,
@@ -26877,6 +26879,7 @@ export function heartbeatService(
           grantId: managedAiRuntime.attribution.grantId,
           identity: managedAiRuntime.identity,
           runId: run.id,
+          afterOutput: (readRawUsageTotals(latestRun.usageJson)?.outputTokens ?? 0) > 0,
         }).catch((error) => logger.warn({ err: error, runId: run.id }, "Could not mark the AI connection as needing attention"));
       }
       try {
