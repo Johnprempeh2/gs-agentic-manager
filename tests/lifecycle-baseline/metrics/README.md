@@ -134,6 +134,7 @@ the same way as `collect.mjs` (read only, loopback hosts only).
 pnpm metrics:lost-time                                 # local embedded instance, last 7 days
 pnpm metrics:lost-time --company <id> --since 2026-09-27T00:00:00Z --now 2026-09-28T00:00:00Z
 pnpm metrics:lost-time --silence-minutes 20            # threshold for L1 manual cancels (default 20)
+pnpm metrics:lost-time --run-log-dir <instance>/data/run-logs   # run logs for L1 manual cancels
 ```
 
 It writes `.lifecycle-baseline/metrics/lost-time/<stamp>/lost-time.{json,md}`.
@@ -142,9 +143,17 @@ Reports hold identifiers, rule names and timings, never comment bodies.
 - **L1 — runs stopped as silent or hung, and their minutes.** A run finished
   in the window counts when a watchdog stopped it (`run_silent_timeout`,
   `process_lost`, or status `timed_out`), or when a person cancelled it
-  (`errorCode = 'cancelled'`) after it ran at least the silence threshold.
-  The two are reported apart: after GRE-34, hangs should move from "person"
-  to "watchdog" and their minutes should drop to about the threshold.
+  (`errorCode = 'cancelled'`) after it had written no output for at least the
+  silence threshold (GRE-182). Silence is read from the run log's chunk times
+  and ends where the stop flush starts: output in the last 60 s before
+  `finished_at` is the dying process's own (tool call, status, error) and is
+  ignored. The clock starts at the last output before that, then process
+  start, then run start. A run with no local log falls back to the row's
+  `last_output_at` (marked `run row` in the report), which the stop flush can
+  hide. A bulk cancel of runs that were still writing does not count; the
+  report gives how many long manual cancels were left out. The two kinds are
+  reported apart: after GRE-34, hangs should move from "person" to "watchdog"
+  and their minutes should drop to about the threshold.
 - **L2 — recovery moved an issue to `blocked` while an interaction was
   pending.** A recovery move is a system `issue.updated` activity row with a
   `recovery.*` source and status `blocked`. It counts when an interaction on
@@ -162,9 +171,11 @@ Each report gives finished runs and agent-minutes in the window, and L1/L3 as a
 share of agent-minutes. Compare windows of the same length, and compare shares
 as well as raw counts: a busier week has more runs to lose.
 
-Limits: before GRE-34 there is no silence signal in the database
-(`last_output_at` is written again during cancel, and run events are sparse
-during a turn), so L1 relies on the manual-cancel rule. A long run a person
-cancels for another reason also counts. If GRE-34 or GRE-36 ship a different
+Limits: the database alone has no reliable silence signal for a cancelled run
+(`last_output_at` and even `process_started_at` are written again during the
+stop), so L1 reads the run logs; point `--run-log-dir` at the instance being
+measured. The manual-cancel rule stays next to the watchdog because an agent
+can turn the watchdog off (`silentTimeoutSec: 0`) and older windows predate
+it. If GRE-34 or GRE-36 ship a different
 stop code than the ones above, add it to `SILENT_STOP_CODES` or
 `REASSIGN_STOP_CODE` before taking the after number.

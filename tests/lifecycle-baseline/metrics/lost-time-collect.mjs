@@ -2,13 +2,17 @@
 // saves the time lost to platform faults (L1–L4, GRE-37) under
 // .lifecycle-baseline/metrics/lost-time/<stamp>/.
 //
-//   pnpm metrics:lost-time [--database-url URL] [--company ID] [--window-days 7] [--since ISO] [--now ISO] [--silence-minutes 20] [--out DIR]
+//   pnpm metrics:lost-time [--database-url URL] [--company ID] [--window-days 7] [--since ISO] [--now ISO] [--silence-minutes 20] [--run-log-dir DIR] [--out DIR]
 //
 // The database URL defaults to $GSAM_METRICS_DATABASE_URL, then the embedded
 // local instance. Only loopback hosts are accepted: this never reads a shared
-// or production database.
+// or production database. For manual cancels, the output chunk times are read
+// from the instance's local run logs (--run-log-dir, default
+// $RUN_LOG_BASE_PATH, then $GSAM_HOME/instances/<id>/data/run-logs); a run
+// whose log is missing falls back to the row's last output time.
 import { createRequire } from "node:module";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DEFAULT_SILENCE_MINUTES, computeLostTime } from "./lost-time.mjs";
@@ -26,6 +30,13 @@ const now = new Date(flag("now", new Date().toISOString()));
 const sinceFlag = flag("since");
 const silenceMinutes = Number(flag("silence-minutes", String(DEFAULT_SILENCE_MINUTES)));
 const outFlag = flag("out");
+const runLogDir = resolve(
+  flag(
+    "run-log-dir",
+    process.env.RUN_LOG_BASE_PATH ??
+      join(process.env.GSAM_HOME ?? join(homedir(), ".gsam"), "instances", process.env.GSAM_INSTANCE_ID ?? "default", "data", "run-logs"),
+  ),
+);
 
 const host = new URL(databaseUrl).hostname;
 if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(host)) {
@@ -41,6 +52,8 @@ const snapshot = await sql.begin("read only", async (tx) => {
   const runs = await tx`
     select r.id, r.agent_id as "agentId", r.status, r.error_code as "errorCode",
       r.created_at as "createdAt", r.started_at as "startedAt", r.finished_at as "finishedAt",
+      r.last_output_at as "lastOutputAt", r.process_started_at as "processStartedAt",
+      r.log_store as "logStore", r.log_ref as "logRef",
       i.identifier as "issueIdentifier"
     from heartbeat_runs r left join issues i on i.id::text = coalesce(r.context_snapshot->>'issueId', r.context_snapshot->>'taskId')
     where r.finished_at >= ${since} and r.finished_at <= ${now} ${scope("r.company_id")}`;
@@ -64,6 +77,22 @@ const snapshot = await sql.begin("read only", async (tx) => {
 });
 await sql.end();
 
+// Output chunk times for manual cancels only; everything else never needs them.
+for (const run of snapshot.runs) {
+  const { logStore, logRef } = run;
+  delete run.logStore;
+  delete run.logRef;
+  if (run.status !== "cancelled" || run.errorCode !== "cancelled" || logStore !== "local_file" || !logRef) continue;
+  const file = resolve(runLogDir, logRef);
+  if (!file.startsWith(runLogDir) || !existsSync(file)) continue;
+  run.outputTimes = readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.stream === "stdout" || entry.stream === "stderr")
+    .map((entry) => entry.ts);
+}
+
 const metrics = computeLostTime(snapshot, { now, windowDays, since: sinceFlag ? since : null, silenceMinutes });
 const git = (...args) => spawnSync("git", args, { cwd: root, encoding: "utf8" }).stdout.trim();
 const report = {
@@ -79,6 +108,7 @@ const report = {
 const { totals, l1HungRuns: l1, l2FalseStalls: l2, l3ReassignCancels: l3, l4HumanComments: l4 } = metrics;
 const pct = (value) => (value == null ? "n/a" : `${value}%`);
 const runLine = (run) => `- ${run.issueIdentifier ?? "no issue"} · run \`${run.id.slice(0, 8)}\` · ${run.status}/${run.errorCode ?? "-"} · ${run.minutes} min`;
+const l1Line = (run) => `${runLine(run)}, silent ${run.silentMinutes} min at stop (${run.silenceSource.replace("_", " ")})`;
 const markdown = [
   "# Time lost to platform faults — L1 to L4",
   "",
@@ -87,7 +117,7 @@ const markdown = [
   "",
   "| # | Number | Value | Detail |",
   "|---|---|---:|---|",
-  `| L1 | Runs stopped as silent or hung | ${l1.count} | ${l1.caughtByWatchdog.count} by a watchdog, ${l1.caughtByHuman.count} cancelled by a person after ≥ ${l1.silenceMinutes} min |`,
+  `| L1 | Runs stopped as silent or hung | ${l1.count} | ${l1.caughtByWatchdog.count} by a watchdog, ${l1.caughtByHuman.count} cancelled by a person after ≥ ${l1.silenceMinutes} min with no output; ${l1.manualCancelsNotCounted} long manual cancels of runs still writing not counted |`,
   `| L1 | Minutes in those runs | ${l1.minutes} | ${pct(l1.shareOfAgentMinutesPct)} of agent-minutes; longest ${Math.max(l1.caughtByWatchdog.maxMinutes, l1.caughtByHuman.maxMinutes)} min |`,
   `| L2 | Recovery moved to \`blocked\` while an interaction was pending | ${l2.count} | of ${l2.recoveryBlocks} recovery moves to \`blocked\` |`,
   `| L3 | Runs cancelled by \`issue_reassigned\` | ${l3.count} | ${l3.overFiveMinutes} ran ≥ 5 min |`,
@@ -96,7 +126,9 @@ const markdown = [
   "",
   "## L1 runs",
   "",
-  ...([...l1.caughtByWatchdog.runs, ...l1.caughtByHuman.runs].map(runLine).join("\n") || "None.").split("\n"),
+  `Rule: a watchdog stop (\`run_silent_timeout\`, \`process_lost\`, or timed out) counts; a manual cancel counts only when the run had written no output for ≥ ${l1.silenceMinutes} min when it was cancelled (clock starts at last output, then process start, then run start; output in the last ${l1.stopFlushSeconds} s before the stop is the stop's own flush and is ignored). A cancel of a run that was still writing does not count.`,
+  "",
+  ...([...l1.caughtByWatchdog.runs, ...l1.caughtByHuman.runs].map(l1Line).join("\n") || "None.").split("\n"),
   "",
   "## L2 false stalls",
   "",

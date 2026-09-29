@@ -29,6 +29,38 @@ test("L1: watchdog stops and long manual cancels count; short cancels and long s
   assert.equal(l1.minutes, 282 + 20 + 3 + 30);
 });
 
+test("L1: a bulk cancel of working runs does not count; a manual cancel of a silent run does (GRE-182)", () => {
+  const sec = (hhmmss) => `2026-09-27T${hhmmss}.000Z`;
+  const cancel = (id, fields) => run(id, { status: "cancelled", errorCode: "cancelled", ...fields });
+  // Every cancel ends in the stop flush: tool call, status, error within seconds.
+  const flush = (hhmm) => [sec(`${hhmm}:52`), sec(`${hhmm}:53`), sec(`${hhmm}:54`)];
+  const snapshot = base({
+    runs: [
+      // 28 Sep 08:27: a bulk cancel of runs that were still writing (8eec7196:
+      // a tool call every 30 s, last one 4 min before the cancel).
+      cancel("working-1", { startedAt: at("07:59"), processStartedAt: at("07:59"), lastOutputAt: sec("08:26:54"), finishedAt: sec("08:27:06"), outputTimes: [at("08:20"), sec("08:22:41"), ...flush("08:26")] }),
+      cancel("working-2", { startedAt: at("07:56"), processStartedAt: at("07:56"), lastOutputAt: sec("08:26:54"), finishedAt: sec("08:27:06"), outputTimes: [sec("08:25:30"), ...flush("08:26")] }),
+      // 27 Sep GRE-3 (d267e002): silent 14:23 to 18:49 in one terminal call,
+      // then a person cancelled it. The stop flush moved lastOutputAt to 18:49,
+      // and the stop stamped processStartedAt again.
+      cancel("silent-1", { startedAt: at("14:07"), processStartedAt: sec("18:49:15"), lastOutputAt: sec("18:48:54"), finishedAt: sec("18:49:22"), outputTimes: [at("14:23"), ...flush("18:48")] }),
+      // No output before the stop flush: the clock starts at process start.
+      cancel("silent-2", { startedAt: at("07:00"), processStartedAt: at("07:02"), lastOutputAt: sec("07:29:54"), finishedAt: sec("07:30:06"), outputTimes: flush("07:29") }),
+      // No run log: the row's last output time is used.
+      cancel("no-log-silent", { startedAt: at("06:00"), lastOutputAt: at("06:30"), finishedAt: at("07:00") }),
+    ],
+  });
+  const l1 = computeHungRuns(snapshot, window);
+  assert.deepEqual(l1.caughtByHuman.runs.map((entry) => entry.id), ["silent-1", "silent-2", "no-log-silent"]);
+  assert.deepEqual(l1.caughtByHuman.runs.map((entry) => entry.silentMinutes), [265.4, 27.1, 30]);
+  assert.deepEqual(l1.caughtByHuman.runs.map((entry) => entry.silenceSource), ["run_log", "run_log", "run_row"]);
+  assert.equal(l1.manualCancelsNotCounted, 2);
+  // Minutes stay the whole run's minutes: that time was lost.
+  assert.equal(l1.caughtByHuman.minutes, round(282.4 + 30.1 + 60));
+});
+
+const round = (value) => Math.round(value * 10) / 10;
+
 test("L2: a recovery block counts only while an interaction on that issue is pending", () => {
   const move = (entityId, createdAt, fields = {}) => ({ actorType: "system", entityId, issueIdentifier: entityId, status: "blocked", source: "recovery.reconcile_execution_review_participant", previousStatus: "in_review", createdAt, ...fields });
   const snapshot = base({
