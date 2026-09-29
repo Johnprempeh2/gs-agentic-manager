@@ -86,6 +86,12 @@ export const issues = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    // "Not now": a tabled task is parked in backlog, gets no agent wakes, and
+    // leaves the Decisions feed until tabledUntil passes or it is brought back.
+    tabledAt: timestamp("tabled_at", { withTimezone: true }),
+    tabledUntil: timestamp("tabled_until", { withTimezone: true }),
+    tabledByUserId: text("tabled_by_user_id"),
+    tabledFromStatus: text("tabled_from_status"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -120,6 +126,9 @@ export const issues = pgTable(
     projectWorkspaceIdx: index("issues_company_project_workspace_idx").on(table.companyId, table.projectWorkspaceId),
     executionWorkspaceIdx: index("issues_company_execution_workspace_idx").on(table.companyId, table.executionWorkspaceId),
     dueMonitorIdx: index("issues_company_monitor_due_idx").on(table.companyId, table.monitorNextCheckAt),
+    tabledIdx: index("issues_tabled_until_idx")
+      .on(table.tabledUntil)
+      .where(sql`${table.tabledAt} is not null`),
     companyUpdatedIdx: index("issues_company_updated_idx").on(table.companyId, table.updatedAt),
     companyCreatedIdx: index("issues_company_created_idx").on(table.companyId, table.createdAt),
     openNormalizedTitleCreatedIdx: index("issues_open_normalized_title_created_idx")

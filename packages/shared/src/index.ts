@@ -2079,6 +2079,8 @@ export {
   issueDocumentKeySchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
+  tableIssueSchema,
+  type TableIssue,
   createIssueTreeHoldSchema,
   issueTreeControlModeSchema,
   issueTreeHoldReleasePolicySchema,
