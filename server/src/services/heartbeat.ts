@@ -21088,10 +21088,27 @@ export function heartbeatService(
       );
   }
 
+  // GRE-281: reaper passes can overlap (the scheduler does not wait for one
+  // to end), so only one pass at a time may finish a given adopted run.
+  const capturedOutputFinishesInFlight = new Set<string>();
+
   // GRE-250: finish a hot-restart-adopted run from the terminal result its
   // child wrote to the capture file. "no_result" leaves the caller on the
   // process_lost + retry-once path; "still_running" leaves the run alone.
-  async function finishAdoptedRunFromCapturedOutput(input: {
+  async function finishAdoptedRunFromCapturedOutput(
+    input: Parameters<typeof finishAdoptedRunFromCapturedOutputOnce>[0],
+  ) {
+    const runId = input.run.id;
+    if (capturedOutputFinishesInFlight.has(runId)) return "still_running";
+    capturedOutputFinishesInFlight.add(runId);
+    try {
+      return await finishAdoptedRunFromCapturedOutputOnce(input);
+    } finally {
+      capturedOutputFinishesInFlight.delete(runId);
+    }
+  }
+
+  async function finishAdoptedRunFromCapturedOutputOnce(input: {
     run: typeof heartbeatRuns.$inferSelect;
     adapterType: string;
     adapterConfig: unknown;
@@ -21207,6 +21224,12 @@ export function heartbeatService(
       });
     };
 
+    // Another path (a Stop, or an earlier pass) may already have finished the
+    // run; then its log is closed and must not get the tail again.
+    const latest = await getRun(run.id);
+    if (!latest || latest.status !== "running") return "still_running";
+    run = latest;
+
     // Append the output the old server never logged. Without frozen offsets
     // the split point is unknown, so log nothing rather than duplicate.
     for (const stream of ["stdout", "stderr"] as const) {
@@ -21238,11 +21261,8 @@ export function heartbeatService(
         recoveredFromCapturedOutput: true,
       },
     };
-    const latest = await getRun(run.id);
-    if (!latest || latest.status !== "running") return "still_running";
-    run = latest;
 
-    await finalizeLegacyRunFromAdapterResult({
+    const won = await finalizeLegacyRunFromAdapterResult({
       run,
       agent,
       adapterResult,
@@ -21294,6 +21314,8 @@ export function heartbeatService(
             >[2])
           : null,
     });
+    // A lost compare-and-set means another path owns the terminal outcome.
+    if (!won) return "still_running";
 
     const finalizedRun = await getRun(run.id);
     if (!finalizedRun || finalizedRun.status === "running") return "no_result";
@@ -21343,7 +21365,8 @@ export function heartbeatService(
   // result: outcome, usage and cost, session, run log, issue comment and
   // status, wakes, and agent status. executeRun calls it after the adapter
   // returns; the reaper calls it for a hot-restart-adopted child whose result
-  // was recovered from its captured output (GRE-250).
+  // was recovered from its captured output (GRE-250). Returns false when
+  // another path already moved the run out of running.
   async function finalizeLegacyRunFromAdapterResult(input: {
     run: typeof heartbeatRuns.$inferSelect;
     agent: typeof agents.$inferSelect;
@@ -21637,7 +21660,7 @@ export function heartbeatService(
           },
           "skipping late run finalization because the run already left running state",
         );
-        return;
+        return false;
       }
     }
     if (persistedRun) {
@@ -22010,6 +22033,7 @@ export function heartbeatService(
           isWorkspaceSyncConflictFailure(adapterResult.errorMessage)),
       wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
     });
+    return true;
   }
 
   async function executeRun(

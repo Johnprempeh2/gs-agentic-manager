@@ -3778,6 +3778,51 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       });
     });
 
+    // GRE-281: the scheduler does not wait for one reaper pass before the next.
+    it("logs the tail and the finish event once when two reaper passes overlap", async () => {
+      await withTempPaperclipHome(async () => {
+        const before = init + assistant("before restart");
+        const adopted = await adoptCapturedRun({
+          loggedStdout: before,
+          stdout:
+            before +
+            assistant("after restart") +
+            resultEvent({
+              subtype: "success",
+              is_error: false,
+              result: "Work finished after the restart.",
+            }),
+        });
+        await killChild(adopted.child);
+
+        const [first, second] = await Promise.all([
+          adopted.heartbeat.reapOrphanedRuns(),
+          adopted.heartbeat.reapOrphanedRuns(),
+        ]);
+        expect([...first.runIds, ...second.runIds]).toEqual([adopted.runId]);
+
+        const run = await loadRun(adopted.runId);
+        expect(run?.status).toBe("succeeded");
+        expect(await retriesOf(adopted.runId)).toHaveLength(0);
+
+        const log = await getRunLogStore().read(adopted.handle);
+        const content = String(log.content);
+        expect(content.split("before restart").length - 1).toBe(1);
+        expect(content.split("after restart").length - 1).toBe(1);
+
+        const events = await db
+          .select()
+          .from(heartbeatRunEvents)
+          .where(eq(heartbeatRunEvents.runId, adopted.runId));
+        expect(
+          events.filter(
+            (event) =>
+              event.message === "Finished from captured output after hot restart",
+          ),
+        ).toHaveLength(1);
+      });
+    });
+
     it("fails an adopted run from an is_error result instead of marking it lost", async () => {
       await withTempPaperclipHome(async () => {
         const adopted = await adoptCapturedRun({
