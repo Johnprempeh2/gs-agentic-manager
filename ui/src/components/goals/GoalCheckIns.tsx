@@ -7,6 +7,14 @@ import { MarkdownBody } from "../MarkdownBody";
 
 type AgentsById = ReadonlyMap<string, Pick<Agent, "id" | "name" | "appearance">>;
 
+/** One-line preview text: drops the markdown marks a history row cannot render. */
+export function plainPreview(body: string): string {
+  return body
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/(\*\*|__|`)/g, "")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+])\s+/gm, "");
+}
+
 function authorName(checkIn: GoalCheckIn, agentsById: AgentsById): string {
   if (checkIn.authorAgentId) return agentsById.get(checkIn.authorAgentId)?.name ?? "An agent";
   return "Board";
@@ -48,7 +56,7 @@ export function GoalCheckIns({
     <div className="grid items-start gap-6 lg:grid-cols-[1.5fr_1fr]">
       <Card className="gap-3 p-6" role="region" aria-label="Latest check-in" data-testid="goal-recap">
         <div className="flex items-center gap-2.5">
-          <AgentAvatar agent={author} name={authorName(latest, agentsById)} size={32} />
+          {author ? <AgentAvatar agent={author} name={author.name} size={32} /> : null}
           <div className="min-w-0">
             <p className="text-sm font-semibold">Latest check-in</p>
             <p className="text-xs text-muted-foreground" title={formatDateTime(latest.createdAt)}>
@@ -91,7 +99,7 @@ export function GoalCheckIns({
                   </p>
                 </div>
                 <div className="min-w-0 text-sm">
-                  <p className="line-clamp-3 whitespace-pre-line">{checkIn.body}</p>
+                  <p className="line-clamp-3 whitespace-pre-line">{plainPreview(checkIn.body)}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">{authorName(checkIn, agentsById)}</p>
                 </div>
               </li>

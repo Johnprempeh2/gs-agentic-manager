@@ -212,6 +212,44 @@ export function GoalDetail() {
         />
       </div>
 
+      <section
+        className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
+        aria-label="Goal at a glance"
+        data-testid="goal-kpis"
+      >
+        <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4 col-span-2 lg:col-span-1">
+          <GoalProgressRing percent={goal.progress.percent} health={health} />
+          <div className="min-w-0">
+            <GoalPercent percent={goal.progress.percent} />
+            <p className="mt-1 text-xs text-muted-foreground">{owner?.name ?? "No owner"}</p>
+          </div>
+        </div>
+        <GoalKpi label="What is left" value={left ?? "No linked tasks yet"} />
+        <GoalKpi label="Target date" value={target ?? "No target date"} hint={daysHint(days)} />
+        <GoalKpi
+          label="Last check-in"
+          value={newestCheckIn ? relativeTime(newestCheckIn.createdAt) : "None yet"}
+        />
+      </section>
+
+      <section className="space-y-3" aria-labelledby="goal-journey-heading">
+        <h3 id="goal-journey-heading" className="text-sm font-semibold">
+          The journey
+        </h3>
+        <GoalJourneyMap milestones={goal.milestones ?? []} agentsById={agentsById} />
+      </section>
+
+      <section className="space-y-3" aria-labelledby="goal-recap-heading">
+        <h3 id="goal-recap-heading" className="text-sm font-semibold">
+          Recap
+        </h3>
+        <GoalCheckIns
+          checkIns={checkIns ?? (goal.latestCheckIn ? [goal.latestCheckIn] : [])}
+          agentsById={agentsById}
+          ownerName={owner?.name ?? null}
+        />
+      </section>
+
       <Tabs defaultValue="children">
         <TabsList>
           <TabsTrigger value="children">
@@ -260,6 +298,14 @@ export function GoalDetail() {
       </Tabs>
     </div>
   );
+}
+
+/** "12 days to go" or "3 days late". */
+export function daysHint(days: number | null): string | null {
+  if (days == null) return null;
+  const n = Math.abs(days);
+  const unit = n === 1 ? "day" : "days";
+  return days < 0 ? `${n} ${unit} late` : `${n} ${unit} to go`;
 }
 
 function GoalKpi({ label, value, hint }: { label: string; value: string; hint?: string | null }) {

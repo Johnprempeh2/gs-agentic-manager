@@ -9,7 +9,7 @@ import { buildScoreboard } from "@/lib/goal-journey";
 import { makeGoal } from "@/lib/goal-journey.fixtures";
 import { GoalScoreboardView, GoalsEmptyState } from "./GoalScoreboard";
 import { GoalJourneyMap } from "./GoalJourneyMap";
-import { GoalCheckIns } from "./GoalCheckIns";
+import { GoalCheckIns, plainPreview } from "./GoalCheckIns";
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompany: null }),
@@ -130,5 +130,13 @@ describe("GoalCheckIns", () => {
     expect(html).toContain('data-testid="check-ins-empty"');
     expect(html).toContain("No check-ins yet");
     expect(html).toContain("Everest writes the first check-in");
+  });
+});
+
+describe("plainPreview", () => {
+  it("drops markdown marks from history previews", () => {
+    expect(plainPreview("**Invoice view** is `half` done, see [the doc](https://x.test)\n- next: __email__")).toBe(
+      "Invoice view is half done, see the doc\nnext: email",
+    );
   });
 });

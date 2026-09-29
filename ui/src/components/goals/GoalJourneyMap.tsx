@@ -27,12 +27,12 @@ export function routeShape(stopCount: number, vertical: boolean): RouteShape {
   const n = stopCount + 1; // stops + flag
   if (!vertical) {
     const width = 1040;
-    const height = 300;
+    const height = 250;
     return {
       width,
       height,
       vertical,
-      at: (t) => ({ x: 60 + t * (width - 140), y: height / 2 + 56 * Math.sin(2 * Math.PI * 1.1 * t - 0.6) }),
+      at: (t) => ({ x: 60 + t * (width - 140), y: height / 2 + 48 * Math.sin(2 * Math.PI * 1.1 * t - 0.6) }),
     };
   }
   const width = 360;
@@ -151,7 +151,8 @@ function RouteSvg({
 }) {
   const shape = routeShape(stops.length, vertical);
   const count = stops.length;
-  const flag = shape.at(stopT(count, count));
+  const flagT = stopT(count, count);
+  const flag = shape.at(flagT);
   const reachedT = reachedIndex >= 0 ? stopT(reachedIndex, count) : 0;
 
   const onKey = (event: KeyboardEvent, milestone: GoalMilestone | null) => {
@@ -170,9 +171,9 @@ function RouteSvg({
       aria-label="Journey to the goal"
       data-orientation={vertical ? "vertical" : "horizontal"}
     >
-      <path d={routePath(shape)} fill="none" strokeWidth={6} strokeLinecap="round" className="stroke-foreground/10" />
+      <path d={routePath(shape, 0, flagT)} fill="none" strokeWidth={6} strokeLinecap="round" className="stroke-foreground/10" />
       <path
-        d={routePath(shape)}
+        d={routePath(shape, 0, flagT)}
         fill="none"
         strokeWidth={2}
         strokeLinecap="round"
@@ -196,7 +197,7 @@ function RouteSvg({
         const bold = stop.kind === "here" || stop.kind === "blocked";
         const labelClass = cn(vertical ? "text-xs" : "text-sm", bold ? "fill-foreground font-semibold" : "fill-muted-foreground");
         const side = vertical ? (p.x < shape.width / 2 ? 1 : -1) : index % 2 === 0 ? 1 : -1;
-        const label = truncate(stop.label, vertical ? 24 : 22);
+        const label = truncate(stop.label, vertical ? 24 : 18);
         const labelProps: { x: number; y: number; textAnchor: "start" | "middle" | "end" } = vertical
           ? { x: p.x + side * 20, y: p.y + 4, textAnchor: side > 0 ? "start" : "end" }
           : { x: p.x, y: p.y + (side > 0 ? 34 : -24), textAnchor: "middle" };
