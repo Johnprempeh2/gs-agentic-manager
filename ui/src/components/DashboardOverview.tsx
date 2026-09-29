@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentIdentity } from "./AgentIdentity";
 import { AgentStatusCapsule } from "./StatusBadge";
-import { KanbanBoard } from "./KanbanBoard";
+import { KanbanBoard, type KanbanOwnerContext } from "./KanbanBoard";
 import { StatusIcon } from "./StatusIcon";
 import { agentUrl, cn } from "../lib/utils";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
@@ -202,6 +202,7 @@ function BoardPageSizePicker({
 export interface DashboardTaskBoardProps {
   agents: Agent[] | undefined;
   openIssues: Issue[] | undefined;
+  ownerContext?: KanbanOwnerContext;
   loading?: boolean;
   error?: Error | null;
 }
@@ -210,7 +211,7 @@ export interface DashboardTaskBoardProps {
  * The open work as a read-only board: one lane per open status, titles only
  * (task keys stay on the task page), with the per-lane count the user picked.
  */
-export function DashboardTaskBoard({ agents, openIssues, loading = false, error = null }: DashboardTaskBoardProps) {
+export function DashboardTaskBoard({ agents, openIssues, ownerContext, loading = false, error = null }: DashboardTaskBoardProps) {
   const [pageSize, setPageSize] = useState<DashboardBoardPageSize>(() => loadDashboardBoardPageSize());
   const tasks = selectDashboardBoardTasks(openIssues);
 
@@ -241,6 +242,7 @@ export function DashboardTaskBoard({ agents, openIssues, loading = false, error 
         <KanbanBoard
           issues={tasks}
           agents={agents}
+          ownerContext={ownerContext}
           statuses={DASHBOARD_OPEN_TASK_STATUSES}
           showIdentifiers={false}
           fillWidth
@@ -351,6 +353,7 @@ export interface DashboardOverviewProps {
   issuesLoading?: boolean;
   agentsError?: Error | null;
   issuesError?: Error | null;
+  ownerContext?: KanbanOwnerContext;
 }
 
 /** The task board with the agent strip under it, as the dashboard stacks them. */
@@ -361,10 +364,11 @@ export function DashboardOverview({
   issuesLoading = false,
   agentsError = null,
   issuesError = null,
+  ownerContext,
 }: DashboardOverviewProps) {
   return (
     <div className="space-y-6" data-testid="dashboard-overview">
-      <DashboardTaskBoard agents={agents} openIssues={openIssues} loading={issuesLoading} error={issuesError} />
+      <DashboardTaskBoard agents={agents} openIssues={openIssues} ownerContext={ownerContext} loading={issuesLoading} error={issuesError} />
       <DashboardAgentStrip agents={agents} openIssues={openIssues} loading={agentsLoading} error={agentsError} />
     </div>
   );

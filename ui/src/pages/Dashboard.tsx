@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "@/lib/router";
 import {
   onboardingStepForCompany,
@@ -10,6 +10,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
+import { accessApi } from "../api/access";
+import { authApi } from "../api/auth";
+import { buildCompanyUserLabelMap } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
 import { BrandStoneIcon } from "../components/BrandMark";
 import { useDialogActions } from "../context/DialogContext";
@@ -110,6 +113,21 @@ export function Dashboard() {
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  // Board cards say "Your task" for the viewer and name other people.
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const { data: companyMembers } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const companyUserLabelMap = useMemo(
+    () => buildCompanyUserLabelMap(companyMembers?.users),
+    [companyMembers?.users],
+  );
 
   // Bulk resume for agents parked by a company import. Sequential on purpose
   // (mirrors the import page's activation checklist); a per-agent failure is
@@ -325,6 +343,7 @@ export function Dashboard() {
         issuesLoading={openIssuesLoading}
         agentsError={agentsError}
         issuesError={openIssuesError}
+        ownerContext={{ currentUserId, userLabels: companyUserLabelMap }}
       />
 
       {data && (

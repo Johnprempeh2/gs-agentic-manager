@@ -63,6 +63,7 @@ import { Identity } from "./Identity";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
 import { IssueRow, type IssueRowPresentation } from "./IssueRow";
+import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { CollectionToolbar, type CollectionToolbarProps } from "./CollectionToolbar";
 import { IssuesList as LegacyIssuesList } from "./LegacyIssuesList";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
@@ -2025,6 +2026,7 @@ function StreamlinedIssuesList({
         <KanbanBoard
           issues={filtered}
           agents={agents}
+          ownerContext={{ currentUserId, userLabels: companyUserLabelMap }}
           liveIssueIds={liveIssueIds}
           compactCards={boardCompactCards}
           collapsedStatuses={boardCollapsedStatuses}
@@ -2206,6 +2208,7 @@ function StreamlinedIssuesList({
                         checklistDependencyChips={checklistDependencyChips}
                         checklistRowId={checklistRowId}
                         titleClassName={doneRowTitleClass}
+                        ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
                         externalObjectSummary={externalObjectSummaryByIssueId.get(issue.id) ?? null}
                         titleSuffix={(
                           <>

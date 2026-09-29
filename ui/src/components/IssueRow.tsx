@@ -57,6 +57,8 @@ export interface IssueRowProps {
   externalObjectSummary?: ExternalObjectSummary | null;
   trailingMeta?: ReactNode;
   titleSuffix?: ReactNode;
+  /** Who the task is for (see TaskOwnerLabel); sits right after the title. */
+  ownerLabel?: ReactNode;
   titleClassName?: string;
   checklistStepNumber?: number | string | null;
   checklistCurrentStep?: boolean;
@@ -136,6 +138,7 @@ export function IssueRow({
   externalObjectSummary,
   trailingMeta,
   titleSuffix,
+  ownerLabel,
   titleClassName,
   checklistStepNumber = null,
   checklistCurrentStep = false,
@@ -307,6 +310,7 @@ export function IssueRow({
             >
               {issue.title}{titleSuffix}
             </span>
+            {ownerLabel}
             {recoveryIndicator}
             {mobileTitleMeta ? (
               <span className="ml-auto shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground sm:hidden">
@@ -398,6 +402,7 @@ export function IssueRow({
           >
             {issue.title}{titleSuffix}
           </span>
+          {ownerLabel}
           {recoveryIndicator}
         </span>
         {checklistDependencyChips ? (

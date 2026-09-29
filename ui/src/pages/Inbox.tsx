@@ -86,6 +86,7 @@ import {
 } from "../components/IssueColumns";
 import { IssueFiltersPopover } from "../components/IssueFiltersPopover";
 import { InboxArchiveButton, IssueRow } from "../components/IssueRow";
+import { TaskOwnerLabel } from "../components/TaskOwnerLabel";
 import { BlockedInboxView } from "../components/BlockedInboxView";
 import { SwipeToArchive } from "../components/SwipeToArchive";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
@@ -2799,6 +2800,7 @@ function StreamlinedInbox() {
                       treeGuides={depth}
                       chevronInGuide={streamlinedUiEnabled && depth > 0 && hasChildren}
                       selected={selected}
+                      ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
                       className={
                         isArchiving
                           ? "pointer-events-none -translate-x-4 scale-(--s-0_98) opacity-0 transition-all duration-200 ease-out"
