@@ -15,7 +15,7 @@ import { AgentChatSidebar } from "./AgentChatSidebar";
 import { AgentChatPicker } from "./AgentChatPicker";
 import { useSidebar } from "@/context/SidebarContext";
 
-export function SidebarAgentChats() {
+export function SidebarAgentChats({ inline = false }: { inline?: boolean } = {}) {
   const { selectedCompanyId } = useCompany();
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -27,12 +27,17 @@ export function SidebarAgentChats() {
       key={`${selectedCompanyId}:${userId ?? "local-board"}`}
       companyId={selectedCompanyId}
       userId={userId}
+      inline={inline}
     />
   );
 }
 
 // A scope change unmounts the picker, including its open state and search.
-function CompanyAgentChats({ companyId, userId }: { companyId: string | null; userId?: string }) {
+function CompanyAgentChats({
+  companyId,
+  userId,
+  inline,
+}: { companyId: string | null; userId?: string; inline: boolean }) {
   const agentsQuery = useQuery({
     queryKey: queryKeys.agents.list(companyId!),
     queryFn: () => agentsApi.list(companyId!),
@@ -53,6 +58,7 @@ function CompanyAgentChats({ companyId, userId }: { companyId: string | null; us
     <>
       <AgentChatSidebar
         agents={agents}
+        inline={inline}
         onOpenChat={() => setPickerOpen(true)}
         activeId={active?.id ?? ""}
         starredIds={stars}

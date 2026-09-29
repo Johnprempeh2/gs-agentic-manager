@@ -61,6 +61,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Every labeled section is collapsible (session-scoped, default open) —
   // one policy across static nav groups and the data-driven sections.
   const [workOpen, setWorkOpen] = useState(true);
+  const [teamOpen, setTeamOpen] = useState(true);
+  const [buildOpen, setBuildOpen] = useState(true);
   const [organizationOpen, setOrganizationOpen] = useState(true);
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { collapsed, peeking } = useSidebar();
@@ -117,6 +119,71 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     companyPrefix: selectedCompany?.issuePrefix ?? null,
   };
 
+  const dashboardItem = (
+    <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
+  );
+  const inboxItem = (
+    <SidebarNavItem
+      to="/inbox"
+      label="Inbox"
+      icon={Inbox}
+      badge={inboxBadge.inbox}
+      badgeLabel="unread"
+      badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
+      alert={inboxBadge.failedRuns > 0}
+    />
+  );
+  const myTasksItem = <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />;
+  // Decisions (attention home, PAP-13481) graduated out of Experimental
+  // (GRE-66): always shown, whatever the stored enableDecisions value says.
+  const decisionsItem = (
+    <SidebarNavItem
+      to="/decisions"
+      label="Decisions"
+      icon={ListChecks}
+      badge={attentionCount}
+      badgeLabel="decisions"
+    />
+  );
+  const statusItem = showStatusCards ? (
+    <SidebarNavItem to="/status" label="Status" icon={LayoutGrid} textBadge="beta" />
+  ) : null;
+  const conferenceRoomItem = conferenceRoomChatEnabled ? (
+    <SidebarNavItem to="/board-chat" label="Conference Room" icon={MessagesSquare} />
+  ) : null;
+  const tasksItem = <SidebarNavItem to="/issues" label="Tasks" icon={CircleCheck} />;
+  // Greatstone (GRE-191): Goals graduated from Experimental; always shown.
+  const goalsItem = <SidebarNavItem to="/goals" label="Goals" icon={Target} />;
+  const routinesItem = <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />;
+  const artifactsItem = <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />;
+  const casesItem = showCases ? (
+    <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
+  ) : null;
+  const pipelinesItem = showPipelines ? (
+    <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
+  ) : null;
+  const workspacesItem = showWorkspacesLink ? (
+    <SidebarNavItem to="/workspaces" label="Workspaces" icon={GitBranch} />
+  ) : null;
+  const pluginNavOutlets = (
+    <>
+      <PluginSlotOutlet
+        slotTypes={["sidebar"]}
+        context={pluginContext}
+        className="flex flex-col gap-0.5"
+        itemClassName="text-(length:--text-compact) font-medium"
+        missingBehavior="placeholder"
+      />
+      <PluginLauncherOutlet
+        placementZones={["sidebar"]}
+        context={pluginContext}
+        className="flex flex-col gap-0.5"
+        itemClassName="text-(length:--text-compact) font-medium"
+      />
+    </>
+  );
+  const showAgentChats = agentChatEnabled && !children;
+
   return (
     <aside
       className={cn(
@@ -166,86 +233,73 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               collapsed rail, where the old header icon was dropped entirely.
               Cmd/Ctrl+K remains the keyboard path (command palette). */}
           <SidebarNavItem to="/search" label="Search" icon={Search} />
-          <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
-          <SidebarNavItem
-            to="/inbox"
-            label="Inbox"
-            icon={Inbox}
-            badge={inboxBadge.inbox}
-            badgeLabel="unread"
-            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
-            alert={inboxBadge.failedRuns > 0}
-          />
-          <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />
-          {/* Decisions (attention home, PAP-13481) graduated out of
-              Experimental (GRE-66): always shown, whatever the stored
-              enableDecisions value says. */}
-          <SidebarNavItem
-            to="/decisions"
-            label="Decisions"
-            icon={ListChecks}
-            badge={attentionCount}
-            badgeLabel="decisions"
-          />
-          {showStatusCards ? (
-            <SidebarNavItem to="/status" label="Status" icon={LayoutGrid} textBadge="beta" />
-          ) : null}
-          {conferenceRoomChatEnabled ? (
-            <SidebarNavItem to="/board-chat" label="Conference Room" icon={MessagesSquare} />
-          ) : null}
+          {/* GRE-259: the chat with Everest sits directly under Search. */}
+          {streamlinedUiEnabled && showAgentChats ? <SidebarAgentChats inline /> : null}
+          {streamlinedUiEnabled ? null : (
+            <>
+              {dashboardItem}
+              {inboxItem}
+              {myTasksItem}
+              {decisionsItem}
+              {statusItem}
+              {conferenceRoomItem}
+            </>
+          )}
         </div>
 
-        <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
-          <SidebarNavItem to="/issues" label="Tasks" icon={CircleCheck} />
-          {streamlinedUiEnabled ? (
-            <>
+        {streamlinedUiEnabled ? (
+          <>
+            <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
+              {dashboardItem}
+              {inboxItem}
+              {myTasksItem}
+              {decisionsItem}
+              {tasksItem}
+              {goalsItem}
+            </SidebarSection>
+
+            <SidebarSection label="Team" collapsible={{ open: teamOpen, onOpenChange: setTeamOpen }}>
+              <SidebarNavItem to="/agents" label="Agents" icon={Users} />
+              {conferenceRoomItem}
+              {statusItem}
+            </SidebarSection>
+
+            <SidebarSection label="Build" collapsible={{ open: buildOpen, onOpenChange: setBuildOpen }}>
               <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
               <SidebarStarredProjects />
-            </>
-          ) : null}
-          <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
-          <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
-          {showCases ? (
-            <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
-          ) : null}
-          {showPipelines ? (
-            <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
-          ) : null}
-          {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
-          <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-          {showWorkspacesLink ? (
-            <SidebarNavItem to="/workspaces" label="Workspaces" icon={GitBranch} />
-          ) : null}
-          <PluginSlotOutlet
-            slotTypes={["sidebar"]}
-            context={pluginContext}
-            className="flex flex-col gap-0.5"
-            itemClassName="text-(length:--text-compact) font-medium"
-            missingBehavior="placeholder"
-          />
-          <PluginLauncherOutlet
-            placementZones={["sidebar"]}
-            context={pluginContext}
-            className="flex flex-col gap-0.5"
-            itemClassName="text-(length:--text-compact) font-medium"
-          />
-        </SidebarSection>
+              {routinesItem}
+              {pipelinesItem}
+              {workspacesItem}
+              {artifactsItem}
+              {casesItem}
+              {pluginNavOutlets}
+            </SidebarSection>
 
-        {streamlinedUiEnabled ? (
-          <SidebarSection
-            label="Org"
-            collapsible={{ open: organizationOpen, onOpenChange: setOrganizationOpen }}
-          >
-            <SidebarNavItem to="/agents" label="Agents" icon={Users} />
-            <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-            <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
-            <SidebarNavItem to="/activity" label="Audit" icon={History} />
-            {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
+            <SidebarSection
+              label="Company"
+              collapsible={{ open: organizationOpen, onOpenChange: setOrganizationOpen }}
+            >
+              <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
+              <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
+              <SidebarNavItem to="/activity" label="Audit" icon={History} />
+              {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
+            </SidebarSection>
+          </>
+        ) : (
+          <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
+            {tasksItem}
+            {routinesItem}
+            {artifactsItem}
+            {casesItem}
+            {pipelinesItem}
+            {goalsItem}
+            {workspacesItem}
+            {pluginNavOutlets}
           </SidebarSection>
-        ) : null}
+        )}
 
         {children}
-        {agentChatEnabled && !children && <SidebarAgentChats />}
+        {!streamlinedUiEnabled && showAgentChats && <SidebarAgentChats />}
 
         {streamlinedUiEnabled ? (
           <SidebarRecentTasks companyId={selectedCompanyId} liveIssueIds={liveIssueIds} />
