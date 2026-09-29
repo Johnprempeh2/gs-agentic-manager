@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
@@ -14,6 +14,7 @@ import { DecisionQueuePage } from "@/pages/DecisionQueuePage";
 import { AttentionQueueRow } from "@/components/AttentionQueueRow";
 import type { DecisionQueueDto } from "@/api/decisionQueues";
 import { queryKeys } from "@/lib/queryKeys";
+import { DECISIONS_VIEW_KEY } from "@/lib/focus-prefs";
 
 // The company id the Storybook providers select (see .storybook/preview.tsx).
 const companyId = "company-storybook";
@@ -587,5 +588,40 @@ export const CardTriageStrip: Story = {
         />
       </div>
     </PrimeDeskFixtures>
+  ),
+};
+
+/** Pins the Decisions view (list or focus) for one story, then restores it. */
+function WithDecisionsView({ view, children }: { view: "list" | "focus"; children: ReactNode }) {
+  useMemo(() => {
+    localStorage.setItem(DECISIONS_VIEW_KEY, view);
+  }, [view]);
+  useEffect(() => () => localStorage.removeItem(DECISIONS_VIEW_KEY), []);
+  return <>{children}</>;
+}
+
+/** Nothing waiting: the branded "all caught up" state under the Decisions title. */
+export const DeskAllCaughtUp: Story = {
+  render: () => (
+    <WithDecisionsView view="list">
+      <PrimeDeskFixtures items={[]}>
+        <div className="p-6">
+          <WhatNeedsMe />
+        </div>
+      </PrimeDeskFixtures>
+    </WithDecisionsView>
+  ),
+};
+
+/** Focus with no questions left: the same stone on the caught-up card. */
+export const FocusAllCaughtUp: Story = {
+  render: () => (
+    <WithDecisionsView view="focus">
+      <PrimeDeskFixtures items={[]}>
+        <div className="p-6">
+          <WhatNeedsMe />
+        </div>
+      </PrimeDeskFixtures>
+    </WithDecisionsView>
   ),
 };
