@@ -173,3 +173,14 @@ Edit only when section 5 of the product brief changes:
 ```sh
 node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/editions.test.ts
 ```
+
+## The edition values for a Docker image
+
+A client install from the Stable image (GRE-138, see "Stable image" in
+`doc/GREATSTONE-WAY-OF-WORKING.md`) gets the same two values. Print them as
+`KEY=VALUE` lines for `docker run --env-file`:
+
+```sh
+scripts/client-instance.sh edition-env --edition managed
+scripts/client-instance.sh edition-env --edition managed-plus --passed-features enableCases
+```

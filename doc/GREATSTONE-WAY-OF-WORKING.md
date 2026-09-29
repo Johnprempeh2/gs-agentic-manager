@@ -300,6 +300,37 @@ pushes it to origin. Live does not change. It asks for your password again in
 login mode. A release can be promoted once; a promote that fails to push
 leaves no tag.
 
+### Stable image (John, after each promote)
+
+Clients install a Docker image, not a checkout. Each `stable-*` tag gets one
+image, built from that tag's commit and pushed to a private registry
+(GRE-138). From the dev checkout, with Docker Desktop running:
+
+```sh
+scripts/greatstone-stable-image.sh publish stable-YYYY-MM-DD.N
+```
+
+It builds the image from the tag (`git archive`, never the working tree),
+starts it on `127.0.0.1` (a free port in 3300-3399, never 3100 or 3200) with
+the Managed edition values from `scripts/client-instance.sh edition-env`, a new
+auth secret and no volume, and checks `/api/health`: status `ok`, the tag's
+commit, login mode, and every Managed hidden setting. Then it pushes
+`ghcr.io/johnprempeh2/gsam-stable:stable-YYYY-MM-DD.N` and reads the package
+visibility; a public package stops the push. A Stable image is pushed once and
+never replaced. `build`, `check` and `push` run one step each.
+
+- **Registry:** GitHub Container Registry, package `gsam-stable` under John's
+  account, private. The image has no `org.opencontainers.image.source` label,
+  so it is not linked to the (public) source repository and does not take its
+  visibility. Set `GSAM_IMAGE_REPO` to use another registry.
+- **Log-in (John, once):** a classic token with `write:packages` and
+  `read:packages` only, then `docker login ghcr.io -u johnprempeh2`. Docker
+  keeps it in the macOS keychain. `gh auth refresh -s read:packages` lets the
+  script read the package visibility. No token goes in the repo or on an issue.
+- **Platform:** this Mac builds `linux/arm64`. A client server with another
+  CPU needs `GSAM_IMAGE_PLATFORM=linux/amd64` (slower: emulated).
+- Tests: `node --test scripts/greatstone-stable-image.test.mjs`.
+
 Run the release from your own terminal, not from an agent run. Both scripts
 run `pnpm install` without questions. If the pnpm store is not the one live was
 installed with (agent runs each get their own store), pnpm deletes and
