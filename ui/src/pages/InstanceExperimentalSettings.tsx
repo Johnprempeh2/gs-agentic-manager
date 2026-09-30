@@ -56,9 +56,6 @@ function formatActivationTimestamp(iso: string): string {
   return parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-// PAP-11233: keep Conference Room code intact, but hide the user-facing opt-in for now.
-const SHOW_CONFERENCE_ROOM_EXPERIMENTAL_SETTING = false;
-
 function ManagedByCloudBadge() {
   return (
     <Badge variant="outline" className="text-muted-foreground">
@@ -358,18 +355,17 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle chat connectors experimental setting"
         />
 
-        {SHOW_CONFERENCE_ROOM_EXPERIMENTAL_SETTING ? (
-          <ExperimentalToggleCard
-            title="Conference Room Chat"
-            description="Adds a Conference Room — one chat where you and your whole team work together — plus the live activity feed and the redesigned onboarding. Also restyles task threads as chat bubbles. Turn off anytime to restore the classic UI."
-            checked={enableConferenceRoomChat}
-            onCheckedChange={(checked) => toggleMutation.mutate({ enableConferenceRoomChat: checked })}
-            disabled={toggleMutation.isPending}
-            settingKey="enableConferenceRoomChat"
-            managed={managedKeys.enableConferenceRoomChat}
-            ariaLabel="Toggle conference room chat experimental setting"
-          />
-        ) : null}
+        {/* Greatstone (GRE-230): upstream hid this opt-in (PAP-11233); John turns it on and off here. */}
+        <ExperimentalToggleCard
+          title="Conference Room Chat"
+          description="Adds a Conference Room — one chat where you and your whole team work together — plus the live activity feed and the redesigned onboarding. Also restyles task threads as chat bubbles. Turn off anytime to restore the classic UI."
+          checked={enableConferenceRoomChat}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableConferenceRoomChat: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableConferenceRoomChat"
+          managed={managedKeys.enableConferenceRoomChat}
+          ariaLabel="Toggle conference room chat experimental setting"
+        />
 
         <ExperimentalToggleCard
           title="Enable Environments"

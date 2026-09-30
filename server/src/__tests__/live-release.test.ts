@@ -9,6 +9,7 @@ import {
   isReleaseRef,
   parseLiveReleaseKey,
   proposeTitle,
+  summarizeRestartReport,
   type LiveReleaseDeps,
   type LiveReleaseEvent,
 } from "../services/live-release.ts";
@@ -34,10 +35,10 @@ let mainCommit: string;
 let forkCi: "passed" | "failed" | "pending" | "unknown";
 let candidates: Array<{ tag: string; title: string; since: string | null; print: boolean }>;
 let restartReport: HotRestartReport | null;
+let recoveryReady: boolean;
 let tags: ReleaseTagInfo[];
-/** "ancestor>commit" pairs that git merge-base --is-ancestor accepts; "?" in a pair means git cannot tell. */
-let ancestry: Set<string>;
 let stableTagsMade: Array<{ tag: string; commit: string; notes: string }>;
+let deletedTags: string[];
 
 const CUT: CandidateCut = {
   tag: "rc-x",
@@ -70,7 +71,6 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
     isProcessAlive: () => true,
     readRunningCommit: () => runningCommit,
     containsRef: (_commit, ref) => ref === "aaaaaaa",
-    isAncestor: (_repo, ancestor, commit) => (ancestry.has(`${ancestor}?${commit}`) ? null : ancestry.has(`${ancestor}>${commit}`)),
     announce: async (event) => {
       announced.push(event);
     },
@@ -84,6 +84,9 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
       return { ...CUT, tag: input.tag };
     },
     nextTagName: async () => "rc-2026-09-28.3",
+    deleteUnpushedTag: async (_repo, tag) => {
+      deletedTags.push(tag);
+    },
     nextStableTagName: async () => {
       let n = 1;
       while (tags.some((t) => t.tag === `stable-2026-09-29.${n}`)) n += 1;
@@ -97,6 +100,7 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
     readTags: async () => tags,
     readMainCommit: async () => mainCommit,
     readRestartReport: () => restartReport,
+    startupRecoveryReady: () => recoveryReady,
     describeRuns: async (ids) => new Map(ids.map((id) => [id, { agentName: "Ridge", issueIdentifier: "GRE-99" }])),
     findRun: async () => null,
     findAgent: async () => null,
@@ -165,9 +169,10 @@ beforeEach(() => {
   forkCi = "passed";
   candidates = [];
   restartReport = null;
+  recoveryReady = true;
   tags = [];
-  ancestry = new Set();
   stableTagsMade = [];
+  deletedTags = [];
 });
 
 afterEach(() => {
@@ -336,6 +341,41 @@ describe("holding: hot restart, flagged runs, cancel, override", () => {
     expect((await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN })).ok).toBe(true);
   });
 
+  it("cancel deletes the rc tag it cut from origin/main, and keeps a given rc tag (GRE-239)", async () => {
+    const svc = createLiveReleaseService(deps());
+    await flagRun(svc, "run-flagged");
+    await svc.start({ kind: "release", tag: null, title: "Release from the app", actor: JOHN });
+    expect(svc.listJobs()[0]).toMatchObject({ tag: "rc-2026-09-28.3", cutTag: true, state: "holding" });
+    await svc.cancel(JOHN);
+    expect(deletedTags).toEqual(["rc-2026-09-28.3"]);
+
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    await svc.cancel(JOHN);
+    expect(deletedTags).toEqual(["rc-2026-09-28.3"]);
+  });
+
+  it("deletes the cut rc tag when the wait limit stops the release or its pre-flight fails, not after the switch (GRE-239)", async () => {
+    const svc = createLiveReleaseService(deps());
+    await flagRun(svc, "run-flagged");
+    await svc.start({ kind: "release", tag: null, title: "Release from the app", actor: JOHN });
+    advance(LIVE_RELEASE_WAIT_FOR_RUNS_MS);
+    await svc.tick();
+    expect(svc.listJobs()[0]).toMatchObject({ state: "failed" });
+    expect(deletedTags).toEqual(["rc-2026-09-28.3"]);
+
+    targetProblem = "rc-2026-09-28.3 is not on origin/main";
+    expect(await svc.start({ kind: "release", tag: null, title: "Release from the app", actor: JOHN })).toMatchObject({ ok: false, status: 409 });
+    expect(deletedTags).toEqual(["rc-2026-09-28.3", "rc-2026-09-28.3"]);
+
+    targetProblem = null;
+    runningRuns.delete("run-flagged");
+    await svc.start({ kind: "release", tag: null, title: "Release from the app", actor: JOHN });
+    writeResult(launches[0].jobDir, { outcome: "rolled_back", message: "did not come up", previousTag: "live-2026-09-28.1" });
+    await svc.tick();
+    expect(svc.listJobs()[0]).toMatchObject({ state: "rolled_back" });
+    expect(deletedTags).toHaveLength(2);
+  });
+
   it("cannot cancel once live is switching", async () => {
     const svc = createLiveReleaseService(deps());
     await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
@@ -384,6 +424,7 @@ describe("progress after the switch", () => {
       completedAt: clock.toISOString(),
       resumedRunIds: ["run-adopted", "run-acp"],
       adoptedRunIds: ["run-adopted"],
+      adoptedWithoutCaptureRunIds: ["run-adopted"],
       finishedWhileDownRunIds: ["run-acp"],
       lostRunIds: ["run-lost"],
     });
@@ -393,6 +434,33 @@ describe("progress after the switch", () => {
     const overview = await createLiveReleaseService(deps()).overview("co-1");
     expect(overview.history[0]).toMatchObject({ tag: "live-2026-09-27.1", title: "Title", releasedBy: "john", changelog: { features: ["A (#1, GRE-1)"], fixes: [] } });
     expect(overview.history[0].restartReport?.lostRunIds).toEqual(["run-lost"]);
+  });
+
+  it("waits for startup recovery to write the hot-restart report before it records the outcome (GRE-242)", async () => {
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    advance(60_000);
+    recoveryReady = false;
+    writeResult(launches[0].jobDir, { outcome: "released", liveTag: "live-2026-09-27.1" });
+    await svc.tick();
+    expect(svc.listJobs()[0].state).toBe("switching");
+    expect(lifted).toHaveLength(0);
+
+    restartReport = report();
+    recoveryReady = true;
+    await svc.tick();
+    const [job] = svc.listJobs();
+    expect(job.state).toBe("healthy");
+    expect(job.restartReport?.resumedRunIds).toEqual(["run-adopted", "run-acp"]);
+    expect(lifted).toHaveLength(1);
+  });
+
+  it("records the outcome without a report once startup recovery is done", async () => {
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    writeResult(launches[0].jobDir, { outcome: "released", liveTag: "live-2026-09-27.1" });
+    await svc.tick();
+    expect(svc.listJobs()[0]).toMatchObject({ state: "healthy", restartReport: null });
   });
 
   it("ignores a hot-restart report from before this release", async () => {
@@ -576,39 +644,33 @@ describe("release now from origin/main", () => {
   });
 });
 
-describe("candidate (GRE-172)", () => {
-  const LIVE = "a".repeat(40);
-  const OLD = "d".repeat(40);
-  const NEW = "e".repeat(40);
-  const rc = (tag: string, commit: string): ReleaseTagInfo => ({ tag, commit, date: clock.toISOString(), annotated: true, message: `Title of ${tag}\n` });
-
-  it("does not offer an rc tag that is an ancestor of live", async () => {
-    tags = [rc("rc-2026-09-28.2", OLD)];
-    ancestry = new Set([`${OLD}>${LIVE}`]);
-    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toBeNull();
+describe("overview (GRE-239)", () => {
+  it("has no candidate field: the page shows the next version from origin/main", async () => {
+    tags = [{ tag: "rc-2026-09-28.2", commit: "d".repeat(40), date: clock.toISOString(), annotated: true, message: "Title\n" }];
+    expect(await createLiveReleaseService(deps()).overview("co-1")).not.toHaveProperty("candidate");
   });
 
-  it("offers the newest rc tag that is newer than live, skipping older ones", async () => {
-    tags = [rc("rc-2026-09-29.1", NEW), rc("rc-2026-09-28.2", OLD)];
-    ancestry = new Set([`${OLD}>${LIVE}`, `${LIVE}>${NEW}`]);
-    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toMatchObject({ tag: "rc-2026-09-29.1", commit: NEW });
+  it("offers no rollback to a live tag whose release failed and never ran", async () => {
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    writeResult(launches[0].jobDir, { outcome: "rolled_back", message: "the live app did not report live-2026-09-29.2 within 3 minutes", previousTag: "live-2026-09-28.1" });
+    await svc.tick();
+    const failed = "b".repeat(40);
+    tags = [
+      { tag: "live-2026-09-29.2", commit: failed, date: clock.toISOString(), annotated: true, message: "Never ran\n" },
+      { tag: "live-2026-09-28.1", commit: "a".repeat(40), date: clock.toISOString(), annotated: true, message: "Live now\n" },
+      { tag: "live-2026-09-20.1", commit: "f".repeat(40), date: clock.toISOString(), annotated: true, message: "Older\n" },
+    ];
+    const history = (await svc.overview("co-1")).history;
+    expect(history.map((h) => [h.tag, h.neverRan])).toEqual([
+      ["live-2026-09-29.2", true],
+      ["live-2026-09-28.1", false],
+      ["live-2026-09-20.1", false],
+    ]);
 
-    tags = [rc("rc-2026-09-28.2", OLD), rc("rc-2026-09-29.1", NEW)];
-    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toMatchObject({ tag: "rc-2026-09-29.1" });
-  });
-
-  it("does not offer the running commit, or an rc git cannot place", async () => {
-    tags = [rc("rc-2026-09-28.1", LIVE)];
-    ancestry = new Set([`${LIVE}>${LIVE}`]);
-    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toBeNull();
-
-    tags = [rc("rc-2026-09-29.1", NEW)];
-    ancestry = new Set([`${LIVE}?${NEW}`]);
-    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toBeNull();
-
-    runningCommit = null;
-    ancestry = new Set([`${LIVE}>${NEW}`]);
-    expect((await createLiveReleaseService(deps()).overview("co-1")).candidate).toBeNull();
+    // Once live runs that commit (a later release of it), it ran.
+    runningCommit = { commit: failed, tag: "live-2026-09-29.2" };
+    expect((await createLiveReleaseService(deps()).overview("co-1")).history[0].neverRan).toBe(false);
   });
 });
 
@@ -822,5 +884,22 @@ describe("promote to Stable (GRE-127)", () => {
       }),
     );
     expect(await svc.promote({ liveTag: "live-2026-09-28.1", notes: "x" })).toMatchObject({ ok: false, status: 502, error: expect.stringMatching(/nothing was changed/) });
+  });
+});
+
+// GRE-250: an adopted run with a capture file keeps its result, so it is not
+// counted among the runs that can still lose theirs.
+describe("summarizeRestartReport", () => {
+  it("lists only adopted runs without output capture as at risk", () => {
+    const summary = summarizeRestartReport(
+      report({
+        adoptedRunIds: ["run-captured", "run-piped"],
+        runs: [
+          { runId: "run-captured", classification: "adopted", reason: "process_pid_alive", outputCaptured: true },
+          { runId: "run-piped", classification: "adopted", reason: "process_pid_alive", outputCaptured: false },
+        ] as unknown as HotRestartReport["runs"],
+      }),
+    );
+    expect(summary.adoptedWithoutCaptureRunIds).toEqual(["run-piped"]);
   });
 });

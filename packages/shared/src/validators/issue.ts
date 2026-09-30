@@ -845,6 +845,12 @@ const issueCommentAttachmentIdsSchema = z
     message: "Attachment ids must be unique",
   });
 
+export const blockedDependentsHandoffSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("move"), issueId: z.string().guid() }).strict(),
+  z.object({ action: z.literal("remove") }).strict(),
+]);
+export type BlockedDependentsHandoff = z.infer<typeof blockedDependentsHandoffSchema>;
+
 export const updateIssueSchema = objectWithoutDefaults(
   createIssueBaseSchema.omit({
     createdByUserId: true,
@@ -869,6 +875,10 @@ export const updateIssueSchema = objectWithoutDefaults(
     /** Assignment-only handoff; the following structured goal action owns the wake. */
     deferWakeForGoal: z.boolean().optional(),
     hiddenAt: z.string().datetime().nullable().optional(),
+    /** Only valid when closing: the kept task that open dependents move to. */
+    duplicateOfIssueId: z.string().guid().optional(),
+    /** Only valid when closing: what happens to open tasks this task blocks. */
+    blockedDependents: blockedDependentsHandoffSchema.optional(),
   });
 
 export type UpdateIssue = z.infer<typeof updateIssueSchema>;

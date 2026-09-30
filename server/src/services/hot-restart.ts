@@ -59,6 +59,8 @@ export type HotRestartReportRun = HotRestartIntentRun & {
     | "lost"
     | "skipped";
   reason: string;
+  /** Adopted with its output in a capture file: its result is kept (GRE-250). */
+  outputCaptured?: boolean;
 };
 
 export type HotRestartReport = {

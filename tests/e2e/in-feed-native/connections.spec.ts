@@ -81,7 +81,7 @@ for (const journey of ['connect', 'decline', 'restart'] as const) test(`fresh na
     const [connection] = (await api(`/companies/${company.id}/tools/connections`)).connections;
     const installs = (await api(`/tool-connections/${connection.id}/installs`)).installs;
     expect(installs).toEqual([expect.objectContaining({ targetId: holder.id })]);
-    await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+    await page.getByRole('link', { name: 'Agent tasks', exact: true }).click();
     await page.getByRole('button', { name: 'New Task', exact: true }).last().click();
     await page.getByPlaceholder('Task title').fill('Find the heliotrope launch notes and summarize the decisions with a source link');
     await page.getByRole('button', { name: 'Assignee', exact: true }).click();

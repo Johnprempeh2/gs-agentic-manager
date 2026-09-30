@@ -66,7 +66,7 @@ export function DecisionQueuePage() {
   const params = useParams<{ key: string }>();
   const queueKey = params.key ?? "";
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const { dismiss, snooze } = useInboxDismissals(selectedCompanyId);
+  const { dismiss } = useInboxDismissals(selectedCompanyId);
 
   // Toolbar preferences (persisted to localStorage, shared with the desk).
   const [groupBy, setGroupBy] = useState<AttentionGroupBy>(() => loadAttentionGroupBy());
@@ -307,7 +307,6 @@ export function DecisionQueuePage() {
                           expanded={expandedId === item.id}
                           onToggleExpand={handleToggleExpand}
                           onDismiss={(next) => dismiss(next.dismissalKey)}
-                          onSnooze={(next, until) => snooze(next.dismissalKey, until)}
                           onExcluded={invalidate}
                         />
                       ))}
@@ -340,7 +339,6 @@ export function DecisionQueuePage() {
                   expanded={expandedId === item.id}
                   onToggleExpand={handleToggleExpand}
                   onDismiss={(next) => dismiss(next.dismissalKey)}
-                  onSnooze={(next, until) => snooze(next.dismissalKey, until)}
                 />
               ))}
             </Curtain>
@@ -414,7 +412,6 @@ function QueueItemRow({
   expanded,
   onToggleExpand,
   onDismiss,
-  onSnooze,
   onExcluded,
 }: {
   item: AttentionItem;
@@ -426,7 +423,6 @@ function QueueItemRow({
   expanded: boolean;
   onToggleExpand: (item: AttentionItem) => void;
   onDismiss: (item: AttentionItem) => void;
-  onSnooze: (item: AttentionItem, snoozedUntil: string) => void;
   onExcluded: () => void;
 }) {
   const { pushToast } = useToastActions();
@@ -498,7 +494,6 @@ function QueueItemRow({
         expanded={expanded}
         onToggleExpand={onToggleExpand}
         onDismiss={onDismiss}
-        onSnooze={onSnooze}
         agentMap={agentMap}
         agents={agents}
         showTriage

@@ -1,38 +1,27 @@
-import { useQuery } from "@tanstack/react-query";
-import type { AttentionFeed, AttentionItem } from "@greatstone/shared";
+import type { DecisionCard, DecisionsFeed } from "@greatstone/shared";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { attentionApi } from "../api/attention";
-import { attentionStatus, sourceMeta } from "../lib/attention";
-import { queryKeys } from "../lib/queryKeys";
-import { StatusGlyph } from "./StatusGlyph";
+import { useDecisionsFeed } from "../hooks/useDecisionsFeed";
 
-export const DASHBOARD_DECISION_PREVIEW_LIMIT = 3;
+export const DASHBOARD_DECISION_PREVIEW_LIMIT = 1;
 
 /**
- * The decisions waiting on the board, top-ranked first. Dismissed and snoozed
- * rows never reach this feed (it is the same query the sidebar badge uses).
+ * The decisions waiting on the board, from the one Decisions feed (GRE-263):
+ * the same count as the sidebar badge, the mobile tab and the Decisions
+ * header. The feed is already ordered, most urgent first.
  */
-export function selectDashboardDecisions(feed: AttentionFeed | null | undefined): {
+export function selectDashboardDecisions(feed: DecisionsFeed | null | undefined): {
   count: number;
-  preview: AttentionItem[];
+  preview: DecisionCard[];
 } {
-  // Lower rank = higher priority (see `sortAttentionItems`).
-  const items = [...(feed?.items ?? [])].sort((a, b) => a.rank - b.rank);
+  const cards = feed?.cards ?? [];
   return {
-    count: Math.max(feed?.totalCount ?? 0, items.length),
-    preview: items.slice(0, DASHBOARD_DECISION_PREVIEW_LIMIT),
+    count: Math.max(feed?.count ?? 0, cards.length),
+    preview: cards.slice(0, DASHBOARD_DECISION_PREVIEW_LIMIT),
   };
-}
-
-/** Decision rows deep-link to their card; other kinds open the queue. */
-function decisionHref(item: AttentionItem): string {
-  return item.sourceKind === "decision"
-    ? `/decisions?decisionId=${encodeURIComponent(item.subject.id)}`
-    : "/decisions";
 }
 
 export function DashboardDecisionsBoxView({
@@ -40,16 +29,24 @@ export function DashboardDecisionsBoxView({
   loading = false,
   error = null,
 }: {
-  feed: AttentionFeed | null | undefined;
+  feed: DecisionsFeed | null | undefined;
   loading?: boolean;
   error?: Error | null;
 }) {
   const { count, preview } = selectDashboardDecisions(feed);
+  const top = preview[0];
 
+  // Stacks on a phone (count and button on top, the top decision under it)
+  // so a long title never runs under the button; one row from `sm` up.
   return (
-    <Card className="block p-4" aria-label="Decisions" data-testid="dashboard-decisions" role="region">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+    <Card
+      className="flex min-w-0 flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:py-2.5"
+      aria-label="Decisions"
+      data-testid="dashboard-decisions"
+      role="region"
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3 sm:contents">
+        <div className="flex shrink-0 items-center gap-2 sm:order-1">
           <h3 className="text-sm font-semibold">Decisions</h3>
           {feed ? (
             <span
@@ -60,7 +57,7 @@ export function DashboardDecisionsBoxView({
             </span>
           ) : null}
         </div>
-        <Button asChild size="sm" variant={count > 0 ? "default" : "outline"}>
+        <Button asChild size="sm" variant={count > 0 ? "default" : "outline"} className="shrink-0 sm:order-3">
           <Link to="/decisions">
             Open decisions
             <ArrowRight className="h-3.5 w-3.5" />
@@ -68,53 +65,36 @@ export function DashboardDecisionsBoxView({
         </Button>
       </div>
 
-      {loading && !feed ? (
-        <div className="mt-3 space-y-2" aria-busy="true" aria-label="Loading decisions">
-          <Skeleton className="h-5 w-full" />
-          <Skeleton className="h-5 w-2/3" />
-        </div>
-      ) : error && !feed ? (
-        <p className="mt-2 text-sm text-destructive">Could not load decisions: {error.message}</p>
-      ) : count === 0 ? (
-        <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
-          Nothing is waiting for you.
-        </p>
-      ) : (
-        <ul className="mt-3 space-y-1.5">
-          {preview.map((item) => {
-            const label = sourceMeta(item.sourceKind).label;
-            return (
-              <li key={item.id}>
-                <Link
-                  to={decisionHref(item)}
-                  className="flex min-w-0 items-center gap-2 rounded-sm text-sm text-inherit no-underline hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  title={item.subject.title ?? label}
-                >
-                  <StatusGlyph status={attentionStatus(item)} size="md" />
-                  <span className="min-w-0 truncate">{item.subject.title ?? label}</span>
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">{label}</span>
-                </Link>
-              </li>
-            );
-          })}
-          {count > preview.length ? (
-            <li className="text-xs text-muted-foreground">
-              and {count - preview.length} more
-            </li>
-          ) : null}
-        </ul>
-      )}
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-sm sm:order-2">
+        {loading && !feed ? (
+          <Skeleton className="h-5 w-full max-w-xs" aria-busy="true" aria-label="Loading decisions" />
+        ) : error && !feed ? (
+          <p className="truncate text-destructive">Could not load decisions: {error.message}</p>
+        ) : !top ? (
+          <p className="flex items-center gap-2 text-muted-foreground">
+            <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+            Nothing is waiting for you.
+          </p>
+        ) : (
+          <>
+            <Link
+              to="/decisions"
+              className="min-w-0 truncate rounded-sm text-inherit no-underline hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={top.title}
+            >
+              {top.title}
+            </Link>
+            {count > 1 ? (
+              <span className="shrink-0 text-xs text-muted-foreground">and {count - 1} more</span>
+            ) : null}
+          </>
+        )}
+      </div>
     </Card>
   );
 }
 
 export function DashboardDecisionsBox({ companyId }: { companyId: string }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.attention(companyId),
-    queryFn: () => attentionApi.list(companyId),
-    enabled: !!companyId,
-    refetchInterval: 60_000,
-  });
+  const { data, isLoading, error } = useDecisionsFeed(companyId);
   return <DashboardDecisionsBoxView feed={data} loading={isLoading} error={error} />;
 }

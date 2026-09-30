@@ -163,6 +163,7 @@ import {
   updateInboxAgentPolicySchema,
   // Issue tree
   createIssueTreeHoldSchema,
+  tableIssueSchema,
   previewIssueTreeControlSchema,
   releaseIssueTreeHoldSchema,
   // Issue interactions
@@ -5274,6 +5275,36 @@ for (const segment of costSummaryPaths) {
   });
 }
 
+const costLedgerMonthQuery = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/ledger",
+  tags: ["costs"],
+  summary: "Monthly cost ledger per agent, provider and tool",
+  request: { params: z.object({ companyId: z.string() }), query: costLedgerMonthQuery },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/ledger/export",
+  tags: ["costs"],
+  summary: "Export the monthly cost ledger as CSV",
+  request: { params: z.object({ companyId: z.string() }), query: costLedgerMonthQuery },
+  responses: {
+    200: {
+      description: "Monthly cost ledger CSV",
+      content: { "text/csv": { schema: z.string() } },
+    },
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
+});
+
 registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/cost-events",
@@ -5576,6 +5607,90 @@ registry.registerPath({
     }),
   },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/push/config",
+  tags: ["inbox"],
+  summary: "Web Push public key for phone decision notifications, and whether this device is registered",
+  request: { params: z.object({ companyId: z.string() }), query: z.object({ endpoint: z.string().url().optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/push/subscriptions",
+  tags: ["inbox"],
+  summary: "Register this phone for decision notifications (existing decisions are marked as seen)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ endpoint: z.string().url(), keys: z.object({ p256dh: z.string(), auth: z.string() }) }),
+        },
+      },
+    },
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/push/subscriptions",
+  tags: ["inbox"],
+  summary: "Stop decision notifications on this phone",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: { content: { "application/json": { schema: z.object({ endpoint: z.string().url() }) } } },
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/push/test",
+  tags: ["inbox"],
+  summary: "Send a test notification to the caller's registered phones",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/decisions-feed",
+  tags: ["inbox"],
+  summary: "List the one Decisions feed: one card per task, stale cards cleared, with actions",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/decisions-feed/count",
+  tags: ["inbox"],
+  summary: "Get the one Decisions count (same build as the feed)",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/decisions-feed/cards/{cardId}/clarity",
+  tags: ["inbox"],
+  summary: "Ask the owning agent of a Decisions card for clarity and wake it",
+  request: {
+    params: z.object({ companyId: z.string(), cardId: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ question: z.string().min(1).max(2000), clientRequestId: z.string().uuid().optional() }),
+        },
+      },
+    },
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 // ─── Decisions ──────────────────────────────────────────────────────────────
@@ -7638,6 +7753,37 @@ registry.registerPath({
     params: z.object({ id: z.string(), holdId: z.string() }),
     body: jsonBody(releaseIssueTreeHoldSchema),
   },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+// "Not now" (GRE-262): table a task, bring it back, list tabled tasks.
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/table",
+  tags: ["issues"],
+  summary: "Table a task (Not now): park it in backlog with an optional return date; no agent wakes until it returns",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(tableIssueSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/bring-back",
+  tags: ["issues"],
+  summary: "Bring a tabled task back to the status it had before it was tabled",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/tabled-issues",
+  tags: ["issues"],
+  summary: "List tabled tasks (soonest return date first, then open-ended)",
+  request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 

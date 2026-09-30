@@ -125,7 +125,19 @@ describe("GET /health dev-server supervisor access", () => {
           waitingForIdle: false,
           lastRestartAt: "2026-03-20T11:30:00.000Z",
         },
+        // The supervisor matches a restart request to this start time. Hidden
+        // here, login mode dropped every hot restart (30 Sep release).
+        serverInfo: {
+          processStartedAt: "2026-03-20T11:00:00.000Z",
+          git: { available: false, unavailableReason: "git_unavailable" },
+        },
       });
+
+      // Without the supervisor's token the response stays redacted.
+      const anonymous = await request(app).get("/health");
+      expect(anonymous.status).toBe(200);
+      expect(anonymous.body.serverInfo).toBeUndefined();
+      expect(anonymous.body.devServer).toBeUndefined();
     } finally {
       if (previousFile === undefined) {
         delete process.env.GSAM_DEV_SERVER_STATUS_FILE;

@@ -81,6 +81,28 @@ export function formatAssigneeUserLabel(
   return formatUserLabel(userId, userLabels);
 }
 
+export type TaskOwnerKind = "agent" | "you" | "person";
+
+export interface TaskOwner {
+  kind: TaskOwnerKind;
+  label: string;
+}
+
+/**
+ * Who a task row is for: "Agent task" for an agent, "Your task" for the viewer,
+ * or the other person's name. Unassigned tasks get no label (null).
+ */
+export function resolveTaskOwner(
+  issue: CommentAssigneeSuggestionInput,
+  currentUserId: string | null | undefined,
+  userLabels?: ReadonlyMap<string, string> | Record<string, string> | null,
+): TaskOwner | null {
+  if (issue.assigneeAgentId) return { kind: "agent", label: "Agent task" };
+  if (!issue.assigneeUserId) return null;
+  if (currentUserId && issue.assigneeUserId === currentUserId) return { kind: "you", label: "Your task" };
+  return { kind: "person", label: formatUserLabel(issue.assigneeUserId, userLabels) ?? "" };
+}
+
 export function formatUserLabel(
   userId: string | null | undefined,
   userLabels?: ReadonlyMap<string, string> | Record<string, string> | null,

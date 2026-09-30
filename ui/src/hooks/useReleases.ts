@@ -26,6 +26,17 @@ export function useCanRelease(companyId: string | null | undefined): { canReleas
   };
 }
 
+/** Client editions only: "Version X" and the notes of the stable tag it runs (GRE-128). */
+export function useClientVersion(companyId: string | null | undefined, { enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: queryKeys.clientVersion(companyId ?? ""),
+    queryFn: () => releasesApi.clientVersion(companyId!),
+    enabled: enabled && !!companyId,
+    retry: false,
+    staleTime: Infinity,
+  });
+}
+
 export function isReleaseInProgress(overview: ReleasesOverview | undefined): boolean {
   const progress = overview?.progress;
   return !!progress && !FINAL_RELEASE_STATES.has(progress.state);

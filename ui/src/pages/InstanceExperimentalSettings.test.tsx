@@ -245,12 +245,12 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     }
   });
 
-  it("does not render the Conference Room Chat experimental setting for now", async () => {
+  it("renders the Conference Room Chat toggle off by default (GRE-230)", async () => {
     await renderPage();
 
-    const headings = [...container.querySelectorAll("section h2")].map((h) => h.textContent);
-    expect(headings).not.toContain("Conference Room Chat");
-    expect(container.querySelector(CONFERENCE_TOGGLE_SELECTOR)).toBeNull();
+    const titles = [...container.querySelectorAll("h3")].map((h) => h.textContent);
+    expect(titles).toContain("Conference Room Chat");
+    expect(container.querySelector(CONFERENCE_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
   });
 
   it("does not render the Pipelines experimental setting for now", async () => {
@@ -261,16 +261,26 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.querySelector('button[aria-label="Toggle pipelines experimental setting"]')).toBeNull();
   });
 
-  it("does not render the toggle even when the stored flag is currently enabled", async () => {
+  it("reflects a stored Conference Room Chat value and saves it off and on (GRE-230)", async () => {
     currentExperimentalSettings = {
       ...currentExperimentalSettings,
       enableConferenceRoomChat: true,
     };
     await renderPage();
 
-    const toggle = container.querySelector(CONFERENCE_TOGGLE_SELECTOR);
-    expect(toggle).toBeNull();
+    const toggle = container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR);
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
+
+    for (const enabled of [false, true]) {
+      await act(() => toggle?.click());
+      await flushReact();
+      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
+        enableConferenceRoomChat: enabled,
+      });
+      expect(toggle?.getAttribute("aria-checked")).toBe(String(enabled));
+      expect(currentExperimentalSettings.enableConferenceRoomChat).toBe(enabled);
+    }
   });
 
   it("renders and patches the Streamlined UI experimental toggle on and off", async () => {

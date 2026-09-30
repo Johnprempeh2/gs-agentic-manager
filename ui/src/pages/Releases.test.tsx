@@ -212,6 +212,21 @@ describe("Releases page", () => {
     ).toContain("Roll back to this version");
   });
 
+  it("offers no rollback or promote for a version that never ran (GRE-239)", async () => {
+    const base = releasesOverviewFixture();
+    const failed = { ...base.history[1], tag: "live-2026-09-29.2", title: "Failed release", neverRan: true };
+    await render(
+      <ReleasesView companyId="company-1" overview={{ ...base, history: [failed, ...base.history] }} fetchError={null} />,
+    );
+    const row = document.querySelector('[data-testid="release-history-live-2026-09-29.2"]')!;
+    expect(row.textContent).toContain("Never ran");
+    expect(row.textContent).not.toContain("Roll back to this version");
+    expect(row.textContent).not.toContain("Promote to Stable");
+    expect(
+      document.querySelector('[data-testid="release-history-live-2026-09-14.1"]')?.textContent,
+    ).toContain("Roll back to this version");
+  });
+
   it("says in plain words when release is off on this server", async () => {
     await render(
       <ReleasesView
@@ -458,12 +473,54 @@ describe("Restart report", () => {
     expect(older.querySelector('[data-testid="restart-report"]')).toBeNull();
   });
 
-  it("says nothing was lost when no runs were lost", async () => {
+  it("says nothing was lost only when no runs were lost or kept running", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("healthy", {
+        restartReport: restartReportFixture({
+          lostRunIds: [],
+          adoptedRunIds: [],
+          resumedRunIds: ["e5f6a7b8-run-checkpoint"],
+        }),
+      }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).toContain("Nothing was lost.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]'),
+    ).toBeNull();
+  });
+
+  // GRE-246: a kept-running run's result is not captured, so the page must not promise nothing was lost.
+  it("does not say nothing was lost when a run kept running", async () => {
     const overview = releasesOverviewFixture({
       progress: releaseProgressFixture("healthy", { restartReport: restartReportFixture({ lostRunIds: [] }) }),
     });
     await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
-    expect(document.querySelector('[data-testid="release-progress"]')?.textContent).toContain("Nothing was lost.");
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).not.toContain("Nothing was lost.");
+    expect(text).toContain("No run stopped.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]')
+        ?.textContent,
+    ).toContain(
+      "When it ends, it is marked lost and runs once more.",
+    );
+  });
+
+  // GRE-250: a kept-running run whose output goes to a file finishes with its real result.
+  it("says nothing was lost when every run that kept running has its output captured", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("healthy", {
+        restartReport: restartReportFixture({ lostRunIds: [], adoptedWithoutCaptureRunIds: [] }),
+      }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).toContain("Nothing was lost.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]'),
+    ).toBeNull();
   });
 });
 

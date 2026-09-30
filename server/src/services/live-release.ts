@@ -47,6 +47,7 @@ import { applyTaskDrain, getTaskDrainStatus, stopTaskDrain } from "./heartbeat.j
 import { issueService } from "./issues.js";
 import { announceLiveRelease } from "./live-release-announce.js";
 import { readHotRestartReportSync, type HotRestartReport } from "./hot-restart.js";
+import { getStartupRecoveryState } from "../startup-recovery-state.js";
 import { hasOwnReleaseNotes, parseReleaseNotes, type ReleaseNotes } from "./release-notes.js";
 import {
   LIVE_TAG_RE,
@@ -56,10 +57,12 @@ import {
   checkReleaseTarget,
   clientNotesProblem,
   createStableTag,
+  deleteUnpushedTag,
   nextCandidateTagName,
   nextStableTagName,
   prepareReleaseRepo,
   readForkCi,
+  readReleaseMainCommit,
   readReleaseTags,
   resolveReleaseRepo as resolveReleaseRepoFrom,
   runCandidateScript,
@@ -126,6 +129,8 @@ export interface RestartReportSummary {
   resumedRunIds: string[];
   /** Kept running through the restart. */
   adoptedRunIds: string[];
+  /** Kept running, but with no capture file: its result is lost when it ends (GRE-250). */
+  adoptedWithoutCaptureRunIds: string[];
   /** Ended during the switch; checkpointed ACP runs are here and continue as a conversation retry. */
   finishedWhileDownRunIds: string[];
   /** Running before, unaccounted for after. Needs recovery. */
@@ -157,6 +162,8 @@ export interface LiveReleaseJob {
   switchDeadline: string | null;
   launcherStartedAt: string | null;
   finishedAt: string | null;
+  /** This job cut `tag` from origin/main; a job that stops before the switch deletes it (GRE-239). */
+  cutTag: boolean;
 }
 
 /** The progress the Releases page shows (agreed with Mica on GRE-121/GRE-122). */
@@ -209,15 +216,6 @@ export interface ReleasesOverview {
     releasedBy: string | null;
     changelog: Changelog;
   } | null;
-  candidate: {
-    tag: string;
-    title: string;
-    date: string | null;
-    commit: string;
-    changelog: Changelog;
-    forkCi: { status: CiStatus; url: string | null };
-    flintCheck: { status: CiStatus; summary: string | null; issueIdentifier: string | null };
-  } | null;
   history: Array<{
     tag: string;
     title: string;
@@ -229,6 +227,8 @@ export interface ReleasesOverview {
     /** The stable-* tag on this release's commit, once promoted (GRE-127). */
     stableTag: string | null;
     restartReport: RestartReportSummary | null;
+    /** The release to this tag failed and live never ran it (GRE-239); it offers no rollback. */
+    neverRan: boolean;
   }>;
   next: NextVersion | null;
   flaggedRuns: FlaggedRunView[];
@@ -282,8 +282,6 @@ export interface LiveReleaseDeps {
   readRunningCommit(): { commit: string; tag: string | null } | null;
   /** Whether `ref` (checked with isReleaseRef) is contained in `commit`; null when git cannot tell. */
   containsRef(commit: string, ref: string): boolean | null;
-  /** git merge-base --is-ancestor in the release repo; null when git cannot tell. */
-  isAncestor(repo: string, ancestor: string, commit: string): boolean | null;
   /** Records and announces a new live commit. Must be safe to repeat. */
   announce(event: LiveReleaseEvent, isRefLive: (ref: string) => boolean | null): Promise<void>;
   // Release repo access (release-repo.ts); injected so tests need no git or gh.
@@ -292,15 +290,19 @@ export interface LiveReleaseDeps {
   /** scripts/greatstone-candidate.mjs; `print` makes no tag. */
   runCandidate(repo: string, input: { tag: string; title: string; since: string | null; print: boolean }): Promise<CandidateCut>;
   nextTagName(repo: string): Promise<string>;
+  /** Deletes `tag` in the release repo when origin does not have it. */
+  deleteUnpushedTag(repo: string, tag: string): Promise<void>;
   /** The next free stable-YYYY-MM-DD.N name (GRE-127). */
   nextStableTagName(repo: string): Promise<string>;
   /** Adds the annotated stable tag and pushes it; a failure changes nothing. */
   createStableTag(repo: string, input: { tag: string; commit: string; notes: string }): Promise<void>;
   readForkCi(repo: string, commit: string): Promise<{ status: CiStatus; url: string | null }>;
   readTags(repo: string): Promise<ReleaseTagInfo[]>;
-  /** The main commit last fetched (origin/main), without fetching. */
+  /** origin/main after a short, rate-limited fetch (GRE-249). */
   readMainCommit(repo: string): Promise<string | null>;
   readRestartReport(): HotRestartReport | null;
+  /** True once this server finished startup recovery (hot-restart adoption writes its report before that). */
+  startupRecoveryReady(): boolean;
   /** Agent names and issue identifiers for the flagged-run list. */
   describeRuns(runIds: string[]): Promise<Map<string, { agentName: string | null; issueIdentifier: string | null }>>;
   findRun(runId: string): Promise<{ companyId: string; agentId: string; status: string } | null>;
@@ -358,6 +360,7 @@ function normalizeJob(raw: Record<string, unknown>, result: LiveReleaseResult | 
   job.waitingForFlaggedRuns ??= null;
   job.overridden ??= false;
   job.restartReport ??= null;
+  job.cutTag ??= false;
   job.updatedAt ??= job.finishedAt ?? job.createdAt;
   const state = raw.state as string;
   if (state === "waiting_for_runs") job.state = "holding";
@@ -373,6 +376,9 @@ export function summarizeRestartReport(report: HotRestartReport): RestartReportS
     completedAt: report.completedAt,
     resumedRunIds: [...new Set([...report.adoptedRunIds, ...report.finalizedWhileDownRunIds])],
     adoptedRunIds: report.adoptedRunIds,
+    adoptedWithoutCaptureRunIds: report.adoptedRunIds.filter(
+      (runId) => !report.runs.some((run) => run.runId === runId && run.outputCaptured === true),
+    ),
     finishedWhileDownRunIds: report.finalizedWhileDownRunIds,
     lostRunIds: report.lostRunIds,
   };
@@ -524,12 +530,24 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     }
   };
 
+  /** An rc-* tag this server cut and never released stays out of the release repo (GRE-239). */
+  const dropCutTag = async (repo: string, tag: string) => {
+    try {
+      await deps.deleteUnpushedTag(repo, tag);
+      tagsVersion += 1;
+    } catch (err) {
+      logger.warn({ err, tag }, "live release: could not delete an unreleased candidate tag");
+    }
+  };
+
   const finish = async (job: LiveReleaseJob, state: ReleaseState, reason: string | null, body: string) => {
     job.state = state;
     job.reason = reason;
     job.finishedAt = deps.now().toISOString();
     saveJob(job);
     releaseHold();
+    // Stopped before the launcher started: the release script never saw the tag.
+    if (job.cutTag && !job.launcherStartedAt) await dropCutTag(job.releaseRepo, job.tag);
     await comment(job, body);
   };
 
@@ -620,7 +638,10 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
           }
         }
         const target = await deps.checkTarget({ repo: releaseRepo, kind: input.kind, tag, liveCommit: live?.commit ?? null });
-        if (!target.ok) return fail(409, target.reason);
+        if (!target.ok) {
+          if (fromMain) await dropCutTag(releaseRepo, tag);
+          return fail(409, target.reason);
+        }
 
         const job: LiveReleaseJob = {
           id: `${now.toISOString().replace(/[:.]/g, "")}-${randomUUID().slice(0, 8)}`,
@@ -645,6 +666,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
           switchDeadline: null,
           launcherStartedAt: null,
           finishedAt: null,
+          cutTag: fromMain,
         };
         saveJob(job);
         // The hold outlives the longest wait plus the longest switch, then lapses.
@@ -699,9 +721,12 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       const result = readJson<LiveReleaseResult>(path.join(dir, "result.json"));
       if (result) {
         const report = deps.readRestartReport();
-        if (report && job.launcherStartedAt && Date.parse(report.requestedAt) >= Date.parse(job.launcherStartedAt)) {
-          job.restartReport = summarizeRestartReport(report);
-        }
+        const fresh = report && job.launcherStartedAt && Date.parse(report.requestedAt) >= Date.parse(job.launcherStartedAt);
+        // The launcher writes result.json once health shows the new process,
+        // which can be before this server's startup recovery has adopted the
+        // runs and written the report (GRE-242). Wait for it; the next tick records.
+        if (!fresh && !deps.startupRecoveryReady()) return;
+        if (fresh) job.restartReport = summarizeRestartReport(report);
         job.liveTag = result.outcome === "released" ? (result.liveTag ?? (job.kind === "rollback" ? job.tag : null)) : null;
         job.previousTag = result.previousTag ?? job.previousTag;
         const state = stateOfResult(result);
@@ -922,6 +947,13 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     const progress = checking ?? (latest && !failureMoot ? toProgress(latest) : null);
     const releasedBy = (tag: string | null) => (tag ? (jobs.find((j) => j.liveTag === tag && j.state === "healthy")?.startedBy ?? null) : null);
     const reportOf = (tag: string) => jobs.find((j) => j.liveTag === tag)?.restartReport ?? null;
+    // Before GRE-239 a release that failed after the switch still pushed its
+    // live-* tag. Such a tag never ran: a job to its commit failed after the
+    // launcher started, no job made it healthy, and live does not run it now.
+    const neverRan = (tag: string, commit: string) =>
+      running?.commit !== commit &&
+      !jobs.some((j) => j.liveTag === tag && j.state === "healthy") &&
+      jobs.some((j) => j.kind === "release" && j.commit === commit && j.launcherStartedAt !== null && (j.state === "failed" || j.state === "rolled_back"));
 
     const liveTags = tags.filter((t) => LIVE_TAG_RE.test(t.tag));
     const rcTags = tags.filter((t) => RC_TAG_RE.test(t.tag));
@@ -950,6 +982,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         candidateTag: rcTags.find((rc) => rc.commit === t.commit)?.tag ?? null,
         stableTag: stableTags.find((st) => st.commit === t.commit)?.tag ?? null,
         restartReport: reportOf(t.tag),
+        neverRan: neverRan(t.tag, t.commit),
       };
     });
 
@@ -968,34 +1001,6 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       };
     }
 
-    const liveCommits = new Set(liveTags.map((t) => t.commit));
-    // Only an rc strictly newer than live (GRE-172); when git cannot tell, offer none.
-    const newerThanLive = (commit: string) =>
-      running && repo && commit !== running.commit
-        ? cached(`ancestor:${running.commit}:${commit}`, async () => deps.isAncestor(repo, running.commit, commit) === true)
-        : Promise.resolve(false);
-    let newestRc: ReleaseTagInfo | null = null;
-    for (const t of rcTags) {
-      if (liveCommits.has(t.commit)) continue;
-      if (await newerThanLive(t.commit)) {
-        newestRc = t;
-        break;
-      }
-    }
-    let candidate: ReleasesOverview["candidate"] = null;
-    if (newestRc && repo) {
-      const { title, changelog } = changelogOf(newestRc.message, newestRc.tag);
-      candidate = {
-        tag: newestRc.tag,
-        title,
-        date: newestRc.date,
-        commit: newestRc.commit,
-        changelog,
-        forkCi: await cached(`ci:${newestRc.commit}`, () => deps.readForkCi(repo, newestRc.commit)),
-        flintCheck: { status: "unknown", summary: null, issueIdentifier: null },
-      };
-    }
-
     let next: NextVersion | null = null;
     if (repo) {
       try {
@@ -1005,7 +1010,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       }
     }
 
-    return { live, candidate, history, next, flaggedRuns: await listFlaggedRuns(companyId), progress, disabledReason };
+    return { live, history, next, flaggedRuns: await listFlaggedRuns(companyId), progress, disabledReason };
   };
 
   /**
@@ -1185,7 +1190,6 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
       return { commit: info.fullSha, tag: tags?.split("\n")[0]?.trim() || null };
     },
     containsRef: (commit, ref) => repoContainsRef(repoRoot, commit, ref),
-    isAncestor: repoIsAncestor,
     announce: async (event, isRefLive) => {
       const result = await announceLiveRelease(db, event, isRefLive);
       logger.info({ commit: event.commit, ...result }, "live release: announced");
@@ -1194,12 +1198,14 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
     checkTarget: checkReleaseTarget,
     runCandidate: runCandidateScript,
     nextTagName: (repo) => nextCandidateTagName(repo, new Date()),
+    deleteUnpushedTag,
     nextStableTagName: (repo) => nextStableTagName(repo, new Date()),
     createStableTag,
     readForkCi,
     readTags: readReleaseTags,
-    readMainCommit: async (repo) => git(repo, ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]),
+    readMainCommit: (repo) => readReleaseMainCommit(repo),
     readRestartReport: () => readHotRestartReportSync(),
+    startupRecoveryReady: () => getStartupRecoveryState().phase === "ready",
     describeRuns: async (runIds) => {
       const out = new Map<string, { agentName: string | null; issueIdentifier: string | null }>();
       if (runIds.length === 0) return out;

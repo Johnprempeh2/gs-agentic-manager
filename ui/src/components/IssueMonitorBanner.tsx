@@ -178,7 +178,9 @@ export function IssueMonitorBanner({
       tone={copy.tone}
       icon={Clock}
       title={copy.bannerTitle}
-      className="my-3"
+      // On a phone the composer strip sits right under this, so the banner
+      // would repeat it; the strip (where you act) carries the state there.
+      className="my-3 max-sm:hidden"
       actions={onCheckNow && !copy.workspaceWait ? <CheckNowButton onCheckNow={onCheckNow} checkingNow={checkingNow} /> : null}
     >
       <span>{copy.bannerMeta.join("  ·  ")}</span>
@@ -206,17 +208,17 @@ export function IssueMonitorComposerStrip({
       data-testid="issue-monitor-composer-strip"
       className={cn("rounded-lg border border-border bg-muted/30 px-3 py-2", className)}
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2">
           <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <div className="min-w-0">
             <div className="text-sm font-medium text-foreground">{copy.stripTitle}</div>
-            <div className="text-xs text-muted-foreground">{copy.stripMeta.join(" · ")}</div>
+            <div className="truncate text-xs text-muted-foreground">{copy.stripMeta.join(" · ")}</div>
           </div>
         </div>
         {onCheckNow && !copy.workspaceWait ? <CheckNowButton onCheckNow={onCheckNow} checkingNow={checkingNow} /> : null}
       </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">
+      <p className="mt-1.5 text-xs text-muted-foreground max-sm:hidden">
         {copy.workspaceWait
           ? "You can keep sending instructions while the agent waits."
           : "Sending a reply wakes the agent now — before the scheduled check."}

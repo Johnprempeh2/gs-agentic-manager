@@ -364,7 +364,14 @@ export interface AcpxTerminalSessionFailure {
 export type AcpxTerminalFailureClassification = Pick<
   AdapterExecutionResult,
   "errorCode" | "errorFamily" | "retryNotBefore"
->;
+> & {
+  /**
+   * The provider's own reason for the failure, already redacted and bounded
+   * by the classifier. It is kept on the run result so an operator can see
+   * what an "access" failure really was.
+   */
+  providerReason?: string;
+};
 
 export interface AcpxEngineExecutorOptions {
   createRuntime?: AcpxRuntimeFactory;
@@ -4504,6 +4511,11 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
             timedOut: false,
             errorMessage: message,
             ...classified,
+            // GRE-295: no prompt reaches the agent before the session handle is
+            // live, so a handshake failure proves the provider did no work. Without
+            // this evidence the server holds the run for manual reconciliation and
+            // a host-sleep startup deadline strands the task instead of retrying.
+            executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
             ...billingFields,
             ...referencedProjectStagingFailuresField,
             model: prepared.requestedModel || null,
@@ -4757,7 +4769,8 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
           timeoutMs: startTimeoutMs,
           signal,
           // The callback belongs to this turn, including when a runtime is reused.
-          // Raw provider text must never enter the result or the run log.
+          // Raw provider text must never enter the result or the run log; only
+          // the classifier's redacted `providerReason` does.
           ...(deps.classifyTerminalSessionFailure
             ? {
                 onTerminalSessionFailure: (failure: AcpxTerminalSessionFailure) => {
@@ -5021,6 +5034,7 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
           resultJson: {
             status: channelLost ? "failed" : terminal.status,
             ...(classifiedFailure?.errorFamily ? { errorFamily: classifiedFailure.errorFamily } : {}),
+            ...(classifiedFailure?.providerReason ? { providerReason: classifiedFailure.providerReason } : {}),
             ...(classifiedFailure?.retryNotBefore
               ? {
                   retryNotBefore: classifiedFailure.retryNotBefore,

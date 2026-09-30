@@ -33,7 +33,7 @@ import {
 } from "../components/AgentBubbleActionRow";
 import { cn, formatDateTime } from "../lib/utils";
 import type { FeedbackVoteValue } from "@greatstone/shared";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 /**
  * Board Concierge Chat — a chat interface powered by the board-member skill.
@@ -656,7 +656,10 @@ export function BoardChat() {
   }
 
   return (
-    <div className="flex h-(--sz-calc-29) flex-col -m-6">
+    // Desktop fills the fixed-height main panel. A phone scrolls the page
+    // instead, so "100% of main" collapses; fill the screen between the
+    // header and the tab bar explicitly.
+    <div className="flex h-(--sz-calc-29) flex-col -m-6 max-md:-m-4 max-md:h-(--mobile-page-fill)">
       <div
         ref={splitContainerRef}
         className="flex min-h-0 min-w-0 flex-1 flex-row"
@@ -712,6 +715,18 @@ export function BoardChat() {
                 </TooltipTrigger>
                 <TooltipContent side="bottom">new chat</TooltipContent>
               </Tooltip>
+              {/* Phone: the agent feed opens from the header, not a floating
+                  button that covered the send button. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground md:hidden"
+                aria-label="Open agent feed"
+                onClick={() => setMobileFeedOpen(true)}
+              >
+                <Activity className="h-4 w-4" />
+              </Button>
             </div>
           </div>
           {/* Messages — scroll viewport flush right so the scrollbar sits on the pane/divider edge */}
@@ -986,20 +1001,9 @@ export function BoardChat() {
         </div>
       </div>
 
-      {/* Mobile: floating feed toggle + sheet drawer */}
+      {/* Mobile: agent feed sheet (opened from the chat header) */}
       <div className="md:hidden">
         <Sheet open={mobileFeedOpen} onOpenChange={setMobileFeedOpen}>
-          <SheetTrigger asChild>
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              className="fixed bottom-20 right-4 z-20 h-10 w-10 rounded-full shadow-lg"
-              aria-label="Open agent feed"
-            >
-              <Activity className="h-4 w-4" />
-            </Button>
-          </SheetTrigger>
           <SheetContent side="bottom" className="h-(--sz-70vh) p-0 rounded-t-xl">
             <ActivityFeed />
           </SheetContent>

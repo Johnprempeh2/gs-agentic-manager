@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { GoalMilestone } from "@greatstone/shared";
-import { buildJourney, buildScoreboard, goalHealth, leadAgentId, remainingLabel } from "./goal-journey";
+import type { GoalIssueBlocker, GoalMilestone } from "@greatstone/shared";
+import {
+  blockerSentence,
+  buildJourney,
+  buildScoreboard,
+  goalHealth,
+  leadAgentId,
+  mainBlockerSummary,
+  plainText,
+  remainingLabel,
+  shortTitle,
+} from "./goal-journey";
 import { makeGoal } from "./goal-journey.fixtures";
 
 const NOW = new Date(2026, 8, 29, 12);
@@ -132,5 +142,105 @@ describe("leadAgentId", () => {
       ]),
     ).toBe("lead");
     expect(leadAgentId([])).toBeNull();
+  });
+});
+
+function issueBlocker(overrides: Partial<GoalIssueBlocker> = {}): GoalIssueBlocker {
+  return {
+    kind: "issue",
+    issueId: "i1",
+    identifier: "GRE-131",
+    title: "Client install",
+    goalId: "g1",
+    reason: "unknown",
+    waitingOn: null,
+    actor: null,
+    note: null,
+    holdsUpCount: 0,
+    ...overrides,
+  };
+}
+
+const ridge = { type: "agent", id: "a1", name: "Ridge" } as const;
+
+describe("main blocker sentence", () => {
+  const NO_CODE = /`|<|>|\.sh\b|\.ts\b|GRE-\d+/;
+
+  it("strips code, file names, tags and ticket numbers into plain words", () => {
+    expect(plainText("client-instance.sh: upgrade <stable tag> and a tested restore (GRE-130)")).toBe(
+      "Upgrade stable tag and a tested restore",
+    );
+    expect(plainText("Fix `server/src/services/goals.ts` so **cards** load <br/> see [docs](https://x.y/z)")).toBe(
+      "Fix so cards load see docs",
+    );
+    expect(plainText("Keep and/or wording")).toBe("Keep and/or wording");
+    expect(plainText('Ship <a tested build> <span class="x">now</span>')).toBe("Ship a tested build now");
+  });
+
+  it("names the stuck work, the task it waits on and who must finish it", () => {
+    const sentence = blockerSentence(
+      issueBlocker({
+        title: "client-instance.sh: upgrade <stable tag> and a tested restore",
+        reason: "waiting_on_issue",
+        waitingOn: { issueId: "r", identifier: "GRE-130", title: "`restore.sh` restore test", status: "in_progress" },
+        actor: ridge,
+      }),
+    );
+    expect(sentence).toBe(
+      'Upgrade stable tag and a tested restore waits for Ridge to finish "Restore test".',
+    );
+    expect(sentence).not.toMatch(NO_CODE);
+  });
+
+  it("covers each reason in one plain sentence", () => {
+    expect(blockerSentence(issueBlocker({ reason: "waiting_on_person", actor: { type: "user", id: "u", name: "John" } })))
+      .toBe("Client install waits for John to answer or approve.");
+    expect(blockerSentence(issueBlocker({ reason: "waiting_on_person" }))).toBe(
+      "Client install waits for the board to answer or approve.",
+    );
+    expect(blockerSentence(issueBlocker({ reason: "no_owner" }))).toBe(
+      "Client install is blocked and nobody owns it; it needs an owner.",
+    );
+    expect(blockerSentence(issueBlocker({ reason: "failed_run", actor: ridge }))).toBe(
+      "Client install stopped after a failed run; Ridge must retry or fix it.",
+    );
+    expect(blockerSentence(issueBlocker({ reason: "waiting_on_issue", waitingOn: null }))).toBe(
+      "Client install waits for another task, which nobody owns yet.",
+    );
+  });
+
+  it("falls back to the first sentence of the blocking comment", () => {
+    const sentence = blockerSentence(
+      issueBlocker({ actor: ridge, note: "Blocked: need the `deploy.sh` key from John (GRE-9). Details below." }),
+    );
+    expect(sentence).toBe("Client install is blocked: Need the key from John. Ridge must act next.");
+    expect(sentence).not.toMatch(NO_CODE);
+    expect(blockerSentence(issueBlocker())).toBe("Client install is blocked; its owner must say why and clear it.");
+  });
+
+  it("shows a check-in blocker as written, in plain words", () => {
+    expect(blockerSentence({ kind: "check_in", text: "Waiting for the client to sign", checkInId: "k" })).toBe(
+      "Waiting for the client to sign.",
+    );
+  });
+
+  it("keeps long titles short", () => {
+    const title = shortTitle("A very long task title that goes on and on about many things well past the card width");
+    expect(title.length).toBeLessThanOrEqual(61);
+    expect(title.endsWith("…")).toBe(true);
+  });
+});
+
+describe("mainBlockerSummary", () => {
+  it("uses the first ranked blocker and counts the rest", () => {
+    const checkIn = { kind: "check_in", text: "Need budget", checkInId: "k" } as const;
+    const summary = mainBlockerSummary(makeGoal({ blockers: [checkIn, issueBlocker(), issueBlocker()] }), "at_risk");
+    expect(summary).toEqual({ kind: "blocker", blocker: checkIn, sentence: "Need budget.", moreCount: 2 });
+  });
+
+  it("says there is no blocker when the goal is at risk only because tasks are open", () => {
+    const goal = makeGoal({ progress: { percent: 13, source: "issues", done: 1, open: 7, blocked: 0, total: 8 } });
+    expect(mainBlockerSummary(goal, "at_risk")).toEqual({ kind: "open", sentence: "No blocker. 7 of 8 tasks still open." });
+    expect(mainBlockerSummary(goal, "on_track")).toBeNull();
   });
 });

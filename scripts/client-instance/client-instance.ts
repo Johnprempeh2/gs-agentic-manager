@@ -4,8 +4,12 @@
 //   scripts/client-instance.sh create --root <dir> --edition managed|managed-plus
 //                                     [--passed-features a,b] [--port N] [--db-port N]
 //                                     [--company-name X] [--client-email X]
+//                                     [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
+//   scripts/client-instance.sh limits --root <dir> [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
 //   scripts/client-instance.sh start|stop|status|backup --root <dir>
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+//   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
+//   scripts/client-instance.sh restore <dir> <backup file>
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
 //                                      Stable image: scripts/greatstone-stable-image.sh)
@@ -18,7 +22,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir, userInfo } from "node:os";
 import path from "node:path";
@@ -29,6 +33,7 @@ import { DAILY_RETENTION_PRESETS, DEFAULT_BACKUP_RETENTION } from "../../package
 import { INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
+import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor } from "./releases.js";
 
 const CODE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const INSTANCE_ID = "default";
@@ -37,6 +42,51 @@ const PID_FILE = "server.pid";
 const LOG_FILE = "server.log";
 const FORBIDDEN_PORTS = new Set([3100, 3200, 54329]);
 const OPERATOR_EMAIL = "operator@instance.invalid";
+
+/**
+ * Install limits (GRE-141), passed to the server as GSAM_INSTALL_LIMITS at
+ * every start. They are settings of each instance, kept in its
+ * client-instance.json; change them with `limits`. These are spend and run
+ * caps, not prices.
+ */
+interface InstallLimits {
+  /** Monthly budget of each new agent that has none, in cents. The agent pauses when it is spent. */
+  agentBudgetMonthlyCents: number;
+  /** Runs a day for each new agent that names no cap. */
+  agentMaxDailyRuns: number;
+  /** Runs at the same time on the whole install. */
+  maxConcurrentRuns: number;
+}
+const DEFAULT_INSTALL_LIMITS: InstallLimits = {
+  agentBudgetMonthlyCents: 5000,
+  agentMaxDailyRuns: 48,
+  maxConcurrentRuns: 3,
+};
+const LIMIT_FLAGS: Record<string, keyof InstallLimits> = {
+  "agent-budget-cents": "agentBudgetMonthlyCents",
+  "agent-daily-runs": "agentMaxDailyRuns",
+  "max-concurrent-runs": "maxConcurrentRuns",
+};
+
+const USAGE = `usage:
+  create --root <dir> --edition managed|managed-plus [--passed-features a,b] [--port N] [--db-port N]
+         [--company-name X] [--client-email X] [limit flags]
+  limits --root <dir> [limit flags]        show or change the install limits (used at the next start)
+  start|stop|status|backup --root <dir>
+  verify --root <dir>                      (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+  upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
+  restore <dir> <backup file>
+  edition-env --edition managed|managed-plus [--passed-features a,b]
+                                           print the edition values as KEY=VALUE lines (Stable image)
+
+limit flags (spend and run caps, not prices; defaults in brackets):
+  --agent-budget-cents N    monthly budget of each new agent, in cents [${DEFAULT_INSTALL_LIMITS.agentBudgetMonthlyCents}].
+                            An agent that spends it is paused and says so on its open tasks.
+  --agent-daily-runs N      runs a day for each new agent [${DEFAULT_INSTALL_LIMITS.agentMaxDailyRuns}]
+  --max-concurrent-runs N   runs at the same time on the whole install [${DEFAULT_INSTALL_LIMITS.maxConcurrentRuns}]
+
+The limits apply to agents made after the start that uses them; an agent's
+own budget, set by the board, stays. See doc/CLIENT-INSTANCES.md.`;
 
 /**
  * `internal` is for Greatstone's own installs only (for example the GRE-157
@@ -51,6 +101,18 @@ interface InstanceState {
   port: number;
   dbPort: number;
   createdAt: string;
+  /** The code folder of the last start, and its tag. */
+  release?: ReleaseRef;
+  /** Written before the upgrade stops the instance, so `restore` can move back. */
+  lastUpgrade?: { from: ReleaseRef; to: ReleaseRef; backupFile: string; at: string };
+  lastRestore?: { to: ReleaseRef; backupFile: string; safetyBackupFile: string | null; at: string };
+  /** Absent on instances made before GRE-141: no limits until `limits` sets them. */
+  limits?: InstallLimits;
+}
+
+interface ReleaseRef {
+  tag: string | null;
+  dir: string;
 }
 
 function say(message: string) {
@@ -65,15 +127,19 @@ function die(message: string): never {
 function parseArgs(argv: string[]) {
   const [command, ...rest] = argv;
   const opts: Record<string, string> = {};
+  const positional: string[] = [];
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i]!;
-    if (!arg.startsWith("--")) die(`unexpected argument "${arg}"`);
+    if (!arg.startsWith("--")) {
+      positional.push(arg);
+      continue;
+    }
     const value = rest[i + 1];
     if (value === undefined || value.startsWith("--")) die(`${arg} needs a value`);
     opts[arg.slice(2)] = value;
     i += 1;
   }
-  return { command, opts };
+  return { command, opts, positional };
 }
 
 // ---------------------------------------------------------------- paths and guards
@@ -102,6 +168,10 @@ function readState(root: string): InstanceState {
   const file = path.join(root, STATE_FILE);
   if (!existsSync(file)) die(`no client instance at ${root} (missing ${STATE_FILE})`);
   return JSON.parse(readFileSync(file, "utf8")) as InstanceState;
+}
+
+function writeState(root: string, state: InstanceState) {
+  writeFileSync(path.join(root, STATE_FILE), `${JSON.stringify(state, null, 2)}\n`);
 }
 
 function checkPort(port: number, label: string) {
@@ -165,7 +235,7 @@ function writeInstanceFiles(root: string, state: InstanceState) {
   writeFileSync(configPath(root), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   // The auth secret is made here and stays in this instance only.
   writeFileSync(path.join(dir, ".env"), `BETTER_AUTH_SECRET=${randomBytes(32).toString("hex")}\n`, { mode: 0o600 });
-  writeFileSync(path.join(root, STATE_FILE), `${JSON.stringify(state, null, 2)}\n`);
+  writeState(root, state);
 }
 
 function catalogVersion(): string {
@@ -248,6 +318,7 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
     state,
     mode === "normal" && values ? { GSAM_HIDDEN_SETTINGS: values.hiddenSettings, GSAM_MANAGED_CONFIG: values.managedConfig } : {},
   );
+  if (state.limits) env.GSAM_INSTALL_LIMITS = installLimitsEnv(state.limits);
   env.GSAM_MIGRATION_AUTO_APPLY = "true";
   env.GSAM_MIGRATION_PROMPT = "never";
   // Serve the built UI when this checkout has one, else the UI dev middleware.
@@ -281,6 +352,10 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
         die(`the server started in "${String(body.deploymentMode)}" mode, not "authenticated"; stopped it`);
       }
       say(`up on ${baseUrl(state)}`);
+      if (mode === "normal") {
+        state.release = currentRelease();
+        writeState(root, state);
+      }
       return;
     }
   }
@@ -480,6 +555,14 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   // Company and client log-in.
   const companies = (await operator.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
   check(Array.isArray(companies) && companies.length === 1, `exactly one company (found ${Array.isArray(companies) ? companies.length : "?"})`);
+  if (state.limits && Array.isArray(companies) && companies.length === 1) {
+    const companyId = (companies[0] as { id?: string }).id;
+    const agentList = (await operator.expect("GET", `/api/companies/${companyId}/agents`, undefined, [200])) as unknown as Array<{
+      budgetMonthlyCents?: number;
+    }>;
+    const withoutBudget = agentList.filter((agent) => !(Number(agent.budgetMonthlyCents) > 0)).length;
+    check(withoutBudget === 0, `every agent has a monthly budget (${agentList.length} agents, ${withoutBudget} without)`);
+  }
   if (client) {
     const clientCompanies = (await client.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
     check(Array.isArray(clientCompanies) && clientCompanies.length === 1, "the client log-in sees its one company");
@@ -510,8 +593,8 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
 
 // ---------------------------------------------------------------- backup
 
-function backupNow(root: string, state: InstanceState): string {
-  const out = runCli(root, state, ["db:backup", "--json", "--filename-prefix", "client-instance"]);
+function backupNow(root: string, state: InstanceState, prefix = "client-instance"): string {
+  const out = runCli(root, state, ["db:backup", "--json", "--filename-prefix", prefix]);
   const match = out.match(/\{[\s\S]*\}/);
   const parsed = match ? (JSON.parse(match[0]) as { backupFile?: string }) : {};
   const file = parsed.backupFile;
@@ -521,6 +604,144 @@ function backupNow(root: string, state: InstanceState): string {
     die(`backup was written outside this instance: ${real}`);
   }
   return real;
+}
+
+// ---------------------------------------------------------------- releases (upgrade, restore)
+
+function git(args: string[], cwd?: string): { ok: boolean; out: string; err: string } {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  return { ok: result.status === 0, out: (result.stdout ?? "").trim(), err: (result.stderr ?? "").trim() };
+}
+
+function tagsAt(dir: string): string[] {
+  const res = git(["tag", "--points-at", "HEAD"], dir);
+  return res.ok ? res.out.split("\n") : [];
+}
+
+/** The release this script runs from. */
+function currentRelease(): ReleaseRef {
+  return { tag: pickReleaseTag(tagsAt(CODE_DIR)), dir: CODE_DIR };
+}
+
+/** The folder the running server was started from (its process cwd). */
+function runningDir(pid: number): string | null {
+  const res = spawnSync("lsof", ["-a", "-d", "cwd", "-p", String(pid), "-Fn"], { encoding: "utf8" });
+  const line = (res.stdout ?? "").split("\n").find((l) => l.startsWith("n"));
+  return line ? realpathSync(line.slice(1)) : null;
+}
+
+function sameDir(a: string, b: string) {
+  return existsSync(a) && existsSync(b) && realpathSync(a) === realpathSync(b);
+}
+
+/** A release folder is ready when it is a clean checkout of exactly this tag with its packages installed. */
+function releaseReady(dir: string, tag: string): string | null {
+  if (!existsSync(path.join(dir, ".git"))) return `${dir} is not a git clone`;
+  if (!tagsAt(dir).includes(tag)) return `${dir} is not at tag ${tag}`;
+  if (git(["status", "--porcelain", "--untracked-files=no"], dir).out !== "") return `${dir} has local changes`;
+  if (!existsSync(path.join(dir, "node_modules"))) return `${dir} has no node_modules (pnpm install did not run)`;
+  if (!existsSync(path.join(dir, "scripts", "client-instance.sh"))) return `${dir} has no scripts/client-instance.sh`;
+  return null;
+}
+
+/** Clone and install the tag into <releases>/<tag>, or reuse a folder that is ready. */
+function prepareRelease(repo: string, releasesDir: string, tag: string): string {
+  const dir = releaseDirFor(releasesDir, tag);
+  if (existsSync(dir)) {
+    const problem = releaseReady(dir, tag);
+    if (problem) die(`release folder not usable: ${problem}. Remove it and run upgrade again.`);
+    say(`release folder ${dir} is ready`);
+    return dir;
+  }
+  // Install into a partial folder first, so a failed install never looks ready.
+  const partial = `${dir}.partial`;
+  if (existsSync(partial)) die(`${partial} is left from a failed install; remove it and run upgrade again`);
+  mkdirSync(releasesDir, { recursive: true });
+  say(`cloning ${tag} into ${dir}`);
+  const clone = git(["clone", "--quiet", "--branch", tag, repo, partial]);
+  if (!clone.ok) die(`git clone of ${tag} failed: ${clone.err}`);
+  git(["remote", "set-url", "--push", "origin", "DISABLED"], partial);
+  for (const args of [["install", "--frozen-lockfile"], ["--filter", "@greatstone/plugin-sdk", "build"]]) {
+    say(`pnpm ${args.join(" ")}`);
+    const res = spawnSync("pnpm", args, { cwd: partial, stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, CI: "true" } });
+    if (res.status !== 0) die(`pnpm ${args.join(" ")} failed in ${partial}`);
+  }
+  renameSync(partial, dir);
+  const problem = releaseReady(dir, tag);
+  if (problem) die(`release folder not usable: ${problem}`);
+  return dir;
+}
+
+/** Start the instance with the script of another release folder, then prove it runs from there. */
+async function startFrom(root: string, state: InstanceState, dir: string, release: ReleaseRef) {
+  const res = spawnSync(path.join(dir, "scripts", "client-instance.sh"), ["start", "--root", root], { stdio: "inherit", env: process.env });
+  if (res.status !== 0) throw new Error(`start from ${dir} failed`);
+  const body = await health(state);
+  if (body?.status !== "ok") throw new Error(`health check failed on ${baseUrl(state)}`);
+  if (body.deploymentMode !== undefined && body.deploymentMode !== "authenticated") {
+    throw new Error(`the server runs in "${String(body.deploymentMode)}" mode, not "authenticated"`);
+  }
+  const pid = readPid(root);
+  const cwd = pid ? runningDir(pid) : null;
+  if (!cwd || !sameDir(cwd, dir)) throw new Error(`the server runs from ${cwd ?? "an unknown folder"}, not ${dir}`);
+  say(`PASS health ok on port ${state.port}, server runs from ${dir}`);
+  const fresh = readState(root);
+  fresh.release = release;
+  writeState(root, fresh);
+  return fresh;
+}
+
+/** Restore a backup into the instance's own database while the server is stopped. */
+async function restoreDatabase(root: string, state: InstanceState, backupFile: string) {
+  if (readPid(root)) throw new Error("stop the instance before a database restore");
+  const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
+  const { resetPostgresDatabase, runDatabaseRestore } = await import("../../packages/db/src/index.js");
+  const pg = await ensureEmbeddedPostgres(path.join(instanceDir(root), "db"), state.dbPort, { allowExisting: false });
+  try {
+    if (pg.port !== state.dbPort) throw new Error(`the database started on port ${pg.port}, not ${state.dbPort}`);
+    const url = (db: string) => `postgres://paperclip:paperclip@127.0.0.1:${pg.port}/${db}`;
+    await resetPostgresDatabase(url("postgres"), "paperclip");
+    await runDatabaseRestore({ connectionString: url("paperclip"), backupFile });
+  } finally {
+    await pg.stop();
+  }
+}
+
+// ---------------------------------------------------------------- install limits
+
+function readLimitFlags(opts: Record<string, string>, base: InstallLimits): InstallLimits {
+  const limits = { ...base };
+  for (const [flag, key] of Object.entries(LIMIT_FLAGS)) {
+    const raw = opts[flag];
+    if (raw === undefined) continue;
+    const value = Number(raw);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1) die(`--${flag} must be a whole number of 1 or more`);
+    limits[key] = value;
+  }
+  return limits;
+}
+
+function installLimitsEnv(limits: InstallLimits): string {
+  return JSON.stringify({ v: 1, ...limits });
+}
+
+function describeLimits(limits: InstallLimits): string {
+  return `agent budget ${limits.agentBudgetMonthlyCents} cents a month, ${limits.agentMaxDailyRuns} runs a day per agent, ${limits.maxConcurrentRuns} runs at once on the install`;
+}
+
+/** limits --root <dir> [flags]: show, or change and save; the next start uses them. */
+function cmdLimits(root: string, state: InstanceState, opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => flag !== "root" && !(flag in LIMIT_FLAGS));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  const changed = Object.keys(opts).some((flag) => flag in LIMIT_FLAGS);
+  if (!changed) {
+    say(`limits: ${state.limits ? describeLimits(state.limits) : "none"}`);
+    return;
+  }
+  state.limits = readLimitFlags(opts, state.limits ?? DEFAULT_INSTALL_LIMITS);
+  writeState(root, state);
+  say(`limits saved: ${describeLimits(state.limits)}`);
+  if (readPid(root)) say("the instance is running; stop and start it to use the new limits");
 }
 
 // ---------------------------------------------------------------- commands
@@ -542,11 +763,13 @@ async function cmdCreate(opts: Record<string, string>) {
   checkPort(dbPort, "--db-port");
   if (port === dbPort) die("--port and --db-port must differ");
 
-  const state: InstanceState = { edition, passedBetaFeatures: [...passed].sort(), port, dbPort, createdAt: new Date().toISOString() };
+  const limits = readLimitFlags(opts, DEFAULT_INSTALL_LIMITS);
+  const state: InstanceState = { edition, passedBetaFeatures: [...passed].sort(), port, dbPort, createdAt: new Date().toISOString(), limits };
   editionValues(state); // fail before anything is written
   mkdirSync(root, { recursive: true });
   writeInstanceFiles(root, state);
   say(`instance folder ${root}, edition ${edition}${passed.length ? ` + ${passed.join(", ")}` : ""}, port ${port}, database port ${dbPort}`);
+  say(`limits: ${describeLimits(limits)}`);
 
   // 1. Setup start: operator (instance admin), one company, one client log-in.
   await startServer(root, state, "provision");
@@ -624,10 +847,115 @@ function cmdEditionEnv(opts: Record<string, string>) {
   process.stdout.write(`GSAM_MANAGED_CONFIG=${values.managedConfig}\nGSAM_HIDDEN_SETTINGS=${values.hiddenSettings}\n`);
 }
 
+/**
+ * upgrade <root> <stable tag>: back up, stop, move to the tag, start, health
+ * check. Stops at the first failure and says how to move back.
+ */
+async function cmdUpgrade(root: string, state: InstanceState, tag: string, opts: Record<string, string>) {
+  if (!isStableTag(tag)) die(`"${tag}" is not a stable-* tag (stable-YYYY-MM-DD.N); clients run Stable releases only`);
+  const origin = git(["config", "--get", "remote.origin.url"], CODE_DIR);
+  const repo = opts.repo ?? (origin.ok && origin.out ? origin.out : CODE_DIR);
+  const releasesDir = resolveRoot(opts.releases ?? defaultReleasesDir(root));
+  const found = git(["ls-remote", "--tags", repo, `refs/tags/${tag}`]);
+  if (!found.ok) die(`cannot read tags from ${repo}: ${found.err}`);
+  if (!found.out) die(`tag ${tag} is not in ${repo}`);
+
+  const pid = readPid(root);
+  if (!pid) die("the instance is not running; start it first (the backup reads the running database)");
+  const fromDir = runningDir(pid);
+  if (!fromDir) die(`cannot find the folder the server runs from (pid ${pid})`);
+  const from: ReleaseRef = state.release && sameDir(state.release.dir, fromDir) ? state.release : { tag: pickReleaseTag(tagsAt(fromDir)), dir: fromDir };
+  if (from.tag === tag) die(`the instance already runs ${tag}`);
+
+  // Clone and install before the backup, so the instance is down only for stop and start.
+  const toDir = prepareRelease(repo, releasesDir, tag);
+  const to: ReleaseRef = { tag, dir: toDir };
+
+  say(`1/5 backup (instance runs ${from.tag ?? "an untagged folder"} from ${from.dir})`);
+  const backupFile = backupNow(root, state, "pre-upgrade");
+  say(`backup written: ${backupFile}`);
+  state.lastUpgrade = { from, to, backupFile, at: new Date().toISOString() };
+  writeState(root, state);
+
+  const rollback = `to move back: scripts/client-instance.sh restore ${root} ${backupFile}`;
+  say("2/5 stop");
+  await stopServer(root, state);
+  say(`3/5 move to ${tag} (${toDir})`);
+  say("4/5 start, then 5/5 health check");
+  try {
+    await startFrom(root, state, toDir, to);
+  } catch (err) {
+    die(`upgrade to ${tag} failed: ${err instanceof Error ? err.message : String(err)}\n${rollback}`);
+  }
+  say(`upgraded ${root} from ${from.tag ?? from.dir} to ${tag}. Run verify next. ${rollback}`);
+}
+
+/**
+ * restore <root> <backup>: move back to the tag before the last upgrade and
+ * restore the backup made just before it. Greatstone only.
+ */
+async function cmdRestore(root: string, state: InstanceState, rawBackup: string) {
+  const last = state.lastUpgrade;
+  if (!last) die("this instance has no upgrade to move back from (no lastUpgrade in client-instance.json)");
+  const candidate = path.isAbsolute(rawBackup) || existsSync(rawBackup) ? path.resolve(rawBackup) : path.join(backupDir(root), rawBackup);
+  if (!existsSync(candidate)) die(`backup ${rawBackup} not found`);
+  const backupFile = realpathSync(candidate);
+  if (!backupFile.startsWith(`${realpathSync(backupDir(root))}${path.sep}`)) die(`${backupFile} is not a backup of this instance`);
+  if (!existsSync(last.backupFile) || realpathSync(last.backupFile) !== backupFile) {
+    die(`restore takes the backup made just before the last upgrade: ${last.backupFile}`);
+  }
+  const problem = last.from.tag ? releaseReady(last.from.dir, last.from.tag) : existsSync(last.from.dir) ? null : `${last.from.dir} is gone`;
+  if (problem) die(`cannot move back: ${problem}`);
+
+  // Keep what changed after the upgrade, in case it is needed later.
+  let safetyBackupFile: string | null = null;
+  if (readPid(root)) {
+    say("1/5 safety backup of the current data");
+    safetyBackupFile = backupNow(root, state, "pre-restore");
+    say(`backup written: ${safetyBackupFile}`);
+    say("2/5 stop");
+    await stopServer(root, state);
+  } else {
+    say("1/5 the instance is not running; no safety backup");
+    say("2/5 stop: already stopped");
+  }
+  try {
+    say(`3/5 restore ${path.basename(backupFile)} into the instance database`);
+    await restoreDatabase(root, state, backupFile);
+    say(`4/5 start from ${last.from.dir} (${last.from.tag ?? "untagged"}), then 5/5 health check`);
+    const fresh = await startFrom(root, state, last.from.dir, last.from);
+    fresh.lastRestore = { to: last.from, backupFile, safetyBackupFile, at: new Date().toISOString() };
+    writeState(root, fresh);
+  } catch (err) {
+    die(`restore failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  say(`restored ${root} to ${last.from.tag ?? last.from.dir} with ${backupFile}. Run verify next.`);
+}
+
 async function main() {
-  const { command, opts } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.length === 0 || argv[0] === "help" || argv.includes("--help") || argv.includes("-h")) {
+    process.stdout.write(`${USAGE}\n`);
+    return;
+  }
+  const { command, opts, positional } = parseArgs(argv);
   if (command === "create") return cmdCreate(opts);
   if (command === "edition-env") return cmdEditionEnv(opts);
+  if (command === "upgrade" || command === "restore") {
+    const [rootArg, second, ...extra] = positional;
+    if (extra.length > 0 || (opts.root && rootArg && second)) die(`too many arguments for ${command}`);
+    // Both `upgrade <root> <tag>` and `upgrade --root <root> <tag>` work.
+    const root = resolveRoot(opts.root ?? rootArg);
+    const value = opts.root ? rootArg : second;
+    const state = readState(root);
+    if (command === "upgrade") {
+      if (!value) die("usage: upgrade <root> <stable tag>");
+      return cmdUpgrade(root, state, value, opts);
+    }
+    if (!value) die("usage: restore <root> <backup file>");
+    return cmdRestore(root, state, value);
+  }
+  if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
   const root = resolveRoot(opts.root);
   const state = readState(root);
   switch (command) {
@@ -640,6 +968,7 @@ async function main() {
       const pid = readPid(root);
       say(`${root}: edition ${state.edition}${state.passedBetaFeatures.length ? ` + ${state.passedBetaFeatures.join(", ")}` : ""}, port ${state.port}, database port ${state.dbPort}`);
       say(pid ? `running (pid ${pid}), health ${String(body?.status ?? "no answer")}` : "not running");
+      say(`limits: ${state.limits ? describeLimits(state.limits) : "none (made before GRE-141; set them with limits)"}`);
       return;
     }
     case "backup":
@@ -648,8 +977,10 @@ async function main() {
       return;
     case "verify":
       return cmdVerify(root, state);
+    case "limits":
+      return cmdLimits(root, state, opts);
     default:
-      die("usage: create|start|stop|status|backup|verify --root <dir>, or edition-env --edition <edition> (see doc/CLIENT-INSTANCES.md)");
+      die(USAGE);
   }
 }
 

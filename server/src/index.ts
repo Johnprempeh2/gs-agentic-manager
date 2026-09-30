@@ -57,6 +57,7 @@ import {
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
+import { getInstallLimits } from "./services/install-limits.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { setupRunnerPrpWebSocketServer } from "./realtime/runner-prp-ws.js";
@@ -82,6 +83,7 @@ import {
   reconcileCodexLocalManagedHomesOnStartup,
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
+  returnDueTabledIssues,
   statusCardService,
   toolAccessService,
   workspaceOperationService,
@@ -104,6 +106,7 @@ import {
   reconcileAdapterAvailability,
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
+import { pushNotificationService } from "./services/push-notifications.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
@@ -802,10 +805,19 @@ async function startServerWithDatabaseTeardown(
     throw err;
   }
 
+  // Client install limits (GSAM_INSTALL_LIMITS, GRE-141): fail closed like the two above.
+  try {
+    const installLimits = getInstallLimits();
+    if (installLimits) logger.warn({ installLimits }, "client install limits active");
+  } catch (err) {
+    logger.error({ err }, "invalid GSAM_INSTALL_LIMITS; refusing to start (fail closed)");
+    throw err;
+  }
+
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
-    shareClient: createFeedbackTraceShareClientFromConfig(config),
+    shareClient: createFeedbackTraceShareClientFromConfig(config) ?? undefined,
   });
   const backupSettingsSvc = instanceSettingsService(db);
   const databaseBackupMaxAgeHours = Math.max(
@@ -1363,6 +1375,7 @@ async function startServerWithDatabaseTeardown(
           const skipped =
             result.skippedActiveRun
             + result.skippedNonTerminalTree
+            + result.skippedOpenLinkedIssue
             + result.skippedUndelivered
             + result.skippedRace
             + result.skippedCooldown;
@@ -1449,15 +1462,44 @@ async function startServerWithDatabaseTeardown(
       "worktree run-execution cutoff state",
     );
     const heartbeatSchedulingSuppression = await heartbeat.resolveSchedulingSuppression();
+    // A release hold (task drain) holds new run admission only (GRE-242). The
+    // restart recovery re-attaches runs that lived through the hot restart and
+    // writes hot-restart-report.json, so it runs under the hold too. Admission
+    // work waits: the periodic recovery runs it once the hold lifts, and the
+    // session-goal recovery below is deferred to that first tick.
+    const startupRestartRecoveryAllowed =
+      !heartbeatSchedulingSuppression.suppressed ||
+      heartbeatSchedulingSuppression.reason === "task_drain";
+    let sessionGoalRecoveryDeferred = false;
+    const recoverSessionGoals = async (phase: "startup" | "deferred") => {
+      const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
+      if (
+        recoveredGoalActions.enqueued > 0 ||
+        recoveredGoalActions.invalid > 0
+      ) {
+        logger.warn(
+          { ...recoveredGoalActions, phase },
+          "startup session-goal action outbox recovery reconciled pending controls",
+        );
+      }
+      const recoveredGoals = await heartbeat.recoverActiveSessionGoals();
+      if (recoveredGoals.enqueued > 0) {
+        logger.warn(
+          { ...recoveredGoals, phase },
+          "startup session-goal recovery resumed durable agent goals",
+        );
+      }
+    };
 
-    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
-    // into a dead "running" row during startup recovery.
     if (heartbeatSchedulingSuppression.suppressed) {
       logger.warn(
         { reason: heartbeatSchedulingSuppression.reason },
         "heartbeat scheduling suppressed for this runtime instance",
       );
-    } else {
+    }
+    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
+    // into a dead "running" row during startup recovery.
+    if (startupRestartRecoveryAllowed) {
       const startupHeartbeatRecovery = (async () => {
         // Legacy remote recovery releases sandbox leases. Wait for provider
         // workers before cleanup or retry admission, including unmanaged installs.
@@ -1502,6 +1544,9 @@ async function startServerWithDatabaseTeardown(
             "startup hot-restart adoption reconciliation failed - orphan reaper will serve as degraded backstop",
           );
         }
+        await heartbeat.sweepStaleRunOutputFiles().catch((err) => {
+          logger.warn({ err }, "startup sweep of stale run output files failed");
+        });
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
@@ -1523,25 +1568,14 @@ async function startServerWithDatabaseTeardown(
           }
         }
 
+        if (heartbeatSchedulingSuppression.suppressed) {
+          sessionGoalRecoveryDeferred = true;
+          return;
+        }
+
         const promotion = await heartbeat.promoteDueScheduledRetries();
         await heartbeat.resumeQueuedRuns();
-        const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
-        if (
-          recoveredGoalActions.enqueued > 0 ||
-          recoveredGoalActions.invalid > 0
-        ) {
-          logger.warn(
-            recoveredGoalActions,
-            "startup session-goal action outbox recovery reconciled pending controls",
-          );
-        }
-        const recoveredGoals = await heartbeat.recoverActiveSessionGoals();
-        if (recoveredGoals.enqueued > 0) {
-          logger.warn(
-            recoveredGoals,
-            "startup session-goal recovery resumed durable agent goals",
-          );
-        }
+        await recoverSessionGoals("startup");
         const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
         if (
           promotion.promoted > 0 ||
@@ -1701,6 +1735,17 @@ async function startServerWithDatabaseTeardown(
           }));
 
         if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork(returnDueTabledIssues(db, { heartbeat })
+          .then((result) => {
+            if (result.returned > 0) {
+              logger.info({ ...result }, "brought back tabled issues on their return date");
+            }
+          })
+          .catch((err) => {
+            logger.error({ err }, "tabled issue return sweep failed");
+          }));
+
+        if (heartbeatSchedulerStopped) return;
         trackHeartbeatSchedulerWork((async () => {
           const experimental = await instanceSettingsService(db).getExperimental();
           if (experimental.enableStatusCards !== true) return;
@@ -1802,6 +1847,10 @@ async function startServerWithDatabaseTeardown(
             .then(() => heartbeat.promoteDueScheduledRetries())
             .then(async (promotion) => {
               await heartbeat.resumeQueuedRuns();
+              if (sessionGoalRecoveryDeferred) {
+                await recoverSessionGoals("deferred");
+                sessionGoalRecoveryDeferred = false;
+              }
               const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
               if (
                 promotion.promoted > 0 ||
@@ -1864,6 +1913,26 @@ async function startServerWithDatabaseTeardown(
     });
   }
   
+  /** How often new decisions are checked for phone notifications. */
+  const DECISION_PUSH_INTERVAL_MS = 60_000;
+  // Phone notifications for new decisions (Web Push). Each round only acts for
+  // users who turned notifications on, so it costs nothing until someone does.
+  // A self-rescheduling timer: a slow round never overlaps the next.
+  const decisionPushes = pushNotificationService(db as any);
+  let decisionPushTimer: ReturnType<typeof setTimeout> | null = null;
+  let decisionPushStopped = false;
+  const scheduleDecisionPushRound = () => {
+    if (decisionPushStopped) return;
+    decisionPushTimer = setTimeout(() => {
+      void decisionPushes
+        .notifyNewDecisions()
+        .catch((err) => logger.warn({ err }, "decision push round failed"))
+        .finally(scheduleDecisionPushRound);
+    }, DECISION_PUSH_INTERVAL_MS);
+    decisionPushTimer.unref?.();
+  };
+  scheduleDecisionPushRound();
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
 
@@ -1958,6 +2027,8 @@ async function startServerWithDatabaseTeardown(
     await systemdNotify(["--stopping", `--status=Stopping after ${signal}`]);
     heartbeatSchedulerStopped = true;
     clearInterval(executionControlInterval);
+    decisionPushStopped = true;
+    if (decisionPushTimer) clearTimeout(decisionPushTimer);
     if (heartbeatSchedulerInterval) {
       clearInterval(heartbeatSchedulerInterval);
       heartbeatSchedulerInterval = null;

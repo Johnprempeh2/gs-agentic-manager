@@ -12,6 +12,7 @@ export { agentRoutes } from "./agents.js";
 export { projectRoutes } from "./projects.js";
 export { issueRoutes } from "./issues.js";
 export { issueTreeControlRoutes } from "./issue-tree-control.js";
+export { issueTablingRoutes } from "./issue-tabling.js";
 export {
   fileResourceRoutes,
   createFileResourceAvailabilityLimiter,
@@ -29,6 +30,8 @@ export { costRoutes } from "./costs.js";
 export { activityRoutes } from "./activity.js";
 export { dashboardRoutes } from "./dashboard.js";
 export { attentionRoutes } from "./attention.js";
+export { decisionsFeedRoutes } from "./decisions-feed.js";
+export { pushRoutes } from "./push.js";
 export { decisionRoutes } from "./decisions.js";
 export { decisionQueueRoutes } from "./decision-queues.js";
 export { sidebarBadgeRoutes } from "./sidebar-badges.js";

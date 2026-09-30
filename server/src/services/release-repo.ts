@@ -237,6 +237,20 @@ export function nextCandidateTagName(repo: string, now: Date): Promise<string> {
   return nextTagName(repo, "rc", now);
 }
 
+/**
+ * Deletes a local rc-* or live-* tag that origin does not have (GRE-239): one
+ * this server cut for a release that was cancelled or stopped before the
+ * switch. A pushed tag is kept. When origin cannot be asked the tag counts as
+ * unpushed: the release pushes its tags only after live is healthy.
+ */
+export async function deleteUnpushedTag(repo: string, tag: string): Promise<void> {
+  if (!/^(rc|live)-\d{4}-\d{2}-\d{2}\.\d+$/.test(tag)) throw new Error(`${tag} is not an rc-* or live-* tag`);
+  const remote = await git(repo, ["ls-remote", "--tags", "origin", `refs/tags/${tag}`], PREFLIGHT_FETCH_TIMEOUT_MS).catch(() => "");
+  if (remote) return;
+  if (!(await gitOk(repo, ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`]))) return;
+  await git(repo, ["tag", "-d", tag]);
+}
+
 // Stable (GRE-127, design GRE-124 "Trimmed build"): a stable-* tag is an
 // annotated tag on the commit of a live-* release. Its message is the client
 // notes, which clients see as "What's new", so no internal numbers.
@@ -301,6 +315,41 @@ export async function readForkCi(repo: string, commit: string): Promise<{ status
   } catch {
     return { status: "unknown", url: null };
   }
+}
+
+/** The Releases page fetches main at most this often, and waits this long for it (GRE-249). */
+export const MAIN_FETCH_INTERVAL_MS = 30_000;
+export const MAIN_FETCH_TIMEOUT_MS = 5_000;
+const mainFetches = new Map<string, { at: number; pending: Promise<void> | null }>();
+
+/**
+ * The origin/main commit, after a short `git fetch origin main` so a new
+ * merge shows within one refresh (GRE-249). One fetch per repo per interval;
+ * page loads in between, or while a fetch runs, share it. A failed or
+ * timed-out fetch falls back to the last fetched commit.
+ */
+export async function readReleaseMainCommit(repo: string, now = Date.now()): Promise<string | null> {
+  let state = mainFetches.get(repo);
+  if (!state || (!state.pending && now - state.at >= MAIN_FETCH_INTERVAL_MS)) {
+    const next = { at: now, pending: null as Promise<void> | null };
+    next.pending = git(repo, ["fetch", "--quiet", "origin", "main"], MAIN_FETCH_TIMEOUT_MS)
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        next.pending = null;
+      });
+    mainFetches.set(repo, next);
+    state = next;
+  }
+  if (state.pending) await state.pending;
+  return git(repo, ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]).catch(() => null);
+}
+
+/** Tests only: forget when each repo last fetched main. */
+export function resetMainFetchesForTest() {
+  mainFetches.clear();
 }
 
 export interface ReleaseTagInfo {

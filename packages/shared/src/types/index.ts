@@ -56,6 +56,21 @@ export type {
 } from "./attention.js";
 export { ATTENTION_SOURCE_KINDS } from "./attention.js";
 export type {
+  DecisionCard,
+  DecisionCardAction,
+  DecisionCardActionId,
+  DecisionCardActionInput,
+  DecisionCardAgentRef,
+  DecisionCardClarity,
+  DecisionCardKind,
+  DecisionCardRequest,
+  DecisionClarityRequest,
+  DecisionClarityResponse,
+  DecisionsFeed,
+  DecisionsFeedCount,
+} from "./decisions-feed.js";
+export { DECISION_CARD_KINDS } from "./decisions-feed.js";
+export type {
   DecisionQueue,
   DecisionQueueItem,
   DecisionQueueSeedRule,
@@ -802,6 +817,10 @@ export type {
 export type {
   Goal,
   GoalBlocker,
+  GoalBlockerActor,
+  GoalBlockerReason,
+  GoalBlockerWaitingOn,
+  GoalIssueBlocker,
   GoalCheckIn,
   GoalDetail,
   GoalMilestone,
@@ -886,7 +905,7 @@ export type {
   RoutineExecutionIssueOrigin,
   RoutineListItem,
 } from "./routine.js";
-export type { CostEvent, CostSummary, IssueCostSummary, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentSummary } from "./cost.js";
+export type { CostEvent, CostSummary, IssueCostSummary, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
 export type { FinanceEvent, FinanceSummary, FinanceByBiller, FinanceByKind } from "./finance.js";
 export type {
   AgentWakeupResponse,

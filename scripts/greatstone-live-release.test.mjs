@@ -159,7 +159,7 @@ test("a stale empty index.lock in live is removed before the release script runs
   assert.equal(existsSync(lock), false);
   assert.match(run.stdout, new RegExp(`Removed a stale ${lock} \\(empty, \\d+s old, no git process\\)`));
   assert.deepEqual(calls, ["rc-2026-09-27.2"]);
-  assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2"));
+  assert.equal(head, git(box.live, "rev-parse", "rc-2026-09-27.2^{commit}"));
 });
 
 for (const [name, setup] of [
@@ -413,4 +413,204 @@ test("a release by hand refuses release scripts older than origin/main and makes
   assert.match(stale.stderr, /release: the release scripts in .*dev are not the ones on origin\/main \(scripts\/greatstone-release.sh\); run: git -C .*dev pull --ff-only origin main/);
   assert.equal(box.liveTags(), "");
   assert.equal(readFileSync(join(box.dev, "scripts", "greatstone-release.sh"), "utf8"), "# v1\n");
+});
+
+// GRE-239: a release that fails after it tags must not leave a live-* tag for a
+// version that never ran. The real greatstone-release.sh runs from a dev clone
+// whose scripts match origin/main; the backup tool is a stub. `pnpm install`
+// fails after the live checkout moved (live has no lockfile; where the script
+// finds no pnpm of its own, a stub fails).
+// An empty workspace: greatstone-common.sh puts its own node (and pnpm) first
+// on PATH, so with these files the real `pnpm install` passes offline.
+const EMPTY_WORKSPACE = {
+  ".gitignore": "node_modules/\n",
+  "package.json": '{ "name": "sandbox", "private": true }\n',
+  "pnpm-lock.yaml": "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n",
+};
+
+// greatstone-release.sh names a new live tag after today's local date.
+const pad2 = (n) => String(n).padStart(2, "0");
+const TODAY_TAG = (() => { const d = new Date(); return `live-${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}.1`; })();
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// base: files the old release has; rc: files the rc commit adds on top.
+function releaseSandbox(t, pnpmScript, { base = {}, rc = {} } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "gs-release-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const origin = join(root, "origin.git");
+  git(root, "init", "--quiet", "--bare", "-b", "main", origin);
+  const dev = join(root, "dev");
+  git(root, "clone", "--quiet", origin, dev);
+  configure(dev);
+  mkdirSync(join(dev, "scripts"));
+  for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh"]) {
+    copyFileSync(join(scriptsDir, f), join(dev, "scripts", f));
+  }
+  const addFiles = (files) => {
+    for (const [path, body] of Object.entries(files)) {
+      mkdirSync(join(dev, path, ".."), { recursive: true });
+      writeFileSync(join(dev, path), body);
+      git(dev, "add", path);
+    }
+  };
+  git(dev, "add", "scripts");
+  addFiles(base);
+  git(dev, "commit", "--quiet", "-m", "old");
+  git(dev, "tag", "-a", "live-2026-09-01.1", "-m", "Old release");
+  addFiles(rc);
+  git(dev, "commit", "--quiet", "--allow-empty", "-m", "new");
+  git(dev, "tag", "-a", "rc-2026-09-29.1", "-m", RC_MESSAGE);
+  git(dev, "push", "--quiet", "origin", "HEAD:main", "live-2026-09-01.1");
+  // Not tracked, so the release scripts still match origin/main.
+  mkdirSync(join(dev, "cli", "node_modules", "tsx", "dist"), { recursive: true });
+  writeFileSync(
+    join(dev, "cli", "node_modules", "tsx", "dist", "cli.mjs"),
+    `import fs from "node:fs"; const a = process.argv; const dir = a[a.indexOf("--dir") + 1];
+fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--prefix") + 1] + ".sql.gz"; fs.writeFileSync(f, "x"); console.log(f);\n`,
+  );
+  const live = join(root, "live");
+  git(root, "clone", "--quiet", origin, live);
+  git(live, "checkout", "--quiet", "--detach", "live-2026-09-01.1");
+  const db = join(root, "data", "instances", "default", "db");
+  mkdirSync(db, { recursive: true });
+  writeFileSync(join(db, "postmaster.pid"), `${process.pid}\n/x\n0\n5432\n`);
+
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "pnpm"), pnpmScript, { mode: 0o755 });
+  const env = (liveUrl) => ({
+    ...process.env,
+    GSAM_ROOT: root,
+    GSAM_RELEASE_REPO: dev,
+    GSAM_LIVE_URL: liveUrl,
+    GSAM_LIVE_BOARD_KEY_FILE: join(root, "no-key"),
+    GSAM_RELEASE_FROM_APP: "1",
+    GSAM_RELEASE_POLL_SECONDS: "0.05",
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+  return { root, origin, dev, live, env };
+}
+
+test("a release that fails after tagging pushes no live tag and deletes the local one", (t) => {
+  const { origin, dev, live, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  const run = spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], {
+    encoding: "utf8",
+    env: env("http://127.0.0.1:9"),
+  });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stdout, new RegExp(`^Tagged rc-2026-09-29\\.1 as ${esc(TODAY_TAG)}:`, "m"));
+  assert.match(run.stdout, new RegExp(`^Live checkout is on ${esc(TODAY_TAG)} `, "m"));
+  assert.match(run.stderr, new RegExp(`Deleted the unpushed tag ${esc(TODAY_TAG)}`));
+  assert.equal(git(dev, "tag", "--list", TODAY_TAG), "");
+  assert.equal(git(live, "tag", "--list", TODAY_TAG), "");
+  assert.equal(git(origin, "tag", "--list", "live-*"), "live-2026-09-01.1");
+  assert.equal(git(origin, "tag", "--list", "rc-*"), "");
+});
+
+// GRE-243: a release of only doc/ (or ui/) changes no file dev-runner watches,
+// so the live server answers every restart with restart_not_required. Its
+// "commit" follows the live checkout, like the real one.
+function fakeRestartNotRequired(live) {
+  const seen = { restarts: 0 };
+  const server = http.createServer((req, res) => {
+    if (req.method === "POST" && req.url === "/api/health/dev-server/restart") {
+      seen.restarts += 1;
+      res.writeHead(409, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "restart_not_required" }));
+      return;
+    }
+    if (req.url === "/api/health") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "ok", commit: git(live, "rev-parse", "HEAD"), serverInfo: { processStartedAt: "2026-09-29T08:00:00.000Z" } }));
+      return;
+    }
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end("{}");
+  });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, seen, url: `http://127.0.0.1:${server.address().port}` })));
+}
+
+// Async: the fake server answers from this process.
+function runAsync(args, env) {
+  return new Promise((resolve) => {
+    const child = spawn("bash", args, { env });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+test("a docs-only release and its rollback end healthy with no restart", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  const fake = await fakeRestartNotRequired(box.live);
+  t.after(() => fake.server.close());
+  const script = join(box.dev, "scripts", "greatstone-release.sh");
+
+  const release = await runAsync([script, "rc-2026-09-29.1"], box.env(fake.url));
+  assert.equal(release.status, 0, release.stderr);
+  assert.match(release.stdout, new RegExp(`^The live server needs no restart: ${esc(TODAY_TAG)} changes no file the server runs from`, "m"));
+  assert.match(release.stdout, new RegExp(`^Live app at .* is running ${esc(TODAY_TAG)} `, "m"));
+  assert.equal(git(box.live, "rev-parse", "HEAD"), git(box.dev, "rev-parse", "rc-2026-09-29.1^{commit}"));
+  // Healthy, so the tags are pushed and History may offer the version.
+  assert.equal(git(box.origin, "tag", "--list", TODAY_TAG), TODAY_TAG);
+  assert.equal(git(box.origin, "tag", "--list", "rc-*"), "rc-2026-09-29.1");
+
+  // Live serves the dev UI here (no ui/dist), so nothing is built.
+  assert.doesNotMatch(release.stdout, /Rebuilt the UI/);
+
+  const rollback = await runAsync([script, "live-2026-09-01.1"], box.env(fake.url));
+  assert.equal(rollback.status, 0, rollback.stderr);
+  assert.match(rollback.stdout, /^The live server needs no restart: live-2026-09-01.1 /m);
+  assert.equal(git(box.live, "rev-parse", "HEAD"), git(box.dev, "rev-parse", "live-2026-09-01.1^{commit}"));
+  assert.equal(fake.seen.restarts, 30);
+});
+
+test("drop_unpushed_live_tag keeps a live tag origin already has", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gs-drop-tag-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const origin = join(root, "origin.git");
+  git(root, "init", "--quiet", "--bare", "-b", "main", origin);
+  const dev = join(root, "dev");
+  git(root, "clone", "--quiet", origin, dev);
+  configure(dev);
+  git(dev, "commit", "--quiet", "--allow-empty", "-m", "one");
+  git(dev, "tag", "live-2026-09-29.1");
+  git(dev, "push", "--quiet", "origin", "HEAD:main", "live-2026-09-29.1");
+  git(dev, "tag", "live-2026-09-29.2");
+  const drop = (tag) =>
+    spawnSync("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; drop_unpushed_live_tag "$@"`, "_", dev, join(root, "none"), tag], {
+      encoding: "utf8",
+      env: { ...process.env, GSAM_ROOT: root },
+    });
+  assert.equal(drop("live-2026-09-29.1").status, 0);
+  assert.equal(drop("live-2026-09-29.2").status, 0);
+  assert.equal(git(dev, "tag", "--list", "live-*"), "live-2026-09-29.1");
+});
+
+// Live serves the built UI (ui/dist) so a phone over Tailscale can load it. The
+// server reads ui/dist from disk, so a UI-only release (no server restart) is
+// only live once the release rebuilds it.
+const UI_WORKSPACE = {
+  ".gitignore": "node_modules/\nui/dist/\n",
+  "package.json": '{ "name": "sandbox", "private": true }\n',
+  "pnpm-workspace.yaml": "packages:\n  - ui\n",
+  "ui/package.json": '{ "name": "@greatstone/ui", "private": true, "scripts": { "build": "node build.mjs" } }\n',
+  "ui/build.mjs": 'import fs from "node:fs"; fs.mkdirSync("dist", { recursive: true }); fs.writeFileSync("dist/index.html", "built " + fs.readFileSync("VERSION", "utf8"));\n',
+  "ui/VERSION": "old",
+  "pnpm-lock.yaml": "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n\n  ui: {}\n",
+};
+
+test("a UI-only release rebuilds the built UI that live serves", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: UI_WORKSPACE, rc: { "ui/VERSION": "new" } });
+  mkdirSync(join(box.live, "ui", "dist"), { recursive: true });
+  writeFileSync(join(box.live, "ui", "dist", "index.html"), "built old");
+  const fake = await fakeRestartNotRequired(box.live);
+  t.after(() => fake.server.close());
+
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], box.env(fake.url));
+  assert.equal(release.status, 0, release.stderr);
+  assert.match(release.stdout, /^Rebuilt the UI for live-\d{4}-\d{2}-\d{2}\.1$/m);
+  assert.equal(readFileSync(join(box.live, "ui", "dist", "index.html"), "utf8"), "built new");
 });

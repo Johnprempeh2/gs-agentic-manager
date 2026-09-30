@@ -194,6 +194,7 @@ import {
 import { buildIssueChanges } from "./issue-change-receipt.js";
 import { projectSafeChatPublication } from "./chat-publication-projection.js";
 import { issueThreadInteractionAttentionAgentAllowed } from "./issue-thread-interaction-resolution.js";
+import { listOpenBlockedDependents } from "./issue-blocker-handoff.js";
 
 const ALL_ISSUE_STATUSES = [
   "backlog",
@@ -4915,6 +4916,10 @@ const issueListSelect = {
   completedAt: issues.completedAt,
   cancelledAt: issues.cancelledAt,
   hiddenAt: issues.hiddenAt,
+  tabledAt: issues.tabledAt,
+  tabledUntil: issues.tabledUntil,
+  tabledByUserId: issues.tabledByUserId,
+  tabledFromStatus: issues.tabledFromStatus,
   createdAt: issues.createdAt,
   updatedAt: issues.updatedAt,
 };
@@ -9094,6 +9099,12 @@ export function issueService(db: Db) {
       return listIssueReviewAttentionMap(dbOrTx, companyId, issueRows);
     },
 
+    listOpenBlockedDependents: (
+      companyId: string,
+      blockerIssueId: string,
+      dbOrTx: any = db,
+    ) => listOpenBlockedDependents(dbOrTx, companyId, blockerIssueId),
+
     listWakeableBlockedDependents: async (blockerIssueId: string) => {
       const blockerIssue = await db
         .select({ id: issues.id, companyId: issues.companyId })
@@ -10725,6 +10736,14 @@ export function issueService(db: Db) {
         patch.unblockDescriptor = null;
         patch.blockedTransitionAt = null;
         patch.blockedOwnerNotifiedAt = null;
+      }
+      // Moving a tabled task to another status by hand brings it back: the
+      // parked state must not outlive the status that represents it.
+      if (existing.tabledAt && issueData.status && issueData.status !== existing.status) {
+        patch.tabledAt = null;
+        patch.tabledUntil = null;
+        patch.tabledByUserId = null;
+        patch.tabledFromStatus = null;
       }
       if (issueData.requestDepth !== undefined) {
         patch.requestDepth = clampIssueRequestDepth(issueData.requestDepth);

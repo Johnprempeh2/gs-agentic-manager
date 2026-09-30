@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useParams } from "@/lib/router";
+import { useLocation, useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
@@ -17,10 +17,17 @@ import { InlineEditor } from "../components/InlineEditor";
 import { EntityRow } from "../components/EntityRow";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { cn, projectUrl, relativeTime } from "../lib/utils";
-import { daysToTarget, formatTargetDate, goalHealth, remainingLabel } from "../lib/goal-journey";
+import {
+  daysToTarget,
+  formatTargetDate,
+  GOAL_BLOCKERS_ANCHOR,
+  goalHealth,
+  remainingLabel,
+} from "../lib/goal-journey";
 import { GoalHealthPill, GoalPercent, GoalProgressRing } from "../components/goals/GoalHealth";
 import { GoalJourneyMap } from "../components/goals/GoalJourneyMap";
 import { GoalCheckIns } from "../components/goals/GoalCheckIns";
+import { GoalBlockerList } from "../components/goals/GoalBlockers";
 import { GoalOwnerPicker } from "../components/goals/GoalOwnerPicker";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -157,6 +164,14 @@ export function GoalDetail() {
     return () => closePanel();
   }, [goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // "+N more blockers" on a goal card lands here; scroll once the list renders.
+  const { hash } = useLocation();
+  const hasBlockers = (goal?.blockers.length ?? 0) > 0;
+  useEffect(() => {
+    if (hash !== `#${GOAL_BLOCKERS_ANCHOR}` || !hasBlockers) return;
+    document.getElementById(GOAL_BLOCKERS_ANCHOR)?.scrollIntoView({ block: "start" });
+  }, [hash, hasBlockers]);
+
   if (isLoading) return <PageSkeleton variant="detail" />;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!goal) return null;
@@ -231,6 +246,19 @@ export function GoalDetail() {
           value={newestCheckIn ? relativeTime(newestCheckIn.createdAt) : "None yet"}
         />
       </section>
+
+      {goal.blockers.length > 0 ? (
+        <section
+          id={GOAL_BLOCKERS_ANCHOR}
+          className="scroll-mt-4 space-y-3"
+          aria-labelledby="goal-blockers-heading"
+        >
+          <h3 id="goal-blockers-heading" className="text-sm font-semibold">
+            What blocks this goal
+          </h3>
+          <GoalBlockerList goal={goal} health={health} />
+        </section>
+      ) : null}
 
       <section className="space-y-3" aria-labelledby="goal-journey-heading">
         <h3 id="goal-journey-heading" className="text-sm font-semibold">

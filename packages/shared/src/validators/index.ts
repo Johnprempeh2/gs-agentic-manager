@@ -428,6 +428,7 @@ export {
   issueBlockedInboxSeveritySchema,
   issueBlockedInboxStateSchema,
   updateIssueSchema,
+  blockedDependentsHandoffSchema,
   stalledReviewDecisionSchema,
   issueExecutionPolicySchema,
   issueExecutionStateSchema,
@@ -498,6 +499,7 @@ export {
   type CreateAcceptedPlanDecomposition,
   type CreateIssueLabel,
   type UpdateIssue,
+  type BlockedDependentsHandoff,
   type StalledReviewDecision,
   type IssueExecutionWorkspaceSettings,
   type IssueRecoveryActionReadModel,
@@ -536,6 +538,8 @@ export {
   type CompanySearchExtractQuery,
   type CompanySearchQuery,
 } from "./search.js";
+
+export { tableIssueSchema, type TableIssue } from "./issue-tabling.js";
 
 export {
   createIssueTreeHoldSchema,

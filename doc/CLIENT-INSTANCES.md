@@ -49,8 +49,9 @@ git -C "$REL" remote set-url --push origin DISABLED
 (cd "$REL" && pnpm install --frozen-lockfile && pnpm --filter @greatstone/plugin-sdk build)
 ```
 
-Instances on the same tag share its folder. Do not edit or `git pull` in it;
-a new release gets a new folder. Call the script with a clean environment:
+`upgrade` makes this folder itself (below). Instances on the same tag share
+its folder. Do not edit or `git pull` in it; a new release gets a new folder.
+Call the script with a clean environment:
 
 ```sh
 env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" LANG=en_US.UTF-8 \
@@ -75,20 +76,51 @@ scripts/client-instance.sh create --root /path/to/instances/c002 \
 scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition internal
 ```
 
-Managed and Managed plus pin `enableManagedSandboxOnly` on. Agents then run
-only in a managed sandbox from a sandbox provider plugin (e2b, Daytona, Modal
-and similar). An instance without one refuses every run. `internal` sets no
-edition values, so agents run on the host. `verify` then checks only health,
+Managed and Managed plus pin `enableManagedSandboxOnly` off (GRE-160: with it
+on and no sandbox provider, every run is refused). `internal` sets no
+edition values. `verify` then checks only health,
 the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
-free from 55400), `--company-name`, `--client-email`.
+free from 55400), `--company-name`, `--client-email`, and the install limits
+below.
 
-Run limits are not set by the script, so a new instance uses the defaults:
-at most 6 runs at once, and new runs wait while free memory is below
-2048 MB or free disk (data dir and home volume) is below 20 GB (GRE-207).
-The OS memory-pressure level does not hold runs (GRE-198). Change them in
-Instance → General → Run limits; 0 turns a floor off.
+### Install limits (GRE-141)
+
+Every new instance gets install limits. They are settings of that instance,
+kept in `<root>/client-instance.json` and given to the server as
+`GSAM_INSTALL_LIMITS` at every start. They are spend and run caps, not prices.
+`scripts/client-instance.sh --help` shows the defaults.
+
+| Flag | Meaning |
+| --- | --- |
+| `--agent-budget-cents N` | Monthly budget of each new agent that has none (hard stop on). |
+| `--agent-daily-runs N` | Runs a day for each new agent that names no cap. |
+| `--max-concurrent-runs N` | Runs at the same time on the whole install. Replaces the Run limits cap in Instance → General. |
+
+When an agent spends its budget, it is paused, its runs stop, and it says so
+in a comment on each task it holds (`todo` or `in_progress`). The task keeps
+its assignee. The board raises the budget on the Costs page (the agent then
+starts again) or gives the task to another agent.
+
+The budget and daily cap go on agents made after the start that uses them.
+An agent's own budget, set by the board, stays. `verify` checks that every
+agent has a monthly budget.
+
+Show or change the limits of an instance (the next start uses them):
+
+```sh
+scripts/client-instance.sh limits --root <root>
+scripts/client-instance.sh limits --root <root> --agent-budget-cents N
+scripts/client-instance.sh stop --root <root> && scripts/client-instance.sh start --root <root>
+```
+
+An instance made before GRE-141 has no limits until `limits` sets them.
+
+The memory and disk floors are not set by the script: new runs wait while free
+memory is below 2048 MB or free disk (data dir and home volume) is below
+20 GB (GRE-207). The OS memory-pressure level does not hold runs (GRE-198).
+Change them in Instance → General → Run limits; 0 turns a floor off.
 
 `create` does, in order:
 
@@ -126,7 +158,8 @@ It checks: health; every hidden setting is reported hidden; each section 5
 "on" feature is on and each "off" feature is off; a change request to each
 floored hidden setting returns 403; exactly one company; the client log-in
 gets 403 on the release API (`instance.releases`, no Releases page on a client
-edition); new sign-ups are refused. A refused request
+edition); every agent has a monthly budget (when the instance has install
+limits); new sign-ups are refused. A refused request
 changes nothing. If one is accepted, the script puts the old value back and
 fails.
 
@@ -143,27 +176,83 @@ scripts/client-instance.sh backup --root <root>    # the instance must be runnin
 The file goes to `<root>/instances/default/data/backups/`. The script fails if
 the file lands anywhere else. Scheduled backups go to the same folder.
 
-## Restore (sandbox copy only)
+## Agree the update time with the client
 
-Not scripted yet: this script has no `restore` command, and a restore has not
-been tested. Until it has, do not restore a client instance. The next step
-adds `restore` and tests it on a sandbox copy. A restore cannot turn a feature
-back on: `GSAM_MANAGED_CONFIG` is never stored in the database.
+Clients run only `stable-*` tags (`stable-YYYY-MM-DD.N`), made by John with
+"Promote to Stable" on the Releases page. Until the first client, and until
+the in-app slot picker (GRE-131) exists, Greatstone agrees each update time
+with the client directly:
 
-## Upgrade (after John makes a release)
+1. When John promotes a new `stable-*` tag, Greatstone tells the client
+   "Version X is ready" with the client notes (the tag message) and offers
+   one or two slots outside the client's working hours.
+2. The client picks a slot. Record the instance code, the tag and the slot on
+   the issue. No client name.
+3. Tell the client the instance is down for a few minutes in that slot.
+4. In the slot, Bedrock runs `upgrade` (below), then says on the issue which
+   instance moved and to which tag.
 
-One instance at a time:
+## Upgrade (after John promotes a Stable release)
 
-1. Make the new release folder and install it (see "Where the code runs").
-   Test it first: `create` a sandbox instance from it (`--edition internal`,
-   a scratch `--root`, spare ports), then `stop` it and delete its folder.
-2. `backup`, with the script from the old or the new folder.
-3. `stop`, then `start` with the script from the **new** folder (migrations
-   apply at start). The instance is down only between the two (about 15 s).
-4. `verify`, and check the process folder with `lsof` (above).
-5. Keep the old release folder until the instance is checked, then remove it
-   if no other instance runs from it.
-6. Say on the issue which instance moved and to which tag.
+One instance at a time, in the agreed slot, with John's go-ahead on the issue
+for a real client instance:
+
+```sh
+scripts/client-instance.sh upgrade <root> <stable tag> \
+  [--repo /Users/johnprempeh/Desktop/Code/gs-clip] [--releases <dir>]
+```
+
+Run it with a clean environment (see "Where the code runs"). It refuses any
+tag that is not a `stable-*` tag, or a tag that is not in `--repo` (default:
+the `origin` of the folder the script runs from). `--releases` defaults to
+`releases/` next to the instance folder. It does, in order, and stops with a
+clear error at the first failure:
+
+1. Makes the release folder `<releases>/<tag>` (clone, `pnpm install
+   --frozen-lockfile`, plugin SDK build), or reuses it if it is a clean
+   checkout of that tag. This is before the backup, so the instance keeps
+   running while it installs.
+2. `backup` (file `pre-upgrade-*` in the instance's own backups folder). It
+   writes the old and new release and the backup file to `lastUpgrade` in
+   `client-instance.json`.
+3. `stop`.
+4. `start` with the script from the new release folder (migrations apply at
+   start). The instance is down only between stop and start.
+5. Health check: health is `ok`, mode is `authenticated`, and the server
+   process runs from the new release folder.
+
+When a step after the backup fails, it prints the `restore` command to move
+back. After it passes, run `verify`. Keep the old release folder until you
+no longer need to move back, then remove it if no other instance runs from it.
+
+## Restore (move back after an upgrade; Greatstone only)
+
+```sh
+scripts/client-instance.sh restore <root> <backup file>
+```
+
+The backup must be the one `upgrade` made just before (the script prints it;
+it is also `lastUpgrade.backupFile` in `client-instance.json`). Any other file
+is refused. It does, in order:
+
+1. If the instance runs: a safety backup (`pre-restore-*`) of the data made
+   since the upgrade. Keep it; it is the only copy of that data.
+2. `stop`.
+3. Restores the backup into a fresh database of this instance only.
+4. `start` with the script from the release folder before the upgrade.
+5. Health check, as for `upgrade`.
+
+Then run `verify`, and say on the issue which instance moved back, to which
+tag. Files uploaded after the upgrade stay in `storage/`; only the database
+goes back. A restore cannot turn a feature back on: `GSAM_MANAGED_CONFIG` is
+never stored in the database.
+
+Tested on a sandbox instance (upgrade, then restore, then health check and
+`verify`):
+
+```sh
+scripts/client-instance/upgrade-restore.sandbox-test.sh <empty scratch dir> [from ref] [to ref]
+```
 
 ## Change the edition values
 
@@ -172,6 +261,12 @@ Edit only when section 5 of the product brief changes:
 
 ```sh
 node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/editions.test.ts
+```
+
+The tag rules for `upgrade` and `restore` have their own tests:
+
+```sh
+node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/releases.test.ts
 ```
 
 ## The edition values for a Docker image

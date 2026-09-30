@@ -262,6 +262,13 @@ import {
   buildIssueBlockersResolvedWakeStateKey,
   findExistingIssueBlockersResolvedWakeForReadyState,
 } from "../services/issue-dependency-wakeups.js";
+import {
+  handOffBlockedDependents,
+  releaseUnownedReadyDependents,
+  resolveDuplicateOfFromComment,
+  type BlockerHandoff,
+  type BlockerHandoffResult,
+} from "../services/issue-blocker-handoff.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import {
   executionWorkspaceService as executionWorkspaceServiceDirect,
@@ -12930,8 +12937,27 @@ export function issueRoutes(
         deferWakeForGoal,
         hiddenAt: hiddenAtRaw,
         onBehalfOfUserId: _requestedOnBehalfOfUserId,
+        duplicateOfIssueId,
+        blockedDependents: blockedDependentsRequest,
         ...updateFields
       } = req.body;
+      const closingToStatus =
+        (updateFields.status === "done" || updateFields.status === "cancelled") &&
+        updateFields.status !== existing.status
+          ? (updateFields.status as "done" | "cancelled")
+          : null;
+      if ((duplicateOfIssueId || blockedDependentsRequest) && !closingToStatus) {
+        res.status(400).json({
+          error: "duplicateOfIssueId and blockedDependents are only valid when closing the task",
+        });
+        return;
+      }
+      if (duplicateOfIssueId && blockedDependentsRequest) {
+        res.status(400).json({
+          error: "Send either duplicateOfIssueId or blockedDependents, not both",
+        });
+        return;
+      }
       if (existing.conversationAgentId && req.actor.type === "board" && commentBody) {
         throw unprocessable("Send conversation messages through the comments endpoint with a clientRequestId");
       }
@@ -12987,7 +13013,9 @@ export function issueRoutes(
       if (
         (reopenRequested === true ||
           resumeRequested === true ||
-          Array.isArray(req.body.blockedByIssueIds)) &&
+          Array.isArray(req.body.blockedByIssueIds) ||
+          Boolean(duplicateOfIssueId) ||
+          Boolean(blockedDependentsRequest)) &&
         (await assertLowTrustControlPlaneDenied(
           req,
           res,
@@ -12996,6 +13024,61 @@ export function issueRoutes(
         ))
       ) {
         return;
+      }
+      // A cancelled blocker never resolves, so decide where its open dependents
+      // go before anything else about the close takes effect.
+      let blockerHandoff: BlockerHandoff | null = null;
+      if (closingToStatus) {
+        const inferredDuplicateOfIssueId =
+          duplicateOfIssueId ??
+          (blockedDependentsRequest
+            ? null
+            : await resolveDuplicateOfFromComment(
+                db,
+                existing.companyId,
+                existing.id,
+                commentBody,
+              ));
+        if (inferredDuplicateOfIssueId) {
+          blockerHandoff = {
+            kind: "move",
+            toIssueId: inferredDuplicateOfIssueId,
+            reason: "duplicate",
+          };
+        } else if (blockedDependentsRequest?.action === "move") {
+          blockerHandoff = {
+            kind: "move",
+            toIssueId: blockedDependentsRequest.issueId,
+            reason: "moved",
+          };
+        } else if (blockedDependentsRequest?.action === "remove") {
+          blockerHandoff = { kind: "remove" };
+        } else if (closingToStatus === "cancelled") {
+          const openDependents = await svc.listOpenBlockedDependents(
+            existing.companyId,
+            existing.id,
+          );
+          if (openDependents.length > 0) {
+            const list = openDependents
+              .map((d) => `${d.identifier ?? d.id} (${d.status})`)
+              .join(", ");
+            throw conflict(
+              `${existing.identifier ?? existing.id} still blocks open tasks: ${list}. ` +
+                "Say what happens to them: send duplicateOfIssueId (or blockedDependents {\"action\":\"move\",\"issueId\"}) to make them wait on another task, " +
+                "or blockedDependents {\"action\":\"remove\"} to remove this blocker.",
+              {
+                code: "issue_close_has_blocked_dependents",
+                dependents: openDependents.map((d) => ({
+                  id: d.id,
+                  identifier: d.identifier,
+                  title: d.title,
+                  status: d.status,
+                })),
+                options: ["move", "remove"],
+              },
+            );
+          }
+        }
       }
       const replacementBlockerIssueIds = Array.isArray(
         req.body.blockedByIssueIds,
@@ -13799,7 +13882,11 @@ export function issueRoutes(
       const attachmentCommentSourceTrust = commentAttachmentIds?.length
         ? await sourceTrustForActorWrite(existing, actor)
         : undefined;
+      const blockerHandoffResult: { value: BlockerHandoffResult | null } = {
+        value: null,
+      };
       const shouldUseTransactionalIssueUpdate =
+        Boolean(blockerHandoff) ||
         Boolean(commentAttachmentIds?.length) ||
         Boolean(decision) ||
         shouldRelayStop ||
@@ -13859,6 +13946,28 @@ export function issueRoutes(
                 updated,
                 tx,
               );
+            }
+
+            if (blockerHandoff && isClosedIssueStatus(updated.status)) {
+              blockerHandoffResult.value = await handOffBlockedDependents(svc, tx, {
+                companyId: updated.companyId,
+                closed: { id: updated.id, identifier: updated.identifier },
+                handoff: blockerHandoff,
+                actor: {
+                  agentId: actor.agentId ?? null,
+                  userId: actor.actorType === "user" ? actor.actorId : null,
+                  runId: actor.runId ?? null,
+                },
+              });
+            } else if (existing.status !== "done" && updated.status === "done") {
+              await releaseUnownedReadyDependents(svc, tx, {
+                companyId: updated.companyId,
+                blocker: { id: updated.id, identifier: updated.identifier },
+                actor: {
+                  agentId: actor.agentId ?? null,
+                  userId: actor.actorType === "user" ? actor.actorId : null,
+                },
+              });
             }
 
             await persistReviewTransitionActivity(tx, updated);
@@ -14905,6 +15014,24 @@ export function issueRoutes(
               },
             });
           }
+        }
+
+        for (const dependent of blockerHandoffResult.value?.dependents ?? []) {
+          if (!dependent.returnedToTodo || !dependent.assigneeAgentId) continue;
+          addWakeup(dependent.assigneeAgentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_status_changed",
+            payload: { issueId: dependent.id, mutation: "blocker_handoff" },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: dependent.id,
+              taskId: dependent.id,
+              source: "issue.blocker_handoff",
+              closedBlockerIssueId: issue.id,
+            },
+          });
         }
 
         const becameDone =

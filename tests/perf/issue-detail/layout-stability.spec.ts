@@ -130,7 +130,7 @@ test("reading anchor survives late media, composer resizing, older history and b
   await expect(page.getByText("Historical message 0", { exact: true })).toBeAttached();
   await expect.poll(async () => Math.abs(await offset() - anchor.top)).toBeLessThanOrEqual(2);
 
-  await page.getByRole("link", { name: "Tasks", exact: true }).first().click();
+  await page.getByRole("link", { name: "Agent tasks", exact: true }).first().click();
   await page.goBack();
   await ready(page);
   await expect.poll(async () => Math.abs(await offset() - anchor.top)).toBeLessThanOrEqual(2);
