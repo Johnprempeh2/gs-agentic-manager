@@ -1771,8 +1771,9 @@ function StreamlinedIssuesList({
         )}
         controls={(
           <>
-          {/* View mode toggle */}
-          <div className="gs-toolbar-divider flex items-center gap-0.5" role="group" aria-label="View mode">
+          {/* View mode toggle. Phones use the list; board lanes and table
+              columns are desktop layouts, so both controls stay off there. */}
+          <div className="gs-toolbar-divider flex items-center gap-0.5 max-sm:hidden" role="group" aria-label="View mode">
             <button
               className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "list" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
               onClick={() => updateView({ viewMode: "list" })}

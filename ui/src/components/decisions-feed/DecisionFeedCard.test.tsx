@@ -322,3 +322,33 @@ describe("Not now", () => {
     });
   });
 });
+
+describe("DecisionFeedCard on a phone", () => {
+  const originalMatchMedia = window.matchMedia;
+  beforeEach(() => {
+    // Phone width: the (width < 40rem) query matches.
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("40rem"),
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+  });
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it("shows the main action and Not now up front, the rest in More, and Cancel still confirms", async () => {
+    render(blockedCard());
+    expect(hasButton("More actions")).toBe(true);
+    expect(hasButton("Cancel the task")).toBe(false);
+    await click(button("More actions"));
+    const sheet = document.querySelector("[role='dialog']");
+    expect(sheet?.textContent).toContain("Cancel the task");
+    expect(sheet?.textContent).toContain("Ask for clarity");
+    await click(button("Cancel the task"));
+    expect(api.patch).not.toHaveBeenCalled();
+    await click(button("Yes, cancel the task"));
+    expect(api.patch).toHaveBeenCalledWith("/issues/issue-201", { status: "cancelled" });
+  });
+});

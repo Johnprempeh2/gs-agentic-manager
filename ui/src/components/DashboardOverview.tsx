@@ -4,6 +4,7 @@ import { Link } from "@/lib/router";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentIdentity } from "./AgentIdentity";
+import { AgentAvatar } from "./AgentAvatar";
 import { AgentStatusBadge } from "./StatusBadge";
 import { IssueRow } from "./IssueRow";
 import { PriorityIcon } from "./PriorityIcon";
@@ -190,7 +191,47 @@ export function DashboardOverview({
         ) : agentRows.length === 0 ? (
           <MessageCard>No agents yet.</MessageCard>
         ) : (
-          <Card className="block divide-y divide-border overflow-hidden py-0">
+          <>
+          {/* Phone: the whole team as a swipeable strip of faces (a lime ring
+              is working now, red needs you), then only the agents on a task. */}
+          <div
+            className="-mx-4 mb-3 flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:hidden"
+            role="list"
+            aria-label="Team"
+            data-testid="dashboard-agent-strip"
+          >
+            {agentRows.map((row) => {
+              const status = dashboardAgentRowStatus(row);
+              return (
+                <Link
+                  key={row.agent.id}
+                  to={agentUrl(row.agent)}
+                  role="listitem"
+                  className="flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-md text-center text-inherit no-underline active:scale-95 transition-transform duration-(--motion-press)"
+                  aria-label={`${row.agent.name}, ${status}`}
+                >
+                  <span
+                    className={cn(
+                      "rounded-full p-0.5 ring-2",
+                      row.live ? "ring-primary" : status === "error" ? "ring-destructive" : "ring-border",
+                    )}
+                  >
+                    <AgentAvatar agent={row.agent} size={48} />
+                  </span>
+                  <span className="w-full truncate text-xs text-muted-foreground">{row.agent.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+          {agentRows.some((row) => row.currentTask || row.live) ? null : (
+            <p className="text-sm text-muted-foreground sm:hidden">Nobody is on a task right now.</p>
+          )}
+          <Card
+            className={cn(
+              "block divide-y divide-border overflow-hidden py-0",
+              !agentRows.some((row) => row.currentTask || row.live) && "max-sm:hidden",
+            )}
+          >
             {agentRows.map((row) => {
               const { agent, currentTask, live, liveIssueId } = row;
               return (
@@ -198,7 +239,10 @@ export function DashboardOverview({
                 key={agent.id}
                 data-testid="dashboard-agent-row"
                 data-live={live ? "true" : undefined}
-                className="flex min-w-0 flex-col gap-1.5 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+                className={cn(
+                  "flex min-w-0 flex-col gap-1.5 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-3",
+                  !currentTask && !live && "max-sm:hidden",
+                )}
               >
                 <div className="flex min-w-0 items-center gap-2 sm:w-48 sm:shrink-0">
                   <Link
@@ -237,6 +281,7 @@ export function DashboardOverview({
               );
             })}
           </Card>
+          </>
         )}
       </section>
 
