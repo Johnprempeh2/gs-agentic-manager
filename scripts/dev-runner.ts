@@ -765,8 +765,12 @@ async function maybeAutoRestartChild() {
       ? (health as { serverInfo: { processStartedAt: string } }).serverInfo
           .processStartedAt
       : null;
+  // Drop a request only when the server that made it has clearly been
+  // replaced. An unreadable identity (a server that hides serverInfo from this
+  // supervisor, as login mode did) is not proof, so the request stands.
   if (
     manualRestartRequest?.previousServerIdentity &&
+    observedServerIdentity &&
     observedServerIdentity !== manualRestartRequest.previousServerIdentity
   ) {
     removeDevServerRestartRequest(

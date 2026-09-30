@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlarmClock, CalendarClock, ChevronDown, Loader2, Plus, UserPlus, X } from "lucide-react";
-import { buildAgentMentionHref, type Agent, type AttentionItem, type AttentionSourceKind } from "@greatstone/shared";
+import type { Agent, AttentionItem, AttentionSourceKind } from "@greatstone/shared";
 import { decisionQueuesApi } from "../api/decisionQueues";
 import { issuesApi } from "../api/issues";
 import { useToastActions } from "../context/ToastContext";
+import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { queryKeys } from "../lib/queryKeys";
 import {
+  attentionDetailLine,
   attentionTaskRef,
   DECIDE_BY_OPTIONS,
   decideByLabel,
@@ -23,21 +25,6 @@ import {
 } from "./ui/dropdown-menu";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
-
-/** Snooze presets shared with the row menu, resolved at click time. */
-const SNOOZE_PRESETS: ReadonlyArray<{ label: string; resolve: () => string }> = [
-  { label: "1 hour", resolve: () => new Date(Date.now() + HOUR_MS).toISOString() },
-  { label: "4 hours", resolve: () => new Date(Date.now() + 4 * HOUR_MS).toISOString() },
-  { label: "Tomorrow", resolve: () => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
-    return d.toISOString();
-  } },
-  { label: "Next week", resolve: () => new Date(Date.now() + 7 * DAY_MS).toISOString() },
-];
 
 /** Slugify a queue title into a URL-safe kebab key the API will accept. */
 function toQueueKey(title: string): string {
@@ -122,18 +109,37 @@ export function DecisionTriageStrip({ item, companyId, agents }: DecisionTriageS
     onSuccess: invalidate,
     onError: onError("remove from queue"),
   });
+  // Creates a child task assigned to the agent: assignment wakes the agent,
+  // whereas an @mention comment is context only and wakes no one.
   const routeToAgent = useMutation({
     mutationFn: (agent: Agent) => {
       if (!relatedIssueId) throw new Error("This decision has no linked task to route from.");
-      const mention = `[@${agent.name}](${buildAgentMentionHref(agent.id)})`;
-      const body =
-        `${mention} — could you look at this decision${taskRef ? ` on ${taskRef.identifier}` : ""}, `
-        + `prepare a recommendation, and re-surface it on the decisions desk? (routed from the desk)`;
-      return issuesApi.addComment(relatedIssueId, body);
+      const decision = item.subject.title?.trim() || item.whyNow;
+      const detailLine = attentionDetailLine(item);
+      const onTask = taskRef ? ` on ${taskRef.identifier}` : "";
+      const description = [
+        `**Decision${onTask}:** ${decision}`,
+        ...(detailLine ? [detailLine] : []),
+        ...(item.whyNow && item.whyNow !== decision ? [`**Why now:** ${item.whyNow}`] : []),
+        `Please look at this decision, prepare a recommendation, and re-surface it on the decisions desk. `
+          + `(Routed from the decisions desk.)`,
+      ].join("\n\n");
+      return issuesApi.create(companyId, {
+        title: `Recommendation: ${decision}${onTask}`.slice(0, 200),
+        description,
+        parentId: relatedIssueId,
+        assigneeAgentId: agent.id,
+        status: "todo",
+      });
     },
-    onSuccess: (_result, agent) => {
+    onSuccess: (issue, agent) => {
       invalidate();
-      pushToast({ title: `Asked ${agent.name} for a recommendation`, tone: "success" });
+      const ref = issue.identifier ?? issue.id;
+      pushToast({
+        title: `Asked ${agent.name} for a recommendation in ${ref}`,
+        tone: "success",
+        action: { label: `View ${ref}`, href: createIssueDetailPath(ref) },
+      });
     },
     onError: onError("ask that agent for a recommendation"),
   });
@@ -228,7 +234,7 @@ export function DecisionTriageStrip({ item, companyId, agents }: DecisionTriageS
         />
       </div>
 
-      {/* Snooze + route-to-agent. */}
+      {/* An old snooze can still be cleared; new ones use Not now (GRE-264). */}
       <div className="flex flex-wrap items-center gap-2">
         {item.snoozedUntil ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -243,24 +249,7 @@ export function DecisionTriageStrip({ item, companyId, agents }: DecisionTriageS
               Clear
             </button>
           </span>
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="xs" className="h-7 gap-1" disabled={pending}>
-                <AlarmClock className="h-3.5 w-3.5" />
-                Snooze
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {SNOOZE_PRESETS.map((preset) => (
-                <DropdownMenuItem key={preset.label} onClick={() => setSnooze.mutate(preset.resolve())}>
-                  {preset.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        ) : null}
 
         <AskAgentPicker
           agents={agents ?? []}
@@ -421,9 +410,9 @@ function DropdownMenuSeparatorLike() {
 }
 
 /**
- * "Ask agent for recommendation" — posts a mention-comment on the linked task
- * asking the agent to prepare a recommendation and re-surface the decision. It
- * does not reassign the task, so the label says exactly what it does
+ * "Ask agent for recommendation" — creates a child task of the linked task,
+ * assigned to the agent, asking it to prepare a recommendation and re-surface
+ * the decision. It does not reassign the linked task itself
  * (Previously labeled "Route to agent".)
  */
 function AskAgentPicker({

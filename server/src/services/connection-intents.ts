@@ -1,7 +1,7 @@
 import { logActivity } from "./activity-log.js";
 import { aiConnectionService } from "./ai-connections.js";
 import { aiConnectionBindingSchema } from "@greatstone/shared";
-import { and, eq, desc, isNull } from "drizzle-orm";
+import { and, eq, desc, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
@@ -878,9 +878,71 @@ export function connectionIntentService(db: Db) {
     );
   }
 
+  /**
+   * One AI reconnect repairs every task that paused on it. Close each open
+   * AI card addressed to this user for the same provider whose agent now
+   * resolves to the repaired account, as if the user had clicked each card.
+   * Returns the closed cards. Delivery owns the wake, so admission guards and
+   * the per-card wake key still apply; a task holds at most one open AI card,
+   * so each paused task gets one continuation.
+   */
+  async function resolveAiIntentsForConnection(input: {
+    companyId: string;
+    userId: string;
+    serviceSlug: string;
+    connectionId: string;
+    bypassCurrentMembershipCheck?: boolean;
+  }): Promise<string[]> {
+    await assertCurrentUserWriteAccess(input.companyId, input.userId, input.bypassCurrentMembershipCheck);
+    const pending = await db
+      .select({ interaction: issueThreadInteractions, issue: issues })
+      .from(issueThreadInteractions)
+      .innerJoin(issues, eq(issues.id, issueThreadInteractions.issueId))
+      .where(and(
+        eq(issueThreadInteractions.companyId, input.companyId),
+        eq(issues.companyId, input.companyId),
+        eq(issueThreadInteractions.kind, "connection_intent"),
+        eq(issueThreadInteractions.status, "pending"),
+        eq(issueThreadInteractions.addresseeUserId, input.userId),
+        sql`${issueThreadInteractions.payload}->>'purpose' = 'ai'`,
+        sql`${issueThreadInteractions.payload}->>'serviceSlug' = ${input.serviceSlug}`,
+      ))
+      .orderBy(desc(issueThreadInteractions.createdAt));
+    const toDeliver: string[] = [];
+    for (const { interaction, issue } of pending) {
+      const payload = connectionIntentPayloadSchema.safeParse(interaction.payload).data;
+      if (!payload || ["done", "cancelled"].includes(issue.status) || issue.assigneeAgentId !== payload.requestingAgentId) continue;
+      const usable = await usableConnectionForAgent({
+        companyId: input.companyId, agentId: payload.requestingAgentId,
+        responsibleUserId: input.userId, serviceSlug: input.serviceSlug, purpose: "ai",
+      });
+      if (usable?.id !== input.connectionId) continue;
+      try {
+        await interactions.resolveConnectionIntent(
+          issue, interaction.id,
+          { version: 1, outcome: "connected", connectionId: input.connectionId },
+          { userId: input.userId },
+        );
+      } catch (error) {
+        // Another resolver closed it first; its own outcome stands.
+        if ((error as { status?: number }).status === 409) continue;
+        throw error;
+      }
+      toDeliver.push(interaction.id);
+      await logActivity(db, {
+        companyId: input.companyId, actorType: "user", actorId: input.userId,
+        action: "issue.connection_intent_connected", entityType: "issue", entityId: issue.id,
+        details: { interactionId: interaction.id, connectionId: input.connectionId,
+          requestingAgentId: payload.requestingAgentId, source: "ai_reconnect" },
+      });
+    }
+    return toDeliver;
+  }
+
   return {
     validate: loadRunContext,
     usableConnectionForAgent,
+    resolveAiIntentsForConnection,
     search,
     request,
     loadIntent,

@@ -251,6 +251,8 @@ export const createAiConnectionSchema = z
     ownership: z.enum(["personal", "shared"]),
     apiKey: z.string().trim().min(1).max(32768).optional(),
     loginSessionId: z.string().max(128).optional(),
+    /** A Claude subscription token printed by `claude setup-token`, pasted by the user. */
+    setupToken: z.string().trim().min(1).max(4096).optional(),
     connectionId: z.string().uuid().optional(),
     agentIds: z.array(z.string().uuid()).max(1000).default([]),
     allAgents: z.boolean().default(false),
@@ -259,10 +261,12 @@ export const createAiConnectionSchema = z
   .superRefine((v, ctx) => {
     if (!AI_CONNECTION_CAPABILITIES[v.provider].methods[v.method])
       ctx.addIssue({ code: "custom", message: "Unsupported sign-in method" });
+    if (v.setupToken && (v.provider !== "anthropic" || v.method !== "subscription"))
+      ctx.addIssue({ code: "custom", message: "A setup token only connects a Claude subscription" });
     if (
       v.method === "api_key"
-        ? !v.apiKey || Boolean(v.loginSessionId)
-        : !v.loginSessionId || Boolean(v.apiKey)
+        ? !v.apiKey || Boolean(v.loginSessionId) || Boolean(v.setupToken)
+        : Boolean(v.loginSessionId) === Boolean(v.setupToken) || Boolean(v.apiKey)
     ) {
       ctx.addIssue({
         code: "custom",
@@ -301,6 +305,14 @@ export interface LocalAiLoginAttempt {
   sessionId: string;
   command: string;
   expiresAt: string;
+}
+
+/**
+ * The stored credential's known expiry has passed. The connection's health
+ * stays "ok" (the provider never refused it), so status views must ask this too.
+ */
+export function aiCredentialExpired(config: Record<string, unknown> | undefined, now = new Date()): boolean {
+  return aiCredentialExpiryState(readAiCredentialRecord(config)?.expiresAt, now) === "expired";
 }
 
 /** Preview-era copies of rotating local credentials must be reconnected. */

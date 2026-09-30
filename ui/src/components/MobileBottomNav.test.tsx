@@ -7,8 +7,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MobileBottomNav } from "./MobileBottomNav";
 
-const mockAttentionApi = vi.hoisted(() => ({
-  list: vi.fn(),
+const mockDecisionsFeedApi = vi.hoisted(() => ({
+  count: vi.fn(),
 }));
 
 vi.mock("@/lib/router", () => ({
@@ -37,8 +37,8 @@ vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "company-1" }),
 }));
 
-vi.mock("../api/attention", () => ({
-  attentionApi: mockAttentionApi,
+vi.mock("../api/decisionsFeed", () => ({
+  decisionsFeedApi: mockDecisionsFeedApi,
 }));
 
 vi.mock("../hooks/useInboxBadge", () => ({
@@ -59,7 +59,7 @@ describe("MobileBottomNav", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    mockAttentionApi.list.mockResolvedValue({ items: [], deskBadgeCount: 3 });
+    mockDecisionsFeedApi.count.mockResolvedValue({ companyId: "company-1", generatedAt: "2026-09-29T00:00:00.000Z", count: 3 });
   });
 
   afterEach(() => {
@@ -87,7 +87,7 @@ describe("MobileBottomNav", () => {
     );
     expect(decisionsLink?.getAttribute("href")).toBe("/decisions");
     expect(decisionsLink?.textContent).toContain("3");
-    expect(mockAttentionApi.list).toHaveBeenCalledWith("company-1");
+    expect(mockDecisionsFeedApi.count).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
       root.unmount();

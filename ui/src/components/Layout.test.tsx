@@ -1351,7 +1351,11 @@ describe("Layout", () => {
     const { root, rootEl } = await renderLayoutRoot();
 
     expect(rootEl.tagName).toBe("DIV");
-    expect(rootEl.className).toContain("pt-(--sz-safe-top)");
+    // On a phone the sticky glass header pads the notch, not the page root, so
+    // content scrolling under the see-through status bar never shows there.
+    expect(rootEl.className).not.toContain("pt-(--sz-safe-top)");
+    const stickyHeader = rootEl.querySelector(".sticky.top-0");
+    expect(stickyHeader?.className).toContain("pt-(--sz-safe-top)");
     // Transparent on purpose: the Greatstone atmosphere on <body> shows through.
     expect(rootEl.className).not.toContain("bg-background");
     // The mobile root must clip horizontal overflow to prevent a stray wide

@@ -141,8 +141,10 @@ import { isAutomaticRecoverySuppressedByPauseHold } from "./pause-hold-guard.js"
 import {
   REVIEW_WAIT_ACTIVITY_SOURCE,
   REVIEW_WAIT_MONITOR_SERVICE_NAME,
-  REVIEW_WAIT_RECHECK_MS,
+  decideReviewWait,
   isReviewerWaitingOnCheck,
+  readReviewWaitEvidence,
+  reviewWaitRecheckMs,
 } from "./review-wait.js";
 import {
   collectDispositionRepairSourceState,
@@ -949,6 +951,15 @@ export function recoveryService(
     isHostSleepLoss?: (run: NonNullable<LatestIssueRun>) => boolean;
     liveRunExecutions?: Readonly<{ has(id: string): boolean }>;
     beforeOrphanedRunTerminalWrite?: (runId: string) => Promise<void>;
+    /**
+     * GRE-25: runs the normal release drain for an issue whose dead lock the
+     * stale-lock sweep just cleared, so wakes deferred behind that lock are
+     * promoted instead of staying `deferred_issue_execution` forever.
+     */
+    promoteDeferredWakesAfterStaleLockClear?: (input: {
+      companyId: string;
+      issueId: string;
+    }) => Promise<void>;
   },
 ) {
   const issuesSvc = issueService(db);
@@ -4326,7 +4337,18 @@ export function recoveryService(
     if (getAdapterFailureRecoveryTargetAgentId(input.issue) !== input.reviewerAgentId)
       return null;
 
-    const nextCheckAt = new Date(Date.now() + REVIEW_WAIT_RECHECK_MS);
+    // A wait on a pending board card is rechecked less often (GRE-290).
+    const now = new Date();
+    const decision = decideReviewWait(
+      await readReviewWaitEvidence(db, {
+        companyId: input.issue.companyId,
+        issueId: input.issue.id,
+        reviewerAgentId: input.reviewerAgentId,
+        now,
+      }),
+      now,
+    );
+    const nextCheckAt = new Date(now.getTime() + reviewWaitRecheckMs(decision));
     const previousPolicy = normalizeIssueExecutionPolicy(
       input.issue.executionPolicy ?? null,
     );
@@ -6378,6 +6400,19 @@ export function recoveryService(
           clearedExecutionRunId: issue.executionRunId,
           referencedRunStatuses: Object.fromEntries(runStatusById),
         },
+      });
+
+      // The dead owner never ran its release, so nothing else drains the
+      // wakes deferred behind this lock. Once the lock columns are null this
+      // sweep never revisits the issue, so drain it now.
+      await deps.promoteDeferredWakesAfterStaleLockClear?.({
+        companyId: issue.companyId,
+        issueId: updated.id,
+      }).catch((err) => {
+        logger.warn(
+          { err, issueId: updated.id },
+          "failed to promote deferred wakes after clearing stale issue lock",
+        );
       });
     }
 

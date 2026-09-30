@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { NavLink, useLocation } from "@/lib/router";
 import {
   House,
@@ -8,14 +7,13 @@ import {
   ListChecks,
   Inbox,
 } from "lucide-react";
-import { attentionApi } from "../api/attention";
-import { attentionBadgeCount } from "../lib/attention";
-import { queryKeys } from "../lib/queryKeys";
+import { useDecisionsCount } from "../hooks/useDecisionsFeed";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn } from "../lib/utils";
 import { useInboxBadge } from "../hooks/useInboxBadge";
+import { useAppBadge } from "../hooks/usePushNotifications";
 import { Badge } from "@/components/ui/badge";
 
 interface MobileBottomNavProps {
@@ -39,19 +37,20 @@ interface MobileNavActionItem {
 
 type MobileNavItem = MobileNavLinkItem | MobileNavActionItem;
 
+/** True on a tab's own list (`/GRE/issues`), not a page inside it (`/GRE/issues/GRE-12`). */
+export function isTabRoot(pathname: string, tabPath: string): boolean {
+  return new RegExp(`^/[^/]+${tabPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?$`).test(pathname);
+}
+
 export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const location = useLocation();
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialogActions();
   const inboxBadge = useInboxBadge(selectedCompanyId);
-  // Same query key as the sidebar Decisions badge, so both share one cache entry.
-  const { data: attentionFeed } = useQuery({
-    queryKey: queryKeys.attention(selectedCompanyId!),
-    queryFn: () => attentionApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-    refetchInterval: 60_000,
-  });
-  const attentionCount = attentionBadgeCount(attentionFeed);
+  // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
+  const attentionCount = useDecisionsCount(selectedCompanyId);
+  // The Home Screen icon shows the same Decisions count (push updates it too).
+  useAppBadge(attentionCount);
 
   const items = useMemo<MobileNavItem[]>(
     () => [
@@ -81,7 +80,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   return (
     <nav
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-muted transition-transform duration-200 ease-out md:hidden pb-(--sz-safe-bottom)",
+        "fixed bottom-0 left-0 right-0 z-30 border-t border-border gs-glass-bar transition-transform duration-200 ease-out md:hidden pb-(--sz-safe-bottom)",
         visible ? "translate-y-0" : "translate-y-full",
       )}
       aria-label="Mobile navigation"
@@ -97,13 +96,15 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
                 type="button"
                 onClick={item.onClick}
                 className={cn(
-                  "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-colors",
+                  "relative flex min-w-0 select-none flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-[color,transform] duration-(--motion-press) active:scale-95",
                   active
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <Icon className="h-(--sz-18px) w-(--sz-18px)" />
+                <span className="flex h-7 w-12 items-center justify-center rounded-full">
+                  <Icon className="h-(--sz-18px) w-(--sz-18px)" />
+                </span>
                 <span className="truncate">{item.label}</span>
               </button>
             );
@@ -115,9 +116,17 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
               key={item.label}
               to={item.to}
               state={SIDEBAR_SCROLL_RESET_STATE}
+              onClick={(event) => {
+                // Tapping the tab you are already on scrolls it to the top,
+                // like an iPhone app. From a page inside the tab it still
+                // navigates back to the tab's list.
+                if (!isTabRoot(location.pathname, item.to)) return;
+                event.preventDefault();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
               className={({ isActive }) =>
                 cn(
-                  "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-colors",
+                  "relative flex min-w-0 select-none flex-col items-center justify-center gap-1 rounded-md text-(length:--text-nano) font-medium transition-[color,transform] duration-(--motion-press) active:scale-95",
                   isActive
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -126,10 +135,15 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
             >
               {({ isActive }) => (
                 <>
-                  <span className="relative">
+                  <span
+                    className={cn(
+                      "relative flex h-7 w-12 items-center justify-center rounded-full transition-colors duration-(--motion-press)",
+                      isActive && "bg-primary/15 text-primary",
+                    )}
+                  >
                     <Icon className={cn("h-(--sz-18px) w-(--sz-18px)", isActive && "stroke-(length:--sw-2_3)")} />
                     {item.badge != null && item.badge > 0 && (
-                      <Badge variant="ghost" className="absolute -right-2 -top-2 bg-primary px-1.5 text-(length:--text-nano) leading-none text-primary-foreground">
+                      <Badge variant="ghost" className="absolute -right-1 -top-1.5 bg-primary px-1.5 text-(length:--text-nano) leading-none text-primary-foreground">
                         {item.badge > 99 ? "99+" : item.badge}
                       </Badge>
                     )}

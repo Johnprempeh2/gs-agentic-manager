@@ -29,6 +29,7 @@ import {
   privateHostnameGuard,
   resolvePrivateHostnameAllowSet,
 } from "./middleware/private-hostname-guard.js";
+import { precompressedAssets } from "./middleware/precompressed-assets.js";
 import {
   applyTrustProxy,
   parseTrustProxyEnv,
@@ -69,6 +70,7 @@ import { environmentRuntimeService } from "./services/environment-runtime.js";
 import { projectRoutes } from "./routes/projects.js";
 import { issueRoutes } from "./routes/issues.js";
 import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
+import { issueTablingRoutes } from "./routes/issue-tabling.js";
 import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
@@ -90,6 +92,8 @@ import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
+import { decisionsFeedRoutes } from "./routes/decisions-feed.js";
+import { pushRoutes } from "./routes/push.js";
 import { decisionTrainingRoutes } from "./routes/decision-training.js";
 import { decisionRoutes } from "./routes/decisions.js";
 import { decisionQueueRoutes } from "./routes/decision-queues.js";
@@ -761,6 +765,7 @@ export async function createApp(
   api.use(projectRoutes(db));
   api.use(caseRoutes(db, opts.storageService));
   api.use(issueTreeControlRoutes(db, { pluginWorkerManager: workerManager }));
+  api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(pipelineRoutes(db));
@@ -800,6 +805,8 @@ export async function createApp(
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
   api.use(attentionRoutes(db));
+  api.use(decisionsFeedRoutes(db, { heartbeat: connectionIntentHeartbeat }));
+  api.use(pushRoutes(db));
   api.use(decisionTrainingRoutes(db));
   api.use(decisionRoutes(db, opts.decisionServiceOptions));
   api.use(decisionQueueRoutes(db));
@@ -990,6 +997,7 @@ export async function createApp(
       // never change once built, so they can be cached aggressively.
       app.use(
         "/assets",
+        precompressedAssets(path.join(uiDist, "assets")),
         express.static(path.join(uiDist, "assets"), {
           maxAge: "1y",
           immutable: true,

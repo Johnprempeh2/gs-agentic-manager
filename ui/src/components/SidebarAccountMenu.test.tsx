@@ -130,10 +130,10 @@ describe("SidebarAccountMenu", () => {
     expect(accountTrigger?.classList).not.toContain("hover:bg-background");
 
     const feedbackButton = container.querySelector<HTMLAnchorElement>(
-      'a[aria-label="Share feedback"]',
+      'a[aria-label="Email feedback to Greatstone"]',
     );
-    expect(feedbackButton?.getAttribute("href")).toBe("https://paperclip.ing/feedback");
-    expect(feedbackButton?.getAttribute("target")).toBe("_blank");
+    // Feedback goes to Greatstone, never to the upstream project.
+    expect(feedbackButton?.getAttribute("href")).toBe("mailto:info@greatstone.co.uk?subject=GS%20Agentic%20Manager%20feedback");
     expect(feedbackButton?.classList).toContain("text-subtle-foreground");
     expect(feedbackButton?.classList).not.toContain("text-border");
     expect(feedbackButton?.classList).not.toContain("text-muted-foreground");
@@ -169,10 +169,9 @@ describe("SidebarAccountMenu", () => {
     expect(accountTrigger?.classList).toContain("hover:bg-accent/50");
 
     const feedbackButton = container.querySelector<HTMLAnchorElement>(
-      'a[aria-label="Share feedback"]',
+      'a[aria-label="Email feedback to Greatstone"]',
     );
-    expect(feedbackButton?.getAttribute("href")).toBe("https://paperclip.ing/feedback");
-    expect(feedbackButton?.getAttribute("target")).toBe("_blank");
+    expect(feedbackButton?.getAttribute("href")).toBe("mailto:info@greatstone.co.uk?subject=GS%20Agentic%20Manager%20feedback");
     expect(feedbackButton?.classList).toContain("text-subtle-foreground");
     expect(feedbackButton?.classList).not.toContain("text-border");
     expect(feedbackButton?.classList).not.toContain("text-muted-foreground");
@@ -187,7 +186,7 @@ describe("SidebarAccountMenu", () => {
 
     const popover = document.body.querySelector('[data-slot="popover-content"]');
     expect(popover?.textContent).not.toContain("Feedback");
-    expect(popover?.querySelector('a[href="https://paperclip.ing/feedback"]')).toBeNull();
+    expect(popover?.querySelector('a[href*="paperclip.ing"]')).toBeNull();
 
     await act(async () => root.unmount());
   });
@@ -214,7 +213,7 @@ describe("SidebarAccountMenu", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.querySelector('a[aria-label="Share feedback"]')).not.toBeNull();
+    expect(container.querySelector('a[aria-label="Email feedback to Greatstone"]')).not.toBeNull();
     expect(container.textContent).toContain("Jane Example");
     expect(container.textContent).not.toContain("jane@example.com");
 
@@ -229,17 +228,12 @@ describe("SidebarAccountMenu", () => {
     expect(document.body.textContent).toContain("Edit profile");
     expect(document.body.textContent).toContain("Settings");
     expect(document.body.textContent).not.toContain("Instance settings");
-    expect(document.body.textContent).toContain("Documentation");
+    // The upstream docs link is gone; there is no Greatstone docs site yet.
+    expect(document.body.textContent).not.toContain("Documentation");
 
     const popover = document.body.querySelector('[data-slot="popover-content"]');
     expect(popover?.textContent).not.toContain("Feedback");
-    expect(popover?.querySelector('a[href="https://paperclip.ing/feedback"]')).toBeNull();
-
-    // Documentation still appears before the theme toggle.
-    const menuText = popover?.textContent ?? "";
-    const docsPos = menuText.indexOf("Documentation");
-    const themePos = menuText.indexOf("Switch to");
-    expect(docsPos).toBeLessThan(themePos);
+    expect(popover?.querySelector('a[href*="paperclip.ing"]')).toBeNull();
 
     // The popover header stays down to name + email: no "Account" badge, no version line.
     expect(popover?.textContent).not.toContain("Account");
@@ -307,7 +301,7 @@ describe("SidebarAccountMenu", () => {
     });
     await flushReact();
 
-    expect(container.querySelector('a[aria-label="Share feedback"]')).toBeNull();
+    expect(container.querySelector('a[aria-label="Email feedback to Greatstone"]')).toBeNull();
 
     const signOutButton = Array.from(document.body.querySelectorAll("button")).find(
       (button) => button.textContent?.includes("Sign out"),

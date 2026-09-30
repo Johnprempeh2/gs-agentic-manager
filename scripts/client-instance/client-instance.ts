@@ -10,6 +10,9 @@
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
 //   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
 //   scripts/client-instance.sh restore <dir> <backup file>
+//   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
+//                                     (prints the two edition values as KEY=VALUE lines, for the
+//                                      Stable image: scripts/greatstone-stable-image.sh)
 //
 // Each instance lives in its own <root>: config, database, storage, secrets,
 // logs and backups, its own server port and its own database port. The
@@ -73,6 +76,8 @@ const USAGE = `usage:
   verify --root <dir>                      (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
   upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
   restore <dir> <backup file>
+  edition-env --edition managed|managed-plus [--passed-features a,b]
+                                           print the edition values as KEY=VALUE lines (Stable image)
 
 limit flags (spend and run caps, not prices; defaults in brackets):
   --agent-budget-cents N    monthly budget of each new agent, in cents [${DEFAULT_INSTALL_LIMITS.agentBudgetMonthlyCents}].
@@ -829,6 +834,20 @@ async function cmdVerify(root: string, state: InstanceState) {
 }
 
 /**
+ * The two edition values as KEY=VALUE lines (a `docker run --env-file`). Each
+ * value is one line. Needs no instance: the Stable image check (GRE-138)
+ * starts the image with the same values a client instance gets.
+ */
+function cmdEditionEnv(opts: Record<string, string>) {
+  const edition = opts.edition as Edition;
+  if (!EDITIONS.includes(edition)) die(`--edition must be one of: ${EDITIONS.join(", ")}`);
+  const passed = (opts["passed-features"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const values = editionValues({ edition, passedBetaFeatures: passed.sort(), port: 0, dbPort: 0, createdAt: "" });
+  if (!values) die(`no edition values for ${edition}`);
+  process.stdout.write(`GSAM_MANAGED_CONFIG=${values.managedConfig}\nGSAM_HIDDEN_SETTINGS=${values.hiddenSettings}\n`);
+}
+
+/**
  * upgrade <root> <stable tag>: back up, stop, move to the tag, start, health
  * check. Stops at the first failure and says how to move back.
  */
@@ -921,6 +940,7 @@ async function main() {
   }
   const { command, opts, positional } = parseArgs(argv);
   if (command === "create") return cmdCreate(opts);
+  if (command === "edition-env") return cmdEditionEnv(opts);
   if (command === "upgrade" || command === "restore") {
     const [rootArg, second, ...extra] = positional;
     if (extra.length > 0 || (opts.root && rootArg && second)) die(`too many arguments for ${command}`);

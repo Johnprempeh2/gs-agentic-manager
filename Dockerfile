@@ -91,6 +91,10 @@ RUN cd /tmp/runner-toolchain && rustup show
 # Pin the recipe generator and its dependency lockfile. It is a build-only tool
 # and uses the same package-owned compiler as both native build stages.
 FROM rust-toolchain AS rust-chef
+# The runner's .cargo/config.toml sets a per-checkout rustc wrapper (GRE-210).
+# cargo chef cook copies that config but not the wrapper script, and an image
+# has one checkout only, so turn the wrapper off for every Rust stage.
+ENV CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER=""
 RUN cd /tmp/runner-toolchain && cargo install cargo-chef --version 0.1.73 --locked
 
 FROM rust-chef AS runner-plan

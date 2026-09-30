@@ -23,6 +23,7 @@ import {
   getAppStoreDefinition,
   isToolConnectionAttentionHealth,
   aiSubscriptionNeedsIsolatedLogin,
+  aiCredentialExpired,
 } from "@greatstone/shared";
 import { useNavigate } from "@/lib/router";
 import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
@@ -181,6 +182,13 @@ function connectionState(connection: ToolConnection): ConnectionState {
       message: "Agents can’t use this account right now.",
     };
   }
+  if (connection.connectionPurpose === "ai" && connection.healthStatus === "ok" && aiCredentialExpired(connection.config)) {
+    return {
+      kind: "attention",
+      label: "Needs attention",
+      message: "The token has expired. Reconnect to restore access.",
+    };
+  }
   if ((connection.connectionPurpose === "ai" && (connection.healthStatus !== "ok" || aiSubscriptionNeedsIsolatedLogin(connection.config))) || isToolConnectionAttentionHealth(connection.healthStatus)) {
     return {
       kind: "attention",
@@ -264,7 +272,16 @@ function accountActionHref(
   if (connection.status === "draft" && row.entry) {
     return appSourceResumeHref(row.slug, connection.id);
   }
-  return `/apps/${connection.id}/permissions`;
+  return aiReconnectHref(connection) ?? `/apps/${connection.id}/permissions`;
+}
+
+/** Straight to the provider's reconnect step for an AI account (sign in or paste a token). */
+function aiReconnectHref(connection: ToolConnection): string | null {
+  const ai = connection.connectionPurpose === "ai"
+    ? connection.config?.ai as { provider?: string; method?: string } | undefined
+    : undefined;
+  if (!ai?.provider || !ai.method) return null;
+  return `/apps/connect?source=${ai.provider}&reconnect=${connection.id}&method=ai-${ai.method}`;
 }
 
 /**
@@ -945,6 +962,7 @@ function ConnectionAccountRow({
 }) {
   const state = connectionState(connection);
   const actionHref = accountActionHref(row, connection);
+  const reconnectHref = aiReconnectHref(connection);
   const accountName = connectionDisplayNameForOwner(
     connection,
     row.name,
@@ -1015,6 +1033,11 @@ function ConnectionAccountRow({
             >
               Permissions
             </DropdownMenuItem>
+            {reconnectHref ? (
+              <DropdownMenuItem onSelect={() => onNavigate(reconnectHref)}>
+                Reconnect
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={onRemove}>
               <Trash2 />

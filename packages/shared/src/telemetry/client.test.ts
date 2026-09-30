@@ -121,6 +121,23 @@ describe("TelemetryClient runtime event gate", () => {
 // Config surface for soft caps + backoff. Fields are optional and additive;
 // `resolveTelemetryConfig` fills documented defaults centrally so no existing
 // caller changes behavior.
+describe("resolveTelemetryConfig endpoint", () => {
+  it("stays off without an endpoint of our own, and never falls back to the upstream service", () => {
+    const saved = process.env.GSAM_TELEMETRY_ENDPOINT;
+    try {
+      delete process.env.GSAM_TELEMETRY_ENDPOINT;
+      expect(resolveTelemetryConfig().enabled).toBe(false);
+      process.env.GSAM_TELEMETRY_ENDPOINT = "https://telemetry.example.test/ingest";
+      const config = resolveTelemetryConfig();
+      // CI turns telemetry off regardless; outside CI the configured endpoint is used.
+      if (config.enabled) expect(config.endpoint).toBe("https://telemetry.example.test/ingest");
+    } finally {
+      if (saved === undefined) delete process.env.GSAM_TELEMETRY_ENDPOINT;
+      else process.env.GSAM_TELEMETRY_ENDPOINT = saved;
+    }
+  });
+});
+
 describe("resolveTelemetryConfig caps + backoff surface", () => {
   it("resolveTelemetryConfig returns default caps and backoff", () => {
     const config = resolveTelemetryConfig();

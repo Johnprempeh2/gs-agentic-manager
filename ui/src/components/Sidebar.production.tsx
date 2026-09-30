@@ -32,10 +32,9 @@ import { SidebarStarredProjects } from "./SidebarStarredProjects.production";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
-import { attentionApi } from "../api/attention";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
-import { attentionBadgeCount } from "../lib/attention";
+import { useDecisionsCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useLiveAgents } from "../hooks/useLiveAgents";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -65,13 +64,8 @@ export function Sidebar() {
   const showApps = experimentalSettings?.enableApps === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
-  const { data: attentionFeed } = useQuery({
-    queryKey: queryKeys.attention(selectedCompanyId!),
-    queryFn: () => attentionApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-    refetchInterval: 60_000,
-  });
-  const attentionCount = attentionBadgeCount(attentionFeed);
+  // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
+  const attentionCount = useDecisionsCount(selectedCompanyId);
   const showCases = experimentalSettings?.enableCases === true;
   // Streamlined left navigation (top-level Projects link + starred children) is
   // now the standard product sidebar (PAP-12472). The former experimental

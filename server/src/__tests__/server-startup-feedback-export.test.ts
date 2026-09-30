@@ -89,6 +89,7 @@ const {
     sweepStaleIssueLocks: vi.fn(async () => ({ cleared: 0 })),
     sweepPendingCleanupLeases: vi.fn(async () => ({ swept: 0, destroyed: 0, capped: 0 })),
     sweepExpiredRuntimeStatuses: vi.fn(() => 0),
+    sweepStaleRunOutputFiles: vi.fn(async () => undefined),
     tickTimers: vi.fn(async () => ({ checked: 0, enqueued: 0, skipped: 0 })),
   };
   const heartbeatServiceFactoryMock = vi.fn(() => heartbeatServiceMock);

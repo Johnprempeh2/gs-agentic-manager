@@ -1,9 +1,6 @@
-import { AlertTriangle, ExternalLink } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import type { AgentPermissions } from "@greatstone/shared";
 import { getTrustPreset } from "@/lib/trust-policy-ui";
-
-export const LOW_TRUST_AGENT_GUIDE =
-  "https://docs.paperclip.ing/administration/trust-and-low-trust-review/";
 
 export function GitHubAgentTrustWarning({
   agent,
@@ -31,15 +28,6 @@ export function GitHubAgentTrustWarning({
         Continuing keeps this agent’s current permissions. A restricted guest
         profile does not replace the agent’s trust and runtime settings.
       </p>
-      <a
-        className="inline-flex items-center gap-1 underline underline-offset-4"
-        href={LOW_TRUST_AGENT_GUIDE}
-        target="_blank"
-        rel="noreferrer"
-      >
-        Learn about low-trust agents
-        <ExternalLink className="size-3.5" />
-      </a>
     </div>
   );
 }

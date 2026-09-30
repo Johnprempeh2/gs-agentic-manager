@@ -609,6 +609,7 @@ import {
   writePaperclipSkillSyncPreference,
 } from "@greatstone/adapter-utils/server-utils";
 import { extractSkillMentionIds, isUuidLike } from "@greatstone/shared";
+import { isIssueTabledById } from "./issue-tabling.js";
 import { evaluateCodexCredentialReadiness } from "@greatstone/adapter-codex-local/server";
 import { environmentService } from "./environments.js";
 import { parseExecutionPolicyBootstrapEnv } from "./execution-policy-bootstrap.js";
@@ -9739,6 +9740,7 @@ export function heartbeatService(
       executionFailureRetryCount(run) >=
       BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS,
     isHostSleepLoss: runLostToHostSleep,
+    promoteDeferredWakesAfterStaleLockClear,
   });
   const runDispatch = createRunDispatch(db);
 
@@ -17601,6 +17603,24 @@ export function heartbeatService(
         .limit(1);
       if (settlingOwner) return null;
     }
+    // Runs inserted without enqueueWakeup (retries, recovery, promoted
+    // deferred wakes) and runs queued just before "Not now" stop here.
+    if (issueId && isUuidLike(issueId) && await isIssueTabledById(db, issueId)) {
+      await cancelQueuedRunForTabledIssue(run, issueId);
+      await logActivity(db, {
+        companyId: run.companyId,
+        actorType: "system",
+        actorId: "system",
+        agentId: run.agentId,
+        runId: run.id,
+        action: "issue.tabled_run_cancelled",
+        entityType: "heartbeat_run",
+        entityId: run.id,
+        issueId,
+        details: { issueId, source: "heartbeat.claim_queued_run" },
+      });
+      return null;
+    }
     if (issueId) {
       const activePauseHold = await treeControlSvc.getActivePauseHoldGate(
         run.companyId,
@@ -18298,6 +18318,43 @@ export function heartbeatService(
       },
     });
 
+    return cancelled;
+  }
+
+  // Same shape as cancelQueuedRunForBlockedDependencies: claimQueuedRun holds
+  // the agent start lock, so this must not go through cancelRunInternal.
+  async function cancelQueuedRunForTabledIssue(
+    run: typeof heartbeatRuns.$inferSelect,
+    issueId: string,
+  ) {
+    const now = new Date();
+    const reason = "Cancelled because the task is tabled (Not now); it wakes again when it is brought back";
+    const cancelled = await setRunStatus(run.id, "cancelled", {
+      finishedAt: now,
+      error: reason,
+      errorCode: "issue_tabled",
+      resultJson: {
+        ...parseObject(run.resultJson),
+        stopReason: "issue_tabled",
+        effectiveTimeoutSec: 0,
+        timeoutConfigured: false,
+        timeoutSource: "tabled_gate",
+        timeoutFired: false,
+      },
+    });
+    if (!cancelled) return null;
+    await setWakeupStatus(run.wakeupRequestId, "skipped", { finishedAt: now, error: reason });
+    await db
+      .update(issues)
+      .set({ executionRunId: null, executionAgentNameKey: null, executionLockedAt: null, updatedAt: now })
+      .where(and(eq(issues.companyId, run.companyId), eq(issues.id, issueId), eq(issues.executionRunId, run.id)));
+    await appendRunEvent(cancelled, {
+      eventType: "lifecycle",
+      stream: "system",
+      level: "warn",
+      message: reason,
+      payload: { issueId },
+    });
     return cancelled;
   }
 
@@ -21892,6 +21949,14 @@ export function heartbeatService(
           livenessRun,
           agent,
         );
+      }
+      // Before the issue is released, so recovery sees the re-armed monitor.
+      if (outcome !== "succeeded") {
+        try {
+          await restoreIssueMonitorForUnstartedRun(livenessRun);
+        } catch (err) {
+          logger.error({ err, runId: livenessRun.id }, "failed to give back the issue monitor of an unstarted run");
+        }
       }
       const issueCommentPolicyResult = await finalizeIssueCommentPolicy(
         livenessRun,
@@ -27682,6 +27747,30 @@ export function heartbeatService(
     }
   }
 
+  // GRE-25: the stale-lock sweep cleared a lock whose owner died without
+  // releasing it. Replay that missing release through the issue's latest run
+  // so deferred wakes get the same admission checks as a normal release.
+  async function promoteDeferredWakesAfterStaleLockClear(input: { companyId: string; issueId: string }) {
+    const [pending] = await db.select({ id: agentWakeupRequests.id }).from(agentWakeupRequests).where(and(
+      eq(agentWakeupRequests.companyId, input.companyId),
+      eq(agentWakeupRequests.status, "deferred_issue_execution"),
+      sql`${agentWakeupRequests.payload}->>'issueId' = ${input.issueId}`,
+    )).limit(1);
+    if (!pending) return;
+    const [latest] = await db.select().from(heartbeatRuns).where(and(
+      eq(heartbeatRuns.companyId, input.companyId),
+      sql`${heartbeatRuns.contextSnapshot}->>'issueId' = ${input.issueId}`,
+    )).orderBy(desc(heartbeatRuns.createdAt), desc(heartbeatRuns.id)).limit(1);
+    // A live latest run owns the next release. With no run at all there is
+    // nothing to release through; leave the issue to stranded-issue recovery.
+    if (!latest || !isHeartbeatRunTerminalStatus(latest.status)) {
+      logger.warn({ ...input, latestRunId: latest?.id ?? null },
+        "stale lock cleared with deferred wakes but no terminal run to release through");
+      return;
+    }
+    await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true });
+  }
+
   async function enqueueWakeup(agentId: string, opts: WakeupOptions = {}, executionWaitRequestId?: string) {
     const source = opts.source ?? "on_demand";
     const triggerDetail = opts.triggerDetail ?? null;
@@ -28167,6 +28256,15 @@ export function heartbeatService(
           "No assigned todo or in_progress issue requires this agent before timer adapter invocation.",
       });
       await markTimerHeartbeatChecked(agentId, source);
+      return null;
+    }
+
+    // "Not now" (GRE-262): a tabled task gets no wakes of any kind. The wake
+    // is dropped, not saved; bringing the task back sends one fresh wake.
+    if (issueId && isUuidLike(issueId) && await isIssueTabledById(db, issueId)) {
+      await writeSkippedRequest("issue_tabled", {
+        error: "This task is tabled (Not now). Bring it back to resume work.",
+      });
       return null;
     }
 
@@ -30301,7 +30399,14 @@ export function heartbeatService(
    * trigger (same attempt, not re-armed or cleared, same agent assignee), so a
    * second call does nothing.
    */
-  async function restoreIssueMonitorForCancelledRun(run: typeof heartbeatRuns.$inferSelect) {
+  async function restoreIssueMonitorForCancelledRun(
+    run: typeof heartbeatRuns.$inferSelect,
+    options: {
+      reason?: "monitor_run_cancelled" | "monitor_run_not_started";
+      refundAttempt?: (timeoutAt: Date | null, nextCheckAt: Date) => boolean;
+    } = {},
+  ) {
+    const reason = options.reason ?? "monitor_run_cancelled";
     const context = parseObject(run.contextSnapshot);
     const issueId = readNonEmptyString(context.issueId);
     const triggeredAttempt = context.monitorAttemptCount;
@@ -30332,11 +30437,16 @@ export function heartbeatService(
     }
     const now = new Date();
     const nextCheckAt = new Date(now.getTime() + CANCELLED_MONITOR_RUN_RECHECK_MS);
+    const previousMonitor = parseIssueExecutionState(issue.executionState)?.monitor ?? null;
+    const timeoutAt = previousMonitor?.timeoutAt ? new Date(previousMonitor.timeoutAt) : null;
+    const attemptCount = !options.refundAttempt || options.refundAttempt(timeoutAt, nextCheckAt)
+      ? triggeredAttempt - 1
+      : triggeredAttempt;
     const patch = buildIssueMonitorRestoredPatch({
       issue,
       policy: normalizeIssueExecutionPolicy(issue.executionPolicy ?? null),
       nextCheckAt,
-      attemptCount: triggeredAttempt - 1,
+      attemptCount,
     });
     if (!patch) return false;
     const restored = await db
@@ -30366,13 +30476,48 @@ export function heartbeatService(
       entityId: issue.id,
       details: {
         identifier: issue.identifier,
-        reason: "monitor_run_cancelled",
+        reason,
         cancelledRunId: run.id,
         nextCheckAt: nextCheckAt.toISOString(),
-        attemptCount: triggeredAttempt - 1,
+        attemptCount,
       },
     });
     return true;
+  }
+
+  /**
+   * GRE-295: a monitor-started run that ended before the provider did any work
+   * (for example an ACP startup deadline that passed while the host slept) used
+   * up the monitor without reaching the agent. When no retry or other run is
+   * queued for the issue, give the monitor back. The attempt is refunded only
+   * while the monitor has a future timeout, so repeated startup failures stay
+   * bounded by that timeout; without one the re-armed check spends its normal
+   * attempt budget.
+   */
+  async function restoreIssueMonitorForUnstartedRun(run: typeof heartbeatRuns.$inferSelect) {
+    if (run.status === "succeeded") return false;
+    const recovery = parseObject(parseObject(run.resultJson).executionRecovery);
+    if (recovery.providerWorkStarted !== false) return false;
+    const context = parseObject(run.contextSnapshot);
+    const issueId = readNonEmptyString(context.issueId);
+    if (!issueId || context.source !== "issue.monitor") return false;
+    const [pending] = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          ne(heartbeatRuns.id, run.id),
+          inArray(heartbeatRuns.status, ["queued", "running", "scheduled_retry"]),
+          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issueId}`,
+        ),
+      )
+      .limit(1);
+    if (pending) return false;
+    return restoreIssueMonitorForCancelledRun(run, {
+      reason: "monitor_run_not_started",
+      refundAttempt: (timeoutAt, nextCheckAt) => timeoutAt !== null && timeoutAt > nextCheckAt,
+    });
   }
 
   function cancellationTerminationGraceMs(

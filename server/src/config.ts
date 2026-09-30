@@ -368,7 +368,8 @@ export function loadConfig(): Config {
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
     companyDeletionEnabled,
     telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
-    announcementsEnabled: process.env.GSAM_ANNOUNCEMENTS_ENABLED !== "false",
-    announcementsFeedUrl: process.env.GSAM_ANNOUNCEMENTS_FEED_URL?.trim() || "https://pages.paperclip.ing/announcements/v1/current.json",
+    // Only a feed we configure: never the upstream project's announcements.
+    announcementsEnabled: Boolean(process.env.GSAM_ANNOUNCEMENTS_FEED_URL?.trim()) && process.env.GSAM_ANNOUNCEMENTS_ENABLED !== "false",
+    announcementsFeedUrl: process.env.GSAM_ANNOUNCEMENTS_FEED_URL?.trim() ?? "",
   };
 }
