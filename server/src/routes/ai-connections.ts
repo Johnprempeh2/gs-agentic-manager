@@ -27,6 +27,7 @@ import { forbidden, notFound, unprocessable } from "../errors.js";
 import { accessService } from "../services/access.js";
 import { logActivity } from "../services/activity-log.js";
 import { aiConnectionService } from "../services/ai-connections.js";
+import { checkAiCredential, type AiCredentialChecker } from "../services/ai-credential-check.js";
 import { validate } from "../middleware/validate.js";
 
 /** Agent API calls inherit authenticated run identity, never the agent's own ID. */
@@ -166,6 +167,26 @@ export async function validateAiApiKey(
     );
 }
 
+/**
+ * A token printed by `claude setup-token`. The terminal often wraps it across
+ * lines, so whitespace inside it is removed before it is checked. A setup token
+ * may lack the profile scope the check endpoint needs, so only a clear refusal
+ * proves it is dead. Returns the cleaned token.
+ */
+export async function validateClaudeSetupToken(
+  raw: string,
+  check: AiCredentialChecker = checkAiCredential,
+): Promise<string> {
+  const token = raw.replace(/\s+/g, "");
+  if (token.startsWith("sk-ant-api"))
+    throw unprocessable("That is a Claude API key, not a setup token. Connect it with the API key option instead.");
+  if (!/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(token))
+    throw unprocessable("That does not look like a token from claude setup-token. It starts with sk-ant-oat. Copy the whole token and try again.");
+  if ((await check({ provider: "anthropic", method: "subscription" }, token)) === "rejected")
+    throw unprocessable("Claude refused this token. Run claude setup-token again and paste the new token.");
+  return token;
+}
+
 export function aiConnectionRoutes(db: Db, options: Parameters<typeof supportsLocalAiLogin>[0] = {}) {
   function assertLocalLoginAvailable() {
     if (!supportsLocalAiLogin(options)) throw unprocessable("Server-host subscription sign-in is unavailable on this hosted instance. Choose a supported sign-in environment or use an API key.");
@@ -276,10 +297,17 @@ export function aiConnectionRoutes(db: Db, options: Parameters<typeof supportsLo
         companyId,
         input,
       );
-      if (input.method !== "api_key")
-        throw unprocessable(
-          "Use the existing provider sign-in flow to connect a subscription",
-        );
+      if (input.method !== "api_key") {
+        if (!input.setupToken)
+          throw unprocessable(
+            "Use the existing provider sign-in flow to connect a subscription",
+          );
+        const { setupToken, ...intent } = input;
+        const startedAt = new Date();
+        const token = await validateClaudeSetupToken(setupToken);
+        res.status(201).json(await service.save(companyId, userId, intent, token, undefined, startedAt, { source: "setup_token", expiresAt: null }));
+        return;
+      }
       const attemptStartedAt = new Date();
       await validateAiApiKey(input.provider, input.apiKey!);
       const result = await service.save(
