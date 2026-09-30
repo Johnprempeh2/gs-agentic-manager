@@ -3,8 +3,9 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AttentionItem } from "@greatstone/shared";
+import type { DecisionCard } from "@greatstone/shared";
 import { defaultFocusPrefs, type FocusPrefs } from "../../lib/focus-prefs";
+import { blockedCard, fixtureAgents, questionCard } from "../../fixtures/decisionsFeedFixtures";
 
 const state = vi.hoisted(() => ({
   interactionsByIssue: new Map<string, unknown[]>(),
@@ -19,18 +20,24 @@ vi.mock("@tanstack/react-query", () => ({
     isLoading: false,
     error: null,
   }),
-  // Enough of useMutation for the shared answer hook: run, then onSuccess.
+  // Enough of useMutation for the shared answer hook and the card: run, then onSuccess.
   useMutation: ({
     mutationFn,
     onSuccess,
   }: {
     mutationFn: (input: unknown) => Promise<unknown>;
-    onSuccess?: (result: unknown) => void;
+    onSuccess?: (result: unknown, input: unknown) => void;
   }) => ({
     isPending: false,
+    error: null,
+    variables: undefined,
+    reset: vi.fn(),
+    mutate: (input: unknown) => {
+      void mutationFn(input).then((result) => onSuccess?.(result, input));
+    },
     mutateAsync: async (input: unknown) => {
       const result = await mutationFn(input);
-      onSuccess?.(result);
+      onSuccess?.(result, input);
       return result;
     },
   }),
@@ -60,6 +67,9 @@ vi.mock("@/lib/router", () => ({
 }));
 
 vi.mock("../AgentAvatar", () => ({ AgentAvatar: () => <span /> }));
+vi.mock("../MarkdownBody", () => ({ MarkdownBody: ({ children }: { children: string }) => <div>{children}</div> }));
+vi.mock("../DecisionResolver", () => ({ DecisionResolver: () => <div /> }));
+vi.mock("../../api/client", () => ({ api: { get: vi.fn(), post: vi.fn(async () => ({})), patch: vi.fn(async () => ({})) } }));
 
 import { DecisionsFocusView } from "./DecisionsFocusView";
 
@@ -134,32 +144,22 @@ function question(id: string, issueId: string, prompt: string) {
   };
 }
 
-function feedItem(interactionId: string, issueId: string, identifier: string): AttentionItem {
-  return {
-    id: `attention-${interactionId}`,
-    sourceKind: "issue_thread_interaction",
-    subject: {
-      kind: "interaction",
-      id: interactionId,
-      title: "Question",
-      href: `/GRE/issues/${identifier}#interaction-${interactionId}`,
-      metadata: { kind: "ask_user_questions", issueId, createdByAgentId: "agent-ridge" },
-    },
-    relatedIssue: { id: issueId, identifier, title: "Stalled runs recovery", href: `/GRE/issues/${identifier}` },
-    originAgentName: "Ridge",
-  } as unknown as AttentionItem;
+function feedItem(interactionId: string, issueId: string, identifier: string): DecisionCard {
+  return questionCard(interactionId, issueId, identifier);
 }
+
 
 const agentMap = new Map([["agent-ridge", { id: "agent-ridge", name: "Ridge" }]]) as never;
 
 let container: HTMLDivElement;
 let root: Root;
 
-function render(items: AttentionItem[], prefs: FocusPrefs = defaultFocusPrefs) {
+function render(cards: DecisionCard[], prefs: FocusPrefs = defaultFocusPrefs) {
   act(() => {
     root.render(
       <DecisionsFocusView
-        items={items}
+        cards={cards}
+        assignableAgents={fixtureAgents}
         companyId="company-1"
         agentMap={agentMap}
         currentUserId="user-1"
@@ -211,7 +211,7 @@ describe("DecisionsFocusView", () => {
   it("fills the note by voice, picks the spoken option, and Submit & next answers on the original card", async () => {
     render(items());
     expect(container.textContent).toContain("When a run is stuck, should I restart it?");
-    expect(container.textContent).toContain("0 of 2 answered");
+    expect(container.textContent).toContain("0 of 2 done");
 
     act(() => button("Speak your answer").click());
     act(() => FakeRecognition.last!.say("Option two. And tell me in the morning"));
@@ -230,7 +230,7 @@ describe("DecisionsFocusView", () => {
       answers: [{ questionId: "q1", optionIds: ["except"], otherText: "Option two. And tell me in the morning" }],
     });
     expect(container.textContent).toContain("Ship the watchdog today?");
-    expect(container.textContent).toContain("1 of 2 answered");
+    expect(container.textContent).toContain("1 of 2 done");
   });
 
   it("drops a question answered elsewhere without submitting it", () => {
@@ -246,7 +246,7 @@ describe("DecisionsFocusView", () => {
     render([feedItem("int-2", "issue-45", "GRE-45")]);
     render([feedItem("int-2", "issue-45", "GRE-45")]);
     expect(state.pushToast).toHaveBeenCalledTimes(1);
-    expect(state.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Answered elsewhere" }));
+    expect(state.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Handled elsewhere" }));
   });
 
   it("toasts once when the card finds its question already answered, then the feed catches up", () => {
@@ -256,7 +256,7 @@ describe("DecisionsFocusView", () => {
     render(items());
     expect(container.textContent).toContain("Ship the watchdog today?");
     expect(state.pushToast).toHaveBeenCalledTimes(1);
-    expect(state.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Answered elsewhere" }));
+    expect(state.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Handled elsewhere" }));
     render([feedItem("int-2", "issue-45", "GRE-45")]);
     expect(state.pushToast).toHaveBeenCalledTimes(1);
     expect(state.respond).not.toHaveBeenCalled();
@@ -275,13 +275,13 @@ describe("DecisionsFocusView", () => {
     render(items());
     act(() => (container.querySelector("[role='radio']") as HTMLButtonElement).click());
     await act(async () => button("Submit & next").click());
-    expect(container.textContent).toContain("1 of 2 answered");
+    expect(container.textContent).toContain("1 of 2 done");
 
     // Open task, then Back: the view unmounts, and the feed no longer lists the answered row.
     act(() => root.unmount());
     root = createRoot(container);
     render([feedItem("int-2", "issue-45", "GRE-45")]);
-    expect(container.textContent).toContain("1 of 2 answered");
+    expect(container.textContent).toContain("1 of 2 done");
     expect(container.textContent).toContain("Ship the watchdog today?");
     expect(container.textContent).toContain("GRE-44");
     expect(state.pushToast).not.toHaveBeenCalled();
@@ -294,7 +294,7 @@ describe("DecisionsFocusView", () => {
     act(() => (container.querySelector("[role='radio']") as HTMLButtonElement).click());
     await act(async () => button("Submit & next").click());
     expect(container.textContent).toContain("You are all caught up.");
-    expect(container.textContent).toContain("1 skipped question is still open.");
+    expect(container.textContent).toContain("1 skipped card is still open.");
   });
 
   it("reads the question aloud when auto-read is on, and stops on question change", () => {
@@ -322,5 +322,31 @@ describe("DecisionsFocusView", () => {
       FakeRecognition.last!.onend?.();
     });
     expect(container.querySelector("[aria-label='Speak your answer']")).toBeNull();
+  });
+
+  it("takes every card that needs John, not only questions", () => {
+    render([feedItem("int-1", "issue-44", "GRE-44"), blockedCard()]);
+    expect(container.textContent).toContain("0 of 2 done");
+    act(() => button("Skip for now").click());
+    // The blocked card shows in place with its actions, Ask for clarity and Not now.
+    expect(container.textContent).toContain("GRE-201 Move the invoices to the new folder");
+    expect(container.textContent).toContain("blocks 2 tasks");
+    for (const label of ["Reassign", "Give an instruction", "Cancel the task", "Ask for clarity", "Not now"]) {
+      expect(button(label)).toBeDefined();
+    }
+    expect(container.textContent).not.toContain("Approvals and other decisions stay in List");
+  });
+
+  it("counts a card John acted on as done, without an elsewhere toast", async () => {
+    render([blockedCard()]);
+    await act(async () => button("Cancel the task").click());
+    await act(async () => button("Yes, cancel the task").click());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    render([]);
+    expect(container.textContent).toContain("You are all caught up.");
+    expect(container.textContent).toContain("You handled 1 card.");
+    expect(state.pushToast).not.toHaveBeenCalled();
   });
 });
