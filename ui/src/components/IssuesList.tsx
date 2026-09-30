@@ -2478,7 +2478,12 @@ function StreamlinedIssuesList({
                   // Skip rows the render budget dropped so separators never
                   // dangle above an unrendered (or absent) row.
                   if (node === null) return;
-                  if (separatorField && rowPresentation === "task") {
+                  // Only top-level rows start a date section. A sub-task stays
+                  // under its parent, so an older child never splits the list
+                  // into Today / Yesterday / Today again.
+                  if (depth > 0) {
+                    // no separator
+                  } else if (separatorField && rowPresentation === "task") {
                     const currentDateGroup = taskDateGroup(issue[separatorField], separatorNow);
                     const separatorLabel = taskDateGroupSeparator(previousDateGroup, currentDateGroup);
                     if (separatorLabel) {
