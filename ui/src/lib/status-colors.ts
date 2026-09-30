@@ -280,6 +280,7 @@ export const taskStatusIconVar: Record<string, string> = {
   blocked: "--status-task-icon-blocked",
   cancelled: "--status-task-icon-cancelled",
   in_queue: "--status-task-icon-in_queue",
+  waiting: "--status-task-icon-in_progress",
 };
 export const taskStatusIconVarDefault = "--status-task-icon-backlog";
 

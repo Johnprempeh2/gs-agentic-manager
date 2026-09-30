@@ -206,7 +206,9 @@ export function IssueMonitorComposerStrip({
     <div
       role="note"
       data-testid="issue-monitor-composer-strip"
-      className={cn("rounded-lg border border-border bg-muted/30 px-3 py-2", className)}
+      // Opaque: it docks over the thread, and a see-through strip let the last
+      // message's time and buttons show through it on a phone.
+      className={cn("rounded-lg border border-border bg-card px-3 py-2", className)}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2">
@@ -221,7 +223,7 @@ export function IssueMonitorComposerStrip({
       <p className="mt-1.5 text-xs text-muted-foreground max-sm:hidden">
         {copy.workspaceWait
           ? "You can keep sending instructions while the agent waits."
-          : "Sending a reply wakes the agent now — before the scheduled check."}
+          : "Sending a reply wakes the agent now, before the scheduled check."}
       </p>
     </div>
   );

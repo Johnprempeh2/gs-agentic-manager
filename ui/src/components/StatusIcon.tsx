@@ -20,6 +20,8 @@ interface StatusIconProps {
   showLabel?: boolean;
   /** Glyph size (PAP-243a). Default `md` (16px); lists/detail/mentions use `lg` (20px). */
   size?: StatusGlyphSize;
+  /** Open work that is only waiting for a scheduled check: shows a clock, not a spinner. */
+  waiting?: boolean;
 }
 
 function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | undefined) {
@@ -76,12 +78,15 @@ function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | 
  * glyph — the blocked shape recoloured blue — while the full blocked reason
  * still rides on the accessible label.
  */
-export function StatusIcon({ status, externalConversationState, blockerAttention, onChange, className, showLabel, size = "md" }: StatusIconProps) {
+export function StatusIcon({ status, externalConversationState, blockerAttention, onChange, className, showLabel, size = "md", waiting = false }: StatusIconProps) {
   const [open, setOpen] = useState(false);
   const displayStatus = status === "in_review" && externalConversationState === "waiting" ? "idle" : status;
   const isCoveredBlocked = status === "blocked" && blockerAttention?.state === "covered";
-  const ariaLabel = status === "blocked" ? blockedAttentionLabel(blockerAttention) : statusLabel(displayStatus);
-  const glyphStatus = isCoveredBlocked ? "in_queue" : displayStatus;
+  const isWaiting = waiting && (status === "in_progress" || status === "in_review");
+  const ariaLabel = status === "blocked"
+    ? blockedAttentionLabel(blockerAttention)
+    : isWaiting ? `${statusLabel(displayStatus)} · waiting for a scheduled check` : statusLabel(displayStatus);
+  const glyphStatus = isCoveredBlocked ? "in_queue" : isWaiting ? "waiting" : displayStatus;
 
   const glyph = (
     <StatusGlyph
