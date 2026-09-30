@@ -17715,18 +17715,29 @@ export function heartbeatService(
     }
 
     const claimedAt = new Date();
-    const responsibleUserId = await resolveResponsibleUserIdForRun({
-      run,
-      contextSnapshot: context,
-      issueContext: issueId
-        ? await getIssueExecutionContext(run.companyId, issueId)
-        : null,
-      routineEnvContext: {
-        routineId: null,
-        env: null,
-        responsibleUserId: null,
-      },
-    });
+    let responsibleUserId: Awaited<ReturnType<typeof resolveResponsibleUserIdForRun>>;
+    try {
+      responsibleUserId = await resolveResponsibleUserIdForRun({
+        run,
+        contextSnapshot: context,
+        issueContext: issueId
+          ? await getIssueExecutionContext(run.companyId, issueId)
+          : null,
+        routineEnvContext: {
+          routineId: null,
+          env: null,
+          responsibleUserId: null,
+        },
+      });
+    } catch (err) {
+      // A queued-message interrupt whose messages another run already
+      // delivered has no authority left. Refused every pass, it would stall
+      // the agent's queue, so it is discarded like any spent queued message.
+      if (!(err instanceof HttpError) || err.status !== 403) throw err;
+      await cancelRunInternal(run.id, "Cancelled because its queued messages were already delivered");
+      logger.warn({ runId: run.id, err: err.message }, "claimQueuedRun: discarded a run with no run identity");
+      return null;
+    }
     // All ordinary and comment claims use the same company-scoped issue
     // lock. A batch may claim several runs before executeRun tracks any owner.
     async function lockIssueExecutionClaim(tx: Db) {
@@ -21000,7 +21011,15 @@ export function heartbeatService(
       const claimedRuns: Array<typeof heartbeatRuns.$inferSelect> = [];
       for (const queuedRun of prioritizedRuns) {
         if (claimedRuns.length >= availableSlots) break;
-        const claimed = await claimQueuedRun(queuedRun, companyAgents);
+        // One failing run must not abort the pass: runs already claimed
+        // above would sit "running" with no process, and the queue stalls.
+        let claimed: Awaited<ReturnType<typeof claimQueuedRun>>;
+        try {
+          claimed = await claimQueuedRun(queuedRun, companyAgents);
+        } catch (err) {
+          logger.error({ err, runId: queuedRun.id }, "claimQueuedRunsForAgent: claim failed, skipping this run");
+          continue;
+        }
         if (claimed) {
           claimedRuns.push(claimed);
           // Counted by the admission gate until its execution settles.
