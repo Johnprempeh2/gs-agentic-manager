@@ -29,6 +29,7 @@ import {
   privateHostnameGuard,
   resolvePrivateHostnameAllowSet,
 } from "./middleware/private-hostname-guard.js";
+import { precompressedAssets } from "./middleware/precompressed-assets.js";
 import {
   applyTrustProxy,
   parseTrustProxyEnv,
@@ -994,6 +995,7 @@ export async function createApp(
       // never change once built, so they can be cached aggressively.
       app.use(
         "/assets",
+        precompressedAssets(path.join(uiDist, "assets")),
         express.static(path.join(uiDist, "assets"), {
           maxAge: "1y",
           immutable: true,
