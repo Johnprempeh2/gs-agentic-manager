@@ -29,6 +29,8 @@ import { logActivity } from "../services/activity-log.js";
 import { aiConnectionService } from "../services/ai-connections.js";
 import { checkAiCredential, type AiCredentialChecker } from "../services/ai-credential-check.js";
 import { validate } from "../middleware/validate.js";
+import { logger } from "../middleware/logger.js";
+import { connectionIntentService } from "../services/connection-intents.js";
 
 /** Agent API calls inherit authenticated run identity, never the agent's own ID. */
 export function responsibleUserForAiRequest(req: Request): string | null {
@@ -194,6 +196,19 @@ export function aiConnectionRoutes(db: Db, options: Parameters<typeof supportsLo
   const router = Router();
   const service = aiConnectionService(db);
   const localLogin = localAiLoginService(db);
+  // A user's reconnect closes every AI card it repairs; the delivery sweep
+  // then wakes each paused task once. Agents cannot close the user's cards.
+  async function resumePausedTasks(req: Request, companyId: string, userId: string, provider: string, connectionId: string) {
+    if (req.actor.type === "agent") return;
+    try {
+      await connectionIntentService(db).resolveAiIntentsForConnection({
+        companyId, userId, serviceSlug: provider, connectionId,
+        bypassCurrentMembershipCheck: req.actor.source === "local_implicit" || req.actor.isInstanceAdmin === true,
+      });
+    } catch (err) {
+      logger.warn({ err, connectionId }, "Could not resume tasks paused on this AI account");
+    }
+  }
   function assertLocalOperator(req: Request) {
     assertBoard(req);
     assertCompanyAccess(req, req.params.companyId as string);
@@ -305,7 +320,9 @@ export function aiConnectionRoutes(db: Db, options: Parameters<typeof supportsLo
         const { setupToken, ...intent } = input;
         const startedAt = new Date();
         const token = await validateClaudeSetupToken(setupToken);
-        res.status(201).json(await service.save(companyId, userId, intent, token, undefined, startedAt, { source: "setup_token", expiresAt: null }));
+        const saved = await service.save(companyId, userId, intent, token, undefined, startedAt, { source: "setup_token", expiresAt: null });
+        await resumePausedTasks(req, companyId, userId, input.provider, saved.connectionId);
+        res.status(201).json(saved);
         return;
       }
       const attemptStartedAt = new Date();
@@ -318,6 +335,7 @@ export function aiConnectionRoutes(db: Db, options: Parameters<typeof supportsLo
         undefined,
         attemptStartedAt,
       );
+      await resumePausedTasks(req, companyId, userId, input.provider, result.connectionId);
       res.status(201).json(result);
     },
   );
@@ -332,12 +350,16 @@ export function aiConnectionRoutes(db: Db, options: Parameters<typeof supportsLo
       const userId = await assertAiConnectionCreateAccess(db, req, companyId, input);
       if (localSessionId || input.provider === "openai" || input.provider === "xai") {
         if (!localSessionId) throw unprocessable("Start a separate local sign-in for this connection before connecting.");
-        res.status(201).json(await localLogin.complete(companyId, userId, localSessionId, input));
+        const completed = await localLogin.complete(companyId, userId, localSessionId, input);
+        await resumePausedTasks(req, companyId, userId, input.provider, completed.connectionId);
+        res.status(201).json(completed);
         return;
       }
       const attemptStartedAt = new Date();
       const { credential, info } = await readVerifiedLocalAiCredentialWithInfo(input.provider);
-      res.status(201).json(await service.save(companyId, userId, input, credential, undefined, attemptStartedAt, info));
+      const saved = await service.save(companyId, userId, input, credential, undefined, attemptStartedAt, info);
+      await resumePausedTasks(req, companyId, userId, input.provider, saved.connectionId);
+      res.status(201).json(saved);
     },
   );
   router.put(
