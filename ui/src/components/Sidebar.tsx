@@ -151,7 +151,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const conferenceRoomItem = conferenceRoomChatEnabled ? (
     <SidebarNavItem to="/board-chat" label="Conference Room" icon={MessagesSquare} />
   ) : null;
-  const tasksItem = <SidebarNavItem to="/issues" label="Tasks" icon={CircleCheck} />;
+  const tasksItem = <SidebarNavItem to="/issues" label="Agent tasks" icon={CircleCheck} />;
   // Greatstone (GRE-191): Goals graduated from Experimental; always shown.
   const goalsItem = <SidebarNavItem to="/goals" label="Goals" icon={Target} />;
   const routinesItem = <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />;
