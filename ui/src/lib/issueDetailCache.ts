@@ -90,6 +90,27 @@ export function getCachedIssueDetail(
     );
 }
 
+/**
+ * The freshest complete snapshot of an issue already held in any cached issue
+ * list (the mention pool, child tasks, the company list), with when that list
+ * was fetched. Lets a mention chip paint without its own detail fetch.
+ */
+export function findIssueInCachedLists(
+  queryClient: QueryClient,
+  issueRef: string,
+): { issue: Issue; updatedAt: number } | undefined {
+  // Identifiers are stored upper case; a hand-written /issues/gre-12 link is not.
+  const refs = new Set([issueRef, issueRef.toUpperCase()]);
+  let found: { issue: Issue; updatedAt: number } | undefined;
+  for (const query of queryClient.getQueryCache().findAll({ queryKey: ["issues"] })) {
+    const { data, dataUpdatedAt } = query.state;
+    if (!Array.isArray(data) || (found && found.updatedAt >= dataUpdatedAt)) continue;
+    const issue = data.find((row): row is Issue => isCompleteIssueSnapshot(row) && matchesIssueRef(row, refs));
+    if (issue) found = { issue, updatedAt: dataUpdatedAt };
+  }
+  return found;
+}
+
 export function seedIssueDetailCache(
   queryClient: QueryClient,
   issue: Issue,

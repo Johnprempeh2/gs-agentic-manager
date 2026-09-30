@@ -1446,6 +1446,94 @@ describe("IssueDetail", () => {
     expect(mockIssuesApi.markRead).toHaveBeenCalledWith(canonical.id);
   });
 
+  describe("idle polling", () => {
+    // The intervals every mounted observer of a query would schedule now.
+    function scheduledPolls(queryKey: readonly unknown[]) {
+      const query = queryClient.getQueryCache().find({ queryKey, exact: true });
+      if (!query) return [];
+      return query.observers
+        .filter((observer) => observer.options.enabled !== false)
+        .map((observer) => {
+          const interval = observer.options.refetchInterval;
+          return typeof interval === "function" ? interval(query) : interval;
+        })
+        .filter((interval): interval is number => typeof interval === "number" && interval > 0);
+    }
+
+    async function renderTask(issue: Issue) {
+      mockIssuesApi.get.mockResolvedValue(issue);
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <IssueDetail />
+          </QueryClientProvider>,
+        );
+      });
+      await flushReact();
+      await flushReact();
+      expect(mockIssueChatThreadRender).toHaveBeenCalled();
+    }
+
+    const liveRun = {
+      id: "run-live",
+      status: "running",
+      invocationSource: "issue",
+      triggerDetail: null,
+      startedAt: "2026-04-21T00:00:01.000Z",
+      finishedAt: null,
+      createdAt: "2026-04-21T00:00:01.000Z",
+      agentId: "agent-1",
+      agentName: "Coder",
+      adapterType: "codex_local",
+      issueId: "issue-1",
+    };
+
+    it("keeps an in-progress task with no live run to one slow probe, keyed once by UUID", async () => {
+      await renderTask(createIssue({ status: "in_progress" }));
+
+      expect(scheduledPolls(queryKeys.issues.runs("issue-1"))).toEqual([]);
+      expect(scheduledPolls(queryKeys.issues.activeRun("issue-1"))).toEqual([]);
+      expect(scheduledPolls(queryKeys.issues.liveRuns("issue-1"))).toEqual([30_000]);
+      // The route identifier must not open a second copy of the same run state.
+      expect(queryClient.getQueryCache().find({ queryKey: queryKeys.issues.liveRuns("PAP-1") })).toBeUndefined();
+      expect(queryClient.getQueryCache().find({ queryKey: queryKeys.issues.activeRun("PAP-1") })).toBeUndefined();
+    });
+
+    it("schedules no poll at all for a done task", async () => {
+      await renderTask(createIssue({ status: "done" }));
+
+      for (const key of [
+        queryKeys.issues.runs("issue-1"),
+        queryKeys.issues.liveRuns("issue-1"),
+        queryKeys.issues.activeRun("issue-1"),
+      ]) {
+        expect(scheduledPolls(key)).toEqual([]);
+      }
+    });
+
+    it("follows a live run closely and pauses while the tab is hidden", async () => {
+      mockHeartbeatsApi.liveRunsForIssue.mockResolvedValue([liveRun]);
+      await renderTask(createIssue({ status: "in_progress" }));
+
+      expect(scheduledPolls(queryKeys.issues.runs("issue-1"))).toEqual([1000]);
+      expect(scheduledPolls(queryKeys.issues.liveRuns("issue-1"))).toEqual(
+        expect.arrayContaining([1000]),
+      );
+
+      const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await flushReact();
+      try {
+        expect(scheduledPolls(queryKeys.issues.runs("issue-1"))).toEqual([]);
+        expect(scheduledPolls(queryKeys.issues.liveRuns("issue-1"))).toEqual([]);
+      } finally {
+        visibility.mockRestore();
+      }
+    });
+  });
+
   it("does not request created tasks or the email thread for an unsaved agent chat", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableStreamlinedUi: true,

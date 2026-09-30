@@ -18,11 +18,12 @@ export function EmailTaskActivity({
   const cache = useQueryClient();
   const threadKey = ["email-thread", companyId, issueId];
   const queryEnabled = Boolean(companyId && issueId) && !issueId.startsWith("chat:");
+  // No interval of its own: it renders inside the task thread, whose
+  // EmailThreadProvider polls this same key (fast only while a run is live).
   const thread = useQuery({
     queryKey: threadKey,
     queryFn: () => emailApi.thread(companyId, issueId),
     enabled: queryEnabled,
-    refetchInterval: 3000,
   });
   if (!queryEnabled) return null;
   const data = thread.data;

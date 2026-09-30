@@ -45,6 +45,18 @@ export type HealthStatus = {
   hiddenSettings?: string[];
 };
 
+/**
+ * Layout's health poll exists for the dev-server restart banner. Poll every 2 s
+ * while a restart is pending (the banner is on screen and tracks it), every 30 s
+ * otherwise so a new backend change still raises the banner, and never on a
+ * server without the dev watcher.
+ */
+export function healthPollInterval(health: HealthStatus | undefined): number | false {
+  const devServer = health?.devServer;
+  if (!devServer?.enabled) return false;
+  return devServer.restartRequired ? 2000 : 30_000;
+}
+
 export const healthApi = {
   get: async (): Promise<HealthStatus> => {
     const res = await fetch("/api/health", {
