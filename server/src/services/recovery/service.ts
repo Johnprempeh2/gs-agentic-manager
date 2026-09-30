@@ -951,6 +951,15 @@ export function recoveryService(
     isHostSleepLoss?: (run: NonNullable<LatestIssueRun>) => boolean;
     liveRunExecutions?: Readonly<{ has(id: string): boolean }>;
     beforeOrphanedRunTerminalWrite?: (runId: string) => Promise<void>;
+    /**
+     * GRE-25: runs the normal release drain for an issue whose dead lock the
+     * stale-lock sweep just cleared, so wakes deferred behind that lock are
+     * promoted instead of staying `deferred_issue_execution` forever.
+     */
+    promoteDeferredWakesAfterStaleLockClear?: (input: {
+      companyId: string;
+      issueId: string;
+    }) => Promise<void>;
   },
 ) {
   const issuesSvc = issueService(db);
@@ -6391,6 +6400,19 @@ export function recoveryService(
           clearedExecutionRunId: issue.executionRunId,
           referencedRunStatuses: Object.fromEntries(runStatusById),
         },
+      });
+
+      // The dead owner never ran its release, so nothing else drains the
+      // wakes deferred behind this lock. Once the lock columns are null this
+      // sweep never revisits the issue, so drain it now.
+      await deps.promoteDeferredWakesAfterStaleLockClear?.({
+        companyId: issue.companyId,
+        issueId: updated.id,
+      }).catch((err) => {
+        logger.warn(
+          { err, issueId: updated.id },
+          "failed to promote deferred wakes after clearing stale issue lock",
+        );
       });
     }
 

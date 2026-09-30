@@ -9740,6 +9740,7 @@ export function heartbeatService(
       executionFailureRetryCount(run) >=
       BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS,
     isHostSleepLoss: runLostToHostSleep,
+    promoteDeferredWakesAfterStaleLockClear,
   });
   const runDispatch = createRunDispatch(db);
 
@@ -27744,6 +27745,30 @@ export function heartbeatService(
       }
       throw error;
     }
+  }
+
+  // GRE-25: the stale-lock sweep cleared a lock whose owner died without
+  // releasing it. Replay that missing release through the issue's latest run
+  // so deferred wakes get the same admission checks as a normal release.
+  async function promoteDeferredWakesAfterStaleLockClear(input: { companyId: string; issueId: string }) {
+    const [pending] = await db.select({ id: agentWakeupRequests.id }).from(agentWakeupRequests).where(and(
+      eq(agentWakeupRequests.companyId, input.companyId),
+      eq(agentWakeupRequests.status, "deferred_issue_execution"),
+      sql`${agentWakeupRequests.payload}->>'issueId' = ${input.issueId}`,
+    )).limit(1);
+    if (!pending) return;
+    const [latest] = await db.select().from(heartbeatRuns).where(and(
+      eq(heartbeatRuns.companyId, input.companyId),
+      sql`${heartbeatRuns.contextSnapshot}->>'issueId' = ${input.issueId}`,
+    )).orderBy(desc(heartbeatRuns.createdAt), desc(heartbeatRuns.id)).limit(1);
+    // A live latest run owns the next release. With no run at all there is
+    // nothing to release through; leave the issue to stranded-issue recovery.
+    if (!latest || !isHeartbeatRunTerminalStatus(latest.status)) {
+      logger.warn({ ...input, latestRunId: latest?.id ?? null },
+        "stale lock cleared with deferred wakes but no terminal run to release through");
+      return;
+    }
+    await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true });
   }
 
   async function enqueueWakeup(agentId: string, opts: WakeupOptions = {}, executionWaitRequestId?: string) {
