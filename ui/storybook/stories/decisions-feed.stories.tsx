@@ -161,6 +161,23 @@ function designChoiceCard(): DecisionCard {
 
 export const DesignChoiceWithScreenshots: Story = { render: () => <CardFrame card={designChoiceCard()} /> };
 
+/** A UI change shipped as a named before/after pair: the gallery offers a compare slider. */
+function beforeAfterCard(): DecisionCard {
+  const card = designChoiceCard();
+  const images = [
+    { assetId: mockScreen("After", "#c8ff00"), alt: "after-releases-dark.png" },
+    { assetId: mockScreen("Before", "#8a8f8b"), alt: "before-releases-dark.png" },
+  ];
+  return {
+    ...card,
+    title: "GRE-44 Approve the new Releases page",
+    reason: "Before and after are attached. Approve and I will merge it.",
+    items: card.items.map((item) => ({ ...item, detail: { kind: "generic", summaryExcerpt: "", images } })),
+  };
+}
+
+export const UiChangeBeforeAndAfter: Story = { render: () => <CardFrame card={beforeAfterCard()} /> };
+
 export const TaskPageTabledBanner: Story = {
   render: () => (
     <div className="max-w-3xl">
