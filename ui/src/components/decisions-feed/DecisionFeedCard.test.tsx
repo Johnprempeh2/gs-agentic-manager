@@ -206,6 +206,23 @@ describe("DecisionFeedCard rendering per kind", () => {
     expect(container.querySelector("[data-clarity]")?.textContent).toContain("Waiting for Ridge to answer.");
   });
 
+  it("shows the task's screenshots once each, and none on a card without them", () => {
+    const card = questionCard();
+    const shot = (assetId: string) => ({ assetId, alt: `${assetId}.png` });
+    card.items = card.items.map((item, index) => ({
+      ...item,
+      detail: { kind: "generic", summaryExcerpt: "", images: index === 0 ? [shot("option-a"), shot("option-b")] : [shot("option-a")] },
+    })) as DecisionCard["items"];
+    card.items.push({ ...card.items[0]!, id: "extra-row" });
+    render(card);
+    const images = [...container.querySelectorAll("[data-decision-images] img")].map((img) => img.getAttribute("src"));
+    expect(images).toEqual(["/api/assets/option-a/content", "/api/assets/option-b/content"]);
+    expect(button("Open image 2 of 2, option-b.png")).toBeTruthy();
+
+    render(blockedCard());
+    expect(container.querySelector("[data-decision-images]")).toBeNull();
+  });
+
   it("keeps ask_clarity out of the plain action buttons", () => {
     expect(visibleCardActions(blockedCard()).map((action) => action.id)).toEqual(["reassign", "instruct", "cancel_task"]);
     expect(visibleCardActions(questionCard()).map((action) => action.id)).not.toContain("open");

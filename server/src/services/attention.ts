@@ -116,7 +116,7 @@ const PENDING_INTERACTION_STATUSES = ["pending"] as const;
 const OPEN_RECOVERY_STATUSES = ["active", "escalated"] as const;
 const HUMAN_RECOVERY_OWNER_TYPES = ["user", "board"] as const;
 const DETAIL_EXCERPT_LENGTH = 160;
-const DETAIL_IMAGE_LIMIT = 3;
+const DETAIL_IMAGE_LIMIT = 6;
 const OPEN_DECISION_DEFAULT_LIMIT = 500;
 const OPEN_DECISION_MAX_LIMIT = 1_000;
 const ATTENTION_PAGE_DEFAULT_LIMIT = 50;
@@ -898,7 +898,8 @@ async function issueImageMap(db: Db, companyId: string, issueIds: Array<string |
       inArray(issueAttachments.issueId, ids),
       sql`${assets.contentType} like 'image/%'`,
     ))
-    .orderBy(asc(issueAttachments.issueId), asc(issueAttachments.createdAt), asc(issueAttachments.id));
+    // Newest first: the latest screenshots are the ones a decision is about.
+    .orderBy(asc(issueAttachments.issueId), desc(issueAttachments.createdAt), desc(issueAttachments.id));
 
   const map = new Map<string, AttentionDetailImage[]>();
   for (const row of rows) {
@@ -1314,8 +1315,9 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       // group header over sibling decisions (v1 still decides each independently).
       const bundleIds = [...new Set(openDecisions.map((decision) => decision.bundleId).filter((value): value is string => Boolean(value)))];
       const bundleTitleMap = new Map<string, string>();
-      const [decisionIssueMap, bundleRows] = await Promise.all([
+      const [decisionIssueMap, decisionImageMap, bundleRows] = await Promise.all([
         issueSummaryMap(db, companyId, openDecisions.map((decision) => decision.originIssueId)),
+        issueImageMap(db, companyId, openDecisions.map((decision) => decision.originIssueId)),
         bundleIds.length > 0
           ? db.select({ id: decisionBundles.id, title: decisionBundles.title })
             .from(decisionBundles).where(and(eq(decisionBundles.companyId, companyId), inArray(decisionBundles.id, bundleIds)))
@@ -1345,7 +1347,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           updatedAt: toIso(decision.updatedAt),
           relatedIssue: issue ? issueSubject(prefix, issue) : null,
           ...issueContext(issue),
-          detail: { kind: "generic", summaryExcerpt: decision.body.slice(0, DETAIL_EXCERPT_LENGTH), images: [] },
+          // A design choice is judged on the task's screenshots, so the decision carries them.
+          detail: { kind: "generic", summaryExcerpt: decision.body.slice(0, DETAIL_EXCERPT_LENGTH), images: issueImages(decisionImageMap, decision.originIssueId) },
         }));
       }
 
