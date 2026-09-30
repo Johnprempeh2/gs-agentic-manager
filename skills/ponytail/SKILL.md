@@ -126,8 +126,8 @@ form, so rung 2 is where the savings are. Climb it properly:
 
 - In the company: before creating a task, project, routine, agent, or skill,
   search for an existing one. Reuse or extend it.
-- In the GS Agentic Manager codebase (a Paperclip fork): look for the
-  feature, not just the helper. Check the services, routes, UI components,
+- In the GS Agentic Manager codebase, most features already ship from its
+  open-source base: look for the feature, not just the helper. Check the services, routes, UI components,
   shared types, bundled skills, plugins, adapters, and existing settings. A
   setting or service that does most of the job beats a new one that does all
   of it. Extend what exists before adding a parallel version.
