@@ -42,3 +42,21 @@ describe("phone page motion", () => {
     expect(routeEnterVariant("/GRE/issues", "/GRE/issues", mobile("POP"))).toBe("back");
   });
 });
+
+describe("phone header lead agent", () => {
+  it("prefers a ceo, else the top of the org chart with the most reports, never a terminated agent", async () => {
+    const { resolveLeadAgent } = await import("../components/MobileEverestButton");
+    const team = [
+      { id: "everest", role: "general", status: "idle", reportsTo: null },
+      { id: "keystone", role: "engineer", status: "idle", reportsTo: "everest" },
+      { id: "mica", role: "engineer", status: "idle", reportsTo: "everest" },
+      { id: "harbor", role: "pm", status: "idle", reportsTo: null },
+      { id: "scout", role: "researcher", status: "idle", reportsTo: "harbor" },
+      { id: "loner", role: "engineer", status: "idle", reportsTo: null },
+    ];
+    expect(resolveLeadAgent(team)?.id).toBe("everest");
+    expect(resolveLeadAgent([...team, { id: "boss", role: "ceo", status: "idle", reportsTo: null }])?.id).toBe("boss");
+    expect(resolveLeadAgent([{ id: "boss", role: "ceo", status: "terminated", reportsTo: null }, ...team])?.id).toBe("everest");
+    expect(resolveLeadAgent([{ id: "solo", role: "engineer", status: "idle", reportsTo: null }])).toBeNull();
+  });
+});
