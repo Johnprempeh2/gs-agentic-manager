@@ -3,7 +3,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ImageGalleryModal, type GalleryMediaItem } from "./ImageGalleryModal";
+import { beforeAfterPair, ImageGalleryModal, type GalleryMediaItem } from "./ImageGalleryModal";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -79,6 +79,27 @@ describe("ImageGalleryModal", () => {
     expect(
       document.body.querySelector('a[aria-label="Download demo.webm"]')?.getAttribute("href"),
     ).toBe("/api/attachments/video-1/content?download=1");
+  });
+
+  it("compares a before/after pair with a divider the viewer can move", async () => {
+    const before = makeMediaItem({ id: "b", contentPath: "/b", originalFilename: "before-dashboard-dark.png" });
+    const after = makeMediaItem({ id: "a", contentPath: "/a", originalFilename: "after-dashboard-dark.png" });
+    const other = makeMediaItem({ id: "o", contentPath: "/o", originalFilename: "notes.png" });
+    expect(beforeAfterPair([before, other, after], 2)).toEqual({ before, after });
+    expect(beforeAfterPair([before, other, after], 1)).toBeNull();
+    expect(beforeAfterPair([before, other], 0)).toBeNull();
+
+    await act(async () => {
+      root.render(<ImageGalleryModal items={[after, other, before]} initialIndex={0} open onOpenChange={() => undefined} />);
+    });
+    await flushReact();
+    const compare = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Compare before and after");
+    expect(compare).toBeTruthy();
+    await act(async () => compare!.click());
+    await flushReact();
+    const images = [...document.body.querySelectorAll("[data-gallery-compare] img")].map((img) => img.getAttribute("src"));
+    expect(images).toEqual(["/a", "/b"]);
+    expect(document.body.querySelector('input[type="range"]')).not.toBeNull();
   });
 
   it("supports keyboard navigation and Escape close", async () => {
