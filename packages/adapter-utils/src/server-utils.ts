@@ -4265,6 +4265,17 @@ export function normalizePaperclipRunnerAdapterConfig(
   return normalizePaperclipOperationalSkillPreference(adapterType, next);
 }
 
+/**
+ * Mounted on every legacy-adapter agent whatever its skill preference: the
+ * operational skill, and ponytail (reuse what exists, build the least that
+ * works). ponytail: native runners mount only their configured skills, add
+ * ponytail there when an agent runs on paperclip_runner.
+ */
+export const GSAM_BUILT_IN_SKILL_KEYS = [
+  GSAM_OPERATIONAL_SKILL_KEY,
+  "paperclipai/paperclip/ponytail",
+];
+
 export function resolveLegacyPaperclipDesiredSkillNames(
   config: Record<string, unknown>,
   availableEntries: Array<{ key: string; runtimeName?: string | null }>,
@@ -4273,16 +4284,13 @@ export function resolveLegacyPaperclipDesiredSkillNames(
     config,
     availableEntries,
   );
-  const operationalEntry = availableEntries.find(
-    (entry) =>
-      entry.key.trim().toLowerCase() === GSAM_OPERATIONAL_SKILL_KEY,
+  const builtIn = availableEntries.filter((entry) =>
+    GSAM_BUILT_IN_SKILL_KEYS.includes(entry.key.trim().toLowerCase()),
   );
-  if (!operationalEntry) return desiredSkills;
-
   return [
-    operationalEntry.key,
+    ...builtIn.map((entry) => entry.key),
     ...desiredSkills.filter(
-      (key) => key.trim().toLowerCase() !== GSAM_OPERATIONAL_SKILL_KEY,
+      (key) => !GSAM_BUILT_IN_SKILL_KEYS.includes(key.trim().toLowerCase()),
     ),
   ];
 }

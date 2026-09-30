@@ -137,6 +137,16 @@ describe("legacy adapter skill selection", () => {
     ).toEqual([optionalEntry.key]);
   });
 
+  it("mounts ponytail on every agent, even after an explicit empty replacement", () => {
+    const ponytailEntry = { key: "paperclipai/paperclip/ponytail", runtimeName: "ponytail" };
+    expect(
+      resolveLegacyPaperclipDesiredSkillNames(
+        { paperclipSkillSync: { desiredSkills: [] } },
+        [operationalEntry, ponytailEntry, optionalEntry],
+      ),
+    ).toEqual([GSAM_OPERATIONAL_SKILL_KEY, ponytailEntry.key]);
+  });
+
   it("leaves the configurable resolver available for native runners", () => {
     expect(resolvePaperclipDesiredSkillNames({}, [operationalEntry])).toEqual(
       [],

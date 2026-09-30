@@ -3300,6 +3300,7 @@ export function accessRoutes(
     res.json({
       skills: [
         { name: "paperclip", path: "/api/skills/paperclip" },
+        { name: "ponytail", path: "/api/skills/ponytail" },
         {
           name: "para-memory-files",
           path: "/api/skills/para-memory-files"
