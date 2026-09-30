@@ -839,6 +839,9 @@ describeEmbeddedPostgres("connectionIntentService", () => {
     expect((await service.setupOptions(toolRequest.id)).existingConnections).toEqual([]);
     await expect(service.complete(toolRequest.id, connection!.id, claims.responsible_user_id!)).rejects.toThrow("cannot satisfy");
     await expect(service.complete(aiRequest.interactionId!, connection!.id, claims.responsible_user_id!)).resolves.toMatchObject({ status: "accepted" });
+    // One fix switches the owner's account on for every agent, not just this one.
+    expect(await db.select({ targetType: toolConnectionInstalls.targetType, targetId: toolConnectionInstalls.targetId }).from(toolConnectionInstalls)
+      .where(eq(toolConnectionInstalls.connectionId, connection!.id))).toEqual([{ targetType: "company", targetId: companyId }]);
     expect((await service.request(aiClaims, "anthropic", { purpose: "ai" })).state).toBe("ready");
     await expect(service.request(aiClaims, "anthropic")).rejects.toMatchObject({ status: 422 });
     expect((await service.search(aiClaims, "openrouter")).results.some(result => result.service === "openrouter")).toBe(false);

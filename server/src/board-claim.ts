@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { companies, companyMemberships, instanceUserRoles } from "@greatstone/db";
 import type { DeploymentMode } from "@greatstone/shared";
@@ -140,6 +140,25 @@ export async function claimBoardOwnership(
           .set({ status: "active", membershipRole: "owner", updatedAt: new Date() })
           .where(eq(companyMemberships.id, existing.id));
       }
+    }
+
+    // Personal accounts connected before sign-in belong to the board identity.
+    // Hand them and their defaults to the claimer, or every agent would need
+    // its accounts connected again. A connection the claimer already holds
+    // keeps theirs.
+    await tx.execute(sql`
+      UPDATE connection_grants g SET subject_user_id = ${opts.userId}, updated_at = now()
+      WHERE g.kind = 'user' AND g.subject_user_id = ${LOCAL_BOARD_USER_ID}
+        AND NOT EXISTS (SELECT 1 FROM connection_grants o WHERE o.connection_id = g.connection_id AND o.subject_user_id = ${opts.userId})`);
+    for (const [table, sameSlot] of [
+      [sql`ai_provider_defaults`, sql`o.provider = d.provider`],
+      [sql`ai_connection_defaults`, sql`o.provider = d.provider AND o.method = d.method`],
+    ]) {
+      await tx.execute(sql`
+        UPDATE ${table} d SET user_id = ${opts.userId}, updated_at = now()
+        WHERE d.user_id = ${LOCAL_BOARD_USER_ID}
+          AND EXISTS (SELECT 1 FROM connection_grants g WHERE g.id = d.grant_id AND g.subject_user_id = ${opts.userId})
+          AND NOT EXISTS (SELECT 1 FROM ${table} o WHERE o.company_id = d.company_id AND o.user_id = ${opts.userId} AND ${sameSlot})`);
     }
   });
 
