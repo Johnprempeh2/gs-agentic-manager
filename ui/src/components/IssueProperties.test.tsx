@@ -1968,9 +1968,9 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).toMatch(/CreatedApr 6, 2026, \d{1,2}:34 (AM|PM)/);
-    expect(container.textContent).toMatch(/StartedApr 6, 2026, \d{1,2}:35 (AM|PM)/);
-    expect(container.textContent).toMatch(/CompletedApr 6, 2026, \d{1,2}:36 (AM|PM)/);
+    expect(container.textContent).toMatch(/Created6 Apr 2026, \d{1,2}:34/);
+    expect(container.textContent).toMatch(/Started6 Apr 2026, \d{1,2}:35/);
+    expect(container.textContent).toMatch(/Completed6 Apr 2026, \d{1,2}:36/);
 
     for (const label of ["Started", "Completed", "Created"]) {
       const labelNode = container.querySelector(`[data-property-label="${label}"]`);
@@ -3353,7 +3353,7 @@ describe("IssueProperties", () => {
     expect(container.textContent).toContain("PR 241 - Merged");
     expect(container.textContent).toContain("Merged");
     expect(container.textContent).toContain("Open");
-    expect(container.textContent).not.toContain("External objects");
+    expect(container.textContent).not.toContain("Linked work");
     const label = Array.from(container.querySelectorAll("span"))
       .find((span) => span.textContent === "Github PR");
     expect(label?.querySelector("svg")).toBeTruthy();

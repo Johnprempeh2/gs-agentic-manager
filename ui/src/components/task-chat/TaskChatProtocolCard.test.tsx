@@ -178,7 +178,8 @@ describe("TaskChatProtocolCard", () => {
     const chip = Array.from(container.querySelectorAll("span")).find((node) => node.textContent === "Pending");
     expect(chip?.className).toContain("border-dashed");
     expect(container.textContent).toContain("Image · 2.0 KB");
-    expect(container.textContent).toContain("Open gallery");
+    // Thread media is a gallery tile: the whole tile opens the gallery.
+    expect(container.querySelector('button[aria-label="Open gallery: demo.png"] img')).not.toBeNull();
   });
 
   it.each([

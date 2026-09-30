@@ -60,7 +60,7 @@ describe("ArtifactCard", () => {
     expect(markup).toContain("Hero shot");
     expect(markup).toContain("flex h-7 items-start justify-between gap-2");
     expect(markup).toContain("leading-7");
-    expect(markup).toContain("Last edited Jun 1, 2026");
+    expect(markup).toContain("Last edited 1 Jun 2026");
     expect(markup).not.toContain("Landing visuals");
     expect(markup).not.toContain("Edited ");
   });
@@ -78,7 +78,7 @@ describe("ArtifactCard", () => {
     );
 
     expect(markup).toContain("Social launch clip");
-    expect(markup).toContain("Last edited Oct 8, 2025");
+    expect(markup).toContain("Last edited 8 Oct 2025");
     expect(markup).not.toContain("Make artifact page look like this");
     expect(markup).not.toContain(">PAP-10370<");
   });
@@ -268,7 +268,7 @@ describe("ArtifactCard", () => {
 
     expect(markup).toContain("flex h-7 items-start justify-between gap-2");
     expect(markup).toContain("leading-7");
-    expect(markup).toContain("Last edited Jun 1, 2026");
+    expect(markup).toContain("Last edited 1 Jun 2026");
     expect(markup).not.toContain('aria-label="Download file"');
     expect(markup).not.toContain('aria-label="Open file in new tab"');
   });

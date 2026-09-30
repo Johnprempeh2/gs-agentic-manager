@@ -69,7 +69,9 @@ export function buildDocumentTitle(breadcrumbs: Breadcrumb[], companyName?: stri
   const pageParts = breadcrumbs.length === 0
     ? []
     : [...breadcrumbs].reverse().map((breadcrumb) => breadcrumb.label);
-  const companyPart = companyName?.trim() ? [companyName.trim()] : [];
+  const company = companyName?.trim();
+  // A page whose breadcrumbs already name the company should not repeat it.
+  const companyPart = company && !pageParts.some((part) => part.trim() === company) ? [company] : [];
   const parts = [...pageParts, ...companyPart, "GS Agentic Manager"];
   return parts.join(" • ");
 }

@@ -253,7 +253,7 @@ function RecentTasksList({
         {entries.map((entry) => (
           <div key={entry.id} className="sidebar-action-row group/recent-task relative">
             <SidebarNavItem
-              to={`/issues/${entry.id}`}
+              to={`/issues/${entry.identifier ?? entry.id}`}
               label={entry.title}
               trailing={entry.status === "in_review" && entry.externalConversationState === "waiting"
                 ? <span className="text-xs text-muted-foreground">Idle</span> : undefined}

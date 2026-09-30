@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import type { HeartbeatRun } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RunActivityChart, SuccessRateChart } from "./ActivityCharts";
+import { formatDayLabel, RunActivityChart, SuccessRateChart } from "./ActivityCharts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -86,6 +86,11 @@ function createRun(overrides: Partial<HeartbeatRun> = {}): HeartbeatRun {
 }
 
 describe("ActivityCharts", () => {
+  it("labels days British style, day before month", () => {
+    expect(formatDayLabel("2026-09-17")).toBe("17/9");
+    expect(formatDayLabel("2026-10-01")).toBe("1/10");
+  });
+
   it("renders empty run charts when dashboard aggregate data is temporarily missing", () => {
     render(<RunActivityChart activity={undefined} />);
     expect(container.textContent).toContain("No runs yet");

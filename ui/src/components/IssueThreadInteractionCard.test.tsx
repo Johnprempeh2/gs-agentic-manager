@@ -1182,7 +1182,7 @@ describe("IssueThreadInteractionCard tool-action card", () => {
     // already carries the "Expired · issue closed" label, so the footer must
     // not restate it.
     const footer = host.querySelector('[data-testid="interaction-issue-closed-footer"]');
-    expect(footer?.textContent).toContain("Apr 20");
+    expect(footer?.textContent).toContain("20 Apr");
     expect(footer?.textContent).not.toContain("Expired when the issue closed");
     // The "Expired · issue closed" label survives exactly once (the header
     // status badge); the duplicate body eyebrow was dropped.

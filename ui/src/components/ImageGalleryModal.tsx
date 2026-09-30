@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { attachmentDownloadPath, attachmentFilename } from "@/lib/issue-attachments";
@@ -11,6 +11,28 @@ export interface GalleryMediaItem {
   downloadPath?: string;
   contentType: string;
   originalFilename: string | null;
+}
+
+const BEFORE_AFTER = /(^|[-_ .])(before|after)(?=[-_ .]|$)/i;
+
+/**
+ * The other half of a before/after pair, matched by filename
+ * ("before-dashboard-dark.png" and "after-dashboard-dark.png"), so a design
+ * change can be judged side by side. Null when the item has no partner.
+ */
+export function beforeAfterPair(
+  items: GalleryMediaItem[],
+  index: number,
+): { before: GalleryMediaItem; after: GalleryMediaItem } | null {
+  const current = items[index];
+  const name = current?.originalFilename;
+  const match = name ? BEFORE_AFTER.exec(name) : null;
+  if (!current || !name || !match) return null;
+  const isBefore = match[2]!.toLowerCase() === "before";
+  const partnerName = name.toLowerCase().replace(BEFORE_AFTER, (_whole, lead: string) => lead + (isBefore ? "after" : "before"));
+  const partner = items.find((item) => item !== current && item.originalFilename?.toLowerCase() === partnerName);
+  if (!partner) return null;
+  return isBefore ? { before: current, after: partner } : { before: partner, after: current };
 }
 
 interface ImageGalleryModalProps {
@@ -49,9 +71,18 @@ export function ImageGalleryModal({
     setCurrentIndex(0);
   }, [currentIndex, items.length]);
 
+  const pair = useMemo(() => beforeAfterPair(items, currentIndex), [items, currentIndex]);
+  const [comparing, setComparing] = useState(false);
+  const [split, setSplit] = useState(50);
+  useEffect(() => {
+    if (!pair) setComparing(false);
+  }, [pair]);
+
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
+      // The compare slider uses the arrow keys itself.
+      if ((e.target as HTMLElement | null)?.tagName === "INPUT" && e.key !== "Escape") return;
       if (e.key === "ArrowRight") goNext();
       else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "Escape") onOpenChange(false);
@@ -67,6 +98,7 @@ export function ImageGalleryModal({
       if (
         target.closest("button") ||
         target.closest("a") ||
+        target.closest("[data-gallery-compare]") ||
         target === mediaRef.current
       )
         return;
@@ -97,6 +129,16 @@ export function ImageGalleryModal({
               {filename}
             </span>
             <div className="flex items-center gap-4">
+              {pair && !isVideo && (
+                <button
+                  type="button"
+                  onClick={() => setComparing((value) => !value)}
+                  aria-pressed={comparing}
+                  className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  {comparing ? "Single view" : "Compare before and after"}
+                </button>
+              )}
               <span className="text-white/40 tabular-nums text-xs">
                 {currentIndex + 1} / {items.length}
               </span>
@@ -139,7 +181,36 @@ export function ImageGalleryModal({
 
             {/* Media */}
             <div className="flex-1 flex items-center justify-center min-w-0 min-h-0 h-full px-2">
-              {isVideo ? (
+              {comparing && pair ? (
+                <div className="relative max-w-full max-h-full" data-gallery-compare>
+                  <img
+                    ref={setMediaRef}
+                    src={pair.after.contentPath}
+                    alt={attachmentFilename(pair.after)}
+                    className="block max-w-full max-h-full object-contain select-none rounded-lg"
+                    draggable={false}
+                  />
+                  <img
+                    src={pair.before.contentPath}
+                    alt={attachmentFilename(pair.before)}
+                    className="absolute inset-0 h-full w-full object-contain select-none rounded-lg"
+                    style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }}
+                    draggable={false}
+                  />
+                  <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/80 shadow" style={{ left: `${split}%` }} />
+                  <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">Before</span>
+                  <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">After</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={split}
+                    onChange={(e) => setSplit(Number(e.target.value))}
+                    aria-label="Move the divider between before and after"
+                    className="absolute inset-x-6 bottom-4 accent-white"
+                  />
+                </div>
+              ) : isVideo ? (
                 <video
                   ref={setMediaRef}
                   src={current.contentPath}

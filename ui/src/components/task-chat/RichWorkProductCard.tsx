@@ -123,6 +123,14 @@ function Chip({ chip }: { chip: StateChip }) {
   );
 }
 
+/** Image and video artifacts: the thread lays these out as gallery tiles. */
+export function isMediaWorkProduct(workProduct: IssueWorkProduct): boolean {
+  if (workProduct.type !== "artifact") return false;
+  const contentType = stringMeta(workProduct.metadata, "contentType") ?? "";
+  const filename = stringMeta(workProduct.metadata, "originalFilename") ?? workProduct.title;
+  return isImageLikeOutput(contentType, filename) || isVideoLikeOutput(contentType, filename);
+}
+
 export interface RichWorkProductCardProps {
   workProduct: IssueWorkProduct;
   href: string | null;

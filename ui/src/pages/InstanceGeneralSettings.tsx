@@ -299,8 +299,8 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
           <div className="space-y-1.5">
             <h2 className="text-sm font-semibold">AI feedback sharing</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Control whether thumbs up and thumbs down votes can send the voted AI output to
-              Paperclip Labs. Votes are always saved locally.
+              Choose whether a thumbs up or thumbs down vote may also share the AI output you
+              voted on outside this server. Votes are always saved here.
             </p>
             {FEEDBACK_TERMS_URL ? (
               <a
@@ -360,13 +360,15 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
               );
             })}
           </div>
-          <p className="text-xs text-muted-foreground">
-            To retest the first-use prompt in local dev, remove the{" "}
-            <code>feedbackDataSharingPreference</code> key from the{" "}
-            <code>instance_settings.general</code> JSON row for this instance, or set it back to{" "}
-            <code>"prompt"</code>. Unset and <code>"prompt"</code> both mean no default has been
-            chosen yet.
-          </p>
+          {import.meta.env.DEV ? (
+            <p className="text-xs text-muted-foreground">
+              To retest the first-use prompt in local dev, remove the{" "}
+              <code>feedbackDataSharingPreference</code> key from the{" "}
+              <code>instance_settings.general</code> JSON row for this instance, or set it back to{" "}
+              <code>"prompt"</code>. Unset and <code>"prompt"</code> both mean no default has been
+              chosen yet.
+            </p>
+          ) : null}
         </div>
       </section>
 

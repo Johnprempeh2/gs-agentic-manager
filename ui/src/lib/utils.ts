@@ -34,11 +34,11 @@ export function asFiniteNumber(value: unknown, fallback: number) {
 }
 
 export function formatCents(cents: number): string {
-  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${(cents / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function formatNumber(n: number): string {
-  return n.toLocaleString("en-US");
+  return n.toLocaleString("en-GB");
 }
 
 /**
@@ -51,7 +51,7 @@ export function formatProjectBudget(budget: { amountCents: number; windowKind: s
 }
 
 export function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("en-US", {
+  return new Date(date).toLocaleDateString("en-GB", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -62,7 +62,7 @@ export function formatDateTime(
   date: Date | string,
   options: { includeSeconds?: boolean } = {},
 ): string {
-  return new Date(date).toLocaleString("en-US", {
+  return new Date(date).toLocaleString("en-GB", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -73,7 +73,7 @@ export function formatDateTime(
 }
 
 export function formatShortDate(date: Date | string): string {
-  return new Date(date).toLocaleString("en-US", {
+  return new Date(date).toLocaleString("en-GB", {
     month: "short",
     day: "numeric",
   });
