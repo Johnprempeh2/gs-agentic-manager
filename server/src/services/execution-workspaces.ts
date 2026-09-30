@@ -1395,6 +1395,12 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
   // sweep and starves eligible rows behind them. The cursor resets to the start
   // when a sweep reaches the end of the candidate set.
   let terminalSweepCursor: { updatedAt: Date; id: string } | null = null;
+  // A kept workspace (uncommitted or unpushed work) stays kept until someone
+  // acts on it, so re-running git on it every tick only burns CPU: about 1,260
+  // scans an hour on live, all night. Hold it until its row changes or the
+  // hold runs out. ponytail: in memory, so a restart re-checks each once.
+  const undeliveredHolds = new Map<string, { updatedAt: number; until: number }>();
+  const UNDELIVERED_RECHECK_MS = 15 * 60 * 1000;
   // The reaper freezes an upper bound on updatedAt at the start of each
   // rotation. The scan only reads candidates at or below the bound, so a steady
   // stream of newer candidates cannot keep every page full and stop the cursor
@@ -2780,6 +2786,16 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
       };
 
       for (const workspace of candidates) {
+        const hold = undeliveredHolds.get(workspace.id);
+        if (hold && hold.updatedAt === workspace.updatedAt.getTime() && hold.until > now().getTime()) {
+          result.skippedUndelivered += 1;
+          continue;
+        }
+        undeliveredHolds.delete(workspace.id);
+        const holdUndelivered = () => undeliveredHolds.set(workspace.id, {
+          updatedAt: workspace.updatedAt.getTime(),
+          until: now().getTime() + UNDELIVERED_RECHECK_MS,
+        });
         const executionWorkspace = toExecutionWorkspace(workspace);
         const { git, statusInspectionSucceeded } = await inspectGitCloseReadiness(executionWorkspace);
         if (!statusInspectionSucceeded) {
@@ -2844,6 +2860,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
             result.keptNoticePosted += 1;
           }
           result.skippedUndelivered += 1;
+          holdUndelivered();
           continue;
         }
         // Hold the archive during the cooldown window. The anchor is the most

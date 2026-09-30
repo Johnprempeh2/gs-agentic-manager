@@ -681,6 +681,16 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       expect(second).toMatchObject({ archived: 0, keptNoticePosted: 0 });
       expect(state.status).toBe("active");
       await expect(fs.access(seeded.worktreePath)).resolves.toBeUndefined();
+
+      // A kept workspace is not scanned again on every tick while nothing changed.
+      const scans = vi.spyOn(workspaceGitOperationScheduler, "run");
+      try {
+        const third = await svc.sweepTerminalWorkspaces();
+        expect(third).toMatchObject({ archived: 0, skippedUndelivered: 1 });
+        expect(scans).not.toHaveBeenCalled();
+      } finally {
+        scans.mockRestore();
+      }
       expect(state.comments).toHaveLength(1);
       expect(state.comments[0]!.body).toContain("Commits not merged or pushed to any remote branch (1)");
       expect(state.comments[0]!.body).toContain("Delivered change");
