@@ -43,7 +43,7 @@ export function MainBlocker({ goal, health }: { goal: GoalWithProgress; health: 
   const more = summary.kind === "blocker" ? summary.moreCount : 0;
   return (
     <div
-      className="border-l-2 border-[var(--sc)] py-0.5 pl-2.5 text-sm text-muted-foreground"
+      className="border-l-2 border-(--sc) py-0.5 pl-2.5 text-sm text-muted-foreground"
       style={healthStyle(health === "blocked" ? "blocked" : "at_risk")}
       data-testid="goal-main-blocker"
     >
@@ -81,7 +81,7 @@ export function GoalBlockerList({ goal, health }: { goal: GoalWithProgress; heal
       {goal.blockers.map((blocker, index) => (
         <li
           key={blocker.kind === "issue" ? blocker.issueId : `${blocker.checkInId}-${index}`}
-          className="border-l-2 border-[var(--sc)] py-0.5 pl-2.5 text-sm"
+          className="border-l-2 border-(--sc) py-0.5 pl-2.5 text-sm"
           style={healthStyle(index === 0 && health === "blocked" ? "blocked" : "at_risk")}
         >
           <p>

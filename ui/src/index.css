@@ -2944,6 +2944,11 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --gtc-63: 280px 1fr;
   --gtc-64: minmax(0,20rem) 1fr;
   --gtc-65: minmax(8rem,0.38fr) minmax(0,0.62fr) auto;
+  --gtc-66: 1.5fr 1fr; /* Goal check-in header. */
+  --gtc-67: 3.5rem 1fr; /* Goal check-in row: date, then note. */
+  --gtc-68: 1fr 1.3fr; /* Goal scoreboard hero. */
+  --gtc-69: repeat(auto-fill,minmax(13rem,1fr)); /* Goal scoreboard tiles. */
+  --gtc-70: repeat(auto-fill,minmax(20rem,1fr)); /* Goal scoreboard cards. */
   --gtc-runner-inspector-stage: 1.25rem minmax(0,1fr);
   --gtc-runner-inspector-filters: minmax(14rem,1fr) repeat(5,minmax(8rem,auto));
   --gtc-runner-inspector-pipeline: 21rem minmax(0,1fr);

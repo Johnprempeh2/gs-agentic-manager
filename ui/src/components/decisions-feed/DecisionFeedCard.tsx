@@ -184,7 +184,7 @@ export function DecisionFeedCard({
         )}
       </h3>
 
-      <dl className="grid gap-x-3 gap-y-1.5 text-sm sm:grid-cols-[auto_1fr]">
+      <dl className="grid gap-x-3 gap-y-1.5 text-sm sm:grid-cols-(--gtc-16)">
         <CardFact label="Why">{card.reason}</CardFact>
         <CardFact label="Waiting">
           {card.waiting ? card.waiting.name : <span className="text-muted-foreground">No agent owns this yet.</span>}

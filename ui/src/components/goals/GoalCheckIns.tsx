@@ -53,7 +53,7 @@ export function GoalCheckIns({
   const author = latest.authorAgentId ? agentsById.get(latest.authorAgentId) : undefined;
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[1.5fr_1fr]">
+    <div className="grid items-start gap-6 lg:grid-cols-(--gtc-66)">
       <Card className="gap-3 p-6" role="region" aria-label="Latest check-in" data-testid="goal-recap">
         <div className="flex items-center gap-2.5">
           {author ? <AgentAvatar agent={author} name={author.name} size={32} /> : null}
@@ -71,7 +71,7 @@ export function GoalCheckIns({
           {latest.body}
         </MarkdownBody>
         {latest.blockers.length > 0 ? (
-          <div className="space-y-1 border-l-2 border-[var(--goal-blocked)] pl-3 text-sm">
+          <div className="space-y-1 border-l-2 border-(--goal-blocked) pl-3 text-sm">
             <p className="font-semibold">Blockers</p>
             <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
               {latest.blockers.map((blocker, index) => (
@@ -89,7 +89,7 @@ export function GoalCheckIns({
         ) : (
           <ol className="divide-y divide-border" data-testid="check-in-history">
             {older.map((checkIn) => (
-              <li key={checkIn.id} className="grid grid-cols-[3.5rem_1fr] gap-3 py-3.5">
+              <li key={checkIn.id} className="grid grid-cols-(--gtc-67) gap-3 py-3.5">
                 <div>
                   <p className="font-bold tabular-nums">
                     {checkIn.progressPercent != null ? `${checkIn.progressPercent}%` : "–"}

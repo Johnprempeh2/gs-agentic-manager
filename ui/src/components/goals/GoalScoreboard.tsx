@@ -118,11 +118,11 @@ export function GoalScoreCard({
       data-health={health}
     >
       {wide ? (
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr] lg:items-start">
+        <div className="grid gap-6 lg:grid-cols-(--gtc-68) lg:items-start">
           {summary}
           <div className="grid gap-2.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sub-goals</p>
-            <div className="grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
+            <div className="grid gap-2.5 sm:grid-cols-(--gtc-69)">
               {subGoals.map((sub) => (
                 <SubGoalTile key={sub.goal.id} goal={sub.goal} health={sub.health} agentsById={agentsById} />
               ))}
@@ -175,7 +175,7 @@ export function GoalScoreboardView({
   agentsById: AgentsById;
 }) {
   return (
-    <div className="grid gap-4 md:grid-cols-[repeat(auto-fill,minmax(20rem,1fr))]" data-testid="goal-scoreboard">
+    <div className="grid gap-4 md:grid-cols-(--gtc-70)" data-testid="goal-scoreboard">
       {entries.map((entry) => (
         <GoalScoreCard key={entry.goal.id} entry={entry} agentsById={agentsById} />
       ))}
