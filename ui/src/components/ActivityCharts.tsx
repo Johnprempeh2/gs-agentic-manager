@@ -10,9 +10,9 @@ export function getLast14Days(): string[] {
   });
 }
 
-function formatDayLabel(dateStr: string): string {
+export function formatDayLabel(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00");
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
 function emptyRunDay(date: string): DashboardRunActivityDay {

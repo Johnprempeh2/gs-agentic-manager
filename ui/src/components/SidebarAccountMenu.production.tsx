@@ -48,6 +48,9 @@ function deriveInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
+// The built-in local board user carries a placeholder address, never a real one.
+const LOCAL_BOARD_PLACEHOLDER_EMAIL = "local@paperclip.local";
+
 function deriveUserSlug(name: string | null | undefined, email: string | null | undefined, id: string | null | undefined) {
   const candidates = [name, email?.split("@")[0], email, id];
   for (const candidate of candidates) {
@@ -121,8 +124,10 @@ export function SidebarAccountMenu({
   const signOutMutation = useSignOut({ onSignedOut: closeNavigationChrome });
 
   const displayName = session?.user.name?.trim() || "Board";
+  const email = session?.user.email?.trim();
   const secondaryLabel =
-    session?.user.email?.trim() || (deploymentMode === "authenticated" ? "Signed in" : "Local workspace board");
+    (email && email !== LOCAL_BOARD_PLACEHOLDER_EMAIL ? email : null)
+    || (deploymentMode === "authenticated" ? "Signed in" : "Local workspace board");
   const initials = deriveInitials(displayName);
   const profileHref = `/u/${deriveUserSlug(session?.user.name, session?.user.email, session?.user.id)}`;
 

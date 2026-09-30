@@ -372,7 +372,7 @@ function SeedRulesCard({
         <div className="flex min-w-0 items-start gap-2">
           <Settings2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 space-y-1">
-            <p className="text-sm font-medium text-foreground">Auto-seeding is {enabled ? "on" : "off"}</p>
+            <p className="text-sm font-medium text-foreground">Automatic adding is {enabled ? "on" : "off"}</p>
             <p className="text-xs text-muted-foreground">
               {enabled
                 ? "This queue fills itself automatically. Decisions are added the moment they match any of its rules:"
@@ -388,8 +388,8 @@ function SeedRulesCard({
             </ul>
             <p className="text-(length:--text-nano) text-muted-foreground">
               {enabled
-                ? "Turning it off stops new automatic adds only — decisions already here stay, and you can still add or remove decisions by hand."
-                : "Adding or removing decisions by hand still works while automatic seeding is off."}
+                ? "Turning it off stops new automatic adds only. Decisions already here stay, and you can still add or remove decisions by hand."
+                : "Adding or removing decisions by hand still works while automatic adding is off."}
             </p>
           </div>
         </div>

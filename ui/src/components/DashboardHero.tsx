@@ -52,7 +52,7 @@ export function DashboardHero({ companyName, now = new Date() }: { companyName: 
         <p className="gs-dash-hero-muted text-xs font-semibold uppercase tracking-(--tracking-eyebrow)">
           {greetingFor(now.getHours())}
         </p>
-        <h2 className="mt-1.5 break-words text-2xl font-extrabold tracking-tight sm:truncate sm:text-3xl">{companyName}</h2>
+        <h2 className="mt-1.5 text-balance break-words text-2xl font-extrabold tracking-tight lg:text-3xl">{companyName}</h2>
         <p className="gs-dash-hero-muted mt-1 text-sm">{dateLabel}</p>
       </div>
     </section>

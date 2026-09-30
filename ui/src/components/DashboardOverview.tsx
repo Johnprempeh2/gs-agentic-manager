@@ -178,7 +178,7 @@ export function DashboardOverview({
                   {liveCount} live
                 </span>
               ) : null}
-              <Link to="/agents" className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+              <Link to="/agents" className="-my-3.5 inline-flex min-h-11 items-center text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
                 View all agents
               </Link>
             </span>
@@ -289,7 +289,7 @@ export function DashboardOverview({
         <SectionHeader
           title="Open tasks"
           action={(
-            <Link to="/issues" className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+            <Link to="/issues" className="-my-3.5 inline-flex min-h-11 items-center text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
               View all tasks
             </Link>
           )}

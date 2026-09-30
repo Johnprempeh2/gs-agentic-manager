@@ -462,7 +462,7 @@ describe("Inbox toolbar", () => {
       expect(container.textContent).toContain(issue.title);
     });
 
-    expect(container.querySelector('[aria-label^="External objects:"]')).toBeNull();
+    expect(container.querySelector('[aria-label^="Linked work:"]')).toBeNull();
 
     act(() => root.unmount());
   });

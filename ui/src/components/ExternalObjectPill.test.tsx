@@ -202,6 +202,6 @@ describe("ExternalObjectStatusSummary", () => {
     expect(html).toContain('data-external-status="failed"');
     expect(html).toContain('data-external-tone="danger"');
     expect(html).toContain(">3<");
-    expect(html).toContain("aria-label=\"External objects: 3 failed, 2 succeeded, 5 total\"");
+    expect(html).toContain("aria-label=\"Linked work: 3 failed, 2 succeeded, 5 total\"");
   });
 });

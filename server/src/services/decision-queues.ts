@@ -55,31 +55,31 @@ export const DECISION_QUEUE_SEEDS: readonly SeedDefinition[] = [
   {
     key: "prs",
     title: "PRs",
-    description: "Pull-request and merge decisions detected from issue work products.",
+    description: "Pull requests and merges from agent work, waiting for your OK.",
     rules: [{
       key: "issue-pull-request-work-product",
       signal: "issue_has_pull_request_work_product",
-      description: "Attention items whose issue has a pull_request work product.",
+      description: "Anything that needs you on a task with a pull request attached.",
     }],
   },
   {
     key: "plans",
     title: "Plans",
-    description: "Plan revisions waiting for confirmation.",
+    description: "Plans waiting for your OK.",
     rules: [{
       key: "plan-document-confirmation",
       signal: "plan_document_confirmation",
-      description: "Pending request_confirmation interactions bound to the issue's plan document.",
+      description: "Plans an agent has asked you to approve.",
     }],
   },
   {
     key: "questions",
     title: "Questions",
-    description: "Structured questions waiting for a board response.",
+    description: "Questions agents asked you.",
     rules: [{
       key: "ask-user-questions",
       signal: "ask_user_questions",
-      description: "Pending ask_user_questions interactions.",
+      description: "Questions an agent is waiting for you to answer.",
     }],
   },
 ] as const;
@@ -125,19 +125,26 @@ function eventActorColumns(actor: DecisionMutationActor) {
   };
 }
 
-function toQueue(row: typeof decisionQueues.$inferSelect, itemCount: number): DecisionQueue {
+export function toQueue(row: typeof decisionQueues.$inferSelect, itemCount: number): DecisionQueue {
+  // Seeded queues store their copy when first created; show today's wording.
+  const seed = row.createdByType === "system"
+    ? DECISION_QUEUE_SEEDS.find((candidate) => candidate.key === row.key)
+    : undefined;
   return {
     id: row.id,
     companyId: row.companyId,
     key: row.key,
     title: row.title,
-    description: row.description ?? null,
+    description: seed?.description ?? row.description ?? null,
     createdByType: row.createdByType as DecisionQueue["createdByType"],
     createdByAgentId: row.createdByAgentId ?? null,
     createdByUserId: row.createdByUserId ?? null,
     createdByRunId: row.createdByRunId ?? null,
     retentionDays: row.retentionDays ?? null,
-    seedRules: row.seedRules ?? [],
+    seedRules: (row.seedRules ?? []).map((rule) => ({
+      ...rule,
+      description: seed?.rules.find((candidate) => candidate.key === rule.key)?.description ?? rule.description,
+    })),
     seedRulesEnabled: row.seedRulesEnabled,
     itemCount,
     createdAt: row.createdAt,
