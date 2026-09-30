@@ -224,11 +224,19 @@ export function activityRoutes(db: Db) {
     assertCompanyAccess(req, companyId);
     if (!(await assertCompanyScopeReadAllowed(req, res, companyId))) return;
 
+    const actions = typeof req.query.action === "string"
+      ? req.query.action.split(",").map((action) => action.trim()).filter(Boolean)
+      : [];
+    if (actions.length > 20) throw badRequest("At most 20 actions per request");
+    const since = typeof req.query.since === "string" ? new Date(req.query.since) : undefined;
+    if (since && Number.isNaN(since.getTime())) throw badRequest("since must be an ISO date");
     const filters = {
       companyId,
       agentId: req.query.agentId as string | undefined,
       entityType: req.query.entityType as string | undefined,
       entityId: req.query.entityId as string | undefined,
+      actions,
+      since,
       limit: normalizeActivityLimit(Number(req.query.limit)),
     };
     const result = await svc.list(filters);

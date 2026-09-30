@@ -1502,7 +1502,7 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/companies/:companyId/costs/summary`    | Company cost summary               |
 | GET    | `/api/companies/:companyId/costs/by-agent`   | Costs by agent                     |
 | GET    | `/api/companies/:companyId/costs/by-project` | Costs by project                   |
-| GET    | `/api/companies/:companyId/activity`         | Activity log                       |
+| GET    | `/api/companies/:companyId/activity`         | Activity log. Filters: `agentId`, `entityType`, `entityId`, `action` (comma list, up to 20), `since` (ISO date), `limit` (up to 500) |
 | GET    | `/api/companies/:companyId/dashboard`        | Company health summary             |
 
 ### Secrets

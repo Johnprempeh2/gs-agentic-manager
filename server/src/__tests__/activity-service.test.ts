@@ -148,6 +148,16 @@ describeEmbeddedPostgres("activity service", () => {
     const result = await activityService(db).list({ companyId, limit: 2 });
 
     expect(result.map((event) => event.action)).toEqual(["test.newest", "test.middle"]);
+
+    // The weekly lessons pass finds the board's rejections by action and time.
+    const filtered = await activityService(db).list({
+      companyId,
+      actions: ["test.oldest", "test.middle"],
+      since: new Date("2026-04-21T10:30:00.000Z"),
+    });
+    expect(filtered.map((event) => event.action)).toEqual(["test.middle"]);
+    expect((await activityService(db).list({ companyId })).map((event) => event.action))
+      .toEqual(["test.newest", "test.middle", "test.oldest"]);
   });
 
   it("returns compact usage and result summaries for issue runs", async () => {
