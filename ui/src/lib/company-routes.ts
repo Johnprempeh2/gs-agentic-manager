@@ -24,6 +24,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "activity",
   "audit",
   "decisions",
+  "deep-dive",
   "my-tasks",
   "inbox",
   "board-chat",

@@ -73,6 +73,9 @@
       "server/src/__tests__/cases-routes.test.ts",
       "ui/src/components/IssueCasesPanel.test.tsx"
     ],
+    "enableDeepDive": [
+      "ui/src/pages/DeepDive.test.tsx"
+    ],
     "enableAgentChat": [
       "server/src/__tests__/agent-conversations.test.ts"
     ],

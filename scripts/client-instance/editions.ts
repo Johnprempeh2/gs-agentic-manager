@@ -35,6 +35,7 @@ export const MANAGED_FEATURES_OFF = [
   "enableManagedSandboxOnly",
   "enablePipelines",
   "enableCases",
+  "enableDeepDive",
   "enableAgentChat",
   "enableConferenceRoomChat",
   "enableSummaries",
@@ -130,6 +131,9 @@ export function buildEditionValues(input: EditionInput): EditionValues {
     }
     if (key === "enableOwnerInstanceAdmin") {
       throw new Error(`"${key}" gives instance admin powers and is never part of Managed plus`);
+    }
+    if (key === "enableDeepDive") {
+      throw new Error(`"${key}" is where Greatstone designs a client's team and is never part of a client install`);
     }
     if (key === "enableManagedSandboxOnly") {
       throw new Error(`"${key}" needs a sandbox provider and is off in both editions (GRE-160)`);

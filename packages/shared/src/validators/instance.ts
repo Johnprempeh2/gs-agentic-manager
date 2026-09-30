@@ -71,6 +71,8 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableMemoryConnectors: z.boolean().default(false),
   enablePipelines: z.boolean().default(false),
   enableCases: z.boolean().default(false),
+  // Greatstone: Deep Dive record (Book V). Requires Cases; the UI turns Cases on with it.
+  enableDeepDive: z.boolean().default(false),
   enableAgentChat: z.boolean().default(false),
   enableConferenceRoomChat: z.boolean().default(false),
   enableClassicTaskInterface: z.boolean().default(false),

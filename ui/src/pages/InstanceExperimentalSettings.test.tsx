@@ -65,6 +65,10 @@ const SUMMARIES_TOGGLE_SELECTOR =
   'button[aria-label="Toggle summaries experimental setting"]';
 const STATUS_CARDS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle status cards experimental setting"]';
+const CASES_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle cases experimental setting"]';
+const DEEP_DIVE_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle deep dive experimental setting"]';
 const GSAM_RUNNER_TOGGLE_SELECTOR =
   'button[aria-label="Toggle GS Agentic Manager Runner experimental setting"]';
 
@@ -83,6 +87,7 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enableMemoryConnectors: false,
     enablePipelines: false,
     enableCases: false,
+    enableDeepDive: false,
     enableAgentChat: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,
@@ -663,6 +668,69 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(
       container.querySelector<HTMLButtonElement>(STATUS_CARDS_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
     ).toBe("false");
+  });
+
+  it("enables Cases when enabling the Deep Dive experimental toggle", async () => {
+    await renderPage();
+
+    const toggle = container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR);
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      toggle?.click();
+    });
+    await flushReact();
+
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+      enableCases: true,
+      enableDeepDive: true,
+    });
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(
+      container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("disables Deep Dive when disabling Cases", async () => {
+    currentExperimentalSettings = {
+      ...currentExperimentalSettings,
+      enableCases: true,
+      enableDeepDive: true,
+    };
+    await renderPage();
+
+    const casesToggle = container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR);
+    await act(async () => {
+      casesToggle?.click();
+    });
+    await flushReact();
+
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+      enableCases: false,
+      enableDeepDive: false,
+    });
+    expect(
+      container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
+    ).toBe("false");
+  });
+
+  it("turns only Deep Dive off and leaves Cases on", async () => {
+    currentExperimentalSettings = {
+      ...currentExperimentalSettings,
+      enableCases: true,
+      enableDeepDive: true,
+    };
+    await renderPage();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR)?.click();
+    });
+    await flushReact();
+
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableDeepDive: false });
+    expect(
+      container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
+    ).toBe("true");
   });
 
   it("renders and patches the Server Info Debug View experimental toggle", async () => {

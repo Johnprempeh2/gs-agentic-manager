@@ -247,6 +247,24 @@ function toQuery(params: ListCasesParams): string {
 export interface PatchCaseInput {
   status?: CaseStatus;
   labelIds?: string[];
+  /** Replaces the whole fields object (the server does not merge). */
+  fields?: Record<string, unknown>;
+}
+
+/**
+ * Body of `POST /companies/:companyId/cases`. The server upserts on
+ * caseType + key: an existing case is updated (201 new, 200 existing), and any
+ * `fields` sent replace the stored ones, so only send them for a new case.
+ */
+export interface CreateCaseInput {
+  caseType: string;
+  key?: string | null;
+  title: string;
+  summary?: string | null;
+  status?: CaseStatus;
+  fields?: Record<string, unknown>;
+  parentCaseId?: string | null;
+  projectId?: string | null;
 }
 
 export function caseDocumentToIssueDocument(caseId: string, key: string, document: CaseDocument): IssueDocument {
@@ -295,6 +313,8 @@ export const casesApi = {
   list: (companyId: string, params: ListCasesParams = {}) =>
     api.get<CaseSummary[]>(`/companies/${companyId}/cases${toQuery(params)}`),
   get: (idOrIdentifier: string) => api.get<CaseDetail>(`/cases/${idOrIdentifier}`),
+  create: (companyId: string, input: CreateCaseInput) =>
+    api.post<CaseDetail>(`/companies/${companyId}/cases`, input),
   patch: (idOrIdentifier: string, input: PatchCaseInput) =>
     api.patch<CaseDetail>(`/cases/${idOrIdentifier}`, input),
   listEvents: (idOrIdentifier: string, limit = 100) =>
