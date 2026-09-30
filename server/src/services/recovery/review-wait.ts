@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gte, inArray, isNull, notExists, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { activityLog, heartbeatRuns, issueComments, issueRelations, issues } from "@greatstone/db";
+import { activityLog, heartbeatRuns, issueComments, issueRelations, issues, issueThreadInteractions } from "@greatstone/db";
 
 // A reviewer that is waiting on CI or on another agent's check is not a
 // stalled review (GRE-97). On GRE-80 the reviewer commented "waiting on CI and
@@ -21,6 +21,12 @@ export const REVIEW_WAIT_MAX_DEFERRALS = 8;
  */
 export const REVIEW_WAIT_COMMENT_ONLY_MAX_DEFERRALS = 2;
 export const REVIEW_WAIT_BUDGET_WINDOW_MS = 12 * 60 * 60 * 1000;
+/**
+ * Recheck interval while a board card on a linked issue is pending (GRE-290).
+ * The board owns that wait and answering the card is its wake path, so the
+ * reviewer is only checked on now and then, not every 30 minutes.
+ */
+export const REVIEW_WAIT_PENDING_CARD_RECHECK_MS = 2 * 60 * 60 * 1000;
 
 export const REVIEW_WAIT_MONITOR_SERVICE_NAME = "Review wait";
 /** `details.source` of the `issue.monitor_scheduled` activity a deferral writes; the budget counts these. */
@@ -32,11 +38,13 @@ const ACTIVE_CHECK_STATUSES = ["in_progress", "in_review"] as const;
 export type ReviewWaitEvidence = {
   latestReviewerCommentAt: Date | null;
   activeCheckIssueCount: number;
+  /** Pending board cards on this issue or a linked one (parent, sibling, child, blocker). */
+  pendingLinkedCardCount: number;
   priorDeferrals: number;
 };
 
 export type ReviewWaitDecision =
-  | { kind: "waiting"; reason: "reviewer_comment" | "active_check_issue" }
+  | { kind: "waiting"; reason: "reviewer_comment" | "active_check_issue" | "pending_linked_card" }
   | { kind: "stalled"; reason: "no_activity" | "budget_exhausted" };
 
 /**
@@ -46,6 +54,12 @@ export type ReviewWaitDecision =
  * own comment, or a check issue being worked, is.
  */
 export function decideReviewWait(evidence: ReviewWaitEvidence, now: Date): ReviewWaitDecision {
+  // GRE-290: GRE-262 and GRE-263 waited only on John's card on sibling
+  // GRE-264, and were blocked "for the board" when the comment budget ran out.
+  // A pending board card has an owner (the board) and a wake path (the
+  // answer), so it is a live wait with no deferral budget. Once the card is
+  // answered or expires the count drops and the rules below apply again.
+  if (evidence.pendingLinkedCardCount > 0) return { kind: "waiting", reason: "pending_linked_card" };
   const commentedRecently =
     evidence.latestReviewerCommentAt !== null &&
     now.getTime() - evidence.latestReviewerCommentAt.getTime() <= REVIEW_WAIT_ACTIVITY_WINDOW_MS;
@@ -117,6 +131,41 @@ export async function readReviewWaitEvidence(
     )
     .then((rows) => Number(rows[0]?.value ?? 0));
 
+  // A pending card addressed to the board or a user (not to an agent) on this
+  // issue, its parent, a sibling, a child, or a blocker (GRE-290).
+  const parentId = db
+    .select({ id: issues.parentId })
+    .from(issues)
+    .where(and(eq(issues.companyId, input.companyId), eq(issues.id, input.issueId)));
+  const linkedIssueIds = db
+    .select({ id: issues.id })
+    .from(issues)
+    .where(
+      and(
+        eq(issues.companyId, input.companyId),
+        isNull(issues.hiddenAt),
+        or(
+          eq(issues.id, input.issueId),
+          inArray(issues.id, parentId),
+          inArray(issues.parentId, parentId),
+          eq(issues.parentId, input.issueId),
+          inArray(issues.id, blockerIds),
+        ),
+      ),
+    );
+  const pendingLinkedCards = await db
+    .select({ value: count() })
+    .from(issueThreadInteractions)
+    .where(
+      and(
+        eq(issueThreadInteractions.companyId, input.companyId),
+        eq(issueThreadInteractions.status, "pending"),
+        isNull(issueThreadInteractions.addresseeAgentId),
+        inArray(issueThreadInteractions.issueId, linkedIssueIds),
+      ),
+    )
+    .then((rows) => Number(rows[0]?.value ?? 0));
+
   const priorDeferrals = await db
     .select({ value: count() })
     .from(activityLog)
@@ -135,8 +184,16 @@ export async function readReviewWaitEvidence(
   return {
     latestReviewerCommentAt: latestComment?.createdAt ?? null,
     activeCheckIssueCount: activeChecks,
+    pendingLinkedCardCount: pendingLinkedCards,
     priorDeferrals,
   };
+}
+
+/** How long to wait before the reviewer is woken again for this decision. */
+export function reviewWaitRecheckMs(decision: ReviewWaitDecision): number {
+  return decision.kind === "waiting" && decision.reason === "pending_linked_card"
+    ? REVIEW_WAIT_PENDING_CARD_RECHECK_MS
+    : REVIEW_WAIT_RECHECK_MS;
 }
 
 export async function isReviewerWaitingOnCheck(
