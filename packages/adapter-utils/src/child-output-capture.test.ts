@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  CapturedOutputTailer,
   CHILD_OUTPUT_FILES_ENV,
   freezeRunOutputCapture,
   readCapturedOutputFile,
@@ -273,6 +274,33 @@ describe("readCapturedOutputFile", () => {
     await fs.writeFile(file, "logged\nnew\n");
     expect((await readCapturedOutputFile(file, { fromOffset: 7 }))?.text).toBe("new\n");
     expect(await readCapturedOutputFile(path.join(dir, "missing"))).toBeNull();
+  });
+});
+
+describe("CapturedOutputTailer from a start offset (GRE-269)", () => {
+  it("logs only what follows the offset, while the file grows, and drains the rest once", async () => {
+    const file = path.join(dir, "adopted.stdout");
+    await fs.writeFile(file, "logged-by-old-server\n");
+    const logged: string[] = [];
+    const tailer = new CapturedOutputTailer(
+      file,
+      async (text) => {
+        // A slow log write: drain must not re-read what is in flight.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        logged.push(text);
+      },
+      20,
+      Buffer.byteLength("logged-by-old-server\n"),
+    );
+    tailer.start();
+    await fs.appendFile(file, "live-1\n");
+    expect(await waitFor(() => logged.join("").includes("live-1"), 1_000)).toBe(true);
+    await fs.appendFile(file, "live-2\n");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await fs.appendFile(file, "tail\n");
+    await tailer.drainToEnd();
+    expect(logged.join("")).toBe("live-1\nlive-2\ntail\n");
+    expect(tailer.committedBytes).toBe((await fs.stat(file)).size);
   });
 });
 

@@ -599,10 +599,13 @@ import {
   type SessionCompactionPolicy,
 } from "@greatstone/adapter-utils";
 import {
+  CapturedOutputTailer,
   freezeRunOutputCapture,
   readCapturedOutputFile,
   readPaperclipSkillSyncPreference,
+  registerActiveOutputCapture,
   removeChildOutputCaptureFiles,
+  unregisterActiveOutputCapture,
   selectPaperclipTaskMarkdown,
   UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON,
   UNMANAGED_BACKGROUND_TASK_STOP_REASON,
@@ -15154,6 +15157,12 @@ export function heartbeatService(
           processGroupId,
         },
       });
+      const outputCapture = readRunOutputCapture(parseObject(updated.resultJson));
+      if (outputCapture) {
+        await startAdoptedRunOutputTail(updated, outputCapture).catch((err) =>
+          logger.warn({ err, runId: run.id }, "failed to start adopted run output tail"),
+        );
+      }
       classify(
         candidate,
         "adopted",
@@ -15161,8 +15170,7 @@ export function heartbeatService(
         {
           ...patch,
           outputCaptured:
-            !!readRunOutputCapture(parseObject(updated.resultJson)) &&
-            !!getServerAdapter(adapterType).recoverResultFromOutput,
+            !!outputCapture && !!getServerAdapter(adapterType).recoverResultFromOutput,
         },
       );
     }
@@ -19724,6 +19732,7 @@ export function heartbeatService(
         },
       );
       if (!failureWrite.updated || !failureWrite.run) continue;
+      await stopAdoptedRunOutputTail(run.id);
       if (adoptedOutputCapture) {
         await removeChildOutputCaptureFiles(adoptedOutputCapture);
       }
@@ -21145,6 +21154,156 @@ export function heartbeatService(
       );
   }
 
+  // The run-log path for output this server did not spawn: the same log
+  // append, output progress, and live log event as executeRun's onLog.
+  // Appends are serialized so stdout and stderr keep one seq order.
+  function createAdoptedRunLogSink(
+    run: typeof heartbeatRuns.$inferSelect,
+    redaction: Awaited<ReturnType<typeof getCurrentUserRedactionOptions>>,
+  ) {
+    const logHandle =
+      run.logStore && run.logRef
+        ? ({ store: run.logStore, logRef: run.logRef } as RunLogHandle)
+        : null;
+    const issueId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
+    let outputSeq = Number(run.lastOutputSeq ?? 0);
+    let persistedLogBytes = Number(run.logBytes ?? 0);
+    let lastOutputFlushMs = 0;
+    let lastRuntimeStatusTouchMs = 0;
+    let chain: Promise<void> = Promise.resolve();
+    const append = async (stream: "stdout" | "stderr", chunk: string) => {
+      const sanitizedChunk = compactRunLogChunk(redactCurrentUserText(chunk, redaction));
+      if (!logHandle) return;
+      const ts = new Date().toISOString();
+      const at = new Date(ts);
+      outputSeq += 1;
+      const seq = outputSeq;
+      persistedLogBytes += await runLogStore.append(logHandle, {
+        stream,
+        chunk: sanitizedChunk,
+        ts,
+        seq,
+      });
+      if (at.getTime() - lastOutputFlushMs >= ACTIVE_RUN_OUTPUT_PROGRESS_FLUSH_INTERVAL_MS) {
+        lastOutputFlushMs = at.getTime();
+        await db
+          .update(heartbeatRuns)
+          .set({
+            lastOutputAt: at,
+            lastOutputSeq: seq,
+            lastOutputStream: stream,
+            lastOutputBytes: persistedLogBytes,
+            updatedAt: new Date(),
+          })
+          .where(eq(heartbeatRuns.id, run.id));
+      }
+      if (
+        at.getTime() - lastRuntimeStatusTouchMs >=
+        ACTIVE_RUN_LOG_RUNTIME_STATUS_REFRESH_INTERVAL_MS
+      ) {
+        lastRuntimeStatusTouchMs = at.getTime();
+        const touchedStatus = touchHeartbeatRunRuntimeStatus({
+          companyId: run.companyId,
+          issueId,
+          agentId: run.agentId,
+          runId: run.id,
+          at,
+        });
+        if (touchedStatus) publishHeartbeatRunRuntimeProgress(touchedStatus);
+      }
+      const payloadChunk =
+        sanitizedChunk.length > MAX_LIVE_LOG_CHUNK_BYTES
+          ? sanitizedChunk.slice(sanitizedChunk.length - MAX_LIVE_LOG_CHUNK_BYTES)
+          : sanitizedChunk;
+      publishLiveEvent({
+        companyId: run.companyId,
+        type: "heartbeat.run.log",
+        payload: {
+          runId: run.id,
+          agentId: run.agentId,
+          issueId,
+          ts,
+          seq,
+          stream,
+          chunk: payloadChunk,
+          truncated: payloadChunk.length !== sanitizedChunk.length,
+        },
+      });
+    };
+    return (stream: "stdout" | "stderr", chunk: string) => {
+      const next = chain.then(() => append(stream, chunk));
+      chain = next.catch(() => undefined);
+      return next;
+    };
+  }
+
+  // GRE-269: tail an adopted child's capture files from the offsets the old
+  // server logged, so the run page shows new output while the child runs.
+  // Registered like a spawned child's capture, so another hot restart freezes
+  // it and records how far it got.
+  const adoptedRunOutputTails = new Map<
+    string,
+    {
+      stdout: CapturedOutputTailer;
+      stderr: CapturedOutputTailer;
+      onLog: ReturnType<typeof createAdoptedRunLogSink>;
+    }
+  >();
+
+  async function startAdoptedRunOutputTail(
+    run: typeof heartbeatRuns.$inferSelect,
+    capture: RunOutputCaptureRecord,
+  ) {
+    if (adoptedRunOutputTails.has(run.id)) return;
+    // Without frozen offsets the split point is unknown: tailing from 0
+    // would repeat what the old server logged.
+    if (capture.stdoutLoggedBytes === undefined || capture.stderrLoggedBytes === undefined)
+      return;
+    const onLog = createAdoptedRunLogSink(run, await getCurrentUserRedactionOptions());
+    const feed = (stream: "stdout" | "stderr") => async (text: string) => {
+      await onLog(stream, text).catch((err) =>
+        logger.warn({ err, runId: run.id, stream }, "failed to append adopted run output"),
+      );
+    };
+    const tail = {
+      stdout: new CapturedOutputTailer(
+        capture.stdoutPath,
+        feed("stdout"),
+        undefined,
+        capture.stdoutLoggedBytes,
+      ),
+      stderr: new CapturedOutputTailer(
+        capture.stderrPath,
+        feed("stderr"),
+        undefined,
+        capture.stderrLoggedBytes,
+      ),
+      onLog,
+    };
+    adoptedRunOutputTails.set(run.id, tail);
+    registerActiveOutputCapture(run.id, {
+      paths: { stdoutPath: capture.stdoutPath, stderrPath: capture.stderrPath },
+      stdout: tail.stdout,
+      stderr: tail.stderr,
+    });
+    tail.stdout.start();
+    tail.stderr.start();
+  }
+
+  // Read the adopted child's files to EOF, then stop tailing. After this the
+  // run log holds everything the child wrote, once. Returns the tail so the
+  // finalizer can keep logging with the same seq.
+  async function stopAdoptedRunOutputTail(runId: string) {
+    const tail = adoptedRunOutputTails.get(runId);
+    if (!tail) return null;
+    adoptedRunOutputTails.delete(runId);
+    unregisterActiveOutputCapture(runId, tail.stdout);
+    await Promise.all([tail.stdout.drainToEnd(), tail.stderr.drainToEnd()]).catch(
+      (err) => logger.warn({ err, runId }, "failed to drain adopted run output"),
+    );
+    return tail;
+  }
+
   // GRE-281: reaper passes can overlap (the scheduler does not wait for one
   // to end), so only one pass at a time may finish a given adopted run.
   const capturedOutputFinishesInFlight = new Set<string>();
@@ -21261,47 +21420,37 @@ export function heartbeatService(
       run.logStore && run.logRef
         ? ({ store: run.logStore, logRef: run.logRef } as RunLogHandle)
         : null;
-    let outputSeq = Number(run.lastOutputSeq ?? 0);
-    let stdoutExcerpt = "";
-    let stderrExcerpt = "";
-    const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
-      const sanitizedChunk = compactRunLogChunk(
-        redactCurrentUserText(chunk, currentUserRedactionOptions),
-      );
-      if (stream === "stdout")
-        stdoutExcerpt = appendExcerpt(stdoutExcerpt, sanitizedChunk);
-      else stderrExcerpt = appendExcerpt(stderrExcerpt, sanitizedChunk);
-      if (!logHandle) return;
-      outputSeq += 1;
-      await runLogStore.append(logHandle, {
-        stream,
-        chunk: sanitizedChunk,
-        ts: new Date().toISOString(),
-        seq: outputSeq,
-      });
-    };
 
     // Another path (a Stop, or an earlier pass) may already have finished the
     // run; then its log is closed and must not get the tail again.
     const latest = await getRun(run.id);
-    if (!latest || latest.status !== "running") return "still_running";
+    if (!latest || latest.status !== "running") {
+      await stopAdoptedRunOutputTail(run.id);
+      return "still_running";
+    }
     run = latest;
 
-    // Append the output the old server never logged. Without frozen offsets
-    // the split point is unknown, so log nothing rather than duplicate.
-    for (const stream of ["stdout", "stderr"] as const) {
-      const loggedBytes =
-        stream === "stdout" ? capture.stdoutLoggedBytes : capture.stderrLoggedBytes;
-      if (loggedBytes === undefined) continue;
-      const unlogged = await readCapturedOutputFile(
-        stream === "stdout" ? capture.stdoutPath : capture.stderrPath,
-        { fromOffset: loggedBytes },
-      ).catch(() => null);
-      if (unlogged?.text) await onLog(stream, unlogged.text);
+    // The live tail (GRE-269) already logged up to its committed offsets;
+    // draining it appends only the rest. Without a tail, append from the
+    // offsets the old server froze. Without those, the split point is
+    // unknown, so log nothing rather than duplicate.
+    const tail = await stopAdoptedRunOutputTail(run.id);
+    const onLog = tail?.onLog ?? createAdoptedRunLogSink(run, currentUserRedactionOptions);
+    if (!tail) {
+      for (const stream of ["stdout", "stderr"] as const) {
+        const loggedBytes =
+          stream === "stdout" ? capture.stdoutLoggedBytes : capture.stderrLoggedBytes;
+        if (loggedBytes === undefined) continue;
+        const unlogged = await readCapturedOutputFile(
+          stream === "stdout" ? capture.stdoutPath : capture.stderrPath,
+          { fromOffset: loggedBytes },
+        ).catch(() => null);
+        if (unlogged?.text) await onLog(stream, unlogged.text);
+      }
     }
     // The excerpts show the end of the output, as for a normal run.
-    stdoutExcerpt = appendExcerpt("", redactCurrentUserText(recovered.stdout.text, currentUserRedactionOptions));
-    stderrExcerpt = appendExcerpt("", redactCurrentUserText(recovered.stderr?.text ?? "", currentUserRedactionOptions));
+    const stdoutExcerpt = appendExcerpt("", redactCurrentUserText(recovered.stdout.text, currentUserRedactionOptions));
+    const stderrExcerpt = appendExcerpt("", redactCurrentUserText(recovered.stderr?.text ?? "", currentUserRedactionOptions));
 
     const issueId = readNonEmptyString(context.issueId);
     const issueContext = issueId
@@ -30822,6 +30971,7 @@ export function heartbeatService(
       }
 
       if (cancellation.updated && cancelled) {
+        await stopAdoptedRunOutputTail(run.id);
         await setWakeupStatus(run.wakeupRequestId, "cancelled", {
           finishedAt: cancelled.finishedAt ?? new Date(),
           error: reason,
