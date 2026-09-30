@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, Loader2, MessageCircleQuestion } from "lucide-react";
+import { ArrowUpRight, Loader2, MessageCircleQuestion, MoreHorizontal } from "lucide-react";
 import type {
   Agent,
   AttentionItem,
@@ -22,6 +22,8 @@ import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { NotNowButton } from "./NotNowButton";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
+import { useIsPhone } from "../../hooks/useIsPhone";
 
 export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   question: "Question",
@@ -94,6 +96,8 @@ export function DecisionFeedCard({
   const severity = severityStyle(card.severity);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [clarityOpen, setClarityOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const isPhone = useIsPhone();
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
@@ -113,6 +117,9 @@ export function DecisionFeedCard({
   const clarityAction = card.actions.find((action) => action.id === "ask_clarity") ?? null;
   const actions = visibleCardActions(card);
   const openAction = actions.find((action) => action.id === openActionId) ?? null;
+  // Phone: one main action up front, the rest in the More sheet.
+  const phonePrimary = actions.find(isPrimaryCardAction) ?? actions[0] ?? null;
+  const phoneMore = actions.filter((action) => action !== phonePrimary);
   const questionItem = hideInlineResolver ? null : decisionCardQuestionItem(card);
   const decisionItems = hideInlineResolver ? [] : card.items.filter((item) => item.sourceKind === "decision");
 
@@ -201,6 +208,77 @@ export function DecisionFeedCard({
 
       {card.clarity ? <ClarityThread clarity={card.clarity} /> : null}
 
+      {isPhone ? (
+        // Phone: the main action, Not now, and More (a sheet with the rest as
+        // big full-width rows), instead of a wrap of small buttons.
+        <div className="flex items-center gap-2">
+          {phonePrimary ? (
+            <CardActionButton
+              action={phonePrimary}
+              size="sm"
+              pending={actionMutation.isPending && actionMutation.variables?.action.id === phonePrimary.id}
+              open={openActionId === phonePrimary.id}
+              onRun={() => runAction(phonePrimary)}
+            />
+          ) : null}
+          {taskId ? (
+            <NotNowButton companyId={companyId} issueId={taskId} issueLabel={taskIdentifier} onTabled={onActed} />
+          ) : null}
+          {phoneMore.length > 0 || taskId ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="ml-auto"
+              aria-label="More actions"
+              onClick={() => setMoreOpen(true)}
+            >
+              <MoreHorizontal />
+              More
+            </Button>
+          ) : null}
+          <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+            <SheetContent side="bottom" className="rounded-t-xl pb-(--sz-safe-bottom)">
+              <SheetHeader>
+                <SheetTitle className="line-clamp-2 text-left">{card.title}</SheetTitle>
+                <SheetDescription className="sr-only">More actions for this decision</SheetDescription>
+              </SheetHeader>
+              <div className="flex flex-col gap-2 px-4 pb-4">
+                {phoneMore.map((action) => (
+                  <CardActionButton
+                    key={action.id}
+                    action={action}
+                    size="lg"
+                    block
+                    pending={actionMutation.isPending && actionMutation.variables?.action.id === action.id}
+                    open={openActionId === action.id}
+                    onRun={() => {
+                      setMoreOpen(false);
+                      runAction(action);
+                    }}
+                  />
+                ))}
+                {taskId ? (
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="outline"
+                    className="w-full justify-start"
+                    disabled={!clarityAction}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setClarityOpen(true);
+                    }}
+                  >
+                    <MessageCircleQuestion />
+                    Ask for clarity
+                  </Button>
+                ) : null}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      ) : (
       <div className="flex flex-wrap items-center gap-1.5">
         {actions.map((action) => (
           <CardActionButton
@@ -229,6 +307,7 @@ export function DecisionFeedCard({
           <NotNowButton companyId={companyId} issueId={taskId} issueLabel={taskIdentifier} onTabled={onActed} />
         ) : null}
       </div>
+      )}
 
       {openAction ? (
         <ActionInputPanel
@@ -271,22 +350,31 @@ function CardFact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+function isPrimaryCardAction(action: DecisionCardAction): boolean {
+  return action.id === "approve" || action.id === "retry" || action.id === "reconnect" || action.id === "open";
+}
+
 function CardActionButton({
   action,
   pending,
   open,
   onRun,
+  size = "xs",
+  block = false,
 }: {
   action: DecisionCardAction;
   pending: boolean;
   open: boolean;
   onRun: () => void;
+  size?: "xs" | "sm" | "lg";
+  /** Full-width, left-aligned row (the phone More sheet). */
+  block?: boolean;
 }) {
-  const primary = action.id === "approve" || action.id === "retry" || action.id === "reconnect" || action.id === "open";
-  const variant = primary ? "default" : action.id === "cancel_task" || action.id === "reject" ? "ghost" : "outline";
+  const primary = isPrimaryCardAction(action);
+  const variant = primary ? "default" : action.id === "cancel_task" || action.id === "reject" ? (block ? "outline" : "ghost") : "outline";
   if (action.type === "link" && action.href) {
     return (
-      <Button asChild size="xs" variant={variant} title={action.description}>
+      <Button asChild size={size} variant={variant} title={action.description} className={cn(block && "w-full justify-start")}>
         <Link to={action.href}>
           {action.label}
           <ArrowUpRight />
@@ -297,12 +385,12 @@ function CardActionButton({
   return (
     <Button
       type="button"
-      size="xs"
+      size={size}
       variant={variant}
       title={action.description}
       aria-expanded={action.input || action.id === "cancel_task" ? open : undefined}
       disabled={pending}
-      className={cn(action.id === "cancel_task" && "text-destructive hover:text-destructive")}
+      className={cn(block && "w-full justify-start", action.id === "cancel_task" && "text-destructive hover:text-destructive")}
       onClick={onRun}
     >
       {pending ? <Loader2 className="animate-spin" /> : null}
