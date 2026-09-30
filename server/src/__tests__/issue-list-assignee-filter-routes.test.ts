@@ -784,6 +784,26 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
     });
   });
 
+  it("returns 422, not a database 500, for malformed id filters", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: uniqueIssuePrefix(),
+      requireBoardApprovalForNewAgents: false,
+    });
+    await seedCloudTenantMember(companyId);
+
+    const app = createApp(companyId);
+    for (const [name, value] of [["projectId", "null"], ["parentIssueId", "GRE-12"], ["labelId", "urgent"]]) {
+      const res = await request(app).get(`/api/companies/${companyId}/issues`).query({ [name]: value, limit: "20" });
+      expect(res.status).toBe(422);
+      expect(res.body).toMatchObject({ error: `${name} must be a UUID` });
+    }
+    const ok = await request(app).get(`/api/companies/${companyId}/issues`).query({ projectId: "", limit: "20" });
+    expect(ok.status).toBe(200);
+  });
+
   it("returns opt-in live descendant counts for offscreen live descendants only", async () => {
     const companyId = randomUUID();
     const otherCompanyId = randomUUID();

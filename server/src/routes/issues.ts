@@ -592,6 +592,17 @@ const HTML_ATTACHMENT_CSP = [
   "base-uri 'none'",
 ].join("; ");
 
+/** A malformed id filter is the caller's mistake: a 422 naming it, not a database 500. */
+function uuidQuery(req: Request, ...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = req.query[name];
+    if (value === undefined || value === "") continue;
+    if (typeof value !== "string" || !isUuidLike(value)) throw unprocessable(`${name} must be a UUID`);
+    return value;
+  }
+  return undefined;
+}
+
 function buildAttachmentContentPath(attachmentId: string): string {
   return `/api/attachments/${attachmentId}/content`;
 }
@@ -8152,20 +8163,18 @@ export function issueRoutes(
       attention: attention === "blocked" ? "blocked" : undefined,
       status: req.query.status as string | string[] | undefined,
       assigneeAgentId,
-      participantAgentId: req.query.participantAgentId as string | undefined,
+      participantAgentId: uuidQuery(req, "participantAgentId"),
       assigneeUserId,
       touchedByUserId,
       inboxArchivedByUserId,
       unreadForUserId,
-      projectId: req.query.projectId as string | undefined,
-      workspaceId: req.query.workspaceId as string | undefined,
-      executionWorkspaceId: req.query.executionWorkspaceId as
-        string | undefined,
-      parentId: (req.query.parentId ?? req.query.parentIssueId) as
-        string | undefined,
-      descendantOf: req.query.descendantOf as string | undefined,
-      createdFromIssueId: req.query.createdFromIssueId as string | undefined,
-      labelId: req.query.labelId as string | undefined,
+      projectId: uuidQuery(req, "projectId"),
+      workspaceId: uuidQuery(req, "workspaceId"),
+      executionWorkspaceId: uuidQuery(req, "executionWorkspaceId"),
+      parentId: uuidQuery(req, "parentId", "parentIssueId"),
+      descendantOf: uuidQuery(req, "descendantOf"),
+      createdFromIssueId: uuidQuery(req, "createdFromIssueId"),
+      labelId: uuidQuery(req, "labelId"),
       originKind: req.query.originKind as string | undefined,
       originKindPrefix: req.query.originKindPrefix as string | undefined,
       originId: req.query.originId as string | undefined,
@@ -8383,17 +8392,15 @@ export function issueRoutes(
       attention: "blocked",
       status: req.query.status as string | string[] | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
-      participantAgentId: req.query.participantAgentId as string | undefined,
+      participantAgentId: uuidQuery(req, "participantAgentId"),
       assigneeUserId: req.query.assigneeUserId as string | undefined,
-      projectId: req.query.projectId as string | undefined,
-      workspaceId: req.query.workspaceId as string | undefined,
-      executionWorkspaceId: req.query.executionWorkspaceId as
-        string | undefined,
-      parentId: (req.query.parentId ?? req.query.parentIssueId) as
-        string | undefined,
-      descendantOf: req.query.descendantOf as string | undefined,
-      createdFromIssueId: req.query.createdFromIssueId as string | undefined,
-      labelId: req.query.labelId as string | undefined,
+      projectId: uuidQuery(req, "projectId"),
+      workspaceId: uuidQuery(req, "workspaceId"),
+      executionWorkspaceId: uuidQuery(req, "executionWorkspaceId"),
+      parentId: uuidQuery(req, "parentId", "parentIssueId"),
+      descendantOf: uuidQuery(req, "descendantOf"),
+      createdFromIssueId: uuidQuery(req, "createdFromIssueId"),
+      labelId: uuidQuery(req, "labelId"),
       originKind: req.query.originKind as string | undefined,
       originKindPrefix: req.query.originKindPrefix as string | undefined,
       originId: req.query.originId as string | undefined,
