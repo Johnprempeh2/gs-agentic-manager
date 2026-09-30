@@ -307,6 +307,14 @@ export interface LocalAiLoginAttempt {
   expiresAt: string;
 }
 
+/**
+ * The stored credential's known expiry has passed. The connection's health
+ * stays "ok" (the provider never refused it), so status views must ask this too.
+ */
+export function aiCredentialExpired(config: Record<string, unknown> | undefined, now = new Date()): boolean {
+  return aiCredentialExpiryState(readAiCredentialRecord(config)?.expiresAt, now) === "expired";
+}
+
 /** Preview-era copies of rotating local credentials must be reconnected. */
 export function aiSubscriptionNeedsIsolatedLogin(config: Record<string, unknown> | undefined): boolean {
   const metadata = aiConnectionMetadataSchema.safeParse(config?.ai);

@@ -433,7 +433,7 @@ function buildPlanDecisionResponseText(
 
 const FEEDBACK_TERMS_URL =
   import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() ||
-  "https://paperclip.ing/tos";
+  null;
 const ISSUE_COMMENT_AUTOLOAD_LIMIT = ISSUE_COMMENT_PAGE_SIZE * 3;
 const JUMP_TO_LATEST_MAX_COMMENT_PAGES = 10;
 function treeControlPreviewErrorCopy(error: unknown): string {

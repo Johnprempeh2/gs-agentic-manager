@@ -14,46 +14,26 @@ describe("feedback trace share client", () => {
     vi.restoreAllMocks();
   });
 
-  it("defaults to telemetry.paperclip.ing when no backend url is configured", async () => {
-    const client = createFeedbackTraceShareClientFromConfig({
+  it("has no upload target when no backend url is configured", () => {
+    // Shared traces hold task content; they never go to the upstream project.
+    expect(createFeedbackTraceShareClientFromConfig({
       feedbackExportBackendUrl: undefined,
       feedbackExportBackendToken: undefined,
-    });
-
-    await client.uploadTraceBundle({
-      traceId: "trace-1",
-      exportId: "export-1",
-      companyId: "company-1",
-      issueId: "issue-1",
-      issueIdentifier: "PAP-1",
-      adapterType: "codex_local",
-      captureStatus: "full",
-      notes: [],
-      envelope: {},
-      surface: null,
-      paperclipRun: null,
-      rawAdapterTrace: null,
-      normalizedAdapterTrace: null,
-      privacy: null,
-      integrity: {},
-      files: [],
-    });
-
-    expect(fetch).toHaveBeenCalledWith(
-      "https://telemetry.paperclip.ing/feedback-traces",
-      expect.objectContaining({
-        method: "POST",
-      }),
-    );
+    })).toBeNull();
+    expect(createFeedbackTraceShareClientFromConfig({
+      feedbackExportBackendUrl: "  ",
+      feedbackExportBackendToken: undefined,
+    })).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("wraps the feedback trace payload as gzip+base64 json before upload", async () => {
     const client = createFeedbackTraceShareClientFromConfig({
-      feedbackExportBackendUrl: "https://telemetry.paperclip.ing",
+      feedbackExportBackendUrl: "https://feedback.example.test",
       feedbackExportBackendToken: "test-token",
     });
 
-    await client.uploadTraceBundle({
+    await client!.uploadTraceBundle({
       traceId: "trace-1",
       exportId: "export-1",
       companyId: "company-1",
@@ -73,7 +53,7 @@ describe("feedback trace share client", () => {
     });
 
     const call = vi.mocked(fetch).mock.calls[0];
-    expect(call?.[0]).toBe("https://telemetry.paperclip.ing/feedback-traces");
+    expect(call?.[0]).toBe("https://feedback.example.test/feedback-traces");
     expect(call?.[1]).toMatchObject({
       method: "POST",
       headers: {

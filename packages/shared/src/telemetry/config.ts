@@ -81,6 +81,9 @@ export function resolveTelemetryConfig(
     return { enabled: false, ...caps };
   }
 
-  const endpoint = process.env.GSAM_TELEMETRY_ENDPOINT || undefined;
+  // Never report to the upstream project's telemetry service: without an
+  // endpoint of our own, telemetry is off.
+  const endpoint = process.env.GSAM_TELEMETRY_ENDPOINT?.trim() || undefined;
+  if (!endpoint) return { enabled: false, ...caps };
   return { enabled: true, endpoint, ...caps };
 }
