@@ -14,6 +14,9 @@ const EXPECTED_BUNDLED_KEYS = [
 
 const EXPECTED_OPTIONAL_KEYS = [
   "paperclipai/optional/content/content-machine",
+  "paperclipai/optional/marketing/marketing-content",
+  "paperclipai/optional/operations/executive-assistant",
+  "paperclipai/optional/research/research-and-reporting",
 ];
 
 const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

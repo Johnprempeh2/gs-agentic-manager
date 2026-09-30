@@ -1,0 +1,16 @@
+schema: paperclip/v1
+routines:
+  daily-inbox-sweep:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Weekdays at 08:00
+        cronExpression: "0 8 * * 1-5"
+        timezone: Europe/London
+  friday-weekly-briefing:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Fridays at 15:00
+        cronExpression: "0 15 * * 5"
+        timezone: Europe/London

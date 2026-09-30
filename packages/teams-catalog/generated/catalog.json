@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "packageName": "@greatstone/teams-catalog",
   "packageVersion": "0.1.0",
-  "generatedAt": "2026-09-26T21:29:33.889Z",
+  "generatedAt": "2026-09-30T23:47:42.728Z",
   "teams": [
     {
       "id": "paperclipai:bundled:company-defaults:core-exec-team",
@@ -462,6 +462,331 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "contentHash": "sha256:06822cec5f2b6910cb37ba0ebd5e04ed5c7e34f77225564ddddc2470779cdaa6"
+    },
+    {
+      "id": "paperclipai:optional:marketing:marketing-content",
+      "key": "paperclipai/optional/marketing/marketing-content",
+      "kind": "optional",
+      "category": "marketing",
+      "slug": "marketing-content",
+      "name": "Marketing Content Team",
+      "description": "Designed by Greatstone. A marketing lead, content writer and social media coordinator who plan, draft and prepare a business's content each week, with one human overseer who approves every piece before anything is published, posted or sent.",
+      "path": "catalog/optional/marketing/marketing-content",
+      "entrypoint": "TEAM.md",
+      "schema": "agentcompanies/v1",
+      "defaultInstall": false,
+      "recommendedForCompanyTypes": [
+        "small-business",
+        "marketing",
+        "services"
+      ],
+      "tags": [
+        "greatstone",
+        "marketing",
+        "content",
+        "social-media",
+        "routines"
+      ],
+      "counts": {
+        "agents": 3,
+        "projects": 1,
+        "tasks": 0,
+        "routines": 1,
+        "localSkills": 1,
+        "catalogSkills": 0,
+        "externalSkillSources": 0
+      },
+      "rootAgentSlugs": [
+        "marketing-lead"
+      ],
+      "agentSlugs": [
+        "content-writer",
+        "marketing-lead",
+        "social-media-coordinator"
+      ],
+      "projectSlugs": [
+        "marketing-content"
+      ],
+      "requiredSkills": [
+        {
+          "type": "local",
+          "ref": "content-planning",
+          "agentSlugs": [
+            "marketing-lead"
+          ],
+          "resolved": true,
+          "localPath": "skills/content-planning/SKILL.md"
+        }
+      ],
+      "envInputs": [],
+      "sourceRefs": [],
+      "files": [
+        {
+          "path": "TEAM.md",
+          "kind": "team",
+          "sizeBytes": 2118,
+          "sha256": "7ae81c62d944300908865c9e558d08bb2be1995a3e82dc60b771579f04655e00"
+        },
+        {
+          "path": ".paperclip.yaml",
+          "kind": "extension",
+          "sizeBytes": 214,
+          "sha256": "f071ff546ed8bb71b6be153cc3fda8efba0c4594e1a6856201912f442076c8e8"
+        },
+        {
+          "path": "agents/content-writer/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 1764,
+          "sha256": "02d4ef20ae8cdce7227be62e5a9b94990fe5e6a896669b26f9403048eeca4dc2"
+        },
+        {
+          "path": "agents/marketing-lead/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 2640,
+          "sha256": "516352e289274af80be4a3beab6c5863e70c7358832a3e976004835d2353bc58"
+        },
+        {
+          "path": "agents/social-media-coordinator/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 1933,
+          "sha256": "097090fd2d1f02e92ab513320431e98055dd6f5eddcd295589d954b33ce54c10"
+        },
+        {
+          "path": "projects/marketing-content/PROJECT.md",
+          "kind": "project",
+          "sizeBytes": 588,
+          "sha256": "743b17761c53e34d79543c6c51a45428cd1d43f000a51066b5e3195f174b21ee"
+        },
+        {
+          "path": "projects/marketing-content/tasks/weekly-content-planning/TASK.md",
+          "kind": "task",
+          "sizeBytes": 564,
+          "sha256": "ef01d69ecd131aa803d0d7fabeb2252346fa28637547fe201c5f5322a9a2f7d0"
+        },
+        {
+          "path": "skills/content-planning/SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 1555,
+          "sha256": "1248b8e3fe2a8f0e56137461255f0f99208542cf752bff882763e770b0ca470b"
+        }
+      ],
+      "trustLevel": "assets",
+      "compatibility": "compatible",
+      "contentHash": "sha256:ee8be4df50feb966a8f89acc8317a24efdbfae8a20fdc559f8df982b2469a205"
+    },
+    {
+      "id": "paperclipai:optional:operations:executive-assistant",
+      "key": "paperclipai/optional/operations/executive-assistant",
+      "kind": "optional",
+      "category": "operations",
+      "slug": "executive-assistant",
+      "name": "Executive Assistant",
+      "description": "Designed by Greatstone. One executive assistant for a small business owner that sorts the inbox, screens CVs, keeps the diary, drafts documents from templates, chases unpaid invoices and writes a Friday briefing, with the owner as the one human overseer who approves every send.",
+      "path": "catalog/optional/operations/executive-assistant",
+      "entrypoint": "TEAM.md",
+      "schema": "agentcompanies/v1",
+      "defaultInstall": false,
+      "recommendedForCompanyTypes": [
+        "small-business",
+        "generalist",
+        "services"
+      ],
+      "tags": [
+        "greatstone",
+        "executive-assistant",
+        "inbox",
+        "admin",
+        "routines"
+      ],
+      "counts": {
+        "agents": 1,
+        "projects": 1,
+        "tasks": 0,
+        "routines": 2,
+        "localSkills": 1,
+        "catalogSkills": 0,
+        "externalSkillSources": 0
+      },
+      "rootAgentSlugs": [
+        "executive-assistant"
+      ],
+      "agentSlugs": [
+        "executive-assistant"
+      ],
+      "projectSlugs": [
+        "owner-support"
+      ],
+      "requiredSkills": [
+        {
+          "type": "local",
+          "ref": "weekly-briefing",
+          "agentSlugs": [
+            "executive-assistant"
+          ],
+          "resolved": true,
+          "localPath": "skills/weekly-briefing/SKILL.md"
+        }
+      ],
+      "envInputs": [],
+      "sourceRefs": [],
+      "files": [
+        {
+          "path": "TEAM.md",
+          "kind": "team",
+          "sizeBytes": 2058,
+          "sha256": "a4ef1e3cc905564ec1ae077b71b3a8b3bf55cd2207e41f703c50886cc52958c8"
+        },
+        {
+          "path": ".paperclip.yaml",
+          "kind": "extension",
+          "sizeBytes": 394,
+          "sha256": "0192e5b86e34f1949903920d2342c9795ad4750dea3a47308815f02b34b21729"
+        },
+        {
+          "path": "agents/executive-assistant/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 2892,
+          "sha256": "5f8f21b6b4db119bf90fd8c88904f7c4bf03377db2ff9d9370d1c44df4276a4e"
+        },
+        {
+          "path": "projects/owner-support/PROJECT.md",
+          "kind": "project",
+          "sizeBytes": 488,
+          "sha256": "77c985e2e7521c44af40c05605f8efbfa09cd8ef93b16709f8284d3fd141e8b7"
+        },
+        {
+          "path": "projects/owner-support/tasks/daily-inbox-sweep/TASK.md",
+          "kind": "task",
+          "sizeBytes": 620,
+          "sha256": "db6dea1da6de89d1f8c72712c96672580baaf03a92da7f4d3ce55b33e04816ef"
+        },
+        {
+          "path": "projects/owner-support/tasks/friday-weekly-briefing/TASK.md",
+          "kind": "task",
+          "sizeBytes": 478,
+          "sha256": "8b2da2107d189a5edbe214b87268b3ed63cca64791310f067a4cb350207f381a"
+        },
+        {
+          "path": "skills/weekly-briefing/SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 1527,
+          "sha256": "19a30329fe702777f375dcddba7fe99ef25074dd4b6de6b17a745ed25251debd"
+        }
+      ],
+      "trustLevel": "assets",
+      "compatibility": "compatible",
+      "contentHash": "sha256:b65b644dd833ed26c8fcfc1e0427b2df4e02e3de40bcd812a80962cc3674e322"
+    },
+    {
+      "id": "paperclipai:optional:research:research-and-reporting",
+      "key": "paperclipai/optional/research/research-and-reporting",
+      "kind": "optional",
+      "category": "research",
+      "slug": "research-and-reporting",
+      "name": "Research and Reporting Team",
+      "description": "Designed by Greatstone. A research lead, data analyst and report writer who turn survey and interview data collected by your field team into analysis, sector benchmarks and branded reports, with one human overseer who signs off everything that leaves the organisation.",
+      "path": "catalog/optional/research/research-and-reporting",
+      "entrypoint": "TEAM.md",
+      "schema": "agentcompanies/v1",
+      "defaultInstall": false,
+      "recommendedForCompanyTypes": [
+        "research",
+        "consultancy",
+        "nonprofit"
+      ],
+      "tags": [
+        "greatstone",
+        "research",
+        "reporting",
+        "surveys",
+        "routines"
+      ],
+      "counts": {
+        "agents": 3,
+        "projects": 1,
+        "tasks": 0,
+        "routines": 1,
+        "localSkills": 1,
+        "catalogSkills": 0,
+        "externalSkillSources": 0
+      },
+      "rootAgentSlugs": [
+        "research-lead"
+      ],
+      "agentSlugs": [
+        "data-analyst",
+        "report-writer",
+        "research-lead"
+      ],
+      "projectSlugs": [
+        "research-reporting"
+      ],
+      "requiredSkills": [
+        {
+          "type": "local",
+          "ref": "survey-to-report-outline",
+          "agentSlugs": [
+            "research-lead"
+          ],
+          "resolved": true,
+          "localPath": "skills/survey-to-report-outline/SKILL.md"
+        }
+      ],
+      "envInputs": [],
+      "sourceRefs": [],
+      "files": [
+        {
+          "path": "TEAM.md",
+          "kind": "team",
+          "sizeBytes": 2121,
+          "sha256": "c0ea643a8a9e0758db479a6e5e03fc23844c8e8dc480c8b42c1267e5c9d46d0a"
+        },
+        {
+          "path": ".paperclip.yaml",
+          "kind": "extension",
+          "sizeBytes": 221,
+          "sha256": "27d92b15bf7251a5beb64d2cfada20e1b5ad539543609b1ee1b28708f0e1b3fd"
+        },
+        {
+          "path": "agents/data-analyst/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 2097,
+          "sha256": "069c7fba1ea12e12539095abb42e0dcf959cf286ede112e6a28448b9c7255a2c"
+        },
+        {
+          "path": "agents/report-writer/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 1782,
+          "sha256": "f239026e71de625fd4272fb2eefe9ae20cfbe9c2232109c5387990eb25482905"
+        },
+        {
+          "path": "agents/research-lead/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 2647,
+          "sha256": "0ae28f04425e2515b82c4d37d18d17162e386b18e738a6e0b7707173210cc15f"
+        },
+        {
+          "path": "projects/research-reporting/PROJECT.md",
+          "kind": "project",
+          "sizeBytes": 623,
+          "sha256": "00f8e8b10aa5daa538adfccd0404fb5dfdba2e409b497d1973582d0b7d9f0ff5"
+        },
+        {
+          "path": "projects/research-reporting/tasks/monthly-report-cycle/TASK.md",
+          "kind": "task",
+          "sizeBytes": 600,
+          "sha256": "507801f00b0a47f21c9288c1cb5f1be79c7d8b95a55b425081c4b6daa934c47b"
+        },
+        {
+          "path": "skills/survey-to-report-outline/SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 1840,
+          "sha256": "c54baaf83f66bef23fae64ed180e8deec327eff69dbcecd51d046297690c3f02"
+        }
+      ],
+      "trustLevel": "assets",
+      "compatibility": "compatible",
+      "contentHash": "sha256:135edd5a21932be450a1b8fef4ec3385583eed352cccab888484d6d4693abde5"
     }
   ]
 }
