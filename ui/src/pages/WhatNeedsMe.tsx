@@ -7,6 +7,7 @@ import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { decisionsApi } from "../api/decisions";
 import { useCompany } from "../context/CompanyContext";
+import { DecisionNotificationsCard } from "../components/decisions-feed/DecisionNotificationsCard";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useInboxDismissals } from "../hooks/useInboxBadge";
 import { useDecisionsFeed } from "../hooks/useDecisionsFeed";
@@ -202,6 +203,8 @@ export function WhatNeedsMe() {
 
       {/* Queue quicklinks. The rail self-hides when the company has no queues. */}
       <DecisionQueueRail companyId={selectedCompanyId} activeQueueKey={null} />
+
+      <DecisionNotificationsCard companyId={selectedCompanyId} />
 
       {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
 

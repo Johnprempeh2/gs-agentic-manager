@@ -13,6 +13,7 @@ import { useDialogActions } from "../context/DialogContext";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn } from "../lib/utils";
 import { useInboxBadge } from "../hooks/useInboxBadge";
+import { useAppBadge } from "../hooks/usePushNotifications";
 import { Badge } from "@/components/ui/badge";
 
 interface MobileBottomNavProps {
@@ -48,6 +49,8 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const inboxBadge = useInboxBadge(selectedCompanyId);
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
+  // The Home Screen icon shows the same Decisions count (push updates it too).
+  useAppBadge(attentionCount);
 
   const items = useMemo<MobileNavItem[]>(
     () => [

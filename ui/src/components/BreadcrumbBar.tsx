@@ -18,6 +18,7 @@ import { PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
 import { PluginLauncherOutlet, usePluginLaunchers } from "@/plugins/launchers";
 import { cn } from "../lib/utils";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
+import { MobileEverestButton } from "./MobileEverestButton";
 
 type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | null };
 
@@ -244,6 +245,7 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
           )}
         </div>
         {globalToolbarSlots}
+        {isMobile ? <MobileEverestButton /> : null}
       </div>
     );
   }
