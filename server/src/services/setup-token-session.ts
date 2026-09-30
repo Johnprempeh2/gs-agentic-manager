@@ -335,7 +335,9 @@ export async function reapSetupTokenLeases(
   let failed = 0;
   for (const record of records) {
     try {
-      await deps.leases.releaseById(record.leaseId);
+      // A local-login session never held a sandbox lease: there is nothing to
+      // release, only the row to remove. Releasing "" threw on every tick.
+      if (record.leaseId) await deps.leases.releaseById(record.leaseId);
       await deps.store.remove({
         sessionId: record.sessionId,
         companyId: record.companyId,
@@ -343,9 +345,9 @@ export async function reapSetupTokenLeases(
         adapterType: record.adapterType,
       });
       released += 1;
-    } catch {
+    } catch (err) {
       failed += 1;
-      log("[paperclip] Setup-token reaper: a lease release failed; it stays retryable.");
+      log(`[paperclip] Setup-token reaper: a lease release failed; it stays retryable. ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   return { released, failed };
