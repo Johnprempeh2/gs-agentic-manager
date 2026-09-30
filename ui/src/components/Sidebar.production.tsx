@@ -130,7 +130,7 @@ export function Sidebar() {
             icon={Inbox}
             badge={inboxBadge.inbox}
             badgeLabel="unread"
-            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
+            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "quiet"}
             alert={inboxBadge.failedRuns > 0}
           />
           <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />

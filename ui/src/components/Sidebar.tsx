@@ -104,7 +104,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
       icon={Inbox}
       badge={inboxBadge.inbox}
       badgeLabel="unread"
-      badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
+      badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "quiet"}
       alert={inboxBadge.failedRuns > 0}
     />
   );
