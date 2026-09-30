@@ -200,6 +200,21 @@ export type {
 } from "./types/attention.js";
 export { ATTENTION_SOURCE_KINDS } from "./types/attention.js";
 export type {
+  DecisionCard,
+  DecisionCardAction,
+  DecisionCardActionId,
+  DecisionCardActionInput,
+  DecisionCardAgentRef,
+  DecisionCardClarity,
+  DecisionCardKind,
+  DecisionCardRequest,
+  DecisionClarityRequest,
+  DecisionClarityResponse,
+  DecisionsFeed,
+  DecisionsFeedCount,
+} from "./types/decisions-feed.js";
+export { DECISION_CARD_KINDS } from "./types/decisions-feed.js";
+export type {
   DecisionQueue,
   DecisionQueueItem,
   DecisionQueueSeedRule,
@@ -2079,6 +2094,8 @@ export {
   issueDocumentKeySchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
+  tableIssueSchema,
+  type TableIssue,
   createIssueTreeHoldSchema,
   issueTreeControlModeSchema,
   issueTreeHoldReleasePolicySchema,

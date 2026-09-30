@@ -96,7 +96,7 @@ export function generateReadme(
   // What's Inside table
   lines.push("## What's Inside");
   lines.push("");
-  lines.push("> This is an [Agent Company](https://agentcompanies.io) package from [GS Agentic Manager](https://paperclip.ing)");
+  lines.push("> This is an [Agent Company](https://agentcompanies.io) package from GS Agentic Manager");
   lines.push("");
 
   const counts: Array<[string, number]> = [];
@@ -160,12 +160,10 @@ export function generateReadme(
   lines.push("npx gsam company import this-github-url-or-folder");
   lines.push("```");
   lines.push("");
-  lines.push("See [GS Agentic Manager](https://paperclip.ing) for more information.");
-  lines.push("");
 
   // Footer
   lines.push("---");
-  lines.push(`Exported from [GS Agentic Manager](https://paperclip.ing) on ${new Date().toISOString().split("T")[0]}`);
+  lines.push(`Exported from GS Agentic Manager on ${new Date().toISOString().split("T")[0]}`);
   lines.push("");
 
   return lines.join("\n");

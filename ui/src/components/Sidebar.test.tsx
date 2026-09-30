@@ -13,8 +13,8 @@ const mockHeartbeatsApi = vi.hoisted(() => ({
   liveRunsForCompany: vi.fn(),
 }));
 
-const mockAttentionApi = vi.hoisted(() => ({
-  list: vi.fn(),
+const mockDecisionsFeedApi = vi.hoisted(() => ({
+  count: vi.fn(),
 }));
 
 const mockInstanceSettingsApi = vi.hoisted(() => ({
@@ -71,8 +71,8 @@ vi.mock("../api/heartbeats", () => ({
   heartbeatsApi: mockHeartbeatsApi,
 }));
 
-vi.mock("../api/attention", () => ({
-  attentionApi: mockAttentionApi,
+vi.mock("../api/decisionsFeed", () => ({
+  decisionsFeedApi: mockDecisionsFeedApi,
 }));
 
 vi.mock("../api/instanceSettings", () => ({
@@ -178,7 +178,7 @@ describe("Sidebar", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
-    mockAttentionApi.list.mockResolvedValue({ items: [] });
+    mockDecisionsFeedApi.count.mockResolvedValue({ companyId: "company-1", generatedAt: "2026-09-29T00:00:00.000Z", count: 0 });
     mockSidebar.isMobile = false;
     mockSidebar.collapsed = false;
     mockSidebar.collapseLocked = false;
@@ -224,6 +224,33 @@ describe("Sidebar", () => {
       root.unmount();
     });
     mockCanRelease.value = false;
+  });
+
+  it("counts live agents from running runs only, once per agent (GRE-257)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    const liveRun = (id: string, agentId: string, status = "running") => ({
+      id,
+      agentId,
+      agentName: agentId,
+      status,
+      createdAt: "2026-09-29T08:00:00Z",
+      issueId: null,
+    });
+    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([
+      liveRun("r1", "a"),
+      liveRun("r2", "a"),
+      liveRun("r3", "b"),
+      liveRun("r4", "c", "queued"),
+    ]);
+    const root = await renderSidebar();
+
+    const dashboardLink = [...container.querySelectorAll("nav a")]
+      .find((anchor) => anchor.getAttribute("href") === "/dashboard");
+    expect(dashboardLink?.textContent).toContain("2 live");
+
+    flushSync(() => {
+      root.unmount();
+    });
   });
 
   it("shows Search as a nav item instead of a header icon", async () => {
@@ -420,7 +447,7 @@ describe("Sidebar", () => {
     const decisionsLink = container.querySelector('a[href="/decisions"]');
     expect(decisionsLink?.textContent?.trim()).toBe("Decisions");
     expect(sectionLabels("Work")).toContain("Decisions");
-    expect(mockAttentionApi.list).toHaveBeenCalledWith("company-1");
+    expect(mockDecisionsFeedApi.count).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
       root.unmount();

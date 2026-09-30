@@ -212,6 +212,8 @@ import {
   IssueMonitorComposerStrip,
   hasVisibleMonitorSurface,
 } from "../components/IssueMonitorBanner";
+import { NotNowButton } from "../components/decisions-feed/NotNowButton";
+import { TabledBanner } from "../components/decisions-feed/TabledBanner";
 import { IssueScheduledRetryCard } from "../components/IssueScheduledRetryCard";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import {
@@ -433,7 +435,7 @@ function buildPlanDecisionResponseText(
 
 const FEEDBACK_TERMS_URL =
   import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() ||
-  "https://paperclip.ing/tos";
+  null;
 const ISSUE_COMMENT_AUTOLOAD_LIMIT = ISSUE_COMMENT_PAGE_SIZE * 3;
 const JUMP_TO_LATEST_MAX_COMMENT_PAGES = 10;
 function treeControlPreviewErrorCopy(error: unknown): string {
@@ -7131,6 +7133,13 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
               <Archive className="h-4 w-4" />
             </Button>
           )}
+          {!issue.tabledAt && !isTerminalIssue ? (
+            <NotNowButton
+              companyId={issue.companyId}
+              issueId={issue.id}
+              issueLabel={issue.identifier}
+            />
+          ) : null}
           {fileViewerEnabled ? (
             <Button
               variant="ghost"
@@ -7313,6 +7322,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       {taskChatShellEnabled && !streamlinedTaskDetailEnabled
         ? subTasksTree
         : null}
+
+      <TabledBanner issue={issue} />
 
       <IssueMonitorBanner
         issue={issue}

@@ -591,7 +591,7 @@ describe("git workspace sync", () => {
     const parents = (await git(repo, ["rev-list", "--parents", "-1", "HEAD"])).split(" ");
     expect(parents.slice(1)).toEqual([currentHead, importedHead]);
     expect(await git(repo, ["log", "-1", "--format=%an|%ae|%cn|%ce"]))
-      .toBe("GS Agentic Manager|noreply@paperclip.ing|GS Agentic Manager|noreply@paperclip.ing");
+      .toBe("GS Agentic Manager|noreply@greatstone.co.uk|GS Agentic Manager|noreply@greatstone.co.uk");
     expect(await git(repo, ["log", "-1", "--format=%s"]))
       .toBe(`GS Agentic Manager remote git sync merge ${importedHead.slice(0, 12)}`);
     const mergedTree = await git(repo, ["ls-tree", "--name-only", "HEAD"]);

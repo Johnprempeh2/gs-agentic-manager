@@ -17,7 +17,18 @@ vi.mock("../services/index.js", () => ({
   issueService: () => mockIssueService,
 }));
 
-vi.mock("node:child_process", () => ({ spawn: mockSpawn }));
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: mockSpawn,
+}));
+
+vi.mock("../services/board-chat-claude-credential.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/board-chat-claude-credential.js")>()),
+  resolveBoardChatClaudeCredential: async () => ({
+    envKey: "CLAUDE_CODE_OAUTH_TOKEN",
+    value: "company-oauth-token",
+  }),
+}));
 
 vi.mock("../routes/authz.js", () => ({
   getActorInfo: () => ({ actorId: "user-1", agentId: null, runId: null }),

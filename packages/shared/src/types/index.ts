@@ -56,6 +56,21 @@ export type {
 } from "./attention.js";
 export { ATTENTION_SOURCE_KINDS } from "./attention.js";
 export type {
+  DecisionCard,
+  DecisionCardAction,
+  DecisionCardActionId,
+  DecisionCardActionInput,
+  DecisionCardAgentRef,
+  DecisionCardClarity,
+  DecisionCardKind,
+  DecisionCardRequest,
+  DecisionClarityRequest,
+  DecisionClarityResponse,
+  DecisionsFeed,
+  DecisionsFeedCount,
+} from "./decisions-feed.js";
+export { DECISION_CARD_KINDS } from "./decisions-feed.js";
+export type {
   DecisionQueue,
   DecisionQueueItem,
   DecisionQueueSeedRule,

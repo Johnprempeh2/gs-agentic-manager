@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
-import type { Agent, AttentionItem } from "@greatstone/shared";
+import type { Agent, DecisionCard, DecisionCardAgentRef } from "@greatstone/shared";
 import { useToastActions } from "../../context/ToastContext";
 import {
   answerFocusItem,
@@ -17,15 +17,16 @@ import {
   syncFocusQueue,
   type FocusQueueState,
 } from "../../lib/focus-queue";
-import { focusItemKind, focusKindLabel } from "../../lib/focus-items";
 import type { FocusPrefs } from "../../lib/focus-prefs";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
+import { DECISION_KIND_LABEL, DecisionFeedCard, decisionCardQuestionItem } from "../decisions-feed/DecisionFeedCard";
 import { FocusQuestionCard } from "./FocusQuestionCard";
 
 export interface DecisionsFocusViewProps {
-  /** Open Focus-eligible feed rows, in queue order. */
-  items: AttentionItem[];
+  /** Every open Decisions card, in feed order (GRE-264: all kinds, not only questions). */
+  cards: DecisionCard[];
+  assignableAgents: DecisionCardAgentRef[];
   companyId: string;
   agentMap: Map<string, Agent>;
   currentUserId: string | null;
@@ -34,13 +35,20 @@ export interface DecisionsFocusViewProps {
   onShowList: () => void;
 }
 
+/** Old sessions stored attention rows; only keep real cards. */
+function isStoredCard(value: unknown): value is DecisionCard {
+  return !!value && typeof value === "object" && Array.isArray((value as { kinds?: unknown }).kinds);
+}
+
 /**
- * Decisions Focus mode (GRE-55): one open agent question at a time, a tab per
- * question, progress, and a caught-up screen. Answers go to the original card
- * on the original task through the same mutations the List view uses.
+ * Decisions Focus mode (GRE-55, GRE-264): one card at a time, a tab per card,
+ * progress, and a caught-up screen. It takes every card that needs John, the
+ * same set and count as List. A question is answered with the Focus form; every
+ * other card shows its actions, Ask for clarity and Not now in place.
  */
 export function DecisionsFocusView({
-  items,
+  cards,
+  assignableAgents,
   companyId,
   agentMap,
   currentUserId,
@@ -50,77 +58,124 @@ export function DecisionsFocusView({
 }: DecisionsFocusViewProps) {
   const { pushToast } = useToastActions();
   // Restore this browser session's Focus run, so Open task → Back keeps the count.
-  const [restored] = useState(() => loadFocusSession<AttentionItem>(companyId));
-  // Keep every row this session has shown, so answered tabs stay (crossed out)
+  const [restored] = useState(() => loadFocusSession<DecisionCard>(companyId));
+  // Keep every card this session has shown, so done tabs stay (crossed out)
   // after the feed drops them.
-  const [seenItems, setSeenItems] = useState<Map<string, AttentionItem>>(
-    () => new Map((restored?.items ?? []).map((item) => [item.id, item])),
+  const [seenCards, setSeenCards] = useState<Map<string, DecisionCard>>(
+    () => new Map((restored?.items ?? []).filter(isStoredCard).map((card) => [card.id, card])),
   );
   const [queue, setQueue] = useState<FocusQueueState>(() => restored?.queue ?? initialFocusQueue);
+  // Questions answered or found closed on a card that still has other work.
+  const [closedQuestionIds, setClosedQuestionIds] = useState<Set<string>>(() => new Set());
   const queueRef = useRef(queue);
   queueRef.current = queue;
   const pushToastRef = useRef(pushToast);
   pushToastRef.current = pushToast;
+  // Cards John acted on here. When they leave the feed they count as done, not
+  // as "handled elsewhere".
+  const actedRef = useRef(new Set<string>());
 
   useEffect(() => {
     saveFocusSession(companyId, {
       queue,
-      items: queue.order.map((id) => seenItems.get(id)).filter(Boolean) as AttentionItem[],
+      items: queue.order.map((id) => seenCards.get(id)).filter(Boolean) as DecisionCard[],
     });
-  }, [companyId, queue, seenItems]);
+  }, [companyId, queue, seenCards]);
 
-  // Both paths that find the open question closed (feed refetch, card refetch)
-  // land here; the toast shows once per question.
   const toastedGoneRef = useRef(new Set<string>());
-  const toastAnsweredElsewhere = useCallback((id: string) => {
+  const toastHandledElsewhere = useCallback((id: string) => {
     if (toastedGoneRef.current.has(id)) return;
     toastedGoneRef.current.add(id);
     pushToastRef.current({
       id: `focus-gone-${id}`,
-      title: "Answered elsewhere",
-      body: "That question was closed on another screen, so Focus moved on.",
+      title: "Handled elsewhere",
+      body: "That card was closed on another screen, so Focus moved on.",
       tone: "info",
       ttlMs: 5000,
     });
   }, []);
 
-  const openIdsKey = items.map((item) => item.id).join("|");
+  const openIdsKey = cards.map((card) => card.id).join("|");
+  const cardsRef = useRef(cards);
+  cardsRef.current = cards;
   useEffect(() => {
-    setSeenItems((previous) => {
+    const current = cardsRef.current;
+    setSeenCards((previous) => {
       const next = new Map(previous);
-      for (const item of items) next.set(item.id, item);
+      for (const card of current) next.set(card.id, card);
       return next;
     });
     const before = queueRef.current;
-    const after = syncFocusQueue(before, items.map((item) => item.id));
-    if (before.currentId && before.currentId !== after.currentId && after.gone.includes(before.currentId)) {
-      toastAnsweredElsewhere(before.currentId);
+    let after = syncFocusQueue(before, current.map((card) => card.id));
+    for (const id of after.gone) {
+      if (actedRef.current.has(id) && !before.gone.includes(id)) after = answerFocusItem(after, id);
+    }
+    if (
+      before.currentId &&
+      before.currentId !== after.currentId &&
+      after.gone.includes(before.currentId) &&
+      !actedRef.current.has(before.currentId)
+    ) {
+      toastHandledElsewhere(before.currentId);
     }
     setQueue(after);
-    // `openIdsKey` stands in for `items`: rows re-create on every refetch.
+    // `openIdsKey` stands in for `cards`: the feed re-creates them on every refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openIdsKey]);
 
-  const handleAnswered = useCallback((id: string) => setQueue((state) => answerFocusItem(state, id)), []);
-  const handleGone = useCallback(
-    (id: string) => {
-      const before = queueRef.current;
-      if (!isFocusPending(before, id)) return;
-      if (before.currentId === id) toastAnsweredElsewhere(id);
-      setQueue((state) => markFocusGone(state, id));
-    },
-    [toastAnsweredElsewhere],
-  );
+  // Keep the shown card fresh (clarity answers, new actions) between id changes.
+  useEffect(() => {
+    setSeenCards((previous) => {
+      let changed = false;
+      const next = new Map(previous);
+      for (const card of cards) {
+        if (next.get(card.id) !== card) {
+          next.set(card.id, card);
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+  }, [cards]);
+
+  const handleActed = useCallback((cardId: string) => {
+    actedRef.current.add(cardId);
+  }, []);
+
   const handleSkip = useCallback(() => setQueue((state) => skipFocusItem(state)), []);
   const handleStep = useCallback((direction: 1 | -1) => setQueue((state) => stepFocus(state, direction)), []);
 
   const progress = focusProgress(queue);
   const percent = progress.total > 0 ? Math.round((progress.answered / progress.total) * 100) : 0;
   const tabs = useMemo(
-    () => queue.order.filter((id) => !queue.gone.includes(id)).map((id) => seenItems.get(id)).filter(Boolean) as AttentionItem[],
-    [queue.gone, queue.order, seenItems],
+    () => queue.order.filter((id) => !queue.gone.includes(id)).map((id) => seenCards.get(id)).filter(Boolean) as DecisionCard[],
+    [queue.gone, queue.order, seenCards],
   );
-  const current = queue.currentId ? seenItems.get(queue.currentId) ?? null : null;
+  const current = queue.currentId ? seenCards.get(queue.currentId) ?? null : null;
+  const questionItem = current ? decisionCardQuestionItem(current) : null;
+  const showQuestion = questionItem !== null && !closedQuestionIds.has(questionItem.id);
+
+  // A question answered on a card with nothing else to do finishes the card.
+  // On a merged card (question + recovery, say) the card stays for the rest.
+  const finishQuestion = useCallback(
+    (cardId: string, questionId: string, how: "answered" | "gone") => {
+      const card = cardsRef.current.find((entry) => entry.id === cardId) ?? null;
+      const onlyQuestion = !card || card.items.every((item) => item.id === questionId);
+      if (onlyQuestion) {
+        if (how === "answered") setQueue((state) => answerFocusItem(state, cardId));
+        else {
+          if (queueRef.current.currentId === cardId && isFocusPending(queueRef.current, cardId)) {
+            toastHandledElsewhere(cardId);
+          }
+          setQueue((state) => markFocusGone(state, cardId));
+        }
+        return;
+      }
+      if (how === "answered") actedRef.current.add(cardId);
+      setClosedQuestionIds((previous) => new Set(previous).add(questionId));
+    },
+    [toastHandledElsewhere],
+  );
 
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
@@ -132,12 +187,12 @@ export function DecisionsFocusView({
       {progress.total > 0 && (
         <div className="flex items-center gap-3 text-sm">
           <span className="shrink-0 font-semibold tabular-nums">
-            {progress.answered} of {progress.total} answered
+            {progress.answered} of {progress.total} done
           </span>
           <div
             className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"
             role="progressbar"
-            aria-label="Questions answered"
+            aria-label="Decisions done"
             aria-valuemin={0}
             aria-valuemax={progress.total}
             aria-valuenow={progress.answered}
@@ -149,32 +204,29 @@ export function DecisionsFocusView({
       )}
 
       {tabs.length > 0 && (
-        <div role="tablist" aria-label="Open questions" className="scrollbar-auto-hide flex overflow-x-auto border-b border-border">
-          {tabs.map((item) => {
-            const pending = isFocusPending(queue, item.id);
-            const active = item.id === queue.currentId;
-            const agentId = item.subject.metadata?.createdByAgentId;
-            const agentName =
-              (typeof agentId === "string" ? agentMap.get(agentId)?.name : null) ?? item.originAgentName ?? "Agent";
-            const skipped = queue.skipped.includes(item.id);
+        <div role="tablist" aria-label="Open decisions" className="scrollbar-auto-hide flex overflow-x-auto border-b border-border">
+          {tabs.map((card) => {
+            const pending = isFocusPending(queue, card.id);
+            const active = card.id === queue.currentId;
+            const skipped = queue.skipped.includes(card.id);
             return (
               <button
-                key={item.id}
+                key={card.id}
                 ref={active ? activeTabRef : undefined}
                 type="button"
                 role="tab"
                 aria-selected={active}
                 disabled={!pending}
-                onClick={() => setQueue((state) => selectFocusItem(state, item.id))}
+                onClick={() => setQueue((state) => selectFocusItem(state, card.id))}
                 className={cn(
                   "-mb-px shrink-0 rounded-t-lg border border-transparent px-3 py-2 text-left text-sm outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
                   active ? "border-border border-b-card bg-card" : "hover:bg-accent/60",
                   !pending && "text-muted-foreground line-through",
                 )}
               >
-                <span className="block font-semibold">{agentName}</span>
+                <span className="block font-semibold">{card.waiting?.name ?? card.task?.identifier ?? "Board"}</span>
                 <span className={cn("block text-xs", pending && "text-muted-foreground")}>
-                  {[item.relatedIssue?.identifier, focusKindLabel(focusItemKind(item))].filter(Boolean).join(" · ")}
+                  {[card.task?.identifier, DECISION_KIND_LABEL[card.kind]].filter(Boolean).join(" · ")}
                   {skipped && pending ? " · skipped" : ""}
                 </span>
               </button>
@@ -183,24 +235,57 @@ export function DecisionsFocusView({
         </div>
       )}
 
-      {current ? (
-        <FocusQuestionCard
-          key={current.id}
-          item={current}
-          companyId={companyId}
-          agentMap={agentMap}
-          currentUserId={currentUserId}
-          prefs={prefs}
-          onPrefsChange={onPrefsChange}
-          onAnswered={handleAnswered}
-          onGone={handleGone}
-          onSkip={handleSkip}
-          onStep={handleStep}
-        />
+      {current && showQuestion && questionItem ? (
+        <div className="space-y-3">
+          <FocusQuestionCard
+            key={questionItem.id}
+            item={questionItem}
+            companyId={companyId}
+            agentMap={agentMap}
+            currentUserId={currentUserId}
+            prefs={prefs}
+            onPrefsChange={onPrefsChange}
+            onAnswered={() => finishQuestion(current.id, questionItem.id, "answered")}
+            onGone={() => finishQuestion(current.id, questionItem.id, "gone")}
+            onSkip={handleSkip}
+            onStep={handleStep}
+          />
+          <DecisionFeedCard
+            key={current.id}
+            card={current}
+            companyId={companyId}
+            assignableAgents={assignableAgents}
+            agentMap={agentMap}
+            currentUserId={currentUserId}
+            hideInlineResolver
+            onActed={() => handleActed(current.id)}
+            className="mx-auto max-w-3xl"
+          />
+        </div>
+      ) : current ? (
+        <div className="mx-auto max-w-3xl space-y-3">
+          <DecisionFeedCard
+            key={current.id}
+            card={current}
+            companyId={companyId}
+            assignableAgents={assignableAgents}
+            agentMap={agentMap}
+            currentUserId={currentUserId}
+            onActed={() => handleActed(current.id)}
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" size="sm" variant="ghost" onClick={() => handleStep(-1)}>
+              Previous
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={handleSkip}>
+              Skip for now
+            </Button>
+          </div>
+        </div>
       ) : (
         <FocusCaughtUp
           skippedCount={queue.skipped.length}
-          answeredCount={progress.answered}
+          doneCount={progress.answered}
           onReviewSkipped={() => setQueue((state) => reviewSkippedFocus(state))}
           onShowList={onShowList}
         />
@@ -211,12 +296,12 @@ export function DecisionsFocusView({
 
 function FocusCaughtUp({
   skippedCount,
-  answeredCount,
+  doneCount,
   onReviewSkipped,
   onShowList,
 }: {
   skippedCount: number;
-  answeredCount: number;
+  doneCount: number;
   onReviewSkipped: () => void;
   onShowList: () => void;
 }) {
@@ -228,12 +313,11 @@ function FocusCaughtUp({
       <p className="text-lg font-semibold">You are all caught up.</p>
       <p className="mt-1 text-sm text-muted-foreground">
         {skippedCount > 0
-          ? `${skippedCount} skipped ${skippedCount === 1 ? "question is" : "questions are"} still open.`
-          : answeredCount > 0
-            ? `You answered ${answeredCount} ${answeredCount === 1 ? "question" : "questions"}.`
-            : "No agent questions are waiting for you."}
+          ? `${skippedCount} skipped ${skippedCount === 1 ? "card is" : "cards are"} still open.`
+          : doneCount > 0
+            ? `You handled ${doneCount} ${doneCount === 1 ? "card" : "cards"}.`
+            : "Nothing needs you right now."}
       </p>
-      <p className="mt-1 text-xs text-muted-foreground">Approvals and other decisions stay in List.</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {skippedCount > 0 && <Button onClick={onReviewSkipped}>Review skipped</Button>}
         <Button variant="outline" onClick={onShowList}>

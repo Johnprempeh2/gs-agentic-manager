@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { NavLink, useLocation } from "@/lib/router";
 import {
   House,
@@ -8,9 +7,7 @@ import {
   ListChecks,
   Inbox,
 } from "lucide-react";
-import { attentionApi } from "../api/attention";
-import { attentionBadgeCount } from "../lib/attention";
-import { queryKeys } from "../lib/queryKeys";
+import { useDecisionsCount } from "../hooks/useDecisionsFeed";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
@@ -44,14 +41,8 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialogActions();
   const inboxBadge = useInboxBadge(selectedCompanyId);
-  // Same query key as the sidebar Decisions badge, so both share one cache entry.
-  const { data: attentionFeed } = useQuery({
-    queryKey: queryKeys.attention(selectedCompanyId!),
-    queryFn: () => attentionApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-    refetchInterval: 60_000,
-  });
-  const attentionCount = attentionBadgeCount(attentionFeed);
+  // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
+  const attentionCount = useDecisionsCount(selectedCompanyId);
 
   const items = useMemo<MobileNavItem[]>(
     () => [

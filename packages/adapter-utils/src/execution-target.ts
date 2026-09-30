@@ -78,6 +78,8 @@ import {
   runChildProcess,
   type RunProcessResult,
   type TerminalResultCleanupOptions,
+  type ChildOutputCaptureOptions,
+  type ChildOutputCapturePaths,
 } from "./server-utils.js";
 import { sanitizeRemoteExecutionEnv } from "./remote-execution-env.js";
 import { preferredShellForSandbox, shellCommandArgs } from "./sandbox-shell.js";
@@ -278,8 +280,15 @@ export interface AdapterExecutionTargetProcessOptions {
   graceSec: number;
   onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
   onRuntimeProgress?: RuntimeStatusSink;
-  onSpawn?: (meta: { pid: number; processGroupId: number | null; startedAt: string }) => Promise<void>;
+  onSpawn?: (meta: {
+    pid: number;
+    processGroupId: number | null;
+    startedAt: string;
+    outputCapture?: ChildOutputCapturePaths | null;
+  }) => Promise<void>;
   terminalResultCleanup?: TerminalResultCleanupOptions;
+  /** Local targets only: write stdout/stderr to files under this dir. */
+  outputCapture?: ChildOutputCaptureOptions | null;
   /**
    * Sandbox-only: factory from the GS Agentic Manager bridge handle that streams the
    * CLI's stdout/stderr during the run. When provided, the batched provider
@@ -922,6 +931,7 @@ export async function runAdapterExecutionTargetProcess(
     terminalResultCleanup: options.terminalResultCleanup,
     localProcessSandbox: target?.kind === "local" || !target ? options.localProcessSandbox : null,
     remoteExecution: adapterExecutionTargetToRemoteSpec(target),
+    outputCapture: target?.kind === "local" || !target ? options.outputCapture : null,
   });
 }
 
