@@ -139,6 +139,28 @@ export const FailedRunCard: Story = { render: () => <CardFrame card={failedRunCa
 export const ReviewCard: Story = { render: () => <CardFrame card={reviewCard()} /> };
 export const ConnectionCard: Story = { render: () => <CardFrame card={connectionAlertCard()} /> };
 
+/** Two mock screens standing in for the screenshots an agent attaches to a design choice. */
+function mockScreen(label: string, accent: string) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#121212"/><rect x="32" y="32" width="576" height="56" rx="14" fill="#1c1f1d"/><rect x="56" y="54" width="140" height="12" rx="6" fill="${accent}"/><rect x="32" y="112" width="360" height="256" rx="18" fill="#1a1d1b"/><rect x="416" y="112" width="192" height="120" rx="18" fill="#1a1d1b"/><rect x="416" y="248" width="192" height="120" rx="18" fill="#1a1d1b"/><text x="212" y="250" font-family="Montserrat, sans-serif" font-size="28" font-weight="700" fill="${accent}" text-anchor="middle">${label}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function designChoiceCard(): DecisionCard {
+  const card = questionCard("int-1", "issue-44", "GRE-44");
+  const images = [
+    { assetId: mockScreen("Option A", "#c8ff00"), alt: "option-a.png" },
+    { assetId: mockScreen("Option B", "#4ecdc4"), alt: "option-b.png" },
+  ];
+  return {
+    ...card,
+    title: "GRE-44 Choose the Releases page layout",
+    reason: "Two layouts are ready. Pick one and I will ship it.",
+    items: card.items.map((item) => ({ ...item, detail: { kind: "generic", summaryExcerpt: "", images } })),
+  };
+}
+
+export const DesignChoiceWithScreenshots: Story = { render: () => <CardFrame card={designChoiceCard()} /> };
+
 export const TaskPageTabledBanner: Story = {
   render: () => (
     <div className="max-w-3xl">

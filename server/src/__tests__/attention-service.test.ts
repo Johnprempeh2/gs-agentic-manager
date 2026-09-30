@@ -1199,7 +1199,8 @@ describeEmbeddedPostgres("attention service", () => {
       issueTitle: "Approve launch plan",
       planTitle: "Launch Plan",
       summaryExcerpt: expect.stringContaining("launch checklist"),
-      images: imageAssetIds.slice(0, 3).map((assetId) => ({ assetId, alt: expect.any(String) })),
+      // Newest first: the latest screenshots are the ones a decision is about.
+      images: [...imageAssetIds].reverse().map((assetId) => ({ assetId, alt: expect.any(String) })),
     });
     expect(detailsByKind.get("questions")?.detail).toMatchObject({
       kind: "questions",

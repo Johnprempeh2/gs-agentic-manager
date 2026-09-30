@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, Loader2, MessageCircleQuestion, MoreHorizontal } from "lucide-react";
 import type {
   Agent,
+  AttentionDetailImage,
   AttentionItem,
   DecisionCard,
   DecisionCardAction,
@@ -11,12 +12,13 @@ import type {
 } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { decisionsFeedApi, runDecisionCardAction } from "../../api/decisionsFeed";
-import { severityStyle } from "../../lib/attention";
+import { attentionDetailImages, attentionImageUrl, severityStyle } from "../../lib/attention";
 import { focusItemIssueId, isFocusItem } from "../../lib/focus-items";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn, relativeTime } from "../../lib/utils";
 import { AttentionInteractionResolver } from "../AttentionInteractionResolver";
 import { DecisionResolver } from "../DecisionResolver";
+import { ImageGalleryModal, type GalleryMediaItem } from "../ImageGalleryModal";
 import { MarkdownBody } from "../MarkdownBody";
 import { Button } from "../ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -43,6 +45,12 @@ export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
 export function decisionCardTaskId(card: DecisionCard): string | null {
   if (card.task?.id) return card.task.id;
   return card.id.startsWith("task:") ? card.id.slice("task:".length) : null;
+}
+
+/** The task's screenshots across the card's rows, newest first, each once. */
+export function decisionCardImages(card: DecisionCard): AttentionDetailImage[] {
+  const byAsset = new Map(card.items.flatMap(attentionDetailImages).map((image) => [image.assetId, image]));
+  return [...byAsset.values()];
 }
 
 /** The first row Focus can answer natively (question, confirmation, suggested tasks). */
@@ -183,6 +191,8 @@ export function DecisionFeedCard({
         </CardFact>
         <CardFact label="Next">{card.nextStep}</CardFact>
       </dl>
+
+      <DecisionCardImages card={card} />
 
       {questionItem && focusItemIssueId(questionItem) ? (
         <AttentionInteractionResolver
@@ -551,6 +561,46 @@ export function AskForClarityForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** What the agent is showing: a design choice is judged on the screenshots, not the words. */
+function DecisionCardImages({ card }: { card: DecisionCard }) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const items: GalleryMediaItem[] = decisionCardImages(card).map((image) => ({
+    id: image.assetId,
+    contentPath: attentionImageUrl(image.assetId),
+    contentType: "image/*",
+    originalFilename: image.alt ?? null,
+  }));
+  if (items.length === 0) return null;
+  return (
+    <>
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" data-decision-images>
+        {items.map((item, index) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setOpenIndex(index)}
+            aria-label={`Open image ${index + 1} of ${items.length}${item.originalFilename ? `, ${item.originalFilename}` : ""}`}
+            className="shrink-0 overflow-hidden rounded-lg border border-border bg-muted transition-colors hover:border-primary/50 focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
+          >
+            <img
+              src={item.contentPath}
+              alt={item.originalFilename ?? ""}
+              loading="lazy"
+              className="h-32 w-52 object-cover object-top sm:h-40 sm:w-64"
+            />
+          </button>
+        ))}
+      </div>
+      <ImageGalleryModal
+        items={items}
+        initialIndex={openIndex ?? 0}
+        open={openIndex !== null}
+        onOpenChange={(open) => { if (!open) setOpenIndex(null); }}
+      />
+    </>
   );
 }
 
