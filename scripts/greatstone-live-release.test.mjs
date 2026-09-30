@@ -428,6 +428,11 @@ const EMPTY_WORKSPACE = {
   "pnpm-lock.yaml": "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n",
 };
 
+// greatstone-release.sh names a new live tag after today's local date.
+const pad2 = (n) => String(n).padStart(2, "0");
+const TODAY_TAG = (() => { const d = new Date(); return `live-${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}.1`; })();
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // base: files the old release has; rc: files the rc commit adds on top.
 function releaseSandbox(t, pnpmScript, { base = {}, rc = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "gs-release-"));
@@ -493,11 +498,11 @@ test("a release that fails after tagging pushes no live tag and deletes the loca
     env: env("http://127.0.0.1:9"),
   });
   assert.notEqual(run.status, 0);
-  assert.match(run.stdout, /^Tagged rc-2026-09-29.1 as live-2026-09-29.1:/m);
-  assert.match(run.stdout, /^Live checkout is on live-2026-09-29.1 /m);
-  assert.match(run.stderr, /Deleted the unpushed tag live-2026-09-29.1/);
-  assert.equal(git(dev, "tag", "--list", "live-2026-09-29.1"), "");
-  assert.equal(git(live, "tag", "--list", "live-2026-09-29.1"), "");
+  assert.match(run.stdout, new RegExp(`^Tagged rc-2026-09-29\\.1 as ${esc(TODAY_TAG)}:`, "m"));
+  assert.match(run.stdout, new RegExp(`^Live checkout is on ${esc(TODAY_TAG)} `, "m"));
+  assert.match(run.stderr, new RegExp(`Deleted the unpushed tag ${esc(TODAY_TAG)}`));
+  assert.equal(git(dev, "tag", "--list", TODAY_TAG), "");
+  assert.equal(git(live, "tag", "--list", TODAY_TAG), "");
   assert.equal(git(origin, "tag", "--list", "live-*"), "live-2026-09-01.1");
   assert.equal(git(origin, "tag", "--list", "rc-*"), "");
 });
@@ -545,12 +550,15 @@ test("a docs-only release and its rollback end healthy with no restart", async (
 
   const release = await runAsync([script, "rc-2026-09-29.1"], box.env(fake.url));
   assert.equal(release.status, 0, release.stderr);
-  assert.match(release.stdout, /^The live server needs no restart: live-2026-09-29.1 changes no file the server runs from/m);
-  assert.match(release.stdout, /^Live app at .* is running live-2026-09-29.1 /m);
+  assert.match(release.stdout, new RegExp(`^The live server needs no restart: ${esc(TODAY_TAG)} changes no file the server runs from`, "m"));
+  assert.match(release.stdout, new RegExp(`^Live app at .* is running ${esc(TODAY_TAG)} `, "m"));
   assert.equal(git(box.live, "rev-parse", "HEAD"), git(box.dev, "rev-parse", "rc-2026-09-29.1^{commit}"));
   // Healthy, so the tags are pushed and History may offer the version.
-  assert.equal(git(box.origin, "tag", "--list", "live-2026-09-29.1"), "live-2026-09-29.1");
+  assert.equal(git(box.origin, "tag", "--list", TODAY_TAG), TODAY_TAG);
   assert.equal(git(box.origin, "tag", "--list", "rc-*"), "rc-2026-09-29.1");
+
+  // Live serves the dev UI here (no ui/dist), so nothing is built.
+  assert.doesNotMatch(release.stdout, /Rebuilt the UI/);
 
   const rollback = await runAsync([script, "live-2026-09-01.1"], box.env(fake.url));
   assert.equal(rollback.status, 0, rollback.stderr);
@@ -579,4 +587,30 @@ test("drop_unpushed_live_tag keeps a live tag origin already has", (t) => {
   assert.equal(drop("live-2026-09-29.1").status, 0);
   assert.equal(drop("live-2026-09-29.2").status, 0);
   assert.equal(git(dev, "tag", "--list", "live-*"), "live-2026-09-29.1");
+});
+
+// Live serves the built UI (ui/dist) so a phone over Tailscale can load it. The
+// server reads ui/dist from disk, so a UI-only release (no server restart) is
+// only live once the release rebuilds it.
+const UI_WORKSPACE = {
+  ".gitignore": "node_modules/\nui/dist/\n",
+  "package.json": '{ "name": "sandbox", "private": true }\n',
+  "pnpm-workspace.yaml": "packages:\n  - ui\n",
+  "ui/package.json": '{ "name": "@greatstone/ui", "private": true, "scripts": { "build": "node build.mjs" } }\n',
+  "ui/build.mjs": 'import fs from "node:fs"; fs.mkdirSync("dist", { recursive: true }); fs.writeFileSync("dist/index.html", "built " + fs.readFileSync("VERSION", "utf8"));\n',
+  "ui/VERSION": "old",
+  "pnpm-lock.yaml": "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n\n  ui: {}\n",
+};
+
+test("a UI-only release rebuilds the built UI that live serves", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: UI_WORKSPACE, rc: { "ui/VERSION": "new" } });
+  mkdirSync(join(box.live, "ui", "dist"), { recursive: true });
+  writeFileSync(join(box.live, "ui", "dist", "index.html"), "built old");
+  const fake = await fakeRestartNotRequired(box.live);
+  t.after(() => fake.server.close());
+
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], box.env(fake.url));
+  assert.equal(release.status, 0, release.stderr);
+  assert.match(release.stdout, /^Rebuilt the UI for live-\d{4}-\d{2}-\d{2}\.1$/m);
+  assert.equal(readFileSync(join(box.live, "ui", "dist", "index.html"), "utf8"), "built new");
 });
