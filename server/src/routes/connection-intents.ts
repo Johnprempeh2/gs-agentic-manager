@@ -13,6 +13,7 @@ import { forbidden, unauthorized } from "../errors.js";
 import { verifyRuntimeToolsToken } from "../runtime-tools-token.js";
 import { connectionIntentService } from "../services/connection-intents.js";
 import { logActivity } from "../services/activity-log.js";
+import { logger } from "../middleware/logger.js";
 import { accessService } from "../services/access.js";
 import type { heartbeatService } from "../services/heartbeat.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
@@ -219,6 +220,21 @@ export function connectionIntentBoardRoutes(db: Db, heartbeat: Heartbeat) {
       },
     });
     await wakeAfterResolution({ loaded, status: interaction.status, actorId: userId });
+    // One reconnect repairs the account for every task that paused on it.
+    // This card is already resolved; a sibling failure must not fail it.
+    if (interaction.payload.purpose === "ai" && interaction.result?.connectionId) {
+      try {
+        const siblings = await service.resolveAiIntentsForConnection({
+          companyId: loaded.issue.companyId, userId, serviceSlug: interaction.payload.serviceSlug,
+          connectionId: interaction.result.connectionId,
+          bypassCurrentMembershipCheck: bypassCurrentMembershipCheck(req),
+        });
+        const deliveries = connectionIntentDeliveryService(db, heartbeat);
+        for (const id of siblings) await deliveries.tryDeliver(id);
+      } catch (err) {
+        logger.warn({ err, interactionId: interaction.id }, "Could not resume other tasks paused on this AI account");
+      }
+    }
     res.json(interaction);
   });
 
