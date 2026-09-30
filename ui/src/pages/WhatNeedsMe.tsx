@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Inbox } from "lucide-react";
+import { Inbox } from "lucide-react";
+import { BrandCaughtUpMark, BrandPageTitle } from "../components/BrandPageTitle";
 import type { Agent, AttentionItem, AttentionSubject } from "@greatstone/shared";
 import { attentionApi } from "../api/attention";
 import { agentsApi } from "../api/agents";
@@ -154,12 +155,15 @@ export function WhatNeedsMe() {
   const viewSwitch = <DecisionsViewSwitch view={view} onChange={updateView} />;
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h1 className="flex items-baseline gap-2 text-xl font-bold">
+      <BrandPageTitle
+        trailing={
+          <span className="text-base font-semibold tabular-nums text-muted-foreground" aria-label={`${count} waiting`}>
+            {count}
+          </span>
+        }
+      >
         Decisions
-        <span className="text-base font-semibold tabular-nums text-muted-foreground" aria-label={`${count} waiting`}>
-          {count}
-        </span>
-      </h1>
+      </BrandPageTitle>
       <div className="flex flex-wrap items-center gap-4">
         {view === "focus" ? (
           <label className="flex items-center gap-2 text-sm font-medium">
@@ -382,9 +386,7 @@ export function DecisionBundleHeader({
 function ZeroState() {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
-      <div className="mb-4 rounded-full bg-green-500/10 p-4">
-        <CheckCircle2 className="h-10 w-10 text-green-500" />
-      </div>
+      <BrandCaughtUpMark />
       <p className="text-lg font-semibold text-foreground">You're all caught up</p>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         <Inbox className="h-4 w-4" />

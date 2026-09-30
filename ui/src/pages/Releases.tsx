@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ReleaseChangelog } from "@/components/ReleaseChangelog";
+import { BrandPageTitle } from "@/components/BrandPageTitle";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ReauthCancelledError, useReauth } from "@/components/ReauthDialog";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -594,6 +595,7 @@ export function ReleasesView({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" data-testid="releases-page">
+      <BrandPageTitle>Releases</BrandPageTitle>
       {reauthDialog}
       <PromoteDialog
         entry={promoteEntry}
