@@ -5609,6 +5609,42 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/decisions-feed",
+  tags: ["inbox"],
+  summary: "List the one Decisions feed: one card per task, stale cards cleared, with actions",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/decisions-feed/count",
+  tags: ["inbox"],
+  summary: "Get the one Decisions count (same build as the feed)",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/decisions-feed/cards/{cardId}/clarity",
+  tags: ["inbox"],
+  summary: "Ask the owning agent of a Decisions card for clarity and wake it",
+  request: {
+    params: z.object({ companyId: z.string(), cardId: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ question: z.string().min(1).max(2000), clientRequestId: z.string().uuid().optional() }),
+        },
+      },
+    },
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
 // ─── Decisions ──────────────────────────────────────────────────────────────
 
 // Decision queues and triage
