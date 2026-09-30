@@ -26,6 +26,8 @@ interface MobileNavLinkItem {
   label: string;
   icon: typeof House;
   badge?: number;
+  /** Quiet badges inform (Inbox); the lime badge is kept for what needs John (Decisions). */
+  quietBadge?: boolean;
 }
 
 interface MobileNavActionItem {
@@ -72,6 +74,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
         label: "Inbox",
         icon: Inbox,
         badge: inboxBadge.inbox,
+        quietBadge: true,
       },
     ],
     [openNewIssue, inboxBadge.inbox, attentionCount],
@@ -143,7 +146,13 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
                   >
                     <Icon className={cn("h-(--sz-18px) w-(--sz-18px)", isActive && "stroke-(length:--sw-2_3)")} />
                     {item.badge != null && item.badge > 0 && (
-                      <Badge variant="ghost" className="absolute -right-1 -top-1.5 bg-primary px-1.5 text-(length:--text-nano) leading-none text-primary-foreground">
+                      <Badge
+                        variant="ghost"
+                        className={cn(
+                          "absolute -right-1 -top-1.5 px-1.5 text-(length:--text-nano) leading-none",
+                          item.quietBadge ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground",
+                        )}
+                      >
                         {item.badge > 99 ? "99+" : item.badge}
                       </Badge>
                     )}

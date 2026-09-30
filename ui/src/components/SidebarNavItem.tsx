@@ -44,7 +44,8 @@ interface SidebarNavItemProps {
   className?: string;
   labelClassName?: string;
   badge?: number;
-  badgeTone?: "default" | "danger" | "warning";
+  /** "quiet" is for counts that inform rather than ask (Inbox); lime stays for what needs John. */
+  badgeTone?: "default" | "danger" | "warning" | "quiet";
   /**
    * Accessible noun for the numeric badge when collapsed to the rail, where the
    * count is rendered as a dot (e.g. `badgeLabel="unread"` → "Inbox, 28 unread").
@@ -161,7 +162,9 @@ export function SidebarNavItem({
                   ? "bg-red-600"
                   : badgeTone === "warning"
                     ? "bg-amber-500"
-                    : "bg-primary",
+                    : badgeTone === "quiet"
+                      ? "bg-muted-foreground"
+                      : "bg-primary",
               )}
               aria-hidden="true"
             />
@@ -204,7 +207,9 @@ export function SidebarNavItem({
               ? "bg-red-600/90 text-red-50"
               : badgeTone === "warning"
                 ? "bg-amber-500/90 text-amber-50"
-                : "bg-primary text-primary-foreground",
+                : badgeTone === "quiet"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-primary text-primary-foreground",
           )}
         >
           {badge}
