@@ -5611,6 +5611,54 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/push/config",
+  tags: ["inbox"],
+  summary: "Web Push public key for phone decision notifications, and whether this device is registered",
+  request: { params: z.object({ companyId: z.string() }), query: z.object({ endpoint: z.string().url().optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/push/subscriptions",
+  tags: ["inbox"],
+  summary: "Register this phone for decision notifications (existing decisions are marked as seen)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ endpoint: z.string().url(), keys: z.object({ p256dh: z.string(), auth: z.string() }) }),
+        },
+      },
+    },
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/push/subscriptions",
+  tags: ["inbox"],
+  summary: "Stop decision notifications on this phone",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: { content: { "application/json": { schema: z.object({ endpoint: z.string().url() }) } } },
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/push/test",
+  tags: ["inbox"],
+  summary: "Send a test notification to the caller's registered phones",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/decisions-feed",
   tags: ["inbox"],
   summary: "List the one Decisions feed: one card per task, stale cards cleared, with actions",

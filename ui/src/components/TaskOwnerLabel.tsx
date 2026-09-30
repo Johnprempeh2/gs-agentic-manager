@@ -37,7 +37,9 @@ export function TaskOwnerLabel({ issue, currentUserId, userLabels, className }: 
       )}
     >
       <Icon aria-hidden />
-      <span className="truncate">{owner.label}</span>
+      {/* On a phone most rows are agent tasks, so the robot icon says it; the
+          words stay for your tasks and people, the ones you scan for. */}
+      <span className={cn("truncate", owner.kind === "agent" && "max-sm:sr-only")}>{owner.label}</span>
     </Badge>
   );
 }

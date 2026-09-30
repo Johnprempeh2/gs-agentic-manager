@@ -102,3 +102,45 @@ self.addEventListener("fetch", (event) => {
       })
   );
 });
+
+// Phone notifications for decisions (Web Push). The server sends
+// { title, body, url, tag, badge }; every push shows a notification (iOS
+// requires one per push) and sets the Home Screen icon's count.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = {};
+  }
+  const title = typeof data.title === "string" && data.title ? data.title : "GS Agentic Manager";
+  const shown = self.registration.showNotification(title, {
+    body: typeof data.body === "string" ? data.body : "",
+    icon: "/android-chrome-192x192.png",
+    tag: typeof data.tag === "string" ? data.tag : undefined,
+    data: { url: typeof data.url === "string" ? data.url : "/" },
+  });
+  const badge = typeof data.badge === "number" && self.navigator && "setAppBadge" in self.navigator
+    ? (data.badge > 0 ? self.navigator.setAppBadge(data.badge) : self.navigator.clearAppBadge())
+    : Promise.resolve();
+  event.waitUntil(Promise.all([shown, badge.catch(() => {})]));
+});
+
+// Tapping a notification opens the app where it points, reusing an open window.
+// Only paths inside this app are followed.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const raw = event.notification.data && event.notification.data.url;
+  const target = new URL(typeof raw === "string" ? raw : "/", self.location.origin);
+  if (target.origin !== self.location.origin) return;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of windows) {
+      if (typeof client.focus !== "function") continue;
+      await client.focus();
+      if (typeof client.navigate === "function") await client.navigate(target.href).catch(() => {});
+      return;
+    }
+    await self.clients.openWindow(target.href);
+  })());
+});

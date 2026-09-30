@@ -29,6 +29,7 @@ import {
   privateHostnameGuard,
   resolvePrivateHostnameAllowSet,
 } from "./middleware/private-hostname-guard.js";
+import { precompressedAssets } from "./middleware/precompressed-assets.js";
 import {
   applyTrustProxy,
   parseTrustProxyEnv,
@@ -92,6 +93,7 @@ import { activityRoutes } from "./routes/activity.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
 import { decisionsFeedRoutes } from "./routes/decisions-feed.js";
+import { pushRoutes } from "./routes/push.js";
 import { decisionTrainingRoutes } from "./routes/decision-training.js";
 import { decisionRoutes } from "./routes/decisions.js";
 import { decisionQueueRoutes } from "./routes/decision-queues.js";
@@ -804,6 +806,7 @@ export async function createApp(
   api.use(dashboardRoutes(db));
   api.use(attentionRoutes(db));
   api.use(decisionsFeedRoutes(db, { heartbeat: connectionIntentHeartbeat }));
+  api.use(pushRoutes(db));
   api.use(decisionTrainingRoutes(db));
   api.use(decisionRoutes(db, opts.decisionServiceOptions));
   api.use(decisionQueueRoutes(db));
@@ -994,6 +997,7 @@ export async function createApp(
       // never change once built, so they can be cached aggressively.
       app.use(
         "/assets",
+        precompressedAssets(path.join(uiDist, "assets")),
         express.static(path.join(uiDist, "assets"), {
           maxAge: "1y",
           immutable: true,

@@ -21949,6 +21949,14 @@ export function heartbeatService(
           agent,
         );
       }
+      // Before the issue is released, so recovery sees the re-armed monitor.
+      if (outcome !== "succeeded") {
+        try {
+          await restoreIssueMonitorForUnstartedRun(livenessRun);
+        } catch (err) {
+          logger.error({ err, runId: livenessRun.id }, "failed to give back the issue monitor of an unstarted run");
+        }
+      }
       const issueCommentPolicyResult = await finalizeIssueCommentPolicy(
         livenessRun,
         agent,
@@ -30366,7 +30374,14 @@ export function heartbeatService(
    * trigger (same attempt, not re-armed or cleared, same agent assignee), so a
    * second call does nothing.
    */
-  async function restoreIssueMonitorForCancelledRun(run: typeof heartbeatRuns.$inferSelect) {
+  async function restoreIssueMonitorForCancelledRun(
+    run: typeof heartbeatRuns.$inferSelect,
+    options: {
+      reason?: "monitor_run_cancelled" | "monitor_run_not_started";
+      refundAttempt?: (timeoutAt: Date | null, nextCheckAt: Date) => boolean;
+    } = {},
+  ) {
+    const reason = options.reason ?? "monitor_run_cancelled";
     const context = parseObject(run.contextSnapshot);
     const issueId = readNonEmptyString(context.issueId);
     const triggeredAttempt = context.monitorAttemptCount;
@@ -30397,11 +30412,16 @@ export function heartbeatService(
     }
     const now = new Date();
     const nextCheckAt = new Date(now.getTime() + CANCELLED_MONITOR_RUN_RECHECK_MS);
+    const previousMonitor = parseIssueExecutionState(issue.executionState)?.monitor ?? null;
+    const timeoutAt = previousMonitor?.timeoutAt ? new Date(previousMonitor.timeoutAt) : null;
+    const attemptCount = !options.refundAttempt || options.refundAttempt(timeoutAt, nextCheckAt)
+      ? triggeredAttempt - 1
+      : triggeredAttempt;
     const patch = buildIssueMonitorRestoredPatch({
       issue,
       policy: normalizeIssueExecutionPolicy(issue.executionPolicy ?? null),
       nextCheckAt,
-      attemptCount: triggeredAttempt - 1,
+      attemptCount,
     });
     if (!patch) return false;
     const restored = await db
@@ -30431,13 +30451,48 @@ export function heartbeatService(
       entityId: issue.id,
       details: {
         identifier: issue.identifier,
-        reason: "monitor_run_cancelled",
+        reason,
         cancelledRunId: run.id,
         nextCheckAt: nextCheckAt.toISOString(),
-        attemptCount: triggeredAttempt - 1,
+        attemptCount,
       },
     });
     return true;
+  }
+
+  /**
+   * GRE-295: a monitor-started run that ended before the provider did any work
+   * (for example an ACP startup deadline that passed while the host slept) used
+   * up the monitor without reaching the agent. When no retry or other run is
+   * queued for the issue, give the monitor back. The attempt is refunded only
+   * while the monitor has a future timeout, so repeated startup failures stay
+   * bounded by that timeout; without one the re-armed check spends its normal
+   * attempt budget.
+   */
+  async function restoreIssueMonitorForUnstartedRun(run: typeof heartbeatRuns.$inferSelect) {
+    if (run.status === "succeeded") return false;
+    const recovery = parseObject(parseObject(run.resultJson).executionRecovery);
+    if (recovery.providerWorkStarted !== false) return false;
+    const context = parseObject(run.contextSnapshot);
+    const issueId = readNonEmptyString(context.issueId);
+    if (!issueId || context.source !== "issue.monitor") return false;
+    const [pending] = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          ne(heartbeatRuns.id, run.id),
+          inArray(heartbeatRuns.status, ["queued", "running", "scheduled_retry"]),
+          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issueId}`,
+        ),
+      )
+      .limit(1);
+    if (pending) return false;
+    return restoreIssueMonitorForCancelledRun(run, {
+      reason: "monitor_run_not_started",
+      refundAttempt: (timeoutAt, nextCheckAt) => timeoutAt !== null && timeoutAt > nextCheckAt,
+    });
   }
 
   function cancellationTerminationGraceMs(

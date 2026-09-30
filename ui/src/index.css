@@ -659,6 +659,15 @@
     min-height: 44px;
   }
 
+  /* iOS zooms the page into any text field under 16px on focus, which leaves
+     the phone app zoomed in after typing. Keep editable text at 16px or more. */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea,
+  [contenteditable="true"] {
+    font-size: max(var(--text-input-touch), 1em);
+  }
+
   /* Small inline widgets keep their design size on touch devices —
      forcing 44px here stretches checkboxes, chip menus, and icon buttons
      that live inside dense rows (sidebar headers, issue rows, filter
@@ -2726,6 +2735,9 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-calc-15: calc(100vw - 16px); /* Extracted from ui/src/components/MarkdownEditor.tsx (max-w-[calc(100vw-16px)]). */
   --sz-66px: 66px; /* Extracted from ui/src/components/MembershipAction.tsx (w-[66px]). */
   --sz-safe-bottom: env(safe-area-inset-bottom); /* Extracted from ui/src/components/MobileBottomNav.tsx (pb-[env(safe-area-inset-bottom)]). */
+  --text-input-touch: 16px; /* iOS does not zoom into fields at 16px or more */
+  --mobile-page-fill: calc(100dvh - var(--sz-safe-top) - var(--sz-60px) - 4rem - var(--sz-safe-bottom)); /* phone: a full-height page between the sticky header and the tab bar (h-16) */
+  --mobile-ptr-top: calc(var(--sz-safe-top) + var(--sz-60px)); /* phone pull-to-refresh sits just under the sticky header */
   --sz-calc-16: min(calc(100dvh - 2rem),46rem); /* Extracted from ui/src/components/NewAgentDialog.tsx (max-h-[min(calc(100dvh-2rem),46rem)]). */
   --sz-24rem: 24rem; /* Extracted from ui/src/components/NewAgentDialog.tsx (h-[24rem]). */
   --sz-50vh: 50vh; /* Extracted from ui/src/components/NewGoalDialog.tsx (max-h-[50vh]). */
