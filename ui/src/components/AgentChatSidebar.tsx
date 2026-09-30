@@ -74,7 +74,7 @@ export function AgentChatSidebar({
         data-slot="icon-button"
         aria-label="Chat with an agent"
         onClick={onOpenChat}
-        className="flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring"
+        className="flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
       >
         <MessageSquarePlus aria-hidden="true" className="h-4 w-4 shrink-0" />
         <span className={rail ? SIDEBAR_RAIL_HIDDEN_LABEL : "truncate"}>New chat</span>
