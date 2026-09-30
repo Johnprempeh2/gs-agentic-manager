@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlarmClock, CalendarClock, ChevronDown, Loader2, Plus, UserPlus, X } from "lucide-react";
-import { buildAgentMentionHref, type Agent, type AttentionItem, type AttentionSourceKind } from "@greatstone/shared";
+import type { Agent, AttentionItem, AttentionSourceKind } from "@greatstone/shared";
 import { decisionQueuesApi } from "../api/decisionQueues";
 import { issuesApi } from "../api/issues";
 import { useToastActions } from "../context/ToastContext";
+import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { queryKeys } from "../lib/queryKeys";
 import {
   attentionTaskRef,
@@ -122,18 +123,35 @@ export function DecisionTriageStrip({ item, companyId, agents }: DecisionTriageS
     onSuccess: invalidate,
     onError: onError("remove from queue"),
   });
+  // Creates a child task assigned to the agent: assignment wakes the agent,
+  // whereas an @mention comment is context only and wakes no one.
   const routeToAgent = useMutation({
     mutationFn: (agent: Agent) => {
       if (!relatedIssueId) throw new Error("This decision has no linked task to route from.");
-      const mention = `[@${agent.name}](${buildAgentMentionHref(agent.id)})`;
-      const body =
-        `${mention} — could you look at this decision${taskRef ? ` on ${taskRef.identifier}` : ""}, `
-        + `prepare a recommendation, and re-surface it on the decisions desk? (routed from the desk)`;
-      return issuesApi.addComment(relatedIssueId, body);
+      const decision = item.subject.title?.trim() || item.whyNow;
+      const onTask = taskRef ? ` on ${taskRef.identifier}` : "";
+      const description = [
+        `**Decision${onTask}:** ${decision}`,
+        ...(item.whyNow && item.whyNow !== decision ? [`**Why now:** ${item.whyNow}`] : []),
+        `Please look at this decision, prepare a recommendation, and re-surface it on the decisions desk. `
+          + `(Routed from the decisions desk.)`,
+      ].join("\n\n");
+      return issuesApi.create(companyId, {
+        title: `Recommend: ${decision}`.slice(0, 200),
+        description,
+        parentId: relatedIssueId,
+        assigneeAgentId: agent.id,
+        status: "todo",
+      });
     },
-    onSuccess: (_result, agent) => {
+    onSuccess: (issue, agent) => {
       invalidate();
-      pushToast({ title: `Asked ${agent.name} for a recommendation`, tone: "success" });
+      const ref = issue.identifier ?? issue.id;
+      pushToast({
+        title: `Asked ${agent.name} for a recommendation in ${ref}`,
+        tone: "success",
+        action: { label: `View ${ref}`, href: createIssueDetailPath(ref) },
+      });
     },
     onError: onError("ask that agent for a recommendation"),
   });
@@ -421,9 +439,9 @@ function DropdownMenuSeparatorLike() {
 }
 
 /**
- * "Ask agent for recommendation" — posts a mention-comment on the linked task
- * asking the agent to prepare a recommendation and re-surface the decision. It
- * does not reassign the task, so the label says exactly what it does
+ * "Ask agent for recommendation" — creates a child task of the linked task,
+ * assigned to the agent, asking it to prepare a recommendation and re-surface
+ * the decision. It does not reassign the linked task itself
  * (Previously labeled "Route to agent".)
  */
 function AskAgentPicker({
