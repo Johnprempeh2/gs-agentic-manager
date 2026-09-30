@@ -1,5 +1,5 @@
-import { Link } from "@/lib/router";
-import { Menu, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Link, useNavigate } from "@/lib/router";
+import { ChevronLeft, Menu, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
@@ -17,6 +17,7 @@ import { Fragment, useMemo, type ReactNode } from "react";
 import { PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
 import { PluginLauncherOutlet, usePluginLaunchers } from "@/plugins/launchers";
 import { cn } from "../lib/utils";
+import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
 
 type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | null };
 
@@ -49,6 +50,22 @@ function GlobalToolbar({
         <PluginLauncherOutlet placementZones={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
       ) : null}
     </div>
+  );
+}
+
+/** Phone back button for inner pages (see lib/mobile-back). */
+function MobileBackButton({ fallbackHref }: { fallbackHref: string }) {
+  const navigate = useNavigate();
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="-ml-2 mr-1 size-10 shrink-0"
+      onClick={() => goBackOr(navigate, fallbackHref)}
+      aria-label="Back"
+    >
+      <ChevronLeft className="size-6" />
+    </Button>
   );
 }
 
@@ -109,6 +126,23 @@ export function BreadcrumbBar({ taskDetailLayout = false }: { taskDetailLayout?:
   );
 
   const currentCrumb = breadcrumbs[breadcrumbs.length - 1];
+  const backFallback = isMobile ? mobileBackFallback(breadcrumbs) : null;
+  if (isMobile && backFallback) {
+    // Inner page on a phone: back arrow and the page title, like a native app.
+    return (
+      <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-4">
+        <MobileBackButton fallbackHref={backFallback} />
+        <h1 className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm font-semibold">
+          {currentCrumb.leading ? (
+            <span className="flex shrink-0 items-center self-center">{currentCrumb.leading}</span>
+          ) : null}
+          <span className="min-w-0 truncate" title={currentCrumb.label}>{currentCrumb.label}</span>
+          <CrumbIdentifier identifier={currentCrumb.identifier} />
+        </h1>
+        {globalToolbarSlots}
+      </div>
+    );
+  }
   if (isMobile && breadcrumbs[0]?.label === "Tasks" && currentCrumb.identifier) {
     return (
       <div className="gs-page-bar h-(--sz-60px) shrink-0 flex items-center px-4">

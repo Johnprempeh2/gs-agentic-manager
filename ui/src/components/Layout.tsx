@@ -25,6 +25,9 @@ import { BlockedDependentsDialogHost } from "./BlockedDependentsDialog";
 import { AnnouncementWell } from "./AnnouncementWell";
 import { PluginAppShellOverlays } from "./PluginAppShellOverlays";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { PullToRefresh } from "./PullToRefresh";
+import { useOptionalBreadcrumbs } from "../context/BreadcrumbContext";
+import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
 import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
@@ -116,6 +119,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     routineId?: string;
   }>();
   const navigate = useNavigate();
+  const breadcrumbs = useOptionalBreadcrumbs();
+  // Where a left-edge swipe goes back to on an inner page (null on a main tab).
+  const mobileBackHref = useRef<string | null>(null);
+  mobileBackHref.current = isMobile ? mobileBackFallback(breadcrumbs) : null;
   const location = useLocation();
   const navigationType = useNavigationType();
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
@@ -138,7 +145,11 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const lastMainScrollTop = useRef(0);
   const previousPathname = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
-  useRouteEnterMotion(mainContentRef, routeSectionKey(location.pathname));
+  useRouteEnterMotion(
+    mainContentRef,
+    routeSectionKey(location.pathname),
+    isMobile ? { pathname: location.pathname, navigationType } : null,
+  );
   const scrollMemory = useRef(new NavigationScrollMemory());
   const activeScrollKey = useRef<string>(location.key);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
@@ -495,9 +506,11 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
 
       if (dy > MAX_VERTICAL) return; // vertical scroll, ignore
 
-      // Swipe right from left edge → open
+      // Swipe right from the left edge: back on an inner page, like a native
+      // app; open the menu on a main tab.
       if (!sidebarOpen && startX < EDGE_ZONE && dx > MIN_DISTANCE) {
-        setSidebarOpen(true);
+        if (mobileBackHref.current) goBackOr(navigate, mobileBackHref.current);
+        else setSidebarOpen(true);
         return;
       }
 
@@ -514,7 +527,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       document.removeEventListener("touchstart", onTouchStart);
       document.removeEventListener("touchend", onTouchEnd);
     };
-  }, [isMobile, sidebarOpen, setSidebarOpen]);
+  }, [isMobile, sidebarOpen, setSidebarOpen, navigate]);
 
   const updateMobileNavVisibility = useCallback((currentTop: number) => {
     const delta = currentTop - lastMainScrollTop.current;
@@ -621,7 +634,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     <GeneralSettingsProvider value={{ keyboardShortcutsEnabled }}>
       <div
       className={cn(
-        "text-foreground pt-(--sz-safe-top)",
+        // Phone: the sticky header pads the notch itself, so content scrolling
+        // under a see-through status bar never shows behind the clock.
+        "text-foreground",
+        !isMobile && "pt-(--sz-safe-top)",
         // overflow-x-clip on mobile keeps a stray wide descendant from making the
         // whole viewport scroll horizontally. clip (not hidden) leaves overflow-y
         // computed as visible, so native body scroll + the sticky breadcrumb keep
@@ -703,10 +719,11 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           <div
             className={cn(
               !isMobile && useStreamlinedTaskDetailShell && "hidden",
-              isMobile && "sticky top-0 z-20 gs-glass-bar",
+              isMobile && "sticky top-0 z-20 gs-glass-bar pt-(--sz-safe-top)",
             )}
           >
-            <StandaloneBrowserControls mobile={isMobile} />
+            {/* The phone app brings its own back arrow and pull-to-refresh, so it
+                needs no browser-controls strip. */}
             <BreadcrumbBar />
             {isMobile && isCompanySettingsRoute ? (
               <div className="border-b border-border px-4 pb-3">
@@ -781,6 +798,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         </div>
       </div>
       {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
+      <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
       <NewIssueDialog />
       <NewProjectDialog />

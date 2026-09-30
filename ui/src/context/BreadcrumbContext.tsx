@@ -119,6 +119,12 @@ export function BreadcrumbProvider({ children, companyName }: BreadcrumbProvider
   );
 }
 
+/** The breadcrumbs when a provider is present, else an empty trail (the shell
+ *  reads them for the phone back swipe and must not require the provider). */
+export function useOptionalBreadcrumbs(): Breadcrumb[] {
+  return useContext(BreadcrumbContext)?.breadcrumbs ?? [];
+}
+
 export function useBreadcrumbs() {
   const ctx = useContext(BreadcrumbContext);
   if (!ctx) {

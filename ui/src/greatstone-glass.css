@@ -57,6 +57,7 @@
   --motion-ease-spring: cubic-bezier(0.22, 1.25, 0.36, 1);
   --motion-route-enter: 380ms;
   --motion-route-travel: 8px;
+  --motion-route-travel-x: 24px; /* phone: page slides sideways on push/back */
   --motion-float-enter: 220ms;
   --motion-hover-lift: 180ms;
   --motion-press: 90ms;
