@@ -23,6 +23,16 @@ describe("StatusIcon", () => {
     expect(html).toContain("var(--status-task-icon-todo)");
   });
 
+  it("shows a still clock, not the spinner, for open work that is only waiting", () => {
+    const waiting = renderToStaticMarkup(<StatusIcon status="in_progress" waiting />);
+    expect(waiting).toContain("lucide-clock");
+    expect(waiting).not.toContain("animate-spin");
+    expect(waiting).toContain("waiting for a scheduled check");
+    // A done task that still has an old monitor keeps its own glyph.
+    expect(renderToStaticMarkup(<StatusIcon status="done" waiting />)).not.toContain("lucide-clock");
+    expect(renderToStaticMarkup(<StatusIcon status="in_progress" />)).toContain("animate-spin");
+  });
+
   it("maps covered-blocked → In queue (blue in_queue var, no cyan markers)", () => {
     const html = renderToStaticMarkup(
       <StatusIcon
