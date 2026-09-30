@@ -53,8 +53,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
   const actorName = actor?.name ?? (event.actorType === "system" ? "System" : userProfile?.label ?? (event.actorType === "user" ? "Board" : event.actorId || "Unknown"));
   const actorAvatarUrl = userProfile?.image ?? null;
 
-  const inner = (
-    <div className="space-y-2">
+  const header = (
       <div className="flex items-start gap-2 @xl:grid @xl:grid-cols-(--dashboard-activity-list-columns) @xl:items-baseline">
         {event.actorType === "agent" ? (
           <AgentAvatar agent={actor} name={actorName} size={24} className="@xl:self-center" />
@@ -76,7 +75,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
               ) : (
                 <span className="min-w-0 flex-1 truncate">
                   {name && <span className="font-medium">{name}</span>}
-                  {entityTitle && <span className="text-muted-foreground"> — {entityTitle}</span>}
+                  {entityTitle && <span className="text-muted-foreground">: {entityTitle}</span>}
                 </span>
               )}
             </p>
@@ -91,8 +90,6 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
           </div>
         </div>
       </div>
-      <IssueReferenceActivitySummary event={event} />
-    </div>
   );
 
   const classes = cn(
@@ -101,17 +98,16 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
     className,
   );
 
-  if (link) {
-    return (
-      <Link to={link} className={cn(classes, "no-underline text-inherit block")}>
-        {inner}
-      </Link>
-    );
-  }
-
+  // The reference chips are links themselves, so they sit beside the row
+  // link rather than inside it (an <a> inside an <a> is invalid HTML).
   return (
-    <div className={classes}>
-      {inner}
+    <div className={cn(classes, "space-y-2")}>
+      {link ? (
+        <Link to={link} className="no-underline text-inherit block">
+          {header}
+        </Link>
+      ) : header}
+      <IssueReferenceActivitySummary event={event} />
     </div>
   );
 }
