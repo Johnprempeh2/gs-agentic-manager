@@ -766,8 +766,12 @@ export function connectionIntentService(db: Db) {
         if (managed.binding.mode === "responsible_user") {
           const selected = await service.select({ companyId: loaded.issue.companyId, agentId: payload.requestingAgentId, userId, adapterType: managed.agent.adapterType, model: managed.agent.adapterConfig.model, runnerProvider: managed.agent.adapterConfig.provider, acpxAgent: managed.agent.adapterConfig.acpxAgent, binding: managed.binding, allowUninstalledPersonal: true });
           if (selected.connection.id !== selectedConnection.id) throw conflict("Choose this account as your personal default in Connections first");
+          // The owner's personal default serves every run they start, so one
+          // fix covers every agent ("Any agent") instead of one card per agent.
           const installs = await txAccess.listConnectionInstalls(selectedConnection.id, loaded.issue.companyId);
-          await txAccess.putConnectionInstalls(selectedConnection.id, { installs: [...installs, { targetType: "agent", targetId: payload.requestingAgentId }] }, { actorType: "user", actorId: userId });
+          if (!installs.some((install) => install.targetType === "company")) {
+            await txAccess.putConnectionInstalls(selectedConnection.id, { installs: [{ targetType: "company", targetId: loaded.issue.companyId }] }, { actorType: "user", actorId: userId });
+          }
         }
         const selected = await service.select({ companyId: loaded.issue.companyId, agentId: payload.requestingAgentId, userId, adapterType: managed.agent.adapterType, model: managed.agent.adapterConfig.model, runnerProvider: managed.agent.adapterConfig.provider, acpxAgent: managed.agent.adapterConfig.acpxAgent, binding: managed.binding });
         if (selected.connection.id !== selectedConnection.id) throw conflict("This is not the account selected for the agent");
