@@ -4511,6 +4511,11 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
             timedOut: false,
             errorMessage: message,
             ...classified,
+            // GRE-295: no prompt reaches the agent before the session handle is
+            // live, so a handshake failure proves the provider did no work. Without
+            // this evidence the server holds the run for manual reconciliation and
+            // a host-sleep startup deadline strands the task instead of retrying.
+            executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
             ...billingFields,
             ...referencedProjectStagingFailuresField,
             model: prepared.requestedModel || null,

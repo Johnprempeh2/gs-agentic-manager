@@ -27,6 +27,11 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { heartbeatService } from "../services/heartbeat.ts";
 import { normalizeIssueExecutionPolicy, parseIssueExecutionState } from "../services/issue-execution-policy.ts";
+import { registerServerAdapter, unregisterServerAdapter } from "../adapters/index.ts";
+
+/** GRE-295: fails like an ACP startup deadline that passed while the host slept. */
+const STARTUP_DEADLINE_TEST_ADAPTER = "monitor_startup_deadline_test";
+const STARTUP_DEADLINE = "The ACP startup handshake did not finish before the startup deadline.";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -45,6 +50,24 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-monitor-");
     db = createDb(tempDb.connectionString);
+    registerServerAdapter({
+      type: STARTUP_DEADLINE_TEST_ADAPTER,
+      execute: async () => ({
+        exitCode: 1,
+        signal: null,
+        timedOut: false,
+        errorMessage: STARTUP_DEADLINE,
+        errorCode: "acpx_handshake_timeout",
+        executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
+        resultJson: { phase: "ensure_session" },
+      }),
+      testEnvironment: async () => ({
+        adapterType: STARTUP_DEADLINE_TEST_ADAPTER,
+        status: "pass",
+        checks: [],
+        testedAt: new Date().toISOString(),
+      }),
+    });
   }, 20_000);
 
   async function waitForHeartbeatIdle(timeoutMs = 3_000) {
@@ -144,6 +167,7 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
   });
 
   afterAll(async () => {
+    unregisterServerAdapter(STARTUP_DEADLINE_TEST_ADAPTER);
     await tempDb?.cleanup();
   });
 
@@ -633,6 +657,61 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
       const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
       expect(issue.monitorNextCheckAt?.toISOString()).toBe(rearmedAt.toISOString());
       expect(issue.monitorAttemptCount).toBe(3);
+    });
+  });
+
+  describe("GRE-295: a monitor-started run that dies before the provider starts", () => {
+    /** The GRE-157 shape: an issue waiting on a one-shot reminder monitor. */
+    async function fireParkedReminder(monitor: Record<string, unknown>) {
+      const fixture = await seedFixture({
+        monitor: { kind: "external_service", serviceName: "reminder", maxAttempts: 1, ...monitor },
+      });
+      await db.update(agents).set({ adapterType: STARTUP_DEADLINE_TEST_ADAPTER, adapterConfig: {} })
+        .where(eq(agents.id, fixture.agentId));
+      const heartbeat = heartbeatService(db);
+      const before = Date.now();
+      const tick = await heartbeat.tickTimers(new Date("2026-04-11T12:31:00.000Z"));
+      expect(tick.enqueued).toBe(1);
+      await heartbeat.drainActiveRunExecutions();
+      await waitForHeartbeatIdle();
+      const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.agentId, fixture.agentId));
+      expect(run).toMatchObject({ status: "failed", errorCode: "acpx_handshake_timeout" });
+      const issue = await db.select().from(issues).where(eq(issues.id, fixture.issueId)).then((rows) => rows[0]!);
+      const actions = await db.select().from(activityLog).where(eq(activityLog.entityId, fixture.issueId));
+      return { issue, actions, before };
+    }
+
+    it("gives the reminder back with its attempt while the monitor timeout is ahead", async () => {
+      const { issue, actions, before } = await fireParkedReminder({ timeoutAt: "2099-01-01T08:00:00.000Z" });
+
+      // Not moved to blocked behind a manual hold; the live path is the re-armed monitor.
+      expect(issue.status).toBe("in_progress");
+      expect(issue.monitorNextCheckAt).not.toBeNull();
+      expect(issue.monitorNextCheckAt!.getTime()).toBeGreaterThan(before);
+      expect(issue.monitorAttemptCount).toBe(0);
+      expect(parseIssueExecutionState(issue.executionState)?.monitor).toMatchObject({
+        status: "scheduled",
+        attemptCount: 0,
+        maxAttempts: 1,
+        timeoutAt: "2099-01-01T08:00:00.000Z",
+      });
+      const restored = actions.filter((row) => row.action === "issue.monitor_restored");
+      expect(restored).toHaveLength(1);
+      expect(restored[0]?.details).toMatchObject({ reason: "monitor_run_not_started", attemptCount: 0 });
+      // No manual reconciliation hold replaces the live path.
+      const holds = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, issue.id));
+      expect(holds.filter((row) => row.status === "active")).toHaveLength(0);
+    });
+
+    it("re-arms without a refund when the monitor has no timeout, so the attempt budget still bounds it", async () => {
+      const { issue } = await fireParkedReminder({});
+
+      expect(issue.monitorNextCheckAt).not.toBeNull();
+      expect(issue.monitorAttemptCount).toBe(1);
+      expect(parseIssueExecutionState(issue.executionState)?.monitor).toMatchObject({
+        status: "scheduled",
+        attemptCount: 1,
+      });
     });
   });
 });
