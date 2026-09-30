@@ -1,5 +1,8 @@
 {
   "_about": "Experimental switch -> vitest files. The release candidate check runs the files of every switch that is on in live (run.mjs, GRE-101). One entry per boolean key of INSTANCE_FEATURE_CATALOG (packages/shared/src/feature-catalog.ts); run.test.mjs fails if a key is missing. Paths are repo-relative. Source: Beacon's beta scorecard on GRE-81 (28 Sep 2026). Playwright specs (tests/e2e) are not listed: they need a running app.",
+  "knownFlaky": {
+    "server/src/__tests__/chat-channels.integration.test.ts": "GRE-280: 4 cases failed inside the full gate on a busy machine and passed alone; two were 1s vi.waitFor limits (fixed), two 15s timeouts not reproduced"
+  },
   "switches": {
     "enableEnvironments": [
       "server/src/__tests__/environment-routes.test.ts",
