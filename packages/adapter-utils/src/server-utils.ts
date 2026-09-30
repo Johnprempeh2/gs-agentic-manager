@@ -4668,11 +4668,14 @@ export async function ensureCommandResolvable(
 }
 
 export {
+  CapturedOutputTailer,
   CHILD_OUTPUT_FILES_ENV,
   childOutputFilesDisabled,
   freezeRunOutputCapture,
   readCapturedOutputFile,
+  registerActiveOutputCapture,
   removeChildOutputCaptureFiles,
+  unregisterActiveOutputCapture,
   type ChildOutputCaptureOptions,
   type ChildOutputCapturePaths,
   type ChildOutputCaptureProgress,

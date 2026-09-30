@@ -3823,6 +3823,63 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       });
     });
 
+    // GRE-269: the run page shows what the adopted child writes after the
+    // restart while it runs, and the finished transcript has it exactly once.
+    it("streams an adopted child's new output to its run log while it runs", async () => {
+      await withTempPaperclipHome(async () => {
+        const before = init + assistant("before restart");
+        const adopted = await adoptCapturedRun({ loggedStdout: before, stdout: before });
+        const logStore = getRunLogStore();
+        const readLog = async () => String((await logStore.read(adopted.handle)).content);
+
+        await fs.appendFile(adopted.stdoutPath, assistant("live after restart"));
+        const appendedAt = Date.now();
+        while (!(await readLog()).includes("live after restart")) {
+          expect(Date.now() - appendedAt).toBeLessThan(1_000);
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        expect((await loadRun(adopted.runId))?.status).toBe("running");
+
+        // A slow log write is in flight when the child writes its last output
+        // and exits: finalize must append only what the tail had not logged.
+        const realAppend = logStore.append.bind(logStore);
+        const appendSpy = vi
+          .spyOn(logStore, "append")
+          .mockImplementation(async (...args: Parameters<typeof logStore.append>) => {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            return realAppend(...args);
+          });
+        try {
+          await fs.appendFile(adopted.stdoutPath, assistant("in flight at exit"));
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          await fs.appendFile(
+            adopted.stdoutPath,
+            assistant("written just before exit") +
+              resultEvent({ subtype: "success", is_error: false, result: "Done." }),
+          );
+          await killChild(adopted.child);
+          const reap = await adopted.heartbeat.reapOrphanedRuns();
+          expect(reap.runIds).toEqual([adopted.runId]);
+        } finally {
+          appendSpy.mockRestore();
+        }
+
+        expect((await loadRun(adopted.runId))?.status).toBe("succeeded");
+        const content = await readLog();
+        const markers = [
+          "before restart",
+          "live after restart",
+          "in flight at exit",
+          "written just before exit",
+        ];
+        for (const marker of markers) {
+          expect(content.split(marker).length - 1).toBe(1);
+        }
+        const positions = markers.map((marker) => content.indexOf(marker));
+        expect(positions).toEqual([...positions].sort((a, b) => a - b));
+      });
+    });
+
     it("fails an adopted run from an is_error result instead of marking it lost", async () => {
       await withTempPaperclipHome(async () => {
         const adopted = await adoptCapturedRun({

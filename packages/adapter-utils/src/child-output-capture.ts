@@ -71,26 +71,36 @@ export function splitCompleteUtf8(buf: Buffer): [Buffer, Buffer] {
 }
 
 export class CapturedOutputTailer {
-  private offset = 0;
+  private offset: number;
   private carry: Buffer = Buffer.alloc(0);
-  private committed = 0;
+  private committed: number;
   private stopRequested = false;
   private finalDrain = false;
   private loop: Promise<void> | null = null;
   private wake: (() => void) | null = null;
 
+  // `startOffset` resumes a file another server already logged up to (a
+  // committed offset, so it never splits a UTF-8 character) (GRE-269).
   constructor(
     readonly filePath: string,
     private readonly onText: (text: string) => Promise<void>,
     private readonly pollMs = CHILD_OUTPUT_POLL_MS,
-  ) {}
+    startOffset = 0,
+  ) {
+    this.offset = startOffset;
+    this.committed = startOffset;
+  }
 
   get committedBytes() {
     return this.committed;
   }
 
   start() {
-    if (!this.loop) this.loop = this.run().finally(() => (this.loop = null));
+    if (this.loop) return;
+    this.loop = this.run().finally(() => (this.loop = null));
+    // Nobody may await the loop (freeze/drain do); a read error must not
+    // become an unhandled rejection. Awaiting callers still see it.
+    this.loop.catch(() => undefined);
   }
 
   // Stop reading. After this resolves no more onText calls happen, so
