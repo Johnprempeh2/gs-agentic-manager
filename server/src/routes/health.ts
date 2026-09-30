@@ -421,6 +421,10 @@ export function healthRoutes(
         ...(redactedDatabaseBackup ? { databaseBackup: redactedDatabaseBackup } : {}),
         ...(redactedWarnings ? { warnings: redactedWarnings } : {}),
         ...(devServer ? { devServer } : {}),
+        // The local supervisor (dev-server status token) checks that a restart
+        // request came from the server it is about to restart. In login mode it
+        // has no board session, so without this every hot restart was dropped.
+        ...(exposeDevServerDetails ? { serverInfo } : {}),
         // Token-authorized probe on an otherwise redacted response: the control
         // plane needs readiness without a board session, and nothing else about
         // this instance becomes visible.

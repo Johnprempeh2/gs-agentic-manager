@@ -2316,7 +2316,7 @@ describe("IssuesList", () => {
     });
   });
 
-  it("places separators around expanded nested rows in visible order", async () => {
+  it("groups by top-level rows: a nested child stays under its parent's heading", async () => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
     const threeDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3, 12);
@@ -2345,10 +2345,43 @@ describe("IssuesList", () => {
       expect(visibleOrder).toEqual([
         "Today",
         "Recent parent",
-        "Earlier",
         "Older child",
+        "Earlier",
         "Old root",
       ]);
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("never repeats Today after an older nested child (30 Sep phone audit)", async () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+    const todayEarlier = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8);
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[
+          createIssue({ id: "p", identifier: "PAP-1", title: "Parent today", updatedAt: today }),
+          createIssue({ id: "c", identifier: "PAP-2", parentId: "p", title: "Child yesterday", updatedAt: yesterday }),
+          createIssue({ id: "r", identifier: "PAP-3", title: "Root today", updatedAt: todayEarlier }),
+        ]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        rowPresentation="task"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      const labels = Array.from(container.querySelectorAll("[data-issues-date-separator]"))
+        .map((el) => el.getAttribute("aria-label"));
+      expect(labels).toEqual(["Today"]);
     });
 
     act(() => {

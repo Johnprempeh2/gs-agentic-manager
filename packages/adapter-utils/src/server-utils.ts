@@ -3,7 +3,13 @@ import { fromLegacyEnvKey, withLegacyEnvAliases } from "@greatstone/shared/legac
 export { fromLegacyEnvKey, toLegacyEnvKey, withLegacyEnvAliases } from "@greatstone/shared/legacy-env";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { constants as fsConstants, promises as fs, type Dirent } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  mkdirSync,
+  promises as fs,
+  type Dirent,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@greatstone/shared";
@@ -14,6 +20,16 @@ import {
 } from "./local-process-sandbox.js";
 import { buildSshSpawnTarget, type SshRemoteExecutionSpec } from "./ssh.js";
 import { redactCommandText } from "./command-redaction.js";
+import {
+  CapturedOutputTailer,
+  childOutputFilesDisabled,
+  openChildOutputCaptureFiles,
+  registerActiveOutputCapture,
+  removeChildOutputCaptureFiles,
+  unregisterActiveOutputCapture,
+  type ChildOutputCaptureOptions,
+  type ChildOutputCapturePaths,
+} from "./child-output-capture.js";
 import { paperclipChatFilePreparationDelivery } from "./chat-file-delivery.js";
 import {
   GSAM_RUNNER_PERMISSION_CAPABILITIES,
@@ -4651,6 +4667,32 @@ export async function ensureCommandResolvable(
   throw new Error(`Command not found in PATH: "${command}"`);
 }
 
+export {
+  CHILD_OUTPUT_FILES_ENV,
+  childOutputFilesDisabled,
+  freezeRunOutputCapture,
+  readCapturedOutputFile,
+  removeChildOutputCaptureFiles,
+  type ChildOutputCaptureOptions,
+  type ChildOutputCapturePaths,
+  type ChildOutputCaptureProgress,
+  type CapturedOutputRead,
+} from "./child-output-capture.js";
+
+function openChildOutputCaptureFilesSafe(
+  dir: string,
+  runId: string,
+  onError: (err: unknown) => void,
+) {
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    return openChildOutputCaptureFiles(dir, runId);
+  } catch (err) {
+    onError(err);
+    return null;
+  }
+}
+
 export async function runChildProcess(
   runId: string,
   command: string,
@@ -4666,11 +4708,16 @@ export async function runChildProcess(
       pid: number;
       processGroupId: number | null;
       startedAt: string;
+      outputCapture?: ChildOutputCapturePaths | null;
     }) => Promise<void>;
     terminalResultCleanup?: TerminalResultCleanupOptions;
     stdin?: string;
     remoteExecution?: RemoteExecutionSpec | null;
     localProcessSandbox?: LocalProcessSandboxOptions | null;
+    // Write stdout/stderr to append-only files under `dir` instead of pipes,
+    // so the output outlives this server (hot-restart adoption). Local,
+    // unsandboxed children only; `GSAM_CHILD_OUTPUT_FILES=0` turns it off.
+    outputCapture?: ChildOutputCaptureOptions | null;
   },
 ): Promise<RunProcessResult> {
   const onLogError =
@@ -4716,20 +4763,50 @@ export async function runChildProcess(
         for (const [key, value] of Object.entries(childEnv)) {
           if (value === undefined) delete childEnv[key];
         }
-        const child = spawn(target.command, target.args, {
-          cwd: target.cwd ?? opts.cwd,
-          env: childEnv,
-          detached: process.platform !== "win32",
-          shell: false,
-          stdio: [opts.stdin != null ? "pipe" : "ignore", "pipe", "pipe"],
-        }) as ChildProcessWithEvents;
+        const captureFiles =
+          opts.outputCapture &&
+          !opts.remoteExecution &&
+          !opts.localProcessSandbox &&
+          !childOutputFilesDisabled()
+            ? openChildOutputCaptureFilesSafe(opts.outputCapture.dir, runId, (err) =>
+                onLogError(err, runId, "failed to open child output files; using pipes"),
+              )
+            : null;
+        let child: ChildProcessWithEvents;
+        try {
+          child = spawn(target.command, target.args, {
+            cwd: target.cwd ?? opts.cwd,
+            env: childEnv,
+            detached: process.platform !== "win32",
+            shell: false,
+            stdio: [
+              opts.stdin != null ? "pipe" : "ignore",
+              captureFiles ? captureFiles.stdoutFd : "pipe",
+              captureFiles ? captureFiles.stderrFd : "pipe",
+            ],
+          }) as ChildProcessWithEvents;
+        } finally {
+          // The child holds its own copies; the server never writes to them.
+          if (captureFiles) {
+            closeSync(captureFiles.stdoutFd);
+            closeSync(captureFiles.stderrFd);
+          }
+        }
+        const capturePaths: ChildOutputCapturePaths | null = captureFiles
+          ? { stdoutPath: captureFiles.stdoutPath, stderrPath: captureFiles.stderrPath }
+          : null;
         const startedAt = new Date().toISOString();
         const processGroupId = resolveProcessGroupId(child);
 
         const spawnPersistPromise =
           typeof child.pid === "number" && child.pid > 0 && opts.onSpawn
             ? opts
-                .onSpawn({ pid: child.pid, processGroupId, startedAt })
+                .onSpawn({
+                  pid: child.pid,
+                  processGroupId,
+                  startedAt,
+                  ...(capturePaths ? { outputCapture: capturePaths } : {}),
+                })
                 .catch((err) => {
                   onLogError(
                     err,
@@ -4838,41 +4915,69 @@ export async function runChildProcess(
               }, opts.timeoutSec * 1000)
             : null;
 
+        // Both the pipe and the file path feed chunks through here, so the
+        // caller sees the same stdout/stderr, onLog chunks, and cleanup.
+        const handleOutput = (stream: "stdout" | "stderr", text: string) => {
+          if (stream === "stdout") stdout = appendWithCap(stdout, text);
+          else stderr = appendWithCap(stderr, text);
+          maybeArmTerminalResultCleanup();
+          logChain = logChain
+            .then(() => opts.onLog(stream, text))
+            .catch((err) =>
+              onLogError(err, runId, `failed to append ${stream} log chunk`),
+            )
+            .finally(() => {
+              maybeArmTerminalResultCleanup();
+            });
+          return logChain;
+        };
+
         child.stdout?.on("data", (chunk: unknown) => {
           const readable = child.stdout;
           if (!readable) return;
           readable.pause();
-          const text = String(chunk);
-          stdout = appendWithCap(stdout, text);
-          maybeArmTerminalResultCleanup();
-          logChain = logChain
-            .then(() => opts.onLog("stdout", text))
-            .catch((err) =>
-              onLogError(err, runId, "failed to append stdout log chunk"),
-            )
-            .finally(() => {
-              maybeArmTerminalResultCleanup();
-              resumeReadable(readable);
-            });
+          void handleOutput("stdout", String(chunk)).finally(() =>
+            resumeReadable(readable),
+          );
         });
 
         child.stderr?.on("data", (chunk: unknown) => {
           const readable = child.stderr;
           if (!readable) return;
           readable.pause();
-          const text = String(chunk);
-          stderr = appendWithCap(stderr, text);
-          maybeArmTerminalResultCleanup();
-          logChain = logChain
-            .then(() => opts.onLog("stderr", text))
-            .catch((err) =>
-              onLogError(err, runId, "failed to append stderr log chunk"),
-            )
-            .finally(() => {
-              maybeArmTerminalResultCleanup();
-              resumeReadable(readable);
-            });
+          void handleOutput("stderr", String(chunk)).finally(() =>
+            resumeReadable(readable),
+          );
         });
+
+        const tailers = capturePaths
+          ? {
+              stdout: new CapturedOutputTailer(capturePaths.stdoutPath, (text) =>
+                handleOutput("stdout", text),
+              ),
+              stderr: new CapturedOutputTailer(capturePaths.stderrPath, (text) =>
+                handleOutput("stderr", text),
+              ),
+            }
+          : null;
+        if (tailers && capturePaths) {
+          tailers.stdout.start();
+          tailers.stderr.start();
+          registerActiveOutputCapture(runId, { paths: capturePaths, ...tailers });
+        }
+        const finishCapture = async () => {
+          if (!tailers || !capturePaths) return;
+          // Drain to EOF before resolving so bytes written just before exit
+          // are not lost, then drop the files: the run log now holds them.
+          await Promise.all([
+            tailers.stdout.drainToEnd(),
+            tailers.stderr.drainToEnd(),
+          ]).catch((err) =>
+            onLogError(err, runId, "failed to drain child output files"),
+          );
+          unregisterActiveOutputCapture(runId, tailers.stdout);
+          await removeChildOutputCaptureFiles(capturePaths);
+        };
 
         const stdin = child.stdin;
         if (opts.stdin != null && stdin) {
@@ -4888,6 +4993,7 @@ export async function runChildProcess(
           clearTerminalCleanupTimers();
           runningProcesses.delete(runId);
           void target.cleanup?.();
+          void finishCapture();
           const errno = (err as NodeJS.ErrnoException).code;
           const pathValue = mergedEnv.PATH ?? mergedEnv.Path ?? "";
           const msg =
@@ -4907,7 +5013,9 @@ export async function runChildProcess(
             if (timeout) clearTimeout(timeout);
             clearTerminalCleanupTimers();
             runningProcesses.delete(runId);
-            void logChain.finally(() => {
+            void finishCapture()
+              .then(() => logChain)
+              .finally(() => {
               void Promise.resolve()
                 .then(() => target.cleanup?.())
                 .finally(() => {
@@ -4932,7 +5040,7 @@ export async function runChildProcess(
                       : null,
                   });
                 });
-            });
+              });
           },
         );
       })

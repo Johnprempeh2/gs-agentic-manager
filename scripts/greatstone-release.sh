@@ -109,6 +109,15 @@ say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD)
 # change purges node_modules under the running server; see the runbook.
 (cd "$LIVE_DIR" && pnpm install --frozen-lockfile --prefer-offline \
   --config.confirm-modules-purge=false --reporter=silent </dev/null)
+# Live serves the built UI (ui/dist, set up by ~/GSAM/start-live.sh) instead of
+# the Vite dev middleware, which a phone over Tailscale could not load. The
+# server reads ui/dist from disk on each request, so the rebuilt UI is live at
+# once, even when the release needs no server restart.
+if [ -f "$LIVE_DIR/ui/dist/index.html" ]; then
+  (cd "$LIVE_DIR" && pnpm --filter @greatstone/ui build >/dev/null </dev/null) \
+    || die "the UI build failed on $LIVE_TAG; live code is on $LIVE_TAG but its UI is not rebuilt. Roll back with: scripts/greatstone-release.sh $PREVIOUS"
+  say "Rebuilt the UI for $LIVE_TAG"
+fi
 
 # The live server runs under dev-runner's "restart required" supervisor. It
 # notices the changed files within a few seconds, then restarts on request.

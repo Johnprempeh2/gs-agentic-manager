@@ -57,6 +57,8 @@ export interface IssueRowProps {
   externalObjectSummary?: ExternalObjectSummary | null;
   trailingMeta?: ReactNode;
   titleSuffix?: ReactNode;
+  /** Who the task is for (see TaskOwnerLabel); sits right after the title. */
+  ownerLabel?: ReactNode;
   titleClassName?: string;
   checklistStepNumber?: number | string | null;
   checklistCurrentStep?: boolean;
@@ -136,6 +138,7 @@ export function IssueRow({
   externalObjectSummary,
   trailingMeta,
   titleSuffix,
+  ownerLabel,
   titleClassName,
   checklistStepNumber = null,
   checklistCurrentStep = false,
@@ -296,17 +299,21 @@ export function IssueRow({
         </span>
 
         <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-          <span data-slot="task-row-title-cluster" className="flex min-w-0 flex-1 items-baseline gap-1.5 sm:items-center">
+          {/* Phone: the title takes the whole first line (up to two lines) and
+              the owner label and time wrap onto the line under it, instead of
+              squeezing the title to a few words. */}
+          <span data-slot="task-row-title-cluster" className="flex min-w-0 flex-1 items-baseline gap-1.5 max-sm:flex-wrap max-sm:gap-y-1 sm:items-center">
             <span
               data-slot="task-row-title"
               className={cn(
-                "min-w-0 line-clamp-2 text-sm sm:truncate sm:line-clamp-none",
+                "min-w-0 line-clamp-2 text-sm max-sm:basis-full sm:truncate sm:line-clamp-none",
                 isUnread && "font-semibold",
                 titleClassName,
               )}
             >
               {issue.title}{titleSuffix}
             </span>
+            {ownerLabel}
             {recoveryIndicator}
             {mobileTitleMeta ? (
               <span className="ml-auto shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground sm:hidden">
@@ -391,13 +398,14 @@ export function IssueRow({
         {parkedBlockerIndicator}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
-        <span data-slot="task-row-title-cluster" className="flex min-w-0 items-start gap-1.5 sm:order-2 sm:flex-1 sm:items-center">
+        <span data-slot="task-row-title-cluster" className="flex min-w-0 items-start gap-1.5 max-sm:flex-wrap max-sm:gap-y-1 sm:order-2 sm:flex-1 sm:items-center">
           <span
             data-slot="task-row-title"
-            className={cn("min-w-0 line-clamp-2 text-sm sm:truncate sm:line-clamp-none", titleClassName)}
+            className={cn("min-w-0 line-clamp-2 text-sm max-sm:basis-full sm:truncate sm:line-clamp-none", titleClassName)}
           >
             {issue.title}{titleSuffix}
           </span>
+          {ownerLabel}
           {recoveryIndicator}
         </span>
         {checklistDependencyChips ? (

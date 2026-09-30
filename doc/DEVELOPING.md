@@ -304,11 +304,24 @@ An alive child appears in `adoptedRunIds`; a child that completed during the
 restart window appears in `finalizedWhileDownRunIds`. Either is continuous. A
 `lostRunIds` entry remains a failed deploy and must not be waived.
 
-An adopted child keeps running, but its stdout pipe closed with the old server,
-so the new server never sees its result. When the child exits, the reaper marks
-the run `failed` / `process_lost` with "after hot-restart adoption; its output
-after the restart was not captured" and queues the one bounded retry. The
-Releases page therefore does not say "Nothing was lost" when a run was adopted.
+A `claude_local` CLI child writes its stdout/stderr to append-only files in
+`$GSAM_HOME/instances/<id>/run-output/` instead of pipes, so the files outlive
+the old server. Its adoption entry in the report has `outputCaptured: true`.
+When the adopted child writes its terminal `result` and exits, the reaper
+finishes the run from that result through the normal finalizer (status, cost,
+session, issue comment); no process-loss retry is queued. If the child is still
+alive after its result for longer than `terminalResultCleanupGraceMs`, the
+reaper stops it first. Files are removed when the run finishes; a startup sweep
+removes files older than 7 days.
+
+Without a capture file (other adapters, or `GSAM_CHILD_OUTPUT_FILES=0`), or when
+the file has no terminal result, the old behaviour stays: the reaper marks the
+run `failed` / `process_lost` with "after hot-restart adoption; its output
+after the restart was not captured" and queues the one bounded retry, and the
+Releases page shows a caveat for those runs.
+
+Rollback: set `GSAM_CHILD_OUTPUT_FILES=0` in the server environment and restart.
+New children then use pipes again; nothing else changes.
 
 For a recovery from a version that can stop embedded PostgreSQL before writing
 its shutdown snapshot, use `--drain-required` once to cross the broken boundary.

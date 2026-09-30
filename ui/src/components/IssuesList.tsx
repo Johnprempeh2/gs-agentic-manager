@@ -63,6 +63,7 @@ import { Identity } from "./Identity";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
 import { IssueRow, type IssueRowPresentation } from "./IssueRow";
+import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { CollectionToolbar, type CollectionToolbarProps } from "./CollectionToolbar";
 import { IssuesList as LegacyIssuesList } from "./LegacyIssuesList";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
@@ -1770,8 +1771,9 @@ function StreamlinedIssuesList({
         )}
         controls={(
           <>
-          {/* View mode toggle */}
-          <div className="gs-toolbar-divider flex items-center gap-0.5" role="group" aria-label="View mode">
+          {/* View mode toggle. Phones use the list; board lanes and table
+              columns are desktop layouts, so both controls stay off there. */}
+          <div className="gs-toolbar-divider flex items-center gap-0.5 max-sm:hidden" role="group" aria-label="View mode">
             <button
               className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "list" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
               onClick={() => updateView({ viewMode: "list" })}
@@ -2025,6 +2027,7 @@ function StreamlinedIssuesList({
         <KanbanBoard
           issues={filtered}
           agents={agents}
+          ownerContext={{ currentUserId, userLabels: companyUserLabelMap }}
           liveIssueIds={liveIssueIds}
           compactCards={boardCompactCards}
           collapsedStatuses={boardCollapsedStatuses}
@@ -2206,6 +2209,7 @@ function StreamlinedIssuesList({
                         checklistDependencyChips={checklistDependencyChips}
                         checklistRowId={checklistRowId}
                         titleClassName={doneRowTitleClass}
+                        ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
                         externalObjectSummary={externalObjectSummaryByIssueId.get(issue.id) ?? null}
                         titleSuffix={(
                           <>
@@ -2475,7 +2479,12 @@ function StreamlinedIssuesList({
                   // Skip rows the render budget dropped so separators never
                   // dangle above an unrendered (or absent) row.
                   if (node === null) return;
-                  if (separatorField && rowPresentation === "task") {
+                  // Only top-level rows start a date section. A sub-task stays
+                  // under its parent, so an older child never splits the list
+                  // into Today / Yesterday / Today again.
+                  if (depth > 0) {
+                    // no separator
+                  } else if (separatorField && rowPresentation === "task") {
                     const currentDateGroup = taskDateGroup(issue[separatorField], separatorNow);
                     const separatorLabel = taskDateGroupSeparator(previousDateGroup, currentDateGroup);
                     if (separatorLabel) {

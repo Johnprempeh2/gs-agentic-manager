@@ -844,5 +844,71 @@ describeEmbeddedPostgres("connectionIntentService", () => {
     expect((await service.search(aiClaims, "openrouter")).results.some(result => result.service === "openrouter")).toBe(false);
   });
 
+  // GRE-289: one reconnect left five tasks paused behind their own AI cards.
+  it("closes every AI card one reconnect repairs and wakes each paused task once", async () => {
+    const companyId = randomUUID();
+    const userId = "reconnect-user";
+    await db.insert(companies).values({ id: companyId, name: "Reconnect", issuePrefix: "RCN", requireBoardApprovalForNewAgents: false });
+    await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: userId, status: "active", membershipRole: "member" });
+    const [app] = await db.insert(toolApplications).values({ companyId, applicationKey: "ai-reconnect-fixture", name: "Claude", type: "mcp_http", metadata: { sourceTemplateKey: "anthropic" } }).returning();
+    const [connection] = await db.insert(toolConnections).values({ companyId, applicationId: app!.id, name: "Claude", uid: `ai-${randomUUID()}`, connectionPurpose: "ai", transport: "runtime_auth", authKind: "api_key", credentialPolicy: "per_user", healthStatus: "error", status: "active", enabled: true, config: { sourceTemplateKey: "anthropic", ai: { provider: "anthropic", method: "api_key" } } }).returning();
+    const [grant] = await db.insert(connectionGrants).values({ companyId, connectionId: connection!.id, kind: "user", subjectUserId: userId, createdByUserId: userId }).returning();
+    await db.insert(aiProviderDefaults).values({ companyId, userId, provider: "anthropic", grantId: grant!.id });
+    const binding = { provider: "anthropic", method: "api_key", mode: "responsible_user" } as const;
+    const service = connectionIntentService(db);
+
+    // Each task pauses when the account fails; a later failed run reuses its card.
+    async function pausedTask(name: string) {
+      const agentId = randomUUID();
+      const issueId = randomUUID();
+      await db.insert(agents).values({ id: agentId, companyId, name, adapterType: "claude_local", runtimeConfig: { aiConnection: binding } });
+      await db.insert(toolConnectionInstalls).values({ companyId, connectionId: connection!.id, targetType: "agent", targetId: agentId });
+      await db.insert(issues).values({ id: issueId, companyId, title: name, status: "in_progress", assigneeAgentId: agentId });
+      let card: string | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const runId = randomUUID();
+        await db.insert(heartbeatRuns).values({ id: runId, companyId, agentId, status: "running", responsibleUserId: userId, contextSnapshot: { issueId } });
+        const request = await service.request({ sub: agentId, company_id: companyId, run_id: runId, responsible_user_id: userId }, "anthropic", { purpose: "ai" });
+        expect(request.state).toBe("needs_user_action");
+        card ??= request.interactionId!;
+        expect(request.interactionId).toBe(card);
+        await db.update(heartbeatRuns).set({ status: "failed" }).where(eq(heartbeatRuns.id, runId));
+      }
+      return { agentId, issueId, card: card! };
+    }
+    const clicked = await pausedTask("Clicked");
+    const first = await pausedTask("First sibling");
+    const second = await pausedTask("Second sibling");
+    const allCards = [clicked.card, first.card, second.card];
+    // Nothing is repaired yet, so a sweep must close nothing.
+    expect(await service.resolveAiIntentsForConnection({ companyId, userId, serviceSlug: "anthropic", connectionId: connection!.id })).toEqual([]);
+
+    // The user reconnects once, from the card on the first task.
+    await db.update(toolConnections).set({ healthStatus: "ok" }).where(eq(toolConnections.id, connection!.id));
+    await service.complete(clicked.card, connection!.id, userId);
+    const siblings = await service.resolveAiIntentsForConnection({ companyId, userId, serviceSlug: "anthropic", connectionId: connection!.id });
+
+    const cards = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.companyId, companyId));
+    expect(cards.map((card) => card.id).sort()).toEqual([...allCards].sort());
+    expect(cards.every((card) => card.status === "accepted")).toBe(true);
+    expect(siblings.sort()).toEqual([first.card, second.card].sort());
+
+    const wakeup = vi.fn().mockImplementation(async (_agentId: string, options: { idempotencyKey: string }) => {
+      await db.insert(agentWakeupRequests).values({ companyId, agentId: _agentId, source: "automation", status: "queued", idempotencyKey: options.idempotencyKey });
+      return null;
+    });
+    const deliveries = connectionIntentDeliveryService(db, { wakeup } as never);
+    for (const id of [clicked.card, ...siblings]) await deliveries.deliver(id);
+    // Replays and the scheduler sweep add nothing.
+    for (const id of [clicked.card, ...siblings]) await deliveries.deliver(id);
+    await deliveries.sweepPending();
+    const ours = new Set([clicked.agentId, first.agentId, second.agentId]);
+    // The sweep is instance-wide, so ignore continuations left by earlier tests.
+    expect(wakeup.mock.calls.map(([agentId]) => agentId).filter((agentId) => ours.has(agentId)).sort()).toEqual([...ours].sort());
+    const pendingDeliveries = await db.select().from(connectionIntentDeliveries)
+      .where(and(eq(connectionIntentDeliveries.companyId, companyId), sql`${connectionIntentDeliveries.deliveredAt} is null`));
+    expect(pendingDeliveries).toEqual([]);
+  });
+
 
 });

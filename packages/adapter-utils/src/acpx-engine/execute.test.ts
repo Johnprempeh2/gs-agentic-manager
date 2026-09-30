@@ -7273,6 +7273,9 @@ describe("ACPX startup handshake guard and late-completion fence", () => {
       expect(result.exitCode).not.toBe(0);
       expect(result.errorCode).toBe("acpx_handshake_timeout");
       expect(result.resultJson).toMatchObject({ phase: "ensure_session" });
+      // GRE-295: the turn never started, so the server may retry instead of
+      // holding the task for manual reconciliation.
+      expect(result.executionRecovery).toEqual({ kind: "bootstrap", providerWorkStarted: false });
     } finally {
       vi.useRealTimers();
     }

@@ -33,6 +33,9 @@ vi.mock("@/api/tools", () => ({
   },
 }));
 
+vi.mock("@/api/ai-connections", () => ({
+  aiConnectionsApi: { list: vi.fn(async () => ({ currentUserId: "user-1", connections: [] })) },
+}));
 vi.mock("@/api/access", () => ({
   accessApi: {
     listUserDirectory: (companyId: string) => listUserDirectoryMock(companyId),
@@ -340,6 +343,28 @@ describe("Connectors landing page", () => {
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(navigateMock).toHaveBeenCalledWith("/apps/advanced/paste-config");
+  });
+
+  it("shows an expired Claude token as needing attention and reconnects straight to the token step", async () => {
+    // The provider never refused it, so health stays "ok"; only the recorded expiry says it is dead.
+    listApplicationsMock.mockResolvedValue({ applications: [application({ id: "app-anthropic", name: "Anthropic", metadata: { sourceTemplateKey: "anthropic" } })] });
+    listConnectionsMock.mockResolvedValue({ connections: [connection({
+      id: "conn-claude",
+      applicationId: "app-anthropic",
+      name: "My Claude subscription",
+      connectionPurpose: "ai",
+      config: {
+        sourceTemplateKey: "anthropic",
+        ai: { provider: "anthropic", method: "subscription" },
+        aiCredential: { source: "imported_login", expiresAt: "2026-01-01T00:00:00.000Z", recordedAt: "2026-01-01T00:00:00.000Z" },
+      },
+    })] });
+    await renderBrowse();
+    expect(container.textContent).toContain("The token has expired. Reconnect to restore access.");
+    const reconnect = [...container.querySelectorAll("button")].find((button) => button.textContent === "Reconnect");
+    expect(reconnect).toBeTruthy();
+    await act(() => reconnect!.click());
+    expect(navigateMock).toHaveBeenCalledWith("/apps/connect?source=anthropic&reconnect=conn-claude&method=ai-subscription");
   });
 
   it("sorts connected providers first and shows account, owner, status actions, and edit menus inline", async () => {

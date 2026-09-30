@@ -28,6 +28,11 @@ export interface RestartReport {
   resumedRunIds: string[];
   /** Kept running through the restart. */
   adoptedRunIds: string[];
+  /**
+   * Kept running with no output capture: its result is lost when it ends.
+   * Absent on reports from before GRE-250, where every adopted run counts.
+   */
+  adoptedWithoutCaptureRunIds?: string[];
   /** Ended during the switch; checkpointed runs continue as a retry. */
   finishedWhileDownRunIds: string[];
   /** Running before, unaccounted for after. Needs recovery. */

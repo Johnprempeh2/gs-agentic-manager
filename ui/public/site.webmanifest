@@ -5,8 +5,8 @@
   "description": "Greatstone's control plane for running teams of AI agents: goals, tasks, budgets and approvals in one place.",
   "start_url": "/",
   "scope": "/",
-  "display": "browser",
-  "orientation": "any",
+  "display": "standalone",
+  "orientation": "portrait",
   "theme_color": "#121212",
   "background_color": "#121212",
   "icons": [

@@ -7,11 +7,21 @@ import { BrandMark } from "./BrandMark";
  * tight, heavy heading. Keep it for the few pages that carry the brand
  * (Decisions, Releases); ordinary pages use a plain heading.
  */
-export function BrandPageTitle({ children, className }: { children: ReactNode; className?: string }) {
+export function BrandPageTitle({
+  children,
+  trailing,
+  className,
+}: {
+  children: ReactNode;
+  /** Small inline extra after the title, such as a count. */
+  trailing?: ReactNode;
+  className?: string;
+}) {
   return (
     <h1 className={cn("flex min-w-0 items-center gap-2 text-xl font-extrabold tracking-tight", className)}>
       <BrandMark decorative className="h-5 w-auto shrink-0" />
       <span className="truncate">{children}</span>
+      {trailing}
     </h1>
   );
 }

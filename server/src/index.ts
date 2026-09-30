@@ -83,6 +83,7 @@ import {
   reconcileCodexLocalManagedHomesOnStartup,
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
+  returnDueTabledIssues,
   statusCardService,
   toolAccessService,
   workspaceOperationService,
@@ -105,6 +106,7 @@ import {
   reconcileAdapterAvailability,
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
+import { pushNotificationService } from "./services/push-notifications.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
@@ -815,7 +817,7 @@ async function startServerWithDatabaseTeardown(
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
-    shareClient: createFeedbackTraceShareClientFromConfig(config),
+    shareClient: createFeedbackTraceShareClientFromConfig(config) ?? undefined,
   });
   const backupSettingsSvc = instanceSettingsService(db);
   const databaseBackupMaxAgeHours = Math.max(
@@ -1542,6 +1544,9 @@ async function startServerWithDatabaseTeardown(
             "startup hot-restart adoption reconciliation failed - orphan reaper will serve as degraded backstop",
           );
         }
+        await heartbeat.sweepStaleRunOutputFiles().catch((err) => {
+          logger.warn({ err }, "startup sweep of stale run output files failed");
+        });
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
@@ -1730,6 +1735,17 @@ async function startServerWithDatabaseTeardown(
           }));
 
         if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork(returnDueTabledIssues(db, { heartbeat })
+          .then((result) => {
+            if (result.returned > 0) {
+              logger.info({ ...result }, "brought back tabled issues on their return date");
+            }
+          })
+          .catch((err) => {
+            logger.error({ err }, "tabled issue return sweep failed");
+          }));
+
+        if (heartbeatSchedulerStopped) return;
         trackHeartbeatSchedulerWork((async () => {
           const experimental = await instanceSettingsService(db).getExperimental();
           if (experimental.enableStatusCards !== true) return;
@@ -1897,6 +1913,26 @@ async function startServerWithDatabaseTeardown(
     });
   }
   
+  /** How often new decisions are checked for phone notifications. */
+  const DECISION_PUSH_INTERVAL_MS = 60_000;
+  // Phone notifications for new decisions (Web Push). Each round only acts for
+  // users who turned notifications on, so it costs nothing until someone does.
+  // A self-rescheduling timer: a slow round never overlaps the next.
+  const decisionPushes = pushNotificationService(db as any);
+  let decisionPushTimer: ReturnType<typeof setTimeout> | null = null;
+  let decisionPushStopped = false;
+  const scheduleDecisionPushRound = () => {
+    if (decisionPushStopped) return;
+    decisionPushTimer = setTimeout(() => {
+      void decisionPushes
+        .notifyNewDecisions()
+        .catch((err) => logger.warn({ err }, "decision push round failed"))
+        .finally(scheduleDecisionPushRound);
+    }, DECISION_PUSH_INTERVAL_MS);
+    decisionPushTimer.unref?.();
+  };
+  scheduleDecisionPushRound();
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
 
@@ -1991,6 +2027,8 @@ async function startServerWithDatabaseTeardown(
     await systemdNotify(["--stopping", `--status=Stopping after ${signal}`]);
     heartbeatSchedulerStopped = true;
     clearInterval(executionControlInterval);
+    decisionPushStopped = true;
+    if (decisionPushTimer) clearTimeout(decisionPushTimer);
     if (heartbeatSchedulerInterval) {
       clearInterval(heartbeatSchedulerInterval);
       heartbeatSchedulerInterval = null;

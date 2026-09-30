@@ -19,7 +19,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { cn } from "../lib/utils";
 import { useSignOut } from "@/hooks/useSignOut";
 
-const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
+const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || null;
 
 export function InstanceGeneralSettings({ embedded = false }: { embedded?: boolean }) {
   const { setBreadcrumbs } = useBreadcrumbs();

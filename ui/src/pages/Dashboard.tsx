@@ -10,10 +10,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
 import { accessApi } from "../api/access";
+import { authApi } from "../api/auth";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
-import { buildCompanyUserProfileMap } from "../lib/company-members";
+import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
 import { DashboardHero } from "../components/DashboardHero";
 import { BrandStoneIcon } from "../components/BrandMark";
@@ -25,6 +26,7 @@ import { EmptyState } from "../components/EmptyState";
 import { DASHBOARD_OPEN_TASK_STATUSES, DashboardOverview } from "../components/DashboardOverview";
 import { DashboardDecisionsBox } from "../components/DashboardDecisionsBox";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+import { useLiveAgents } from "../hooks/useLiveAgents";
 
 import { ActivityRow } from "../components/ActivityRow";
 import { cn, formatCents } from "../lib/utils";
@@ -218,6 +220,17 @@ export function Dashboard() {
     [companyMembers?.users],
   );
 
+  // Task rows say "Your task" for the viewer and name other people.
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const companyUserLabelMap = useMemo(
+    () => buildCompanyUserLabelMap(companyMembers?.users),
+    [companyMembers?.users],
+  );
+
   const recentActivity = useMemo(() => (activity ?? []).slice(0, 10), [activity]);
 
   useEffect(() => {
@@ -294,6 +307,9 @@ export function Dashboard() {
     for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
     return map;
   }, [issues]);
+
+  // Same source as the sidebar "N live" count, so the two always agree (GRE-257).
+  const { liveAgents } = useLiveAgents(selectedCompanyId);
 
   if (!selectedCompanyId) {
     if (companies.length === 0) {
@@ -385,10 +401,13 @@ export function Dashboard() {
       <DashboardOverview
         agents={agents}
         openIssues={openIssues}
+        liveAgents={liveAgents}
         agentsLoading={agentsLoading}
         issuesLoading={openIssuesLoading}
         agentsError={agentsError}
         issuesError={openIssuesError}
+        currentUserId={currentUserId}
+        userLabels={companyUserLabelMap}
       />
 
       <ActiveAgentsPanel companyId={selectedCompanyId!} />

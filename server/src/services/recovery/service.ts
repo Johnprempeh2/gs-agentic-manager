@@ -141,8 +141,10 @@ import { isAutomaticRecoverySuppressedByPauseHold } from "./pause-hold-guard.js"
 import {
   REVIEW_WAIT_ACTIVITY_SOURCE,
   REVIEW_WAIT_MONITOR_SERVICE_NAME,
-  REVIEW_WAIT_RECHECK_MS,
+  decideReviewWait,
   isReviewerWaitingOnCheck,
+  readReviewWaitEvidence,
+  reviewWaitRecheckMs,
 } from "./review-wait.js";
 import {
   collectDispositionRepairSourceState,
@@ -4326,7 +4328,18 @@ export function recoveryService(
     if (getAdapterFailureRecoveryTargetAgentId(input.issue) !== input.reviewerAgentId)
       return null;
 
-    const nextCheckAt = new Date(Date.now() + REVIEW_WAIT_RECHECK_MS);
+    // A wait on a pending board card is rechecked less often (GRE-290).
+    const now = new Date();
+    const decision = decideReviewWait(
+      await readReviewWaitEvidence(db, {
+        companyId: input.issue.companyId,
+        issueId: input.issue.id,
+        reviewerAgentId: input.reviewerAgentId,
+        now,
+      }),
+      now,
+    );
+    const nextCheckAt = new Date(now.getTime() + reviewWaitRecheckMs(decision));
     const previousPolicy = normalizeIssueExecutionPolicy(
       input.issue.executionPolicy ?? null,
     );
