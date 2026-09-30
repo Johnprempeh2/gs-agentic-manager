@@ -12,6 +12,7 @@ import {
   Boxes,
   Repeat,
   Layers,
+  Microscope,
   GitBranch,
   Package,
   Settings,
@@ -67,6 +68,8 @@ export function Sidebar() {
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
   const showCases = experimentalSettings?.enableCases === true;
+  // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
+  const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
   // Streamlined left navigation (top-level Projects link + starred children) is
   // now the standard product sidebar (PAP-12472). The former experimental
   // opt-out was retired; classic per-project collapsible mode is no longer
@@ -156,6 +159,9 @@ export function Sidebar() {
           <SidebarNavItem to="/issues" label="Tasks" icon={CircleDot} />
           {showCases ? (
             <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
+          ) : null}
+          {showDeepDive ? (
+            <SidebarNavItem to="/deep-dive" label="Deep Dive" icon={Microscope} textBadge="beta" />
           ) : null}
           <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
           {showPipelines ? (

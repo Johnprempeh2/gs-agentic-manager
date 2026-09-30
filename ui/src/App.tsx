@@ -9,6 +9,7 @@ import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { TaskChatLab } from "./pages/TaskChatLab";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
+import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
 import { StatusCardsExperimentalGate } from "./components/StatusCardsExperimentalGate";
 import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
 import { HiddenSettingsPageGate } from "./components/HiddenSettingsPageGate";
@@ -20,6 +21,7 @@ import {
 import { useHiddenSettings } from "./hooks/useHiddenSettings";
 import { Cases } from "./pages/Cases";
 import { CaseDetail } from "./pages/CaseDetail";
+import { DeepDive } from "./pages/DeepDive";
 import { OnboardingWizardVariant } from "./components/OnboardingWizardVariant";
 import { CloudAccessGate } from "./components/CloudAccessGate";
 import { BrandLoading } from "./components/BrandLoading";
@@ -319,6 +321,10 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route
         path="cases/:caseIdentifier"
         element={<CasesExperimentalGate><CaseDetail /></CasesExperimentalGate>}
+      />
+      <Route
+        path="deep-dive"
+        element={<DeepDiveExperimentalGate><DeepDive /></DeepDiveExperimentalGate>}
       />
       <Route
         path="status"
@@ -781,6 +787,7 @@ export function App() {
           <Route path="learnings" element={<UnprefixedBoardRedirect />} />
           <Route path="cases" element={<UnprefixedBoardRedirect />} />
           <Route path="cases/:caseIdentifier" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive" element={<UnprefixedBoardRedirect />} />
           <Route path="status" element={<UnprefixedBoardRedirect />} />
           <Route path="status/:cardId" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards" element={<UnprefixedBoardRedirect />} />

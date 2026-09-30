@@ -12,6 +12,7 @@ import {
   Boxes,
   Repeat,
   Layers,
+  Microscope,
   GitBranch,
   Package,
   Settings,
@@ -84,6 +85,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
   const showCases = experimentalSettings?.enableCases === true;
+  // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
+  const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
   // Conference Room Chat flag (PAP-136/PAP-137): the Conference Room nav item
   // is a new surface, hidden entirely while the flag is off (same no-flash
   // pattern as showWorkspacesLink above).
@@ -133,6 +136,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const artifactsItem = <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />;
   const casesItem = showCases ? (
     <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
+  ) : null;
+  const deepDiveItem = showDeepDive ? (
+    <SidebarNavItem to="/deep-dive" label="Deep Dive" icon={Microscope} textBadge="beta" />
   ) : null;
   const pipelinesItem = showPipelines ? (
     <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
@@ -247,6 +253,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               {workspacesItem}
               {artifactsItem}
               {casesItem}
+              {deepDiveItem}
               {pluginNavOutlets}
             </SidebarSection>
 
@@ -266,6 +273,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             {routinesItem}
             {artifactsItem}
             {casesItem}
+            {deepDiveItem}
             {pipelinesItem}
             {goalsItem}
             {workspacesItem}

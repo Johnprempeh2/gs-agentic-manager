@@ -35,6 +35,16 @@ test("Managed pins exactly the section 5 features", () => {
   assert.deepEqual(values.expectOn, [...MANAGED_FEATURES_ON].sort());
 });
 
+test("client installs never show Deep Dive (deep dive design, section 5 rule 12)", () => {
+  for (const edition of ["managed", "managed-plus"] as const) {
+    const values = buildEditionValues({ edition, catalogVersion });
+    const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
+    assert.ok(parsed);
+    assert.equal(parsed.features.enableDeepDive, false, edition);
+    assert.ok(values.expectOff.includes("enableDeepDive"), edition);
+  }
+});
+
 test("agents can run without a sandbox provider (GRE-160)", () => {
   for (const edition of ["managed", "managed-plus"] as const) {
     const values = buildEditionValues({ edition, catalogVersion });
@@ -103,6 +113,10 @@ test("rejects features without a place in section 5", () => {
   assert.throws(
     () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableManagedSandboxOnly"], catalogVersion }),
     /off in both editions/,
+  );
+  assert.throws(
+    () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableDeepDive"], catalogVersion }),
+    /never part of a client install/,
   );
   assert.throws(() => buildEditionValues({ edition: "self-run" as never, catalogVersion }), /Unknown edition/);
 });

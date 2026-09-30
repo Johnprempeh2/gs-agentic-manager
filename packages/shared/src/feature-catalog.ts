@@ -145,6 +145,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableDeepDive: {
+    title: "Deep Dive",
+    description:
+      "Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with depth, status and visibility per stream. Requires Cases.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableAgentChat: {
     title: "Agent Chat",
     description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",

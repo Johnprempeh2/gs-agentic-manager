@@ -109,6 +109,8 @@ export interface InstanceExperimentalSettings {
   enableMemoryConnectors: boolean;
   enablePipelines: boolean;
   enableCases: boolean;
+  /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
+  enableDeepDive: boolean;
   enableAgentChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;

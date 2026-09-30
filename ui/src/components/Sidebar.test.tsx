@@ -514,6 +514,22 @@ describe("Sidebar", () => {
     mockCanRelease.value = false;
   });
 
+  it("shows Deep Dive after Cases only while both flags are on", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
+    let root = await renderSidebar();
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Artifacts", "Casesbeta", "Deep Divebeta"]);
+    flushSync(() => {
+      root.unmount();
+    });
+
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: false, enableDeepDive: true });
+    root = await renderSidebar();
+    expect(container.textContent).not.toContain("Deep Dive");
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("always shows the Goals nav item, even with the old experimental setting off (GRE-191)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,

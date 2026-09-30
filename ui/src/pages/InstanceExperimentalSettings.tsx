@@ -232,6 +232,11 @@ export function InstanceExperimentalSettings() {
   const summariesRequiredByManagedStatusCards = statusCardsManaged && enableStatusCards;
   const enableGoalsSidebarLink = experimentalQuery.data?.enableGoalsSidebarLink === true;
   const enableCases = experimentalQuery.data?.enableCases === true;
+  const enableDeepDive = experimentalQuery.data?.enableDeepDive === true;
+  const casesManaged = managedKeys.enableCases?.managed === true;
+  const deepDiveManaged = managedKeys.enableDeepDive?.managed === true;
+  const deepDiveBlockedByManagedCases = casesManaged && !enableCases;
+  const casesRequiredByManagedDeepDive = deepDiveManaged && enableDeepDive;
   const enableServerInfoDebugView = experimentalQuery.data?.enableServerInfoDebugView === true;
   const enablePaperclipDeveloperMode =
     experimentalQuery.data?.enablePaperclipDeveloperMode === true;
@@ -334,10 +339,16 @@ export function InstanceExperimentalSettings() {
         <ExperimentalToggleCard
           title="Cases"
           description="Durable work products (blog posts, tweet storms…) that tasks create and iterate on. Adds the Cases tab and the agent case API."
-          footnote="Turning Cases off hides the tab and blocks the case API; existing case data is kept."
+          footnote="Turning Cases off hides the tab and blocks the case API; existing case data is kept. Deep Dive requires Cases, so turning Cases off also turns Deep Dive off."
           checked={enableCases}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableCases: checked })}
-          disabled={toggleMutation.isPending}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate(
+              checked || !enableDeepDive
+                ? { enableCases: checked }
+                : { enableCases: false, enableDeepDive: false },
+            )
+          }
+          disabled={toggleMutation.isPending || casesRequiredByManagedDeepDive}
           settingKey="enableCases"
           managed={managedKeys.enableCases}
           ariaLabel="Toggle cases experimental setting"
@@ -365,6 +376,24 @@ export function InstanceExperimentalSettings() {
           settingKey="enableConferenceRoomChat"
           managed={managedKeys.enableConferenceRoomChat}
           ariaLabel="Toggle conference room chat experimental setting"
+        />
+
+        <ExperimentalToggleCard
+          title="Deep Dive"
+          description="Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with status, depth and visibility for each stream. Adds the Deep Dive page."
+          footnote="Turning Deep Dive on also turns Cases on. Turning it off hides the page; the deep dive cases are kept."
+          checked={enableDeepDive}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate(
+              checked
+                ? { enableCases: true, enableDeepDive: true }
+                : { enableDeepDive: false },
+            )
+          }
+          disabled={toggleMutation.isPending || deepDiveBlockedByManagedCases}
+          settingKey="enableDeepDive"
+          managed={managedKeys.enableDeepDive}
+          ariaLabel="Toggle deep dive experimental setting"
         />
 
         <ExperimentalToggleCard
