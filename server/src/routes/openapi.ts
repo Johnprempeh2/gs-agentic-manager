@@ -94,6 +94,7 @@ import {
   updateFolderSchema,
   // Goal
   createGoalSchema,
+  createGoalCheckInSchema,
   updateGoalSchema,
   // Secret
   createSecretSchema,
@@ -1319,6 +1320,7 @@ const BOARD_ONLY_PREFIXES = [
 
 const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/companies/{companyId}/releases",
+  "POST /api/companies/{companyId}/releases/promote",
   "POST /api/companies/{companyId}/releases/release",
   "POST /api/companies/{companyId}/releases/rollback",
   "POST /api/companies/{companyId}/releases/cancel",
@@ -3025,6 +3027,27 @@ registry.registerPath({
     body: jsonBody(z.object({ tag: z.string().optional(), title: z.string().optional() })),
   },
   responses: { 202: r.ok(), ...releaseResponses },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/releases/promote",
+  tags: ["releases"],
+  summary: "Promote a live-* release to Stable: a stable-* tag carrying the client notes",
+  request: {
+    params: releaseCompanyParams,
+    body: jsonBody(z.object({ liveTag: z.string(), notes: z.string().optional() })),
+  },
+  responses: { 200: r.ok(), ...releaseResponses },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/version",
+  tags: ["releases"],
+  summary: "The running version and the latest release, for the in-app update prompt",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
@@ -4838,6 +4861,27 @@ registry.registerPath({
     body: jsonBody(updateGoalSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/goals/{id}/check-ins",
+  tags: ["goals"],
+  summary: "List a goal's check-ins, newest first",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/goals/{id}/check-ins",
+  tags: ["goals"],
+  summary: "Record a check-in on a goal (progress, status, note)",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(createGoalCheckInSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({
