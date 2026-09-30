@@ -345,4 +345,33 @@ describe("SidebarAccountMenu", () => {
     });
   });
 
+  it("never shows the local board user's placeholder address", async () => {
+    mockAuthApi.getSession.mockResolvedValue({
+      session: { id: "session-1", userId: "local-board" },
+      user: { id: "local-board", name: "John Prempeh", email: "local@paperclip.local", image: null },
+    });
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <SidebarAccountMenu deploymentMode="local_trusted" open />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    expect(document.body.textContent).toContain("John Prempeh");
+    expect(document.body.textContent).not.toContain("paperclip.local");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
 });

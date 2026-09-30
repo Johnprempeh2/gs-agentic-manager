@@ -1019,7 +1019,8 @@ function ResourceCard({
   item: Extract<TaskChatProtocolItem, { surface: "resource" }>;
 }) {
   if (item.resourceKind === "deliverable" && item.workProduct) {
-    return <RichWorkProductCard workProduct={item.workProduct} href={item.href} />;
+    // Media renders as a gallery tile; every other kind falls back to the card.
+    return <RichWorkProductCard workProduct={item.workProduct} href={item.href} variant="gallery" />;
   }
   const Icon =
     item.resourceKind === "document"

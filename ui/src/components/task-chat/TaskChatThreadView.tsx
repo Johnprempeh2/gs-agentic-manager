@@ -24,6 +24,7 @@ import { TaskMessageScroller } from "./TaskMessageScroller";
 import { TaskChatProtocolCard } from "./TaskChatProtocolCard";
 import { TaskChatProtocolActivityRow } from "./TaskChatProtocolActivityRow";
 import { TaskChatPlanPreviewCard } from "./TaskChatPlanPreviewCard";
+import { isMediaWorkProduct } from "./RichWorkProductCard";
 
 const EMPTY_ATTACHMENTS: IssueAttachment[] = [];
 
@@ -283,6 +284,30 @@ export function taskChatItemSpacingClass(
   return "mt-6";
 }
 
+function isMediaTileItem(item: TaskChatItem): boolean {
+  return (
+    item.kind === "protocol" &&
+    item.surface === "resource" &&
+    item.resourceKind === "deliverable" &&
+    item.workProduct !== undefined &&
+    isMediaWorkProduct(item.workProduct)
+  );
+}
+
+/** Consecutive image and video deliverables share one two-column grid. */
+export function groupConsecutiveMedia<T extends { item: TaskChatItem }>(entries: T[]) {
+  const groups: Array<{ media: boolean; entries: T[]; previous: TaskChatItem | null }> = [];
+  let previous: TaskChatItem | null = null;
+  for (const entry of entries) {
+    const media = isMediaTileItem(entry.item);
+    const last = groups[groups.length - 1];
+    if (media && last?.media) last.entries.push(entry);
+    else groups.push({ media, entries: [entry], previous });
+    previous = entry.item;
+  }
+  return groups;
+}
+
 /**
  * Presentational render layer for the redesigned task thread. Consumed by both
  * the live thread (adapter over comment/run props) and the dev harness
@@ -348,29 +373,42 @@ export function TaskChatThreadView({
           }))
           .filter((entry) => entry.content !== null)
       : [];
+    const renderStreamlinedEntry = (
+      { item, content }: (typeof renderedItems)[number],
+      className: string | undefined,
+    ) => (
+      <div
+        key={item.kind === "message" ? (item.renderKey ?? item.id) : item.id}
+        data-thread-anchor={item.kind === "message" ? (item.renderKey ?? item.id) : item.id}
+        id={item.kind === "message" ? `comment-${item.id}` : undefined}
+        className={className}
+        data-thread-item-kind={item.kind === "message" ? item.author : item.kind}
+      >
+        {content}
+      </div>
+    );
     return (
       <>
         {streamlined
-          ? renderedItems.map(({ item, content }, index) => (
-              <div
-                key={
-                  item.kind === "message" ? (item.renderKey ?? item.id) : item.id
-                }
-                data-thread-anchor={
-                  item.kind === "message" ? (item.renderKey ?? item.id) : item.id
-                }
-                id={item.kind === "message" ? `comment-${item.id}` : undefined}
-                className={taskChatItemSpacingClass(
-                  item,
-                  renderedItems[index - 1]?.item ?? null,
-                )}
-                data-thread-item-kind={
-                  item.kind === "message" ? item.author : item.kind
-                }
-              >
-                {content}
-              </div>
-            ))
+          ? groupConsecutiveMedia(renderedItems).map((group) =>
+              group.media ? (
+                <div
+                  key={`media-grid:${group.entries[0]!.item.id}`}
+                  className={cn(
+                    "grid grid-cols-2 gap-2",
+                    taskChatItemSpacingClass(group.entries[0]!.item, group.previous),
+                  )}
+                  data-testid="task-chat-media-grid"
+                >
+                  {group.entries.map((entry) => renderStreamlinedEntry(entry, "min-w-0"))}
+                </div>
+              ) : (
+                renderStreamlinedEntry(
+                  group.entries[0]!,
+                  taskChatItemSpacingClass(group.entries[0]!.item, group.previous),
+                )
+              ),
+            )
           : items.map((item, index) => (
               <div
                 key={

@@ -410,7 +410,7 @@ export function Dashboard() {
         userLabels={companyUserLabelMap}
       />
 
-      <ActiveAgentsPanel companyId={selectedCompanyId!} />
+      <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent runs" />
 
       {data && (
         <>

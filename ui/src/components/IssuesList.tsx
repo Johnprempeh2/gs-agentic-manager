@@ -31,8 +31,10 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  issueFilterArraysEqual,
   issueFilterLabel,
   issuePriorityOrder,
+  issueQuickFilterPresets,
   normalizeIssueFilterState,
   resolveIssueFilterWorkspaceId,
   shouldIncludeIssueFilterWorkspaceOption,
@@ -232,14 +234,18 @@ function normalizeIssueViewState(value: unknown): IssueViewState {
   };
 }
 
-function getInitialViewState(
+export function getInitialViewState(
   stored: { viewState: IssueViewState; source: "current" | "legacy" | "default" },
   initialAssignees?: string[],
   defaultSortField?: IssueSortField,
+  defaultStatuses?: readonly string[],
 ): IssueViewState {
-  const base = stored.source === "default" && defaultSortField
-    ? { ...stored.viewState, sortField: defaultSortField, sortDir: "asc" as const }
-    : stored.viewState;
+  let base = stored.viewState;
+  // Page defaults only fill in for a viewer who has never saved a view.
+  if (stored.source === "default") {
+    if (defaultSortField) base = { ...base, sortField: defaultSortField, sortDir: "asc" };
+    if (defaultStatuses) base = { ...base, statuses: [...defaultStatuses] };
+  }
   if (!initialAssignees) return base;
   return {
     ...base,
@@ -254,8 +260,9 @@ function getInitialWorkspaceViewState(
   initialWorkspaces?: string[],
   defaultSortField?: IssueSortField,
   hasCustomGrouping = false,
+  defaultStatuses?: readonly string[],
 ): IssueViewState {
-  const base = getInitialViewState(stored, initialAssignees, defaultSortField);
+  const base = getInitialViewState(stored, initialAssignees, defaultSortField, defaultStatuses);
   const initial = hasCustomGrouping && stored.source === "default" ? { ...base, groupBy: "custom" as const } : base;
   if (!initialWorkspaces) return initial;
   return {
@@ -482,6 +489,12 @@ interface IssuesListProps {
   baseCreateIssueDefaults?: Record<string, unknown>;
   createIssueLabel?: string;
   defaultSortField?: IssueSortField;
+  /** Status filter for a viewer who has never saved a view of this list. */
+  defaultStatuses?: readonly string[];
+  /** Show the All / Active / Blocked / Done chips beside search. */
+  showStatusChips?: boolean;
+  /** Reports the status filter so the page can ask the server for just those tasks. */
+  onStatusFilterChange?: (statuses: string[]) => void;
   showProgressSummary?: boolean;
   /**
    * When set together with `showProgressSummary`, the progress strip fetches
@@ -587,6 +600,35 @@ function IssueSearchInput({
         aria-label="Search tasks"
         data-page-search-target="true"
       />
+    </div>
+  );
+}
+
+const STATUS_CHIP_LABELS = ["All", "Active", "Blocked", "Done"];
+const statusChipPresets = issueQuickFilterPresets.filter((preset) => STATUS_CHIP_LABELS.includes(preset.label));
+
+function IssueStatusChips({ statuses, onChange }: { statuses: string[]; onChange: (statuses: string[]) => void }) {
+  return (
+    <div role="group" aria-label="Show tasks" className="flex items-center gap-1">
+      {statusChipPresets.map((preset) => {
+        const active = issueFilterArraysEqual(statuses, preset.statuses);
+        return (
+          <button
+            key={preset.label}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange([...preset.statuses])}
+            className={cn(
+              "gs-press h-8 rounded-full border px-3 text-xs font-medium transition-colors",
+              active
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            )}
+          >
+            {preset.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -733,6 +775,9 @@ function StreamlinedIssuesList({
   baseCreateIssueDefaults,
   createIssueLabel,
   defaultSortField,
+  defaultStatuses,
+  showStatusChips = false,
+  onStatusFilterChange,
   showProgressSummary = false,
   parentIssueIdForCostSummary,
   enableRoutineVisibilityFilter = false,
@@ -815,7 +860,7 @@ function StreamlinedIssuesList({
   const initialPreferences = initialPreferencesRef.current;
 
   const [viewState, setViewState] = useState<IssueViewState>(() =>
-    getInitialWorkspaceViewState(initialPreferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping)),
+    getInitialWorkspaceViewState(initialPreferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping), defaultStatuses),
   );
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState("");
@@ -838,7 +883,7 @@ function StreamlinedIssuesList({
     if (prevViewStateContextKey.current !== nextContextKey) {
       prevViewStateContextKey.current = nextContextKey;
       const preferences = loadIssueCollectionPreferences(preferenceLocation);
-      setViewState(getInitialWorkspaceViewState(preferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping)));
+      setViewState(getInitialWorkspaceViewState(preferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping), defaultStatuses));
       setVisibleIssueColumns(preferences.columns);
     }
   }, [
@@ -870,6 +915,11 @@ function StreamlinedIssuesList({
     preferenceLocation.legacyViewStorageKey,
     visibleIssueColumns,
   ]);
+
+  const statusFilterKey = viewState.statuses.join(",");
+  useEffect(() => {
+    onStatusFilterChange?.(statusFilterKey ? statusFilterKey.split(",") : []);
+  }, [onStatusFilterChange, statusFilterKey]);
 
   useEffect(() => {
     if (!experimentalSettingsLoaded || externalObjectsEnabled || viewState.externalObjectStatuses.length === 0) return;
@@ -1739,6 +1789,15 @@ function StreamlinedIssuesList({
 
   let remainingRowsToRender = viewState.viewMode === "list" ? renderedIssueRowLimit : Number.POSITIVE_INFINITY;
   const IssuesToolbar = toolbarPresentation === "collection" ? CollectionToolbar : LegacyIssuesToolbar;
+  const searchInput = (
+    <IssueSearchInput
+      value={issueSearch}
+      onDebouncedChange={(nextSearch) => {
+        setIssueSearch(nextSearch);
+        onSearchChange?.(nextSearch);
+      }}
+    />
+  );
 
   return (
     <div ref={rootRef} className="space-y-4">
@@ -1760,15 +1819,12 @@ function StreamlinedIssuesList({
             <span className="hidden sm:inline">{createButtonLabel}</span>
           </Button>
         )}
-        search={(
-          <IssueSearchInput
-            value={issueSearch}
-            onDebouncedChange={(nextSearch) => {
-              setIssueSearch(nextSearch);
-              onSearchChange?.(nextSearch);
-            }}
-          />
-        )}
+        search={showStatusChips ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {searchInput}
+            <IssueStatusChips statuses={viewState.statuses} onChange={(statuses) => updateView({ statuses })} />
+          </div>
+        ) : searchInput}
         controls={(
           <>
           {/* View mode toggle. Phones use the list; board lanes and table

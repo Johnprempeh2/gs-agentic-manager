@@ -69,7 +69,7 @@ const EXTERNAL_OBJECT_FILTER_LABELS: Record<string, string> = {
   auth_required: "Auth required",
   unreachable: "Unreachable",
   stale: "Stale",
-  none: "No external objects",
+  none: "No linked work",
 };
 
 export function externalObjectFilterLabel(value: string): string {
@@ -82,6 +82,7 @@ export const issuePriorityOrder = ["critical", "high", "medium", "low"];
 export const issueQuickFilterPresets = [
   { label: "All", statuses: [] as string[] },
   { label: "Active", statuses: ["todo", "in_progress", "in_review", "blocked"] },
+  { label: "Blocked", statuses: ["blocked"] },
   { label: "Backlog", statuses: ["backlog"] },
   { label: "Done", statuses: ["done", "cancelled"] },
 ];

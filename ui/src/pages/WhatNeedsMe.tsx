@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Inbox } from "lucide-react";
 import { BrandCaughtUpMark, BrandPageTitle } from "../components/BrandPageTitle";
 import type { Agent, AttentionItem, AttentionSubject } from "@greatstone/shared";
 import { attentionApi } from "../api/attention";
@@ -388,10 +387,7 @@ function ZeroState() {
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
       <BrandCaughtUpMark />
       <p className="text-lg font-semibold text-foreground">You're all caught up</p>
-      <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Inbox className="h-4 w-4" />
-        Nothing needs a decision from you right now.
-      </p>
+      <p className="mt-1 text-sm text-muted-foreground">Nothing needs a decision from you right now.</p>
     </div>
   );
 }

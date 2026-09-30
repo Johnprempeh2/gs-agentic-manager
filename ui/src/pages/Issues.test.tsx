@@ -1,13 +1,27 @@
 import { describe, expect, it } from "vitest";
 import type { Issue } from "@greatstone/shared";
 import {
+  ISSUES_DEFAULT_STATUSES,
   ISSUES_ROW_PRESENTATION,
   ISSUES_TOOLBAR_PRESENTATION,
   buildIssuesSearchUrl,
   getNextIssuesPageOffset,
+  issuesStatusQueryParam,
   mergeIssuePagesStable,
   resolveIssuesPresentation,
 } from "./Issues";
+
+describe("issues page status filter", () => {
+  it("opens on the Active preset so live and blocked work comes first", () => {
+    expect(ISSUES_DEFAULT_STATUSES).toEqual(["todo", "in_progress", "in_review", "blocked"]);
+  });
+
+  it("asks the server for one stable status set, or everything for All", () => {
+    expect(issuesStatusQueryParam(["todo", "blocked"])).toBe("blocked,todo");
+    expect(issuesStatusQueryParam(["blocked", "todo"])).toBe("blocked,todo");
+    expect(issuesStatusQueryParam([])).toBeUndefined();
+  });
+});
 
 function createIssue(id: string, title: string): Issue {
   return { id, title } as Issue;
