@@ -362,7 +362,7 @@ export function activityService(db: Db) {
       }
 
       return db
-        .select({ activityLog })
+        .select({ activityLog, issueIdentifier: issues.identifier, issueTitle: issues.title })
         .from(activityLog)
         .leftJoin(
           issues,
@@ -382,7 +382,11 @@ export function activityService(db: Db) {
         )
         .orderBy(desc(activityLog.createdAt))
         .limit(limit)
-        .then((rows) => rows.map((r) => r.activityLog));
+        .then((rows) => rows.map((r) => (
+          r.activityLog.entityType === "issue"
+            ? { ...r.activityLog, issueIdentifier: r.issueIdentifier, issueTitle: r.issueTitle }
+            : r.activityLog
+        )));
     },
 
     forIssue: (issueId: string) =>

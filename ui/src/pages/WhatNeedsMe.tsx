@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { activityApi } from "../api/activity";
+import { DecisionLog, DECISION_LOG_ACTIONS } from "../components/decisions-feed/DecisionLog";
 import { Inbox } from "lucide-react";
 import { BrandCaughtUpMark, BrandPageTitle } from "../components/BrandPageTitle";
 import type { Agent, AttentionItem, AttentionSubject } from "@greatstone/shared";
@@ -92,6 +94,17 @@ export function WhatNeedsMe() {
     queryFn: () => decisionsApi.list(selectedCompanyId!, { status: "decided", limit: DECISION_HISTORY_QUERY_LIMIT }),
     enabled: decisionHistoryQueryEnabled(selectedCompanyId, decidedOpen),
   });
+  // John's answers to questions, plans and confirmations: most of what he
+  // decides, and not in the decisions table.
+  const { data: decisionLogEvents } = useQuery({
+    queryKey: [...queryKeys.activity(selectedCompanyId!), "decision-log"],
+    queryFn: () => activityApi.list(selectedCompanyId!, { action: DECISION_LOG_ACTIONS, limit: 50 }),
+    enabled: decisionHistoryQueryEnabled(selectedCompanyId, decidedOpen),
+  });
+  const boardAnswers = useMemo(
+    () => (decisionLogEvents ?? []).filter((event) => event.actorType === "user"),
+    [decisionLogEvents],
+  );
   const { data: expiredDecisions, isLoading: expiredDecisionsLoading } = useQuery({
     queryKey: queryKeys.decisions.list(selectedCompanyId!, "expired"),
     queryFn: () => decisionsApi.list(selectedCompanyId!, { status: "expired", limit: DECISION_HISTORY_QUERY_LIMIT }),
@@ -265,10 +278,15 @@ export function WhatNeedsMe() {
 
         <Curtain
           label="Decided"
-          count={decisionHistoryCount(decidedDecisions?.length)}
+          count={decisionHistoryCount(
+            decidedDecisions === undefined && decisionLogEvents === undefined
+              ? undefined
+              : (decidedDecisions?.length ?? 0) + boardAnswers.length,
+          )}
           open={decidedOpen}
           onToggle={() => setDecidedOpen((prev) => !prev)}
         >
+          <DecisionLog events={boardAnswers} />
           {decidedDecisionsLoading ? (
             <p className="text-xs text-muted-foreground">Loading decided decisions…</p>
           ) : (decidedDecisions?.length ?? 0) > 0 ? (
@@ -282,7 +300,7 @@ export function WhatNeedsMe() {
               />
             ))
           ) : (
-            <p className="text-xs text-muted-foreground">No decided decisions.</p>
+            boardAnswers.length === 0 && <p className="text-xs text-muted-foreground">Nothing decided yet.</p>
           )}
         </Curtain>
 

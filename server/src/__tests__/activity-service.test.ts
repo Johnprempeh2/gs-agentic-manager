@@ -160,6 +160,27 @@ describeEmbeddedPostgres("activity service", () => {
       .toEqual(["test.newest", "test.middle", "test.oldest"]);
   });
 
+  it("names the task on rows about a task", async () => {
+    const companyId = randomUUID();
+    const issueId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(issues).values({ id: issueId, companyId, title: "Choose the layout", status: "in_review", identifier: "TST-7" });
+    await db.insert(activityLog).values([
+      { companyId, actorType: "user", actorId: "board-user", action: "issue.thread_interaction_accepted", entityType: "issue", entityId: issueId },
+      { companyId, actorType: "system", actorId: "system", action: "company.updated", entityType: "company", entityId: companyId },
+    ]);
+
+    const rows = await activityService(db).list({ companyId });
+    const byAction = Object.fromEntries(rows.map((row) => [row.action, row]));
+    expect(byAction["issue.thread_interaction_accepted"]).toMatchObject({ issueIdentifier: "TST-7", issueTitle: "Choose the layout" });
+    expect(byAction["company.updated"]).not.toHaveProperty("issueTitle");
+  });
+
   it("returns compact usage and result summaries for issue runs", async () => {
     const companyId = randomUUID();
     const agentId = randomUUID();
