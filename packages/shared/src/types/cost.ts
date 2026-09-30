@@ -201,6 +201,15 @@ export interface ApiEquivalentSummary {
   unpricedModels: string[];
   byProvider: ApiEquivalentProviderRow[];
   byModel: ApiEquivalentModelRow[];
+  /** Per agent: what its work would cost under API billing, and how many runs did it. */
+  byAgent: ApiEquivalentAgentRow[];
+}
+
+export interface ApiEquivalentAgentRow {
+  agentId: string;
+  /** priced models only */
+  apiEquivalentCents: number;
+  runCount: number;
 }
 
 /**

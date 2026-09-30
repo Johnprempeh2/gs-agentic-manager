@@ -4,6 +4,7 @@ import {
   computeApiEquivalentCents,
   resolveAgentAppearance,
   type ApiEquivalentModelRow,
+  type ApiEquivalentAgentRow,
   type ApiEquivalentProviderRow,
   type ApiEquivalentSummary,
   type CreateCompanySubscription,
@@ -587,7 +588,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
 
       const isSubscription = sql`${costEvents.billingType} in (${sql.join(SUBSCRIPTION_BILLING_TYPES.map((value) => sql`${value}`), sql`, `)})`;
-      const [usageRows, subscriptions, firstEvent] = await Promise.all([
+      const [usageRows, subscriptions, agentRows, firstEvent] = await Promise.all([
         db
           .select({
             provider: costEvents.provider,
@@ -603,6 +604,19 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
           .groupBy(costEvents.provider, costEvents.model)
           .orderBy(costEvents.provider, costEvents.model),
         db.select().from(companySubscriptions).where(eq(companySubscriptions.companyId, companyId)),
+        db
+          .select({
+            agentId: costEvents.agentId,
+            provider: costEvents.provider,
+            model: costEvents.model,
+            inputTokens: sumAsNumber(costEvents.inputTokens),
+            cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+            outputTokens: sumAsNumber(costEvents.outputTokens),
+            runCount: sql<number>`count(distinct ${costEvents.heartbeatRunId})::int`,
+          })
+          .from(costEvents)
+          .where(and(...conditions))
+          .groupBy(costEvents.agentId, costEvents.provider, costEvents.model),
         range?.from
           ? Promise.resolve(null)
           : db
@@ -676,6 +690,23 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         );
       }
 
+      const agentsById = new Map<string, ApiEquivalentAgentRow>();
+      for (const row of agentRows) {
+        const entry = agentsById.get(row.agentId) ?? { agentId: row.agentId, apiEquivalentCents: 0, runCount: 0 };
+        entry.apiEquivalentCents += computeApiEquivalentCents({
+          provider: row.provider,
+          model: row.model,
+          inputTokens: Number(row.inputTokens),
+          cachedInputTokens: Number(row.cachedInputTokens),
+          outputTokens: Number(row.outputTokens),
+        }) ?? 0;
+        // ponytail: a run that used two models counts once per model; add a
+        // separate distinct-run query if agents start mixing models per run.
+        entry.runCount += Number(row.runCount);
+        agentsById.set(row.agentId, entry);
+      }
+      const byAgent = [...agentsById.values()].sort((a, b) => b.apiEquivalentCents - a.apiEquivalentCents);
+
       const byProvider = [...providers.values()].sort((a, b) => a.provider.localeCompare(b.provider));
       const sum = (pick: (row: ApiEquivalentProviderRow) => number) =>
         byProvider.reduce((total, row) => total + pick(row), 0);
@@ -699,6 +730,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         unpricedModels: [...unpricedModels].sort(),
         byProvider,
         byModel,
+        byAgent,
       };
     },
 

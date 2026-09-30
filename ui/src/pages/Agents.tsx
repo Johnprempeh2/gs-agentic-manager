@@ -24,6 +24,8 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { OrgChart } from "./OrgChart";
 import { relativeTime, cn, agentRouteRef, agentUrl } from "../lib/utils";
+import { costsApi } from "../api/costs";
+import type { ApiEquivalentAgentRow } from "@greatstone/shared";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -240,6 +242,24 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
   const builtInAgentIds = useMemo(() => new Set(builtInByAgentId.keys()), [builtInByAgentId]);
   const [configureState, setConfigureState] = useState<BuiltInAgentState | null>(null);
 
+  // What each agent's last seven days of work would cost on the API: the
+  // owner's "is this agent earning its keep" number. Hour-rounded so the key
+  // stays stable while the page is open.
+  const weekFrom = useMemo(() => {
+    const from = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    from.setMinutes(0, 0, 0);
+    return from.toISOString();
+  }, []);
+  const { data: weekValue } = useQuery({
+    queryKey: queryKeys.apiEquivalent(selectedCompanyId!, weekFrom),
+    queryFn: () => costsApi.apiEquivalent(selectedCompanyId!, weekFrom),
+    enabled: !!selectedCompanyId,
+  });
+  const weekValueByAgent = useMemo(
+    () => new Map((weekValue?.byAgent ?? []).map((row) => [row.agentId, row])),
+    [weekValue],
+  );
+
   const { data: agents, isLoading, error } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
@@ -403,11 +423,14 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         ) : (
           <AgentAvatar agent={agent} size={32} />
         )}
-        secondaryRow={builtInCluster && (
+        secondaryRow={
           <div className="@5xl:hidden flex flex-wrap items-center gap-1.5">
             {builtInCluster}
+            {weekValue && (
+              <span className="text-xs text-muted-foreground">{agentWeekLine(weekValueByAgent.get(agent.id))}</span>
+            )}
           </div>
-        )}
+        }
         meta={
           <div className="flex items-center gap-3">
             {builtInCluster && (
@@ -420,6 +443,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
                 agent={agent}
                 environment={resolveRenderedEnvironment(agent.id)}
                 showEnvironment={showEnvironmentColumn}
+                week={weekValue ? weekValueByAgent.get(agent.id) ?? null : undefined}
               />
             </div>
           </div>
@@ -771,25 +795,50 @@ function OrgTreeNode({
  * heartbeat is single-line (`whitespace-nowrap`) and wide enough for a full
  * date like "Apr 30, 2026".
  */
+/** Whole dollars: the row is a glance, the Costs page has the cents. */
+function formatWorkValue(cents: number): string {
+  return `$${Math.round(cents / 100).toLocaleString("en-GB")}`;
+}
+
+/** "$123 of work · 41 runs this week", or that it did not run. */
+export function agentWeekLine(row: ApiEquivalentAgentRow | undefined): string {
+  if (!row || row.runCount === 0) return "No runs this week";
+  const runs = `${row.runCount} ${row.runCount === 1 ? "run" : "runs"} this week`;
+  return row.apiEquivalentCents > 0 ? `${formatWorkValue(row.apiEquivalentCents)} of work · ${runs}` : runs;
+}
+
 function AgentMetaColumns({
   agent,
   environment,
   showEnvironment,
+  week,
 }: {
   agent: Agent;
   environment: EnvironmentDescriptor;
   showEnvironment: boolean;
+  /** undefined while loading; null when the agent did not run this week. */
+  week?: ApiEquivalentAgentRow | null;
 }) {
   const model = getConfiguredModel(agent);
   const adapterLabel = getAdapterLabel(agent.adapterType);
   return (
     <>
+      {week !== undefined && (
+        <div className="w-28 min-w-0 text-right leading-tight" title="What this agent's work in the last 7 days would cost on the API">
+          <div className="truncate text-xs font-medium tabular-nums text-foreground">
+            {week && week.apiEquivalentCents > 0 ? formatWorkValue(week.apiEquivalentCents) : "None"}
+          </div>
+          <div className="truncate text-(length:--text-micro) tabular-nums text-subtle-foreground">
+            {week?.runCount ? `${week.runCount} ${week.runCount === 1 ? "run" : "runs"} this week` : "No runs this week"}
+          </div>
+        </div>
+      )}
       <div className="w-44 min-w-0 leading-tight">
         <div
           className="truncate font-mono text-xs text-muted-foreground"
-          title={model ?? undefined}
+          title={model ?? "The model its AI connection uses by default"}
         >
-          {model ?? "—"}
+          {model ?? "Default model"}
         </div>
         <div className="truncate font-mono text-(length:--text-micro) text-subtle-foreground" title={adapterLabel}>
           {adapterLabel}

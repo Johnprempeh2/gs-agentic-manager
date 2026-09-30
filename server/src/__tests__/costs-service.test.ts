@@ -1199,6 +1199,10 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     expect(sum((row) => row.actualApiSpendCents)).toBe(summary.actualApiSpendCents);
     expect(sum((row) => row.subscriptionCostCents)).toBeCloseTo(summary.subscriptionCostCents, 6);
 
+    // One agent did all the work in the period, so its value is the priced total.
+    expect(summary.byAgent).toHaveLength(1);
+    expect(summary.byAgent[0]!.apiEquivalentCents).toBeCloseTo(summary.apiEquivalentCents, 6);
+
     await costs.deleteSubscription(companyId, anthropicPlan.id);
     const afterDelete = await costs.apiEquivalent(
       companyId,
