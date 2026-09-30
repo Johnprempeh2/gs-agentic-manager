@@ -1,0 +1,9 @@
+schema: paperclip/v1
+routines:
+  monthly-report-cycle:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: 1st of each month at 09:00
+        cronExpression: "0 9 1 * *"
+        timezone: Europe/London

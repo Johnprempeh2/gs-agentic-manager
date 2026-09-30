@@ -1,0 +1,9 @@
+schema: paperclip/v1
+routines:
+  weekly-content-planning:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Mondays at 09:00
+        cronExpression: "0 9 * * 1"
+        timezone: Europe/London

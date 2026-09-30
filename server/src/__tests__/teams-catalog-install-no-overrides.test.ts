@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { agents, companies, createDb } from "@greatstone/db";
+import { agents, companies, createDb, routineTriggers, routines } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -114,6 +114,41 @@ describeEmbeddedPostgres("teams catalog install with no caller adapter overrides
     expect(adapterTypes).toEqual(["claude_local", "claude_local", "claude_local"]);
     expect(adapterTypes).not.toContain("process");
     expect(byName.get("CTO")?.permissions).toMatchObject({ canCreateAgents: true });
+  });
+
+  it.each([
+    { slug: "research-and-reporting", agents: 3, schedules: ["0 9 1 * *"] },
+    { slug: "executive-assistant", agents: 1, schedules: ["0 15 * * 5", "0 8 * * 1-5"] },
+    { slug: "marketing-content", agents: 3, schedules: ["0 9 * * 1"] },
+  ])("installs the Greatstone $slug team with its routines paused on schedule", async ({ slug, agents: agentCount, schedules }) => {
+    const companyId = await seedEmptyCompany();
+    const svc = teamsCatalogService(db);
+
+    // Routines need a responsible user; in the product that is the board user
+    // installing the team, which is the team's one human overseer.
+    await svc.installCatalogTeam(companyId, slug, {
+      collisionStrategy: "rename",
+      actor: { actorType: "user", actorId: "overseer-1", userId: "overseer-1" },
+    });
+
+    const byName = await listAdapterTypesByName(companyId);
+    expect(byName.size).toBe(agentCount);
+    expect(Array.from(byName.values()).every((row) => row.adapterType === "claude_local")).toBe(true);
+
+    const installedRoutines = await db
+      .select({
+        status: routines.status,
+        responsibleUserId: routines.responsibleUserId,
+        cronExpression: routineTriggers.cronExpression,
+        timezone: routineTriggers.timezone,
+      })
+      .from(routines)
+      .innerJoin(routineTriggers, eq(routineTriggers.routineId, routines.id))
+      .where(eq(routines.companyId, companyId));
+    expect(installedRoutines.map((row) => row.status)).toEqual(schedules.map(() => "paused"));
+    expect(installedRoutines.map((row) => row.cronExpression).sort()).toEqual([...schedules].sort());
+    expect(installedRoutines.every((row) => row.timezone === "Europe/London")).toBe(true);
+    expect(installedRoutines.every((row) => row.responsibleUserId === "overseer-1")).toBe(true);
   });
 
   it("honors an explicit caller adapter override for a single slug while defaulting the rest to claude_local", async () => {
