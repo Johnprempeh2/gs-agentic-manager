@@ -511,22 +511,28 @@ describe("issue attachment routes", () => {
     expect(mockCompanyService.getById).not.toHaveBeenCalled();
   });
 
-  it("serves html attachments as downloads with nosniff", async () => {
+  it("opens html attachments in an opaque-origin sandbox, and downloads them on request", async () => {
     const storage = createStorageService();
     mockIssueService.getAttachmentById.mockResolvedValue(makeAttachment("text/html", "report.html"));
 
     const app = await createApp(storage);
-    const res = await request(app)
-      .get("/api/attachments/attachment-1/content")
-      .buffer(true)
-      .parse(parseBinaryResponse);
+    for (const download of [false, true]) {
+      const res = await request(app)
+        .get(`/api/attachments/attachment-1/content${download ? "?download=1" : ""}`)
+        .buffer(true)
+        .parse(parseBinaryResponse);
 
-    expect(res.status).toBe(200);
-    expect([
-      undefined,
-      'attachment; filename="report.html"',
-    ]).toContain(res.headers["content-disposition"]);
-    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+      expect(res.status).toBe(200);
+      expect(res.headers["content-disposition"]).toBe(`${download ? "attachment" : "inline"}; filename="report.html"`);
+      expect(res.headers["x-content-type-options"]).toBe("nosniff");
+      // No allow-same-origin: the page never runs with the app's origin, cookies or storage.
+      const csp = res.headers["content-security-policy"] as string;
+      expect(csp).toMatch(/^sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox;/);
+      expect(csp).not.toContain("allow-same-origin");
+      expect(csp).not.toContain("allow-forms");
+      expect(csp).toContain("connect-src 'none'");
+      expect(csp).toContain("form-action 'none'");
+    }
   });
 
   it("serves arbitrary binary attachments as downloads with nosniff", async () => {
