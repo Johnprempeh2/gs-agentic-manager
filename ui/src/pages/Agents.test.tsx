@@ -8,7 +8,7 @@ import type { Agent, Environment, EnvironmentCapabilities } from "@greatstone/sh
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../context/ToastContext";
 import type { BuiltInAgentState } from "../api/builtInAgents";
-import { Agents } from "./Agents";
+import { Agents, agentWeekLine } from "./Agents";
 import { Agents as ProductionAgents } from "./Agents.production";
 import type { AgentOrgChainHealth } from "@greatstone/shared";
 
@@ -1098,5 +1098,13 @@ describe("Agents", () => {
 
     expect(container.textContent).toContain("Alpha");
     expect(container.querySelector('[aria-label="Invalid reporting chain"]')).not.toBeNull();
+  });
+});
+
+describe("agentWeekLine", () => {
+  it("says what the week's work is worth and how many runs did it", () => {
+    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 12_345, runCount: 41 })).toBe("$123 of work · 41 runs this week");
+    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 0, runCount: 1 })).toBe("1 run this week");
+    expect(agentWeekLine(undefined)).toBe("No runs this week");
   });
 });

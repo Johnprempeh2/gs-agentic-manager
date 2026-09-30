@@ -43,6 +43,7 @@ const summary: ApiEquivalentSummary = {
       unpricedTokens: 1_500,
     },
   ],
+  byAgent: [],
   byModel: [
     {
       provider: "openai",

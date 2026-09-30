@@ -1282,6 +1282,7 @@ export type {
   DetectedSubscriptionProvider,
   CompanySubscriptionsResult,
   ApiEquivalentModelRow,
+  ApiEquivalentAgentRow,
   ApiEquivalentProviderRow,
   ApiEquivalentSummary,
   CostLedgerBasis,
