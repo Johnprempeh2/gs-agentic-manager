@@ -44,7 +44,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
-import { healthApi } from "../api/health";
+import { healthApi, healthPollInterval } from "../api/health";
 import { resolveArchivedCompanyBounce, shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import { useOptionalToastActions } from "../context/ToastContext";
 import {
@@ -249,10 +249,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
     retry: false,
-    refetchInterval: (query) => {
-      const data = query.state.data as { devServer?: { enabled?: boolean } } | undefined;
-      return data?.devServer?.enabled ? 2000 : false;
-    },
+    refetchInterval: (query) => healthPollInterval(query.state.data),
     refetchIntervalInBackground: false,
   });
   const keyboardShortcutsEnabled = useUserPreferences().data?.keyboardShortcuts === true;

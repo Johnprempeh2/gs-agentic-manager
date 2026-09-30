@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 
+import { act } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../context/ThemeContext";
+import { issuesApi } from "../api/issues";
+import { queryKeys } from "../lib/queryKeys";
 import { MarkdownBody } from "./MarkdownBody";
 
 vi.mock("@/lib/router", () => ({
@@ -23,6 +26,10 @@ vi.mock("../api/issues", () => ({
   },
 }));
 
+vi.mock("../context/CompanyContext", () => ({
+  useOptionalCompany: () => ({ selectedCompanyId: "company-1", companies: [] }),
+}));
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -38,17 +45,19 @@ afterEach(() => {
   container = null;
 });
 
-function renderMarkdown(children: string) {
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
-  const queryClient = new QueryClient({
+function renderMarkdown(
+  children: string,
+  queryClient = new QueryClient({
     defaultOptions: {
       queries: {
         retry: false,
       },
     },
-  });
+  }),
+) {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
 
   flushSync(() => {
     root?.render(
@@ -91,5 +100,65 @@ describe("MarkdownBody code block interactions", () => {
     expect(pre?.style.whiteSpace).toBe("");
     expect(wrapButton?.getAttribute("aria-pressed")).toBe("false");
     expect(wrapButton?.getAttribute("aria-label")).toBe("Wrap lines");
+  });
+});
+
+describe("MarkdownBody issue mention chips", () => {
+  const pap7 = {
+    id: "issue-7",
+    identifier: "PAP-7",
+    companyId: "company-1",
+    projectId: null,
+    parentId: null,
+    title: "Ship the release",
+    description: null,
+    status: "done",
+    priority: "medium",
+    workMode: "standard",
+    assigneeAgentId: null,
+    assigneeUserId: null,
+    executionRunId: null,
+    issueNumber: 7,
+    requestDepth: 0,
+    createdAt: "2026-09-30T00:00:00.000Z",
+    updatedAt: "2026-09-30T00:00:00.000Z",
+  };
+  const newQueryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  beforeEach(() => {
+    vi.mocked(issuesApi.get).mockReset().mockResolvedValue(undefined as never);
+  });
+
+  it("paints chips from a cached issue list and fetches only the task it lacks", async () => {
+    const queryClient = newQueryClient();
+    queryClient.setQueryData(queryKeys.issues.mentionPool("company-1"), [pap7]);
+
+    const node = renderMarkdown("See PAP-7 and PAP-8.", queryClient);
+    await Promise.resolve();
+
+    expect(node.querySelector('[aria-label="Issue PAP-7: Ship the release"]')).not.toBeNull();
+    expect(vi.mocked(issuesApi.get).mock.calls).toEqual([["PAP-8"]]);
+  });
+
+  it("waits for the page's first issue-list load instead of racing it", async () => {
+    const queryClient = newQueryClient();
+    let resolvePool: (rows: unknown[]) => void = () => {};
+    void queryClient.fetchQuery({
+      queryKey: queryKeys.issues.mentionPool("company-1"),
+      queryFn: () => new Promise<unknown[]>((resolve) => { resolvePool = resolve; }),
+    });
+
+    const node = renderMarkdown("See PAP-7.", queryClient);
+    await act(async () => { await Promise.resolve(); });
+    expect(issuesApi.get).not.toHaveBeenCalled();
+
+    // Query cache notifications are batched onto the next macrotask.
+    await act(async () => {
+      resolvePool([pap7]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(node.querySelector('[aria-label="Issue PAP-7: Ship the release"]')).not.toBeNull();
+    expect(issuesApi.get).not.toHaveBeenCalled();
   });
 });

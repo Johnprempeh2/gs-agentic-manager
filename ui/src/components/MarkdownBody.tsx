@@ -1,5 +1,5 @@
 import { isValidElement, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, ExternalLink, WrapText } from "lucide-react";
 import Markdown, { defaultUrlTransform, type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,6 +11,7 @@ import { useOptionalCompany } from "../context/CompanyContext";
 import { mentionChipInlineStyle, parseMentionChipHref } from "../lib/mention-chips";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
+import { findIssueInCachedLists } from "../lib/issueDetailCache";
 import { parseIssueReferenceFromHref, remarkLinkIssueReferences } from "../lib/issue-reference";
 import { remarkLinkCaseReferences } from "../lib/case-reference";
 
@@ -42,6 +43,7 @@ import { copyTextToClipboard } from "../lib/clipboard";
 import type {
   ExternalObjectLivenessState,
   ExternalObjectStatusCategory,
+  Issue,
 } from "@greatstone/shared";
 
 /**
@@ -103,19 +105,56 @@ interface MarkdownBodyProps {
 
 let mermaidLoaderPromise: Promise<typeof import("mermaid").default> | null = null;
 
-function MarkdownIssueLink({
-  issuePathId,
-  children,
-}: {
+interface MarkdownIssueLinkProps {
   issuePathId: string;
   children: ReactNode;
-}) {
+}
+
+function MarkdownIssueLink({ issuePathId, children }: MarkdownIssueLinkProps) {
+  const queryClient = useQueryClient();
+  const companyId = useOptionalCompany()?.selectedCompanyId ?? null;
+  // Chips mount with a thread's comments, often before the page's issue lists
+  // (mention pool, child tasks) land. Hold each lookup until those first loads
+  // settle, once, so the chip can take its task from them.
+  const listsLoading = useIsFetching({
+    predicate: (query) =>
+      query.queryKey[0] === "issues" &&
+      query.queryKey[1] === companyId &&
+      query.state.data === undefined,
+  }) > 0;
+  const [listsSettled, setListsSettled] = useState(!listsLoading);
+  if (!listsSettled && !listsLoading) setListsSettled(true);
+  if (!listsSettled) {
+    const known = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issuePathId));
+    return <MarkdownIssueLinkView issuePathId={issuePathId} issue={known}>{children}</MarkdownIssueLinkView>;
+  }
+  return <CachedMarkdownIssueLink issuePathId={issuePathId}>{children}</CachedMarkdownIssueLink>;
+}
+
+function CachedMarkdownIssueLink({ issuePathId, children }: MarkdownIssueLinkProps) {
+  const queryClient = useQueryClient();
+  // A thread can mention dozens of tasks. Seed each chip from an issue list the
+  // page already holds (with that list's real age) instead of one fetch per
+  // mention; only a task missing from every cached list, or a stale one, fetches.
+  const cached = useMemo(
+    () => findIssueInCachedLists(queryClient, issuePathId),
+    [queryClient, issuePathId],
+  );
   const { data } = useQuery({
     queryKey: queryKeys.issues.detail(issuePathId),
     queryFn: () => issuesApi.get(issuePathId),
     staleTime: 60_000,
+    initialData: cached?.issue,
+    initialDataUpdatedAt: cached?.updatedAt,
   });
+  return <MarkdownIssueLinkView issuePathId={issuePathId} issue={data}>{children}</MarkdownIssueLinkView>;
+}
 
+function MarkdownIssueLinkView({
+  issuePathId,
+  issue: data,
+  children,
+}: MarkdownIssueLinkProps & { issue: Issue | undefined }) {
   const identifier = data?.identifier ?? issuePathId;
   const title = data?.title ?? identifier;
   const status = data?.status;

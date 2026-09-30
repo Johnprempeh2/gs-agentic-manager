@@ -110,7 +110,9 @@ import {
 import {
   resolveIssueActiveRun,
   shouldTrackIssueActiveRun,
+  taskPollInterval,
 } from "../lib/issueActiveRun";
+import { usePageVisibility } from "../lib/page-visibility";
 import { getIssueDetailQueryOptions } from "../lib/issueDetailCache";
 import {
   beginIssueDetailNavigation,
@@ -1448,6 +1450,10 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
     enabled: !!issueId,
     placeholderData: keepPreviousDataForSameQueryTail<ActivityEvent[]>(issueId),
   });
+  // Both endpoints return only queued or running runs, so their data is the
+  // liveness signal. The page's slow probe (TaskDetailSurface) notices a run
+  // starting; these follow it at 1 s only while it is live.
+  const { visible: pageVisible } = usePageVisibility();
   const {
     data: liveRuns,
     isFetched: liveRunsFetched,
@@ -1457,7 +1463,11 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
     queryKey: queryKeys.issues.liveRuns(issueId),
     queryFn: () => heartbeatsApi.liveRunsForIssue(issueId),
     enabled: !!issueId,
-    refetchInterval: 1000,
+    refetchInterval: (query) =>
+      taskPollInterval(
+        { issueStatus, live: (query.state.data?.length ?? 0) > 0, visible: pageVisible },
+        1000,
+      ),
     placeholderData:
       keepPreviousDataForSameQueryTail<LiveRunForIssue[]>(issueId),
   });
@@ -1474,7 +1484,11 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
     queryKey: queryKeys.issues.activeRun(issueId),
     queryFn: () => heartbeatsApi.activeRunForIssue(issueId),
     enabled: activeRunQueryEnabled,
-    refetchInterval: liveRunCount > 0 ? false : 1000,
+    refetchInterval: (query) =>
+      taskPollInterval(
+        { issueStatus, live: liveRunCount === 0 && query.state.data != null, visible: pageVisible },
+        1000,
+      ),
     placeholderData: keepPreviousDataForSameQueryTail<ActiveRunForIssue | null>(
       issueId,
     ),
@@ -1544,8 +1558,10 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
     queryKey: queryKeys.issues.runs(issueId),
     queryFn: () => activityApi.runsForIssue(issueId),
     enabled: !!issueId,
-    refetchInterval:
-      hasLiveRuns || issueStatus === "in_progress" ? 1000 : false,
+    refetchInterval: taskPollInterval(
+      { issueStatus, live: hasLiveRuns, visible: pageVisible },
+      1000,
+    ),
     placeholderData: keepPreviousDataForSameQueryTail<RunForIssue[]>(issueId),
   });
   const resolvedActivity = activity ?? [];
@@ -2316,7 +2332,15 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
             hash: scrollLocation.hash,
           }}
         >
-          <EmailThreadProvider companyId={companyId} issueId={issueId}>
+          <EmailThreadProvider
+            companyId={companyId}
+            issueId={issueId}
+            refetchInterval={taskPollInterval(
+              { issueStatus, live: hasLiveRuns, visible: pageVisible },
+              3000,
+              30_000,
+            )}
+          >
           <ThreadComponent
             key={conversationMode ? draftKey : issueId}
             {...(!classicTaskInterfaceEnabled ? { creationActivity: resolvedActivity } : {})}
@@ -3183,15 +3207,31 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     void refetchWorkProducts();
   }, [issueId, workProducts, refetchWorkProducts]);
 
+  // Run state is keyed by the task's UUID, as the chat tab and run ledger key
+  // it. Keying it by the route identifier as well fetched and polled the same
+  // task twice.
+  const runStateIssueId = issueId ? issue?.id : undefined;
+  const { visible: pageVisible } = usePageVisibility();
   const { data: liveRunCount = 0 } = useQuery<LiveRunForIssue[], Error, number>(
     {
-      queryKey: queryKeys.issues.liveRuns(issueId!),
-      queryFn: () => heartbeatsApi.liveRunsForIssue(issueId!),
-      enabled: !!issueId,
-      refetchInterval: 3000,
+      queryKey: queryKeys.issues.liveRuns(runStateIssueId!),
+      queryFn: () => heartbeatsApi.liveRunsForIssue(runStateIssueId!),
+      enabled: !!runStateIssueId,
+      // The page's one idle probe: a run started by an agent other than the
+      // assignee carries no issue id on its socket event, so check every 30 s.
+      refetchInterval: (query) =>
+        taskPollInterval(
+          {
+            issueStatus: issue?.status,
+            live: (query.state.data?.length ?? 0) > 0,
+            visible: pageVisible,
+          },
+          3000,
+          30_000,
+        ),
       select: (runs) => runs.length,
       placeholderData: keepPreviousDataForSameQueryTail<LiveRunForIssue[]>(
-        issueId ?? "pending",
+        runStateIssueId ?? "pending",
       ),
     },
   );
@@ -3201,14 +3241,23 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     Error,
     boolean
   >({
-    queryKey: queryKeys.issues.activeRun(issueId!),
-    queryFn: () => heartbeatsApi.activeRunForIssue(issueId!),
+    queryKey: queryKeys.issues.activeRun(runStateIssueId!),
+    queryFn: () => heartbeatsApi.activeRunForIssue(runStateIssueId!),
     enabled:
-      !!issueId && (!!issue?.executionRunId || issue?.status === "in_progress"),
-    refetchInterval: liveRunCount > 0 ? false : 3000,
+      !!runStateIssueId &&
+      (!!issue?.executionRunId || issue?.status === "in_progress"),
+    refetchInterval: (query) =>
+      taskPollInterval(
+        {
+          issueStatus: issue?.status,
+          live: liveRunCount === 0 && query.state.data != null,
+          visible: pageVisible,
+        },
+        3000,
+      ),
     select: (run) => !!run,
     placeholderData: keepPreviousDataForSameQueryTail<ActiveRunForIssue | null>(
-      issueId ?? "pending",
+      runStateIssueId ?? "pending",
     ),
   });
   const resolvedHasActiveRun = issue
@@ -4135,8 +4184,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       for (const queryKey of [
         queryKeys.issues.detail(issueId!),
         queryKeys.issues.activity(issueId!),
-        queryKeys.issues.runs(issueId!),
-        queryKeys.issues.liveRuns(issueId!),
+        queryKeys.issues.runs(runStateIssueId ?? issueId!),
+        queryKeys.issues.liveRuns(runStateIssueId ?? issueId!),
       ]) {
         void queryClient.invalidateQueries({ queryKey });
       }
@@ -4224,13 +4273,13 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           queryKey: queryKeys.issues.activity(issueId!),
         }),
         queryClient.invalidateQueries({
-          queryKey: queryKeys.issues.liveRuns(issueId!),
+          queryKey: queryKeys.issues.liveRuns(runStateIssueId ?? issueId!),
         }),
         queryClient.invalidateQueries({
-          queryKey: queryKeys.issues.activeRun(issueId!),
+          queryKey: queryKeys.issues.activeRun(runStateIssueId ?? issueId!),
         }),
         queryClient.invalidateQueries({
-          queryKey: queryKeys.issues.runs(issueId!),
+          queryKey: queryKeys.issues.runs(runStateIssueId ?? issueId!),
         }),
         queryClient.invalidateQueries({
           queryKey: ["issues", "tree-control-state", issueId ?? "pending"],
@@ -4274,7 +4323,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     },
     onSettled: () => Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(issueId!) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(runStateIssueId ?? issueId!) }),
     ]),
   });
   const stopAndFinalizeRun = useMutation({
@@ -4518,7 +4567,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
         queryKeys.issues.detail(issueId!),
       );
       const queuedComment = !interrupt
-        ? readIssueRunStateFromCache(queryClient, issueId!, issue)
+        ? readIssueRunStateFromCache(queryClient, runStateIssueId ?? issueId!, issue)
             .interruptibleIssueRun
         : null;
       const optimisticComment = issue
@@ -4913,7 +4962,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
         queryKeys.issues.detail(issueId!),
       );
       const queuedComment = !interrupt
-        ? readIssueRunStateFromCache(queryClient, issueId!, issue)
+        ? readIssueRunStateFromCache(queryClient, runStateIssueId ?? issueId!, issue)
             .interruptibleIssueRun
         : null;
       const optimisticComment = issue

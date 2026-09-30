@@ -48,7 +48,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
-import { healthApi } from "../api/health";
+import { healthApi, healthPollInterval } from "../api/health";
 import {
   resolveArchivedCompanyBounce,
   shouldSyncCompanySelectionFromRoute,
@@ -248,11 +248,7 @@ export function Layout() {
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
     retry: false,
-    refetchInterval: (query) => {
-      const data = query.state.data as
-        { devServer?: { enabled?: boolean } } | undefined;
-      return data?.devServer?.enabled ? 2000 : false;
-    },
+    refetchInterval: (query) => healthPollInterval(query.state.data),
     refetchIntervalInBackground: false,
   });
   const keyboardShortcutsEnabled = useUserPreferences().data?.keyboardShortcuts === true;

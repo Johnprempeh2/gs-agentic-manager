@@ -13,21 +13,25 @@ const EmailContext = createContext<EmailThreadSummary | null>(null);
 export function EmailThreadProvider({
   companyId,
   issueId,
+  refetchInterval = 3000,
   children,
 }: {
   companyId: string;
   issueId: string;
+  /** The task page slows this while no run is live (see taskPollInterval). */
+  refetchInterval?: number | false;
   children: ReactNode;
 }) {
   const { enabled: connectorsEnabled } = useChatConnectorsEnabled();
   // An unsaved agent chat has no task yet: its id is "" or a "chat:" draft id.
   const enabled =
     connectorsEnabled && Boolean(companyId && issueId) && !issueId.startsWith("chat:");
+  // The one poller for this thread; EmailTaskActivity reads the same cache.
   const thread = useQuery({
     queryKey: ["email-thread", companyId, issueId],
     queryFn: () => emailApi.thread(companyId, issueId),
     enabled,
-    refetchInterval: enabled ? 3000 : false,
+    refetchInterval: enabled ? refetchInterval : false,
   });
   return (
     <EmailContext.Provider value={thread.data ?? null}>

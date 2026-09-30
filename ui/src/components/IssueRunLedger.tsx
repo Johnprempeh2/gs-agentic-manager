@@ -23,6 +23,8 @@ import { useToastActions } from "../context/ToastContext";
 import { cn, relativeTime } from "../lib/utils";
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
+import { taskPollInterval } from "../lib/issueActiveRun";
+import { usePageVisibility } from "../lib/page-visibility";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { readSourceResolvedWatchdogFold } from "../lib/source-resolved-watchdog-fold";
 import { SourceResolvedFoldBadge } from "./SourceResolvedFoldBadge";
@@ -450,18 +452,20 @@ export function IssueRunLedger({
     queryFn: () => accessApi.getCurrentBoardAccess(),
     retry: false,
   });
+  // The page owns run discovery; this ledger only follows a run that is live.
+  const { visible } = usePageVisibility();
+  const pollState = { issueStatus, live: hasLiveRuns, visible };
   const { data: runs } = useQuery({
     queryKey: queryKeys.issues.runs(issueId),
     queryFn: () => activityApi.runsForIssue(issueId),
-    refetchInterval:
-      hasLiveRuns || issueStatus === "in_progress" ? 5000 : false,
+    refetchInterval: taskPollInterval(pollState, 5000),
     placeholderData: keepPreviousDataForSameQueryTail<RunForIssue[]>(issueId),
   });
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.issues.liveRuns(issueId),
     queryFn: () => heartbeatsApi.liveRunsForIssue(issueId),
     enabled: hasLiveRuns,
-    refetchInterval: 3000,
+    refetchInterval: taskPollInterval(pollState, 3000),
     placeholderData:
       keepPreviousDataForSameQueryTail<LiveRunForIssue[]>(issueId),
   });
@@ -469,7 +473,6 @@ export function IssueRunLedger({
     queryKey: queryKeys.issues.activeRun(issueId),
     queryFn: () => heartbeatsApi.activeRunForIssue(issueId),
     enabled: hasLiveRuns || issueStatus === "in_progress",
-    refetchInterval: hasLiveRuns ? false : 3000,
     placeholderData: keepPreviousDataForSameQueryTail<ActiveRunForIssue | null>(
       issueId,
     ),

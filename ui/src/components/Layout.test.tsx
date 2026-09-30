@@ -257,7 +257,8 @@ vi.mock("../hooks/useCompanyPageMemory", () => ({
   useCompanyPageMemory: () => undefined,
 }));
 
-vi.mock("../api/health", () => ({
+vi.mock("../api/health", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/health")>()),
   healthApi: mockHealthApi,
 }));
 
