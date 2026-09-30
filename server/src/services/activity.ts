@@ -1,5 +1,5 @@
 import { executionProjectionsForRuns } from "./execution-projection.js";
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   activityLog,
@@ -26,6 +26,10 @@ export interface ActivityFilters {
   agentId?: string;
   entityType?: string;
   entityId?: string;
+  /** Only these actions, e.g. the board's rejections for the weekly lessons pass. */
+  actions?: string[];
+  /** Only rows written at or after this time. */
+  since?: Date;
   limit?: number;
 }
 
@@ -349,6 +353,12 @@ export function activityService(db: Db) {
       }
       if (filters.entityId) {
         conditions.push(eq(activityLog.entityId, filters.entityId));
+      }
+      if (filters.actions?.length) {
+        conditions.push(inArray(activityLog.action, filters.actions));
+      }
+      if (filters.since) {
+        conditions.push(gte(activityLog.createdAt, filters.since));
       }
 
       return db

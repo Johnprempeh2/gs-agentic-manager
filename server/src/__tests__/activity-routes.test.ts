@@ -218,6 +218,8 @@ describe.sequential("activity routes", () => {
       agentId: undefined,
       entityType: undefined,
       entityId: undefined,
+      actions: [],
+      since: undefined,
       limit: 100,
     });
   });
@@ -236,8 +238,27 @@ describe.sequential("activity routes", () => {
       agentId: undefined,
       entityType: "issue",
       entityId: undefined,
+      actions: [],
+      since: undefined,
       limit: 500,
     });
+  });
+
+  it("filters company activity by action list and since, and refuses a bad date", async () => {
+    mockActivityService.list.mockResolvedValue([]);
+
+    const app = await createApp();
+    const res = await requestApp(app, (baseUrl) =>
+      request(baseUrl).get("/api/companies/company-1/activity?action=issue.thread_interaction_rejected, issue.thread_interaction_answered&since=2026-09-24T00:00:00.000Z"),
+    );
+    expect(res.status).toBe(200);
+    expect(mockActivityService.list).toHaveBeenCalledWith(expect.objectContaining({
+      actions: ["issue.thread_interaction_rejected", "issue.thread_interaction_answered"],
+      since: new Date("2026-09-24T00:00:00.000Z"),
+    }));
+
+    const bad = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/companies/company-1/activity?since=last-week"));
+    expect(bad.status).toBe(400);
   });
 
   it("resolves alphanumeric issue identifiers before loading runs", async () => {
