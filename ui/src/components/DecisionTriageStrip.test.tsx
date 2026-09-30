@@ -92,7 +92,7 @@ function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
       kind: "interaction",
       id: "interaction-1",
       companyId: "c1",
-      title: "Pick a hosting provider",
+      title: "Confirmation requested",
       identifier: null,
       status: "pending",
       href: null,
@@ -121,7 +121,7 @@ function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
     },
     project: null,
     workspace: null,
-    detail: null,
+    detail: { kind: "confirmation", promptExcerpt: "Pick a hosting provider: Fly or Render?", isPlanTarget: false, images: [] },
     dismissal: null,
     expiresAt: null,
     ruleKey: null,
@@ -164,10 +164,10 @@ describe("DecisionTriageStrip — ask agent for a recommendation", () => {
       parentId: "issue-219",
       assigneeAgentId: "agent-everest",
       status: "todo",
-      title: "Recommend: Pick a hosting provider",
+      title: "Recommendation: Confirmation requested on GRE-219",
     });
     const description = String(payload.description);
-    expect(description).toContain("Pick a hosting provider");
+    expect(description).toContain("Pick a hosting provider: Fly or Render?");
     expect(description).toContain("GRE-219");
     expect(description).toContain("prepare a recommendation, and re-surface it on the decisions desk");
     // Assignment is the wake; no @mention comment is posted.

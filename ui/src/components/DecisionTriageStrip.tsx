@@ -8,6 +8,7 @@ import { useToastActions } from "../context/ToastContext";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { queryKeys } from "../lib/queryKeys";
 import {
+  attentionDetailLine,
   attentionTaskRef,
   DECIDE_BY_OPTIONS,
   decideByLabel,
@@ -129,15 +130,17 @@ export function DecisionTriageStrip({ item, companyId, agents }: DecisionTriageS
     mutationFn: (agent: Agent) => {
       if (!relatedIssueId) throw new Error("This decision has no linked task to route from.");
       const decision = item.subject.title?.trim() || item.whyNow;
+      const detailLine = attentionDetailLine(item);
       const onTask = taskRef ? ` on ${taskRef.identifier}` : "";
       const description = [
         `**Decision${onTask}:** ${decision}`,
+        ...(detailLine ? [detailLine] : []),
         ...(item.whyNow && item.whyNow !== decision ? [`**Why now:** ${item.whyNow}`] : []),
         `Please look at this decision, prepare a recommendation, and re-surface it on the decisions desk. `
           + `(Routed from the decisions desk.)`,
       ].join("\n\n");
       return issuesApi.create(companyId, {
-        title: `Recommend: ${decision}`.slice(0, 200),
+        title: `Recommendation: ${decision}${onTask}`.slice(0, 200),
         description,
         parentId: relatedIssueId,
         assigneeAgentId: agent.id,
