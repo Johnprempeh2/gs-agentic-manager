@@ -19,13 +19,21 @@ export function ManagedAiConnectionRow({
         method: "subscription" | "api_key";
       }
     | undefined;
+  // Accounts can share a name; the default is the one agents use.
+  const accounts = useQuery({
+    queryKey: ["ai-connections", connection.companyId],
+    queryFn: () => aiConnectionsApi.list(connection.companyId),
+    enabled: Boolean(metadata),
+  });
   if (!metadata) return null;
+  const isDefault = accounts.data?.connections.some((a) => a.id === connection.id && a.isDefault);
   return (
     <p className="text-xs text-muted-foreground">
       {aiMethodLabel(metadata.provider, metadata.method)} ·{" "}
       {connection.credentialPolicy === "per_user"
         ? "Personal"
         : "Company shared"}
+      {isDefault ? " · Default" : ""}
     </p>
   );
 }

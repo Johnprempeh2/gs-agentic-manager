@@ -815,7 +815,7 @@ async function startServerWithDatabaseTeardown(
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
-    shareClient: createFeedbackTraceShareClientFromConfig(config),
+    shareClient: createFeedbackTraceShareClientFromConfig(config) ?? undefined,
   });
   const backupSettingsSvc = instanceSettingsService(db);
   const databaseBackupMaxAgeHours = Math.max(
