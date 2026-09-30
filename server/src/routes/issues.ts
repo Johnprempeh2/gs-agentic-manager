@@ -578,6 +578,20 @@ function noopTaskWatchdogService(): TaskWatchdogService {
   };
 }
 
+const HTML_CONTENT_TYPES = new Set(["text/html", "application/xhtml+xml"]);
+const HTML_ATTACHMENT_CSP = [
+  "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox",
+  "default-src 'none'",
+  "script-src 'unsafe-inline' https:",
+  "style-src 'unsafe-inline' https:",
+  "font-src https: data:",
+  "img-src https: data: blob:",
+  "media-src https: data: blob:",
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+].join("; ");
+
 function buildAttachmentContentPath(attachmentId: string): string {
   return `/api/attachments/${attachmentId}/content`;
 }
@@ -18961,9 +18975,14 @@ export function issueRoutes(
         "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
       );
     }
+    // Agent-made pages (mock-ups, reports, calculators) open in the browser
+    // inside an opaque-origin sandbox: scripts run, but the page cannot read
+    // the app's cookies or storage, submit forms, or call the network.
+    const isHtml = HTML_CONTENT_TYPES.has(responseContentType);
+    if (isHtml) res.setHeader("Content-Security-Policy", HTML_ATTACHMENT_CSP);
     const disposition = parseBooleanQuery(req.query.download)
       ? "attachment"
-      : isInlineAttachmentContentType(responseContentType)
+      : isHtml || isInlineAttachmentContentType(responseContentType)
         ? "inline"
         : "attachment";
     res.setHeader(
