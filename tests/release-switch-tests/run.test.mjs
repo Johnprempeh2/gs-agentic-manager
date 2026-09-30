@@ -33,6 +33,15 @@ test("every mapped test file exists and is a vitest file", () => {
   }
 });
 
+test("every known flaky file is a mapped test file and names its reason", () => {
+  const { knownFlaky = {} } = JSON.parse(readFileSync(join(HERE, "switch-tests.json"), "utf8"));
+  const mapped = new Set(Object.values(MAP).flat());
+  for (const [file, reason] of Object.entries(knownFlaky)) {
+    assert.ok(mapped.has(file), `${file} is not in the switch map`);
+    assert.match(reason, /GRE-\d+/, `${file}: the reason names no issue`);
+  }
+});
+
 // A throwaway repo: server/ is a package with two test files.
 function fixtureRepo() {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "switch-tests-fixture-")));
@@ -173,4 +182,66 @@ test("started through a symlinked path, the runner still runs main()", () => {
   const out = spawnSync(process.execPath, [join(link, "run.mjs")], { encoding: "utf8" });
   assert.equal(out.status, 2, `stdout: ${out.stdout}\nstderr: ${out.stderr}`);
   assert.match(out.stdout, /switch-tests:/);
+});
+
+function withKnownFlaky(map, files) {
+  const parsed = JSON.parse(readFileSync(map, "utf8"));
+  parsed.knownFlaky = Object.fromEntries(files.map((f) => [f, "GRE-0: test"]));
+  writeFileSync(map, JSON.stringify(parsed));
+}
+
+test("a known flaky file that fails once and then passes passes, and the report keeps the first failure", async () => {
+  const { repo, map, settings } = fixtureRepo();
+  writeFileSync(map, JSON.stringify({ switches: { alphaOn: ["server/src/a.test.ts"], betaOn: ["server/src/b.test.ts"] } }));
+  withKnownFlaky(map, ["server/src/b.test.ts"]);
+  const calls = [];
+  const logs = [];
+  const json = join(repo, "report.json");
+  const code = await main(["--repo", repo, "--map", map, "--settings-file", settings, "--json", json], {
+    prepare: () => true,
+    run: (pkg, files) => {
+      calls.push(files);
+      return calls.length === 1
+        ? vitestReport(repo, { "server/src/a.test.ts": [], "server/src/b.test.ts": ["chat > times out"] })
+        : vitestReport(repo, { "server/src/b.test.ts": [] });
+    },
+    log: (line) => logs.push(line),
+  });
+  const out = logs.join("\n");
+  assert.equal(code, 0, out);
+  assert.deepEqual(calls, [["server/src/a.test.ts", "server/src/b.test.ts"], ["server/src/b.test.ts"]]);
+  assert.match(out, /- server\/src\/b\.test\.ts: passed on retry \(GRE-0: test\)/);
+  assert.match(out, /first run: chat > times out/);
+  const report = JSON.parse(readFileSync(json, "utf8"));
+  assert.deepEqual(report.files.find((f) => f.file === "server/src/b.test.ts").retried.firstRunFailed, ["chat > times out"]);
+});
+
+test("a known flaky file that fails twice fails the candidate", async () => {
+  const { repo, map, settings } = fixtureRepo();
+  writeFileSync(map, JSON.stringify({ switches: { alphaOn: ["server/src/a.test.ts"], betaOn: ["server/src/b.test.ts"] } }));
+  withKnownFlaky(map, ["server/src/b.test.ts"]);
+  const logs = [];
+  const code = await main(["--repo", repo, "--map", map, "--settings-file", settings], {
+    prepare: () => true,
+    run: () => vitestReport(repo, { "server/src/a.test.ts": [], "server/src/b.test.ts": ["chat > times out"] }),
+    log: (line) => logs.push(line),
+  });
+  const out = logs.join("\n");
+  assert.equal(code, 1, out);
+  assert.match(out, /- betaOn \| server\/src\/b\.test\.ts \| chat > times out/);
+  assert.match(out, /b\.test\.ts: failed on retry/);
+});
+
+test("a failing file that is not known flaky is not retried", async () => {
+  const { repo, map, settings } = fixtureRepo();
+  writeFileSync(map, JSON.stringify({ switches: { alphaOn: ["server/src/a.test.ts"], betaOn: ["server/src/b.test.ts"] } }));
+  withKnownFlaky(map, ["server/src/b.test.ts"]);
+  let calls = 0;
+  const code = await main(["--repo", repo, "--map", map, "--settings-file", settings], {
+    prepare: () => true,
+    run: () => { calls++; return vitestReport(repo, { "server/src/a.test.ts": ["real > regression"], "server/src/b.test.ts": [] }); },
+    log: () => {},
+  });
+  assert.equal(code, 1);
+  assert.equal(calls, 1);
 });

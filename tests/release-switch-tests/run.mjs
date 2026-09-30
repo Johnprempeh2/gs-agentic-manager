@@ -21,6 +21,11 @@
 // DATABASE_URL removed from the env so that no test can reach the live instance. Exit 0: all pass. Exit 1: a test of
 // an on switch fails, a file is missing, or an on switch has no map entry.
 // Exit 2: bad arguments or the switch values could not be read.
+//
+// A file listed under "knownFlaky" in the map (with the issue that names the
+// cause) is run once more when it fails. It passes only if the second run
+// passes, and the report still lists the failures of the first run (GRE-280).
+// No other file is retried.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -57,9 +62,12 @@ export function loadMap(opts) {
   const candidates = opts.map ? [opts.map] : [join(opts.repo, MAP_PATH), join(DEFAULT_REPO, MAP_PATH)];
   const path = candidates.find((p) => existsSync(p));
   if (!path) throw new Error(`no switch map at ${candidates.join(" or ")}`);
-  const map = JSON.parse(readFileSync(path, "utf8")).switches;
+  const parsed = JSON.parse(readFileSync(path, "utf8"));
+  const map = parsed.switches;
   if (!map || typeof map !== "object") throw new Error(`${path} has no "switches" object`);
-  return { path, map };
+  const knownFlaky = parsed.knownFlaky ?? {};
+  if (typeof knownFlaky !== "object" || Array.isArray(knownFlaky)) throw new Error(`${path}: "knownFlaky" must be an object of file -> reason`);
+  return { path, map, knownFlaky };
 }
 
 export async function readSettings(source, { fetchImpl = fetch, env = process.env } = {}) {
@@ -182,6 +190,26 @@ export function collectResults(plan, repo, runs) {
   return results.sort((a, b) => a.file.localeCompare(b.file));
 }
 
+// Runs the failed known-flaky files once more, one vitest per package, and
+// replaces their results. A file passes only when the second run passes.
+export function retryKnownFlaky(plan, repo, results, knownFlaky, run) {
+  const retry = results.filter((r) => r.status === "failed" && Object.hasOwn(knownFlaky, r.file) && !plan.missing.includes(r.file));
+  if (retry.length === 0) return results;
+  const byPackage = new Map();
+  for (const [pkg, files] of plan.byPackage) {
+    const failed = files.filter((f) => retry.some((r) => r.file === f));
+    if (failed.length) byPackage.set(pkg, failed);
+  }
+  const runs = new Map();
+  for (const [pkg, files] of byPackage) runs.set(pkg, run(pkg, files, repo));
+  const second = new Map(collectResults({ byPackage, missing: [] }, repo, runs).map((r) => [r.file, r]));
+  return results.map((r) => {
+    const again = second.get(r.file);
+    if (!again) return r;
+    return { ...again, retried: { reason: knownFlaky[r.file], firstRunFailed: r.failed } };
+  });
+}
+
 function firstLine(text) {
   return String(text ?? "").split("\n").find((l) => l.trim())?.trim() ?? "";
 }
@@ -216,6 +244,14 @@ export function formatReport(report) {
   if (report.switchesOnWithoutTests.length) lines.push(`On without tests: ${report.switchesOnWithoutTests.join(", ")}`);
   const passed = report.files.filter((f) => f.status === "passed").length;
   lines.push(`Test files: ${report.files.length} run, ${passed} passed, ${report.files.length - passed} failed`);
+  const retried = report.files.filter((f) => f.retried);
+  if (retried.length) {
+    lines.push("", "Known flaky, run twice (file: second run; first run failures):");
+    for (const f of retried) {
+      lines.push(`- ${f.file}: ${f.status} on retry (${f.retried.reason})`);
+      for (const test of f.retried.firstRunFailed) lines.push(`    first run: ${test}`);
+    }
+  }
   if (report.failures.length) {
     lines.push("", "Failed (switch, test file, test):");
     for (const f of report.failures) {
@@ -239,7 +275,7 @@ export async function main(argv, { run = runVitest, prepare = prepareRepo, fetch
   if (plan.byPackage.size && !prepare(opts.repo)) log("switch-tests: building the plugin SDK failed; server tests may not load");
   const runs = new Map();
   for (const [pkg, files] of plan.byPackage) runs.set(pkg, run(pkg, files, opts.repo));
-  const results = collectResults(plan, opts.repo, runs);
+  const results = retryKnownFlaky(plan, opts.repo, collectResults(plan, opts.repo, runs), loaded.knownFlaky, run);
   const commit = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: opts.repo, encoding: "utf8" }).stdout?.trim() || null;
   const report = buildReport({ plan, results, from: settings.from, mapPath: loaded.path, repo: opts.repo, commit });
   if (opts.json) writeFileSync(opts.json, `${JSON.stringify(report, null, 2)}\n`);

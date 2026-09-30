@@ -16118,6 +16118,10 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       publicBaseUrl: "https://paperclip.example",
       runtime: new FakeChatSdkRuntime() as unknown as ChatSdkRuntime,
     });
+    // A failed assertion below skips the shutdowns at the end; let afterEach
+    // stop both services so their drains cannot run into later cases (GRE-280).
+    fixtureServices.add(service);
+    fixtureServices.add(competingService);
     deferred.shift()?.();
     // Simulate another server process reconciling the same durable rows at
     // the same time as the webhook process's deferred drain.
@@ -16160,6 +16164,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     // Comment admission commits before the durable wake. Wait for this
     // company's last wake too, not merely its already-visible last comment.
     // The competing sweep may legitimately reconcile another fixture company.
+    // The last wake can land over 1s after the last comment on a busy machine
+    // (GRE-280), so this wait gets the same headroom as the one above.
     await vi.waitFor(() => {
       const calls = wakeup.mock.calls.filter(
         (call) => call[0] === fixture.assignedAgentId,
@@ -16168,7 +16174,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(calls.map((call) => call[1]?.payload?.wakeCommentId)).toEqual(
         comments.map((comment) => comment.id),
       );
-    });
+    }, { timeout: 10_000 });
     // The last comment and wakeup commit inside the lease. Under full-suite
     // load the assertions above can observe those effects one microtask before
     // the deferred owner's `finally` deletes its lease. Require prompt eventual
@@ -16180,7 +16186,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           .from(chatEndpointLeases)
           .where(eq(chatEndpointLeases.endpointId, endpoint.id)),
       ).toHaveLength(0);
-    });
+    }, { timeout: 10_000 });
     await competingService.shutdown();
     await service.shutdown();
   });
@@ -61860,6 +61866,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     // request is queued. The duplicate delivery callback becomes a no-op.
     expect(deferred).toHaveLength(4);
     await drainDeferred();
+    // The default 1s wait is too tight on a busy machine (GRE-280).
     await vi.waitFor(async () => {
       const deliveries = await db
         .select({
@@ -61872,7 +61879,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(
         deliveries.every((delivery) => delivery.state === "processed"),
       ).toBe(true);
-    });
+    }, { timeout: 10_000 });
 
     const [conversation] = await db
       .select()
@@ -61900,7 +61907,9 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).resolves.toMatchObject({ ok: true });
     expect(deferred).toHaveLength(1);
     await drainDeferred();
-    await vi.waitFor(() => expect(deferred).toHaveLength(1));
+    await vi.waitFor(() => expect(deferred).toHaveLength(1), {
+      timeout: 10_000,
+    });
     await drainDeferred();
     await vi.waitFor(async () => {
       await expect(
@@ -61926,7 +61935,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           state: "filtered",
         },
       ]);
-    });
+    }, { timeout: 10_000 });
     await expect(
       db
         .select({ body: issueComments.body })
