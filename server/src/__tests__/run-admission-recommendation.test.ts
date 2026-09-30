@@ -43,9 +43,10 @@ describe("recommendRunAdmission", () => {
     expect(ramRuleCap(1 * GB, 2048)).toBe(1);
   });
 
-  it("no holds: suggests the RAM rule and keeps the floor", () => {
+  it("no holds: keeps the owner's cap (within the RAM rule) and the floor", () => {
     const result = recommendRunAdmission(input());
-    expect(result.suggested).toEqual({ maxConcurrentRuns: 28, minAvailableMemoryMb: 2048 });
+    expect(result.suggested).toEqual({ maxConcurrentRuns: 6, minAvailableMemoryMb: 2048 });
+    expect(result.reasons.join("\n")).toMatch(/keep the cap at 6/);
     expect(result.reasons.join("\n")).toMatch(/RAM rule/);
     expect(result.reasons.join("\n")).toMatch(/Memory use per run is not recorded/);
   });
@@ -62,7 +63,7 @@ describe("recommendRunAdmission", () => {
     const result = recommendRunAdmission(
       input({ usage: { globalCapHeldRuns: 12 }, system: { availableMemoryMb: 1500 } }),
     );
-    expect(result.suggested.maxConcurrentRuns).toBe(28);
+    expect(result.suggested.maxConcurrentRuns).toBe(6);
     expect(result.reasons.join("\n")).toMatch(/not raised/);
   });
 
@@ -72,6 +73,11 @@ describe("recommendRunAdmission", () => {
     );
     expect(result.suggested.maxConcurrentRuns).toBe(3);
     expect(result.reasons.join("\n")).toMatch(/held for low RAM/);
+  });
+
+  it("a cap above the RAM rule is brought down to it", () => {
+    const result = recommendRunAdmission(input({ current: { maxConcurrentRuns: 40 } }));
+    expect(result.suggested.maxConcurrentRuns).toBe(28);
   });
 
   it("low-RAM holds never push the cap below 1", () => {

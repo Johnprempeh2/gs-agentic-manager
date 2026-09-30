@@ -178,7 +178,9 @@ export function RunAdmissionSettingsSection({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span>{describeRunCapSuggestion(memory.totalBytes, suggestionFloor)}</span>
-                {suggestedCap !== null && cap !== suggestedCap ? (
+                {/* Once there is usage, the usage-based advice below is the one to
+                    act on; the RAM rule alone overstates what the machine can run. */}
+                {suggestedCap !== null && cap !== suggestedCap && !hasUsage ? (
                   <Button
                     type="button"
                     variant="ghost"
