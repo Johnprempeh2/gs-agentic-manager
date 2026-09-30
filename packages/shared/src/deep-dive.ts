@@ -24,7 +24,7 @@ export const DEEP_DIVE_RECORD_DOCUMENTS = [
 /** The nine Investigation Streams (Book V, Ch 7) and the chapters that conduct them (Part III). */
 export const DEEP_DIVE_STREAMS = [
   { key: "leadership", label: "Leadership", conductedThrough: "Ch 11 Executive Interviews, Ch 12 Leadership Investigation" },
-  { key: "business", label: "Business", conductedThrough: "No chapter of its own; John's 9 Sep ruling reads it as Process (Ch 13)" },
+  { key: "business", label: "Business", conductedThrough: "Ch 13 Process Investigation (no chapter of its own)" },
   { key: "operations", label: "Operations", conductedThrough: "Ch 13 Process Investigation" },
   { key: "people", label: "People", conductedThrough: "Ch 18 People Investigation" },
   { key: "technology", label: "Technology", conductedThrough: "Ch 14 Technology Investigation" },
