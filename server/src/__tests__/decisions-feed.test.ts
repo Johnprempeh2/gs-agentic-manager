@@ -430,6 +430,35 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect(cardFor(await build(seeded.companyId), seeded.gre241)).toBeNull();
   });
 
+  // GRE-320: the card sent every instruction as a resume, and the comment route
+  // refuses resume for in_review and backlog with a 409.
+  it.each(["in_review", "backlog"] as const)("posts an instruction on a %s task and wakes its owner without moving it", async (status) => {
+    const seeded = await seedLiveScenario();
+    await db.update(issues).set({ status }).where(eq(issues.id, seeded.gre241));
+    const testApp = app(seeded.companyId);
+    const instruct = action(cardFor(await build(seeded.companyId), seeded.gre241), "instruct");
+
+    const [response] = await run(testApp, instruct, "Use the main branch.");
+
+    expect(response!.status).toBe(201);
+    const [instruction] = await db.select().from(issueComments).where(eq(issueComments.issueId, seeded.gre241));
+    expect(instruction?.body).toBe("Use the main branch.");
+    // The comment route sends its wakes after it responds.
+    await vi.waitFor(() => expect(wakeup).toHaveBeenCalledWith(seeded.workerId, expect.objectContaining({
+      reason: "issue_commented",
+      contextSnapshot: expect.objectContaining({ issueId: seeded.gre241, wakeCommentId: instruction!.id }),
+    })));
+    const [task] = await db.select().from(issues).where(eq(issues.id, seeded.gre241));
+    expect(task?.status).toBe(status);
+  });
+
+  it.each(["todo", "in_progress", "blocked"] as const)("keeps the instruction a resume on a %s task", async (status) => {
+    const seeded = await seedLiveScenario();
+    await db.update(issues).set({ status }).where(eq(issues.id, seeded.gre241));
+    const instruct = action(cardFor(await build(seeded.companyId), seeded.gre241), "instruct");
+    expect(instruct.requests).toEqual([expect.objectContaining({ method: "POST", body: { resume: true } })]);
+  });
+
   it("marks a recovery resolved and sends the task where the board chooses", async () => {
     const seeded = await seedLiveScenario();
     const testApp = app(seeded.companyId);
