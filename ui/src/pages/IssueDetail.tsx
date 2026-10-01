@@ -3,7 +3,6 @@ import { agentChatDraft } from "@/lib/agent-chat-draft";
 import {
   PaperclipIcon,
   ChevronRight,
-  Plus,
   EyeOff,
   MessageSquare,
   Activity as ActivityIcon,
@@ -41,11 +40,6 @@ import {
 } from "../lib/optimistic-issue-comments";
 import { cn } from "../lib/utils";
 import type { IssueChatComposerHandle } from "../components/IssueChatThread";
-import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
-import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
-import { IssuePlanDecompositionsSection } from "../components/IssuePlanDecompositionsSection";
-import { IssueOutputSection } from "../components/issue-output/IssueOutputSection";
-import { IssuesList } from "../components/IssuesList";
 import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import {
   isWaitingOnMonitor,
@@ -66,7 +60,6 @@ import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
 import {
   type Agent,
   type Issue,
@@ -76,11 +69,9 @@ import {
 import {
   useTaskDetailInterfaceMode,
   IssueDetailLoadingState,
-  IssueSectionSkeleton,
 } from "./issue-detail/IssueDetailLoading";
 import {
   isMarkdownFile,
-  FEEDBACK_TERMS_URL,
   extractWorkspaceFileRefFromWorkProduct,
   treeControlPreviewErrorCopy,
 } from "./issue-detail/helpers";
@@ -98,6 +89,7 @@ import { useIssueDetailDerivedState } from "./issue-detail/useIssueDetailDerived
 import { useIssueDetailQueries } from "./issue-detail/useIssueDetailQueries";
 import { useIssueAndComments } from "./issue-detail/useIssueAndComments";
 import { IssueDetailChatPanel } from "./issue-detail/IssueDetailChatPanel";
+import { IssueDetailClassicSections } from "./issue-detail/IssueDetailClassicSections";
 export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 export type { AttributionActor } from "./issue-detail/IssueAttribution";
 
@@ -1129,151 +1121,46 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
 
           {taskChatShellEnabled ? null : pluginOutletsBlock}
 
-          {taskChatShellEnabled ? null : showRichSubIssuesSection ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  Sub-tasks
-                </h3>
-              </div>
-              <IssuesList
-                issues={childIssues}
-                isLoading={childIssuesLoading}
-                agents={agents}
-                projects={projects}
-                liveIssueIds={liveIssueIds}
-                mutedIssueIds={mutedChildIssueIds}
-                issueBadgeById={childPauseBadgeById}
-                projectId={issue.projectId ?? undefined}
-                viewStateKey={`paperclip:issue-detail:${issue.id}:subissues-view`}
-                issueLinkState={resolvedIssueDetailState ?? location.state}
-                searchFilters={{
-                  descendantOf: issue.id,
-                  includeBlockedBy: true,
-                }}
-                searchWithinLoadedIssues
-                baseCreateIssueDefaults={buildSubIssueDefaultsForViewer(
-                  issue,
-                  currentUserId,
-                )}
-                createIssueLabel="Sub-task"
-                defaultSortField="workflow"
-                showProgressSummary
-                parentIssueIdForCostSummary={issue.id}
-                onUpdateIssue={handleChildIssueUpdate}
-              />
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={openNewSubIssue}
-                className="shrink-0 shadow-none"
-              >
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                New Sub-task
-              </Button>
-            </div>
-          )}
-
-          {!taskChatShellEnabled && showPlanDecompositionsSection ? (
-            <IssuePlanDecompositionsSection
-              issueId={issue.id}
-              issueIdentifier={issue.identifier}
-              agentMap={agentMap}
-            />
-          ) : null}
-
-          {/* Flag ON: attachments/work products/workspace live in the properties
-          pane (Artifacts tab) — the center column belongs to the thread. */}
-          {taskChatShellEnabled ? null : (
-            <IssueDocumentsSection
-              issue={issue}
-              canDeleteDocuments={Boolean(session?.user?.id)}
-              canManageDocumentLocks={Boolean(session?.user?.id)}
-              feedbackVotes={feedbackVotes}
-              feedbackDataSharingPreference={feedbackDataSharingPreference}
-              feedbackTermsUrl={FEEDBACK_TERMS_URL}
-              mentions={mentionOptions}
-              externalReferences={
-                externalObjectsState.isEnabled
-                  ? externalObjectsState.markdownReferences
-                  : undefined
-              }
-              imageUploadHandler={async (file) => {
-                const attachment = await uploadAttachment.mutateAsync(file);
-                return attachment.contentPath;
-              }}
-              onVote={async (revisionId, vote, options) => {
-                await feedbackVoteMutation.mutateAsync({
-                  targetType: "issue_document_revision",
-                  targetId: revisionId,
-                  vote,
-                  reason: options?.reason,
-                  allowSharing: options?.allowSharing,
-                  sharingPreferenceAtSubmit: feedbackDataSharingPreference,
-                });
-              }}
-              extraActions={!hasAttachments ? attachmentUploadButton : null}
-              agentMap={agentMap}
-              userProfileMap={userProfileMap}
-            />
-          )}
-
-          {taskChatShellEnabled ? null : (
-            <IssueOutputSection
-              workProducts={workProducts}
-              onMediaClick={(item) => {
-                const meta = item.metadata;
-                if (!meta) return;
-                const idx = mediaGalleryItems.findIndex(
-                  (galleryItem) =>
-                    galleryItem.contentPath === meta.contentPath ||
-                    galleryItem.id === `work-product-${item.id}` ||
-                    galleryItem.id === meta.attachmentId,
-                );
-                setGalleryIndex(idx >= 0 ? idx : 0);
-                setGalleryOpen(true);
-              }}
-            />
-          )}
-
-          {taskChatShellEnabled ? null : attachmentsInitialLoading ? (
-            <IssueSectionSkeleton titleWidth="w-24" rows={2} />
-          ) : hasAttachments ? (
-            <IssueAttachmentsSection
-              attachments={attachmentList}
-              uploadButton={attachmentUploadButton}
-              error={attachmentError}
-              dragActive={attachmentDragActive}
-              deletePending={deleteAttachment.isPending}
-              onDelete={(attachmentId) => deleteAttachment.mutate(attachmentId)}
-              onImageClick={(attachment) => {
-                const idx = mediaGalleryItems.findIndex(
-                  (a) => a.id === attachment.id,
-                );
-                setGalleryIndex(idx >= 0 ? idx : 0);
-                setGalleryOpen(true);
-              }}
-              onDragEnter={(evt) => {
-                evt.preventDefault();
-                setAttachmentDragActive(true);
-              }}
-              onDragOver={(evt) => {
-                evt.preventDefault();
-                setAttachmentDragActive(true);
-              }}
-              onDragLeave={(evt) => {
-                if (
-                  evt.currentTarget.contains(evt.relatedTarget as Node | null)
-                )
-                  return;
-                setAttachmentDragActive(false);
-              }}
-              onDrop={(evt) => void handleAttachmentDrop(evt)}
-            />
-          ) : null}
+          <IssueDetailClassicSections
+            taskChatShellEnabled={taskChatShellEnabled}
+            showRichSubIssuesSection={showRichSubIssuesSection}
+            childIssues={childIssues}
+            childIssuesLoading={childIssuesLoading}
+            agents={agents}
+            projects={projects}
+            liveIssueIds={liveIssueIds}
+            mutedChildIssueIds={mutedChildIssueIds}
+            childPauseBadgeById={childPauseBadgeById}
+            issue={issue}
+            resolvedIssueDetailState={resolvedIssueDetailState}
+            location={location}
+            currentUserId={currentUserId}
+            handleChildIssueUpdate={handleChildIssueUpdate}
+            openNewSubIssue={openNewSubIssue}
+            showPlanDecompositionsSection={showPlanDecompositionsSection}
+            agentMap={agentMap}
+            session={session}
+            feedbackVotes={feedbackVotes}
+            feedbackDataSharingPreference={feedbackDataSharingPreference}
+            mentionOptions={mentionOptions}
+            externalObjectsState={externalObjectsState}
+            uploadAttachment={uploadAttachment}
+            feedbackVoteMutation={feedbackVoteMutation}
+            hasAttachments={hasAttachments}
+            attachmentUploadButton={attachmentUploadButton}
+            userProfileMap={userProfileMap}
+            workProducts={workProducts}
+            mediaGalleryItems={mediaGalleryItems}
+            setGalleryIndex={setGalleryIndex}
+            setGalleryOpen={setGalleryOpen}
+            attachmentsInitialLoading={attachmentsInitialLoading}
+            attachmentList={attachmentList}
+            attachmentError={attachmentError}
+            attachmentDragActive={attachmentDragActive}
+            deleteAttachment={deleteAttachment}
+            setAttachmentDragActive={setAttachmentDragActive}
+            handleAttachmentDrop={handleAttachmentDrop}
+          />
 
           <ImageGalleryModal
             items={mediaGalleryItems}
