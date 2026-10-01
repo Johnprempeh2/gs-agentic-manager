@@ -74,7 +74,17 @@ export function ActiveAgentsPanel({
   });
   usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
 
-  const runs = liveRuns ?? [];
+  // One card per task, the newest run: four finished runs of the same chat
+  // read as four identical cards.
+  const runs = useMemo(() => {
+    const seenIssues = new Set<string>();
+    return (liveRuns ?? []).filter((run) => {
+      if (!run.issueId) return true;
+      if (seenIssues.has(run.issueId)) return false;
+      seenIssues.add(run.issueId);
+      return true;
+    });
+  }, [liveRuns]);
   const visibleRuns = useMemo(() => runs.slice(0, cardLimit), [cardLimit, runs]);
   const hiddenRunCount = Math.max(0, runs.length - visibleRuns.length);
   const visibleIssueIds = useMemo(

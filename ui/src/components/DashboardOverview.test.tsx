@@ -280,3 +280,18 @@ describe("DashboardOverview", () => {
     expect(container.textContent).toContain("Could not load tasks: boom");
   });
 });
+
+describe("idleAgentCount", () => {
+  it("folds only agents with no task, not running and nothing wrong", async () => {
+    const { idleAgentCount } = await import("./DashboardOverview");
+    const agent = (status: string) => ({ status }) as unknown as import("@greatstone/shared").Agent;
+    const rows = [
+      { agent: agent("idle"), live: false, currentTask: null },
+      { agent: agent("idle"), live: false, currentTask: { id: "t1" } as unknown as import("@greatstone/shared").Issue },
+      { agent: agent("running"), live: true, currentTask: null },
+      { agent: agent("error"), live: false, currentTask: null },
+      { agent: agent("paused"), live: false, currentTask: null },
+    ];
+    expect(idleAgentCount(rows)).toBe(2);
+  });
+});

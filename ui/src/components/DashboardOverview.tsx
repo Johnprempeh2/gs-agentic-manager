@@ -38,6 +38,17 @@ export function dashboardAgentRowStatus(row: Pick<DashboardAgentRow, "agent" | "
   return row.agent.status === "running" ? "idle" : row.agent.status;
 }
 
+/** An agent with an error or awaiting approval stays on the dashboard even when idle. */
+export function dashboardAgentNeedsAttention(row: Pick<DashboardAgentRow, "agent" | "live">): boolean {
+  const status = dashboardAgentRowStatus(row);
+  return status === "error" || status === "pending_approval";
+}
+
+/** Agents folded into the "N idle agents" line: no task, not running, nothing wrong. */
+export function idleAgentCount(rows: Array<Pick<DashboardAgentRow, "agent" | "live" | "currentTask">>): number {
+  return rows.filter((row) => !row.currentTask && !row.live && !dashboardAgentNeedsAttention(row)).length;
+}
+
 // Running agents first so "what is happening now" reads top-down; errors next
 // because they need a person.
 const AGENT_STATUS_ORDER: Record<string, number> = {
@@ -241,7 +252,9 @@ export function DashboardOverview({
                 data-live={live ? "true" : undefined}
                 className={cn(
                   "flex min-w-0 flex-col gap-1.5 px-4 py-2.5 sm:flex-row sm:items-center sm:gap-3",
-                  !currentTask && !live && "max-sm:hidden",
+                  // Idle agents with nothing to do fold into the count below:
+                  // ten "No current task" rows buried what was moving.
+                  !currentTask && !live && !dashboardAgentNeedsAttention(row) && "hidden",
                 )}
               >
                 <div className="flex min-w-0 items-center gap-2 sm:w-48 sm:shrink-0">
@@ -280,6 +293,15 @@ export function DashboardOverview({
               </div>
               );
             })}
+            {idleAgentCount(agentRows) > 0 ? (
+              <Link
+                to="/agents"
+                className="flex min-h-11 items-center px-4 py-2.5 text-sm text-muted-foreground no-underline hover:text-foreground hover:underline max-sm:hidden"
+                data-testid="dashboard-idle-agents"
+              >
+                {idleAgentCount(agentRows)} idle {idleAgentCount(agentRows) === 1 ? "agent" : "agents"}
+              </Link>
+            ) : null}
           </Card>
           </>
         )}
