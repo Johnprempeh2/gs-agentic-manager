@@ -60,6 +60,7 @@ import { pipelinesApi } from "../api/pipelines";
 import { EmptyState } from "../components/EmptyState";
 import { StageSecretsPanel } from "../components/StageSecretsPanel";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ErrorState } from "../components/ErrorState";
 import { MarkdownEditor, type MarkdownEditorRef } from "../components/MarkdownEditor";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/RoutineVariablesEditor";
 import { PipelineStageHistoryPanel } from "../components/PipelineStageHistoryPanel";
@@ -2135,7 +2136,7 @@ export function PipelineSettings() {
   }
 
   if (pipelineQuery.error) {
-    return <p className="text-sm text-destructive">{pipelineQuery.error.message}</p>;
+    return <ErrorState error={pipelineQuery.error} onRetry={() => void pipelineQuery.refetch()} />;
   }
 
   if (!pipeline) {

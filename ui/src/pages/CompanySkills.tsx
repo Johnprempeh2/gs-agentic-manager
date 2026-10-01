@@ -36,6 +36,7 @@ import { EmptyState } from "../components/EmptyState";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ErrorState } from "../components/ErrorState";
 import { CopyText } from "../components/CopyText";
 import { Identity } from "../components/Identity";
 import { AgentMultiSelect } from "../components/AgentMultiSelect";
@@ -1053,6 +1054,7 @@ export function DiscoveryGrid({
   onOpenCard,
   loading,
   error,
+  onRetry,
   totalCount,
   onCreate,
   onImport,
@@ -1099,6 +1101,7 @@ export function DiscoveryGrid({
   onOpenCard: (card: DiscoveryCard) => void;
   loading: boolean;
   error: string | null;
+  onRetry?: () => void;
   totalCount: number;
   onCreate: () => void;
   onImport: () => void;
@@ -1425,7 +1428,7 @@ export function DiscoveryGrid({
           {loading ? (
             <PageSkeleton variant="list" />
           ) : error ? (
-            <div className="py-6 text-sm text-destructive">{error}</div>
+            <ErrorState error={error} onRetry={onRetry} />
           ) : sourceFilteredCards.length === 0 ? (
             <div className="py-12">
               <EmptyState
@@ -1895,7 +1898,7 @@ function CatalogDetailPane({
   packageVersion: string | null;
   installedSkill: CompanySkillListItem | null;
   installedSkillId: string | null;
-  fileQuery: { data: CatalogSkillFileDetail | undefined; isLoading: boolean; error: unknown };
+  fileQuery: { data: CatalogSkillFileDetail | undefined; isLoading: boolean; error: unknown; refetch: () => unknown };
   selectedPath: string;
   onInstall: () => void;
   onUpdate: () => void;
@@ -2028,7 +2031,7 @@ function CatalogDetailPane({
         {fileQuery.isLoading ? (
           <PageSkeleton variant="detail" />
         ) : fileQuery.error ? (
-          <div className="text-sm text-destructive">{fileQuery.error instanceof Error ? fileQuery.error.message : "Failed to load file"}</div>
+          <ErrorState title="Could not load this file" error={fileQuery.error} onRetry={() => void fileQuery.refetch()} />
         ) : !fileQuery.data ? (
           <div className="text-sm text-muted-foreground">Select a file to inspect.</div>
         ) : fileQuery.data.markdown ? (
@@ -5499,6 +5502,10 @@ export function CompanySkills() {
           onOpenCard={openDiscoveryCard}
           loading={skillsQuery.isLoading || catalogListQuery.isLoading}
           error={skillsQuery.error?.message ?? catalogListQuery.error?.message ?? null}
+          onRetry={() => {
+            if (skillsQuery.error) void skillsQuery.refetch();
+            if (catalogListQuery.error) void catalogListQuery.refetch();
+          }}
           totalCount={discoveryTabCards.length}
           onCreate={() => void openNewSkill()}
           onImport={() => setImportDialogOpen(true)}
