@@ -30,6 +30,7 @@ import type {
 } from "@greatstone/shared";
 import { attentionService, type AttentionServiceOptions } from "./attention.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
+import { isExplicitResumeCapableStatus } from "./issue-comment-wakeup.js";
 
 /** activity_log.details.source on the comment a clarity question writes. */
 export const DECISIONS_CLARITY_SOURCE = "decisions_clarity";
@@ -619,7 +620,9 @@ function buildCard(input: {
       "instruct",
       "Give an instruction",
       "Post an instruction on the task and wake its owner.",
-      [request("POST", `${issuePath}/comments`, { resume: true })],
+      // in_review and backlog refuse resume intent; a plain comment there still
+      // wakes the owner and leaves the status (and any review) alone. GRE-320.
+      [request("POST", `${issuePath}/comments`, isExplicitResumeCapableStatus(task.status) ? { resume: true } : {})],
       { field: "body", type: "text", label: "Instruction", required: true },
     ));
     if (recoveryItem) {
