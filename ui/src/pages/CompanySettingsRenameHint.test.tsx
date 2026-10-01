@@ -41,6 +41,9 @@ vi.mock("../context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: mockSetBreadcrumbs }),
 }));
 
+// The settings tab bar asks the sidebar whether it is on a phone.
+vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
+
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({
     companies: [SELECTED_COMPANY],
