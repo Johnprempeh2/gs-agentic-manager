@@ -115,6 +115,24 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Stacking scale (GRE-305). The only z-index values the UI uses: write
+   `z-dialog`, `z-popover`, … in classes and `var(--z-index-…)` in CSS or
+   inline styles; never a bare number. Each layer sits above every layer
+   listed before it. Within one layer, later DOM (a later portal) wins, so a
+   dialog opened from a dialog stacks correctly without a new number.
+   `static` keeps every variable on :root even when no class uses it. */
+@theme static {
+  --z-index-page: 0;     /* in-flow content; resets a lifted child */
+  --z-index-raised: 10;  /* lift inside one component: focused button in a group, overlapping card, badge */
+  --z-index-sticky: 20;  /* sticky headers and bars inside a scroll area; overlays above raised content in one component */
+  --z-index-chrome: 30;  /* app shell: sidebar, bottom nav, floating page buttons */
+  --z-index-drawer: 40;  /* shell drawers and panels that slide over the page, and their scrims */
+  --z-index-dialog: 50;  /* modal dialogs, sheets, full-screen modals, and their scrims */
+  --z-index-popover: 60; /* dropdowns, selects, popovers, tooltips, editor popups: always above a dialog they open from */
+  --z-index-toast: 70;   /* toasts: above everything people work in */
+  --z-index-top: 80;     /* skip link only */
+}
+
 @theme inline {
   --font-sans: "Montserrat Variable", "Montserrat", "InterVariable", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -2074,7 +2092,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   position: absolute;
   top: 0.25rem;
   right: 0.25rem;
-  z-index: 2;
+  z-index: var(--z-index-raised);
   opacity: 0;
   transition: opacity 150ms ease;
 }
@@ -2555,13 +2573,14 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   font-size: inherit;
 }
 
-/* Keep MDXEditor popups above app dialogs, even when they portal to <body>. */
+/* Keep MDXEditor popups above app dialogs, even when they portal to <body>.
+   Overlay and content share the popover layer; DOM order puts content on top. */
 [class*="_popupContainer_"] {
-  z-index: 81 !important;
+  z-index: var(--z-index-popover) !important;
 }
 
 [class*="_dialogOverlay_"] {
-  z-index: 80;
+  z-index: var(--z-index-popover);
 }
 
 [class*="_dialogContent_"],
@@ -2571,7 +2590,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 [class*="_tableColumnEditorPopoverContent_"],
 [class*="_toolbarButtonDropdownContainer_"],
 [class*="_toolbarNodeKindSelectContainer_"] {
-  z-index: 81 !important;
+  z-index: var(--z-index-popover) !important;
 }
 
 /* Status chip/fill helpers.
@@ -3086,13 +3105,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --tp-box-shadow-border-color: box-shadow,border-color; /* Extracted from ui/src/pages/OrgChart.tsx (transition-[box-shadow,border-color]). */
   --tp-box-shadow: box-shadow; /* Extracted from ui/src/pages/ProjectDetail.tsx (transition-[box-shadow]). */
   --tp-transform-box-shadow: transform,box-shadow; /* Extracted from ui/src/pages/ProjectDetail.tsx (transition-[transform,box-shadow]). */
-  --z-2: 2; /* Extracted from ui/src/components/DocumentAnnotationLayer.tsx (z-[2]). */
-  --z-20: 20; /* Anchored document annotation popover. */
-  --z-60: 60; /* Extracted from ui/src/components/DocumentAnnotationPanel.tsx (z-[60]). */
-  --z-1: 1; /* Extracted from ui/src/components/IssueDocumentAnnotations.tsx (z-[1]). */
-  --z-200: 200; /* Extracted from ui/src/components/Layout.tsx (z-[200]). */
-  --z-9999: 9999; /* Extracted from ui/src/components/MarkdownEditor.tsx (z-[9999]). */
-  --z-120: 120; /* Extracted from ui/src/components/ToastViewport.tsx (z-[120]). */
   --s-0_98: 0.98; /* Extracted from ui/src/pages/Inbox.tsx (scale-[0.98]). */
   --s-1_02: 1.02; /* Extracted from ui/src/components/CaseAttachmentsGallery.tsx (scale-[1.02]). */
   --e-cubic-bezier-0_16-1-0_3-1: cubic-bezier(0.16,1,0.3,1); /* Extracted from ui/src/components/ui/alert-dialog.tsx (ease-[cubic-bezier(0.16,1,0.3,1)]). */
@@ -3414,7 +3426,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   position: fixed;
   inset-inline-end: max(var(--plugin-shell-inset), env(safe-area-inset-right));
   bottom: max(var(--plugin-shell-inset), var(--sz-safe-bottom));
-  z-index: var(--z-20);
+  z-index: var(--z-index-chrome);
   display: flex;
   flex-direction: column;
   align-items: flex-end;

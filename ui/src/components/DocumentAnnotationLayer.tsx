@@ -502,7 +502,7 @@ export function DocumentAnnotationLayer({
 
   const content = (
     <>
-      <div className="paperclip-doc-annotation-visual-layer pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+      <div className="paperclip-doc-annotation-visual-layer pointer-events-none absolute inset-0 z-page" aria-hidden="true">
         <div className="relative h-full w-full">
           {highlightRects.map((rect, index) => {
             const isFocused = rect.focused;
@@ -528,7 +528,7 @@ export function DocumentAnnotationLayer({
         </div>
       </div>
       <div
-        className="paperclip-doc-annotation-layer pointer-events-none absolute inset-0 z-(--z-2)"
+        className="paperclip-doc-annotation-layer pointer-events-none absolute inset-0 z-raised"
         aria-hidden="true"
       >
         <div ref={overlayRef} className="relative h-full w-full">
@@ -596,7 +596,7 @@ export function DocumentAnnotationLayer({
               data-testid="document-annotation-selection-toolbar"
               role="toolbar"
               aria-label="Selection actions"
-              className="paperclip-doc-annotation-selection-toolbar pointer-events-auto absolute z-10 flex items-center gap-1 rounded-md border border-border bg-popover px-1 py-1 shadow-md"
+              className="paperclip-doc-annotation-selection-toolbar pointer-events-auto absolute z-raised flex items-center gap-1 rounded-md border border-border bg-popover px-1 py-1 shadow-md"
               style={{ top: toolbarPosition.top, left: toolbarPosition.left }}
               onMouseDown={(event) => event.preventDefault()}
             >

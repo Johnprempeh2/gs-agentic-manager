@@ -120,7 +120,6 @@ const focusableElementSelector = [
   "textarea:not([disabled])",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
-const launcherOverlayBaseZIndex = 1000;
 const supportedLauncherBounds = new Set<PluginLauncherBounds>(
   PLUGIN_LAUNCHER_BOUNDS,
 );
@@ -485,13 +484,11 @@ function LauncherRenderContent({
 
 function LauncherModalShell({
   instance,
-  stackIndex,
   isTopmost,
   requestBounds,
   closeLauncher,
 }: {
   instance: LauncherInstance;
-  stackIndex: number;
   isTopmost: boolean;
   requestBounds: (key: string, request: PluginModalBoundsRequest) => Promise<void>;
   closeLauncher: (key: string, event: PluginRenderCloseEvent) => Promise<void>;
@@ -539,9 +536,10 @@ function LauncherModalShell({
     },
   }), [instance, requestBounds]);
 
-  const baseZ = launcherOverlayBaseZIndex + stackIndex * 20;
-  // Keep each launcher in a deterministic z-index band so every stacked modal,
-  // drawer, or popover retains its own backdrop/panel pairing.
+  // Every launcher sits on the dialog layer. The stack renders in order, so a
+  // later launcher (and its backdrop) paints over an earlier one, and app
+  // popovers opened from a launcher (popover layer) sit above it.
+  const layer = "var(--z-index-dialog)";
   const shellType = instance.launcher.action.type;
   const containerStyle = shellType === "openPopover"
     ? launcherPopoverStyle(instance)
@@ -557,7 +555,7 @@ function LauncherModalShell({
     <>
       <div
         className="fixed inset-0 bg-black/45"
-        style={{ zIndex: baseZ }}
+        style={{ zIndex: layer }}
         aria-hidden="true"
         onMouseDown={(event) => {
           if (!isTopmost) return;
@@ -573,7 +571,7 @@ function LauncherModalShell({
         tabIndex={-1}
         className={panelClassName}
         style={{
-          zIndex: baseZ + 1,
+          zIndex: layer,
           ...(shellType === "openDrawer"
             ? { width: containerStyle.width ?? "min(44rem, 100vw)" }
             : containerStyle),
@@ -732,7 +730,6 @@ export function PluginLauncherProvider({ children }: { children: ReactNode }) {
         <LauncherModalShell
           key={instance.key}
           instance={instance}
-          stackIndex={index}
           isTopmost={index === stack.length - 1}
           requestBounds={requestBounds}
           closeLauncher={closeLauncher}

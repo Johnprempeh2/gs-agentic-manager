@@ -94,7 +94,7 @@ function SortableCompanyItem({
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        zIndex: isDragging ? 10 : undefined,
+        zIndex: isDragging ? "var(--z-index-raised)" : undefined,
       }}
       onSelect={(event) => {
         if (isEditing) {

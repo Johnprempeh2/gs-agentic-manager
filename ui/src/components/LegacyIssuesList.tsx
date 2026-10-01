@@ -2165,7 +2165,7 @@ export function IssuesList({
                               <button
                                 type="button"
                                 data-slot="icon-button"
-                                className="relative z-10 hidden w-4 shrink-0 items-center justify-center sm:inline-flex"
+                                className="relative z-raised hidden w-4 shrink-0 items-center justify-center sm:inline-flex"
                                 onClick={toggleCollapse}
                               >
                                 <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />

@@ -3294,7 +3294,7 @@ export function PipelineSettings() {
               {saveStage.error ? <p className="text-sm text-destructive">{saveStage.error.message}</p> : null}
 
               {stageDirty || saveStage.isPending ? (
-                <div className="sticky bottom-0 z-10 -mx-6 mt-6 flex items-center justify-between gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2">
+                <div className="sticky bottom-0 z-raised -mx-6 mt-6 flex items-center justify-between gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2">
                   <span className="text-sm text-muted-foreground">
                     {saveStage.isPending ? "Saving changes…" : "You have unsaved changes."}
                   </span>

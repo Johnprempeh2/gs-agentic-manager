@@ -356,7 +356,7 @@ export function FileContentViewer({ content, highlightedLine, onLoaded }: FileCo
               <span
                 aria-hidden="true"
                 className={cn(
-                  "sticky left-0 z-10 shrink-0 select-none pl-3 pr-4 text-right text-(--code-gutter-fg-resolved) opacity-70",
+                  "sticky left-0 z-raised shrink-0 select-none pl-3 pr-4 text-right text-(--code-gutter-fg-resolved) opacity-70",
                   "bg-(--code-bg-resolved)",
                   isHighlighted &&
                     "opacity-100 bg-(--code-highlight-bg-resolved) border-l-2 border-(--code-highlight-border-resolved)",
@@ -379,7 +379,7 @@ export function FileContentViewer({ content, highlightedLine, onLoaded }: FileCo
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="absolute right-3 top-3 z-20">
+      <div className="absolute right-3 top-3 z-sticky">
         <div
           role="group"
           aria-label="Markdown preview mode"

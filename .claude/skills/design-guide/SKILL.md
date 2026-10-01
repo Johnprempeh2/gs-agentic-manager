@@ -79,6 +79,26 @@ Single `--radius` variable (0.625rem) with derived sizes:
 
 Minimal shadows: `shadow-xs` (outline buttons), `shadow-sm` (cards). No heavy shadows.
 
+### Stacking (z-index)
+
+One named scale, defined once as `--z-index-*` in `ui/src/index.css`. Use the class (`z-dialog`) in markup and `var(--z-index-dialog)` in CSS or inline styles. Never a number (`z-50`, `z-[60]`, `zIndex: 1000`).
+
+| Class | Value | Use |
+|-------|-------|-----|
+| `z-page` | 0 | In-flow content; resets a lifted child |
+| `z-raised` | 10 | Lift inside one component: focused button in a group, overlapping card, badge |
+| `z-sticky` | 20 | Sticky headers and bars in a scroll area; overlays above raised content in one component |
+| `z-chrome` | 30 | App shell: sidebar, bottom nav, floating page buttons |
+| `z-drawer` | 40 | Shell drawers and panels that slide over the page, and their scrims |
+| `z-dialog` | 50 | Dialogs, sheets, full-screen modals, and their scrims |
+| `z-popover` | 60 | Dropdowns, selects, popovers, tooltips, editor popups — always above a dialog they open from |
+| `z-toast` | 70 | Toasts |
+| `z-top` | 80 | Skip link only |
+
+- The shared components in `components/ui` already carry the right layer. Do not pass a `z-*` override to them.
+- Within one layer, later DOM wins. A dialog opened from a dialog, or a menu opened from a menu, needs no new number.
+- Need a new layer? Add it to the scale and to `Z_LAYERS` in `lib/utils.ts` (so `cn()` merges it), not a one-off value.
+
 ---
 
 ## 4. Typography Scale
@@ -362,3 +382,4 @@ All components use `cn()` from `@/lib/utils` for className merging. All componen
 - Using `shadow-md` or heavier — keep shadows minimal (xs, sm only)
 - Using `rounded-2xl` or larger — max is `rounded-xl` (except `rounded-full` for pills)
 - Forgetting dark mode — always use semantic tokens, never hardcode light/dark values
+- Using a numeric z-index (`z-50`, `z-[9999]`) — pick a named layer from the stacking scale

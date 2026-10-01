@@ -70,7 +70,7 @@ export function RoutineSaveBar({
     <>
       <div
         className={cn(
-          "sticky bottom-0 z-10 -mx-8 mt-6 flex h-14 items-center justify-between border-t px-8 backdrop-blur",
+          "sticky bottom-0 z-raised -mx-8 mt-6 flex h-14 items-center justify-between border-t px-8 backdrop-blur",
           "motion-safe:transition-colors motion-safe:duration-200",
           "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2",
           saveConflict

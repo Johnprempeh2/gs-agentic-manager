@@ -2391,7 +2391,7 @@ function OnboardingWizardInner({
         {/* Plain div instead of DialogOverlay — Radix's overlay wraps in
             RemoveScroll which blocks wheel events on our custom (non-DialogContent)
             scroll container. A plain div preserves the background without scroll-locking. */}
-        <div className="gs-onboarding-ground fixed inset-0 z-50" />
+        <div className="gs-onboarding-ground fixed inset-0 z-dialog" />
         {/* A deliberate hook for "the wizard mounted".
 
             The tests that assert it opens used to prove it by finding any text
@@ -2402,7 +2402,7 @@ function OnboardingWizardInner({
             mean rather than depending on whatever happens to render. */}
         <div
           data-testid="onboarding-wizard"
-          className="fixed inset-0 z-50 flex"
+          className="fixed inset-0 z-dialog flex"
           onKeyDown={handleKeyDown}
         >
           <div className="gs-onboarding-brand pointer-events-none absolute left-6 top-6 hidden sm:block">

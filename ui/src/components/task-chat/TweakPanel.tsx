@@ -128,7 +128,7 @@ export function TweakPanel() {
 
   return (
     <div
-      className="fixed z-50 w-72 select-none rounded-lg border border-border bg-card text-card-foreground shadow-lg"
+      className="fixed z-popover w-72 select-none rounded-lg border border-border bg-card text-card-foreground shadow-lg"
       style={{ left: pos.x, top: pos.y }}
       data-testid="task-chat-tweak-panel"
     >

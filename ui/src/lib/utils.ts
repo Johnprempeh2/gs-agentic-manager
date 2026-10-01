@@ -1,7 +1,15 @@
 import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
 import { deriveAgentUrlKey, deriveProjectUrlKey, normalizeProjectUrlKey, hasNonAsciiContent } from "@greatstone/shared";
 import type { BillingType, FinanceDirection, FinanceEventKind } from "@greatstone/shared";
+
+/** Named stacking layers from `--z-index-*` in index.css, lowest first. */
+export const Z_LAYERS = ["page", "raised", "sticky", "chrome", "drawer", "dialog", "popover", "toast", "top"] as const;
+
+// Teach tailwind-merge the named layers so `cn("z-dialog", "z-popover")` keeps the last one.
+const twMerge = extendTailwindMerge({
+  extend: { classGroups: { z: [{ z: [...Z_LAYERS] }] } },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

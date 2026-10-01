@@ -522,7 +522,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
         onTouchCancel={handleTouchEnd}
       >
         {/* Zoom controls */}
-        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1.5">
+        <div className="absolute top-3 right-3 z-raised flex flex-col gap-1.5">
           <button
             className="flex size-9 items-center justify-center rounded border border-border bg-background text-sm transition-colors hover:bg-accent sm:size-7"
             onClick={() => {

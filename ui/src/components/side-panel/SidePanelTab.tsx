@@ -166,7 +166,7 @@ export function SidePanelTab({
           className={cn(
             "side-panel-tab-close-motion absolute flex items-center justify-center text-muted-foreground outline-none hover:text-foreground",
             appearance === "streamlined-task"
-              ? "right-0 top-1/2 z-20 size-5 -translate-y-1/2 rounded-sm opacity-0 hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/60 group-hover/side-panel-tab:opacity-100"
+              ? "right-0 top-1/2 z-sticky size-5 -translate-y-1/2 rounded-sm opacity-0 hover:bg-accent focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/60 group-hover/side-panel-tab:opacity-100"
               : "right-1 size-6 rounded-lg hover:bg-background/70 focus-visible:ring-2 focus-visible:ring-ring/60",
           )}
         >

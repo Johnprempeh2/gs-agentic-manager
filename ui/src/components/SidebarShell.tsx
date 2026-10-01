@@ -204,8 +204,8 @@ export function SidebarShell({
           // Overlay styling only while the panel is wider than its reserved
           // spacer (i.e. peeking) so it floats above content without reflow.
           isOverlay
-            ? "z-30 border-r border-border gs-glass-chrome shadow-lg"
-            : "z-0",
+            ? "z-chrome border-r border-border gs-glass-chrome shadow-lg"
+            : "z-page",
         )}
         style={panelStyle}
         data-sidebar-overlay={isOverlay ? "" : undefined}
@@ -226,7 +226,7 @@ export function SidebarShell({
           aria-valuenow={width}
           tabIndex={0}
           data-dragging={isResizing ? "" : undefined}
-          className="group absolute inset-y-0 z-20 cursor-col-resize touch-none outline-none"
+          className="group absolute inset-y-0 z-sticky cursor-col-resize touch-none outline-none"
           style={{ right: -4, width: 8 }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
