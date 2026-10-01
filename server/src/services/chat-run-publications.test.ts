@@ -35,7 +35,7 @@ describe("chat run milestone projection", () => {
         publicBaseUrl: "https://paperclip.example/path",
       }),
     ).toBe(
-      "Maya couldn't safely start this turn because this task was started for an unlinked external guest and isolated guest execution isn't available. Ask a GS Agentic Manager admin to create a private identity link for this account or enable isolated guest execution, then start a new task. Open the task in GS Agentic Manager: https://paperclip.example/issues/issue-1",
+      "Maya couldn't safely start this turn because this task was started for an unlinked external guest and isolated guest execution isn't available. To fix it, link your account in GS Agentic Manager: Apps → your chat app → Access → Identity links (an admin can create the link). Then start a new task. Open the task in GS Agentic Manager: https://paperclip.example/issues/issue-1",
     );
     expect(
       safeMilestoneText({
@@ -46,7 +46,27 @@ describe("chat run milestone projection", () => {
         publicBaseUrl: null,
       }),
     ).toBe(
-      "Maya couldn't safely start this turn because this task was started for an unlinked external guest and isolated guest execution isn't available. Ask a GS Agentic Manager admin to create a private identity link for this account or enable isolated guest execution, then start a new task. Open the task in GS Agentic Manager for details.",
+      "Maya couldn't safely start this turn because this task was started for an unlinked external guest and isolated guest execution isn't available. To fix it, link your account in GS Agentic Manager: Apps → your chat app → Access → Identity links (an admin can create the link). Then start a new task. Open the task in GS Agentic Manager for details.",
+    );
+  });
+
+  it.each([
+    "low_trust_isolation_unavailable",
+    "low_trust_requires_isolated_workspace",
+    "low_trust_boundary_mismatch",
+    "low_trust_requires_sandbox_environment",
+    "low_trust_runtime_services_denied",
+  ])("names the identity-link fix for low-trust refusal %s", (errorCode) => {
+    expect(
+      safeMilestoneText({
+        agentName: "Everest",
+        errorCode,
+        milestone: "failed",
+        issueId: "issue-1",
+        provider: "telegram",
+      }),
+    ).toContain(
+      "link your account in GS Agentic Manager: Apps → Telegram → Access → Identity links",
     );
   });
 

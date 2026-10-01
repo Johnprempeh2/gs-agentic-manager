@@ -126,6 +126,9 @@ vi.mock("@chat-adapter/telegram", () => ({
     return {
       name: "telegram",
       processUpdate: () => undefined,
+      ...(config.botToken === "missing-telegram-rich-output-flag"
+        ? {}
+        : { richMessagesAvailable: true }),
       parseTelegramMessage:
         config.botToken === "missing-telegram-rich-parser"
           ? undefined
@@ -563,6 +566,21 @@ describe("Chat SDK endpoint runtime", () => {
       ).toThrow("Telegram attachment parser contract is unavailable");
     },
   );
+
+  it("fails closed when the Telegram rich-message output flag is unavailable", () => {
+    expect(() =>
+      createChatSdkEndpointRuntime(
+        baseOptions({
+          provider: "telegram",
+          userName: "paperclip-agent",
+          credentials: {
+            botToken: "missing-telegram-rich-output-flag",
+            secretToken: "synthetic-secret",
+          },
+        }),
+      ),
+    ).toThrow("Telegram rich-message output contract is unavailable");
+  });
 
   it("keeps one long-lived Discord Gateway session and shuts it down cleanly", async () => {
     const runtime = createChatSdkEndpointRuntime(

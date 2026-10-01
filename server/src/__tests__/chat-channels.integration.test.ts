@@ -29746,7 +29746,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toMatchObject({
       progressState: "failed",
       text: expect.stringContaining(
-        "Ask a GS Agentic Manager admin to create a private identity link for this account or enable isolated guest execution, then start a new task.",
+        "To fix it, link your account in GS Agentic Manager: Apps → Slack → Access → Identity links (an admin can create the link). Then start a new task.",
       ),
     });
   });
@@ -44739,7 +44739,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
                   { status: 400 },
                 );
               }
-            } else expect(method).toBe("sendRichMessage");
+            } else expect(method).toBe("sendMessage");
             return Response.json({
               ok: true,
               result: {
@@ -44798,7 +44798,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           "owner-user",
           [attachment.id],
         );
-        expect(methods).toEqual(["sendRichMessage", expectedMethod]);
+        expect(methods).toEqual(["sendMessage", expectedMethod]);
         expect(uploadedBytes).toHaveLength(1);
         // Buffer.equals still compares every byte, without Vitest expanding
         // a ten-megabyte boundary fixture into a recursive object comparison.
@@ -44829,7 +44829,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           },
         ]);
         await service.processPendingPublications();
-        expect(methods).toEqual(["sendRichMessage", expectedMethod]);
+        expect(methods).toEqual(["sendMessage", expectedMethod]);
       } finally {
         threadSpy?.mockRestore();
         await pinned?.shutdown();
@@ -68281,7 +68281,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         await hook?.(method, body);
         if (method.endsWith("Draft"))
           return Response.json({ ok: true, result: true });
-        if (!["sendMessage", "sendRichMessage"].includes(method))
+        if (method !== "sendMessage")
           throw new Error("Unexpected draft fixture provider I/O");
         return Response.json({
           ok: true,
@@ -68512,7 +68512,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             "Telegram draft presentation was stopped. The saved answer and task are unchanged.",
         });
         expect(lane.requests.map((request) => request.method)).toEqual([
-          "sendRichMessageDraft",
+          "sendMessageDraft",
         ]);
         expect((await lane.actions())[0]).toMatchObject({
           status: "cancelled",
@@ -68659,7 +68659,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           expect(publication?.state).toBe("published");
           expect(lane.requests).toHaveLength(1);
           expect(lane.requests[0]!.method.endsWith("Draft")).toBe(false);
-          expect(JSON.stringify(lane.requests[0]!.body)).toContain(
+          expect(String(lane.requests[0]!.body.text).replaceAll("\\", "")).toContain(
             `END-subscription-${changed}`,
           );
           expect(lane.requests[0]!.body.can_stop).toBeUndefined();
@@ -68691,7 +68691,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           expect(publication?.state).toBe("published");
           expect(lane.requests).toHaveLength(1);
           expect(lane.requests[0]!.method.endsWith("Draft")).toBe(false);
-          expect(JSON.stringify(lane.requests[0]!.body)).toContain(
+          expect(String(lane.requests[0]!.body.text).replaceAll("\\", "")).toContain(
             "END-malformed-subscription",
           );
           expect(lane.requests[0]!.body.can_stop).toBeUndefined();
@@ -68919,7 +68919,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             "cancelled",
           );
           expect(lane.requests.map(({ method }) => method)).toEqual([
-            "sendRichMessageDraft",
+            "sendMessageDraft",
           ]);
           await lane.context.service.processPendingDeliveries();
           expect(
@@ -69061,7 +69061,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             );
             expect(lane.requests).toHaveLength(1);
             expect(lane.requests[0]!.method.endsWith("Draft")).toBe(false);
-            expect(JSON.stringify(lane.requests[0]!.body)).toContain(
+            expect(String(lane.requests[0]!.body.text).replaceAll("\\", "")).toContain(
               `END-unconfirmed-${mode}`,
             );
           }
@@ -69214,7 +69214,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         expect((await lane.send("commit-retry"))?.state).toBe("cancelled");
         expect(checked).toBe(true);
         expect(lane.requests.map((request) => request.method)).toEqual([
-          "sendRichMessageDraft",
+          "sendMessageDraft",
         ]);
         expect((await lane.actions())[0]).toMatchObject({
           result: { phase: "stopped", updateId: 1777 },
