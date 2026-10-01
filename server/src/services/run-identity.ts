@@ -13,6 +13,8 @@ import { conflict, forbidden } from "../errors.js";
 import { isUuidLike } from "@greatstone/shared";
 import { queuedCommentIdsFromRunContext, queuedCommentIdsFromWakePayload } from "./issue-queued-comment-queue.js";
 
+export const QUEUED_INTERRUPT_SPENT = "queued_interrupt_spent";
+
 /** Resolve an explicit click from persisted receipts, never caller context or message authors. */
 export async function explicitOperatorRunIdentity(
   executor: Pick<Db, "select">,
@@ -41,12 +43,17 @@ export async function explicitOperatorRunIdentity(
     eq(agentWakeupRequests.agentId, run.agentId), eq(agentWakeupRequests.runId, run.id),
     eq(agentWakeupRequests.status, "coalesced"),
   ));
-  const marker = receipt?.payload?.queuedCommentInterrupt;
+  // Another run already consumed this queue: nothing is left to deliver.
+  if (!receipt) throw forbidden("Queued-message interrupt authority is unavailable", { code: QUEUED_INTERRUPT_SPENT });
+  const marker = receipt.payload?.queuedCommentInterrupt;
   const actorId = marker && typeof marker === "object" && "actorId" in marker ? marker.actorId : null;
   const ids = queuedCommentIdsFromWakePayload(receipt?.payload);
   const deliveredIds = queuedCommentIdsFromRunContext(run.contextSnapshot);
-  if (typeof actorId !== "string" || !actorId || !ids.length ||
-      receipt?.payload?.issueId !== run.contextSnapshot?.issueId ||
+  // A decision answer queued without a typed message is delivered by the run too.
+  const answerOnly = !ids.length && receipt.payload?.mutation === "interaction" &&
+    typeof receipt.payload?.interactionId === "string";
+  if (typeof actorId !== "string" || !actorId || (!ids.length && !answerOnly) ||
+      receipt.payload?.issueId !== run.contextSnapshot?.issueId ||
       !ids.every(id => deliveredIds.includes(id)) ||
       request.requestedByActorType !== "user" || request.requestedByActorId !== actorId) {
     throw forbidden("Queued-message interrupt authority is unavailable");

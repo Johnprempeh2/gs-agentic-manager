@@ -14,6 +14,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { heartbeatService } from "../services/heartbeat.ts";
+import { explicitOperatorRunIdentity } from "../services/run-identity.ts";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -105,6 +106,52 @@ describeEmbeddedPostgres("heartbeat: a spent queued-message interrupt", () => {
     expect(run).toMatchObject({
       status: "cancelled",
       error: "Cancelled because its queued messages were already delivered",
+      errorCode: "queued_interrupt_spent",
+    });
+  });
+
+  // Review, 1 Oct: "Send now" on a queued decision answer (no typed message)
+  // carries no comment ids. It is a real delivery and must keep its authority.
+  it("keeps the authority of an interrupt that delivers only a decision answer", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const receiptId = randomUUID();
+    const wakeupRequestId = randomUUID();
+    const runId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Answer Co",
+      issuePrefix: `A${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId, companyId, name: "Lead", role: "ceo", status: "idle", adapterType: "codex_local",
+      adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    });
+    await db.insert(heartbeatRuns).values({
+      id: runId, companyId, agentId, invocationSource: "on_demand", status: "queued", contextSnapshot: {},
+    });
+    await db.insert(agentWakeupRequests).values({
+      id: receiptId, companyId, agentId, source: "on_demand", status: "coalesced", runId,
+      payload: {
+        queuedCommentInterrupt: { actorId: "board-user", requestedAt: new Date().toISOString() },
+        mutation: "interaction", interactionId: randomUUID(), interactionStatus: "answered",
+      },
+    });
+    await db.insert(agentWakeupRequests).values({
+      id: wakeupRequestId, companyId, agentId, source: "on_demand", status: "queued", runId,
+      idempotencyKey: `queued-comment-interrupt:${receiptId}`,
+      requestedByActorType: "user", requestedByActorId: "board-user",
+    });
+    await db.update(heartbeatRuns).set({ wakeupRequestId }).where(eq(heartbeatRuns.id, runId));
+    const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+
+    await expect(explicitOperatorRunIdentity(db, run!)).resolves.toMatchObject({ actorId: "board-user" });
+    // The same receipt from a different actor is still refused, and not as "spent".
+    await db.update(agentWakeupRequests).set({ requestedByActorId: "someone-else" })
+      .where(eq(agentWakeupRequests.id, wakeupRequestId));
+    await expect(explicitOperatorRunIdentity(db, run!)).rejects.toMatchObject({
+      status: 403, details: undefined,
     });
   });
 });

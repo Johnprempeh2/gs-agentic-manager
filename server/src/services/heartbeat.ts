@@ -44,7 +44,7 @@ import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-util
 import { PROJECT_REPOSITORIES_DIR, readGitWorkspaceSnapshot } from "@greatstone/adapter-utils/git-workspace-sync";
 import { isWorkspaceGitScanError, WorkspaceGitScanError, WORKSPACE_GIT_SCAN_ERROR_CODES } from "./workspace-git-operation-scheduler.js";
 import { captureDirectorySnapshot, mergeDirectoryWithBaseline } from "@greatstone/adapter-utils/workspace-restore-merge";
-import { initializeRunIdentity, explicitOperatorRunIdentity } from "./run-identity.js";
+import { initializeRunIdentity, explicitOperatorRunIdentity, QUEUED_INTERRUPT_SPENT } from "./run-identity.js";
 import {
   assertDurableChatWakeupReceipt,
   assertDurableChatWakeupRequest,
@@ -17733,9 +17733,10 @@ export function heartbeatService(
       // A queued-message interrupt whose messages another run already
       // delivered has no authority left. Refused every pass, it would stall
       // the agent's queue, so it is discarded like any spent queued message.
-      if (!(err instanceof HttpError) || err.status !== 403) throw err;
-      await cancelRunInternal(run.id, "Cancelled because its queued messages were already delivered");
-      logger.warn({ runId: run.id, err: err.message }, "claimQueuedRun: discarded a run with no run identity");
+      const code = err instanceof HttpError ? (err.details as { code?: unknown } | undefined)?.code : undefined;
+      if (code !== QUEUED_INTERRUPT_SPENT) throw err;
+      await cancelRunInternal(run.id, "Cancelled because its queued messages were already delivered", { errorCode: QUEUED_INTERRUPT_SPENT });
+      logger.warn({ runId: run.id }, "claimQueuedRun: discarded a spent queued-message interrupt");
       return null;
     }
     // All ordinary and comment claims use the same company-scoped issue

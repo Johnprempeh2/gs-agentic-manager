@@ -150,6 +150,19 @@ export async function claimBoardOwnership(
       UPDATE connection_grants g SET subject_user_id = ${opts.userId}, updated_at = now()
       WHERE g.kind = 'user' AND g.subject_user_id = ${LOCAL_BOARD_USER_ID}
         AND NOT EXISTS (SELECT 1 FROM connection_grants o WHERE o.connection_id = g.connection_id AND o.subject_user_id = ${opts.userId})`);
+    // The stored key belongs to whoever owns the grant (credential() checks
+    // it), and the grant's creator is who may reconnect it: move both, or the
+    // handed-over account stops resolving and cannot be repaired.
+    await tx.execute(sql`
+      UPDATE company_secrets s SET owner_user_id = ${opts.userId}, updated_at = now()
+      WHERE s.scope = 'user' AND s.owner_user_id = ${LOCAL_BOARD_USER_ID}
+        AND EXISTS (
+          SELECT 1 FROM connection_grants g, jsonb_array_elements(g.credential_secret_refs) r
+          WHERE g.kind = 'user' AND g.subject_user_id = ${opts.userId} AND (r->>'secretId')::uuid = s.id
+        )`);
+    await tx.execute(sql`
+      UPDATE connection_grants SET created_by_user_id = ${opts.userId}, updated_at = now()
+      WHERE kind = 'user' AND subject_user_id = ${opts.userId} AND created_by_user_id = ${LOCAL_BOARD_USER_ID}`);
     for (const [table, sameSlot] of [
       [sql`ai_provider_defaults`, sql`o.provider = d.provider`],
       [sql`ai_connection_defaults`, sql`o.provider = d.provider AND o.method = d.method`],
