@@ -544,6 +544,8 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
     expect(Array.from(capRow!.querySelectorAll("td")).map((cell) => cell.textContent)).toEqual(["4", "5"]);
     expect(text).toContain("raise the cap by one to 5.");
     expect(mockInstanceSettingsApi.updateGeneral).not.toHaveBeenCalled();
+    // With usage, the raw RAM rule is information only: no one-tap jump to it.
+    expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Use suggested")).toBe(false);
 
     flushSync(() => applyButton()!.click());
 
