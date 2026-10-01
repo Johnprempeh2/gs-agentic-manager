@@ -181,7 +181,13 @@ describe("AgentActionButtons", () => {
     render(makeAgent(), { canRunWithProviderTrace: true });
     await flushReact();
 
-    const traceButton = Array.from(container.querySelectorAll("button")).find(
+    // A debugging tool lives in the "..." menu, not beside the owner's actions.
+    expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent?.includes("Run with provider trace"))).toBe(false);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Open actions for Alpha Agent"]')?.click();
+    });
+    await flushReact();
+    const traceButton = Array.from(document.body.querySelectorAll("button")).find(
       (button) => button.textContent?.includes("Run with provider trace"),
     );
     expect(traceButton).toBeTruthy();
