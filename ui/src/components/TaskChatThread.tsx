@@ -3093,9 +3093,11 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                   // row is never occluded, and drops it back to the safe-area dock
                   // when the nav auto-hides (PAP-495). transition-[bottom] rides the
                   // nav's own 200ms slide; the offset only changes on nav toggles, so
-                  // it never animates mid-scroll.
+                  // it never animates mid-scroll. While the iPhone keyboard is up,
+                  // iOS often stops panning short of the page's bottom edge, so the
+                  // dock also clears --vv-bottom-inset (lib/ios-keyboard.ts).
                   isMobile
-                    ? "bottom-(--tc-composer-bottom) z-sticky transition-[bottom] duration-200 ease-out"
+                    ? "bottom-[max(var(--tc-composer-bottom),calc(var(--vv-bottom-inset)_+_0.25rem))] z-sticky transition-[bottom] duration-200 ease-out"
                     : "bottom-0 z-raised",
                   "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-2 px-1 pb-1 md:px-4 md:pb-2",
                   streamlinedUiEnabled && "md:px-0 md:pb-0",
