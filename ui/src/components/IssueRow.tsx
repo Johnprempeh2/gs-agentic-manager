@@ -19,7 +19,7 @@ import {
   readRecoveryRetryLineage,
   type RecoveryLivenessContext,
 } from "../lib/recovery-lineage";
-import { StatusIcon } from "./StatusIcon";
+import { StatusIcon, blockedAttentionLabel } from "./StatusIcon";
 import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
 import { ExternalObjectStatusSummary } from "./ExternalObjectStatusSummary";
@@ -163,6 +163,14 @@ export function IssueRow({
     externalObjectToneSeverity(allExternalObjects?.highestSeverity) >= externalObjectToneSeverity("warning")
       ? allExternalObjects
       : null;
+  // Why a blocked task is stuck, in words: the icon's label was screen-reader only.
+  const blockedLabel = issue.status === "blocked" ? blockedAttentionLabel(issue.blockerAttention) : null;
+  const blockedReason = blockedLabel?.startsWith("Blocked · ") ? blockedLabel.slice("Blocked · ".length) : null;
+  const blockedNote = blockedReason ? (
+    <span data-slot="task-row-blocked" className="min-w-0 max-w-64 shrink truncate text-xs text-destructive max-sm:basis-full" title={blockedLabel ?? undefined}>
+      {blockedReason}
+    </span>
+  ) : null;
   const issuePathId = issue.identifier ?? issue.id;
   const identifier = issue.identifier ?? issue.id.slice(0, 8);
   // A row participates in the unread system whenever `unreadState` is supplied.
@@ -324,6 +332,7 @@ export function IssueRow({
               {issue.title}{titleSuffix}
             </span>
             {ownerLabel}
+            {blockedNote}
             {recoveryIndicator}
             {mobileTitleMeta ? (
               <span className="ml-auto shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground sm:hidden">
@@ -416,6 +425,7 @@ export function IssueRow({
             {issue.title}{titleSuffix}
           </span>
           {ownerLabel}
+          {blockedNote}
           {recoveryIndicator}
         </span>
         {checklistDependencyChips ? (

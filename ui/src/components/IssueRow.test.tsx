@@ -97,6 +97,19 @@ describe("IssueRow", () => {
     container.remove();
   });
 
+  it("says why a blocked task is stuck", () => {
+    const root = createRoot(container);
+    const blockerAttention = {
+      state: "covered", reason: "active_child", unresolvedBlockerCount: 1, coveredBlockerCount: 1,
+      stalledBlockerCount: 0, attentionBlockerCount: 0, sampleBlockerIdentifier: "GRE-12", sampleStalledBlockerIdentifier: null,
+    } as NonNullable<Issue["blockerAttention"]>;
+    act(() => root.render(<IssueRow issue={createIssue({ status: "blocked", blockerAttention })} />));
+    expect(container.querySelector('[data-slot="task-row-blocked"]')?.textContent).toBe("waiting on active sub-task GRE-12");
+    act(() => root.render(<IssueRow issue={createIssue({ status: "todo", blockerAttention })} />));
+    expect(container.querySelector('[data-slot="task-row-blocked"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
   it("flags linked work on the row only when it needs a look", () => {
     const summary = (tone: "success" | "danger") => ({
       total: 2,
