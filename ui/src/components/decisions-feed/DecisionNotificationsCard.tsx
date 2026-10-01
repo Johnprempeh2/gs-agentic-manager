@@ -59,13 +59,16 @@ export function DecisionNotificationsCard({ companyId }: { companyId: string | n
   }
   if (state === "denied") {
     if (dismissed) return null;
+    // One quiet line, with advice for the device in hand.
     return (
-      <div className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5 text-sm" role="note">
-        <BellOff className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <p className="min-w-0 flex-1 text-muted-foreground">
-          Notifications are blocked for this app. Turn them on in your phone's Settings, under Notifications.
-        </p>
-        <Button type="button" size="sm" variant="ghost" onClick={dismiss}>OK</Button>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="note" data-testid="decision-notifications-denied">
+        <BellOff className="size-3.5 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1">
+          {isPhone
+            ? "Notifications are blocked. Turn them on in your phone's Settings, under Notifications."
+            : "Notifications are blocked. Allow them for this site in your browser's site settings."}
+        </span>
+        <Button type="button" size="xs" variant="ghost" onClick={dismiss}>OK</Button>
       </div>
     );
   }
