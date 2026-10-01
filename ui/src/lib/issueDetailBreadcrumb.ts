@@ -31,7 +31,7 @@ type IssueDetailHeaderSeedSource = Pick<Issue, "id" | "title"> & {
   originId?: string | null;
 };
 
-type IssueDetailLocationState = {
+export type IssueDetailLocationState = {
   issueDetailBreadcrumb?: IssueDetailBreadcrumb;
   issueDetailSource?: IssueDetailSource;
   issueDetailInboxQuickArchiveArmed?: boolean;
