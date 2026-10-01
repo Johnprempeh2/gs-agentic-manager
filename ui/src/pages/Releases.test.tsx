@@ -227,6 +227,23 @@ describe("Releases page", () => {
     ).toContain("Roll back to this version");
   });
 
+  it("hides a finished release card once a newer version is live, and says the off reason once", async () => {
+    const stale = releaseProgressFixture("healthy", { targetTag: "rc-2026-09-14.1", updatedAt: "2026-09-14T10:00:00.000Z" });
+    await render(
+      <ReleasesView
+        companyId="company-1"
+        overview={releasesOverviewFixture({
+          progress: stale,
+          disabledReason: "release is off on this server: it does not run from /srv/live",
+        })}
+        fetchError={null}
+      />,
+    );
+    expect(document.querySelector('[data-testid="release-progress"]')).toBeNull();
+    const banner = document.querySelector('[data-testid="release-disabled"]')!;
+    expect(banner.textContent).toContain("Release is off on this server.It does not run from /srv/live");
+  });
+
   it("says in plain words when release is off on this server", async () => {
     await render(
       <ReleasesView
