@@ -48,6 +48,33 @@ describe("MarkdownBody code block wrapping", () => {
     container.remove();
   });
 
+  it("fades the edge of a wide table that has more to scroll to", () => {
+    flushSync(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <MarkdownBody>{"| Check | Result |\n|---|---|\n| Build | Pass |"}</MarkdownBody>
+          </ThemeProvider>
+        </QueryClientProvider>,
+      );
+    });
+    const box = container.querySelector<HTMLDivElement>(".paperclip-markdown-table-scroll")!;
+    expect(box).not.toBeNull();
+    expect(box.hasAttribute("data-more-right")).toBe(false);
+
+    // jsdom has no layout: give the box a table wider than itself, then scroll.
+    Object.defineProperty(box, "clientWidth", { configurable: true, value: 300 });
+    Object.defineProperty(box, "scrollWidth", { configurable: true, value: 600 });
+    flushSync(() => box.dispatchEvent(new Event("scroll")));
+    expect(box.hasAttribute("data-more-right")).toBe(true);
+    expect(box.hasAttribute("data-more-left")).toBe(false);
+
+    box.scrollLeft = 300;
+    flushSync(() => box.dispatchEvent(new Event("scroll")));
+    expect(box.hasAttribute("data-more-left")).toBe(true);
+    expect(box.hasAttribute("data-more-right")).toBe(false);
+  });
+
   it("toggles fenced code blocks between horizontal scroll and wrapped lines", () => {
     flushSync(() => {
       root.render(
