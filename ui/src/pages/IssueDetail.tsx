@@ -5,7 +5,6 @@ import { clearLegacyChatMessageRequests } from "@/lib/chat-message-request";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
 import { isBlockedDependentsHandoffCancelled } from "@/lib/blocked-dependents-handoff";
 import {
-  AlertTriangle,
   Settings as ChatSettings,
   PaperclipIcon,
   ChevronRight,
@@ -30,8 +29,8 @@ import { ExecutionBlockerNotice } from "../components/ExecutionBlockerNotice";
 import { TaskDetailTasksPanel } from "@/components/task-detail/TaskDetailTasksPanel";
 import { EmailTaskActivity } from "../components/EmailTaskActivity";
 import {
-  useMemo,
   useState,
+  useMemo,
   useRef,
   useCallback,
   useLayoutEffect,
@@ -42,18 +41,16 @@ import {
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { useParams, useNavigate, useNavigationType, useLocation, Link } from "@/lib/router";
 import {
-  useQuery,
   useQueryClient,
+  useQuery,
   useInfiniteQuery,
   type InfiniteData,
   useMutation,
 } from "@tanstack/react-query";
 import { useSharedPollingQuery, usePublishSharedQueryData } from "@/hooks/useSharedPolling";
-import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
 import { CommentSubmissionUnknownError } from "../lib/comment-submit-result";
 import { approvalsApi } from "../api/approvals";
-import { activityApi, type RunForIssue } from "../api/activity";
 import { type LiveRunForIssue, heartbeatsApi, type ActiveRunForIssue } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { accessApi } from "../api/access";
@@ -137,14 +134,12 @@ import {
 } from "../lib/optimistic-issue-comments";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { recordRecentTask } from "../lib/recent-tasks";
-import { visibleRunCostUsd, formatTokens, formatDurationMs, cn, relativeTime } from "../lib/utils";
+import { cn } from "../lib/utils";
 import { liveBlueBadge } from "../lib/status-colors";
-import { ApprovalCard } from "../components/ApprovalCard";
 import { ProjectTile } from "../components/ProjectTile";
 import { InlineEditor } from "../components/InlineEditor";
 import type { IssueChatComposerHandle, IssueChatRunFinalizationAction } from "../components/IssueChatThread";
 import { workModeMetaFor } from "../lib/work-mode-meta";
-import { IssueContinuationHandoff } from "../components/IssueContinuationHandoff";
 import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
 import { IssuePlanDecompositionsSection } from "../components/IssuePlanDecompositionsSection";
@@ -157,12 +152,7 @@ import {
   getPromotedOutputAttachmentIds,
 } from "../lib/issue-output";
 import { IssueSiblingNavigation } from "../components/IssueSiblingNavigation";
-import type { MarkdownExternalReferenceMap } from "../components/MarkdownBody";
 import { IssuesList } from "../components/IssuesList";
-import { IssueReferenceActivitySummary } from "../components/IssueReferenceActivitySummary";
-import { IssueFieldChangeReceipt } from "../components/IssueFieldChangeReceipt";
-import { IssueWriteDenialNotice } from "../components/IssueWriteDenialNotice";
-import { issueWriteDenialForActivity } from "../lib/issue-write-denial-activity";
 import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import {
   isWaitingOnMonitor,
@@ -172,7 +162,6 @@ import {
 } from "../components/IssueMonitorBanner";
 import { NotNowButton } from "../components/decisions-feed/NotNowButton";
 import { TabledBanner } from "../components/decisions-feed/TabledBanner";
-import { IssueScheduledRetryCard } from "../components/IssueScheduledRetryCard";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink, IssueProperties } from "../components/IssueProperties";
 import { type TaskSidePanelProps, TaskSidePanel } from "../components/task-side-panel";
@@ -183,7 +172,6 @@ import { useIssueExternalObjects } from "../hooks/useIssueExternalObjects";
 import { IssueGalleryContext } from "../context/IssueGalleryContext";
 import { useIssuePlanDocument } from "../hooks/useIssuePlanDocument";
 import { useTaskArtifactArrival } from "../hooks/useTaskArtifactArrival";
-import { IssueRunLedger } from "../components/IssueRunLedger";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { type GalleryMediaItem, ImageGalleryModal } from "../components/ImageGalleryModal";
@@ -204,7 +192,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { formatIssueActivityAction } from "@/lib/activity-format";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { buildIssuePropertiesPanelKey } from "../lib/issue-properties-panel-key";
 import { shouldSuppressTaskPanelUntilPlan, openSkillPanelState } from "../lib/task-side-panel-state";
@@ -213,18 +200,11 @@ import { resolveIssueDocumentDeepLink } from "../lib/issue-document-deep-link";
 import { shouldRenderRichSubIssuesSection, buildIssueSiblingNavigation } from "../lib/issue-detail-subissues";
 import { filterIssueDescendants } from "../lib/issue-tree";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
-import {
-  successfulRunHandoffActivityTone,
-  SUCCESSFUL_RUN_HANDOFF_REQUIRED_ACTION,
-  SUCCESSFUL_RUN_HANDOFF_ESCALATED_ACTION,
-} from "../lib/successful-run-handoff";
 import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
 import { Badge } from "@/components/ui/badge";
 import {
-  type Issue,
   type Agent,
-  type ActivityEvent,
-  ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
+  type Issue,
   type IssueWorkMode,
   type IssueTreeControlMode,
   isClosedIsolatedExecutionWorkspace,
@@ -240,8 +220,11 @@ import {
   type FeedbackVote,
 } from "@greatstone/shared";
 import {
-  asRecord,
-  usageNumber,
+  useTaskDetailInterfaceMode,
+  IssueDetailLoadingState,
+  IssueSectionSkeleton,
+} from "./issue-detail/IssueDetailLoading";
+import {
   ISSUE_COMMENT_AUTOLOAD_LIMIT,
   EMPTY_ISSUES,
   canBoardResolveRecoveryAction,
@@ -262,14 +245,10 @@ import {
   extractWorkspaceFileRefFromWorkProduct,
   treeControlPreviewErrorCopy,
 } from "./issue-detail/helpers";
-import {
-  IssueSectionSkeleton,
-  useTaskDetailInterfaceMode,
-  IssueDetailLoadingState,
-} from "./issue-detail/IssueDetailLoading";
-import { ActorIdentity, IssueAttributionByline } from "./issue-detail/IssueAttribution";
 import { InboxMobileToolbar } from "./issue-detail/InboxMobileToolbar";
+import { IssueAttributionByline } from "./issue-detail/IssueAttribution";
 import { IssueDetailChatTab } from "./issue-detail/IssueDetailChatTab";
+import { IssueDetailActivityTab } from "./issue-detail/IssueDetailActivityTab";
 export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 export type { AttributionActor } from "./issue-detail/IssueAttribution";
 
@@ -278,369 +257,6 @@ export type { AttributionActor } from "./issue-detail/IssueAttribution";
 // here (from the top-of-file import) to keep existing import sites — and their tests — stable, while
 // the imported bindings stay usable within this module.
 export { canBoardManageRuntime, readRecoveryReconcileWorkspaceId };
-
-type IssueDetailActivityTabProps = {
-  issue: Issue;
-  issueId: string;
-  companyId: string;
-  issueStatus: Issue["status"];
-  childIssues: Issue[];
-  agentMap: Map<string, Agent>;
-  hasLiveRuns: boolean;
-  currentUserId: string | null;
-  userProfileMap: Map<
-    string,
-    import("../lib/company-members").CompanyUserProfile
-  >;
-  pendingApprovalAction: {
-    approvalId: string;
-    action: "approve" | "reject";
-  } | null;
-  onApprovalAction: (approvalId: string, action: "approve" | "reject") => void;
-  handoffFocusSignal?: number;
-  externalReferences?: MarkdownExternalReferenceMap;
-};
-
-function IssueDetailActivityTab({
-  issue,
-  issueId,
-  companyId,
-  issueStatus,
-  childIssues,
-  agentMap,
-  hasLiveRuns,
-  currentUserId,
-  userProfileMap,
-  pendingApprovalAction,
-  onApprovalAction,
-  handoffFocusSignal = 0,
-  externalReferences,
-}: IssueDetailActivityTabProps) {
-  const { data: activity, isLoading: activityLoading } = useQuery({
-    queryKey: queryKeys.issues.activity(issueId),
-    queryFn: () => activityApi.forIssue(issueId),
-    placeholderData: keepPreviousDataForSameQueryTail<ActivityEvent[]>(issueId),
-  });
-  const { data: linkedRuns, isLoading: linkedRunsLoading } = useQuery({
-    queryKey: queryKeys.issues.runs(issueId),
-    queryFn: () => activityApi.runsForIssue(issueId),
-    placeholderData: keepPreviousDataForSameQueryTail<RunForIssue[]>(issueId),
-  });
-  const { data: linkedApprovals } = useQuery({
-    queryKey: queryKeys.issues.approvals(issueId),
-    queryFn: () => issuesApi.listApprovals(issueId),
-    placeholderData:
-      keepPreviousDataForSameQueryTail<
-        Awaited<ReturnType<typeof issuesApi.listApprovals>>
-      >(issueId),
-  });
-  const { data: continuationHandoff } = useQuery({
-    queryKey: queryKeys.issues.document(
-      issueId,
-      ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
-    ),
-    queryFn: async () => {
-      try {
-        return await issuesApi.getDocument(
-          issueId,
-          ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
-        );
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null;
-        throw error;
-      }
-    },
-    retry: false,
-    placeholderData: keepPreviousDataForSameQueryTail<Awaited<
-      ReturnType<typeof issuesApi.getDocument>
-    > | null>(issueId),
-  });
-  const { data: issueTreeCostSummary } = useQuery({
-    queryKey: queryKeys.issues.costSummary(issueId),
-    queryFn: () => issuesApi.getCostSummary(issueId),
-    placeholderData:
-      keepPreviousDataForSameQueryTail<
-        Awaited<ReturnType<typeof issuesApi.getCostSummary>>
-      >(issueId),
-  });
-  const initialLoading =
-    (activityLoading && activity === undefined) ||
-    (linkedRunsLoading && linkedRuns === undefined);
-  const issueCostSummary = useMemo(() => {
-    let input = 0;
-    let output = 0;
-    let cached = 0;
-    let cost = 0;
-    let runtimeMs = 0;
-    let runCount = 0;
-    let hasCost = false;
-    let hasTokens = false;
-    const nowMs = Date.now();
-
-    for (const run of linkedRuns ?? []) {
-      const usage = asRecord(run.usageJson);
-      const result = asRecord(run.resultJson);
-      const runInput = usageNumber(usage, "inputTokens", "input_tokens");
-      const runOutput = usageNumber(usage, "outputTokens", "output_tokens");
-      const runCached = usageNumber(
-        usage,
-        "cachedInputTokens",
-        "cached_input_tokens",
-        "cache_read_input_tokens",
-      );
-      const runCost = visibleRunCostUsd(usage, result);
-      if (runCost > 0) hasCost = true;
-      if (runInput + runOutput + runCached > 0) hasTokens = true;
-      input += runInput;
-      output += runOutput;
-      cached += runCached;
-      cost += runCost;
-
-      if (run.startedAt) {
-        const startMs = new Date(run.startedAt).getTime();
-        const endMs = run.finishedAt
-          ? new Date(run.finishedAt).getTime()
-          : nowMs;
-        if (
-          Number.isFinite(startMs) &&
-          Number.isFinite(endMs) &&
-          endMs >= startMs
-        ) {
-          runtimeMs += endMs - startMs;
-          runCount += 1;
-        }
-      }
-    }
-
-    return {
-      input,
-      output,
-      cached,
-      cost,
-      totalTokens: input + output,
-      hasCost,
-      hasTokens,
-      runtimeMs,
-      runCount,
-      hasRuntime: runtimeMs > 0,
-    };
-  }, [linkedRuns]);
-  const issueTreeCostTokens =
-    (issueTreeCostSummary?.inputTokens ?? 0) +
-    (issueTreeCostSummary?.outputTokens ?? 0);
-  const hasIssueTreeCost =
-    !!issueTreeCostSummary &&
-    (issueTreeCostSummary.costCents > 0 ||
-      issueTreeCostTokens > 0 ||
-      issueTreeCostSummary.cachedInputTokens > 0 ||
-      issueTreeCostSummary.runtimeMs > 0 ||
-      issueTreeCostSummary.issueCount > 1);
-  const shouldShowCostSummary =
-    (linkedRuns && linkedRuns.length > 0) || hasIssueTreeCost;
-
-  if (initialLoading) {
-    return <IssueSectionSkeleton titleWidth="w-20" rows={4} />;
-  }
-
-  return (
-    <>
-      {shouldShowCostSummary && (
-        <div className="mb-3 px-3 py-2 rounded-lg border border-border">
-          <div className="text-sm font-medium text-muted-foreground mb-1">
-            Cost Summary
-          </div>
-          {!issueCostSummary.hasCost &&
-          !issueCostSummary.hasTokens &&
-          !hasIssueTreeCost ? (
-            <div className="text-xs text-muted-foreground">
-              No cost data yet.
-            </div>
-          ) : (
-            <div className="space-y-1 text-xs text-muted-foreground tabular-nums">
-              <div className="flex flex-wrap gap-3">
-                <span className="font-medium text-foreground">This task</span>
-                {issueCostSummary.hasCost ? (
-                  <span className="font-medium text-foreground">
-                    ${issueCostSummary.cost.toFixed(4)}
-                  </span>
-                ) : null}
-                {issueCostSummary.hasTokens ? (
-                  <span>
-                    Tokens {formatTokens(issueCostSummary.totalTokens)}
-                    {issueCostSummary.cached > 0
-                      ? ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)}, cached ${formatTokens(issueCostSummary.cached)})`
-                      : ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)})`}
-                  </span>
-                ) : null}
-                {issueCostSummary.hasRuntime ? (
-                  <span>
-                    Runtime {formatDurationMs(issueCostSummary.runtimeMs)}
-                    {` (${issueCostSummary.runCount} run${issueCostSummary.runCount === 1 ? "" : "s"})`}
-                  </span>
-                ) : null}
-                {!issueCostSummary.hasCost &&
-                !issueCostSummary.hasTokens &&
-                !issueCostSummary.hasRuntime ? (
-                  <span>No direct cost data.</span>
-                ) : null}
-              </div>
-              {hasIssueTreeCost && issueTreeCostSummary ? (
-                <div className="flex flex-wrap gap-3">
-                  <span className="font-medium text-foreground">
-                    Including sub-tasks{" "}
-                    {(issueTreeCostSummary.costCents / 100).toLocaleString(
-                      undefined,
-                      {
-                        style: "currency",
-                        currency: "USD",
-                        minimumFractionDigits: 4,
-                        maximumFractionDigits: 4,
-                      },
-                    )}
-                  </span>
-                  <span>
-                    Tokens {formatTokens(issueTreeCostTokens)}
-                    {issueTreeCostSummary.cachedInputTokens > 0
-                      ? ` (in ${formatTokens(issueTreeCostSummary.inputTokens)}, out ${formatTokens(issueTreeCostSummary.outputTokens)}, cached ${formatTokens(issueTreeCostSummary.cachedInputTokens)})`
-                      : ` (in ${formatTokens(issueTreeCostSummary.inputTokens)}, out ${formatTokens(issueTreeCostSummary.outputTokens)})`}
-                  </span>
-                  {issueTreeCostSummary.runCount > 0 ? (
-                    <span>
-                      Runtime {formatDurationMs(issueTreeCostSummary.runtimeMs)}
-                      {` (${issueTreeCostSummary.runCount} run${issueTreeCostSummary.runCount === 1 ? "" : "s"})`}
-                    </span>
-                  ) : null}
-                  <span>
-                    {issueTreeCostSummary.issueCount} task
-                    {issueTreeCostSummary.issueCount === 1 ? "" : "s"}
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          )}
-        </div>
-      )}
-      <div className="mb-3">
-        <IssueRunLedger
-          issueId={issueId}
-          companyId={companyId}
-          issueStatus={issueStatus}
-          childIssues={childIssues}
-          agentMap={agentMap}
-          hasLiveRuns={hasLiveRuns}
-          activityEvents={activity ?? []}
-          resolveUserLabel={(userId) =>
-            userProfileMap.get(userId)?.label ?? null
-          }
-          renderActivityEvent={(evt) => {
-            const tone = successfulRunHandoffActivityTone(evt.action);
-            const isHandoffWarning =
-              evt.action === SUCCESSFUL_RUN_HANDOFF_REQUIRED_ACTION ||
-              evt.action === SUCCESSFUL_RUN_HANDOFF_ESCALATED_ACTION;
-            return (
-              <div
-                className={cn(
-                  "space-y-1.5 rounded-lg border px-3 py-2 text-xs",
-                  tone.className,
-                )}
-              >
-                <div className="flex items-center gap-1.5">
-                  {isHandoffWarning ? (
-                    <AlertTriangle
-                      className={cn("h-3.5 w-3.5 shrink-0", tone.iconClassName)}
-                    />
-                  ) : null}
-                  <ActorIdentity
-                    evt={evt}
-                    agentMap={agentMap}
-                    userProfileMap={userProfileMap}
-                  />
-                  <span>
-                    {formatIssueActivityAction(evt.action, evt.details, {
-                      agentMap,
-                      userProfileMap,
-                      currentUserId,
-                    })}
-                  </span>
-                  <span className="ml-auto shrink-0">
-                    {relativeTime(evt.createdAt)}
-                  </span>
-                </div>
-                <IssueReferenceActivitySummary event={evt} />
-                {/* Field-level who/what/why receipt for agent and board edits alike. */}
-                <IssueFieldChangeReceipt
-                  event={evt}
-                  resolveAgentLabel={(agentId) =>
-                    agentMap.get(agentId)?.name ?? null
-                  }
-                  resolveUserLabel={(userId) =>
-                    userProfileMap.get(userId)?.label ?? null
-                  }
-                />
-                {/* A refused write explains itself here, not just in the API error. */}
-                {(() => {
-                  const denial = issueWriteDenialForActivity(
-                    evt.action,
-                    evt.details,
-                    {
-                      actorLabel: evt.agentId
-                        ? (agentMap.get(evt.agentId)?.name ?? null)
-                        : null,
-                      responsibleUserName: evt.responsibleUserId
-                        ? (userProfileMap.get(evt.responsibleUserId)?.label ??
-                          null)
-                        : null,
-                    },
-                  );
-                  return denial ? (
-                    <IssueWriteDenialNotice
-                      code={denial.code}
-                      context={denial.context}
-                    />
-                  ) : null;
-                })()}
-              </div>
-            );
-          }}
-        />
-      </div>
-      <IssueContinuationHandoff
-        document={continuationHandoff}
-        focusSignal={handoffFocusSignal}
-        externalReferences={externalReferences}
-      />
-      {linkedApprovals && linkedApprovals.length > 0 && (
-        <div className="mb-3 space-y-3">
-          {linkedApprovals.map((approval) => (
-            <ApprovalCard
-              key={approval.id}
-              approval={approval}
-              requesterAgent={
-                approval.requestedByAgentId
-                  ? (agentMap.get(approval.requestedByAgentId) ?? null)
-                  : null
-              }
-              onApprove={() => onApprovalAction(approval.id, "approve")}
-              onReject={() => onApprovalAction(approval.id, "reject")}
-              detailLink={`/approvals/${approval.id}`}
-              isPending={pendingApprovalAction?.approvalId === approval.id}
-              pendingAction={
-                pendingApprovalAction?.approvalId === approval.id
-                  ? pendingApprovalAction.action
-                  : null
-              }
-            />
-          ))}
-        </div>
-      )}
-      <IssueScheduledRetryCard
-        issueId={issue.id}
-        scheduledRetry={issue.scheduledRetry ?? null}
-      />
-      {/* Waiting-monitor state shows in the banner above the tabs (the composer strip on the chat tab). */}
-    </>
-  );
-}
 
 export function IssueDetail({ tasksTab }: { tasksTab?: TaskSidePanelProps["tasksTab"] }) { return <TaskDetailSurface tasksTab={tasksTab} />; }
 
