@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "@/lib/queryKeys";
+import { formatDateTime } from "@/lib/utils";
 import { InstanceGeneralSettings } from "./InstanceGeneralSettings";
 
 const mockAuthApi = vi.hoisted(() => ({ signOut: vi.fn() }));
@@ -269,6 +270,26 @@ describe("InstanceGeneralSettings operator-hidden sections", () => {
     expect(container.textContent).toContain("Deployment and auth");
     expect(container.textContent).toContain("Censor username in logs");
     expect(container.textContent).toContain("Backup retention");
+  });
+
+  it("renders only the sections a Settings tab asks for", async () => {
+    mockHealthApi.get.mockResolvedValue(SELF_HOSTED_HEALTH);
+    queryClient.setQueryData(queryKeys.health, SELF_HOSTED_HEALTH);
+    root = createRoot(container);
+    flushSync(() => {
+      root?.render(
+        <QueryClientProvider client={queryClient}>
+          <InstanceGeneralSettings embedded sections={["backupRetention", "feedbackDataSharingPreference"]} />
+        </QueryClientProvider>,
+      );
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain("Backup retention"));
+
+    expect(container.textContent).toContain("AI feedback sharing");
+    expect(container.textContent).not.toContain("Deployment and auth");
+    expect(container.textContent).not.toContain("Censor username in logs");
+    expect(container.textContent).not.toContain("Run limits");
+    expect(container.textContent).not.toContain("Sign out");
   });
 });
 
@@ -543,6 +564,11 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
       .find((row) => row.querySelector("th")?.textContent === "Run cap");
     expect(Array.from(capRow!.querySelectorAll("td")).map((cell) => cell.textContent)).toEqual(["4", "5"]);
     expect(text).toContain("raise the cap by one to 5.");
+    // The reasons carry the raw formula, so they sit behind a closed disclosure.
+    const working = box()!.querySelector<HTMLDetailsElement>('[data-testid="run-admission-working"]');
+    expect(working?.open).toBe(false);
+    expect(working?.querySelector("summary")?.textContent).toBe("Show working");
+    expect(working?.textContent).toContain("RAM rule: (16384 MB total");
     expect(mockInstanceSettingsApi.updateGeneral).not.toHaveBeenCalled();
     // With usage, the raw RAM rule is information only: no one-tap jump to it.
     expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Use suggested")).toBe(false);
@@ -557,6 +583,23 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
       .find((el) => el.textContent === "Run cap");
     expect(container.querySelector<HTMLInputElement>(`#${CSS.escape(capLabel!.getAttribute("for")!)}`)!.value)
       .toBe("5");
+  });
+
+  it("shows times in the working as British dates, not ISO strings", async () => {
+    const iso = "2026-09-30T22:36:35.041Z";
+    mockInstanceSettingsApi.getRunAdmissionRecommendation.mockResolvedValue({
+      ...USAGE_RECOMMENDATION,
+      reasons: [
+        ...USAGE_RECOMMENDATION.reasons,
+        `Hold reasons are counted since ${iso} (server start or window start, whichever is later).`,
+      ],
+    });
+    await renderPage();
+
+    await vi.waitFor(() => expect(box()).not.toBeNull());
+    const text = box()!.textContent ?? "";
+    expect(text).not.toContain(iso);
+    expect(text).toContain(`Hold reasons are counted since ${formatDateTime(iso)} (server start`);
   });
 
   it("shows only the RAM-based suggestion when there is no usage data yet", async () => {

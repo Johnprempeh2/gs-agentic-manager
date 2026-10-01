@@ -21,7 +21,23 @@ import { useSignOut } from "@/hooks/useSignOut";
 
 const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || null;
 
-export function InstanceGeneralSettings({ embedded = false }: { embedded?: boolean }) {
+/** Section names match their `instance.general.*` hidden-setting keys. */
+export type InstanceGeneralSection =
+  | "deploymentStatus"
+  | "censorUsernameInLogs"
+  | "runAdmission"
+  | "backupRetention"
+  | "feedbackDataSharingPreference"
+  | "signOut";
+
+export function InstanceGeneralSettings({
+  embedded = false,
+  sections,
+}: {
+  embedded?: boolean;
+  /** Render only these sections (Settings spreads them across its tabs). All when omitted. */
+  sections?: readonly InstanceGeneralSection[];
+}) {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -83,12 +99,14 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
   const feedbackDataSharingPreference = generalQuery.data?.feedbackDataSharingPreference ?? "prompt";
   const backupRetention: BackupRetentionPolicy = generalQuery.data?.backupRetention ?? DEFAULT_BACKUP_RETENTION;
   const hiddenSettings = new Set(healthQuery.data?.hiddenSettings ?? []);
-  const showDeploymentStatus = !hiddenSettings.has("instance.general.deploymentStatus");
-  const showCensorUsernameInLogs = !hiddenSettings.has("instance.general.censorUsernameInLogs");
-  const showBackupRetention = !hiddenSettings.has("instance.general.backupRetention");
-  const showRunAdmission = !hiddenSettings.has("instance.general.runAdmission");
-  const showFeedbackDataSharing = !hiddenSettings.has("instance.general.feedbackDataSharingPreference");
-  const showSignOut = !hiddenSettings.has("instance.general.signOut");
+  const shows = (section: InstanceGeneralSection) =>
+    !hiddenSettings.has(`instance.general.${section}`) && (!sections || sections.includes(section));
+  const showDeploymentStatus = shows("deploymentStatus");
+  const showCensorUsernameInLogs = shows("censorUsernameInLogs");
+  const showBackupRetention = shows("backupRetention");
+  const showRunAdmission = shows("runAdmission");
+  const showFeedbackDataSharing = shows("feedbackDataSharingPreference");
+  const showSignOut = shows("signOut");
   const visibleTopics = [
     ...(showCensorUsernameInLogs ? ["log display"] : []),
     ...(showRunAdmission ? ["run limits"] : []),

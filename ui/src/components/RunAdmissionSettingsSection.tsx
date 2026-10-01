@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { queryKeys } from "@/lib/queryKeys";
+import { formatDateTime } from "@/lib/utils";
 import {
   RAM_FLOOR_MAX_MB,
   RUN_CAP_MAX,
@@ -25,6 +26,13 @@ import {
 type RunAdmission = NonNullable<InstanceGeneralSettings["runAdmission"]>;
 
 const DISK_FLOOR_MAX_GB = 100_000;
+
+// The server writes times into its reasons as ISO strings; show them the British way.
+const ISO_TIMESTAMP = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g;
+
+function readableReason(reason: string) {
+  return reason.replace(ISO_TIMESTAMP, (iso) => formatDateTime(iso));
+}
 
 export function RunAdmissionSettingsSection({
   runAdmission,
@@ -317,11 +325,14 @@ function UsageRecommendation({
         </tbody>
       </table>
       {recommendation.reasons.length > 0 ? (
-        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-          {recommendation.reasons.map((reason) => (
-            <li key={reason}>{reason}</li>
-          ))}
-        </ul>
+        <details className="text-xs text-muted-foreground" data-testid="run-admission-working">
+          <summary className="cursor-pointer hover:text-foreground">Show working</summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {recommendation.reasons.map((reason) => (
+              <li key={reason}>{readableReason(reason)}</li>
+            ))}
+          </ul>
+        </details>
       ) : null}
     </div>
   );

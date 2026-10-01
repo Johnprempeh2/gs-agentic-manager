@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import { useConfirm } from "@/context/ConfirmContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   type InteractionResolverGovernance,
@@ -17,6 +17,9 @@ import { companiesApi } from "../api/companies";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { PageTabBar } from "../components/PageTabBar";
+import { useHiddenSettings } from "../hooks/useHiddenSettings";
 import { SlidersHorizontal } from "lucide-react";
 import {
   InteractionGovernancePanel,
@@ -29,7 +32,22 @@ import {
   Field,
   ToggleField,
 } from "../components/agent-config-primitives";
-import { InstanceGeneralSettings } from "./InstanceGeneralSettings";
+import { InstanceGeneralSettings, type InstanceGeneralSection } from "./InstanceGeneralSettings";
+
+const SECURITY_SECTIONS: readonly InstanceGeneralSection[] = ["deploymentStatus", "censorUsernameInLogs"];
+const BACKUP_SECTIONS: readonly InstanceGeneralSection[] = ["backupRetention", "feedbackDataSharingPreference"];
+
+const SETTINGS_TABS: ReadonlyArray<{
+  value: string;
+  label: string;
+  /** Set when the tab holds only instance sections, so it can vanish when all are hidden. */
+  sections?: readonly InstanceGeneralSection[];
+}> = [
+  { value: "general", label: "General" },
+  { value: "agents", label: "Agents and runs" },
+  { value: "security", label: "Security", sections: SECURITY_SECTIONS },
+  { value: "backups", label: "Backups and data", sections: BACKUP_SECTIONS },
+];
 
 export function CompanySettings() {
   const {
@@ -44,6 +62,24 @@ export function CompanySettings() {
   const navigate = useNavigate();
   const toastActions = useOptionalToastActions();
   const cloud = useCloudInstance();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { hidden: hiddenSettings } = useHiddenSettings();
+  // A tab whose sections the operator has all hidden would open empty, so it goes.
+  const tabs = SETTINGS_TABS.filter(
+    (tab) => !tab.sections || tab.sections.some((section) => !hiddenSettings.has(`instance.general.${section}`)),
+  );
+  const activeTab = tabs.find((tab) => tab.value === searchParams.get("tab"))?.value ?? "general";
+  const handleTabChange = (value: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value === "general") next.delete("tab");
+        else next.set("tab", value);
+        return next;
+      },
+      { replace: true },
+    );
+  };
   // Managed instances derive the task ID prefix from the company name, so a
   // rename here also renumbers the existing task IDs.
   const isCloudManaged = Boolean(cloud);
@@ -221,203 +257,225 @@ export function CompanySettings() {
         <h1 className="text-lg font-semibold">General</h1>
       </div>
 
-      {/* General */}
-      <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5">
-        <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          General
-        </div>
-        <div className="space-y-3">
-          <Field label="Organization name" hint="The display name for your organization.">
-            <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
-              type="text"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-            />
-            {isCloudManaged && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Renaming can change this company's task ID prefix. Existing task IDs are
-                renumbered and old task links stop resolving.
-              </p>
-            )}
-          </Field>
-          <Field
-            label="Description"
-            hint="Optional description shown in the organization profile."
-          >
-            <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
-              type="text"
-              value={description}
-              placeholder="Optional organization description"
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </Field>
-        </div>
-      </div>
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col gap-6">
+        <PageTabBar
+          items={tabs}
+          value={activeTab}
+          onValueChange={handleTabChange}
+          align="start"
+          ariaLabel="Settings section"
+        />
 
-      {/* Appearance */}
-      <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5">
-        <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Appearance
-        </div>
-        <div className="space-y-3">
-          <div className="flex items-start gap-4">
-            <div className="shrink-0">
-              <CompanyPatternIcon
-                companyName={companyName || selectedCompany.name}
-                logoUrl={logoUrl || null}
-                className="rounded-(--rad-14)"
-              />
+        <TabsContent value="general" className="space-y-8">
+          {/* General */}
+          <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5">
+            <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              General
             </div>
-            <div className="flex-1 space-y-3">
+            <div className="space-y-3">
+              <Field label="Organization name" hint="The display name for your organization.">
+                <input
+                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
+                {isCloudManaged && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Renaming can change this company's task ID prefix. Existing task IDs are
+                    renumbered and old task links stop resolving.
+                  </p>
+                )}
+              </Field>
               <Field
-                label="Logo"
-                hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
+                label="Description"
+                hint="Optional description shown in the organization profile."
               >
-                <div className="space-y-2">
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-                    onChange={handleLogoFileChange}
-                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-xs"
-                  />
-                  {logoUrl && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleClearLogo}
-                        disabled={clearLogoMutation.isPending}
-                      >
-                        {clearLogoMutation.isPending ? "Removing..." : "Remove logo"}
-                      </Button>
-                    </div>
-                  )}
-                  {(logoUploadMutation.isError || logoUploadError) && (
-                    <span className="text-xs text-destructive">
-                      {logoUploadError ??
-                        (logoUploadMutation.error instanceof Error
-                          ? logoUploadMutation.error.message
-                          : "Logo upload failed")}
-                    </span>
-                  )}
-                  {clearLogoMutation.isError && (
-                    <span className="text-xs text-destructive">
-                      {clearLogoMutation.error.message}
-                    </span>
-                  )}
-                  {logoUploadMutation.isPending && (
-                    <span className="text-xs text-muted-foreground">Uploading logo...</span>
-                  )}
-                </div>
+                <input
+                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                  type="text"
+                  value={description}
+                  placeholder="Optional organization description"
+                  onChange={(e) => setDescription(e.target.value)}
+                />
               </Field>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Save button for General + Appearance */}
-      {generalDirty && (
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={handleSaveGeneral}
-            disabled={generalMutation.isPending || !companyName.trim()}
-          >
-            {generalMutation.isPending ? "Saving..." : "Save changes"}
-          </Button>
-          {generalMutation.isSuccess && (
-            <span className="text-xs text-muted-foreground">Saved</span>
-          )}
-          {generalMutation.isError && (
-            <span className="text-xs text-destructive">
-              {generalMutation.error instanceof Error
-                  ? generalMutation.error.message
-                  : "Failed to save"}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Hiring */}
-      <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5" data-testid="company-settings-team-section">
-        <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Hiring
-        </div>
-        <div>
-          <ToggleField
-            label="Require board approval for new hires"
-            hint="New agent hires stay pending until approved by board."
-            checked={!!selectedCompany.requireBoardApprovalForNewAgents}
-            onChange={(v) => settingsMutation.mutate(v)}
-            toggleTestId="company-settings-team-approval-toggle"
-          />
-        </div>
-      </div>
-
-      {/* Interaction governance */}
-      <InteractionGovernancePanel
-        governance={governance}
-        onChange={handleGovernanceChange}
-        isPending={governanceMutation.isPending}
-        errorMessage={
-          governanceMutation.isError
-            ? governanceMutation.error instanceof Error
-              ? governanceMutation.error.message
-              : "Failed to save interaction governance"
-            : null
-        }
-      />
-
-      <InstanceGeneralSettings embedded />
-
-      {/* Danger Zone */}
-      <div className="space-y-4">
-        <div className="text-xs font-medium text-destructive uppercase tracking-wide">
-          Danger Zone
-        </div>
-        <div className="space-y-3 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-4">
-          <p className="text-sm text-muted-foreground">
-            Archive this organization to hide it from the sidebar. This persists in
-            the database.
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={
-                archiveMutation.isPending ||
-                selectedCompany.status === "archived"
-              }
-              onClick={async () => {
-                if (!selectedCompanyId) return;
-                const confirmed = await confirmAction({
-                  title: `Archive "${selectedCompany.name}"?`,
-                  description: "The organization will be hidden from the sidebar.",
-                  confirmLabel: "Archive",
-                  tone: "destructive",
-                });
-                if (!confirmed) return;
-                archiveMutation.mutate({ companyId: selectedCompanyId });
-              }}
-            >
-              {archiveMutation.isPending
-                ? "Archiving..."
-                : selectedCompany.status === "archived"
-                ? "Already archived"
-                : "Archive organization"}
-            </Button>
-            {archiveMutation.isError && (
-              <span className="text-xs text-destructive">
-                {archiveMutation.error instanceof Error
-                  ? archiveMutation.error.message
-                  : "Failed to archive organization"}
-              </span>
-            )}
+          {/* Appearance */}
+          <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5">
+            <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Appearance
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start gap-4">
+                <div className="shrink-0">
+                  <CompanyPatternIcon
+                    companyName={companyName || selectedCompany.name}
+                    logoUrl={logoUrl || null}
+                    className="rounded-(--rad-14)"
+                  />
+                </div>
+                <div className="flex-1 space-y-3">
+                  <Field
+                    label="Logo"
+                    hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
+                  >
+                    <div className="space-y-2">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                        onChange={handleLogoFileChange}
+                        className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-xs"
+                      />
+                      {logoUrl && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleClearLogo}
+                            disabled={clearLogoMutation.isPending}
+                          >
+                            {clearLogoMutation.isPending ? "Removing..." : "Remove logo"}
+                          </Button>
+                        </div>
+                      )}
+                      {(logoUploadMutation.isError || logoUploadError) && (
+                        <span className="text-xs text-destructive">
+                          {logoUploadError ??
+                            (logoUploadMutation.error instanceof Error
+                              ? logoUploadMutation.error.message
+                              : "Logo upload failed")}
+                        </span>
+                      )}
+                      {clearLogoMutation.isError && (
+                        <span className="text-xs text-destructive">
+                          {clearLogoMutation.error.message}
+                        </span>
+                      )}
+                      {logoUploadMutation.isPending && (
+                        <span className="text-xs text-muted-foreground">Uploading logo...</span>
+                      )}
+                    </div>
+                  </Field>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* Save button for General + Appearance */}
+          {generalDirty && (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={handleSaveGeneral}
+                disabled={generalMutation.isPending || !companyName.trim()}
+              >
+                {generalMutation.isPending ? "Saving..." : "Save changes"}
+              </Button>
+              {generalMutation.isSuccess && (
+                <span className="text-xs text-muted-foreground">Saved</span>
+              )}
+              {generalMutation.isError && (
+                <span className="text-xs text-destructive">
+                  {generalMutation.error instanceof Error
+                      ? generalMutation.error.message
+                      : "Failed to save"}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Hiring */}
+          <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5" data-testid="company-settings-team-section">
+            <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Hiring
+            </div>
+            <div>
+              <ToggleField
+                label="Require board approval for new hires"
+                hint="New agent hires stay pending until approved by board."
+                checked={!!selectedCompany.requireBoardApprovalForNewAgents}
+                onChange={(v) => settingsMutation.mutate(v)}
+                toggleTestId="company-settings-team-approval-toggle"
+              />
+            </div>
+          </div>
+
+          <InstanceGeneralSettings embedded sections={["signOut"]} />
+
+          {/* Danger Zone */}
+          <div className="space-y-4">
+            <div className="text-xs font-medium text-destructive uppercase tracking-wide">
+              Danger Zone
+            </div>
+            <div className="space-y-3 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-4">
+              <p className="text-sm text-muted-foreground">
+                Archive this organization to hide it from the sidebar. This persists in
+                the database.
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={
+                    archiveMutation.isPending ||
+                    selectedCompany.status === "archived"
+                  }
+                  onClick={async () => {
+                    if (!selectedCompanyId) return;
+                    const confirmed = await confirmAction({
+                      title: `Archive "${selectedCompany.name}"?`,
+                      description: "The organization will be hidden from the sidebar.",
+                      confirmLabel: "Archive",
+                      tone: "destructive",
+                    });
+                    if (!confirmed) return;
+                    archiveMutation.mutate({ companyId: selectedCompanyId });
+                  }}
+                >
+                  {archiveMutation.isPending
+                    ? "Archiving..."
+                    : selectedCompany.status === "archived"
+                    ? "Already archived"
+                    : "Archive organization"}
+                </Button>
+                {archiveMutation.isError && (
+                  <span className="text-xs text-destructive">
+                    {archiveMutation.error instanceof Error
+                      ? archiveMutation.error.message
+                      : "Failed to archive organization"}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="agents" className="space-y-8">
+          <InstanceGeneralSettings embedded sections={["runAdmission"]} />
+          <InteractionGovernancePanel
+            governance={governance}
+            onChange={handleGovernanceChange}
+            isPending={governanceMutation.isPending}
+            errorMessage={
+              governanceMutation.isError
+                ? governanceMutation.error instanceof Error
+                  ? governanceMutation.error.message
+                  : "Failed to save interaction governance"
+                : null
+            }
+          />
+        </TabsContent>
+
+        <TabsContent value="security" className="space-y-8">
+          <InstanceGeneralSettings embedded sections={SECURITY_SECTIONS} />
+        </TabsContent>
+
+        <TabsContent value="backups" className="space-y-8">
+          <InstanceGeneralSettings embedded sections={BACKUP_SECTIONS} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
