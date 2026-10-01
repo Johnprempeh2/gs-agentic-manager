@@ -842,18 +842,21 @@ describe("already-approved publication streaming", () => {
         );
         expect(result.id).toBe(`${chatId}:901`);
         const drafts = requests.filter(
-          ({ method }) => method === "sendRichMessageDraft",
+          ({ method }) => method === "sendMessageDraft",
         );
+        // GRE-327: rich messages rendered as empty bubbles in Telegram clients.
+        expect(
+          requests.some(({ method }) => method.startsWith("sendRichMessage")),
+        ).toBe(false);
         if (chatType === "private") {
           expect(drafts.length).toBeGreaterThan(0);
           expect(drafts.length).toBeLessThanOrEqual(2);
           const final = requests.filter(
-            ({ method }) => method === "sendRichMessage",
+            ({ method }) => method === "sendMessage",
           );
           expect(final).toHaveLength(1);
-          expect(final[0].body.rich_message).toEqual({
-            markdown: source.trimEnd(),
-          });
+          expect(final[0].body.rich_message).toBeUndefined();
+          expect(String(final[0].body.text).trim()).not.toBe("");
           expect(providerPacing).not.toHaveBeenCalled();
         } else {
           expect(drafts).toHaveLength(0);
@@ -861,9 +864,8 @@ describe("already-approved publication streaming", () => {
           expect(providerPacing).toHaveBeenCalledOnce();
           expect(providerPacing.mock.calls[0][0]).toBeGreaterThan(0);
           expect(requests.at(-1)?.method).toBe("editMessageText");
-          expect(requests.at(-1)?.body.rich_message).toEqual({
-            markdown: source.trimEnd(),
-          });
+          expect(requests.at(-1)?.body.rich_message).toBeUndefined();
+          expect(String(requests.at(-1)?.body.text).trim()).not.toBe("");
         }
         expect(wait).not.toHaveBeenCalled();
       } finally {
