@@ -48,4 +48,29 @@ describe("ActivityRow", () => {
     act(() => root.unmount());
     container.remove();
   });
+
+  it("names the task from the activity row when the page has no map entry for it", () => {
+    const event = {
+      id: "event-2",
+      companyId: "company-1",
+      actorType: "system",
+      actorId: "system",
+      action: "issue.updated",
+      entityType: "issue",
+      entityId: "issue-99",
+      details: { status: "blocked" },
+      createdAt: new Date("2026-09-30T10:00:00.000Z"),
+      issueIdentifier: "GRE-99",
+      issueTitle: "Renew the domain",
+    } as unknown as ActivityEvent;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() => {
+      root.render(<ActivityRow event={event} agentMap={new Map()} entityNameMap={new Map()} />);
+    });
+    expect(container.textContent).toContain("GRE-99");
+    expect(container.textContent).toContain("Renew the domain");
+    expect(container.querySelector("a[href='/issues/GRE-99']")).not.toBeNull();
+    act(() => root.unmount());
+  });
 });

@@ -156,3 +156,13 @@ describe("Dashboard layout", () => {
     expect(decisions.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+describe("isOwnerActivity", () => {
+  it("keeps finished, blocked and cancelled tasks and drops other task updates", async () => {
+    const { isOwnerActivity } = await import("./Dashboard");
+    expect(isOwnerActivity({ action: "issue.updated", details: { status: "done" } })).toBe(true);
+    expect(isOwnerActivity({ action: "issue.updated", details: { status: "in_review" } })).toBe(false);
+    expect(isOwnerActivity({ action: "issue.updated", details: null })).toBe(false);
+    expect(isOwnerActivity({ action: "instance.live_released", details: null })).toBe(true);
+  });
+});
