@@ -1,169 +1,156 @@
-import { DispositionRecoveryNotice, useDispositionRecoverySnapshot } from "./DispositionRecoveryNotice";
+import { useDispositionRecoverySnapshot, DispositionRecoveryNotice } from "./DispositionRecoveryNotice";
 import { AgentAvatar } from "@/components/AgentAvatar";
-import { TaskChatPausedTakeover, type TaskComposerPause } from "./task-chat/TaskChatPausedTakeover";
+import { type TaskComposerPause, TaskChatPausedTakeover } from "./task-chat/TaskChatPausedTakeover";
 import { useEmailComment } from "./EmailMessageCard";
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import type {
-  ReasoningMessagePart,
-  TextMessagePart,
-  ThreadMessage,
-  ToolCallMessagePart,
+import {
+  type ThreadMessage,
+  type ToolCallMessagePart,
+  type ReasoningMessagePart,
+  type TextMessagePart,
+  AssistantRuntimeProvider,
 } from "@assistant-ui/react";
 import {
-  createContext,
-  Component,
-  forwardRef,
-  memo,
-  useCallback,
-  useContext,
-  useEffect,
-  useId,
-  useImperativeHandle,
+  useRef,
   useLayoutEffect,
   useMemo,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type DragEvent as ReactDragEvent,
-  type ErrorInfo,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type Ref,
   type ReactNode,
+  type Ref,
+  Component,
+  type ErrorInfo,
+  type DragEvent as ReactDragEvent,
+  memo,
+  useContext,
+  useState,
+  useEffect,
+  useId,
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { Link, useLocation } from "@/lib/router";
-import type {
-  Agent,
-  FeedbackDataSharingPreference,
-  FeedbackVote,
-  FeedbackVoteValue,
-  IssueAttachment,
-  IssueDocumentSummary,
-  IssueBlockerAttention,
-  IssueRecoveryAction,
-  IssueQueuedCommentQueue,
-  IssueRelationIssueSummary,
-  IssueScheduledRetry,
-  SuccessfulRunHandoffState,
-  IssueWorkMode,
-  IssueWorkProduct,
+import {
+  type IssueAttachment,
+  type Agent,
+  type IssueWorkMode,
+  type IssueDocumentSummary,
+  type IssueWorkProduct,
+  type FeedbackVote,
+  type FeedbackDataSharingPreference,
+  type IssueRelationIssueSummary,
+  type IssueBlockerAttention,
+  type SuccessfulRunHandoffState,
+  type IssueScheduledRetry,
+  type IssueRecoveryAction,
+  type FeedbackVoteValue,
+  type IssueQueuedCommentQueue,
+  type IssueCommentPresentation,
+  type IssueCommentMetadata,
+  type SourceTrustMetadata,
+  buildAgentMentionHref,
 } from "@greatstone/shared";
-import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
+import type { LiveRunForIssue, ActiveRunForIssue } from "../api/heartbeats";
 import { findUIAdapter } from "../adapters/registry";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
 import { useSecondTick } from "../hooks/useSecondTick";
-import {
-  usePaperclipIssueRuntime,
-  type PaperclipIssueRuntimeReassignment,
-} from "../hooks/usePaperclipIssueRuntime";
+import { type PaperclipIssueRuntimeReassignment, usePaperclipIssueRuntime } from "../hooks/usePaperclipIssueRuntime";
 import { useOptionalToastActions } from "../context/ToastContext";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
   loadDraft,
+  type ComposerDraftSubmission,
+  loadDraftSubmission,
   saveDraft,
-  clearDraft,
+  saveDraftSubmission,
   loadDraftAttachments,
   saveDraftAttachments,
-  loadDraftSubmission,
-  saveDraftSubmission,
-  clearDraftSubmission,
   settleDraftSubmission,
-  type ComposerDraftSubmission,
+  clearDraftSubmission,
+  clearDraft,
 } from "../lib/composer-draft";
 import { CommentSubmissionUnknownError } from "../lib/comment-submit-result";
 import {
-  buildIssueChatMessages,
   formatDurationWords,
-  isCoTSegmentActive,
-  stabilizeThreadMessages,
   type IssueChatComment,
   type IssueChatLinkedRun,
-  type StableThreadMessageCacheEntry,
   type IssueChatTranscriptEntry,
   type SegmentTiming,
+  isCoTSegmentActive,
+  buildIssueChatMessages,
+  type StableThreadMessageCacheEntry,
+  stabilizeThreadMessages,
 } from "../lib/issue-chat-messages";
-import type {
-  AskUserQuestionsAnswer,
-  AskUserQuestionsInteraction,
-  IssueThreadInteraction,
-  RequestCheckboxConfirmationInteraction,
-  RequestConfirmationInteraction,
-  RequestItemVerdictsInteraction,
-  RequestItemVerdictValue,
-  SuggestTasksInteraction,
-} from "../lib/issue-thread-interactions";
 import {
+  type IssueThreadInteraction,
+  type SuggestTasksInteraction,
+  type RequestConfirmationInteraction,
+  type RequestCheckboxConfirmationInteraction,
+  type AskUserQuestionsInteraction,
+  type AskUserQuestionsAnswer,
+  type RequestItemVerdictsInteraction,
+  type RequestItemVerdictValue,
   buildIssueThreadInteractionSummary,
   isIssueThreadInteraction,
 } from "../lib/issue-thread-interactions";
 import { isLiveIssueRun } from "../lib/liveIssueIds";
 import { resolveIssueChatTranscriptRuns } from "../lib/issueChatTranscriptRuns";
 import {
-  formatTimelineWorkspaceLabel,
-  type IssueTimelineAssignee,
   type IssueTimelineEvent,
-  type IssueTimelineWorkspace,
   type IssueWorkModeChange,
+  type IssueTimelineWorkspace,
+  type IssueTimelineAssignee,
+  formatTimelineWorkspaceLabel,
 } from "../lib/issue-timeline-events";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "@/components/InlineBanner";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
+  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  MarkdownBody,
-  type MarkdownExternalReferenceMap,
-} from "./MarkdownBody";
+import { type MarkdownExternalReferenceMap, MarkdownBody } from "./MarkdownBody";
 import type { TaskChatIssueBrief } from "./task-chat/TaskChatDescriptionBubble";
 import { WorkspaceFileMarkdownBody } from "./WorkspaceFileMarkdownBody";
-import {
-  MarkdownEditor,
-  type MentionOption,
-  type MarkdownEditorRef,
-} from "./MarkdownEditor";
-import { Identity } from "./Identity";
-import {
-  InlineEntitySelector,
-  type InlineEntityOption,
-} from "./InlineEntitySelector";
+import { type MentionOption, type MarkdownEditorRef, MarkdownEditor } from "./MarkdownEditor";
+import { type InlineEntityOption, InlineEntitySelector } from "./InlineEntitySelector";
 import { IssueThreadInteractionCard } from "./IssueThreadInteractionCard";
 import {
+  type HandoffChipResolvers,
   AssigneeChip,
-  ComposerHandoffPreviewRow,
-  ComposerMentionCoach,
   HandoffWakeRow,
   RunStatusBadge,
-  type HandoffChipResolvers,
+  ComposerMentionCoach,
+  ComposerHandoffPreviewRow,
 } from "./interrupt-handoff/InterruptHandoffViews";
 import {
-  computeComposerHandoffPreview,
-  extractAgentMentionIds,
-  findPlainAgentNameCandidate,
   type ComposerHandoffPreview,
   type HandoffAgentMention,
+  extractAgentMentionIds,
+  findPlainAgentNameCandidate,
+  computeComposerHandoffPreview,
 } from "../lib/interrupt-handoff";
 import { restoreSubmittedCommentDraft } from "../lib/comment-submit-draft";
 import {
@@ -174,175 +161,77 @@ import {
 import { formatAssigneeUserLabel } from "../lib/assignees";
 import type { CompanyUserProfile } from "../lib/company-members";
 import { timeAgo } from "../lib/timeAgo";
+import { isSuccessfulRunHandoffComment, isSuccessfulRunHandoffEscalationComment } from "../lib/successful-run-handoff";
 import {
-  isSuccessfulRunHandoffComment,
-  isSuccessfulRunHandoffEscalationComment,
-} from "../lib/successful-run-handoff";
-import {
-  SystemNotice,
   type SystemNoticeMetadataRow,
   type SystemNoticeMetadataSection,
-  type SystemNoticeProps,
   type SystemNoticeTone,
+  type SystemNoticeProps,
+  SystemNotice,
 } from "./SystemNotice";
 import {
-  buildSystemNoticeProps,
   mapCommentMetadataToSystemNoticeSections,
+  buildSystemNoticeProps,
   systemNoticeLabelForTone,
 } from "../lib/system-notice-comment";
-import type {
-  IssueCommentMetadata,
-  IssueCommentPresentation,
-  SourceTrustMetadata,
-} from "@greatstone/shared";
 import {
-  describeToolInput,
-  displayToolName,
-  formatToolPayload,
   isCommandTool,
-  parseToolPayload,
+  displayToolName,
   summarizeToolInput,
+  parseToolPayload,
+  formatToolPayload,
+  describeToolInput,
   summarizeToolResult,
 } from "../lib/transcriptPresentation";
-import { buildAgentMentionHref } from "@greatstone/shared";
 import { useComposerStop } from "@/hooks/useComposerStop";
-import { cn, formatDateTime, formatShortDate } from "../lib/utils";
+import { cn, formatShortDate, formatDateTime } from "../lib/utils";
 import { liveBlueBadge } from "../lib/status-colors";
 import {
+  workModeMetaList,
+  workModeMetaFor,
   nextWorkMode,
   titleForPendingWorkMode,
-  workModeMetaFor,
-  workModeMetaList,
 } from "../lib/work-mode-meta";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  PauseCircle,
   AlertTriangle,
-  ArrowRight,
+  Loader2,
+  ChevronDown,
   Brain,
   Check,
-  ChevronDown,
-  ClipboardList,
   Copy,
+  ClipboardList,
   Hammer,
-  Loader2,
-  MoreHorizontal,
-  PaperclipIcon,
-  PauseCircle,
-  Search,
-  Square,
-  ThumbsDown,
-  ThumbsUp,
   Trash2,
+  MoreHorizontal,
+  Square,
+  Search,
+  ThumbsUp,
+  ThumbsDown,
+  PaperclipIcon,
+  ArrowRight,
   X,
 } from "lucide-react";
 import { IssueBlockedNotice } from "./IssueBlockedNotice";
 import { IssueAssignedBacklogNotice } from "./IssueAssignedBacklogNotice";
 import {
-  IssueRecoveryActionCard,
-  type RecoveryReissueRequest,
   type RecoveryResolveOutcome,
+  type RecoveryReissueRequest,
+  IssueRecoveryActionCard,
 } from "./IssueRecoveryActionCard";
 import { SourceTrustBadge } from "./SourceTrustBadge";
 import { CommentAttributionChip } from "./CommentAttributionChip";
 import { resolveCommentAttribution } from "../lib/comment-attribution";
-
-interface IssueChatMessageContext {
-  feedbackDataSharingPreference: FeedbackDataSharingPreference;
-  feedbackTermsUrl: string | null;
-  agentMap?: Map<string, Agent>;
-  currentUserId?: string | null;
-  userLabelMap?: ReadonlyMap<string, string> | null;
-  userProfileMap?: ReadonlyMap<string, CompanyUserProfile> | null;
-  onVote?: (
-    commentId: string,
-    vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
-  ) => Promise<void>;
-  onStopRun?: (runId: string) => Promise<void>;
-  stopRunLabel?: string;
-  stoppingRunLabel?: string;
-  stopRunVariant?: "stop" | "pause";
-  runFinalizationActions?: readonly IssueChatRunFinalizationAction[];
-  onInterruptQueued?: (runId: string | null) => Promise<void>;
-  onCancelQueued?: (commentId: string) => void;
-  onDeleteComment?: (commentId: string) => Promise<void> | void;
-  onImageClick?: (src: string) => void;
-  onAcceptInteraction?: (
-    interaction:
-      | SuggestTasksInteraction
-      | RequestConfirmationInteraction
-      | RequestCheckboxConfirmationInteraction,
-    selectedClientKeys?: string[],
-    selectedOptionIds?: string[],
-    rememberAction?: boolean,
-  ) => Promise<void> | void;
-  onRejectInteraction?: (
-    interaction:
-      | SuggestTasksInteraction
-      | RequestConfirmationInteraction
-      | RequestCheckboxConfirmationInteraction,
-    reason?: string,
-  ) => Promise<void> | void;
-  onSubmitInteractionAnswers?: (
-    interaction: AskUserQuestionsInteraction,
-    answers: AskUserQuestionsAnswer[],
-  ) => Promise<void> | void;
-  onCancelInteraction?: (
-    interaction: AskUserQuestionsInteraction,
-  ) => Promise<void> | void;
-  /** New task-view composer takeover action. The classic thread does not render it. */
-  onSkipInteraction?: (
-    interaction: IssueThreadInteraction,
-  ) => Promise<void> | void;
-  onSubmitInteractionVerdicts?: (
-    interaction: RequestItemVerdictsInteraction,
-    verdicts: {
-      id: string;
-      verdict: RequestItemVerdictValue;
-      reason?: string;
-    }[],
-  ) => Promise<void> | void;
-  onUploadImage?: (file: File) => Promise<string>;
-  issueStatus?: string;
-  /**
-   * Current assignee. Agent comments from anyone else are cross-issue writes, so
-   * they carry a "for {user}" attribution chip (the open cross-task write design (attribution)).
-   */
-  issueAssigneeAgentId?: string | null;
-  successfulRunHandoff?: SuccessfulRunHandoffState | null;
-  externalReferences?: MarkdownExternalReferenceMap;
-  /** Linkify `PAP-C7` case chips in comment bodies (experimental Cases flag). */
-  linkCaseReferences?: boolean;
-}
-
-const IssueChatCtx = createContext<IssueChatMessageContext>({
-  feedbackDataSharingPreference: "prompt",
-  feedbackTermsUrl: null,
-  issueStatus: undefined,
-  successfulRunHandoff: null,
-});
-
-const AGENT_COMMENT_BUBBLE_WIDTH_CLASS =
-  "max-w-(--sz-calc-7) sm:max-w-(--pct-85)";
-
-export type IssueChatRunFinalizationAction = {
-  id: "cancel" | "done";
-  label: string;
-  pendingLabel: string;
-  onSelect: (runId: string) => Promise<void> | void;
-  isPending?: boolean;
-  disabled?: boolean;
-};
+import {
+  type IssueChatRunFinalizationAction,
+  IssueChatCtx,
+  AGENT_COMMENT_BUBBLE_WIDTH_CLASS,
+  type IssueChatMessageContext,
+} from "./issue-chat/IssueChatContext";
+export type { IssueChatRunFinalizationAction } from "./issue-chat/IssueChatContext";
 
 export function resolveAssistantMessageFoldedState(args: {
   messageId: string;
