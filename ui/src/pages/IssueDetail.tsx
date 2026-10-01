@@ -175,8 +175,7 @@ import { useTaskArtifactArrival } from "../hooks/useTaskArtifactArrival";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { type GalleryMediaItem, ImageGalleryModal } from "../components/ImageGalleryModal";
-import { FileViewerProvider, useRequiredFileViewer } from "../context/FileViewerContext";
-import { FileViewerSheet } from "../components/FileViewerSheet";
+import { FileViewerProvider } from "../context/FileViewerContext";
 import { ArtifactFileChip } from "../components/ArtifactFileChip";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { StatusIcon } from "../components/StatusIcon";
@@ -249,6 +248,7 @@ import { InboxMobileToolbar } from "./issue-detail/InboxMobileToolbar";
 import { IssueAttributionByline } from "./issue-detail/IssueAttribution";
 import { IssueDetailChatTab } from "./issue-detail/IssueDetailChatTab";
 import { IssueDetailActivityTab } from "./issue-detail/IssueDetailActivityTab";
+import { IssueFileViewer } from "./issue-detail/IssueFileViewer";
 export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 export type { AttributionActor } from "./issue-detail/IssueAttribution";
 
@@ -5724,62 +5724,5 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
         </div>
       </IssueGalleryContext.Provider>
     </FileViewerProvider>
-  );
-}
-
-function IssueFileViewer({
-  issueId,
-  companyId,
-  promptOpen,
-  onPromptOpenChange,
-  useSidePanel = false,
-}: {
-  issueId: string;
-  companyId: string;
-  promptOpen: boolean;
-  onPromptOpenChange: (next: boolean) => void;
-  useSidePanel?: boolean;
-}) {
-  const viewer = useRequiredFileViewer();
-
-  useEffect(() => {
-    if (!useSidePanel || !promptOpen) return;
-    viewer.openBrowse();
-    onPromptOpenChange(false);
-  }, [onPromptOpenChange, promptOpen, useSidePanel, viewer]);
-
-  const open = viewer.state !== null || viewer.browse || promptOpen;
-  const showPromptWhenEmpty =
-    (promptOpen || viewer.browse) && viewer.state === null;
-
-  useEffect(() => {
-    if (useSidePanel) return;
-    if (!promptOpen) return;
-    if (viewer.state === null && !viewer.browse) return;
-    onPromptOpenChange(false);
-  }, [
-    onPromptOpenChange,
-    promptOpen,
-    useSidePanel,
-    viewer.browse,
-    viewer.state,
-  ]);
-
-  if (useSidePanel) return null;
-
-  return (
-    <FileViewerSheet
-      issueId={issueId}
-      companyId={companyId}
-      open={open}
-      showPromptWhenEmpty={showPromptWhenEmpty}
-      onOpenChange={(next) => {
-        if (!next) {
-          onPromptOpenChange(false);
-          // Clears any file view and browse state from the URL.
-          viewer.close();
-        }
-      }}
-    />
   );
 }
