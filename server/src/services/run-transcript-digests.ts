@@ -43,6 +43,7 @@ const TERMINAL_STATUSES = new Set(["failed", "timed_out", "cancelled", "interrup
 // ponytail: in-process LRU of finished-run digests; persist at run finish if
 // cold starts ever make the first open slow.
 const CACHE_LIMIT = 500;
+const DIGEST_CONCURRENCY = 8;
 
 type LogHandle = { id: string; companyId: string; logStore: string | null; logRef: string | null };
 
@@ -129,9 +130,13 @@ export function runTranscriptDigestService(db: Db, deps: RunTranscriptDigestDeps
         .innerJoin(agents, and(eq(agents.id, heartbeatRuns.agentId), eq(agents.companyId, heartbeatRuns.companyId)))
         .where(and(eq(heartbeatRuns.companyId, companyId), inArray(heartbeatRuns.id, runIds)));
       const digests: Record<string, TranscriptEntry[] | null> = {};
-      await Promise.all(runs.map(async (run) => {
-        digests[run.id] = await digestRun(run);
-      }));
+      // A cold task with 200 runs would read 200 log tails at once; eight at a
+      // time keeps the burst small on a host that also runs the agents.
+      for (let i = 0; i < runs.length; i += DIGEST_CONCURRENCY) {
+        await Promise.all(runs.slice(i, i + DIGEST_CONCURRENCY).map(async (run) => {
+          digests[run.id] = await digestRun(run);
+        }));
+      }
       return digests;
     },
   };
