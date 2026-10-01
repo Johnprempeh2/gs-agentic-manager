@@ -3284,8 +3284,12 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    software keyboard. The fixed sheet also avoids scale motion during mobile
    viewport resizing. */
 @media (max-width: 40rem) {
+  /* Radix sets an inline will-change: transform on the wrapper. Like a
+     transform, it makes the wrapper the containing block of the fixed sheet,
+     which then collapses to the wrapper's zero size, out of sight. */
   [data-radix-popper-content-wrapper]:has(> [data-mobile-entity-picker]) {
     transform: none !important;
+    will-change: auto !important;
   }
 
   [data-mobile-entity-picker] {
