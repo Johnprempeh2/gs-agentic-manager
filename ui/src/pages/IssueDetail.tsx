@@ -210,7 +210,6 @@ import { IssueWriteDenialNotice } from "../components/IssueWriteDenialNotice";
 import { issueWriteDenialForActivity } from "../lib/issue-write-denial-activity";
 import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import {
-  IssueMonitorBanner,
   IssueMonitorComposerStrip,
   hasVisibleMonitorSurface,
   isWaitingOnMonitor,
@@ -2866,7 +2865,7 @@ function IssueDetailActivityTab({
         issueId={issue.id}
         scheduledRetry={issue.scheduledRetry ?? null}
       />
-      {/* Waiting-monitor state now lives in the pinned top banner (IssueMonitorBanner) — PAP-14557 decision 1. */}
+      {/* Waiting-monitor state lives in the strip above the composer (IssueMonitorComposerStrip); the status icon shows the clock. */}
     </>
   );
 }
@@ -7376,11 +7375,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
 
       <TabledBanner issue={issue} />
 
-      <IssueMonitorBanner
-        issue={issue}
-        onCheckNow={() => checkIssueMonitorNow.mutate()}
-        checkingNow={checkIssueMonitorNow.isPending}
-      />
+      {/* The monitor's state and Check now live in the strip above the
+          composer; a second banner up here only repeated them. */}
 
       {taskChatShellEnabled ? null : (
         <InlineEditor
