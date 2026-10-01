@@ -21023,18 +21023,24 @@ export function heartbeatService(
           claimed = await claimQueuedRun(queuedRun, companyAgents);
           claimFailureCounts.delete(queuedRun.id);
         } catch (err) {
-          const failures = (claimFailureCounts.get(queuedRun.id) ?? 0) + 1;
+          // Only a refusal (HttpError) is the run's own fault. A database or
+          // pool error under load is the server's, so it just retries next pass.
+          const refused = err instanceof HttpError;
+          const failures = refused ? (claimFailureCounts.get(queuedRun.id) ?? 0) + 1 : 0;
           logger.error({ err, runId: queuedRun.id, failures }, "claimQueuedRunsForAgent: claim failed, skipping this run");
+          if (!refused) continue;
           if (failures < CLAIM_FAILURE_LIMIT) {
+            // ponytail: entries for runs that leave the queue another way are
+            // never removed; clearing at 1,000 keeps that bounded.
+            if (claimFailureCounts.size >= 1_000) claimFailureCounts.clear();
             claimFailureCounts.set(queuedRun.id, failures);
             continue;
           }
           // Settle it, so it stops absorbing later wakes for the same task.
           claimFailureCounts.delete(queuedRun.id);
-          const reason = err instanceof Error ? err.message : String(err);
           await cancelRunInternal(
             queuedRun.id,
-            `Cancelled because it could not start after ${CLAIM_FAILURE_LIMIT} tries: ${reason}`,
+            `Cancelled because it could not start after ${CLAIM_FAILURE_LIMIT} tries: ${err.message}`,
             { errorCode: "claim_failed" },
           ).catch((cancelErr) => logger.error({ err: cancelErr, runId: queuedRun.id }, "claimQueuedRunsForAgent: could not cancel a run that keeps failing to claim"));
           continue;
