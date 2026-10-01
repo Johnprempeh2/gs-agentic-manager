@@ -37,11 +37,14 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
     ? (event.details as Record<string, unknown> | null)?.agentId as string | undefined
     : undefined;
 
+  // The company activity list names tasks itself, so a task outside the
+  // loaded maps still reads "on GRE-12 Title" instead of a dangling "on".
   const name = isHeartbeatEvent
     ? (heartbeatAgentId ? entityNameMap.get(`agent:${heartbeatAgentId}`) : null)
-    : entityNameMap.get(`${event.entityType}:${event.entityId}`);
+    : entityNameMap.get(`${event.entityType}:${event.entityId}`) ?? event.issueIdentifier ?? undefined;
 
   const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`)
+    ?? event.issueTitle
     ?? (event.entityType === "issue" && typeof event.details?.issueTitle === "string" ? event.details.issueTitle : undefined);
 
   const link = isHeartbeatEvent && heartbeatAgentId

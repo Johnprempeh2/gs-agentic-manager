@@ -45,6 +45,30 @@ import { DashboardCostCard } from "../components/DashboardCostCard";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
 
+/**
+ * What an owner wants from Recent activity: work started, finished or stuck,
+ * decisions asked and made, releases and hires. Housekeeping (leases, syncs,
+ * gateway discovery) stays on the Audit page.
+ */
+export const OWNER_ACTIVITY_ACTIONS = [
+  "issue.created",
+  "issue.updated",
+  "issue.thread_interaction_created",
+  "issue.thread_interaction_accepted",
+  "issue.thread_interaction_rejected",
+  "issue.thread_interaction_answered",
+  "instance.live_released",
+  "agent.hire_created",
+  "goal.created",
+];
+const OWNER_STATUS_CHANGES = new Set(["done", "blocked", "cancelled"]);
+
+/** A task update counts only when it finished, blocked or cancelled the task. */
+export function isOwnerActivity(event: { action: string; details: Record<string, unknown> | null }) {
+  if (event.action !== "issue.updated") return true;
+  return OWNER_STATUS_CHANGES.has(String(event.details?.status ?? ""));
+}
+
 export type PausedAgentBanner =
   | { kind: "imported"; pausedImportedAgentIds: string[] }
   | { kind: "all-paused" }
@@ -171,16 +195,17 @@ export function Dashboard() {
   });
   usePublishSharedQueryData(sharedDashboard, data, dashboardUpdatedAt);
 
-  const activityQueryKey = [...queryKeys.activity(selectedCompanyId!), { limit: DASHBOARD_ACTIVITY_LIMIT }] as const;
+  const activityQueryKey = [...queryKeys.activity(selectedCompanyId!), { owner: true, limit: DASHBOARD_ACTIVITY_LIMIT }] as const;
   const sharedActivity = useSharedPollingQuery({
     companyId: selectedCompanyId,
-    resourceKey: `activity:limit:${DASHBOARD_ACTIVITY_LIMIT}`,
+    resourceKey: `activity:owner:limit:${DASHBOARD_ACTIVITY_LIMIT}`,
     queryKey: activityQueryKey,
     enabled: !!selectedCompanyId,
   });
   const { data: activity, dataUpdatedAt: activityUpdatedAt } = useQuery({
     queryKey: activityQueryKey,
-    queryFn: () => activityApi.list(selectedCompanyId!, { limit: DASHBOARD_ACTIVITY_LIMIT }),
+    // Task updates are filtered to real status changes below, so fetch a margin.
+    queryFn: () => activityApi.list(selectedCompanyId!, { action: OWNER_ACTIVITY_ACTIONS, limit: 80 }),
     enabled: !!selectedCompanyId,
   });
   usePublishSharedQueryData(sharedActivity, activity, activityUpdatedAt);
@@ -231,7 +256,10 @@ export function Dashboard() {
     [companyMembers?.users],
   );
 
-  const recentActivity = useMemo(() => (activity ?? []).slice(0, 10), [activity]);
+  const recentActivity = useMemo(
+    () => (activity ?? []).filter(isOwnerActivity).slice(0, DASHBOARD_ACTIVITY_LIMIT),
+    [activity],
+  );
 
   useEffect(() => {
     for (const timer of activityAnimationTimersRef.current) {
