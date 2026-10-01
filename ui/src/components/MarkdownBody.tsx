@@ -824,11 +824,11 @@ function MarkdownBodyImpl({
       </blockquote>
     ),
     table: ({ node: _node, style: tableStyle, children: tableChildren, ...tableProps }) => (
-      <div className="paperclip-markdown-table-scroll" role="region" aria-label="Scrollable table" tabIndex={0}>
+      <ScrollableTable>
         <table {...tableProps} style={tableStyle as React.CSSProperties | undefined}>
           {tableChildren}
         </table>
-      </div>
+      </ScrollableTable>
     ),
     td: ({ node: _node, style: tableCellStyle, children: tableCellChildren, ...tableCellProps }) => (
       <td {...tableCellProps} style={mergeTableCellStyle(tableCellStyle as React.CSSProperties | undefined)}>
@@ -992,3 +992,42 @@ function MarkdownBodyImpl({
 }
 
 export const MarkdownBody = memo(MarkdownBodyImpl);
+
+/**
+ * A wide table scrolls sideways inside its own box. On a phone the cut-off
+ * column gave no hint there was more, so the edge with more content fades.
+ */
+function ScrollableTable({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const left = el.scrollLeft > 1;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      observer?.disconnect();
+    };
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className="paperclip-markdown-table-scroll"
+      data-more-left={edges.left || undefined}
+      data-more-right={edges.right || undefined}
+      role="region"
+      aria-label="Scrollable table"
+      tabIndex={0}
+    >
+      {children}
+    </div>
+  );
+}

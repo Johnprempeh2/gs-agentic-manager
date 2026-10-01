@@ -2334,6 +2334,17 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   -webkit-overflow-scrolling: touch;
 }
 
+/* The edge with more table beyond it fades, so a cut-off column reads as "scroll". */
+.paperclip-markdown-table-scroll[data-more-right] {
+  mask-image: linear-gradient(to right, black calc(100% - 2.5rem), transparent);
+}
+.paperclip-markdown-table-scroll[data-more-left] {
+  mask-image: linear-gradient(to left, black calc(100% - 2.5rem), transparent);
+}
+.paperclip-markdown-table-scroll[data-more-left][data-more-right] {
+  mask-image: linear-gradient(to right, transparent, black 2.5rem, black calc(100% - 2.5rem), transparent);
+}
+
 .paperclip-markdown-table-scroll:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
