@@ -32,6 +32,7 @@ import {
   type FocusPrefs,
 } from "../lib/focus-prefs";
 import { cn } from "../lib/utils";
+import { ErrorState } from "../components/ErrorState";
 
 /** Curtain rows never expand; module-level so memoized rows see one identity. */
 const noopToggleExpand = () => {};
@@ -69,7 +70,7 @@ export function WhatNeedsMe() {
 
   // One feed (GRE-263): one card per task, every kind, one count. List, Focus
   // and the sidebar badge all read the same build.
-  const { data: feed, isLoading, error } = useDecisionsFeed(selectedCompanyId);
+  const { data: feed, isLoading, error, refetch } = useDecisionsFeed(selectedCompanyId);
 
   // Dismissed rows are not in the feed; the curtain still lets John restore them.
   const { data: attentionFeed } = useQuery({
@@ -192,11 +193,20 @@ export function WhatNeedsMe() {
     </div>
   );
 
+  if (error && !feed) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        {header}
+        <ErrorState error={error} onRetry={() => void refetch()} />
+      </div>
+    );
+  }
+
   if (view === "focus") {
     return (
       <div className="mx-auto max-w-5xl space-y-4">
         {header}
-        {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
+        {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
         <DecisionsFocusView
           cards={cards}
           assignableAgents={assignableAgents}
@@ -222,7 +232,7 @@ export function WhatNeedsMe() {
 
       <DecisionNotificationsCard companyId={selectedCompanyId} />
 
-      {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {cards.length === 0 ? (
         <ZeroState />

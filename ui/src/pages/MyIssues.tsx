@@ -12,8 +12,11 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { formatDate } from "../lib/utils";
 import { ListTodo } from "lucide-react";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
+import { ErrorState } from "../components/ErrorState";
+import { useDialogActions } from "../context/DialogContext";
 
 export function MyIssues() {
+  const { openNewIssue } = useDialogActions();
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -22,7 +25,7 @@ export function MyIssues() {
     setBreadcrumbs([{ label: "My Tasks" }]);
   }, [setBreadcrumbs]);
 
-  const { data: issues, isLoading, error } = useQuery({
+  const { data: issues, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
     queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -43,6 +46,10 @@ export function MyIssues() {
     return <PageSkeleton variant="list" />;
   }
 
+  if (error && !issues) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
+  }
+
   // Show issues that are not assigned (user-created or unassigned)
   const myIssues = (issues ?? []).filter(
     (i) => !i.assigneeAgentId && !["done", "cancelled"].includes(i.status)
@@ -50,10 +57,10 @@ export function MyIssues() {
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {myIssues.length === 0 && (
-        <EmptyState icon={ListTodo} message="No tasks assigned to you." />
+        <EmptyState icon={ListTodo} message="No tasks assigned to you." action="Create task" onAction={() => openNewIssue()} />
       )}
 
       {myIssues.length > 0 && (

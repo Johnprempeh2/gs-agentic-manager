@@ -13,6 +13,7 @@ import { useCompany } from "../context/CompanyContext";
 import type { ProjectWorkspaceSummary } from "../lib/project-workspaces-tab";
 import { queryKeys } from "../lib/queryKeys";
 import { projectRouteRef } from "../lib/utils";
+import { ErrorState } from "../components/ErrorState";
 
 type ProjectWorkspaceGroup = {
   projectId: string;
@@ -113,7 +114,7 @@ export function Workspaces() {
   if (experimentalSettingsQuery.isLoading) return <PageSkeleton variant="detail" />;
   if (!isolatedWorkspacesEnabled) return <Navigate to="/issues" replace />;
   if (dataLoading) return <PageSkeleton variant="list" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void overviewQuery.refetch()} />;
 
   return (
     <div className="space-y-6">

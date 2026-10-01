@@ -35,6 +35,7 @@ import {
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
+import { ErrorState } from "../components/ErrorState";
 
 const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
 
@@ -229,7 +230,7 @@ export function Agents() {
   const builtInAgentIds = useMemo(() => new Set(builtInByAgentId.keys()), [builtInByAgentId]);
   const [configureState, setConfigureState] = useState<BuiltInAgentState | null>(null);
 
-  const { data: agents, isLoading, error } = useQuery({
+  const { data: agents, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -333,6 +334,10 @@ export function Agents() {
 
   if (isLoading) {
     return <PageSkeleton variant="list" />;
+  }
+
+  if (error && !agents) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
   }
 
   const filtered = filterAgents(agents ?? [], tab, builtInAgentIds);
@@ -530,7 +535,7 @@ export function Agents() {
         <p className="text-xs text-muted-foreground">{filtered.length} agent{filtered.length !== 1 ? "s" : ""}</p>
       )}
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {agents && agents.length === 0 && (
         <EmptyState

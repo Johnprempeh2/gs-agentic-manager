@@ -45,6 +45,7 @@ import {
   useResourceMembershipMutation,
   useResourceMemberships,
 } from "../hooks/useResourceMemberships";
+import { ErrorState } from "../components/ErrorState";
 
 /* ── Top-level tab types ── */
 
@@ -353,7 +354,7 @@ export function ProjectDetail() {
   }, [location.search]);
   const activeTab = activeRouteTab ?? pluginTabFromSearch;
 
-  const { data: project, isLoading, error } = useQuery({
+  const { data: project, isLoading, error, refetch } = useQuery({
     queryKey: [...queryKeys.projects.detail(routeProjectRef), lookupCompanyId ?? null],
     queryFn: () => projectsApi.get(routeProjectRef, lookupCompanyId),
     enabled: canFetchProject,
@@ -680,7 +681,7 @@ export function ProjectDetail() {
   }
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!project) return null;
   const showLeftProjectNotice =
     projectMembershipState === "left" && !dismissedLeftProjectIds.has(project.id);

@@ -140,6 +140,7 @@ import {
   parseAgentDetailView,
   type AgentDetailView,
 } from "./agent-detail-navigation";
+import { ErrorState } from "../components/ErrorState";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -818,7 +819,7 @@ export function AgentDetail() {
     if (!configDirty) return true;
     return confirmAction(DISCARD_AGENT_CONFIG_CHANGES_OPTIONS);
   }, [configDirty, confirmAction]);
-  const { data: agent, isLoading, error } = useQuery<AgentDetailRecord>({
+  const { data: agent, isLoading, error, refetch } = useQuery<AgentDetailRecord>({
     queryKey: [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null],
     queryFn: () => agentsApi.get(routeAgentRef, lookupCompanyId),
     enabled: canFetchAgent,
@@ -1188,7 +1189,7 @@ export function AgentDetail() {
   }, [configDirty, prepareAgentNavigation]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!agent) return null;
   if (!urlRunId && legacyAuditSection) {
     return <Navigate to={agentScopedAuditHref(agent.id, legacyAuditSection)} replace />;

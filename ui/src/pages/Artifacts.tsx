@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "../components/ErrorState";
 
 const ARTIFACTS_PAGE_SIZE = 30;
 const SEARCH_DEBOUNCE_MS = 250;
@@ -176,6 +177,7 @@ export function Artifacts() {
     hasNextPage,
     fetchNextPage,
     error,
+    refetch,
   } = useInfiniteQuery({
     queryKey: queryKeys.artifacts.list(selectedCompanyId!, kind, query, groupBy, groupIssueId),
     queryFn: ({ pageParam }) =>
@@ -343,7 +345,7 @@ export function Artifacts() {
         </div>
       ) : null}
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && !isLoading ? <ErrorState error={error} onRetry={() => void refetch()} compact={!!data} /> : null}
 
       {isLoading ? (
         <PageSkeleton variant="list" />
