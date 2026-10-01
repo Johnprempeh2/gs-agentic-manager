@@ -9,9 +9,8 @@ import {
   formatDayLabel,
   IssueStatusChart,
   RunActivityChart,
-  runChartSubtitle,
   SuccessRateChart,
-  taskChartSubtitle,
+  chartWindowLabel,
 } from "./ActivityCharts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -115,34 +114,39 @@ describe("ActivityCharts", () => {
     });
   }
 
-  it("starts at the first run when history is shorter than the window, and says so", () => {
+  it("starts at the company's first day when it is younger than the window, and says so", () => {
     const activity = youngActivity();
-    expect(runChartSubtitle({ activity })).toBe("Since first run");
-    expect(runChartSubtitle({ activity: activity.map((day) => ({ ...day, total: day.total || 1 })) })).toBe("Last 14 days");
-    expect(runChartSubtitle({ activity: undefined })).toBe("Last 14 days");
+    const start = new Date("2026-04-17T08:00:00.000Z");
+    expect(chartWindowLabel(start)).toBe("Since 17 Apr");
+    expect(chartWindowLabel(null)).toBe("Last 14 days");
 
-    render(<RunActivityChart activity={activity} />);
+    render(<RunActivityChart activity={activity} start={start} />);
     expect(container.querySelectorAll(".gs-bars > div")).toHaveLength(4);
     expect(container.textContent).toContain("17 Apr");
     expect(container.textContent).toContain("Today");
     expect(container.textContent).not.toContain("13 Apr");
   });
 
+  // Review 2: an older company after a quiet week keeps its empty days.
+  it("keeps quiet days for a company older than the window", () => {
+    const start = new Date("2026-03-01T08:00:00.000Z");
+    expect(chartWindowLabel(start)).toBe("Last 14 days");
+    render(<RunActivityChart activity={youngActivity()} start={start} />);
+    expect(container.querySelectorAll(".gs-bars > div")).toHaveLength(14);
+  });
+
   it("draws success in brand emerald and failure-led days in the destructive red", () => {
-    render(<SuccessRateChart activity={youngActivity()} />);
+    render(<SuccessRateChart activity={youngActivity()} start={new Date("2026-04-17T08:00:00.000Z")} />);
     const bars = Array.from(container.querySelectorAll<HTMLElement>(".gs-bar")).map((bar) => bar.style.backgroundColor);
     expect(bars).toEqual(["var(--brand-emerald)", "var(--destructive)", "var(--brand-emerald)", "var(--brand-emerald)"]);
   });
 
-  it("trims task charts to the first task too", () => {
+  it("trims task charts to the company's first day too", () => {
     const issues = [
       { status: "todo", createdAt: new Date("2026-04-18T09:00:00.000Z") },
       { status: "done", createdAt: new Date("2026-04-20T09:00:00.000Z") },
     ];
-    expect(taskChartSubtitle(issues)).toBe("Since first task");
-    expect(taskChartSubtitle([...issues, { status: "done", createdAt: new Date("2026-04-07T09:00:00.000Z") }])).toBe("Last 14 days");
-
-    render(<IssueStatusChart issues={issues} />);
+    render(<IssueStatusChart issues={issues} start={new Date("2026-04-18T08:00:00.000Z")} />);
     expect(container.querySelectorAll(".gs-bars > div")).toHaveLength(3);
   });
 

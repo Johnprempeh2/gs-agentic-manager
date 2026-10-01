@@ -296,15 +296,35 @@ function isMediaTileItem(item: TaskChatItem): boolean {
 }
 
 /** Consecutive image and video deliverables share one two-column grid. */
-/** "Today", "Yesterday" or "29 Sep": the day a message was sent, in the reader's calendar. */
+/** "Today", "Yesterday", "29 Sept" or, in another year, "2 Oct 2025": the reader's calendar. */
 export function chatDayLabel(iso: string, now: Date = new Date()): string {
   const group = taskDateGroup(iso, now);
-  return group === "earlier" ? formatShortDate(iso) : taskDateGroupLabels[group];
+  if (group !== "earlier") return taskDateGroupLabels[group];
+  const date = new Date(iso);
+  return date.getFullYear() === now.getFullYear()
+    ? formatShortDate(date)
+    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** When an item happened, if it knows: a run row borrows its reply's or live status's time. */
+function itemTimeIso(item: TaskChatItem): string | undefined {
+  switch (item.kind) {
+    case "message":
+    case "marker":
+      return item.createdAtIso;
+    case "interaction":
+      return item.interaction.createdAt ? new Date(item.interaction.createdAt).toISOString() : undefined;
+    case "turn":
+      return item.finalResponse?.createdAtIso
+        ?? (item.liveStatus?.startedAtMs ? new Date(item.liveStatus.startedAtMs).toISOString() : undefined);
+    default:
+      return undefined;
+  }
 }
 
 /**
  * The day label to draw before each group, keyed by the group's first item.
- * Messages carry the time; a thread that is all today gets no label at all.
+ * Groups with no known time are skipped; a thread that is all today gets no label.
  */
 export function chatDaySeparators<T extends { item: TaskChatItem }>(
   groups: Array<{ entries: T[] }>,
@@ -313,8 +333,7 @@ export function chatDaySeparators<T extends { item: TaskChatItem }>(
   const labels = new Map<T, string>();
   let previousDay: string | null = null;
   for (const group of groups) {
-    const message = group.entries.find((entry) => entry.item.kind === "message" && entry.item.createdAtIso);
-    const iso = message?.item.kind === "message" ? message.item.createdAtIso : undefined;
+    const iso = group.entries.map((entry) => itemTimeIso(entry.item)).find(Boolean);
     if (!iso || Number.isNaN(new Date(iso).getTime())) continue;
     const day = new Date(iso).toDateString();
     if (day === previousDay) continue;

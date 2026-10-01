@@ -71,8 +71,7 @@ vi.mock("../components/ActivityCharts", () => ({
   PriorityChart: () => null,
   IssueStatusChart: () => null,
   SuccessRateChart: () => null,
-  runChartSubtitle: () => "Last 14 days",
-  taskChartSubtitle: () => "Last 14 days",
+  chartWindowLabel: () => "Last 14 days",
 }));
 vi.mock("../components/ActivityRow", () => ({
   ActivityRow: ({ event }: { event: ActivityEvent }) => <div data-testid="activity-row">{event.id}</div>,
