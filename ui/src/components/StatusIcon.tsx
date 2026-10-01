@@ -24,7 +24,7 @@ interface StatusIconProps {
   waiting?: boolean;
 }
 
-function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | undefined) {
+export function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | undefined) {
   if (!blockerAttention || blockerAttention.state === "none") return "Blocked";
 
   if (blockerAttention.reason === "active_child") {
