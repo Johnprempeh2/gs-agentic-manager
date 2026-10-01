@@ -793,7 +793,7 @@ export function IssueAssigneePausedNotice({
     agent.pauseReason === "budget"
       ? "It was paused by a budget hard stop."
       : agent.pauseReason === "import"
-        ? "It arrived paused from an organization import — imported agents stay parked until you resume them."
+        ? "It arrived paused from an organisation import. Imported agents stay parked until you resume them."
         : agent.pauseReason === "system"
           ? "It was paused by the system."
           : "It was paused manually.";
@@ -1831,7 +1831,7 @@ function IssueChatProviderActivity({
                     {String(child.role ?? "Child agent")}
                   </span>{" "}
                   · {String(child.status ?? "unknown")}
-                  {child.summary ? ` — ${String(child.summary)}` : ""}
+                  {child.summary ? `: ${String(child.summary)}` : ""}
                 </div>
               );
             })}
@@ -6653,7 +6653,7 @@ export function IssueChatThread({
                             the source task
                             {legacyRecoverySourceIssue.identifier ? (
                               <>
-                                {" — "}
+                                {": "}
                                 <Link
                                   to={legacyRecoverySourceIssue.href}
                                   className="underline-offset-2 hover:underline"
@@ -6662,7 +6662,7 @@ export function IssueChatThread({
                                   {legacyRecoverySourceIssue.title ? (
                                     <span className="text-muted-foreground">
                                       {" "}
-                                      — {legacyRecoverySourceIssue.title}
+                                      ({legacyRecoverySourceIssue.title})
                                     </span>
                                   ) : null}
                                 </Link>

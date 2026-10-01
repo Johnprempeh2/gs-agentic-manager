@@ -10,7 +10,7 @@ export function AiConnectionLegacyNotice({
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
       <h3 className="text-sm font-semibold">
-        Existing authentication — not managed by Connections
+        Existing authentication (not managed by Connections)
       </h3>
       <p className="text-sm text-muted-foreground">
         This agent keeps its current authentication until you choose and test a

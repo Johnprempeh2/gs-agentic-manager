@@ -121,7 +121,7 @@ export function GatewayDetail() {
         body:
           updated.status === "active"
             ? `${updated.name} is exposing its tools again.`
-            : `${updated.name} is off — every client goes silent.`,
+            : `${updated.name} is off. Every client goes silent.`,
         tone: "success",
       });
       await queryClient.invalidateQueries({ queryKey: gatewaysQueryKey(selectedCompanyId!) });

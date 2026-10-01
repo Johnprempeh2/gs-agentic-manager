@@ -691,7 +691,7 @@ describe("Inbox toolbar", () => {
     });
 
     expect(container.querySelector('[data-testid="inbox-filter-scope-feedback"]')?.textContent)
-      .toBe("Live runs only — tasks currently connected to an agent run.");
+      .toBe("Live runs only: tasks currently connected to an agent run.");
     const migrated = JSON.parse(
       localStorage.getItem("paperclip:task-collection:v1:company-1:inbox") ?? "null",
     ) as { companyId?: string; collectionKey?: string } | null;

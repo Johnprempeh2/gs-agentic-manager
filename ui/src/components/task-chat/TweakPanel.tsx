@@ -231,7 +231,7 @@ export function TweakPanel() {
                 {exportCopy.copied
                   ? "Copied to clipboard"
                   : exportCopy.failed
-                    ? "Copy failed — select the text and copy it manually"
+                    ? "Copy failed. Select the text and copy it manually"
                     : "Click the box to copy"}
               </p>
             </>

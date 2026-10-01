@@ -186,7 +186,7 @@ function AwaitingJoinApprovalPanel({
             Ask them to visit <span className="text-zinc-200">Settings → Members</span> to approve your request.
           </p>
           <p className="text-xs text-zinc-500">
-            Refresh this page after you've been approved — you'll be redirected automatically.
+            Refresh this page after you've been approved. You'll be redirected automatically.
           </p>
         </div>
         {claimSecret && claimApiKeyPath ? (

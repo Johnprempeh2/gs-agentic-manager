@@ -207,7 +207,7 @@ export function ForkSkillDialog({
                   <span className="mt-0.5 block text-xs text-muted-foreground">
                     {reassign
                       ? "These agents will run your copy instead of the original."
-                      : "These agents keep running the original — your copy won't change what they do."}
+                      : "These agents keep running the original. Your copy won't change what they do."}
                   </span>
                 </span>
                 <ToggleSwitch

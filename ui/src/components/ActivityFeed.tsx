@@ -569,7 +569,7 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
       const issueTitle = entityTitleMap.get(`issue:${groupKey}`);
       const label = isOther
         ? "Other activity"
-        : `${issueName ?? groupKey}${issueTitle ? ` — ${issueTitle}` : ""}`;
+        : `${issueName ?? groupKey}${issueTitle ? `: ${issueTitle}` : ""}`;
 
       return (
         <div key={groupKey} className="mb-2">
@@ -602,7 +602,7 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
       };
     }
     return {
-      text: "Your agents are running — activity will appear here shortly.",
+      text: "Your agents are running. Activity will appear here shortly.",
       showPulse: true,
     };
   }, [agents]);

@@ -908,7 +908,7 @@ describe("AttentionQueueRow", () => {
     expect(audience?.textContent).toContain("Only CodexCoder or the board can respond");
     // A collapsed row spends its line on the responder, not on a badge that
     // repeats the clause beside it.
-    expect(audience?.textContent).not.toContain("Addressed —");
+    expect(audience?.textContent).not.toContain("Addressed:");
   });
 
   // PAP-17289: the row's shell is `overflow-hidden`, so a clause that cannot

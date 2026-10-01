@@ -398,7 +398,7 @@ export function Dashboard() {
         <InlineBanner
           tone="warning"
           icon={PauseCircle}
-          title="All agents in this organization are paused — nothing will run."
+          title="All agents in this organisation are paused. Nothing will run."
           actions={
             <Button variant="ghost" size="sm" asChild>
               <Link to="/agents">Review agents</Link>

@@ -207,7 +207,7 @@ function collectValidation(form: FormModel, isSkillFile: boolean): ValidationIss
     issues.push({ field: "description", message: "SKILL.md needs a description." });
   }
   if (form.allowedToolsPresent && form.allowedTools === null) {
-    issues.push({ field: "allowed-tools", message: "Expected a list — edit in YAML." });
+    issues.push({ field: "allowed-tools", message: "Expected a list. Edit in YAML." });
   }
   return issues;
 }
@@ -511,7 +511,7 @@ function FieldsForm({
           <Label className="text-xs text-muted-foreground">allowed-tools</Label>
           {form.allowedTools === null ? (
             <p className="mt-1 text-xs text-amber-500">
-              {toolsWarning ?? "Expected a list — edit in YAML."}
+              {toolsWarning ?? "Expected a list. Edit in YAML."}
             </p>
           ) : (
             <ChipInput
@@ -528,7 +528,7 @@ function FieldsForm({
         <div>
           <Label className="text-xs text-muted-foreground">metadata</Label>
           {form.metadataComplex !== null ? (
-            <p className="mt-1 text-xs text-muted-foreground">Complex value — edit in YAML.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Complex value. Edit in YAML.</p>
           ) : (
             <MetadataRows
               rows={form.metaRows}
@@ -560,7 +560,7 @@ function FieldsForm({
         ) : (
           <div key={row.id}>
             <Label className="text-xs text-muted-foreground">{row.key}</Label>
-            <p className="mt-1 text-xs text-muted-foreground">Complex value — edit in YAML.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Complex value. Edit in YAML.</p>
           </div>
         ),
       )}

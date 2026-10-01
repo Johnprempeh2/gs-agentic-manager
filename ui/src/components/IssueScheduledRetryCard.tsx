@@ -160,8 +160,8 @@ export function IssueScheduledRetryCard({
               ? "Promoting scheduled retry"
               : isSuccessTransient
                 ? retryNow.data?.outcome === "already_promoted"
-                  ? "Already promoted — run starting"
-                  : "Promoted — run starting"
+                  ? "Already promoted: run starting"
+                  : "Promoted: run starting"
                 : helperIdle}
           </span>
         </div>

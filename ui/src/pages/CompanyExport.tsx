@@ -468,7 +468,7 @@ function generateReadmeFromSelection(
     lines.push("|-------|------|------------|");
     for (const agent of agents) {
       const roleLabel = ROLE_LABELS[agent.role] ?? agent.role;
-      const reportsTo = agent.reportsToSlug ?? "\u2014";
+      const reportsTo = agent.reportsToSlug ?? "None";
       lines.push(`| ${agent.name} | ${roleLabel} | ${reportsTo} |`);
     }
     lines.push("");
@@ -478,7 +478,7 @@ function generateReadmeFromSelection(
     lines.push("### Projects");
     lines.push("");
     for (const project of projects) {
-      const desc = project.description ? ` \u2014 ${project.description}` : "";
+      const desc = project.description ? `: ${project.description}` : "";
       lines.push(`- **${project.name}**${desc}`);
     }
     lines.push("");
@@ -1179,7 +1179,7 @@ export function CompanyExport() {
                     />
                     <span className="min-w-0 truncate">{EXPORT_CATEGORY_LABELS[key]}</span>
                     <span className="text-xs text-muted-foreground">
-                      {countLoaded ? count.toLocaleString() : "—"}
+                      {countLoaded ? count.toLocaleString() : "Not counted"}
                     </span>
                   </label>
                 );

@@ -302,7 +302,7 @@ describe("Connections table (M1b / PAP-13254 door 2)", () => {
     expect(text).not.toContain("Connected and ready");
     // 2. Attention + Paused rows keep their explanatory hint.
     expect(text).toContain("The key stopped working");
-    expect(text).toContain("Paused — agents can");
+    expect(text).toContain("Paused: agents can");
     // 3. Every account has its own filterable row and health signal.
     expect(text).toContain("All (4)");
     expect(text).toContain("Needs attention (1)");
@@ -315,8 +315,8 @@ describe("Connections table (M1b / PAP-13254 door 2)", () => {
     // 4. Actions column reflects enabled catalog entries per account; missing profile => 0 on.
     expect(text).toContain("3 on");
     expect(text).toContain("0 on");
-    // 5. Last used renders a relative timestamp when present, dash when absent.
-    expect(text).toContain("—");
+    // 5. Last used renders a relative timestamp when present, "Never" when absent.
+    expect(text).toContain("Never");
     // 6. Multi-account apps appear once per connection and edit the selected account directly.
     expect(Array.from(container.querySelectorAll("tbody tr")).filter((tr) => tr.textContent?.includes("Slack"))).toHaveLength(2);
     const slackRow = Array.from(container.querySelectorAll("tbody tr")).find((tr) =>

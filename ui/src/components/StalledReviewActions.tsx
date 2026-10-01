@@ -28,9 +28,9 @@ interface StalledReviewActionsProps {
 }
 
 const ACTION_PAST_TENSE: Record<StalledReviewDecisionAction, string> = {
-  approve: "Review approved — issue marked done.",
-  request_changes: "Changes requested — issue returned to the assignee.",
-  send_back: "Sent back to work — issue returned to the assignee.",
+  approve: "Review approved. Issue marked done.",
+  request_changes: "Changes requested. Issue returned to the assignee.",
+  send_back: "Sent back to work. Issue returned to the assignee.",
 };
 
 /**
@@ -104,7 +104,7 @@ export function StalledReviewActions({
       <Textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
-        placeholder="Add a note — required to request changes, optional otherwise…"
+        placeholder="Add a note (required to request changes, optional otherwise)…"
         className="min-h-16 text-sm"
         data-testid="stalled-review-note"
         disabled={pending}

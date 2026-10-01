@@ -297,7 +297,7 @@ export function ActionsSection({
           <FilterChip label={`Read ${readOnly.length}`} active={kindFilter === "read"} onClick={() => setKindFilter("read")} />
           <FilterChip label={`Write ${canChange.length}`} active={kindFilter === "write"} onClick={() => setKindFilter("write")} />
         </div>
-        <p className="text-xs text-muted-foreground">{visibleCount} matches · sorted A–Z</p>
+        <p className="text-xs text-muted-foreground">{visibleCount} matches · sorted A to Z</p>
       </div>
 
       {visibleCount === 0 ? (
@@ -492,7 +492,7 @@ function ActionRow({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="top">
-                      <span className="font-medium">{option.label}</span> — {option.description}
+                      <span className="font-medium">{option.label}</span>: {option.description}
                     </TooltipContent>
                   </Tooltip>
                 );

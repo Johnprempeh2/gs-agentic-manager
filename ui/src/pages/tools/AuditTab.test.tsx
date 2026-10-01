@@ -132,7 +132,7 @@ describe("AuditTab", () => {
     expect(container.textContent).toContain("Send Email");
     expect(container.textContent).toContain("Gmail");
     expect(container.textContent).toContain("Blocked");
-    expect(container.textContent).not.toContain("Recorded by GS Agentic Manager — entries can't be edited.");
+    expect(container.textContent).not.toContain("Recorded by GS Agentic Manager. Entries can't be edited.");
     expect(listActivityMock).toHaveBeenCalledWith("company-1", expect.objectContaining({ window: "all" }));
     // Vocabulary gate: no raw tool ID or ops terms in the sentence list.
     expect(container.textContent).not.toContain("mail:send_email");
@@ -253,7 +253,7 @@ describe("AuditTab", () => {
     });
     await render();
 
-    expect(container.textContent).toContain("Fable's run received 0 MCP servers — 1 permitted connection not installed");
+    expect(container.textContent).toContain("Fable's run received 0 MCP servers: 1 permitted connection not installed");
     await clickButton("received 0 MCP servers");
     expect(container.textContent).toContain("Permitted connections were not installed");
     await clickButton("Details");

@@ -87,7 +87,7 @@ describe("SecretBindingPicker", () => {
   it("names an active cross-company secret and its owner instead of calling it missing", async () => {
     await render(readyContext("active"));
 
-    expect(container.textContent).toContain("DAYTONA_API_KEY — Other Team");
+    expect(container.textContent).toContain("DAYTONA_API_KEY (Other Team)");
     expect(container.textContent).toContain("Owned by the Other Team organization");
     expect(container.textContent).not.toContain("Missing secret");
     expect(container.querySelector("select")?.className).not.toContain("border-destructive");
@@ -96,7 +96,7 @@ describe("SecretBindingPicker", () => {
   it("reports a deleted hinted secret as deleted", async () => {
     await render(readyContext("deleted"));
 
-    expect(container.textContent).toContain("DAYTONA_API_KEY — Other Team");
+    expect(container.textContent).toContain("DAYTONA_API_KEY (Other Team)");
     expect(container.textContent).toContain("was deleted");
     expect(container.querySelector("select")?.className).toContain("border-destructive");
   });
@@ -104,7 +104,7 @@ describe("SecretBindingPicker", () => {
   it("does not present a disabled cross-company secret as working", async () => {
     await render(readyContext("disabled"));
 
-    expect(container.textContent).toContain("DAYTONA_API_KEY — Other Team");
+    expect(container.textContent).toContain("DAYTONA_API_KEY (Other Team)");
     expect(container.textContent).toContain("This secret is disabled");
     expect(container.textContent).not.toContain("keeps working");
     expect(container.querySelector("select")?.className).toContain("border-destructive");

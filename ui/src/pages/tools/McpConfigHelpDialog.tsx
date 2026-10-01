@@ -103,7 +103,7 @@ export function McpConfigHelpDialog() {
             {copyState === "copied"
               ? "Copied to clipboard."
               : copyState === "failed"
-                ? "Couldn't copy automatically — select the text above and copy it."
+                ? "Couldn't copy automatically. Select the text above and copy it."
                 : null}
           </span>
         </div>

@@ -768,7 +768,7 @@ function ConnectedTaskComposer({
                     .filter((part) => part.fileTransfer)
                     .map((part) => (
                       <li key={part.id}>
-                        {part.fileTransfer!.filename} —{" "}
+                        {part.fileTransfer!.filename}:{" "}
                         {filePhaseLabels[part.fileTransfer!.phase]}
                       </li>
                     ))}

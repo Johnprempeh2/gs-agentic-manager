@@ -765,7 +765,7 @@ function SearchTabContent({
         <div>
           <h2 className="text-lg font-semibold">Type to search organization memory.</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Tasks, comments, plan documents, artifacts, agents, projects — same surface, ranked by relevance.
+            Tasks, comments, plan documents, artifacts, agents, projects: same surface, ranked by relevance.
           </p>
         </div>
         {recentSearches.length > 0 ? (

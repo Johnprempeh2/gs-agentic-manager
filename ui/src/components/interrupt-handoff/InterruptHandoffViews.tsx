@@ -80,7 +80,7 @@ export function AssigneeChip({
       data-testid="handoff-assignee-chip"
       data-kind="unassigned"
     >
-      <span className="sr-only">No responsible — </span>
+      <span className="sr-only">No responsible: </span>
       Unassigned
     </span>
   );
@@ -134,7 +134,7 @@ export function RunStatusBadge({
       data-interrupted={operatorInterrupted ? "true" : "false"}
     >
       {p.label}
-      {p.srHint ? <span className="sr-only"> — {p.srHint}</span> : null}
+      {p.srHint ? <span className="sr-only"> ({p.srHint})</span> : null}
     </span>
   );
 }
@@ -323,7 +323,7 @@ export function PauseAffectsSummaryView({
       </div>
       {summary.nothingLive ? (
         <p role="status" className="text-xs text-muted-foreground" data-testid="pause-nothing-live">
-          Nothing live to pause — no agent run is in flight or queued. This records a hold so new work
+          Nothing live to pause. No agent run is in flight or queued. This records a hold so new work
           won't start until you resume.
         </p>
       ) : null}
@@ -337,7 +337,7 @@ export function PauseAffectsSummaryView({
             >
               <span className="font-medium text-foreground">{bucket.label}:</span>
               <span className="tabular-nums text-foreground">{bucket.count}</span>
-              <span className="text-muted-foreground">— {bucket.detail}</span>
+              <span className="text-muted-foreground">({bucket.detail})</span>
             </li>
           ))}
         </ul>

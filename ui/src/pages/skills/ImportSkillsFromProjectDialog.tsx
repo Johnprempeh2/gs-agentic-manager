@@ -570,7 +570,7 @@ export function ImportSkillsFromProjectDialog({
             <div className="min-w-0 flex-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <Link2 className="h-3.5 w-3.5 shrink-0" />
-                Files stay in the project — Studio edits save directly to them.
+                Files stay in the project. Studio edits save directly to them.
               </span>
             </div>
           ) : (
@@ -719,7 +719,7 @@ function PickProjectStep({
                       </div>
                       {disabled && (
                         <div className="mt-1 text-(length:--text-micro) text-muted-foreground">
-                          Remote-only project — no locally scannable workspaces to import from.
+                          Remote-only project: no locally scannable workspaces to import from.
                         </div>
                       )}
                     </div>
@@ -1184,7 +1184,7 @@ function ResultStep({ result }: ResultStepProps) {
           <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <div className="text-xs leading-relaxed text-muted-foreground">
             <span className="font-medium text-foreground">No files were copied.</span> These skills
-            reference the files in the project workspace — editing them in Skill Studio saves
+            reference the files in the project workspace. Editing them in Skill Studio saves
             directly back to those files.
           </div>
         </div>
@@ -1240,7 +1240,7 @@ function ResultStep({ result }: ResultStepProps) {
                 >
                   <FileWarning className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <div className="min-w-0">
-                    <span className="font-mono text-muted-foreground">{row.path ?? "—"}</span>
+                    <span className="font-mono text-muted-foreground">{row.path ?? "Unknown"}</span>
                     {row.reason && (
                       <span className="ml-2 text-muted-foreground">{row.reason}</span>
                     )}

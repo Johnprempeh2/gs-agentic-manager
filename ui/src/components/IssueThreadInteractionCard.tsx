@@ -286,7 +286,7 @@ function planStatusClasses(
         return {
           shell: "border-2 border-amber-500/70 bg-transparent",
           badge: "border-amber-500/60 bg-amber-500/10 text-amber-900 dark:bg-amber-500/15 dark:text-amber-100",
-          label: "Approved — agent resume failed",
+          label: "Approved: agent resume failed",
           Icon: AlertTriangle,
         };
       }
@@ -1874,7 +1874,7 @@ function SecretProposalResolution({
       <div aria-live="polite" className="flex items-start gap-2 rounded-sm border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
         <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
         <div>
-          <div className="font-medium">Approved by {who} — creating the binding</div>
+          <div className="font-medium">Approved by {who}: creating the binding</div>
           <p className="mt-1 text-amber-900/80 dark:text-amber-100/80">
             GS Agentic Manager is re-checking authority and the proposal snapshot before writing.
           </p>
@@ -3939,7 +3939,7 @@ function ResolvedByAgentChip() {
         </Badge>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs text-xs">
-        Resolved by an agent under the organization's interaction governance policy — audit-distinct from a human board resolution.
+        Resolved by an agent under the organisation's interaction governance policy (audit-distinct from a human board resolution).
       </TooltipContent>
     </Tooltip>
   );

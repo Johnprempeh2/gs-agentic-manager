@@ -548,7 +548,7 @@ function FocusKeyHints({ native, micAvailable = false }: { native: boolean; micA
     <p className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
       {native && (
         <>
-          <Key>1–9</Key> pick ·
+          <Key>1</Key> to <Key>9</Key> pick ·
         </>
       )}
       <Key>Space</Key> play / pause ·

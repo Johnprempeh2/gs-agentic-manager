@@ -212,27 +212,27 @@ export function attentionDetailLine(item: AttentionItem): string | null {
       return quote(detail.promptExcerpt);
     case "checkbox_confirmation": {
       const q = quote(detail.promptExcerpt);
-      return q ? `${countNoun(detail.optionCount, "option")} — ${q}` : countNoun(detail.optionCount, "option");
+      return q ? `${countNoun(detail.optionCount, "option")}: ${q}` : countNoun(detail.optionCount, "option");
     }
     case "questions": {
       const q = quote(detail.firstQuestionText);
       const label = countNoun(detail.questionCount, "question");
-      return q ? `${label} — ${q}` : label;
+      return q ? `${label}: ${q}` : label;
     }
     case "suggested_tasks": {
       const q = quote(detail.firstTaskTitle);
       const label = countNoun(detail.taskCount, "suggested task");
-      return q ? `${label} — ${q}` : label;
+      return q ? `${label}: ${q}` : label;
     }
     case "item_verdicts": {
       const q = quote(detail.promptExcerpt);
       const label = `${countNoun(detail.itemCount, "item")} to verdict`;
-      return q ? `${label} — ${q}` : label;
+      return q ? `${label}: ${q}` : label;
     }
     case "failed_run":
     case "agent_error": {
       const reason = quote(detail.failureReasonExcerpt);
-      if (detail.agentName && reason) return `${detail.agentName} — ${reason}`;
+      if (detail.agentName && reason) return `${detail.agentName}: ${reason}`;
       return detail.agentName ?? reason;
     }
     case "blocker": {

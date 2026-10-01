@@ -718,7 +718,7 @@ function CasesEmptyHero() {
       <Layers className="h-10 w-10 text-muted-foreground" />
       <h2 className="text-lg font-semibold">No cases yet</h2>
       <p className="text-sm text-muted-foreground">
-        Cases are durable work products — blog posts, tweet storms, docs pages — that tasks create and
+        Cases are durable work products (blog posts, tweet storms, docs pages) that tasks create and
         iterate on. In v1 they&apos;re created by agents, not from the UI.
       </p>
       <div className="w-full space-y-2 rounded-lg border border-border bg-muted/50 p-4 text-left">

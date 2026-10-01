@@ -23,9 +23,9 @@ const HEALTH_LABEL: Record<SmokeHealth, string> = {
 };
 
 function formatTime(value: string | Date | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "unknown";
   const date = new Date(value as string | Date);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "unknown";
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 

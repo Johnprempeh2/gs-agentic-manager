@@ -840,7 +840,7 @@ export function IssueProperties({
       return (
         <span
           className="min-w-0 truncate text-sm"
-          title={`Task-level model override — replaces the agent's primary model for this issue.${details.length > 0 ? ` (${details.join(" · ")})` : ""}`}
+          title={`Task-level model override: replaces the agent's primary model for this issue.${details.length > 0 ? ` (${details.join(" · ")})` : ""}`}
         >
           {summary}
         </span>
@@ -871,7 +871,7 @@ export function IssueProperties({
         </div>
         {assigneeOverrideLane === "custom" ? (
           <p className="text-xs text-muted-foreground">
-            Task-level model override — replaces the agent&apos;s primary model for this issue.
+            Task-level model override: replaces the agent&apos;s primary model for this issue.
           </p>
         ) : null}
       </div>
@@ -1361,15 +1361,15 @@ export function IssueProperties({
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Watching</div>
-              <div className="text-sm">{monitorServiceName ?? "—"}</div>
+              <div className="text-sm">{monitorServiceName ?? "Not set"}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Notes</div>
-              <div className="whitespace-normal text-sm">{monitorNotes ?? "—"}</div>
+              <div className="whitespace-normal text-sm">{monitorNotes ?? "None"}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Last triggered</div>
-              <div className="text-sm">{monitorLastTriggeredAt ? formatMonitorAbsoluteFull(monitorLastTriggeredAt) : "— not yet triggered"}</div>
+              <div className="text-sm">{monitorLastTriggeredAt ? formatMonitorAbsoluteFull(monitorLastTriggeredAt) : "Not yet triggered"}</div>
             </div>
           </div>
           <div className="flex gap-2 border-t border-border px-4 py-3">
@@ -1540,8 +1540,8 @@ export function IssueProperties({
             ? "Promoting scheduled retry"
             : scheduledRetryRetryNowSuccess
               ? retryNow.data?.outcome === "already_promoted"
-                ? "Already promoted — run starting"
-                : "Promoted — run starting"
+                ? "Already promoted: run starting"
+                : "Promoted: run starting"
               : scheduledRetryIsContinuation
                 ? "Pulls continuation forward immediately"
                 : "Pulls retry forward immediately"}

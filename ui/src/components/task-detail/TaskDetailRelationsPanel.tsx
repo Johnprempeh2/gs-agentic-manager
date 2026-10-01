@@ -42,7 +42,7 @@ export function RelationNavigationList({
               state={issueLinkState}
               onClickCapture={() => rememberIssueDetailLocationState(pathId, issueLinkState)}
               className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title={`${item.identifier ? `${item.identifier} — ` : ""}${item.title}`}
+              title={`${item.identifier ? `${item.identifier}: ` : ""}${item.title}`}
             >
               {item.status ? (
                 <StatusIcon status={item.status} className="h-3.5 w-3.5 shrink-0" />

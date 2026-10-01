@@ -32,7 +32,7 @@ export function IssueAssignedBacklogNotice({
         <Flag className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
         <div className="min-w-0 flex-1 space-y-1.5">
           <p className="leading-5">
-            <span className="font-medium">Parked</span> —{" "}
+            <span className="font-medium">Parked</span>:{" "}
             <span className="font-medium">{assigneeLabel}</span> will not be asked to work on this until status changes to To do or In progress.
           </p>
           {assigneeAgent ? (

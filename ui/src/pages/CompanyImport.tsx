@@ -656,7 +656,7 @@ function AdapterPickerList({
                 {agent.fallbackAdapterType && (
                   <div className="mx-4 mb-2.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2">
                     <p className="text-xs text-amber-500">
-                      source adapter {agent.adapterType} is not installed here — this agent
+                      source adapter {agent.adapterType} is not installed here: this agent
                       will use {adapterLabels[selectedType] ?? getAdapterLabel(selectedType)}
                     </p>
                   </div>
@@ -739,7 +739,7 @@ interface ImportTransferProgress {
 
 function formatTransferProgress(progress: ImportTransferProgress): string {
   const currentPart = Math.min(progress.uploadedParts + 1, progress.totalParts);
-  return `Uploading part ${currentPart} of ${progress.totalParts} — ${formatMegabytes(progress.uploadedBytes)} of ${formatMegabytes(progress.totalBytes)} uploaded.`;
+  return `Uploading part ${currentPart} of ${progress.totalParts} (${formatMegabytes(progress.uploadedBytes)} of ${formatMegabytes(progress.totalBytes)} uploaded).`;
 }
 
 // ── Async import job flow ─────────────────────────────────────────────
@@ -798,7 +798,7 @@ async function watchImportJob(
         // refreshed company list lets the user confirm what actually landed.
         clearStoredImportJob(storageKey);
         throw new Error(
-          "The server no longer reports this import job — it may have restarted while the import ran.",
+          "The server no longer reports this import job. It may have restarted while the import ran.",
         );
       }
       if (
@@ -813,7 +813,7 @@ async function watchImportJob(
         // 429 (rate limited) and 5xx stay transient and fall through below.
         clearStoredImportJob(storageKey);
         throw new Error(
-          "The import status can no longer be read — your session may have expired. Reload and sign in to check on it.",
+          "The import status can no longer be read. Your session may have expired. Reload and sign in to check on it.",
         );
       }
       // Any other poll failure is treated as transient (network blip,
@@ -1671,11 +1671,11 @@ export function CompanyImport() {
           <p className="text-xs text-muted-foreground mt-1">
             {importOutcome.companyName
               ? <>The import finished and <span className="font-medium text-foreground">{importOutcome.companyName}</span> is ready. Its detailed summary is no longer available.</>
-              : "The import finished and your organization is ready. Its detailed summary is no longer available, but the organization has been added — select it from the organization switcher to view it."}
+              : "The import finished and your organisation is ready. Its detailed summary is no longer available, but the organisation has been added. Select it from the organisation switcher to view it."}
           </p>
           {importOutcome.pausedAutomations ? (
             <p className="text-xs text-muted-foreground mt-1">
-              Imported agents arrived paused — resume them from the company's Agents page so assigned tasks can start.
+              Imported agents arrived paused. Resume them from the company's Agents page so assigned tasks can start.
             </p>
           ) : null}
         </div>
@@ -1796,7 +1796,7 @@ export function CompanyImport() {
 
         {importOutcome.pausedAutomations ? (
           <p className="text-xs text-muted-foreground">
-            Anything left paused here stays visible on the company's Agents and Routines pages, which offer the same resume actions — nothing is lost if you leave this page.
+            Anything left paused here stays visible on the company's Agents and Routines pages, which offer the same resume actions. Nothing is lost if you leave this page.
           </p>
         ) : null}
 
@@ -1829,7 +1829,7 @@ export function CompanyImport() {
         <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2.5">
           <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
           <p className="text-xs text-muted-foreground">
-            Import running on the server — safe to keep waiting; reconnecting won&apos;t lose it.
+            Import running on the server. Safe to keep waiting; reconnecting won&apos;t lose it.
           </p>
         </div>
       </div>
@@ -2006,7 +2006,7 @@ export function CompanyImport() {
           )}
           {importMutation.isPending && (
             <span className="text-xs text-muted-foreground">
-              Import in progress — the package and settings unlock when it finishes.
+              Import in progress. The package and settings unlock when it finishes.
             </span>
           )}
         </div>
@@ -2016,9 +2016,9 @@ export function CompanyImport() {
             <p className="text-xs text-muted-foreground">
               {transferProgress
                 ? `${formatTransferProgress(transferProgress)} An interrupted upload resumes from the finished parts.`
-                : `Uploading and analyzing your package${
+                : `Uploading and analysing your package${
                     localCompressedBytes !== null ? ` (${formatMegabytes(localCompressedBytes)} zip)` : ""
-                  } — large packages can take a few minutes. Keep this page open.`}
+                  }. Large packages can take a few minutes. Keep this page open.`}
             </p>
           </div>
         )}
@@ -2116,7 +2116,7 @@ export function CompanyImport() {
               <p className="text-xs text-muted-foreground">
                 {transferProgress
                   ? `${formatTransferProgress(transferProgress)} An interrupted upload resumes from the finished parts.`
-                  : "Import running on the server — safe to keep waiting; reconnecting won't lose it. Large packages can take several minutes."}
+                  : "Import running on the server. Safe to keep waiting; reconnecting won't lose it. Large packages can take several minutes."}
               </p>
             </div>
           )}
@@ -2127,7 +2127,7 @@ export function CompanyImport() {
                 {importMutation.error instanceof Error
                   ? importMutation.error.message
                   : "the request did not complete."}{" "}
-                Nothing may have been created, or the import stopped partway — check the target company
+                Nothing may have been created, or the import stopped partway. Check the target company
                 before retrying.
               </p>
             </div>

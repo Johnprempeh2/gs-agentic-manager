@@ -454,7 +454,7 @@ function MultiServiceBar({
               <button
                 type="button"
                 className="flex h-full items-center gap-2 rounded-l-lg pr-1 text-xs font-medium text-foreground hover:bg-accent"
-                aria-label={`${runningCount} of ${services.length} services running — show services`}
+                aria-label={`${runningCount} of ${services.length} services running. Show services`}
               >
                 <StatusIndicator entry={aggregateEntry} />
                 <span className="whitespace-nowrap">{runningCount}/{services.length} running</span>

@@ -335,12 +335,12 @@ export function formatPipelineItemEvent(event: PipelineCaseEvent, stages?: Stage
     const reason = movementReason(payload);
     const transitionClass = movementClass(event, payload);
     if (transitionClass === "automatic") {
-      return `${movement} — automatic${reason ? ` (${reason})` : ""}.`;
+      return `${movement}: automatic${reason ? ` (${reason})` : ""}.`;
     }
     const actor = actorName(event);
-    if (reason && actor) return `${movement} — ${actor}: '${reason}'.`;
-    if (reason) return `${movement} — '${reason}'.`;
-    if (actor && event.actorType !== "system") return `${movement} — ${actor}.`;
+    if (reason && actor) return `${movement} (${actor}): '${reason}'.`;
+    if (reason) return `${movement}: '${reason}'.`;
+    if (actor && event.actorType !== "system") return `${movement} (${actor}).`;
     return `${movement}.`;
   }
   if (kind === "suggested" || kind === "transition_suggested") {
@@ -377,11 +377,11 @@ export function formatPipelineItemEvent(event: PipelineCaseEvent, stages?: Stage
   if (kind === "automation_executed") {
     const routineName = event.automation?.routine?.title ?? "the automation";
     const issueLabel = automationIssueLabel(event);
-    return `Automation completed — ran ${routineName}${issueLabel ? ` -> ${issueLabel}` : ""}.`;
+    return `Automation completed: ran ${routineName}${issueLabel ? ` -> ${issueLabel}` : ""}.`;
   }
   if (kind === "automation_failed") {
     const reason = readString(payload.error);
-    return `Automation needs attention${reason ? ` — ${humanizeReason(reason)}` : ""}.`;
+    return `Automation needs attention${reason ? `: ${humanizeReason(reason)}` : ""}.`;
   }
   if (kind === "claimed") return "Work started.";
   if (kind === "lease_released" || kind === "lease_expired") return "Work handoff cleared.";

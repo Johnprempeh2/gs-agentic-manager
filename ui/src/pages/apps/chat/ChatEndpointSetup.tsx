@@ -1250,7 +1250,7 @@ settings:
         </p>
         <p className="text-sm text-muted-foreground">
           This release supports personal chats, group chats, and standard team
-          channels—not private channels. <code>supportsFiles: true</code>{" "}
+          channels, not private channels. <code>supportsFiles: true</code>{" "}
           enables native file receipt and consent-based sending in personal
           chats; channel and group-chat files need a separate Microsoft Graph
           connection and are not ingested here.
@@ -1459,7 +1459,7 @@ settings:
                   {webhookSecretCopy.copied
                     ? "Webhook secret copied"
                     : webhookSecretCopy.failed
-                      ? "Couldn’t copy — select it manually"
+                      ? "Couldn’t copy. Select it manually"
                       : "Copy webhook secret"}
                 </Button>
               </div>
@@ -1737,7 +1737,7 @@ settings:
           <Input
             id="slack-bot-token"
             type="password"
-            placeholder={slackCredentialsSaved ? "Saved — leave blank to keep" : undefined}
+            placeholder={slackCredentialsSaved ? "Saved (leave blank to keep)" : undefined}
             value={credentials.botToken ?? ""}
             aria-invalid={slackBotTokenInvalid || undefined}
             aria-describedby={`slack-bot-token-help${slackBotTokenInvalid ? " slack-bot-token-warning" : ""}`}
@@ -1763,7 +1763,7 @@ settings:
           <Input
             id="slack-signing-secret"
             type="password"
-            placeholder={slackCredentialsSaved ? "Saved — leave blank to keep" : undefined}
+            placeholder={slackCredentialsSaved ? "Saved (leave blank to keep)" : undefined}
             value={credentials.signingSecret ?? ""}
             aria-invalid={slackSigningSecretHasTokenPrefix || undefined}
             aria-describedby={`slack-signing-secret-help${slackSigningSecretHasTokenPrefix ? " slack-signing-secret-warning" : ""}`}

@@ -415,10 +415,10 @@ export function Connections() {
                     connection && isRetiredComposioConnection(connection) ? RETIRED_COMPOSIO_MESSAGE :
                     status.tone === "attention"
                       ? connection?.authKind === "oauth"
-                        ? "Reconnect required — sign in again to restore access."
-                        : "The key stopped working — reconnect to fix."
+                        ? "Reconnect required. Sign in again to restore access."
+                        : "The key stopped working. Reconnect to fix."
                       : status.tone === "paused"
-                        ? "Paused — agents can’t use it right now."
+                        ? "Paused: agents can’t use it right now."
                         : status.tone === "not_connected"
                           ? "Connect it so agents can use it."
                           : row.displayName !== application.name
@@ -464,7 +464,7 @@ export function Connections() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs font-medium text-foreground">
-                          {connection ? connectionTypeLabel(connection.credentialPolicy) : "—"}
+                          {connection ? connectionTypeLabel(connection.credentialPolicy) : "Not connected"}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -485,7 +485,7 @@ export function Connections() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs text-muted-foreground">
-                          {row.lastUsedAt ? timeAgo(row.lastUsedAt) : "—"}
+                          {row.lastUsedAt ? timeAgo(row.lastUsedAt) : "Never"}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">

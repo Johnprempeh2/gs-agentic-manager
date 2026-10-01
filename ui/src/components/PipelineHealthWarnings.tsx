@@ -59,7 +59,7 @@ export function PipelineHealthBar({
     >
       <h2 id="pipeline-health-bar-heading" className="flex items-center gap-2 text-sm font-semibold">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span>Some steps won't run yet — {warningCount(warnings.length)}</span>
+        <span>Some steps won't run yet: {warningCount(warnings.length)}</span>
       </h2>
       <ul className="mt-1.5 space-y-1 pl-6 text-sm">
         {shown.map((warning, index) => {
@@ -126,7 +126,7 @@ export function StageHealthWarnings({
         <span>
           {warnings.length === 1
             ? "This step won't run yet"
-            : `This step won't run yet — ${warnings.length} things to fix`}
+            : `This step won't run yet: ${warnings.length} things to fix`}
         </span>
       </h2>
       <ul className="mt-1.5 space-y-1 pl-6">

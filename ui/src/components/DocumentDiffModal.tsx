@@ -27,7 +27,7 @@ function getRevisionLabel(revision: DocumentRevision) {
     : revision.createdByAgentId
       ? "agent"
       : "system";
-  return `rev ${revision.revisionNumber} — ${relativeTime(revision.createdAt)} • ${actor}`;
+  return `rev ${revision.revisionNumber}, ${relativeTime(revision.createdAt)} • ${actor}`;
 }
 
 export function DocumentDiffModal({
@@ -95,7 +95,7 @@ export function DocumentDiffModal({
         <div className="flex items-center justify-between gap-4">
           <DialogHeader className="shrink-0">
             <DialogTitle>
-              Diff — <span className="font-mono text-sm">{documentKey}</span>
+              Diff: <span className="font-mono text-sm">{documentKey}</span>
             </DialogTitle>
           </DialogHeader>
 

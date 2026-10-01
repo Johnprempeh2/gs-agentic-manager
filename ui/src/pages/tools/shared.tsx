@@ -109,7 +109,7 @@ function decisionToStatusKey(decision: string): { key: string; label: string } {
 
 /** Policy/gateway decision badge — canonical status colors. */
 export function DecisionBadge({ decision }: { decision: ToolPolicyDecision | string | null | undefined }) {
-  if (!decision) return <Badge variant="outline">—</Badge>;
+  if (!decision) return <Badge variant="outline">None</Badge>;
   const { key, label } = decisionToStatusKey(decision.toString());
   return <StatusBadge status={key} label={label} />;
 }
@@ -118,7 +118,7 @@ export function DecisionBadge({ decision }: { decision: ToolPolicyDecision | str
 export function RelativeTime({ value }: { value: Date | string | null | undefined }) {
   if (!value) return <span className="text-muted-foreground">never</span>;
   const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return <span className="text-muted-foreground">—</span>;
+  if (Number.isNaN(date.getTime())) return <span className="text-muted-foreground">unknown</span>;
   const diffMs = Date.now() - date.getTime();
   const abs = Math.abs(diffMs);
   const mins = Math.round(abs / 60000);
@@ -174,7 +174,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
       message = "You do not have permission to view this. Tools & Access requires board/admin access.";
     } else if (error.status === 404 || /route not found/i.test(error.message)) {
       // Snapshot-skew window: the route exists in this build but not on the live server snapshot yet.
-      message = "Tools & Access isn't available on this server yet — try refreshing after the next deployment.";
+      message = "Tools & Access isn't available on this server yet. Try refreshing after the next deployment.";
     } else {
       message = error.message;
     }

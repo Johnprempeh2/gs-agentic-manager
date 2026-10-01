@@ -72,7 +72,7 @@ describe("GS Agentic Manager Runner Codex configuration", () => {
   it("falls back to the fail-closed Codex permission mode", () => {
     const html = renderRunner({ codexPermissionMode: "unrestricted" });
 
-    expect(html).toContain("Unsupported saved mode — select a qualified mode");
+    expect(html).toContain("Unsupported saved mode: select a qualified mode");
     expect(html).toContain("cannot start or recover a GS Agentic Manager Runner run");
     expect(html).toContain("Select Automatic (isolated) to remediate it");
     expect(html).not.toContain("Full auto (never ask)");

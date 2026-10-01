@@ -133,7 +133,7 @@ function plainReason(event: ToolGatewayActivityEvent): string {
     case "asked_first":
       return "Held for someone to approve before it could run.";
     case "waiting":
-      return "Waiting — the app it needs wasn't ready yet.";
+      return "Waiting: the app it needs wasn't ready yet.";
     case "failed":
       return "The app was allowed to run it, but returned an error.";
     default:
@@ -216,7 +216,7 @@ function ActivityRow({
             <span className="block text-foreground">{lifecycle}</span>
           ) : isRuntimeMcpDeliveryDiagnostic ? (
             <span className="block text-foreground">
-              <span className="font-medium">{who}</span>'s run received 0 MCP servers —{" "}
+              <span className="font-medium">{who}</span>'s run received 0 MCP servers:{" "}
               <span className="font-medium">{permittedNotInstalledCount ?? permittedNotInstalledConnections.length}</span>{" "}
               permitted {(permittedNotInstalledCount ?? permittedNotInstalledConnections.length) === 1 ? "connection" : "connections"} not installed
             </span>
@@ -278,7 +278,7 @@ function ActivityRow({
               <div className="mt-2 space-y-1.5 text-xs">
                 {rawTool ? <DetailFact label="Action name" value={rawTool} mono /> : null}
                 <DetailFact label="Reason code" value={reasonCode} mono />
-                <DetailFact label="Actor type" value={event.actorType ?? "—"} />
+                <DetailFact label="Actor type" value={event.actorType ?? "Unknown"} />
                 {runId ? <DetailFact label="Run ID" value={runId} mono /> : null}
                 {transport ? <DetailFact label="Transport" value={transport} mono /> : null}
                 {requestMethod && endpoint ? <DetailFact label="HTTP request" value={`${requestMethod} ${endpoint}`} mono /> : null}
@@ -397,7 +397,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
     <div className="space-y-4">
       <ToolsPageHeader
         title="Activity"
-        description="What your agents actually did with your apps, newest first. Each line is one decision — allowed, blocked, asked first, waiting, or failed."
+        description="What your agents actually did with your apps, newest first. Each line is one decision: allowed, blocked, asked first, waiting, or failed."
       />
 
       <div className="flex flex-wrap items-center gap-2">
