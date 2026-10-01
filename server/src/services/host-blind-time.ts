@@ -18,6 +18,13 @@
 export const HOST_BLIND_SAMPLE_MS = 5_000;
 /** A sampler gap longer than this is blind time (12 missed samples). */
 export const HOST_BLIND_GAP_MS = 60_000;
+/**
+ * GRE-317: how long the host must stay awake after blind time before the
+ * scheduler starts new runs. A macOS dark wake lasts a few seconds; a run
+ * started in one freezes mid-startup when the host sleeps again, and fails on
+ * the next wake with an expired lease and a passed startup deadline.
+ */
+export const HOST_RESUME_SETTLE_MS = 60_000;
 const HOST_BLIND_WINDOW_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export type HostBlindWindow = { start: number; end: number };
@@ -29,6 +36,11 @@ export interface HostBlindTimeTracker {
   blindMsBetween(from: number, to: number): number;
   /** When the host last came back from blind time (process start if never). */
   lastResumeAt(): number;
+  /**
+   * True while the host came back from recorded blind time less than
+   * `settleMs` ago. Process start alone does not count: a fresh server is awake.
+   */
+  resumedWithin(settleMs: number): boolean;
   /** Start the background sampler; returns a stop function. */
   start(): () => void;
 }
@@ -74,13 +86,18 @@ export function createHostBlindTimeTracker(opts: {
     return windows.length > 0 ? windows[windows.length - 1]!.end : startedAt;
   }
 
+  function resumedWithin(settleMs: number) {
+    const last = windows[windows.length - 1];
+    return last !== undefined && now() - last.end < settleMs;
+  }
+
   function start() {
     const timer = setInterval(sample, sampleMs);
     timer.unref?.();
     return () => clearInterval(timer);
   }
 
-  return { sample, blindMsBetween, lastResumeAt, start };
+  return { sample, blindMsBetween, lastResumeAt, resumedWithin, start };
 }
 
 /** No blind time at all: the pre-GRE-181 wall-clock behaviour. Test default. */
