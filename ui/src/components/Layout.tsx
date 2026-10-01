@@ -28,6 +28,7 @@ import { MobileBottomNav } from "./MobileBottomNav";
 import { PullToRefresh } from "./PullToRefresh";
 import { useOptionalBreadcrumbs } from "../context/BreadcrumbContext";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
+import { startVisualViewportSync } from "../lib/ios-keyboard";
 import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
@@ -583,6 +584,13 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     return pinDocumentScrollToZero();
   }, [isMobile]);
 
+  // Phone: keep the header on the visible top while the keyboard pans the
+  // page, and settle the layout once the keyboard closes (see ios-keyboard).
+  useEffect(() => {
+    if (!isMobile) return;
+    return startVisualViewportSync();
+  }, [isMobile]);
+
   useEffect(() => {
     if (typeof document === "undefined") return;
     const mainContent = mainContentRef.current;
@@ -719,7 +727,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           <div
             className={cn(
               !isMobile && useStreamlinedTaskDetailShell && "hidden",
-              isMobile && "sticky top-0 z-20 gs-glass-bar pt-(--sz-safe-top)",
+              isMobile && "sticky top-0 z-20 gs-glass-bar pt-(--sz-safe-top) translate-y-(--vv-offset-top)",
             )}
           >
             {/* The phone app brings its own back arrow and pull-to-refresh, so it
