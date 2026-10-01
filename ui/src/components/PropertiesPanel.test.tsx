@@ -132,12 +132,12 @@ describe("PropertiesPanel", () => {
       await renderPanel({ taskDetailLayout: true });
       const aside = container.querySelector("aside");
       expect(aside).not.toBeNull();
-      expect(aside!.style.width).toBe("340px");
+      expect(aside!.style.width).toBe("400px");
       expect(aside!.querySelector('[role="separator"][aria-label="Resize panel"]')).not.toBeNull();
       expect(container.querySelector('[aria-label="Maximize side panel"]')).not.toBeNull();
       const inner = aside!.querySelector<HTMLDivElement>(":scope > div:not([role])");
-      expect(inner!.style.width).toBe("340px");
-      expect(inner!.style.minWidth).toBe("340px");
+      expect(inner!.style.width).toBe("400px");
+      expect(inner!.style.minWidth).toBe("400px");
       expect(aside!.querySelector("header")?.className).toContain(
         "h-(--side-panel-header-height)",
       );

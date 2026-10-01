@@ -81,9 +81,11 @@ export const PROPERTIES_PANE_FOOTER_SLOT_ID = "properties-pane-footer-slot";
 const WIDTH_STORAGE_KEY = "taskChatRedesign.propertiesPaneWidth";
 const TASK_DETAIL_WIDTH_STORAGE_KEY = "taskChatRedesign.taskDetailPropertiesPaneWidth";
 const DEFAULT_PANE_WIDTH = 322;
-// GS: the thread comes first; 434 left a 530 px thread and two-line titles
-// at 1366 wide (owner UX audit item 22). A dragged width is still remembered.
-const TASK_DETAIL_DEFAULT_PANE_WIDTH = 340;
+// GS: the thread comes first (owner UX audit item 22), but not at the cost of
+// clipping names: measured at 1366 wide, 400 cuts only branch names and paths
+// (as 434 did), while 340 also clipped the project and the owner's name.
+// A dragged width is still remembered.
+const TASK_DETAIL_DEFAULT_PANE_WIDTH = 400;
 const MIN_PANE_WIDTH = 260;
 /** ~236px sidebar + ~420px minimum center column stay usable while resizing. */
 const RESERVED_LAYOUT_WIDTH = 656;
