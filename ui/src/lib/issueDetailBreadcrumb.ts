@@ -2,7 +2,7 @@ import type { Issue } from "@greatstone/shared";
 
 type IssueDetailSource = "issues" | "inbox";
 
-type IssueDetailBreadcrumb = {
+export type IssueDetailBreadcrumb = {
   label: string;
   href: string;
 };
