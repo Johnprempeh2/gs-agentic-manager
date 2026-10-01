@@ -584,6 +584,22 @@ const THUMBNAIL_WIDTHS = new Set([320, 640, 960]);
 const THUMBNAILABLE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const THUMBNAIL_SOURCE_LIMIT_BYTES = 25 * 1024 * 1024;
 
+// At most three resizes at once: each holds a whole image in memory, and a
+// grid of 40 screenshots asks for all of them together.
+let thumbnailsInFlight = 0;
+const thumbnailWaiters: Array<() => void> = [];
+async function withThumbnailSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (thumbnailsInFlight < 3) thumbnailsInFlight += 1;
+  else await new Promise<void>((resolve) => thumbnailWaiters.push(resolve)); // the slot is handed over
+  try {
+    return await work();
+  } finally {
+    const next = thumbnailWaiters.shift();
+    if (next) next();
+    else thumbnailsInFlight -= 1;
+  }
+}
+
 async function readStream(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -18956,12 +18972,14 @@ export function issueRoutes(
     ) {
       try {
         const { default: sharp } = await import("sharp");
-        const source = await storage.getObject(attachment.companyId, attachment.objectKey);
-        const thumbnail = await sharp(await readStream(source.stream), { limitInputPixels: 100_000_000 })
-          .rotate()
-          .resize({ width: thumbnailWidth, withoutEnlargement: true })
-          .webp({ quality: 78 })
-          .toBuffer();
+        const thumbnail = await withThumbnailSlot(async () => {
+          const source = await storage.getObject(attachment.companyId, attachment.objectKey);
+          return sharp(await readStream(source.stream), { limitInputPixels: 100_000_000 })
+            .rotate()
+            .resize({ width: thumbnailWidth, withoutEnlargement: true })
+            .webp({ quality: 78 })
+            .toBuffer();
+        });
         res.setHeader("Content-Type", "image/webp");
         res.setHeader("Content-Length", String(thumbnail.length));
         // Attachment bytes never change under an id, so the phone can keep it.

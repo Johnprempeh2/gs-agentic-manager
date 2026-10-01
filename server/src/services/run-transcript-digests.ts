@@ -43,6 +43,9 @@ const TERMINAL_STATUSES = new Set(["failed", "timed_out", "cancelled", "interrup
 // ponytail: in-process LRU of finished-run digests; persist at run finish if
 // cold starts ever make the first open slow.
 const CACHE_LIMIT = 500;
+// About 95 bytes an entry, so roughly 19 MB at most: a few log-heavy runs
+// must not hold hundreds of MB for the life of the process.
+const CACHE_ENTRY_BUDGET = 200_000;
 const DIGEST_CONCURRENCY = 8;
 
 type LogHandle = { id: string; companyId: string; logStore: string | null; logRef: string | null };
@@ -66,6 +69,7 @@ export interface RunTranscriptDigestDeps {
  */
 export function createRunTranscriptDigester(deps: RunTranscriptDigestDeps) {
   const cache = new Map<string, TranscriptEntry[] | null>();
+  let cachedEntries = 0;
 
   return async function digestRun(run: DigestRun): Promise<TranscriptEntry[] | null> {
     const parser = DIGEST_PARSERS[run.adapterType];
@@ -105,7 +109,12 @@ export function createRunTranscriptDigester(deps: RunTranscriptDigestDeps) {
 
     const digest = buildRunLogTranscriptDigest(run.id, content, parser);
     cache.set(key, digest);
-    if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+    cachedEntries += digest?.length ?? 0;
+    while (cache.size > CACHE_LIMIT || (cachedEntries > CACHE_ENTRY_BUDGET && cache.size > 1)) {
+      const oldest = cache.keys().next().value!;
+      cachedEntries -= cache.get(oldest)?.length ?? 0;
+      cache.delete(oldest);
+    }
     return digest;
   };
 }
