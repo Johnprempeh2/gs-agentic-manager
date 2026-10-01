@@ -581,6 +581,34 @@ describe("issue attachment routes", () => {
     expect(res.headers["content-disposition"]).toBe('attachment; filename="notes.md"');
   });
 
+  it("serves a small WebP for ?w= and falls back to the original when the image cannot be read", async () => {
+    const sharp = (await vi.importActual<typeof import("sharp")>("sharp")).default;
+    const png = await sharp({ create: { width: 1600, height: 1000, channels: 3, background: "#1b5039" } }).png().toBuffer();
+    const storage = createStorageService(png);
+    mockIssueService.getAttachmentById.mockResolvedValue({ ...makeAttachment("image/png", "shot.png"), byteSize: png.length });
+    const app = await createApp(storage);
+
+    const thumb = await request(app).get("/api/attachments/attachment-1/content?w=320")
+      .buffer(true).parse(parseBinaryResponse);
+    expect(thumb.status).toBe(200);
+    expect(thumb.headers["content-type"]).toBe("image/webp");
+    expect((await sharp(thumb.body as Buffer).metadata()).width).toBe(320);
+
+    // An unlisted width is ignored: the original comes back.
+    const original = await request(app).get("/api/attachments/attachment-1/content?w=123")
+      .buffer(true).parse(parseBinaryResponse);
+    expect(original.headers["content-type"]).toBe("image/png");
+
+    // Bytes that are not an image still load as the original.
+    const notAnImage = Buffer.from("not an image");
+    const broken = createStorageService(notAnImage);
+    mockIssueService.getAttachmentById.mockResolvedValue({ ...makeAttachment("image/png", "broken.png"), byteSize: notAnImage.length });
+    const brokenApp = await createApp(broken);
+    const fallback = await request(brokenApp).get("/api/attachments/attachment-1/content?w=320");
+    expect(fallback.status).toBe(200);
+    expect(fallback.headers["content-type"]).toBe("image/png");
+  });
+
   it("keeps image attachments inline for previews", async () => {
     const storage = createStorageService();
     mockIssueService.getAttachmentById.mockResolvedValue(makeAttachment("image/png", "preview.png"));

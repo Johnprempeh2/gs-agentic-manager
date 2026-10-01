@@ -10,6 +10,7 @@ import { OutputVideoPlayer } from "./issue-output/OutputVideoPlayer";
 import { formatBytes } from "@/lib/issue-output";
 import {
   attachmentDownloadPath,
+  attachmentThumbnailSrc,
   attachmentFilename,
   attachmentOpenPath,
   isImageAttachment,
@@ -286,7 +287,7 @@ export function IssueAttachmentsSection({
               onClick={() => onImageClick(attachment)}
             >
               <img
-                src={attachment.contentPath}
+                src={attachmentThumbnailSrc(attachment.contentPath, 320)}
                 alt={attachment.originalFilename ?? "attachment"}
                 className="h-full w-full object-cover"
                 loading="lazy"

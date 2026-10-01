@@ -578,6 +578,18 @@ function noopTaskWatchdogService(): TaskWatchdogService {
   };
 }
 
+// ?w= on an image attachment returns a small WebP for grids and card strips,
+// so a task with 19 screenshots does not pull 11 MB onto a phone.
+const THUMBNAIL_WIDTHS = new Set([320, 640, 960]);
+const THUMBNAILABLE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const THUMBNAIL_SOURCE_LIMIT_BYTES = 25 * 1024 * 1024;
+
+async function readStream(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
 const HTML_CONTENT_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const HTML_ATTACHMENT_CSP = [
   "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox",
@@ -18935,6 +18947,32 @@ export function issueRoutes(
       return;
     }
     if (!(await assertIssueReadAllowed(req, res, issue))) return;
+
+    const thumbnailWidth = Number(req.query.w);
+    if (
+      THUMBNAIL_WIDTHS.has(thumbnailWidth) &&
+      THUMBNAILABLE_TYPES.has(attachment.contentType.toLowerCase().split(";")[0]!.trim()) &&
+      attachment.byteSize <= THUMBNAIL_SOURCE_LIMIT_BYTES
+    ) {
+      try {
+        const { default: sharp } = await import("sharp");
+        const source = await storage.getObject(attachment.companyId, attachment.objectKey);
+        const thumbnail = await sharp(await readStream(source.stream), { limitInputPixels: 100_000_000 })
+          .rotate()
+          .resize({ width: thumbnailWidth, withoutEnlargement: true })
+          .webp({ quality: 78 })
+          .toBuffer();
+        res.setHeader("Content-Type", "image/webp");
+        res.setHeader("Content-Length", String(thumbnail.length));
+        // Attachment bytes never change under an id, so the phone can keep it.
+        res.setHeader("Cache-Control", "private, max-age=86400");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.status(200).end(thumbnail);
+        return;
+      } catch (err) {
+        logger.warn({ err, attachmentId }, "attachment thumbnail failed; serving the original");
+      }
+    }
 
     const contentLength = attachment.byteSize;
     const range = parseAttachmentRangeHeader(

@@ -20,6 +20,11 @@ export function attachmentOpenPath(attachment: AttachmentPathLike) {
   return attachment.openPath ?? attachment.contentPath;
 }
 
+/** A small WebP of an image attachment for grids and strips. Any other URL passes through. */
+export function attachmentThumbnailSrc(path: string, width: 320 | 640 | 960): string {
+  return /^\/api\/attachments\/[^/?#]+\/content$/.test(path) ? `${path}?w=${width}` : path;
+}
+
 export function attachmentDownloadPath(attachment: AttachmentPathLike) {
   return attachment.downloadPath ?? `${attachment.contentPath}?download=1`;
 }
