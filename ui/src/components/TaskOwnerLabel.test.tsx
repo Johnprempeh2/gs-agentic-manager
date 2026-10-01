@@ -33,12 +33,16 @@ describe("TaskOwnerLabel", () => {
     const label = render({ issue: { assigneeAgentId: "agent-1" }, currentUserId: "user-1", userLabels });
     expect(label?.textContent).toBe("Agent task");
     expect(label?.dataset.ownerKind).toBe("agent");
+    // Quiet: the words are for screen readers and the tooltip, the glyph shows.
+    expect(label?.querySelector("span")?.className).toContain("sr-only");
   });
 
   it("says Your task when the viewer is the assignee", () => {
     const label = render({ issue: { assigneeUserId: "user-1" }, currentUserId: "user-1", userLabels });
     expect(label?.textContent).toBe("Your task");
     expect(label?.dataset.ownerKind).toBe("you");
+    expect(label?.className).toContain("bg-primary");
+    expect(label?.querySelector("span")?.className).not.toContain("sr-only");
   });
 
   it("names another person who is the assignee", () => {

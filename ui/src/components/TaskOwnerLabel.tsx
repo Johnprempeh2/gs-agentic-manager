@@ -3,9 +3,11 @@ import { Badge } from "@/components/ui/badge";
 import { resolveTaskOwner, type TaskOwnerKind } from "../lib/assignees";
 import { cn } from "../lib/utils";
 
+// Most rows are agent tasks, so that label is quiet (a robot glyph) and
+// "Your task" is the loud one: it is what the owner scans for.
 const TASK_OWNER_TONE: Record<TaskOwnerKind, string> = {
-  agent: "border-border bg-secondary text-secondary-foreground",
-  you: "border-primary/40 bg-primary/10 text-foreground",
+  agent: "border-transparent bg-transparent px-0 text-muted-foreground",
+  you: "border-transparent bg-primary font-medium text-primary-foreground",
   person: "border-border text-foreground",
 };
 
@@ -37,9 +39,7 @@ export function TaskOwnerLabel({ issue, currentUserId, userLabels, className }: 
       )}
     >
       <Icon aria-hidden />
-      {/* On a phone most rows are agent tasks, so the robot icon says it; the
-          words stay for your tasks and people, the ones you scan for. */}
-      <span className={cn("truncate", owner.kind === "agent" && "max-sm:sr-only")}>{owner.label}</span>
+      <span className={cn("truncate", owner.kind === "agent" && "sr-only")}>{owner.label}</span>
     </Badge>
   );
 }

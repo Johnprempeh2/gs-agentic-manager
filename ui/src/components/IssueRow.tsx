@@ -23,6 +23,7 @@ import { StatusIcon } from "./StatusIcon";
 import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
 import { ExternalObjectStatusSummary } from "./ExternalObjectStatusSummary";
+import { externalObjectToneSeverity } from "../lib/external-objects";
 import { Badge } from "@/components/ui/badge";
 
 export type IssueRowUnreadState = "hidden" | "visible" | "fading";
@@ -136,7 +137,7 @@ export function IssueRow({
   mobileMeta,
   mobileTitleMeta,
   desktopTrailing,
-  externalObjectSummary,
+  externalObjectSummary: allExternalObjects,
   trailingMeta,
   titleSuffix,
   ownerLabel,
@@ -155,6 +156,13 @@ export function IssueRow({
   chevronInGuide = false,
   showDivider = false,
 }: IssueRowProps) {
+  // Rows flag linked work only when it needs a look (a failed deploy, a
+  // stale check). A healthy count read like a comment count; the task's
+  // properties still list everything.
+  const externalObjectSummary =
+    externalObjectToneSeverity(allExternalObjects?.highestSeverity) >= externalObjectToneSeverity("warning")
+      ? allExternalObjects
+      : null;
   const issuePathId = issue.identifier ?? issue.id;
   const identifier = issue.identifier ?? issue.id.slice(0, 8);
   // A row participates in the unread system whenever `unreadState` is supplied.

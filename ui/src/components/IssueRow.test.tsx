@@ -97,6 +97,27 @@ describe("IssueRow", () => {
     container.remove();
   });
 
+  it("flags linked work on the row only when it needs a look", () => {
+    const summary = (tone: "success" | "danger") => ({
+      total: 2,
+      byStatusCategory: { [tone === "success" ? "succeeded" : "failed"]: 2 },
+      byLiveness: {},
+      highestSeverity: tone,
+      staleCount: 0,
+      objects: [1, 2].map((n) => ({
+        id: `obj-${n}`, providerKey: "github", objectType: "deployment", displayTitle: null,
+        statusCategory: tone === "success" ? "succeeded" : "failed", statusTone: tone,
+        liveness: "fresh", isTerminal: true,
+      })),
+    }) as unknown as NonNullable<Parameters<typeof IssueRow>[0]["externalObjectSummary"]>;
+    const root = createRoot(container);
+    act(() => root.render(<IssueRow issue={createIssue()} externalObjectSummary={summary("success")} />));
+    expect(container.querySelector("[data-external-status]")).toBeNull();
+    act(() => root.render(<IssueRow issue={createIssue()} externalObjectSummary={summary("danger")} />));
+    expect(container.querySelector("[data-external-status]")).not.toBeNull();
+    act(() => root.unmount());
+  });
+
   it("renders the list status glyph at md (16px)", () => {
     const root = createRoot(container);
 
