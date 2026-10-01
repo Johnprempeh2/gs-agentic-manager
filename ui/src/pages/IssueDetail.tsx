@@ -254,6 +254,7 @@ import { useThreadMutations } from "./issue-detail/useThreadMutations";
 import { useRecoveryActionHandlers } from "./issue-detail/useRecoveryActionHandlers";
 import { useThreadHandlers } from "./issue-detail/useThreadHandlers";
 import { useIssueDeepLinks } from "./issue-detail/useIssueDeepLinks";
+import { useIssueDetailPageEffects } from "./issue-detail/useIssueDetailPageEffects";
 export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 export type { AttributionActor } from "./issue-detail/IssueAttribution";
 
@@ -1289,483 +1290,72 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     undoInboxArchive,
   });
 
-  const conversationAgent = conversation?.agent ?? agents?.find(agent => agent.id === issue?.conversationAgentId);
-  useEffect(() => {
-    if (conversationAgent) {
-      setBreadcrumbs([{
-        label: conversationAgent.name,
-        leading: <Avatar className="size-6 shrink-0"><AvatarFallback>{deriveInitials(conversationAgent.name)}</AvatarFallback></Avatar>,
-        leadingKey: `agent:${conversationAgent.id}`,
-        trailing: <Button variant="ghost" size="icon-xs" asChild aria-label={`Configure ${conversationAgent.name}`}><Link to={agentDetailHref(conversationAgent.id, "runtime")}><ChatSettings /></Link></Button>,
-        trailingKey: `configure:${conversationAgent.id}`,
-      }]);
-      return;
-    }
-    setBreadcrumbs([
-      sourceBreadcrumb,
-      {
-        // The status glyph (leading) already conveys in-progress/live state;
-        // no redundant 🔵 emoji prefix on the title.
-        label: breadcrumbTitle,
-        identifier: breadcrumbIdentifier,
-        leading: breadcrumbStatusLeading,
-        leadingKey: breadcrumbStatusKey,
-      },
-    ]);
-  }, [
+  const {
     conversationAgent,
+    isFromInbox,
+    mediaGalleryItems,
+    openIssueGallery,
+    handleChatImageClick,
+  } = useIssueDetailPageEffects({
+    conversation,
+    agents,
+    issue,
+    setBreadcrumbs,
+    sourceBreadcrumb,
     breadcrumbTitle,
     breadcrumbIdentifier,
-    hasLiveRuns,
-    setBreadcrumbs,
-    sourceBreadcrumb.href,
-    sourceBreadcrumb.label,
     breadcrumbStatusLeading,
     breadcrumbStatusKey,
-  ]);
-
-  useEffect(() => {
-    if (!streamlinedTaskDetailEnabled || !taskChatShellEnabled || !issue?.id) {
-      setBreadcrumbPanelControl(null);
-      return;
-    }
-
-    setBreadcrumbPanelControl({
-      open: panelVisible && !suppressPanelUntilPlan,
-      onToggle: toggleTaskSidePanel,
-    });
-
-    return () => setBreadcrumbPanelControl(null);
-  }, [
-    issue?.id,
-    panelVisible,
+    hasLiveRuns,
+    streamlinedTaskDetailEnabled,
+    taskChatShellEnabled,
     setBreadcrumbPanelControl,
-    streamlinedTaskDetailEnabled,
-    suppressPanelUntilPlan,
-    taskChatShellEnabled,
-    toggleTaskSidePanel,
-  ]);
-
-  useEffect(() => {
-    const showTaskPanelLauncher =
-      taskChatShellEnabled &&
-      !streamlinedTaskDetailEnabled &&
-      !isMobile &&
-      Boolean(issue?.id) &&
-      (!panelVisible || suppressPanelUntilPlan);
-
-    setBreadcrumbToolbar(
-      showTaskPanelLauncher ? (
-        <TooltipProvider>
-          <SidePanelToggleButton
-            open={false}
-            onToggle={openTaskSidePanel}
-            shortcut="]"
-            className="shrink-0"
-          />
-        </TooltipProvider>
-      ) : null,
-    );
-
-    return () => setBreadcrumbToolbar(null);
-  }, [
-    isMobile,
-    issue?.id,
-    openTaskSidePanel,
     panelVisible,
-    setBreadcrumbToolbar,
-    streamlinedTaskDetailEnabled,
     suppressPanelUntilPlan,
-    taskChatShellEnabled,
-  ]);
-
-  const isFromInbox = resolvedIssueDetailState?.issueDetailSource === "inbox";
-
-  // Scroll to top on forward navigation (PUSH/REPLACE) so issue doesn't
-  // inherit the inbox/issues-list scroll position on mobile.
-  useEffect(() => {
-    const previousIssueId = lastScrollIssueIdRef.current;
-    lastScrollIssueIdRef.current = issueId;
-    if (
-      !shouldScrollIssueDetailToTopOnNavigation({
-        previousIssueId,
-        nextIssueId: issueId,
-        navigationType,
-      })
-    )
-      return;
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    const main = document.getElementById("main-content");
-    if (main) main.scrollTop = 0;
-  }, [issueId, navigationType]);
-
-  // Resolve external UUID links and wrong-prefix task links from the loaded
-  // task's company, not the organization that happened to be selected first.
-  useEffect(() => {
-    if (conversation || !loadedIssue) return;
-    const nextState = resolvedIssueDetailState ?? location.state;
-    const taskCompany = loadedIssueCompany;
-    const canonicalRef = loadedIssue.identifier ?? loadedIssue.id;
-    const companyMismatch =
-      taskCompany && companyPrefix !== taskCompany.issuePrefix;
-    const legacyQuery = hasLegacyIssueDetailQuery(location.search);
-    if (issueId !== canonicalRef || companyMismatch || legacyQuery) {
-      rememberIssueDetailLocationState(
-        canonicalRef,
-        nextState,
-        location.search,
-      );
-      const taskPath = createIssueDetailPath(canonicalRef);
-      navigate(
-        {
-          pathname: taskCompany
-            ? `/${taskCompany.issuePrefix}${taskPath}`
-            : taskPath,
-          search: legacyQuery ? "" : location.search,
-          hash: location.hash,
-        },
-        {
-          replace: true,
-          state: nextState,
-        },
-      );
-    }
-  }, [
-    conversation,
+    toggleTaskSidePanel,
+    isMobile,
+    setBreadcrumbToolbar,
+    openTaskSidePanel,
+    resolvedIssueDetailState,
+    lastScrollIssueIdRef,
+    issueId,
+    navigationType,
     loadedIssue,
+    location,
     loadedIssueCompany,
     companyPrefix,
-    issueId,
     navigate,
-    location.state,
-    location.search,
-    location.hash,
-    resolvedIssueDetailState,
-  ]);
-
-  useEffect(() => {
-    if (!issueId || !issue?.id) return;
-    if (lastMarkedReadIssueIdRef.current === issue.id) return;
-    lastMarkedReadIssueIdRef.current = issue.id;
-    markIssueRead.mutate(issue.id);
-  }, [issue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const mediaGalleryItems = useMemo<GalleryMediaItem[]>(() => {
-    const items: GalleryMediaItem[] = [];
-    const seen = new Set<string>();
-
-    const mark = (
-      attachmentId: string | null | undefined,
-      contentPath: string,
-    ) => {
-      if (attachmentId) seen.add(`attachment:${attachmentId}`);
-      seen.add(`content:${contentPath}`);
-    };
-
-    const hasSeen = (
-      attachmentId: string | null | undefined,
-      contentPath: string,
-    ) =>
-      Boolean(attachmentId && seen.has(`attachment:${attachmentId}`)) ||
-      seen.has(`content:${contentPath}`);
-
-    for (const attachment of attachments ?? []) {
-      if (!isImageAttachment(attachment) && !isVideoAttachment(attachment))
-        continue;
-      items.push(attachment);
-      mark(attachment.id, attachment.contentPath);
-    }
-
-    for (const item of getIssueOutputs(workProducts).items) {
-      const meta = item.metadata;
-      if (!meta) continue;
-      const isMedia =
-        isImageLikeOutput(meta.contentType, meta.originalFilename ?? item.title) ||
-        isVideoLikeOutput(meta.contentType, meta.originalFilename);
-      if (!isMedia || hasSeen(meta.attachmentId, meta.contentPath)) continue;
-      items.push({
-        id: `work-product-${item.id}`,
-        contentPath: meta.contentPath,
-        openPath: meta.openPath,
-        downloadPath: meta.downloadPath,
-        contentType: meta.contentType,
-        originalFilename: meta.originalFilename ?? item.title,
-      });
-      mark(meta.attachmentId, meta.contentPath);
-    }
-
-    return items;
-  }, [attachments, workProducts]);
-
-  const openIssueGallery = useCallback(
-    (src: string) => {
-      // Match content and preview URLs in either relative or absolute form.
-      const absoluteUrl = (path: string) => {
-        try {
-          return new URL(path, window.location.origin).href;
-        } catch {
-          return path;
-        }
-      };
-      const requestedUrl = absoluteUrl(src);
-      let idx = mediaGalleryItems.findIndex(
-        (a) =>
-          absoluteUrl(a.contentPath) === requestedUrl ||
-          (a.openPath && absoluteUrl(a.openPath) === requestedUrl),
-      );
-      if (idx < 0) {
-        // Try matching by asset ID extracted from /api/assets/{assetId}/content URLs
-        const assetMatch = src.match(/\/api\/assets\/([^/]+)\/content/);
-        if (assetMatch) {
-          idx = mediaGalleryItems.findIndex(
-            (a) => "assetId" in a && a.assetId === assetMatch[1],
-          );
-        }
-      }
-      if (idx >= 0) {
-        setGalleryIndex(idx);
-        setGalleryOpen(true);
-        return true;
-      }
-      return false;
-    },
-    [mediaGalleryItems],
-  );
-
-  const handleChatImageClick = useCallback(
-    (src: string) => {
-      if (!openIssueGallery(src)) window.open(src, "_blank");
-    },
-    [openIssueGallery],
-  );
-
-  useLayoutEffect(() => {
-    if (!panelIssue || suppressPanelUntilPlan || (conversation && !conversation.issue)) {
-      closePanel();
-      return;
-    }
-    const sharedProps = {
-      issue: panelIssue,
-      childIssues: panelChildIssues,
-      issueLinkState: streamlinedTaskDetailEnabled
-        ? relationIssueLinkState
-        : undefined,
-      onAddSubIssue: openNewSubIssue,
-      onUpdate: handleIssuePropertiesUpdate,
-      hasActiveRun: resolvedHasActiveRun,
-      externalObjects: externalObjectsState.isEnabled
-        ? externalObjectsState.groups
-        : undefined,
-      externalObjectsLoading: externalObjectsState.isEnabled
-        ? externalObjectsState.isLoading
-        : undefined,
-      externalObjectsError: externalObjectsState.isEnabled
-        ? externalObjectsState.isError
-        : undefined,
-      onRetryExternalObjects: externalObjectsState.isEnabled
-        ? externalObjectsState.refetch
-        : undefined,
-      onCheckMonitorNow: () => checkIssueMonitorNow.mutate(),
-      checkingMonitorNow: checkIssueMonitorNow.isPending,
-      documentDeepLink:
-        documentDeepLink?.issueId === panelIssue.id ? documentDeepLink : null,
-      openSkillId: openSkill?.id ?? null,
-      openSkillName: openSkill?.name ?? null,
-      onSkillOpened: handleSkillOpened,
-    };
-    if (taskChatShellEnabled) {
-      openPanel(
-        <IssueGalleryContext.Provider value={openIssueGallery}>
-          <TaskSidePanel
-            key={panelIssue.id}
-            {...sharedProps}
-            accountScope={currentUserId ?? "anonymous"}
-            fileTabsEnabled={fileViewerEnabled}
-            streamlinedTabs={streamlinedTaskDetailEnabled}
-            showSubtasksTab={streamlinedTaskDetailEnabled}
-            tasksTab={resolvedTasksTab}
-            artifactsOpenRequestId={!isMobile && !artifactsOpenRequest?.handled && artifactsOpenRequest?.issueId === panelIssue.id
-              ? artifactsOpenRequest.requestId : undefined}
-            onArtifactsOpened={handleArtifactsOpened}
-          />
-        </IssueGalleryContext.Provider>,
-        { contentMode: "full-bleed" },
-      );
-    } else {
-      openPanel(
-        <IssueGalleryContext.Provider value={openIssueGallery}>
-          <IssueProperties {...sharedProps} />
-        </IssueGalleryContext.Provider>,
-      );
-    }
-    return () => closePanel();
-  }, [
+    lastMarkedReadIssueIdRef,
+    markIssueRead,
+    attachments,
+    workProducts,
+    setGalleryIndex,
+    setGalleryOpen,
+    panelIssue,
     closePanel,
-    openIssueGallery,
-    handleIssuePropertiesUpdate,
-    issuePanelKey,
+    panelChildIssues,
+    relationIssueLinkState,
     openNewSubIssue,
-    openPanel,
+    handleIssuePropertiesUpdate,
+    resolvedHasActiveRun,
+    externalObjectsState,
+    checkIssueMonitorNow,
+    documentDeepLink,
     openSkill,
     handleSkillOpened,
-    panelChildIssues,
-    panelIssue,
-    suppressPanelUntilPlan,
-    relationIssueLinkState,
-    streamlinedTaskDetailEnabled,
-    resolvedHasActiveRun,
-    checkIssueMonitorNow.isPending,
-    checkIssueMonitorNow.mutate,
-    externalObjectsState.isEnabled,
-    externalObjectsState.groups,
-    externalObjectsState.isLoading,
-    externalObjectsState.isError,
-    externalObjectsState.refetch,
-    documentDeepLink,
-    taskChatShellEnabled,
+    openPanel,
     currentUserId,
     fileViewerEnabled,
     resolvedTasksTab,
     artifactsOpenRequest,
     handleArtifactsOpened,
-    isMobile,
-  ]);
-
-  const goToInboxShortcutArmedRef = useRef(false);
-  const goToInboxShortcutTimeoutRef = useRef<number | null>(null);
-  const canQuickArchiveFromInbox =
-    keyboardShortcutsEnabled && !issue?.hiddenAt;
-
-  useEffect(() => {
-    if (!issue?.id || !canQuickArchiveFromInbox) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const action = resolveInboxQuickArchiveKeyAction({
-        armed: canQuickArchiveFromInbox,
-        defaultPrevented: event.defaultPrevented,
-        key: event.key,
-        metaKey: event.metaKey,
-        ctrlKey: event.ctrlKey,
-        altKey: event.altKey,
-        target: event.target,
-        hasOpenDialog: hasBlockingShortcutDialog(document),
-      });
-
-      if (action !== "archive") return;
-
-      event.preventDefault();
-      if (!archiveFromInbox.isPending) {
-        archiveFromInbox.mutate(issue.id);
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [archiveFromInbox, canQuickArchiveFromInbox, issue?.id]);
-
-  useEffect(() => {
-    if (!keyboardShortcutsEnabled) {
-      goToInboxShortcutArmedRef.current = false;
-      if (goToInboxShortcutTimeoutRef.current !== null) {
-        window.clearTimeout(goToInboxShortcutTimeoutRef.current);
-        goToInboxShortcutTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    const clearArmTimeout = () => {
-      if (goToInboxShortcutTimeoutRef.current !== null) {
-        window.clearTimeout(goToInboxShortcutTimeoutRef.current);
-        goToInboxShortcutTimeoutRef.current = null;
-      }
-    };
-
-    const disarm = () => {
-      goToInboxShortcutArmedRef.current = false;
-      clearArmTimeout();
-    };
-
-    const arm = () => {
-      goToInboxShortcutArmedRef.current = true;
-      clearArmTimeout();
-      goToInboxShortcutTimeoutRef.current = window.setTimeout(() => {
-        goToInboxShortcutArmedRef.current = false;
-        goToInboxShortcutTimeoutRef.current = null;
-      }, 1200);
-    };
-
-    const handlePointerDown = () => {
-      disarm();
-    };
-
-    const handleFocusIn = (event: FocusEvent) => {
-      if (
-        event.target instanceof HTMLElement &&
-        event.target !== document.body
-      ) {
-        disarm();
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const action = resolveIssueDetailGoKeyAction({
-        armed: goToInboxShortcutArmedRef.current,
-        defaultPrevented: event.defaultPrevented,
-        key: event.key,
-        metaKey: event.metaKey,
-        ctrlKey: event.ctrlKey,
-        altKey: event.altKey,
-        target: event.target,
-        hasOpenDialog: hasBlockingShortcutDialog(document),
-      });
-
-      if (action === "ignore") return;
-      if (action === "arm") {
-        arm();
-        return;
-      }
-
-      disarm();
-      if (action === "navigate_inbox") {
-        event.preventDefault();
-        event.stopPropagation();
-        navigate(
-          sourceBreadcrumb.href.startsWith("/inbox")
-            ? sourceBreadcrumb.href
-            : "/inbox",
-        );
-        return;
-      }
-      if (action === "focus_comment") {
-        event.preventDefault();
-        event.stopPropagation();
-        setDetailTab("chat");
-        setPendingCommentComposerFocusKey((current) => current + 1);
-      }
-      if (action === "open_file_viewer") {
-        if (!fileViewerEnabled) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setFileViewerPromptOpen(true);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    document.addEventListener("focusin", handleFocusIn, true);
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      disarm();
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      document.removeEventListener("focusin", handleFocusIn, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [
-    fileViewerEnabled,
+    issuePanelKey,
     keyboardShortcutsEnabled,
-    navigate,
-    sourceBreadcrumb.href,
-  ]);
+    archiveFromInbox,
+    setDetailTab,
+    setPendingCommentComposerFocusKey,
+    setFileViewerPromptOpen,
+  });
 
   // One maximize request per issue + `viewer=full` hash: routing re-runs
   // whenever a callback dependency changes identity, and re-requesting then
