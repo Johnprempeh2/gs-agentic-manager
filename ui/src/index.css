@@ -145,6 +145,33 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-brand-emerald: var(--brand-emerald);
+  --color-status-success: var(--status-success);
+  --color-status-success-foreground: var(--status-success-foreground);
+  --color-status-success-soft: var(--status-success-soft);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-foreground: var(--status-warning-foreground);
+  --color-status-warning-soft: var(--status-warning-soft);
+  --color-status-danger: var(--status-danger);
+  --color-status-danger-foreground: var(--status-danger-foreground);
+  --color-status-danger-soft: var(--status-danger-soft);
+  --color-status-info: var(--status-info);
+  --color-status-info-foreground: var(--status-info-foreground);
+  --color-status-info-soft: var(--status-info-soft);
+  --color-status-running: var(--status-running);
+  --color-status-running-foreground: var(--status-running-foreground);
+  --color-status-running-soft: var(--status-running-soft);
+  --color-status-review: var(--status-review);
+  --color-status-review-foreground: var(--status-review-foreground);
+  --color-status-review-soft: var(--status-review-soft);
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-foreground: var(--status-pending-foreground);
+  --color-status-pending-soft: var(--status-pending-soft);
+  --color-status-alert: var(--status-alert);
+  --color-status-alert-foreground: var(--status-alert-foreground);
+  --color-status-alert-soft: var(--status-alert-soft);
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-foreground: var(--status-neutral-foreground);
+  --color-status-neutral-soft: var(--status-neutral-soft);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -318,6 +345,46 @@
   --status-task-icon-blocked: var(--status-task-blocked);         /* #dc2626 both modes */
   --status-task-icon-cancelled: #52585d;
   --status-task-icon-in_queue: var(--status-task-icon-in_progress); /* blocked shape, same mode-aware blue */
+
+  /* Semantic status tones (GRE-304). Use these for any colour that carries
+     status meaning instead of raw palette classes (`text-amber-600`, ...).
+     Three steps per tone, mapped in @theme as `status-<tone>[-foreground|-soft]`:
+       --status-<tone>             strong hue: icons, borders, dots, bare text
+       --status-<tone>-foreground  text on the soft fill (badges, pills)
+       --status-<tone>-soft        soft badge / pill fill
+     Values reproduce the recipes the shared status maps already used
+     (700 / 100 soft pairs on paper, 400 / 300 / 900@50% on the void). The
+     strong hue is 600 on paper where that clears AA as text (running, review,
+     danger) and 700 where 600 did not (success, warning, info, pending,
+     alert); neutral rides --subtle-foreground. Contrast (WCAG 2.1, GRE-304):
+     strong on paper/void and foreground on soft are all ≥ 4.5:1. */
+  --status-success: var(--color-green-700);
+  --status-success-foreground: var(--color-green-700);
+  --status-success-soft: var(--color-green-100);
+  --status-warning: var(--color-amber-700);
+  --status-warning-foreground: var(--color-amber-700);
+  --status-warning-soft: var(--color-amber-100);
+  --status-danger: var(--color-red-600);
+  --status-danger-foreground: var(--color-red-700);
+  --status-danger-soft: var(--color-red-100);
+  --status-info: var(--color-sky-700);
+  --status-info-foreground: var(--color-sky-700);
+  --status-info-soft: var(--color-sky-100);
+  --status-running: var(--color-blue-600); /* liveness: emerald on paper, lime on the void (greatstone-palette.css) */
+  --status-running-foreground: var(--color-blue-700);
+  --status-running-soft: var(--color-blue-100);
+  --status-review: var(--color-violet-600);
+  --status-review-foreground: var(--color-violet-700);
+  --status-review-soft: var(--color-violet-100);
+  --status-pending: var(--color-yellow-700); /* queued / waiting to start */
+  --status-pending-foreground: var(--color-yellow-700);
+  --status-pending-soft: var(--color-yellow-100);
+  --status-alert: var(--color-orange-700); /* timed out, rate limited, high priority */
+  --status-alert-foreground: var(--color-orange-700);
+  --status-alert-soft: var(--color-orange-100);
+  --status-neutral: var(--subtle-foreground); /* cancelled, closed, archived */
+  --status-neutral-foreground: var(--muted-foreground);
+  --status-neutral-soft: var(--muted);
 
   --folder-color-indigo: #6366f1;
   --folder-color-violet: #8b5cf6;
@@ -538,6 +605,31 @@
   --status-task-icon-in_review: var(--color-violet-400);
   --status-task-icon-done: var(--color-green-400);
   --status-task-icon-cancelled: #9a958a;
+  /* Semantic status tones on the void (see the :root block). */
+  --status-success: var(--color-green-400);
+  --status-success-foreground: var(--color-green-300);
+  --status-success-soft: color-mix(in oklab, var(--color-green-900) 50%, transparent);
+  --status-warning: var(--color-amber-400);
+  --status-warning-foreground: var(--color-amber-300);
+  --status-warning-soft: color-mix(in oklab, var(--color-amber-900) 50%, transparent);
+  --status-danger: var(--color-red-400);
+  --status-danger-foreground: var(--color-red-300);
+  --status-danger-soft: color-mix(in oklab, var(--color-red-900) 50%, transparent);
+  --status-info: var(--color-sky-400);
+  --status-info-foreground: var(--color-sky-300);
+  --status-info-soft: color-mix(in oklab, var(--color-sky-900) 50%, transparent);
+  --status-running: var(--color-blue-400);
+  --status-running-foreground: var(--color-blue-300);
+  --status-running-soft: color-mix(in oklab, var(--color-blue-900) 50%, transparent);
+  --status-review: var(--color-violet-400);
+  --status-review-foreground: var(--color-violet-300);
+  --status-review-soft: color-mix(in oklab, var(--color-violet-900) 50%, transparent);
+  --status-pending: var(--color-yellow-400);
+  --status-pending-foreground: var(--color-yellow-300);
+  --status-pending-soft: color-mix(in oklab, var(--color-yellow-900) 50%, transparent);
+  --status-alert: var(--color-orange-400);
+  --status-alert-foreground: var(--color-orange-300);
+  --status-alert-soft: color-mix(in oklab, var(--color-orange-900) 50%, transparent);
 }
 
 .streamlined-task-detail-surface {
