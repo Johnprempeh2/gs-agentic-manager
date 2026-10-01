@@ -123,6 +123,17 @@ Add a schedule trigger with `cronExpression: "0 * * * *"`. The first tick runs. 
 
 ---
 
+## Writing a Routine's Instructions
+
+A routine runs many times, so write its description as a loop with a memory:
+
+1. **Name a ledger.** Keep one issue document (for example `ledger`) on a task the routine owns, and read it first, so a run never repeats what an earlier run already checked or reported.
+2. **Read the latest direction first.** Before acting, read the newest comment from a board user on the routine's tasks. It overrides the standing instructions until the description is updated.
+3. **Exit quietly.** When nothing has changed since the ledger's last entry, post one line ("Nothing new since <time>") on this run's task, mark it done, and stop. Pair this with `activityGatePolicy: "require_external_activity"` so most quiet ticks never run at all.
+4. **Append, then stop.** End every run by adding one dated line to the ledger: what was checked, what changed, and what was handed to whom.
+
+---
+
 ## Adding Triggers
 
 A routine can have multiple triggers of different kinds.
