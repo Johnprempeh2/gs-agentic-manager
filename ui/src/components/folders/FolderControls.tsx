@@ -754,7 +754,7 @@ export function BulkBar({
 }) {
   if (selectedCount === 0) return null;
   return (
-    <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-md border border-border bg-background/95 px-3 py-2 shadow-sm backdrop-blur">
+    <div className="sticky top-2 z-raised flex flex-wrap items-center gap-2 rounded-md border border-border bg-background/95 px-3 py-2 shadow-sm backdrop-blur">
       <span className="mr-auto text-sm text-muted-foreground">{selectedCount} selected</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

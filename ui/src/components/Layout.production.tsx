@@ -647,7 +647,7 @@ export function Layout() {
       >
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-(--z-200) focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-top focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Skip to Main Content
         </a>
@@ -662,7 +662,7 @@ export function Layout() {
           {isMobile && sidebarOpen && (
             <button
               type="button"
-              className="fixed inset-0 z-40 gs-scrim"
+              className="fixed inset-0 z-drawer gs-scrim"
               onClick={() => setSidebarOpen(false)}
               aria-label="Close sidebar"
             />
@@ -671,7 +671,7 @@ export function Layout() {
           {isMobile ? (
             <div
               className={cn(
-                "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out",
+                "fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out",
                 sidebarOpen ? "translate-x-0" : "-translate-x-full",
               )}
             >
@@ -713,7 +713,7 @@ export function Layout() {
             <div
               className={cn(
                 isMobile &&
-                  "sticky top-0 z-20 gs-glass-bar",
+                  "sticky top-0 z-sticky gs-glass-bar",
               )}
             >
               <StandaloneBrowserControls mobile={isMobile} />

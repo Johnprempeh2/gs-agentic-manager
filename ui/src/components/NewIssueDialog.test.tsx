@@ -1685,8 +1685,8 @@ describe("NewIssueDialog", () => {
       expect(workModeOption("ask")?.textContent).toContain("Ask mode");
       expect(workModeOption("planning")?.textContent).toContain("Plan mode");
 
-      expect(statusOptionIconClass("Todo", "Executable - assignee will be woken")).toContain("text-amber-600");
-      expect(statusOptionIconClass("In Progress")).toContain("text-blue-600");
+      expect(statusOptionIconClass("Todo", "Executable - assignee will be woken")).toContain("text-status-warning");
+      expect(statusOptionIconClass("In Progress")).toContain("text-status-running");
 
       act(() => root.unmount());
     });

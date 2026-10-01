@@ -42,6 +42,7 @@ import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 import { DashboardCostCard } from "../components/DashboardCostCard";
+import { ErrorState } from "../components/ErrorState";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
 
@@ -189,7 +190,7 @@ export function Dashboard() {
     queryKey: dashboardQueryKey,
     enabled: !!selectedCompanyId,
   });
-  const { data, isLoading, error, dataUpdatedAt: dashboardUpdatedAt } = useQuery({
+  const { data, isLoading, error, refetch, dataUpdatedAt: dashboardUpdatedAt } = useQuery({
     queryKey: dashboardQueryKey,
     queryFn: () => dashboardApi.summary(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -360,6 +361,10 @@ export function Dashboard() {
     return <PageSkeleton variant="dashboard" />;
   }
 
+  if (error && !data) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
+  }
+
   // Same rule as the auto-offer above: a list still being refreshed may be the
   // empty one cached before the first hire, and the banner's "Create one here"
   // opens the same agent step the offer does.
@@ -373,7 +378,7 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {selectedCompany ? <DashboardHero companyName={selectedCompany.name} /> : null}
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       <DashboardDecisionsBox companyId={selectedCompanyId!} />
 

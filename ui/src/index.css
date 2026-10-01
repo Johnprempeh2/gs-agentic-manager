@@ -115,6 +115,24 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Stacking scale (GRE-305). The only z-index values the UI uses: write
+   `z-dialog`, `z-popover`, … in classes and `var(--z-index-…)` in CSS or
+   inline styles; never a bare number. Each layer sits above every layer
+   listed before it. Within one layer, later DOM (a later portal) wins, so a
+   dialog opened from a dialog stacks correctly without a new number.
+   `static` keeps every variable on :root even when no class uses it. */
+@theme static {
+  --z-index-page: 0;     /* in-flow content; resets a lifted child */
+  --z-index-raised: 10;  /* lift inside one component: focused button in a group, overlapping card, badge */
+  --z-index-sticky: 20;  /* sticky headers and bars inside a scroll area; overlays above raised content in one component */
+  --z-index-chrome: 30;  /* app shell: sidebar, bottom nav, floating page buttons */
+  --z-index-drawer: 40;  /* shell drawers and panels that slide over the page, and their scrims */
+  --z-index-dialog: 50;  /* modal dialogs, sheets, full-screen modals, and their scrims */
+  --z-index-popover: 60; /* dropdowns, selects, popovers, tooltips, editor popups: always above a dialog they open from */
+  --z-index-toast: 70;   /* toasts: above everything people work in */
+  --z-index-top: 80;     /* skip link only */
+}
+
 @theme inline {
   --font-sans: "Montserrat Variable", "Montserrat", "InterVariable", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -145,6 +163,33 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-brand-emerald: var(--brand-emerald);
+  --color-status-success: var(--status-success);
+  --color-status-success-foreground: var(--status-success-foreground);
+  --color-status-success-soft: var(--status-success-soft);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-foreground: var(--status-warning-foreground);
+  --color-status-warning-soft: var(--status-warning-soft);
+  --color-status-danger: var(--status-danger);
+  --color-status-danger-foreground: var(--status-danger-foreground);
+  --color-status-danger-soft: var(--status-danger-soft);
+  --color-status-info: var(--status-info);
+  --color-status-info-foreground: var(--status-info-foreground);
+  --color-status-info-soft: var(--status-info-soft);
+  --color-status-running: var(--status-running);
+  --color-status-running-foreground: var(--status-running-foreground);
+  --color-status-running-soft: var(--status-running-soft);
+  --color-status-review: var(--status-review);
+  --color-status-review-foreground: var(--status-review-foreground);
+  --color-status-review-soft: var(--status-review-soft);
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-foreground: var(--status-pending-foreground);
+  --color-status-pending-soft: var(--status-pending-soft);
+  --color-status-alert: var(--status-alert);
+  --color-status-alert-foreground: var(--status-alert-foreground);
+  --color-status-alert-soft: var(--status-alert-soft);
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-foreground: var(--status-neutral-foreground);
+  --color-status-neutral-soft: var(--status-neutral-soft);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -318,6 +363,46 @@
   --status-task-icon-blocked: var(--status-task-blocked);         /* #dc2626 both modes */
   --status-task-icon-cancelled: #52585d;
   --status-task-icon-in_queue: var(--status-task-icon-in_progress); /* blocked shape, same mode-aware blue */
+
+  /* Semantic status tones (GRE-304). Use these for any colour that carries
+     status meaning instead of raw palette classes (`text-amber-600`, ...).
+     Three steps per tone, mapped in @theme as `status-<tone>[-foreground|-soft]`:
+       --status-<tone>             strong hue: icons, borders, dots, bare text
+       --status-<tone>-foreground  text on the soft fill (badges, pills)
+       --status-<tone>-soft        soft badge / pill fill
+     Values reproduce the recipes the shared status maps already used
+     (700 / 100 soft pairs on paper, 400 / 300 / 900@50% on the void). The
+     strong hue is 600 on paper where that clears AA as text (running, review,
+     danger) and 700 where 600 did not (success, warning, info, pending,
+     alert); neutral rides --subtle-foreground. Contrast (WCAG 2.1, GRE-304):
+     strong on paper/void and foreground on soft are all ≥ 4.5:1. */
+  --status-success: var(--color-green-700);
+  --status-success-foreground: var(--color-green-700);
+  --status-success-soft: var(--color-green-100);
+  --status-warning: var(--color-amber-700);
+  --status-warning-foreground: var(--color-amber-700);
+  --status-warning-soft: var(--color-amber-100);
+  --status-danger: var(--color-red-600);
+  --status-danger-foreground: var(--color-red-700);
+  --status-danger-soft: var(--color-red-100);
+  --status-info: var(--color-sky-700);
+  --status-info-foreground: var(--color-sky-700);
+  --status-info-soft: var(--color-sky-100);
+  --status-running: var(--color-blue-600); /* liveness: emerald on paper, lime on the void (greatstone-palette.css) */
+  --status-running-foreground: var(--color-blue-700);
+  --status-running-soft: var(--color-blue-100);
+  --status-review: var(--color-violet-600);
+  --status-review-foreground: var(--color-violet-700);
+  --status-review-soft: var(--color-violet-100);
+  --status-pending: var(--color-yellow-700); /* queued / waiting to start */
+  --status-pending-foreground: var(--color-yellow-700);
+  --status-pending-soft: var(--color-yellow-100);
+  --status-alert: var(--color-orange-700); /* timed out, rate limited, high priority */
+  --status-alert-foreground: var(--color-orange-700);
+  --status-alert-soft: var(--color-orange-100);
+  --status-neutral: var(--subtle-foreground); /* cancelled, closed, archived */
+  --status-neutral-foreground: var(--muted-foreground);
+  --status-neutral-soft: var(--muted);
 
   --folder-color-indigo: #6366f1;
   --folder-color-violet: #8b5cf6;
@@ -538,6 +623,31 @@
   --status-task-icon-in_review: var(--color-violet-400);
   --status-task-icon-done: var(--color-green-400);
   --status-task-icon-cancelled: #9a958a;
+  /* Semantic status tones on the void (see the :root block). */
+  --status-success: var(--color-green-400);
+  --status-success-foreground: var(--color-green-300);
+  --status-success-soft: color-mix(in oklab, var(--color-green-900) 50%, transparent);
+  --status-warning: var(--color-amber-400);
+  --status-warning-foreground: var(--color-amber-300);
+  --status-warning-soft: color-mix(in oklab, var(--color-amber-900) 50%, transparent);
+  --status-danger: var(--color-red-400);
+  --status-danger-foreground: var(--color-red-300);
+  --status-danger-soft: color-mix(in oklab, var(--color-red-900) 50%, transparent);
+  --status-info: var(--color-sky-400);
+  --status-info-foreground: var(--color-sky-300);
+  --status-info-soft: color-mix(in oklab, var(--color-sky-900) 50%, transparent);
+  --status-running: var(--color-blue-400);
+  --status-running-foreground: var(--color-blue-300);
+  --status-running-soft: color-mix(in oklab, var(--color-blue-900) 50%, transparent);
+  --status-review: var(--color-violet-400);
+  --status-review-foreground: var(--color-violet-300);
+  --status-review-soft: color-mix(in oklab, var(--color-violet-900) 50%, transparent);
+  --status-pending: var(--color-yellow-400);
+  --status-pending-foreground: var(--color-yellow-300);
+  --status-pending-soft: color-mix(in oklab, var(--color-yellow-900) 50%, transparent);
+  --status-alert: var(--color-orange-400);
+  --status-alert-foreground: var(--color-orange-300);
+  --status-alert-soft: color-mix(in oklab, var(--color-orange-900) 50%, transparent);
 }
 
 .streamlined-task-detail-surface {
@@ -1982,7 +2092,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   position: absolute;
   top: 0.25rem;
   right: 0.25rem;
-  z-index: 2;
+  z-index: var(--z-index-raised);
   opacity: 0;
   transition: opacity 150ms ease;
 }
@@ -2463,13 +2573,14 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   font-size: inherit;
 }
 
-/* Keep MDXEditor popups above app dialogs, even when they portal to <body>. */
+/* Keep MDXEditor popups above app dialogs, even when they portal to <body>.
+   Overlay and content share the popover layer; DOM order puts content on top. */
 [class*="_popupContainer_"] {
-  z-index: 81 !important;
+  z-index: var(--z-index-popover) !important;
 }
 
 [class*="_dialogOverlay_"] {
-  z-index: 80;
+  z-index: var(--z-index-popover);
 }
 
 [class*="_dialogContent_"],
@@ -2479,7 +2590,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 [class*="_tableColumnEditorPopoverContent_"],
 [class*="_toolbarButtonDropdownContainer_"],
 [class*="_toolbarNodeKindSelectContainer_"] {
-  z-index: 81 !important;
+  z-index: var(--z-index-popover) !important;
 }
 
 /* Status chip/fill helpers.
@@ -2744,6 +2855,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-120px: 120px; /* Extracted from ui/src/components/KanbanBoard.tsx (min-h-[120px]). */
   --sz-safe-top: env(safe-area-inset-top); /* Extracted from ui/src/components/Layout.tsx (pt-[env(safe-area-inset-top)]). */
   --vv-offset-top: 0px; /* how far iOS has panned the page under the keyboard; lib/ios-keyboard.ts keeps it current */
+  --vv-bottom-inset: 0px; /* how much of the page's bottom edge the iOS keyboard hides; same source */
   --sz-calc-14: calc(5rem + env(safe-area-inset-bottom)); /* Extracted from ui/src/components/Layout.tsx (pb-[calc(5rem+env(safe-area-inset-bottom))]). */
   --sz-38ch: 38ch; /* Extracted from ui/src/components/MarkdownBody.test.tsx (max-w-[38ch]). */
   --sz-208px: 208px; /* Extracted from ui/src/components/MarkdownEditor.test.tsx (max-h-[208px]). */
@@ -2993,13 +3105,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --tp-box-shadow-border-color: box-shadow,border-color; /* Extracted from ui/src/pages/OrgChart.tsx (transition-[box-shadow,border-color]). */
   --tp-box-shadow: box-shadow; /* Extracted from ui/src/pages/ProjectDetail.tsx (transition-[box-shadow]). */
   --tp-transform-box-shadow: transform,box-shadow; /* Extracted from ui/src/pages/ProjectDetail.tsx (transition-[transform,box-shadow]). */
-  --z-2: 2; /* Extracted from ui/src/components/DocumentAnnotationLayer.tsx (z-[2]). */
-  --z-20: 20; /* Anchored document annotation popover. */
-  --z-60: 60; /* Extracted from ui/src/components/DocumentAnnotationPanel.tsx (z-[60]). */
-  --z-1: 1; /* Extracted from ui/src/components/IssueDocumentAnnotations.tsx (z-[1]). */
-  --z-200: 200; /* Extracted from ui/src/components/Layout.tsx (z-[200]). */
-  --z-9999: 9999; /* Extracted from ui/src/components/MarkdownEditor.tsx (z-[9999]). */
-  --z-120: 120; /* Extracted from ui/src/components/ToastViewport.tsx (z-[120]). */
   --s-0_98: 0.98; /* Extracted from ui/src/pages/Inbox.tsx (scale-[0.98]). */
   --s-1_02: 1.02; /* Extracted from ui/src/components/CaseAttachmentsGallery.tsx (scale-[1.02]). */
   --e-cubic-bezier-0_16-1-0_3-1: cubic-bezier(0.16,1,0.3,1); /* Extracted from ui/src/components/ui/alert-dialog.tsx (ease-[cubic-bezier(0.16,1,0.3,1)]). */
@@ -3191,8 +3296,12 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    software keyboard. The fixed sheet also avoids scale motion during mobile
    viewport resizing. */
 @media (max-width: 40rem) {
+  /* Radix sets an inline will-change: transform on the wrapper. Like a
+     transform, it makes the wrapper the containing block of the fixed sheet,
+     which then collapses to the wrapper's zero size, out of sight. */
   [data-radix-popper-content-wrapper]:has(> [data-mobile-entity-picker]) {
     transform: none !important;
+    will-change: auto !important;
   }
 
   [data-mobile-entity-picker] {
@@ -3317,7 +3426,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   position: fixed;
   inset-inline-end: max(var(--plugin-shell-inset), env(safe-area-inset-right));
   bottom: max(var(--plugin-shell-inset), var(--sz-safe-bottom));
-  z-index: var(--z-20);
+  z-index: var(--z-index-chrome);
   display: flex;
   flex-direction: column;
   align-items: flex-end;

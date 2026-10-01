@@ -30,6 +30,7 @@ import type {
 } from "@greatstone/shared";
 import { attentionService, type AttentionServiceOptions } from "./attention.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
+import { isExplicitResumeCapableStatus } from "./issue-comment-wakeup.js";
 
 /** activity_log.details.source on the comment a clarity question writes. */
 export const DECISIONS_CLARITY_SOURCE = "decisions_clarity";
@@ -47,6 +48,9 @@ type TaskRow = {
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
 };
+
+/** An agent's open cards for one missing connection, shown as one card. */
+type SharedConnection = { agentId: string; serviceName: string; tasks: TaskRow[] };
 
 type AiHealth = {
   /** Newest time a healthy connection was saved, per provider. */
@@ -285,13 +289,47 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         item.sourceKind === "blocker_attention"
         && (item.detail as { blockedTaskCount?: unknown } | null)?.blockedTaskCount === 0;
 
-      type Group = { key: string; taskId: string | null; items: AttentionItem[]; cleared: AttentionItem[]; aiRepairedAt: number | null };
+      /**
+       * One agent waiting on one missing tool connection across several tasks
+       * is one decision (GRE-316): the answer on any card answers them all.
+       * AI accounts already fold into the company-level alert and keep a
+       * per-task retry, so they stay on their task cards.
+       */
+      const sharedConnectionKey = (item: AttentionItem) => {
+        if (item.sourceKind !== "issue_thread_interaction" || cardKind(item) !== "connection") return null;
+        const payload = (intentById.get(item.subject.id)?.payload ?? {}) as Record<string, unknown>;
+        const agentId = readString(payload, "requestingAgentId");
+        const service = readString(payload, "serviceSlug");
+        if (!agentId || !service || payload.purpose === "ai") return null;
+        const upstream = readString(payload.upstreamService as Record<string, unknown> | undefined, "slug") ?? "";
+        return `connection:${agentId}:${service}:${upstream}`;
+      };
+      const isOpenRow = (item: AttentionItem) => !isClosedTaskRow(item) && !blocksNothing(item) && aiRepairedAt(item) === null;
+      const sharedTasks = new Map<string, Set<string>>();
+      for (const item of rawItems) {
+        const key = sharedConnectionKey(item);
+        const taskId = taskIdOf(item);
+        if (!key || !taskId || !isOpenRow(item)) continue;
+        sharedTasks.set(key, (sharedTasks.get(key) ?? new Set()).add(taskId));
+      }
+
+      type Group = { key: string; taskId: string | null; items: AttentionItem[]; cleared: AttentionItem[]; aiRepairedAt: number | null; shared?: SharedConnection };
       const groups = new Map<string, Group>();
       let staleCleared = 0;
       for (const item of rawItems) {
-        const taskId = taskIdOf(item);
-        const key = taskId ? `task:${taskId}` : `item:${item.dedupKey}`;
+        const sharedKey = sharedConnectionKey(item);
+        const shared = sharedKey && isOpenRow(item) && (sharedTasks.get(sharedKey)?.size ?? 0) > 1 ? sharedKey : null;
+        const taskId = shared ? null : taskIdOf(item);
+        const key = shared ?? (taskId ? `task:${taskId}` : `item:${item.dedupKey}`);
         const group = groups.get(key) ?? { key, taskId, items: [], cleared: [], aiRepairedAt: null };
+        if (shared && !group.shared) {
+          const payload = (intentById.get(item.subject.id)?.payload ?? {}) as Record<string, unknown>;
+          group.shared = {
+            agentId: readString(payload, "requestingAgentId")!,
+            serviceName: readString(payload, "serviceName") ?? readString(payload, "serviceSlug")!,
+            tasks: [...sharedTasks.get(shared)!].map((id) => taskById.get(id)).filter((task): task is TaskRow => Boolean(task)),
+          };
+        }
         groups.set(key, group);
         if (isClosedTaskRow(item) || blocksNothing(item)) {
           staleCleared += 1;
@@ -432,7 +470,7 @@ function findTaskSubject(items: AttentionItem[], taskId: string): AttentionSubje
 
 function buildCard(input: {
   companyId: string;
-  group: { key: string; taskId: string | null; items: AttentionItem[]; cleared: AttentionItem[]; aiRepairedAt: number | null };
+  group: { key: string; taskId: string | null; items: AttentionItem[]; cleared: AttentionItem[]; aiRepairedAt: number | null; shared?: SharedConnection };
   task: TaskRow | null;
   readyToRetry: boolean;
   taskSubject: AttentionSubject | null;
@@ -451,13 +489,19 @@ function buildCard(input: {
   const byKind = (wanted: DecisionCardKind) => items.find((item) => cardKind(item) === wanted) ?? null;
 
   const taskLabel = task ? `${task.identifier ?? task.id.slice(0, 8)} ${task.title}` : null;
-  const title = taskLabel ?? main?.subject.title ?? "Needs your decision";
+  const shared = group.shared;
+  const sharedAgent = shared ? agentRef(shared.agentId) : null;
+  const sharedTaskList = shared?.tasks.map((row) => row.identifier ?? row.id.slice(0, 8)).sort().join(", ");
+  const title = shared
+    ? `${sharedAgent?.name ?? "An agent"} needs ${shared.serviceName} for ${shared.tasks.length} tasks`
+    : taskLabel ?? main?.subject.title ?? "Needs your decision";
 
   // Who is waiting: the owner of the task. For a stalled blocker, the owner of
   // the blocked task behind it waits too, but the blocker's owner acts.
   const blockedItem = byKind("blocked");
   const blockedTaskAgentId = readString(blockedItem?.relatedIssue?.metadata, "assigneeAgentId");
-  const waiting = agentRef(task?.assigneeAgentId)
+  const waiting = sharedAgent
+    ?? agentRef(task?.assigneeAgentId)
     ?? agentRef(blockedTaskAgentId)
     ?? agentRef(readString(main?.subject.metadata, "createdByAgentId"))
     ?? agentRef(readString(main?.subject.metadata, "agentId"))
@@ -471,7 +515,9 @@ function buildCard(input: {
     ?? (retryAfterRepair ? group.cleared.find((item) => item.sourceKind === "recovery_action") ?? null : null);
   const recovery = recoveryItem ? input.recoveryById.get(recoveryItem.subject.id) ?? null : null;
   let reason: string;
-  if (readyToRetry) {
+  if (shared) {
+    reason = `${shared.tasks.length} tasks wait for the same ${shared.serviceName} connection: ${sharedTaskList}. One answer covers all of them.`;
+  } else if (readyToRetry) {
     reason = `The AI connection works again (since ${hhmm(group.aiRepairedAt!)}). The task is still stopped from the earlier failure.`;
   } else if (kind === "recovery" && recovery) {
     reason = readString(recovery.evidence as Record<string, unknown>, "failureSummary") ?? recovery.nextAction;
@@ -512,6 +558,9 @@ function buildCard(input: {
     agent_error: "The agent takes no work until the error is fixed.",
     join_request: "The request waits for your approval.",
   };
+  if (shared) {
+    nextStepByKind.connection = `${waiting?.name ?? "The agent"} stays stopped on these tasks until you answer. Connect ${shared.serviceName} once and each task continues one time.`;
+  }
   const nextStep = clarity && !clarity.answer
     ? `Waiting for ${clarity.agent?.name ?? "the agent"} to answer your question. ${nextStepByKind[kind]}`
     : nextStepByKind[kind];
@@ -527,7 +576,9 @@ function buildCard(input: {
     } else if (item.sourceKind === "issue_thread_interaction" && cardKind(item) === "question" && item.subject.href) {
       actions.push(linkAction("open", "Answer", "Open the question on the task.", item.subject.href));
     } else if (cardKind(item) === "connection" && item.subject.href && !actions.some((action) => action.id === "reconnect")) {
-      actions.push(linkAction("reconnect", "Reconnect", "Open the AI connection and reconnect it.", item.subject.href));
+      actions.push(shared
+        ? linkAction("reconnect", "Connect", `Open the request and connect ${shared.serviceName}. Every waiting task continues.`, item.subject.href)
+        : linkAction("reconnect", "Reconnect", "Open the AI connection and reconnect it.", item.subject.href));
     }
   }
 
@@ -569,7 +620,9 @@ function buildCard(input: {
       "instruct",
       "Give an instruction",
       "Post an instruction on the task and wake its owner.",
-      [request("POST", `${issuePath}/comments`, { resume: true })],
+      // in_review and backlog refuse resume intent; a plain comment there still
+      // wakes the owner and leaves the status (and any review) alone. GRE-320.
+      [request("POST", `${issuePath}/comments`, isExplicitResumeCapableStatus(task.status) ? { resume: true } : {})],
       { field: "body", type: "text", label: "Instruction", required: true },
     ));
     if (recoveryItem) {

@@ -10,7 +10,7 @@ import {
 import { healthStyle } from "./GoalHealth";
 
 const TICKET_LINK =
-  "relative z-10 font-mono text-xs text-subtle-foreground underline-offset-2 hover:text-foreground hover:underline";
+  "relative z-raised font-mono text-xs text-subtle-foreground underline-offset-2 hover:text-foreground hover:underline";
 
 function TicketLinks({ blocker }: { blocker: GoalBlocker }) {
   if (blocker.kind !== "issue") return null;
@@ -57,7 +57,7 @@ export function MainBlocker({ goal, health }: { goal: GoalWithProgress; health: 
           {more > 0 ? (
             <Link
               to={`/goals/${goal.id}#${GOAL_BLOCKERS_ANCHOR}`}
-              className="relative z-10 text-xs text-subtle-foreground underline underline-offset-2 hover:text-foreground"
+              className="relative z-raised text-xs text-subtle-foreground underline underline-offset-2 hover:text-foreground"
               data-testid="goal-more-blockers"
             >
               +{more} more {more === 1 ? "blocker" : "blockers"}

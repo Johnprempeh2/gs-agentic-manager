@@ -4,6 +4,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
 import { NotFoundPage } from "./NotFound";
+import { PageSkeleton } from "../components/PageSkeleton";
 
 export function CompanySettingsPluginPage() {
   const params = useParams<{
@@ -54,7 +55,7 @@ export function CompanySettingsPluginPage() {
   }
 
   if (!settingsRoutePath || isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading...</div>;
+    return <PageSkeleton variant="detail" />;
   }
 
   if (errorMessage) {

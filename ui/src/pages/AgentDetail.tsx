@@ -140,6 +140,7 @@ import {
   parseAgentDetailView,
   type AgentDetailView,
 } from "./agent-detail-navigation";
+import { ErrorState } from "../components/ErrorState";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -818,7 +819,7 @@ export function AgentDetail() {
     if (!configDirty) return true;
     return confirmAction(DISCARD_AGENT_CONFIG_CHANGES_OPTIONS);
   }, [configDirty, confirmAction]);
-  const { data: agent, isLoading, error } = useQuery<AgentDetailRecord>({
+  const { data: agent, isLoading, error, refetch } = useQuery<AgentDetailRecord>({
     queryKey: [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null],
     queryFn: () => agentsApi.get(routeAgentRef, lookupCompanyId),
     enabled: canFetchAgent,
@@ -1188,7 +1189,7 @@ export function AgentDetail() {
   }, [configDirty, prepareAgentNavigation]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!agent) return null;
   if (!urlRunId && legacyAuditSection) {
     return <Navigate to={agentScopedAuditHref(agent.id, legacyAuditSection)} replace />;
@@ -1528,7 +1529,7 @@ export function AgentDetail() {
         />
       )}
 
-      {showConfigActionBar && <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background py-4">
+      {showConfigActionBar && <footer className="sticky bottom-0 z-raised flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background py-4">
         <p role="status" className="text-xs text-muted-foreground">{configSaving ? "Saving changes…" : configDirty ? "You have unsaved changes." : ""}</p>
         <div className="flex gap-2">
           <Button variant="ghost" disabled={!configDirty || configSaving} onClick={() => cancelConfigActionRef.current?.()}>Discard</Button>

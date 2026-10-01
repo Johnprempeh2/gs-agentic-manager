@@ -998,7 +998,7 @@ function SelectStep(props: SelectStepProps) {
           <EmptyCandidates query={debouncedQuery} />
         ) : (
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+            <thead className="sticky top-0 z-raised bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left">
                   <Checkbox

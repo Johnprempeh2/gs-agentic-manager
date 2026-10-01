@@ -98,7 +98,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
   const classes = cn(
     "dashboard-list-row text-sm",
     // The row link stretches over the whole row; the chip links sit above it.
-    link && "relative cursor-pointer hover:bg-accent/50 transition-colors [&_a:not([data-row-link])]:relative [&_a:not([data-row-link])]:z-10",
+    link && "relative cursor-pointer hover:bg-accent/50 transition-colors [&_a:not([data-row-link])]:relative [&_a:not([data-row-link])]:z-raised",
     className,
   );
 

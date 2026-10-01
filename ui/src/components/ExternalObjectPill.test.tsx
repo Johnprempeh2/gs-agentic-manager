@@ -130,7 +130,7 @@ describe("ExternalObjectPill", () => {
     expect(html).toContain("Merged");
     expect(html).toContain("PR 241 - Merged");
     expect(html).not.toContain("acme/web#241</span>");
-    expect(html).toContain("text-violet-600");
+    expect(html).toContain("text-status-review");
     expect(html).not.toContain(">Github Pull Request</span>");
     expect(html).toContain('aria-label="Github Pull Request, Merged: acme/web#241: Add rich object presentation metadata"');
   });

@@ -1058,7 +1058,7 @@ function SelectStep({
                   Other Workspaces
                 </header>
               )}
-              <header className="sticky top-0 z-10 border-b border-border/60 bg-background px-5 py-2 text-sm font-medium text-foreground">
+              <header className="sticky top-0 z-raised border-b border-border/60 bg-background px-5 py-2 text-sm font-medium text-foreground">
                 {group.workspaceName}
               </header>
               {group.directories.map((directory) => (

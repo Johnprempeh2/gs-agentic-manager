@@ -573,7 +573,7 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
 
       return (
         <div key={groupKey} className="mb-2">
-          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b px-4 py-1.5">
+          <div className="sticky top-0 z-raised bg-background/95 backdrop-blur-sm border-b px-4 py-1.5">
             <p className="text-xs font-medium text-muted-foreground truncate">{label}</p>
           </div>
           {items.map((item, i) => renderItem(item, i, items))}

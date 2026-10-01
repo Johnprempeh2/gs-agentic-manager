@@ -369,7 +369,7 @@ export function EnvironmentVariableRow({
                           }}
                           aria-label="Version"
                           className={cn(
-                            "absolute right-8 top-1/2 z-10 -translate-y-1/2 rounded px-1.5 py-0.5 text-(length:--text-nano) font-medium",
+                            "absolute right-8 top-1/2 z-raised -translate-y-1/2 rounded px-1.5 py-0.5 text-(length:--text-nano) font-medium",
                             versionPinned
                               ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
                               : "text-muted-foreground hover:bg-accent",

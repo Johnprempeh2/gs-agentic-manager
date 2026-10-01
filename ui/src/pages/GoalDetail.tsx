@@ -32,6 +32,7 @@ import { GoalOwnerPicker } from "../components/goals/GoalOwnerPicker";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, SlidersHorizontal } from "lucide-react";
+import { ErrorState } from "../components/ErrorState";
 
 interface GoalPropertiesToggleButtonProps {
   panelVisible: boolean;
@@ -69,7 +70,8 @@ export function GoalDetail() {
   const {
     data: goal,
     isLoading,
-    error
+    error,
+    refetch,
   } = useQuery({
     queryKey: queryKeys.goals.detail(goalId!),
     queryFn: () => goalsApi.get(goalId!),
@@ -173,7 +175,7 @@ export function GoalDetail() {
   }, [hash, hasBlockers]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!goal) return null;
 
   const health = goalHealth(goal);

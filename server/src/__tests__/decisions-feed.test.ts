@@ -430,6 +430,35 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect(cardFor(await build(seeded.companyId), seeded.gre241)).toBeNull();
   });
 
+  // GRE-320: the card sent every instruction as a resume, and the comment route
+  // refuses resume for in_review and backlog with a 409.
+  it.each(["in_review", "backlog"] as const)("posts an instruction on a %s task and wakes its owner without moving it", async (status) => {
+    const seeded = await seedLiveScenario();
+    await db.update(issues).set({ status }).where(eq(issues.id, seeded.gre241));
+    const testApp = app(seeded.companyId);
+    const instruct = action(cardFor(await build(seeded.companyId), seeded.gre241), "instruct");
+
+    const [response] = await run(testApp, instruct, "Use the main branch.");
+
+    expect(response!.status).toBe(201);
+    const [instruction] = await db.select().from(issueComments).where(eq(issueComments.issueId, seeded.gre241));
+    expect(instruction?.body).toBe("Use the main branch.");
+    // The comment route sends its wakes after it responds.
+    await vi.waitFor(() => expect(wakeup).toHaveBeenCalledWith(seeded.workerId, expect.objectContaining({
+      reason: "issue_commented",
+      contextSnapshot: expect.objectContaining({ issueId: seeded.gre241, wakeCommentId: instruction!.id }),
+    })));
+    const [task] = await db.select().from(issues).where(eq(issues.id, seeded.gre241));
+    expect(task?.status).toBe(status);
+  });
+
+  it.each(["todo", "in_progress", "blocked"] as const)("keeps the instruction a resume on a %s task", async (status) => {
+    const seeded = await seedLiveScenario();
+    await db.update(issues).set({ status }).where(eq(issues.id, seeded.gre241));
+    const instruct = action(cardFor(await build(seeded.companyId), seeded.gre241), "instruct");
+    expect(instruct.requests).toEqual([expect.objectContaining({ method: "POST", body: { resume: true } })]);
+  });
+
   it("marks a recovery resolved and sends the task where the board chooses", async () => {
     const seeded = await seedLiveScenario();
     const testApp = app(seeded.companyId);
@@ -488,6 +517,60 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     const answered = cardFor(await build(seeded.companyId), seeded.gre138)!;
     expect(answered.clarity?.answer?.body).toBe("Costs need one row per client per month.");
     expect(answered.nextStep).not.toMatch(/^Waiting for/);
+  });
+
+  // GRE-316: Mica had no GitHub access, and each of three tasks sent its own card.
+  it("shows one card when three tasks of one agent wait for the same missing connection", async () => {
+    const companyId = randomUUID();
+    const micaId = randomUUID();
+    const otherId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: "GRE", requireBoardApprovalForNewAgents: false });
+    await db.insert(agents).values([micaId, otherId].map((id) => ({
+      id, companyId, name: id === micaId ? "Mica" : "Other", role: "engineer", status: "idle",
+      adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    })));
+    await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: USER_ID, status: "active", membershipRole: "owner" });
+    const tasks = [303, 304, 305].map((number) => ({ id: randomUUID(), number }));
+    const otherTask = randomUUID();
+    await db.insert(issues).values([
+      ...tasks.map(({ id, number }) => ({ id, companyId, identifier: `GRE-${number}`, issueNumber: number, title: `Task ${number}`, status: "in_review", priority: "medium", assigneeAgentId: micaId })),
+      { id: otherTask, companyId, identifier: "GRE-306", issueNumber: 306, title: "Task 306", status: "in_progress", priority: "medium", assigneeAgentId: otherId },
+    ]);
+    const intent = (issueId: string, agentId: string) => ({
+      companyId, issueId, kind: "connection_intent", status: "pending", title: "Connect GitHub",
+      addresseeUserId: USER_ID, createdByAgentId: agentId,
+      payload: { version: 1, serviceSlug: "github", serviceName: "GitHub", requestingAgentId: agentId, requestingAgentName: "Agent", phase: "requested" },
+    });
+    await db.insert(issueThreadInteractions).values([...tasks.map(({ id }) => intent(id, micaId)), intent(otherTask, otherId)]);
+    // A question on one of the tasks stays on that task's own card.
+    await db.insert(issueThreadInteractions).values({
+      companyId, issueId: tasks[0]!.id, kind: "ask_user_questions", status: "pending", title: "Which branch?", createdByAgentId: micaId,
+      payload: { version: 1, questions: [{ id: "branch", prompt: "Which branch?", selectionMode: "single", options: [{ id: "main", label: "main" }] }] },
+    });
+
+    const feed = await build(companyId);
+
+    const shared = feed.cards.filter((card) => card.id.startsWith("connection:"));
+    expect(shared).toHaveLength(1);
+    expect(shared[0]).toMatchObject({
+      id: `connection:${micaId}:github:`,
+      kind: "connection",
+      task: null,
+      title: "Mica needs GitHub for 3 tasks",
+      reason: "3 tasks wait for the same GitHub connection: GRE-303, GRE-304, GRE-305. One answer covers all of them.",
+      waiting: { id: micaId, name: "Mica" },
+    });
+    expect(shared[0]!.items).toHaveLength(3);
+    expect(action(shared[0]!, "reconnect")).toMatchObject({ type: "link", label: "Connect" });
+    // No task card repeats the connection request.
+    for (const { id } of tasks) {
+      expect(cardFor(feed, id)?.kinds ?? []).not.toContain("connection");
+    }
+    expect(cardFor(feed, tasks[0]!.id)).toMatchObject({ kind: "question", kinds: ["question"] });
+    // Another agent's single request keeps its own task card.
+    expect(cardFor(feed, otherTask)).toMatchObject({ kind: "connection" });
+    expect(feed.count).toBe(3);
+    expect(feed.countsByKind).toMatchObject({ connection: 2, question: 1 });
   });
 
   it("refuses clarity on a card that is gone, and refuses agent callers", async () => {

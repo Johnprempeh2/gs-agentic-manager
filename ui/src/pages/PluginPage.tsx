@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { NotFoundPage } from "./NotFound";
+import { PageSkeleton } from "../components/PageSkeleton";
 
 /**
  * Company-context plugin page. Renders a plugin's `page` slot at
@@ -136,7 +137,7 @@ export function PluginPage() {
   }
 
   if (!contributions) {
-    return <div className="text-sm text-muted-foreground">Loading…</div>;
+    return <PageSkeleton variant="detail" />;
   }
 
   if (!pluginId && pluginRoutePath) {

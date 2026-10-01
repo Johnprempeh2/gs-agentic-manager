@@ -15,6 +15,7 @@ import { GoalHealthLegend } from "../components/goals/GoalHealth";
 import { GoalScoreboardView, GoalsEmptyState, type AgentsById } from "../components/goals/GoalScoreboard";
 import { Button } from "@/components/ui/button";
 import { Target, Plus } from "lucide-react";
+import { ErrorState } from "../components/ErrorState";
 
 /** "3 active goals · Everest checked in 2h ago" */
 export function scoreboardLede(goals: readonly GoalWithProgress[], shown: number, agentsById: AgentsById): string {
@@ -41,7 +42,7 @@ export function Goals() {
     setBreadcrumbs([{ label: "Goals" }]);
   }, [setBreadcrumbs]);
 
-  const { data: goals, isLoading, error } = useQuery({
+  const { data: goals, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.goals.list(selectedCompanyId!),
     queryFn: () => goalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -69,6 +70,10 @@ export function Goals() {
 
   if (isLoading) {
     return <PageSkeleton variant="list" />;
+  }
+
+  if (error && !goals) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
   }
 
   const shownCount = entries.reduce((sum, entry) => sum + 1 + entry.subGoals.length, 0);
@@ -103,7 +108,7 @@ export function Goals() {
         ) : null}
       </header>
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {goals && entries.length === 0 ? (
         !hasAchieved ? (

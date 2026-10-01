@@ -341,7 +341,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left font-semibold text-foreground">Path</th>
+                <th className="sticky left-0 z-raised bg-muted/40 px-3 py-2 text-left font-semibold text-foreground">Path</th>
                 {LIFECYCLE_STAGES.map((stage) => (
                   <th key={stage.key} className="px-2 py-2 text-center font-medium text-muted-foreground">
                     {stage.label}
@@ -352,7 +352,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
             <tbody>
               {SMOKE_PATHS.map((path) => (
                 <tr key={path} className="border-b border-border last:border-0">
-                  <th scope="row" className="sticky left-0 z-10 bg-card px-3 py-2 text-left">
+                  <th scope="row" className="sticky left-0 z-raised bg-card px-3 py-2 text-left">
                     <span className="font-mono font-semibold text-foreground">{path}</span>
                     <span className="ml-2 text-foreground">{SMOKE_PATH_LABELS[path].title}</span>
                     <span className="block text-(length:--text-micro) font-normal text-muted-foreground">

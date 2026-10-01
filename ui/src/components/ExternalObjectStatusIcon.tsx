@@ -54,7 +54,7 @@ export function ExternalObjectStatusIcon({
   const reducedMotion = usePrefersReducedMotion();
   const Icon = externalObjectIconForKey(statusIconKey) ?? externalObjectIconForCategory(category);
   const tone = statusIconKey === "git-merge"
-    ? "text-violet-600 border-violet-600 dark:text-violet-400 dark:border-violet-400"
+    ? "text-status-review border-status-review"
     : externalObjectStatusIcon[category] ?? externalObjectStatusIconDefault;
   const livenessSuffix = liveness === "fresh" || liveness === "unknown"
     ? ""

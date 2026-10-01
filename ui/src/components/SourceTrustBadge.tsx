@@ -32,7 +32,7 @@ export function SourceTrustBadge({
             "inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0 text-(length:--text-nano) font-medium tracking-normal",
             promoted
               ? "border-border text-muted-foreground"
-              : "border-amber-500/40 text-amber-700 dark:text-amber-100",
+              : "border-status-warning/40 text-status-warning-foreground",
             className,
           )}
         >

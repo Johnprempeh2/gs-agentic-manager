@@ -5,6 +5,7 @@ import { accessApi } from "@/api/access";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCompany } from "@/context/CompanyContext";
 import { ToolsAccess } from "./ToolsAccess";
+import { PageSkeleton } from "../../components/PageSkeleton";
 
 /**
  * Admin gate for the Advanced door (PAP-10862, plan D8). The developer surface
@@ -22,7 +23,7 @@ export function AdvancedToolsRoute() {
   });
 
   if (boardAccess.isLoading) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading…</div>;
+    return <PageSkeleton variant="list" />;
   }
 
   const data = boardAccess.data;

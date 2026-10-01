@@ -246,7 +246,10 @@ import {
   SVG_CONTENT_TYPE,
 } from "../attachment-types.js";
 import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
-import { shouldWakeAssigneeForIssueComment } from "../services/issue-comment-wakeup.js";
+import {
+  isExplicitResumeCapableStatus,
+  shouldWakeAssigneeForIssueComment,
+} from "../services/issue-comment-wakeup.js";
 import { createSecretProposalsService } from "../services/secret-proposals.js";
 import { notifySecretProposalResolution } from "../services/secret-proposal-notifications.js";
 import {
@@ -2402,16 +2405,6 @@ function shouldHumanCommentResumeInProgressScheduledRetry(input: {
   return (
     typeof input.assigneeAgentId === "string" &&
     input.assigneeAgentId.length > 0
-  );
-}
-
-function isExplicitResumeCapableStatus(status: string | null | undefined) {
-  return (
-    status === "done" ||
-    status === "cancelled" ||
-    status === "blocked" ||
-    status === "todo" ||
-    status === "in_progress"
   );
 }
 

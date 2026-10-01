@@ -69,6 +69,7 @@ export function useIssueAndComments({
     isLoading,
     isPlaceholderData,
     error,
+    refetch,
   } = useQuery({
     ...getIssueDetailQueryOptions(queryClient, issueId!, {
       placeholderIssue: issueHeaderSeed
@@ -273,6 +274,7 @@ export function useIssueAndComments({
   return {
     isLoading,
     error,
+    refetch,
     issue,
     resolveWritableIssueId,
     loadedIssue,

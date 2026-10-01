@@ -395,7 +395,7 @@ export function TokensPanel({
       </Collapsible>
 
       {confirmToken ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-dialog flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
           <div className="w-full max-w-md space-y-3 rounded-lg border border-border bg-card p-5 shadow-lg">
             <div>
               <h3 className="text-sm font-semibold text-foreground">Revoke this token?</h3>

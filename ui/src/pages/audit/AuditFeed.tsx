@@ -25,6 +25,7 @@ import { agentsApi } from "@/api/agents";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
 import { useToastActions } from "@/context/ToastContext";
+import { PageSkeleton } from "../../components/PageSkeleton";
 
 const PAGE_SIZE = 50;
 const ALL = "__all";
@@ -654,9 +655,7 @@ export function AuditFeed({
           </CardContent>
         </Card>
       ) : feed.isLoading ? (
-        <Card>
-          <CardContent className="py-14 text-center text-sm text-muted-foreground">Loading…</CardContent>
-        </Card>
+        <PageSkeleton variant="list" />
       ) : feed.error ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-14 text-center">

@@ -696,7 +696,7 @@ function ActorGutter({ rows, height }: { rows: ReturnType<typeof computeLayout>[
       width={GEOM.gutter}
       height={height}
       viewBox={`0 0 ${GEOM.gutter} ${height}`}
-      className="sticky left-0 z-20 block bg-card"
+      className="sticky left-0 z-sticky block bg-card"
     >
       <rect x={0} y={0} width={GEOM.gutter} height={height} fill="var(--color-card)" />
       {rows.map((row, i) => {
@@ -740,7 +740,7 @@ function TimeAxisOverlay({
     <div
       aria-hidden="true"
       data-testid="work-timeline-time-axis"
-      className="pointer-events-none absolute left-0 right-0 top-0 z-30 overflow-hidden bg-card"
+      className="pointer-events-none absolute left-0 right-0 top-0 z-chrome overflow-hidden bg-card"
       style={{ height: AXIS_H }}
     >
       <svg
@@ -787,7 +787,7 @@ function Tooltip({ tooltip, now }: { tooltip: TooltipState; now: number }) {
   return (
     <div
       // design-allow(card-pattern): floating cursor-follow chart tooltip, not a content card (C5a Run 3)
-      className="pointer-events-none fixed z-50 max-w-(--sz-280px) rounded-md border border-foreground bg-card px-2.5 py-2 text-xs shadow-md"
+      className="pointer-events-none fixed z-popover max-w-(--sz-280px) rounded-md border border-foreground bg-card px-2.5 py-2 text-xs shadow-md"
       style={{ left, top: tooltip.y + 14 }}
     >
       <div className="text-(length:--text-compact) font-medium text-foreground">{truncate(title)}</div>

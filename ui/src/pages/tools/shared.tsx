@@ -7,7 +7,9 @@ import type {
 import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ErrorState as SharedErrorState, errorStateMessage } from "@/components/ErrorState";
 import { ApiError } from "@/api/client";
 
 /** Risk classification badge for a catalog tool. */
@@ -157,53 +159,40 @@ export function ToolsPageHeader({
   );
 }
 
-export function LoadingState({ label = "Loading…" }: { label?: string }) {
+/** Skeleton rows; the label is kept for screen readers only. */
+export function LoadingState({ label = "Loading" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
-      <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-      {label}
+    <div role="status" aria-busy="true" className="space-y-2 py-4">
+      <span className="sr-only">{label}</span>
+      {[0, 1, 2].map((row) => (
+        <Skeleton key={row} className="h-12 w-full" />
+      ))}
     </div>
   );
 }
 
-/** Actionable error surface — surfaces the server message and HTTP status. */
-export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  let message: string;
+export function toolsErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 403) {
-      message = "You do not have permission to view this. Tools & Access requires board/admin access.";
-    } else if (error.status === 404 || /route not found/i.test(error.message)) {
-      // Snapshot-skew window: the route exists in this build but not on the live server snapshot yet.
-      message = "Tools & Access isn't available on this server yet. Try refreshing after the next deployment.";
-    } else {
-      message = error.message;
+      return "You do not have permission to view this. Tools & Access requires board/admin access.";
     }
-  } else if (error instanceof Error) {
-    message = error.message;
-  } else {
-    message = "Something went wrong.";
+    if (error.status === 404 || /route not found/i.test(error.message)) {
+      // Snapshot-skew window: the route exists in this build but not on the live server snapshot yet.
+      return "Tools & Access isn't available on this server yet. Try refreshing after the next deployment.";
+    }
   }
+  return errorStateMessage(error);
+}
+
+/** Shared ErrorState with the Tools & Access 403/404 messages. */
+export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   return (
-    <Card className="border-destructive/40">
-      <CardContent className="flex flex-col gap-3 py-6">
-        <div className="flex items-start gap-2 text-sm text-destructive">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p className="font-medium">Could not load this view</p>
-            <p className="text-destructive/80">{message}</p>
-          </div>
-        </div>
-        {onRetry ? (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="self-start rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"
-          >
-            Retry
-          </button>
-        ) : null}
-      </CardContent>
-    </Card>
+    <SharedErrorState
+      compact
+      title="Could not load this view"
+      error={toolsErrorMessage(error)}
+      onRetry={onRetry}
+    />
   );
 }
 
