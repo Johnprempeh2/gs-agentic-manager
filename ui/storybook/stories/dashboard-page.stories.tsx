@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
-import type { AttentionFeed, AttentionItem } from "@greatstone/shared";
+import type { AttentionFeed, AttentionItem, DashboardRunActivityDay } from "@greatstone/shared";
 import { Dashboard } from "@/pages/Dashboard";
 import { DASHBOARD_OPEN_TASK_STATUSES } from "@/components/DashboardOverview";
 import { queryKeys } from "@/lib/queryKeys";
@@ -51,13 +51,30 @@ function installLiveRunsFixture() {
   };
 }
 
+/** A company four days old: runs only on the last four days of the 14-day window, ending today. */
+function firstWeekRunActivity(): DashboardRunActivityDay[] {
+  return Array.from({ length: 14 }, (_, i) => {
+    const daysAgo = 13 - i;
+    const date = new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+    const empty: DashboardRunActivityDay = { date, succeeded: 0, failed: 0, recovered: 0, other: 0, total: 0, failedByErrorCode: {} };
+    if (daysAgo > 3) return empty;
+    const failed = daysAgo === 1 ? 4 : 1;
+    const recovered = daysAgo === 0 ? 2 : 0;
+    const succeeded = 6 - daysAgo;
+    return { ...empty, succeeded, failed, recovered, total: succeeded + failed + recovered, failedByErrorCode: { process_lost: failed } };
+  });
+}
+
 /** Seeds the page's queries once; the Storybook client never refetches them. */
-function SeededDashboard({ children }: { children: ReactNode }) {
+function SeededDashboard({ children, runActivity }: { children: ReactNode; runActivity?: DashboardRunActivityDay[] }) {
   const queryClient = useQueryClient();
   useState(() => {
     installLiveRunsFixture();
     const openStatuses = new Set<string>(DASHBOARD_OPEN_TASK_STATUSES);
-    queryClient.setQueryData(queryKeys.dashboard(COMPANY_ID), storybookDashboardSummary);
+    queryClient.setQueryData(
+      queryKeys.dashboard(COMPANY_ID),
+      runActivity ? { ...storybookDashboardSummary, runActivity } : storybookDashboardSummary,
+    );
     queryClient.setQueryData(queryKeys.agents.list(COMPANY_ID), storybookAgents);
     queryClient.setQueryData(queryKeys.issues.list(COMPANY_ID), storybookIssues);
     queryClient.setQueryData(
@@ -76,8 +93,8 @@ const meta = {
   component: Dashboard,
   parameters: { layout: "padded" },
   decorators: [
-    (Story) => (
-      <SeededDashboard>
+    (Story, context) => (
+      <SeededDashboard runActivity={context.parameters.runActivity as DashboardRunActivityDay[] | undefined}>
         <Story />
       </SeededDashboard>
     ),
@@ -89,3 +106,6 @@ type Story = StoryObj<typeof meta>;
 
 /** Decisions line on top, then agents, live runs, metric cards, charts and recent activity. */
 export const Populated: Story = {};
+
+/** A young company: the run charts start at the first run instead of showing ten empty days. */
+export const FirstWeek: Story = { parameters: { runActivity: firstWeekRunActivity() } };

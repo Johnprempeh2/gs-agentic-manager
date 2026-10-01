@@ -188,6 +188,30 @@ const MOCK_CARDS: DiscoveryCard[] = [
     sourceBadge: "local",
   },
   {
+    // A GitHub import pinned to a commit: the byline names the repo, never the hash.
+    key: "affaan-m/ecc/tdd-workflow",
+    skillId: "s-ecc-tdd",
+    catalogRef: null,
+    name: "tdd-workflow",
+    slug: "tdd-workflow",
+    author: "affaan-m/ecc",
+    version: "e482e57",
+    tagline: "Write the failing test first, then the code.",
+    description: "Test-driven development loop for agents.",
+    categories: ["testing"],
+    iconUrl: null,
+    color: null,
+    starCount: 0,
+    agentCount: 4,
+    forkCount: 0,
+    installed: true,
+    required: false,
+    forkedFrom: false,
+    updatedAt: STORY_NOW - 1 * 86_400_000,
+    sourceBadge: "github",
+    sourceLabel: "affaan-m/ecc",
+  },
+  {
     key: "paperclipai/paperclip/paperclip",
     skillId: "s-core",
     catalogRef: "c-core",
@@ -208,6 +232,7 @@ const MOCK_CARDS: DiscoveryCard[] = [
     forkedFrom: false,
     updatedAt: STORY_NOW - 30 * 86_400_000,
     sourceBadge: "paperclip",
+    sourceLabel: "GS Agentic Manager bundled",
   },
   {
     key: "paperclipai/paperclip/diagnose-why-work-stopped",
@@ -240,9 +265,11 @@ function cardsForTab(cards: DiscoveryCard[], tab: DiscoveryTab): DiscoveryCard[]
 function DiscoveryGridHarness({
   initialTab = "installed",
   cards = MOCK_CARDS,
+  showBrowseRails = true,
 }: {
   initialTab?: DiscoveryTab;
   cards?: DiscoveryCard[];
+  showBrowseRails?: boolean;
 }) {
   const [tab, setTab] = useState<DiscoveryTab>(initialTab);
   const [sort, setSort] = useState<DiscoverySort>("agents");
@@ -301,6 +328,7 @@ function DiscoveryGridHarness({
       onScan={() => {}}
       scanPending={false}
       scanStatus={null}
+      showBrowseRails={showBrowseRails}
     />
   );
 }
@@ -316,5 +344,7 @@ export default meta;
 type Story = StoryObj<typeof DiscoveryGridHarness>;
 
 export const Installed: Story = { args: { initialTab: "installed" } };
+/** The default streamlined shell: no category rail, the page itself scrolls. */
+export const InstalledStreamlined: Story = { args: { initialTab: "installed", showBrowseRails: false } };
 export const Discover: Story = { args: { initialTab: "discover" } };
 export const EmptyInstalledLibrary: Story = { args: { initialTab: "installed", cards: [] } };

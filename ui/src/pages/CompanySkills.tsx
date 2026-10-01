@@ -628,6 +628,13 @@ export type DiscoveryCard = {
 
 export { SkillCardIcon } from "../components/SkillCardIcon";
 
+/** "Built in" for skills that ship with the app; a bare commit hash is not a version worth showing. */
+export function skillCardByline(card: Pick<DiscoveryCard, "required" | "author" | "version">): string {
+  if (card.required) return "Built in";
+  const version = card.version && !/^[0-9a-f]{7,40}$/i.test(card.version) ? ` · ${card.version}` : "";
+  return `by ${card.author}${version}`;
+}
+
 function discoveryVersionLabel(skill: {
   packageVersion: string | null;
   sourceRef: string | null;
@@ -877,9 +884,7 @@ function SkillCard({
         <SkillCardIcon card={card} />
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-sm font-medium text-foreground">{card.name}</div>
-          <div className="truncate text-xs text-muted-foreground">
-            by {card.author}{card.version ? ` · ${card.version}` : ""}
-          </div>
+          <div className="truncate text-xs text-muted-foreground">{skillCardByline(card)}</div>
           {badgeFolder !== undefined ? (
             <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <FolderSwatch color={badgeFolder?.color} className="h-2 w-2" />
