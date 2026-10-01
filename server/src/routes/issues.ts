@@ -3093,6 +3093,7 @@ function toCompactIssue(issue: any): CompactIssue {
       ? { blockedInboxAttention: issue.blockedInboxAttention }
       : {}),
     ...(issue.scheduledRetry ? { scheduledRetry: issue.scheduledRetry } : {}),
+    ...(issue.monitorNextCheckAt ? { monitorNextCheckAt: issue.monitorNextCheckAt } : {}),
     ...(issue.liveDescendantCount !== undefined
       ? { liveDescendantCount: issue.liveDescendantCount }
       : {}),

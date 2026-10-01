@@ -919,6 +919,8 @@ export type CompactIssue = Pick<
   reviewAttention?: IssueReviewAttention;
   blockedInboxAttention?: IssueBlockedInboxAttention | null;
   scheduledRetry?: IssueScheduledRetry | null;
+  /** Lets list rows show the waiting clock without the full monitor object. */
+  monitorNextCheckAt?: Date | null;
   liveDescendantCount?: number;
   myLastTouchAt?: Date | null;
   lastExternalCommentAt?: Date | null;
