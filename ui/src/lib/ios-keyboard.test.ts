@@ -34,6 +34,18 @@ describe("startVisualViewportSync", () => {
     expect(document.documentElement.style.getPropertyValue("--vv-offset-top")).toBe("240px");
   });
 
+  it("publishes how much of the page's bottom edge the keyboard hides", () => {
+    Object.defineProperty(window, "innerHeight", { value: 714, configurable: true });
+    viewport.height = 384;
+    viewport.offsetTop = 319; // iOS stopped 11 px short of the bottom
+    viewport.dispatchEvent(new Event("resize"));
+    expect(document.documentElement.style.getPropertyValue("--vv-bottom-inset")).toBe("11px");
+
+    viewport.offsetTop = 330; // panned all the way: nothing hidden
+    viewport.dispatchEvent(new Event("scroll"));
+    expect(document.documentElement.style.getPropertyValue("--vv-bottom-inset")).toBe("0px");
+  });
+
   it("nudges the page once the keyboard has closed but iOS left it panned", () => {
     viewport.offsetTop = 180;
     document.dispatchEvent(new FocusEvent("focusout"));

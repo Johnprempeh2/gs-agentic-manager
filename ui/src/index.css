@@ -2744,6 +2744,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-120px: 120px; /* Extracted from ui/src/components/KanbanBoard.tsx (min-h-[120px]). */
   --sz-safe-top: env(safe-area-inset-top); /* Extracted from ui/src/components/Layout.tsx (pt-[env(safe-area-inset-top)]). */
   --vv-offset-top: 0px; /* how far iOS has panned the page under the keyboard; lib/ios-keyboard.ts keeps it current */
+  --vv-bottom-inset: 0px; /* how much of the page's bottom edge the iOS keyboard hides; same source */
   --sz-calc-14: calc(5rem + env(safe-area-inset-bottom)); /* Extracted from ui/src/components/Layout.tsx (pb-[calc(5rem+env(safe-area-inset-bottom))]). */
   --sz-38ch: 38ch; /* Extracted from ui/src/components/MarkdownBody.test.tsx (max-w-[38ch]). */
   --sz-208px: 208px; /* Extracted from ui/src/components/MarkdownEditor.test.tsx (max-h-[208px]). */

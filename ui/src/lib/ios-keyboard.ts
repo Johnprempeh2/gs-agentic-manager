@@ -6,8 +6,11 @@
  * so the tab bar and composer sit mid-screen until the next scroll.
  *
  * This keeps `--vv-offset-top` in step with the visible area so the header can
- * follow it, and nudges the page by a pixel once the keyboard has gone if iOS
- * left it panned, which makes it lay the page out again.
+ * follow it, and `--vv-bottom-inset` with how much of the page's bottom edge
+ * the keyboard hides (iOS often stops panning short of it), so the composer
+ * can rise above the keyboard. It also nudges the page by a pixel once the
+ * keyboard has gone if iOS left it panned, which makes it lay the page out
+ * again.
  */
 const SETTLE_DELAY_MS = 300;
 
@@ -28,7 +31,9 @@ export function startVisualViewportSync(win: Window = window): () => void {
     win.cancelAnimationFrame(frame);
     frame = win.requestAnimationFrame(() => {
       const offset = Number.isFinite(viewport.offsetTop) ? Math.max(0, viewport.offsetTop) : 0;
+      const hidden = win.innerHeight - viewport.height - offset;
       root.style.setProperty("--vv-offset-top", `${offset}px`);
+      root.style.setProperty("--vv-bottom-inset", `${Number.isFinite(hidden) ? Math.max(0, hidden) : 0}px`);
     });
   };
 
@@ -57,5 +62,6 @@ export function startVisualViewportSync(win: Window = window): () => void {
     win.cancelAnimationFrame(frame);
     clearTimeout(settleTimer);
     root.style.removeProperty("--vv-offset-top");
+    root.style.removeProperty("--vv-bottom-inset");
   };
 }
