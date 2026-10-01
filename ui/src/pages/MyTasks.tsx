@@ -28,11 +28,13 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { resolveIssuesPresentation } from "./Issues";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { ErrorState } from "../components/ErrorState";
+import { useDialogActions } from "../context/DialogContext";
 
 /** Tasks behind decisions are fetched one by one; the Decisions page holds the rest. */
 const DECISION_ISSUE_FETCH_LIMIT = 50;
 
 export function MyTasks() {
+  const { openNewIssue } = useDialogActions();
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const issuesPresentation = resolveIssuesPresentation(streamlinedUiEnabled);
   const { selectedCompanyId } = useCompany();
@@ -178,7 +180,12 @@ export function MyTasks() {
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {nothingNeedsYou ? (
-        <EmptyState icon={CheckCircle2} message="Nothing needs you right now." />
+        <EmptyState
+          icon={CheckCircle2}
+          message="Nothing needs you right now."
+          action="Create task"
+          onAction={() => openNewIssue()}
+        />
       ) : (
         <>
           {merged.issues.length > 0 && (

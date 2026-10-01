@@ -14,6 +14,7 @@ import { ApprovalCard } from "../components/ApprovalCard";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "../components/ErrorState";
+import { EmptyState } from "../components/EmptyState";
 
 type StatusFilter = "pending" | "all";
 
@@ -110,12 +111,14 @@ export function Approvals() {
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ShieldCheck className="h-8 w-8 text-subtle-foreground mb-3" />
-          <p className="text-sm text-muted-foreground">
-            {statusFilter === "pending" ? "No pending approvals." : "No approvals yet."}
-          </p>
-        </div>
+        <EmptyState
+          icon={ShieldCheck}
+          message={statusFilter === "pending" ? "No pending approvals." : "No approvals yet."}
+          description="Agents ask here when a step needs your sign-off."
+          action={statusFilter === "pending" ? "Show all approvals" : "Back to Decisions"}
+          onAction={() => navigate(statusFilter === "pending" ? "/approvals/all" : "/decisions")}
+          hideActionIcon
+        />
       )}
 
       {filtered.length > 0 && (

@@ -12,6 +12,7 @@ import { ChevronRight, GitBranch } from "lucide-react";
 import { cn } from "../lib/utils";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { ErrorState } from "../components/ErrorState";
+import { useDialogActions } from "../context/DialogContext";
 
 function OrgTree({
   nodes,
@@ -87,6 +88,7 @@ function OrgTreeNode({
 
 export function Org() {
   const { selectedCompanyId } = useCompany();
+  const { openNewAgent } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
 
   useEffect(() => {
@@ -119,6 +121,8 @@ export function Org() {
         <EmptyState
           icon={GitBranch}
           message="No agents in the organization. Create agents to build your org chart."
+          action="New agent"
+          onAction={openNewAgent}
         />
       )}
 

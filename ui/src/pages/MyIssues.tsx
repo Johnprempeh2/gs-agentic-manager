@@ -13,8 +13,10 @@ import { formatDate } from "../lib/utils";
 import { ListTodo } from "lucide-react";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { ErrorState } from "../components/ErrorState";
+import { useDialogActions } from "../context/DialogContext";
 
 export function MyIssues() {
+  const { openNewIssue } = useDialogActions();
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -58,7 +60,7 @@ export function MyIssues() {
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {myIssues.length === 0 && (
-        <EmptyState icon={ListTodo} message="No tasks assigned to you." />
+        <EmptyState icon={ListTodo} message="No tasks assigned to you." action="Create task" onAction={() => openNewIssue()} />
       )}
 
       {myIssues.length > 0 && (

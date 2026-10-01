@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, Settings2, X } from "lucide-react";
+import { Check, Inbox, Loader2, Settings2, X } from "lucide-react";
 import type { Agent, AttentionItem } from "@greatstone/shared";
-import { useParams } from "@/lib/router";
+import { useNavigate, useParams } from "@/lib/router";
 import { attentionApi } from "../api/attention";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
@@ -47,6 +47,7 @@ import { IssueGroupHeader } from "../components/IssueGroupHeader";
 import { Button } from "../components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import { ErrorState } from "../components/ErrorState";
+import { EmptyState } from "../components/EmptyState";
 
 /**
  * Queue page. A single queue's pending
@@ -61,6 +62,7 @@ import { ErrorState } from "../components/ErrorState";
  */
 export function DecisionQueuePage() {
   const { selectedCompanyId } = useCompany();
+  const navigate = useNavigate();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
@@ -269,12 +271,14 @@ export function DecisionQueuePage() {
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {isEmpty ? (
-        <div className="rounded-xl border border-dashed border-border py-14 text-center">
-          <p className="text-sm font-medium text-foreground">This queue is empty.</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Decisions land here when they match the queue's rules or an agent adds them.
-          </p>
-        </div>
+        <EmptyState
+          icon={Inbox}
+          message="This queue is empty."
+          description="Decisions land here when they match the queue's rules or an agent adds them."
+          action="Back to Decisions"
+          onAction={() => navigate("/decisions")}
+          hideActionIcon
+        />
       ) : (
         <div className="space-y-4">
           {visibleCount === 0 ? (
