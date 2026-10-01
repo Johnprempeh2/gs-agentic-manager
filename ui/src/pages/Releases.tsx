@@ -121,6 +121,11 @@ export function RestartReportSummary({ report }: { report: RestartReport }) {
   );
 }
 
+/** "rc-2026-09-30.3" and "live-2026-09-30.3" name the same release. */
+export function releaseNumber(tag: string): string {
+  return tag.replace(/^(rc|live|stable)-/, "");
+}
+
 // ── Progress ────────────────────────────────────────────────────────────────
 
 const STEPS: { state: ReleaseProgressState; label: string }[] = [
@@ -590,7 +595,15 @@ export function ReleasesView({
     if (ok) overrideMutation.mutate();
   }
 
-  const showProgress = progress && progress.id !== dismissedJobId;
+  // A finished, healthy release card is history once a newer version is
+  // live: it sat above "Live now" and read as the current one. Failed and
+  // rolled-back cards stay until dismissed.
+  const supersededByLive = Boolean(
+    progress && progress.state === "healthy" && live?.tag && live.date &&
+      (!progress.targetTag || releaseNumber(progress.targetTag) !== releaseNumber(live.tag)) &&
+      Date.parse(live.date) > Date.parse(progress.updatedAt),
+  );
+  const showProgress = progress && progress.id !== dismissedJobId && !supersededByLive;
   const titleBy = next ? actorLabel(next.titleEditedBy, agentNames) : null;
 
   return (
@@ -613,7 +626,9 @@ export function ReleasesView({
       {disabledReason ? (
         <div className="rounded-lg border border-border bg-card p-4 text-sm" data-testid="release-disabled">
           <p className="font-medium text-foreground">Release is off on this server.</p>
-          <p className="text-muted-foreground">{disabledReason}</p>
+          <p className="text-muted-foreground">
+            {disabledReason.replace(/^release is off on this server:\s*/i, "").replace(/^./, (first) => first.toUpperCase())}
+          </p>
         </div>
       ) : null}
 
@@ -652,7 +667,7 @@ export function ReleasesView({
               <Meta label="Commit">
                 <span className="font-mono text-xs">{shortId(live.commit)}</span>
               </Meta>
-              <Meta label="Released by">{live.releasedBy ?? "Unknown"}</Meta>
+              {live.releasedBy ? <Meta label="Released by">{live.releasedBy}</Meta> : null}
             </dl>
           </CardContent>
         ) : null}
