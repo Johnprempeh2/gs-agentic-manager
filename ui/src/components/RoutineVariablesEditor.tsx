@@ -323,7 +323,7 @@ export function RoutineVariablesHint() {
                 Built-in variables
               </h3>
               <p className="text-muted-foreground">
-                These are filled in automatically — no setup needed and they will not appear in the
+                These are filled in automatically: no setup needed and they will not appear in the
                 Variables list.
               </p>
               <div className="overflow-hidden rounded-lg border border-border/70">

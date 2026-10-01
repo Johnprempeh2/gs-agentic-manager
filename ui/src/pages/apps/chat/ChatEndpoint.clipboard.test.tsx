@@ -650,7 +650,7 @@ describe("chat setup and identity-link clipboard actions", () => {
     // Same failure again, well inside the dedupe window: the second toast is
     // suppressed, so the button itself is the only thing left to say so.
     const toastsAfterFirst = mocks.pushToast.mock.calls.length;
-    await click("Couldn’t copy — select it manually");
+    await click("Couldn’t copy. Select it manually");
     expect(container.textContent).toContain("Couldn’t copy");
     expect(container.textContent).not.toContain("Webhook secret copied");
     expect(mocks.pushToast.mock.calls.length).toBeGreaterThanOrEqual(

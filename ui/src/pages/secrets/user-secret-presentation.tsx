@@ -74,7 +74,7 @@ export function myValueLabel(state: MyValueState): string {
  * decisions. E.g. "5 of 7 members set".
  */
 export function coverageSummaryLabel(summary: UserSecretCoverageSummary | undefined): string {
-  if (!summary) return "—";
+  if (!summary) return "Unknown";
   const total = summary.configuredCount + summary.missingCount + summary.inactiveCount;
   return `${summary.configuredCount} of ${total} set`;
 }

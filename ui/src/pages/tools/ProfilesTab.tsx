@@ -599,7 +599,7 @@ function AllowList({ rows, catalogLoading }: { rows: AllowListRow[]; catalogLoad
                       <span className="font-mono text-xs text-foreground">{row.toolName}</span>
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">
-                      {row.applicationName ?? <span className="text-subtle-foreground">—</span>}
+                      {row.applicationName ?? <span className="text-subtle-foreground">None</span>}
                     </td>
                     <td className="px-3 py-2.5">
                       {row.isReadOnly || row.isWrite || row.isDestructive ? (
@@ -609,11 +609,11 @@ function AllowList({ rows, catalogLoading }: { rows: AllowListRow[]; catalogLoad
                           isDestructive={row.isDestructive}
                         />
                       ) : (
-                        <span className="text-subtle-foreground">—</span>
+                        <span className="text-subtle-foreground">Unknown</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5">
-                      {row.risk ? <RiskBadge risk={row.risk} /> : <span className="text-subtle-foreground">—</span>}
+                      {row.risk ? <RiskBadge risk={row.risk} /> : <span className="text-subtle-foreground">Unknown</span>}
                     </td>
                     <td className="px-3 py-2.5">
                       <SourceBadge source={row.source} />
@@ -629,7 +629,7 @@ function AllowList({ rows, catalogLoading }: { rows: AllowListRow[]; catalogLoad
         <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
           Tools marked <span className="font-medium">pattern</span> were pulled in by a wildcard, application,
-          connection, or risk selector rather than named explicitly — review them when the catalog changes.
+          connection, or risk selector rather than named explicitly. Review them when the catalog changes.
         </p>
       ) : null}
     </div>

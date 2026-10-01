@@ -197,7 +197,7 @@ export function RoutineSaveBar({
 export function RoutineReadOnlyStrip() {
   return (
     <div className="-mx-8 mt-6 border-t border-border bg-muted/20 px-8 py-3 text-xs text-muted-foreground">
-      Read-only — you don't own this routine.
+      Read-only: you don't own this routine.
     </div>
   );
 }

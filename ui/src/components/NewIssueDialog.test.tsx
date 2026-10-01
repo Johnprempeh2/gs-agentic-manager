@@ -651,7 +651,7 @@ describe("NewIssueDialog", () => {
     await waitForAssertion(() => {
       expect(container.querySelector('[data-testid="new-issue-paused-assignee-note"]')).not.toBeNull();
     });
-    expect(container.textContent).toContain("arrived paused from an organization import");
+    expect(container.textContent).toContain("arrived paused from an organisation import");
 
     act(() => root.unmount());
   });

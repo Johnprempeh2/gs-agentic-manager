@@ -22,7 +22,7 @@ const instructions: Record<Platform, { steps: string[]; tip?: string }> = {
     steps: [
       "Open Finder and navigate to the folder.",
       "Right-click (or Control-click) the folder.",
-      "Hold the Option (⌥) key — \"Copy\" changes to \"Copy as Pathname\".",
+      "Hold the Option (⌥) key. \"Copy\" changes to \"Copy as Pathname\".",
       "Click \"Copy as Pathname\", then paste here.",
     ],
     tip: "You can also open Terminal, type cd, drag the folder into the terminal window, and press Enter. Then type pwd to see the full path.",
@@ -30,7 +30,7 @@ const instructions: Record<Platform, { steps: string[]; tip?: string }> = {
   windows: {
     steps: [
       "Open File Explorer and navigate to the folder.",
-      "Click in the address bar at the top — the full path will appear.",
+      "Click in the address bar at the top. The full path will appear.",
       "Copy the path, then paste here.",
     ],
     tip: "Alternatively, hold Shift and right-click the folder, then select \"Copy as path\".",

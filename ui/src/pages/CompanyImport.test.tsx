@@ -639,7 +639,7 @@ describe("CompanyImport", () => {
 
     await clickButton((text) => text === "Preview import");
 
-    expect(container.textContent).toContain("Uploading and analyzing your package");
+    expect(container.textContent).toContain("Uploading and analysing your package");
     expect(container.textContent).toContain("Keep this page open.");
 
     // A mid-flight config edit keeps the progress panel visible (the request
@@ -647,14 +647,14 @@ describe("CompanyImport", () => {
     // settles silently instead of describing a package no longer selected.
     await enterGithubUrl("https://github.com/acme/starter-b/tree/main/company");
 
-    expect(container.textContent).toContain("Uploading and analyzing your package");
+    expect(container.textContent).toContain("Uploading and analysing your package");
 
     await act(async () => {
       rejectPreview(new Error("stream disconnected"));
     });
     await flushReact();
 
-    expect(container.textContent).not.toContain("Uploading and analyzing your package");
+    expect(container.textContent).not.toContain("Uploading and analysing your package");
     expect(container.textContent).not.toContain("Preview failed:");
     expect(mockPushToast).not.toHaveBeenCalled();
 
@@ -692,14 +692,14 @@ describe("CompanyImport", () => {
     await clickButton((text) => text.startsWith("Import 3 file"));
 
     expect(container.textContent).toContain("Import running on the server");
-    expect(container.textContent).toContain("safe to keep waiting");
+    expect(container.textContent).toContain("Safe to keep waiting");
 
     // While the import runs, previewing and the structural package/settings
     // controls are locked (and explained), so nothing can replace or unmount
     // the plan the import started from.
     expect(findButton((text) => text === "Preview import")?.disabled).toBe(true);
     expect(container.textContent).toContain(
-      "Import in progress — the package and settings unlock when it finishes.",
+      "Import in progress. The package and settings unlock when it finishes.",
     );
     const lockedUrlInput = container.querySelector<HTMLInputElement>(
       'input[placeholder="https://github.com/owner/repo/tree/main/company"]',
@@ -733,7 +733,7 @@ describe("CompanyImport", () => {
 
     expect(container.textContent).not.toContain("Import running on the server");
     expect(container.textContent).toContain("Import failed: connection reset");
-    expect(container.textContent).toContain("check the target company before retrying.");
+    expect(container.textContent).toContain("Check the target company before retrying.");
     expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "error" }));
 
     // The new-company name feeds the request payload too: editing it clears
@@ -888,7 +888,7 @@ describe("CompanyImport", () => {
     await settle();
 
     expect(container.textContent).not.toContain("Import running on the server");
-    expect(container.textContent).toContain("your session may have expired");
+    expect(container.textContent).toContain("Your session may have expired");
     expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "error" }));
   });
 
@@ -950,7 +950,7 @@ describe("CompanyImport", () => {
     await renderPageAndImport();
 
     expect(container.textContent).toContain("Import completed");
-    expect(container.textContent).toContain("select it from the organization switcher");
+    expect(container.textContent).toContain("Select it from the organisation switcher");
     // No readable company, so no dashboard CTA — the switcher guidance stands in.
     expect(container.querySelector('[data-testid="import-expired-open-company"]')).toBeNull();
   });
@@ -969,7 +969,7 @@ describe("CompanyImport", () => {
     await settle();
 
     expect(container.textContent).toContain("Import failed:");
-    expect(container.textContent).toContain("it may have restarted while the import ran");
+    expect(container.textContent).toContain("It may have restarted while the import ran");
     expect(container.textContent).not.toContain("Import completed");
     expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "error" }));
   });
@@ -991,7 +991,7 @@ describe("CompanyImport", () => {
     await settle();
 
     expect(container.textContent).toContain("Import failed:");
-    expect(container.textContent).toContain("it may have restarted while the import ran");
+    expect(container.textContent).toContain("It may have restarted while the import ran");
     expect(container.textContent).not.toContain("Import completed");
     expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "error" }));
   });

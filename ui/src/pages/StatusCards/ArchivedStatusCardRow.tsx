@@ -9,7 +9,7 @@ import { formatCents, formatTokens, rollupUpdates } from "./format";
 import type { StatusCardView } from "./types";
 
 function shortDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "never";
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 

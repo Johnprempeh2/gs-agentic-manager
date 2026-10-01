@@ -101,7 +101,7 @@ export function GatewaysList() {
         body:
           gateway.status === "active"
             ? `${gateway.name} is exposing its tools again.`
-            : `${gateway.name} is off — every client goes silent.`,
+            : `${gateway.name} is off. Every client goes silent.`,
         tone: "success",
       });
       await queryClient.invalidateQueries({ queryKey: gatewaysQueryKey(selectedCompanyId!) });
@@ -237,7 +237,7 @@ export function GatewaysList() {
                             {active} active{expiring > 0 ? ` · ${expiring} expiring` : ""}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                            {lastUsed ? <RelativeTime value={lastUsed} /> : "—"}
+                            {lastUsed ? <RelativeTime value={lastUsed} /> : "Never"}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex justify-end">{toggle(gateway)}</div>
@@ -277,7 +277,7 @@ export function GatewaysList() {
                         />
                         <MobileField
                           label="Last used"
-                          value={lastUsed ? <RelativeTime value={lastUsed} /> : "—"}
+                          value={lastUsed ? <RelativeTime value={lastUsed} /> : "Never"}
                         />
                       </dl>
                     </div>
@@ -294,7 +294,7 @@ export function GatewaysList() {
             <div className="text-sm font-semibold text-foreground">Why a gateway?</div>
             <p className="mt-1 text-sm text-muted-foreground">
               You pick which apps go through it, who can use it, and how. Revoke the token, the whole
-              gateway goes silent — no app-by-app cleanup.
+              gateway goes silent. No app-by-app cleanup.
             </p>
           </div>
         </div>

@@ -321,7 +321,7 @@ function buildOperations(
     const lastFrame = groupFrames.at(-1);
     const range = firstFrame === lastFrame
       ? `frame ${firstFrame?.frameId}`
-      : `frames ${firstFrame?.frameId}–${lastFrame?.frameId}`;
+      : `frames ${firstFrame?.frameId} to ${lastFrame?.frameId}`;
     operations.push({
       key: `frames:${firstFrame?.frameId}`,
       frames: groupFrames,
@@ -572,9 +572,9 @@ function InterpretationStage({ entry, last }: { entry: TraceEntry; last: boolean
                     <td className="px-3 py-2">
                       <span className={cn("rounded border px-1.5 py-0.5 text-(length:--text-nano)", mappingTone(mapping.action))}>{mapping.action}</span>
                     </td>
-                    <td className="px-3 py-2 font-mono">{mapping.inputPath ?? "—"}</td>
-                    <td className="px-3 py-2 font-mono">{mapping.outputPath ?? "—"}</td>
-                    <td className="max-w-xs px-3 py-2 text-muted-foreground">{mapping.reason ?? "—"}</td>
+                    <td className="px-3 py-2 font-mono">{mapping.inputPath ?? "None"}</td>
+                    <td className="px-3 py-2 font-mono">{mapping.outputPath ?? "None"}</td>
+                    <td className="max-w-xs px-3 py-2 text-muted-foreground">{mapping.reason ?? "None"}</td>
                   </tr>
                 ))}
               </tbody>

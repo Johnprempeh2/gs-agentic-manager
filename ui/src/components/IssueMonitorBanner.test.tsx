@@ -51,7 +51,7 @@ describe("buildMonitorSurfaceCopy", () => {
     );
 
     expect(copy).not.toBeNull();
-    expect(copy!.bannerTitle).toBe("Waiting on monitor — resumes in 2h 12m");
+    expect(copy!.bannerTitle).toBe("Waiting on monitor: resumes in 2h 12m");
     expect(copy!.stripTitle).toBe("Resumes in 2h 12m");
     expect(copy!.tone).toBe("info");
     expect(copy!.bannerMeta).toContain("Attempt 1");
@@ -94,7 +94,7 @@ describe("buildMonitorSurfaceCopy", () => {
       derived({ state: "due-now", nextCheckAt: NOW.toISOString(), attemptCount: 1 }),
       NOW,
     );
-    expect(dueNow!.bannerTitle).toBe("Waiting on monitor — due now");
+    expect(dueNow!.bannerTitle).toBe("Waiting on monitor: due now");
     expect(dueNow!.stripTitle).toBe("Due now");
     expect(dueNow!.bannerMeta).toContain("Checking momentarily…");
     expect(dueNow!.tone).toBe("info");
@@ -107,7 +107,7 @@ describe("buildMonitorSurfaceCopy", () => {
       }),
       NOW,
     );
-    expect(overdue!.bannerTitle).toBe("Waiting on monitor — overdue by 18m");
+    expect(overdue!.bannerTitle).toBe("Waiting on monitor: overdue by 18m");
     expect(overdue!.stripTitle).toBe("Overdue by 18m");
     expect(overdue!.bannerMeta).toContain("Fires on next tick");
     expect(overdue!.tone).toBe("warning");
@@ -171,7 +171,7 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
       );
     });
 
-    expect(container.textContent).toContain("Waiting on monitor — resumes in 2h");
+    expect(container.textContent).toContain("Waiting on monitor: resumes in 2h");
     expect(container.textContent).toContain("Watching: vercel-deploy");
 
     const button = Array.from(container.querySelectorAll("button")).find((b) =>

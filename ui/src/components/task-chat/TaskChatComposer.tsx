@@ -310,11 +310,11 @@ function modePlaceholder(mode: IssueWorkMode, agentName: string, mobile: boolean
   }
   switch (mode) {
     case "planning":
-      return `Plan with ${agentName} — shapes the plan doc, no code changes…`;
+      return `Plan with ${agentName}: shapes the plan doc, no code changes…`;
     case "ask":
-      return `Ask ${agentName} a question — read-only, nothing runs…`;
+      return `Ask ${agentName} a question: read-only, nothing runs…`;
     default:
-      return `Message ${agentName} — describe what you want done…`;
+      return `Message ${agentName}: describe what you want done…`;
   }
 }
 

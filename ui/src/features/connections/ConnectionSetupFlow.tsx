@@ -2923,7 +2923,7 @@ function GalleryStep({
           </p>
           {!zapierSource && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Any remote tool URL works here — including a local MCP server like{" "}
+              Any remote tool URL works here, including a local MCP server like{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-xs">http://127.0.0.1:8848/mcp</code>.
             </p>
           )}
@@ -3125,7 +3125,7 @@ function LinkConnectStep({
             <p className="mt-2 text-xs text-muted-foreground">
               {needsKey
                 ? "Paste the key this app gave you."
-                : "Most servers just work from the address — pick Yes only if the server gave you a key, or if it asks you to sign in."}
+                : "Most servers just work from the address. Pick Yes only if the server gave you a key, or if it asks you to sign in."}
             </p>
           </div>
         )}

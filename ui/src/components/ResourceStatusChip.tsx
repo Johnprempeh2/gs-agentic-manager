@@ -41,7 +41,7 @@ const VARIANTS: Record<ResourceStatusVariant, VariantSpec> = {
     color: "blue",
     glyph: "↑",
     label: "Update available",
-    title: "Unedited — a newer shipped default can be applied",
+    title: "Unedited: a newer shipped default can be applied",
   },
   drifted: {
     color: "gray",
@@ -53,7 +53,7 @@ const VARIANTS: Record<ResourceStatusVariant, VariantSpec> = {
     color: "gray",
     glyph: "◌",
     label: "Schedule off",
-    title: "No background work runs until you enable it — costs zero tokens",
+    title: "No background work runs until you enable it (costs zero tokens)",
   },
   schedule_on: { color: "green", glyph: "●", label: "Weekly", title: "Runs on the weekly schedule" },
   pending_approval: {

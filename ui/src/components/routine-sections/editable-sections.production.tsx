@@ -72,7 +72,7 @@ const activityGatePolicyOptions = [
   {
     value: "always",
     title: "Run on every scheduled tick",
-    description: "Fire on the schedule no matter what — the default behavior.",
+    description: "Fire on the schedule no matter what (the default behaviour).",
   },
   {
     value: "require_external_activity",
@@ -103,7 +103,7 @@ const signingModeDescriptions: Record<string, string> = {
   github_hmac: "Accept GitHub-style X-Hub-Signature-256 header (HMAC over raw body, no timestamp).",
   app_webhook: "Accept a bearer token or an HMAC-SHA256 signature over the exact request body in X-Hub-Signature or X-Hub-Signature-256.",
   fireflies_hmac: "Signed webhook (legacy).",
-  none: "No authentication — the webhook URL itself acts as a shared secret.",
+  none: "No authentication: the webhook URL itself acts as a shared secret.",
 };
 const SIGNING_MODES_WITHOUT_REPLAY_WINDOW = new Set(["app_webhook", "bearer", "github_hmac", "fireflies_hmac", "none"]);
 
@@ -624,7 +624,7 @@ export function VariablesSection() {
       <div className="flex items-center gap-3 rounded-md border border-border bg-muted/20 px-4 py-3 text-xs">
         <span className="flex-1 text-muted-foreground">
           Variables are auto-detected from <code className="font-mono">{"{{placeholders}}"}</code> in
-          the title &amp; instructions. The variable name is read-only — rename by editing the
+          the title &amp; instructions. The variable name is read-only. Rename by editing the
           placeholder.
         </span>
         <Button variant="secondary" size="sm" onClick={() => navigateToSection("overview")}>

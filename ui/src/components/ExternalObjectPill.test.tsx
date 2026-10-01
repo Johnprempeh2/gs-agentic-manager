@@ -26,7 +26,7 @@ describe("ExternalObjectPill", () => {
     expect(html).toContain('data-external-status="succeeded"');
     expect(html).toContain('data-external-liveness="fresh"');
     expect(html).toContain("×4");
-    expect(html).toContain('aria-label="GitHub pull request — Succeeded: Add external refs"');
+    expect(html).toContain('aria-label="GitHub pull request, Succeeded: Add external refs"');
   });
 
   it("falls back to a non-interactive span when no URL is supplied", () => {
@@ -43,7 +43,7 @@ describe("ExternalObjectPill", () => {
     );
     expect(html).toContain('data-mention-kind="external-object"');
     expect(html).not.toContain("<a ");
-    expect(html).toContain('aria-label="External object — Not yet resolved"');
+    expect(html).toContain('aria-label="External object, Not yet resolved"');
   });
 
   it("applies the dashed-border liveness overlay when stale or auth_required", () => {
@@ -106,7 +106,7 @@ describe("ExternalObjectPill", () => {
     );
 
     expect(html).toContain("PR 241 - Not yet refreshed");
-    expect(html).toContain('aria-label="GitHub pull request — Not yet refreshed: acme/web#241"');
+    expect(html).toContain('aria-label="GitHub pull request, Not yet refreshed: acme/web#241"');
     expect(html).not.toContain("Not yet resolved");
   });
 
@@ -132,7 +132,7 @@ describe("ExternalObjectPill", () => {
     expect(html).not.toContain("acme/web#241</span>");
     expect(html).toContain("text-violet-600");
     expect(html).not.toContain(">Github Pull Request</span>");
-    expect(html).toContain('aria-label="Github Pull Request — Merged: acme/web#241: Add rich object presentation metadata"');
+    expect(html).toContain('aria-label="Github Pull Request, Merged: acme/web#241: Add rich object presentation metadata"');
   });
 
   it("labels generic URL link objects as URL instead of URL link", () => {
@@ -149,7 +149,7 @@ describe("ExternalObjectPill", () => {
       />,
     );
 
-    expect(html).toContain('aria-label="URL — Not yet resolved"');
+    expect(html).toContain('aria-label="URL, Not yet resolved"');
     expect(html).not.toContain("URL link");
   });
 });

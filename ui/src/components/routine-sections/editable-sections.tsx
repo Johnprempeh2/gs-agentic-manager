@@ -68,7 +68,7 @@ const activityGatePolicyOptions = [
   {
     value: "always",
     title: "Run on every scheduled tick",
-    description: "Fire on the schedule no matter what — the default behavior.",
+    description: "Fire on the schedule no matter what (the default behaviour).",
   },
   {
     value: "require_external_activity",
@@ -404,7 +404,7 @@ export function VariablesSection() {
       <div className="flex items-center gap-3 rounded-md border border-border bg-muted/20 px-4 py-3 text-xs">
         <span className="flex-1 text-muted-foreground">
           Variables are auto-detected from <code className="font-mono">{"{{placeholders}}"}</code> in
-          the title &amp; instructions. The variable name is read-only — rename by editing the
+          the title &amp; instructions. The variable name is read-only. Rename by editing the
           placeholder.
         </span>
         <Button variant="secondary" size="sm" onClick={() => navigateToSection("overview")}>

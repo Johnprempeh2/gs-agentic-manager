@@ -68,7 +68,7 @@ function ProposalRow({
         {/* Headline */}
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           {isSecret ? (
-            <SecretPathName name={proposal.proposedName ?? "—"} className="text-sm" />
+            <SecretPathName name={proposal.proposedName ?? "Unnamed"} className="text-sm" />
           ) : (
             <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm">
               {proposal.target ? (
@@ -194,7 +194,7 @@ export function ProposalsTab({
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
         Agents propose credentials and access bindings; you approve or reject them here. Proposed
-        values are never shown — only a fingerprint and length.
+        values are never shown, only a fingerprint and length.
       </p>
       {sorted.map((proposal) => (
         <ProposalRow

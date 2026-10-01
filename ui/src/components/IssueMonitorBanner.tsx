@@ -89,17 +89,17 @@ export function buildMonitorSurfaceCopy(
   switch (derived.state) {
     case "scheduled":
     case "retrying":
-      bannerTitle = isScheduledRetryOnly ? `Agent resumes ${eta}` : `Waiting on monitor — resumes ${eta}`;
+      bannerTitle = isScheduledRetryOnly ? `Agent resumes ${eta}` : `Waiting on monitor: resumes ${eta}`;
       stripTitle = `Resumes ${eta}`;
       break;
     case "due-now":
-      bannerTitle = isScheduledRetryOnly ? "Agent retry due now" : "Waiting on monitor — due now";
+      bannerTitle = isScheduledRetryOnly ? "Agent retry due now" : "Waiting on monitor: due now";
       stripTitle = "Due now";
       statusHint = "Checking momentarily…";
       break;
     case "overdue":
     default:
-      bannerTitle = isScheduledRetryOnly ? `Agent retry ${eta}` : `Waiting on monitor — ${eta}`;
+      bannerTitle = isScheduledRetryOnly ? `Agent retry ${eta}` : `Waiting on monitor: ${eta}`;
       stripTitle = capitalize(eta);
       statusHint = "Fires on next tick";
       break;

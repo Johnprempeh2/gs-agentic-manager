@@ -201,7 +201,7 @@ describe("TokensPanel", () => {
         ownerNote: "",
       }),
     );
-    expect(container.textContent).toContain("New token — copy now");
+    expect(container.textContent).toContain("New token: copy now");
     // Reveal-once banner shows the full value immediately after creation.
     expect(container.textContent).toContain("pcgw_live_FULLSECRETVALUE");
 

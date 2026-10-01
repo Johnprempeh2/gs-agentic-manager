@@ -109,7 +109,7 @@ function effectSummary(
     case "assign_issue":
       return `Reassign ${target}`;
     case "resolve_blocker":
-      return `Unblock ${target} — remove ${pluralize(effect.removeBlockedByIssueIds.length, "blocker")}`;
+      return `Unblock ${target}: remove ${pluralize(effect.removeBlockedByIssueIds.length, "blocker")}`;
     case "cancel_issue_tree": {
       const snapshot = snapshots[effect.targetIssueId];
       const descendantCount = snapshot?.descendantCount ?? snapshot?.descendantIds?.length ?? snapshot?.childCount ?? 0;
@@ -142,11 +142,11 @@ function executionRow(
   const target = issueLabel(targetRef, execution.targetIssueId);
   const result = execution.result ?? {};
   if (execution.status === "skipped") {
-    return { key: execution.id, status: "skipped", summary: `Skipped ${target} — target changed since proposal`, link: targetRef };
+    return { key: execution.id, status: "skipped", summary: `Skipped ${target}: target changed since proposal`, link: targetRef };
   }
   if (execution.status === "failed") {
     const cause = FAILURE_CAUSE[execution.error ?? ""] ?? execution.error ?? "the effect could not run";
-    return { key: execution.id, status: "failed", summary: `Failed on ${target} — ${cause}`, link: targetRef };
+    return { key: execution.id, status: "failed", summary: `Failed on ${target}: ${cause}`, link: targetRef };
   }
   if (execution.status === "claimed") {
     return { key: execution.id, status: "claimed", summary: `Running on ${target}…`, link: targetRef };
@@ -563,7 +563,7 @@ export function DecisionCard({
             <div className="flex items-center justify-between gap-2 pt-1">
               <span className="text-xs text-muted-foreground">Not now?</span>
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => onDismiss?.()}>
-                Dismiss — no effects
+                Dismiss (no effects)
               </Button>
             </div>
           )}
@@ -596,7 +596,7 @@ export function DecisionCard({
           )}
           {decision.status === "decided" && dismissed && (
             <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Dismissed — no effects were run.
+              Dismissed. No effects were run.
             </p>
           )}
           {decision.status === "decided" && !dismissed && (executions ?? []).length > 0 && (

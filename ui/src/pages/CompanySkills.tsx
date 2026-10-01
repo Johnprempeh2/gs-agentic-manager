@@ -474,7 +474,7 @@ function TrustChip({ level }: { level: CompanySkillTrustLevel }) {
     markdown_only: {
       icon: ShieldCheck,
       label: "Markdown only",
-      tooltip: "Text only — no scripts, no binaries, no assets.",
+      tooltip: "Text only: no scripts, no binaries, no assets.",
       className: "border-border bg-muted/40 text-muted-foreground",
     },
     assets: {
@@ -517,7 +517,7 @@ function CompatChip({ compatibility }: { compatibility: CompanySkillCompatibilit
     invalid: {
       icon: XOctagon,
       label: "Invalid",
-      tooltip: "This skill cannot be installed — content is not valid Agent Skills markdown.",
+      tooltip: "This skill cannot be installed: content is not valid Agent Skills markdown.",
       className: "border-destructive/40 bg-destructive/10 text-destructive",
     },
   } as const;
@@ -1917,7 +1917,7 @@ function CatalogDetailPane({
             </Button>
           </span>
         </TooltipTrigger>
-        <TooltipContent>This skill cannot be installed — its content is not valid Agent Skills markdown.</TooltipContent>
+        <TooltipContent>This skill cannot be installed: its content is not valid Agent Skills markdown.</TooltipContent>
       </Tooltip>
     );
   } else if (!isInstalled) {
@@ -2163,7 +2163,7 @@ export function InstallPreviewDialog({
               <div className="text-foreground">{skill.recommendedForRoles.length === 0 ? "any" : skill.recommendedForRoles.join(" · ")}</div>
               <div className="text-muted-foreground">Provenance</div>
               <div className="min-w-0">
-                <div className="truncate">{packageName ?? "—"}{packageVersion ? ` v${packageVersion}` : ""}</div>
+                <div className="truncate">{packageName ?? "Unknown"}{packageVersion ? ` v${packageVersion}` : ""}</div>
                 <div className="truncate font-mono text-(length:--text-micro) text-muted-foreground">{skill.contentHash}</div>
               </div>
             </div>
@@ -3639,8 +3639,8 @@ export function SkillDetailPage({
                 disabled={updateSettingsPending}
                 className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
               >
-                <option value="company">Organization — visible inside this organization</option>
-                <option value="private">Private — only visible in your library</option>
+                <option value="company">Organisation: visible inside this organisation</option>
+                <option value="private">Private: only visible in your library</option>
               </select>
               <p className="text-xs text-muted-foreground">Public link sharing is coming later.</p>
             </div>
@@ -4736,7 +4736,7 @@ export function CompanySkills() {
         title: result.action === "created" ? "Skill installed" : result.action === "updated" ? "Skill updated" : "Skill is up to date",
         body: result.action === "created"
           ? enabledCount > 0
-            ? `${result.skill.name} — enabled for ${enabledCount} agent${enabledCount === 1 ? "" : "s"}.`
+            ? `${result.skill.name}: enabled for ${enabledCount} agent${enabledCount === 1 ? "" : "s"}.`
             : `${result.skill.name} is in the library but not enabled for any agent yet. Use "Add to agent" to enable it.`
           : result.skill.name,
       });

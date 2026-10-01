@@ -463,7 +463,7 @@ function ReceiptDisclosure({
                 <li key={item.id}>
                   <span className="font-medium">{item.label}</span> ·{" "}
                   {verdict?.verdict}
-                  {verdict?.reason ? ` — ${verdict.reason}` : ""}
+                  {verdict?.reason ? ` (${verdict.reason})` : ""}
                 </li>
               );
             })}
@@ -1140,7 +1140,7 @@ function CheckboxConfirmationCard({
 
   const countHint =
     maximum < Number.POSITIVE_INFINITY
-      ? `${selected.size} selected · choose ${minimum}–${maximum}`
+      ? `${selected.size} selected · choose ${minimum} to ${maximum}`
       : minimum > 0
         ? `${selected.size} selected · at least ${minimum}`
         : `${selected.size} selected`;

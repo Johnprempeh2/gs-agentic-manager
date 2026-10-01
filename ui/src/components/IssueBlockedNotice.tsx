@@ -58,10 +58,10 @@ function BlockerRecoveryIndicator({
       data-recovery-kind={action.kind}
       data-recovery-lane={lineage?.lane}
       role="status"
-      aria-label={detail ? `${label} — ${detail}` : label}
+      aria-label={detail ? `${label}: ${detail}` : label}
       title={detail
-        ? `${label} — ${detail}. Open the source task to act.`
-        : `${label} — open the source task to act.`}
+        ? `${label}: ${detail}. Open the source task to act.`
+        : `${label}. Open the source task to act.`}
       className={`[&>svg]:size-2.5 gap-0.5 px-1.5 text-(length:--text-nano) ${tone.className}`}
     >
       <Icon className="h-2.5 w-2.5" aria-hidden />
@@ -214,7 +214,7 @@ function SuccessfulRunHandoffInFlightNotice({
           <span className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
         </span>
         <p className="min-w-0 leading-5">
-          A correction run is in progress — the agent is working. This alert returns if the run
+          A correction run is in progress. The agent is working. This alert returns if the run
           stops without choosing a next step.
           {shortRunId ? (
             <>
@@ -355,7 +355,7 @@ function WaitingOnLiveWorkNotice({
               </div>
               <div className="min-w-0 pb-0.5">
                 <span className="inline-block rounded-md border border-dashed border-blue-300/70 px-2 py-1 text-xs text-blue-800 dark:border-blue-500/40 dark:text-blue-200">
-                  This task — resumes automatically when the chain is done
+                  This task (resumes automatically when the chain is done)
                 </span>
               </div>
             </div>
@@ -660,7 +660,7 @@ export function IssueBlockedNotice({
                       ? <>Work on this task is blocked by {blockerLabel}, but the chain is stalled in review without a clear next step. Resolve the stalled reviews below or remove them as blockers.</>
                       : <>Work on this task is blocked by {blockerLabel}, but the chain is stalled in review without a clear next step. Resolve the stalled review below or remove it as a blocker.</>
                     : reopenSuppressed
-                      ? <>A message won&rsquo;t restart this task yet — it stays blocked by {blockerLabel} until {blockers.length === 1 ? "it is" : "they are"} done, then it reopens automatically. Comments still notify {responsibleName} for questions or triage in the meantime.</>
+                      ? <>A message won&rsquo;t restart this task yet. It stays blocked by {blockerLabel} until {blockers.length === 1 ? "it is" : "they are"} done, then it reopens automatically. Comments still notify {responsibleName} for questions or triage in the meantime.</>
                       : <>Work on this task is blocked by {blockerLabel} until {blockers.length === 1 ? "it is" : "they are"} complete. Comments still notify the assignee for questions or triage.</>
                   : <>Work on this task is blocked until someone moves it back to To do. Comments still notify the assignee for questions or triage.</>}
               </p>

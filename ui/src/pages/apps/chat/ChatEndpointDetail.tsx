@@ -1109,7 +1109,7 @@ function Activity({
                   <p className="mt-1 text-xs text-muted-foreground">{activityKindLabels[item.kind]}</p>
                   {item.fileTransfer && (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {item.fileTransfer.filename} —{" "}
+                      {item.fileTransfer.filename}:{" "}
                       {item.fileTransfer.phase.replaceAll("_", " ")}
                     </p>
                   )}

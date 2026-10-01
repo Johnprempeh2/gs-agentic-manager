@@ -156,7 +156,7 @@ export function PhotonConnectStep({
               />
               <span>
                 {line.phoneNumber}
-                {line.unavailableReason ? ` — ${line.unavailableReason}` : ""}
+                {line.unavailableReason ? ` (${line.unavailableReason})` : ""}
               </span>
             </label>
           ))}

@@ -431,7 +431,7 @@ export function TestPanel({
           <FilterChip label={`Read ${readActions.length}`} active={kindFilter === "read"} onClick={() => setKindFilter("read")} />
           <FilterChip label={`Write ${writeActions.length}`} active={kindFilter === "write"} onClick={() => setKindFilter("write")} />
         </div>
-        <p className="text-xs text-muted-foreground">{visibleCount} matches · sorted A–Z</p>
+        <p className="text-xs text-muted-foreground">{visibleCount} matches · sorted A to Z</p>
       </section>
 
       {visibleCount === 0 ? (
@@ -643,10 +643,10 @@ function AgentPicker({
         <div className="border-t border-border p-3">
           <p className="text-xs font-semibold text-foreground">What the badges mean</p>
           <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
-            <li><span className="font-medium text-foreground">Allowed</span> — runs immediately when you press Run.</li>
-            <li><span className="font-medium text-foreground">Ask first</span> — Run is parked in Review for your OK.</li>
+            <li><span className="font-medium text-foreground">Allowed</span>: runs immediately when you press Run.</li>
+            <li><span className="font-medium text-foreground">Ask first</span>: Run is parked in Review for your OK.</li>
             <li>
-              <span className="font-medium text-foreground">Off</span> — won't run. Change it in{" "}
+              <span className="font-medium text-foreground">Off</span>: won't run. Change it in{" "}
               <Link className="text-primary hover:underline" to={appTabHref(connectionId, "permissions")}>
                 Permissions
               </Link>.
@@ -839,7 +839,7 @@ function splitRequiredOptional(schema: JsonSchemaNode): JsonSchemaNode {
 const GUT_CHECK: Record<ToolConnectionTestDecision, (app: string, agent: string) => string> = {
   allowed: (app, agent) => `This runs a real call against ${app} as ${agent}.`,
   ask_first: () => `Waiting for your OK before this call leaves GS Agentic Manager.`,
-  off: (_app, agent) => `No call will be made — this action is off for ${agent}.`,
+  off: (_app, agent) => `No call will be made. This action is off for ${agent}.`,
 };
 
 function ActionTester({
@@ -1308,7 +1308,7 @@ function PrettyPreview({ value }: { value: unknown }) {
 }
 
 function cellText(value: unknown): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "None";
   if (typeof value === "object") return Array.isArray(value) ? `[${value.length}]` : "{…}";
   return String(value);
 }
@@ -1490,11 +1490,11 @@ function AskFirstResult({
     phase === "running"
       ? "Approved · running"
       : phase === "denied"
-        ? "Denied — see Review for why"
+        ? "Denied: see Review for why"
         : phase === "cancelled"
           ? "Cancelled"
           : phase === "expired"
-            ? "Expired — send it again"
+            ? "Expired: send it again"
             : `Waiting · ${relTime(requestedAt)}`;
   const settled = phase === "denied" || phase === "cancelled" || phase === "expired";
 
@@ -1599,15 +1599,15 @@ function OffExplanation({
               Want to test it? Turn it on for {agent.name} in{" "}
               <Link className="font-medium text-primary hover:underline" to={appTabHref(connectionId, "permissions")}>
                 Permissions
-              </Link>{" "}
-              — set it to Allowed or Ask first.
+              </Link>
+              . Set it to Allowed or Ask first.
             </p>
           </div>
         </div>
         <Button asChild size="sm">
           <Link to={permHref}>Open Permissions →</Link>
         </Button>
-        <p className="text-xs text-muted-foreground">No call will be made — this action is off for {agent.name}.</p>
+        <p className="text-xs text-muted-foreground">No call will be made. This action is off for {agent.name}.</p>
       </div>
 
       <aside>
@@ -1657,7 +1657,7 @@ export function errorHints(message: string, reasonCode: string | null | undefine
   const haystack = `${reasonCode ?? ""} ${message}`.toUpperCase();
   if (haystack.includes("NOT_FOUND")) {
     return [
-      "Double-check the ID or name you entered — pick it from a dropdown if one is offered.",
+      "Double-check the ID or name you entered. Pick it from a dropdown if one is offered.",
       "Make sure this agent has access to that resource in the connected account.",
     ];
   }
@@ -1669,12 +1669,12 @@ export function errorHints(message: string, reasonCode: string | null | undefine
   }
   if (haystack.includes("INVALID_ARGUMENT") || haystack.includes("INVALID") || haystack.includes("BAD_REQUEST")) {
     return [
-      "Check the field formats above — a value may be the wrong type or shape.",
+      "Check the field formats above. A value may be the wrong type or shape.",
       "Open “More options” to confirm any advanced fields are filled in correctly.",
     ];
   }
   if (haystack.includes("RATE_LIMIT") || haystack.includes("RESOURCE_EXHAUSTED") || haystack.includes("429")) {
-    return ["The app is rate-limiting calls right now — wait a moment and run it again."];
+    return ["The app is rate-limiting calls right now. Wait a moment and run it again."];
   }
   // Locked generic fallback (copy-spec decision #2).
   return ["Check the inputs above and try again."];

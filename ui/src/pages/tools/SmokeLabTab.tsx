@@ -40,9 +40,9 @@ const DEMO_EMAIL = "smoke@paperclip.test";
 const DEMO_PASSWORD = "smoke-password";
 
 function formatTime(value: string | Date | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "not yet";
   const date = new Date(value as string | Date);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "unknown";
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
@@ -209,7 +209,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
           </a>
         </div>
         <p className="mt-1.5 max-w-3xl text-sm text-muted-foreground">
-          Exercise every integration path (P1–P7) end-to-end against deterministic local fixtures —
+          Exercise every integration path (P1 to P7) end-to-end against deterministic local fixtures:
           a fake OAuth provider and loopback MCP servers. Nothing here touches a real vendor or a
           real credential. Start the services, install the fixture apps, then drive the governed
           lifecycle from a browser smoke run. New here? Follow the{" "}
@@ -317,7 +317,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
           <p className="text-xs font-semibold text-foreground">Fake OAuth demo credentials</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Type these into the fake provider's real consent page during a P1 (OAuth) smoke. Fixed
-            fixture values — safe to show.
+            fixture values (safe to show).
           </p>
           <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs text-foreground">
             <span>email: {DEMO_EMAIL}</span>

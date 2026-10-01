@@ -2852,7 +2852,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   disabled={!stageAutomation || rerunCurrentStageAutomation.isPending || rerunBlockedByPermission}
-                  title={rerunBlockedByPermission ? "Permission still missing — request access first" : undefined}
+                  title={rerunBlockedByPermission ? "Permission still missing: request access first" : undefined}
                   onSelect={(event) => {
                     event.preventDefault();
                     setRetryTargetStageId(null);
@@ -3376,7 +3376,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
             ) : null}
             {breakdown && pieceCountTotal === 0 ? (
               <p className="py-2 text-sm text-muted-foreground">
-                Nothing was worth splitting — this case moved straight ahead without creating any {pieceNounPluralLabel}.
+                Nothing was worth splitting. This case moved straight ahead without creating any {pieceNounPluralLabel}.
               </p>
             ) : (
               <BuiltFromTree rows={childRows} />
@@ -3737,7 +3737,7 @@ function PipelineEventText({
     const issue = event.automation.issue;
     return (
       <>
-        Automation completed — ran <span className="font-medium">{routineName}</span>
+        Automation completed: ran <span className="font-medium">{routineName}</span>
         {issue ? (
           <>
             {" -> "}

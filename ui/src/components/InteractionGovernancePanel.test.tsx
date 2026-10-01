@@ -146,7 +146,7 @@ describe("InteractionGovernancePanel", () => {
     const listText = listbox?.textContent ?? "";
     expect(listText).toContain("Anyone (default)");
     expect(listText).toContain(
-      "New cards are open — the board or any agent can respond, including the one that asked.",
+      "New cards are open. The board or any agent can respond, including the one that asked.",
     );
     expect(listText).toContain("New cards wait for a person on the board. Agents are turned away.");
     // Each option keeps a label-only typeahead value so keyboard search does not

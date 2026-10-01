@@ -1482,7 +1482,7 @@ function SkillPane({
             <div className="min-w-0 flex-1">
               <p>
                 {skill.editableReason ?? "This skill is read-only because it comes from an external source."}
-                {" "}Make an editable copy to change it — the original stays untouched.
+                {" "}Make an editable copy to change it. The original stays untouched.
               </p>
               <Button
                 type="button"
@@ -2239,7 +2239,7 @@ function SaveInputDialog({
         <DialogHeader>
           <DialogTitle>Save test input</DialogTitle>
           <DialogDescription>
-            Runs snapshot input at run time — editing later won't change past runs.
+            Runs snapshot input at run time. Editing later won't change past runs.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">

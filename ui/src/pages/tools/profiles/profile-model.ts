@@ -369,7 +369,7 @@ export interface TemplateDef {
 
 export const TEMPLATES: TemplateDef[] = [
   { key: "read_only", title: "Read-only", description: "See and fetch, but never change anything." },
-  { key: "everyday", title: "Everyday work", description: "Read and make routine changes — no destructive tools." },
+  { key: "everyday", title: "Everyday work", description: "Read and make routine changes (no destructive tools)." },
   { key: "full_access", title: "Full access", description: "Everything every connected app offers." },
   { key: "scratch", title: "Start from scratch", description: "An empty profile you build up tool by tool." },
   { key: "copy", title: "Copy an existing profile", description: "Start from a profile you already have." },

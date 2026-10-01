@@ -429,7 +429,7 @@ export function EmailEndpointSetup() {
                     >
                       {i.inbox_id}
                       {inboxes.data?.some((e) => e.address === i.inbox_id)
-                        ? " — already assigned"
+                        ? " (already assigned)"
                         : ""}
                     </option>
                   ))}
@@ -475,10 +475,10 @@ export function EmailEndpointSetup() {
                   className={selectClass}
                 >
                   <option value="websocket">
-                    Live connection — works locally
+                    Live connection (works locally)
                   </option>
                   <option value="webhook">
-                    Webhook — requires public HTTPS
+                    Webhook (requires public HTTPS)
                   </option>
                 </select>
               </div>

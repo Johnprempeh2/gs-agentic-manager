@@ -103,7 +103,7 @@ export function genericConnectGuidance(
     case "mcp_remote_url_invalid":
       return {
         title: "That doesn't look like a server address",
-        body: "Paste the full address, starting with https:// — for example https://mcp.example.com/mcp.",
+        body: "Paste the full address, starting with https:// (for example https://mcp.example.com/mcp).",
         focus: "url",
       };
     case "remote_http_private_endpoint":

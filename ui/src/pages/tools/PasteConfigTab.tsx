@@ -220,7 +220,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
       JSON.parse(trimmed);
       return null;
     } catch {
-      return "That doesn't look like valid JSON yet — paste the whole snippet, including the outer braces.";
+      return "That doesn't look like valid JSON yet. Paste the whole snippet, including the outer braces.";
     }
   }, [draftText]);
 
@@ -285,7 +285,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
           <p className="text-xs text-amber-600">{localParseError}</p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Paste an MCP config — the snippet a README tells you to copy.
+            Paste an MCP config (the snippet a README tells you to copy).
           </p>
         )}
       </div>

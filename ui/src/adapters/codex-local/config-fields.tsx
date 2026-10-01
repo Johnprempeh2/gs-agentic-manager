@@ -314,7 +314,7 @@ export function CodexLocalConfigFields({
           </Field>
           <Field
             label="Maximum iterations"
-            hint="Qualified range is 1–8. Invalid values fail closed to 8."
+            hint="Qualified range is 1 to 8. Invalid values fail closed to 8."
           >
             <DraftNumberInput
               value={Number(runnerSchemaValue("maxIterations", 8))}
@@ -329,7 +329,7 @@ export function CodexLocalConfigFields({
           </Field>
           <Field
             label="Maximum output tokens"
-            hint="Qualified range is 1–4096."
+            hint="Qualified range is 1 to 4096."
           >
             <DraftNumberInput
               value={Number(runnerSchemaValue("maxOutputTokens", 4_096))}
@@ -344,7 +344,7 @@ export function CodexLocalConfigFields({
           </Field>
           <Field configSection="runPolicy"
             label="Invocation timeout (seconds)"
-            hint="Qualified range is 1–300 seconds."
+            hint="Qualified range is 1 to 300 seconds."
           >
             <DraftNumberInput
               value={Number(runnerSchemaValue("timeoutSeconds", 300))}
@@ -405,14 +405,14 @@ export function CodexLocalConfigFields({
             <SelectTrigger aria-label="Permission mode" className="w-full font-sans">
               <SelectValue>
                 {runnerPermissionModeUnsupported
-                  ? "Unsupported saved mode — select a qualified mode"
+                  ? "Unsupported saved mode: select a qualified mode"
                   : runnerPermissionCapability.options.find((option) => option.value === runnerPermissionMode)?.label}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {runnerPermissionModeUnsupported && (
                 <SelectItem value="__unsupported__" disabled>
-                  Unsupported saved mode — select a qualified mode
+                  Unsupported saved mode: select a qualified mode
                 </SelectItem>
               )}
               {runnerPermissionCapability.options.map((option) => (

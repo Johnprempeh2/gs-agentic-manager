@@ -473,7 +473,7 @@ describe("TestPanel", () => {
     await clickByText("Run");
     await settle();
 
-    expect(container.textContent).toContain("Denied — see Review for why");
+    expect(container.textContent).toContain("Denied: see Review for why");
     expect(container.textContent).not.toContain("Cancel this request");
   });
 

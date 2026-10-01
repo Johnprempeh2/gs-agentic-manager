@@ -2925,7 +2925,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     await render();
 
     expect(container.textContent).toContain(
-      "Any remote tool URL works here — including a local MCP server like",
+      "Any remote tool URL works here, including a local MCP server like",
     );
     expect(container.textContent).toContain("http://127.0.0.1:8848/mcp");
     const linkInput = Array.from(container.querySelectorAll<HTMLInputElement>("input")).find((i) =>

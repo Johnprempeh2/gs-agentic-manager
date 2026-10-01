@@ -369,7 +369,7 @@ export function InstanceExperimentalSettings() {
         {/* Greatstone (GRE-230): upstream hid this opt-in (PAP-11233); John turns it on and off here. */}
         <ExperimentalToggleCard
           title="Conference Room Chat"
-          description="Adds a Conference Room — one chat where you and your whole team work together — plus the live activity feed and the redesigned onboarding. Also restyles task threads as chat bubbles. Turn off anytime to restore the classic UI."
+          description="Adds a Conference Room (one chat where you and your whole team work together) plus the live activity feed and the redesigned onboarding. Also restyles task threads as chat bubbles. Turn off anytime to restore the classic UI."
           checked={enableConferenceRoomChat}
           onCheckedChange={(checked) => toggleMutation.mutate({ enableConferenceRoomChat: checked })}
           disabled={toggleMutation.isPending}
@@ -616,7 +616,7 @@ export function InstanceExperimentalSettings() {
                     </div>
                     <p className="max-w-2xl text-sm text-muted-foreground">
                       This is an isolated git-worktree preview instance. Turn this on to let the scheduler execute runs
-                      here. Only tasks created after enabling will run automatically — copied/pre-existing tasks stay
+                      here. Only tasks created after enabling will run automatically. Copied/pre-existing tasks stay
                       parked. Toggling off and on resets the cutoff.
                     </p>
                   </div>
@@ -648,7 +648,7 @@ export function InstanceExperimentalSettings() {
                   <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
                     <div className="space-y-0.5">
-                      <p className="font-medium text-foreground">Execution is suppressed — effectively off.</p>
+                      <p className="font-medium text-foreground">Execution is suppressed (effectively off).</p>
                       <p className="text-muted-foreground">
                         {worktreeRunExecutionState.reason === "instance_mismatch"
                           ? "This setting was armed in a different instance and copied here, so no tasks run automatically."
@@ -712,7 +712,7 @@ export function InstanceExperimentalSettings() {
 
           <ExperimentalToggleCard
             title="Classic Task Interface"
-            description="Restores the previous task detail page: the page-level header with inline description editing, the plain comment thread, and the fixed Properties sidebar. Chat-only features — streaming activity folding, inline plan and question cards, the three-mode composer — are unavailable in the classic view."
+            description="Restores the previous task detail page: the page-level header with inline description editing, the plain comment thread, and the fixed Properties sidebar. Chat-only features (streaming activity folding, inline plan and question cards, the three-mode composer) are unavailable in the classic view."
             footnote="Switching takes effect immediately. No task data is affected."
             checked={enableClassicTaskInterface}
             onCheckedChange={(checked) =>

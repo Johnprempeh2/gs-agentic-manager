@@ -158,7 +158,7 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
         <p>
           Define credentials that <span className="font-medium">each member supplies for
           themselves</span>. You set the shape here; every user enters their own value under My
-          secrets. Coverage shows how many members have set a value — never the values themselves.
+          secrets. Coverage shows how many members have set a value, never the values themselves.
         </p>
       </div>
 

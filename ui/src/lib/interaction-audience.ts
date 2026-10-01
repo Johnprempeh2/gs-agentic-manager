@@ -50,7 +50,7 @@ const RESOLVER_POLICY_LABELS: Record<IssueThreadInteractionCanonicalResolverPoli
  */
 const RESOLVER_POLICY_EFFECTS: Record<IssueThreadInteractionCanonicalResolverPolicy, string> = {
   anyone:
-    "Anyone in the organization can respond — the board or any agent, including the one that asked.",
+    "Anyone in the organisation can respond: the board or any agent, including the one that asked.",
   not_creator:
     "Anyone in the organization except the agent that created the card, and its run. Use this when the answer has to come from someone else.",
   human_only: "Only a person on the board can respond. Agents are turned away.",
@@ -191,12 +191,12 @@ export function describeResolverAudience({
   const summary = isUserAddressee
     ? `Only ${addressee} can respond.`
     : policy === "human_only"
-    ? `${hasAddressee ? `Assigned to ${addressee}. ` : ""}Only a person on the board can respond — agents cannot resolve this card.`
+    ? `${hasAddressee ? `Assigned to ${addressee}. ` : ""}Only a person on the board can respond. Agents cannot resolve this card.`
     : hasAddressee
       ? `Only ${addressee} or a person on the board can respond.`
       : policy === "not_creator"
         ? `Anyone in the organization except ${creator} can respond.`
-        : "Anyone in the organization can respond — the board or any agent, including the one that asked.";
+        : "Anyone in the organisation can respond: the board or any agent, including the one that asked.";
 
   // Same fact, fewer words: a collapsed row has to answer "is this mine to
   // decide?" in one glance, next to the buttons that act on the answer.

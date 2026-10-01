@@ -197,7 +197,7 @@ export function SecretBindingPicker({
             {selectedMissing && value ? (
               <option value={value.secretId}>
                 {missingHint
-                  ? `${missingHint.name} — ${missingHint.companyName ?? "another organization"}`
+                  ? `${missingHint.name} (${missingHint.companyName ?? "another organisation"})`
                   : hintsPending
                     ? `Secret (${value.secretId.slice(0, 8)}…)`
                     : `Missing secret (${value.secretId.slice(0, 8)}…)`}
@@ -205,7 +205,7 @@ export function SecretBindingPicker({
             ) : null}
             {filteredSecrets.map((secret) => (
               <option key={secret.id} value={secret.id}>
-                {secret.name} — {describeSecret(secret)}
+                {secret.name} ({describeSecret(secret)})
               </option>
             ))}
           </select>

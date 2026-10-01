@@ -1398,7 +1398,7 @@ describe("CompanyEnvironments — test provider button", () => {
     await waitForAssertion(() => {
       const dialog = getEnvironmentFormPage()!;
       expect(dialog.textContent).toContain("Active template");
-      expect(dialog.textContent).toContain("Not in use — the environment configuration changed");
+      expect(dialog.textContent).toContain("Not in use: the environment configuration changed");
     });
   });
 
@@ -1428,7 +1428,7 @@ describe("CompanyEnvironments — test provider button", () => {
     await openEnvironmentEditPage(container);
     await waitForAssertion(() => {
       const dialog = getEnvironmentFormPage()!;
-      expect(dialog.textContent).toContain("Not in use — Base image changed: snapshot `a` -> `b`");
+      expect(dialog.textContent).toContain("Not in use: Base image changed: snapshot `a` -> `b`");
       expect(dialog.textContent).not.toContain("the environment configuration changed");
     });
   });
@@ -1456,7 +1456,7 @@ describe("CompanyEnvironments — test provider button", () => {
     await openEnvironmentEditPage(container);
     await waitForAssertion(() => {
       const dialog = getEnvironmentFormPage()!;
-      expect(dialog.textContent).toContain("Not in use — the environment configuration changed");
+      expect(dialog.textContent).toContain("Not in use: the environment configuration changed");
       expect(dialog.textContent).not.toContain("Base image changed");
     });
   });

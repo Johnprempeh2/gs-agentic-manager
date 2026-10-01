@@ -126,7 +126,7 @@ export function TokensPanel({
       setExpiresAt(defaultExpiry());
       pushToast({
         title: "Token issued",
-        body: "Copy it now — you won’t see the full value again after leaving this page.",
+        body: "Copy it now. You won’t see the full value again after leaving this page.",
         tone: "success",
       });
       onTokenCreated?.(token);
@@ -240,7 +240,7 @@ export function TokensPanel({
         <div className="space-y-2 border-y border-border py-4">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <div className="text-sm font-semibold text-foreground">New token — copy now</div>
+              <div className="text-sm font-semibold text-foreground">New token: copy now</div>
               <div className="text-xs text-muted-foreground">
                 It is now available in Client snippets for a copy-ready configuration.
               </div>
@@ -303,10 +303,10 @@ export function TokensPanel({
                             <div className="font-medium text-foreground">{token.name}</div>
                             <div className="font-mono text-xs text-muted-foreground">{maskedTokenLabel(token)}</div>
                           </td>
-                          <td className="px-4 py-3 text-muted-foreground">{token.clientLabel || token.ownerNote || "—"}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{token.clientLabel || token.ownerNote || "None"}</td>
                           <td className="px-4 py-3 text-muted-foreground"><RelativeTime value={token.createdAt} /></td>
                           <td className="px-4 py-3 text-muted-foreground">
-                            {token.lastUsedAt ? <RelativeTime value={token.lastUsedAt} /> : "—"}
+                            {token.lastUsedAt ? <RelativeTime value={token.lastUsedAt} /> : "Never"}
                           </td>
                           <td className="px-4 py-3 text-muted-foreground"><ExpiryValue token={token} /></td>
                           <td className="px-4 py-3"><StatusBadge status={status} /></td>
@@ -342,9 +342,9 @@ export function TokensPanel({
                         <StatusBadge status={status} />
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                        <TokenField label="Owner" value={token.clientLabel || token.ownerNote || "—"} />
+                        <TokenField label="Owner" value={token.clientLabel || token.ownerNote || "None"} />
                         <TokenField label="Created" value={<RelativeTime value={token.createdAt} />} />
-                        <TokenField label="Last used" value={token.lastUsedAt ? <RelativeTime value={token.lastUsedAt} /> : "—"} />
+                        <TokenField label="Last used" value={token.lastUsedAt ? <RelativeTime value={token.lastUsedAt} /> : "Never"} />
                         <TokenField label="Expiry" value={<ExpiryValue token={token} />} />
                       </dl>
                       {status !== "revoked" ? (

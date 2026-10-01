@@ -3093,7 +3093,7 @@ export function PipelineSettings() {
                               onChange={setInstructionsBody}
                               placeholder={
                                 breakdownEnabled
-                                  ? "Describe the judgment the agent should make — what counts as a piece worth splitting out?"
+                                  ? "Describe the judgement the agent should make: what counts as a piece worth splitting out?"
                                   : "Tell the agent exactly what to do when an item enters this step..."
                               }
                               bordered={false}

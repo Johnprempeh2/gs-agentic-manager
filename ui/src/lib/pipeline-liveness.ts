@@ -40,7 +40,7 @@ export interface LivenessBannerView {
 }
 
 const AUTO_RETRY_NOTE =
-  "GS Agentic Manager retries automatically once the blocker clears — you don't need to move the item by hand.";
+  "GS Agentic Manager retries automatically once the blocker clears. You don't need to move the item by hand.";
 
 /**
  * Prosumer-voice body for the `no_action_path` "stuck" banner. The server's
@@ -49,7 +49,7 @@ const AUTO_RETRY_NOTE =
  * the PAP-11245 voice rule forbids, so we translate it here. See PAP-11259.
  */
 const NO_ACTION_PATH_BODY =
-  "GS Agentic Manager can't see anything to work on next here — no automation, retry, blocker, or review. " +
+  "GS Agentic Manager can't see anything to work on next here: no automation, retry, blocker, or review. " +
   "Re-run the stage to nudge it, or use the ⋯ menu to move it by hand.";
 
 /**
@@ -106,7 +106,7 @@ export function derivePipelineLivenessBanner(
       return {
         reason: liveness.reason,
         tone: "blocked",
-        title: "Automation paused — waiting on a blocker",
+        title: "Automation paused: waiting on a blocker",
         body: liveness.message,
         blockerLink: blockerLinkFromLiveness(liveness),
         automationLink: automationLinkFromLiveness(liveness),
@@ -121,7 +121,7 @@ export function derivePipelineLivenessBanner(
       return {
         reason: liveness.reason,
         tone: "blocked",
-        title: "Automation paused — waiting on a blocker",
+        title: "Automation paused: waiting on a blocker",
         body: liveness.message,
         blockerLink: blockerLinkFromLiveness(liveness),
         automationLink: automationLinkFromLiveness(liveness),
@@ -157,7 +157,7 @@ export function derivePipelineLivenessBanner(
       return {
         reason: liveness.reason,
         tone: recovered ? "retry" : "attention",
-        title: recovered ? "Blocker resolved — ready to retry" : "Automation failed",
+        title: recovered ? "Blocker resolved: ready to retry" : "Automation failed",
         body: liveness.message,
         blockerLink: null,
         automationLink: automationLinkFromLiveness(liveness),

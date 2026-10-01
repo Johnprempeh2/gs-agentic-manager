@@ -325,7 +325,7 @@ export function DecisionQueuePage() {
               onToggle={() => setAgingOpen((prev) => !prev)}
             >
               <p className="text-xs text-muted-foreground">
-                Idle past {ATTENTION_AGING_DAYS} days — kept off the queue. Keep any you still want surfaced.
+                Idle past {ATTENTION_AGING_DAYS} days: kept off the queue. Keep any you still want surfaced.
               </p>
               {agingItems.map((item) => (
                 <AgingItemRow

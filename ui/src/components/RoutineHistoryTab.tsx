@@ -610,7 +610,7 @@ function RevisionPreview({
             <div key={row.key} className="space-y-1 p-2">
               <p className="text-(length:--text-micro) uppercase tracking-wide text-muted-foreground">{row.label}</p>
               <p className="text-sm">
-                {row.value || <span className="text-muted-foreground">—</span>}
+                {row.value || <span className="text-muted-foreground">Not set</span>}
                 {row.differs && (
                   <Badge variant="outline" className="ml-2 border-amber-500/40 bg-amber-500/10 px-1.5 text-(length:--text-nano) uppercase tracking-(--tracking-eyebrow) text-amber-800 dark:text-amber-200">
                     differs from current
@@ -719,7 +719,7 @@ function RestoreConfirmDialog({
           <DialogTitle>Restore revision {target.revisionNumber}?</DialogTitle>
           <DialogDescription>
             This creates a new revision {newRevisionNumber} with the same content as revision{" "}
-            {target.revisionNumber}. Revisions {target.revisionNumber}–{currentRevisionNumber} stay
+            {target.revisionNumber}. Revisions {target.revisionNumber} to {currentRevisionNumber} stay
             in history and are not modified.
           </DialogDescription>
         </DialogHeader>
@@ -742,7 +742,7 @@ function RestoreConfirmDialog({
             <li key={label} className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
               <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
               The webhook trigger {label} will be recreated with a new URL and secret. GS Agentic Manager will
-              show the secret once after restore — copy it before closing.
+              show the secret once after restore. Copy it before closing.
             </li>
           ))}
         </ul>
@@ -860,10 +860,10 @@ function RoutineRevisionDiffModal({
                     <tr key={change.field} className="border-t border-border/60">
                       <td className="px-3 py-2 align-top text-xs font-medium">{change.field}</td>
                       <td className="px-3 py-2 align-top text-xs text-red-700 dark:text-red-300">
-                        {change.oldValue ?? "—"}
+                        {change.oldValue ?? "Not set"}
                       </td>
                       <td className="px-3 py-2 align-top text-xs text-emerald-700 dark:text-emerald-300">
-                        {change.newValue ?? "—"}
+                        {change.newValue ?? "Not set"}
                       </td>
                     </tr>
                   ))}
@@ -924,7 +924,7 @@ function RevisionPicker({
       >
         {revisions.map((revision) => (
           <option key={revision.id} value={revision.id}>
-            rev {revision.revisionNumber} — {relativeTime(revision.createdAt)}
+            rev {revision.revisionNumber}, {relativeTime(revision.createdAt)}
             {revision.changeSummary ? ` • ${revision.changeSummary}` : ""}
           </option>
         ))}
@@ -1009,7 +1009,7 @@ function summarizeTriggerSnapshot(trigger: RoutineRevisionSnapshotTriggerV1): st
 }
 
 function formatVariableDefault(variable: RoutineVariable): string {
-  if (variable.defaultValue == null) return "—";
+  if (variable.defaultValue == null) return "Not set";
   return String(variable.defaultValue);
 }
 
@@ -1031,7 +1031,7 @@ function collectWebhookTriggerDifferences(
 }
 
 function describeSnapshotField(value: unknown): string {
-  if (value == null) return "—";
+  if (value == null) return "Not set";
   if (typeof value === "string") return value;
   return JSON.stringify(value);
 }
@@ -1119,7 +1119,7 @@ function describeSecretRef(ref: EnvSecretRefBinding, secrets: SecretLookup): str
 }
 
 function describeEnvBinding(binding: EnvBinding | undefined, secrets: SecretLookup): string {
-  if (binding === undefined) return "—";
+  if (binding === undefined) return "Not set";
   const ref = asSecretRef(binding);
   if (ref) return `secret_ref → ${describeSecretRef(ref, secrets)}`;
   return "plain (set)";
@@ -1195,7 +1195,7 @@ function compareEnv(
     if (inNew && !inOld) {
       changes.push({
         field: `Env added (${key})`,
-        oldValue: "—",
+        oldValue: "Not set",
         newValue: describeEnvBinding(newBinding, secrets),
       });
       continue;
@@ -1204,7 +1204,7 @@ function compareEnv(
       changes.push({
         field: `Env removed (${key})`,
         oldValue: describeEnvBinding(oldBinding, secrets),
-        newValue: "—",
+        newValue: "Not set",
       });
       continue;
     }

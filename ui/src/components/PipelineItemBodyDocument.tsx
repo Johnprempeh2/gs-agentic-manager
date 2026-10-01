@@ -230,7 +230,7 @@ export function PipelineItemBodyDocument({
         await caseDocumentQuery.refetch();
         pushToast({
           title: "Body changed elsewhere",
-          body: "This item body was updated by someone else. Reloaded the latest — re-apply your edit.",
+          body: "This item body was updated by someone else. Reloaded the latest. Re-apply your edit.",
           tone: "error",
         });
         return;
