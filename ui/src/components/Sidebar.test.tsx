@@ -314,7 +314,8 @@ describe("Sidebar", () => {
     expect(agentLinks).toHaveLength(1);
     expect([...container.querySelectorAll('a[href="/activity"]')]).toHaveLength(1);
     expect(navLabels).toContain("Audit");
-    expect(navLabels).not.toContain("Settings");
+    // GS: Settings is a visible owner destination (owner UX audit, 1 Oct).
+    expect(navLabels).toContain("Settings");
     expect(navLabels).not.toContain("Activity");
     expect(navLabels).not.toContain("Costs");
     expect(container.querySelector('[data-testid="sidebar-recent-tasks"]')).not.toBeNull();
@@ -471,6 +472,21 @@ describe("Sidebar", () => {
     });
   });
 
+  it("remembers a section the owner folded away", async () => {
+    window.localStorage.setItem("gsam.sidebar.build.open", "0");
+    try {
+      const root = await renderSidebar();
+      const navLabels = [...container.querySelectorAll("nav a")].map((anchor) => anchor.textContent?.trim());
+      expect(navLabels).not.toContain("Projects");
+      expect(navLabels).toContain("Skills");
+      flushSync(() => {
+        root.unmount();
+      });
+    } finally {
+      window.localStorage.removeItem("gsam.sidebar.build.open");
+    }
+  });
+
   it("puts the Everest chat directly under Search (GRE-259)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
     const root = await renderSidebar();
@@ -502,7 +518,7 @@ describe("Sidebar", () => {
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Inbox", "My tasks", "Decisions", "Agent tasks", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
     expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workspaces", "Artifacts", "Casesbeta"]);
-    expect(sectionLabels("Company")).toEqual(["Skills", "Connectors", "Audit", "Releases"]);
+    expect(sectionLabels("Company")).toEqual(["Skills", "Connectors", "Audit", "Releases", "Settings"]);
     expect(
       container.querySelector('a[href="/issues"] svg')?.classList.contains("lucide-circle-check"),
     ).toBe(true);
