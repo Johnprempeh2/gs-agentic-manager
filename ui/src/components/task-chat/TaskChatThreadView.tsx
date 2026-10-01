@@ -2,7 +2,8 @@ import { TaskChatProjectCreatedCard } from "./TaskChatProjectCreatedCard";
 import { TaskChatSkillCreatedCard } from "./TaskChatSkillCreatedCard";
 import { useMemo, type ReactNode } from "react";
 import type { IssueAttachment } from "@greatstone/shared";
-import { cn } from "@/lib/utils";
+import { cn, formatShortDate } from "@/lib/utils";
+import { taskDateGroup, taskDateGroupLabels } from "@/lib/task-date-groups";
 import { useStreamlinedTaskChatPresentation } from "./presentation-mode";
 import type {
   TaskChatInteractionItem,
@@ -295,6 +296,35 @@ function isMediaTileItem(item: TaskChatItem): boolean {
 }
 
 /** Consecutive image and video deliverables share one two-column grid. */
+/** "Today", "Yesterday" or "29 Sep": the day a message was sent, in the reader's calendar. */
+export function chatDayLabel(iso: string, now: Date = new Date()): string {
+  const group = taskDateGroup(iso, now);
+  return group === "earlier" ? formatShortDate(iso) : taskDateGroupLabels[group];
+}
+
+/**
+ * The day label to draw before each group, keyed by the group's first item.
+ * Messages carry the time; a thread that is all today gets no label at all.
+ */
+export function chatDaySeparators<T extends { item: TaskChatItem }>(
+  groups: Array<{ entries: T[] }>,
+  now: Date = new Date(),
+): Map<T, string> {
+  const labels = new Map<T, string>();
+  let previousDay: string | null = null;
+  for (const group of groups) {
+    const message = group.entries.find((entry) => entry.item.kind === "message" && entry.item.createdAtIso);
+    const iso = message?.item.kind === "message" ? message.item.createdAtIso : undefined;
+    if (!iso || Number.isNaN(new Date(iso).getTime())) continue;
+    const day = new Date(iso).toDateString();
+    if (day === previousDay) continue;
+    const label = chatDayLabel(iso, now);
+    if (previousDay !== null || label !== taskDateGroupLabels.today) labels.set(group.entries[0]!, label);
+    previousDay = day;
+  }
+  return labels;
+}
+
 export function groupConsecutiveMedia<T extends { item: TaskChatItem }>(entries: T[]) {
   const groups: Array<{ media: boolean; entries: T[]; previous: TaskChatItem | null }> = [];
   let previous: TaskChatItem | null = null;
@@ -390,8 +420,14 @@ export function TaskChatThreadView({
     return (
       <>
         {streamlined
-          ? groupConsecutiveMedia(renderedItems).map((group) =>
-              group.media ? (
+          ? (() => {
+              const groups = groupConsecutiveMedia(renderedItems);
+              const dayLabels = chatDaySeparators(groups);
+              // Flat siblings: a message keeps its key (and its DOM) when a
+              // label appears or moves, e.g. as an optimistic bubble settles.
+              return groups.flatMap((group) => {
+                const dayLabel = dayLabels.get(group.entries[0]!);
+                const body = group.media ? (
                 <div
                   key={`media-grid:${group.entries[0]!.item.id}`}
                   className={cn(
@@ -407,8 +443,24 @@ export function TaskChatThreadView({
                   group.entries[0]!,
                   taskChatItemSpacingClass(group.entries[0]!.item, group.previous),
                 )
-              ),
-            )
+              );
+                if (!dayLabel) return [body];
+                return [
+                  <div
+                    key={`day:${group.entries[0]!.item.id}`}
+                    role="separator"
+                    aria-label={dayLabel}
+                    data-testid="task-chat-day-separator"
+                    className="mt-4 flex items-center gap-3 text-xs text-muted-foreground"
+                  >
+                    <span className="h-px flex-1 bg-border" aria-hidden="true" />
+                    <span>{dayLabel}</span>
+                    <span className="h-px flex-1 bg-border" aria-hidden="true" />
+                  </div>,
+                  body,
+                ];
+              });
+            })()
           : items.map((item, index) => (
               <div
                 key={
