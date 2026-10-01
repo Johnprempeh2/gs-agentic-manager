@@ -1171,6 +1171,20 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     await costs.updateSubscription(companyId, openAiPlan.id, { plan: "ChatGPT Pro", monthlyPriceCents: 20_000 });
     expect((await costs.listSubscriptions(companyId)).detected).toEqual([]);
 
+    // Runs count whether or not they reported usage: two failed runs in the
+    // period by a second agent, and one run outside it.
+    const failingAgentId = randomUUID();
+    await db.insert(agents).values({
+      id: failingAgentId, companyId, name: "Failing", role: "engineer", status: "idle",
+      adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    });
+    await db.insert(heartbeatRuns).values([
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-09T00:00:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-10T00:00:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-03-10T00:00:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "queued" },
+    ]);
+
     const summary = await costs.apiEquivalent(
       companyId,
       { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
@@ -1199,9 +1213,12 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     expect(sum((row) => row.actualApiSpendCents)).toBe(summary.actualApiSpendCents);
     expect(sum((row) => row.subscriptionCostCents)).toBeCloseTo(summary.subscriptionCostCents, 6);
 
-    // One agent did all the work in the period, so its value is the priced total.
-    expect(summary.byAgent).toHaveLength(1);
+    // One agent did all the priced work in the period, so its value is the priced total.
+    expect(summary.byAgent).toHaveLength(2);
     expect(summary.byAgent[0]!.apiEquivalentCents).toBeCloseTo(summary.apiEquivalentCents, 6);
+    expect(summary.byAgent.find((row) => row.agentId === failingAgentId)).toEqual({
+      agentId: failingAgentId, apiEquivalentCents: 0, runCount: 2,
+    });
 
     await costs.deleteSubscription(companyId, anthropicPlan.id);
     const afterDelete = await costs.apiEquivalent(

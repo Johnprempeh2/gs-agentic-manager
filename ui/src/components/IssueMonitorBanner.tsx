@@ -38,6 +38,11 @@ export function hasVisibleMonitorSurface(issue: Issue): boolean {
   return isWaitingMonitorState(derived.state) && derived.nextCheckAt !== null;
 }
 
+/** The still clock: waiting on a scheduled check, and no agent is working it right now. */
+export function isWaitingOnMonitor(issue: Issue): boolean {
+  return !issue.executionRunId && hasVisibleMonitorSurface(issue);
+}
+
 export interface MonitorSurfaceCopy {
   /** Prominent lead for the top banner, e.g. "Waiting on monitor — resumes in 2h 12m". */
   bannerTitle: string;

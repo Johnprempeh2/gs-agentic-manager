@@ -36,6 +36,11 @@ describe("decision queue copy", () => {
     ]);
   });
 
+  it("keeps a description edited on a seeded queue", () => {
+    const queue = toQueue(queueRow({ description: "Anything Ben needs to answer" }), 0);
+    expect(queue.description).toBe("Anything Ben needs to answer");
+  });
+
   it("keeps the owner's own wording on a queue they created", () => {
     const queue = toQueue(queueRow({ createdByType: "user", description: "My shortlist" }), 0);
     expect(queue.description).toBe("My shortlist");

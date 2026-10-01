@@ -97,7 +97,8 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
 
   const classes = cn(
     "dashboard-list-row text-sm",
-    link && "cursor-pointer hover:bg-accent/50 transition-colors",
+    // The row link stretches over the whole row; the chip links sit above it.
+    link && "relative cursor-pointer hover:bg-accent/50 transition-colors [&_a:not([data-row-link])]:relative [&_a:not([data-row-link])]:z-10",
     className,
   );
 
@@ -106,7 +107,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
   return (
     <div className={cn(classes, "space-y-2")}>
       {link ? (
-        <Link to={link} className="no-underline text-inherit block">
+        <Link to={link} data-row-link className="no-underline text-inherit block after:absolute after:inset-0">
           {header}
         </Link>
       ) : header}

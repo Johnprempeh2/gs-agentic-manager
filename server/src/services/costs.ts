@@ -588,7 +588,10 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
 
       const isSubscription = sql`${costEvents.billingType} in (${sql.join(SUBSCRIPTION_BILLING_TYPES.map((value) => sql`${value}`), sql`, `)})`;
-      const [usageRows, subscriptions, agentRows, firstEvent] = await Promise.all([
+      const runConditions = [eq(heartbeatRuns.companyId, companyId), isNotNull(heartbeatRuns.startedAt)];
+      if (range?.from) runConditions.push(gte(heartbeatRuns.startedAt, range.from));
+      if (range?.to) runConditions.push(lte(heartbeatRuns.startedAt, range.to));
+      const [usageRows, subscriptions, agentRows, firstEvent, agentRunRows] = await Promise.all([
         db
           .select({
             provider: costEvents.provider,
@@ -612,7 +615,6 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
             inputTokens: sumAsNumber(costEvents.inputTokens),
             cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
             outputTokens: sumAsNumber(costEvents.outputTokens),
-            runCount: sql<number>`count(distinct ${costEvents.heartbeatRunId})::int`,
           })
           .from(costEvents)
           .where(and(...conditions))
@@ -624,6 +626,12 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
             .from(costEvents)
             .where(eq(costEvents.companyId, companyId))
             .then((rows) => rows[0]?.first ?? null),
+        // Every run that started counts, failed ones too, not only runs that reported usage.
+        db
+          .select({ agentId: heartbeatRuns.agentId, runCount: sql<number>`count(*)::int` })
+          .from(heartbeatRuns)
+          .where(and(...runConditions))
+          .groupBy(heartbeatRuns.agentId),
       ]);
 
       // Period used to prorate subscriptions: the requested range; an open
@@ -700,9 +708,11 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
           cachedInputTokens: Number(row.cachedInputTokens),
           outputTokens: Number(row.outputTokens),
         }) ?? 0;
-        // ponytail: a run that used two models counts once per model; add a
-        // separate distinct-run query if agents start mixing models per run.
-        entry.runCount += Number(row.runCount);
+        agentsById.set(row.agentId, entry);
+      }
+      for (const row of agentRunRows) {
+        const entry = agentsById.get(row.agentId) ?? { agentId: row.agentId, apiEquivalentCents: 0, runCount: 0 };
+        entry.runCount = Number(row.runCount);
         agentsById.set(row.agentId, entry);
       }
       const byAgent = [...agentsById.values()].sort((a, b) => b.apiEquivalentCents - a.apiEquivalentCents);
