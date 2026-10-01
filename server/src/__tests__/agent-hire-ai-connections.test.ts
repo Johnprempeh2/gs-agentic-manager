@@ -5,7 +5,7 @@ import path from "node:path";
 import express from "express";
 import request from "supertest";
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { agents, companies, companyMemberships, createDb, heartbeatRuns, issues, principalPermissionGrants, toolConnectionInstalls } from "@greatstone/db";
 import { type AiConnectionBinding } from "@greatstone/shared";
 import { startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
@@ -242,6 +242,13 @@ describe("agent-created hires use managed AI connections", () => {
 });
 
 describe("hired agents sharing a subscription", () => {
+  // Each fixture leaves its parent run "running". The instance run cap
+  // (GRE-105) counts those across the whole file, so by now the cap is full
+  // and the child waits for ever. Start each test with no stale runs live.
+  beforeEach(async () => {
+    await db.update(heartbeatRuns).set({ status: "cancelled", finishedAt: new Date() }).where(eq(heartbeatRuns.status, "running"));
+  });
+
   it.each(["openai", "anthropic"] as const)("runs the %s child alongside a live parent and inherits its connection", async (provider) => {
     const f = await fixture(provider, "subscription");
     const agent = hired(await request(f.app).post(`/api/companies/${f.companyId}/agent-hires`).send({ name: "Concurrent teammate", role: "engineer", adapterType: f.adapterType, reportsTo: f.agentId, adapterConfig: { cwd: home, engine: "cli" }, runtimeConfig: { heartbeat: { enabled: false } } }));
