@@ -253,6 +253,7 @@ import { useIssueMutations } from "./issue-detail/useIssueMutations";
 import { useThreadMutations } from "./issue-detail/useThreadMutations";
 import { useRecoveryActionHandlers } from "./issue-detail/useRecoveryActionHandlers";
 import { useThreadHandlers } from "./issue-detail/useThreadHandlers";
+import { useIssueDeepLinks } from "./issue-detail/useIssueDeepLinks";
 export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 export type { AttributionActor } from "./issue-detail/IssueAttribution";
 
@@ -1771,169 +1772,25 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
   // would re-maximize a pane the user deliberately restored. The key carries
   // the issue param so navigating to another issue with an identical hash
   // still maximizes the destination pane.
-  const lastMaximizeRequestKeyRef = useRef<string | null>(null);
-  const routeIssueDocumentDeepLink = useCallback(
-    (hash: string) => {
-      const route = resolveIssueDocumentDeepLink(hash);
-      if (!route) return false;
-
-      if (route.kind === "continuation-summary") {
-        setDocumentDeepLink(null);
-        setDetailTab("activity");
-        setHandoffFocusSignal((current) => current + 1);
-        return true;
-      }
-
-      // The classic interface owns document links in its center-column
-      // Documents section. Do not open its tab-less properties panel.
-      if (!taskInterfaceSettingsLoaded || !taskChatShellEnabled) return false;
-
-      if (isMobile) {
-        setMobilePropsOpen(true);
-      } else {
-        if (suppressPanelUntilPlan && issue?.id) {
-          setPanelBeforePlanOverrideIssueId(issue.id);
-        }
-        setPanelVisible(true);
-        // `viewer=full` (LOOA-2181): external links (Slack approval cards)
-        // land with the pane maximized. Mobile uses the sheet, which is
-        // already full-screen, so the request is desktop-only.
-        if (route.maximize) {
-          const requestKey = `${issueId ?? ""}::${hash}`;
-          if (lastMaximizeRequestKeyRef.current !== requestKey) {
-            lastMaximizeRequestKeyRef.current = requestKey;
-            requestPanelMaximize();
-          }
-        }
-      }
-      const targetIssueId = issue?.id ?? issueId ?? "";
-      setDocumentDeepLink((current) => ({
-        issueId: targetIssueId,
-        tab: route.tab,
-        documentKey: route.documentKey,
-        requestId:
-          current?.issueId === targetIssueId ? current.requestId + 1 : 1,
-      }));
-      return true;
-    },
-    [
-      taskInterfaceSettingsLoaded,
-      isMobile,
-      issue?.id,
-      issueId,
-      setPanelVisible,
-      requestPanelMaximize,
-      suppressPanelUntilPlan,
-      taskChatShellEnabled,
-    ],
-  );
-
-  useEffect(() => {
-    if (!routeIssueDocumentDeepLink(location.hash)) {
-      setDocumentDeepLink(null);
-      // The deep link ended (hash cleared or issue changed): drop any
-      // maximize request the panel never consumed so it cannot maximize a
-      // later, unrelated panel, and re-arm for the next viewer=full hash.
-      lastMaximizeRequestKeyRef.current = null;
-      clearPanelMaximizeRequest();
-    }
-  }, [
+  useIssueDeepLinks({
+    setDocumentDeepLink,
+    setDetailTab,
+    setHandoffFocusSignal,
+    taskInterfaceSettingsLoaded,
+    taskChatShellEnabled,
+    isMobile,
+    setMobilePropsOpen,
+    suppressPanelUntilPlan,
+    issue,
+    setPanelBeforePlanOverrideIssueId,
+    setPanelVisible,
     issueId,
-    location.hash,
-    routeIssueDocumentDeepLink,
+    requestPanelMaximize,
+    location,
     clearPanelMaximizeRequest,
-  ]);
-
-  // Leaving the issue page entirely also ends the deep link's lifetime.
-  useEffect(
-    () => () => {
-      clearPanelMaximizeRequest();
-    },
-    [clearPanelMaximizeRequest],
-  );
-
-  // React Router does not emit a location update when the user clicks a link
-  // whose hash is already current. Capture that repeated intent so a manually
-  // collapsed document reopens and scrolls back into view.
-  useEffect(() => {
-    const handleSameHashDocumentClick = (event: MouseEvent) => {
-      if (
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      )
-        return;
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const anchor = target.closest<HTMLAnchorElement>("a[href]");
-      if (!anchor) return;
-      const rawHref = anchor.getAttribute("href");
-      if (!rawHref) return;
-
-      let targetUrl: URL;
-      try {
-        targetUrl = new URL(rawHref, window.location.href);
-      } catch {
-        return;
-      }
-      const sameIssue =
-        rawHref.startsWith("#") ||
-        (targetUrl.pathname === location.pathname &&
-          targetUrl.search === location.search);
-      if (!sameIssue || targetUrl.hash !== location.hash) return;
-      routeIssueDocumentDeepLink(targetUrl.hash);
-    };
-
-    document.addEventListener("click", handleSameHashDocumentClick, true);
-    return () =>
-      document.removeEventListener("click", handleSameHashDocumentClick, true);
-  }, [
-    location.hash,
-    location.pathname,
-    location.search,
-    routeIssueDocumentDeepLink,
-  ]);
-
-  // Scroll + briefly highlight work-product / direct-attachment anchors so the
-  // company Artifacts page (PAP-10359) can deep-link to a specific artifact in
-  // its issue context. Retries while the section data loads in.
-  useEffect(() => {
-    const match = location.hash.match(/^#(work-product|attachment)-(.+)$/);
-    if (!match) return;
-    const targetId = `${match[1]}-${decodeURIComponent(match[2]!)}`;
-    let cancelled = false;
-    let attempts = 0;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tryScroll = () => {
-      if (cancelled) return;
-      const element = document.getElementById(targetId);
-      if (!element) {
-        if (attempts < 30) {
-          attempts += 1;
-          timer = setTimeout(tryScroll, 100);
-        }
-        return;
-      }
-      element.scrollIntoView({ behavior: "smooth", block: "center" });
-      element.classList.add("ring-2", "ring-primary/50", "transition-shadow");
-      timer = setTimeout(
-        () =>
-          element.classList.remove(
-            "ring-2",
-            "ring-primary/50",
-            "transition-shadow",
-          ),
-        3000,
-      );
-    };
-    tryScroll();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [location.hash, workProducts, attachments]);
+    workProducts,
+    attachments,
+  });
 
   useEffect(() => {
     if (pendingCommentComposerFocusKey === 0) return;
