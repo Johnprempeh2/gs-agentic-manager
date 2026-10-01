@@ -378,6 +378,8 @@ export const queryKeys = {
     runs: (issueId: string) => ["issues", "runs", issueId] as const,
     approvals: (issueId: string) => ["issues", "approvals", issueId] as const,
     liveRuns: (issueId: string) => ["issues", "live-runs", issueId] as const,
+    runTranscriptDigests: (issueId: string, runIdsKey: string) =>
+      ["issues", "run-transcript-digests", issueId, runIdsKey] as const,
     activeRun: (issueId: string) => ["issues", "active-run", issueId] as const,
     runnerGoal: (issueId: string, agentId?: string | null) =>
       ["issues", "runner-goal", issueId, agentId ?? "__effective__"] as const,

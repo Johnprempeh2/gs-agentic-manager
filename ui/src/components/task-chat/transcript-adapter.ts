@@ -1961,6 +1961,12 @@ export function coalesceSettledTurns(
           items: [...held.items, ...item.items],
           finalResponse: item.finalResponse ?? held.finalResponse,
           animateFold: held.animateFold || item.animateFold || undefined,
+          ...(held.runIds || item.runIds
+            ? { runIds: [...(held.runIds ?? []), ...(item.runIds ?? [])] }
+            : {}),
+          ...(held.historyPending || item.historyPending
+            ? { historyPending: true }
+            : {}),
           summary: buildMergedTurnSummary(parts),
         });
         mergedMeta.set(held.id, { ...heldMeta, parts });

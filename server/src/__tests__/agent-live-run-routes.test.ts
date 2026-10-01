@@ -63,6 +63,9 @@ const mockAccessService = vi.hoisted(() => ({
   decide: vi.fn(),
   hasPermission: vi.fn(),
 }));
+const mockRunTranscriptDigests = vi.hoisted(() => ({
+  forRuns: vi.fn(),
+}));
 const mockWorkspaceOperationService = vi.hoisted(() => ({
   getById: vi.fn(),
   listForRun: vi.fn(),
@@ -102,6 +105,10 @@ function registerModuleMocks() {
 
   vi.doMock("../services/run-secret-redaction.js", () => ({
     createRunSecretRedactionRegistry: () => mockRunSecretRedactionRegistry,
+  }));
+
+  vi.doMock("../services/run-transcript-digests.js", () => ({
+    runTranscriptDigestService: () => mockRunTranscriptDigests,
   }));
 
   vi.doMock("../services/provider-trace-store.js", () => ({
@@ -609,6 +616,35 @@ describe("agent live run routes", () => {
     });
   });
 
+  it("serves transcript digests for the listed runs inside the task's company", async () => {
+    const digest = [{ kind: "tool_call", ts: "2026-04-10T09:30:01.000Z", name: "", input: null, toolUseId: "t-1" }];
+    mockRunTranscriptDigests.forRuns.mockResolvedValue({ "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": digest });
+    const res = await requestApp(await createApp(), (baseUrl) =>
+      request(baseUrl).get(
+        "/api/issues/PAP-1/run-transcript-digests?runIds=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockRunTranscriptDigests.forRuns).toHaveBeenCalledWith("company-1", [
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    ]);
+    expect(res.body).toEqual({ digests: { "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": digest } });
+  });
+
+  it("rejects malformed transcript digest run lists before reading anything", async () => {
+    const app = await createApp();
+    const tooMany = Array.from({ length: 201 }, () => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").join(",");
+    for (const runIds of ["not-a-run", " aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tooMany]) {
+      const res = await requestApp(app, (baseUrl) =>
+        request(baseUrl).get(`/api/issues/PAP-1/run-transcript-digests?runIds=${encodeURIComponent(runIds)}`),
+      );
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+    }
+    expect(mockRunTranscriptDigests.forRuns).not.toHaveBeenCalled();
+  });
+
   it.each(["skill_test", "task_bridge"])(
     "denies %s keys from company-wide run and workspace logs",
     async (kind) => {
@@ -638,6 +674,7 @@ describe("agent live run routes", () => {
         "/api/heartbeat-runs/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/log",
         "/api/heartbeat-runs/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/workspace-operations",
         "/api/workspace-operations/operation-1/log",
+        "/api/issues/PAP-1/run-transcript-digests?runIds=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       ];
 
       for (const path of paths) {
@@ -648,6 +685,7 @@ describe("agent live run routes", () => {
 
       expect(mockHeartbeatService.readLog).not.toHaveBeenCalled();
       expect(mockWorkspaceOperationService.readLog).not.toHaveBeenCalled();
+      expect(mockRunTranscriptDigests.forRuns).not.toHaveBeenCalled();
       expect(mockAccessService.decide).toHaveBeenCalledWith(expect.objectContaining({
         action: "company_scope:read",
         resource: { type: "company", companyId: "company-1" },
