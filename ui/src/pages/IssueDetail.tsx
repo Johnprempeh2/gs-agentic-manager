@@ -1,12 +1,33 @@
 import { useUserPreferences } from "../hooks/useUserPreferences";
 import { DispositionRecoveryProvider } from "../components/DispositionRecoveryNotice";
 import { AgentAvatar } from "@/components/AgentAvatar";
-import { ReauthCancelledError, useReauth } from "@/components/ReauthDialog";
+import { useReauth, ReauthCancelledError } from "@/components/ReauthDialog";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { clearLegacyChatMessageRequests } from "@/lib/chat-message-request";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
 import { isBlockedDependentsHandoffCancelled } from "@/lib/blocked-dependents-handoff";
-import { Settings as ChatSettings } from "lucide-react";
+import {
+  Repeat,
+  ArrowLeft,
+  Archive,
+  MoreVertical,
+  Copy,
+  SlidersHorizontal,
+  EyeOff,
+  AlertTriangle,
+  Settings as ChatSettings,
+  PaperclipIcon,
+  ChevronRight,
+  ScanEye,
+  Flag,
+  Check,
+  FileCode2,
+  MoreHorizontal,
+  Plus,
+  MessageSquare,
+  Activity as ActivityIcon,
+  ListTree,
+} from "lucide-react";
 import { agentDetailHref } from "./agent-detail-navigation";
 import { deriveInitials } from "@/components/Identity";
 import { ExecutionBlockerNotice } from "../components/ExecutionBlockerNotice";
@@ -16,54 +37,37 @@ import { EmailThreadProvider } from "../components/EmailMessageCard";
 import { EmailTaskActivity } from "../components/EmailTaskActivity";
 import { TaskChatScrollNavigation } from "@/components/task-chat/scroll-navigation";
 import {
-  memo,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
   useState,
+  type Ref,
+  type ReactNode,
+  memo,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+  useLayoutEffect,
   type ChangeEvent,
   type DragEvent,
-  type ReactNode,
-  type Ref,
 } from "react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
+import { useNavigate, useLocation, useNavigationType, useParams, Link } from "@/lib/router";
 import {
-  Link,
-  useLocation,
-  useNavigate,
-  useNavigationType,
-  useParams,
-} from "@/lib/router";
-import {
-  useInfiniteQuery,
+  useQueryClient,
   useQuery,
   useMutation,
-  useQueryClient,
   type InfiniteData,
-  type QueryClient,
+  useInfiniteQuery,
 } from "@tanstack/react-query";
-import {
-  usePublishSharedQueryData,
-  useSharedPollingQuery,
-} from "@/hooks/useSharedPolling";
+import { useSharedPollingQuery, usePublishSharedQueryData } from "@/hooks/useSharedPolling";
 import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
 import { CommentSubmissionUnknownError } from "../lib/comment-submit-result";
 import { approvalsApi } from "../api/approvals";
 import { activityApi, type RunForIssue } from "../api/activity";
-import {
-  heartbeatsApi,
-  type ActiveRunForIssue,
-  type LiveRunForIssue,
-} from "../api/heartbeats";
+import { heartbeatsApi, type LiveRunForIssue, type ActiveRunForIssue } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
-import { accessApi, type CurrentBoardAccess } from "../api/access";
-import {
-  canBoardManageRuntime,
-  readRecoveryReconcileWorkspaceId,
-} from "../lib/recovery-reconcile";
+import { accessApi } from "../api/access";
+import { canBoardManageRuntime, readRecoveryReconcileWorkspaceId } from "../lib/recovery-reconcile";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
@@ -75,114 +79,91 @@ import { useSidebar } from "../context/SidebarContext";
 import { useToastActions } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import {
-  assigneeValueFromSelection,
-  formatAssigneeUserLabel,
   formatUserLabel,
+  assigneeValueFromSelection,
   suggestedCommentAssigneeValue,
 } from "../lib/assignees";
 import {
-  buildCompanyUserInlineOptions,
-  buildCompanyUserLabelMap,
   buildCompanyUserProfileMap,
+  buildCompanyUserLabelMap,
   buildMarkdownMentionOptions,
+  buildCompanyUserInlineOptions,
   isAgentTaskTarget,
 } from "../lib/company-members";
-import {
-  extractIssueTimelineEvents,
-  extractIssueWorkModeChanges,
-} from "../lib/issue-timeline-events";
+import { extractIssueTimelineEvents, extractIssueWorkModeChanges } from "../lib/issue-timeline-events";
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
-import {
-  mergePendingIssueQueuedComments,
-  normalizeIssueQueuedCommentQueue,
-} from "../lib/issue-queued-comment-queue";
+import { normalizeIssueQueuedCommentQueue, mergePendingIssueQueuedComments } from "../lib/issue-queued-comment-queue";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
 import {
-  hasLegacyIssueDetailQuery,
-  createIssueDetailPath,
-  readIssueDetailLocationState,
-  readIssueDetailBreadcrumb,
   readIssueDetailHeaderSeed,
-  withIssueDetailHeaderSeed,
+  readIssueDetailLocationState,
+  hasLegacyIssueDetailQuery,
+  readIssueDetailBreadcrumb,
   rememberIssueDetailLocationState,
+  createIssueDetailPath,
+  withIssueDetailHeaderSeed,
 } from "../lib/issueDetailBreadcrumb";
-import {
-  resolveIssueActiveRun,
-  shouldTrackIssueActiveRun,
-  taskPollInterval,
-} from "../lib/issueActiveRun";
+import { taskPollInterval, resolveIssueActiveRun, shouldTrackIssueActiveRun } from "../lib/issueActiveRun";
 import { usePageVisibility } from "../lib/page-visibility";
 import { getIssueDetailQueryOptions } from "../lib/issueDetailCache";
 import {
   beginIssueDetailNavigation,
-  ISSUE_DETAIL_CONTENT_MEASURE,
-  ISSUE_DETAIL_CONTENT_PAINT_MARK,
-  ISSUE_DETAIL_HEADER_MEASURE,
-  ISSUE_DETAIL_HEADER_PAINT_MARK,
   reportIssueDetailWebVitals,
   scheduleIssueDetailPaintMeasure,
+  ISSUE_DETAIL_HEADER_PAINT_MARK,
+  ISSUE_DETAIL_HEADER_MEASURE,
+  ISSUE_DETAIL_CONTENT_PAINT_MARK,
+  ISSUE_DETAIL_CONTENT_MEASURE,
 } from "../lib/issue-detail-performance";
 import {
-  beginLocalInboxArchive,
-  boundLocalInboxArchive,
+  type InboxIssueCacheSnapshot,
   cancelInboxIssueQueries,
   clearLocalInboxArchive,
-  confirmLocalInboxArchive,
-  invalidateInboxIssueQueries,
-  getIssuePresenceInActiveInboxCaches,
-  removeIssueFromInboxCaches,
   restoreIssueToInboxCaches,
+  beginLocalInboxArchive,
+  removeIssueFromInboxCaches,
+  boundLocalInboxArchive,
+  invalidateInboxIssueQueries,
   snapshotInboxIssueCaches,
-  type InboxIssueCacheSnapshot,
+  getIssuePresenceInActiveInboxCaches,
+  confirmLocalInboxArchive,
 } from "../lib/inboxArchiveCache";
 import {
+  resolveInboxQuickArchiveKeyAction,
   hasBlockingShortcutDialog,
   resolveIssueDetailGoKeyAction,
-  resolveInboxQuickArchiveKeyAction,
 } from "../lib/keyboardShortcuts";
 import {
+  applyLocalQueuedIssueCommentState,
+  isQueuedIssueComment,
+  removeIssueCommentFromPages,
+  type OptimisticIssueComment,
+  ISSUE_COMMENT_PAGE_SIZE,
+  getNextIssueCommentPageParam,
+  flattenIssueCommentPages,
+  shouldAutoloadOlderIssueComments,
+  mergeIssueComments,
+  upsertIssueCommentInPages,
+  matchesIssueRef,
   applyOptimisticIssueFieldUpdate,
   applyOptimisticIssueFieldUpdateToCollection,
-  applyOptimisticIssueCommentUpdate,
-  applyLocalQueuedIssueCommentState,
   createOptimisticIssueComment,
-  flattenIssueCommentPages,
-  getNextIssueCommentPageParam,
-  ISSUE_COMMENT_PAGE_SIZE,
-  isQueuedIssueComment,
-  loadRemainingIssueCommentPages,
-  matchesIssueRef,
-  mergeIssueComments,
-  removeIssueCommentFromPages,
-  shouldAutoloadOlderIssueComments,
+  applyOptimisticIssueCommentUpdate,
   takeOptimisticIssueComment,
-  upsertIssueCommentInPages,
-  type IssueCommentReassignment,
-  type OptimisticIssueComment,
+  loadRemainingIssueCommentPages,
 } from "../lib/optimistic-issue-comments";
-import {
-  clearIssueExecutionRun,
-  removeLiveRunById,
-  upsertInterruptedRun,
-} from "../lib/optimistic-issue-runs";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { recordRecentTask } from "../lib/recent-tasks";
-import {
-  relativeTime,
-  cn,
-  formatDurationMs,
-  formatTokens,
-  visibleRunCostUsd,
-} from "../lib/utils";
+import { cn, visibleRunCostUsd, formatTokens, formatDurationMs, relativeTime } from "../lib/utils";
 import { liveBlueBadge } from "../lib/status-colors";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { ProjectTile } from "../components/ProjectTile";
 import { InlineEditor } from "../components/InlineEditor";
 import {
-  IssueChatThread,
   type IssueChatComposerHandle,
   type IssueChatRunFinalizationAction,
+  IssueChatThread,
 } from "../components/IssueChatThread";
 import { TaskChatThread } from "../components/TaskChatThread";
 import type { TaskChatIssueBrief } from "../components/task-chat/TaskChatDescriptionBubble";
@@ -197,9 +178,9 @@ import { IssueOutputSection } from "../components/issue-output/IssueOutputSectio
 import { isImageAttachment, isVideoAttachment } from "../lib/issue-attachments";
 import {
   getIssueOutputs,
-  getPromotedOutputAttachmentIds,
   isImageLikeOutput,
   isVideoLikeOutput,
+  getPromotedOutputAttachmentIds,
 } from "../lib/issue-output";
 import { IssueSiblingNavigation } from "../components/IssueSiblingNavigation";
 import type { MarkdownExternalReferenceMap } from "../components/MarkdownBody";
@@ -210,25 +191,19 @@ import { IssueWriteDenialNotice } from "../components/IssueWriteDenialNotice";
 import { issueWriteDenialForActivity } from "../lib/issue-write-denial-activity";
 import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import {
-  IssueMonitorBanner,
-  IssueMonitorComposerStrip,
-  hasVisibleMonitorSurface,
   isWaitingOnMonitor,
+  IssueMonitorBanner,
+  hasVisibleMonitorSurface,
+  IssueMonitorComposerStrip,
 } from "../components/IssueMonitorBanner";
 import { NotNowButton } from "../components/decisions-feed/NotNowButton";
 import { TabledBanner } from "../components/decisions-feed/TabledBanner";
 import { IssueScheduledRetryCard } from "../components/IssueScheduledRetryCard";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
-import {
-  IssueProperties,
-  type IssuePropertiesDocumentDeepLink,
-} from "../components/IssueProperties";
-import { TaskSidePanel, type TaskSidePanelProps } from "../components/task-side-panel";
+import { type IssuePropertiesDocumentDeepLink, IssueProperties } from "../components/IssueProperties";
+import { type TaskSidePanelProps, TaskSidePanel } from "../components/task-side-panel";
 import { SidePanelToggleButton } from "../components/side-panel";
-import {
-  TaskTreeControlDialog,
-  TaskTreeControlMenuItems,
-} from "../components/TaskTreeControls";
+import { TaskTreeControlMenuItems, TaskTreeControlDialog } from "../components/TaskTreeControls";
 import { waitForStoppedRuns } from "../lib/wait-for-stopped-runs";
 import { useIssueExternalObjects } from "../hooks/useIssueExternalObjects";
 import { IssueGalleryContext } from "../context/IssueGalleryContext";
@@ -237,14 +212,8 @@ import { useTaskArtifactArrival } from "../hooks/useTaskArtifactArrival";
 import { IssueRunLedger } from "../components/IssueRunLedger";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
-import {
-  ImageGalleryModal,
-  type GalleryMediaItem,
-} from "../components/ImageGalleryModal";
-import {
-  FileViewerProvider,
-  useRequiredFileViewer,
-} from "../context/FileViewerContext";
+import { type GalleryMediaItem, ImageGalleryModal } from "../components/ImageGalleryModal";
+import { FileViewerProvider, useRequiredFileViewer } from "../context/FileViewerContext";
 import { FileViewerSheet } from "../components/FileViewerSheet";
 import { ArtifactFileChip } from "../components/ArtifactFileChip";
 import { ScrollToBottom } from "../components/ScrollToBottom";
@@ -252,411 +221,88 @@ import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { Identity } from "../components/Identity";
-import {
-  PluginSlotMount,
-  PluginSlotOutlet,
-  usePluginSlots,
-} from "@/plugins/slots";
+import { usePluginSlots, PluginSlotOutlet, PluginSlotMount } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { Separator } from "@/components/ui/separator";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarGroup,
-  AvatarImage,
-} from "@/components/ui/avatar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Avatar, AvatarImage, AvatarFallback, AvatarGroup } from "@/components/ui/avatar";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatIssueActivityAction } from "@/lib/activity-format";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { buildIssuePropertiesPanelKey } from "../lib/issue-properties-panel-key";
-import { openSkillPanelState, shouldSuppressTaskPanelUntilPlan } from "../lib/task-side-panel-state";
-import {
-  buildAnsweredQuestionsDeliveryText,
-  buildIssueThreadInteractionSummary,
-} from "../lib/issue-thread-interactions";
+import { shouldSuppressTaskPanelUntilPlan, openSkillPanelState } from "../lib/task-side-panel-state";
+import { buildAnsweredQuestionsDeliveryText, buildIssueThreadInteractionSummary } from "../lib/issue-thread-interactions";
 import { resolveIssueDocumentDeepLink } from "../lib/issue-document-deep-link";
-import {
-  buildIssueSiblingNavigation,
-  shouldRenderRichSubIssuesSection,
-} from "../lib/issue-detail-subissues";
+import { shouldRenderRichSubIssuesSection, buildIssueSiblingNavigation } from "../lib/issue-detail-subissues";
 import { filterIssueDescendants } from "../lib/issue-tree";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
 import {
-  SUCCESSFUL_RUN_HANDOFF_ESCALATED_ACTION,
-  SUCCESSFUL_RUN_HANDOFF_REQUIRED_ACTION,
   successfulRunHandoffActivityTone,
+  SUCCESSFUL_RUN_HANDOFF_REQUIRED_ACTION,
+  SUCCESSFUL_RUN_HANDOFF_ESCALATED_ACTION,
 } from "../lib/successful-run-handoff";
 import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
-import {
-  Activity as ActivityIcon,
-  AlertTriangle,
-  Archive,
-  ArrowLeft,
-  Check,
-  ChevronRight,
-  Copy,
-  EyeOff,
-  ScanEye,
-  Flag,
-  FileCode2,
-  ListTree,
-  MessageSquare,
-  MoreHorizontal,
-  MoreVertical,
-  PaperclipIcon,
-  Plus,
-  Repeat,
-  SlidersHorizontal,
-} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
-  deriveOriginatingActor,
-  isClosedIsolatedExecutionWorkspace,
-  ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
-  ONBOARDING_FIRST_TASK_ORIGIN_KIND,
-  type AskUserQuestionsAnswer,
-  type AskUserQuestionsInteraction,
   type ActivityEvent,
   type Agent,
-  type FeedbackVote,
   type Issue,
-  type IssueRecoveryAction,
-  type IssueAttachment,
-  type IssueComment,
-  type IssueDocumentSummary,
-  type IssueWorkProduct,
+  deriveOriginatingActor,
   type IssueWorkMode,
   type IssueThreadInteraction,
-  type RequestCheckboxConfirmationInteraction,
-  type RequestConfirmationInteraction,
+  type IssueDocumentSummary,
+  type IssueWorkProduct,
+  type IssueAttachment,
+  type FeedbackVote,
+  type AskUserQuestionsAnswer,
+  type AskUserQuestionsInteraction,
   type RequestItemVerdictsInteraction,
   type RequestItemVerdictValue,
-  type SuggestTasksInteraction,
+  type IssueComment,
+  ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
   type IssueTreeControlMode,
-  type WorkspaceFileRef,
-  workspaceFileRefSchema,
+  isClosedIsolatedExecutionWorkspace,
+  ONBOARDING_FIRST_TASK_ORIGIN_KIND,
 } from "@greatstone/shared";
-
-// Stable empty array for React Query `data` defaults. A literal `= []` default
-// creates a new array reference on every render while `data` is undefined
-// (loading/idle), which destabilizes downstream memos and panel keys that
-// depend on it. Reusing one shared reference keeps those values stable.
-const EMPTY_ISSUES: Issue[] = [];
-
-type StopAndFinalizeRunError = Error & {
-  runCancelledBeforeStatusUpdateFailed?: boolean;
-};
-
-function createRunCancelledStatusUpdateError(
-  err: unknown,
-): StopAndFinalizeRunError {
-  const message =
-    err instanceof Error
-      ? `Run was stopped, but updating the task failed: ${err.message}`
-      : "Run was stopped, but updating the task failed. Retry the task status update.";
-  const error = new Error(message) as StopAndFinalizeRunError;
-  error.runCancelledBeforeStatusUpdateFailed = true;
-  return error;
-}
-
-function didRunCancelBeforeStatusUpdateFail(
-  err: unknown,
-): err is StopAndFinalizeRunError {
-  return (
-    err instanceof Error &&
-    (err as StopAndFinalizeRunError).runCancelledBeforeStatusUpdateFailed ===
-      true
-  );
-}
-
-type CommentReassignment = IssueCommentReassignment;
-type ActionableIssueThreadInteraction =
-  | SuggestTasksInteraction
-  | RequestConfirmationInteraction
-  | RequestCheckboxConfirmationInteraction;
-type ResolveRecoveryActionOutcome =
-  "restored" | "false_positive" | "blocked" | "cancelled";
-type IssueDetailComment = (IssueComment | OptimisticIssueComment) & {
-  runId?: string | null;
-  runAgentId?: string | null;
-  interruptedRunId?: string | null;
-  queueState?: "queued";
-  queueTargetRunId?: string | null;
-  queueReason?: "hold" | "active_run" | "other";
-  consumedByRunId?: string | null;
-  steeredIntoRunId?: string | null;
-  conversationAnchorAt?: Date | string | null;
-  conversationAnchorSequence?: number;
-};
-
-function isPlanConfirmationInteraction(
-  interaction: IssueThreadInteraction,
-): interaction is RequestConfirmationInteraction {
-  return (
-    interaction.kind === "request_confirmation" &&
-    interaction.payload.target?.type === "issue_document" &&
-    interaction.payload.target.key === "plan"
-  );
-}
-
-function buildPlanDecisionResponseText(
-  interaction: RequestConfirmationInteraction,
-) {
-  if (interaction.status === "accepted") return "Approved plan";
-  const reason = interaction.result?.reason?.trim();
-  return reason ? `Requested changes\n\n${reason}` : "Requested changes";
-}
-
-const FEEDBACK_TERMS_URL =
-  import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() ||
-  null;
-const ISSUE_COMMENT_AUTOLOAD_LIMIT = ISSUE_COMMENT_PAGE_SIZE * 3;
-const JUMP_TO_LATEST_MAX_COMMENT_PAGES = 10;
-function treeControlPreviewErrorCopy(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.status === 403)
-      return "Only board users can preview subtree controls.";
-    if (error.status === 409)
-      return "Preview is stale because subtree hold state changed. Retry to refresh.";
-    if (error.status === 422)
-      return "This subtree action is currently invalid for the selected tasks.";
-  }
-  return error instanceof Error ? error.message : "Unable to load preview.";
-}
-
-export function canBoardResolveRecoveryAction(
-  companyId: string | null | undefined,
-  boardAccess: CurrentBoardAccess | undefined,
-) {
-  if (!companyId || !boardAccess) return false;
-  if (boardAccess.source === "local_implicit" || boardAccess.isInstanceAdmin)
-    return true;
-  if (!boardAccess.memberships || boardAccess.memberships.length === 0) {
-    return boardAccess.companyIds.includes(companyId);
-  }
-
-  const membership = boardAccess.memberships.find(
-    (item) => item.companyId === companyId && item.status === "active",
-  );
-  if (!membership) return false;
-  return (
-    membership.membershipRole !== "viewer" && membership.membershipRole !== null
-  );
-}
+import {
+  type IssueDetailComment,
+  type CommentReassignment,
+  type ActionableIssueThreadInteraction,
+  resolveInterruptibleIssueRun,
+  isPlanConfirmationInteraction,
+  buildPlanDecisionResponseText,
+  asRecord,
+  usageNumber,
+  ISSUE_COMMENT_AUTOLOAD_LIMIT,
+  EMPTY_ISSUES,
+  canBoardResolveRecoveryAction,
+  type ResolveRecoveryActionOutcome,
+  createRunCancelledStatusUpdateError,
+  didRunCancelBeforeStatusUpdateFail,
+  readIssueRunStateFromCache,
+  mergeOptimisticFeedbackVote,
+  fileBaseName,
+  slugifyDocumentKey,
+  titleizeFilename,
+  shouldScrollIssueDetailToTopOnNavigation,
+  JUMP_TO_LATEST_MAX_COMMENT_PAGES,
+  isMarkdownFile,
+  FEEDBACK_TERMS_URL,
+  extractWorkspaceFileRefFromWorkProduct,
+  treeControlPreviewErrorCopy,
+} from "./issue-detail/helpers";
+export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 
 // `canBoardManageRuntime` and `readRecoveryReconcileWorkspaceId` moved to `@/lib/recovery-reconcile`
 // so the run-page recovery surface can reuse them without importing this page module. Re-exported
 // here (from the top-of-file import) to keep existing import sites — and their tests — stable, while
 // the imported bindings stay usable within this module.
 export { canBoardManageRuntime, readRecoveryReconcileWorkspaceId };
-
-export function shouldScrollIssueDetailToTopOnNavigation(input: {
-  previousIssueId: string | undefined;
-  nextIssueId: string | undefined;
-  navigationType: ReturnType<typeof useNavigationType>;
-}): boolean {
-  if (input.navigationType === "POP") return false;
-  return input.previousIssueId !== input.nextIssueId;
-}
-
-function resolveInterruptibleIssueRun(
-  activeRun: ActiveRunForIssue | null | undefined,
-  liveRuns: readonly LiveRunForIssue[] | undefined,
-) {
-  const issueLiveRun =
-    (liveRuns ?? []).find((run) => run.status === "running") ??
-    (liveRuns ?? []).find((run) => run.status === "queued") ??
-    null;
-  return (
-    issueLiveRun ??
-    (activeRun?.status === "running" || activeRun?.status === "queued"
-      ? activeRun
-      : null)
-  );
-}
-
-function dedupeLiveRunsById(liveRuns: readonly LiveRunForIssue[]) {
-  const seen = new Set<string>();
-  return liveRuns.filter((run) => {
-    if (seen.has(run.id)) return false;
-    seen.add(run.id);
-    return true;
-  });
-}
-
-function readIssueRunStateFromCache(
-  queryClient: QueryClient,
-  issueId: string,
-  issue: Pick<Issue, "executionRunId"> | null | undefined,
-) {
-  const liveRuns = queryClient.getQueryData<LiveRunForIssue[]>(
-    queryKeys.issues.liveRuns(issueId),
-  );
-  const activeRun = queryClient.getQueryData<ActiveRunForIssue | null>(
-    queryKeys.issues.activeRun(issueId),
-  );
-  const activeRunIsLive = Boolean(
-    activeRun && liveRuns?.some((run) => run.id === activeRun.id),
-  );
-  const activeRunMatchesIssueLock = Boolean(
-    activeRun && issue?.executionRunId && activeRun.id === issue.executionRunId,
-  );
-  const resolvedActiveRun =
-    activeRunIsLive || activeRunMatchesIssueLock ? activeRun : null;
-  return {
-    liveRuns,
-    activeRun: resolvedActiveRun,
-    interruptibleIssueRun: resolveInterruptibleIssueRun(
-      resolvedActiveRun,
-      liveRuns,
-    ),
-  };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return null;
-  return value as Record<string, unknown>;
-}
-
-function extractWorkspaceFileRefFromWorkProduct(workProduct: {
-  metadata: Record<string, unknown> | null;
-}): WorkspaceFileRef | null {
-  const metadata = asRecord(workProduct.metadata);
-  if (!metadata) return null;
-  const parsed = workspaceFileRefSchema.safeParse(metadata.resourceRef);
-  return parsed.success ? parsed.data : null;
-}
-
-function usageNumber(usage: Record<string, unknown> | null, ...keys: string[]) {
-  if (!usage) return 0;
-  for (const key of keys) {
-    const value = usage[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-  }
-  return 0;
-}
-
-function truncate(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return text.slice(0, max - 1) + "\u2026";
-}
-
-function isMarkdownFile(file: File) {
-  const name = file.name.toLowerCase();
-  return (
-    name.endsWith(".md") ||
-    name.endsWith(".markdown") ||
-    file.type === "text/markdown"
-  );
-}
-
-function fileBaseName(filename: string) {
-  return filename.replace(/\.[^.]+$/, "");
-}
-
-function slugifyDocumentKey(input: string) {
-  const slug = input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "document";
-}
-
-function titleizeFilename(input: string) {
-  return input
-    .split(/[-_ ]+/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function mergeOptimisticFeedbackVote(
-  previousVotes: FeedbackVote[] | undefined,
-  nextVote: {
-    issueId: string;
-    targetType: "issue_comment" | "issue_document_revision";
-    targetId: string;
-    vote: "up" | "down";
-    reason?: string;
-  },
-  currentUserId: string | null,
-): FeedbackVote[] {
-  const now = new Date();
-  const existingVotes = previousVotes ?? [];
-  const existingIndex = existingVotes.findIndex(
-    (feedbackVote) =>
-      feedbackVote.targetType === nextVote.targetType &&
-      feedbackVote.targetId === nextVote.targetId &&
-      (!currentUserId || feedbackVote.authorUserId === currentUserId),
-  );
-
-  if (existingIndex >= 0) {
-    const existingVote = existingVotes[existingIndex]!;
-    const updatedVote: FeedbackVote = {
-      ...existingVote,
-      vote: nextVote.vote,
-      reason:
-        nextVote.reason !== undefined
-          ? nextVote.reason.trim() || null
-          : existingVote.reason,
-      updatedAt: now,
-    };
-    const nextVotes = [...existingVotes];
-    nextVotes[existingIndex] = updatedVote;
-    return nextVotes;
-  }
-
-  return [
-    ...existingVotes,
-    {
-      id: `optimistic:${nextVote.targetType}:${nextVote.targetId}`,
-      companyId: "",
-      issueId: nextVote.issueId,
-      targetType: nextVote.targetType,
-      targetId: nextVote.targetId,
-      authorUserId: currentUserId ?? "current-user",
-      vote: nextVote.vote,
-      reason: nextVote.reason?.trim() || null,
-      sharedWithLabs: false,
-      sharedAt: null,
-      consentVersion: null,
-      redactionSummary: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-}
 
 function ActorIdentity({
   evt,
