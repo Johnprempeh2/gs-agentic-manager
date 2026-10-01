@@ -2,7 +2,7 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { StatusIcon } from "./StatusIcon";
+import { StatusIcon, blockedAttentionLabel } from "./StatusIcon";
 import { IssueStatusBadge } from "./StatusBadge";
 
 /**
@@ -54,6 +54,13 @@ describe("StatusIcon", () => {
     expect(html).not.toContain("border-cyan");
     // Full blocked reason still rides on the accessible label.
     expect(html).toContain("Blocked · waiting on active sub-task PAP-9");
+  });
+
+  it("names the one blocker that needs attention", () => {
+    expect(blockedAttentionLabel({
+      state: "needs_attention", reason: "attention_required", unresolvedBlockerCount: 1, coveredBlockerCount: 0,
+      stalledBlockerCount: 0, attentionBlockerCount: 1, sampleBlockerIdentifier: "GRE-73", sampleStalledBlockerIdentifier: null,
+    })).toBe("Blocked · GRE-73 needs attention");
   });
 
   it("surfaces attention-required blocked copy and keeps the blocked glyph", () => {

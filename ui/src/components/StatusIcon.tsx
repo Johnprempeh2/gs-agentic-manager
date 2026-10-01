@@ -55,7 +55,11 @@ export function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | 
 
   if (blockerAttention.reason === "attention_required") {
     const count = blockerAttention.attentionBlockerCount || blockerAttention.unresolvedBlockerCount;
-    const attentionCopy = `${count} ${count === 1 ? "blocker needs" : "blockers need"} attention`;
+    // One blocker: name it, so the owner knows which task to open.
+    const leaf = blockerAttention.terminalBlocker?.identifier ?? blockerAttention.sampleBlockerIdentifier;
+    const attentionCopy = count === 1 && leaf
+      ? `${leaf} needs attention`
+      : `${count} ${count === 1 ? "blocker needs" : "blockers need"} attention`;
     const coveredCount = blockerAttention.coveredBlockerCount;
     if (coveredCount > 0) {
       return `Blocked · ${attentionCopy}; ${coveredCount} covered by active work`;
