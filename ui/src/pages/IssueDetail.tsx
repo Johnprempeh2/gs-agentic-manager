@@ -252,6 +252,7 @@ import { IssueFileViewer } from "./issue-detail/IssueFileViewer";
 import { useIssueMutations } from "./issue-detail/useIssueMutations";
 import { useThreadMutations } from "./issue-detail/useThreadMutations";
 import { useRecoveryActionHandlers } from "./issue-detail/useRecoveryActionHandlers";
+import { useThreadHandlers } from "./issue-detail/useThreadHandlers";
 export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 export type { AttributionActor } from "./issue-detail/IssueAttribution";
 
@@ -1957,324 +1958,67 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     };
   }, [fileViewerEnabled]);
 
-  const promotedOutputAttachmentIds = useMemo(
-    () => getPromotedOutputAttachmentIds(workProducts),
-    [workProducts],
-  );
-  const attachmentList = useMemo(
-    () =>
-      (attachments ?? []).filter(
-        (attachment) => !promotedOutputAttachmentIds.has(attachment.id),
-      ),
-    [attachments, promotedOutputAttachmentIds],
-  );
-  const copyIssueToClipboard = async () => {
-    if (!issue) return;
-    const decodeEntities = (text: string) => {
-      const el = document.createElement("textarea");
-      el.innerHTML = text;
-      return el.value;
-    };
-    const title = decodeEntities(issue.title);
-    const body = decodeEntities(issue.description ?? "");
-    const md = `# ${issue.identifier}: ${title}\n\n${body}`.trimEnd();
-    try {
-      await copyTextToClipboard(md);
-      setCopied(true);
-      pushToast({ title: "Copied to clipboard", tone: "success" });
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      pushToast({
-        title: "Copy failed",
-        body:
-          error instanceof Error
-            ? error.message
-            : "Unable to copy task markdown",
-        tone: "error",
-      });
-    }
-  };
-
-  // Gmail-style mobile toolbar when viewing an issue from inbox.
-  // Callbacks are stored in a ref so the effect deps stay stable and
-  // don't trigger an infinite render loop (useMutation results and
-  // non-memoized functions change identity every render).
-  const inboxToolbarCallbacksRef = useRef({
-    onArchive: () => {
-      if (!archiveFromInbox.isPending && issue?.id)
-        archiveFromInbox.mutate(issue.id);
-    },
-    onCopy: () => copyIssueToClipboard(),
-    onProperties: () => setMobilePropsOpen(true),
-    onHide: () => {
-      updateIssue.mutate(
-        { hiddenAt: new Date().toISOString() },
-        { onSuccess: () => navigate("/issues/all") },
-      );
-    },
-  });
-  inboxToolbarCallbacksRef.current = {
-    onArchive: () => {
-      if (!archiveFromInbox.isPending && issue?.id)
-        archiveFromInbox.mutate(issue.id);
-    },
-    onCopy: () => copyIssueToClipboard(),
-    onProperties: () => setMobilePropsOpen(true),
-    onHide: () => {
-      updateIssue.mutate(
-        { hiddenAt: new Date().toISOString() },
-        { onSuccess: () => navigate("/issues/all") },
-      );
-    },
-  };
-
-  const backHref = sourceBreadcrumb.href ?? "/inbox";
-  const showInboxToolbar = isMobile && isFromInbox;
-  const archivePending = archiveFromInbox.isPending;
-  const issueHidden = !!issue?.hiddenAt;
-  const canArchiveFromInbox = isFromInbox && !!issue?.id && !issueHidden;
-
-  useEffect(() => {
-    if (!showInboxToolbar) {
-      setMobileToolbar(null);
-      return;
-    }
-
-    setMobileToolbar(
-      <InboxMobileToolbar
-        backHref={backHref}
-        preferHistoryBack={streamlinedUiEnabled ? preferInboxHistoryBack : true}
-        issueId={issue?.id}
-        issueHidden={issueHidden}
-        archivePending={archivePending}
-        onArchive={() => inboxToolbarCallbacksRef.current.onArchive()}
-        onCopy={() => inboxToolbarCallbacksRef.current.onCopy()}
-        onProperties={() => inboxToolbarCallbacksRef.current.onProperties()}
-        onHide={() => inboxToolbarCallbacksRef.current.onHide()}
-      />,
-    );
-
-    return () => setMobileToolbar(null);
-  }, [
-    showInboxToolbar,
-    backHref,
-    preferInboxHistoryBack,
-    streamlinedUiEnabled,
-    issue?.id,
-    issueHidden,
+  const {
+    attachmentList,
+    copyIssueToClipboard,
     archivePending,
+    canArchiveFromInbox,
+    attachmentsInitialLoading,
+    loadOlderComments,
+    refetchLatestComments,
+    handleCommentVote,
+    handleChatAdd,
+    handleCommentImageUpload,
+    handleCommentAttachImage,
+    handleInterruptQueuedRun,
+    runFinalizationActions,
+    handleAcceptInteraction,
+    handleRejectInteraction,
+    handleSubmitInteractionAnswers,
+    handleCancelInteraction,
+    handleSkipInteraction,
+    handleSubmitInteractionVerdicts,
+    canResumeFromBacklog,
+    handleResumeFromBacklog,
+  } = useThreadHandlers({
+    workProducts,
+    attachments,
+    issue,
+    setCopied,
+    pushToast,
+    archiveFromInbox,
+    setMobilePropsOpen,
+    updateIssue,
+    navigate,
+    sourceBreadcrumb,
+    isMobile,
+    isFromInbox,
     setMobileToolbar,
-  ]);
-
-  const attachmentsInitialLoading =
-    attachmentsLoading && attachments === undefined;
-  const loadOlderComments = useCallback(() => {
-    void fetchOlderComments();
-  }, [fetchOlderComments]);
-  const refetchLatestComments = useCallback(async () => {
-    // Refetch page 0 first so comments that arrived after initial load are
-    // visible, then load every remaining older page. The chat thread is
-    // paginated and virtualized, so "latest" must be resolved against the
-    // complete comment set rather than the current loaded window.
-    const refreshed = await refetchComments();
-    const loaded = await loadRemainingIssueCommentPages<IssueComment>({
-      pages: refreshed.data?.pages,
-      pageParams: refreshed.data?.pageParams as
-        Array<string | null> | undefined,
-      pageSize: ISSUE_COMMENT_PAGE_SIZE,
-      maxPages: JUMP_TO_LATEST_MAX_COMMENT_PAGES,
-      fetchPage: (afterCommentId) =>
-        issuesApi.listComments(issueId!, {
-          order: "desc",
-          limit: ISSUE_COMMENT_PAGE_SIZE,
-          after: afterCommentId,
-        }),
-    });
-    queryClient.setQueryData<InfiniteData<IssueComment[], string | null>>(
-      queryKeys.issues.comments(issueId!),
-      loaded,
-    );
-    await new Promise<void>((resolve) => {
-      if (typeof window === "undefined") {
-        resolve();
-        return;
-      }
-      window.requestAnimationFrame(() => resolve());
-    });
-  }, [issueId, queryClient, refetchComments]);
-  useEffect(() => {
-    if (
-      !shouldPrefetchOlderComments &&
-      !(linkedCommentPending && hasOlderComments && !commentsLoadingOlder)
-    )
-      return;
-    void fetchOlderComments();
-  }, [
+    streamlinedUiEnabled,
+    preferInboxHistoryBack,
+    attachmentsLoading,
     fetchOlderComments,
+    refetchComments,
+    issueId,
+    queryClient,
     shouldPrefetchOlderComments,
     linkedCommentPending,
     hasOlderComments,
     commentsLoadingOlder,
-  ]);
-  const handleCommentVote = useCallback(
-    async (
-      commentId: string,
-      vote: "up" | "down",
-      options?: { allowSharing?: boolean; reason?: string },
-    ) => {
-      await feedbackVoteMutation.mutateAsync({
-        targetType: "issue_comment",
-        targetId: commentId,
-        vote,
-        reason: options?.reason,
-        allowSharing: options?.allowSharing,
-        sharingPreferenceAtSubmit: feedbackDataSharingPreference,
-      });
-    },
-    [feedbackDataSharingPreference, feedbackVoteMutation],
-  );
-  const handleChatAdd = useCallback(
-    async (
-      body: string,
-      reopen?: boolean,
-      reassignment?: CommentReassignment,
-      attachmentIds?: string[],
-      clientRequestId?: string,
-    ) => {
-      if (reassignment) {
-        await addCommentAndReassign.mutateAsync({
-          body,
-          reopen,
-          reassignment,
-          attachmentIds,
-          clientRequestId,
-        });
-        return;
-      }
-      await addComment.mutateAsync({ body, reopen, attachmentIds, clientRequestId });
-    },
-    [addComment, addCommentAndReassign],
-  );
-  const handleCommentImageUpload = useCallback(
-    async (file: File) => {
-      const attachment = await uploadAttachment.mutateAsync(file);
-      return attachment.contentPath;
-    },
-    [uploadAttachment],
-  );
-  const handleCommentAttachImage = useCallback(
-    async (file: File) => {
-      return uploadAttachment.mutateAsync(file);
-    },
-    [uploadAttachment],
-  );
-  const handleInterruptQueuedRun = useCallback(
-    async (runId: string | null) => {
-      await interruptQueuedComment.mutateAsync(runId);
-    },
-    [interruptQueuedComment],
-  );
-  const runFinalizationActions = useMemo<
-    readonly IssueChatRunFinalizationAction[]
-  >(
-    () => [
-      {
-        id: "cancel",
-        label: "Stop and cancel",
-        pendingLabel: "Stopping and cancelling...",
-        isPending:
-          stopAndFinalizeRun.isPending &&
-          stopAndFinalizeRun.variables?.status === "cancelled",
-        disabled: stopAndFinalizeRun.isPending,
-        onSelect: (runId) =>
-          stopAndFinalizeRun.mutateAsync({ runId, status: "cancelled" }).then(
-            () => undefined,
-            () => undefined,
-          ),
-      },
-      {
-        id: "done",
-        label: "Stop and done",
-        pendingLabel: "Stopping and marking done...",
-        isPending:
-          stopAndFinalizeRun.isPending &&
-          stopAndFinalizeRun.variables?.status === "done",
-        disabled: stopAndFinalizeRun.isPending,
-        onSelect: (runId) =>
-          stopAndFinalizeRun.mutateAsync({ runId, status: "done" }).then(
-            () => undefined,
-            () => undefined,
-          ),
-      },
-    ],
-    [
-      stopAndFinalizeRun.isPending,
-      stopAndFinalizeRun.mutateAsync,
-      stopAndFinalizeRun.variables?.status,
-    ],
-  );
-  const handleAcceptInteraction = useCallback(
-    async (
-      interaction: ActionableIssueThreadInteraction,
-      selectedClientKeys?: string[],
-      selectedOptionIds?: string[],
-      rememberAction?: boolean,
-    ) => {
-      await acceptInteraction.mutateAsync({
-        interaction,
-        selectedClientKeys,
-        selectedOptionIds,
-        rememberAction,
-      });
-    },
-    [acceptInteraction],
-  );
-  const handleRejectInteraction = useCallback(
-    async (interaction: ActionableIssueThreadInteraction, reason?: string) => {
-      await rejectInteraction.mutateAsync({ interaction, reason });
-    },
-    [rejectInteraction],
-  );
-  const handleSubmitInteractionAnswers = useCallback(
-    async (
-      interaction: IssueThreadInteraction,
-      answers: AskUserQuestionsAnswer[],
-    ) => {
-      await answerInteraction.mutateAsync({ interaction, answers });
-    },
-    [answerInteraction],
-  );
-  const handleCancelInteraction = useCallback(
-    async (interaction: AskUserQuestionsInteraction) => {
-      await cancelInteraction.mutateAsync({ interaction });
-    },
-    [cancelInteraction],
-  );
-  const handleSkipInteraction = useCallback(
-    async (interaction: IssueThreadInteraction) => {
-      await skipInteraction.mutateAsync({ interaction });
-    },
-    [skipInteraction],
-  );
-  const handleSubmitInteractionVerdicts = useCallback(
-    async (
-      interaction: RequestItemVerdictsInteraction,
-      verdicts: {
-        id: string;
-        verdict: RequestItemVerdictValue;
-        reason?: string;
-      }[],
-    ) => {
-      await submitInteractionVerdicts.mutateAsync({ interaction, verdicts });
-    },
-    [submitInteractionVerdicts],
-  );
-  const canResumeFromBacklog =
-    issue?.status === "backlog" &&
-    Boolean(issue.assigneeAgentId || issue.assigneeUserId);
-  const handleResumeFromBacklog = useCallback(async () => {
-    await updateIssue.mutateAsync({ status: "todo" });
-  }, [updateIssue.mutateAsync]);
+    feedbackVoteMutation,
+    feedbackDataSharingPreference,
+    addCommentAndReassign,
+    addComment,
+    uploadAttachment,
+    interruptQueuedComment,
+    stopAndFinalizeRun,
+    acceptInteraction,
+    rejectInteraction,
+    answerInteraction,
+    cancelInteraction,
+    skipInteraction,
+    submitInteractionVerdicts,
+  });
   // Resume a paused assignee agent straight from the thread notice: a paused
   // assignee silently drops every assignment wake, so the fix belongs next to
   // the explanation.
