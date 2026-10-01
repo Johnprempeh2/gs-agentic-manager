@@ -93,4 +93,26 @@ describe("MobileBottomNav", () => {
       root.unmount();
     });
   });
+
+  it("hides the bar outright, not just off-screen, so the iOS keyboard cannot reveal it", () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const root = createRoot(container);
+    const render = (visible: boolean) =>
+      flushSync(() => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <MobileBottomNav visible={visible} />
+          </QueryClientProvider>,
+        );
+      });
+
+    render(false);
+    expect(container.querySelector("nav")!.classList).toContain("invisible");
+    render(true);
+    expect(container.querySelector("nav")!.classList).not.toContain("invisible");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
 });

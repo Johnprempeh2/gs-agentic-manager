@@ -3379,8 +3379,10 @@ describe("TaskChatThread mobile composer dock (PAP-495)", () => {
     expect(dock).not.toBeNull();
     // Bottom offset comes from --tc-composer-bottom (Layout raises it to the nav
     // height while the nav is on screen) — NOT the raw safe-area dock, which is
-    // what let the nav occlude the action row before PAP-495.
-    expect(dock?.className).toContain("bottom-(--tc-composer-bottom)");
+    // what let the nav occlude the action row before PAP-495. It also clears
+    // the part of the page the iPhone keyboard hides.
+    expect(dock?.className).toContain("var(--tc-composer-bottom)");
+    expect(dock?.className).toContain("var(--vv-bottom-inset)");
     expect(dock?.className).not.toContain("bottom-(--sz-calc-8)");
   });
 });
