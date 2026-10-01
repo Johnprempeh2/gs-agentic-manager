@@ -17,11 +17,27 @@ export function formatDayLabel(dateStr: string): string {
 
 const WINDOW_LABEL = "Last 14 days";
 
-// A young company should see its real history, not ten empty days: drop the
-// days before the first one with data.
-function sinceFirstActive<T>(days: T[], total: (day: T) => number): T[] {
-  const first = days.findIndex((day) => total(day) > 0);
-  return first > 0 ? days.slice(first) : days;
+/** When the company (or agent) began; days before it are not quiet days. */
+export type ChartStart = Date | string | null | undefined;
+
+function startDay(start: ChartStart): string | null {
+  if (!start) return null;
+  const date = new Date(start);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+// A young company should see its real history, not ten empty days. Only days
+// before it existed go: a quiet week for an older company stays on the chart.
+function sinceStart(days: string[], start: ChartStart): string[] {
+  const first = startDay(start);
+  const kept = first ? days.filter((day) => day >= first) : days;
+  return kept.length > 0 ? kept : days;
+}
+
+/** ChartCard subtitle: names the window the chart really shows. */
+export function chartWindowLabel(start: ChartStart): string {
+  const days = getLast14Days();
+  return sinceStart(days, start).length < days.length ? `Since ${formatShortDate(start as Date | string)}` : WINDOW_LABEL;
 }
 
 function sumCounts(counts: Record<string, number>): number {
@@ -104,9 +120,10 @@ export function ChartCard({ title, subtitle, children }: { title: string; subtit
 
 /* ---- Chart Components ---- */
 
-type RunChartProps =
+type RunChartProps = { start?: ChartStart } & (
   | { activity?: DashboardRunActivityDay[] | null; runs?: never }
-  | { runs?: HeartbeatRun[] | null; activity?: never };
+  | { runs?: HeartbeatRun[] | null; activity?: never }
+);
 
 function aggregateRuns(runs: readonly HeartbeatRun[] = []): DashboardRunActivityDay[] {
   const days = getLast14Days();
@@ -139,21 +156,14 @@ function resolveRunActivity(props: RunChartProps): DashboardRunActivityDay[] {
   return [];
 }
 
-/** ChartCard subtitle for the run charts: names the window the chart really shows. */
-export function runChartSubtitle(props: RunChartProps): string {
+function runActivitySince(props: RunChartProps): DashboardRunActivityDay[] {
   const activity = resolveRunActivity(props);
-  return sinceFirstActive(activity, (day) => day.total).length < activity.length ? "Since first run" : WINDOW_LABEL;
-}
-
-/** ChartCard subtitle for the task charts: names the window the chart really shows. */
-export function taskChartSubtitle(issues: { createdAt: Date }[]): string {
-  const days = getLast14Days();
-  const created = new Set(issues.map((issue) => new Date(issue.createdAt).toISOString().slice(0, 10)));
-  return sinceFirstActive(days, (day) => (created.has(day) ? 1 : 0)).length < days.length ? "Since first task" : WINDOW_LABEL;
+  const kept = new Set(sinceStart(activity.map((day) => day.date), props.start));
+  return activity.filter((day) => kept.has(day.date));
 }
 
 export function RunActivityChart(props: RunChartProps) {
-  const activity = sinceFirstActive(resolveRunActivity(props), (day) => day.total);
+  const activity = runActivitySince(props);
   const days = activity.map((day) => day.date);
   const grouped = new Map(activity.map((day) => [day.date, day]));
 
@@ -208,7 +218,7 @@ const priorityColors: Record<string, string> = {
 
 const priorityOrder = ["critical", "high", "medium", "low"] as const;
 
-export function PriorityChart({ issues }: { issues: { priority: string; createdAt: Date }[] }) {
+export function PriorityChart({ issues, start }: { issues: { priority: string; createdAt: Date }[]; start?: ChartStart }) {
   const days = getLast14Days();
   const grouped = new Map<string, Record<string, number>>();
   for (const day of days) grouped.set(day, { critical: 0, high: 0, medium: 0, low: 0 });
@@ -223,7 +233,7 @@ export function PriorityChart({ issues }: { issues: { priority: string; createdA
   const hasData = Array.from(grouped.values()).some(v => sumCounts(v) > 0);
 
   if (!hasData) return <p className="text-xs text-muted-foreground">No tasks</p>;
-  const shownDays = sinceFirstActive(days, (day) => sumCounts(grouped.get(day)!));
+  const shownDays = sinceStart(days, start);
 
   return (
     <div>
@@ -281,7 +291,7 @@ const statusLabels: Record<string, string> = {
   backlog: "Backlog",
 };
 
-export function IssueStatusChart({ issues }: { issues: { status: string; createdAt: Date }[] }) {
+export function IssueStatusChart({ issues, start }: { issues: { status: string; createdAt: Date }[]; start?: ChartStart }) {
   const days = getLast14Days();
   const allStatuses = new Set<string>();
   const grouped = new Map<string, Record<string, number>>();
@@ -299,7 +309,7 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
   const hasData = allStatuses.size > 0;
 
   if (!hasData) return <p className="text-xs text-muted-foreground">No tasks</p>;
-  const shownDays = sinceFirstActive(days, (day) => sumCounts(grouped.get(day)!));
+  const shownDays = sinceStart(days, start);
 
   return (
     <div>
@@ -330,7 +340,7 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
 }
 
 export function SuccessRateChart(props: RunChartProps) {
-  const activity = sinceFirstActive(resolveRunActivity(props), (day) => day.total);
+  const activity = runActivitySince(props);
   const days = activity.map((day) => day.date);
   const grouped = new Map(activity.map((day) => [day.date, day]));
 

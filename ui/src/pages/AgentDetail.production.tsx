@@ -18,7 +18,7 @@ import { budgetsApi } from "../api/budgets";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { ApiError } from "../api/client";
-import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart, runChartSubtitle, taskChartSubtitle } from "../components/ActivityCharts";
+import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart, chartWindowLabel } from "../components/ActivityCharts";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { activityApi } from "../api/activity";
 import { accessApi } from "../api/access";
@@ -1828,20 +1828,20 @@ function AgentOverview({
 
       {/* Charts */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <ChartCard title="Run Activity" subtitle={runChartSubtitle({ runs })}>
-          <RunActivityChart runs={runs} />
+        <ChartCard title="Run Activity" subtitle={chartWindowLabel(agent.createdAt)}>
+          <RunActivityChart runs={runs} start={agent.createdAt} />
         </ChartCard>
         {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
         {SHOW_TASK_PRIORITY_UI && (
-          <ChartCard title="Tasks by Priority" subtitle={taskChartSubtitle(assignedIssues)}>
-            <PriorityChart issues={assignedIssues} />
+          <ChartCard title="Tasks by Priority" subtitle={chartWindowLabel(agent.createdAt)}>
+            <PriorityChart issues={assignedIssues} start={agent.createdAt} />
           </ChartCard>
         )}
-        <ChartCard title="Tasks by Status" subtitle={taskChartSubtitle(assignedIssues)}>
-          <IssueStatusChart issues={assignedIssues} />
+        <ChartCard title="Tasks by Status" subtitle={chartWindowLabel(agent.createdAt)}>
+          <IssueStatusChart issues={assignedIssues} start={agent.createdAt} />
         </ChartCard>
-        <ChartCard title="Success Rate" subtitle={runChartSubtitle({ runs })}>
-          <SuccessRateChart runs={runs} />
+        <ChartCard title="Success Rate" subtitle={chartWindowLabel(agent.createdAt)}>
+          <SuccessRateChart runs={runs} start={agent.createdAt} />
         </ChartCard>
       </div>
 
