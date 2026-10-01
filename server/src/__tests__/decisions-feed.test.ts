@@ -490,6 +490,60 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect(answered.nextStep).not.toMatch(/^Waiting for/);
   });
 
+  // GRE-316: Mica had no GitHub access, and each of three tasks sent its own card.
+  it("shows one card when three tasks of one agent wait for the same missing connection", async () => {
+    const companyId = randomUUID();
+    const micaId = randomUUID();
+    const otherId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: "GRE", requireBoardApprovalForNewAgents: false });
+    await db.insert(agents).values([micaId, otherId].map((id) => ({
+      id, companyId, name: id === micaId ? "Mica" : "Other", role: "engineer", status: "idle",
+      adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    })));
+    await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: USER_ID, status: "active", membershipRole: "owner" });
+    const tasks = [303, 304, 305].map((number) => ({ id: randomUUID(), number }));
+    const otherTask = randomUUID();
+    await db.insert(issues).values([
+      ...tasks.map(({ id, number }) => ({ id, companyId, identifier: `GRE-${number}`, issueNumber: number, title: `Task ${number}`, status: "in_review", priority: "medium", assigneeAgentId: micaId })),
+      { id: otherTask, companyId, identifier: "GRE-306", issueNumber: 306, title: "Task 306", status: "in_progress", priority: "medium", assigneeAgentId: otherId },
+    ]);
+    const intent = (issueId: string, agentId: string) => ({
+      companyId, issueId, kind: "connection_intent", status: "pending", title: "Connect GitHub",
+      addresseeUserId: USER_ID, createdByAgentId: agentId,
+      payload: { version: 1, serviceSlug: "github", serviceName: "GitHub", requestingAgentId: agentId, requestingAgentName: "Agent", phase: "requested" },
+    });
+    await db.insert(issueThreadInteractions).values([...tasks.map(({ id }) => intent(id, micaId)), intent(otherTask, otherId)]);
+    // A question on one of the tasks stays on that task's own card.
+    await db.insert(issueThreadInteractions).values({
+      companyId, issueId: tasks[0]!.id, kind: "ask_user_questions", status: "pending", title: "Which branch?", createdByAgentId: micaId,
+      payload: { version: 1, questions: [{ id: "branch", prompt: "Which branch?", selectionMode: "single", options: [{ id: "main", label: "main" }] }] },
+    });
+
+    const feed = await build(companyId);
+
+    const shared = feed.cards.filter((card) => card.id.startsWith("connection:"));
+    expect(shared).toHaveLength(1);
+    expect(shared[0]).toMatchObject({
+      id: `connection:${micaId}:github:`,
+      kind: "connection",
+      task: null,
+      title: "Mica needs GitHub for 3 tasks",
+      reason: "3 tasks wait for the same GitHub connection: GRE-303, GRE-304, GRE-305. One answer covers all of them.",
+      waiting: { id: micaId, name: "Mica" },
+    });
+    expect(shared[0]!.items).toHaveLength(3);
+    expect(action(shared[0]!, "reconnect")).toMatchObject({ type: "link", label: "Connect" });
+    // No task card repeats the connection request.
+    for (const { id } of tasks) {
+      expect(cardFor(feed, id)?.kinds ?? []).not.toContain("connection");
+    }
+    expect(cardFor(feed, tasks[0]!.id)).toMatchObject({ kind: "question", kinds: ["question"] });
+    // Another agent's single request keeps its own task card.
+    expect(cardFor(feed, otherTask)).toMatchObject({ kind: "connection" });
+    expect(feed.count).toBe(3);
+    expect(feed.countsByKind).toMatchObject({ connection: 2, question: 1 });
+  });
+
   it("refuses clarity on a card that is gone, and refuses agent callers", async () => {
     const seeded = await seedLiveScenario();
     await request(app(seeded.companyId))
