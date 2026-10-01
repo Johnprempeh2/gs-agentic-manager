@@ -1,30 +1,15 @@
 import { useUserPreferences } from "../hooks/useUserPreferences";
 import { DispositionRecoveryProvider } from "../components/DispositionRecoveryNotice";
-import { useReauth, ReauthCancelledError } from "@/components/ReauthDialog";
-import { clearLegacyChatMessageRequests } from "@/lib/chat-message-request";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
-import { isBlockedDependentsHandoffCancelled } from "@/lib/blocked-dependents-handoff";
 import {
-  Settings as ChatSettings,
   PaperclipIcon,
   ChevronRight,
-  Repeat,
-  ScanEye,
-  Flag,
-  Check,
-  Copy,
-  SlidersHorizontal,
-  Archive,
-  FileCode2,
-  MoreHorizontal,
   Plus,
   EyeOff,
   MessageSquare,
   Activity as ActivityIcon,
   ListTree,
 } from "lucide-react";
-import { agentDetailHref } from "./agent-detail-navigation";
-import { deriveInitials } from "@/components/Identity";
 import { ExecutionBlockerNotice } from "../components/ExecutionBlockerNotice";
 import { TaskDetailTasksPanel } from "@/components/task-detail/TaskDetailTasksPanel";
 import { EmailTaskActivity } from "../components/EmailTaskActivity";
@@ -38,19 +23,15 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
-import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { useParams, useNavigate, useNavigationType, useLocation, Link } from "@/lib/router";
 import {
   useQueryClient,
   useQuery,
   useInfiniteQuery,
   type InfiniteData,
-  useMutation,
 } from "@tanstack/react-query";
 import { useSharedPollingQuery, usePublishSharedQueryData } from "@/hooks/useSharedPolling";
 import { issuesApi } from "../api/issues";
-import { CommentSubmissionUnknownError } from "../lib/comment-submit-result";
-import { approvalsApi } from "../api/approvals";
 import { type LiveRunForIssue, heartbeatsApi, type ActiveRunForIssue } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { accessApi } from "../api/access";
@@ -58,7 +39,6 @@ import { canBoardManageRuntime, readRecoveryReconcileWorkspaceId } from "../lib/
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
-import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
@@ -98,109 +78,56 @@ import {
   ISSUE_DETAIL_CONTENT_MEASURE,
 } from "../lib/issue-detail-performance";
 import {
-  type InboxIssueCacheSnapshot,
-  cancelInboxIssueQueries,
-  clearLocalInboxArchive,
-  restoreIssueToInboxCaches,
-  beginLocalInboxArchive,
-  removeIssueFromInboxCaches,
-  boundLocalInboxArchive,
-  invalidateInboxIssueQueries,
-  snapshotInboxIssueCaches,
-  getIssuePresenceInActiveInboxCaches,
-  confirmLocalInboxArchive,
-} from "../lib/inboxArchiveCache";
-import {
-  resolveInboxQuickArchiveKeyAction,
-  hasBlockingShortcutDialog,
-  resolveIssueDetailGoKeyAction,
-} from "../lib/keyboardShortcuts";
-import {
   type OptimisticIssueComment,
   ISSUE_COMMENT_PAGE_SIZE,
   getNextIssueCommentPageParam,
   flattenIssueCommentPages,
   shouldAutoloadOlderIssueComments,
   mergeIssueComments,
-  removeIssueCommentFromPages,
-  upsertIssueCommentInPages,
-  matchesIssueRef,
-  applyOptimisticIssueFieldUpdate,
-  applyOptimisticIssueFieldUpdateToCollection,
-  createOptimisticIssueComment,
-  applyOptimisticIssueCommentUpdate,
-  takeOptimisticIssueComment,
-  loadRemainingIssueCommentPages,
 } from "../lib/optimistic-issue-comments";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { recordRecentTask } from "../lib/recent-tasks";
 import { cn } from "../lib/utils";
-import { liveBlueBadge } from "../lib/status-colors";
-import { ProjectTile } from "../components/ProjectTile";
-import { InlineEditor } from "../components/InlineEditor";
-import type { IssueChatComposerHandle, IssueChatRunFinalizationAction } from "../components/IssueChatThread";
-import { workModeMetaFor } from "../lib/work-mode-meta";
+import type { IssueChatComposerHandle } from "../components/IssueChatThread";
 import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
 import { IssuePlanDecompositionsSection } from "../components/IssuePlanDecompositionsSection";
 import { IssueOutputSection } from "../components/issue-output/IssueOutputSection";
-import { isImageAttachment, isVideoAttachment } from "../lib/issue-attachments";
-import {
-  getIssueOutputs,
-  isImageLikeOutput,
-  isVideoLikeOutput,
-  getPromotedOutputAttachmentIds,
-} from "../lib/issue-output";
 import { IssueSiblingNavigation } from "../components/IssueSiblingNavigation";
 import { IssuesList } from "../components/IssuesList";
 import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import {
   isWaitingOnMonitor,
-  IssueMonitorBanner,
   hasVisibleMonitorSurface,
   IssueMonitorComposerStrip,
 } from "../components/IssueMonitorBanner";
-import { NotNowButton } from "../components/decisions-feed/NotNowButton";
-import { TabledBanner } from "../components/decisions-feed/TabledBanner";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink, IssueProperties } from "../components/IssueProperties";
 import { type TaskSidePanelProps, TaskSidePanel } from "../components/task-side-panel";
-import { SidePanelToggleButton } from "../components/side-panel";
-import { TaskTreeControlMenuItems, TaskTreeControlDialog } from "../components/TaskTreeControls";
-import { waitForStoppedRuns } from "../lib/wait-for-stopped-runs";
+import { TaskTreeControlDialog } from "../components/TaskTreeControls";
 import { useIssueExternalObjects } from "../hooks/useIssueExternalObjects";
 import { IssueGalleryContext } from "../context/IssueGalleryContext";
 import { useIssuePlanDocument } from "../hooks/useIssuePlanDocument";
 import { useTaskArtifactArrival } from "../hooks/useTaskArtifactArrival";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
-import { type GalleryMediaItem, ImageGalleryModal } from "../components/ImageGalleryModal";
+import { ImageGalleryModal } from "../components/ImageGalleryModal";
 import { FileViewerProvider } from "../context/FileViewerContext";
 import { ArtifactFileChip } from "../components/ArtifactFileChip";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { StatusIcon } from "../components/StatusIcon";
-import { PriorityIcon } from "../components/PriorityIcon";
-import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { usePluginSlots, PluginSlotOutlet, PluginSlotMount } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { Separator } from "@/components/ui/separator";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { copyTextToClipboard } from "../lib/clipboard";
 import { buildIssuePropertiesPanelKey } from "../lib/issue-properties-panel-key";
 import { shouldSuppressTaskPanelUntilPlan, openSkillPanelState } from "../lib/task-side-panel-state";
-import { buildIssueThreadInteractionSummary } from "../lib/issue-thread-interactions";
-import { resolveIssueDocumentDeepLink } from "../lib/issue-document-deep-link";
 import { shouldRenderRichSubIssuesSection, buildIssueSiblingNavigation } from "../lib/issue-detail-subissues";
 import { filterIssueDescendants } from "../lib/issue-tree";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
-import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
-import { Badge } from "@/components/ui/badge";
 import {
   type Agent,
   type Issue,
@@ -212,11 +139,6 @@ import {
   type IssueAttachment,
   type IssueWorkProduct,
   ONBOARDING_FIRST_TASK_ORIGIN_KIND,
-  type AskUserQuestionsAnswer,
-  type RequestItemVerdictsInteraction,
-  type RequestItemVerdictValue,
-  type AskUserQuestionsInteraction,
-  type FeedbackVote,
 } from "@greatstone/shared";
 import {
   useTaskDetailInterfaceMode,
@@ -227,25 +149,11 @@ import {
   ISSUE_COMMENT_AUTOLOAD_LIMIT,
   EMPTY_ISSUES,
   canBoardResolveRecoveryAction,
-  type ResolveRecoveryActionOutcome,
-  createRunCancelledStatusUpdateError,
-  didRunCancelBeforeStatusUpdateFail,
-  readIssueRunStateFromCache,
-  type ActionableIssueThreadInteraction,
-  type CommentReassignment,
-  mergeOptimisticFeedbackVote,
-  fileBaseName,
-  slugifyDocumentKey,
-  titleizeFilename,
-  shouldScrollIssueDetailToTopOnNavigation,
-  JUMP_TO_LATEST_MAX_COMMENT_PAGES,
   isMarkdownFile,
   FEEDBACK_TERMS_URL,
   extractWorkspaceFileRefFromWorkProduct,
   treeControlPreviewErrorCopy,
 } from "./issue-detail/helpers";
-import { InboxMobileToolbar } from "./issue-detail/InboxMobileToolbar";
-import { IssueAttributionByline } from "./issue-detail/IssueAttribution";
 import { IssueDetailChatTab } from "./issue-detail/IssueDetailChatTab";
 import { IssueDetailActivityTab } from "./issue-detail/IssueDetailActivityTab";
 import { IssueFileViewer } from "./issue-detail/IssueFileViewer";
