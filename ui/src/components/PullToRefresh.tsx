@@ -103,7 +103,7 @@ export function PullToRefresh({ enabled }: { enabled: boolean }) {
       role="status"
       aria-live="polite"
       aria-label={phase === "refreshing" ? "Refreshing" : phase === "armed" ? "Release to refresh" : "Pull to refresh"}
-      className="pointer-events-none fixed inset-x-0 top-(--mobile-ptr-top) z-30 flex justify-center"
+      className="pointer-events-none fixed inset-x-0 top-(--mobile-ptr-top) z-chrome flex justify-center"
       style={{ "--ptr-pull": `${pull}px`, opacity: progress } as CSSProperties}
     >
       <span

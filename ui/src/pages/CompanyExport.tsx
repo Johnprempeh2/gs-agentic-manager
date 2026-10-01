@@ -1078,7 +1078,7 @@ export function CompanyExport() {
   return (
     <div className="max-w-6xl">
       {/* Sticky top action bar */}
-      <div className="sticky top-0 z-10 border-b border-border bg-background px-5 py-3">
+      <div className="sticky top-0 z-raised border-b border-border bg-background px-5 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <span className="font-medium">
@@ -1236,7 +1236,7 @@ export function CompanyExport() {
           />
           {exportPreviewMutation.isPending ? (
             <div
-              className="absolute inset-0 z-10 flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
+              className="absolute inset-0 z-raised flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
               role="status"
               aria-live="polite"
               aria-busy="true"
@@ -1258,7 +1258,7 @@ export function CompanyExport() {
             </div>
           ) : previewCancelled ? (
             <div
-              className="absolute inset-0 z-10 flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
+              className="absolute inset-0 z-raised flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
               data-export-preview-state="cancelled"
             >
               <div className="flex max-w-md flex-col items-center gap-3">
@@ -1276,7 +1276,7 @@ export function CompanyExport() {
             </div>
           ) : exportPreviewMutation.isError ? (
             <div
-              className="absolute inset-0 z-10 flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
+              className="absolute inset-0 z-raised flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
               role="alert"
               data-export-preview-state="error"
             >

@@ -357,7 +357,7 @@ function ResizablePropertiesPanel({
           "hidden md:flex bg-card flex-col",
           !maximized && "border-l border-border",
           isFixed
-            ? "tc-pane-glide fixed z-40 overflow-hidden"
+            ? "tc-pane-glide fixed z-drawer overflow-hidden"
             : cn(
                 "relative h-full shrink-0",
                 panelVisible ? "overflow-visible" : "overflow-hidden",
@@ -384,7 +384,7 @@ function ResizablePropertiesPanel({
             aria-orientation="vertical"
             aria-label="Resize panel"
             data-dragging={dragging ? "" : undefined}
-            className="group absolute inset-y-0 z-10 cursor-col-resize touch-none"
+            className="group absolute inset-y-0 z-raised cursor-col-resize touch-none"
             style={{ left: -4, width: 8 }}
             onPointerDown={handleGripPointerDown}
             onPointerMove={handleGripPointerMove}

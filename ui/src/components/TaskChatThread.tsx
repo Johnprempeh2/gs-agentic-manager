@@ -2888,7 +2888,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
               {historyError ? (
                 <div
                   role="status"
-                  className="absolute inset-x-0 top-0 z-20 mx-auto flex w-full max-w-(--tc-shell-max-w) items-center gap-2 border border-border bg-background px-4 py-2 text-sm text-muted-foreground"
+                  className="absolute inset-x-0 top-0 z-sticky mx-auto flex w-full max-w-(--tc-shell-max-w) items-center gap-2 border border-border bg-background px-4 py-2 text-sm text-muted-foreground"
                 >
                   Some task history could not be loaded.
                   <Button variant="ghost" size="sm" onClick={retryHistory}>
@@ -2898,7 +2898,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
               ) : null}
               {!historyRevealed ? (
                 <div
-                  className="absolute inset-0 z-10 overflow-hidden bg-background"
+                  className="absolute inset-0 z-raised overflow-hidden bg-background"
                   data-testid="task-chat-history-loading"
                   role="status"
                   aria-label="Loading conversation"
@@ -3095,8 +3095,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                   // nav's own 200ms slide; the offset only changes on nav toggles, so
                   // it never animates mid-scroll.
                   isMobile
-                    ? "bottom-(--tc-composer-bottom) z-20 transition-[bottom] duration-200 ease-out"
-                    : "bottom-0 z-10",
+                    ? "bottom-(--tc-composer-bottom) z-sticky transition-[bottom] duration-200 ease-out"
+                    : "bottom-0 z-raised",
                   "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-2 px-1 pb-1 md:px-4 md:pb-2",
                   streamlinedUiEnabled && "md:px-0 md:pb-0",
                   (!streamlinedUiEnabled || isMobile) &&
@@ -3153,7 +3153,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                       }}
                     />
                   ) : null}
-                  <div className="relative z-10">
+                  <div className="relative z-raised">
                     <TaskChatComposer
                       onAdd={handleThreadAdd}
                       confirmedSubmissionIds={new Set(comments.filter((comment) =>

@@ -3374,7 +3374,7 @@ describe("IssueChatThread", () => {
     expect(dock).not.toBeNull();
     expect(dock?.className).toContain("sticky");
     expect(dock?.className).toContain("bottom-(--sz-calc-8)");
-    expect(dock?.className).toContain("z-20");
+    expect(dock?.className).toContain("z-sticky");
 
     const composer = container.querySelector(
       '[data-testid="issue-chat-composer"]',

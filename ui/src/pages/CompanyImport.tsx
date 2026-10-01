@@ -2041,7 +2041,7 @@ export function CompanyImport() {
       {importPreview && (
         <>
           {/* Sticky import action bar */}
-          <div className="sticky top-0 z-10 border-b border-border bg-background px-5 py-3">
+          <div className="sticky top-0 z-raised border-b border-border bg-background px-5 py-3">
             <div className="flex flex-wrap items-center gap-4 text-sm">
               <span className="font-medium">
                 Import preview

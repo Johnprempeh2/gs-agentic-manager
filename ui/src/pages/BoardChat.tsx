@@ -946,7 +946,7 @@ export function BoardChat() {
               onClick={() => scrollToLatest("smooth")}
               aria-label="Jump to latest messages"
               // design-allow(card-pattern): floating scroll-to-bottom <button>, not a content card (C5a Run 3)
-              className="absolute bottom-24 left-1/2 z-20 grid h-8 w-8 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:border-muted-foreground/30"
+              className="absolute bottom-24 left-1/2 z-sticky grid h-8 w-8 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:border-muted-foreground/30"
             >
               <ArrowDown className="h-4 w-4" />
             </button>
@@ -964,7 +964,7 @@ export function BoardChat() {
                mask is gone — the dock carries the task-style soft top fade instead
                (mirrors IssueChatThread's composer dock). pointer-events pass through
                the fade so the scrollbar stays usable; the composer re-enables them. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pt-6 pb-5">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-raised bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pt-6 pb-5">
             <ChatComposer
               ref={composerRef}
               value={input}

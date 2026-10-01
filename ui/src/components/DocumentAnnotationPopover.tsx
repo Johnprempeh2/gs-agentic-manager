@@ -81,7 +81,7 @@ export function DocumentAnnotationPopover(props: DocumentAnnotationPopoverProps)
       role="dialog"
       aria-label={props.pendingAnchor ? "Add annotation comment" : "Annotation thread"}
       data-testid="document-annotation-popover"
-      className="absolute z-(--z-20) w-80 max-w-full rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
+      className="absolute z-sticky w-80 max-w-full rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
       style={{ top, left }}
     >
       {mutationError ? <p className="border-b border-border bg-destructive/10 px-3 py-2 text-xs text-destructive">{mutationError}</p> : null}

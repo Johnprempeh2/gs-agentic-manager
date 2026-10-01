@@ -1197,7 +1197,7 @@ export function TaskChatComposer({
             className={cn(
               "flex min-w-0 items-center gap-2",
               takeover.hideLabel && takeover.pendingCount === 1
-                ? "absolute right-0 top-0 z-10"
+                ? "absolute right-0 top-0 z-raised"
                 : "mb-3",
             )}
             data-testid="task-chat-composer-takeover-header"

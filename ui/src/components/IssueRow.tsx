@@ -245,7 +245,7 @@ export function IssueRow({
         className={cn(
           "gs-row group relative flex min-w-0 items-start gap-2 rounded-lg py-2.5 pr-2 text-sm no-underline text-inherit sm:items-center sm:py-2",
           showUnreadSlot ? "pl-4" : "pl-2 sm:pl-4",
-          "[&_button]:relative [&_button]:z-10",
+          "[&_button]:relative [&_button]:z-raised",
           selected ? "bg-accent/50 hover:bg-accent/50" : "hover:bg-accent/50",
           checklistCurrentStep && "bg-primary/5",
           className,
@@ -260,7 +260,7 @@ export function IssueRow({
           id={checklistRowId}
           aria-current={checklistCurrentStep ? "step" : undefined}
           onClickCapture={() => rememberIssueDetailLocationState(issuePathId, detailState)}
-          className="absolute inset-0 rounded-lg no-underline text-inherit focus-visible:z-10 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
+          className="absolute inset-0 rounded-lg no-underline text-inherit focus-visible:z-raised focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
         >
           <span className="sr-only">Open {identifier}: {issue.title}</span>
         </Link>
@@ -384,7 +384,7 @@ export function IssueRow({
         // when scrubbing the mouse fast across the list.
         "gs-row group relative flex items-start gap-2 rounded-lg py-2.5 pr-3 text-sm no-underline text-inherit sm:items-center sm:py-2 sm:pl-1",
         showUnreadSlot ? "pl-4" : "pl-2",
-        "[&_button]:relative [&_button]:z-10",
+        "[&_button]:relative [&_button]:z-raised",
         // Divider + hover/selected/checklist wash live on the ROOT row band so
         // the tint paints BEHIND the content and `last:border-b-0` matches the
         // real last row. Keeping these on the overlay Link (PR #10526) made the
@@ -407,7 +407,7 @@ export function IssueRow({
         className={cn(
           // Overlay Link keeps ONLY positioning + focus ring so header controls
           // stay clickable above it; visual washes belong on the root above.
-          "absolute inset-0 rounded-lg no-underline text-inherit focus-visible:z-10 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
+          "absolute inset-0 rounded-lg no-underline text-inherit focus-visible:z-raised focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
         )}
       >
         <span className="sr-only">Open {identifier}: {issue.title}</span>

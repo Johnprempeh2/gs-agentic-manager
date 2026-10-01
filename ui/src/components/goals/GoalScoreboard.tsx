@@ -53,7 +53,7 @@ function SubGoalTile({
   return (
     <Link
       to={goalHref(goal)}
-      className="relative z-10 grid gap-2 rounded-md border border-border p-3 text-inherit no-underline transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="relative z-raised grid gap-2 rounded-md border border-border p-3 text-inherit no-underline transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid="goal-sub-tile"
     >
       <span className="flex min-w-0 items-center gap-2">
