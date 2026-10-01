@@ -245,6 +245,32 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
     expect(res.body[0]).not.toHaveProperty("goal");
   });
 
+  // A list row needs the next scheduled check to show the waiting clock.
+  it("carries the monitor's next check in compact rows", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: uniqueIssuePrefix(),
+      requireBoardApprovalForNewAgents: false,
+    });
+    await seedCloudTenantMember(companyId);
+    const nextCheckAt = new Date("2026-10-12T07:00:00.000Z");
+    await db.insert(issues).values([
+      { companyId, title: "Waiting task", status: "in_progress", priority: "medium", monitorNextCheckAt: nextCheckAt },
+      { companyId, title: "Plain task", status: "todo", priority: "medium" },
+    ]);
+
+    const res = await request(createApp(companyId))
+      .get(`/api/companies/${companyId}/issues`)
+      .query({ view: "compact", limit: "20" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const byTitle = Object.fromEntries(res.body.map((row: { title: string }) => [row.title, row]));
+    expect(byTitle["Waiting task"].monitorNextCheckAt).toBe(nextCheckAt.toISOString());
+    expect(byTitle["Plain task"]).not.toHaveProperty("monitorNextCheckAt");
+  });
+
   it("marks a required successful-run handoff live while a run targets the issue", async () => {
     const companyId = randomUUID();
     const agentId = randomUUID();
