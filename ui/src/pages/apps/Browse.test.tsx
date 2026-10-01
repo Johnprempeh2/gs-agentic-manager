@@ -558,6 +558,13 @@ describe("Connectors landing page", () => {
     expect(navigateMock).toHaveBeenLastCalledWith(
       "/apps/chat/connect?provider=telegram&purpose=chat&resume=chat-draft",
     );
+    // Review 2: a provider with only a draft can still be added afresh.
+    const addConnector = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Add a connector"));
+    await act(() => addConnector!.click());
+    const catalogue = container.querySelector('[aria-label="Available connectors"]')!;
+    expect(
+      Array.from(catalogue.querySelectorAll<HTMLElement>("[data-app-slug]")).map((row) => row.dataset.appSlug),
+    ).toContain("telegram");
   });
 
   it("tells two Claude subscriptions apart by how each was connected", async () => {

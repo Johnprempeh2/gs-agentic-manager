@@ -686,9 +686,9 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
       row.connections.some((connection) => connection.status === "draft") ||
       row.chatEndpoints.some(isUnfinishedEndpoint),
   );
-  const availableRows = visibleRows.filter(
-    (row) => row.connections.length === 0 && row.chatEndpoints.length === 0,
-  );
+  // A provider with only an unfinished setup stays addable, so the owner can
+  // start afresh instead of having to finish or delete the draft first.
+  const availableRows = visibleRows.filter((row) => !connectedRows.includes(row));
   const hasAccounts = connectedRows.length > 0 || unfinishedRows.length > 0;
   // With nothing connected yet the catalogue is the whole page, so it stays open.
   const catalogueOpen = showCatalogue || !hasAccounts;
