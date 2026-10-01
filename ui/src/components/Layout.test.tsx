@@ -156,7 +156,7 @@ vi.mock("./AnnouncementWell", () => ({
 }));
 
 vi.mock("./MobileBottomNav", () => ({
-  MobileBottomNav: () => null,
+  MobileBottomNav: ({ visible }: { visible: boolean }) => <div data-mobile-nav={visible ? "shown" : "hidden"} />,
 }));
 
 vi.mock("./WorktreeBanner", () => ({
@@ -603,6 +603,30 @@ describe("Layout", () => {
     expect(container.textContent).toContain("Company settings sidebar");
     expect(mockSetForceCollapsed).toHaveBeenCalledWith(true);
 
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it.each([
+    ["/PAP/issues/PAP-1", "hidden"],
+    ["/PAP/chats/everest", "hidden"],
+    ["/PAP/dashboard", "shown"],
+  ])("on a phone, %s keeps the tab bar %s", async (pathname, expected) => {
+    currentPathname = pathname;
+    mockSidebarState.isMobile = true;
+    mockSidebarState.sidebarOpen = false;
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Layout />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    expect(container.querySelector("[data-mobile-nav]")?.getAttribute("data-mobile-nav")).toBe(expected);
     await act(async () => {
       root.unmount();
     });
