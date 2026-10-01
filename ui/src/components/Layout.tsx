@@ -153,6 +153,9 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const scrollMemory = useRef(new NavigationScrollMemory());
   const activeScrollKey = useRef<string>(location.key);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
+  // Task and chat threads read like Messages on a phone: the back arrow is
+  // the way out, so the tab bar steps aside and the composer docks low.
+  const showMobileNav = mobileNavVisible && !isTaskDetailRoute;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const matchedCompany = useMemo(() => {
     if (!companyPrefix) return null;
@@ -756,7 +759,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
               style={
                 isMobile
                   ? ({
-                      "--tc-composer-bottom": mobileNavVisible
+                      "--tc-composer-bottom": showMobileNav
                         ? "var(--sz-calc-14)"
                         : "var(--tc-composer-hidden-nav-offset)",
                     } as CSSProperties)
@@ -772,7 +775,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                 // changes (e.g. switching skill-detail tabs) don't widen/shift
                 // when the vertical scrollbar appears or disappears (PAP-10907).
                 isMobile
-                  ? isTaskDetailRoute && !mobileNavVisible
+                  ? isTaskDetailRoute && !showMobileNav
                     ? "overflow-visible pb-(--tc-composer-hidden-nav-offset)"
                     : "overflow-visible pb-(--sz-calc-14)"
                   : "overflow-auto [scrollbar-gutter:stable]",
@@ -794,7 +797,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </div>
         </div>
       </div>
-      {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
+      {isMobile && <MobileBottomNav visible={showMobileNav} />}
       <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
       <NewIssueDialog />
