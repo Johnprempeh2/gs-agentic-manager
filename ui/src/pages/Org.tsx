@@ -11,6 +11,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { ChevronRight, GitBranch } from "lucide-react";
 import { cn } from "../lib/utils";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
+import { ErrorState } from "../components/ErrorState";
 
 function OrgTree({
   nodes,
@@ -92,7 +93,7 @@ export function Org() {
     setBreadcrumbs([{ label: "Org Chart" }]);
   }, [setBreadcrumbs]);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
     queryFn: () => agentsApi.org(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -106,9 +107,13 @@ export function Org() {
     return <PageSkeleton variant="list" />;
   }
 
+  if (error && !data) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
+  }
+
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {data && data.length === 0 && (
         <EmptyState

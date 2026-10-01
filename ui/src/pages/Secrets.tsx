@@ -130,6 +130,7 @@ import {
 } from "./secrets/user-secret-presentation";
 import type { MyUserSecretEntry } from "../api/secrets";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type CreateMode = "managed" | "external";
 // "value" writes a new secret value (for external references: through to the
@@ -4200,7 +4201,7 @@ function CoverageInline({
     staleTime: 30_000,
   });
   const summary = coverageQuery.data;
-  if (coverageQuery.isPending) return <span className="text-muted-foreground">Loading…</span>;
+  if (coverageQuery.isPending) return <Skeleton className="inline-block h-4 w-20 align-middle" aria-busy="true" />;
   if (coverageQuery.isError) return <span className="text-destructive">Coverage unavailable</span>;
   return (
     <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
@@ -4273,7 +4274,12 @@ function UserSecretCoverageTab({
     staleTime: 30_000,
   });
   if (coverageQuery.isPending) {
-    return <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>;
+    return (
+      <div className="space-y-2 py-4" aria-busy="true">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
   }
   if (coverageQuery.isError) {
     return <div className="py-6 text-center text-xs text-destructive">Coverage unavailable.</div>;
@@ -4699,7 +4705,12 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 
 export function SecretUsageTab({ loading, bindings }: { loading: boolean; bindings: CompanySecretUsageBinding[] }) {
   if (loading) {
-    return <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>;
+    return (
+      <div className="space-y-2 py-4" aria-busy="true">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
   }
   if (bindings.length === 0) {
     return (
@@ -4797,7 +4808,12 @@ export function SecretEventsTab({
   };
 
   if (loading) {
-    return <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>;
+    return (
+      <div className="space-y-2 py-4" aria-busy="true">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
   }
   if (events.length === 0) {
     return (

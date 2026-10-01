@@ -27,6 +27,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { resolveIssuesPresentation } from "./Issues";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
+import { ErrorState } from "../components/ErrorState";
 
 /** Tasks behind decisions are fetched one by one; the Decisions page holds the rest. */
 const DECISION_ISSUE_FETCH_LIMIT = 50;
@@ -53,6 +54,7 @@ export function MyTasks() {
     data: issues,
     isLoading,
     error,
+    refetch,
   } = useQuery({
     queryKey: ["issues", selectedCompanyId, "my-tasks"],
     queryFn: () =>
@@ -165,11 +167,15 @@ export function MyTasks() {
     return <PageSkeleton variant="list" />;
   }
 
+  if (error && !issues) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
+  }
+
   const nothingNeedsYou = merged.issues.length === 0 && merged.decisionsWithoutIssue.length === 0;
 
   return (
     <div className="space-y-6">
-      {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {nothingNeedsYou ? (
         <EmptyState icon={CheckCircle2} message="Nothing needs you right now." />
