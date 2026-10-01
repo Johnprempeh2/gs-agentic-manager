@@ -60,3 +60,14 @@ describe("phone header lead agent", () => {
     expect(resolveLeadAgent([{ id: "solo", role: "engineer", status: "idle", reportsTo: null }])).toBeNull();
   });
 });
+
+describe("isChatWith", () => {
+  it("knows when the lead agent's own chat is open, by url key or id", async () => {
+    const { isChatWith } = await import("../components/MobileEverestButton");
+    const everest = { id: "a1", name: "Everest", urlKey: "everest" };
+    expect(isChatWith("/GRE/chats/everest", everest)).toBe(true);
+    expect(isChatWith("/GRE/chats/a1", everest)).toBe(true);
+    expect(isChatWith("/GRE/chats/keystone", everest)).toBe(false);
+    expect(isChatWith("/GRE/dashboard", everest)).toBe(false);
+  });
+});

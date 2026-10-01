@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@/lib/router";
+import { Link, useLocation } from "@/lib/router";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -31,6 +31,13 @@ export function resolveLeadAgent<T extends LeadCandidate>(agents: readonly T[]):
  * Phone header shortcut to the lead agent's chat (Everest): one tap from any
  * main tab. Hidden when the team has no lead.
  */
+export function isChatWith(pathname: string, agent: { id: string; name?: string | null; urlKey?: string | null }): boolean {
+  const match = /\/chats\/([^/?#]+)\/?$/.exec(pathname);
+  if (!match) return false;
+  const ref = decodeURIComponent(match[1]!);
+  return ref === agent.id || ref === agentRouteRef(agent);
+}
+
 export function MobileEverestButton() {
   const { selectedCompanyId } = useCompany();
   const { data: agents } = useQuery({
@@ -38,8 +45,11 @@ export function MobileEverestButton() {
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { pathname } = useLocation();
   const lead = agents ? resolveLeadAgent(agents) : null;
   if (!lead) return null;
+  // Already in the lead's chat: its header shows the agent, so no second face.
+  if (isChatWith(pathname, lead)) return null;
   return (
     <Link
       to={`/chats/${encodeURIComponent(agentRouteRef(lead))}`}
