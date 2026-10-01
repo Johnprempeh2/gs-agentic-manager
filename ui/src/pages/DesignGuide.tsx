@@ -156,6 +156,7 @@ import { SHOW_TASK_PRIORITY_UI } from "@/lib/ui-flags";
 import { agentStatusDot, agentStatusDotDefault } from "@/lib/status-colors";
 import { EntityRow } from "@/components/EntityRow";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { BrandMark, BrandStoneIcon } from "@/components/BrandMark";
 import { BrandLockup } from "@/components/BrandLockup";
 import { BrandBuildingIcon, BrandThinkingIcon } from "@/components/BrandLoading";
@@ -2251,6 +2252,14 @@ export function DesignGuide() {
             action="New connection"
             onAction={() => {}}
           />
+        </SubSection>
+
+        <SubSection title="ErrorState (page load failed, with retry)">
+          <ErrorState error={new Error("The server did not answer. Check your connection.")} onRetry={() => {}} />
+        </SubSection>
+
+        <SubSection title="ErrorState compact (refresh failed, older data still shown)">
+          <ErrorState error={new Error("Showing the last list we loaded.")} onRetry={() => {}} compact />
         </SubSection>
       </Section>
 
