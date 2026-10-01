@@ -213,6 +213,7 @@ import {
   IssueMonitorBanner,
   IssueMonitorComposerStrip,
   hasVisibleMonitorSurface,
+  isWaitingOnMonitor,
 } from "../components/IssueMonitorBanner";
 import { NotNowButton } from "../components/decisions-feed/NotNowButton";
 import { TabledBanner } from "../components/decisions-feed/TabledBanner";
@@ -6945,7 +6946,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
   const issueStatusControl = (
     <StatusIcon
       status={issue.status} externalConversationState={issue.externalConversationState}
-      waiting={hasVisibleMonitorSurface(issue)}
+      waiting={isWaitingOnMonitor(issue)}
       size="lg"
       blockerAttention={issue.blockerAttention}
       onChange={(status) => updateIssue.mutate({ status })}

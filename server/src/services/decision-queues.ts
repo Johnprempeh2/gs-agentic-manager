@@ -125,6 +125,14 @@ function eventActorColumns(actor: DecisionMutationActor) {
   };
 }
 
+// Seed copy before 1 Oct 2026. A stored row still holding it shows today's
+// wording; anything else was edited on purpose and is shown as saved.
+const RETIRED_SEED_DESCRIPTIONS = new Set([
+  "Pull-request and merge decisions detected from issue work products.",
+  "Plan revisions waiting for confirmation.",
+  "Structured questions waiting for a board response.",
+]);
+
 export function toQueue(row: typeof decisionQueues.$inferSelect, itemCount: number): DecisionQueue {
   // Seeded queues store their copy when first created; show today's wording.
   const seed = row.createdByType === "system"
@@ -135,7 +143,9 @@ export function toQueue(row: typeof decisionQueues.$inferSelect, itemCount: numb
     companyId: row.companyId,
     key: row.key,
     title: row.title,
-    description: seed?.description ?? row.description ?? null,
+    description: seed && row.description && RETIRED_SEED_DESCRIPTIONS.has(row.description)
+      ? seed.description
+      : row.description ?? null,
     createdByType: row.createdByType as DecisionQueue["createdByType"],
     createdByAgentId: row.createdByAgentId ?? null,
     createdByUserId: row.createdByUserId ?? null,

@@ -10,6 +10,7 @@ import {
   IssueMonitorComposerStrip,
   buildMonitorSurfaceCopy,
   hasVisibleMonitorSurface,
+  isWaitingOnMonitor,
 } from "./IssueMonitorBanner";
 import type { DerivedMonitorState } from "@/lib/issue-monitor";
 
@@ -156,6 +157,12 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
     expect(container.textContent).not.toContain("wakes the agent now");
     expect(container.querySelector("button")).toBeNull();
     flushSync(() => root.unmount());
+  });
+
+  it("shows the still clock only while no agent is working the task", () => {
+    const waiting = issueWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString());
+    expect(isWaitingOnMonitor(waiting)).toBe(true);
+    expect(isWaitingOnMonitor({ ...waiting, executionRunId: "run-1" })).toBe(false);
   });
 
   it("renders the banner with a working Check now button while waiting", () => {

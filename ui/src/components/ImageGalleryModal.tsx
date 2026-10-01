@@ -182,12 +182,14 @@ export function ImageGalleryModal({
             {/* Media */}
             <div className="flex-1 flex items-center justify-center min-w-0 min-h-0 h-full px-2">
               {comparing && pair ? (
-                <div className="relative max-w-full max-h-full" data-gallery-compare>
+                // Both images fill one box with object-contain, so tall
+                // screenshots fit the screen and share a scale.
+                <div className="relative h-full w-full" data-gallery-compare>
                   <img
                     ref={setMediaRef}
                     src={pair.after.contentPath}
                     alt={attachmentFilename(pair.after)}
-                    className="block max-w-full max-h-full object-contain select-none rounded-lg"
+                    className="absolute inset-0 h-full w-full object-contain select-none rounded-lg"
                     draggable={false}
                   />
                   <img
