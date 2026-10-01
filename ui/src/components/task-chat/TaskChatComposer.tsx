@@ -1526,7 +1526,8 @@ export function TaskChatComposer({
                         userProfileMap={userProfileMap}
                         placement="trigger"
                       />
-                      <span className="max-w-40 truncate">{assigneeLabel}</span>
+                      {/* Phone: the avatar says who; "Keysto…" said less. */}
+                      <span className="max-w-40 truncate max-sm:sr-only">{assigneeLabel}</span>
                       <ChevronDown
                         className="h-3 w-3 shrink-0 text-muted-foreground"
                         aria-hidden
