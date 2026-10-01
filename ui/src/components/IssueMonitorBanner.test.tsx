@@ -165,6 +165,14 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
     expect(isWaitingOnMonitor({ ...waiting, executionRunId: "run-1" })).toBe(false);
   });
 
+  it("shows the clock on list rows, which carry only the flat next-check column", () => {
+    const listRow = { ...issueWithMonitor(null), executionState: null, monitorNextCheckAt: new Date(NOW.getTime() + 3_600_000) } as Issue;
+    expect(isWaitingOnMonitor(listRow)).toBe(true);
+    expect(isWaitingOnMonitor({ ...listRow, executionRunId: "run-1" })).toBe(false);
+    expect(isWaitingOnMonitor({ ...listRow, status: "done" })).toBe(false);
+    expect(isWaitingOnMonitor({ ...listRow, monitorNextCheckAt: null })).toBe(false);
+  });
+
   it("renders the banner with a working Check now button while waiting", () => {
     const onCheckNow = vi.fn();
     expect(hasVisibleMonitorSurface(issueWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString()))).toBe(true);

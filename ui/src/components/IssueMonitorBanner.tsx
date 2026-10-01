@@ -40,7 +40,14 @@ export function hasVisibleMonitorSurface(issue: Issue): boolean {
 
 /** The still clock: waiting on a scheduled check, and no agent is working it right now. */
 export function isWaitingOnMonitor(issue: Issue): boolean {
-  return !issue.executionRunId && hasVisibleMonitorSurface(issue);
+  if (issue.executionRunId) return false;
+  if (hasVisibleMonitorSurface(issue)) return true;
+  // List rows carry only the flat monitorNextCheckAt column, not the monitor
+  // object, so without this the clock showed on the task page only.
+  return !issue.executionState
+    && Boolean(issue.monitorNextCheckAt)
+    && issue.status !== "done"
+    && issue.status !== "cancelled";
 }
 
 export interface MonitorSurfaceCopy {
