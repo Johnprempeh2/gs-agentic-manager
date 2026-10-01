@@ -154,4 +154,42 @@ describeEmbeddedPostgres("heartbeat: a spent queued-message interrupt", () => {
       status: 403, details: undefined,
     });
   });
+
+  // Review, 1 Oct: a run refused on every pass stayed queued for ever.
+  it("settles a run that fails to claim five passes in a row", { timeout: 30_000 }, async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const wakeupRequestId = randomUUID();
+    const runId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Stuck Co",
+      issuePrefix: `K${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId, companyId, name: "Lead", role: "ceo", status: "idle", adapterType: "codex_local",
+      adapterConfig: {}, runtimeConfig: { heartbeat: { enabled: true, intervalSec: 60, wakeOnDemand: true } }, permissions: {},
+    });
+    // A manual wake must come from a user; this one never will.
+    await db.insert(agentWakeupRequests).values({
+      id: wakeupRequestId, companyId, agentId, source: "on_demand", status: "queued",
+      payload: { manualUserWake: true }, requestedByActorType: "agent", requestedByActorId: agentId,
+    });
+    await db.insert(heartbeatRuns).values({
+      id: runId, companyId, agentId, invocationSource: "on_demand", status: "queued", wakeupRequestId,
+    });
+    await db.update(agentWakeupRequests).set({ runId }).where(eq(agentWakeupRequests.id, wakeupRequestId));
+
+    const heartbeat = heartbeatService(db);
+    let run: typeof heartbeatRuns.$inferSelect | undefined;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      void heartbeat.resumeQueuedRuns().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+      if (run?.status !== "queued") break;
+    }
+    expect(run).toMatchObject({ status: "cancelled", errorCode: "claim_failed" });
+    expect(run?.error).toContain("could not start after 5 tries: Manual wake requires an authenticated user");
+  });
 });

@@ -1324,6 +1324,10 @@ const activeRunExecutions = new Set<string>();
 // the running count before another gate's claim has committed.
 let runAdmissionReservedSlots = 0;
 const runAdmissionAdmittedRunIds = new Set<string>();
+// Consecutive passes on which a queued run failed to claim. ponytail: in
+// memory, so a restart gives a stuck run a fresh five tries.
+const claimFailureCounts = new Map<string, number>();
+const CLAIM_FAILURE_LIMIT = 5;
 // Queued runs currently held by the admission guard, keyed by run id.
 const runAdmissionHeldRuns = new Map<
   string,
@@ -21017,8 +21021,22 @@ export function heartbeatService(
         let claimed: Awaited<ReturnType<typeof claimQueuedRun>>;
         try {
           claimed = await claimQueuedRun(queuedRun, companyAgents);
+          claimFailureCounts.delete(queuedRun.id);
         } catch (err) {
-          logger.error({ err, runId: queuedRun.id }, "claimQueuedRunsForAgent: claim failed, skipping this run");
+          const failures = (claimFailureCounts.get(queuedRun.id) ?? 0) + 1;
+          logger.error({ err, runId: queuedRun.id, failures }, "claimQueuedRunsForAgent: claim failed, skipping this run");
+          if (failures < CLAIM_FAILURE_LIMIT) {
+            claimFailureCounts.set(queuedRun.id, failures);
+            continue;
+          }
+          // Settle it, so it stops absorbing later wakes for the same task.
+          claimFailureCounts.delete(queuedRun.id);
+          const reason = err instanceof Error ? err.message : String(err);
+          await cancelRunInternal(
+            queuedRun.id,
+            `Cancelled because it could not start after ${CLAIM_FAILURE_LIMIT} tries: ${reason}`,
+            { errorCode: "claim_failed" },
+          ).catch((cancelErr) => logger.error({ err: cancelErr, runId: queuedRun.id }, "claimQueuedRunsForAgent: could not cancel a run that keeps failing to claim"));
           continue;
         }
         if (claimed) {
