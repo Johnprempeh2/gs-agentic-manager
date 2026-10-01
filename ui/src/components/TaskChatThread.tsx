@@ -4,7 +4,11 @@ import type { ActivityEvent } from "@greatstone/shared";
 import { useProjectCreatedItems } from "@/hooks/useProjectCreatedItems";
 import { skillCreatedItems } from "@/components/task-chat/skill-created-items";
 import { requiresExecutionReconciliation } from "@greatstone/shared";
-import { TaskChatExpansionState } from "@/components/task-chat/expansion-state";
+import {
+  TaskChatExpansionState,
+  TaskChatRunHistoryRequest,
+} from "@/components/task-chat/expansion-state";
+import type { TranscriptEntry } from "@/adapters";
 import { TaskChatScrollReady } from "@/components/task-chat/scroll-navigation";
 import {
   useCallback,
@@ -116,7 +120,7 @@ import {
 import { heartbeatsApi, type RuntimeRequestResolution } from "@/api/heartbeats";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TaskChatPresentationProvider } from "@/components/task-chat/presentation-mode";
 
 function toMs(value: Date | string | null | undefined): number {
@@ -243,6 +247,8 @@ export function shouldRepeatTaskChatBlockers(items: TaskChatItem[]): boolean {
   );
   return conversationItems.length >= LONG_THREAD_BLOCKER_REPEAT_COUNT;
 }
+
+const NO_RUN_IDS: ReadonlySet<string> = new Set();
 
 function isNativePaperclipRunnerRun(
   run:
@@ -876,8 +882,80 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     () => runs.filter((run) => run.runtimeMode === "native"),
     [runs],
   );
+
+  // A finished run that never streamed on this page draws its folded row from
+  // a server digest (its transcript structure without content). Its log loads
+  // only when the reader opens the row. A run seen unfinished here keeps the
+  // log it streamed.
+  const streamedRunIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const run of runs) {
+      if (!isTerminalRunStatus(run.status)) streamedRunIdsRef.current.add(run.id);
+    }
+  }, [runs]);
+  const digestCandidateIds = useMemo(() => {
+    const liveIds = new Set((liveRuns ?? []).map((run) => run.id));
+    if (activeRun) liveIds.add(activeRun.id);
+    return (linkedRuns ?? [])
+      .filter(
+        (run) =>
+          isTerminalRunStatus(run.status) &&
+          run.runtimeMode !== "native" &&
+          !liveIds.has(run.runId) &&
+          !streamedRunIdsRef.current.has(run.runId),
+      )
+      .map((run) => run.runId)
+      // The route takes up to 200 ids; older runs beyond that read their logs.
+      .slice(0, 200)
+      .sort();
+  }, [activeRun, linkedRuns, liveRuns]);
+  const digestQuery = useQuery({
+    queryKey: queryKeys.issues.runTranscriptDigests(
+      issueId ?? "",
+      digestCandidateIds.join(","),
+    ),
+    queryFn: ({ signal }) =>
+      heartbeatsApi.transcriptDigests(issueId!, digestCandidateIds, { signal }),
+    enabled: Boolean(issueId) && digestCandidateIds.length > 0,
+    // A finished run's digest never changes.
+    staleTime: Number.POSITIVE_INFINITY,
+    placeholderData: keepPreviousData,
+    // On failure every run reads its own log, as before.
+    retry: false,
+  });
+  const digestResult = digestQuery.data?.digests;
+  const runDigests = useMemo(() => {
+    const map = new Map<string, readonly TranscriptEntry[]>();
+    for (const id of digestCandidateIds) {
+      const entries = digestResult?.[id];
+      if (entries) map.set(id, entries);
+    }
+    return map;
+  }, [digestCandidateIds, digestResult]);
+  const digestFetching = digestQuery.isFetching;
+  const deferredRunIds = useMemo(
+    () =>
+      new Set(
+        digestFetching
+          ? digestCandidateIds.filter((id) => !(digestResult && id in digestResult))
+          : [],
+      ),
+    [digestCandidateIds, digestFetching, digestResult],
+  );
+  const [openedRunIds, setOpenedRunIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const requestRunHistory = useCallback((runIds: readonly string[]) => {
+    setOpenedRunIds((previous) =>
+      runIds.every((id) => previous.has(id))
+        ? previous
+        : new Set([...previous, ...runIds]),
+    );
+  }, []);
+
   const {
     transcriptByRun: logTranscriptByRun,
+    digestRunIds = NO_RUN_IDS,
     isInitialHydrating: logsAreInitiallyHydrating,
     hydratedRunIds: hydratedLogRunIds,
     errorsByRun: logErrorsByRun,
@@ -888,6 +966,9 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     // the native event endpoint is temporarily unavailable.
     runs,
     companyId,
+    runDigests,
+    deferredRunIds,
+    fullLogRunIds: openedRunIds,
   });
   const {
     transcriptByRun: nativeTranscriptByRun,
@@ -1906,6 +1987,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
               durationMs: segmentDurationMs,
               failed,
             }),
+            runIds: [source.id],
+            historyPending: digestRunIds.has(source.id) || undefined,
           },
           anchorCommentId: segmented
             ? null
@@ -2057,6 +2140,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     runs,
     liveRun,
     transcriptByRun,
+    digestRunIds,
     linkedRunMetaById,
     lastCommentIdByRun,
     comments,
@@ -2780,7 +2864,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     void retryPlan();
   };
 
-  return (
+  const threadView = (
     <TaskChatExpansionState.Provider value={expansionState.current}>
       <TaskChatScrollReady.Provider value={!historyPending}>
         <TaskChatWindowScroll
@@ -3124,5 +3208,10 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         </TaskChatPresentationProvider>
       </TaskChatScrollReady.Provider>
     </TaskChatExpansionState.Provider>
+  );
+  return (
+    <TaskChatRunHistoryRequest.Provider value={requestRunHistory}>
+      {threadView}
+    </TaskChatRunHistoryRequest.Provider>
   );
 }

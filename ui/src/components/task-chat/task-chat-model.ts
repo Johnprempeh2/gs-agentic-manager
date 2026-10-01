@@ -526,6 +526,10 @@ export interface TaskChatTurnItem {
   continuedAfterSteering?: boolean;
   /** Durable response shown after the ordered GS Agentic Manager Runner timeline. */
   finalResponse?: TaskChatMessageItem;
+  /** The runs a settled row covers (several once back-to-back runs merge). */
+  runIds?: string[];
+  /** Drawn from a run digest: the activity loads when the row is opened. */
+  historyPending?: boolean;
   summary: {
     /** e.g. "38s" — omitted when unknown. */
     durationLabel?: string;

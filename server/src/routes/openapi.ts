@@ -7058,6 +7058,24 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/issues/{issueId}/run-transcript-digests",
+  tags: ["runs"],
+  summary: "Structure-only transcripts of finished runs, for folded run rows",
+  request: {
+    params: z.object({ issueId: z.string() }),
+    query: z.object({ runIds: z.string().optional() }),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/issues/{issueId}/live-runs",
   tags: ["runs"],
   summary: "List live runs for an issue",

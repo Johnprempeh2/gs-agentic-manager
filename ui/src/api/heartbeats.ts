@@ -7,6 +7,7 @@ import type {
   ProviderTraceFrame,
   ProviderTraceMetadata,
 } from "@greatstone/shared";
+import type { TranscriptEntry } from "@greatstone/adapter-utils";
 import { tenantSessionRecovery } from "@/lib/tenant-session-recovery";
 import { api, type RequestOptions } from "./client";
 
@@ -136,6 +137,12 @@ export const heartbeatsApi = {
   events: (runId: string, afterSeq = 0, limit = 200, options?: RequestOptions) =>
     api.get<HeartbeatRunEvent[]>(
       `/heartbeat-runs/${runId}/events?afterSeq=${encodeURIComponent(String(afterSeq))}&limit=${encodeURIComponent(String(limit))}`,
+      options,
+    ),
+  /** Structure-only transcripts of finished runs; null where the log must be read. */
+  transcriptDigests: (issueId: string, runIds: readonly string[], options?: RequestOptions) =>
+    api.get<{ digests: Record<string, TranscriptEntry[] | null> }>(
+      `/issues/${encodeURIComponent(issueId)}/run-transcript-digests?runIds=${runIds.map(encodeURIComponent).join(",")}`,
       options,
     ),
   log: (runId: string, offset = 0, limitBytes = 256000, options?: RequestOptions) =>

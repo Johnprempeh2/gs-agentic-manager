@@ -85,6 +85,7 @@ import {
 import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { ONBOARDING_FIRST_TASK_SKILL_KEY, GSAM_CORE_SKILL_KEYS } from "../services/company-skills.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
+import { runTranscriptDigestService } from "../services/run-transcript-digests.js";
 import { assertAuthenticated, assertBoard, assertCompanyAccess, assertInstanceAdmin, buildActorSecretContext, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
 import { runAdapterLoginStartSpine } from "./adapter-login-route-spine.js";
 import { isLoginCommandSupportedAdapterType } from "../services/login-command.js";
@@ -718,6 +719,10 @@ export function agentRoutes(
   const runRedactions = createRunSecretRedactionRegistry(db);
   const heartbeat = heartbeatService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
+  });
+  const runTranscriptDigests = runTranscriptDigestService(db, {
+    readLog: (run, opts) => heartbeat.readLog(run, opts),
+    redactForRun: (companyId, runId, value) => runRedactions.redactForRun(companyId, runId, value),
   });
   const providerTraces = providerTraceStore(db);
   const traceExpiryCleanup = providerTraces.cleanupExpired?.();
@@ -7359,6 +7364,29 @@ export function agentRoutes(
 
     res.set("Cache-Control", "no-cache, no-store");
     res.json(result);
+  });
+
+  // Structure-only transcripts of finished runs: the task page draws each folded
+  // run row from these and reads a full log only when a row is opened.
+  router.get("/issues/:issueId/run-transcript-digests", async (req, res) => {
+    const rawId = req.params.issueId as string;
+    const issueSvc = issueService(db);
+    const identifier = normalizeIssueIdentifier(rawId);
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      identifier ? issueSvc.getByIdentifier(identifier) : issueSvc.getById(rawId),
+      "Issue not found",
+    );
+    if (!issue) return;
+    if (!(await assertRunTelemetryReadAllowed(req, res, issue.companyId))) return;
+
+    const runIds = String(req.query.runIds ?? "").split(",").filter(Boolean);
+    if (runIds.length > 200 || runIds.some((runId) => runId !== runId.trim() || !isUuidLike(runId))) {
+      throw badRequest("runIds must list up to 200 heartbeat run IDs");
+    }
+    // Same scope as the per-run log route: company telemetry access.
+    res.json({ digests: await runTranscriptDigests.forRuns(issue.companyId, runIds) });
   });
 
   router.get("/issues/:issueId/live-runs", async (req, res) => {

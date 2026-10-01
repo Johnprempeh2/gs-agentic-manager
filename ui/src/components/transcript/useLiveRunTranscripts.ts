@@ -16,6 +16,10 @@ import {
   readChunkSeq,
   type ChunkRetentionBudget,
 } from "../../lib/run-log-chunks";
+import {
+  RUN_LOG_READ_LIMIT_BYTES,
+  TASK_VIEW_MAX_BYTES_PER_RUN,
+} from "@greatstone/adapter-utils/run-log-transcript";
 
 // TODO(perf): this whole hook polls the log/runs endpoints on an interval. The
 // durable fix is server push (SSE/websocket) for transcript deltas so idle tabs
@@ -24,19 +28,13 @@ import {
 const SOCKET_CONNECTING = 0;
 const SOCKET_OPEN = 1;
 const LOG_POLL_INTERVAL_MS = 2000;
-const LOG_READ_LIMIT_BYTES = 256_000;
+const LOG_READ_LIMIT_BYTES = RUN_LOG_READ_LIMIT_BYTES;
 // When realtime websocket updates are enabled, the frequent log poll is
 // redundant with the live stream; keep only a slow safety-net poll to cover
 // gaps and reconnects instead of polling every couple of seconds.
 const REALTIME_FALLBACK_POLL_INTERVAL_MS = 30_000;
 const EMPTY_RUN_LOG_CHUNKS: RunLogChunk[] = [];
-// Retained transcript payload budget for full task views. A byte budget (rather
-// than a tiny chunk count) keeps the whole streamed scrollback intact — a
-// delta-streaming run emits thousands of one-token chunks in seconds, and the
-// old 200-chunk cap discarded just-rendered messages off the top irreversibly.
-// If a run genuinely exceeds this, the oldest output collapses behind a visible
-// marker instead of vanishing (see `applyRetentionBudget`).
-const TASK_VIEW_MAX_BYTES_PER_RUN = 2_000_000;
+const EMPTY_RUN_IDS: ReadonlySet<string> = new Set();
 // Grace period before an accumulated transcript buffer is pruned for a run that
 // has vanished from the `runs` list. The parent refetches runs on its own
 // interval, and a single transient empty/errored poll would otherwise wipe the
@@ -68,6 +66,16 @@ interface UseLiveRunTranscriptsOptions {
   logPollIntervalMs?: number;
   logReadLimitBytes?: number;
   enableRealtimeUpdates?: boolean;
+  /**
+   * Structure-only transcripts of finished runs (server digests). A run listed
+   * here renders from its digest and skips its log read until it is listed in
+   * `fullLogRunIds`, and keeps the digest until that log has loaded.
+   */
+  runDigests?: ReadonlyMap<string, readonly TranscriptEntry[]>;
+  /** Finished runs whose digest is still loading: their log read waits. */
+  deferredRunIds?: ReadonlySet<string>;
+  /** Digest runs whose full log the reader asked for (an opened row). */
+  fullLogRunIds?: ReadonlySet<string>;
 }
 
 function readString(value: unknown): string | null {
@@ -103,6 +111,9 @@ export function useLiveRunTranscripts({
   logPollIntervalMs = LOG_POLL_INTERVAL_MS,
   logReadLimitBytes = LOG_READ_LIMIT_BYTES,
   enableRealtimeUpdates = true,
+  runDigests,
+  deferredRunIds = EMPTY_RUN_IDS,
+  fullLogRunIds = EMPTY_RUN_IDS,
 }: UseLiveRunTranscriptsOptions) {
   // Ticker consumers opt into the silent chunk-count cap; full task views use a
   // byte budget that collapses (not discards) the oldest output when exceeded.
@@ -180,6 +191,20 @@ export function useLiveRunTranscripts({
   const runIdsKey = useMemo(
     () => normalizedRuns.map((run) => run.id).sort((a, b) => a.localeCompare(b)).join(","),
     [normalizedRuns],
+  );
+  // A finished run with a digest (or one on the way) reads no log until opened.
+  const logReadRunIdsKey = useMemo(
+    () =>
+      normalizedRuns
+        .filter(
+          (run) =>
+            fullLogRunIds.has(run.id) ||
+            !(runDigests?.has(run.id) || deferredRunIds.has(run.id)),
+        )
+        .map((run) => run.id)
+        .sort((a, b) => a.localeCompare(b))
+        .join(","),
+    [deferredRunIds, fullLogRunIds, normalizedRuns, runDigests],
   );
 
   const appendChunks = (runId: string, chunks: Array<RunLogChunk & { dedupeKey: string }>) => {
@@ -299,7 +324,10 @@ export function useLiveRunTranscripts({
 
   useEffect(() => {
     if (!visible) return;
-    const readableRuns = normalizedRuns.filter(canReadPersistedLog);
+    const logReadRunIds = new Set(logReadRunIdsKey.split(","));
+    const readableRuns = normalizedRuns.filter(
+      (run) => canReadPersistedLog(run) && logReadRunIds.has(run.id),
+    );
     if (readableRuns.length === 0) return;
 
     let cancelled = false;
@@ -389,7 +417,7 @@ export function useLiveRunTranscripts({
       controller.abort();
       if (interval !== null) window.clearInterval(interval);
     };
-  }, [visible, enableRealtimeUpdates, logPollIntervalMs, logReadLimitBytes, normalizedRuns, runIdsKey, retryGeneration]);
+  }, [visible, enableRealtimeUpdates, logPollIntervalMs, logReadLimitBytes, normalizedRuns, runIdsKey, logReadRunIdsKey, retryGeneration]);
 
   useEffect(() => {
     if (!visible || !enableRealtimeUpdates) return;
@@ -527,6 +555,18 @@ export function useLiveRunTranscripts({
     };
   }, [visible, activeRunIds, companyId, enableRealtimeUpdates, runById]);
 
+  // A digest run keeps its digest until its full log has loaded without error.
+  const digestRunIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of normalizedRuns) {
+      if (!runDigests?.has(run.id)) continue;
+      const fullLogLoaded =
+        fullLogRunIds.has(run.id) && hydratedRunIds.has(run.id) && !errorsByRun.has(run.id);
+      if (!fullLogLoaded) ids.add(run.id);
+    }
+    return ids;
+  }, [errorsByRun, fullLogRunIds, hydratedRunIds, normalizedRuns, runDigests]);
+
   const transcriptByRun = useMemo(() => {
     const next = new Map<string, TranscriptEntry[]>();
     const censorUsernameInLogs = generalSettings?.censorUsernameInLogs === true;
@@ -534,6 +574,11 @@ export function useLiveRunTranscripts({
     const currentRunIds = new Set<string>();
     for (const run of normalizedRuns) {
       currentRunIds.add(run.id);
+      const digest = digestRunIds.has(run.id) ? runDigests?.get(run.id) : undefined;
+      if (digest) {
+        next.set(run.id, digest as TranscriptEntry[]);
+        continue;
+      }
       const chunks = chunksByRun.get(run.id) ?? EMPTY_RUN_LOG_CHUNKS;
       const cached = cache.get(run.id);
       if (
@@ -566,12 +611,19 @@ export function useLiveRunTranscripts({
       }
     }
     return next;
-  }, [chunksByRun, generalSettings?.censorUsernameInLogs, normalizedRuns, parserTick]);
+  }, [chunksByRun, digestRunIds, generalSettings?.censorUsernameInLogs, normalizedRuns, parserTick, runDigests]);
+
+  const readyRunIds = useMemo(
+    () => (runDigests?.size ? new Set([...hydratedRunIds, ...runDigests.keys()]) : hydratedRunIds),
+    [hydratedRunIds, runDigests],
+  );
 
   return {
     transcriptByRun,
-    hydratedRunIds, errorsByRun, retry,
-    isInitialHydrating: normalizedRuns.some((run) => canReadPersistedLog(run) && !hydratedRunIds.has(run.id)),
+    /** Runs drawn from a server digest: their rows have no activity to show yet. */
+    digestRunIds,
+    hydratedRunIds: readyRunIds, errorsByRun, retry,
+    isInitialHydrating: normalizedRuns.some((run) => canReadPersistedLog(run) && !readyRunIds.has(run.id)),
     hasOutputForRun(runId: string) {
       return (chunksByRun.get(runId)?.length ?? 0) > 0 || runById.get(runId)?.hasStoredOutput === true;
     },

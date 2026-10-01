@@ -700,7 +700,9 @@ On server startup:
    - fetch persisted lightweight timeline
 7. `GET /heartbeat-runs/:runId/log`
    - reads full log stream via `RunLogStore` (or redirects/presigned URL for object store)
-8. `GET /api/companies/:companyId/events/ws`
+8. `GET /issues/:issueId/run-transcript-digests?runIds=:ids`
+   - structure-only transcripts of finished runs (same read window, redaction and parser as the board, no content), so a task page draws folded run rows without reading each log; `null` where the board must read the log
+9. `GET /api/companies/:companyId/events/ws`
    - websocket stream
 
 ## 13.2 Mutation logging
