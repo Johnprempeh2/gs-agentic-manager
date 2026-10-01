@@ -1,4 +1,4 @@
-import { useUserPreferences } from "../hooks/useUserPreferences";
+
 import { DispositionRecoveryProvider } from "../components/DispositionRecoveryNotice";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
 import {
@@ -11,14 +11,12 @@ import {
   ListTree,
 } from "lucide-react";
 import { ExecutionBlockerNotice } from "../components/ExecutionBlockerNotice";
-import { TaskDetailTasksPanel } from "@/components/task-detail/TaskDetailTasksPanel";
 import { EmailTaskActivity } from "../components/EmailTaskActivity";
 import {
   useState,
   useMemo,
   useRef,
   useCallback,
-  useLayoutEffect,
   useEffect,
   type ChangeEvent,
   type DragEvent,
@@ -26,67 +24,25 @@ import {
 import { useParams, useNavigate, useNavigationType, useLocation, Link } from "@/lib/router";
 import {
   useQueryClient,
-  useQuery,
-  useInfiniteQuery,
-  type InfiniteData,
 } from "@tanstack/react-query";
-import { useSharedPollingQuery, usePublishSharedQueryData } from "@/hooks/useSharedPolling";
-import { issuesApi } from "../api/issues";
-import { type LiveRunForIssue, heartbeatsApi, type ActiveRunForIssue } from "../api/heartbeats";
-import { instanceSettingsApi } from "../api/instanceSettings";
-import { accessApi } from "../api/access";
 import { canBoardManageRuntime, readRecoveryReconcileWorkspaceId } from "../lib/recovery-reconcile";
-import { agentsApi } from "../api/agents";
-import { authApi } from "../api/auth";
-import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useToastActions } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { assigneeValueFromSelection, suggestedCommentAssigneeValue } from "../lib/assignees";
-import {
-  buildCompanyUserProfileMap,
-  buildCompanyUserLabelMap,
-  buildMarkdownMentionOptions,
-  buildCompanyUserInlineOptions,
-  isAgentTaskTarget,
-} from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
-import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
-import { collectLiveIssueIds } from "../lib/liveIssueIds";
 import {
   readIssueDetailLocationState,
   readIssueDetailHeaderSeed,
-  hasLegacyIssueDetailQuery,
-  readIssueDetailBreadcrumb,
   rememberIssueDetailLocationState,
   createIssueDetailPath,
   withIssueDetailHeaderSeed,
 } from "../lib/issueDetailBreadcrumb";
-import { taskPollInterval, shouldTrackIssueActiveRun } from "../lib/issueActiveRun";
-import { usePageVisibility } from "../lib/page-visibility";
-import { getIssueDetailQueryOptions } from "../lib/issueDetailCache";
-import {
-  beginIssueDetailNavigation,
-  reportIssueDetailWebVitals,
-  scheduleIssueDetailPaintMeasure,
-  ISSUE_DETAIL_HEADER_PAINT_MARK,
-  ISSUE_DETAIL_HEADER_MEASURE,
-  ISSUE_DETAIL_CONTENT_PAINT_MARK,
-  ISSUE_DETAIL_CONTENT_MEASURE,
-} from "../lib/issue-detail-performance";
 import {
   type OptimisticIssueComment,
-  ISSUE_COMMENT_PAGE_SIZE,
-  getNextIssueCommentPageParam,
-  flattenIssueCommentPages,
-  shouldAutoloadOlderIssueComments,
-  mergeIssueComments,
 } from "../lib/optimistic-issue-comments";
-import { useProjectOrder } from "../hooks/useProjectOrder";
-import { recordRecentTask } from "../lib/recent-tasks";
 import { cn } from "../lib/utils";
 import type { IssueChatComposerHandle } from "../components/IssueChatThread";
 import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
@@ -105,37 +61,24 @@ import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConn
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
 import { type TaskSidePanelProps } from "../components/task-side-panel";
 import { TaskTreeControlDialog } from "../components/TaskTreeControls";
-import { useIssueExternalObjects } from "../hooks/useIssueExternalObjects";
 import { IssueGalleryContext } from "../context/IssueGalleryContext";
-import { useIssuePlanDocument } from "../hooks/useIssuePlanDocument";
-import { useTaskArtifactArrival } from "../hooks/useTaskArtifactArrival";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
-import type { MentionOption } from "../components/MarkdownEditor";
 import { ImageGalleryModal } from "../components/ImageGalleryModal";
 import { FileViewerProvider } from "../context/FileViewerContext";
 import { ArtifactFileChip } from "../components/ArtifactFileChip";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { StatusIcon } from "../components/StatusIcon";
-import { usePluginSlots, PluginSlotOutlet, PluginSlotMount } from "@/plugins/slots";
+import { PluginSlotOutlet, PluginSlotMount } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { buildIssuePropertiesPanelKey } from "../lib/issue-properties-panel-key";
-import { shouldSuppressTaskPanelUntilPlan, openSkillPanelState } from "../lib/task-side-panel-state";
-import { shouldRenderRichSubIssuesSection, buildIssueSiblingNavigation } from "../lib/issue-detail-subissues";
-import { filterIssueDescendants } from "../lib/issue-tree";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
 import {
   type Agent,
   type Issue,
   type IssueWorkMode,
   type IssueTreeControlMode,
-  isClosedIsolatedExecutionWorkspace,
-  type IssueComment,
-  type IssueThreadInteraction,
-  type IssueAttachment,
-  type IssueWorkProduct,
   ONBOARDING_FIRST_TASK_ORIGIN_KIND,
 } from "@greatstone/shared";
 import {
@@ -144,9 +87,6 @@ import {
   IssueSectionSkeleton,
 } from "./issue-detail/IssueDetailLoading";
 import {
-  ISSUE_COMMENT_AUTOLOAD_LIMIT,
-  EMPTY_ISSUES,
-  canBoardResolveRecoveryAction,
   isMarkdownFile,
   FEEDBACK_TERMS_URL,
   extractWorkspaceFileRefFromWorkProduct,
@@ -165,6 +105,7 @@ import { IssueDetailHeader } from "./issue-detail/IssueDetailHeader";
 import { IssueDetailMobilePropertiesSheet } from "./issue-detail/IssueDetailMobilePropertiesSheet";
 import { useIssueDetailDerivedState } from "./issue-detail/useIssueDetailDerivedState";
 import { useIssueDetailQueries } from "./issue-detail/useIssueDetailQueries";
+import { useIssueAndComments } from "./issue-detail/useIssueAndComments";
 export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 export type { AttributionActor } from "./issue-detail/IssueAttribution";
 
@@ -306,210 +247,50 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
   );
 
   const {
-    data: queriedIssue,
     isLoading,
-    isPlaceholderData,
     error,
-  } = useQuery({
-    ...getIssueDetailQueryOptions(queryClient, issueId!, {
-      placeholderIssue: issueHeaderSeed
-        ? {
-            id: issueHeaderSeed.id,
-            identifier: issueHeaderSeed.identifier,
-          }
-        : null,
-    }),
-    enabled: !!issueId,
+    issue,
+    resolveWritableIssueId,
+    loadedIssue,
+    loadedIssueCompany,
+    taskRouteReady,
+    resolvedCompanyId,
+    externalObjectsState,
+    closedIsolatedWorkspaceReopenPending,
+    commentsLoading,
+    commentsError,
+    commentsLoadingOlder,
+    hasOlderComments,
+    fetchOlderComments,
+    refetchComments,
+    comments,
+    linkedCommentPending,
+    shouldPrefetchOlderComments,
+    interactions,
+    interactionsLoading,
+    interactionsError,
+    refetchInteractions,
+    attachments,
+    attachmentsLoading,
+    attachmentsError,
+    refetchAttachments,
+    workProducts,
+    workProductsLoading,
+    workProductsError,
+    refetchWorkProducts,
+  } = useIssueAndComments({
+    queryClient,
+    issueId,
+    issueHeaderSeed,
+    conversation,
+    draftIssue,
+    pendingDraftWorkMode,
+    companies,
+    companyPrefix,
+    location,
+    selectedCompanyId,
+    detailTab,
   });
-  const issue = queriedIssue ?? conversation?.issue ?? draftIssue;
-  const resolveWritableIssueId = async () => {
-    if (!conversation) return issueId!;
-    const resolved = await conversation.ensureIssue();
-    const requestedMode = pendingDraftWorkMode.current;
-    if (requestedMode !== null && requestedMode !== resolved.workMode) {
-      await issuesApi.update(resolved.id, { workMode: requestedMode });
-    }
-    pendingDraftWorkMode.current = null;
-    return resolved.id;
-  };
-  // A cached header seed can paint during navigation, but must not redirect
-  // or upload against the previous task while the requested task is loading.
-  const loadedIssue =
-    !isPlaceholderData &&
-    !error &&
-    issue &&
-    issueId &&
-    (issue.id.toLowerCase() === issueId.toLowerCase() ||
-      issue.identifier?.toLowerCase() === issueId.toLowerCase())
-      ? issue
-      : null;
-  const loadedIssueCompany = loadedIssue
-    ? companies.find((company) => company.id === loadedIssue.companyId)
-    : undefined;
-  const taskRouteReady = Boolean(conversation || (
-    loadedIssue &&
-    issueId === (loadedIssue.identifier ?? loadedIssue.id) &&
-    (!loadedIssueCompany || companyPrefix === loadedIssueCompany.issuePrefix) &&
-    !hasLegacyIssueDetailQuery(location.search)
-  ));
-  const resolvedCompanyId = issue?.companyId ?? selectedCompanyId;
-  const externalObjectsState = useIssueExternalObjects(conversation && !conversation.issue ? null : issue?.id ?? null);
-  // A closed isolated workspace no longer blocks the composer. The server reopens
-  // the workspace when the next comment or resume arrives, so the composer stays
-  // enabled and a hint tells the user what happens.
-  const closedIsolatedWorkspaceReopenPending = useMemo(
-    () =>
-      Boolean(
-        issue?.currentExecutionWorkspace &&
-        isClosedIsolatedExecutionWorkspace(issue.currentExecutionWorkspace),
-      ),
-    [issue?.currentExecutionWorkspace],
-  );
-
-  const {
-    data: commentPages,
-    isLoading: commentsLoading,
-    isError: commentsError,
-    isFetchingNextPage: commentsLoadingOlder,
-    hasNextPage: hasOlderComments,
-    fetchNextPage: fetchOlderComments,
-    refetch: refetchComments,
-  } = useInfiniteQuery({
-    queryKey: queryKeys.issues.comments(issueId!),
-    queryFn: ({ pageParam }) =>
-      issuesApi.listComments(issueId!, {
-        order: "desc",
-        limit: ISSUE_COMMENT_PAGE_SIZE,
-        ...(pageParam ? { after: pageParam } : {}),
-      }),
-    enabled: !!issueId,
-    initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) =>
-      getNextIssueCommentPageParam(lastPage, ISSUE_COMMENT_PAGE_SIZE),
-    placeholderData: keepPreviousDataForSameQueryTail<
-      InfiniteData<IssueComment[], string | null>
-    >(issueId ?? "pending"),
-  });
-  const comments = useMemo(
-    () => flattenIssueCommentPages(commentPages?.pages),
-    [commentPages?.pages],
-  );
-
-  useLayoutEffect(() => {
-    beginIssueDetailNavigation();
-  }, [issueId]);
-
-  useEffect(() => {
-    if (!(import.meta.env.DEV || import.meta.env.MODE === "qa")) return;
-    return reportIssueDetailWebVitals();
-  }, [issueId]);
-
-  useEffect(() => {
-    if (!issue) return;
-    scheduleIssueDetailPaintMeasure(
-      ISSUE_DETAIL_HEADER_PAINT_MARK,
-      ISSUE_DETAIL_HEADER_MEASURE,
-    );
-  }, [issue?.id]);
-
-  useEffect(() => {
-    if (!issue || commentsLoading) return;
-    scheduleIssueDetailPaintMeasure(
-      ISSUE_DETAIL_CONTENT_PAINT_MARK,
-      ISSUE_DETAIL_CONTENT_MEASURE,
-    );
-  }, [commentsLoading, issue?.id]);
-  const linkedCommentId = location.hash.startsWith("#comment-")
-    ? location.hash.slice("#comment-".length)
-    : null;
-  const linkedCommentPending = Boolean(
-    linkedCommentId &&
-    !comments.some((comment) => comment.id === linkedCommentId) &&
-    !commentsError &&
-    (commentsLoading || hasOlderComments),
-  );
-  const shouldPrefetchOlderComments = useMemo(
-    () =>
-      shouldAutoloadOlderIssueComments({
-        activeDetailTab: detailTab,
-        hasOlderComments: hasOlderComments ?? false,
-        loadedCommentCount: comments.length,
-        initialPageLoading: commentsLoading,
-        olderPageLoading: commentsLoadingOlder,
-        autoLoadLimit: ISSUE_COMMENT_AUTOLOAD_LIMIT,
-      }),
-    [
-      comments.length,
-      commentsLoading,
-      commentsLoadingOlder,
-      detailTab,
-      hasOlderComments,
-    ],
-  );
-  const {
-    data: interactions = [],
-    isLoading: interactionsLoading,
-    isError: interactionsError,
-    refetch: refetchInteractions,
-  } = useQuery({
-    queryKey: queryKeys.issues.interactions(issueId!),
-    queryFn: () => issuesApi.listInteractions(issueId!),
-    enabled: !!issueId,
-    // A review can be committed between the initial fetch and live-socket
-    // subscription. Reconcile even after its originating run has ended.
-    refetchInterval: 20_000,
-    placeholderData: keepPreviousDataForSameQueryTail<IssueThreadInteraction[]>(
-      issueId ?? "pending",
-    ),
-  });
-
-  const {
-    data: attachments,
-    isLoading: attachmentsLoading,
-    isError: attachmentsError,
-    refetch: refetchAttachments,
-  } = useQuery({
-    queryKey: queryKeys.issues.attachments(issueId!),
-    queryFn: () => issuesApi.listAttachments(issueId!),
-    enabled: !!issueId,
-    placeholderData: keepPreviousDataForSameQueryTail<IssueAttachment[]>(
-      issueId ?? "pending",
-    ),
-  });
-
-  const {
-    data: workProducts,
-    isLoading: workProductsLoading,
-    isError: workProductsError,
-    refetch: refetchWorkProducts,
-  } = useQuery({
-    queryKey: queryKeys.issues.workProducts(issueId!),
-    queryFn: () =>
-      issuesApi.listWorkProducts(issueId!, {
-        // Initial geometry needs stored artifacts, not a network round-trip to
-        // GitHub. Enrich PR status after the stored list has painted.
-        refreshPullRequests:
-          queryClient.getQueryData(queryKeys.issues.workProducts(issueId!)) !==
-          undefined,
-      }),
-    enabled: !!issueId,
-    refetchOnMount: "always",
-    placeholderData: keepPreviousDataForSameQueryTail<IssueWorkProduct[]>(
-      issueId ?? "pending",
-    ),
-  });
-
-  const enrichedWorkProductsIssue = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      !issueId ||
-      enrichedWorkProductsIssue.current === issueId ||
-      !workProducts?.some((product) => product.type === "pull_request")
-    )
-      return;
-    enrichedWorkProductsIssue.current = issueId;
-    void refetchWorkProducts();
-  }, [issueId, workProducts, refetchWorkProducts]);
 
   // Run state is keyed by the task's UUID, as the chat tab and run ledger key
   // it. Keying it by the route identifier as well fetched and polled the same
