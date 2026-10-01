@@ -1,5 +1,4 @@
 
-import { DispositionRecoveryProvider } from "../components/DispositionRecoveryNotice";
 import { agentChatDraft } from "@/lib/agent-chat-draft";
 import {
   PaperclipIcon,
@@ -10,8 +9,6 @@ import {
   Activity as ActivityIcon,
   ListTree,
 } from "lucide-react";
-import { ExecutionBlockerNotice } from "../components/ExecutionBlockerNotice";
-import { EmailTaskActivity } from "../components/EmailTaskActivity";
 import {
   useState,
   useMemo,
@@ -32,7 +29,6 @@ import { usePanel } from "../context/PanelContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useToastActions } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { queryKeys } from "../lib/queryKeys";
 import {
   readIssueDetailLocationState,
   readIssueDetailHeaderSeed,
@@ -49,13 +45,10 @@ import { IssueAttachmentsSection } from "../components/IssueAttachmentsSection";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
 import { IssuePlanDecompositionsSection } from "../components/IssuePlanDecompositionsSection";
 import { IssueOutputSection } from "../components/issue-output/IssueOutputSection";
-import { IssueSiblingNavigation } from "../components/IssueSiblingNavigation";
 import { IssuesList } from "../components/IssuesList";
 import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import {
   isWaitingOnMonitor,
-  hasVisibleMonitorSurface,
-  IssueMonitorComposerStrip,
 } from "../components/IssueMonitorBanner";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
@@ -79,7 +72,6 @@ import {
   type Issue,
   type IssueWorkMode,
   type IssueTreeControlMode,
-  ONBOARDING_FIRST_TASK_ORIGIN_KIND,
 } from "@greatstone/shared";
 import {
   useTaskDetailInterfaceMode,
@@ -92,7 +84,6 @@ import {
   extractWorkspaceFileRefFromWorkProduct,
   treeControlPreviewErrorCopy,
 } from "./issue-detail/helpers";
-import { IssueDetailChatTab } from "./issue-detail/IssueDetailChatTab";
 import { IssueDetailActivityTab } from "./issue-detail/IssueDetailActivityTab";
 import { IssueFileViewer } from "./issue-detail/IssueFileViewer";
 import { useIssueMutations } from "./issue-detail/useIssueMutations";
@@ -106,6 +97,7 @@ import { IssueDetailMobilePropertiesSheet } from "./issue-detail/IssueDetailMobi
 import { useIssueDetailDerivedState } from "./issue-detail/useIssueDetailDerivedState";
 import { useIssueDetailQueries } from "./issue-detail/useIssueDetailQueries";
 import { useIssueAndComments } from "./issue-detail/useIssueAndComments";
+import { IssueDetailChatPanel } from "./issue-detail/IssueDetailChatPanel";
 export { canBoardResolveRecoveryAction, shouldScrollIssueDetailToTopOnNavigation } from "./issue-detail/helpers";
 export type { AttributionActor } from "./issue-detail/IssueAttribution";
 
@@ -1386,292 +1378,114 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
 
             {/* The chat shell keeps the page's responsive 16px/24px gutters so
             thread content and the composer do not touch either sidebar. */}
-            <TabsContent
-              data-testid="issue-detail-content"
-              value="chat"
-              className={
-                taskChatShellEnabled
-                  ? isMobile
-                    ? streamlinedTaskDetailEnabled
-                      ? undefined
-                      : "-mx-4"
-                    : streamlinedTaskDetailEnabled
-                      ? "flex min-h-0 flex-col"
-                      : "-mx-4 -mt-4 md:-mx-6 md:-mt-6 flex min-h-0 flex-col"
-                  : undefined
-              }
-            >
-              {issue.executionBlocker && (
-                <ExecutionBlockerNotice companyId={issue.companyId} issueId={issue.id} blocker={issue.executionBlocker} onRetried={invalidateIssueDetail} />
-              )}
-              {resolvedDetailTab === "chat" ? (
-                <DispositionRecoveryProvider value={{
-                  issue,
-                  agentMap,
-                  hasPendingInteraction: interactions.some((interaction) => interaction.status === "pending"),
-                  unavailableReason: boardAccess && !canResolveBoardRecoveryAction
-                    ? "You don’t have permission to retry this recovery action."
-                    : treeControlStateError
-                    ? "Couldn’t check whether this task is paused. Refresh to try again."
-                    : activePauseHold
-                      ? "The task is paused. Resume it before retrying."
-                      : issue.project?.pausedAt
-                        ? "The project is paused. Resume it before retrying."
-                        : null,
-                  onRetry: (actionId) => retryDispositionRecovery.mutateAsync(actionId).then(() => undefined),
-                }}>
-                <IssueDetailChatTab
-                  onOpenSkill={handleOpenSkill}
-                  threadHeader={<>{taskChatThreadHeader}{instanceExperimentalSettings?.enableChatConnectors && <EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} />}</>}
-                  issueBrief={
-                    // Suppress the seeded-description bubble for the onboarding first
-                    // task: its description is agent instructions, not something the
-                    // user typed. The user lands on a seeded agent greeting instead.
-                    taskChatShellEnabled && !issue.conversationAgentId &&
-                    issue.originKind !== ONBOARDING_FIRST_TASK_ORIGIN_KIND
-                      ? {
-                          description: issue.description ?? "",
-                          author: issue.createdByAgentId ? "agent" : "human",
-                          authorName: issue.createdByAgentId
-                            ? (agentMap.get(issue.createdByAgentId)?.name ??
-                              "Agent")
-                            : undefined,
-                          agent: issue.createdByAgentId ? agentMap.get(issue.createdByAgentId) ?? { id: issue.createdByAgentId } : undefined,
-                        agentIcon: issue.createdByAgentId
-                            ? agentMap.get(issue.createdByAgentId)?.icon
-                            : undefined,
-                          createdAt: issue.createdAt,
-                          onSave: (description) =>
-                            updateIssue.mutateAsync({ description }),
-                          mentions: mentionOptions,
-                          externalReferences: externalObjectsState.isEnabled
-                            ? externalObjectsState.markdownReferences
-                            : undefined,
-                          imageUploadHandler: async (file) => {
-                            const attachment =
-                              await uploadAttachment.mutateAsync(file);
-                            return attachment.contentPath;
-                          },
-                          onDropFile: async (file) => {
-                            await uploadAttachment.mutateAsync(file);
-                          },
-                        }
-                      : undefined
-                  }
-                  issueId={conversation && !conversation.issue ? "" : issue.id}
-                  companyId={issue.companyId}
-                  projectId={issue.projectId ?? null}
-                  issueStatus={issue.status}
-                  issueAssigneeAgentId={issue.assigneeAgentId}
-                  issueWorkMode={issue.workMode ?? "standard"}
-                  executionRunId={issue.executionRunId ?? null}
-                  blockedBy={issue.blockedBy ?? []}
-                  liveIssueIds={liveIssueIds}
-                  blockerAttention={issue.blockerAttention ?? null}
-                  successfulRunHandoff={issue.successfulRunHandoff ?? null}
-                  scheduledRetry={issue.scheduledRetry ?? null}
-                  recoveryAction={issue.activeRecoveryAction ?? null}
-                  onResolveRecoveryAction={handleResolveRecoveryAction}
-                  onReissueIsolatedRecoveryAction={
-                    handleReissueIsolatedRecoveryAction
-                  }
-                  reissueIsolatedRecoveryActionPending={
-                    reissueIsolatedRecoveryAction.isPending
-                  }
-                  onReconcileForwardRecoveryAction={
-                    handleReconcileForwardRecoveryAction
-                  }
-                  onBreakGlassOverrideRecoveryAction={
-                    handleBreakGlassOverrideRecoveryAction
-                  }
-                  onQuarantineRestoreRecoveryAction={
-                    handleQuarantineRestoreRecoveryAction
-                  }
-                  quarantineRestoreRecoveryActionPending={
-                    reconcileRecoveryAction.isPending
-                  }
-                  canBreakGlassRecoveryAction={canManageBoardRuntime}
-                  reconcileRecoveryActionPending={
-                    reconcileRecoveryAction.isPending
-                  }
-                  canFalsePositiveRecoveryAction={canResolveBoardRecoveryAction}
-                  legacyRecoverySourceIssue={legacyRecoverySourceIssue}
-                  comments={threadComments}
-                  commentsInitialLoading={commentsLoading}
-                  initialHistoryPending={
-                    linkedCommentPending ||
-                    interactionsLoading ||
-                    attachmentsLoading ||
-                    workProductsLoading
-                  }
-                  initialHistoryError={
-                    commentsError ||
-                    interactionsError ||
-                    attachmentsError ||
-                    workProductsError
-                  }
-                  onRetryInitialHistory={() => {
-                    void refetchComments();
-                    void refetchInteractions();
-                    void refetchAttachments();
-                    void refetchWorkProducts();
-                  }}
-                  locallyQueuedCommentRunIds={locallyQueuedCommentRunIds}
-                  interactions={interactions}
-                  documents={issue.documentSummaries ?? []}
-                  workProducts={workProducts ?? []}
-                  attachments={attachments ?? []}
-                  hasOlderComments={hasOlderComments}
-                  commentsLoadingOlder={commentsLoadingOlder}
-                  onLoadOlderComments={loadOlderComments}
-                  onRefreshLatestComments={refetchLatestComments}
-                  composerRef={commentComposerRef}
-                  composerAccessory={
-                    hasVisibleMonitorSurface(issue) ? (
-                      <IssueMonitorComposerStrip
-                        issue={issue}
-                        onCheckNow={() => checkIssueMonitorNow.mutate()}
-                        checkingNow={checkIssueMonitorNow.isPending}
-                      />
-                    ) : null
-                  }
-                  footer={
-                    !taskChatShellEnabled && siblingNavigation ? (
-                      <IssueSiblingNavigation
-                        navigation={siblingNavigation}
-                        linkState={resolvedIssueDetailState ?? location.state}
-                      />
-                    ) : null
-                  }
-                  feedbackVotes={feedbackVotes}
-                  feedbackDataSharingPreference={feedbackDataSharingPreference}
-                  feedbackTermsUrl={FEEDBACK_TERMS_URL}
-                  agentMap={agentMap}
-                  currentUserId={currentUserId}
-                  userLabelMap={userLabelMap}
-                  userProfileMap={userProfileMap}
-                  draftKey={conversationAgent ? `paperclip:agent-chat-draft:${issue.companyId}:${currentUserId}:${conversationAgent.id}` : `paperclip:issue-comment-draft:${issue.id}`}
-                  reassignOptions={commentReassignOptions}
-                  currentAssigneeValue={actualAssigneeValue}
-                  suggestedAssigneeValue={suggestedAssigneeValue}
-                  mentions={mentionOptions}
-                  conversationMode={!!issue.conversationAgentId}
-                  composerPause={activePauseHold ? {
-                    scope: activePauseHold.isRoot && childIssues.length === 0 ? "leaf" : "subtree",
-                    pending: executeTreeControl.isPending && executeTreeControl.variables?.mode === "resume",
-                    onResume: activePauseHold.isRoot && canManageTreeControl ? () => {
-                      executeTreeControl.reset();
-                      setTreeControlMode("resume");
-                      setTreeControlWakeAgentsOnResume(isAgentOwnedNonTerminalIssue || canShowSubtreeControls);
-                      setTreeControlOpen(true);
-                    } : undefined,
-                    resumeHref: !activePauseHold.isRoot ? createIssueDetailPath(activePauseHoldRoot?.identifier ?? activePauseHold.rootIssueId) : undefined,
-                  } : null}
-                  composerDisabledReason={issue.conversationAgentId && !instanceExperimentalSettings?.enableAgentChat ? "Agent Chat is disabled in Experimental settings." : treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
-                  composerHint={composerHint}
-                  queuedCommentReason={queuedCommentReason}
-                  onVote={handleCommentVote}
-                  onAdd={handleChatAdd}
-                  onReviewConversation={async () => {
-                    await Promise.all([
-                      refetchComments({ throwOnError: true }),
-                      queryClient.refetchQueries(
-                        { queryKey: queryKeys.issues.attachments(issueId!) },
-                        { throwOnError: true },
-                      ),
-                    ]);
-                  }}
-                  onImageUpload={handleCommentImageUpload}
-                  onAttachImage={handleCommentAttachImage}
-                  onInterruptQueued={handleInterruptQueuedRun}
-                  onDeleteComment={(commentId) =>
-                    deleteComment
-                      .mutateAsync({ commentId })
-                      .then(() => undefined)
-                  }
-                  onStopResponse={canManageTreeControl
-                    ? (runId) => stopResponse.mutateAsync(runId)
-                    : undefined}
-                  stopResponsePending={stopResponse.isPending}
-                  pauseWorkPending={
-                    executeTreeControl.isPending &&
-                    executeTreeControl.variables?.mode === "pause"
-                  }
-                  pauseWorkScope={treeControlScope}
-                  onPauseWorkRun={
-                    canManageTreeControl
-                      ? (runId, feedback) =>
-                          executeTreeControl
-                            .mutateAsync({
-                              mode: "pause",
-                              feedback,
-                              runId,
-                              scope: treeControlScope,
-                            })
-                            .then(() => undefined)
-                      : undefined
-                  }
-                  runFinalizationActions={runFinalizationActions}
-                  onWorkModeChange={(nextMode) => {
-                    const currentMode: IssueWorkMode =
-                      issue.workMode ?? "standard";
-                    if (currentMode === nextMode) return;
-                    if (conversation && (!conversation.issue || pendingDraftWorkMode.current !== null)) { pendingDraftWorkMode.current = nextMode; setDraftWorkMode(nextMode); return; }
-                    return updateIssue
-                      .mutateAsync({ workMode: nextMode })
-                      .then(() => undefined);
-                  }}
-                  onCancelQueued={handleCancelQueuedComment}
-                  interruptingQueuedRunId={
-                    interruptQueuedComment.isPending
-                      ? (interruptQueuedComment.variables ?? null)
-                      : null
-                  }
-                  pausingWorkRunId={
-                    executeTreeControl.isPending &&
-                    executeTreeControl.variables?.mode === "pause"
-                      ? (executeTreeControl.variables?.runId ?? null)
-                      : null
-                  }
-                  onImageClick={handleChatImageClick}
-                  onAcceptInteraction={handleAcceptInteraction}
-                  onRejectInteraction={handleRejectInteraction}
-                  onSubmitInteractionAnswers={handleSubmitInteractionAnswers}
-                  onCancelInteraction={handleCancelInteraction}
-                  onSkipInteraction={handleSkipInteraction}
-                  onSubmitInteractionVerdicts={handleSubmitInteractionVerdicts}
-                  assigneeUserId={issue.assigneeUserId ?? null}
-                  onResumeFromBacklog={
-                    canResumeFromBacklog ? handleResumeFromBacklog : undefined
-                  }
-                  resumeFromBacklogPending={
-                    updateIssue.isPending &&
-                    updateIssue.variables?.status === "todo"
-                  }
-                  onResumeAssignee={
-                    issue.assigneeAgentId ? handleResumeAssignee : undefined
-                  }
-                  resumeAssigneePending={resumeAssigneeAgent.isPending}
-                  onTryAgainNoLiveExecutionPath={
-                    issue.status === "blocked" && issue.activeRecoveryAction
-                      ? handleTryAgainNoLiveExecutionPath
-                      : undefined
-                  }
-                  tryAgainNoLiveExecutionPathPending={
-                    resolveRecoveryAction.isPending &&
-                    resolveRecoveryAction.variables?.sourceIssueStatus ===
-                      "todo"
-                  }
-                  externalReferences={
-                    externalObjectsState.isEnabled
-                      ? externalObjectsState.markdownReferences
-                      : undefined
-                  }
-                  linkCaseReferences={casesChipsEnabled}
-                />
-                </DispositionRecoveryProvider>
-              ) : null}
-            </TabsContent>
+            <IssueDetailChatPanel
+              taskChatShellEnabled={taskChatShellEnabled}
+              isMobile={isMobile}
+              streamlinedTaskDetailEnabled={streamlinedTaskDetailEnabled}
+              issue={issue}
+              invalidateIssueDetail={invalidateIssueDetail}
+              resolvedDetailTab={resolvedDetailTab}
+              agentMap={agentMap}
+              interactions={interactions}
+              boardAccess={boardAccess}
+              canResolveBoardRecoveryAction={canResolveBoardRecoveryAction}
+              treeControlStateError={treeControlStateError}
+              activePauseHold={activePauseHold}
+              retryDispositionRecovery={retryDispositionRecovery}
+              handleOpenSkill={handleOpenSkill}
+              taskChatThreadHeader={taskChatThreadHeader}
+              instanceExperimentalSettings={instanceExperimentalSettings}
+              updateIssue={updateIssue}
+              mentionOptions={mentionOptions}
+              externalObjectsState={externalObjectsState}
+              uploadAttachment={uploadAttachment}
+              conversation={conversation}
+              liveIssueIds={liveIssueIds}
+              handleResolveRecoveryAction={handleResolveRecoveryAction}
+              handleReissueIsolatedRecoveryAction={handleReissueIsolatedRecoveryAction}
+              reissueIsolatedRecoveryAction={reissueIsolatedRecoveryAction}
+              handleReconcileForwardRecoveryAction={handleReconcileForwardRecoveryAction}
+              handleBreakGlassOverrideRecoveryAction={handleBreakGlassOverrideRecoveryAction}
+              handleQuarantineRestoreRecoveryAction={handleQuarantineRestoreRecoveryAction}
+              reconcileRecoveryAction={reconcileRecoveryAction}
+              canManageBoardRuntime={canManageBoardRuntime}
+              legacyRecoverySourceIssue={legacyRecoverySourceIssue}
+              threadComments={threadComments}
+              commentsLoading={commentsLoading}
+              linkedCommentPending={linkedCommentPending}
+              interactionsLoading={interactionsLoading}
+              attachmentsLoading={attachmentsLoading}
+              workProductsLoading={workProductsLoading}
+              commentsError={commentsError}
+              interactionsError={interactionsError}
+              attachmentsError={attachmentsError}
+              workProductsError={workProductsError}
+              refetchComments={refetchComments}
+              refetchInteractions={refetchInteractions}
+              refetchAttachments={refetchAttachments}
+              refetchWorkProducts={refetchWorkProducts}
+              locallyQueuedCommentRunIds={locallyQueuedCommentRunIds}
+              workProducts={workProducts}
+              attachments={attachments}
+              hasOlderComments={hasOlderComments}
+              commentsLoadingOlder={commentsLoadingOlder}
+              loadOlderComments={loadOlderComments}
+              refetchLatestComments={refetchLatestComments}
+              commentComposerRef={commentComposerRef}
+              checkIssueMonitorNow={checkIssueMonitorNow}
+              siblingNavigation={siblingNavigation}
+              resolvedIssueDetailState={resolvedIssueDetailState}
+              location={location}
+              feedbackVotes={feedbackVotes}
+              feedbackDataSharingPreference={feedbackDataSharingPreference}
+              currentUserId={currentUserId}
+              userLabelMap={userLabelMap}
+              userProfileMap={userProfileMap}
+              conversationAgent={conversationAgent}
+              commentReassignOptions={commentReassignOptions}
+              actualAssigneeValue={actualAssigneeValue}
+              suggestedAssigneeValue={suggestedAssigneeValue}
+              childIssues={childIssues}
+              executeTreeControl={executeTreeControl}
+              canManageTreeControl={canManageTreeControl}
+              setTreeControlMode={setTreeControlMode}
+              setTreeControlWakeAgentsOnResume={setTreeControlWakeAgentsOnResume}
+              isAgentOwnedNonTerminalIssue={isAgentOwnedNonTerminalIssue}
+              canShowSubtreeControls={canShowSubtreeControls}
+              setTreeControlOpen={setTreeControlOpen}
+              activePauseHoldRoot={activePauseHoldRoot}
+              composerHint={composerHint}
+              queuedCommentReason={queuedCommentReason}
+              handleCommentVote={handleCommentVote}
+              handleChatAdd={handleChatAdd}
+              queryClient={queryClient}
+              issueId={issueId}
+              handleCommentImageUpload={handleCommentImageUpload}
+              handleCommentAttachImage={handleCommentAttachImage}
+              handleInterruptQueuedRun={handleInterruptQueuedRun}
+              deleteComment={deleteComment}
+              stopResponse={stopResponse}
+              treeControlScope={treeControlScope}
+              runFinalizationActions={runFinalizationActions}
+              pendingDraftWorkMode={pendingDraftWorkMode}
+              setDraftWorkMode={setDraftWorkMode}
+              handleCancelQueuedComment={handleCancelQueuedComment}
+              interruptQueuedComment={interruptQueuedComment}
+              handleChatImageClick={handleChatImageClick}
+              handleAcceptInteraction={handleAcceptInteraction}
+              handleRejectInteraction={handleRejectInteraction}
+              handleSubmitInteractionAnswers={handleSubmitInteractionAnswers}
+              handleCancelInteraction={handleCancelInteraction}
+              handleSkipInteraction={handleSkipInteraction}
+              handleSubmitInteractionVerdicts={handleSubmitInteractionVerdicts}
+              canResumeFromBacklog={canResumeFromBacklog}
+              handleResumeFromBacklog={handleResumeFromBacklog}
+              handleResumeAssignee={handleResumeAssignee}
+              resumeAssigneeAgent={resumeAssigneeAgent}
+              handleTryAgainNoLiveExecutionPath={handleTryAgainNoLiveExecutionPath}
+              resolveRecoveryAction={resolveRecoveryAction}
+              casesChipsEnabled={casesChipsEnabled}
+            />
 
             <TabsContent value="activity" className={shellSectionClass}>
               {detailTab === "activity" ? (
