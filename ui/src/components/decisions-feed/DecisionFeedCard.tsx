@@ -26,6 +26,7 @@ import { Textarea } from "../ui/textarea";
 import { NotNowButton } from "./NotNowButton";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
 import { useIsPhone } from "../../hooks/useIsPhone";
+import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
 
 export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   question: "Question",
@@ -586,7 +587,7 @@ function DecisionCardImages({ card }: { card: DecisionCard }) {
             className="shrink-0 overflow-hidden rounded-lg border border-border bg-muted transition-colors hover:border-primary/50 focus-visible:ring-ring focus-visible:ring-(length:--rad-3) focus-visible:outline-none"
           >
             <img
-              src={item.contentPath}
+              src={attachmentThumbnailSrc(item.contentPath, 640)}
               alt={item.originalFilename ?? ""}
               loading="lazy"
               className="h-32 w-52 object-cover object-top sm:h-40 sm:w-64"

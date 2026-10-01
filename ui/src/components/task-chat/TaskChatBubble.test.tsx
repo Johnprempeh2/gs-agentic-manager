@@ -64,7 +64,8 @@ describe("TaskChatBubble attachment chips", () => {
         </IssueGalleryContext.Provider>
       </ThemeProvider>,
     ));
-    const image = container.querySelector<HTMLImageElement>(`img[src="${contentPath}"]`);
+    // The tile loads a small copy; the gallery opens the full image.
+    const image = container.querySelector<HTMLImageElement>(`img[src="${contentPath}?w=640"]`);
     expect(image).not.toBeNull();
     flushSync(() => image!.click());
     expect(openGallery).toHaveBeenCalledWith(contentPath);

@@ -33,6 +33,7 @@ import {
 } from "./task-chat-attachments";
 import { TaskChatSystemNotice } from "./TaskChatSystemNotice";
 import type { TaskChatMessageItem } from "./task-chat-model";
+import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
 
 interface TaskChatBubbleProps {
   item: TaskChatMessageItem;
@@ -278,7 +279,7 @@ function TaskChatBubbleContent({
                   onClick={() => openImage(ref.url)}
                 >
                   <img
-                    src={ref.openPath ?? ref.url}
+                    src={attachmentThumbnailSrc(ref.openPath ?? ref.url, 640)}
                     alt={ref.name}
                     loading="lazy"
                     className="h-full w-full object-cover transition-transform group-hover:scale-(--s-1_02)"
