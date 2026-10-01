@@ -760,7 +760,7 @@ export function BoardChat() {
                 const chips: Array<{ label: string; prompt: string }> = [
                   {
                     label: "Draft an Organization Brief",
-                    prompt: `Draft a one-page Organization Brief for ${companyName} — include our mission, team roster, and first priorities.`,
+                    prompt: `Draft a one-page Organization Brief for ${companyName}, with our mission, team roster and first priorities.`,
                   },
                   {
                     label: "Create a hiring plan",

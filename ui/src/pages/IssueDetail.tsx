@@ -7075,7 +7075,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
             variant="outline"
             data-testid="issue-detail-parked-blocker"
             className="border-amber-500/60 bg-amber-500/15 text-(length:--text-nano) text-amber-700 dark:text-amber-300"
-            title="Blocked by parked work — at least one assigned blocker is in backlog and will not wake its assignee."
+            title="Blocked by parked work: at least one assigned blocker is in the backlog and will not wake its assignee."
           >
             <Flag className="h-3 w-3" />
             Blocked by parked work
