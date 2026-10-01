@@ -94,7 +94,7 @@ function EmailDelivery({
       )}
       <p>
         Email {p.outcome}
-        {p.error ? ` — ${p.error}` : ""}
+        {p.error ? `: ${p.error}` : ""}
       </p>
       {p.outcome === "uncertain" && (
         <details>
