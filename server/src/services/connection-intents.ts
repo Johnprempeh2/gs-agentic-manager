@@ -1,7 +1,7 @@
 import { logActivity } from "./activity-log.js";
 import { aiConnectionService } from "./ai-connections.js";
 import { aiConnectionBindingSchema } from "@greatstone/shared";
-import { and, eq, desc, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, desc, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
@@ -943,10 +943,84 @@ export function connectionIntentService(db: Db) {
     return toDeliver;
   }
 
+  /**
+   * One answer covers every task one agent paused on the same missing
+   * connection (GRE-316). Close the agent's other open cards for this service,
+   * addressed to the same user, with the answer given on the answered card.
+   * A connect only closes a sibling when its task now resolves to the same
+   * connection. Returns the closed cards; delivery owns the wake, and the
+   * per-card wake key gives each waiting task one continuation.
+   */
+  async function resolveSiblingIntents(
+    answeredId: string,
+    options: { bypassCurrentMembershipCheck?: boolean } = {},
+  ): Promise<string[]> {
+    const answered = await loadIntent(answeredId);
+    const { interaction } = answered;
+    if (interaction.status !== "accepted" && interaction.status !== "rejected") return [];
+    const userId = interaction.addresseeUserId;
+    if (!userId) return [];
+    const payload = connectionIntentPayloadSchema.parse(interaction.payload);
+    const connectionId = interaction.status === "accepted" ? interaction.result?.connectionId ?? null : null;
+    if (interaction.status === "accepted" && !connectionId) return [];
+    await assertCurrentUserWriteAccess(answered.issue.companyId, userId, options.bypassCurrentMembershipCheck);
+    const pending = await db
+      .select({ interaction: issueThreadInteractions, issue: issues })
+      .from(issueThreadInteractions)
+      .innerJoin(issues, eq(issues.id, issueThreadInteractions.issueId))
+      .where(and(
+        eq(issueThreadInteractions.companyId, answered.issue.companyId),
+        eq(issues.companyId, answered.issue.companyId),
+        eq(issueThreadInteractions.kind, "connection_intent"),
+        eq(issueThreadInteractions.status, "pending"),
+        eq(issueThreadInteractions.addresseeUserId, userId),
+        sql`${issueThreadInteractions.id} <> ${interaction.id}`,
+        sql`${issueThreadInteractions.payload}->>'requestingAgentId' = ${payload.requestingAgentId}`,
+        sql`${issueThreadInteractions.payload}->>'serviceSlug' = ${payload.serviceSlug}`,
+        sql`coalesce(${issueThreadInteractions.payload}->>'purpose', '') = ${payload.purpose ?? ""}`,
+        sql`coalesce(${issueThreadInteractions.payload}->'upstreamService'->>'slug', '') = ${payload.upstreamService?.slug ?? ""}`,
+      ))
+      .orderBy(asc(issueThreadInteractions.createdAt));
+    const toDeliver: string[] = [];
+    for (const sibling of pending) {
+      if (["done", "cancelled"].includes(sibling.issue.status) || sibling.issue.assigneeAgentId !== payload.requestingAgentId) continue;
+      if (connectionId) {
+        const usable = await usableConnectionForAgent({
+          companyId: sibling.issue.companyId, agentId: payload.requestingAgentId,
+          responsibleUserId: userId, serviceSlug: payload.serviceSlug, purpose: payload.purpose,
+        });
+        if (usable?.id !== connectionId) continue;
+      }
+      try {
+        await interactions.resolveConnectionIntent(
+          sibling.issue, sibling.interaction.id,
+          connectionId
+            ? { ...interaction.result!, version: 1, outcome: "connected", connectionId }
+            : { version: 1, outcome: "declined", reason: interaction.result?.reason ?? null },
+          { userId },
+        );
+      } catch (error) {
+        // Another resolver closed it first; its own outcome stands.
+        if ((error as { status?: number }).status === 409) continue;
+        throw error;
+      }
+      toDeliver.push(sibling.interaction.id);
+      await logActivity(db, {
+        companyId: sibling.issue.companyId, actorType: "user", actorId: userId,
+        action: connectionId ? "issue.connection_intent_connected" : "issue.connection_intent_declined",
+        entityType: "issue", entityId: sibling.issue.id,
+        details: { interactionId: sibling.interaction.id, connectionId,
+          requestingAgentId: payload.requestingAgentId, source: "shared_card", answeredInteractionId: interaction.id },
+      });
+    }
+    return toDeliver;
+  }
+
   return {
     validate: loadRunContext,
     usableConnectionForAgent,
     resolveAiIntentsForConnection,
+    resolveSiblingIntents,
     search,
     request,
     loadIntent,

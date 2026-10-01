@@ -180,6 +180,21 @@ export function connectionIntentBoardRoutes(db: Db, heartbeat: Heartbeat) {
     await connectionIntentDeliveryService(db, heartbeat).tryDeliver(input.loaded.interaction.id);
   }
 
+  // One card per agent and service (GRE-316): the answer also closes the
+  // agent's other cards for it, and each of those tasks wakes once. This card
+  // is already resolved; a sibling failure must not fail it.
+  async function resolveSiblings(req: Request, interactionId: string) {
+    try {
+      const siblings = await service.resolveSiblingIntents(interactionId, {
+        bypassCurrentMembershipCheck: bypassCurrentMembershipCheck(req),
+      });
+      const deliveries = connectionIntentDeliveryService(db, heartbeat);
+      for (const id of siblings) await deliveries.tryDeliver(id);
+    } catch (err) {
+      logger.warn({ err, interactionId }, "Could not answer the other tasks waiting on this connection");
+    }
+  }
+
   router.get("/connection-intents/:interactionId/setup-options", async (req, res) => {
     const { loaded } = await addressedIntent(req);
     res.json(await service.setupOptions(req.params.interactionId as string, {
@@ -234,6 +249,8 @@ export function connectionIntentBoardRoutes(db: Db, heartbeat: Heartbeat) {
       } catch (err) {
         logger.warn({ err, interactionId: interaction.id }, "Could not resume other tasks paused on this AI account");
       }
+    } else {
+      await resolveSiblings(req, interaction.id);
     }
     res.json(interaction);
   });
@@ -254,6 +271,7 @@ export function connectionIntentBoardRoutes(db: Db, heartbeat: Heartbeat) {
       details: { interactionId: interaction.id, reason: input.reason ?? null },
     });
     await wakeAfterResolution({ loaded, status: interaction.status, actorId: userId });
+    await resolveSiblings(req, interaction.id);
     res.json(interaction);
   });
 

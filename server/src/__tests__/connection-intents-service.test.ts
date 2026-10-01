@@ -913,5 +913,87 @@ describeEmbeddedPostgres("connectionIntentService", () => {
     expect(pendingDeliveries).toEqual([]);
   });
 
+  // GRE-316: Mica had no GitHub access and sent one card from each of three tasks.
+  describe("one agent, three tasks, one missing connection", () => {
+    async function threeWaitingTasks(prefix: string) {
+      const companyId = randomUUID();
+      const userId = `${prefix}-user`;
+      const agentId = randomUUID();
+      await db.insert(companies).values({ id: companyId, name: prefix, issuePrefix: prefix.toUpperCase(), requireBoardApprovalForNewAgents: false });
+      await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: userId, status: "active", membershipRole: "member" });
+      await db.insert(agents).values({ id: agentId, companyId, name: "Mica", adapterType: "codex_local", runtimeConfig: {} });
+      const otherAgentId = randomUUID();
+      await db.insert(agents).values({ id: otherAgentId, companyId, name: "Other", adapterType: "codex_local", runtimeConfig: {} });
+      const service = connectionIntentService(db);
+      async function waitingTask(title: string, assignee = agentId) {
+        const issueId = randomUUID();
+        const taskRunId = randomUUID();
+        await db.insert(issues).values({ id: issueId, companyId, title, status: "in_progress", priority: "medium", assigneeAgentId: assignee });
+        await db.insert(heartbeatRuns).values({ id: taskRunId, companyId, agentId: assignee, status: "running", responsibleUserId: userId, contextSnapshot: { issueId } });
+        const request = await service.request({ sub: assignee, company_id: companyId, run_id: taskRunId, responsible_user_id: userId }, "notion");
+        expect(request.state).toBe("needs_user_action");
+        return { issueId, card: request.interactionId! };
+      }
+      const tasks = [await waitingTask("GRE-303"), await waitingTask("GRE-304"), await waitingTask("GRE-305")];
+      // Another agent's card for the same service is its own decision.
+      const other = await waitingTask("Other agent", otherAgentId);
+      return { companyId, userId, agentId, service, tasks, other };
+    }
+
+    function recordingWakeup(companyId: string) {
+      return vi.fn().mockImplementation(async (agentId: string, options: { idempotencyKey: string }) => {
+        await db.insert(agentWakeupRequests).values({ companyId, agentId, source: "automation", status: "queued", idempotencyKey: options.idempotencyKey });
+        return null;
+      });
+    }
+
+    async function deliverTwice(companyId: string, ids: string[]) {
+      const wakeup = recordingWakeup(companyId);
+      const deliveries = connectionIntentDeliveryService(db, { wakeup } as never);
+      // Replays add nothing: each task wakes exactly once.
+      for (const id of [...ids, ...ids]) await deliveries.deliver(id);
+      return wakeup.mock.calls.map(([, options]) => (options as { payload: { issueId: string } }).payload.issueId);
+    }
+
+    it("one connect closes every card and wakes each task once", async () => {
+      const { companyId, userId, agentId, service, tasks, other } = await threeWaitingTasks("gh3");
+      const [application] = await db.insert(toolApplications).values({ companyId, applicationKey: `notion-${randomUUID()}`, name: "Notion", type: "mcp_http", status: "active", metadata: { sourceTemplateKey: "notion" } }).returning();
+      const [connection] = await db.insert(toolConnections).values({ companyId, applicationId: application!.id, name: "Notion", uid: `notion/${randomUUID()}`, transport: "mcp_remote", authKind: "api_key", credentialPolicy: "per_user", status: "active", enabled: true, healthStatus: "ok", config: { sourceTemplateKey: "notion" }, transportConfig: { sourceTemplateKey: "notion" } }).returning();
+      await db.insert(connectionGrants).values({ companyId, connectionId: connection!.id, kind: "user", subjectUserId: userId, status: "active", isDefault: false });
+      const [profile] = await db.insert(toolProfiles).values({ companyId, name: "Notion reads", profileKey: `notion-reads-${randomUUID()}`, defaultAction: "allow", status: "active" }).returning();
+      await db.insert(toolProfileBindings).values({ companyId, profileId: profile!.id, targetType: "agent", targetId: agentId });
+      await db.insert(toolCatalogEntries).values({ companyId, connectionId: connection!.id, toolName: "notion-read", name: "notion-read", versionHash: "fixture-v1", status: "active", entryKind: "tool" });
+
+      await service.complete(tasks[0]!.card, connection!.id, userId);
+      const siblings = await service.resolveSiblingIntents(tasks[0]!.card);
+      expect(siblings.sort()).toEqual([tasks[1]!.card, tasks[2]!.card].sort());
+      // Answering again finds nothing left to close.
+      expect(await service.resolveSiblingIntents(tasks[0]!.card)).toEqual([]);
+
+      const cards = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.companyId, companyId));
+      for (const { card } of tasks) {
+        expect(cards.find((row) => row.id === card)).toMatchObject({ status: "accepted", result: expect.objectContaining({ outcome: "connected", connectionId: connection!.id }) });
+      }
+      expect(cards.find((row) => row.id === other.card)?.status).toBe("pending");
+
+      const woken = await deliverTwice(companyId, [tasks[0]!.card, ...siblings]);
+      expect(woken.sort()).toEqual(tasks.map((task) => task.issueId).sort());
+    });
+
+    it("one decline answers every card and wakes each task once", async () => {
+      const { companyId, userId, service, tasks, other } = await threeWaitingTasks("gh3d");
+      await service.decline(tasks[1]!.card, userId, "Not now");
+      const siblings = await service.resolveSiblingIntents(tasks[1]!.card);
+      expect(siblings.sort()).toEqual([tasks[0]!.card, tasks[2]!.card].sort());
+      const cards = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.companyId, companyId));
+      for (const { card } of tasks) {
+        expect(cards.find((row) => row.id === card)).toMatchObject({ status: "rejected", result: expect.objectContaining({ outcome: "declined", reason: "Not now" }) });
+      }
+      expect(cards.find((row) => row.id === other.card)?.status).toBe("pending");
+      const woken = await deliverTwice(companyId, [tasks[1]!.card, ...siblings]);
+      expect(woken.sort()).toEqual(tasks.map((task) => task.issueId).sort());
+    });
+  });
+
 
 });
