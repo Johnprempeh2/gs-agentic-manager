@@ -27,7 +27,7 @@ describe("chat connector UI contract", () => {
       expect(page).toContain("newRun.runId");
       expect(page).toContain("newRun.issueId");
     }
-    const issue = source("../../IssueDetail.tsx");
+    const issue = source("../../issue-detail/IssueDetailChatTab.tsx");
     expect(issue).toMatch(
       /agentsApi\.retryFailedRun\(\s*failedRun\.agentId,\s*failedRun\.runId,\s*companyId/,
     );
