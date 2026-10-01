@@ -25,7 +25,7 @@ import {
   Users,
   Rocket,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
@@ -54,15 +54,36 @@ import { useCanRelease } from "../hooks/useReleases";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { primarySidebarStyles } from "./primary-sidebar-styles";
 
+function useStoredSectionOpen(section: string, initial: boolean) {
+  const key = `gsam.sidebar.${section}.open`;
+  const [open, setOpen] = useState(() => {
+    try {
+      const stored = window.localStorage.getItem(key);
+      return stored === null ? initial : stored === "1";
+    } catch {
+      return initial;
+    }
+  });
+  const update = useCallback((next: boolean) => {
+    setOpen(next);
+    try {
+      window.localStorage.setItem(key, next ? "1" : "0");
+    } catch {
+      // Private mode: the section still toggles for this session.
+    }
+  }, [key]);
+  return [open, update] as const;
+}
+
 export function Sidebar({ children }: { children?: ReactNode }) {
   const { openNewIssue } = useDialogActions();
   const { enabled: agentChatEnabled } = useAgentChatEnabled();
-  // Every labeled section is collapsible (session-scoped, default open) —
-  // one policy across static nav groups and the data-driven sections.
-  const [workOpen, setWorkOpen] = useState(true);
-  const [teamOpen, setTeamOpen] = useState(true);
-  const [buildOpen, setBuildOpen] = useState(true);
-  const [organizationOpen, setOrganizationOpen] = useState(true);
+  // Every labeled section is collapsible, default open, and remembers being
+  // closed, so a section the owner folds away stays folded after a reload.
+  const [workOpen, setWorkOpen] = useStoredSectionOpen("work", true);
+  const [teamOpen, setTeamOpen] = useStoredSectionOpen("team", true);
+  const [buildOpen, setBuildOpen] = useStoredSectionOpen("build", true);
+  const [organizationOpen, setOrganizationOpen] = useStoredSectionOpen("company", true);
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { collapsed, peeking } = useSidebar();
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
@@ -265,6 +286,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
               <SidebarNavItem to="/activity" label="Audit" icon={History} />
               {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
+              <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
             </SidebarSection>
           </>
         ) : (

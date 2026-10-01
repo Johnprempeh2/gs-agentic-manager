@@ -194,7 +194,7 @@ export function WhatNeedsMe() {
 
   if (view === "focus") {
     return (
-      <div className="max-w-5xl space-y-4">
+      <div className="mx-auto max-w-5xl space-y-4">
         {header}
         {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
         <DecisionsFocusView
@@ -214,7 +214,7 @@ export function WhatNeedsMe() {
   const tabledCount = tabledIssues?.length ?? 0;
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4">
       {header}
 
       {/* Queue quicklinks. The rail self-hides when the company has no queues. */}
