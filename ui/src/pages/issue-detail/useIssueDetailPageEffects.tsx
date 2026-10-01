@@ -75,7 +75,7 @@ export type UseIssueDetailPageEffectsInput = {
   panelIssue: Issue | null;
   closePanel: () => void;
   panelChildIssues: Issue[];
-  relationIssueLinkState: any;
+  relationIssueLinkState: unknown;
   openNewSubIssue: () => void;
   handleIssuePropertiesUpdate: (data: Record<string, unknown>) => void;
   resolvedHasActiveRun: boolean;
