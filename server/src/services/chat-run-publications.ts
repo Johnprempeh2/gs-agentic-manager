@@ -104,6 +104,7 @@ type ChatRunMilestoneCandidate = {
   issueId: string;
   companyId: string;
   endpointId: string;
+  provider: string;
   conversationId: string;
   agentName: string;
 };
@@ -141,11 +142,32 @@ function milestoneForStatus(
   return null;
 }
 
+// Every low-trust preflight refusal. Each one means the sender is an unlinked
+// guest whose work cannot run here, so each must tell them how to get linked.
+const LOW_TRUST_REFUSAL_CODES = new Set([
+  "low_trust_isolation_unavailable",
+  "low_trust_requires_isolated_workspace",
+  "low_trust_boundary_mismatch",
+  "low_trust_requires_sandbox_environment",
+  "low_trust_runtime_services_denied",
+]);
+
+const CHAT_PROVIDER_LABELS: Record<string, string> = {
+  telegram: "Telegram",
+  slack: "Slack",
+  discord: "Discord",
+  "microsoft-teams": "Microsoft Teams",
+  github: "GitHub",
+  "imessage-photon": "iMessage",
+  agentmail: "AgentMail",
+};
+
 export function safeMilestoneText(input: {
   agentName: string;
   errorCode?: string | null;
   milestone: SafeRunMilestone;
   issueId: string;
+  provider?: string | null;
   publicBaseUrl?: string | null;
 }): string {
   if (input.milestone === "queued") return `${input.agentName} is queued.`;
@@ -155,11 +177,13 @@ export function safeMilestoneText(input: {
   if (input.errorCode === "slack_session_stopped")
     return `${input.agentName} stopped at your request.`;
   const taskUrl = safeChatTaskUrl(input.publicBaseUrl, input.issueId);
+  const providerLabel =
+    CHAT_PROVIDER_LABELS[input.provider ?? ""] ?? "your chat app";
   const recovery =
     input.milestone === "waiting_for_input"
       ? `${input.agentName} needs a GS Agentic Manager admin to safely recover this turn before more work can start.`
-      : input.errorCode === "low_trust_isolation_unavailable"
-        ? `${input.agentName} couldn't safely start this turn because this task was started for an unlinked external guest and isolated guest execution isn't available. Ask a GS Agentic Manager admin to create a private identity link for this account or enable isolated guest execution, then start a new task.`
+      : LOW_TRUST_REFUSAL_CODES.has(input.errorCode ?? "")
+        ? `${input.agentName} couldn't safely start this turn because this task was started for an unlinked external guest and isolated guest execution isn't available. To fix it, link your account in GS Agentic Manager: Apps → ${providerLabel} → Access → Identity links (an admin can create the link). Then start a new task.`
         : input.errorCode === "native_provider_usage_limit"
           ? `${input.agentName} couldn't complete this turn because the model provider's usage allowance is exhausted. A GS Agentic Manager admin needs to restore capacity before retrying.`
           : input.errorCode === "native_event_replay_conflict"
@@ -656,6 +680,7 @@ export async function enqueueChatRunMilestones(
         issueId: chatConversations.issueId,
         companyId: chatConversations.companyId,
         endpointId: chatConversations.endpointId,
+        provider: chatEndpoints.provider,
         conversationId: chatConversations.id,
         agentName: agents.name,
       })
@@ -910,6 +935,7 @@ export async function enqueueChatRunMilestones(
               errorCode: row.runErrorCode,
               milestone,
               issueId: row.issueId,
+              provider: row.provider,
               publicBaseUrl: input.publicBaseUrl,
             }),
             progressState: milestone,
