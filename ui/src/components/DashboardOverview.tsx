@@ -10,6 +10,7 @@ import { IssueRow } from "./IssueRow";
 import { PriorityIcon } from "./PriorityIcon";
 import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { StatusIcon } from "./StatusIcon";
+import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { agentUrl, cn } from "../lib/utils";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
@@ -272,7 +273,7 @@ export function DashboardOverview({
                     className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-sm text-inherit no-underline hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     title={currentTask.title}
                   >
-                    <StatusIcon status={currentTask.status} blockerAttention={currentTask.blockerAttention} />
+                    <StatusIcon status={currentTask.status} blockerAttention={currentTask.blockerAttention} waiting={!live && isWaitingOnMonitor(currentTask)} />
                     <span className="shrink-0 font-mono text-xs text-muted-foreground">
                       {currentTask.identifier ?? currentTask.id.slice(0, 8)}
                     </span>
