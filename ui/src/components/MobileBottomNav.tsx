@@ -83,8 +83,11 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   return (
     <nav
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-30 border-t border-border gs-glass-bar transition-transform duration-200 ease-out md:hidden pb-(--sz-safe-bottom)",
-        visible ? "translate-y-0" : "translate-y-full",
+        "fixed bottom-0 left-0 right-0 z-30 border-t border-border gs-glass-bar transition-[transform,visibility] duration-200 ease-out md:hidden pb-(--sz-safe-bottom)",
+        // Sliding off is not enough: the iOS keyboard reveals the strip below
+        // the viewport, so a hidden bar peeked above it. Visibility flips once
+        // the slide ends, which also keeps hidden tabs out of focus order.
+        visible ? "translate-y-0" : "invisible translate-y-full",
       )}
       aria-label="Mobile navigation"
     >
