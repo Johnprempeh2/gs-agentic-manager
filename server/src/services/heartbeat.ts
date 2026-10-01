@@ -520,6 +520,7 @@ import {
   type SilentRetryPressure,
 } from "./run-silent-timeout.js";
 import {
+  HOST_RESUME_SETTLE_MS,
   NO_HOST_BLIND_TIME,
   hostBlindTime as processHostBlindTime,
   type HostBlindTimeTracker,
@@ -9638,6 +9639,13 @@ export function heartbeatService(
     hostBlindTime.sample();
     return isHostSleepLoss(run, hostBlindTime.blindMsBetween);
   };
+  // GRE-317: a scheduler tick in a macOS dark wake used to start timer,
+  // monitor and retry runs that froze mid-startup seconds later. Hold that
+  // work until the host has stayed awake; the next tick picks it up.
+  const hostSettlingAfterResume = () => {
+    hostBlindTime.sample();
+    return hostBlindTime.resumedWithin(HOST_RESUME_SETTLE_MS);
+  };
   const hostLoadReader =
     options.hostLoadReader ?? (runtimeEnv.VITEST ? () => null : readHostLoad);
   const inWorktreeRuntime = isTruthyRuntimeEnvValue(
@@ -16741,6 +16749,7 @@ export function heartbeatService(
   }
 
   async function promoteDueScheduledRetries(now = new Date()) {
+    if (hostSettlingAfterResume()) return { promoted: 0, runIds: [] as string[] };
     const cutoff = await getWorktreeExecutionCutoff();
     const result = await runDispatch.promoteDueScheduledRetries({
       now,
@@ -31615,7 +31624,7 @@ export function heartbeatService(
     buildRunOutputSilence,
 
     tickTimers: async (now = new Date()) => {
-      if ((await getSchedulingSuppression()).suppressed) {
+      if (hostSettlingAfterResume() || (await getSchedulingSuppression()).suppressed) {
         return {
           checked: 0,
           enqueued: 0,
