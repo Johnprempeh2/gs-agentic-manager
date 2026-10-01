@@ -102,29 +102,39 @@ Use these exact patterns — do not invent new ones:
 
 ## 5. Status & Priority Systems
 
-### Status Colors (consistent across all entities)
+### Status Colour Tokens
 
-Defined in `StatusBadge.tsx` and `StatusIcon.tsx`:
+**Rule: never use raw palette classes (`text-amber-600`, `bg-red-100`, `dark:text-emerald-300`, ...) for status meaning.** Use the semantic status tokens from `ui/src/index.css`. They carry both themes, so no `dark:` pair is needed, and every pair clears WCAG AA 4.5:1.
 
-| Status | Color | Entity types |
-|--------|-------|-------------|
-| active, achieved, completed, succeeded, approved, done | Green shades | Agents, goals, issues, approvals |
-| running | Cyan | Agents |
-| paused | Orange | Agents |
-| idle, pending | Yellow | Agents, approvals |
-| failed, error, rejected, blocked | Red shades | Runs, agents, approvals, issues |
-| archived, planned, backlog, cancelled | Neutral gray | Various |
-| todo | Blue | Issues |
-| in_progress | Indigo | Issues |
-| in_review | Violet | Issues |
+Each tone has three steps, available as Tailwind colours:
+
+| Utility | Use |
+|---------|-----|
+| `text-status-<tone>` / `border-status-<tone>` / `bg-status-<tone>` | Strong hue: icons, borders, dots, bare status text |
+| `bg-status-<tone>-soft` + `text-status-<tone>-foreground` | Soft badge / pill: fill + text |
+| `bg-status-<tone>/10`, `border-status-<tone>/30` | Tinted live pill or banner edge |
+
+| Tone | Meaning | Examples |
+|------|---------|----------|
+| `success` | Finished well | done, succeeded, approved, healthy |
+| `warning` | Needs attention, queued work | todo, pending_approval, degraded |
+| `danger` | Failed or stopped | blocked, failed, error, rejected |
+| `info` | Neutral information | info, scheduled_retry, deferred |
+| `running` | Live right now | in_progress, running, Live pill |
+| `review` | Awaiting review | in_review, redacted, merged |
+| `pending` | Waiting to start | pending, queued |
+| `alert` | Stronger than warning | timed_out, rate-limit, high priority |
+| `neutral` | Inert | cancelled, closed, archived |
+
+The status maps live in `ui/src/lib/status-colors.ts` (consumed by `StatusBadge`, `StatusIcon`, `PriorityIcon` and friends). Add a status there, not in a page. A test keeps raw palette classes out of that file.
 
 ### Priority Icons
 
-Defined in `PriorityIcon.tsx`: critical (red/AlertTriangle), high (orange/ArrowUp), medium (yellow/Minus), low (blue/ArrowDown).
+Defined in `PriorityIcon.tsx`, coloured from `priorityColor`: critical (`status-danger`/AlertTriangle), high (`status-alert`/ArrowUp), medium (`status-pending`/Minus), low (`status-running`/ArrowDown).
 
 ### Agent Status Dots
 
-Inline colored dots: running (cyan, animate-pulse), active (green), paused (yellow), error (red), offline (neutral).
+Inline colored dots from `agentStatusDot`: running (`status-running`, animate-pulse), active (`status-success`), paused / idle (`status-pending`), error (`status-danger`), archived (`status-neutral`).
 
 ---
 
