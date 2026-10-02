@@ -5,6 +5,7 @@ import type {
   DecisionsFeed,
   DecisionsFeedCount,
   Issue,
+  NeedsMe,
 } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -15,6 +16,8 @@ import { api } from "./client";
 export const decisionsFeedApi = {
   get: (companyId: string) => api.get<DecisionsFeed>(`/companies/${companyId}/decisions-feed`),
   count: (companyId: string) => api.get<DecisionsFeedCount>(`/companies/${companyId}/decisions-feed/count`),
+  /** One "needs me" list and count (GRE-355): the feed plus tasks assigned to the user. */
+  needsMe: (companyId: string) => api.get<NeedsMe>(`/companies/${companyId}/needs-me`),
   askClarity: (companyId: string, cardId: string, input: DecisionClarityRequest) =>
     api.post<DecisionClarityResponse>(
       `/companies/${companyId}/decisions-feed/cards/${encodeURIComponent(cardId)}/clarity`,

@@ -658,6 +658,7 @@ export const queryKeys = {
   decisionsFeed: {
     feed: (companyId: string) => ["attention", companyId, "decisions-feed"] as const,
     count: (companyId: string) => ["attention", companyId, "decisions-feed", "count"] as const,
+    needsMe: (companyId: string) => ["attention", companyId, "needs-me"] as const,
   },
   /** Tasks set aside with "Not now" (GRE-262). */
   tabledIssues: (companyId: string) => ["attention", companyId, "tabled-issues"] as const,

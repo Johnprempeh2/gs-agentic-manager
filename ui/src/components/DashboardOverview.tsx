@@ -160,6 +160,8 @@ export interface DashboardOverviewProps {
   /** The viewer, so task rows can say "Your task" and name other people. */
   currentUserId?: string | null;
   userLabels?: ReadonlyMap<string, string> | null;
+  /** How many open tasks to list; the phone home shows fewer (GRE-364). */
+  openTaskLimit?: number;
 }
 
 export function DashboardOverview({
@@ -172,10 +174,11 @@ export function DashboardOverview({
   issuesError = null,
   currentUserId = null,
   userLabels = null,
+  openTaskLimit = DASHBOARD_OPEN_TASK_LIMIT,
 }: DashboardOverviewProps) {
   const agentRows = deriveDashboardAgentRows(agents, openIssues, liveAgents);
   const liveCount = agentRows.filter((row) => row.live).length;
-  const openTasks = selectDashboardOpenTasks(openIssues);
+  const openTasks = selectDashboardOpenTasks(openIssues, openTaskLimit);
   const agentById = new Map((agents ?? []).map((agent) => [agent.id, agent]));
 
   return (
