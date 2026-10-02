@@ -13,15 +13,24 @@ export function useDecisionsFeed(companyId: string | null | undefined) {
 }
 
 /**
- * The one Decisions count: sidebar badge and mobile nav. The server builds it
- * from the same feed, so it matches the Decisions header and Focus.
+ * The one "needs me" list (GRE-358): open decisions plus tasks assigned to the
+ * user. Inbox Mine, the Decisions header, Focus and the nav badge all read it.
  */
-export function useDecisionsCount(companyId: string | null | undefined): number {
-  const { data } = useQuery({
-    queryKey: queryKeys.decisionsFeed.count(companyId!),
-    queryFn: () => decisionsFeedApi.count(companyId!),
+export function useNeedsMe(companyId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.decisionsFeed.needsMe(companyId!),
+    queryFn: () => decisionsFeedApi.needsMe(companyId!),
     enabled: !!companyId,
+    refetchOnWindowFocus: true,
     refetchInterval: 60_000,
   });
+}
+
+/**
+ * The one "needs me" count: sidebar badge and mobile nav. Same query as Inbox
+ * Mine and the Decisions header, so the numbers cannot disagree.
+ */
+export function useDecisionsCount(companyId: string | null | undefined): number {
+  const { data } = useNeedsMe(companyId);
   return data?.count ?? 0;
 }
