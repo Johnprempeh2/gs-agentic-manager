@@ -6332,7 +6332,14 @@ function clearSteeringDeliveries(runId: string) {
     if (key.startsWith(`${runId}:`)) steeringDeliveries.delete(key);
 }
 
-/** Dispatches a true same-turn steering message and resolves only after ack. */
+/**
+ * Dispatches a true same-turn steering message and resolves only after ack.
+ *
+ * The caller may hold a database transaction and row locks while this runs,
+ * so one deadline bounds the whole call: the runtime probe (capabilities and
+ * snapshot) as well as the acknowledgement wait. A deadline that expires
+ * before dispatch is a definite failure, and the late probe never dispatches.
+ */
 export async function steerNativeSession(input: {
   runId: string;
   message: string;
@@ -6347,61 +6354,77 @@ export async function steerNativeSession(input: {
       "The active native session is not attached.",
     );
   }
-  const capabilities = await active.session.capabilities();
-  if (!capabilities.steering || !active.session.steer) {
-    throw new NativeSessionSteeringError(
-      "steering_unsupported",
-      "This provider does not support same-turn steering.",
-    );
-  }
-  const snapshot = await active.session.snapshot();
-  const turnId = snapshot.activeTurnId ?? null;
-  if (!turnId) {
-    throw new NativeSessionSteeringError(
-      "steering_stale_turn",
-      "The target turn is no longer active.",
-    );
-  }
+  const deadline = new AbortController();
+  let dispatched = false;
+  const attempt = (async () => {
+    const capabilities = await active.session.capabilities();
+    if (!capabilities.steering || !active.session.steer) {
+      throw new NativeSessionSteeringError(
+        "steering_unsupported",
+        "This provider does not support same-turn steering.",
+      );
+    }
+    const snapshot = await active.session.snapshot({ signal: deadline.signal });
+    // The deadline already answered the caller. Never deliver a message the
+    // caller has been told was not sent.
+    if (deadline.signal.aborted) throw deadline.signal.reason;
+    const turnId = snapshot.activeTurnId ?? null;
+    if (!turnId) {
+      throw new NativeSessionSteeringError(
+        "steering_stale_turn",
+        "The target turn is no longer active.",
+      );
+    }
 
-  const deliveryKey = `${input.runId}:${input.correlationId}`;
-  let delivery = steeringDeliveries.get(deliveryKey);
-  if (!delivery) {
-    delivery = active.session
-      .steer({
-        turnId,
-        message: { role: "user", text: input.message },
-        correlationId: input.correlationId,
-      })
-      .then(() => ({ turnId }));
-    steeringDeliveries.set(deliveryKey, delivery);
-    void delivery.catch(() => {
-      steeringDeliveries.delete(deliveryKey);
-    });
-  }
-  // Do not await the persistence callback here: the route holds the run lock
-  // until acknowledgement. After a timeout this callback can acquire that lock.
-  if (input.onAcknowledged)
-    void delivery.then(input.onAcknowledged).catch(() => undefined);
+    const deliveryKey = `${input.runId}:${input.correlationId}`;
+    let delivery = steeringDeliveries.get(deliveryKey);
+    if (!delivery) {
+      delivery = active.session
+        .steer({
+          turnId,
+          message: { role: "user", text: input.message },
+          correlationId: input.correlationId,
+        })
+        .then(() => ({ turnId }));
+      steeringDeliveries.set(deliveryKey, delivery);
+      void delivery.catch(() => {
+        steeringDeliveries.delete(deliveryKey);
+      });
+    }
+    dispatched = true;
+    // Do not await the persistence callback here: the route holds the run lock
+    // until acknowledgement. After a timeout this callback can acquire that lock.
+    if (input.onAcknowledged)
+      void delivery.then(input.onAcknowledged).catch(() => undefined);
+    return delivery;
+  })();
+  // The deadline can win the race; a later failure of the attempt is expected.
+  void attempt.catch(() => undefined);
   let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
     const acknowledged = await Promise.race([
-      delivery,
+      attempt,
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(
-          () =>
-            reject(
-              new NativeSessionSteeringError(
+        timeout = setTimeout(() => {
+          const expired = dispatched
+            ? new NativeSessionSteeringError(
                 "steering_timeout",
                 "The provider did not acknowledge steering in time.",
-              ),
-            ),
-          input.timeoutMs ?? 10_000,
-        );
+              )
+            : new NativeSessionSteeringError(
+                "steering_temporarily_unavailable",
+                "The native session did not respond in time.",
+              );
+          deadline.abort(expired);
+          reject(expired);
+        }, input.timeoutMs ?? 10_000);
       }),
     ]);
     return acknowledged;
   } catch (error) {
     if (error instanceof NativeSessionSteeringError) throw error;
+    // Probe failures before dispatch keep their original behaviour.
+    if (!dispatched) throw error;
     const message = error instanceof Error ? error.message : String(error);
     if (/stale|terminal|active turn/i.test(message)) {
       throw new NativeSessionSteeringError(
