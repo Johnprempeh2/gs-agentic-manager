@@ -68,6 +68,10 @@ import { useCompanyListQuery } from "../api/companies-query";
 import { goalsApi } from "../api/goals";
 import { agentsApi } from "../api/agents";
 import { approvalsApi } from "../api/approvals";
+import { teamCatalogApi } from "../api/teamCatalog";
+import { useOptionalToastActions } from "../context/ToastContext";
+import { FirstTeamStep } from "./onboarding/FirstTeamStep";
+import { firstTeamCandidates } from "./onboarding/first-team";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { environmentsApi } from "../api/environments";
@@ -575,6 +579,19 @@ function OnboardingWizardInner({
   // Step 1
   const [companyName, setCompanyName] = useState((saved?.companyName as string) ?? "");
 
+  // Step 2: "Pick your first team" (GRE-427). Only a choice here; the team is
+  // installed on launch, under the lead agent hired on step 4.
+  const [firstTeamId, setFirstTeamId] = useState<string | null>(
+    (saved?.firstTeamId as string | null | undefined) ?? null,
+  );
+  const [firstTeamIndustry, setFirstTeamIndustry] = useState<string | null>(
+    (saved?.firstTeamIndustry as string | null | undefined) ?? null,
+  );
+  // The company the chosen team was installed into, so a second press of
+  // "Get started" after a later failure does not install the team twice.
+  const firstTeamInstalledForRef = useRef<string | null>(null);
+  const toastActions = useOptionalToastActions();
+
   // Step 2
   // The name is not defaulted: a pre-filled "Chief of staff" is a choice made
   // on the customer's behalf that they then have to notice and undo. It is the
@@ -808,6 +825,8 @@ function OnboardingWizardInner({
     setCreatedProjectId(null);
     setCreatedIssueRef(null);
     setCreatedAgentId(null);
+    setFirstTeamId(null);
+    firstTeamInstalledForRef.current = null;
   }
 
   // Sync step and company when onboarding opens with explicit options.
@@ -904,7 +923,7 @@ function OnboardingWizardInner({
   useEffect(() => {
     if (!effectiveOnboardingOpen) return;
     const state = {
-      step, companyName,
+      step, companyName, firstTeamId, firstTeamIndustry,
       agentName, agentAppearance, agentRole, adapterType, cwd, model, command, args, url,
       // The mode, never the key: this blob is localStorage.
       credentialMode, credentialModeChoice,
@@ -913,7 +932,7 @@ function OnboardingWizardInner({
     };
     onboardingDraftStorage.write(JSON.stringify(state));
   }, [
-    effectiveOnboardingOpen, step, companyName,
+    effectiveOnboardingOpen, step, companyName, firstTeamId, firstTeamIndustry,
     agentName, agentAppearance, agentRole, adapterType, cwd, model, command, args, url,
     credentialMode, credentialModeChoice,
     createdCompanyId, createdCompanyPrefix, createdAgentId,
@@ -935,6 +954,21 @@ function OnboardingWizardInner({
     // Models are picked on step 4 (Connect a model).
     enabled: Boolean(createdCompanyId) && effectiveOnboardingOpen && step === 4
   });
+  // The first-team step's options. Fetched from the naming step on, so the
+  // decision to show the step at all is ready when the company is created.
+  // The server applies the instance's catalogue filter; the step itself offers
+  // only Greatstone teams either way.
+  const firstTeamQuery = useQuery({
+    queryKey: queryKeys.teamCatalog.catalog({ kind: "optional" }),
+    queryFn: () => teamCatalogApi.catalogList({ kind: "optional" }),
+    enabled: effectiveOnboardingOpen && step <= 3,
+    retry: false,
+  });
+  const firstTeamOptions = useMemo(
+    () => firstTeamCandidates(Array.isArray(firstTeamQuery.data) ? firstTeamQuery.data : []),
+    [firstTeamQuery.data],
+  );
+  const offersFirstTeamStep = firstTeamOptions.length > 0;
   const getCapabilities = useAdapterCapabilities();
   const adapterCaps = getCapabilities(adapterType);
 
@@ -1623,6 +1657,9 @@ function OnboardingWizardInner({
     setLoading(false);
     setError(null);
     setCompanyName("");
+    setFirstTeamId(null);
+    setFirstTeamIndustry(null);
+    firstTeamInstalledForRef.current = null;
     // Back to the mount defaults: an empty name (the step's only question, and
     // what its CTA gates on) and the neutral role every onboarding hire uses.
     setAgentName("");
@@ -1695,6 +1732,41 @@ function OnboardingWizardInner({
     return false;
   }
 
+  /**
+   * Install the team picked on step 2, its lead reporting to the agent hired on
+   * step 4 (GRE-427). A failure does not hold the customer on this screen:
+   * the company, agent and first task already exist, so it says what went
+   * wrong and where to add the team, and the launch goes on.
+   */
+  async function installFirstTeam(companyId: string, leadAgentId: string, teamId: string) {
+    const team = firstTeamOptions.find((option) => option.id === teamId);
+    const teamName = team?.name ?? "your first team";
+    // Team agents use the lead's adapter where the catalogue allows it, so the
+    // team runs on the model the customer just connected.
+    const adapterOverrides =
+      team && adapterType !== "process" && adapterType !== "http"
+        ? Object.fromEntries(team.agentSlugs.map((slug) => [slug, { adapterType }]))
+        : undefined;
+    try {
+      await teamCatalogApi.install(companyId, teamId, {
+        targetManagerAgentId: leadAgentId,
+        collisionStrategy: "rename",
+        adapterOverrides,
+      });
+      firstTeamInstalledForRef.current = companyId;
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.teamCatalog.installed(companyId) });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "Unknown error";
+      console.error("[onboarding] first team install failed", err);
+      toastActions?.pushToast({
+        title: `Could not add ${teamName}`,
+        body: `Your company is ready. Add the team from Team Catalogue. (${reason})`,
+        tone: "error",
+      });
+    }
+  }
+
   async function handleLaunchToDashboard() {
     if (!createdCompanyId || !createdAgentId) {
       setError(INCOMPLETE_ONBOARDING_STATE_MESSAGE);
@@ -1745,6 +1817,10 @@ function OnboardingWizardInner({
         queryClient.invalidateQueries({
           queryKey: queryKeys.issues.list(createdCompanyId)
         });
+      }
+
+      if (firstTeamId && firstTeamInstalledForRef.current !== createdCompanyId) {
+        await installFirstTeam(createdCompanyId, createdAgentId, firstTeamId);
       }
 
       // Everything above is server work and stands on its own: the company has
@@ -1979,8 +2055,11 @@ function OnboardingWizardInner({
   // the first agent, so writing an empty one now would only give the
   // organization a goal it did not choose.
   async function handleCreateCompany() {
+    // Next is "Pick your first team" when the catalogue has a Greatstone team
+    // to offer, and the agent step otherwise (GRE-427).
+    const nextStep: Step = offersFirstTeamStep ? 2 : 3;
     if (createdCompanyId) {
-      setStep(3);
+      setStep(nextStep);
       return;
     }
     if (creatingCompanyRef.current) return;
@@ -2004,7 +2083,7 @@ function OnboardingWizardInner({
       createdCompanyIdRef.current = company.id;
       setCreatedCompanyPrefix(company.issuePrefix);
       setSelectedCompanyId(company.id);
-      setStep(3);
+      setStep(nextStep);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create organization");
     } finally {
@@ -2315,6 +2394,7 @@ function OnboardingWizardInner({
       // yet — two organizations for one name, two agents for one hire.
       if (loading) return;
       if (step === 1 && companyName.trim()) void handleCreateCompany();
+      else if (step === 2) setStep(3);
       else if (step === 3 && agentName.trim()) setStep(4);
       // `connectStepReady`, the same predicate the step's button uses. Spelling
       // the condition out here again is what let this path hire against a
@@ -2345,7 +2425,7 @@ function OnboardingWizardInner({
   // naming the organization and naming the agent), so the agent step walks
   // back to step 1 rather than to a screen the customer never saw.
   function backStepFrom(current: Step): Step {
-    if (current === 3) return 1;
+    if (current === 3) return offersFirstTeamStep && entryStep <= 2 ? 2 : 1;
     return (current - 1) as Step;
   }
 
@@ -2445,7 +2525,7 @@ function OnboardingWizardInner({
                 // narrowing the shell again would put the connect step back out
                 // of step with its own design, so the fix would belong in those
                 // steps' own content rather than here.
-                isAgentArcStep || step === 1
+                isAgentArcStep || step === 1 || step === 2
                   ? "w-(--sz-560px) max-w-full px-8 py-10 sm:px-10 sm:py-11"
                   : "w-full max-w-md px-8 py-12",
               )}
@@ -2632,6 +2712,28 @@ function OnboardingWizardInner({
                   the range of answers that fit. Hiring uses the neutral
                   `general` role; a specific one can be set later, where there
                   is context to choose it in. */}
+              {/* Step 2: pick the first department team (GRE-427). Its own
+                  heading, because the hero block above belongs to the agent
+                  arc and stays closed until the agent step. */}
+              {step === 2 && (
+                <motion.div key="step-2" {...stepContentMotion} exit={stepHandoff ? stepContentMotion.exit : undefined} className="mx-auto flex w-full flex-col gap-9">
+                  <OnboardingHeading
+                    center
+                    title="Pick your first team"
+                    lede="A ready department team that reports to your first agent. You can add another department later."
+                  />
+                  <FirstTeamStep
+                    teams={firstTeamOptions}
+                    loading={firstTeamQuery.isLoading}
+                    failed={firstTeamQuery.isError}
+                    industry={firstTeamIndustry}
+                    onIndustryChange={setFirstTeamIndustry}
+                    selectedTeamId={firstTeamId}
+                    onSelectTeam={setFirstTeamId}
+                  />
+                </motion.div>
+              )}
+
               {step === 3 && (
                 <motion.div key="step-3" {...stepContentMotion} exit={stepHandoff ? stepContentMotion.exit : undefined} className="mx-auto flex w-full flex-col gap-9">
                   <div className="flex flex-col gap-2">
@@ -3080,7 +3182,7 @@ function OnboardingWizardInner({
                   position from the first screen onward. It has no Back: step 1
                   is the first screen now that the front door is gone, and
                   `canGoBackFromOnboardingStep` returns false for it. */}
-              {(isAgentArcStep || step === 1) && (
+              {(isAgentArcStep || step === 1 || step === 2) && (
                 <FooterNav
                   onBack={
                     // On the connect step Back unwinds the sign-in first, and
@@ -3096,7 +3198,7 @@ function OnboardingWizardInner({
                   // one advances — which is exactly the distinction the
                   // prototype's own local flow draws with "Next".
                   primaryLabel={
-                    step === 1
+                    step === 1 || step === 2
                       ? "Continue"
                       : step === 5
                         ? "Get started"
@@ -3119,11 +3221,13 @@ function OnboardingWizardInner({
                   // against work happening in another tab.
                   // Step 4 says what it is doing through `connectCta` instead:
                   // it has four faces and only two of them are the step working.
-                  loading={step === 3 || step === 4 ? false : loading}
+                  loading={step === 2 || step === 3 || step === 4 ? false : loading}
                   primaryDisabled={
                     step === 1
                       ? !companyName.trim() || loading
-                      : step === 3
+                      : step === 2
+                        ? false
+                        : step === 3
                         ? !agentName.trim()
                         : step === 4
                           ? connectCta.disabled || loading
@@ -3131,6 +3235,7 @@ function OnboardingWizardInner({
                   }
                   onPrimary={() => {
                     if (step === 1) void handleCreateCompany();
+                    else if (step === 2) setStep(3);
                     else if (step === 3) setStep(4);
                     // One button, two jobs — start the sign-in, or hire — and
                     // Cmd+Enter has to do the same thing. See
