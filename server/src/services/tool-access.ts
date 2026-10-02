@@ -12967,6 +12967,75 @@ export function toolAccessService(
       } else if (dedicatedAgentId) {
         // Managed OAuth creates the credential-bearing grant in the callback.
         // Keep the connection free of organization secrets from the outset.
+        // A pasted API key has no callback, so it must land on the named
+        // agent's grant here; otherwise the `per_agent` connection has no
+        // grant at all and every agent is refused with `no_grant` (GRE-351).
+        if (credentialSecretRefs.length > 0) {
+          const [previousGrant] = await db
+            .select()
+            .from(connectionGrants)
+            .where(
+              and(
+                eq(connectionGrants.connectionId, connectionRow.id),
+                eq(connectionGrants.kind, "agent"),
+                eq(connectionGrants.subjectAgentId, dedicatedAgentId),
+              ),
+            )
+            .limit(1);
+          const [changedGrant] = await db
+            .insert(connectionGrants)
+            .values({
+              companyId,
+              connectionId: connectionRow.id,
+              kind: "agent",
+              subjectAgentId: dedicatedAgentId,
+              credentialSecretRefs,
+              status: "active",
+              isDefault: false,
+              createdByAgentId:
+                actor?.actorType === "agent" ? (actor.actorId ?? null) : null,
+              createdByUserId:
+                actor?.actorType === "user" ? (actor.actorId ?? null) : null,
+            })
+            .onConflictDoUpdate({
+              target: [connectionGrants.connectionId, connectionGrants.subjectAgentId],
+              set: {
+                credentialSecretRefs,
+                status: "active",
+                revokedAt: null,
+                revokedByAgentId: null,
+                revokedByUserId: null,
+                updatedAt: new Date(),
+              },
+            })
+            .returning();
+          if (!changedGrant)
+            throw new Error("Failed to create dedicated agent connection grant");
+          if (revivedConnectionPrevious) {
+            revivedGrantMutation = {
+              previous: previousGrant ?? null,
+              current: changedGrant,
+            };
+          }
+          await db.insert(toolAccessAuditEvents).values({
+            companyId,
+            connectionId: connectionRow.id,
+            actorType: actor?.actorType ?? "system",
+            actorId: actor?.actorId ?? null,
+            action: previousGrant
+              ? "connection_grant.updated"
+              : "connection_grant.created",
+            outcome: "success",
+            reasonCode: previousGrant
+              ? "agent_identity_reconnected"
+              : "agent_identity_created",
+            details: {
+              kind: "agent",
+              subjectAgentId: dedicatedAgentId,
+              credentialSecretRefCount: credentialSecretRefs.length,
+            },
+          });
+        }
       } else {
         const organizationGrant = await ensureDefaultOrganizationGrant(
           connectionRow,

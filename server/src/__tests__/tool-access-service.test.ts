@@ -5729,6 +5729,49 @@ describeEmbeddedPostgres("tool access service", () => {
     }
   });
 
+  it("commits a dedicated-agent API key to the named agent's grant (GRE-351)", async () => {
+    const company = await createCompany(db);
+    const agent = await createAgent(db, company.id);
+    const service = createTestToolAccessService(db);
+    mockToolsList([
+      { name: "query_insight", annotations: { readOnlyHint: true } },
+    ]);
+
+    const connected = await service.connectGalleryApp(
+      company.id,
+      {
+        galleryKey: "posthog",
+        connectionMethodKey: "mcp-api-key",
+        credentialValues: { "credentials.authorization": "phx_agent-secret" },
+        configValues: { projectId: "12345", mode: "tools" },
+        grantKind: "agent",
+        subjectAgentId: agent.id,
+      },
+      { actorType: "user", actorId: "board" },
+    );
+
+    const { grants } = await service.listConnectionGrants(
+      connected.connectionId,
+      company.id,
+    );
+    const connection = await service.getConnection(
+      connected.connectionId,
+      company.id,
+    );
+
+    // Before GRE-351 there was no grant here at all, so every agent got `no_grant`.
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).toMatchObject({
+      kind: "agent",
+      subjectAgentId: agent.id,
+      status: "active",
+      isDefault: false,
+    });
+    expect(grants[0]!.credentialSecretRefs.length).toBeGreaterThan(0);
+    expect(connection.credentialPolicy).toBe("per_agent");
+    expect(connection.credentialSecretRefs).toEqual([]);
+  });
+
   it("keeps the shared-credential default when no grant kind is chosen", async () => {
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
