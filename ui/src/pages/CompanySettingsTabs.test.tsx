@@ -123,7 +123,7 @@ describe("CompanySettings tabs", () => {
   it("opens the tab named in the URL", () => {
     render("/ACM/company/settings?tab=agents");
 
-    expect(sections()).toEqual(["runAdmission,teamCatalogFilter"]);
+    expect(sections()).toEqual(["runAdmission,teamCatalogFilter,teamCatalogAddMode"]);
     expect(container.querySelector('[data-testid="governance"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Organization name");
   });

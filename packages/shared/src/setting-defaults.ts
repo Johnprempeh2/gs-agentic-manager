@@ -32,8 +32,9 @@ export const SETTING_DEFAULTS_ENV_KEY = "GSAM_SETTING_DEFAULTS";
 /** Instance → General fields whose schema default an operator may replace. */
 export const DEFAULTABLE_GENERAL_SETTINGS = [
   "feedbackDataSharingPreference",
-  // GRE-427: client installs show only Greatstone teams.
+  // GRE-427: client installs show only Greatstone teams and ask before adding.
   "teamCatalogFilter",
+  "teamCatalogAddMode",
 ] as const;
 
 export type DefaultableGeneralSetting = (typeof DEFAULTABLE_GENERAL_SETTINGS)[number];

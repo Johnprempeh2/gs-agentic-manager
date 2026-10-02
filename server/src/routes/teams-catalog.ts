@@ -14,7 +14,7 @@ import {
   readCatalogTeamFile,
   teamsCatalogService,
 } from "../services/teams-catalog.js";
-import { forbidden, notFound } from "../errors.js";
+import { conflict, forbidden, notFound } from "../errors.js";
 import { assertAuthenticated, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function teamsCatalogRoutes(db: Db) {
@@ -140,6 +140,20 @@ export function teamsCatalogRoutes(db: Db) {
       res.status(201).json(result);
     },
   );
+
+  // "Ask Greatstone to add" (GRE-434): with add mode `request`, the board asks
+  // for a team through an approval card. Same permission check as install.
+  router.post("/companies/:companyId/teams/catalog/:catalogId/request", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
+    await assertCanInstallCatalogTeam(req, companyId);
+    const team = await assertCatalogTeamOffered(catalogRef);
+    if ((await instanceSettings.getGeneral()).teamCatalogAddMode !== "request") {
+      throw conflict("This instance installs catalogue teams directly. Use install instead.");
+    }
+    const { approval, created } = await svc.requestCatalogTeam(companyId, team, getActorInfo(req));
+    res.status(created ? 201 : 200).json(approval);
+  });
 
   return router;
 }

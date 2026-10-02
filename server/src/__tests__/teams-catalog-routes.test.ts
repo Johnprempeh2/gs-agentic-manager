@@ -15,6 +15,7 @@ const mockTeamsCatalogService = vi.hoisted(() => ({
   previewCatalogTeamImport: vi.fn(),
   installCatalogTeam: vi.fn(),
   listInstalledCatalogTeams: vi.fn(),
+  requestCatalogTeam: vi.fn(),
 }));
 
 const mockInstanceSettingsService = vi.hoisted(() => ({
@@ -395,6 +396,116 @@ describe("teams catalog routes", () => {
         "marketing-content",
         expect.objectContaining({ targetManagerAgentId: "33333333-3333-4333-8333-333333333333" }),
       );
+    });
+  });
+
+  describe("Ask Greatstone to add (GRE-434)", () => {
+    const boardActor = {
+      type: "board",
+      userId: "local-board",
+      companyIds: [companyId],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    };
+    const marketingTeam = catalogTeam({
+      id: "paperclipai:optional:marketing:marketing-content",
+      key: "paperclipai/optional/marketing/marketing-content",
+      slug: "marketing-content",
+      name: "Marketing Content Team",
+      tags: ["greatstone", "marketing"],
+    });
+
+    beforeEach(() => {
+      mockInstanceSettingsService.getGeneral.mockResolvedValue({
+        teamCatalogFilter: "greatstone",
+        teamCatalogAddMode: "request",
+      });
+      mockCatalogModule.getCatalogTeamOrThrow.mockReturnValue(marketingTeam);
+      mockTeamsCatalogService.requestCatalogTeam.mockResolvedValue({
+        approval: { id: "approval-1", type: "request_board_approval", status: "pending" },
+        created: true,
+      });
+    });
+
+    it("makes an approval card that names the team and installs nothing", async () => {
+      const app = await createApp(boardActor);
+
+      const res = await request(app)
+        .post(`/api/companies/${companyId}/teams/catalog/marketing-content/request`)
+        .send({});
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body).toMatchObject({ id: "approval-1", type: "request_board_approval" });
+      expect(mockTeamsCatalogService.requestCatalogTeam).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({ key: "paperclipai/optional/marketing/marketing-content" }),
+        expect.objectContaining({ actorType: "user", actorId: "local-board" }),
+      );
+      expect(mockTeamsCatalogService.installCatalogTeam).not.toHaveBeenCalled();
+    });
+
+    it("returns the open card when the team was already asked for", async () => {
+      mockTeamsCatalogService.requestCatalogTeam.mockResolvedValue({
+        approval: { id: "approval-1", type: "request_board_approval", status: "pending" },
+        created: false,
+      });
+      const app = await createApp(boardActor);
+
+      const res = await request(app)
+        .post(`/api/companies/${companyId}/teams/catalog/marketing-content/request`)
+        .send({});
+
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.id).toBe("approval-1");
+    });
+
+    it("uses the install permission check", async () => {
+      mockAgentService.getById.mockResolvedValue({ id: "agent-1", companyId, permissions: {} });
+      const agentApp = await createApp({ type: "agent", agentId: "agent-1", companyId, runId: "run-1" });
+      const otherCompanyApp = await createApp({
+        ...boardActor,
+        userId: "other",
+        companyIds: ["22222222-2222-4222-8222-222222222222"],
+        source: "session",
+      });
+
+      const byAgent = await request(agentApp)
+        .post(`/api/companies/${companyId}/teams/catalog/marketing-content/request`)
+        .send({});
+      const byOtherCompany = await request(otherCompanyApp)
+        .post(`/api/companies/${companyId}/teams/catalog/marketing-content/request`)
+        .send({});
+
+      expect(byAgent.status, JSON.stringify(byAgent.body)).toBe(403);
+      expect(byOtherCompany.status, JSON.stringify(byOtherCompany.body)).toBe(403);
+      expect(mockTeamsCatalogService.requestCatalogTeam).not.toHaveBeenCalled();
+    });
+
+    it("refuses a request when the instance installs teams directly", async () => {
+      mockInstanceSettingsService.getGeneral.mockResolvedValue({
+        teamCatalogFilter: "all",
+        teamCatalogAddMode: "install",
+      });
+      const app = await createApp(boardActor);
+
+      const res = await request(app)
+        .post(`/api/companies/${companyId}/teams/catalog/marketing-content/request`)
+        .send({});
+
+      expect(res.status, JSON.stringify(res.body)).toBe(409);
+      expect(mockTeamsCatalogService.requestCatalogTeam).not.toHaveBeenCalled();
+    });
+
+    it("hides a team the catalogue filter does not offer", async () => {
+      mockCatalogModule.getCatalogTeamOrThrow.mockReturnValue(catalogTeam());
+      const app = await createApp(boardActor);
+
+      const res = await request(app)
+        .post(`/api/companies/${companyId}/teams/catalog/product-engineering/request`)
+        .send({});
+
+      expect(res.status, JSON.stringify(res.body)).toBe(404);
+      expect(mockTeamsCatalogService.requestCatalogTeam).not.toHaveBeenCalled();
     });
   });
 });

@@ -31,6 +31,7 @@ export type InstanceGeneralSection =
   | "feedbackDataSharingPreference"
   | "aiAccessRoute"
   | "teamCatalogFilter"
+  | "teamCatalogAddMode"
   | "signOut";
 
 export function InstanceGeneralSettings({
@@ -100,6 +101,7 @@ export function InstanceGeneralSettings({
 
   const censorUsernameInLogs = generalQuery.data?.censorUsernameInLogs === true;
   const greatstoneTeamsOnly = generalQuery.data?.teamCatalogFilter === "greatstone";
+  const askGreatstoneToAdd = generalQuery.data?.teamCatalogAddMode === "request";
   const feedbackDataSharingPreference = generalQuery.data?.feedbackDataSharingPreference ?? "prompt";
   const backupRetention: BackupRetentionPolicy = generalQuery.data?.backupRetention ?? DEFAULT_BACKUP_RETENTION;
   const hiddenSettings = new Set(healthQuery.data?.hiddenSettings ?? []);
@@ -112,6 +114,7 @@ export function InstanceGeneralSettings({
   const showFeedbackDataSharing = shows("feedbackDataSharingPreference");
   const showAiAccessRoute = shows("aiAccessRoute");
   const showTeamCatalogFilter = shows("teamCatalogFilter");
+  const showTeamCatalogAddMode = shows("teamCatalogAddMode");
   const showSignOut = shows("signOut");
   const visibleTopics = [
     ...(showCensorUsernameInLogs ? ["log display"] : []),
@@ -222,6 +225,28 @@ export function InstanceGeneralSettings({
             }
             disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
             aria-label="Show only Greatstone teams"
+          />
+        </div>
+      </section>
+      )}
+
+      {showTeamCatalogAddMode && (
+      <section>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Ask Greatstone to add teams</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Team Catalogue shows "Ask Greatstone to add" in place of Install. The button makes an approval card
+              for the board and installs nothing. Off by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={askGreatstoneToAdd}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({ teamCatalogAddMode: askGreatstoneToAdd ? "install" : "request" })
+            }
+            disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+            aria-label="Ask Greatstone to add teams"
           />
         </div>
       </section>
