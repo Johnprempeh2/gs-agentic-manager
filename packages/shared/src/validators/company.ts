@@ -43,6 +43,8 @@ export const updateCompanySchema = objectWithoutDefaults(
       feedbackDataSharingConsentByUserId: z.string().min(1).nullable().optional(),
       feedbackDataSharingTermsVersion: feedbackDataSharingTermsVersionSchema,
       logoAssetId: logoAssetIdSchema,
+      /** Hourly wage in cents used to value agent hours; null clears it. */
+      minimumWageHourlyCents: z.number().int().nonnegative().max(100_000_000).nullable().optional(),
     }),
 );
 

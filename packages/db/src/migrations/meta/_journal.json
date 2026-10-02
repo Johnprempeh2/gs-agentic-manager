@@ -2024,6 +2024,13 @@
       "when": 1790937530807,
       "tag": "0290_deliverable_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 291,
+      "version": "7",
+      "when": 1790963292942,
+      "tag": "0291_company_minimum_wage_rate",
+      "breakpoints": true
     }
   ]
 }

@@ -1179,9 +1179,9 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
       adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
     });
     await db.insert(heartbeatRuns).values([
-      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-09T00:00:00.000Z") },
-      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-10T00:00:00.000Z") },
-      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-03-10T00:00:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-09T00:00:00.000Z"), finishedAt: new Date("2026-04-09T00:30:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-10T00:00:00.000Z"), finishedAt: new Date("2026-04-10T01:30:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-03-10T00:00:00.000Z"), finishedAt: new Date("2026-03-10T05:00:00.000Z") },
       { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "queued" },
     ]);
 
@@ -1219,6 +1219,20 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     expect(summary.byAgent.find((row) => row.agentId === failingAgentId)).toEqual({
       agentId: failingAgentId, apiEquivalentCents: 0, runCount: 2,
     });
+
+    // Agent hours: the two runs in the period took 30 and 90 minutes. No rate set yet.
+    expect(summary.agentWorkMs).toBe(2 * 60 * 60 * 1000);
+    expect(summary.minimumWageHourlyCents).toBeNull();
+    expect(summary.minimumWageEquivalentCents).toBeNull();
+
+    await db.update(companies).set({ minimumWageHourlyCents: 1_250 }).where(eq(companies.id, companyId));
+    const withRate = await costs.apiEquivalent(
+      companyId,
+      { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
+      new Date("2026-05-10T00:00:00.000Z"),
+    );
+    expect(withRate.minimumWageHourlyCents).toBe(1_250);
+    expect(withRate.minimumWageEquivalentCents).toBe(2_500);
 
     await costs.deleteSubscription(companyId, anthropicPlan.id);
     const afterDelete = await costs.apiEquivalent(

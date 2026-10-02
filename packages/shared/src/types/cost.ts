@@ -203,6 +203,12 @@ export interface ApiEquivalentSummary {
   byModel: ApiEquivalentModelRow[];
   /** Per agent: what its work would cost under API billing, and how many runs did it. */
   byAgent: ApiEquivalentAgentRow[];
+  /** Run time of all agent runs that started in the period, in milliseconds. */
+  agentWorkMs: number;
+  /** The company's hourly wage in cents; null when not set. */
+  minimumWageHourlyCents: number | null;
+  /** agentWorkMs valued at minimumWageHourlyCents; null when no rate is set. */
+  minimumWageEquivalentCents: number | null;
 }
 
 export interface ApiEquivalentAgentRow {

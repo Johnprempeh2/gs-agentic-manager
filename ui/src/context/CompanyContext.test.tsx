@@ -54,6 +54,7 @@ function makeCompany(id: string): Company {
     issueCounter: 1,
     budgetMonthlyCents: 0,
     spentMonthlyCents: 0,
+    minimumWageHourlyCents: null,
     defaultResponsibleUserId: null,
     requireBoardApprovalForNewAgents: false,
     interactionResolverGovernance: {},

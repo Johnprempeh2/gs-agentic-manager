@@ -2,6 +2,7 @@ import {
   API_PRICE_TABLE_CHECKED_AT,
   agentAvatarUrl,
   computeApiEquivalentCents,
+  minimumWageEquivalentCents,
   resolveAgentAppearance,
   type ApiEquivalentModelRow,
   type ApiEquivalentAgentRow,
@@ -591,7 +592,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       const runConditions = [eq(heartbeatRuns.companyId, companyId), isNotNull(heartbeatRuns.startedAt)];
       if (range?.from) runConditions.push(gte(heartbeatRuns.startedAt, range.from));
       if (range?.to) runConditions.push(lte(heartbeatRuns.startedAt, range.to));
-      const [usageRows, subscriptions, agentRows, firstEvent, agentRunRows] = await Promise.all([
+      const [usageRows, subscriptions, agentRows, firstEvent, agentRunRows, company] = await Promise.all([
         db
           .select({
             provider: costEvents.provider,
@@ -627,11 +628,21 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
             .where(eq(costEvents.companyId, companyId))
             .then((rows) => rows[0]?.first ?? null),
         // Every run that started counts, failed ones too, not only runs that reported usage.
+        // A run still going counts up to now.
         db
-          .select({ agentId: heartbeatRuns.agentId, runCount: sql<number>`count(*)::int` })
+          .select({
+            agentId: heartbeatRuns.agentId,
+            runCount: sql<number>`count(*)::int`,
+            workMs: sql<number>`coalesce(sum(greatest(extract(epoch from (coalesce(${heartbeatRuns.finishedAt}, ${now.toISOString()}::timestamptz) - ${heartbeatRuns.startedAt})), 0) * 1000), 0)::double precision`,
+          })
           .from(heartbeatRuns)
           .where(and(...runConditions))
           .groupBy(heartbeatRuns.agentId),
+        db
+          .select({ minimumWageHourlyCents: companies.minimumWageHourlyCents })
+          .from(companies)
+          .where(eq(companies.id, companyId))
+          .then((rows) => rows[0] ?? null),
       ]);
 
       // Period used to prorate subscriptions: the requested range; an open
@@ -716,6 +727,8 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         agentsById.set(row.agentId, entry);
       }
       const byAgent = [...agentsById.values()].sort((a, b) => b.apiEquivalentCents - a.apiEquivalentCents);
+      const agentWorkMs = agentRunRows.reduce((total, row) => total + Number(row.workMs), 0);
+      const minimumWageHourlyCents = company?.minimumWageHourlyCents ?? null;
 
       const byProvider = [...providers.values()].sort((a, b) => a.provider.localeCompare(b.provider));
       const sum = (pick: (row: ApiEquivalentProviderRow) => number) =>
@@ -741,6 +754,9 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         byProvider,
         byModel,
         byAgent,
+        agentWorkMs,
+        minimumWageHourlyCents,
+        minimumWageEquivalentCents: minimumWageEquivalentCents(agentWorkMs, minimumWageHourlyCents),
       };
     },
 

@@ -1,0 +1,1 @@
+ALTER TABLE "companies" ADD COLUMN "minimum_wage_hourly_cents" integer;
