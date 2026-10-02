@@ -633,6 +633,23 @@ describe("instance settings routes", () => {
     });
   });
 
+  it("refuses a non-admin board user who tries to change the AI access route", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      isInstanceAdmin: false,
+      companyIds: ["company-1"],
+    });
+
+    const res = await request(app)
+      .patch("/api/instance/settings/general")
+      .send({ aiAccessRoute: "codex_subscription" });
+
+    expect(res.status).toBe(403);
+    expect(mockInstanceSettingsService.updateGeneral).not.toHaveBeenCalled();
+  });
+
   it("rejects signed-in users without company access from reading general settings", async () => {
     const app = await createApp({
       type: "board",
