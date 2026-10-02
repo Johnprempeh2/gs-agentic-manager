@@ -224,3 +224,4 @@ export {
   type RemoteAgentProfileInput,
   type RemoteAgentService,
 } from "./remote-agent-profiles.js";
+export { agentTeamService } from "./agent-teams.js";

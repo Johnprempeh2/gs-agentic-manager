@@ -95,6 +95,10 @@ import {
   moveFolderItemSchema,
   moveFolderSchema,
   updateFolderSchema,
+  // Agent teams
+  addAgentTeamMemberSchema,
+  createAgentTeamSchema,
+  updateAgentTeamSchema,
   // Goal
   createGoalSchema,
   createGoalCheckInSchema,
@@ -1580,6 +1584,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/environments",
   "POST /api/environments/{environmentId}/custom-image-setup-sessions",
   "POST /api/companies/{companyId}/goals",
+  "POST /api/companies/{companyId}/agent-teams",
   "POST /api/companies/{companyId}/labels",
   "POST /api/issues/{id}/documents/{key}/annotations",
   "POST /api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
@@ -4875,6 +4880,80 @@ registry.registerPath({
   tags: ["routines"],
   summary: "Fire a public routine trigger",
   request: { params: z.object({ publicId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+// ─── Agent teams ─────────────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/agent-teams",
+  tags: ["agents"],
+  summary: "List agent teams in a company, with member agent ids",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/agent-teams",
+  tags: ["agents"],
+  summary: "Create an agent team",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(createAgentTeamSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agent-teams/{id}",
+  tags: ["agents"],
+  summary: "Get an agent team",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/agent-teams/{id}",
+  tags: ["agents"],
+  summary: "Update an agent team; memberAgentIds, when sent, replaces the member list",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(updateAgentTeamSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/agent-teams/{id}",
+  tags: ["agents"],
+  summary: "Delete an agent team",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/agent-teams/{id}/members",
+  tags: ["agents"],
+  summary: "Add an agent to a team",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(addAgentTeamMemberSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/agent-teams/{id}/members/{agentId}",
+  tags: ["agents"],
+  summary: "Remove an agent from a team",
+  request: { params: z.object({ id: z.string(), agentId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 

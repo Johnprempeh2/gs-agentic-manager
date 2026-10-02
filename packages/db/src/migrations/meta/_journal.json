@@ -2031,6 +2031,13 @@
       "when": 1790963292942,
       "tag": "0291_company_minimum_wage_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 292,
+      "version": "7",
+      "when": 1790966306429,
+      "tag": "0292_agent_teams",
+      "breakpoints": true
     }
   ]
 }

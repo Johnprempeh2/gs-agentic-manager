@@ -143,7 +143,7 @@ const ProductionCosts = lazy(() =>
   import("./pages/Costs.production").then((module) => ({ default: module.Costs })),
 );
 const ProductionOrgChart = lazy(() =>
-  import("./pages/OrgChart.production").then((module) => ({ default: module.OrgChart })),
+  import("./pages/OrgChart").then((module) => ({ default: module.OrgChart })),
 );
 
 function ProductionSurface({ children }: { children: ReactNode }) {
