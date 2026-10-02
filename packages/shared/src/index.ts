@@ -2876,3 +2876,13 @@ export * from "./connection-routing.js";
 export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorkspaceRestorePath } from "./workspace-restore.js";
 
 export * from "./deep-dive.js";
+export {
+  AGENT_TEAM_COLORS,
+  addAgentTeamMemberSchema,
+  createAgentTeamSchema,
+  updateAgentTeamSchema,
+  type AddAgentTeamMember,
+  type AgentTeam,
+  type CreateAgentTeam,
+  type UpdateAgentTeam,
+} from "./agent-teams.js";
