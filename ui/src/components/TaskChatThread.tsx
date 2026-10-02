@@ -2875,13 +2875,20 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           mode={streamlinedUiEnabled ? "streamlined" : "production"}
         >
           <div
-            className={cn("flex flex-col", !isMobile && "min-h-0 flex-1")}
+            className={cn(
+              "flex flex-col",
+              !isMobile && "min-h-0 flex-1",
+              // A phone chat fills the screen so a short chat still docks the
+              // composer at the bottom, where the thumb is.
+              isMobile && conversationMode && "min-h-(--tc-chat-mobile-min-h)",
+            )}
             data-testid="task-chat-thread"
           >
             <div
               className={cn(
                 "relative flex flex-col",
                 !isMobile && "min-h-0 flex-1",
+                isMobile && conversationMode && "flex-1",
               )}
               aria-busy={!historyRevealed}
             >
