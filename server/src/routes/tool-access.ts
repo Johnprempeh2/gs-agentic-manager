@@ -83,6 +83,7 @@ import { trustedBoardMutationOrigin } from "../middleware/board-mutation-guard.j
 import { connectionIntentService } from "../services/connection-intents.js";
 import { redactRemoteUrlCredential } from "../services/remote-url-credentials.js";
 import { connectionIntentDeliveryService } from "../services/connection-intent-delivery.js";
+import { logger } from "../middleware/logger.js";
 import type { heartbeatService } from "../services/heartbeat.js";
 
 const COMPANY_INSTALL_DENIAL_REASON =
@@ -262,6 +263,24 @@ export function toolAccessRoutes(
 
   function bypassCurrentMembershipCheck(req: Request) {
     return req.actor.source === "local_implicit" || req.actor.isInstanceAdmin === true;
+  }
+
+  // One reconnect repairs every task waiting on this connection (GRE-335).
+  // The user's action closes each card it now serves; delivery wakes each
+  // task once. Agents cannot close the user's cards.
+  async function resumeTasksWaitingOn(req: Request, companyId: string, connectionId: string) {
+    if (req.actor.type === "agent" || !req.actor.userId) return;
+    try {
+      const closed = await connectionIntents.resolveToolIntentsForConnection({
+        companyId, userId: req.actor.userId, connectionId,
+        bypassCurrentMembershipCheck: bypassCurrentMembershipCheck(req),
+      });
+      if (!options.connectionIntentHeartbeat) return;
+      const deliveries = connectionIntentDeliveryService(db, options.connectionIntentHeartbeat);
+      for (const id of closed) await deliveries.tryDeliver(id);
+    } catch (err) {
+      logger.warn({ err, connectionId }, "Could not resume tasks waiting on this connection");
+    }
   }
 
   async function finishConnectionIntentOAuth(input: {
@@ -1418,6 +1437,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         canManageOrganizationGrant: await isToolConnectionManager(req, pendingConnection.companyId),
         bypassCurrentMembershipCheck: bypassCurrentMembershipCheck(req),
       });
+      await resumeTasksWaitingOn(req, result.connection.companyId, result.connection.id);
       sendConnectionIntentOAuthOutcome(res, {
         interactionId: pendingState.interactionId,
         issueId: pendingState.issueId,
@@ -1426,6 +1446,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
       });
       return;
     }
+    await resumeTasksWaitingOn(req, result.connection.companyId, result.connection.id);
     if (acceptsHtml) {
       const permissionsPath = await oauthAppPath(result.connection.companyId, result.connection.id);
       res.redirect(303, `${permissionsPath}?success=1`);
@@ -2134,7 +2155,9 @@ function connectorEnrollmentPrincipal(req: Request): string {
     if (!existing) return;
     if (existing.credentialPolicy === "per_user") await assertToolConnectionAccess(req, existing);
     else await assertToolConnectionConfigureAccess(req, existing);
-    res.json(await svc.checkHealth(existing.id, getActorInfo(req)));
+    const result = await svc.checkHealth(existing.id, getActorInfo(req));
+    await resumeTasksWaitingOn(req, existing.companyId, existing.id);
+    res.json(result);
   });
 
   router.post(
@@ -2159,6 +2182,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         entityId: existing.id,
         details: { healthStatus: result.connection.healthStatus },
       });
+      await resumeTasksWaitingOn(req, existing.companyId, existing.id);
       res.json(result);
     },
   );

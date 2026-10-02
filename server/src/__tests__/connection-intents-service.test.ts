@@ -937,7 +937,7 @@ describeEmbeddedPostgres("connectionIntentService", () => {
       const tasks = [await waitingTask("GRE-303"), await waitingTask("GRE-304"), await waitingTask("GRE-305")];
       // Another agent's card for the same service is its own decision.
       const other = await waitingTask("Other agent", otherAgentId);
-      return { companyId, userId, agentId, service, tasks, other };
+      return { companyId, userId, agentId, service, tasks, other: { ...other, agentId: otherAgentId } };
     }
 
     function recordingWakeup(companyId: string) {
@@ -992,6 +992,42 @@ describeEmbeddedPostgres("connectionIntentService", () => {
       expect(cards.find((row) => row.id === other.card)?.status).toBe("pending");
       const woken = await deliverTwice(companyId, [tasks[1]!.card, ...siblings]);
       expect(woken.sort()).toEqual(tasks.map((task) => task.issueId).sort());
+    });
+
+    // GRE-335: reconnecting a tool from Connections closed no card, so every
+    // task stayed paused until its own card was clicked.
+    it("one tool reconnect closes every card the connection now serves and wakes each task once", async () => {
+      const { companyId, userId, agentId, service, tasks, other } = await threeWaitingTasks("tr3");
+      const [application] = await db.insert(toolApplications).values({ companyId, applicationKey: `notion-${randomUUID()}`, name: "Notion", type: "mcp_http", status: "active", metadata: { sourceTemplateKey: "notion" } }).returning();
+      const [connection] = await db.insert(toolConnections).values({ companyId, applicationId: application!.id, name: "Notion", uid: `notion/${randomUUID()}`, transport: "mcp_remote", authKind: "api_key", credentialPolicy: "per_user", status: "active", enabled: true, healthStatus: "error", lastError: "OAuth authorization has expired.", config: { sourceTemplateKey: "notion" }, transportConfig: { sourceTemplateKey: "notion" } }).returning();
+      await db.insert(connectionGrants).values({ companyId, connectionId: connection!.id, kind: "user", subjectUserId: userId, status: "active", isDefault: false });
+      const [profile] = await db.insert(toolProfiles).values({ companyId, name: "Notion reads", profileKey: `notion-reads-${randomUUID()}`, defaultAction: "allow", status: "active" }).returning();
+      await db.insert(toolProfileBindings).values({ companyId, profileId: profile!.id, targetType: "agent", targetId: agentId });
+      await db.insert(toolConnectionInstalls).values({ companyId, connectionId: connection!.id, targetType: "agent", targetId: agentId });
+      await db.insert(toolCatalogEntries).values({ companyId, connectionId: connection!.id, toolName: "notion-read", name: "notion-read", versionHash: "fixture-v1", status: "active", entryKind: "tool" });
+
+      // Still broken: a reconnect attempt that did not repair it closes nothing.
+      expect(await service.resolveToolIntentsForConnection({ companyId, userId, connectionId: connection!.id })).toEqual([]);
+
+      await db.update(toolConnections).set({ healthStatus: "ok", lastError: null }).where(eq(toolConnections.id, connection!.id));
+      const closed = await service.resolveToolIntentsForConnection({ companyId, userId, connectionId: connection!.id });
+      expect(closed.sort()).toEqual(tasks.map((task) => task.card).sort());
+      // The other agent cannot use this connection yet, so its card waits.
+      const afterFirst = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.id, other.card));
+      expect(afterFirst[0]?.status).toBe("pending");
+      // Running it again finds nothing left to close.
+      expect(await service.resolveToolIntentsForConnection({ companyId, userId, connectionId: connection!.id })).toEqual([]);
+
+      // Once the other agent may use it, the next reconnect serves its card too.
+      await db.insert(toolProfileBindings).values({ companyId, profileId: profile!.id, targetType: "agent", targetId: other.agentId });
+      await db.insert(toolConnectionInstalls).values({ companyId, connectionId: connection!.id, targetType: "agent", targetId: other.agentId });
+      const later = await service.resolveToolIntentsForConnection({ companyId, userId, connectionId: connection!.id });
+      expect(later).toEqual([other.card]);
+
+      const cards = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.companyId, companyId));
+      expect(cards.every((card) => card.status === "accepted" && card.result?.connectionId === connection!.id)).toBe(true);
+      const woken = await deliverTwice(companyId, [...closed, ...later]);
+      expect(woken.sort()).toEqual([...tasks.map((task) => task.issueId), other.issueId].sort());
     });
   });
 
