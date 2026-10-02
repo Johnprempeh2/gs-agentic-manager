@@ -738,8 +738,8 @@ export function TeamDetailPane({
   return (
     <div className="flex-1 overflow-auto">
       <div className="space-y-5 p-5">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
+        {/* Header: the button wraps under the title on a phone. */}
+        <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
           <div className="min-w-0 space-y-1.5">
             <h2 className="text-base font-semibold">{team.name}</h2>
             <div className="flex flex-wrap items-center gap-1.5">
