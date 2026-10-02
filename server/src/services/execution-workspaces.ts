@@ -102,6 +102,12 @@ function issueTerminalTimestamp(issue: {
 
 const WORKSPACE_BRANCH_INCOHERENCE_REASON = "git_worktree_branch_incoherence";
 const WORKSPACE_VALIDATION_RECOVERY_CAUSE = "workspace_validation_failed";
+
+// The heartbeat records the bound workspace on the run context once it resolves
+// the workspace, so this matches a run that still owns the worktree.
+function runBoundToWorkspaceSql(workspaceId: string) {
+  return sql<boolean>`(${heartbeatRuns.contextSnapshot} ->> 'executionWorkspaceId') = ${workspaceId}`;
+}
 export const ISSUE_TERMINAL_WORKSPACE_CLEANUP_REASON = "issue_terminal";
 
 // The reopen-failure reason kept on the row when a rebuild does not finish. The
@@ -1627,14 +1633,20 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
       issue.checkoutRunId,
       issue.executionRunId,
     ]).filter((runId): runId is string => Boolean(runId)))];
-    if (runIds.length === 0) return false;
+    // Moving an issue out of in_progress clears its checkout and execution run
+    // ids, but the run that made the move is still live and still has to
+    // finalize this worktree. Match runs bound to the workspace as well, so
+    // cleanup waits for that run to finish (GRE-386).
     const active = await db
       .select({ id: heartbeatRuns.id })
       .from(heartbeatRuns)
       .where(and(
         eq(heartbeatRuns.companyId, workspace.companyId),
-        inArray(heartbeatRuns.id, runIds),
         inArray(heartbeatRuns.status, ["queued", "running"]),
+        or(
+          ...(runIds.length > 0 ? [inArray(heartbeatRuns.id, runIds)] : []),
+          runBoundToWorkspaceSql(workspace.id),
+        ),
       ))
       .limit(1);
     return active.length > 0;
@@ -3007,6 +3019,15 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
                   )
                   AND live_run.company_id = ${workspace.companyId}
                   AND live_run.status IN ('queued', 'running')
+              )`,
+              // A run that set its issue to done no longer shows on the issue,
+              // but it is still bound to this workspace until it finalizes.
+              sql<boolean>`NOT EXISTS (
+                SELECT 1
+                FROM ${heartbeatRuns}
+                WHERE ${heartbeatRuns.companyId} = ${workspace.companyId}
+                  AND ${heartbeatRuns.status} IN ('queued', 'running')
+                  AND ${runBoundToWorkspaceSql(workspace.id)}
               )`,
               // Re-check under the lock that no open issue is bound to the
               // workspace, so an issue that binds after the loop check above

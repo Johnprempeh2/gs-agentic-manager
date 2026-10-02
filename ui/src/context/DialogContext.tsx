@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { IssueWorkMode } from "@greatstone/shared";
 
-interface NewIssueDefaults {
+export interface NewIssueDefaults {
   status?: string;
   workMode?: IssueWorkMode;
   priority?: string;

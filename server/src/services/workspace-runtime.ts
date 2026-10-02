@@ -62,6 +62,7 @@ import {
   writeLocalServiceRegistryRecord,
 } from "./local-service-supervisor.js";
 import { workspaceOperationService, type WorkspaceOperationRecorder } from "./workspace-operations.js";
+import { resolveGitIndexLockPath, waitForGitIndexLock } from "./git-index-lock.js";
 import { executionWorkspaceService, readExecutionWorkspaceConfig } from "./execution-workspaces.js";
 import { isRecordOnlyExecutionWorkspace, isRuntimeOwnedGitBranch } from "./execution-workspace-branch-ownership.js";
 import { logActivity } from "./activity-log.js";
@@ -2578,24 +2579,31 @@ async function refreshUnstartedWorktreeToBase(input: {
     return { refreshed: false, baseRefSha: null };
   }
 
-  // A stale `index.lock` (left by a crashed git process) makes the reset fail
-  // with a raw git error. Name the worktree and the lock so an operator can act.
-  const indexLockPath = await runGit(["rev-parse", "--git-path", "index.lock"], input.worktreePath)
-    .then((lockPath) => path.resolve(input.worktreePath, lockPath))
-    .catch(() => null);
-  if (indexLockPath && existsSync(indexLockPath)) {
-    throw new WorkspaceRuntimeValidationFailure(
-      `Cannot refresh reused git worktree "${input.worktreePath}": git index lock "${indexLockPath}" exists. ` +
-        "Another git process is running there, or one crashed and left the lock behind. " +
-        "Stop any git process in that worktree, then delete the lock file and retry the run. No work was changed.",
-      {
-        workspaceValidation: {
-          reason: "git_index_locked",
-          worktreePath: input.worktreePath,
-          indexLockPath,
-        },
-      },
-    );
+  // GRE-383: an `index.lock` would make the reset fail. Wait for a lock a git
+  // process holds; remove one that is stale. If a live process still holds it
+  // after the wait, skip the refresh and run on the current base: the refresh
+  // is optional, and failing here moved the task to `blocked` for a lock that
+  // was usually gone minutes later.
+  const indexLockPath = await resolveGitIndexLockPath(input.worktreePath, runGit);
+  if (indexLockPath) {
+    const lock = await waitForGitIndexLock({ lockPath: indexLockPath, worktreePath: input.worktreePath });
+    const lockNote = lock.status === "held"
+      ? `Skipped refreshing git worktree at ${input.worktreePath}: git index lock "${indexLockPath}" is still held after ${Math.round(lock.waitedMs / 1000)}s. Running on the current base.\n`
+      : lock.status === "removed_stale"
+        ? `Removed stale git index lock "${indexLockPath}" (${Math.round(lock.lockAgeMs / 1000)}s old, no git process holds it).\n`
+        : null;
+    if (lockNote) {
+      await input.recorder?.recordOperation({
+        phase: "worktree_prepare",
+        command: null,
+        cwd: input.worktreePath,
+        metadata: { reason: "git_index_locked", indexLockPath, ...lock },
+        run: async () => ({ status: "succeeded", exitCode: 0, system: lockNote }),
+      }).catch(() => {});
+    }
+    if (lock.status === "held") {
+      return { refreshed: false, baseRefSha: null };
+    }
   }
 
   // `--keep`, not `--hard`: if a file appears between the clean-tree guard

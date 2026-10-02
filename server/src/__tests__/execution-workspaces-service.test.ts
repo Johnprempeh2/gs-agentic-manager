@@ -2122,6 +2122,48 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     }, 20_000);
   });
 
+  it("waits for the run that set its issue done before removing the worktree (GRE-386)", async () => {
+    const seeded = await seedTerminalWorkspace({ mergedPr: true });
+    const agentId = randomUUID();
+    const runId = randomUUID();
+    await db.insert(agents).values({
+      id: agentId,
+      companyId: seeded.companyId,
+      name: "Reviewer",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    // Setting the issue to done cleared its checkout and execution run ids, so
+    // only the run context still ties the live run to the workspace.
+    await db.insert(heartbeatRuns).values({
+      id: runId,
+      companyId: seeded.companyId,
+      agentId,
+      status: "running",
+      contextSnapshot: { issueId: seeded.sourceIssueId, executionWorkspaceId: seeded.executionWorkspaceId },
+    });
+
+    const whileRunning = await svc.sweepTerminalWorkspaces();
+    expect(whileRunning).toMatchObject({ archived: 0, skippedActiveRun: 1 });
+    await expect(fs.access(seeded.worktreePath)).resolves.toBeUndefined();
+
+    // The run finalizes against the intact worktree and ends; the next sweep
+    // then removes the worktree.
+    await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, runId));
+    const afterRun = await svc.sweepTerminalWorkspaces();
+    const [workspace] = await db
+      .select({ status: executionWorkspaces.status })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+    expect(afterRun).toMatchObject({ archived: 1, skippedActiveRun: 0 });
+    expect(workspace?.status).toBe("archived");
+    await expect(fs.access(seeded.worktreePath)).rejects.toThrow();
+  }, 20_000);
+
   it("allows archiving shared workspace sessions with warnings even when issues are still open", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
