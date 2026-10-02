@@ -81,21 +81,26 @@ export function FirstTeamStep({
         </p>
       )}
 
-      {groups.map((group) => (
-        <section key={group.category} className="flex flex-col gap-2" aria-label={group.label}>
-          <h2 className="text-sm font-medium text-foreground">{group.label}</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {group.teams.map((team) => (
-              <TeamCard
-                key={team.id}
-                team={team}
-                selected={selectedTeamId === team.id}
-                onSelect={() => onSelectTeam(selectedTeamId === team.id ? null : team.id)}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      {/* One cell per department: most departments hold one team, so a grid
+          of departments stays compact where a grid per department would
+          leave every second column empty. */}
+      {groups.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {groups.map((group) => (
+            <section key={group.category} className="flex flex-col gap-2" aria-label={group.label}>
+              <h2 className="text-sm font-medium text-foreground">{group.label}</h2>
+              {group.teams.map((team) => (
+                <TeamCard
+                  key={team.id}
+                  team={team}
+                  selected={selectedTeamId === team.id}
+                  onSelect={() => onSelectTeam(selectedTeamId === team.id ? null : team.id)}
+                />
+              ))}
+            </section>
+          ))}
+        </div>
+      )}
 
       <button
         type="button"

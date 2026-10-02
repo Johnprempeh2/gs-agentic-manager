@@ -2198,7 +2198,7 @@ export function TeamCard({
       aria-pressed={selected}
       className={cn(
         // design-allow(card-pattern): interactive <button> tile; Card renders a div and would break button semantics (C5a Run 3)
-        "flex aspect-square w-full flex-col gap-2 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full flex-col gap-2 rounded-lg border sm:aspect-square border-border bg-card p-4 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected && "ring-2 ring-ring",
       )}
     >
