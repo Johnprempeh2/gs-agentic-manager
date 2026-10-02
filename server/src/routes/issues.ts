@@ -3928,8 +3928,9 @@ export function issueRoutes(
     }) ?? noopTaskWatchdogService();
   const externalObjectsSvc = externalObjectService(db, {
     pluginWorkerManager: opts.pluginWorkerManager,
-    enabled: async () =>
-      (await instanceSettings.getExperimental()).enableExternalObjects === true,
+    enabled: async (dbOrTx) =>
+      (await instanceSettings.getExperimental({ db: dbOrTx }))
+        .enableExternalObjects === true,
   });
   const queuedCommentQueue = createQueuedCommentQueue(db, {
     syncCommentReferences: (commentId, tx) => issueReferencesSvc.syncComment(commentId, tx),
@@ -4729,7 +4730,9 @@ export function issueRoutes(
     actorAgentId?: string | null;
     actorRunId?: string | null;
     reviewInteractionId?: string;
+    dbOrTx?: Db;
   }) {
+    const dbOrTx = input.dbOrTx ?? db;
     const nextStatus = typeof input.updateFields.status === "string"
       ? input.updateFields.status
       : input.existing.status;
@@ -4739,7 +4742,7 @@ export function issueRoutes(
     if (input.existing.status === "in_review" || nextStatus !== "in_review") return null;
     if (input.actorType !== "agent" && !input.reviewInteractionId) return null;
 
-    const interactions = await issueThreadInteractionService(db).listForIssue(
+    const interactions = await issueThreadInteractionService(dbOrTx).listForIssue(
       input.existing.id,
     );
     const pendingInteractions = interactions.filter(
@@ -4823,11 +4826,11 @@ export function issueRoutes(
       return null;
 
     if (pendingInteractions.length > 0) return null;
-    if (await hasQueuedInteractionResponse(db, input.existing.companyId, input.existing.id, input.existing.assigneeAgentId)) return null;
+    if (await hasQueuedInteractionResponse(dbOrTx, input.existing.companyId, input.existing.id, input.existing.assigneeAgentId)) return null;
 
-    const approvals = await issueApprovalsSvc.listApprovalsForIssue(
-      input.existing.id,
-    );
+    const approvals = await (
+      dbOrTx === db ? issueApprovalsSvc : issueApprovalService(dbOrTx)
+    ).listApprovalsForIssue(input.existing.id);
     if (
       approvals.some((approval) =>
         ACTIVE_REVIEW_APPROVAL_STATUSES.has(String(approval.status)),
@@ -5356,8 +5359,11 @@ export function issueRoutes(
     actorAgentId: string,
     companyId: string,
     assigneeAgentId: string,
+    dbOrTx: Db = db,
   ) {
-    const decision = await access.decide({
+    const decision = await (
+      dbOrTx === db ? access : accessService(dbOrTx)
+    ).decide({
       actor: { type: "agent", agentId: actorAgentId, companyId },
       action: "tasks:manage_active_checkouts",
       resource: { type: "issue", companyId, assigneeAgentId },
@@ -6777,6 +6783,7 @@ export function issueRoutes(
       ReturnType<typeof recoveryActionsSvc.getActiveForIssue>
     >,
     input: { source: "issue_update" | "recovery_action_resolution" },
+    dbOrTx: Db = db,
   ) {
     if (req.actor.type !== "agent") return true;
     if (!activeRecoveryAction) return true;
@@ -6792,6 +6799,7 @@ export function issueRoutes(
         actorAgentId,
         issue.companyId,
         issue.assigneeAgentId,
+        dbOrTx,
       ))
     ) {
       return true;
@@ -6803,6 +6811,7 @@ export function issueRoutes(
         actorAgentId,
         issue.companyId,
         activeRecoveryAction.ownerAgentId,
+        dbOrTx,
       ))
     ) {
       return true;
@@ -6844,6 +6853,7 @@ export function issueRoutes(
       executionRunId?: string | null;
       executionState?: unknown;
     },
+    dbOrTx: Db = db,
   ) {
     if (req.actor.type !== "agent") return;
     const actorAgentId = req.actor.agentId;
@@ -6858,6 +6868,7 @@ export function issueRoutes(
         actorAgentId,
         issue.companyId,
         issue.assigneeAgentId,
+        dbOrTx,
       )),
     );
     if (!isSourceOwner && !isExecutionParticipant && !hasPolicyGrant) {
@@ -6922,7 +6933,9 @@ export function issueRoutes(
     recoveryAction: NonNullable<
       Awaited<ReturnType<typeof recoveryActionsSvc.getActiveForIssue>>
     >;
+    dbOrTx?: Db;
   }) {
+    const dbOrTx = input.dbOrTx ?? db;
     const returnOwnerAgentId = input.recoveryAction.returnOwnerAgentId;
     if (
       !returnOwnerAgentId ||
@@ -6970,10 +6983,11 @@ export function issueRoutes(
       );
     }
 
-    const activePauseHold = await treeControlSvc.getActivePauseHoldGate(
-      input.issue.companyId,
-      input.issue.id,
-    );
+    const activePauseHold = await (
+      dbOrTx === db
+        ? treeControlSvc
+        : (issueTreeControlFactory?.(dbOrTx) ?? treeControlSvc)
+    ).getActivePauseHoldGate(input.issue.companyId, input.issue.id);
     if (activePauseHold) {
       throw conflict(
         "Safe recovery hand-back blocked by active subtree pause hold",
@@ -6986,7 +7000,9 @@ export function issueRoutes(
       );
     }
     if (input.issue.projectId) {
-      const project = await projectsSvc.getById(input.issue.projectId);
+      const project = await (
+        dbOrTx === db ? projectsSvc : projectService(dbOrTx)
+      ).getById(input.issue.projectId);
       if (project?.pausedAt) {
         throw conflict(
           project.pauseReason === "budget"
@@ -6995,9 +7011,9 @@ export function issueRoutes(
         );
       }
     }
-    const approvals = await issueApprovalsSvc.listApprovalsForIssue(
-      input.issue.id,
-    );
+    const approvals = await (
+      dbOrTx === db ? issueApprovalsSvc : issueApprovalService(dbOrTx)
+    ).listApprovalsForIssue(input.issue.id);
     if (
       approvals.some((approval) =>
         ACTIVE_REVIEW_APPROVAL_STATUSES.has(String(approval.status)),
@@ -7011,7 +7027,7 @@ export function issueRoutes(
         },
       );
     }
-    const budgetBlock = await budgetService(db).getInvocationBlock(
+    const budgetBlock = await budgetService(dbOrTx).getInvocationBlock(
       input.issue.companyId,
       returnOwnerAgentId,
       { issueId: input.issue.id, projectId: input.issue.projectId },
@@ -9315,6 +9331,10 @@ export function issueRoutes(
       const actionStatus = outcome === "cancelled" ? "cancelled" : "resolved";
       const postCommitActivityPublications: ActivityPublication[] = [];
       const postCommitIssueActions: IssuePostCommitAction[] = [];
+      // Every read in this transaction goes through `tx`. A read through the
+      // outer pool would wait for a second connection while this one is held,
+      // and enough concurrent requests leave the whole pool idle in
+      // transaction.
       const result = await db.transaction(async (tx) => {
         const lockedIssue = await tx
           .select()
@@ -9355,6 +9375,7 @@ export function issueRoutes(
               lockedIssue,
               issueRecoveryActionReadModel(settled),
               { source: "recovery_action_resolution" },
+              tx as unknown as Db,
             );
             const automatic = settled.evidence.automaticRecovery as
               { replay?: string } | undefined;
@@ -9397,6 +9418,7 @@ export function issueRoutes(
           lockedIssue,
           activeRecoveryAction,
           { source: "recovery_action_resolution" },
+          tx as unknown as Db,
         );
 
         // Retrying an exhausted disposition repair is an explicit retry of the
@@ -9421,7 +9443,9 @@ export function issueRoutes(
             );
           }
           const sourceOwner = lockedIssue.assigneeAgentId
-            ? await agentsSvc.getById(lockedIssue.assigneeAgentId)
+            ? await agentService(tx as unknown as Db).getById(
+                lockedIssue.assigneeAgentId,
+              )
             : null;
           if (
             !sourceOwner ||
@@ -9572,9 +9596,14 @@ export function issueRoutes(
               req,
               issue: lockedIssue,
               recoveryAction: activeRecoveryAction,
+              dbOrTx: tx as unknown as Db,
             });
           } else {
-            await requireRecoverySourceMutationAuthority(req, lockedIssue);
+            await requireRecoverySourceMutationAuthority(
+              req,
+              lockedIssue,
+              tx as unknown as Db,
+            );
           }
 
           if (
@@ -9601,6 +9630,7 @@ export function issueRoutes(
               actorId: actor.actorId,
               actorAgentId: actor.agentId,
               actorRunId: actor.runId,
+              dbOrTx: tx as unknown as Db,
             });
             const executionPolicy = normalizeIssueExecutionPolicy(
               lockedIssue.executionPolicy ?? null,
