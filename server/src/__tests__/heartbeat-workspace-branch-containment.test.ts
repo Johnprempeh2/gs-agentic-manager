@@ -703,6 +703,13 @@ async function expectContainedWorkspaceBranchFailure(input: {
     comment.issueId === input.sourceIssueId &&
     noticeMetadataReferencesRecoveryAction(comment.metadata, action.id),
   )).toHaveLength(1);
+  // GRE-395: diverged commits make the repair unsafe, so there is no retry,
+  // only one plain line naming the board as owner.
+  expect(comments.filter((comment) =>
+    comment.issueId === input.sourceIssueId &&
+    comment.body.startsWith("Your run stopped because its workspace was on the wrong branch or path. The app did not retry:") &&
+    comment.body.includes("The board must act"),
+  )).toHaveLength(1);
   expect(comments.filter((comment) => comment.issueId === input.sameWorkspaceSiblingId)).toHaveLength(0);
   expect(comments.filter((comment) => comment.issueId === input.otherWorkspaceSiblingId)).toHaveLength(0);
 }

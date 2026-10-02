@@ -506,6 +506,25 @@ import {
 } from "./recovery/stranded-notice.js";
 import { withRecoveryContext } from "./recovery/status-only-context.js";
 import {
+  buildSetupRepairBlockedComment,
+  buildSetupRepairResumeComment,
+  buildSetupRepairUnblockAction,
+  classifySetupRepairCause,
+  decideSetupRepair,
+  inspectWorktreeSafety,
+  readSetupRepairWorkspaceHint,
+  repointWorktreeToTaskBranch,
+  SETUP_REPAIR_BLOCK_OWNER,
+  SETUP_REPAIR_REPEAT_WINDOW_MS,
+  SETUP_REPAIR_RETRY_REASON,
+  SETUP_REPAIR_WAKE_REASON,
+  type GitRunner,
+  type SetupRepairCause,
+  type SetupRepairDecision,
+  type WorktreeSafety,
+} from "./recovery/setup-repair.js";
+import { systemNoticePresentation } from "./recovery/notice-format.js";
+import {
   FRESH_SESSION_ON_RETRY_KEY,
   RUN_SILENT_TIMEOUT_ERROR_CODE,
   RUN_SILENT_TIMEOUT_RETRY_WAKE_REASON,
@@ -6085,6 +6104,19 @@ function formatInheritedExecutionWorkspaceReuseFailure(input: {
   return `${message} ${remediation}`;
 }
 
+// A reuse_existing workspace that could not be restored. Still recorded as
+// `setup_failed`, but the structured id lets setup repair (GRE-395) give the
+// task a fresh workspace from its own branch.
+export class InheritedWorkspaceReuseFailure extends Error {
+  executionWorkspaceId: string | null;
+
+  constructor(message: string, executionWorkspaceId: string | null) {
+    super(message);
+    this.name = "InheritedWorkspaceReuseFailure";
+    this.executionWorkspaceId = executionWorkspaceId;
+  }
+}
+
 export async function provisionExecutionWorkspaceForFreshnessDecision<
   T extends { warnings?: string[] },
 >(input: {
@@ -6144,7 +6176,12 @@ export async function provisionExecutionWorkspaceForFreshnessDecision<
       });
   }
 
-  if (reuseFailure) throw new Error(reuseFailure);
+  if (reuseFailure) {
+    throw new InheritedWorkspaceReuseFailure(
+      reuseFailure,
+      readNonEmptyString(input.existingExecutionWorkspaceId),
+    );
+  }
   if (!restored) {
     throw new Error(
       "Expected restored execution workspace after reuse fallback handling",
@@ -15599,6 +15636,14 @@ export function heartbeatService(
       wakeReason?: string;
       maxAttempts?: number;
       delayMs?: number;
+      // GRE-395: the cause the app repaired before this retry. When
+      // quarantineWorkspace is set, the failed workspace is archived and
+      // unbound so the retry realizes a fresh one from the task branch.
+      setupRepair?: {
+        cause: string;
+        quarantineWorkspace: boolean;
+        executionWorkspaceId: string | null;
+      };
     },
   ) {
     const now = opts?.now ?? new Date();
@@ -15808,10 +15853,21 @@ export function heartbeatService(
           }
         : {};
     const workspaceValidationRetryPayload =
-      retryReason === INTERACTION_CONTINUATION_INFRA_RETRY_REASON &&
-      isWorkspaceValidationFailedRun(run)
-        ? readWorkspaceValidationPayloadFromRun(run)
-        : null;
+      opts?.setupRepair?.quarantineWorkspace
+        ? {
+            ...readWorkspaceValidationPayloadFromRun(run),
+            reason:
+              readNonEmptyString(
+                readWorkspaceValidationPayloadFromRun(run).reason,
+              ) ??
+              run.errorCode ??
+              "setup_repair",
+            executionWorkspaceId: opts.setupRepair.executionWorkspaceId,
+          }
+        : retryReason === INTERACTION_CONTINUATION_INFRA_RETRY_REASON &&
+            isWorkspaceValidationFailedRun(run)
+          ? readWorkspaceValidationPayloadFromRun(run)
+          : null;
     const shouldQuarantineWorkspaceForRetry =
       workspaceValidationRetryPayload !== null &&
       Object.keys(workspaceValidationRetryPayload).length > 0;
@@ -15833,6 +15889,15 @@ export function heartbeatService(
           : {}),
         ...(retryReason === HOST_SLEEP_RETRY_REASON
           ? { [FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY]: executionFailureRetryCount(run) }
+          : {}),
+        ...(opts?.setupRepair
+          ? {
+              setupRepair: {
+                cause: opts.setupRepair.cause,
+                sourceRunId: run.id,
+                repairedAt: now.toISOString(),
+              },
+            }
           : {}),
         ...(shouldQuarantineWorkspaceForRetry
           ? {
@@ -16303,7 +16368,7 @@ export function heartbeatService(
             ) {
               const existingMetadata = parseObject(failedWorkspace.metadata);
               const quarantine = {
-                reason: WORKSPACE_VALIDATION_FAILURE_CODE,
+                reason: run.errorCode ?? WORKSPACE_VALIDATION_FAILURE_CODE,
                 retryReason,
                 sourceRunId: run.id,
                 retryRunId: scheduledRun.id,
@@ -16318,7 +16383,8 @@ export function heartbeatService(
                   status: "archived",
                   closedAt: now,
                   cleanupEligibleAt: null,
-                  cleanupReason: WORKSPACE_VALIDATION_FAILURE_CODE,
+                  cleanupReason:
+                    run.errorCode ?? WORKSPACE_VALIDATION_FAILURE_CODE,
                   metadata: {
                     ...existingMetadata,
                     workspaceValidationQuarantine: quarantine,
@@ -16746,6 +16812,304 @@ export function heartbeatService(
       wakeReason: INTERACTION_CONTINUATION_INFRA_WAKE_REASON,
       maxAttempts: INTERACTION_CONTINUATION_INFRA_MAX_ATTEMPTS,
     });
+  }
+
+  // GRE-395: a run that failed on a known setup cause is repaired here and
+  // the agent is woken once through a normal scheduled retry, so the RAM, disk
+  // and run-cap admission gate still applies when it starts. An unsafe repair,
+  // or the same cause twice in 30 minutes, blocks the task with the board as
+  // the named owner instead of retrying.
+  async function repairAndResumeSetupFailure(
+    run: typeof heartbeatRuns.$inferSelect,
+    agent: typeof agents.$inferSelect,
+    opts?: { now?: Date; git?: GitRunner },
+  ): Promise<
+    | { outcome: "skipped" }
+    | { outcome: "resumed"; cause: SetupRepairCause; retryRunId: string }
+    | { outcome: "blocked"; cause: SetupRepairCause; reason: string }
+  > {
+    const now = opts?.now ?? new Date();
+    const cause = classifySetupRepairCause(run);
+    // Native runs have their own same-run controller, and a run whose provider
+    // actions are unverified already goes to the board's reconciliation path.
+    if (
+      !cause ||
+      run.runtimeMode === "native" ||
+      legacyExecutionNeedsReconciliation(run)
+    ) {
+      return { outcome: "skipped" };
+    }
+    const issueId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
+    if (!issueId) return { outcome: "skipped" };
+    const issue = await db
+      .select()
+      .from(issues)
+      .where(and(eq(issues.id, issueId), eq(issues.companyId, run.companyId)))
+      .then((rows) => rows[0] ?? null);
+    if (
+      !issue ||
+      (issue.status !== "todo" && issue.status !== "in_progress") ||
+      issue.assigneeUserId ||
+      issue.assigneeAgentId !== run.agentId
+    ) {
+      return { outcome: "skipped" };
+    }
+
+    // Repair retries of this cause on this task inside the window, not
+    // counting the successor of this same run (a repeated call reuses it).
+    const recentRepairCount = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          eq(heartbeatRuns.scheduledRetryReason, SETUP_REPAIR_RETRY_REASON),
+          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issueId}`,
+          sql`${heartbeatRuns.contextSnapshot} -> 'setupRepair' ->> 'cause' = ${cause}`,
+          sql`${heartbeatRuns.retryOfRunId} is distinct from ${run.id}`,
+          gte(
+            heartbeatRuns.createdAt,
+            new Date(now.getTime() - SETUP_REPAIR_REPEAT_WINDOW_MS),
+          ),
+        ),
+      )
+      .then((rows) => Number(rows[0]?.count ?? 0));
+
+    let safety: WorktreeSafety | null = null;
+    let executionWorkspaceId: string | null = null;
+    let cwd: string | null = null;
+    let expectedBranchName: string | null = null;
+    if (cause !== "process_lost") {
+      const hint = readSetupRepairWorkspaceHint(run);
+      executionWorkspaceId =
+        hint.executionWorkspaceId ??
+        readNonEmptyString(issue.executionWorkspaceId);
+      const workspace = executionWorkspaceId
+        ? await db
+            .select({
+              cwd: executionWorkspaces.cwd,
+              branchName: executionWorkspaces.branchName,
+            })
+            .from(executionWorkspaces)
+            .where(
+              and(
+                eq(executionWorkspaces.id, executionWorkspaceId),
+                eq(executionWorkspaces.companyId, run.companyId),
+              ),
+            )
+            .then((rows) => rows[0] ?? null)
+        : null;
+      cwd = hint.cwd ?? readNonEmptyString(workspace?.cwd);
+      expectedBranchName =
+        hint.expectedBranchName ?? readNonEmptyString(workspace?.branchName);
+      safety = await inspectWorktreeSafety({
+        cwd,
+        expectedBranchName,
+        git: opts?.git,
+      });
+    }
+
+    let decision: SetupRepairDecision = decideSetupRepair({
+      cause,
+      recentRepairCount,
+      safety,
+    });
+    // A clean worktree on the wrong branch is put back on the task branch in
+    // place. A missing or unusable workspace is archived and unbound, so the
+    // retry realizes a fresh one from the task branch. Neither discards work:
+    // safety already proved every commit is on the task branch or a remote.
+    let quarantineWorkspace = false;
+    if (decision.kind === "repair") {
+      if (
+        cause === "workspace_mismatch" &&
+        safety?.state === "safe" &&
+        cwd &&
+        safety.currentBranch !== expectedBranchName
+      ) {
+        const repointed = expectedBranchName
+          ? await repointWorktreeToTaskBranch({
+              cwd,
+              expectedBranchName,
+              git: opts?.git,
+            })
+          : { ok: false as const, reason: "the task branch is not recorded" };
+        if (!repointed.ok) decision = { kind: "block", reason: repointed.reason };
+      } else {
+        quarantineWorkspace = executionWorkspaceId !== null;
+      }
+    }
+
+    if (decision.kind === "repair") {
+      const scheduled = await scheduleBoundedRetryForRun(run, agent, {
+        now,
+        retryReason: SETUP_REPAIR_RETRY_REASON,
+        wakeReason: SETUP_REPAIR_WAKE_REASON,
+        maxAttempts: 1,
+        delayMs: 0,
+        setupRepair: { cause, quarantineWorkspace, executionWorkspaceId },
+      });
+      if (scheduled.outcome === "scheduled") {
+        if (!("reusedExisting" in scheduled && scheduled.reusedExisting)) {
+          await issuesSvc.addComment(
+            issueId,
+            buildSetupRepairResumeComment(cause as Exclude<SetupRepairCause, "process_lost">),
+            {},
+            {
+              authorType: "system",
+              presentation: systemNoticePresentation({
+                tone: "info",
+                title: "Run repaired and resumed",
+              }),
+              metadata: {
+                version: 1,
+                sourceRunId: run.id,
+                sections: [
+                  {
+                    title: "Repair",
+                    rows: [
+                      { type: "key_value", label: "Cause", value: cause },
+                      { type: "run_link", label: "Failed run", runId: run.id, title: run.status },
+                      { type: "run_link", label: "Resume run", runId: scheduled.run.id, title: scheduled.run.status },
+                    ],
+                  },
+                ],
+              },
+            },
+          );
+          await logActivity(db, {
+            companyId: run.companyId,
+            actorType: "system",
+            actorId: "heartbeat",
+            agentId: run.agentId,
+            runId: run.id,
+            action: "issue.setup_repaired",
+            entityType: "issue",
+            entityId: issueId,
+            details: {
+              cause,
+              quarantineWorkspace,
+              executionWorkspaceId,
+              retryRunId: scheduled.run.id,
+            },
+          });
+        }
+        return { outcome: "resumed", cause, retryRunId: scheduled.run.id };
+      }
+      decision = {
+        kind: "block",
+        reason:
+          scheduled.outcome === "retry_exhausted"
+            ? "the one automatic repair was already used"
+            : scheduled.reason,
+      };
+    }
+
+    const blockedComment = buildSetupRepairBlockedComment(cause, decision.reason);
+    const blockedCommentOptions = {
+      authorType: "system" as const,
+      presentation: systemNoticePresentation({
+        tone: "danger",
+        title: "Run stopped: board must act",
+      }),
+      metadata: {
+        version: 1 as const,
+        sourceRunId: run.id,
+        sections: [
+          {
+            title: "Repair",
+            rows: [
+              { type: "key_value" as const, label: "Cause", value: cause },
+              { type: "key_value" as const, label: "Owner", value: "board" },
+              { type: "run_link" as const, label: "Failed run", runId: run.id, title: run.status },
+            ],
+          },
+        ],
+      },
+    };
+    // A workspace cause still ends `blocked` through the release path's
+    // board escalation, which keeps the board-owned recovery action and its
+    // evidence. This only adds the plain line, once per failed run.
+    if (cause !== "process_lost") {
+      const alreadyPosted = await db
+        .select({ id: issueComments.id })
+        .from(issueComments)
+        .where(
+          and(
+            eq(issueComments.issueId, issueId),
+            eq(issueComments.body, blockedComment),
+            sql`${issueComments.metadata} ->> 'sourceRunId' = ${run.id}`,
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows.length > 0);
+      if (!alreadyPosted) {
+        await issuesSvc.addComment(issueId, blockedComment, {}, blockedCommentOptions);
+      }
+      return { outcome: "blocked", cause, reason: decision.reason };
+    }
+
+    // A lost process retry would get another generic continuation retry from
+    // the release path, so it is blocked here with the board as owner.
+    const blocked = await db
+      .update(issues)
+      .set({
+        status: "blocked",
+        unblockDescriptor: {
+          owner: SETUP_REPAIR_BLOCK_OWNER,
+          action: buildSetupRepairUnblockAction(cause),
+        },
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(issues.id, issueId),
+          eq(issues.companyId, run.companyId),
+          inArray(issues.status, ["todo", "in_progress"]),
+          eq(issues.assigneeAgentId, run.agentId),
+        ),
+      )
+      .returning({ id: issues.id })
+      .then((rows) => rows[0] ?? null);
+    if (!blocked) return { outcome: "skipped" };
+    await issuesSvc.addComment(issueId, blockedComment, {}, blockedCommentOptions);
+    await logActivity(db, {
+      companyId: run.companyId,
+      actorType: "system",
+      actorId: "heartbeat",
+      agentId: run.agentId,
+      runId: run.id,
+      action: "issue.updated",
+      entityType: "issue",
+      entityId: issueId,
+      details: {
+        identifier: issue.identifier,
+        status: "blocked",
+        previousStatus: issue.status,
+        source: "heartbeat.setup_repair",
+        cause,
+        reason: decision.reason,
+      },
+    });
+    return { outcome: "blocked", cause, reason: decision.reason };
+  }
+
+  // Setup repair first; any failure it does not own keeps the existing path.
+  async function repairSetupFailureOrRetry(
+    run: typeof heartbeatRuns.$inferSelect,
+    agent: typeof agents.$inferSelect,
+    fallback: () => Promise<unknown>,
+  ) {
+    const repair = await repairAndResumeSetupFailure(run, agent).catch(
+      (error) => {
+        logger.warn(
+          { err: error, runId: run.id },
+          "setup repair failed; falling back to the existing retry path",
+        );
+        return { outcome: "skipped" as const };
+      },
+    );
+    if (repair.outcome === "skipped") await fallback();
+    return repair;
   }
 
   async function promoteDueScheduledRetries(now = new Date()) {
@@ -19799,6 +20163,19 @@ export function heartbeatService(
             retryAgent,
           );
         retriedRun = scheduled?.outcome === "scheduled" ? scheduled.run : null;
+      }
+
+      // GRE-395: the process-loss retry was lost too. Do not retry again;
+      // block the task with one plain line naming who must act.
+      if (!retriedRun && retryAgent && finalizedRun.retryOfRunId) {
+        await repairAndResumeSetupFailure(finalizedRun, retryAgent, { now }).catch(
+          (error) => {
+            logger.warn(
+              { err: error, runId: finalizedRun?.id },
+              "failed to block task after repeated process loss",
+            );
+          },
+        );
       }
 
       if (!retriedRun) {
@@ -27379,9 +27756,11 @@ export function heartbeatService(
           }
           await (runLostToHostSleep(livenessRun)
             ? scheduleBoundedRetryForRun(livenessRun, agent)
-            : scheduleInteractionContinuationInfrastructureRetryIfEligible(
-                livenessRun,
-                agent,
+            : repairSetupFailureOrRetry(livenessRun, agent, () =>
+                scheduleInteractionContinuationInfrastructureRetryIfEligible(
+                  livenessRun,
+                  agent,
+                ),
               ));
           await releaseIssueExecutionAndPromote(livenessRun, {
             // Native recovery owns the original heartbeat run through
@@ -27547,6 +27926,13 @@ export function heartbeatService(
                 run,
                 sandboxProviderPluginNotReadySetupFailure,
               )
+            : null) ??
+          (outerErr instanceof InheritedWorkspaceReuseFailure
+            ? {
+                workspaceReuseFailure: {
+                  executionWorkspaceId: outerErr.executionWorkspaceId,
+                },
+              }
             : null);
         const setupFailureResultJson = {
           ...setupFailureDetails,
@@ -27642,7 +28028,9 @@ export function heartbeatService(
             await (isTransientWorkspaceGitScanCode(livenessRun.errorCode) ||
               runLostToHostSleep(livenessRun)
               ? scheduleBoundedRetryForRun(livenessRun, failedAgent)
-              : scheduleInteractionContinuationInfrastructureRetryIfEligible(livenessRun, failedAgent)
+              : repairSetupFailureOrRetry(livenessRun, failedAgent, () =>
+                  scheduleInteractionContinuationInfrastructureRetryIfEligible(livenessRun, failedAgent),
+                )
             ).catch((retryError) => {
               logger.warn(
                 { err: retryError, runId: livenessRun.id },
@@ -31599,6 +31987,17 @@ export function heartbeatService(
       const agent = await getAgent(run.agentId);
       if (!agent) return { outcome: "missing_agent" as const };
       return scheduleBoundedRetryForRun(run, agent, opts);
+    },
+
+    repairAndResumeSetupFailure: async (
+      runId: string,
+      opts?: { now?: Date; git?: GitRunner },
+    ) => {
+      const run = await getRun(runId, { unsafeFullResultJson: true });
+      if (!run) return { outcome: "skipped" as const };
+      const agent = await getAgent(run.agentId);
+      if (!agent) return { outcome: "skipped" as const };
+      return repairAndResumeSetupFailure(run, agent, opts);
     },
 
     reconcileStrandedAssignedIssues,
