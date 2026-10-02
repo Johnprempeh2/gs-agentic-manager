@@ -71,6 +71,15 @@ export type {
 } from "./decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./decisions-feed.js";
 export type {
+  AgentWorkDigest,
+  AgentWorkDigestAgent,
+  AgentWorkDigestCounts,
+  AgentWorkDigestItem,
+  AgentWorkDigestItemKind,
+  AgentWorkDigestSinceSource,
+  AgentWorkDigestVisit,
+} from "./agent-work-digest.js";
+export type {
   DecisionQueue,
   DecisionQueueItem,
   DecisionQueueSeedRule,

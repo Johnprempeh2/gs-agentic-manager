@@ -31,6 +31,7 @@ export { activityRoutes } from "./activity.js";
 export { dashboardRoutes } from "./dashboard.js";
 export { attentionRoutes } from "./attention.js";
 export { decisionsFeedRoutes } from "./decisions-feed.js";
+export { agentWorkDigestRoutes } from "./agent-work-digest.js";
 export { pushRoutes } from "./push.js";
 export { decisionRoutes } from "./decisions.js";
 export { decisionQueueRoutes } from "./decision-queues.js";
