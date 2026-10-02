@@ -12,7 +12,8 @@ import { useCompany } from "../context/CompanyContext";
 import { DecisionNotificationsCard } from "../components/decisions-feed/DecisionNotificationsCard";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useInboxDismissals } from "../hooks/useInboxBadge";
-import { useDecisionsFeed } from "../hooks/useDecisionsFeed";
+import { useDecisionsFeed, useNeedsMe } from "../hooks/useDecisionsFeed";
+import { NeedsMeList } from "../components/NeedsMeList";
 import { queryKeys } from "../lib/queryKeys";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AttentionQueueRow } from "../components/AttentionQueueRow";
@@ -71,6 +72,9 @@ export function WhatNeedsMe() {
   // One feed (GRE-263): one card per task, every kind, one count. List, Focus
   // and the sidebar badge all read the same build.
   const { data: feed, isLoading, error, refetch } = useDecisionsFeed(selectedCompanyId);
+  // The header counts what Inbox Mine and the badge count (GRE-358): the
+  // cards plus tasks assigned to John, which show under "Assigned to you".
+  const { data: needsMe } = useNeedsMe(selectedCompanyId);
 
   // Dismissed rows are not in the feed; the curtain still lets John restore them.
   const { data: attentionFeed } = useQuery({
@@ -129,7 +133,9 @@ export function WhatNeedsMe() {
 
   const cards = useMemo(() => feed?.cards ?? [], [feed]);
   const assignableAgents = useMemo(() => feed?.assignableAgents ?? [], [feed]);
-  const count = feed?.count ?? 0;
+  const count = needsMe?.count ?? feed?.count ?? 0;
+  const assignedList = needsMe ? <NeedsMeList needsMe={needsMe} /> : null;
+  const hasAssigned = (needsMe?.assignedTasks.length ?? 0) > 0;
 
   const dismissedItems = useMemo(
     () =>
@@ -207,6 +213,8 @@ export function WhatNeedsMe() {
       <div className="mx-auto max-w-5xl space-y-4">
         {header}
         {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
+        {/* Assigned tasks are counted in the header but are not focus cards. */}
+        {assignedList}
         <DecisionsFocusView
           cards={cards}
           assignableAgents={assignableAgents}
@@ -234,8 +242,10 @@ export function WhatNeedsMe() {
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
+      {assignedList}
+
       {cards.length === 0 ? (
-        <ZeroState />
+        hasAssigned ? null : <ZeroState />
       ) : (
         <div className="space-y-4">
           {cards.map((card) => (

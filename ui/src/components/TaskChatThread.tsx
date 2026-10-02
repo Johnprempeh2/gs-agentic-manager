@@ -9,9 +9,13 @@ import {
   TaskChatRunHistoryRequest,
 } from "@/components/task-chat/expansion-state";
 import type { TranscriptEntry } from "@/adapters";
-import { TaskChatScrollReady } from "@/components/task-chat/scroll-navigation";
+import {
+  TaskChatScrollNavigation,
+  TaskChatScrollReady,
+} from "@/components/task-chat/scroll-navigation";
 import {
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -408,6 +412,8 @@ export type TaskChatThreadProps = ComponentProps<typeof IssueChatThread> & {
   conversationMode?: boolean;
   creationActivity?: ActivityEvent[];
   initialHistoryPending?: boolean;
+  /** The first comments page is still loading (part of `initialHistoryPending`). */
+  initialCommentsPending?: boolean;
   initialHistoryError?: boolean;
   onRetryInitialHistory?: () => void;
   onOpenSkill?: (skillId: string, name: string) => void;
@@ -479,6 +485,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const {
     initialHistoryPending = false,
+    initialCommentsPending = initialHistoryPending,
     initialHistoryError = false,
     onRetryInitialHistory,
     comments,
@@ -2845,18 +2852,35 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           (logTranscriptByRun.get(run.id)?.length ?? 0) === 0
         : Boolean(logErrorsByRun?.has(run.id)),
     );
+  // Opening a task lands on its latest message, and the bottom-pinned scroller
+  // keeps that message in view while older rows (finished-run digests, logs,
+  // activity) fill in above it. So show the comments as soon as they are in.
+  // A linked comment or a Back/Forward restore needs the whole history
+  // measured first, as does an empty thread (no empty-state flash).
+  const scrollNavigation = useContext(TaskChatScrollNavigation);
+  const revealWithComments =
+    !initialCommentsPending &&
+    comments.length > 0 &&
+    Boolean(scrollNavigation) &&
+    !scrollNavigation?.hash &&
+    !scrollNavigation?.restore;
   const [revealedIssue, setRevealedIssue] = useState<string | null | undefined>(
-    () => (historyPending ? undefined : issueId),
+    () => (historyPending && !revealWithComments ? undefined : issueId),
   );
-  const historyRevealed = revealedIssue === issueId;
+  const historyRevealed = revealedIssue === issueId || revealWithComments;
   // Mount and measure the real thread while concealed, then reveal in one
   // commit. A frame also lets ancestor navigation scroll restoration finish.
   // Readiness is latched per issue: refetches never hide existing conversation.
   useEffect(() => {
-    if (historyRevealed || historyPending) return;
+    if (revealedIssue === issueId) return;
+    if (revealWithComments) {
+      setRevealedIssue(issueId);
+      return;
+    }
+    if (historyPending) return;
     const frame = requestAnimationFrame(() => setRevealedIssue(issueId));
     return () => cancelAnimationFrame(frame);
-  }, [historyPending, historyRevealed, issueId]);
+  }, [historyPending, revealWithComments, revealedIssue, issueId]);
   const retryHistory = () => {
     onRetryInitialHistory?.();
     retryLogs?.();
@@ -2875,13 +2899,20 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           mode={streamlinedUiEnabled ? "streamlined" : "production"}
         >
           <div
-            className={cn("flex flex-col", !isMobile && "min-h-0 flex-1")}
+            className={cn(
+              "flex flex-col",
+              !isMobile && "min-h-0 flex-1",
+              // A phone chat fills the screen so a short chat still docks the
+              // composer at the bottom, where the thumb is.
+              isMobile && conversationMode && "min-h-(--tc-chat-mobile-min-h)",
+            )}
             data-testid="task-chat-thread"
           >
             <div
               className={cn(
                 "relative flex flex-col",
                 !isMobile && "min-h-0 flex-1",
+                isMobile && conversationMode && "flex-1",
               )}
               aria-busy={!historyRevealed}
             >

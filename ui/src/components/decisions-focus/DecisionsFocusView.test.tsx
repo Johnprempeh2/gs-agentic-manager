@@ -233,6 +233,37 @@ describe("DecisionsFocusView", () => {
     expect(container.textContent).toContain("1 of 2 done");
   });
 
+  it("puts the decision and its actions first, with Listen and key hints after them (GRE-363)", () => {
+    render(items());
+    const card = container.querySelector("article")!;
+    const order = [
+      card.querySelector("h2"),
+      card.querySelector("[role='radiogroup']"),
+      button("Submit & next"),
+      button("Play summary"),
+      card.querySelector("details"),
+    ];
+    for (let index = 1; index < order.length; index += 1) {
+      expect(order[index - 1]!.compareDocumentPosition(order[index]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    // Keyboard hints start collapsed.
+    expect(card.querySelector("details")!.open).toBe(false);
+    expect(card.querySelector("details summary")!.textContent).toBe("Keyboard shortcuts");
+  });
+
+  it("does not render the list card again under a question (GRE-363)", () => {
+    render(items());
+    expect(container.textContent).toContain("When a run is stuck, should I restart it?");
+    expect(container.querySelector("[data-decision-card]")).toBeNull();
+  });
+
+  it("keeps the card's other work under a question on a merged card", () => {
+    const merged = questionCard("int-1", "issue-44", "GRE-44");
+    merged.items = [...merged.items, { ...merged.items[0]!, id: "recovery-1", sourceKind: "recovery" } as never];
+    render([merged]);
+    expect(container.querySelector("[data-decision-card='task:issue-44']")).not.toBeNull();
+  });
+
   it("drops a question answered elsewhere without submitting it", () => {
     render(items());
     render([feedItem("int-2", "issue-45", "GRE-45")]);

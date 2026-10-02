@@ -126,7 +126,7 @@ describe("gateway client snippets", () => {
     expect(formatHydratedSnippetConfig(
       {
         mcpServers: {
-          "GS Agentic Manager": {
+          "Greatstone": {
             url: "/mcp/gateways/public-id",
             headers: { Authorization: "Bearer pcgw_..." },
           },

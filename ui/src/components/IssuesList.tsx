@@ -605,7 +605,7 @@ function IssueSearchInput({
   );
 }
 
-const STATUS_CHIP_LABELS = ["All", "Active", "Blocked", "Done"];
+const STATUS_CHIP_LABELS = ["All", "Recent", "Active", "Blocked", "Done"];
 const statusChipPresets = issueQuickFilterPresets.filter((preset) => STATUS_CHIP_LABELS.includes(preset.label));
 
 function IssueStatusChips({ statuses, onChange }: { statuses: string[]; onChange: (statuses: string[]) => void }) {
@@ -877,6 +877,9 @@ function StreamlinedIssuesList({
     setIssueSearch(initialSearch ?? "");
   }, [initialSearch]);
 
+  // The status filter the viewer picked on this mount, if any.
+  const pickedStatusesRef = useRef<string[] | null>(null);
+
   // Reload view state whenever the persisted context changes.
   const prevViewStateContextKey = useRef(`${scopedKey}::${initialAssigneesKey}::${initialWorkspacesKey}`);
   useEffect(() => {
@@ -884,7 +887,11 @@ function StreamlinedIssuesList({
     if (prevViewStateContextKey.current !== nextContextKey) {
       prevViewStateContextKey.current = nextContextKey;
       const preferences = loadIssueCollectionPreferences(preferenceLocation);
-      setViewState(getInitialWorkspaceViewState(preferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping), defaultStatuses));
+      const next = getInitialWorkspaceViewState(preferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping), defaultStatuses);
+      // The company can settle after the list mounts (cold load, route sync). A chip
+      // picked before then must not snap back to the page default; a saved view still wins.
+      const keepPick = preferences.source === "default" && pickedStatusesRef.current && !initialAssignees && !initialWorkspaces;
+      setViewState(keepPick ? { ...next, statuses: [...pickedStatusesRef.current!] } : next);
       setVisibleIssueColumns(preferences.columns);
     }
   }, [
@@ -901,6 +908,7 @@ function StreamlinedIssuesList({
   ]);
 
   const updateView = useCallback((patch: Partial<IssueViewState>) => {
+    if (patch.statuses) pickedStatusesRef.current = patch.statuses;
     setViewState((prev) => {
       const next = { ...prev, ...patch };
       saveTaskCollectionPreferences(preferenceLocation, {

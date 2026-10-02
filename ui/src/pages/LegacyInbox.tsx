@@ -1233,6 +1233,7 @@ export function Inbox() {
         approvals: tab === "all" && !showApprovalsCategory ? [] : approvalsToRender,
         failedRuns: failedRunsForTab,
         joinRequests: joinRequestsForTab,
+        unreadFirst: tab === "mine",
       }),
     [approvalsToRender, issuesToRender, showApprovalsCategory, showTouchedCategory, tab, failedRunsForTab, joinRequestsForTab],
   );
@@ -1384,7 +1385,10 @@ export function Inbox() {
     });
   }, [selectedCompanyId]);
   const freshGroupedSections = useMemo<InboxGroupedSection[]>(() => [
-    ...buildGroupedInboxSections(filteredWorkItems, groupBy, inboxWorkspaceGrouping, { nestingEnabled }),
+    ...buildGroupedInboxSections(filteredWorkItems, groupBy, inboxWorkspaceGrouping, {
+      nestingEnabled,
+      unreadFirst: tab === "mine",
+    }),
     ...buildGroupedInboxSections(
       getInboxWorkItems({ issues: archivedSearchIssues, approvals: [] }),
       groupBy,
@@ -1404,6 +1408,7 @@ export function Inbox() {
     inboxWorkspaceGrouping,
     issueSearchSupplementResults,
     nestingEnabled,
+    tab,
   ]);
 
   // --- Order pinning (PAP-16015) ---

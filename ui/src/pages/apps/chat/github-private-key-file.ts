@@ -1,3 +1,5 @@
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
+
 export const GITHUB_PRIVATE_KEY_FILE_MAX_BYTES = 64 * 1024;
 
 export function createGitHubPrivateKeyReadGuard() {
@@ -35,7 +37,7 @@ export async function readGitHubPrivateKeyFile(
     value = await file.text();
   } catch {
     throw new Error(
-      "GS Agentic Manager couldn't read that file. Choose the .pem file again or paste the private key.",
+      `${CLIENT_BRAND_NAME} couldn't read that file. Choose the .pem file again or paste the private key.`,
     );
   }
   if (!value.trim()) {

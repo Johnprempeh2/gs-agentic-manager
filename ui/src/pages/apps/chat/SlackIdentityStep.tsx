@@ -7,6 +7,7 @@ import { chatEndpointsApi } from "@/api/chatEndpoints";
 import { Button } from "@/components/ui/button";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { queryKeys } from "@/lib/queryKeys";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 export function SlackIdentityStep({ endpointId, command, testStartedAt, onConnected, onSaveExit }: {
   endpointId: string;
@@ -68,7 +69,7 @@ export function SlackIdentityStep({ endpointId, command, testStartedAt, onConnec
         <div className={`space-y-3 rounded-lg border p-4 ${linkedToMe
           ? "border-(--status-task-done)/30 bg-(--status-task-done)/10"
           : "border-(--status-task-todo)/30 bg-(--status-task-todo)/10"}`}>
-          <p className="text-sm">Choose your Slack account below to link it to <strong>{userLabel ?? "your GS Agentic Manager account"}</strong>. Only confirm an account that belongs to you. Future messages will use your GS Agentic Manager permissions.</p>
+          <p className="text-sm">Choose your Slack account below to link it to <strong>{userLabel ?? `your ${CLIENT_BRAND_NAME} account`}</strong>. Only confirm an account that belongs to you. Future messages will use your {CLIENT_BRAND_NAME} permissions.</p>
           {candidates.map((identity) => {
             const mine = identity.status === "linked" && identity.paperclipUserId === userId;
             return (
@@ -78,8 +79,8 @@ export function SlackIdentityStep({ endpointId, command, testStartedAt, onConnec
                   <p className="text-xs text-muted-foreground">{identity.externalDetail}</p>
                 </div>
                 {mine ? <p role="status" className="flex items-center gap-2 text-sm"><CheckCircle2 className="size-4 text-(--status-task-done)" />Linked to you</p>
-                  : identity.status === "linked" ? <p className="text-sm text-muted-foreground">Linked to {identity.paperclipUserLabel ?? "another GS Agentic Manager account"}</p>
-                  : <Button variant="outline" disabled={!userId || link.isPending} onClick={() => link.mutate(identity.principalId)} aria-label={`Link ${identity.externalLabel} to my GS Agentic Manager account`}>
+                  : identity.status === "linked" ? <p className="text-sm text-muted-foreground">Linked to {identity.paperclipUserLabel ?? `another ${CLIENT_BRAND_NAME} account`}</p>
+                  : <Button variant="outline" disabled={!userId || link.isPending} onClick={() => link.mutate(identity.principalId)} aria-label={`Link ${identity.externalLabel} to my ${CLIENT_BRAND_NAME} account`}>
                     {link.isPending && link.variables === identity.principalId && <Loader2 className="size-4 animate-spin" />}This is my Slack account
                   </Button>}
               </div>
@@ -87,7 +88,7 @@ export function SlackIdentityStep({ endpointId, command, testStartedAt, onConnec
           })}
         </div>
       )}
-      {!userId && !session.isPending && !health.isPending && <p role="alert" className="text-sm text-destructive">Sign in to GS Agentic Manager to link your Slack account. Refresh this page after signing in.</p>}
+      {!userId && !session.isPending && !health.isPending && <p role="alert" className="text-sm text-destructive">Sign in to {CLIENT_BRAND_NAME} to link your Slack account. Refresh this page after signing in.</p>}
       {link.isError && <p role="alert" className="text-sm text-destructive">Couldn&apos;t link your account. Check that you are a member of this company and try again.</p>}
       <div className="flex items-center justify-between gap-3">
         <Button variant="ghost" className="text-muted-foreground" onClick={onSaveExit}>Save &amp; exit</Button>

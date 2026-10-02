@@ -1347,6 +1347,22 @@ export function scopeMicrosoftTeamsEgress(
   return adapter;
 }
 
+/**
+ * Send Telegram output as regular `sendMessage`/`editMessageText` text, never
+ * as a rich message. Telegram accepts `sendRichMessage` and returns a message
+ * ID, but current clients can render that message as an empty bubble, so every
+ * reply (answers, refusals, run failures) reached the user blank (GRE-327).
+ * The pinned adapter has no config switch; its own fallback flag is the only
+ * lever. Fail closed if a future adapter drops the flag.
+ */
+export function disableTelegramRichOutbound(adapter: unknown): void {
+  const target = adapter as { richMessagesAvailable?: unknown };
+  if (typeof target.richMessagesAvailable !== "boolean") {
+    throw new Error("Telegram rich-message output contract is unavailable");
+  }
+  target.richMessagesAvailable = false;
+}
+
 function createProviderAdapter(
   config: ResolvedChatSdkProviderConfig,
   logger: CreateChatSdkEndpointRuntimeOptions["logger"],
@@ -1491,6 +1507,7 @@ function createProviderAdapter(
         userName: config.userName,
       };
       const adapter = createTelegramAdapter(adapterConfig);
+      disableTelegramRichOutbound(adapter);
       const parser = adapter as unknown as {
         extractAttachments(raw: TelegramRawMessage): Attachment[];
         parseTelegramMessage(

@@ -14,7 +14,7 @@ const mockHeartbeatsApi = vi.hoisted(() => ({
 }));
 
 const mockDecisionsFeedApi = vi.hoisted(() => ({
-  count: vi.fn(),
+  needsMe: vi.fn(),
 }));
 
 const mockInstanceSettingsApi = vi.hoisted(() => ({
@@ -178,7 +178,15 @@ describe("Sidebar", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
-    mockDecisionsFeedApi.count.mockResolvedValue({ companyId: "company-1", generatedAt: "2026-09-29T00:00:00.000Z", count: 0 });
+    mockDecisionsFeedApi.needsMe.mockResolvedValue({
+      companyId: "company-1",
+      generatedAt: "2026-09-29T00:00:00.000Z",
+      count: 0,
+      decisionCount: 0,
+      assignedTaskCount: 0,
+      decisions: [],
+      assignedTasks: [],
+    });
     mockSidebar.isMobile = false;
     mockSidebar.collapsed = false;
     mockSidebar.collapseLocked = false;
@@ -448,7 +456,7 @@ describe("Sidebar", () => {
     const decisionsLink = container.querySelector('a[href="/decisions"]');
     expect(decisionsLink?.textContent?.trim()).toBe("Decisions");
     expect(sectionLabels("Work")).toContain("Decisions");
-    expect(mockDecisionsFeedApi.count).toHaveBeenCalledWith("company-1");
+    expect(mockDecisionsFeedApi.needsMe).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
       root.unmount();

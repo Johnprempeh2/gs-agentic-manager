@@ -42,6 +42,11 @@ describe("company routes", () => {
     expect(toCompanyRelativePath("/PAP/search?q=foo")).toBe("/search?q=foo");
   });
 
+  it("treats /since-last-visit as a board route that needs a company prefix", () => {
+    expect(isBoardPathWithoutPrefix("/since-last-visit")).toBe(true);
+    expect(applyCompanyPrefix("/since-last-visit", "PAP")).toBe("/PAP/since-last-visit");
+  });
+
   it("rewrites company package paths with the active prefix", () => {
     expect(applyCompanyPrefix("/company/export", "NEU")).toBe("/NEU/company/export");
     expect(applyCompanyPrefix("/company/import", "NEU")).toBe("/NEU/company/import");

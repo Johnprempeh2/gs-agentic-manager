@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MobileBottomNav } from "./MobileBottomNav";
 
 const mockDecisionsFeedApi = vi.hoisted(() => ({
-  count: vi.fn(),
+  needsMe: vi.fn(),
 }));
 
 vi.mock("@/lib/router", () => ({
@@ -59,7 +59,16 @@ describe("MobileBottomNav", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    mockDecisionsFeedApi.count.mockResolvedValue({ companyId: "company-1", generatedAt: "2026-09-29T00:00:00.000Z", count: 3 });
+    // One "needs me" count (GRE-358): 2 decisions + 1 assigned task.
+    mockDecisionsFeedApi.needsMe.mockResolvedValue({
+      companyId: "company-1",
+      generatedAt: "2026-09-29T00:00:00.000Z",
+      count: 3,
+      decisionCount: 2,
+      assignedTaskCount: 1,
+      decisions: [],
+      assignedTasks: [],
+    });
   });
 
   afterEach(() => {
@@ -87,7 +96,7 @@ describe("MobileBottomNav", () => {
     );
     expect(decisionsLink?.getAttribute("href")).toBe("/decisions");
     expect(decisionsLink?.textContent).toContain("3");
-    expect(mockDecisionsFeedApi.count).toHaveBeenCalledWith("company-1");
+    expect(mockDecisionsFeedApi.needsMe).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
       root.unmount();

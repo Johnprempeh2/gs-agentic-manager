@@ -1658,6 +1658,32 @@ export interface ToolConnectionTestAgentAccessResponse {
   access: ToolConnectionAccessSummary;
 }
 
+/** Why a "Test as agent" connection check failed (GRE-341). */
+export type ToolConnectionAgentCheckReason =
+  | "no_access"
+  | "no_grant"
+  | "expired_token"
+  | "scope_missing"
+  | "service_error";
+
+/**
+ * Result of one read-only connection check run with an agent's access: its
+ * tool profile, its grant and that grant's credential. No run, no model call.
+ */
+export interface ToolConnectionAgentCheckResult {
+  ok: boolean;
+  reason: ToolConnectionAgentCheckReason | null;
+  /** Underlying error code, for support. Null on success. */
+  code: string | null;
+  message: string;
+  agentId: string;
+  connectionId: string;
+  /** Which kind of grant the agent would use; null when none resolved. */
+  grantKind: "organization" | "user" | "agent" | null;
+  access: Pick<ToolConnectionAccessSummary, "toolCount" | "allowedCount" | "askFirstCount" | "offCount">;
+  checkedAt: string;
+}
+
 export interface ToolUpstreamPending {
   kind: "authorization" | "approval";
   links: Array<{ url: string; host: string; elicitationId?: string }>;

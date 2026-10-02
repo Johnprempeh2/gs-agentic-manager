@@ -128,6 +128,13 @@ interface IssueThreadInteractionCardProps {
   ) => Promise<void> | void;
   onUploadImage?: (file: File) => Promise<string>;
   externalReferences?: MarkdownExternalReferenceMap;
+  /**
+   * Rendered inside a host card that already names the kind, the task, why it
+   * waits and who asked (the Decisions card, GRE-360). Drops the status badge,
+   * the generic title, the audience line and the "proposed by" tile, so the
+   * card does not say everything twice and the answer buttons sit higher.
+   */
+  embedded?: boolean;
 }
 
 function resolveActorLabel(args: {
@@ -3566,6 +3573,7 @@ export function IssueThreadInteractionCard({
   onSubmitInteractionVerdicts,
   onUploadImage,
   externalReferences,
+  embedded = false,
 }: IssueThreadInteractionCardProps) {
   // Single enforcement point (PAP-424, plan from PAP-420; extended by PAP-437):
   // a card that should never be drawn — a degenerate `ask_user_questions`
@@ -3700,12 +3708,30 @@ export function IssueThreadInteractionCard({
         : activeStyles
           ? activeStyles.label
           : statusLabel(interaction.status);
+  // Secret and connection cards carry their state in the header, so they keep it
+  // even when embedded.
+  const compactHeader = embedded && !isSecretProposal && !connectionAuthorization;
+  const explicitTitle = interaction.title
+    ?? (interaction.kind === "ask_user_questions" ? interaction.payload.title : null)
+    ?? null;
 
   return (
     // Every nested subcard resolves the same interaction, so they all explain a
     // denial with the same audience the header states (PAP-17287).
     <InteractionAudienceContext.Provider value={audience}>
-      <div className={cn("rounded-lg border p-5 shadow-none", styles.shell)}>
+      <div className={cn("rounded-lg border shadow-none", compactHeader ? "p-4" : "p-5", styles.shell)}>
+        {compactHeader ? (
+          explicitTitle || (interaction.summary && interaction.kind !== "connection_intent") ? (
+            <div className="mb-4" data-testid="interaction-embedded-header">
+              {explicitTitle ? <div className="text-base font-semibold text-foreground">{explicitTitle}</div> : null}
+              {interaction.summary && interaction.kind !== "connection_intent" ? (
+                <p className={cn("max-w-3xl text-sm leading-6 text-muted-foreground", explicitTitle && "mt-1")}>
+                  {interaction.summary}
+                </p>
+              ) : null}
+            </div>
+          ) : null
+        ) : (
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1 basis-64">
             <div className="flex flex-wrap items-center gap-2">
@@ -3806,8 +3832,9 @@ export function IssueThreadInteractionCard({
             </TooltipContent>
           </Tooltip>
         </div>
+        )}
 
-        <div className="mt-5">
+        <div className={compactHeader ? undefined : "mt-5"}>
           {interaction.kind === "suggest_tasks" ? (
             <SuggestTasksCard
               interaction={interaction}

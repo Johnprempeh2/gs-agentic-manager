@@ -365,9 +365,15 @@ export function useIssueDetailPageEffects({
 
     return items;
   }, [attachments, workProducts]);
+  const mediaGalleryItemsRef = useRef(mediaGalleryItems);
+  mediaGalleryItemsRef.current = mediaGalleryItems;
 
+  // Stable identity: every chat bubble's markdown takes this as its image
+  // handler, and a new one re-mounts their rendered text. Attachments and
+  // work products load after the thread shows, so read the latest list.
   const openIssueGallery = useCallback(
     (src: string) => {
+      const mediaGalleryItems = mediaGalleryItemsRef.current;
       // Match content and preview URLs in either relative or absolute form.
       const absoluteUrl = (path: string) => {
         try {
@@ -398,7 +404,7 @@ export function useIssueDetailPageEffects({
       }
       return false;
     },
-    [mediaGalleryItems],
+    [],
   );
 
   const handleChatImageClick = useCallback(

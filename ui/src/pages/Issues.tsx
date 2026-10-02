@@ -23,8 +23,8 @@ const ISSUES_PAGE_SIZE = 100;
 export const ISSUES_ROW_PRESENTATION = "task" as const;
 export const ISSUES_TOOLBAR_PRESENTATION = "collection" as const;
 
-/** Owners open the list to see what is live or stuck, so it starts on Active. */
-export const ISSUES_DEFAULT_STATUSES = issueQuickFilterPresets.find((preset) => preset.label === "Active")!.statuses;
+/** Owners open the list to see what is live and what just finished, so it starts on Recent. */
+export const ISSUES_DEFAULT_STATUSES = issueQuickFilterPresets.find((preset) => preset.label === "Recent")!.statuses;
 
 /** One stable server filter per status set, or none for "All". */
 export function issuesStatusQueryParam(statuses: readonly string[]): string | undefined {

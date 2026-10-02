@@ -554,6 +554,10 @@
   --tc-composer-bottom: var(--sz-calc-8);
   /* Together with the dock's pb-2, match the page's p-4 side gutters. */
   --tc-composer-hidden-nav-offset: calc(var(--sz-safe-bottom) + var(--spacing) * 2);
+  /* Phone agent chat: the screen below the header (bar, safe area, main's
+     top padding and composer-dock bottom padding), so a short chat still
+     docks its composer at the bottom. */
+  --tc-chat-mobile-min-h: calc(100dvh - var(--sz-60px) - var(--sz-safe-top) - var(--spacing) * 4 - var(--tc-composer-hidden-nav-offset));
 }
 
 .dark {
@@ -2844,7 +2848,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-15px: 15px; /* Extracted from ui/src/components/IssueChatThread.test.tsx (p-[15px]). */
   --sz-calc-8: calc(env(safe-area-inset-bottom) + 20px); /* Extracted from ui/src/components/IssueChatThread.test.tsx (bottom-[calc(env(safe-area-inset-bottom)+20px)]). */
   --sz-300px: 300px; /* Extracted from ui/src/components/IssueColumns.tsx (w-[300px]). */
-  --sz-calc-9: min(80vh,42rem); /* Extracted from ui/src/components/IssueFiltersPopover.test.tsx (max-h-[min(80vh,42rem)]). */
   --sz-calc-10: min(780px,calc(100vw - 2rem)); /* Extracted from ui/src/components/IssueFiltersPopover.tsx (w-[min(780px,calc(100vw-2rem))]). */
   --sz-24ch: 24ch; /* Extracted from ui/src/components/IssuePlanDecompositionsSection.tsx (max-w-[24ch]). */
   --sz-calc-13: calc(0.75rem + 0.5rem); /* Extracted from ui/src/components/IssueRow.tsx (ml-[calc(theme(spacing.3)+theme(spacing.2))]). */
@@ -3413,6 +3416,15 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --agent-cap-v1-gs-sunrise-b: #c8ff00;
   --agent-cap-v1-muted-dream-a: #a6aaad;
   --agent-cap-v1-muted-dream-b: #44464a;
+}
+
+/* Issue filter popover: tall enough to show every filter, never taller than
+   the space Radix measured below (or above) its trigger. 80vh ran past the
+   bottom of a phone screen, so the last filters could not be reached. The
+   Radix variable only exists on the popover itself, so this cannot be a
+   :root size token. */
+.issue-filters-popover-scroll {
+  max-height: min(var(--radix-popover-content-available-height, 80vh), 42rem);
 }
 
 /* Persistent plugin surface. The host reserves mobile navigation/safe-area

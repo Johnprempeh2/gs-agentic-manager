@@ -5712,9 +5712,39 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/agent-work-digest",
+  tags: ["inbox"],
+  summary: "Digest of agent work since a time (default: your last visit), grouped by agent",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({ since: z.string().datetime({ offset: true }).optional() }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/agent-work-digest/visit",
+  tags: ["inbox"],
+  summary: "Record that you have seen the digest; the next digest starts from now",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/decisions-feed/count",
   tags: ["inbox"],
   summary: "Get the one Decisions count (same build as the feed)",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/needs-me",
+  tags: ["inbox"],
+  summary: "List what needs the board user: open decisions plus tasks assigned to them that are not done",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });

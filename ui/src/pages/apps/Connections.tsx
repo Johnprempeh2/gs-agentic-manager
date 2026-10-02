@@ -51,6 +51,7 @@ import {
   connectionOwnerProfile,
   type ConnectionOwnerProfile,
 } from "./connection-owner";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 const BROWSE_HREF = "/apps";
 
@@ -589,7 +590,7 @@ function CloudConnectorEnrollmentBanner({
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
         <ShieldCheck className="h-5 w-5 text-primary" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-foreground">GS Agentic Manager-managed sign-in is ready</div>
+          <div className="text-sm font-semibold text-foreground">{CLIENT_BRAND_NAME}-managed sign-in is ready</div>
           <div className="truncate text-xs text-muted-foreground">
             Provider authorization uses {status.brokerBaseUrl}; credentials stay in this instance.
           </div>
@@ -610,7 +611,7 @@ function CloudConnectorEnrollmentBanner({
       <Cloud className="h-5 w-5 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-foreground">
-          {status?.status === "pending" ? "Finish Paperclip Cloud enrollment" : "Enable GS Agentic Manager-managed sign-in"}
+          {status?.status === "pending" ? "Finish Paperclip Cloud enrollment" : `Enable ${CLIENT_BRAND_NAME}-managed sign-in`}
         </div>
         <div className="text-xs text-muted-foreground">
           Confirm this server’s exact address before Cloud can return encrypted Google credentials to it.

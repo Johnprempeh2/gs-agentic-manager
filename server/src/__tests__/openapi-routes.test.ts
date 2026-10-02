@@ -43,6 +43,7 @@ const apiPrefixes: Record<string, string> = {
   "decisions.ts": "/api",
   "decision-training.ts": "/api",
   "decisions-feed.ts": "/api",
+  "agent-work-digest.ts": "/api",
   "push.ts": "/api",
   "environments.ts": "/api",
   "execution-workspaces.ts": "/api",

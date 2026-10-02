@@ -6767,17 +6767,23 @@ export function toolAccessService(
     connection: typeof toolConnections.$inferSelect,
     credentialHeaders?: Record<string, string>,
     actor?: ActorInfo,
+    // An agent check (GRE-341) probes with that agent's credential only: never
+    // retry with the actor's credential or record what the probe discovers.
+    agentProbe?: { endpoint: string; scope: string },
   ): Promise<McpToolDescriptor[]> {
     assertSupportedConnection(connection);
     let headers = credentialHeaders ?? {
       ...projectedConnectionHeaders(connection),
       ...(await resolveCredentialHeaders(connection, actor)),
     };
-    const endpoint = await resolvedRemoteEndpoint(connection, actor);
+    const endpoint = agentProbe?.endpoint ?? await resolvedRemoteEndpoint(connection, actor);
     // Pinned to the address the guard approved: `config.url` is operator-supplied,
     // so a second DNS resolution here would reopen the rebinding window that
     // PAP-17098 closed for the OAuth endpoints.
     let listRequestId = "paperclip-catalog-refresh";
+    const sessionScope = agentProbe
+      ? `${connection.id}:agent-check:${agentProbe.scope}:${endpoint}`
+      : `${connection.id}:catalog:${actor?.actorType}:${actor?.actorId}:${endpoint}`;
     let sessionHeaders = headers;
     const sendRemote = (init: RequestInit) => requestRemoteHttpEndpoint(new URL(endpoint), init);
     const sendToolsList = (requestHeaders: Record<string, string>, cursor?: string) => {
@@ -6790,7 +6796,7 @@ export function toolAccessService(
     if (usedInitializedSession) {
       try {
         sessionHeaders = await getMcpHttpSession({ send: sendRemote, headers,
-          scope: `${connection.id}:catalog:${actor?.actorType}:${actor?.actorId}:${endpoint}`,
+          scope: sessionScope,
           requestId: listRequestId });
         response = await sendToolsList(sessionHeaders);
       } catch (error) {
@@ -6823,7 +6829,7 @@ export function toolAccessService(
       forgetMcpHttpSessions(connection.id);
       await response.body?.cancel().catch(() => undefined);
       sessionHeaders = await getMcpHttpSession({ send: sendRemote, headers,
-        scope: `${connection.id}:catalog:${actor?.actorType}:${actor?.actorId}:${endpoint}`,
+        scope: sessionScope,
         requestId: listRequestId });
       response = await sendToolsList(sessionHeaders);
       if (response.status === 404) forgetMcpHttpSessions(connection.id);
@@ -6848,6 +6854,7 @@ export function toolAccessService(
         );
     }
     if (
+      !agentProbe &&
       response.status === 401 &&
       connection.credentialSource === "vercel_connect"
     ) {
@@ -6870,6 +6877,7 @@ export function toolAccessService(
       response = await sendToolsList(headers);
     }
     if (
+      !agentProbe &&
       response.status === 401 &&
       connection.authKind === "oauth" &&
       connection.credentialSource === "paperclip_vault"
@@ -6915,10 +6923,9 @@ export function toolAccessService(
         response.status === 401 &&
         /bearer|oauth|authorization/i.test(authenticate)
       ) {
-        const endpoints = await discoverOAuthEndpoints(
-          connection,
-          authenticate,
-        );
+        const endpoints = agentProbe
+          ? null
+          : await discoverOAuthEndpoints(connection, authenticate);
         if (endpoints) {
           const nextConfig = {
             ...connection.config,
@@ -7206,10 +7213,24 @@ export function toolAccessService(
   async function checkConnectionHealth(
     connectionId: string,
     actor?: ActorInfo,
-    options: { allowUnauthenticatedProbe?: boolean } = {},
+    options: {
+      allowUnauthenticatedProbe?: boolean;
+      /**
+       * Probe with one agent's resolved grant and credential instead of the
+       * actor's (GRE-341). The result describes that agent only, so it is not
+       * saved as the connection's health and wakes nobody.
+       */
+      asAgent?: {
+        agentId: string;
+        grantId: string;
+        credentialHeaders?: Record<string, string>;
+        endpoint?: string;
+      };
+    } = {},
   ): Promise<ToolConnectionHealthCheckResult> {
     const connection = await getConnectionRow(connectionId);
     if (connection.connectionPurpose === "ai") return { connection: toConnection(connection), runtimeSlot: null };
+    const asAgent = options.asAgent;
     try {
       assertSupportedConnection(connection);
       const config = asRecord(connection.config);
@@ -7236,8 +7257,9 @@ export function toolAccessService(
                   grant.subjectUserId === actor.actorId,
               )
             : null;
-        const grantsToCheck =
-          connection.credentialPolicy === "per_user" &&
+        const grantsToCheck = asAgent
+          ? activeGrants.filter((grant) => grant.id === asAgent.grantId)
+          : connection.credentialPolicy === "per_user" &&
           actor?.actorType === "user"
             ? actorGrant
               ? [actorGrant]
@@ -7261,6 +7283,14 @@ export function toolAccessService(
           connection.credentialPolicy === "per_user" &&
           actor?.actorType === "user" &&
           actor.actorId === connection.createdByUserId;
+        if (asAgent) {
+          if (!asAgent.credentialHeaders || !asAgent.endpoint)
+            throw unprocessable("The agent's credential could not be resolved.", { code: "agent_credential_unresolved" });
+          await remoteTools(connection, asAgent.credentialHeaders, actor, {
+            endpoint: asAgent.endpoint,
+            scope: `${asAgent.agentId}:${asAgent.grantId}`,
+          });
+        } else {
         const credentialHeaders =
           connection.credentialSource === "vercel_connect"
             ? await resolveCredentialHeaders(connection, actor, {
@@ -7270,12 +7300,24 @@ export function toolAccessService(
               ? {}
               : undefined;
         await remoteTools(connection, credentialHeaders, actor);
+        }
       } else if (connection.transport === "local_stdio") {
         await resolveCredentialHeaders(connection);
         await stdioTemplateId(connection.companyId, connection.config);
         await validateCogneeConnection(connection, actor, false);
       } else {
         throw unsupportedToolConnectionTransport();
+      }
+      if (asAgent) {
+        await audit({
+          companyId: connection.companyId,
+          connectionId: connection.id,
+          action: "tool_connection.agent_check",
+          outcome: "success",
+          actor,
+          details: { transport: connection.transport, agentId: asAgent.agentId },
+        });
+        return { connection: toConnection(connection), runtimeSlot: null };
       }
       const updated = await updateConnectionHealth(
         connection,
@@ -7306,6 +7348,21 @@ export function toolAccessService(
       )
         throw error;
       const failure = sanitizeHttpFailure(error);
+      if (asAgent) {
+        await audit({
+          companyId: connection.companyId,
+          connectionId: connection.id,
+          action: "tool_connection.agent_check",
+          outcome: "failure",
+          reasonCode: failure.code,
+          actor,
+          details: { status: failure.status, transport: connection.transport, agentId: asAgent.agentId },
+        });
+        throw new HttpError(healthFailureHttpStatus(failure), failure.message, {
+          code: failure.code,
+          upstreamStatus: error instanceof HttpError ? asRecord(error.details).status ?? null : null,
+        });
+      }
       const updated = await updateConnectionHealth(
         connection,
         failure.status,
@@ -12910,6 +12967,75 @@ export function toolAccessService(
       } else if (dedicatedAgentId) {
         // Managed OAuth creates the credential-bearing grant in the callback.
         // Keep the connection free of organization secrets from the outset.
+        // A pasted API key has no callback, so it must land on the named
+        // agent's grant here; otherwise the `per_agent` connection has no
+        // grant at all and every agent is refused with `no_grant` (GRE-351).
+        if (credentialSecretRefs.length > 0) {
+          const [previousGrant] = await db
+            .select()
+            .from(connectionGrants)
+            .where(
+              and(
+                eq(connectionGrants.connectionId, connectionRow.id),
+                eq(connectionGrants.kind, "agent"),
+                eq(connectionGrants.subjectAgentId, dedicatedAgentId),
+              ),
+            )
+            .limit(1);
+          const [changedGrant] = await db
+            .insert(connectionGrants)
+            .values({
+              companyId,
+              connectionId: connectionRow.id,
+              kind: "agent",
+              subjectAgentId: dedicatedAgentId,
+              credentialSecretRefs,
+              status: "active",
+              isDefault: false,
+              createdByAgentId:
+                actor?.actorType === "agent" ? (actor.actorId ?? null) : null,
+              createdByUserId:
+                actor?.actorType === "user" ? (actor.actorId ?? null) : null,
+            })
+            .onConflictDoUpdate({
+              target: [connectionGrants.connectionId, connectionGrants.subjectAgentId],
+              set: {
+                credentialSecretRefs,
+                status: "active",
+                revokedAt: null,
+                revokedByAgentId: null,
+                revokedByUserId: null,
+                updatedAt: new Date(),
+              },
+            })
+            .returning();
+          if (!changedGrant)
+            throw new Error("Failed to create dedicated agent connection grant");
+          if (revivedConnectionPrevious) {
+            revivedGrantMutation = {
+              previous: previousGrant ?? null,
+              current: changedGrant,
+            };
+          }
+          await db.insert(toolAccessAuditEvents).values({
+            companyId,
+            connectionId: connectionRow.id,
+            actorType: actor?.actorType ?? "system",
+            actorId: actor?.actorId ?? null,
+            action: previousGrant
+              ? "connection_grant.updated"
+              : "connection_grant.created",
+            outcome: "success",
+            reasonCode: previousGrant
+              ? "agent_identity_reconnected"
+              : "agent_identity_created",
+            details: {
+              kind: "agent",
+              subjectAgentId: dedicatedAgentId,
+              credentialSecretRefCount: credentialSecretRefs.length,
+            },
+          });
+        }
       } else {
         const organizationGrant = await ensureDefaultOrganizationGrant(
           connectionRow,

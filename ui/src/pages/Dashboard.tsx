@@ -16,6 +16,7 @@ import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
+import { useSidebar } from "../context/SidebarContext";
 import { DashboardHero } from "../components/DashboardHero";
 import { BrandStoneIcon } from "../components/BrandMark";
 import { useDialogActions } from "../context/DialogContext";
@@ -24,6 +25,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
 import { DASHBOARD_OPEN_TASK_STATUSES, DashboardOverview } from "../components/DashboardOverview";
+import { DashboardDigestCard } from "../components/AgentWorkDigest";
 import { DashboardDecisionsBox } from "../components/DashboardDecisionsBox";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import { useLiveAgents } from "../hooks/useLiveAgents";
@@ -31,7 +33,7 @@ import { useLiveAgents } from "../hooks/useLiveAgents";
 import { ActivityRow } from "../components/ActivityRow";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
-import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
+import { Bot, ChevronDown, CircleDot, DollarSign, History, ShieldCheck, LayoutDashboard, PauseCircle, Users } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart, chartWindowLabel } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -45,6 +47,32 @@ import { DashboardCostCard } from "../components/DashboardCostCard";
 import { ErrorState } from "../components/ErrorState";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
+/** The phone home lists fewer open tasks; "View all tasks" has the rest (GRE-364). */
+export const PHONE_DASHBOARD_OPEN_TASK_LIMIT = 5;
+
+/**
+ * Phone only: Agents and Audit are not on the tab bar, so home gives them one
+ * tap each instead of the side drawer (GRE-364). Audit stands in for the
+ * overnight view until GRE-357 ships it.
+ */
+function PhoneShortcuts() {
+  return (
+    <nav className="grid grid-cols-2 gap-2" aria-label="Shortcuts" data-testid="dashboard-phone-shortcuts">
+      <Button variant="outline" className="h-11 justify-start" asChild>
+        <Link to="/agents">
+          <Users />
+          Agents
+        </Link>
+      </Button>
+      <Button variant="outline" className="h-11 justify-start" asChild>
+        <Link to="/activity">
+          <History />
+          Audit
+        </Link>
+      </Button>
+    </nav>
+  );
+}
 
 /**
  * What an owner wants from Recent activity: work started, finished or stuck,
@@ -96,6 +124,11 @@ export function derivePausedAgentBanner(agents: Agent[] | undefined): PausedAgen
 
 export function Dashboard() {
   const { selectedCompanyId, companies } = useCompany();
+  const { isMobile } = useSidebar();
+  // Phone home keeps what needs the user on the first screens; runs, numbers,
+  // charts and activity wait behind one button (GRE-364). Desktop shows all.
+  const [phoneDetailsOpen, setPhoneDetailsOpen] = useState(false);
+  const showDetails = !isMobile || phoneDetailsOpen;
   const companyStart = companies.find((company) => company.id === selectedCompanyId)?.createdAt;
   const { openOnboarding } = useDialogActions();
   const location = useLocation();
@@ -381,6 +414,7 @@ export function Dashboard() {
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       <DashboardDecisionsBox companyId={selectedCompanyId!} />
+      <DashboardDigestCard companyId={selectedCompanyId!} />
 
       {pausedBanner?.kind === "imported" ? (
         <InlineBanner
@@ -432,6 +466,8 @@ export function Dashboard() {
         </div>
       )}
 
+      {isMobile ? <PhoneShortcuts /> : null}
+
       <DashboardOverview
         agents={agents}
         openIssues={openIssues}
@@ -442,144 +478,163 @@ export function Dashboard() {
         issuesError={openIssuesError}
         currentUserId={currentUserId}
         userLabels={companyUserLabelMap}
+        openTaskLimit={isMobile ? PHONE_DASHBOARD_OPEN_TASK_LIMIT : undefined}
       />
 
-      <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent runs" />
-
-      {data && (
-        <>
-          {data.budgets.activeIncidents > 0 ? (
-            <div className="flex items-start justify-between gap-3 rounded-xl border border-red-500/20 bg-(image:--gradient-extract-1) px-4 py-3">
-              <div className="flex items-start gap-2.5">
-                <PauseCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" />
-                <div>
-                  <p className="text-sm font-medium text-red-950 dark:text-red-50">
-                    {data.budgets.activeIncidents} active budget incident{data.budgets.activeIncidents === 1 ? "" : "s"}
-                  </p>
-                  <p className="text-xs text-red-900/70 dark:text-red-100/70">
-                    {data.budgets.pausedAgents} agents paused · {data.budgets.pausedProjects} projects paused · {data.budgets.pendingApprovals} pending budget approvals
-                  </p>
-                </div>
-              </div>
-              <Link to="/costs" className="text-sm underline underline-offset-2 text-red-900 dark:text-red-100">
-                Open budgets
-              </Link>
+      {data && data.budgets.activeIncidents > 0 ? (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-red-500/20 bg-(image:--gradient-extract-1) px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <PauseCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" />
+            <div>
+              <p className="text-sm font-medium text-red-950 dark:text-red-50">
+                {data.budgets.activeIncidents} active budget incident{data.budgets.activeIncidents === 1 ? "" : "s"}
+              </p>
+              <p className="text-xs text-red-900/70 dark:text-red-100/70">
+                {data.budgets.pausedAgents} agents paused · {data.budgets.pausedProjects} projects paused · {data.budgets.pendingApprovals} pending budget approvals
+              </p>
             </div>
-          ) : null}
-
-          <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
-            <MetricCard
-              icon={Bot}
-              value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
-              label="Agents Enabled"
-              to="/agents"
-              description={
-                <span>
-                  {data.agents.running} running{", "}
-                  {data.agents.paused} paused{", "}
-                  {data.agents.error} errors
-                </span>
-              }
-            />
-            <MetricCard
-              icon={CircleDot}
-              value={data.tasks.inProgress}
-              label="Tasks In Progress"
-              to="/issues"
-              description={
-                <span>
-                  {data.tasks.open} open{", "}
-                  {data.tasks.blocked} blocked
-                </span>
-              }
-            />
-            <MetricCard
-              icon={DollarSign}
-              value={formatCents(data.costs.monthSpendCents)}
-              label="Month Spend"
-              to="/costs"
-              description={
-                <span>
-                  {data.costs.monthBudgetCents > 0
-                    ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
-                    : "Unlimited budget"}
-                </span>
-              }
-            />
-            <MetricCard
-              icon={ShieldCheck}
-              value={data.pendingApprovals + data.budgets.pendingApprovals}
-              label="Pending Approvals"
-              to="/approvals"
-              description={
-                <span>
-                  {data.budgets.pendingApprovals > 0
-                    ? `${data.budgets.pendingApprovals} budget overrides awaiting board review`
-                    : "Awaiting board review"}
-                </span>
-              }
-            />
           </div>
+          <Link to="/costs" className="text-sm underline underline-offset-2 text-red-900 dark:text-red-100">
+            Open budgets
+          </Link>
+        </div>
+      ) : null}
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
-            <DashboardCostCard companyId={selectedCompanyId!} />
-          </div>
+      {isMobile ? (
+        <Button
+          variant="outline"
+          className="h-11 w-full"
+          aria-expanded={phoneDetailsOpen}
+          aria-controls="dashboard-details"
+          onClick={() => setPhoneDetailsOpen((open) => !open)}
+          data-testid="dashboard-phone-details-toggle"
+        >
+          {phoneDetailsOpen ? "Show less" : "Show runs, numbers and activity"}
+          <ChevronDown className={cn("transition-transform", phoneDetailsOpen && "rotate-180")} />
+        </Button>
+      ) : null}
 
-          <SmokeLabDashboardCard companyId={selectedCompanyId!} />
+      {showDetails ? (
+        <div id="dashboard-details" className="space-y-6">
+          <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent runs" />
 
-          <div className={cn("gs-stagger grid grid-cols-1 gap-4 sm:grid-cols-2", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
-            <ChartCard title="Run Activity" subtitle={chartWindowLabel(companyStart)}>
-              <RunActivityChart activity={data.runActivity} start={companyStart} />
-            </ChartCard>
-            {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
-            {SHOW_TASK_PRIORITY_UI && (
-              <ChartCard title="Tasks by Priority" subtitle={chartWindowLabel(companyStart)}>
-                <PriorityChart issues={issues ?? []} start={companyStart} />
-              </ChartCard>
-            )}
-            <ChartCard title="Tasks by Status" subtitle={chartWindowLabel(companyStart)}>
-              <IssueStatusChart issues={issues ?? []} start={companyStart} />
-            </ChartCard>
-            <ChartCard title="Success Rate" subtitle={chartWindowLabel(companyStart)}>
-              <SuccessRateChart activity={data.runActivity} start={companyStart} />
-            </ChartCard>
-          </div>
-
-          <PluginSlotOutlet
-            slotTypes={["dashboardWidget"]}
-            context={{ companyId: selectedCompanyId }}
-            className="grid gap-4 md:grid-cols-2"
-            // design-allow(card-pattern): class-string prop consumed by the plugin outlet; a component can't be passed here (C5a Run 3)
-            itemClassName="rounded-lg border bg-card p-4 shadow-sm"
-          />
-
-          <div>
-            {/* Recent Activity */}
-            {recentActivity.length > 0 && (
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                  Recent Activity
-                </h3>
-                <Card className="@container block py-0 divide-y divide-border overflow-hidden">
-                  {recentActivity.map((event) => (
-                    <ActivityRow
-                      key={event.id}
-                      event={event}
-                      agentMap={agentMap}
-                      userProfileMap={userProfileMap}
-                      entityNameMap={entityNameMap}
-                      entityTitleMap={entityTitleMap}
-                      className={animatedActivityIds.has(event.id) ? "activity-row-enter" : undefined}
-                    />
-                  ))}
-                </Card>
+          {data && (
+            <>
+              <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
+                <MetricCard
+                  icon={Bot}
+                  value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
+                  label="Agents Enabled"
+                  to="/agents"
+                  description={
+                    <span>
+                      {data.agents.running} running{", "}
+                      {data.agents.paused} paused{", "}
+                      {data.agents.error} errors
+                    </span>
+                  }
+                />
+                <MetricCard
+                  icon={CircleDot}
+                  value={data.tasks.inProgress}
+                  label="Tasks In Progress"
+                  to="/issues"
+                  description={
+                    <span>
+                      {data.tasks.open} open{", "}
+                      {data.tasks.blocked} blocked
+                    </span>
+                  }
+                />
+                <MetricCard
+                  icon={DollarSign}
+                  value={formatCents(data.costs.monthSpendCents)}
+                  label="Month Spend"
+                  to="/costs"
+                  description={
+                    <span>
+                      {data.costs.monthBudgetCents > 0
+                        ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
+                        : "Unlimited budget"}
+                    </span>
+                  }
+                />
+                <MetricCard
+                  icon={ShieldCheck}
+                  value={data.pendingApprovals + data.budgets.pendingApprovals}
+                  label="Pending Approvals"
+                  to="/approvals"
+                  description={
+                    <span>
+                      {data.budgets.pendingApprovals > 0
+                        ? `${data.budgets.pendingApprovals} budget overrides awaiting board review`
+                        : "Awaiting board review"}
+                    </span>
+                  }
+                />
               </div>
-            )}
 
-          </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
+                <DashboardCostCard companyId={selectedCompanyId!} />
+              </div>
 
-        </>
-      )}
+              <SmokeLabDashboardCard companyId={selectedCompanyId!} />
+
+              <div className={cn("gs-stagger grid grid-cols-1 gap-4 sm:grid-cols-2", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
+                <ChartCard title="Run Activity" subtitle={chartWindowLabel(companyStart)}>
+                  <RunActivityChart activity={data.runActivity} start={companyStart} />
+                </ChartCard>
+                {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
+                {SHOW_TASK_PRIORITY_UI && (
+                  <ChartCard title="Tasks by Priority" subtitle={chartWindowLabel(companyStart)}>
+                    <PriorityChart issues={issues ?? []} start={companyStart} />
+                  </ChartCard>
+                )}
+                <ChartCard title="Tasks by Status" subtitle={chartWindowLabel(companyStart)}>
+                  <IssueStatusChart issues={issues ?? []} start={companyStart} />
+                </ChartCard>
+                <ChartCard title="Success Rate" subtitle={chartWindowLabel(companyStart)}>
+                  <SuccessRateChart activity={data.runActivity} start={companyStart} />
+                </ChartCard>
+              </div>
+
+              <PluginSlotOutlet
+                slotTypes={["dashboardWidget"]}
+                context={{ companyId: selectedCompanyId }}
+                className="grid gap-4 md:grid-cols-2"
+                // design-allow(card-pattern): class-string prop consumed by the plugin outlet; a component can't be passed here (C5a Run 3)
+                itemClassName="rounded-lg border bg-card p-4 shadow-sm"
+              />
+
+              <div>
+                {/* Recent Activity */}
+                {recentActivity.length > 0 && (
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                      Recent Activity
+                    </h3>
+                    <Card className="@container block py-0 divide-y divide-border overflow-hidden">
+                      {recentActivity.map((event) => (
+                        <ActivityRow
+                          key={event.id}
+                          event={event}
+                          agentMap={agentMap}
+                          userProfileMap={userProfileMap}
+                          entityNameMap={entityNameMap}
+                          entityTitleMap={entityTitleMap}
+                          className={animatedActivityIds.has(event.id) ? "activity-row-enter" : undefined}
+                        />
+                      ))}
+                    </Card>
+                  </div>
+                )}
+
+              </div>
+
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

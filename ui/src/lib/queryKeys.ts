@@ -652,12 +652,15 @@ export const queryKeys = {
     ) => ["company-search", companyId, q, scope, limit, offset] as const,
   },
   dashboard: (companyId: string) => ["dashboard", companyId] as const,
+  /** "Since you were last here" (GRE-357). */
+  agentWorkDigest: (companyId: string) => ["agent-work-digest", companyId] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
   /** One Decisions feed (GRE-263). Under the `attention` prefix so every
    *  existing attention invalidation also refreshes the feed and its count. */
   decisionsFeed: {
     feed: (companyId: string) => ["attention", companyId, "decisions-feed"] as const,
     count: (companyId: string) => ["attention", companyId, "decisions-feed", "count"] as const,
+    needsMe: (companyId: string) => ["attention", companyId, "needs-me"] as const,
   },
   /** Tasks set aside with "Not now" (GRE-262). */
   tabledIssues: (companyId: string) => ["attention", companyId, "tabled-issues"] as const,
