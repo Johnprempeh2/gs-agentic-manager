@@ -8,6 +8,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import { readBundleInfo, type BundleInfo } from "./bundle-freshness";
 
 // UX baseline (GRE-337): time, clicks, typing, scrolls and screens for the top
 // five flows, at desktop and phone width, against a fresh seeded instance.
@@ -492,11 +493,11 @@ function summarize(samples: Sample[]) {
   });
 }
 
-function markdown(summary: ReturnType<typeof summarize>, meta: Record<string, unknown>) {
+function markdown(summary: ReturnType<typeof summarize>, meta: Record<string, unknown> & { bundle: BundleInfo | null }) {
   const lines = [
     "# UX baseline: top five flows",
     "",
-    `Recorded ${meta.recordedAt} · ${meta.samplesPerCell} samples per flow and viewport · desktop 1440×900, phone 390×844 · built UI, fresh seeded local instance.`,
+    `Recorded ${meta.recordedAt} · ${meta.samplesPerCell} samples per flow and viewport · desktop 1440×900, phone 390×844 · built UI${meta.bundle?.commit ? ` from ${meta.bundle.commit.slice(0, 9)}` : ""}, fresh seeded local instance.`,
     "",
     "Time is from the home screen being ready to the goal being on screen. Active time leaves out the wait for the agent to reply. Home load is the cold load of the dashboard before the flow starts.",
     "",
@@ -535,7 +536,9 @@ test("UX baseline: top five flows on desktop and phone", async ({ browser, reque
     }
   }
   const summary = summarize(samples);
-  const meta = { recordedAt: new Date().toISOString(), samplesPerCell: RUNS, viewports: VIEWPORTS };
+  // An external instance serves its own bundle, so its commit is unknown here.
+  const bundle = process.env.GSAM_UX_BASELINE_BASE_URL ? null : readBundleInfo(process.cwd());
+  const meta = { recordedAt: new Date().toISOString(), samplesPerCell: RUNS, viewports: VIEWPORTS, bundle };
   await fs.writeFile(path.join(OUTPUT_DIR, "baseline.json"), `${JSON.stringify({ meta, summary, samples }, null, 2)}\n`);
   await fs.writeFile(path.join(OUTPUT_DIR, "baseline.md"), `${markdown(summary, meta)}\n`);
 });

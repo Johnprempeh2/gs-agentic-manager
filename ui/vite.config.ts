@@ -5,20 +5,19 @@ import tailwindcss from "@tailwindcss/vite";
 import { createUiDevWatchOptions } from "./src/lib/vite-watch";
 import { createApiProxy } from "./src/lib/vite-api-proxy";
 import { serviceWorkerBuildIdPlugin } from "./src/lib/vite-sw-build-id";
-import { readBrowserBuildCommit } from "./src/lib/vite-build-commit";
+import { buildInfoPlugin, readBrowserBuildCommit } from "./src/lib/vite-build-commit";
 import { precompressAssetsPlugin } from "./src/lib/vite-precompress";
 
 // GSAM_UI_API_TARGET points the dev UI at another server (for example the
 // preview on :3200) instead of live on :3100.
 const apiProxy = createApiProxy(process.env.GSAM_UI_API_TARGET || undefined);
+const buildCommit = readBrowserBuildCommit(__dirname);
 
 export default defineConfig(({ mode }) => ({
   define: {
-    __GSAM_BUILD_COMMIT__: JSON.stringify(
-      readBrowserBuildCommit(__dirname),
-    ),
+    __GSAM_BUILD_COMMIT__: JSON.stringify(buildCommit),
   },
-  plugins: [react(), tailwindcss(), serviceWorkerBuildIdPlugin(), precompressAssetsPlugin()],
+  plugins: [react(), tailwindcss(), serviceWorkerBuildIdPlugin(), buildInfoPlugin(buildCommit), precompressAssetsPlugin()],
   build: {
     minify: "esbuild",
   },
