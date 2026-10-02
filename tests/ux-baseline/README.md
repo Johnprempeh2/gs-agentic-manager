@@ -36,7 +36,7 @@ Options:
 | `3a-needs-me-inbox` | Find what needs John today in the Inbox (Mine) | The task assigned to John is on screen |
 | `3b-needs-me-focus` | The same through Decisions → Focus | Focus mode shows its first decision |
 | `4-task-latest-result` | Find a finished task and read its latest result | The result comment is on screen |
-| `5-overnight-activity` | See what the agents did overnight (Audit → Agent Actions) | The newest agent action is on screen |
+| `5-overnight-activity` | See what the agents did overnight (home → Since you were last here) | The first agent's work is on screen |
 
 Every sample starts from a cold load of the dashboard in a fresh browser
 context, like opening the app.
