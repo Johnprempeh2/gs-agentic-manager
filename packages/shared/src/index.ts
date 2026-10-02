@@ -2846,6 +2846,7 @@ export {
   type ApiEquivalentInput,
   type ApiModelPrice,
 } from "./api-pricing.js";
+export { agentWorkHours, minimumWageEquivalentCents } from "./agent-hours.js";
 export type { ExecutionContinuationEnvelope } from "./types/execution-continuation.js";
 export type { ExecutionProjection, ExecutionReconciliation, ExecutionBlocker } from "./types/execution-projection.js";
 
