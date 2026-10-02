@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
+import { scrubParentInstanceEnv } from "../fixtures/sandbox-env";
 
 const PORT = Number(process.env.GSAM_UX_BASELINE_PORT ?? 3203);
 // Optional: reuse a disposable local instance while editing the flows. It must be
@@ -18,13 +19,7 @@ const GSAM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "gsam-ux-baseline-home-"
 const GSAM_INSTANCE_ID = "playwright-ux-baseline";
 const GSAM_CONFIG = path.join(GSAM_HOME, "instances", GSAM_INSTANCE_ID, "config.json");
 
-// When an agent runs this harness, its shell carries the live instance's API
-// URL, key and run. None of that may reach the sandbox or its scripted agents.
-// Playwright merges process.env into webServer.env, so remove them at the source.
-for (const key of Object.keys(process.env)) {
-  if (/^(GSAM_|PAPERCLIP_)/.test(key) && !key.startsWith("GSAM_UX_BASELINE_")) delete process.env[key];
-}
-
+scrubParentInstanceEnv(["GSAM_UX_BASELINE_"]);
 process.env.GSAM_HOME = GSAM_HOME;
 process.env.GSAM_CONFIG = GSAM_CONFIG;
 

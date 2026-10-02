@@ -94,6 +94,7 @@
     "metrics:budgets": "node tests/metrics-budgets/check.mjs",
     "metrics:lost-time": "node tests/lifecycle-baseline/metrics/lost-time-collect.mjs",
     "test:metrics": "node --test tests/lifecycle-baseline/metrics/compute.test.mjs tests/lifecycle-baseline/metrics/lost-time.test.mjs tests/metrics-budgets/check.test.mjs",
+    "test:sandbox-env": "node --test tests/fixtures/sandbox-env.test.mjs",
     "perf:issue-detail": "playwright test --config tests/perf/issue-detail/playwright.config.ts issue-detail.perf.spec.ts",
     "perf:task-chat": "playwright test --config tests/perf/task-chat/playwright.config.ts",
     "ux:baseline": "playwright test --config tests/ux-baseline/playwright.config.ts"
