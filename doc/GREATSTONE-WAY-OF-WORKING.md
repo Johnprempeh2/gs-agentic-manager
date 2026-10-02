@@ -23,10 +23,11 @@ to it.
 1. **Task.** A GRE issue in the "GS Agentic Manager platform" project. Its
    branch is named after the issue, for example `GRE-12-faster-board`.
 2. **Build in your worktree.** Work only inside your worktree. Keep the change
-   to what the issue asks for. If your run did not start in a worktree of your
-   own (it started in the dev checkout, or in another task's worktree) and the
-   task needs its own branch, do not make a worktree by hand: say so on the
-   issue, set it to `blocked` and name Keystone.
+   to what the issue asks for. If your run started in your parent task's
+   worktree, work there and commit on the parent's branch, and say on the issue
+   that the change ships in the parent's pull request. If it started in the dev
+   checkout and the task needs a branch, do not make a worktree by hand: say so
+   on the issue, set it to `blocked` and name Keystone.
 3. **Test in a sandbox.** Run the tests for what you touched from the worktree
    root (`npx vitest run <files>`, `npx tsc --noEmit -p <package>`). When you
    need the running app, start a sandbox from the worktree:
