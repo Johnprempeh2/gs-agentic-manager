@@ -23,6 +23,8 @@ export type DecisionCardKind = (typeof DECISION_CARD_KINDS)[number];
 
 export type DecisionCardActionId =
   | "reassign"
+  | "reassign_blocker"
+  | "instruct_blocker"
   | "retry"
   | "instruct"
   | "resolve"

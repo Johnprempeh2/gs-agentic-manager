@@ -43,6 +43,7 @@ import {
   assets,
   companies,
   companyMemberships,
+  decisions,
   documentRevisions,
   documents,
   goals,
@@ -3946,6 +3947,20 @@ async function listIssueBlockerAttentionMap(
           ),
         );
       for (const row of approvalRows) explicitWaitingIssueIds.add(row.issueId);
+
+      // An open agent decision waits on the board like a pending question, so
+      // its issue already has a Decisions card and is not a stalled blocker.
+      const decisionRows: Array<{ issueId: string }> = await dbOrTx
+        .select({ issueId: decisions.originIssueId })
+        .from(decisions)
+        .where(
+          and(
+            eq(decisions.companyId, companyId),
+            eq(decisions.status, "open"),
+            inArray(decisions.originIssueId, chunk),
+          ),
+        );
+      for (const row of decisionRows) explicitWaitingIssueIds.add(row.issueId);
     }
 
     // Recovery rows are intentionally company-wide: a liveness escalation for
