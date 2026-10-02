@@ -1,4 +1,23 @@
 schema: paperclip/v1
+# Daily run limits from the Greatstone Content team design (GRE-331).
+# Monthly budgets come from the install's own limits, not from this template.
+agents:
+  marketing-lead:
+    runtime:
+      heartbeat:
+        maxDailyRuns: 6
+  content-writer:
+    runtime:
+      heartbeat:
+        maxDailyRuns: 10
+  social-media-coordinator:
+    runtime:
+      heartbeat:
+        maxDailyRuns: 8
+  marketing-analyst:
+    runtime:
+      heartbeat:
+        maxDailyRuns: 2
 routines:
   weekly-content-planning:
     status: paused
@@ -6,4 +25,32 @@ routines:
       - kind: schedule
         label: Mondays at 09:00
         cronExpression: "0 9 * * 1"
+        timezone: Europe/London
+  daily-draft-review:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Weekdays at 11:00
+        cronExpression: "0 11 * * 1-5"
+        timezone: Europe/London
+  daily-social-posts:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Weekdays at 09:30
+        cronExpression: "30 9 * * 1-5"
+        timezone: Europe/London
+  weekly-content-numbers:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Fridays at 12:00
+        cronExpression: "0 12 * * 5"
+        timezone: Europe/London
+  monthly-content-report:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: 1st of each month at 09:00
+        cronExpression: "0 9 1 * *"
         timezone: Europe/London

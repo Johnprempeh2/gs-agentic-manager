@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "packageName": "@greatstone/teams-catalog",
   "packageVersion": "0.1.0",
-  "generatedAt": "2026-09-30T23:47:42.728Z",
+  "generatedAt": "2026-10-02T18:25:31.486Z",
   "teams": [
     {
       "id": "paperclipai:bundled:company-defaults:core-exec-team",
@@ -470,7 +470,7 @@
       "category": "marketing",
       "slug": "marketing-content",
       "name": "Marketing Content Team",
-      "description": "Designed by Greatstone. A marketing lead, content writer and social media coordinator who plan, draft and prepare a business's content each week, with one human overseer who approves every piece before anything is published, posted or sent.",
+      "description": "Designed by Greatstone. A marketing lead, content writer, social media coordinator and marketing analyst who plan, draft, prepare and measure a business's content each week, with one human overseer who approves every piece before anything is published, posted or sent.",
       "path": "catalog/optional/marketing/marketing-content",
       "entrypoint": "TEAM.md",
       "schema": "agentcompanies/v1",
@@ -488,11 +488,11 @@
         "routines"
       ],
       "counts": {
-        "agents": 3,
+        "agents": 4,
         "projects": 1,
-        "tasks": 0,
-        "routines": 1,
-        "localSkills": 1,
+        "tasks": 2,
+        "routines": 5,
+        "localSkills": 2,
         "catalogSkills": 0,
         "externalSkillSources": 0
       },
@@ -501,6 +501,7 @@
       ],
       "agentSlugs": [
         "content-writer",
+        "marketing-analyst",
         "marketing-lead",
         "social-media-coordinator"
       ],
@@ -516,6 +517,15 @@
           ],
           "resolved": true,
           "localPath": "skills/content-planning/SKILL.md"
+        },
+        {
+          "type": "local",
+          "ref": "content-results-report",
+          "agentSlugs": [
+            "marketing-analyst"
+          ],
+          "resolved": true,
+          "localPath": "skills/content-results-report/SKILL.md"
         }
       ],
       "envInputs": [],
@@ -524,14 +534,14 @@
         {
           "path": "TEAM.md",
           "kind": "team",
-          "sizeBytes": 2118,
-          "sha256": "7ae81c62d944300908865c9e558d08bb2be1995a3e82dc60b771579f04655e00"
+          "sizeBytes": 3080,
+          "sha256": "12e9d707ebc438328a4633de68a77de54d26e9e2617c51b928fccbb61ba7a6c5"
         },
         {
           "path": ".paperclip.yaml",
           "kind": "extension",
-          "sizeBytes": 214,
-          "sha256": "f071ff546ed8bb71b6be153cc3fda8efba0c4594e1a6856201912f442076c8e8"
+          "sizeBytes": 1411,
+          "sha256": "0b7912cfecff4967be2512aded47496bf140f9906ea289a118b4d6429c368ac5"
         },
         {
           "path": "agents/content-writer/AGENTS.md",
@@ -540,22 +550,64 @@
           "sha256": "02d4ef20ae8cdce7227be62e5a9b94990fe5e6a896669b26f9403048eeca4dc2"
         },
         {
+          "path": "agents/marketing-analyst/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 1786,
+          "sha256": "54108ea467dc0defe0ca178f5869e3ba4c80eb9f85364763753cc1d3abdc1e89"
+        },
+        {
           "path": "agents/marketing-lead/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 2640,
-          "sha256": "516352e289274af80be4a3beab6c5863e70c7358832a3e976004835d2353bc58"
+          "sizeBytes": 2758,
+          "sha256": "cb378519949857d65a479fa50b566224cdb3ea9995cf33608b7d11c52880327e"
         },
         {
           "path": "agents/social-media-coordinator/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1933,
-          "sha256": "097090fd2d1f02e92ab513320431e98055dd6f5eddcd295589d954b33ce54c10"
+          "sizeBytes": 1910,
+          "sha256": "41964766892622517926185962d15bde4082b0a74de4c232e2ee3cd6f08d39d4"
         },
         {
           "path": "projects/marketing-content/PROJECT.md",
           "kind": "project",
           "sizeBytes": 588,
           "sha256": "743b17761c53e34d79543c6c51a45428cd1d43f000a51066b5e3195f174b21ee"
+        },
+        {
+          "path": "projects/marketing-content/tasks/brand-voice-guide/TASK.md",
+          "kind": "task",
+          "sizeBytes": 521,
+          "sha256": "6dd9f2e41eb73e655ce935292c921c5c80ea7f8cf37c5dc94d8c83a73a3a7af5"
+        },
+        {
+          "path": "projects/marketing-content/tasks/daily-draft-review/TASK.md",
+          "kind": "task",
+          "sizeBytes": 548,
+          "sha256": "d1a7dcc7e2af76d8c296260729366acf468bba092c4b2694138930781fee17ce"
+        },
+        {
+          "path": "projects/marketing-content/tasks/daily-social-posts/TASK.md",
+          "kind": "task",
+          "sizeBytes": 555,
+          "sha256": "06afa9468d0c571c8250c20980364fded5908e81d304492a9efc12ba55263c64"
+        },
+        {
+          "path": "projects/marketing-content/tasks/monthly-content-report/TASK.md",
+          "kind": "task",
+          "sizeBytes": 478,
+          "sha256": "ed5801fd03c57de9f4578f2e49964089aaacf3a636a22d9599cdf0b2983de331"
+        },
+        {
+          "path": "projects/marketing-content/tasks/results-baseline/TASK.md",
+          "kind": "task",
+          "sizeBytes": 555,
+          "sha256": "0f70b242171b051c0bd5c967e71b2ec337d3c3695d2cb4e8c9dcce6159cb22d1"
+        },
+        {
+          "path": "projects/marketing-content/tasks/weekly-content-numbers/TASK.md",
+          "kind": "task",
+          "sizeBytes": 553,
+          "sha256": "3389fc3a241ff21e957351fecd0d6cb028fcaf7d4684b6a527f47fe489155770"
         },
         {
           "path": "projects/marketing-content/tasks/weekly-content-planning/TASK.md",
@@ -568,11 +620,17 @@
           "kind": "skill",
           "sizeBytes": 1555,
           "sha256": "1248b8e3fe2a8f0e56137461255f0f99208542cf752bff882763e770b0ca470b"
+        },
+        {
+          "path": "skills/content-results-report/SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 1513,
+          "sha256": "a1d21ae3ba48f9d129e7fd3c629fcd1608247fc13c4a2895074e7b5846179449"
         }
       ],
       "trustLevel": "assets",
       "compatibility": "compatible",
-      "contentHash": "sha256:ee8be4df50feb966a8f89acc8317a24efdbfae8a20fdc559f8df982b2469a205"
+      "contentHash": "sha256:c8c90483bcb10a885566da1c58c8eb32e3f5a8fd12582df480a172439a79d832"
     },
     {
       "id": "paperclipai:optional:operations:executive-assistant",
@@ -601,7 +659,7 @@
       "counts": {
         "agents": 1,
         "projects": 1,
-        "tasks": 0,
+        "tasks": 1,
         "routines": 2,
         "localSkills": 1,
         "catalogSkills": 0,
@@ -633,8 +691,8 @@
         {
           "path": "TEAM.md",
           "kind": "team",
-          "sizeBytes": 2058,
-          "sha256": "a4ef1e3cc905564ec1ae077b71b3a8b3bf55cd2207e41f703c50886cc52958c8"
+          "sizeBytes": 2139,
+          "sha256": "2688ee2bb59f57764f4a931f1a262afef8e8cf145021de86391339adc86beec5"
         },
         {
           "path": ".paperclip.yaml",
@@ -667,6 +725,12 @@
           "sha256": "8b2da2107d189a5edbe214b87268b3ed63cca64791310f067a4cb350207f381a"
         },
         {
+          "path": "projects/owner-support/tasks/owner-priorities/TASK.md",
+          "kind": "task",
+          "sizeBytes": 506,
+          "sha256": "6b0c1fdece33127814ac18eeb0db45ecac8eec55c5541ac1e7b5ceb17fe8babf"
+        },
+        {
           "path": "skills/weekly-briefing/SKILL.md",
           "kind": "skill",
           "sizeBytes": 1527,
@@ -675,7 +739,176 @@
       ],
       "trustLevel": "assets",
       "compatibility": "compatible",
-      "contentHash": "sha256:b65b644dd833ed26c8fcfc1e0427b2df4e02e3de40bcd812a80962cc3674e322"
+      "contentHash": "sha256:aa0a1917ee510775a9ffd043ec80f03853c75f6b7c78cee3d5e05ea8c98cf83e"
+    },
+    {
+      "id": "paperclipai:optional:operations:operations-team",
+      "key": "paperclipai/optional/operations/operations-team",
+      "kind": "optional",
+      "category": "operations",
+      "slug": "operations-team",
+      "name": "Operations Team",
+      "description": "Designed by Greatstone. An operations coordinator, minutes taker, reporter and policy writer who turn requests into tasks, chase owners, write up meetings, draft the weekly status report and monthly board pack, and keep policies current, with one human overseer who approves everything that leaves the team.",
+      "path": "catalog/optional/operations/operations-team",
+      "entrypoint": "TEAM.md",
+      "schema": "agentcompanies/v1",
+      "defaultInstall": false,
+      "recommendedForCompanyTypes": [
+        "small-business",
+        "services",
+        "generalist"
+      ],
+      "tags": [
+        "greatstone",
+        "operations",
+        "reporting",
+        "meetings",
+        "routines"
+      ],
+      "counts": {
+        "agents": 4,
+        "projects": 1,
+        "tasks": 2,
+        "routines": 5,
+        "localSkills": 2,
+        "catalogSkills": 0,
+        "externalSkillSources": 0
+      },
+      "rootAgentSlugs": [
+        "operations-coordinator"
+      ],
+      "agentSlugs": [
+        "minutes-taker",
+        "operations-coordinator",
+        "operations-reporter",
+        "policy-writer"
+      ],
+      "projectSlugs": [
+        "operations"
+      ],
+      "requiredSkills": [
+        {
+          "type": "local",
+          "ref": "meeting-actions",
+          "agentSlugs": [
+            "minutes-taker"
+          ],
+          "resolved": true,
+          "localPath": "skills/meeting-actions/SKILL.md"
+        },
+        {
+          "type": "local",
+          "ref": "status-report",
+          "agentSlugs": [
+            "operations-reporter"
+          ],
+          "resolved": true,
+          "localPath": "skills/status-report/SKILL.md"
+        }
+      ],
+      "envInputs": [],
+      "sourceRefs": [],
+      "files": [
+        {
+          "path": "TEAM.md",
+          "kind": "team",
+          "sizeBytes": 3402,
+          "sha256": "f9b365b0060266fb104ad57aed2dbba033c96411654262bdfedd407ede35e43e"
+        },
+        {
+          "path": ".paperclip.yaml",
+          "kind": "extension",
+          "sizeBytes": 1402,
+          "sha256": "e67a2b957f9106659466563ff3d752431e9ec249ee14ba9fa8e793365fc9ceb4"
+        },
+        {
+          "path": "agents/minutes-taker/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 1459,
+          "sha256": "fd9185d90cd3de4ad2fa9d4efc39998d60b6c88be57cbd6ebff3b7cd455df351"
+        },
+        {
+          "path": "agents/operations-coordinator/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 2288,
+          "sha256": "67e391f58ecd0c43ad6086c52e4352de30a4414706051c624e62c00b55ef9bdb"
+        },
+        {
+          "path": "agents/operations-reporter/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 1506,
+          "sha256": "d8945bf4263d916acc706e39e15876ce1f3c35d89bc2c807fb296675a8c612d9"
+        },
+        {
+          "path": "agents/policy-writer/AGENTS.md",
+          "kind": "agent",
+          "sizeBytes": 1649,
+          "sha256": "25d73ed0550a45431f9bd867393a1edbbb29043fd335cb58e3d8f68731cb00c1"
+        },
+        {
+          "path": "projects/operations/PROJECT.md",
+          "kind": "project",
+          "sizeBytes": 606,
+          "sha256": "1d6ee8e51c10da1396f3902d8e5c0b27c0ceaa23df1438171c31085e1d44e64f"
+        },
+        {
+          "path": "projects/operations/tasks/daily-triage/TASK.md",
+          "kind": "task",
+          "sizeBytes": 575,
+          "sha256": "ac895cd8899c5d991a524d8228b5c15a952cec8f42815198c3619ea159984de0"
+        },
+        {
+          "path": "projects/operations/tasks/map-meetings-and-reports/TASK.md",
+          "kind": "task",
+          "sizeBytes": 534,
+          "sha256": "59bf338c804a51e0c7169b0889b8ad0c962c456153285d324470409db05dcc19"
+        },
+        {
+          "path": "projects/operations/tasks/monthly-board-pack/TASK.md",
+          "kind": "task",
+          "sizeBytes": 483,
+          "sha256": "737838a3b8ad59a5a7c50571601697947e320bdadd1b16efde1217fc475e9ac5"
+        },
+        {
+          "path": "projects/operations/tasks/monthly-policy-review/TASK.md",
+          "kind": "task",
+          "sizeBytes": 554,
+          "sha256": "d8e7136ddbe51b9f451df9f2641ede274ea6fbffeae5aec31fcb27b548761fad"
+        },
+        {
+          "path": "projects/operations/tasks/overdue-chase/TASK.md",
+          "kind": "task",
+          "sizeBytes": 449,
+          "sha256": "a84b6ea68e03c173993638dddeeb45d9074529e9cae01aeff71308f6094f02be"
+        },
+        {
+          "path": "projects/operations/tasks/status-report-template/TASK.md",
+          "kind": "task",
+          "sizeBytes": 498,
+          "sha256": "21dd6dd2fc2ffd09258688464053c8270bbaea352606fffd3d212951d2da1378"
+        },
+        {
+          "path": "projects/operations/tasks/weekly-status-report/TASK.md",
+          "kind": "task",
+          "sizeBytes": 500,
+          "sha256": "5e0a82727fe36dc241ca235fdd1224a703c2edaf3701ec8bbfb5854cad0d8cee"
+        },
+        {
+          "path": "skills/meeting-actions/SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 1071,
+          "sha256": "c3f9a541ecad9363c8c515a9f759fd7a0ed05c8be33888c1d71e857007d55cf4"
+        },
+        {
+          "path": "skills/status-report/SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 1587,
+          "sha256": "d29c1812f6d6ae9d091cdd0fec57aee28741cf83bee3e24c61ba1a234506125d"
+        }
+      ],
+      "trustLevel": "assets",
+      "compatibility": "compatible",
+      "contentHash": "sha256:acb9eb5adb058d46ee50ec8a5806de4d1e84a43b9100f0c067bfc199f73d324a"
     },
     {
       "id": "paperclipai:optional:research:research-and-reporting",
@@ -704,7 +937,7 @@
       "counts": {
         "agents": 3,
         "projects": 1,
-        "tasks": 0,
+        "tasks": 1,
         "routines": 1,
         "localSkills": 1,
         "catalogSkills": 0,
@@ -738,8 +971,8 @@
         {
           "path": "TEAM.md",
           "kind": "team",
-          "sizeBytes": 2121,
-          "sha256": "c0ea643a8a9e0758db479a6e5e03fc23844c8e8dc480c8b42c1267e5c9d46d0a"
+          "sizeBytes": 2202,
+          "sha256": "4fc79c6a94929ad0b68c18a76eedd78444037db6911a271418175cdcf7745d3e"
         },
         {
           "path": ".paperclip.yaml",
@@ -772,6 +1005,12 @@
           "sha256": "00f8e8b10aa5daa538adfccd0404fb5dfdba2e409b497d1973582d0b7d9f0ff5"
         },
         {
+          "path": "projects/research-reporting/tasks/first-study-plan/TASK.md",
+          "kind": "task",
+          "sizeBytes": 538,
+          "sha256": "006d3c686f18bb13306cf4304a10ea622794ebf0bd6884ff1b33a94f2c679eca"
+        },
+        {
           "path": "projects/research-reporting/tasks/monthly-report-cycle/TASK.md",
           "kind": "task",
           "sizeBytes": 600,
@@ -786,7 +1025,7 @@
       ],
       "trustLevel": "assets",
       "compatibility": "compatible",
-      "contentHash": "sha256:135edd5a21932be450a1b8fef4ec3385583eed352cccab888484d6d4693abde5"
+      "contentHash": "sha256:ebfc7601a42cb440e04f33327f394fdc166070dbfda5ed3e33cffea8188c25ef"
     }
   ]
 }
