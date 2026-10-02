@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
+import { ENV_PREFIX, LEGACY_ENV_PREFIX } from "../../packages/shared/src/legacy-env.ts";
 
 const PORT = Number(process.env.GSAM_UX_BASELINE_PORT ?? 3203);
 // Optional: reuse a disposable local instance while editing the flows. It must be
@@ -22,7 +23,8 @@ const GSAM_CONFIG = path.join(GSAM_HOME, "instances", GSAM_INSTANCE_ID, "config.
 // URL, key and run. None of that may reach the sandbox or its scripted agents.
 // Playwright merges process.env into webServer.env, so remove them at the source.
 for (const key of Object.keys(process.env)) {
-  if (/^(GSAM_|PAPERCLIP_)/.test(key) && !key.startsWith("GSAM_UX_BASELINE_")) delete process.env[key];
+  const instanceKey = key.startsWith(ENV_PREFIX) || key.startsWith(LEGACY_ENV_PREFIX);
+  if (instanceKey && !key.startsWith("GSAM_UX_BASELINE_")) delete process.env[key];
 }
 
 process.env.GSAM_HOME = GSAM_HOME;
