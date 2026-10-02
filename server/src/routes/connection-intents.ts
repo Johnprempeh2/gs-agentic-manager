@@ -190,6 +190,16 @@ export function connectionIntentBoardRoutes(db: Db, heartbeat: Heartbeat) {
       });
       const deliveries = connectionIntentDeliveryService(db, heartbeat);
       for (const id of siblings) await deliveries.tryDeliver(id);
+      // A connect also serves other agents' cards for the same connection.
+      const answered = await service.loadIntent(interactionId);
+      const connectionId = answered.interaction.status === "accepted" ? answered.interaction.result?.connectionId : null;
+      if (connectionId && answered.interaction.addresseeUserId) {
+        const others = await service.resolveToolIntentsForConnection({
+          companyId: answered.issue.companyId, userId: answered.interaction.addresseeUserId, connectionId,
+          bypassCurrentMembershipCheck: bypassCurrentMembershipCheck(req),
+        });
+        for (const id of others) await deliveries.tryDeliver(id);
+      }
     } catch (err) {
       logger.warn({ err, interactionId }, "Could not answer the other tasks waiting on this connection");
     }

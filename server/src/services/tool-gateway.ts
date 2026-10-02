@@ -319,6 +319,13 @@ export interface ToolGatewaySession {
 
 export type ToolGatewayRuntimeSlot = ToolRuntimeSlotView;
 
+/** Seconds from a Retry-After header (delta-seconds or HTTP date), capped at a day. */
+export function remoteRetryAfterSeconds(header: string | null, now = Date.now()): number | null {
+  if (!header) return null;
+  const seconds = /^\d+$/.test(header.trim()) ? Number(header.trim()) : Math.ceil((Date.parse(header) - now) / 1000);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 86_400) : null;
+}
+
 export class ToolGatewayHttpError extends Error {
   constructor(
     public readonly status: number,
@@ -6117,18 +6124,24 @@ export function createToolGatewayService(
           response.headers.get("traceparent"),
       };
       if (!response.ok) {
-        // Session expiration is recoverable on an explicit retry. Marking the
-        // connection unhealthy here would hide every tool and prevent it.
-        if (!sessionExpired) {
+        // Session expiration and rate limits are recoverable on a later retry.
+        // Marking the connection unhealthy here would hide every tool from
+        // every agent until the next health sweep (GRE-335).
+        const rateLimited = response.status === 429;
+        const retryAfterSeconds = rateLimited ? remoteRetryAfterSeconds(response.headers.get("retry-after")) : null;
+        if (!sessionExpired && !rateLimited) {
           await markRemoteConnectionHealth(connection, "error", "Remote MCP server returned an HTTP error.");
         }
         throw new ToolGatewayHttpError(
           502,
-          sessionExpired ? "Remote MCP session expired. Retry the action explicitly to start a new session." : "Remote MCP server returned an HTTP error",
+          sessionExpired ? "Remote MCP session expired. Retry the action explicitly to start a new session."
+            : rateLimited ? `The app is rate limiting requests. The connection still works; retry ${retryAfterSeconds ? `in ${retryAfterSeconds} seconds` : "later"}.`
+            : "Remote MCP server returned an HTTP error",
           "mcp_remote_status",
           {
             status: response.status,
             ...(sessionExpired ? { sessionExpired: true } : {}),
+            ...(rateLimited ? { rateLimited: true, retryAfterSeconds } : {}),
             connectionId: connection.id,
             catalogEntryId: entry.id,
             execution,

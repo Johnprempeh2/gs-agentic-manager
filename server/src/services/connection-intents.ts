@@ -883,18 +883,20 @@ export function connectionIntentService(db: Db) {
   }
 
   /**
-   * One AI reconnect repairs every task that paused on it. Close each open
-   * AI card addressed to this user for the same provider whose agent now
-   * resolves to the repaired account, as if the user had clicked each card.
-   * Returns the closed cards. Delivery owns the wake, so admission guards and
-   * the per-card wake key still apply; a task holds at most one open AI card,
-   * so each paused task gets one continuation.
+   * One reconnect repairs every task that paused on it (GRE-289 for AI,
+   * GRE-335 for tools). Close each open card addressed to this user for the
+   * same service and purpose whose agent now resolves to the repaired
+   * connection, as if the user had clicked each card. Returns the closed
+   * cards. Delivery owns the wake, so admission guards and the per-card wake
+   * key still apply, and each paused task gets one continuation.
    */
-  async function resolveAiIntentsForConnection(input: {
+  async function resolvePendingIntents(input: {
     companyId: string;
     userId: string;
     serviceSlug: string;
+    purpose?: "ai";
     connectionId: string;
+    source: string;
     bypassCurrentMembershipCheck?: boolean;
   }): Promise<string[]> {
     await assertCurrentUserWriteAccess(input.companyId, input.userId, input.bypassCurrentMembershipCheck);
@@ -908,17 +910,21 @@ export function connectionIntentService(db: Db) {
         eq(issueThreadInteractions.kind, "connection_intent"),
         eq(issueThreadInteractions.status, "pending"),
         eq(issueThreadInteractions.addresseeUserId, input.userId),
-        sql`${issueThreadInteractions.payload}->>'purpose' = 'ai'`,
+        sql`coalesce(${issueThreadInteractions.payload}->>'purpose', '') = ${input.purpose ?? ""}`,
         sql`${issueThreadInteractions.payload}->>'serviceSlug' = ${input.serviceSlug}`,
       ))
       .orderBy(desc(issueThreadInteractions.createdAt));
     const toDeliver: string[] = [];
+    const inventory = input.purpose === "ai" ? undefined : await connectionInventory(input.companyId);
     for (const { interaction, issue } of pending) {
       const payload = connectionIntentPayloadSchema.safeParse(interaction.payload).data;
       if (!payload || ["done", "cancelled"].includes(issue.status) || issue.assigneeAgentId !== payload.requestingAgentId) continue;
+      // An aggregator connection can be healthy while the app behind it is
+      // still unauthorized. Those cards stay with their own answer path.
+      if (payload.upstreamService) continue;
       const usable = await usableConnectionForAgent({
         companyId: input.companyId, agentId: payload.requestingAgentId,
-        responsibleUserId: input.userId, serviceSlug: input.serviceSlug, purpose: "ai",
+        responsibleUserId: input.userId, serviceSlug: input.serviceSlug, purpose: input.purpose, inventory,
       });
       if (usable?.id !== input.connectionId) continue;
       try {
@@ -937,10 +943,41 @@ export function connectionIntentService(db: Db) {
         companyId: input.companyId, actorType: "user", actorId: input.userId,
         action: "issue.connection_intent_connected", entityType: "issue", entityId: issue.id,
         details: { interactionId: interaction.id, connectionId: input.connectionId,
-          requestingAgentId: payload.requestingAgentId, source: "ai_reconnect" },
+          requestingAgentId: payload.requestingAgentId, source: input.source },
       });
     }
     return toDeliver;
+  }
+
+  function resolveAiIntentsForConnection(input: {
+    companyId: string;
+    userId: string;
+    serviceSlug: string;
+    connectionId: string;
+    bypassCurrentMembershipCheck?: boolean;
+  }): Promise<string[]> {
+    return resolvePendingIntents({ ...input, purpose: "ai", source: "ai_reconnect" });
+  }
+
+  /**
+   * A tool connection was reconnected or tested healthy. Close every open
+   * tool card it now serves, for any agent, addressed to this user.
+   */
+  async function resolveToolIntentsForConnection(input: {
+    companyId: string;
+    userId: string;
+    connectionId: string;
+    bypassCurrentMembershipCheck?: boolean;
+  }): Promise<string[]> {
+    const { applicationsById, connections } = await connectionInventory(input.companyId);
+    const connection = connections.find((candidate) => candidate.id === input.connectionId);
+    if (!connection || connection.connectionPurpose === "ai") return [];
+    if (connection.status !== "active" || !connection.enabled || isToolConnectionAttentionHealth(connection.healthStatus)) return [];
+    return resolvePendingIntents({
+      ...input,
+      serviceSlug: sourceSlugForConnection(connection, applicationsById),
+      source: "tool_reconnect",
+    });
   }
 
   /**
@@ -1020,6 +1057,7 @@ export function connectionIntentService(db: Db) {
     validate: loadRunContext,
     usableConnectionForAgent,
     resolveAiIntentsForConnection,
+    resolveToolIntentsForConnection,
     resolveSiblingIntents,
     search,
     request,
