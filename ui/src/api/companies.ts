@@ -110,6 +110,7 @@ export const companiesApi = {
         | "interactionResolverGovernance"
         | "feedbackDataSharingEnabled"
         | "logoAssetId"
+        | "minimumWageHourlyCents"
       >
     >,
   ) => api.patch<Company>(`/companies/${companyId}`, data),
