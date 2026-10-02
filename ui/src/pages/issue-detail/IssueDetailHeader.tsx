@@ -47,6 +47,8 @@ export type IssueDetailHeaderProps = {
   streamlinedTaskDetailEnabled: boolean;
   shellSectionClass: string | undefined;
   issueStatusControl: JSX.Element;
+  /** Who is on the task and what it waits for (GRE-308). */
+  activityLine: JSX.Element | null;
   issue: Issue;
   updateIssue: ReturnType<typeof useIssueMutations>["updateIssue"];
   hasLiveRuns: boolean;
@@ -97,6 +99,7 @@ export function IssueDetailHeader({
   streamlinedTaskDetailEnabled,
   shellSectionClass,
   issueStatusControl,
+  activityLine,
   issue,
   updateIssue,
   hasLiveRuns,
@@ -171,6 +174,10 @@ export function IssueDetailHeader({
             </span>
           </div>
         </div>
+      ) : null}
+
+      {streamlinedTaskDetailEnabled && activityLine ? (
+        <div className="md:pl-7">{activityLine}</div>
       ) : null}
 
       <div
@@ -558,6 +565,8 @@ export function IssueDetailHeader({
           }
         />
       ) : null}
+
+      {!streamlinedTaskDetailEnabled ? activityLine : null}
 
       {taskChatShellEnabled && !streamlinedTaskDetailEnabled
         ? subTasksTree
