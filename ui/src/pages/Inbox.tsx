@@ -90,6 +90,8 @@ import { TaskOwnerLabel } from "../components/TaskOwnerLabel";
 import { BlockedInboxView } from "../components/BlockedInboxView";
 import { SwipeToArchive } from "../components/SwipeToArchive";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
+import { useNeedsMe } from "../hooks/useDecisionsFeed";
+import { NeedsMeList } from "../components/NeedsMeList";
 import { Inbox as LegacyInbox } from "./LegacyInbox";
 
 import { StatusIcon } from "../components/StatusIcon";
@@ -968,6 +970,9 @@ function StreamlinedInbox() {
     staleTime: INBOX_HOT_PATH_STALE_MS,
   });
   usePublishSharedQueryData(sharedInboxIssues, issues, issuesUpdatedAt);
+  // One "needs me" list (GRE-358): same count as the Decisions header and the
+  // nav badge, shown first on Mine so assigned tasks are above the fold.
+  const { data: needsMe } = useNeedsMe(selectedCompanyId);
   const {
     data: mineIssuesRaw = [],
     isLoading: isMineIssuesLoading,
@@ -2408,7 +2413,7 @@ function StreamlinedInbox() {
           <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
             <PageTabBar
               items={[
-                { value: "mine", label: "Mine" },
+                { value: "mine", label: needsMe?.count ? `Mine (${needsMe.count})` : "Mine" },
                 { value: "recent", label: "Recent" },
                 { value: "unread", label: "Unread" },
                 { value: "blocked", label: "Blocked" },
@@ -2690,6 +2695,8 @@ function StreamlinedInbox() {
 
       {approvalsError && <p className="text-sm text-destructive">{approvalsError.message}</p>}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+
+      {tab === "mine" && needsMe ? <NeedsMeList needsMe={needsMe} includeDecisions /> : null}
 
       {tab === "blocked" ? (
         <div className="-mx-2 sm:mx-0">
