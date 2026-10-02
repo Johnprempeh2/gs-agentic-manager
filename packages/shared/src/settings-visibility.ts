@@ -87,6 +87,8 @@ export const HIDEABLE_GENERAL_SECTIONS = [
   "instance.general.backupRetention",
   "instance.general.feedbackDataSharingPreference",
   "instance.general.runAdmission",
+  // GRE-427: hide it on a client install so the Greatstone-only filter stays on.
+  "instance.general.teamCatalogFilter",
   "instance.general.signOut",
 ] as const;
 

@@ -216,7 +216,6 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       // Absent/null => each agent's own harness and AI connection (GRE-139).
       ...(parsed.data.aiAccessRoute ? { aiAccessRoute: parsed.data.aiAccessRoute } : {}),
       teamCatalogFilter: parsed.data.teamCatalogFilter ?? "all",
-      teamCatalogAddMode: parsed.data.teamCatalogAddMode ?? "install",
     };
   }
   return {
@@ -225,7 +224,6 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
     feedbackDataSharingPreference: DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
     backupRetention: DEFAULT_BACKUP_RETENTION,
     teamCatalogFilter: "all",
-    teamCatalogAddMode: "install",
   };
 }
 

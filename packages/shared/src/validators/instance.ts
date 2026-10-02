@@ -5,7 +5,6 @@ import {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
-  TEAM_CATALOG_ADD_MODES,
   TEAM_CATALOG_FILTERS,
 } from "../types/instance.js";
 import { feedbackDataSharingPreferenceSchema } from "./feedback.js";
@@ -51,9 +50,6 @@ export const instanceGeneralSettingsSchema = z.object({
   // Which teams the Team Catalogue and the new-company flow offer (GRE-427).
   // "greatstone" shows only teams tagged `greatstone`, for client installs.
   teamCatalogFilter: z.enum(TEAM_CATALOG_FILTERS).default("all"),
-  // What the catalogue's add button does for a team not yet installed (GRE-427).
-  // "request" asks the board through an approval card instead of installing.
-  teamCatalogAddMode: z.enum(TEAM_CATALOG_ADD_MODES).default("install"),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = z
