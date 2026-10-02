@@ -1506,6 +1506,8 @@ export type {
   ToolConnectionAccessSummary,
   ToolConnectionTestAgent,
   ToolConnectionTestAgentAccessResponse,
+  ToolConnectionAgentCheckReason,
+  ToolConnectionAgentCheckResult,
   ToolConnectionTestAgentsResponse,
   ToolConnectionTestCallResult,
   ToolUpstreamPending,

@@ -83,6 +83,7 @@ import { trustedBoardMutationOrigin } from "../middleware/board-mutation-guard.j
 import { connectionIntentService } from "../services/connection-intents.js";
 import { redactRemoteUrlCredential } from "../services/remote-url-credentials.js";
 import { connectionIntentDeliveryService } from "../services/connection-intent-delivery.js";
+import { connectionAgentCheckService } from "../services/connection-agent-check.js";
 import { logger } from "../middleware/logger.js";
 import type { heartbeatService } from "../services/heartbeat.js";
 
@@ -2021,6 +2022,30 @@ function connectorEnrollmentPrincipal(req: Request): string {
       agentId,
     });
     res.json({ access: accessSummary });
+  });
+
+  // "Test as agent" (GRE-341): one read-only check with this agent's access.
+  // No run and no model call; the answer is returned, not saved as health.
+  router.post("/tool-connections/:connectionId/test-agents/:agentId/check", async (req, res) => {
+    assertBoard(req);
+    if (!options.toolGateway) {
+      res.status(501).json({ error: "Tool gateway service is not configured" });
+      return;
+    }
+    const connection = await getAccessibleResource(req, res, svc.getConnection(req.params.connectionId as string), "Tool connection not found");
+    if (!connection) return;
+    await assertBoardAnyToolPermission(req, connection.companyId, ["tools:use", "tools:manage_connections"]);
+    if (connection.connectionPurpose === "ai") throw unprocessable("AI connections are checked from the AI account, not as an agent");
+    const agentId = req.params.agentId as string;
+    await assertCanTestAsAgent(req, connection.companyId, agentId);
+    const result = await connectionAgentCheckService({ toolAccess: svc, toolGateway: options.toolGateway }).check({
+      companyId: connection.companyId,
+      connectionId: connection.id,
+      agentId,
+      userId: req.actor.userId ?? "board",
+      actor: getActorInfo(req),
+    });
+    res.json(result);
   });
 
   router.post("/tool-connections/:connectionId/test-calls", validate(toolConnectionTestCallSchema), async (req, res) => {

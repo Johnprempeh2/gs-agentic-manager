@@ -8989,6 +8989,64 @@ export function createToolGatewayService(
       };
     },
 
+    /**
+     * Resolve the grant and credential this agent's tool calls would use on a
+     * connection, without calling the app (GRE-341). The session mirrors
+     * {@link executeTestCall}: no run, the operator as the responsible user, so
+     * no authorization card is posted and nothing wakes.
+     */
+    async resolveAgentConnectionCredential(input: {
+      companyId: string;
+      connectionId: string;
+      agentId: string;
+      userId: string;
+    }): Promise<{
+      grantId: string;
+      grantKind: "organization" | "user" | "agent";
+      credentialHeaders?: Record<string, string>;
+      endpoint?: string;
+    }> {
+      await assertAgentInCompany(input.companyId, input.agentId);
+      const [connection] = await db
+        .select()
+        .from(toolConnections)
+        .where(
+          and(
+            eq(toolConnections.id, input.connectionId),
+            eq(toolConnections.companyId, input.companyId),
+          ),
+        )
+        .limit(1);
+      if (!connection) {
+        throw new ToolGatewayHttpError(404, "Tool connection not found", "connection_not_found");
+      }
+      const session: ToolGatewaySession = {
+        id: "agent-check",
+        token: "agent-check",
+        companyId: input.companyId,
+        agentId: input.agentId,
+        runId: null,
+        issueId: null,
+        projectId: null,
+        actorType: "user",
+        actorId: input.userId,
+        responsibleUserId: input.userId,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + DEFAULT_SESSION_TTL_MS),
+      };
+      const grant = await resolveConnectionGrant(session, connection);
+      const grantKind = grant.kind as "organization" | "user" | "agent";
+      if (connection.transport !== "mcp_remote") {
+        return { grantId: grant.id, grantKind };
+      }
+      const endpoint = await resolvedRemoteEndpoint(session, connection, grant);
+      const credentialHeaders = {
+        ...projectedConnectionHeaders(connection),
+        ...(await resolveCredentialHeaders(session, connection, grant)),
+      };
+      return { grantId: grant.id, grantKind, credentialHeaders, endpoint };
+    },
+
     async executeTestCall(input: ExecuteTestCallInput) {
       await assertAgentInCompany(input.companyId, input.agentId);
       const session: ToolGatewaySession = {
