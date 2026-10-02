@@ -10,6 +10,7 @@ import { sentryReady, shutdownSentry, captureException } from "./sentry.js";
 import { waitForPendingRunFailureReports } from "./services/run-failure-report.js";
 import { verifyStoppedNativeSessionForReplacement } from "./services/native-runtime/native-session-executor.js";
 import { embeddedPostgresOwnerPort } from "./embedded-postgres-owner.js";
+import { isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
 import { deliverExecutionStatuses } from "./services/execution-status-delivery.js";
 import { deliverReconciledExecutions, settleUnrecoverableExecutions } from "./services/execution-recovery-resolution.js";
 import { reconcileSafeNativeReplacements } from "./services/native-runtime/native-safe-replacement.js";
@@ -465,8 +466,11 @@ async function startServerWithDatabaseTeardown(
     let port = configuredPort;
     const logBuffer = createEmbeddedPostgresLogBuffer(120);
     const verboseEmbeddedPostgresLogs = process.env.GSAM_EMBEDDED_POSTGRES_VERBOSE === "true";
+    // Logs of the current start attempt only; null once Postgres is up.
+    let embeddedPostgresStartLogs: string[] | null = null;
     const appendEmbeddedPostgresLog = (message: unknown) => {
       logBuffer.append(message);
+      embeddedPostgresStartLogs?.push(String(message ?? ""));
       if (!verboseEmbeddedPostgresLogs) {
         return;
       }
@@ -547,12 +551,7 @@ async function startServerWithDatabaseTeardown(
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
       } catch {
-        const detectedPort = await detectPort(configuredPort);
-        if (detectedPort !== configuredPort) {
-          logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${configuredPort}, selectedPort=${detectedPort})`);
-        }
-        port = detectedPort;
-        logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
+        logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, requestedPort=${configuredPort})`);
         const createEmbeddedPostgres = () => new EmbeddedPostgres({
           databaseDir: dataDir,
           user: "paperclip",
@@ -584,7 +583,28 @@ async function startServerWithDatabaseTeardown(
           rmSync(postmasterPidFile, { force: true });
         }
         try {
-          await embeddedPostgres.start();
+          port = await startOnFreePort({
+            requestedPort: configuredPort,
+            findFreePort: async (from) => {
+              const detectedPort = await detectPort(from);
+              if (detectedPort !== from) {
+                logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${from}, selectedPort=${detectedPort})`);
+              }
+              return detectedPort;
+            },
+            start: async (candidatePort) => {
+              port = candidatePort;
+              embeddedPostgres = createEmbeddedPostgres();
+              embeddedPostgresStartLogs = [];
+              await embeddedPostgres.start();
+            },
+            lostBindRace: () => isPortInUseFailure(embeddedPostgresStartLogs ?? []),
+            onRetry: (lostPort, attempt) => logger.warn(
+              { lostPort, attempt },
+              "Embedded PostgreSQL port was taken before it could bind; retrying on the next free port",
+            ),
+          });
+          embeddedPostgresStartLogs = null;
         } catch (err) {
           logEmbeddedPostgresFailure("start", err);
           throw formatEmbeddedPostgresError(err, {
