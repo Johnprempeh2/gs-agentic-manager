@@ -44,6 +44,7 @@ import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import {
   isWaitingOnMonitor,
 } from "../components/IssueMonitorBanner";
+import { TaskActivityLine } from "../components/TaskActivityLine";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
 import { type TaskSidePanelProps } from "../components/task-side-panel";
@@ -953,6 +954,21 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       streamlinedTaskDetailEnabled={streamlinedTaskDetailEnabled}
       shellSectionClass={shellSectionClass}
       issueStatusControl={issueStatusControl}
+      activityLine={
+        <TaskActivityLine
+          issue={issue}
+          hasLiveRuns={hasLiveRuns}
+          waitingOnMonitor={isWaitingOnMonitor(issue)}
+          monitorServiceName={
+            issue.executionState?.monitor?.serviceName ??
+            issue.executionPolicy?.monitor?.serviceName
+          }
+          interactions={interactions}
+          currentUserId={currentUserId}
+          agentNames={agentMap}
+          userLabels={userLabelMap}
+        />
+      }
       issue={issue}
       updateIssue={updateIssue}
       hasLiveRuns={hasLiveRuns}
