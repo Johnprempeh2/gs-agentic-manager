@@ -1072,7 +1072,7 @@ function StandardConnectionSetupFlow({
     onSuccess: (status) => {
       if (!status.verificationUrl) {
         closeEnrollmentPopup();
-        setConnectorEnrollmentError("Paperclip Cloud did not return an enrollment link. Try again.");
+        setConnectorEnrollmentError("The connection service did not return a setup link. Try again.");
         return;
       }
       openConnectorEnrollment(status.verificationUrl);
@@ -1080,7 +1080,7 @@ function StandardConnectionSetupFlow({
     onError: (error) => {
       closeEnrollmentPopup();
       setConnectorEnrollmentError(
-        error instanceof Error ? error.message : `${CLIENT_BRAND_NAME} couldn’t reach Paperclip Cloud. Try again.`,
+        error instanceof Error ? error.message : `${CLIENT_BRAND_NAME} couldn’t reach the connection service. Try again.`,
       );
     },
   });
