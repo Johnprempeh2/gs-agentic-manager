@@ -12,6 +12,7 @@ const orgMock = vi.fn();
 const listMock = vi.fn();
 const issuesMock = vi.fn();
 const liveRunsMock = vi.fn();
+const teamsMock = vi.fn();
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
@@ -36,6 +37,12 @@ vi.mock("../api/agents", () => ({
 vi.mock("../api/issues", () => ({
   issuesApi: {
     listCompact: () => issuesMock(),
+  },
+}));
+
+vi.mock("../api/agentTeams", () => ({
+  agentTeamsApi: {
+    list: () => teamsMock(),
   },
 }));
 
@@ -176,6 +183,7 @@ describe("OrgChart", () => {
     listMock.mockResolvedValue(agents);
     issuesMock.mockResolvedValue([]);
     liveRunsMock.mockResolvedValue([]);
+    teamsMock.mockResolvedValue([]);
 
     Object.defineProperty(HTMLElement.prototype, "clientWidth", {
       configurable: true,
@@ -523,6 +531,93 @@ describe("OrgChart", () => {
 
       expect(container.textContent).not.toContain("Import organization");
       expect(container.textContent).toContain("Export organization");
+    });
+  });
+
+  describe("teams", () => {
+    const team = (id: string, name: string, color: string, memberAgentIds: string[], leadAgentId: string | null = null) => ({
+      id,
+      companyId: "company-1",
+      name,
+      color,
+      description: null,
+      leadAgentId,
+      memberAgentIds,
+      createdAt: "2026-10-02T00:00:00Z",
+      updatedAt: "2026-10-02T00:00:00Z",
+    });
+
+    function viewButton(label: string) {
+      return [...container.querySelectorAll('[aria-label="Chart view"] button')].find(
+        (b) => b.textContent === label,
+      ) as HTMLButtonElement | undefined;
+    }
+
+    it("shows no team view switch when the company has no teams", async () => {
+      await renderOrgChart();
+      expect(container.querySelector('[aria-label="Chart view"]')).toBeNull();
+      expect(container.querySelector('[data-testid="org-card-teams"]')).toBeNull();
+    });
+
+    it("colours cards by team in the reporting-line view", async () => {
+      teamsMock.mockResolvedValue([
+        team("t-eng", "Engineering", "#2563eb", ["agent-2"]),
+        team("t-lead", "Leadership", "#dc2626", ["agent-1", "agent-2"]),
+      ]);
+      await renderOrgChart();
+
+      const stripe = card(container, "agent-2")!.querySelector('[data-testid="org-card-teams"]') as HTMLElement;
+      expect(stripe.title).toBe("Teams: Engineering, Leadership");
+      expect(stripe.children).toHaveLength(2);
+      expect(card(container, "agent-2")!.getAttribute("aria-label")).toContain("teams: Engineering, Leadership");
+      // Reporting lines are still drawn.
+      expect(container.querySelectorAll('[data-testid="org-chart-edges"] path')).toHaveLength(1);
+    });
+
+    it("groups agents into coloured team boxes without reporting lines", async () => {
+      teamsMock.mockResolvedValue([team("t-eng", "Engineering", "#2563eb", ["agent-1", "agent-2"], "agent-1")]);
+      await renderOrgChart();
+
+      await act(async () => viewButton("Group by team")!.click());
+      await flushReact();
+
+      expect(viewButton("Group by team")!.getAttribute("aria-pressed")).toBe("true");
+      const boxes = [...container.querySelectorAll('[data-testid="org-team-box"]')] as HTMLElement[];
+      expect(boxes.map((b) => b.getAttribute("data-team-id"))).toEqual(["t-eng"]);
+      expect(boxes[0]!.textContent).toContain("Engineering");
+      expect(boxes[0]!.textContent).toContain("Lead: CEO");
+      expect(boxes[0]!.style.borderColor).not.toBe("");
+      expect(container.querySelectorAll('[data-testid="org-chart-edges"] path')).toHaveLength(0);
+      expect(card(container, "agent-2")).not.toBeNull();
+
+      await act(async () => viewButton("Reporting lines")!.click());
+      expect(container.querySelector('[data-testid="org-team-box"]')).toBeNull();
+      expect(container.querySelectorAll('[data-testid="org-chart-edges"] path')).toHaveLength(1);
+    });
+
+    it("shows an agent in two teams in both boxes, and real reporting lines in the panel", async () => {
+      teamsMock.mockResolvedValue([
+        team("t-a", "Alpha", "#2563eb", ["agent-2"]),
+        team("t-b", "Beta", "#16a34a", ["agent-2"]),
+      ]);
+      await renderOrgChart();
+      await act(async () => viewButton("Group by team")!.click());
+      await flushReact();
+
+      const engineerCards = container.querySelectorAll('[data-agent-id="agent-2"]');
+      expect(engineerCards).toHaveLength(2);
+      const boxIds = [...container.querySelectorAll('[data-testid="org-team-box"]')].map((b) => b.getAttribute("data-team-id"));
+      expect(boxIds).toEqual(["t-a", "t-b", "none"]);
+
+      await act(async () => {
+        engineerCards[1]!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+      await flushReact();
+
+      const panel = document.querySelector('[role="dialog"]') as HTMLElement;
+      expect(panel.textContent).toContain("Reports toCEO");
+      expect(panel.textContent).toContain("Alpha");
+      expect(panel.textContent).toContain("Beta");
     });
   });
 });

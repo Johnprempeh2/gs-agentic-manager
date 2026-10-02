@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { OrgNode } from "../api/agents";
-import { CARD_H, CARD_W, collectEdges, flattenLayout, layoutForest } from "./org-chart-layout";
+import type { AgentTeam } from "@greatstone/shared";
+import { groupAgentsByTeam } from "./agent-teams";
+import {
+  CARD_H,
+  CARD_W,
+  collectEdges,
+  flattenLayout,
+  layoutForest,
+  layoutTeamGroups,
+  TEAM_ROW_MAX_WIDTH,
+  PADDING,
+} from "./org-chart-layout";
 
 function agent(id: string, reports: OrgNode[] = []): OrgNode {
   return { id, name: id, role: "engineer", status: "active", reports } as OrgNode;
@@ -61,5 +72,60 @@ describe("org chart layout", () => {
     for (const edge of collectEdges([root!])) {
       expect(edge.path.endsWith(`H ${edge.child.x}`)).toBe(true);
     }
+  });
+});
+
+function team(id: string, memberAgentIds: string[]): AgentTeam {
+  return {
+    id,
+    companyId: "c",
+    name: id,
+    color: "#2563eb",
+    description: null,
+    leadAgentId: null,
+    memberAgentIds,
+    createdAt: "2026-10-02T00:00:00Z",
+    updatedAt: "2026-10-02T00:00:00Z",
+  };
+}
+
+describe("group by team layout", () => {
+  const people = ["a", "b", "c", "d", "e"].map((id) => agent(id));
+
+  it("puts every member's card inside its team box, with no overlaps", () => {
+    const groups = groupAgentsByTeam(people, [team("t1", ["a", "b", "c", "d"]), team("t2", ["b", "e"])]);
+    const { nodes, boxes } = layoutTeamGroups(groups);
+
+    expect(boxes.map((b) => b.key)).toEqual(["t1", "t2"]);
+    for (const node of nodes) {
+      const box = boxes.find((b) => node.key.startsWith(`${b.key}:`))!;
+      expect(node.x).toBeGreaterThanOrEqual(box.x);
+      expect(node.y).toBeGreaterThanOrEqual(box.y);
+      expect(node.x + CARD_W).toBeLessThanOrEqual(box.x + box.width);
+      expect(node.y + CARD_H).toBeLessThanOrEqual(box.y + box.height);
+    }
+    expectNoOverlap(nodes.map((n) => ({ ...n, id: n.key })));
+  });
+
+  it("gives an agent in two teams a card in each box, with unique keys", () => {
+    const { nodes } = layoutTeamGroups(groupAgentsByTeam(people, [team("t1", ["a", "b"]), team("t2", ["b"])]));
+    const bCards = nodes.filter((n) => n.id === "b");
+    expect(bCards.map((n) => n.key)).toEqual(["t1:b", "t2:b"]);
+    expect(new Set(nodes.map((n) => n.key)).size).toBe(nodes.length);
+  });
+
+  it("adds a No team box for agents in no team and draws no reporting lines", () => {
+    const { nodes, boxes } = layoutTeamGroups(groupAgentsByTeam([agent("lead", [agent("x")]), agent("x")], [team("t1", ["lead"])]));
+    expect(boxes.map((b) => b.key)).toEqual(["t1", "none"]);
+    expect(boxes[1]!.team).toBeNull();
+    expect(collectEdges(nodes)).toHaveLength(0);
+  });
+
+  it("wraps team boxes into rows instead of one very wide line", () => {
+    const many = Array.from({ length: 8 }, (_, i) => agent(`p${i}`));
+    const teams = many.map((p) => team(`t-${p.id}`, [p.id]));
+    const { boxes } = layoutTeamGroups(groupAgentsByTeam(many, teams));
+    expect(new Set(boxes.map((b) => b.y)).size).toBeGreaterThan(1);
+    for (const box of boxes) expect(box.x + box.width).toBeLessThanOrEqual(PADDING + TEAM_ROW_MAX_WIDTH);
   });
 });

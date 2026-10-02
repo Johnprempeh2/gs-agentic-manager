@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { issuesApi } from "../api/issues";
+import { agentTeamsApi } from "../api/agentTeams";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -18,8 +19,11 @@ import {
   flattenOrg,
   layoutBounds,
   layoutForest,
+  layoutTeamGroups,
   type LayoutNode,
+  type TeamBox,
 } from "../lib/org-chart-layout";
+import { groupAgentsByTeam, teamsByAgent } from "../lib/agent-teams";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +32,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentStatusCapsule } from "../components/StatusBadge";
 import { ChevronDown, ChevronRight, Download, Maximize2, Minus, Network, Plus, Search, Upload } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent, type CompactIssue } from "@greatstone/shared";
+import { AGENT_ROLE_LABELS, type Agent, type AgentTeam, type CompactIssue } from "@greatstone/shared";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
@@ -64,6 +68,8 @@ interface TouchGesture {
   startCenter: Point;
   moved: boolean;
 }
+
+type ChartMode = "reporting" | "teams";
 
 interface AgentActivity {
   statusKey: string;
@@ -203,8 +209,31 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
     refetchInterval: 30_000,
   });
 
+  // Teams (GRE-436) colour the cards and drive the "group by team" view.
+  // They never change reporting lines.
+  const { data: teams } = useQuery({
+    queryKey: queryKeys.agentTeams.list(selectedCompanyId!),
+    queryFn: () => agentTeamsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
   const orgTree = providedOrgTree ?? queriedOrgTree;
   const agents = providedAgents ?? queriedAgents;
+  const teamsForAgent = useMemo(() => teamsByAgent(teams ?? []), [teams]);
+  const hasTeams = (teams?.length ?? 0) > 0;
+  const [chartMode, setChartMode] = useState<ChartMode>("reporting");
+  const mode: ChartMode = hasTeams ? chartMode : "reporting";
+
+  /** Manager and report count from the real reporting lines, whatever the view. */
+  const orgInfo = useMemo(() => {
+    const info = new Map<string, { managerName: string | null; reportCount: number }>();
+    const walk = (node: OrgNode, managerName: string | null) => {
+      info.set(node.id, { managerName, reportCount: node.reports.length });
+      node.reports.forEach((child) => walk(child, node.name));
+    };
+    (orgTree ?? []).forEach((root) => walk(root, null));
+    return info;
+  }, [orgTree]);
 
   const agentMap = useMemo(() => {
     const m = new Map<string, Agent>();
@@ -252,9 +281,18 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
 
   // Layout computation
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
-  const layout = useMemo(() => layoutForest(orgTree ?? [], collapsed), [orgTree, collapsed]);
+  const teamLayout = useMemo(
+    () => (mode === "teams" ? layoutTeamGroups(groupAgentsByTeam(flattenOrg(orgTree ?? []), teams ?? [])) : null),
+    [mode, orgTree, teams],
+  );
+  const layout = useMemo(
+    () => teamLayout?.nodes ?? layoutForest(orgTree ?? [], collapsed),
+    [teamLayout, orgTree, collapsed],
+  );
+  const teamBoxes: TeamBox[] = teamLayout?.boxes ?? [];
   const allNodes = useMemo(() => flattenLayout(layout), [layout]);
-  const nodeById = useMemo(() => new Map(allNodes.map((n) => [n.id, n])), [allNodes]);
+  /** Keyed by card key: an agent in two teams has two cards in the team view. */
+  const nodeById = useMemo(() => new Map(allNodes.map((n) => [n.key, n])), [allNodes]);
   const edges = useMemo(() => collectEdges(layout), [layout]);
   const bounds = useMemo(() => layoutBounds(allNodes), [allNodes]);
   const hasChart = allNodes.length > 0;
@@ -295,7 +333,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
   const hasInitialized = useRef(false);
   useEffect(() => {
     hasInitialized.current = false;
-  }, [orgTree]);
+  }, [orgTree, mode]);
 
   useEffect(() => {
     if (hasInitialized.current || allNodes.length === 0 || !containerRef.current) return;
@@ -431,20 +469,20 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
 
   useEffect(() => {
     if (!pendingFocusId) return;
-    const node = nodeById.get(pendingFocusId);
+    const node = allNodes.find((n) => n.id === pendingFocusId);
     if (!node) return;
     setPendingFocusId(null);
-    setFocusedId(node.id);
+    setFocusedId(node.key);
     centerOn(node, Math.max(viewRef.current.zoom, 1));
-    cardRefs.current.get(node.id)?.focus({ preventScroll: true });
-  }, [pendingFocusId, nodeById, centerOn]);
+    cardRefs.current.get(node.key)?.focus({ preventScroll: true });
+  }, [pendingFocusId, allNodes, centerOn]);
 
-  const moveFocus = useCallback((id: string) => {
-    const node = nodeById.get(id);
+  const moveFocus = useCallback((key: string) => {
+    const node = nodeById.get(key);
     if (!node) return;
-    setFocusedId(id);
+    setFocusedId(key);
     ensureVisible(node);
-    cardRefs.current.get(id)?.focus({ preventScroll: true });
+    cardRefs.current.get(key)?.focus({ preventScroll: true });
   }, [nodeById, ensureVisible]);
 
   const siblingsOf = useCallback((node: LayoutNode): LayoutNode[] => {
@@ -454,7 +492,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
 
   const handleCardKeyDown = useCallback((e: React.KeyboardEvent, node: LayoutNode) => {
     const siblings = siblingsOf(node);
-    const index = siblings.findIndex((s) => s.id === node.id);
+    const index = siblings.findIndex((s) => s.key === node.key);
     let target: LayoutNode | undefined;
     switch (e.key) {
       case "ArrowUp":
@@ -478,7 +516,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
         return;
     }
     e.preventDefault();
-    if (target) moveFocus(target.id);
+    if (target) moveFocus(target.key);
   }, [siblingsOf, nodeById, moveFocus]);
 
   // Arrow keys on the empty canvas pan it.
@@ -615,8 +653,8 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
     );
   }
 
-  const tabStopId = focusedId && nodeById.has(focusedId) ? focusedId : allNodes[0]?.id;
-  const selectedNode = selectedId ? nodeById.get(selectedId) ?? null : null;
+  const tabStopKey = focusedId && nodeById.has(focusedId) ? focusedId : allNodes[0]?.key;
+  const selectedNode = selectedId ? allNodes.find((n) => n.id === selectedId) ?? null : null;
   const controlButton =
     "flex size-9 items-center justify-center rounded border border-border bg-background text-sm transition-colors hover:bg-accent sm:size-7";
 
@@ -759,6 +797,30 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
           </button>
         </div>
 
+        {hasTeams ? (
+          <div
+            data-org-control
+            role="group"
+            aria-label="Chart view"
+            className="absolute bottom-3 left-3 z-raised flex overflow-hidden rounded border border-border bg-background text-xs"
+          >
+            {([["reporting", "Reporting lines"], ["teams", "Group by team"]] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                className={cn(
+                  "h-9 px-3 transition-colors hover:bg-accent sm:h-7",
+                  mode === value && "bg-accent font-medium text-foreground",
+                )}
+                onClick={() => setChartMode(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {/* SVG layer for edges */}
         <svg data-testid="org-chart-edges" className="absolute inset-0 pointer-events-none" style={{ width: "100%", height: "100%" }}>
           <g transform={`translate(${view.x}, ${view.y}) scale(${view.zoom})`}>
@@ -777,8 +839,13 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
             transformOrigin: "0 0",
           }}
         >
+          {teamBoxes.map((box) => (
+            <TeamBoxFrame key={box.key} box={box} leadName={box.team?.leadAgentId ? agentMap.get(box.team.leadAgentId)?.name : undefined} />
+          ))}
           {allNodes.map((node) => {
             const agent = agentMap.get(node.id);
+            const nodeTeams = teamsForAgent.get(node.id) ?? [];
+            const teamNames = nodeTeams.map((t) => t.name).join(", ");
             const activity = activityByAgent.get(node.id);
             const title = agent?.title ?? roleLabel(node.role);
             const status = activity
@@ -788,23 +855,23 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
 
             return (
               <Card
-                key={node.id}
+                key={node.key}
                 ref={(el: HTMLDivElement | null) => {
-                  if (el) cardRefs.current.set(node.id, el);
-                  else cardRefs.current.delete(node.id);
+                  if (el) cardRefs.current.set(node.key, el);
+                  else cardRefs.current.delete(node.key);
                 }}
                 data-org-card
                 data-agent-id={node.id}
                 role="button"
-                tabIndex={node.id === tabStopId ? 0 : -1}
-                aria-label={`${node.name}, ${title}, ${status}`}
+                tabIndex={node.key === tabStopKey ? 0 : -1}
+                aria-label={`${node.name}, ${title}, ${status}${teamNames ? `, teams: ${teamNames}` : ""}`}
                 interactive
                 className={cn(
                   "absolute gap-0 overflow-hidden py-0 select-none",
-                  node.id === focusedId && "ring-2 ring-ring",
+                  node.key === focusedId && "ring-2 ring-ring",
                 )}
                 style={{ left: node.x, top: node.y, width: CARD_W, height: CARD_H }}
-                onFocus={() => setFocusedId(node.id)}
+                onFocus={() => setFocusedId(node.key)}
                 onKeyDown={(e) => handleCardKeyDown(e, node)}
                 onClick={() => setSelectedId(node.id)}
                 onClickCapture={(e) => {
@@ -814,6 +881,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
                   e.stopPropagation();
                 }}
               >
+                {nodeTeams.length > 0 ? <TeamStripe teams={nodeTeams} /> : null}
                 <div className="flex h-full flex-col gap-1.5 px-3.5 py-3">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -879,7 +947,9 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
               node={selectedNode}
               agent={agentMap.get(selectedNode.id)}
               activity={activityByAgent.get(selectedNode.id)}
-              manager={selectedNode.parentId ? nodeById.get(selectedNode.parentId) : undefined}
+              managerName={orgInfo.get(selectedNode.id)?.managerName ?? null}
+              reportCount={orgInfo.get(selectedNode.id)?.reportCount ?? 0}
+              teams={teamsForAgent.get(selectedNode.id) ?? []}
               onOpenAgent={(path) => navigate(path)}
             />
           ) : null}
@@ -893,13 +963,17 @@ function AgentPanel({
   node,
   agent,
   activity,
-  manager,
+  managerName,
+  reportCount,
+  teams,
   onOpenAgent,
 }: {
   node: LayoutNode;
   agent: Agent | undefined;
   activity: AgentActivity | undefined;
-  manager: LayoutNode | undefined;
+  managerName: string | null;
+  reportCount: number;
+  teams: AgentTeam[];
   onOpenAgent: (path: string) => void;
 }) {
   const title = agent?.title ?? roleLabel(node.role);
@@ -912,8 +986,21 @@ function AgentPanel({
         : "—",
     ],
     ["Runs on", agent ? getAdapterLabel(agent.adapterType) : "—"],
-    ["Reports to", manager?.name ?? "No one"],
-    ["Direct reports", String(node.reportCount)],
+    ["Reports to", managerName ?? "No one"],
+    ["Direct reports", String(reportCount)],
+    [
+      "Teams",
+      teams.length > 0 ? (
+        <span className="flex flex-wrap gap-x-3 gap-y-1">
+          {teams.map((team) => (
+            <span key={team.id} className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: team.color }} />
+              {team.name}
+            </span>
+          ))}
+        </span>
+      ) : "None",
+    ],
   ];
 
   return (
@@ -988,6 +1075,50 @@ function AgentPanel({
         <Button onClick={() => onOpenAgent(agent ? agentUrl(agent) : `/agents/${node.id}`)}>Open agent page</Button>
       </div>
     </>
+  );
+}
+
+/** Thin colour bar across the top of a card, one segment per team. */
+function TeamStripe({ teams }: { teams: AgentTeam[] }) {
+  return (
+    <div
+      data-testid="org-card-teams"
+      title={`Teams: ${teams.map((t) => t.name).join(", ")}`}
+      className="absolute inset-x-0 top-0 flex h-1"
+    >
+      {teams.map((team) => (
+        <span key={team.id} className="flex-1" style={{ backgroundColor: team.color }} />
+      ))}
+    </div>
+  );
+}
+
+/** A coloured box behind one team's cards in the "group by team" view. */
+function TeamBoxFrame({ box, leadName }: { box: TeamBox; leadName: string | undefined }) {
+  const color = box.team?.color;
+  return (
+    <div
+      data-testid="org-team-box"
+      data-team-id={box.key}
+      className={cn(
+        "absolute rounded-xl border-2",
+        !color && "border-dashed border-border bg-muted/30",
+      )}
+      // Team colours are 6-digit hex, so a 2-digit alpha suffix tints the fill.
+      style={{
+        left: box.x,
+        top: box.y,
+        width: box.width,
+        height: box.height,
+        ...(color ? { borderColor: color, backgroundColor: `${color}14` } : {}),
+      }}
+    >
+      <div className="flex h-9 min-w-0 items-center gap-2 px-4 text-sm">
+        {color ? <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} /> : null}
+        <span className="truncate font-semibold">{box.team?.name ?? "No team"}</span>
+        {leadName ? <span className="truncate text-xs text-muted-foreground">Lead: {leadName}</span> : null}
+      </div>
+    </div>
   );
 }
 
