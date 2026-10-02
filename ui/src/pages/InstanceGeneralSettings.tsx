@@ -237,7 +237,7 @@ export function InstanceGeneralSettings({
             <h2 className="text-sm font-semibold">Ask Greatstone to add teams</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
               Team Catalogue shows "Ask Greatstone to add" in place of Install. The button makes an approval card
-              for the board and installs nothing. Off by default.
+              for the board and installs nothing. On by default.
             </p>
           </div>
           <ToggleSwitch

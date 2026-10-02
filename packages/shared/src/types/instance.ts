@@ -61,7 +61,7 @@ export interface InstanceGeneralSettings {
   aiAccessRoute?: AiAccessRoute | null;
   /** Team Catalogue filter (GRE-427). Default `"greatstone"`. */
   teamCatalogFilter: TeamCatalogFilter;
-  /** Team Catalogue add button (GRE-427). Default `"install"`. */
+  /** Team Catalogue add button (GRE-434). Default `"request"`. */
   teamCatalogAddMode: TeamCatalogAddMode;
 }
 
