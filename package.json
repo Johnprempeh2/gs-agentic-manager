@@ -95,7 +95,8 @@
     "metrics:lost-time": "node tests/lifecycle-baseline/metrics/lost-time-collect.mjs",
     "test:metrics": "node --test tests/lifecycle-baseline/metrics/compute.test.mjs tests/lifecycle-baseline/metrics/lost-time.test.mjs tests/metrics-budgets/check.test.mjs",
     "perf:issue-detail": "playwright test --config tests/perf/issue-detail/playwright.config.ts issue-detail.perf.spec.ts",
-    "perf:task-chat": "playwright test --config tests/perf/task-chat/playwright.config.ts"
+    "perf:task-chat": "playwright test --config tests/perf/task-chat/playwright.config.ts",
+    "ux:baseline": "playwright test --config tests/ux-baseline/playwright.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
