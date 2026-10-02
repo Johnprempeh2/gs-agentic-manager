@@ -22,6 +22,7 @@ import {
   failedRequestConfirmationInteraction,
   failedToolActionInteraction,
   pendingRequestConfirmationInteraction,
+  genericPendingRequestConfirmationInteraction,
   pendingToolActionDestructiveInteraction,
   pendingToolActionWriteInteraction,
   issueThreadInteractionFixtureMeta,
@@ -738,6 +739,36 @@ describe("IssueThreadInteractionCard", () => {
     expect(labels).toContain("Revise…");
     expect(labels.some((label) => label?.includes("Approve"))).toBe(true);
     expect(host.textContent).not.toContain("Request changes");
+  });
+
+  // GRE-360: the Decisions card already names the kind, why and who asked.
+  it("drops the repeated header when embedded in a host card", () => {
+    const host = renderCard({
+      interaction: { ...genericPendingRequestConfirmationInteraction, title: null, summary: null },
+      embedded: true,
+    });
+
+    expect(host.querySelector("[data-testid='interaction-status-badge']")).toBeNull();
+    expect(host.textContent).not.toContain("Confirmation requested");
+    expect(host.textContent).not.toContain("proposed by");
+    expect(host.textContent).not.toContain("Anyone in the organisation");
+    expect(host.textContent).toContain("Continue with the current approach?");
+    expect(Array.from(host.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Approve")).toBe(true);
+  });
+
+  it("keeps an agent-written title and summary when embedded", () => {
+    const host = renderCard({ interaction: genericPendingRequestConfirmationInteraction, embedded: true });
+
+    const header = host.querySelector("[data-testid='interaction-embedded-header']");
+    expect(header?.textContent).toContain("Confirm next step");
+    expect(header?.textContent).toContain("The responsible needs a lightweight yes or no");
+    expect(host.querySelector("[data-testid='interaction-status-badge']")).toBeNull();
+  });
+
+  it("keeps the state header on an embedded secret proposal", () => {
+    const host = renderCard({ interaction: pendingSecretProposalInteraction, embedded: true });
+
+    expect(host.querySelector("[data-testid='interaction-status-badge']")).not.toBeNull();
   });
 
   it("does not expose continuation wake policy labels in the card header", () => {

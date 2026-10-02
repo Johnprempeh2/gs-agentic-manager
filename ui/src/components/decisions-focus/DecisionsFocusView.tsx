@@ -20,7 +20,7 @@ import {
 import type { FocusPrefs } from "../../lib/focus-prefs";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
-import { DECISION_KIND_LABEL, DecisionFeedCard, decisionCardQuestionItem } from "../decisions-feed/DecisionFeedCard";
+import { DecisionFeedCard, decisionCardQuestionItem, decisionKindLabel } from "../decisions-feed/DecisionFeedCard";
 import { FocusQuestionCard } from "./FocusQuestionCard";
 
 export interface DecisionsFocusViewProps {
@@ -226,7 +226,7 @@ export function DecisionsFocusView({
               >
                 <span className="block font-semibold">{card.waiting?.name ?? card.task?.identifier ?? "Board"}</span>
                 <span className={cn("block text-xs", pending && "text-muted-foreground")}>
-                  {[card.task?.identifier, DECISION_KIND_LABEL[card.kind]].filter(Boolean).join(" · ")}
+                  {[card.task?.identifier, decisionKindLabel(card, card.kind)].filter(Boolean).join(" · ")}
                   {skipped && pending ? " · skipped" : ""}
                 </span>
               </button>

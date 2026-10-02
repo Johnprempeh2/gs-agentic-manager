@@ -27,6 +27,8 @@ interface AttentionInteractionResolverProps {
   userLabelMap?: ReadonlyMap<string, string> | null;
   /** Called after a resolution so the parent can refresh the feed. */
   onResolved?: () => void;
+  /** The host card already names the kind and who asked; see IssueThreadInteractionCard. */
+  embedded?: boolean;
 }
 
 export function replaceResolvedInteraction(
@@ -141,6 +143,7 @@ export function AttentionInteractionResolver({
   currentUserId,
   userLabelMap,
   onResolved,
+  embedded,
 }: AttentionInteractionResolverProps) {
   const { data: interactions, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.interactions(issueId),
@@ -179,6 +182,7 @@ export function AttentionInteractionResolver({
         agentMap={agentMap}
         currentUserId={currentUserId}
         userLabelMap={userLabelMap}
+        embedded={embedded}
         onAcceptInteraction={(target, selectedClientKeys, selectedOptionIds, rememberAction) =>
           acceptMutation.mutateAsync({ interaction: target, selectedClientKeys, selectedOptionIds, rememberAction }).then(() => undefined)
         }
