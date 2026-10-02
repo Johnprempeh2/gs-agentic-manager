@@ -215,7 +215,7 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       ...(parsed.data.runAdmission ? { runAdmission: parsed.data.runAdmission } : {}),
       // Absent/null => each agent's own harness and AI connection (GRE-139).
       ...(parsed.data.aiAccessRoute ? { aiAccessRoute: parsed.data.aiAccessRoute } : {}),
-      teamCatalogFilter: parsed.data.teamCatalogFilter ?? "all",
+      teamCatalogFilter: parsed.data.teamCatalogFilter ?? "greatstone",
     };
   }
   return {
@@ -223,7 +223,7 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
     keyboardShortcuts: false,
     feedbackDataSharingPreference: DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
     backupRetention: DEFAULT_BACKUP_RETENTION,
-    teamCatalogFilter: "all",
+    teamCatalogFilter: "greatstone",
   };
 }
 

@@ -48,8 +48,9 @@ export const instanceGeneralSettingsSchema = z.object({
   // Install-wide AI access route (GRE-139). Absent/null => each agent's own setting.
   aiAccessRoute: aiAccessRouteSchema.nullable().optional(),
   // Which teams the Team Catalogue and the new-company flow offer (GRE-427).
-  // "greatstone" shows only teams tagged `greatstone`, for client installs.
-  teamCatalogFilter: z.enum(TEAM_CATALOG_FILTERS).default("all"),
+  // "greatstone" (default) shows only teams tagged `greatstone`; "all" also
+  // shows the upstream teams, for our own instance.
+  teamCatalogFilter: z.enum(TEAM_CATALOG_FILTERS).default("greatstone"),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = z

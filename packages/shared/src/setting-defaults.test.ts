@@ -31,12 +31,13 @@ describe("parseSettingDefaults", () => {
     expect(unknown).toEqual(["someFutureSetting"]);
   });
 
-  it("lets an operator turn on the Greatstone-only team catalogue (GRE-427)", () => {
-    const { defaults } = parseSettingDefaults('{"teamCatalogFilter":"greatstone"}');
-    expect(defaults).toEqual({ teamCatalogFilter: "greatstone" });
+  it("shows only Greatstone teams by default; an operator can show every team (GRE-427)", () => {
+    const base = instanceGeneralSettingsSchema.parse({});
+    expect(base.teamCatalogFilter).toBe("greatstone");
+    const { defaults } = parseSettingDefaults('{"teamCatalogFilter":"all"}');
+    expect(defaults).toEqual({ teamCatalogFilter: "all" });
     expect(() => parseSettingDefaults('{"teamCatalogFilter":"some"}')).toThrow(/teamCatalogFilter/);
-    const overlaid = applyOperatorGeneralDefaults(instanceGeneralSettingsSchema.parse({}), defaults);
-    expect(overlaid.teamCatalogFilter).toBe("greatstone");
+    expect(applyOperatorGeneralDefaults(base, defaults).teamCatalogFilter).toBe("all");
   });
 
   it("fails closed on malformed JSON and non-object shapes", () => {

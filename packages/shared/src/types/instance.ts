@@ -56,7 +56,7 @@ export interface InstanceGeneralSettings {
    * harness and AI connection. Set = every Claude/Codex agent uses this route.
    */
   aiAccessRoute?: AiAccessRoute | null;
-  /** Team Catalogue filter (GRE-427). Default `"all"`. */
+  /** Team Catalogue filter (GRE-427). Default `"greatstone"`. */
   teamCatalogFilter: TeamCatalogFilter;
 }
 

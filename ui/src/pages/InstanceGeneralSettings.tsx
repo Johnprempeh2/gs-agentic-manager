@@ -212,7 +212,7 @@ export function InstanceGeneralSettings({
             <h2 className="text-sm font-semibold">Show only Greatstone teams</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
               Team Catalogue and the new-company flow offer only teams made by Greatstone. Other teams, such as
-              the engineering teams, are hidden and cannot be installed. Off by default.
+              the engineering teams, are hidden and cannot be installed. On by default.
             </p>
           </div>
           <ToggleSwitch
