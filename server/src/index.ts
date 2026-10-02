@@ -1389,6 +1389,24 @@ async function startServerWithDatabaseTeardown(
           logger.error({ err }, "terminal issue workspace reaper failed");
         }));
     };
+    // Opt-in (GSAM_UNRECORDED_WORKTREE_IDLE_DAYS), at most once an hour: remove
+    // idle git worktrees that agents made by hand and nothing records.
+    let lastUnrecordedWorktreeSweepAt = 0;
+    const scheduleUnrecordedWorktreeSweep = () => {
+      if (heartbeatSchedulerStopped || !(config.unrecordedWorktreeIdleDays > 0)) return;
+      if (Date.now() - lastUnrecordedWorktreeSweepAt < 60 * 60 * 1000) return;
+      lastUnrecordedWorktreeSweepAt = Date.now();
+      trackHeartbeatSchedulerWork(terminalWorkspaces
+        .sweepUnrecordedWorktrees(config.unrecordedWorktreeIdleDays)
+        .then((result) => {
+          if (result.removed.length > 0) {
+            logger.info(result, "removed idle git worktrees that no execution workspace records");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "unrecorded worktree sweep failed");
+        }));
+    };
 
     // The restart-safe cleanup backstop for adapter login sessions. The
     // in-process five-minute timer stays the primary control. This reaper runs
@@ -1718,6 +1736,7 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionEventPoll();
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
+        scheduleUnrecordedWorktreeSweep();
         scheduleAdapterLoginReaperSweep();
         scheduleSetupTokenReaperSweep();
         scheduleEnvironmentLeaseCleanupSweep();

@@ -77,6 +77,7 @@ export interface Config {
   databaseBackupRetentionDays: number;
   databaseBackupDir: string;
   workspaceReaperCooldownDays: number;
+  unrecordedWorktreeIdleDays: number;
   serveUi: boolean;
   uiDevMiddleware: boolean;
   secretsProvider: SecretProvider;
@@ -296,6 +297,17 @@ export function loadConfig(): Config {
       && workspaceReaperCooldownDaysRaw >= 0
       ? workspaceReaperCooldownDaysRaw
       : 0;
+  // Agents sometimes add git worktrees by hand, which no execution workspace
+  // records, so nothing ever removes them. When this is a positive number of
+  // days, a sweep removes such a worktree under a project's managed worktree
+  // root once it has been idle that long and removing it loses nothing. It is
+  // off by default: an instance cannot see the worktrees that another instance
+  // on the same checkout (an agent's sandbox) records.
+  const unrecordedWorktreeIdleDaysRaw = Number(process.env.GSAM_UNRECORDED_WORKTREE_IDLE_DAYS?.trim());
+  const unrecordedWorktreeIdleDays =
+    Number.isFinite(unrecordedWorktreeIdleDaysRaw) && unrecordedWorktreeIdleDaysRaw > 0
+      ? unrecordedWorktreeIdleDaysRaw
+      : 0;
   const bindValidationErrors = validateConfiguredBindMode({
     deploymentMode,
     deploymentExposure,
@@ -342,6 +354,7 @@ export function loadConfig(): Config {
     databaseBackupRetentionDays,
     databaseBackupDir,
     workspaceReaperCooldownDays,
+    unrecordedWorktreeIdleDays,
     serveUi:
       process.env.SERVE_UI !== undefined
         ? process.env.SERVE_UI === "true"

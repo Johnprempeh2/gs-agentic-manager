@@ -1968,9 +1968,11 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(parentWorkspace?.status).toBe("active");
   });
 
-  it("reaps only fully-terminal delivered workspaces without active checkout runs", async () => {
+  it("reaps delivered workspaces of finished issues without active checkout runs", async () => {
     const eligible = await seedTerminalWorkspace({ mergedPr: true, childStatus: "done" });
     const activeRun = await seedTerminalWorkspace({ mergedPr: true, activeRun: true });
+    // An open child that is not bound to the workspace never uses it, so it no
+    // longer holds the finished parent's worktree (GRE-119).
     const openDescendant = await seedTerminalWorkspace({ mergedPr: true, childStatus: "todo" });
     const undelivered = await seedTerminalWorkspace();
 
@@ -1986,11 +1988,11 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       ]));
     const byId = new Map(rows.map((row) => [row.id, row]));
 
-    expect(result).toMatchObject({ archived: 1, skippedActiveRun: 1, skippedNonTerminalTree: 1, skippedUndelivered: 1 });
+    expect(result).toMatchObject({ archived: 2, skippedActiveRun: 1, skippedNonTerminalTree: 0, skippedUndelivered: 1 });
     expect(byId.get(eligible.executionWorkspaceId)).toMatchObject({ status: "archived", cleanupReason: "issue_terminal" });
     expect(byId.get(eligible.executionWorkspaceId)?.cleanupEligibleAt).toBeInstanceOf(Date);
     expect(byId.get(activeRun.executionWorkspaceId)?.status).toBe("active");
-    expect(byId.get(openDescendant.executionWorkspaceId)?.status).toBe("active");
+    expect(byId.get(openDescendant.executionWorkspaceId)?.status).toBe("archived");
     expect(byId.get(undelivered.executionWorkspaceId)?.status).toBe("active");
 
     const second = await svc.sweepTerminalWorkspaces();
@@ -2013,6 +2015,112 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(reopenedWorkspace?.status).toBe("archived");
     expect(reopenActivities).toContainEqual({ action: "execution_workspace.source_issue_reopened" });
   }, 20_000);
+
+  it("keeps a finished workspace that an open descendant is bound to", async () => {
+    const seeded = await seedTerminalWorkspace({ mergedPr: true, childStatus: "todo" });
+    await db
+      .update(issues)
+      .set({ executionWorkspaceId: seeded.executionWorkspaceId })
+      .where(eq(issues.parentId, seeded.sourceIssueId));
+
+    const sweep = await svc.sweepTerminalWorkspaces();
+    const [workspace] = await db
+      .select({ status: executionWorkspaces.status })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+
+    expect(sweep).toMatchObject({ archived: 0, skippedOpenLinkedIssue: 1 });
+    expect(workspace?.status).toBe("active");
+    await expect(fs.access(seeded.worktreePath)).resolves.toBeUndefined();
+  }, 20_000);
+
+  describe("finished shared sessions (no files of their own)", () => {
+    async function seedFinishedSharedSession(cwd: string) {
+      const companyId = randomUUID();
+      const projectId = randomUUID();
+      const executionWorkspaceId = randomUUID();
+      const sourceIssueId = randomUUID();
+      await db.insert(companies).values({
+        id: companyId,
+        name: "GS Agentic Manager",
+        issuePrefix: `S${companyId.slice(0, 8).toUpperCase()}`,
+        requireBoardApprovalForNewAgents: false,
+      });
+      await db.insert(projects).values({ id: projectId, companyId, name: "Shared sessions", status: "in_progress" });
+      await db.insert(executionWorkspaces).values({
+        id: executionWorkspaceId,
+        companyId,
+        projectId,
+        mode: "shared_workspace",
+        strategyType: "project_primary",
+        name: "Shared session",
+        status: "active",
+        providerType: "local_fs",
+        cwd,
+        metadata: { source: "project_primary", createdByRuntime: false },
+      });
+      await db.insert(issues).values({
+        id: sourceIssueId,
+        companyId,
+        projectId,
+        title: "Finished on the shared checkout",
+        status: "done",
+        priority: "medium",
+        executionWorkspaceId,
+      });
+      await db
+        .update(executionWorkspaces)
+        .set({ sourceIssueId })
+        .where(eq(executionWorkspaces.id, executionWorkspaceId));
+      return { executionWorkspaceId, sourceIssueId };
+    }
+
+    async function readSession(seeded: { executionWorkspaceId: string; sourceIssueId: string }) {
+      const [workspace] = await db
+        .select({ status: executionWorkspaces.status, cleanupReason: executionWorkspaces.cleanupReason })
+        .from(executionWorkspaces)
+        .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+      const [issue] = await db
+        .select({ executionWorkspaceId: issues.executionWorkspaceId })
+        .from(issues)
+        .where(eq(issues.id, seeded.sourceIssueId));
+      return { workspace, issue };
+    }
+
+    it("archives a session on a project folder that is not a git repository", async () => {
+      const folder = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-shared-folder-"));
+      tempDirs.add(folder);
+      const seeded = await seedFinishedSharedSession(folder);
+
+      const readiness = await svc.getCloseReadiness(seeded.executionWorkspaceId);
+      const sweep = await svc.sweepTerminalWorkspaces();
+      const state = await readSession(seeded);
+
+      expect(readiness?.blockingReasons).toEqual([]);
+      expect(sweep).toMatchObject({ archived: 1, cleanupFailed: 0, skippedUndelivered: 0 });
+      expect(state.workspace).toMatchObject({ status: "archived", cleanupReason: "issue_terminal" });
+      expect(state.issue?.executionWorkspaceId).toBeNull();
+      await expect(fs.access(folder)).resolves.toBeUndefined();
+    }, 20_000);
+
+    it("archives a session on the project checkout without marking cleanup failed (GRE-316)", async () => {
+      const checkout = await createTempRepo();
+      const remote = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-shared-remote-"));
+      tempDirs.add(checkout);
+      tempDirs.add(remote);
+      await runGit(remote, ["init", "--bare"]);
+      await runGit(checkout, ["remote", "add", "origin", remote]);
+      await runGit(checkout, ["push", "-q", "origin", "main"]);
+      const seeded = await seedFinishedSharedSession(checkout);
+
+      const sweep = await svc.sweepTerminalWorkspaces();
+      const state = await readSession(seeded);
+
+      expect(sweep).toMatchObject({ archived: 1, cleanupFailed: 0 });
+      expect(state.workspace).toMatchObject({ status: "archived", cleanupReason: "issue_terminal" });
+      await expect(fs.access(path.join(checkout, "README.md"))).resolves.toBeUndefined();
+    }, 20_000);
+  });
 
   it("allows archiving shared workspace sessions with warnings even when issues are still open", async () => {
     const companyId = randomUUID();
