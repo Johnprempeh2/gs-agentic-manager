@@ -23,11 +23,7 @@ to it.
 1. **Task.** A GRE issue in the "GS Agentic Manager platform" project. Its
    branch is named after the issue, for example `GRE-12-faster-board`.
 2. **Build in your worktree.** Work only inside your worktree. Keep the change
-   to what the issue asks for. If your run started in your parent task's
-   worktree, work there and commit on the parent's branch, and say on the issue
-   that the change ships in the parent's pull request. If it started in the dev
-   checkout and the task needs a branch, do not make a worktree by hand: say so
-   on the issue, set it to `blocked` and name Keystone.
+   to what the issue asks for.
 3. **Test in a sandbox.** Run the tests for what you touched from the worktree
    root (`npx vitest run <files>`, `npx tsc --noEmit -p <package>`). When you
    need the running app, start a sandbox from the worktree:
@@ -95,14 +91,6 @@ to it.
 - Push to `public-fork` or open pull requests on `Johnprempeh2/GS-Clip`.
 - Run `git clean -x`, `git reset --hard`, `git stash` or `git checkout` of
   another branch in the dev checkout. Your worktree is your only workspace.
-- Run `git worktree add` under `.gsam/worktrees/`. GS Agentic Manager does not
-  record a worktree you make there, so nothing removes it, and with its
-  `node_modules` each one costs gigabytes. For a throwaway check of a pull
-  request, a release candidate or a tag, add a detached checkout inside your
-  run's scratch folder (`git worktree add --detach
-  "$GSAM_RUN_SCRATCH_DIR/check" <sha or tag>`) and remove it with
-  `git worktree remove --force "$GSAM_RUN_SCRATCH_DIR/check"` before you
-  finish. The scratch folder is deleted when the run ends.
 - Commit secrets, tokens, `.env` files, client names or personal data.
 - Widen a task on your own. Propose follow-up work as a new issue instead.
 

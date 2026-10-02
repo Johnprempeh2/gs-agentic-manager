@@ -26,7 +26,9 @@ describe("removeIdleUnrecordedWorktrees", () => {
     await git(base, ["clone", "-q", origin, checkout]);
     await git(checkout, ["config", "user.name", "GS Agentic Manager Test"]);
     await git(checkout, ["config", "user.email", "test@example.invalid"]);
-    await git(checkout, ["commit", "-q", "--allow-empty", "-m", "Initial commit"]);
+    await fs.writeFile(path.join(checkout, "README.md"), "base\n");
+    await git(checkout, ["add", "README.md"]);
+    await git(checkout, ["commit", "-q", "-m", "Initial commit"]);
     await git(checkout, ["push", "-q", "origin", "HEAD:main"]);
     await git(checkout, ["fetch", "-q", "origin"]);
 
@@ -44,6 +46,8 @@ describe("removeIdleUnrecordedWorktrees", () => {
     await addBranchWithCommit("GRE-2-unpushed", false);
     await addDetached(at("dirty-check"));
     await fs.writeFile(path.join(at("dirty-check"), "notes.txt"), "keep me\n");
+    await addDetached(at("modified-check"));
+    await fs.writeFile(path.join(at("modified-check"), "README.md"), "local edit\n");
     await addDetached(at("GRE-3-recorded"));
     await addDetached(at("busy-check"));
     await addDetached(path.join(base, "elsewhere"));
@@ -66,13 +70,16 @@ describe("removeIdleUnrecordedWorktrees", () => {
     const result = await sweep(threeDaysOn, busyProcess);
 
     expect(result.removed.sort()).toEqual([at("GRE-1-pushed"), at("flint-pr-check")]);
-    expect(result.kept).toBe(3);
+    expect(result.kept).toBe(4);
     expect(await exists(at("flint-pr-check"))).toBe(false);
     expect(await exists(at("GRE-1-pushed"))).toBe(false);
-    for (const kept of ["GRE-2-unpushed", "dirty-check", "GRE-3-recorded", "busy-check"]) {
+    for (const kept of ["GRE-2-unpushed", "dirty-check", "modified-check", "GRE-3-recorded", "busy-check"]) {
       expect(await exists(at(kept))).toBe(true);
     }
     expect(await exists(path.join(base, "elsewhere"))).toBe(true);
+    // Uncommitted work survives, tracked edits and untracked files alike.
+    expect(await fs.readFile(path.join(at("modified-check"), "README.md"), "utf8")).toBe("local edit\n");
+    expect(await fs.readFile(path.join(at("dirty-check"), "notes.txt"), "utf8")).toBe("keep me\n");
     // Removing a worktree never deletes its branch.
     expect(await git(checkout, ["branch", "--list", "GRE-1-pushed"])).toContain("GRE-1-pushed");
   }, 30_000);
