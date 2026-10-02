@@ -179,6 +179,9 @@ function registerModuleMocks() {
         agent: { id: raw },
       })),
     }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
+    }),
     clampIssueListLimit: (value: number) => value,
     companySkillService: () => ({
       completeTestRunForIssue: vi.fn(async () => null),
