@@ -14,8 +14,9 @@ export interface ExecutionRetryAccounting {
   maxTurnContinuations: number;
 }
 
-/** Lanes that wait out a resource or the host; they never spend failure retries. */
-const WAIT_LANES: readonly string[] = ["workspace_busy", "ai_connection_busy", HOST_SLEEP_RETRY_REASON];
+/** Lanes that wait out a resource or the host, or resume after an app-side
+ * setup repair (GRE-395); they never spend failure retries. */
+const WAIT_LANES: readonly string[] = ["workspace_busy", "ai_connection_busy", HOST_SLEEP_RETRY_REASON, "setup_repair"];
 
 function count(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
