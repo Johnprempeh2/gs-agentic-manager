@@ -11,6 +11,7 @@ import { LogOut, SlidersHorizontal } from "lucide-react";
 import { healthApi } from "@/api/health";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { ModeBadge } from "@/components/access/ModeBadge";
+import { AiAccessRouteSection } from "@/components/AiAccessRouteSection";
 import { RunAdmissionSettingsSection } from "@/components/RunAdmissionSettingsSection";
 import { Button } from "../components/ui/button";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -28,6 +29,7 @@ export type InstanceGeneralSection =
   | "runAdmission"
   | "backupRetention"
   | "feedbackDataSharingPreference"
+  | "aiAccessRoute"
   | "signOut";
 
 export function InstanceGeneralSettings({
@@ -106,6 +108,7 @@ export function InstanceGeneralSettings({
   const showBackupRetention = shows("backupRetention");
   const showRunAdmission = shows("runAdmission");
   const showFeedbackDataSharing = shows("feedbackDataSharingPreference");
+  const showAiAccessRoute = shows("aiAccessRoute");
   const showSignOut = shows("signOut");
   const visibleTopics = [
     ...(showCensorUsernameInLogs ? ["log display"] : []),
@@ -390,6 +393,14 @@ export function InstanceGeneralSettings({
         </div>
       </section>
 
+      )}
+
+      {showAiAccessRoute && (
+        <AiAccessRouteSection
+          route={generalQuery.data?.aiAccessRoute}
+          disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+          onChange={(aiAccessRoute) => updateGeneralMutation.mutate({ aiAccessRoute })}
+        />
       )}
 
       {showSignOut && (

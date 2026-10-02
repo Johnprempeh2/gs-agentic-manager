@@ -402,7 +402,7 @@ export function CompanySettings() {
             </div>
           </div>
 
-          <InstanceGeneralSettings embedded sections={["signOut"]} />
+          <InstanceGeneralSettings embedded sections={["aiAccessRoute", "signOut"]} />
 
           {/* Danger Zone */}
           <div className="space-y-4">

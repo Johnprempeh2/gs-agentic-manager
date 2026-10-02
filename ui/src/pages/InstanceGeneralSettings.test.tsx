@@ -19,6 +19,9 @@ const mockInstanceSettingsApi = vi.hoisted(() => ({
 const mockNavigateTopLevel = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/auth", () => ({ authApi: mockAuthApi }));
+vi.mock("@/api/access", () => ({
+  accessApi: { getCurrentBoardAccess: vi.fn().mockResolvedValue({ isInstanceAdmin: false }) },
+}));
 vi.mock("@/api/health", () => ({ healthApi: mockHealthApi }));
 vi.mock("@/api/instanceSettings", () => ({ instanceSettingsApi: mockInstanceSettingsApi }));
 vi.mock("@/lib/browserNavigation", () => ({ navigateTopLevel: mockNavigateTopLevel }));
