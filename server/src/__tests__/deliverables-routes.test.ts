@@ -21,7 +21,12 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/index.js";
 import { deliverableRoutes } from "../routes/deliverables.js";
-import { deliverableService, extractHtmlSearchText } from "../services/deliverables.js";
+import {
+  deliverableService,
+  extractHtmlSearchText,
+  extractHtmlTitle,
+  latestDeliverableIdsByAttachment,
+} from "../services/deliverables.js";
 import type { StorageService } from "../storage/types.js";
 
 // GRE-388 Deliverables: company scoping, versioning, search and filters.
@@ -63,6 +68,7 @@ const files = {
   "q3-v2.html": "<html><body><h1>Q3 board pack</h1><p>Revised for the Kumasi office.</p></body></html>",
   "brief.html": "<html><body><h1>Hiring brief</h1></body></html>",
   "other.html": "<html><body><h1>Other company report</h1></body></html>",
+  "plain-artifact.html": "<html><head><title>\n  Ghana market entry &amp; plan\n</title></head><body><h1>Plan</h1></body></html>",
 };
 
 describeEmbeddedPostgres("deliverables", () => {
@@ -318,5 +324,73 @@ describeEmbeddedPostgres("deliverables", () => {
     expect(opened.status).toBe(200);
     const detail = await request(boardApp()).get(`/api/companies/${companyId}/deliverables/${marked.body.id}`);
     expect(detail.body.lastOpenedAt).toEqual(expect.any(String));
+  });
+
+  it("reads the HTML <title> as plain text", () => {
+    expect(extractHtmlTitle(files["plain-artifact.html"])).toBe("Ghana market entry & plan");
+    expect(extractHtmlTitle(files["q3.html"])).toBeNull();
+    expect(extractHtmlTitle("<title>  </title>")).toBeNull();
+  });
+
+  it("names a marked HTML file after its <title>, and falls back to the file name (GRE-406)", async () => {
+    await seed();
+    const titled = await addAttachment({ company: companyId, issue: issueId, objectKey: "plain-artifact.html" });
+    const untitled = await addAttachment({ company: companyId, issue: issueId, objectKey: "brief.html" });
+
+    const fromTitle = await request(boardApp()).post(`/api/companies/${companyId}/deliverables/mark`).send({
+      artifactId: `attachment:${titled}`,
+    });
+    expect(fromTitle.status).toBe(201);
+    expect(fromTitle.body).toMatchObject({ title: "Ghana market entry & plan", key: "ghana-market-entry-plan" });
+
+    const fromFilename = await request(boardApp()).post(`/api/companies/${companyId}/deliverables/mark`).send({
+      artifactId: `attachment:${untitled}`,
+    });
+    expect(fromFilename.body.title).toBe("brief");
+  });
+
+  it("returns the existing deliverable when the file already is one, with no new version (GRE-406)", async () => {
+    await seed();
+    const attachmentId = await addAttachment({ company: companyId, issue: issueId, objectKey: "q3.html" });
+
+    const first = await request(boardApp()).post(`/api/companies/${companyId}/deliverables/mark`).send({
+      artifactId: `attachment:${attachmentId}`,
+    });
+    expect(first.status).toBe(201);
+    const again = await request(boardApp()).post(`/api/companies/${companyId}/deliverables/mark`).send({
+      artifactId: `attachment:${attachmentId}`,
+    });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ id: first.body.id, version: 1, versionCount: 1 });
+
+    // A file an agent already registered is not registered a second time.
+    const agentFile = await addAttachment({ company: companyId, issue: issueId, objectKey: "q3-v2.html" });
+    const registered = await request(agentApp(agentId)).post(`/api/issues/${issueId}/deliverables`).send({
+      attachmentId: agentFile,
+      title: "Q3 board pack",
+    });
+    expect(registered.status).toBe(201);
+    const marked = await request(boardApp()).post(`/api/companies/${companyId}/deliverables/mark`).send({
+      artifactId: `attachment:${agentFile}`,
+    });
+    expect(marked.status).toBe(200);
+    expect(marked.body.id).toBe(registered.body.id);
+
+    const list = await request(boardApp()).get(`/api/companies/${companyId}/deliverables`);
+    expect(list.body.total).toBe(2);
+  });
+
+  it("maps every version's file to the latest version, for the Artifacts page (GRE-406)", async () => {
+    await seed();
+    const v1File = await addAttachment({ company: companyId, issue: issueId, objectKey: "q3.html" });
+    const v2File = await addAttachment({ company: companyId, issue: issueId, objectKey: "q3-v2.html" });
+    const loose = await addAttachment({ company: companyId, issue: issueId, objectKey: "brief.html" });
+    const app = agentApp(agentId);
+    await request(app).post(`/api/issues/${issueId}/deliverables`).send({ attachmentId: v1File, title: "Q3 board pack" });
+    const v2 = await request(app).post(`/api/issues/${issueId}/deliverables`).send({ attachmentId: v2File, title: "Q3 board pack" });
+
+    const ids = await latestDeliverableIdsByAttachment(db, companyId, [v1File, v2File, loose]);
+    expect(Object.fromEntries(ids)).toEqual({ [v1File]: v2.body.id, [v2File]: v2.body.id });
+    expect((await latestDeliverableIdsByAttachment(db, otherCompanyId, [v1File])).size).toBe(0);
   });
 });

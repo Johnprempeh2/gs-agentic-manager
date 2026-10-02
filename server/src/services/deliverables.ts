@@ -1,5 +1,5 @@
 import { buffer } from "node:stream/consumers";
-import { and, asc, desc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
@@ -37,6 +37,7 @@ const VERSION_UNIQUE_INDEX = "issue_work_products_deliverable_version_uq";
 const SEARCH_TEXT_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
 const SEARCH_TEXT_MAX_LENGTH = 20_000;
 const FACET_SCAN_LIMIT = 2_000;
+const TITLE_MAX_LENGTH = 200;
 const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 
 const DELIVERABLE_KINDS = new Set<DeliverableKind>(["report", "brief", "plan", "deck", "other"]);
@@ -88,6 +89,13 @@ export function extractHtmlSearchText(html: string): string {
     .replace(/\s+/g, " ")
     .trim();
   return text.length > SEARCH_TEXT_MAX_LENGTH ? text.slice(0, SEARCH_TEXT_MAX_LENGTH) : text;
+}
+
+/** The document's own <title>, as plain text, or null when it has none. */
+export function extractHtmlTitle(html: string): string | null {
+  const match = /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(html);
+  const title = match ? extractHtmlSearchText(match[1]!) : "";
+  return title ? title.slice(0, TITLE_MAX_LENGTH).trim() : null;
 }
 
 function normalizeContentType(contentType: string) {
@@ -191,6 +199,45 @@ function toDeliverable(input: ListRow, issuePrefix: string): Deliverable {
   };
 }
 
+/**
+ * For each attachment that is any version of a deliverable, the id of that
+ * deliverable's latest version. Lets the Artifacts page link to it.
+ */
+export async function latestDeliverableIdsByAttachment(
+  db: Db,
+  companyId: string,
+  attachmentIds: string[],
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (attachmentIds.length === 0) return result;
+  const attachmentIdExpression = sql<string>`${issueWorkProducts.metadata}->>'attachmentId'`;
+  const matches = await db
+    .select({ attachmentId: attachmentIdExpression, issueId: issueWorkProducts.issueId, key: issueWorkProducts.externalId })
+    .from(issueWorkProducts)
+    .where(and(
+      eq(issueWorkProducts.companyId, companyId),
+      eq(issueWorkProducts.type, DELIVERABLE_TYPE),
+      inArray(attachmentIdExpression, [...new Set(attachmentIds)]),
+    ));
+  if (matches.length === 0) return result;
+  const latest = await db
+    .select({ id: issueWorkProducts.id, issueId: issueWorkProducts.issueId, key: issueWorkProducts.externalId })
+    .from(issueWorkProducts)
+    .where(and(
+      eq(issueWorkProducts.companyId, companyId),
+      eq(issueWorkProducts.type, DELIVERABLE_TYPE),
+      inArray(issueWorkProducts.issueId, [...new Set(matches.map((row) => row.issueId))]),
+      inArray(issueWorkProducts.externalId, [...new Set(matches.map((row) => row.key ?? ""))]),
+      latestVersionOnly,
+    ));
+  const latestByKey = new Map(latest.map((row) => [`${row.issueId}:${row.key}`, row.id]));
+  for (const match of matches) {
+    const id = latestByKey.get(`${match.issueId}:${match.key}`);
+    if (id && !result.has(match.attachmentId)) result.set(match.attachmentId, id);
+  }
+  return result;
+}
+
 export function deliverableService(db: Db, storage?: StorageService) {
   async function companyPrefix(companyId: string) {
     const company = await db
@@ -220,16 +267,21 @@ export function deliverableService(db: Db, storage?: StorageService) {
       .leftJoin(agents, agentJoinCondition);
   }
 
-  async function readSearchText(attachment: DeliverableAttachment): Promise<string | null> {
+  async function readHtml(attachment: DeliverableAttachment): Promise<string | null> {
     if (!storage) return null;
     if (!HTML_TYPES.has(normalizeContentType(attachment.contentType))) return null;
     if (attachment.byteSize <= 0 || attachment.byteSize > SEARCH_TEXT_SOURCE_MAX_BYTES) return null;
     try {
       const object = await storage.getObject(attachment.companyId, attachment.objectKey);
-      return extractHtmlSearchText((await buffer(object.stream)).toString("utf8")) || null;
+      return (await buffer(object.stream)).toString("utf8");
     } catch {
       return null;
     }
+  }
+
+  async function readSearchText(attachment: DeliverableAttachment): Promise<string | null> {
+    const html = await readHtml(attachment);
+    return html ? extractHtmlSearchText(html) || null : null;
   }
 
   async function getAttachment(companyId: string, attachmentId: string): Promise<DeliverableAttachment | null> {
@@ -295,6 +347,29 @@ export function deliverableService(db: Db, storage?: StorageService) {
   return {
     getAttachment,
     getDetail,
+
+    /** The <title> of an HTML attachment, or null for other files or no title. */
+    readHtmlTitle: async (attachment: DeliverableAttachment): Promise<string | null> => {
+      const html = await readHtml(attachment);
+      return html ? extractHtmlTitle(html) : null;
+    },
+
+    /** The deliverable whose latest version is this attachment, if any. */
+    findLatestByAttachment: async (companyId: string, attachmentId: string): Promise<DeliverableDetail | null> => {
+      const row = await db
+        .select({ id: issueWorkProducts.id })
+        .from(issueWorkProducts)
+        .where(and(
+          eq(issueWorkProducts.companyId, companyId),
+          eq(issueWorkProducts.type, DELIVERABLE_TYPE),
+          sql`${issueWorkProducts.metadata}->>'attachmentId' = ${attachmentId}`,
+          latestVersionOnly,
+        ))
+        .orderBy(desc(issueWorkProducts.createdAt))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      return row ? getDetail(companyId, row.id) : null;
+    },
 
     /**
      * Register a deliverable on an issue. The same key on the same issue makes

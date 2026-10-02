@@ -1,5 +1,5 @@
 import { type SyntheticEvent, useEffect, useRef, useState } from "react";
-import { Download, ExternalLink, FileCheck2, PaperclipIcon, Play } from "lucide-react";
+import { BadgeCheck, Download, ExternalLink, FileCheck2, PaperclipIcon, Play } from "lucide-react";
 import type { CompanyArtifact } from "@/api/artifacts";
 import { Link } from "@/lib/router";
 import { cn, formatDate } from "@/lib/utils";
@@ -8,6 +8,8 @@ interface ArtifactCardProps {
   artifact: CompanyArtifact;
   /** Shown for stored files only; promotes the artifact to the Deliverables page (GRE-388). */
   onMarkDeliverable?: (artifact: CompanyArtifact) => void;
+  /** Shown instead of marking when the file already is a deliverable (GRE-406). */
+  onOpenDeliverable?: (deliverableId: string) => void;
 }
 
 /** Only stored files (direct attachments and file work products) can become deliverables. */
@@ -199,7 +201,37 @@ function SecondaryAction({
   );
 }
 
-export function ArtifactCard({ artifact, onMarkDeliverable }: ArtifactCardProps) {
+function CardActionButton({
+  title,
+  testId,
+  onAction,
+  children,
+}: {
+  title: string;
+  testId: string;
+  onAction: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      data-testid={testId}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onAction();
+      }}
+      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+    >
+      {children}
+    </button>
+  );
+}
+
+export function ArtifactCard({ artifact, onMarkDeliverable, onOpenDeliverable }: ArtifactCardProps) {
+  const deliverableId = artifact.deliverableId;
   return (
     <Link
       // design-allow(card-pattern): navigation <Link> card; Card renders a div and would break anchor semantics (C5a Run 3)
@@ -230,21 +262,24 @@ export function ArtifactCard({ artifact, onMarkDeliverable }: ArtifactCardProps)
                 <Download className="h-3.5 w-3.5" />
               </SecondaryAction>
             ) : null}
-            {onMarkDeliverable && canMarkAsDeliverable(artifact) ? (
-              <button
-                type="button"
+            {deliverableId ? (
+              onOpenDeliverable ? (
+                <CardActionButton
+                  title="View deliverable"
+                  testId="artifact-view-deliverable"
+                  onAction={() => onOpenDeliverable(deliverableId)}
+                >
+                  <BadgeCheck className="h-3.5 w-3.5" />
+                </CardActionButton>
+              ) : null
+            ) : onMarkDeliverable && canMarkAsDeliverable(artifact) ? (
+              <CardActionButton
                 title="Mark as deliverable"
-                aria-label="Mark as deliverable"
-                data-testid="artifact-mark-deliverable"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onMarkDeliverable(artifact);
-                }}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                testId="artifact-mark-deliverable"
+                onAction={() => onMarkDeliverable(artifact)}
               >
                 <FileCheck2 className="h-3.5 w-3.5" />
-              </button>
+              </CardActionButton>
             ) : null}
           </div>
         </div>
