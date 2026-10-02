@@ -56,6 +56,9 @@ vi.mock("../components/DashboardHero", () => ({ DashboardHero: () => <div data-t
 vi.mock("../components/DashboardDecisionsBox", () => ({
   DashboardDecisionsBox: () => <div data-testid="dashboard-decisions" />,
 }));
+vi.mock("../components/AgentWorkDigest", () => ({
+  DashboardDigestCard: () => <div data-testid="dashboard-digest" />,
+}));
 vi.mock("../components/DashboardOverview", () => ({
   DASHBOARD_OPEN_TASK_STATUSES: ["in_progress", "in_review", "blocked"],
   DashboardOverview: (props: { openTaskLimit?: number }) => {
@@ -162,6 +165,10 @@ describe("Dashboard layout", () => {
     const decisions = container.querySelector('[data-testid="dashboard-decisions"]')!;
     const overview = container.querySelector('[data-testid="dashboard-overview"]')!;
     expect(decisions.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // "Since you were last here" sits right under decisions, one tap from home (GRE-357).
+    const digest = container.querySelector('[data-testid="dashboard-digest"]')!;
+    expect(decisions.compareDocumentPosition(digest) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(digest.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     // Desktop has no phone shortcuts or toggle, and lists the full open-task count.
     expect(container.querySelector('[data-testid="dashboard-phone-shortcuts"]')).toBeNull();

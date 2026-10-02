@@ -25,6 +25,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
 import { DASHBOARD_OPEN_TASK_STATUSES, DashboardOverview } from "../components/DashboardOverview";
+import { DashboardDigestCard } from "../components/AgentWorkDigest";
 import { DashboardDecisionsBox } from "../components/DashboardDecisionsBox";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import { useLiveAgents } from "../hooks/useLiveAgents";
@@ -413,6 +414,7 @@ export function Dashboard() {
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       <DashboardDecisionsBox companyId={selectedCompanyId!} />
+      <DashboardDigestCard companyId={selectedCompanyId!} />
 
       {pausedBanner?.kind === "imported" ? (
         <InlineBanner

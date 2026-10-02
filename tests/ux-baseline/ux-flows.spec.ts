@@ -334,6 +334,8 @@ type FlowContext = { page: Page; rec: Recorder; viewport: ViewportName; seed: Se
 /** Untimed set-up a flow needs before each sample, done before the app opens. */
 const PREPARE: Partial<Record<FlowId, (request: APIRequestContext, seedData: Seed, label: string) => Promise<unknown>>> = {
   "2-answer-decision": seedDecision,
+  // Opening the digest marks the visit, so each sample needs new agent work since the last one.
+  "5-overnight-activity": seedDecision,
 };
 
 const FLOWS: Record<FlowId, (ctx: FlowContext) => Promise<void>> = {
@@ -408,23 +410,17 @@ const FLOWS: Record<FlowId, (ctx: FlowContext) => Promise<void>> = {
     await rec.step("result-visible", result);
   },
 
-  async "5-overnight-activity"({ page, rec, viewport }) {
-    if (viewport === "phone") {
-      await rec.click(page.getByRole("button", { name: "Open sidebar" }));
-      const audit = page.getByRole("link", { name: /^Audit/ }).first();
-      await rec.step("drawer-open", audit);
-      await rec.click(audit);
-    } else {
-      await rec.click(nav(page, viewport).link(/Audit/));
-    }
-    const agentTab = page.getByRole("tab", { name: "Agent Actions" });
-    await rec.step("audit-open", agentTab);
-    await rec.click(agentTab);
-    await expect(agentTab).toHaveAttribute("aria-selected", "true");
-    // Done when the newest agent action is on screen, not just loaded below the filters.
-    const newest = page.getByRole("list", { name: "Audit activity" }).getByRole("listitem").filter({ hasText: /Ridge|Mica|Everest/ }).first();
-    await rec.step("agent-actions", newest);
-    await rec.bringIntoView(newest);
+  async "5-overnight-activity"({ page, rec }) {
+    // GRE-357: home has a "Since you were last here" card, the same on desktop
+    // and phone, so the overnight digest is one tap away and no drawer opens.
+    const open = page.getByRole("region", { name: "Since you were last here" }).getByRole("link", { name: /See what happened/ });
+    await rec.step("home-digest", open);
+    await rec.bringIntoView(open);
+    await rec.click(open);
+    // Done when the first agent's work is on screen.
+    const firstAgent = page.getByRole("heading", { level: 2, name: /Ridge|Mica|Everest/ }).first();
+    await rec.step("digest-open", firstAgent);
+    await rec.bringIntoView(firstAgent);
   },
 };
 
