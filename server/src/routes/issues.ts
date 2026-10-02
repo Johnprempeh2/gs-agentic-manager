@@ -3,7 +3,7 @@ import { deliverConversationComments, isConversation } from "../services/agent-c
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
-import { extractIssueReferenceIdentifiers, requiresExecutionReconciliation } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_SANDBOX_TOKENS, requiresExecutionReconciliation } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -609,9 +609,14 @@ async function readStream(stream: NodeJS.ReadableStream): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+// Deliverables carry versions and search text, so they only enter through
+// their own routes (routes/deliverables.ts), never the generic work-product ones.
+const DELIVERABLE_WORK_PRODUCT_ROUTE_ERROR =
+  "Deliverables are registered with POST /api/issues/{id}/deliverables, not the work-products routes.";
+
 const HTML_CONTENT_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const HTML_ATTACHMENT_CSP = [
-  "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox",
+  `sandbox ${HTML_ATTACHMENT_SANDBOX_TOKENS.join(" ")}`,
   "default-src 'none'",
   "script-src 'unsafe-inline' https:",
   "style-src 'unsafe-inline' https:",
@@ -10846,6 +10851,10 @@ export function issueRoutes(
     "/issues/:id/work-products",
     validate(createIssueWorkProductSchema),
     async (req, res) => {
+      if (req.body.type === "deliverable") {
+        res.status(422).json({ error: DELIVERABLE_WORK_PRODUCT_ROUTE_ERROR });
+        return;
+      }
       const id = req.params.id as string;
       const issue = await getAccessibleResource(
         req,
@@ -11279,6 +11288,10 @@ export function issueRoutes(
         "Work product not found",
       );
       if (!existing) return;
+      if (existing.type === "deliverable" || req.body.type === "deliverable") {
+        res.status(422).json({ error: DELIVERABLE_WORK_PRODUCT_ROUTE_ERROR });
+        return;
+      }
       const issue = await svc.getById(existing.issueId);
       if (!issue) {
         res.status(404).json({ error: "Issue not found" });

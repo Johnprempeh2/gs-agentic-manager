@@ -71,6 +71,7 @@ import { projectRoutes } from "./routes/projects.js";
 import { issueRoutes } from "./routes/issues.js";
 import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
 import { issueTablingRoutes } from "./routes/issue-tabling.js";
+import { deliverableRoutes } from "./routes/deliverables.js";
 import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
@@ -762,6 +763,7 @@ export async function createApp(
     }),
   );
   api.use(assetRoutes(db, opts.storageService));
+  api.use(deliverableRoutes(db, opts.storageService));
   api.use(projectToolRoutes(db));
   api.use(projectRoutes(db));
   api.use(caseRoutes(db, opts.storageService));

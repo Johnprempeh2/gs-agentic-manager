@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "issue_work_products_deliverable_version_uq" ON "issue_work_products" USING btree ("company_id","issue_id","external_id",(("metadata"->>'version')::integer)) WHERE "issue_work_products"."type" = 'deliverable';

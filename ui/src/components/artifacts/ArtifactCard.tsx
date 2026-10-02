@@ -1,11 +1,18 @@
 import { type SyntheticEvent, useEffect, useRef, useState } from "react";
-import { Download, ExternalLink, PaperclipIcon, Play } from "lucide-react";
+import { Download, ExternalLink, FileCheck2, PaperclipIcon, Play } from "lucide-react";
 import type { CompanyArtifact } from "@/api/artifacts";
 import { Link } from "@/lib/router";
 import { cn, formatDate } from "@/lib/utils";
 
 interface ArtifactCardProps {
   artifact: CompanyArtifact;
+  /** Shown for stored files only; promotes the artifact to the Deliverables page (GRE-388). */
+  onMarkDeliverable?: (artifact: CompanyArtifact) => void;
+}
+
+/** Only stored files (direct attachments and file work products) can become deliverables. */
+export function canMarkAsDeliverable(artifact: CompanyArtifact) {
+  return artifact.source !== "document" && !!artifact.downloadPath;
 }
 
 /**
@@ -192,7 +199,7 @@ function SecondaryAction({
   );
 }
 
-export function ArtifactCard({ artifact }: ArtifactCardProps) {
+export function ArtifactCard({ artifact, onMarkDeliverable }: ArtifactCardProps) {
   return (
     <Link
       // design-allow(card-pattern): navigation <Link> card; Card renders a div and would break anchor semantics (C5a Run 3)
@@ -222,6 +229,22 @@ export function ArtifactCard({ artifact }: ArtifactCardProps) {
               <SecondaryAction href={artifact.downloadPath} download title="Download file">
                 <Download className="h-3.5 w-3.5" />
               </SecondaryAction>
+            ) : null}
+            {onMarkDeliverable && canMarkAsDeliverable(artifact) ? (
+              <button
+                type="button"
+                title="Mark as deliverable"
+                aria-label="Mark as deliverable"
+                data-testid="artifact-mark-deliverable"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onMarkDeliverable(artifact);
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <FileCheck2 className="h-3.5 w-3.5" />
+              </button>
             ) : null}
           </div>
         </div>

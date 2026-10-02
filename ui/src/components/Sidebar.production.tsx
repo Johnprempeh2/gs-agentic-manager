@@ -22,6 +22,7 @@ import {
   GanttChartSquare,
   LayoutGrid,
   UserCheck,
+  FileCheck2,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -169,6 +170,7 @@ export function Sidebar() {
           ) : null}
           {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
+          <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (

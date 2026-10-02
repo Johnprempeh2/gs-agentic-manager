@@ -272,4 +272,32 @@ describe("ArtifactCard", () => {
     expect(markup).not.toContain('aria-label="Download file"');
     expect(markup).not.toContain('aria-label="Open file in new tab"');
   });
+
+  it("offers Mark as deliverable on stored files only, without following the card link (GRE-388)", () => {
+    const onMark = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const artifact = makeArtifact();
+    flushSync(() => {
+      root.render(<ArtifactCard artifact={artifact} onMarkDeliverable={onMark} />);
+    });
+    const button = container.querySelector<HTMLButtonElement>("[data-testid='artifact-mark-deliverable']");
+    expect(button?.getAttribute("aria-label")).toBe("Mark as deliverable");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    button!.dispatchEvent(click);
+    expect(onMark).toHaveBeenCalledWith(artifact);
+    expect(click.defaultPrevented).toBe(true);
+    flushSync(() => root.unmount());
+    container.remove();
+
+    const documentMarkup = renderToStaticMarkup(
+      <ArtifactCard
+        artifact={makeArtifact({ source: "document", mediaKind: "document", downloadPath: null })}
+        onMarkDeliverable={onMark}
+      />,
+    );
+    expect(documentMarkup).not.toContain("artifact-mark-deliverable");
+    expect(renderToStaticMarkup(<ArtifactCard artifact={makeArtifact()} />)).not.toContain("artifact-mark-deliverable");
+  });
 });

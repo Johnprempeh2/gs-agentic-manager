@@ -567,6 +567,12 @@ export const queryKeys = {
         groupIssueId ?? "",
       ] as const,
   },
+  deliverables: {
+    all: (companyId: string) => ["deliverables", companyId] as const,
+    list: (companyId: string, params: Record<string, string | undefined>) =>
+      ["deliverables", companyId, "list", params] as const,
+    detail: (companyId: string, id: string) => ["deliverables", companyId, "detail", id] as const,
+  },
   budgets: {
     overview: (companyId: string) =>
       ["budgets", "overview", companyId] as const,
