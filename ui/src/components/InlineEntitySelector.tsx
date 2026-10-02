@@ -88,6 +88,8 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
     const inputRef = useRef<HTMLInputElement>(null);
     const shouldPreventCloseAutoFocusRef = useRef(false);
     const isPointerDownRef = useRef(false);
+    // Set while closing hands focus back to the trigger, so openOnFocus does not reopen it.
+    const isReturningFocusRef = useRef(false);
 
     const allOptions = useMemo<InlineEntityOption[]>(() => {
       const baseOptions = [{ id: "", label: noneLabel, searchText: noneLabel }, ...options];
@@ -207,6 +209,11 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
             onPointerDown={() => { isPointerDownRef.current = true; }}
             onFocus={() => {
               if (disabled) return;
+              if (isReturningFocusRef.current) {
+                isReturningFocusRef.current = false;
+                isPointerDownRef.current = false;
+                return;
+              }
               if (openOnFocus && !isPointerDownRef.current) setOpen(true);
               isPointerDownRef.current = false;
             }}
@@ -229,7 +236,14 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
             inputRef.current?.focus();
           }}
           onCloseAutoFocus={(event) => {
-            if (!shouldPreventCloseAutoFocusRef.current) return;
+            if (!shouldPreventCloseAutoFocusRef.current) {
+              // Radix focuses the trigger right after this handler; clear the flag if it never lands.
+              isReturningFocusRef.current = true;
+              requestAnimationFrame(() => {
+                isReturningFocusRef.current = false;
+              });
+              return;
+            }
             event.preventDefault();
             shouldPreventCloseAutoFocusRef.current = false;
           }}

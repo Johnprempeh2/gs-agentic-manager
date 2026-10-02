@@ -3,6 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { InlineEntitySelector } from "./InlineEntitySelector";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -178,6 +179,81 @@ describe("InlineEntitySelector", () => {
       root.unmount();
     });
   });
+
+  it.each(["click", "focus"] as const)(
+    "closes on Escape after a %s open and stays closed inside a dialog",
+    async (openWith) => {
+      const root = createRoot(container);
+      const onDialogOpenChange = vi.fn();
+
+      act(() => {
+        root.render(
+          <Dialog open onOpenChange={onDialogOpenChange}>
+            <DialogContent>
+              <DialogTitle>New task</DialogTitle>
+              <input aria-label="Task title" />
+              <InlineEntitySelector
+                value=""
+                options={[{ id: "agent:agent-1", label: "CodexCoder" }]}
+                placeholder="Assignee"
+                noneLabel="No assignee"
+                searchPlaceholder="Search assignees..."
+                emptyMessage="No assignees found."
+                onChange={vi.fn()}
+                triggerTestId="assignee-trigger"
+                disablePortal
+              />
+            </DialogContent>
+          </Dialog>,
+        );
+      });
+
+      const trigger = document.querySelector('[data-testid="assignee-trigger"]') as HTMLButtonElement;
+      expect(trigger).not.toBeNull();
+
+      await act(async () => {
+        if (openWith === "click") {
+          trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+          trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        } else {
+          trigger.focus();
+        }
+        await Promise.resolve();
+      });
+
+      const searchInput = document.querySelector('input[placeholder="Search assignees..."]') as HTMLInputElement;
+      expect(searchInput).not.toBeNull();
+      searchInput.focus();
+
+      await act(async () => {
+        searchInput.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(document.querySelector('input[placeholder="Search assignees..."]')).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+      expect(onDialogOpenChange).not.toHaveBeenCalled();
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+
+      // A later keyboard focus still opens the picker.
+      await act(async () => {
+        trigger.blur();
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+      });
+      await act(async () => {
+        trigger.focus();
+        await Promise.resolve();
+      });
+      expect(document.querySelector('input[placeholder="Search assignees..."]')).not.toBeNull();
+
+      act(() => {
+        root.unmount();
+      });
+    },
+  );
 
   it("does not open the popover when disabled", async () => {
     const root = createRoot(container);
