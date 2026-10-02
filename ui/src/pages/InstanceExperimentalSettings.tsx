@@ -60,7 +60,7 @@ function ManagedByCloudBadge() {
   return (
     <Badge variant="outline" className="text-muted-foreground">
       <Lock aria-hidden="true" />
-      Managed by Paperclip Cloud
+      Managed by your hosting service
     </Badge>
   );
 }
@@ -196,7 +196,7 @@ export function InstanceExperimentalSettings() {
 
   const inWorktree = isWorktreeRuntime();
   // Present only on cloud-managed instances: keys the managed overlay controls
-  // render locked with the "Managed by Paperclip Cloud" badge. Self-hosted
+  // render locked with the "Managed by your hosting service" badge. Self-hosted
   // responses carry no `managedKeys`, so every card stays editable.
   const managedKeys = experimentalQuery.data?.managedKeys ?? {};
   const enableWorktreeRunExecution = experimentalQuery.data?.enableWorktreeRunExecution === true;

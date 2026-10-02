@@ -1588,14 +1588,10 @@ settings:
               Slack needs a public HTTPS URL to send messages to {CLIENT_BRAND_NAME}.
               Configure one for this instance before creating or connecting your Slack app.
             </p>
-            <a
-              href="https://docs.paperclip.ing/reference/deploy/https/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm underline underline-offset-4"
-            >
-              Learn how to set up HTTPS
-            </a>
+            <p className="text-sm">
+              To set up HTTPS, put this instance behind a reverse proxy with a trusted certificate,
+              or use a public tunnel such as Tailscale Funnel.
+            </p>
           </div>
         </div>
       )}

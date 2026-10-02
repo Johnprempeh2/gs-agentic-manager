@@ -603,7 +603,7 @@ export function OnboardingRoutePage() {
             <p className="text-sm text-muted-foreground">
               {t("app.cloudCreateUnavailable", {
                 defaultValue:
-                  "Organisations are created in Paperclip Cloud. This instance can't reach it right now. Try again from your Cloud portfolio.",
+                  "Organisations are created in your Cloud portfolio. This instance can't reach it right now. Try again from your Cloud portfolio.",
               })}
             </p>
           ) : (
@@ -732,7 +732,7 @@ function NoCompaniesStartPage() {
             <p className="text-sm text-muted-foreground">
               {t("app.cloudCreateUnavailable", {
                 defaultValue:
-                  "Organisations are created in Paperclip Cloud. This instance can't reach it right now. Try again from your Cloud portfolio.",
+                  "Organisations are created in your Cloud portfolio. This instance can't reach it right now. Try again from your Cloud portfolio.",
               })}
             </p>
           ) : (

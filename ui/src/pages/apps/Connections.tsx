@@ -169,7 +169,7 @@ export function Connections() {
       if (status.verificationUrl) window.location.assign(status.verificationUrl);
     },
     onError: (error) => pushToast({
-      title: "Couldn’t reach Paperclip Cloud",
+      title: "Couldn’t reach the connection service",
       body: error instanceof Error ? error.message : "Try again in a moment.",
       tone: "error",
     }),
@@ -602,7 +602,7 @@ function CloudConnectorEnrollmentBanner({
     return (
       <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
         <Cloud className="h-5 w-5 text-muted-foreground" />
-        <div className="text-sm text-muted-foreground">Paperclip Cloud enrollment status is unavailable.</div>
+        <div className="text-sm text-muted-foreground">Sign-in service status is unavailable.</div>
       </div>
     );
   }
@@ -611,7 +611,7 @@ function CloudConnectorEnrollmentBanner({
       <Cloud className="h-5 w-5 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-foreground">
-          {status?.status === "pending" ? "Finish Paperclip Cloud enrollment" : `Enable ${CLIENT_BRAND_NAME}-managed sign-in`}
+          {status?.status === "pending" ? "Finish sign-in service setup" : `Enable ${CLIENT_BRAND_NAME}-managed sign-in`}
         </div>
         <div className="text-xs text-muted-foreground">
           Confirm this server’s exact address before Cloud can return encrypted Google credentials to it.

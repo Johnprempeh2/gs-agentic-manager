@@ -312,8 +312,9 @@ export function GitHubChatSetup() {
             >
               A publicly reachable HTTPS address is required before App
               registration. Configure the instance’s public URL or an explicit
-              webhook ingress URL, then refresh. {" "}
-              <a className="underline" href="https://docs.paperclip.ing/reference/deploy/https/" target="_blank" rel="noreferrer">Learn how to set up HTTPS</a>
+              webhook ingress URL, then refresh. To set up HTTPS, put this
+              instance behind a reverse proxy with a trusted certificate, or
+              use a public tunnel such as Tailscale Funnel.
             </div>
           )}
           <p className="text-sm">
