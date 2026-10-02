@@ -26,6 +26,12 @@
 // cause) is run once more when it fails. It passes only if the second run
 // passes, and the report still lists the failures of the first run (GRE-280).
 // No other file is retried.
+//
+// The report also says how far the wall clock moved against the monotonic
+// clock during the run. A clock that is stepped back (WSL2 with a fast clock
+// source and NTP correcting it every 32s steps about -2s each time) fails
+// tests that compare timestamps, on cases that differ from run to run. Such
+// failures are the machine, not the candidate (GRE-407).
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -214,7 +220,16 @@ function firstLine(text) {
   return String(text ?? "").split("\n").find((l) => l.trim())?.trim() ?? "";
 }
 
-export function buildReport({ plan, results, from, mapPath, repo, commit }) {
+// Wall time minus monotonic time. It changes only when the wall clock is
+// stepped, so its change over the run is the sum of the steps.
+export function clockOffsetMs() {
+  return Date.now() - performance.now();
+}
+
+// A step this large can turn "later" into "earlier" between two writes.
+const CLOCK_STEP_WARN_MS = 500;
+
+export function buildReport({ plan, results, from, mapPath, repo, commit, clockStepMs = 0 }) {
   const failures = [];
   for (const key of plan.unmapped) {
     failures.push({ switch: key, file: null, tests: [`switch is on but has no entry in ${MAP_PATH}`] });
@@ -231,6 +246,7 @@ export function buildReport({ plan, results, from, mapPath, repo, commit }) {
     map: mapPath,
     switchesOn: plan.on,
     switchesOnWithoutTests: plan.untested,
+    clockStepMs,
     files: results,
     failures,
   };
@@ -242,6 +258,10 @@ export function formatReport(report) {
   lines.push(`Switch values: ${report.settingsFrom}`);
   lines.push(`Switches on (${report.switchesOn.length}): ${report.switchesOn.join(", ") || "none"}`);
   if (report.switchesOnWithoutTests.length) lines.push(`On without tests: ${report.switchesOnWithoutTests.join(", ")}`);
+  if (Math.abs(report.clockStepMs ?? 0) >= CLOCK_STEP_WARN_MS) {
+    lines.push(`Clock: the system clock was stepped ${(report.clockStepMs / 1000).toFixed(1)} s against the monotonic clock during this run. ` +
+      "Tests that compare timestamps can fail on such a machine; fix the machine clock before you trust a timing failure (GRE-407).");
+  }
   const passed = report.files.filter((f) => f.status === "passed").length;
   lines.push(`Test files: ${report.files.length} run, ${passed} passed, ${report.files.length - passed} failed`);
   const retried = report.files.filter((f) => f.retried);
@@ -261,7 +281,7 @@ export function formatReport(report) {
   return lines.join("\n");
 }
 
-export async function main(argv, { run = runVitest, prepare = prepareRepo, fetchImpl = fetch, env = process.env, log = console.log } = {}) {
+export async function main(argv, { run = runVitest, prepare = prepareRepo, fetchImpl = fetch, env = process.env, log = console.log, clockOffset = clockOffsetMs } = {}) {
   let opts, loaded, settings;
   try {
     opts = parseArgs(argv);
@@ -273,11 +293,13 @@ export async function main(argv, { run = runVitest, prepare = prepareRepo, fetch
   }
   const plan = planRun(settings.settings, loaded.map, opts.repo);
   if (plan.byPackage.size && !prepare(opts.repo)) log("switch-tests: building the plugin SDK failed; server tests may not load");
+  const clockBefore = clockOffset();
   const runs = new Map();
   for (const [pkg, files] of plan.byPackage) runs.set(pkg, run(pkg, files, opts.repo));
   const results = retryKnownFlaky(plan, opts.repo, collectResults(plan, opts.repo, runs), loaded.knownFlaky, run);
+  const clockStepMs = Math.round(clockOffset() - clockBefore);
   const commit = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: opts.repo, encoding: "utf8" }).stdout?.trim() || null;
-  const report = buildReport({ plan, results, from: settings.from, mapPath: loaded.path, repo: opts.repo, commit });
+  const report = buildReport({ plan, results, from: settings.from, mapPath: loaded.path, repo: opts.repo, commit, clockStepMs });
   if (opts.json) writeFileSync(opts.json, `${JSON.stringify(report, null, 2)}\n`);
   log(formatReport(report));
   return report.verdict === "passed" ? 0 : 1;

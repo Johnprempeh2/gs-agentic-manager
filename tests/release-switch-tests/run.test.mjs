@@ -245,3 +245,34 @@ test("a failing file that is not known flaky is not retried", async () => {
   assert.equal(code, 1);
   assert.equal(calls, 1);
 });
+
+test("a clock stepped back during the run is named in the report; the verdict does not change", async () => {
+  const { repo, map, settings } = fixtureRepo();
+  writeFileSync(map, JSON.stringify({ switches: { alphaOn: ["server/src/a.test.ts"], betaOn: [], gammaOff: [] } }));
+  const offsets = [1_000, 1_000 - 4_012];
+  const logs = [];
+  const json = join(repo, "report.json");
+  const code = await main(["--repo", repo, "--map", map, "--settings-file", settings, "--json", json], {
+    prepare: () => true,
+    run: () => vitestReport(repo, { "server/src/a.test.ts": [] }),
+    log: (line) => logs.push(line),
+    clockOffset: () => offsets.shift(),
+  });
+  assert.equal(code, 0);
+  assert.match(logs.join("\n"), /Clock: the system clock was stepped -4\.0 s .*GRE-407/);
+  assert.equal(JSON.parse(readFileSync(json, "utf8")).clockStepMs, -4_012);
+});
+
+test("a steady clock adds no clock line", async () => {
+  const { repo, map, settings } = fixtureRepo();
+  writeFileSync(map, JSON.stringify({ switches: { alphaOn: ["server/src/a.test.ts"], betaOn: [], gammaOff: [] } }));
+  const offsets = [1_000, 1_020];
+  const logs = [];
+  await main(["--repo", repo, "--map", map, "--settings-file", settings], {
+    prepare: () => true,
+    run: () => vitestReport(repo, { "server/src/a.test.ts": [] }),
+    log: (line) => logs.push(line),
+    clockOffset: () => offsets.shift(),
+  });
+  assert.doesNotMatch(logs.join("\n"), /Clock:/);
+});
