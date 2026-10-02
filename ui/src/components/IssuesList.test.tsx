@@ -610,10 +610,10 @@ describe("IssuesList", () => {
 
     const chipGroup = container.querySelector("[role='group'][aria-label='Show tasks']");
     const chips = Array.from(chipGroup?.querySelectorAll("button") ?? []);
-    expect(chips.map((chip) => chip.textContent)).toEqual(["All", "Active", "Blocked", "Done"]);
-    expect(chips[1]?.getAttribute("aria-pressed")).toBe("true");
+    expect(chips.map((chip) => chip.textContent)).toEqual(["All", "Recent", "Active", "Blocked", "Done"]);
+    expect(chips[2]?.getAttribute("aria-pressed")).toBe("true");
 
-    await act(() => chips[3]?.click());
+    await act(() => chips[4]?.click());
 
     await waitForAssertion(() => {
       expect(container.textContent).toContain("Shipped task");
@@ -622,6 +622,84 @@ describe("IssuesList", () => {
     expect(onStatusFilterChange).toHaveBeenLastCalledWith(["done", "cancelled"]);
 
     act(() => root.unmount());
+  });
+
+  it("shows finished and live tasks together on the Recent default", async () => {
+    const doneIssue = createIssue({ id: "issue-done", identifier: "PAP-20", title: "Shipped task", status: "done" });
+    const blockedIssue = createIssue({ id: "issue-blocked", identifier: "PAP-21", title: "Stuck task", status: "blocked" });
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[doneIssue, blockedIssue]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        toolbarPresentation="collection"
+        defaultStatuses={["todo", "in_progress", "in_review", "blocked", "done"]}
+        showStatusChips
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Shipped task");
+      expect(container.textContent).toContain("Stuck task");
+    });
+    const recent = Array.from(container.querySelectorAll("[aria-label='Show tasks'] button"))
+      .find((chip) => chip.textContent === "Recent");
+    expect(recent?.getAttribute("aria-pressed")).toBe("true");
+
+    act(() => root.unmount());
+  });
+
+  it("keeps a chip picked before the company settles instead of resetting it to the default", async () => {
+    companyState.selectedCompanyId = "company-1";
+    const doneIssue = createIssue({ id: "issue-done", identifier: "PAP-20", title: "Shipped task", status: "done" });
+    const blockedIssue = createIssue({ id: "issue-blocked", identifier: "PAP-21", title: "Stuck task", status: "blocked" });
+    const list = () => (
+      <IssuesList
+        issues={[doneIssue, blockedIssue]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        toolbarPresentation="collection"
+        defaultStatuses={["todo", "in_progress", "in_review", "blocked"]}
+        showStatusChips
+        onUpdateIssue={() => undefined}
+      />
+    );
+    const { root, queryClient } = renderWithQueryClient(list(), container);
+    const chip = (label: string) => Array.from(container.querySelectorAll("[aria-label='Show tasks'] button"))
+      .find((button) => button.textContent === label);
+
+    await waitForAssertion(() => expect(chip("Done")).toBeTruthy());
+    await act(() => (chip("Done") as HTMLButtonElement).click());
+    expect(chip("Done")?.getAttribute("aria-pressed")).toBe("true");
+
+    try {
+      // The route settles on another company with no saved view yet.
+      companyState.selectedCompanyId = "company-2";
+      act(() => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <TooltipProvider>{list()}</TooltipProvider>
+          </QueryClientProvider>,
+        );
+      });
+      // Let the context reload effect and its re-render settle.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      await waitForAssertion(() => {
+        expect(chip("Done")?.getAttribute("aria-pressed")).toBe("true");
+        expect(container.textContent).toContain("Shipped task");
+        expect(container.textContent).not.toContain("Stuck task");
+      });
+    } finally {
+      companyState.selectedCompanyId = "company-1";
+      act(() => root.unmount());
+    }
   });
 
   it("does not load external-object summaries when the experimental flag is disabled", async () => {

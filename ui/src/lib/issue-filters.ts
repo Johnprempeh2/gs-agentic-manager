@@ -81,6 +81,8 @@ export const issuePriorityOrder = ["critical", "high", "medium", "low"];
 
 export const issueQuickFilterPresets = [
   { label: "All", statuses: [] as string[] },
+  // Live work plus finished results; the newest-updated sort puts recent results near the top.
+  { label: "Recent", statuses: ["todo", "in_progress", "in_review", "blocked", "done"] },
   { label: "Active", statuses: ["todo", "in_progress", "in_review", "blocked"] },
   { label: "Blocked", statuses: ["blocked"] },
   { label: "Backlog", statuses: ["backlog"] },

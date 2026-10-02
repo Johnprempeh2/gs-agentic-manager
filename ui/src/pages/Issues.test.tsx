@@ -12,8 +12,8 @@ import {
 } from "./Issues";
 
 describe("issues page status filter", () => {
-  it("opens on the Active preset so live and blocked work comes first", () => {
-    expect(ISSUES_DEFAULT_STATUSES).toEqual(["todo", "in_progress", "in_review", "blocked"]);
+  it("opens on the Recent preset so live work and finished results show without a filter click", () => {
+    expect(ISSUES_DEFAULT_STATUSES).toEqual(["todo", "in_progress", "in_review", "blocked", "done"]);
   });
 
   it("asks the server for one stable status set, or everything for All", () => {
