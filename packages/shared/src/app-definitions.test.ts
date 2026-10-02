@@ -244,6 +244,9 @@ describe("AppDefinition catalog", () => {
 
   it("validates all Wave 1 definitions", () =>
     expect(() => appDefinitionsSchema.parse(APP_DEFINITIONS)).not.toThrow());
+  it("says Greatstone, not the platform name, in app card and setup text", () => {
+    expect(JSON.stringify(APP_DEFINITIONS)).not.toContain("GS Agentic Manager");
+  });
   it("contains every established provider plus the reviewed self-serve catalog", () => {
     expect(APP_DEFINITIONS.map((app) => app.slug)).toEqual(
       expect.arrayContaining([
@@ -398,7 +401,7 @@ describe("AppDefinition catalog", () => {
       "installation_repositories",
     );
     expect(channel("github")?.guidanceMd).toContain(
-      "Generate the webhook secret in GS Agentic Manager",
+      "Generate the webhook secret in Greatstone",
     );
     expect(channel("github")?.guidanceMd).toContain("SSL-verified");
     expect(channel("microsoft-teams")?.guidanceMd).toContain(
@@ -422,7 +425,7 @@ describe("AppDefinition catalog", () => {
       "One team install covers its standard channels",
     );
     expect(channel("telegram")?.guidanceMd).toContain(
-      "public GS Agentic Manager webhook endpoint",
+      "public Greatstone webhook endpoint",
     );
     expect(channel("slack")?.guidanceMd).toContain("reactions");
     expect(channel("slack")?.guidanceMd).toContain("direct messages");
@@ -689,7 +692,7 @@ describe("AppDefinition catalog", () => {
         "https://developers.google.com/workspace/preview",
       );
       expect(prerequisite?.description, slug).toContain(
-        "does not enable unrelated GS Agentic Manager customers",
+        "does not enable unrelated Greatstone customers",
       );
       expect(prerequisite?.steps?.join(" "), slug).toContain(
         "final project-registration email",
