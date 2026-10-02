@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { test } from "node:test";
+import { LEGACY_ENV_PREFIX } from "../../packages/shared/src/legacy-env.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const tsx = path.join(root, "cli/node_modules/tsx/dist/cli.mjs");
@@ -23,7 +24,7 @@ const LIVE = {
   GSAM_GITHUB_BROKER_TOKEN: "live-broker-token",
   GSAM_WORKSPACE_CWD: "/live/worktree",
   GSAM_RUN_SCRATCH_DIR: "/live/scratch",
-  PAPERCLIP_API_KEY: "live-legacy-key",
+  [`${LEGACY_ENV_PREFIX}API_KEY`]: "live-legacy-key",
 };
 
 const CONFIGS = [
