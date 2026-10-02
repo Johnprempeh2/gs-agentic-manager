@@ -36,14 +36,25 @@ vi.mock("@/lib/router", () => ({
 }));
 // The inline question form has its own tests; here it only has to appear.
 vi.mock("../AttentionInteractionResolver", () => ({
-  AttentionInteractionResolver: ({ interactionId }: { interactionId: string }) => (
-    <div data-testid="inline-question">{interactionId}</div>
+  AttentionInteractionResolver: ({ interactionId, embedded }: { interactionId: string; embedded?: boolean }) => (
+    <div data-testid="inline-question" data-embedded={embedded ? "true" : "false"}>{interactionId}</div>
   ),
 }));
 vi.mock("../MarkdownBody", () => ({ MarkdownBody: ({ children }: { children: string }) => <div>{children}</div> }));
 vi.mock("../DecisionResolver", () => ({ DecisionResolver: () => <div data-testid="inline-decision" /> }));
 
-import { DecisionFeedCard, visibleCardActions } from "./DecisionFeedCard";
+import { DecisionFeedCard, decisionKindLabel, visibleCardActions } from "./DecisionFeedCard";
+
+/** A confirmation: the feed files it under "question" (GRE-360). */
+function confirmationCard(): DecisionCard {
+  const card = questionCard("int-7", "issue-42", "GRE-42");
+  card.reason = "Confirmation requested";
+  card.items = card.items.map((item) => ({
+    ...item,
+    subject: { ...item.subject, metadata: { ...item.subject.metadata, kind: "request_confirmation" } },
+  })) as DecisionCard["items"];
+  return card;
+}
 
 if (!globalThis.PointerEvent) {
   (globalThis as unknown as { PointerEvent: typeof MouseEvent }).PointerEvent = MouseEvent;
@@ -174,6 +185,45 @@ describe("DecisionFeedCard rendering per kind", () => {
     expect(container.querySelector("[data-testid='inline-question']")?.textContent).toBe("int-1");
     expect(hasButton("Answer")).toBe(false);
     expect(container.querySelector("a[href='/issues/GRE-44']")).not.toBeNull();
+  });
+
+  it("labels a confirmation Confirmation, once, and embeds its answer without a second header", () => {
+    render(confirmationCard());
+    const chips = [...container.querySelectorAll("[data-decision-card] span.rounded-full")].map((el) => el.textContent);
+    expect(chips).toEqual(["Confirmation"]);
+    expect(container.textContent).not.toContain("Question");
+    expect(container.textContent?.split("Confirmation requested").length).toBe(2);
+    expect(container.querySelector("[data-testid='inline-question']")?.getAttribute("data-embedded")).toBe("true");
+  });
+
+  it("names each answered-in-place kind for what it asks", () => {
+    expect(decisionKindLabel(questionCard(), "question")).toBe("Question");
+    expect(decisionKindLabel(confirmationCard(), "question")).toBe("Confirmation");
+    expect(decisionKindLabel(blockedCard(), "blocked")).toBe("Blocked");
+  });
+
+  it("folds the task actions into More when the card is answered in place", async () => {
+    render(questionCard());
+    expect(hasButton("Reassign")).toBe(false);
+    expect(hasButton("Give an instruction")).toBe(false);
+    expect(hasButton("Cancel the task")).toBe(false);
+    expect(hasButton("Ask for clarity")).toBe(true);
+    expect(hasButton("Not now")).toBe(true);
+    const more = button("More actions");
+    await act(async () => {
+      more.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    });
+    const items = [...document.querySelectorAll("[role='menuitem']")].map((el) => el.textContent?.trim());
+    expect(items).toEqual(["Reassign", "Give an instruction", "Cancel the task"]);
+    await click(document.querySelector("[role='menuitem']:last-child") as HTMLElement);
+    await click(button("Yes, cancel the task"));
+    expect(api.patch).toHaveBeenCalledWith("/issues/issue-44", { status: "cancelled" });
+  });
+
+  it("keeps a blocked card's actions as buttons", () => {
+    render(blockedCard());
+    expect(hasButton("Reassign")).toBe(true);
+    expect(hasButton("More actions")).toBe(false);
   });
 
   it("a company-level card has no Not now or Ask for clarity", () => {
@@ -367,5 +417,12 @@ describe("DecisionFeedCard on a phone", () => {
     expect(api.patch).not.toHaveBeenCalled();
     await click(button("Yes, cancel the task"));
     expect(api.patch).toHaveBeenCalledWith("/issues/issue-201", { status: "cancelled" });
+  });
+
+  it("puts no task action in front of a confirmation's own Approve", () => {
+    render(confirmationCard());
+    const actionRow = button("More actions").parentElement!;
+    const labels = [...actionRow.querySelectorAll("button")].map((entry) => entry.textContent?.trim());
+    expect(labels).toEqual(["Not now", "More"]);
   });
 });

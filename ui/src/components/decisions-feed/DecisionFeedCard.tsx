@@ -13,7 +13,7 @@ import type {
 import { Link } from "@/lib/router";
 import { decisionsFeedApi, runDecisionCardAction } from "../../api/decisionsFeed";
 import { attentionDetailImages, attentionImageUrl, severityStyle } from "../../lib/attention";
-import { focusItemIssueId, isFocusItem } from "../../lib/focus-items";
+import { focusItemIssueId, focusItemKind, isFocusItem } from "../../lib/focus-items";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn, relativeTime } from "../../lib/utils";
 import { AttentionInteractionResolver } from "../AttentionInteractionResolver";
@@ -21,6 +21,7 @@ import { DecisionResolver } from "../DecisionResolver";
 import { ImageGalleryModal, type GalleryMediaItem } from "../ImageGalleryModal";
 import { MarkdownBody } from "../MarkdownBody";
 import { Button } from "../ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { NotNowButton } from "./NotNowButton";
@@ -41,6 +42,20 @@ export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   agent_error: "Agent error",
   join_request: "Join request",
 };
+
+/**
+ * The chip for one of a card's kinds. The feed files confirmations and
+ * suggested tasks under "question"; the card names what it really asks for.
+ */
+export function decisionKindLabel(card: DecisionCard, kind: DecisionCardKind): string {
+  if (kind === "question") {
+    const interactionKind = card.items.find(isFocusItem);
+    const itemKind = interactionKind ? focusItemKind(interactionKind) : null;
+    if (itemKind === "request_confirmation" || itemKind === "request_checkbox_confirmation") return "Confirmation";
+    if (itemKind === "suggest_tasks") return "Suggested tasks";
+  }
+  return DECISION_KIND_LABEL[kind];
+}
 
 /** The task a card is about. Falls back to the `task:<id>` card id. */
 export function decisionCardTaskId(card: DecisionCard): string | null {
@@ -126,10 +141,14 @@ export function DecisionFeedCard({
   const clarityAction = card.actions.find((action) => action.id === "ask_clarity") ?? null;
   const actions = visibleCardActions(card);
   const openAction = actions.find((action) => action.id === openActionId) ?? null;
-  // Phone: one main action up front, the rest in the More sheet.
-  const phonePrimary = actions.find(isPrimaryCardAction) ?? actions[0] ?? null;
-  const phoneMore = actions.filter((action) => action !== phonePrimary);
   const questionItem = hideInlineResolver ? null : decisionCardQuestionItem(card);
+  // A card answered in place has its main action (Approve, Submit) in the
+  // question itself; the card's own actions are then the rare ones and fold
+  // into a menu, so the answer sits higher (GRE-360).
+  const answersInPlace = questionItem !== null;
+  // Phone: one main action up front, the rest in the More sheet.
+  const phonePrimary = actions.find(isPrimaryCardAction) ?? (answersInPlace ? null : actions[0]) ?? null;
+  const phoneMore = actions.filter((action) => action !== phonePrimary);
   const decisionItems = hideInlineResolver ? [] : card.items.filter((item) => item.sourceKind === "decision");
 
   const runAction = (action: DecisionCardAction) => {
@@ -165,7 +184,7 @@ export function DecisionFeedCard({
                 index === 0 ? "bg-accent text-foreground" : "text-muted-foreground",
               )}
             >
-              {DECISION_KIND_LABEL[kind]}
+              {decisionKindLabel(card, kind)}
             </span>
           ))}
           <span className="sr-only">Severity: {severity.label}</span>
@@ -203,6 +222,7 @@ export function DecisionFeedCard({
           agentMap={agentMap}
           currentUserId={currentUserId}
           onResolved={refresh}
+          embedded
         />
       ) : null}
 
@@ -291,7 +311,7 @@ export function DecisionFeedCard({
         </div>
       ) : (
       <div className="flex flex-wrap items-center gap-1.5">
-        {actions.map((action) => (
+        {!answersInPlace && actions.map((action) => (
           <CardActionButton
             key={action.id}
             action={action}
@@ -316,6 +336,34 @@ export function DecisionFeedCard({
         ) : null}
         {taskId ? (
           <NotNowButton companyId={companyId} issueId={taskId} issueLabel={taskIdentifier} onTabled={onActed} />
+        ) : null}
+        {answersInPlace && actions.length > 0 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="xs" variant="ghost" aria-label="More actions">
+                <MoreHorizontal />
+                More
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {actions.map((action) =>
+                action.type === "link" && action.href ? (
+                  <DropdownMenuItem key={action.id} asChild>
+                    <Link to={action.href}>{action.label}</Link>
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    key={action.id}
+                    variant={action.id === "cancel_task" ? "destructive" : "default"}
+                    disabled={actionMutation.isPending}
+                    onSelect={() => runAction(action)}
+                  >
+                    {action.label}
+                  </DropdownMenuItem>
+                ),
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </div>
       )}
