@@ -392,6 +392,7 @@ import {
   WORKTREE_INSTANCE_ROOT_METADATA_KEY,
 } from "./workspace-instance-cleanup.js";
 import { issueService } from "./issues.js";
+import { agentTeamService } from "./agent-teams.js";
 import {
   blockRunnerGoalRecovery,
   failRunnerGoalAction,
@@ -8681,6 +8682,12 @@ export function buildPaperclipTaskMarkdown(input: {
     status?: string | null;
     priority?: string | null;
   }> | null;
+  /** Set when the woken agent leads the team the task is assigned to (GRE-437). */
+  team?: {
+    id: string;
+    name: string;
+    members: Array<{ id: string; name: string; role: string; title: string | null }>;
+  } | null;
   wakeComment?: {
     id: string;
     body: string;
@@ -8941,6 +8948,20 @@ export function buildPaperclipTaskMarkdown(input: {
       lines.push(
         `- [ancestor context truncated after ${ancestors.length} entries]`,
       );
+    }
+  }
+  if (input.team) {
+    lines.push(
+      "",
+      `Team context: this task is assigned to team "${input.team.name}" and you are its lead.`,
+      "Delegate parts of it by creating child issues assigned to team members:",
+    );
+    if (input.team.members.length === 0) {
+      lines.push("- The team has no other members yet.");
+    }
+    for (const member of input.team.members) {
+      const role = member.title ? `${member.title}, ${member.role}` : member.role;
+      lines.push(`- ${member.name} (${role}): agent ${member.id}`);
     }
   }
   if (effectiveWakeComments.length === 1) {
@@ -10948,6 +10969,7 @@ export function heartbeatService(
         executionWorkspaceId: issues.executionWorkspaceId,
         executionWorkspacePreference: issues.executionWorkspacePreference,
         assigneeAgentId: issues.assigneeAgentId,
+        teamId: issues.teamId,
         assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
         executionPolicy: issues.executionPolicy,
         executionState: issues.executionState,
@@ -23362,6 +23384,20 @@ export function heartbeatService(
       const issueAncestors = issueRef
         ? await issuesSvc.getAncestors(issueRef.id)
         : [];
+      // A team task wakes the team lead; give the lead the members to delegate to.
+      const teamDelegation =
+        issueContext?.teamId && issueContext.assigneeAgentId === agent.id
+          ? await agentTeamService(db).getDelegationContext(agent.companyId, issueContext.teamId)
+          : null;
+      const issueTeam =
+        teamDelegation && teamDelegation.leadAgentId === agent.id
+          ? { id: teamDelegation.id, name: teamDelegation.name, members: teamDelegation.members }
+          : null;
+      if (issueTeam) {
+        context.paperclipIssueTeam = issueTeam;
+      } else {
+        delete context.paperclipIssueTeam;
+      }
       if (continuationSummary) {
         context.paperclipContinuationSummary = {
           key: safeContinuationSummary!.key,
@@ -23491,6 +23527,7 @@ export function heartbeatService(
             }
           : null,
         ancestors: issueAncestors,
+        team: issueTeam,
         wakeComment: safeWakeCommentContext,
         wakeComments: safeWakeComments,
         attachmentOmissions: paperclipWakePayload?.attachmentOmissions,

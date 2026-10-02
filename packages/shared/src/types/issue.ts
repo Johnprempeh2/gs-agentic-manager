@@ -795,6 +795,8 @@ export interface Issue {
   reviewPolicy: IssueReviewPolicy | null;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
+  /** The team the task was assigned to (GRE-437); the assignee is its lead. */
+  teamId?: string | null;
   checkoutRunId: string | null;
   executionRunId: string | null;
   executionAgentNameKey: string | null;

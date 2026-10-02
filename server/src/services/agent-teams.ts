@@ -143,6 +143,66 @@ export function agentTeamService(db: Db) {
       return withMembers(row);
     },
 
+    /**
+     * Turns a task's `teamId` into its assignee (GRE-437): the team lead.
+     * Mutates `body` in place so the usual assignment checks, permission
+     * checks and wakes see a normal agent assignment. `teamId: null` only
+     * clears the team.
+     */
+    async applyTeamAssignment(
+      companyId: string,
+      body: { teamId?: string | null; assigneeAgentId?: string | null; assigneeUserId?: string | null },
+    ) {
+      if (!body.teamId) return;
+      const team = await getById(body.teamId);
+      if (!team || team.companyId !== companyId) {
+        throw unprocessable("Team not found in this company", { code: "agent_team_not_found" });
+      }
+      if (!team.leadAgentId) {
+        throw unprocessable(
+          `Team "${team.name}" has no lead. Set a team lead on the Agents page, or assign the task to an agent.`,
+          { code: "agent_team_no_lead", teamId: team.id },
+        );
+      }
+      if (body.assigneeUserId) {
+        throw unprocessable("A task assigned to a team cannot also be assigned to a user");
+      }
+      if (body.assigneeAgentId && body.assigneeAgentId !== team.leadAgentId) {
+        throw unprocessable(`A task assigned to team "${team.name}" goes to the team lead`, {
+          code: "agent_team_assignee_mismatch",
+          teamId: team.id,
+        });
+      }
+      body.assigneeAgentId = team.leadAgentId;
+      if (body.assigneeUserId === undefined) body.assigneeUserId = null;
+    },
+
+    /**
+     * What a team lead needs to delegate a team task (GRE-437): the team and
+     * its other members. Terminated agents are left out.
+     */
+    async getDelegationContext(companyId: string, teamId: string) {
+      const team = await getById(teamId);
+      if (!team || team.companyId !== companyId) return null;
+      const memberIds = team.memberAgentIds.filter((id) => id !== team.leadAgentId);
+      const members =
+        memberIds.length === 0
+          ? []
+          : await db
+              .select({ id: agents.id, name: agents.name, role: agents.role, title: agents.title, status: agents.status })
+              .from(agents)
+              .where(and(eq(agents.companyId, companyId), inArray(agents.id, memberIds)))
+              .orderBy(asc(agents.name));
+      return {
+        id: team.id,
+        name: team.name,
+        leadAgentId: team.leadAgentId,
+        members: members
+          .filter((member) => member.status !== "terminated")
+          .map(({ id, name, role, title }) => ({ id, name, role, title })),
+      };
+    },
+
     async remove(id: string) {
       const [row] = await db.delete(agentTeams).where(eq(agentTeams.id, id)).returning();
       return row ?? null;

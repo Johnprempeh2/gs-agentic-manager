@@ -1815,6 +1815,7 @@ export interface IssueFilters {
   descendantOf?: string;
   createdFromIssueId?: string;
   labelId?: string;
+  teamId?: string;
   originKind?: string;
   originKindPrefix?: string;
   originId?: string;
@@ -4894,6 +4895,7 @@ const issueListSelect = {
   reviewPolicy: issues.reviewPolicy,
   assigneeAgentId: issues.assigneeAgentId,
   assigneeUserId: issues.assigneeUserId,
+  teamId: issues.teamId,
   checkoutRunId: issues.checkoutRunId,
   executionRunId: issues.executionRunId,
   executionAgentNameKey: issues.executionAgentNameKey,
@@ -6322,6 +6324,7 @@ async function blockedInboxIssueConditions(
     conditions.push(unreadForUserCondition(companyId, unreadForUserId));
   if (filters?.projectId)
     conditions.push(eq(issues.projectId, filters.projectId));
+  if (filters?.teamId) conditions.push(eq(issues.teamId, filters.teamId));
   if (filters?.workspaceId) {
     conditions.push(
       or(
@@ -8006,6 +8009,8 @@ export function issueService(db: Db) {
       }
       if (filters?.projectId)
         conditions.push(eq(issues.projectId, filters.projectId));
+      if (filters?.teamId)
+        conditions.push(eq(issues.teamId, filters.teamId));
       if (filters?.workspaceId) {
         conditions.push(
           or(
@@ -8279,6 +8284,8 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
       if (filters?.projectId)
         conditions.push(eq(issues.projectId, filters.projectId));
+      if (filters?.teamId)
+        conditions.push(eq(issues.teamId, filters.teamId));
       if (filters?.workspaceId) {
         conditions.push(
           or(

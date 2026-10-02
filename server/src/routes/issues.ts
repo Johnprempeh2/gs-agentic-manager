@@ -150,6 +150,7 @@ import * as serviceIndex from "../services/index.js";
 import {
   accessService,
   agentService,
+  agentTeamService,
   budgetService,
   companySkillService,
   companyService,
@@ -3579,6 +3580,7 @@ export function issueRoutes(
 ) {
   const router = Router();
   const svc = issueService(db);
+  const agentTeamsSvc = agentTeamService(db);
   const runRedactions = createRunSecretRedactionRegistry(db);
   const access = accessService(db);
   const secretProposals = createSecretProposalsService(db);
@@ -8222,6 +8224,7 @@ export function issueRoutes(
       descendantOf: uuidQuery(req, "descendantOf"),
       createdFromIssueId: uuidQuery(req, "createdFromIssueId"),
       labelId: uuidQuery(req, "labelId"),
+      teamId: uuidQuery(req, "teamId"),
       originKind: req.query.originKind as string | undefined,
       originKindPrefix: req.query.originKindPrefix as string | undefined,
       originId: req.query.originId as string | undefined,
@@ -8448,6 +8451,7 @@ export function issueRoutes(
       descendantOf: uuidQuery(req, "descendantOf"),
       createdFromIssueId: uuidQuery(req, "createdFromIssueId"),
       labelId: uuidQuery(req, "labelId"),
+      teamId: uuidQuery(req, "teamId"),
       originKind: req.query.originKind as string | undefined,
       originKindPrefix: req.query.originKindPrefix as string | undefined,
       originId: req.query.originId as string | undefined,
@@ -11775,6 +11779,7 @@ export function issueRoutes(
         req,
         collectIssueWorkspaceCommandPaths(req.body),
       );
+      await agentTeamsSvc.applyTeamAssignment(companyId, req.body);
       const sanitizedBody = await sanitizeIssueCreateAttribution(
         db,
         req,
@@ -12273,6 +12278,7 @@ export function issueRoutes(
         req,
         collectIssueWorkspaceCommandPaths(req.body),
       );
+      await agentTeamsSvc.applyTeamAssignment(parent.companyId, req.body);
       const sanitizedBody = await sanitizeIssueCreateAttribution(
         db,
         req,
@@ -12990,6 +12996,7 @@ export function issueRoutes(
       const actor = getActorInfo(req);
       const isClosed = isClosedIssueStatus(existing.status);
       const isBlocked = existing.status === "blocked";
+      await agentTeamsSvc.applyTeamAssignment(existing.companyId, req.body);
       const normalizedAssigneeAgentId =
         await normalizeIssueAssigneeAgentReference(
           existing.companyId,
