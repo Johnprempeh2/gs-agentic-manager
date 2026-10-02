@@ -18,6 +18,8 @@ export type IssueFilterState = {
   assignees: string[];
   creators: string[];
   labels: string[];
+  /** Team ids (GRE-437); optional so older saved views still load. */
+  teams?: string[];
   projects: string[];
   workspaces: string[];
   liveOnly?: boolean;
@@ -45,6 +47,7 @@ export const defaultIssueFilterState: IssueFilterState = {
   assignees: [],
   creators: [],
   labels: [],
+  teams: [],
   projects: [],
   workspaces: [],
   liveOnly: false,
@@ -114,6 +117,7 @@ export function normalizeIssueFilterState(value: unknown): IssueFilterState {
     assignees: normalizeIssueFilterValueArray(candidate.assignees),
     creators: normalizeIssueFilterValueArray(candidate.creators),
     labels: normalizeIssueFilterValueArray(candidate.labels),
+    teams: normalizeIssueFilterValueArray(candidate.teams),
     projects: normalizeIssueFilterValueArray(candidate.projects),
     workspaces: normalizeIssueFilterValueArray(candidate.workspaces),
     liveOnly: candidate.liveOnly === true,
@@ -248,6 +252,10 @@ export function applyIssueFilters(
   if (state.labels.length > 0) {
     result = result.filter((issue) => (issue.labelIds ?? []).some((id) => state.labels.includes(id)));
   }
+  const teams = state.teams ?? [];
+  if (teams.length > 0) {
+    result = result.filter((issue) => issue.teamId != null && teams.includes(issue.teamId));
+  }
   if (state.projects.length > 0) {
     result = result.filter((issue) => issue.projectId != null && state.projects.includes(issue.projectId));
   }
@@ -280,6 +288,7 @@ export function countActiveIssueFilters(
   if (state.assignees.length > 0) count += 1;
   if (state.creators.length > 0) count += 1;
   if (state.labels.length > 0) count += 1;
+  if ((state.teams ?? []).length > 0) count += 1;
   if (state.projects.length > 0) count += 1;
   if (state.workspaces.length > 0) count += 1;
   if (state.liveOnly) count += 1;

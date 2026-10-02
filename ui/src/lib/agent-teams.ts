@@ -70,3 +70,37 @@ export function groupAgentsByTeam<T extends { id: string; name: string }>(
   if (loose.length > 0) groups.push({ team: null, agents: loose });
   return groups;
 }
+
+/** Shown when a team with no lead is offered as an assignee (GRE-437). */
+export const TEAM_NO_LEAD_MESSAGE = "No lead. Set a team lead on the Agents page first.";
+
+/**
+ * The issue update that assigns a task to a team: the lead becomes the
+ * assignee and the team is stored. `null` when the team has no lead, so it
+ * cannot be picked.
+ */
+export function teamAssignmentPatch(
+  team: Pick<AgentTeam, "id" | "leadAgentId">,
+): { teamId: string; assigneeAgentId: string; assigneeUserId: null } | null {
+  if (!team.leadAgentId) return null;
+  return { teamId: team.id, assigneeAgentId: team.leadAgentId, assigneeUserId: null };
+}
+
+const TEAM_ASSIGNEE_PREFIX = "team:";
+
+/** Assignee picker value for a team, beside `agent:<id>` and `user:<id>`. */
+export function teamAssigneeValue(teamId: string): string {
+  return `${TEAM_ASSIGNEE_PREFIX}${teamId}`;
+}
+
+export function isTeamAssigneeValue(value: string): boolean {
+  return value.startsWith(TEAM_ASSIGNEE_PREFIX);
+}
+
+/** The team a `team:<id>` picker value points at, when it can be picked (has a lead). */
+export function teamForAssigneeValue(value: string, teams: readonly AgentTeam[] | undefined): AgentTeam | null {
+  if (!isTeamAssigneeValue(value)) return null;
+  const id = value.slice(TEAM_ASSIGNEE_PREFIX.length);
+  const team = (teams ?? []).find((candidate) => candidate.id === id);
+  return team?.leadAgentId ? team : null;
+}

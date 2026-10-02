@@ -111,6 +111,7 @@ export function IssueFiltersPopover({
   agents,
   projects,
   labels,
+  teams,
   currentUserId,
   enableExternalObjectFilters = true,
   enableRoutineVisibilityFilter = false,
@@ -127,6 +128,8 @@ export function IssueFiltersPopover({
   agents?: AgentOption[];
   projects?: ProjectOption[];
   labels?: LabelOption[];
+  /** Agent teams (GRE-437); same shape as labels. */
+  teams?: LabelOption[];
   currentUserId?: string | null;
   enableExternalObjectFilters?: boolean;
   enableRoutineVisibilityFilter?: boolean;
@@ -484,6 +487,24 @@ export function IssueFiltersPopover({
                         />
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: label.color }} />
                         <span className="text-sm">{label.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {teams && teams.length > 0 ? (
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Teams</span>
+                  <div data-filter-options="teams" className={streamlined ? "space-y-0.5" : "max-h-32 space-y-0.5 overflow-y-auto"}>
+                    {teams.map((team) => (
+                      <label key={team.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                        <Checkbox
+                          checked={(state.teams ?? []).includes(team.id)}
+                          onCheckedChange={() => onChange({ teams: toggleIssueFilterValue(state.teams ?? [], team.id) })}
+                        />
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: team.color }} />
+                        <span className="text-sm">{team.name}</span>
                       </label>
                     ))}
                   </div>
