@@ -93,6 +93,11 @@ export interface DecisionFeedCardProps {
   currentUserId?: string | null;
   /** Focus renders the question itself; the card then shows only its frame. */
   hideInlineResolver?: boolean;
+  /**
+   * Focus puts the card's other work inside its question card (GRE-431), so
+   * one issue is one card: no frame and no title of its own.
+   */
+  embedded?: boolean;
   /** Called after any action, answer, question or Not now. */
   onActed?: () => void;
   className?: string;
@@ -110,6 +115,7 @@ export function DecisionFeedCard({
   agentMap,
   currentUserId,
   hideInlineResolver = false,
+  embedded = false,
   onActed,
   className,
 }: DecisionFeedCardProps) {
@@ -161,17 +167,21 @@ export function DecisionFeedCard({
     actionMutation.mutate({ action });
   };
 
+  const Frame = embedded ? "section" : "article";
+
   return (
-    <article
+    <Frame
       className={cn(
-        "relative flex flex-col gap-3 overflow-hidden rounded-xl border border-border bg-card px-4 pt-3 pb-4",
+        embedded
+          ? "flex flex-col gap-3 border-t border-border pt-4"
+          : "relative flex flex-col gap-3 overflow-hidden rounded-xl border border-border bg-card px-4 pt-3 pb-4",
         className,
       )}
       data-decision-card={card.id}
       data-decision-kind={card.kind}
-      aria-label={card.title}
+      aria-label={embedded ? "Also on this task" : card.title}
     >
-      <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", severity.accent)} />
+      {embedded ? null : <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", severity.accent)} />}
 
       {/* Eyebrow: every merged kind, the task, and when it last moved. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -195,7 +205,9 @@ export function DecisionFeedCard({
       </div>
 
       <h3 className="text-base font-semibold leading-snug">
-        {taskHref ? (
+        {embedded ? (
+          "Also on this task"
+        ) : taskHref ? (
           <Link to={taskHref} className="hover:underline">
             {card.title}
           </Link>
@@ -396,7 +408,7 @@ export function DecisionFeedCard({
           onCancel={() => setClarityOpen(false)}
         />
       ) : null}
-    </article>
+    </Frame>
   );
 }
 

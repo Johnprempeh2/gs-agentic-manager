@@ -34,6 +34,8 @@ export interface FocusQuestionCardProps {
   onGone: (itemId: string) => void;
   onSkip: () => void;
   onStep: (direction: 1 | -1) => void;
+  /** The rest of the issue's card (a blocker, a recovery), shown inside this one (GRE-431). */
+  children?: ReactNode;
 }
 
 /**
@@ -98,6 +100,7 @@ function FocusQuestionBody({
   issueId,
   interaction,
   answeringRef,
+  children,
 }: FocusQuestionCardProps & {
   issueId: string;
   interaction: IssueThreadInteraction;
@@ -231,6 +234,7 @@ function FocusQuestionBody({
           <FocusKeys onStep={onStep} onTogglePlay={reader.toggle} />
         </>
       )}
+      {children}
     </FocusCardShell>
   );
 }

@@ -168,6 +168,55 @@ export function questionCard(interactionId = "int-1", issueId = "issue-44", iden
   });
 }
 
+/**
+ * GRE-431: blocked GRE-44 asks a question and waits on stalled blocker GRE-58.
+ * One card for GRE-44, with the blocker's own actions on it.
+ */
+export function questionWithBlockerCard(): DecisionCard {
+  const base = questionCard();
+  const blockerPath = "/api/issues/issue-58";
+  return {
+    ...base,
+    kinds: ["question", "blocked"],
+    severity: "high",
+    nextStep: `${base.nextStep} It is also blocked by GRE-58, which has no live next step.`,
+    actions: [
+      base.actions[0]!,
+      {
+        id: "reassign_blocker",
+        label: "Reassign GRE-58",
+        description: "Give the blocker GRE-58 to another agent. The new owner is woken.",
+        type: "request",
+        requests: [request("PATCH", blockerPath, { assigneeUserId: null })],
+        href: null,
+        input: { field: "assigneeAgentId", type: "agent", label: "New owner", required: true },
+      },
+      {
+        id: "instruct_blocker",
+        label: "Instruct GRE-58",
+        description: "Post an instruction on the blocker GRE-58 and wake its owner.",
+        type: "request",
+        requests: [request("POST", `${blockerPath}/comments`, { resume: true })],
+        href: null,
+        input: { field: "body", type: "text", label: "Instruction", required: true },
+      },
+      ...base.actions.slice(1),
+    ],
+    items: [
+      ...base.items,
+      {
+        id: "attention-blocker-58",
+        sourceKind: "blocker_attention",
+        dismissalKey: "blocker:issue-58",
+        dedupKey: "blocker:issue-58",
+        severity: "high",
+        subject: { kind: "issue", id: "issue-58", title: "Pick a ledger owner", identifier: "GRE-58", href: "/issues/GRE-58", metadata: {} },
+        relatedIssue: base.items[0]!.relatedIssue,
+      } as unknown as AttentionItem,
+    ],
+  };
+}
+
 /** GRE-138 style: one task, three sources merged to one card. */
 export function mergedCard(): DecisionCard {
   const id = "task:issue-138";
