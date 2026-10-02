@@ -19,7 +19,17 @@ const child = spawn(
   },
 );
 
+// The dev runner stops the server with SIGTERM to the head of its process tree,
+// which reaches this wrapper only. Pass it on to `tsx watch`, which stops the
+// server it runs. SIGINT is left alone: a Ctrl-C in a terminal already reaches
+// `tsx watch` directly, and a second SIGINT makes it force-kill the server.
+const forwardSigterm = () => {
+  child.kill("SIGTERM");
+};
+process.on("SIGTERM", forwardSigterm);
+
 child.on("exit", (code, signal) => {
+  process.off("SIGTERM", forwardSigterm);
   if (signal) {
     process.kill(process.pid, signal);
     return;

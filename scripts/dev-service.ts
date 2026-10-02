@@ -1,6 +1,7 @@
 #!/usr/bin/env -S node --import tsx
 import { listLocalServiceRegistryRecords, removeLocalServiceRegistryRecord, terminateLocalService } from "../server/src/services/local-service-supervisor.ts";
 import { applyDevRunnerOptions } from "./dev-runner-options.ts";
+import { DEV_RUNNER_STOP_BUDGET_MS } from "./dev-runner-process.ts";
 import { repoRoot } from "./dev-service-profile.ts";
 
 function toDisplayLines(records: Awaited<ReturnType<typeof listLocalServiceRegistryRecords>>) {
@@ -48,7 +49,9 @@ if (command === "stop") {
     process.exit(0);
   }
   for (const record of records) {
-    await terminateLocalService(record);
+    // The runner stops its own server tree on SIGTERM and needs up to this
+    // long; killing it sooner would leave the server without a supervisor.
+    await terminateLocalService(record, { forceAfterMs: DEV_RUNNER_STOP_BUDGET_MS });
     await removeLocalServiceRegistryRecord(record.serviceKey);
     console.log(`Stopped ${record.serviceName} (pid ${record.pid})`);
   }
