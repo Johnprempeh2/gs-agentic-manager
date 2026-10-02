@@ -10,6 +10,7 @@ import { logActivity } from "../services/activity-log.js";
 import { heartbeatService } from "../services/heartbeat.js";
 import { issueService } from "../services/issues.js";
 import { DECISIONS_CLARITY_SOURCE, decisionsFeedService } from "../services/decisions-feed.js";
+import { needsMeService } from "../services/needs-me.js";
 import type { AttentionServiceOptions } from "../services/attention.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 
@@ -40,6 +41,7 @@ export function decisionsFeedRoutes(
 ) {
   const router = Router();
   const feeds = decisionsFeedService(db, opts.serviceOptions);
+  const needsMe = needsMeService(db, opts.serviceOptions);
   let heartbeat = opts.heartbeat ?? null;
   const wakeup: Heartbeat["wakeup"] = (...args) => (heartbeat ??= heartbeatService(db)).wakeup(...args);
 
@@ -57,6 +59,14 @@ export function decisionsFeedRoutes(
     const feed = await feeds.build(companyId, { userId });
     const body: DecisionsFeedCount = { companyId, generatedAt: feed.generatedAt, count: feed.count };
     res.json(body);
+  });
+
+  // One "needs me" list and count: open decisions plus tasks assigned to the user.
+  router.get("/companies/:companyId/needs-me", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const userId = boardUserId(req, res, companyId);
+    if (!userId) return;
+    res.json(await needsMe.build(companyId, { userId }));
   });
 
   // Ask for clarity: post the board's short question on the task and wake the

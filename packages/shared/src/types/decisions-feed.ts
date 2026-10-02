@@ -121,6 +121,33 @@ export interface DecisionsFeedCount {
   count: number;
 }
 
+/** A task assigned to the board user that is not done and has no decision card. */
+export interface NeedsMeTask {
+  id: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+  priority: string;
+  updatedAt: string;
+}
+
+/**
+ * What truly needs the board user: open decisions waiting on them, plus
+ * tasks assigned to them that are not done. Tasks they only created or
+ * commented on are not included.
+ */
+export interface NeedsMe {
+  companyId: string;
+  generatedAt: string;
+  /** decisionCount + assignedTaskCount. A task is never counted twice. */
+  count: number;
+  decisionCount: number;
+  assignedTaskCount: number;
+  decisions: DecisionCard[];
+  /** Assigned open tasks, without the ones already shown as a decision card. */
+  assignedTasks: NeedsMeTask[];
+}
+
 export interface DecisionClarityRequest {
   question: string;
   clientRequestId?: string;

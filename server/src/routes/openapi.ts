@@ -5720,6 +5720,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/needs-me",
+  tags: ["inbox"],
+  summary: "List what needs the board user: open decisions plus tasks assigned to them that are not done",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/decisions-feed/cards/{cardId}/clarity",
   tags: ["inbox"],
