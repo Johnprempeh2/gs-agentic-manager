@@ -56,7 +56,7 @@ import { visibleIssueCondition } from "./issue-visibility.js";
 import { createGitRemoteAuthProvider } from "./git-credentials.js";
 import { readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
 import { workspaceGitOperationScheduler } from "./workspace-git-operation-scheduler.js";
-import { isRuntimeOwnedGitBranch } from "./execution-workspace-branch-ownership.js";
+import { isRecordOnlyExecutionWorkspace, isRuntimeOwnedGitBranch } from "./execution-workspace-branch-ownership.js";
 import {
   listCurrentRuntimeServicesForExecutionWorkspaces,
   listCurrentRuntimeServicesForProjectWorkspaces,
@@ -1492,11 +1492,10 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     const issueTree = await listWorkspaceIssueTree(workspace);
     const sourceIssue = issueTree.find((issue) => issue.id === workspace.sourceIssueId) ?? null;
     const sourceIssueTerminal = Boolean(sourceIssue && TERMINAL_ISSUE_STATUSES.has(sourceIssue.status));
-    const subtreeTerminal = Boolean(sourceIssue && issueTree.every((issue) => TERMINAL_ISSUE_STATUSES.has(issue.status)));
     // The cooldown anchor is the most recent terminal timestamp across the whole
     // issue tree. The reaper compares it against the cooldown window. A null
     // anchor means no issue in the tree is terminal yet, so the cooldown never
-    // applies (the terminal-tree gates above already block the archive).
+    // applies (the terminal source-issue gate already blocks the archive).
     let cooldownAnchor: Date | null = null;
     for (const issue of issueTree) {
       const terminalAt = issueTerminalTimestamp(issue);
@@ -1512,7 +1511,9 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         .catch(() => null)
       : null;
 
-    if (sourceIssueTerminal) {
+    // Without git there is no head to match a pull request against, so the
+    // lookup could not change the result. Skip the GitHub calls.
+    if (sourceIssueTerminal && git) {
       const products = await listDeliveryPullRequestProducts(workspace);
       for (const product of products) {
         const references = extractGitHubPullRequestReferences([
@@ -1566,7 +1567,6 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         isMergedIntoBase: git?.isMergedIntoBase ?? null,
       }),
       sourceIssueTerminal,
-      subtreeTerminal,
       cooldownAnchor,
       workspaceDirty: Boolean(git?.hasDirtyTrackedFiles || git?.hasUntrackedFiles),
       workspaceHeadSha,
@@ -2508,7 +2508,9 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
       const { deliveryState } = await assessDelivery(workspace, git);
       const warnings = [...gitWarnings];
       const blockingReasons: string[] = [];
-      if (!statusInspectionSucceeded) {
+      // Closing a record-only session deletes nothing, so an unreadable git
+      // status (a project folder that is not a repository) does not block it.
+      if (!statusInspectionSucceeded && !isRecordOnlyExecutionWorkspace(executionWorkspace)) {
         blockingReasons.push("GS Agentic Manager could not verify the workspace git status. Retry before destructive cleanup.");
       }
       const isSharedWorkspace = executionWorkspace.mode === "shared_workspace";
@@ -2797,7 +2799,15 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           until: now().getTime() + UNDELIVERED_RECHECK_MS,
         });
         const executionWorkspace = toExecutionWorkspace(workspace);
-        const { git, statusInspectionSucceeded } = await inspectGitCloseReadiness(executionWorkspace);
+        // Archiving a record-only session (a shared session on the project
+        // checkout or folder) cannot lose work, so git has no veto. Its folder
+        // need not even be a repository: a project without a checkout runs in a
+        // plain folder, and inspecting that folder failed on every sweep, so
+        // these sessions stayed active for ever.
+        const recordOnly = isRecordOnlyExecutionWorkspace(executionWorkspace);
+        const { git, statusInspectionSucceeded } = recordOnly
+          ? { git: null, statusInspectionSucceeded: true }
+          : await inspectGitCloseReadiness(executionWorkspace);
         if (!statusInspectionSucceeded) {
           result.skippedUndelivered += 1;
           continue;
@@ -2806,7 +2816,13 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         const reopenPending = metadataHasReopenPendingConsumption(
           workspace.metadata as Record<string, unknown> | null,
         );
-        if (!assessment.sourceIssueTerminal || !assessment.subtreeTerminal) {
+        // Only the source issue has to be finished. An open descendant keeps the
+        // workspace only when it is bound to it, which the open-linked check
+        // below covers, the same rule as the manual archive. A child inherits
+        // its parent's workspace when it is created, so an unbound descendant
+        // never uses this one; waiting for it held finished worktrees for weeks
+        // (GRE-119 behind two backlog children).
+        if (!assessment.sourceIssueTerminal) {
           if (reopenPending) {
             // The source issue left the terminal state, so the reopen transition
             // committed. Clear the reopen-pending flag under the lifecycle lock so
@@ -2834,7 +2850,8 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         // or untracked files, and every commit is merged or on a remote branch.
         // A pushed branch that is not merged is archived, but its branch ref is
         // kept. Otherwise keep the workspace and tell the owner once what would
-        // be lost.
+        // be lost. A record-only session removes nothing, so it skips this
+        // gate.
         const merged =
           assessment.deliveryState === "merged_via_pr"
           || assessment.deliveryState === "merged_by_ancestry";
@@ -2842,7 +2859,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           ? await inspectUnpushedCommits(git.workspacePath, git.baseRef)
           : null;
         const pushedOnly = !merged && unpushed?.count === 0;
-        if (assessment.workspaceDirty || (!merged && !pushedOnly)) {
+        if (!recordOnly && (assessment.workspaceDirty || (!merged && !pushedOnly))) {
           // Name the unpushed commits only when git confirmed them and no merged
           // pull request is pending a lookup, so the notice never guesses.
           const confirmedUnpushed = unpushed && unpushed.count > 0 && assessment.deliveryState === "unmerged"
@@ -2991,20 +3008,6 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
                   AND live_run.company_id = ${workspace.companyId}
                   AND live_run.status IN ('queued', 'running')
               )`,
-              sql<boolean>`NOT EXISTS (
-                WITH RECURSIVE issue_tree(id, status) AS (
-                  SELECT root.id, root.status
-                  FROM ${issues} root
-                  WHERE root.company_id = ${workspace.companyId}
-                    AND root.id = ${workspace.sourceIssueId}
-                  UNION ALL
-                  SELECT child.id, child.status
-                  FROM ${issues} child
-                  JOIN issue_tree parent ON child.parent_id = parent.id
-                  WHERE child.company_id = ${workspace.companyId}
-                )
-                SELECT 1 FROM issue_tree WHERE status NOT IN ('done', 'cancelled')
-              )`,
               // Re-check under the lock that no open issue is bound to the
               // workspace, so an issue that binds after the loop check above
               // still keeps it.
@@ -3013,9 +3016,9 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
               ),
               // Re-check the cooldown under the lifecycle lock. This predicate
               // matches the loop check above: block the archive when any issue in
-              // the tree became terminal after the cutoff. The tree walk mirrors
-              // the terminal-tree walk above. A null cutoff means the cooldown is
-              // disabled, so this predicate drops out of the guard.
+              // the tree became terminal after the cutoff. A null cutoff means
+              // the cooldown is disabled, so this predicate drops out of the
+              // guard.
               cooldownCutoff
                 ? sql<boolean>`NOT EXISTS (
                 WITH RECURSIVE cooldown_tree(id, status, completed_at, cancelled_at, updated_at) AS (
@@ -3105,6 +3108,24 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
       } finally {
         terminalSweepInProgress = false;
       }
+    },
+
+    // Remove idle git worktrees that agents made by hand and no execution
+    // workspace (in any status) records. See removeIdleUnrecordedWorktrees.
+    sweepUnrecordedWorktrees: async (idleDays: number) => {
+      const { removeIdleUnrecordedWorktrees } = await import("./workspace-runtime.js");
+      const [checkouts, recorded] = await Promise.all([
+        db.select({ cwd: projectWorkspaces.cwd }).from(projectWorkspaces),
+        db
+          .select({ cwd: executionWorkspaces.cwd, providerRef: executionWorkspaces.providerRef })
+          .from(executionWorkspaces),
+      ]);
+      return removeIdleUnrecordedWorktrees({
+        checkoutPaths: new Set(checkouts.flatMap((row) => (row.cwd ? [row.cwd] : []))),
+        recordedPaths: recorded.flatMap((row) => [row.cwd, row.providerRef].filter((value): value is string => Boolean(value))),
+        minIdleMs: idleDays * 24 * 60 * 60 * 1000,
+        now: now(),
+      });
     },
 
     create: async (data: typeof executionWorkspaces.$inferInsert) => {

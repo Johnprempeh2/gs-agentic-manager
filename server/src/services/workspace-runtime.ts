@@ -63,7 +63,7 @@ import {
 } from "./local-service-supervisor.js";
 import { workspaceOperationService, type WorkspaceOperationRecorder } from "./workspace-operations.js";
 import { executionWorkspaceService, readExecutionWorkspaceConfig } from "./execution-workspaces.js";
-import { isRuntimeOwnedGitBranch } from "./execution-workspace-branch-ownership.js";
+import { isRecordOnlyExecutionWorkspace, isRuntimeOwnedGitBranch } from "./execution-workspace-branch-ownership.js";
 import { logActivity } from "./activity-log.js";
 import { readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
 import { workspaceGitOperationScheduler } from "./workspace-git-operation-scheduler.js";
@@ -4034,6 +4034,90 @@ async function deleteGitBranchAtVerifiedTip(input: {
   }
 }
 
+// Every process working directory on this host, or null when they cannot be
+// read (an unknown platform or a failed lsof). Null means the caller cannot
+// prove a directory is unused, so it must not remove anything.
+async function listProcessWorkingDirectories(): Promise<string[] | null> {
+  if (process.platform === "linux") {
+    const pids = await fs.readdir("/proc").catch(() => null);
+    if (!pids) return null;
+    const cwds = await Promise.all(
+      pids.filter((pid) => /^\d+$/.test(pid)).map((pid) => fs.readlink(`/proc/${pid}/cwd`).catch(() => null)),
+    );
+    return cwds.filter((cwd): cwd is string => Boolean(cwd));
+  }
+  if (process.platform !== "darwin") return null;
+  const proc = await executeProcess({
+    command: "lsof",
+    args: ["-nP", "-w", "-d", "cwd", "-Fn"],
+    cwd: os.tmpdir(),
+    maxStdoutBytes: 16 * 1024 * 1024,
+  }).catch(() => null);
+  if (!proc || proc.code !== 0 || proc.stdoutTruncated) return null;
+  return proc.stdout.split("\n").filter((line) => line.startsWith("n/")).map((line) => line.slice(1));
+}
+
+// Agents sometimes add a git worktree of their own under the managed root (a
+// pull request or release check, or a branch of their own when their task runs
+// on the shared checkout). No execution workspace records it, so the terminal
+// reaper never reaches it and it stays on disk for ever. This removes only one
+// whose removal loses nothing: not recorded, idle for `minIdleMs`, no process
+// working inside it, every commit on HEAD already on a remote branch (which
+// covers merged work and detached checkouts of pushed commits), and clean,
+// because `git worktree remove` without --force refuses uncommitted or
+// untracked files and locked worktrees. The branch ref itself is kept.
+export async function removeIdleUnrecordedWorktrees(input: {
+  checkoutPaths: Iterable<string>;
+  recordedPaths: Iterable<string>;
+  minIdleMs: number;
+  now?: Date;
+  listProcessCwds?: () => Promise<string[] | null>;
+}): Promise<{ removed: string[]; kept: number }> {
+  const result = { removed: [] as string[], kept: 0 };
+  const processCwds = await (input.listProcessCwds ?? listProcessWorkingDirectories)();
+  if (!processCwds) return result;
+  const nowMs = (input.now ?? new Date()).getTime();
+  const recorded = new Set(await Promise.all([...input.recordedPaths].map(resolvePathForWorktreeComparison)));
+  const repoRoots = new Set<string>();
+  for (const checkout of input.checkoutPaths) {
+    const repoRoot = await resolveGitOwnerRepoRoot(checkout).catch(() => null);
+    if (repoRoot) repoRoots.add(await resolvePathForWorktreeComparison(repoRoot));
+  }
+  for (const repoRoot of repoRoots) {
+    const managedRoot = path.join(repoRoot, ".gsam", "worktrees");
+    const raw = await runGit(["worktree", "list", "--porcelain"], repoRoot).catch(() => null);
+    if (!raw) continue;
+    for (const entry of parseGitWorktreeListPorcelain(raw)) {
+      const worktree = await resolvePathForWorktreeComparison(entry.worktree);
+      if (path.dirname(worktree) !== managedRoot || recorded.has(worktree)) continue;
+      if (processCwds.some((cwd) => cwd === worktree || cwd.startsWith(`${worktree}${path.sep}`))) {
+        result.kept += 1;
+        continue;
+      }
+      const gitDir = await runGit(["rev-parse", "--absolute-git-dir"], worktree).catch(() => null);
+      const lastTouchedMs = Math.max(
+        0,
+        ...await Promise.all(
+          [worktree, ...(gitDir ? ["index", "HEAD", "logs/HEAD"].map((file) => path.join(gitDir, file)) : [])]
+            .map((file) => fs.stat(file).then((stats) => stats.mtimeMs).catch(() => 0)),
+        ),
+      );
+      const unpushed = await runGit(["rev-list", "--count", "HEAD", "--not", "--remotes"], worktree).catch(() => null);
+      if (!gitDir || nowMs - lastTouchedMs < input.minIdleMs || unpushed !== "0") {
+        result.kept += 1;
+        continue;
+      }
+      try {
+        await runGit(["worktree", "remove", worktree], repoRoot);
+        result.removed.push(worktree);
+      } catch {
+        result.kept += 1;
+      }
+    }
+  }
+  return result;
+}
+
 export async function cleanupExecutionWorkspaceArtifacts(input: {
   workspace: {
     id: string;
@@ -4252,8 +4336,12 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
     }
   }
 
+  // The directory of a record-only session (the shared project checkout) stays
+  // on disk by design, so it is not a failed cleanup. Counting it as one marked
+  // the archived session on the project checkout `cleanup_failed` (GRE-316).
   const cleaned =
     !workspacePath ||
+    isRecordOnlyExecutionWorkspace(input.workspace) ||
     !(await directoryExists(workspacePath));
 
   return {
