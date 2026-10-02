@@ -51,6 +51,9 @@ import {
   linkIssueApprovalSchema,
   createIssueWorkProductSchema,
   updateIssueWorkProductSchema,
+  createDeliverableSchema,
+  markDeliverableSchema,
+  deliverablesQuerySchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
   upsertIssueFeedbackVoteSchema,
@@ -1583,6 +1586,8 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/routines/{id}/description/annotations",
   "POST /api/routines/{id}/description/annotations/{threadId}/comments",
   "POST /api/issues/{id}/work-products",
+  "POST /api/issues/{id}/deliverables",
+  "POST /api/companies/{companyId}/deliverables/mark",
   "POST /api/issues/{id}/low-trust/promotions",
   "POST /api/issues/{id}/approvals",
   "POST /api/companies/{companyId}/issues",
@@ -4155,6 +4160,60 @@ registry.registerPath({
     415: r.unsupportedMediaType,
     422: r.unprocessable,
   },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/deliverables",
+  tags: ["issues"],
+  summary: "List the latest version of each deliverable, with search, filters and sort",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: deliverablesQuerySchema,
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/deliverables/{id}",
+  tags: ["issues"],
+  summary: "Get a deliverable with its version history",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/{id}/opened",
+  tags: ["issues"],
+  summary: "Record that a deliverable was opened (for the recently opened sort)",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/mark",
+  tags: ["issues"],
+  summary: "Mark an existing artifact as a deliverable (board only)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(markDeliverableSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/deliverables",
+  tags: ["issues"],
+  summary: "Register a deliverable on an issue; the same key makes the next version",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(createDeliverableSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({
