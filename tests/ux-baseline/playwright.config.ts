@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
 import { scrubParentInstanceEnv } from "../fixtures/sandbox-env";
+import { ensureFreshBundle } from "./bundle-freshness";
 
 const PORT = Number(process.env.GSAM_UX_BASELINE_PORT ?? 3203);
 // Optional: reuse a disposable local instance while editing the flows. It must be
@@ -13,6 +14,11 @@ if (EXTERNAL_URL) {
   if (!["127.0.0.1", "localhost", "[::1]"].includes(target.hostname) || target.pathname !== "/") {
     throw new Error("GSAM_UX_BASELINE_BASE_URL must be a loopback origin for a disposable local instance; the run seeds data.");
   }
+}
+// The launched instance serves ui/dist; refuse to time a bundle older than the
+// checkout. Only the runner checks: workers load this config too.
+if (!EXTERNAL_URL && !process.env.TEST_WORKER_INDEX) {
+  ensureFreshBundle(process.cwd(), process.env.GSAM_UX_BASELINE_BUILD === "1");
 }
 const BASE_URL = EXTERNAL_URL ?? `http://127.0.0.1:${PORT}`;
 const GSAM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "gsam-ux-baseline-home-"));

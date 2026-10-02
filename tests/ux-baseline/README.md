@@ -9,11 +9,19 @@ pnpm build                 # the harness times the built UI (ui/dist)
 pnpm ux:baseline           # 5 samples per flow and viewport
 ```
 
+Before it starts, the run checks that `ui/dist` matches the checkout. The
+build writes `ui/dist/build-info.json` (commit and build time). The run fails
+when that file is missing, when it names a commit whose UI or `packages`
+sources differ from HEAD, or when a UI or package source file is newer than
+the build. Run `pnpm --dir ui build`, or set `GSAM_UX_BASELINE_BUILD=1` to
+rebuild automatically. The bundle's commit is saved in `baseline.json` under
+`meta.bundle`.
+
 The run starts its own empty, loopback-only instance, seeds one company and
 writes to `test-results/ux-baseline/`:
 
 - `baseline.md`: summary table and per-step timings (median / p95)
-- `baseline.json`: the same, plus every raw sample
+- `baseline.json`: the same, plus every raw sample and the bundle commit
 - `screens/`: a screenshot after every step of the first sample of each flow,
   and a full-page screenshot of any failure
 
@@ -24,6 +32,7 @@ Options:
 | `GSAM_UX_BASELINE_RUNS` | 5 (minimum 3) | Samples per flow and viewport |
 | `GSAM_UX_BASELINE_VIEWPORTS` | `desktop,phone` | Limit to one viewport |
 | `GSAM_UX_BASELINE_FLOWS` | all | Comma-separated flow ids, for example `2-answer-decision` |
+| `GSAM_UX_BASELINE_BUILD` | off | `1` rebuilds `ui/dist` when it is stale instead of failing |
 | `GSAM_UX_BASELINE_PORT` | 3203 | Port for the launched instance |
 | `GSAM_UX_BASELINE_BASE_URL` | none | Reuse a disposable loopback instance while editing flows. Start it with no `GSAM_*` variables from an agent shell, because its scripted agents run inside it |
 
