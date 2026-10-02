@@ -24,6 +24,7 @@ import {
   UserCheck,
   Users,
   Rocket,
+  FileCheck2,
 } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -154,7 +155,13 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Greatstone (GRE-191): Goals graduated from Experimental; always shown.
   const goalsItem = <SidebarNavItem to="/goals" label="Goals" icon={Target} />;
   const routinesItem = <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />;
-  const artifactsItem = <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />;
+  const artifactsItem = (
+    <>
+      {/* GRE-388: finished documents sit directly above everything agents made. */}
+      <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
+      <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
+    </>
+  );
   const casesItem = showCases ? (
     <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
   ) : null;

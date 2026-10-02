@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Maximize2,
   File,
+  FileCheck2,
   FileText,
   Film,
   GitBranch,
@@ -174,6 +175,14 @@ export function RichWorkProductCard({ workProduct, href, variant = "card" }: Ric
       const size = numberMeta(metadata, "byteSize", "size");
       meta = [isImage ? "Image" : isVideo ? "Video" : stringMeta(metadata, "kind", "fileType") ?? "File", size === null ? null : formatBytes(size)];
       action = isImage || isVideo ? "Open gallery" : "Download";
+      break;
+    }
+    case "deliverable": {
+      // GRE-388: a finished document; it opens from the Deliverables page.
+      Icon = FileCheck2;
+      const version = numberMeta(metadata, "version");
+      meta = ["Deliverable", version === null ? null : `v${version}`];
+      action = "Open";
       break;
     }
     case "document":
