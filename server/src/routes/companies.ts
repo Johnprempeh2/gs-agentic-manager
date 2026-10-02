@@ -67,7 +67,14 @@ import {
 import { isCloudManagedInstance } from "../services/cloud-instance.js";
 import { getHiddenSettings, hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import type { StorageService } from "../storage/types.js";
-import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo, hasCompanyAccess } from "./authz.js";
+import {
+  assertBoard,
+  assertCompanyAccess,
+  assertCompanyOwnerOrAdmin,
+  assertInstanceAdmin,
+  getActorInfo,
+  hasCompanyAccess,
+} from "./authz.js";
 import { COMPANY_IMPORT_ROUTE_PATH } from "./company-import-paths.js";
 
 // A company import can arrive one of two ways on the import + preview routes:
@@ -372,6 +379,17 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
     if (actorAgent.role !== "ceo") {
       throw forbidden(`Only CEO agents can manage ${capability}`);
     }
+  }
+
+  /**
+   * Company-wide settings: the same-company CEO agent keeps its existing
+   * (branding-only) access, and a person must be an owner or admin of the
+   * company (or an instance admin, or the implicit local board). Operators
+   * and viewers get 403.
+   */
+  async function assertSameCompanyCeoAgentOrOwnerAdmin(req: Request, companyId: string, capability: string) {
+    await assertSameCompanyCeoAgentOrBoard(req, companyId, capability);
+    if (req.actor.type === "board") assertCompanyOwnerOrAdmin(req, companyId);
   }
 
   router.get("/", async (req, res) => {
@@ -1246,7 +1264,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.patch("/:companyId", async (req, res) => {
     const companyId = req.params.companyId as string;
-    await assertSameCompanyCeoAgentOrBoard(req, companyId, "company settings");
+    await assertSameCompanyCeoAgentOrOwnerAdmin(req, companyId, "company settings");
 
     const actor = getActorInfo(req);
     let body: Record<string, unknown>;
@@ -1323,7 +1341,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.patch("/:companyId/branding", async (req, res) => {
     const companyId = req.params.companyId as string;
-    await assertSameCompanyCeoAgentOrBoard(req, companyId, "company branding");
+    await assertSameCompanyCeoAgentOrOwnerAdmin(req, companyId, "company branding");
     const body = updateCompanyBrandingSchema.parse(req.body);
     const company = await svc.update(companyId, body);
     if (!company) {
@@ -1348,8 +1366,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.post("/:companyId/archive", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    assertBoard(req);
+    assertCompanyOwnerOrAdmin(req, companyId);
     const company = await svc.archive(companyId, getActorInfo(req));
     if (!company) {
       res.status(404).json({ error: "Company not found" });
@@ -1360,8 +1377,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.delete("/:companyId", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    assertBoard(req);
+    assertCompanyOwnerOrAdmin(req, companyId);
     const company = await svc.remove(companyId);
     if (!company) {
       res.status(404).json({ error: "Company not found" });

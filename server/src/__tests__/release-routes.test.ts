@@ -1,6 +1,8 @@
 // Releases page API guards (GRE-121): board only, agents get 403; the release
 // manager agent may edit only the next title; an agent may flag only its own run.
 // In login mode release and rollback also need the password re-check (GRE-136).
+// Every action that changes live is for owners and admins; operators and
+// viewers get 403, and the overview stays open to every member.
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,9 +51,27 @@ async function createApp(actor: Record<string, unknown>) {
   return app;
 }
 
-const board = { type: "board", userId: "john", sessionId: "sess-1", companyIds: [companyId], source: "session", isInstanceAdmin: false };
+function member(userId: string, membershipRole: string, extra: Record<string, unknown> = {}) {
+  return {
+    type: "board",
+    userId,
+    sessionId: `sess-${userId}`,
+    companyIds: [companyId],
+    memberships: [{ companyId, membershipRole, status: "active" }],
+    source: "session",
+    isInstanceAdmin: false,
+    ...extra,
+  };
+}
+
+// John: the company owner, signed in (login mode).
+const board = { ...member("john", "owner"), sessionId: "sess-1" };
+const admin = member("ann", "admin");
+const operator = member("ben", "operator");
+const viewer = member("vic", "viewer");
+const instanceAdminOperator = member("ida", "operator", { isInstanceAdmin: true });
 const localBoard = { type: "board", userId: "local-board", source: "local_implicit", isInstanceAdmin: true };
-const otherBoard = { ...board, userId: "stranger", companyIds: [] };
+const otherBoard = { ...board, userId: "stranger", companyIds: [], memberships: [] };
 const agent = { type: "agent", agentId, companyId, source: "agent_jwt", runId };
 const keystone = { type: "agent", agentId: keystoneId, companyId, source: "agent_jwt", runId: otherRunId };
 const base = `/api/companies/${companyId}/releases`;
@@ -116,6 +136,87 @@ describe("release routes", () => {
     expect((await request(app).post(`${base}/cancel`)).body.progress.state).toBe("cancelled");
     expect((await request(app).post(`${base}/override`)).body.progress.state).toBe("switching");
     expect(mockLogActivity).toHaveBeenCalledTimes(5);
+  });
+
+  describe("owner or admin only", () => {
+    // Every action that changes live or a release in progress.
+    const mutations = [
+      ["post", "release", { tag: "rc-2026-09-28.1" }, "release", 202],
+      ["post", "rollback", { tag: "live-2026-09-20.1" }, "rollback", 202],
+      ["post", "promote", { liveTag: "live-2026-09-20.1", notes: "Faster board." }, "promote", 201],
+      ["post", "cancel", {}, null, 200],
+      ["post", "override", {}, null, 200],
+      ["patch", "next", { title: "Next" }, null, 200],
+    ] as const;
+
+    function expectNothingStarted() {
+      expect(svc.start).not.toHaveBeenCalled();
+      expect(svc.promote).not.toHaveBeenCalled();
+      expect(svc.cancel).not.toHaveBeenCalled();
+      expect(svc.override).not.toHaveBeenCalled();
+      expect(svc.setNextTitle).not.toHaveBeenCalled();
+      expect(mockLogActivity).not.toHaveBeenCalled();
+    }
+
+    async function send(
+      actor: ReturnType<typeof member>,
+      method: "post" | "patch",
+      path: string,
+      body: Record<string, unknown>,
+      reauthAction: "release" | "rollback" | "promote" | null,
+    ) {
+      const app = await createApp(actor);
+      let req = (request(app) as any)[method](`${base}/${path}`);
+      if (reauthAction) req = req.set(REAUTH, await token(reauthAction, actor.userId, actor.sessionId));
+      return req.send(body);
+    }
+
+    it.each(mutations)("the owner may %s %s", async (method, path, body, reauthAction, okStatus) => {
+      const res = await send(board, method, path, body, reauthAction);
+      expect(res.status).toBe(okStatus);
+    });
+
+    it.each(mutations)("an admin may %s %s", async (method, path, body, reauthAction, okStatus) => {
+      const res = await send(admin, method, path, body, reauthAction);
+      expect(res.status).toBe(okStatus);
+    });
+
+    it.each(mutations)("an instance admin may %s %s even with an operator membership", async (method, path, body, reauthAction, okStatus) => {
+      const res = await send(instanceAdminOperator, method, path, body, reauthAction);
+      expect(res.status).toBe(okStatus);
+    });
+
+    it.each(mutations)("an operator gets 403 on %s %s, before the password re-check", async (method, path, body, reauthAction) => {
+      const res = await send(operator, method, path, body, reauthAction);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: "Owner or admin role required" });
+      expect(res.body.code).not.toBe("reauth_required");
+      expectNothingStarted();
+    });
+
+    it.each(mutations)("a viewer gets 403 on %s %s", async (method, path, body, reauthAction) => {
+      const res = await send(viewer, method, path, body, reauthAction);
+      expect(res.status).toBe(403);
+      expectNothingStarted();
+    });
+
+    it.each(mutations)("a suspended owner gets 403 on %s %s", async (method, path, body, reauthAction) => {
+      const suspended = { ...board, memberships: [{ companyId, membershipRole: "owner", status: "suspended" }] };
+      const res = await send(suspended, method, path, body, reauthAction);
+      expect(res.status).toBe(403);
+      expectNothingStarted();
+    });
+
+    it.each([
+      ["owner", board],
+      ["admin", admin],
+      ["operator", operator],
+      ["viewer", viewer],
+    ] as const)("the overview (GET) stays open to a %s", async (_role, actor) => {
+      const res = await request(await createApp(actor)).get(base);
+      expect(res.status).toBe(200);
+      expect(svc.overview).toHaveBeenCalledWith(companyId);
+    });
   });
 
   it("returns a pre-flight failure as { error } with its status", async () => {

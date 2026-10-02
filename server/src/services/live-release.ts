@@ -43,6 +43,8 @@ import { LIVE_RELEASE_REF_PATTERN } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { getServerInfoSnapshot } from "../server-info.js";
+import { accessService } from "./access.js";
+import { isCompanyOwnerOrAdminRole } from "./company-member-roles.js";
 import { applyTaskDrain, getTaskDrainStatus, stopTaskDrain } from "./heartbeat.js";
 import { issueService } from "./issues.js";
 import { announceLiveRelease } from "./live-release-announce.js";
@@ -259,6 +261,16 @@ interface StoredNextTitle {
   editedAt: string;
 }
 
+/** Who accepted an "Update live?" card (getActorInfo in the issues route). */
+export interface ReleaseCardActor {
+  actorType: string;
+  actorId: string;
+  actorSource?: string;
+}
+
+export const RELEASE_CARD_OWNER_OR_ADMIN_COMMENT =
+  "Not released: only an owner or admin of this company can accept an \"Update live?\" card. Live is unchanged.";
+
 export interface LiveReleaseDeps {
   /** Folder for hold.json, jobs/<id>/, next-title.json and run-flags.json (inside the instance data folder). */
   stateDir: string;
@@ -272,6 +284,12 @@ export interface LiveReleaseDeps {
   /** Running runs among `runIds` (the flagged ones). */
   runningRunIds(runIds: string[]): Promise<string[]>;
   postComment(issueId: string, body: string): Promise<void>;
+  /**
+   * Whether this person may release from an "Update live?" card on this
+   * issue: an owner or admin of the issue's company, an instance admin, or
+   * the implicit local board. The Releases page routes check the same.
+   */
+  mayReleaseFromCard(input: { issueId: string; actor: ReleaseCardActor }): Promise<boolean>;
   applyHold(hold: { startedAt: Date; expiresAt: Date }): void;
   /** Lifts the task drain only if it is still the one this release started. */
   liftHold(startedAt: Date): void;
@@ -788,12 +806,17 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
   const onConfirmationAccepted = async (input: {
     issueId: string;
     interaction: { id: string; kind: string; status: string; idempotencyKey?: string | null };
-    actor: { actorType: string; actorId: string };
+    actor: ReleaseCardActor;
   }) => {
     const { interaction } = input;
     if (interaction.kind !== "request_confirmation" || interaction.status !== "accepted") return null;
     const rcTag = parseLiveReleaseKey(interaction.idempotencyKey);
     if (!rcTag) return null;
+    // A person must be an owner or admin; start() refuses agents itself.
+    if (input.actor.actorType === "user" && !(await deps.mayReleaseFromCard({ issueId: input.issueId, actor: input.actor }))) {
+      await deps.postComment(input.issueId, RELEASE_CARD_OWNER_OR_ADMIN_COMMENT);
+      return null;
+    }
     const result = await start({ kind: "release", tag: rcTag, actor: input.actor, issueId: input.issueId, interactionId: interaction.id });
     if (!result.ok) {
       await deps.postComment(input.issueId, `Not released: ${result.error}. Live is unchanged.`);
@@ -1159,6 +1182,19 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
     },
     postComment: async (issueId, body) => {
       await issues.addComment(issueId, body, {}, { authorType: "system" });
+    },
+    mayReleaseFromCard: async ({ issueId, actor }) => {
+      if (actor.actorType !== "user") return false;
+      if (actor.actorSource === "local_implicit") return true;
+      const [issue] = await db
+        .select({ companyId: issuesTable.companyId })
+        .from(issuesTable)
+        .where(eq(issuesTable.id, issueId));
+      if (!issue) return false;
+      const access = accessService(db);
+      if (await access.isInstanceAdmin(actor.actorId)) return true;
+      const membership = await access.getMembership(issue.companyId, "user", actor.actorId);
+      return membership?.status === "active" && isCompanyOwnerOrAdminRole(membership.membershipRole);
     },
     applyHold: (hold) => applyTaskDrain(hold),
     liftHold: (startedAt) => {

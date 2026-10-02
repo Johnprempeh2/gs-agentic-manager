@@ -3,12 +3,18 @@
 // the release manager agent (Keystone) may edit the next version's title, and
 // an agent may flag its own running run "finish before update".
 //
+// Release, rollback, promote, cancel, override and the next title are for
+// company owners and admins only (and instance admins, and the implicit local
+// board): an operator or viewer gets 403 "Owner or admin role required". The
+// overview (GET) stays open to every member of the company, since it only
+// reads.
+//
 // Every action goes through liveReleaseService, the same service the
 // "Update live?" card uses; nothing here repeats release logic.
 //
 // Release, rollback and promote also ask for the password again in login mode
-// (GRE-133, wired by GRE-136): the company and board checks run first, then
-// the shared `assertReleaseReauth`.
+// (GRE-133, wired by GRE-136): the company, board and role checks run first,
+// then the shared `assertReleaseReauth`.
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@greatstone/db";
 import { isUuidLike } from "@greatstone/shared";
@@ -16,7 +22,7 @@ import { badRequest, forbidden, notFound } from "../errors.js";
 import { logActivity } from "../services/index.js";
 import { liveReleaseService } from "../services/live-release.js";
 import { assertReleaseReauth, releaseReauth, type ReleaseReauth } from "../services/release-reauth.js";
-import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo } from "./authz.js";
 
 type ActionResult =
   | { ok: true; progress: unknown }
@@ -26,9 +32,15 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
   const router = Router();
   const svc = liveReleaseService(db);
 
+  /** Read only: any board member of the company. */
   function assertBoardFor(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
     assertBoard(req);
+  }
+
+  /** Changes live or a release in progress: owner or admin only. */
+  function assertReleaserFor(req: Request, companyId: string) {
+    assertCompanyOwnerOrAdmin(req, companyId);
   }
 
   async function log(req: Request, companyId: string, action: string, details: Record<string, unknown>) {
@@ -64,7 +76,7 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
 
   router.post("/companies/:companyId/releases/release", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertBoardFor(req, companyId);
+    assertReleaserFor(req, companyId);
     assertReleaseReauth(req, "release", reauth);
     const tag = typeof req.body?.tag === "string" && req.body.tag.trim() ? req.body.tag.trim() : null;
     const title = typeof req.body?.title === "string" ? req.body.title : null;
@@ -75,7 +87,7 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
 
   router.post("/companies/:companyId/releases/rollback", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertBoardFor(req, companyId);
+    assertReleaserFor(req, companyId);
     assertReleaseReauth(req, "rollback", reauth);
     const tag = typeof req.body?.tag === "string" ? req.body.tag.trim() : null;
     const result = await svc.start({ kind: "rollback", tag, actor: userActor(req) });
@@ -87,7 +99,7 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
   // the client notes as its message.
   router.post("/companies/:companyId/releases/promote", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertBoardFor(req, companyId);
+    assertReleaserFor(req, companyId);
     assertReleaseReauth(req, "promote", reauth);
     const result = await svc.promote({ liveTag: req.body?.liveTag, notes: req.body?.notes });
     if (!result.ok) {
@@ -100,7 +112,7 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
 
   router.post("/companies/:companyId/releases/cancel", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertBoardFor(req, companyId);
+    assertReleaserFor(req, companyId);
     const result = await svc.cancel(userActor(req));
     if (result.ok) await log(req, companyId, "release.cancelled", { tag: result.job.tag });
     send(res, result.ok ? { ok: true, progress: result.progress } : result, 200);
@@ -108,17 +120,19 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
 
   router.post("/companies/:companyId/releases/override", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertBoardFor(req, companyId);
+    assertReleaserFor(req, companyId);
     const result = await svc.override(userActor(req));
     if (result.ok) await log(req, companyId, "release.override", { tag: result.job.tag });
     send(res, result.ok ? { ok: true, progress: result.progress } : result, 200);
   });
 
-  // Board or the release manager agent; only the title.
+  // An owner or admin, or the release manager agent; only the title.
   router.patch("/companies/:companyId/releases/next", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    if (req.actor.type !== "board") {
+    if (req.actor.type === "board") {
+      assertReleaserFor(req, companyId);
+    } else {
       const agentId = req.actor.type === "agent" ? req.actor.agentId : null;
       if (!agentId || !(await svc.isReleaseManagerAgent(companyId, agentId))) {
         throw forbidden("Only the board or the release manager can edit the next title");

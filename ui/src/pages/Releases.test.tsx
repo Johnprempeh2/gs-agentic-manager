@@ -59,6 +59,13 @@ const AGENT_OR_VIEWER = {
   companyIds: ["company-1"],
   memberships: [{ companyId: "company-1", status: "active", membershipRole: "viewer" }],
 };
+const signedIn = (membershipRole: string) => ({
+  source: "session",
+  isInstanceAdmin: false,
+  companyIds: ["company-1"],
+  memberships: [{ companyId: "company-1", status: "active", membershipRole }],
+});
+const GATE_TEXT = "Releases are for owners and admins";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -165,23 +172,40 @@ describe("Releases page", () => {
     await render(<Releases />);
 
     expect(mockReleasesApi.overview).toHaveBeenCalledWith("company-1");
-    expect(document.body.textContent).not.toContain("Releases are for the board");
+    expect(document.body.textContent).not.toContain(GATE_TEXT);
   });
 
   it("hides the page and its buttons from non-board viewers", async () => {
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue(AGENT_OR_VIEWER);
     await render(<Releases />);
 
-    expect(document.body.textContent).toContain("Releases are for the board");
+    expect(document.body.textContent).toContain(GATE_TEXT);
     expect(buttonByText("Release now")).toBeUndefined();
     expect(mockReleasesApi.overview).not.toHaveBeenCalled();
+  });
+
+  it("hides the page and its buttons from an operator", async () => {
+    mockAccessApi.getCurrentBoardAccess.mockResolvedValue(signedIn("operator"));
+    await render(<Releases />);
+
+    expect(document.body.textContent).toContain(GATE_TEXT);
+    expect(buttonByText("Release now")).toBeUndefined();
+    expect(mockReleasesApi.overview).not.toHaveBeenCalled();
+  });
+
+  it.each(["owner", "admin"])("shows the page to a signed-in %s", async (role) => {
+    mockAccessApi.getCurrentBoardAccess.mockResolvedValue(signedIn(role));
+    await render(<Releases />);
+
+    expect(document.body.textContent).not.toContain(GATE_TEXT);
+    expect(mockReleasesApi.overview).toHaveBeenCalledWith("company-1");
   });
 
   it("hides the page when board access cannot be read (agent keys)", async () => {
     mockAccessApi.getCurrentBoardAccess.mockRejectedValue(new Error("Unauthorized"));
     await render(<Releases />);
 
-    expect(document.body.textContent).toContain("Releases are for the board");
+    expect(document.body.textContent).toContain(GATE_TEXT);
     expect(mockReleasesApi.overview).not.toHaveBeenCalled();
   });
 

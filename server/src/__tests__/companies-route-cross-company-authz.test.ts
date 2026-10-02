@@ -387,10 +387,15 @@ describe.sequential("company route cross-company authorization", () => {
       companyIds: [companyBId],
       memberships: [{ companyId: companyBId, membershipRole: "member", status: "active" }],
     }));
-    await request(memberApp).patch(`/api/companies/${companyBId}`).send({ description: "Updated" }).expect(200);
-    await request(memberApp).patch(`/api/companies/${companyBId}/branding`).send({ description: "Branding" }).expect(200);
-    await request(memberApp).post(`/api/companies/${companyBId}/archive`).send({}).expect(200);
-    await request(memberApp).delete(`/api/companies/${companyBId}`).expect(200);
+    // Company-wide settings are for owners and admins; a plain member is refused.
+    await request(memberApp).patch(`/api/companies/${companyBId}`).send({ description: "Updated" }).expect(403);
+    await request(memberApp).patch(`/api/companies/${companyBId}/branding`).send({ description: "Branding" }).expect(403);
+    await request(memberApp).post(`/api/companies/${companyBId}/archive`).send({}).expect(403);
+    await request(memberApp).delete(`/api/companies/${companyBId}`).expect(403);
+    expect(mockCompanyService.update).not.toHaveBeenCalled();
+    expect(mockCompanyService.archive).not.toHaveBeenCalled();
+    expect(mockCompanyService.remove).not.toHaveBeenCalled();
+    // Export and the safe import are unchanged in this PR.
     await request(memberApp).post(`/api/companies/${companyBId}/export`).send(exportRequest).expect(200);
     await request(memberApp).post(`/api/companies/${companyBId}/exports/preview`).send(exportRequest).expect(200);
     await request(memberApp).post(`/api/companies/${companyBId}/imports/preview`).send(importRequest()).expect(200);
@@ -419,5 +424,81 @@ describe.sequential("company route cross-company authorization", () => {
     expect(adminWrite.status).toBe(403);
     expect(adminWrite.body.error).toContain("access to this company");
     assertNoTargetMutationSideEffects();
+  });
+
+  describe("company-wide settings are for owners and admins", () => {
+    const settingsWrites = [
+      {
+        label: "PATCH /api/companies/:companyId",
+        request: (app: express.Express) => request(app).patch(`/api/companies/${companyBId}`).send({ requireBoardApprovalForNewAgents: true }),
+        service: () => mockCompanyService.update,
+      },
+      {
+        label: "PATCH /api/companies/:companyId/branding",
+        request: (app: express.Express) => request(app).patch(`/api/companies/${companyBId}/branding`).send({ name: "Renamed" }),
+        service: () => mockCompanyService.update,
+      },
+      {
+        label: "POST /api/companies/:companyId/archive",
+        request: (app: express.Express) => request(app).post(`/api/companies/${companyBId}/archive`).send({}),
+        service: () => mockCompanyService.archive,
+      },
+      {
+        label: "DELETE /api/companies/:companyId",
+        request: (app: express.Express) => request(app).delete(`/api/companies/${companyBId}`),
+        service: () => mockCompanyService.remove,
+      },
+    ];
+
+    function memberOfB(membershipRole: string, extra: { isInstanceAdmin?: boolean } = {}) {
+      return boardActor({
+        userId: `${membershipRole}-user`,
+        companyIds: [companyBId],
+        memberships: [{ companyId: companyBId, membershipRole, status: "active" }],
+        ...extra,
+      });
+    }
+
+    it.each(settingsWrites)("the owner may $label", async ({ request: buildRequest, service }) => {
+      const res = await buildRequest(await createApp(memberOfB("owner")));
+      expect(res.status).toBe(200);
+      expect(service()).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(settingsWrites)("an admin may $label", async ({ request: buildRequest, service }) => {
+      const res = await buildRequest(await createApp(memberOfB("admin")));
+      expect(res.status).toBe(200);
+      expect(service()).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(settingsWrites)("an instance admin with an operator membership may $label", async ({ request: buildRequest, service }) => {
+      const res = await buildRequest(await createApp(memberOfB("operator", { isInstanceAdmin: true })));
+      expect(res.status).toBe(200);
+      expect(service()).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(settingsWrites)("the local trusted board may $label", async ({ request: buildRequest, service }) => {
+      const res = await buildRequest(await createApp(boardActor({ userId: "local-board", source: "local_implicit", isInstanceAdmin: true })));
+      expect(res.status).toBe(200);
+      expect(service()).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(settingsWrites)("an operator gets 403 on $label", async ({ request: buildRequest }) => {
+      const res = await buildRequest(await createApp(memberOfB("operator")));
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: "Owner or admin role required" });
+      assertNoTargetMutationSideEffects();
+    });
+
+    it.each(settingsWrites)("a viewer gets 403 on $label", async ({ request: buildRequest }) => {
+      const res = await buildRequest(await createApp(memberOfB("viewer")));
+      expect(res.status).toBe(403);
+      assertNoTargetMutationSideEffects();
+    });
+
+    it("an operator still reads the company", async () => {
+      const app = await createApp(memberOfB("operator"));
+      await request(app).get(`/api/companies/${companyBId}`).expect(200);
+    });
   });
 });
