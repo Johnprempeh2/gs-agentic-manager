@@ -25,11 +25,15 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { OrgChart } from "./OrgChart";
 import { relativeTime, cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { costsApi } from "../api/costs";
-import type { ApiEquivalentAgentRow } from "@greatstone/shared";
+import { agentTeamsApi } from "../api/agentTeams";
+import { AgentTeamsDialog, TeamColorDot } from "../components/AgentTeamsDialog";
+import { filterAgentsByTeam, NO_TEAM_FILTER, teamsByAgent } from "../lib/agent-teams";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { AgentTeam, ApiEquivalentAgentRow } from "@greatstone/shared";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Bot, Plus, List, Network } from "lucide-react";
+import { AlertTriangle, Bot, Plus, List, Network, Users } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent, type Environment, type EnvironmentCapabilities } from "@greatstone/shared";
 import {
   isStarred,
@@ -267,6 +271,16 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
     enabled: !!selectedCompanyId,
   });
 
+  // Teams (GRE-436): manage them here and filter the list by team.
+  const { data: teams } = useQuery({
+    queryKey: queryKeys.agentTeams.list(selectedCompanyId!),
+    queryFn: () => agentTeamsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const teamsForAgent = useMemo(() => teamsByAgent(teams ?? []), [teams]);
+  const [teamFilter, setTeamFilter] = useState<string | null>(null);
+  const [teamsDialogOpen, setTeamsDialogOpen] = useState(false);
+
   const { data: orgTree } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
     queryFn: () => agentsApi.org(selectedCompanyId!),
@@ -365,7 +379,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
     return <ErrorState error={error} onRetry={() => void refetch()} />;
   }
 
-  const filtered = filterAgents(agents ?? [], tab, builtInAgentIds);
+  const filtered = filterAgentsByTeam(filterAgents(agents ?? [], tab, builtInAgentIds), teams ?? [], teamFilter);
   const filteredOrg = filterOrgTree(orgTree ?? [], tab, builtInAgentIds);
   const environmentDataLoading = environmentsEnabled && environments === undefined;
   const showEnvironmentColumn = environmentsEnabled && (environments === undefined || environments.length > 1);
@@ -430,6 +444,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         )}
         secondaryRow={
           <div className="@5xl:hidden flex flex-wrap items-center gap-1.5">
+            <AgentTeamChips teams={teamsForAgent.get(agent.id)} />
             {builtInCluster}
             {weekValue && (
               <span className="text-xs text-muted-foreground">{agentWeekLine(weekValueByAgent.get(agent.id))}</span>
@@ -438,6 +453,9 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         }
         meta={
           <div className="flex items-center gap-3">
+            <div className="hidden @5xl:flex items-center gap-1.5">
+              <AgentTeamChips teams={teamsForAgent.get(agent.id)} />
+            </div>
             {builtInCluster && (
               <div className="hidden @5xl:flex items-center gap-1.5">
                 {builtInCluster}
@@ -547,6 +565,30 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
                 <Network className="h-3.5 w-3.5" />
               </Button>
           </div> : null}
+          {(teams?.length ?? 0) > 0 && (
+            <Select
+              value={teamFilter ?? "all"}
+              onValueChange={(value) => setTeamFilter(value === "all" ? null : value)}
+            >
+              <SelectTrigger size="sm" aria-label="Filter by team" className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All teams</SelectItem>
+                {(teams ?? []).map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    <TeamColorDot color={team.color} />
+                    {team.name}
+                  </SelectItem>
+                ))}
+                <SelectItem value={NO_TEAM_FILTER}>No team</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <Button size="sm" variant="outline" onClick={() => setTeamsDialogOpen(true)}>
+            <Users className="h-3.5 w-3.5 mr-1.5" />
+            Teams
+          </Button>
           <Button size="sm" variant="outline" onClick={openNewAgent}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             New Agent
@@ -578,7 +620,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
 
       {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
-          No agents match the selected status.
+          {teamFilter ? "No agents match the selected status and team." : "No agents match the selected status."}
         </p>
       )}
 
@@ -598,6 +640,14 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
           No organizational hierarchy defined.
         </p>
       )}
+      {teamsDialogOpen && (
+        <AgentTeamsDialog
+          companyId={selectedCompanyId}
+          teams={teams ?? []}
+          agents={(agents ?? []).filter((agent) => !HIDDEN_AGENT_STATUSES.has(agent.status))}
+          onClose={() => setTeamsDialogOpen(false)}
+        />
+      )}
       {configureState && selectedCompanyId && (
         <Suspense fallback={null}>
           <ConfigureBuiltInAgentModal
@@ -611,6 +661,24 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         </Suspense>
       )}
     </div>
+  );
+}
+
+function AgentTeamChips({ teams }: { teams: AgentTeam[] | undefined }) {
+  if (!teams || teams.length === 0) return null;
+  return (
+    <>
+      {teams.map((team) => (
+        <span
+          key={team.id}
+          className="inline-flex max-w-32 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+          title={`Team: ${team.name}`}
+        >
+          <TeamColorDot color={team.color} className="h-2 w-2" />
+          <span className="truncate">{team.name}</span>
+        </span>
+      ))}
+    </>
   );
 }
 

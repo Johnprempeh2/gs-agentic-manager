@@ -46,6 +46,13 @@ const mockResourceMembershipsApi = vi.hoisted(() => ({
   updateAgent: vi.fn(),
 }));
 
+const mockAgentTeamsApi = vi.hoisted(() => ({
+  list: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
+}));
+
 const mockOpenNewAgent = vi.hoisted(() => vi.fn());
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
 const mockSidebarState = vi.hoisted(() => ({ isMobile: false }));
@@ -76,6 +83,10 @@ vi.mock("../context/SidebarContext", () => ({
 
 vi.mock("../api/agents", () => ({
   agentsApi: mockAgentsApi,
+}));
+
+vi.mock("../api/agentTeams", () => ({
+  agentTeamsApi: mockAgentTeamsApi,
 }));
 
 vi.mock("../api/builtInAgents", () => ({
@@ -326,6 +337,7 @@ describe("Agents", () => {
       },
     ]);
     mockBuiltInAgentsApi.list.mockResolvedValue([]);
+    mockAgentTeamsApi.list.mockResolvedValue([]);
     mockEnvironmentsApi.list.mockResolvedValue([
       makeEnvironment({ id: "env-daytona" }),
     ]);
@@ -391,6 +403,44 @@ describe("Agents", () => {
       const buttons = Array.from(row?.querySelectorAll("button") ?? []).map((button) => button.textContent);
       expect(buttons).not.toEqual(expect.arrayContaining([expect.stringMatching(/Assign Task|Run Heartbeat|Run with provider trace|Pause|Resume/)]));
     }
+  });
+
+  it("shows each agent's teams on its row and offers a team filter", async () => {
+    mockAgentsApi.list.mockResolvedValue([
+      makeAgent({ id: "agent-1", name: "Alpha" }),
+      makeAgent({ id: "agent-2", name: "Beta", urlKey: "beta" }),
+    ]);
+    mockAgentTeamsApi.list.mockResolvedValue([
+      {
+        id: "team-1",
+        companyId: "company-1",
+        name: "Platform",
+        color: "#2563eb",
+        description: null,
+        leadAgentId: "agent-1",
+        memberAgentIds: ["agent-1"],
+        createdAt: "2026-10-02T00:00:00Z",
+        updatedAt: "2026-10-02T00:00:00Z",
+      },
+    ]);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <QueryClientProvider client={queryClient}>
+          <ToastProvider>
+            <Agents />
+          </ToastProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(findAgentRow(container, "Alpha")?.querySelector('[title="Team: Platform"]')).not.toBeNull();
+    expect(findAgentRow(container, "Beta")?.querySelector('[title^="Team:"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Filter by team"]')).not.toBeNull();
+    const teamsButton = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Teams");
+    expect(teamsButton).toBeDefined();
   });
 
   it("shows the configured model beside the adapter on the all agents page", async () => {
