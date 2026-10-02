@@ -38,7 +38,6 @@ import {
   refreshRemoteTrackingBaseRef,
   releaseRuntimeServicesForRun,
   UnresolvedWorkspaceBaseRefError,
-  WorkspaceRuntimeValidationFailure,
   resetRuntimeServicesForTests,
   MANAGED_RUNTIME_PUBLIC_URL_ENV,
   resolveManagedPaperclipRuntimePublicOrigin,
@@ -1183,37 +1182,30 @@ describe("realizeExecutionWorkspace", () => {
     expect(await readGit(reused.cwd, ["diff", "--cached", "--name-only"])).toBe("staged.txt");
   });
 
-  // GRE-243: a stale index.lock in a reused worktree failed setup with a raw
-  // `git reset --hard` error. It must fail with an error that names the
-  // worktree and the lock, and leave the worktree untouched.
-  it("stops with a clear error when a clean reused worktree has a stale index.lock", async () => {
+  // GRE-243 / GRE-383: a stale index.lock in a reused worktree failed setup,
+  // and the task went to `blocked` (GRE-309, GRE-351). A lock that no git
+  // process holds and that is older than 2 minutes is now removed, and the
+  // worktree refreshes as normal. Held-lock waiting is covered in
+  // services/git-index-lock.test.ts.
+  it("removes a stale index.lock in a clean reused worktree and refreshes it", async () => {
     const { sourceRepo, remotePath, repoRoot } = await createClonedRepoWithRemote();
 
     const initial = await realizeWorktreeForTest(repoRoot, null);
-    const initialHead = await readGit(initial.cwd, ["rev-parse", "HEAD"]);
     const indexLockPath = path.resolve(
       initial.cwd,
       await readGit(initial.cwd, ["rev-parse", "--git-path", "index.lock"]),
     );
     await fs.writeFile(indexLockPath, "", "utf8");
+    const staleMtime = new Date(Date.now() - 3 * 60 * 1000);
+    await fs.utimes(indexLockPath, staleMtime, staleMtime);
 
-    await advanceRemoteMaster(sourceRepo, remotePath, "auth-fix.txt");
+    const newBaseSha = await advanceRemoteMaster(sourceRepo, remotePath, "auth-fix.txt");
 
-    const error = await realizeWorktreeForTest(repoRoot, null).then(
-      () => null,
-      (caught: unknown) => caught,
-    );
+    const reused = await realizeWorktreeForTest(repoRoot, null);
 
-    expect(error).toBeInstanceOf(WorkspaceRuntimeValidationFailure);
-    const failure = error as WorkspaceRuntimeValidationFailure;
-    expect(failure.message).toContain(initial.cwd);
-    expect(failure.message).toContain(indexLockPath);
-    expect(failure.message).toContain("delete the lock file");
-    expect(failure.resultJson).toMatchObject({
-      workspaceValidation: { reason: "git_index_locked", worktreePath: initial.cwd, indexLockPath },
-    });
-    expect(await readGit(initial.cwd, ["rev-parse", "HEAD"])).toBe(initialHead);
-    await expect(fs.stat(indexLockPath)).resolves.toBeTruthy();
+    expect(reused.created).toBe(false);
+    await expect(fs.stat(indexLockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readGit(reused.cwd, ["rev-parse", "HEAD"])).toBe(newBaseSha);
   });
 
   it("bases a fresh worktree on a remote-only branch supplied as fix/foo", async () => {
