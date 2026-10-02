@@ -487,6 +487,61 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     ]);
   });
 
+  // GRE-356: answering a decision logs activity but is not a read, so the
+  // agent's asking comment kept the user's task unread until the answer
+  // route marks it read.
+  it("keeps an answered decision unread until it is marked read, then only new comments make it unread", async () => {
+    const companyId = await seedAssignableAgentCompany();
+    const issueId = randomUUID();
+    const userId = "board-user";
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Approve the onboarding plan",
+      status: "in_progress",
+      priority: "medium",
+      createdByUserId: userId,
+      createdAt: new Date(Date.now() - 120_000),
+    });
+    await db.insert(issueComments).values({
+      companyId,
+      issueId,
+      body: "Please approve the plan.",
+      createdAt: new Date(Date.now() - 60_000),
+    });
+    await db.insert(activityLog).values({
+      companyId,
+      actorType: "user",
+      actorId: userId,
+      action: "issue.thread_interaction_accepted",
+      entityType: "issue",
+      entityId: issueId,
+    });
+
+    await expect(svc.list(companyId, { touchedByUserId: userId })).resolves.toEqual([
+      expect.objectContaining({ id: issueId, isUnreadForMe: true }),
+    ]);
+
+    await svc.markRead(companyId, issueId, userId, new Date());
+
+    await expect(svc.list(companyId, { touchedByUserId: userId })).resolves.toEqual([
+      expect.objectContaining({ id: issueId, isUnreadForMe: false }),
+    ]);
+    await expect(svc.list(companyId, { unreadForUserId: userId })).resolves.toEqual([]);
+
+    await db.insert(issueComments).values({
+      companyId,
+      issueId,
+      body: "Plan approved, starting now.",
+      createdAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(svc.list(companyId, { unreadForUserId: userId })).resolves.toEqual([
+      expect.objectContaining({ id: issueId }),
+    ]);
+  });
+
   function agentRow(companyId: string, input: {
     id: string;
     name: string;
