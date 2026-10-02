@@ -34,6 +34,7 @@ const EXPIRED_TOKEN_CODES = new Set([
   "user_secret_missing",
   "missing_secret",
   "mcp_remote_missing_secret",
+  "local_stdio_missing_secret",
   "secret_missing",
   "binding_missing",
   "secret_deleted",
@@ -173,7 +174,11 @@ export function connectionAgentCheckService(deps: { toolAccess: ToolAccess; tool
         ok: true,
         reason: null,
         code: null,
-        message: `The app answered with this agent's access. ${access.allowedCount} actions allowed, ${access.askFirstCount} ask first, ${access.offCount} off.`,
+        message: `${
+          credential.transport === "local_stdio"
+            ? "Grant and credentials found for this agent; the app was not started."
+            : "The app answered with this agent's access."
+        } ${access.allowedCount} actions allowed, ${access.askFirstCount} ask first, ${access.offCount} off.`,
         grantKind: credential.grantKind,
         checkedAt: new Date().toISOString(),
       };
