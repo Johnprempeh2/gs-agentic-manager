@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   afterAll,
   afterEach,
@@ -50,6 +50,7 @@ describe("durable inbound chat scheduler receipts", () => {
   let temporary: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>>;
   let db: ReturnType<typeof createDb>;
   const liveRunIds = new Set<string>();
+  const fixtureCompanyIds = new Set<string>();
   const unregisterAuthorities: Array<() => void> = [];
   const execute = vi.fn<ServerAdapterModule["execute"]>(async (input) => {
     const issueId = String(input.context.issueId);
@@ -87,11 +88,28 @@ describe("durable inbound chat scheduler receipts", () => {
       }),
     });
   }, 30_000);
-  afterEach(() => {
+  afterEach(async () => {
     execute.mockClear();
     for (const unregister of unregisterAuthorities.splice(0)) unregister();
     for (const runId of liveRunIds) runningProcesses.delete(runId);
     liveRunIds.clear();
+    // Run admission (GRE-105) counts every running row in this file's shared
+    // database against the instance run cap (default 6). Retire each case's
+    // fixture slot and any run it left queued, or a later case's run stays
+    // held in the queue and never reaches the dispatch checks it asserts.
+    const companyIds = [...fixtureCompanyIds];
+    fixtureCompanyIds.clear();
+    if (companyIds.length > 0) {
+      await db
+        .update(heartbeatRuns)
+        .set({ status: "cancelled", finishedAt: new Date() })
+        .where(
+          and(
+            inArray(heartbeatRuns.companyId, companyIds),
+            inArray(heartbeatRuns.status, ["queued", "running"]),
+          ),
+        );
+    }
   });
   afterAll(async () => {
     unregisterServerAdapter("durable_chat_retry_test");
@@ -103,6 +121,7 @@ describe("durable inbound chat scheduler receipts", () => {
       agentId = randomUUID(),
       issueId = randomUUID(),
       activeRunId = randomUUID();
+    fixtureCompanyIds.add(companyId);
     await db.insert(companies).values({
       id: companyId,
       name: "Durable wake",
