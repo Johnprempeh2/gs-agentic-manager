@@ -7343,3 +7343,174 @@ describeEmbeddedPostgres("issueService.addComment createdByRunId", () => {
     expect(duplicates).toHaveLength(1);
   });
 });
+
+// `update` joins the caller's transaction when one is passed. Every read it
+// makes must go through that transaction: a read through the outer pool needs a
+// second connection while the caller holds the first, and enough concurrent
+// callers (one per pool slot) leave every connection idle in transaction for
+// good. A one-connection pool turns that into a deterministic hang.
+describeEmbeddedPostgres("issueService.update on a single pooled connection", () => {
+  let db!: ReturnType<typeof createDb>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let companyId!: string;
+  let agentId!: string;
+  let projectId!: string;
+  let projectWorkspaceId!: string;
+  let executionWorkspaceId!: string;
+  const memberUserId = "single-connection-member";
+
+  beforeAll(async () => {
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issues-update-single-connection-");
+    db = createDb(tempDb.connectionString);
+    companyId = randomUUID();
+    agentId = randomUUID();
+    projectId = randomUUID();
+    projectWorkspaceId = randomUUID();
+    executionWorkspaceId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `S${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "SingleConnectionAgent",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(companyMemberships).values({
+      companyId,
+      principalType: "user",
+      principalId: memberUserId,
+      status: "active",
+      membershipRole: "member",
+    });
+    await db.insert(projects).values({
+      id: projectId,
+      companyId,
+      name: "Single-connection project",
+      status: "in_progress",
+    });
+    await db.insert(projectWorkspaces).values({
+      id: projectWorkspaceId,
+      companyId,
+      projectId,
+      name: "Single-connection project workspace",
+      sourceType: "local_path",
+      visibility: "default",
+      isPrimary: false,
+    });
+    await db.insert(executionWorkspaces).values({
+      id: executionWorkspaceId,
+      companyId,
+      projectId,
+      projectWorkspaceId,
+      mode: "shared_workspace",
+      strategyType: "project_primary",
+      name: "Single-connection execution workspace",
+      status: "active",
+      providerType: "local_fs",
+    });
+  }, 20_000);
+
+  afterAll(async () => {
+    await tempDb?.cleanup();
+  });
+
+  async function seedIssue(values: Partial<typeof issues.$inferInsert> = {}) {
+    const [issue] = await db
+      .insert(issues)
+      .values({
+        companyId,
+        title: "Single-connection update",
+        status: "todo",
+        priority: "medium",
+        ...values,
+      })
+      .returning();
+    return issue!;
+  }
+
+  async function inTransactionOnSingleConnection<T>(
+    work: (
+      svc: ReturnType<typeof issueService>,
+      tx: Parameters<Parameters<ReturnType<typeof createDb>["transaction"]>[0]>[0],
+    ) => Promise<T>,
+  ) {
+    const singleDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const singleSvc = issueService(singleDb);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        singleDb.transaction((tx) => work(singleSvc, tx)),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("issue update waited for a second pooled connection")),
+            10_000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      // Ends a stuck transaction too, so later tests are not blocked by its
+      // row locks.
+      await singleDb.$client.end({ timeout: 1 });
+    }
+  }
+
+  it("changes status", async () => {
+    const issue = await seedIssue({ assigneeAgentId: agentId });
+
+    const updated = await inTransactionOnSingleConnection((svc, tx) =>
+      svc.update(issue.id, { status: "blocked" }, tx),
+    );
+
+    expect(updated?.status).toBe("blocked");
+  });
+
+  it("assigns a member user", async () => {
+    const issue = await seedIssue({ assigneeAgentId: agentId });
+
+    const updated = await inTransactionOnSingleConnection((svc, tx) =>
+      svc.update(issue.id, { assigneeAgentId: null, assigneeUserId: memberUserId }, tx),
+    );
+
+    expect(updated).toMatchObject({ assigneeAgentId: null, assigneeUserId: memberUserId });
+  });
+
+  it.each([
+    ["a project and both workspaces", { withProject: true, withProjectWorkspace: true }],
+    ["a project workspace and no project", { withProject: false, withProjectWorkspace: true }],
+    ["an execution workspace and no project", { withProject: false, withProjectWorkspace: false }],
+  ])("validates the workspaces of an issue with %s", async (_label, shape) => {
+    const issue = await seedIssue({
+      projectId: shape.withProject ? projectId : null,
+      projectWorkspaceId: shape.withProjectWorkspace ? projectWorkspaceId : null,
+      executionWorkspaceId,
+    });
+
+    const updated = await inTransactionOnSingleConnection((svc, tx) =>
+      svc.update(issue.id, { title: "Renamed on one connection" }, tx),
+    );
+
+    expect(updated).toMatchObject({ title: "Renamed on one connection", projectId });
+  });
+
+  it("completes an issue for a user", async () => {
+    const issue = await seedIssue({ assigneeUserId: memberUserId });
+    const publications: Parameters<ReturnType<typeof issueService>["update"]>[3] = [];
+
+    const updated = await inTransactionOnSingleConnection((svc, tx) =>
+      svc.update(issue.id, { status: "done", actorUserId: memberUserId }, tx, publications, []),
+    );
+
+    expect(updated?.status).toBe("done");
+    expect(publications).toHaveLength(1);
+  });
+});
