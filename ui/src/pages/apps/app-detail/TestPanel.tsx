@@ -15,6 +15,7 @@ import {
 import type {
   ToolCatalogEntry,
   ToolConnectionAccessSummary,
+  ToolConnectionAgentCheckReason,
   ToolConnectionTestAgent,
   ToolConnectionTestCallResult,
   ToolConnectionTestCallStatus,
@@ -546,7 +547,70 @@ function TestAsHeader({
           {formatActionPermissionSummary(selectedAgent.effectiveAccess)}
         </Link>
       </div>
+      <ConnectionCheck
+        key={selectedAgent.id}
+        connectionId={connectionId}
+        agent={selectedAgent}
+        appName={appName}
+      />
     </section>
+  );
+}
+
+const CHECK_REASON_LABEL: Record<ToolConnectionAgentCheckReason, string> = {
+  no_access: "No access",
+  no_grant: "No grant",
+  expired_token: "Expired token",
+  scope_missing: "Scope missing",
+  service_error: "Service error",
+};
+
+/**
+ * "Check connection" (GRE-341): one read-only check with the selected agent's
+ * access. No run starts and no action runs.
+ */
+function ConnectionCheck({
+  connectionId,
+  agent,
+  appName,
+}: {
+  connectionId: string;
+  agent: ToolConnectionTestAgent;
+  appName: string;
+}) {
+  const check = useMutation({
+    mutationFn: () => toolsApi.checkAsAgent(connectionId, agent.id),
+  });
+  const result = check.data;
+  return (
+    <div className="flex flex-wrap items-start gap-3" data-testid="connection-check">
+      <Button size="sm" variant="outline" onClick={() => check.mutate()} disabled={check.isPending}>
+        {check.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
+        {check.isPending ? "Checking…" : `Check connection as ${agent.name}`}
+      </Button>
+      <div className="min-w-0 flex-1 text-sm" role="status" aria-live="polite">
+        {check.isError ? (
+          <p className="text-destructive">We couldn't run the check. Try again.</p>
+        ) : result?.ok ? (
+          <p className="flex items-start gap-1.5 text-foreground">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <span>
+              <span className="font-medium">Works.</span> {appName} answered with {agent.name}'s access.
+            </span>
+          </p>
+        ) : result ? (
+          <p className="flex items-start gap-1.5 text-foreground">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <span>
+              <span className="font-medium">{result.reason ? CHECK_REASON_LABEL[result.reason] : "Failed"}.</span>{" "}
+              {result.message.replace(/^[^:]+:\s*/, "")}
+            </span>
+          </p>
+        ) : (
+          <p className="text-muted-foreground">Checks the connection with this agent's access. No run, no action.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
