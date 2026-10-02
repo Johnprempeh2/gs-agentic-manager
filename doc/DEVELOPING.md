@@ -1374,6 +1374,14 @@ Environment overrides:
   with no uncommitted files whose commits are merged or pushed; otherwise it
   keeps it and posts one comment on the issue naming what would be lost. A
   negative or non-numeric value falls back to the default.
+- `GSAM_UNRECORDED_WORKTREE_IDLE_DAYS=<days>` turns on an hourly sweep of git
+  worktrees under a project checkout's `.gsam/worktrees/` that no execution
+  workspace records (an agent added them by hand). A worktree is removed with
+  `git worktree remove` (never `--force`, so the branch ref stays) only when it
+  has been idle that many days, no process is working inside it, every commit
+  on its HEAD is on a remote branch, and it has no uncommitted or untracked
+  files. Off when unset or not a positive number. Leave it off on sandboxes and
+  previews: an instance cannot see worktrees another instance records.
 
 Without `GSAM_DB_BACKUP_ALERT_FILE`, health checks look for
 `db-backup-to-s3.failure` in the backup directory, beside the backup directory,
