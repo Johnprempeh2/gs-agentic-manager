@@ -2200,7 +2200,7 @@ function StandardConnectionSetupFlow({
         <div className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6">
           <h2 className="text-lg font-semibold text-foreground">{entry.name} sign-in is unavailable</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            This instance is connected to {CLIENT_BRAND_NAME}, but {entry.name} sign-in is not currently available. Try again shortly or contact your instance administrator.
+            {CLIENT_BRAND_NAME}-managed sign-in is on, but {entry.name} sign-in is not available right now. Try again shortly or contact your instance administrator.
           </p>
           <div className="mt-6 flex items-center justify-between gap-3">
             <Button type="button" variant="ghost" onClick={() => setAppStep("access")}>Back</Button>
@@ -2222,7 +2222,7 @@ function StandardConnectionSetupFlow({
                   Connect with {CLIENT_BRAND_NAME}
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  You must connect this instance to {CLIENT_BRAND_NAME} to connect to {entry.name} (you only need to do this once).
+                  To connect {entry.name}, first turn on {CLIENT_BRAND_NAME}-managed sign-in for this instance. You only do this once.
                 </p>
               </div>
             </div>

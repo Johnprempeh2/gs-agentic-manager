@@ -91,7 +91,7 @@ const providerLifecycleGuidance: Record<
     reconnect:
       "Reconnect verifies this same Discord application and server installation. It does not add or remove the bot from the server.",
     remove:
-      `${CLIENT_BRAND_NAME} archives the endpoint, stops its ${CLIENT_BRAND_NAME} Gateway connection, and retires its saved bot token. It does not uninstall the bot: the bot remains in the Discord server, and the application remains in the Developer Portal, until you remove them there.`,
+      `${CLIENT_BRAND_NAME} archives the endpoint, stops its Discord Gateway connection, and retires its saved bot token. It does not uninstall the bot: the bot remains in the Discord server, and the application remains in the Developer Portal, until you remove them there.`,
   },
   "microsoft-teams": {
     reconnect:

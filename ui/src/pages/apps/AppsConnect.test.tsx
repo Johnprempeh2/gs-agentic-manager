@@ -1042,7 +1042,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
 
     expect(container.textContent).toContain("Connect with Greatstone");
     expect(container.textContent).toContain(
-      "You must connect this instance to Greatstone to connect to Gmail (you only need to do this once).",
+      "To connect Gmail, first turn on Greatstone-managed sign-in for this instance. You only do this once.",
     );
     expect(buttonByText("Connect with Greatstone")?.closest(".rounded-xl")?.classList.contains("border-border")).toBe(true);
     expect(container.textContent).not.toContain("Required once for managed Google sign-in.");
@@ -1509,7 +1509,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
 
     await render();
 
-    expect(container.textContent).not.toContain("You must connect this instance to Greatstone");
+    expect(container.textContent).not.toContain("first turn on Greatstone-managed sign-in");
     expect(container.textContent).not.toContain("Connect with Greatstone");
   });
 
