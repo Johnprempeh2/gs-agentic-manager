@@ -24,6 +24,11 @@ const mockTeamCatalogApi = vi.hoisted(() => ({
   preview: vi.fn(),
   install: vi.fn(),
   installed: vi.fn(),
+  request: vi.fn(),
+}));
+
+const mockInstanceSettingsApi = vi.hoisted(() => ({
+  getGeneral: vi.fn(),
 }));
 
 const mockAgentsApi = vi.hoisted(() => ({
@@ -40,6 +45,7 @@ const mockAdapterAvailability = vi.hoisted(() => ({
 
 vi.mock("../api/teamCatalog", () => ({ teamCatalogApi: mockTeamCatalogApi }));
 vi.mock("../api/agents", () => ({ agentsApi: mockAgentsApi }));
+vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: mockInstanceSettingsApi }));
 vi.mock("../adapters/use-disabled-adapters", () => ({
   useDisabledAdaptersSync: () => mockAdapterAvailability.disabled,
   useAdapterRegistryLoaded: () => mockAdapterAvailability.loaded,
@@ -245,6 +251,7 @@ describe("TeamCatalog install preview path", () => {
     document.body.appendChild(container);
     currentRoute = "team-no-deps";
     mockAgentsApi.list.mockResolvedValue([]);
+    mockInstanceSettingsApi.getGeneral.mockResolvedValue({ teamCatalogFilter: "all", teamCatalogAddMode: "install" });
     mockTeamCatalogApi.installed.mockResolvedValue([]);
     mockTeamCatalogApi.catalogList.mockResolvedValue([makeTeam()]);
     mockTeamCatalogApi.preview.mockResolvedValue(makePreview());
@@ -480,5 +487,61 @@ describe("TeamCatalog install preview path", () => {
     expect(document.body.textContent).toContain("Installed");
     expect(document.body.textContent).not.toContain("Update available");
     expect(findButton("Re-install latest")).toBeTruthy();
+  });
+
+  describe("Ask Greatstone to add (GRE-434)", () => {
+    beforeEach(() => {
+      mockInstanceSettingsApi.getGeneral.mockResolvedValue({ teamCatalogFilter: "greatstone", teamCatalogAddMode: "request" });
+      mockTeamCatalogApi.request.mockResolvedValue({ id: "approval-1", type: "request_board_approval", status: "pending" });
+    });
+
+    it("asks for a team that is not installed and installs nothing", async () => {
+      await renderPage();
+
+      expect(findButton("Install team")).toBeFalsy();
+      const ask = findButton("Ask Greatstone to add");
+      expect(ask).toBeTruthy();
+      await act(async () => {
+        ask!.click();
+      });
+      await flushReact();
+
+      expect(mockTeamCatalogApi.request).toHaveBeenCalledWith("company-1", "team-no-deps");
+      expect(mockTeamCatalogApi.preview).not.toHaveBeenCalled();
+      expect(mockTeamCatalogApi.install).not.toHaveBeenCalled();
+      expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "success", title: "Request sent" }));
+    });
+
+    it("shows the server error when the request fails", async () => {
+      mockTeamCatalogApi.request.mockRejectedValue(new Error("Missing permission: agents:create"));
+      await renderPage();
+
+      await act(async () => {
+        findButton("Ask Greatstone to add")!.click();
+      });
+      await flushReact();
+
+      expect(mockPushToast).toHaveBeenCalledWith(
+        expect.objectContaining({ tone: "error", body: "Missing permission: agents:create" }),
+      );
+    });
+
+    it("keeps Re-install for a team that is already installed", async () => {
+      mockTeamCatalogApi.installed.mockResolvedValue([
+        {
+          catalogId: "team-no-deps",
+          catalogKey: "paperclipai/bundled/company-defaults/team-no-deps",
+          present: true,
+          currentContentHash: "sha256:deadbeefdeadbeefdeadbeef",
+          installedOriginHashes: ["sha256:deadbeefdeadbeefdeadbeef"],
+          agentCount: 2,
+          outOfDate: false,
+        },
+      ]);
+      await renderPage();
+
+      expect(findButton("Ask Greatstone to add")).toBeFalsy();
+      expect(findButton("Re-install latest")).toBeTruthy();
+    });
   });
 });

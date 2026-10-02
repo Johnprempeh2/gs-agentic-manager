@@ -31,6 +31,24 @@ describe("parseSettingDefaults", () => {
     expect(unknown).toEqual(["someFutureSetting"]);
   });
 
+  it("shows only Greatstone teams by default; an operator can show every team (GRE-427)", () => {
+    const base = instanceGeneralSettingsSchema.parse({});
+    expect(base.teamCatalogFilter).toBe("greatstone");
+    const { defaults } = parseSettingDefaults('{"teamCatalogFilter":"all"}');
+    expect(defaults).toEqual({ teamCatalogFilter: "all" });
+    expect(() => parseSettingDefaults('{"teamCatalogFilter":"some"}')).toThrow(/teamCatalogFilter/);
+    expect(applyOperatorGeneralDefaults(base, defaults).teamCatalogFilter).toBe("all");
+  });
+
+  it("lets an operator make the catalogue ask Greatstone instead of installing (GRE-434)", () => {
+    const { defaults } = parseSettingDefaults('{"teamCatalogAddMode":"request"}');
+    expect(defaults).toEqual({ teamCatalogAddMode: "request" });
+    expect(() => parseSettingDefaults('{"teamCatalogAddMode":"buy"}')).toThrow(/teamCatalogAddMode/);
+    const base = instanceGeneralSettingsSchema.parse({});
+    expect(base.teamCatalogAddMode).toBe("install");
+    expect(applyOperatorGeneralDefaults(base, defaults).teamCatalogAddMode).toBe("request");
+  });
+
   it("fails closed on malformed JSON and non-object shapes", () => {
     expect(() => parseSettingDefaults("{nope")).toThrow(SETTING_DEFAULTS_ENV_KEY);
     expect(() => parseSettingDefaults('"allowed"')).toThrow(/JSON object/);

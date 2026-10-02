@@ -1,4 +1,6 @@
+import { z } from "zod";
 import { instanceGeneralSettingsSchema } from "./validators/instance.js";
+import { shapeWithoutDefaults } from "./validators/partial.js";
 import type { InstanceGeneralSettings } from "./types/instance.js";
 
 /**
@@ -30,6 +32,9 @@ export const SETTING_DEFAULTS_ENV_KEY = "GSAM_SETTING_DEFAULTS";
 /** Instance → General fields whose schema default an operator may replace. */
 export const DEFAULTABLE_GENERAL_SETTINGS = [
   "feedbackDataSharingPreference",
+  // GRE-427: client installs show only Greatstone teams and ask before adding.
+  "teamCatalogFilter",
+  "teamCatalogAddMode",
 ] as const;
 
 export type DefaultableGeneralSetting = (typeof DEFAULTABLE_GENERAL_SETTINGS)[number];
@@ -45,11 +50,16 @@ export interface ParsedSettingDefaults {
   unknown: string[];
 }
 
-const defaultableFieldsSchema = instanceGeneralSettingsSchema
-  .pick(
-    Object.fromEntries(DEFAULTABLE_GENERAL_SETTINGS.map((key) => [key, true])) as {
-      [K in DefaultableGeneralSetting]: true;
-    },
+// Without the schema defaults, so a field the operator did not name stays absent.
+const defaultableFieldsSchema = z
+  .object(
+    shapeWithoutDefaults(
+      instanceGeneralSettingsSchema.pick(
+        Object.fromEntries(DEFAULTABLE_GENERAL_SETTINGS.map((key) => [key, true])) as {
+          [K in DefaultableGeneralSetting]: true;
+        },
+      ).shape,
+    ),
   )
   .partial();
 
@@ -115,7 +125,7 @@ export function applyOperatorGeneralDefaults(
     if (value === undefined) continue;
     if (general[key] === schemaDefaults[key] && general[key] !== value) {
       next ??= { ...general };
-      next[key] = value;
+      (next as Record<DefaultableGeneralSetting, unknown>)[key] = value;
     }
   }
   return next ?? general;
@@ -156,7 +166,7 @@ export function stripOperatorGeneralEchoes(
       next[key] !== schemaDefaults[key]
     ) {
       result ??= { ...next };
-      result[key] = schemaDefaults[key];
+      (result as Record<DefaultableGeneralSetting, unknown>)[key] = schemaDefaults[key];
     }
   }
   return result ?? next;

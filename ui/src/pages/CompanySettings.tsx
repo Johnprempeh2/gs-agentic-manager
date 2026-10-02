@@ -511,7 +511,7 @@ export function CompanySettings() {
         </TabsContent>
 
         <TabsContent value="agents" className="space-y-8">
-          <InstanceGeneralSettings embedded sections={["runAdmission"]} />
+          <InstanceGeneralSettings embedded sections={["runAdmission", "teamCatalogFilter", "teamCatalogAddMode"]} />
           <InteractionGovernancePanel
             governance={governance}
             onChange={handleGovernanceChange}

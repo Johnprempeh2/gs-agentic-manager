@@ -17,9 +17,11 @@ import type {
   InstalledCatalogTeam,
   CompanyPortabilityAdapterOverride,
   CompanyPortabilityCollisionStrategy,
+  TeamCatalogAddMode,
 } from "@greatstone/shared";
 import { AGENT_ADAPTER_TYPES } from "@greatstone/shared";
 import { teamCatalogApi } from "../api/teamCatalog";
+import { instanceSettingsApi } from "../api/instanceSettings";
 import { agentsApi } from "../api/agents";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import {
@@ -106,6 +108,7 @@ import {
   Repeat,
   RotateCcw,
   Search,
+  Send,
   ShieldCheck,
   Users2,
   XCircle,
@@ -676,6 +679,9 @@ export function TeamDetailPane({
   canInstall,
   fileContent,
   installed,
+  addMode = "install",
+  onRequest,
+  requestPending = false,
 }: {
   team: CatalogTeam;
   selectedPath: string | null;
@@ -684,6 +690,10 @@ export function TeamDetailPane({
   canInstall: boolean;
   fileContent: string | null;
   installed?: InstalledCatalogTeam | null;
+  /** Instance `teamCatalogAddMode` (GRE-434). `request` asks Greatstone instead of installing. */
+  addMode?: TeamCatalogAddMode;
+  onRequest?: () => void;
+  requestPending?: boolean;
 }) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const tree = useMemo(() => buildTree(team.files), [team.files]);
@@ -701,8 +711,14 @@ export function TeamDetailPane({
     });
 
   // Installed teams default to update/re-install semantics; out-of-date teams
-  // get the primary amber affordance (design §5 / PAP-10256).
-  const installButton = (
+  // get the primary amber affordance (design §5 / PAP-10256). With add mode
+  // `request`, a team not yet installed is asked for, never installed (GRE-434).
+  const installButton = addMode === "request" && !isInstalled ? (
+    <Button onClick={onRequest} disabled={invalid || !canInstall || requestPending}>
+      {requestPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+      Ask Greatstone to add
+    </Button>
+  ) : (
     <Button
       onClick={onInstall}
       disabled={invalid || !canInstall}
@@ -2198,7 +2214,7 @@ export function TeamCard({
       aria-pressed={selected}
       className={cn(
         // design-allow(card-pattern): interactive <button> tile; Card renders a div and would break button semantics (C5a Run 3)
-        "flex aspect-square w-full flex-col gap-2 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "flex w-full flex-col gap-2 rounded-lg border sm:aspect-square border-border bg-card p-4 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         selected && "ring-2 ring-ring",
       )}
     >
@@ -2380,6 +2396,31 @@ export function TeamCatalog() {
   }, [filtered, installedById]);
 
   const canInstall = true; // server enforces; UI shows the affordance to operators
+
+  const generalSettingsQuery = useQuery({
+    queryKey: queryKeys.instance.generalSettings,
+    queryFn: () => instanceSettingsApi.getGeneral(),
+  });
+  const addMode: TeamCatalogAddMode = generalSettingsQuery.data?.teamCatalogAddMode ?? "install";
+
+  const requestMutation = useMutation({
+    mutationFn: (team: CatalogTeam) => teamCatalogApi.request(selectedCompanyId!, team.id),
+    onSuccess: (_approval, team) => {
+      pushToast({
+        tone: "success",
+        title: "Request sent",
+        body: `An approval card asks Greatstone to add the ${team.name}. Nothing is installed yet.`,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["approvals", selectedCompanyId] });
+    },
+    onError: (error, team) => {
+      pushToast({
+        tone: "error",
+        title: `Could not ask for the ${team.name}`,
+        body: error instanceof Error ? error.message : "Try again, or ask your Greatstone contact.",
+      });
+    },
+  });
 
   if (!selectedCompanyId) {
     return (
@@ -2591,6 +2632,9 @@ export function TeamCatalog() {
                 canInstall={canInstall}
                 fileContent={fileQuery.data?.content ?? null}
                 installed={installedById.get(selectedTeam.id) ?? null}
+                addMode={addMode}
+                onRequest={() => requestMutation.mutate(selectedTeam)}
+                requestPending={requestMutation.isPending}
               />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">

@@ -29,6 +29,15 @@ export const DEFAULT_BACKUP_RETENTION: BackupRetentionPolicy = {
  */
 export type InstanceExecutionMode = "kubernetes" | "any";
 
+/** Which teams the Team Catalogue offers. `"greatstone"` = only teams tagged `greatstone`. */
+export const TEAM_CATALOG_FILTERS = ["all", "greatstone"] as const;
+export type TeamCatalogFilter = (typeof TEAM_CATALOG_FILTERS)[number];
+/** What adding a team does. `"request"` = an approval card for the board, no install. */
+export const TEAM_CATALOG_ADD_MODES = ["install", "request"] as const;
+export type TeamCatalogAddMode = (typeof TEAM_CATALOG_ADD_MODES)[number];
+/** The tag that marks a Greatstone team in the catalogue. */
+export const GREATSTONE_TEAM_TAG = "greatstone";
+
 export interface InstanceGeneralSettings {
   censorUsernameInLogs: boolean;
   /** @deprecated Legacy instance value. Use /auth/preferences for personal shortcuts. */
@@ -50,6 +59,10 @@ export interface InstanceGeneralSettings {
    * harness and AI connection. Set = every Claude/Codex agent uses this route.
    */
   aiAccessRoute?: AiAccessRoute | null;
+  /** Team Catalogue filter (GRE-427). Default `"greatstone"`. */
+  teamCatalogFilter: TeamCatalogFilter;
+  /** Team Catalogue add button (GRE-427). Default `"install"`. */
+  teamCatalogAddMode: TeamCatalogAddMode;
 }
 
 export interface RunAdmissionSettingsInput {
