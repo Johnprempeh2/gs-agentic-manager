@@ -1280,11 +1280,48 @@ async function assertDirtyQuarantineRuntimeServicesStopped(input: {
   throw branchIncoherenceValidationFailure(input.evidence);
 }
 
-async function assertGitIndexIsUnlocked(worktreePath: string) {
-  const indexLockPath = await runGit(["rev-parse", "--git-path", "index.lock"], worktreePath)
-    .catch(() => null);
-  if (indexLockPath && existsSync(indexLockPath)) {
-    throw new Error(`git index lock exists at ${indexLockPath}`);
+type GitIndexLockWaitOverrides = Omit<Parameters<typeof waitForGitIndexLock>[0], "lockPath" | "worktreePath">;
+let gitIndexLockWaitOverrides: GitIndexLockWaitOverrides | null = null;
+
+/** Test-only seam for the git index lock wait (timeout, clock, holder probe). Pass null to restore defaults. */
+export function setGitIndexLockWaitOptionsForTests(overrides: GitIndexLockWaitOverrides | null) {
+  gitIndexLockWaitOverrides = overrides;
+}
+
+function waitForWorktreeGitIndexLock(lockPath: string, worktreePath: string) {
+  return waitForGitIndexLock({ ...gitIndexLockWaitOverrides, lockPath, worktreePath });
+}
+
+// GRE-387: the dirty-quarantine repair used to throw on any index.lock, so a
+// stale lock left by a dead git process moved the task to `blocked`. Remove a
+// stale lock and wait for a held one, as the base refresh does (GRE-383). The
+// repair cannot run without the index, so a lock still held after the wait
+// fails the repair.
+async function waitForGitIndexUnlockedForRepair(input: {
+  worktreePath: string;
+  phase: "worktree_prepare" | "workspace_finalize";
+  recorder?: WorkspaceOperationRecorder | null;
+}) {
+  const indexLockPath = await resolveGitIndexLockPath(input.worktreePath, runGit);
+  if (!indexLockPath) return;
+  const lock = await waitForWorktreeGitIndexLock(indexLockPath, input.worktreePath);
+  if (lock.status === "held") {
+    throw new Error(
+      `git index lock "${indexLockPath}" is still held after ${Math.round(lock.waitedMs / 1000)}s`,
+    );
+  }
+  if (lock.status === "removed_stale") {
+    await input.recorder?.recordOperation({
+      phase: input.phase,
+      command: null,
+      cwd: input.worktreePath,
+      metadata: { reason: "git_index_locked", indexLockPath, ...lock },
+      run: async () => ({
+        status: "succeeded",
+        exitCode: 0,
+        system: `Removed stale git index lock "${indexLockPath}" (${Math.round(lock.lockAgeMs / 1000)}s old, no git process holds it) before dirty workspace rescue.\n`,
+      }),
+    }).catch(() => {});
   }
 }
 
@@ -1767,7 +1804,11 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
   let rescueBranchCreated = false;
   let expectedBranchRestored = false;
   try {
-    await assertGitIndexIsUnlocked(input.worktreePath);
+    await waitForGitIndexUnlockedForRepair({
+      worktreePath: input.worktreePath,
+      phase: input.phase ?? "worktree_prepare",
+      recorder: input.recorder,
+    });
     await recordGitOperation(input.recorder, {
       phase: input.phase ?? "worktree_prepare",
       args: ["checkout", "-b", rescueBranch],
@@ -2586,7 +2627,7 @@ async function refreshUnstartedWorktreeToBase(input: {
   // was usually gone minutes later.
   const indexLockPath = await resolveGitIndexLockPath(input.worktreePath, runGit);
   if (indexLockPath) {
-    const lock = await waitForGitIndexLock({ lockPath: indexLockPath, worktreePath: input.worktreePath });
+    const lock = await waitForWorktreeGitIndexLock(indexLockPath, input.worktreePath);
     const lockNote = lock.status === "held"
       ? `Skipped refreshing git worktree at ${input.worktreePath}: git index lock "${indexLockPath}" is still held after ${Math.round(lock.waitedMs / 1000)}s. Running on the current base.\n`
       : lock.status === "removed_stale"

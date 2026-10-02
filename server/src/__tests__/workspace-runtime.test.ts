@@ -45,6 +45,7 @@ import {
   resolveWorkspaceRuntimeReadinessTimeoutSec,
   resolveShell,
   sanitizeRuntimeServiceBaseEnv,
+  setGitIndexLockWaitOptionsForTests,
   setWorkspaceRuntimeExposureDepsForTests,
   startRuntimeServicesForWorkspaceControl,
   stopRuntimeServicesForExecutionWorkspace,
@@ -6496,7 +6497,9 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
     ])).resolves.toBe("");
   }, 20_000);
 
-  it("falls back to validation failure when git reports index-lock contention during quarantine", async () => {
+  // GRE-387: a held lock is waited on for up to 2 minutes (fake clock here),
+  // then the repair fails with index contention instead of failing at once.
+  it("waits up to 2 minutes for a held index.lock, then falls back to validation failure", async () => {
     const expectedBranch = "PAP-459-recorded";
     const actualBranch = "PAP-459-live";
     const { repoRoot, worktreePath } = await createDirtyMismatchRepo({ expectedBranch, actualBranch });
@@ -6508,8 +6511,18 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
       sourceIdentifier: "PAP-459",
       claimant: "none",
     });
-    const lockPath = await readGit(worktreePath, ["rev-parse", "--git-path", "index.lock"]);
+    const lockPath = path.resolve(worktreePath, await readGit(worktreePath, ["rev-parse", "--git-path", "index.lock"]));
     await fs.writeFile(lockPath, "locked\n", "utf8");
+    let fakeNow = Date.now();
+    let sleptMs = 0;
+    setGitIndexLockWaitOptionsForTests({
+      probe: async () => true,
+      now: () => fakeNow,
+      sleep: async (ms) => {
+        sleptMs += ms;
+        fakeNow += ms;
+      },
+    });
     try {
       await expect(restoreDirtyQuarantine({
         repoRoot,
@@ -6525,15 +6538,56 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
             safeRepair: expect.objectContaining({
               attempted: true,
               succeeded: false,
-              reason: expect.stringContaining("index contention"),
+              reason: expect.stringMatching(/index contention.*still held after 120s/),
             }),
           }),
         },
       });
     } finally {
+      setGitIndexLockWaitOptionsForTests(null);
       await fs.rm(lockPath, { force: true });
     }
+    expect(sleptMs).toBe(2 * 60 * 1000);
     await expect(readGit(worktreePath, ["branch", "--show-current"])).resolves.toBe(actualBranch);
+  }, 20_000);
+
+  // GRE-387: a stale lock (no holder, older than 2 minutes) used to block the
+  // task. It is now removed and the repair continues.
+  it("removes a stale index.lock and completes the dirty quarantine repair", async () => {
+    const expectedBranch = "PAP-461-recorded";
+    const actualBranch = "PAP-461-live";
+    const { repoRoot, worktreePath } = await createDirtyMismatchRepo({ expectedBranch, actualBranch });
+    const ids = await seedDirtyQuarantineRecords({
+      repoRoot,
+      worktreePath,
+      expectedBranch,
+      actualBranch,
+      sourceIdentifier: "PAP-461",
+      claimant: "none",
+    });
+    const lockPath = path.resolve(worktreePath, await readGit(worktreePath, ["rev-parse", "--git-path", "index.lock"]));
+    await fs.writeFile(lockPath, "", "utf8");
+    const staleMtime = new Date(Date.now() - 3 * 60 * 1000);
+    await fs.utimes(lockPath, staleMtime, staleMtime);
+    setGitIndexLockWaitOptionsForTests({ probe: async () => false });
+    const { recorder, operations } = createWorkspaceOperationRecorderDouble();
+    try {
+      const restored = await restoreDirtyQuarantine({
+        repoRoot,
+        worktreePath,
+        expectedBranch,
+        actualBranch,
+        ids,
+        recorder,
+      });
+      expect(restored?.warnings.some((entry) => entry.includes("dirty worktree state was quarantined"))).toBe(true);
+    } finally {
+      setGitIndexLockWaitOptionsForTests(null);
+    }
+    await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readGit(worktreePath, ["branch", "--show-current"])).resolves.toBe(expectedBranch);
+    await expect(readGit(worktreePath, ["status", "--porcelain", "--untracked-files=all"])).resolves.toBe("");
+    expect(operations.some((op) => op.metadata?.reason === "git_index_locked")).toBe(true);
   }, 20_000);
 
   it("best-effort restores the recorded branch when the rescue commit fails", async () => {
