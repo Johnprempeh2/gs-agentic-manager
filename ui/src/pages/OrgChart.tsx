@@ -3,137 +3,74 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
+import { heartbeatsApi } from "../api/heartbeats";
+import { issuesApi } from "../api/issues";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { agentUrl } from "../lib/utils";
+import { agentUrl, cn, formatCents, issueUrl, relativeTime } from "../lib/utils";
+import {
+  CARD_H,
+  CARD_W,
+  ancestorIds,
+  collectEdges,
+  flattenLayout,
+  flattenOrg,
+  layoutBounds,
+  layoutForest,
+  type LayoutNode,
+} from "../lib/org-chart-layout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { Download, Maximize2, Minus, Network, Plus, Upload } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent } from "@greatstone/shared";
+import { AgentStatusCapsule } from "../components/StatusBadge";
+import { ChevronDown, ChevronRight, Download, Maximize2, Minus, Network, Plus, Search, Upload } from "lucide-react";
+import { AGENT_ROLE_LABELS, type Agent, type CompactIssue } from "@greatstone/shared";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
+import { getAdapterLabel } from "../adapters/adapter-display-registry";
 
-// Layout constants
-const CARD_W = 200;
-const CARD_H = 100;
-const GAP_X = 32;
-const GAP_Y = 80;
-const PADDING = 60;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2;
+/** Fit-to-screen never shrinks below this, so card text stays readable. */
+const MIN_FIT_ZOOM = 0.6;
 const FIT_PADDING = 40;
 const TOUCH_MOVE_THRESHOLD = 6;
-
-// ── Tree layout types ───────────────────────────────────────────────────
-
-interface LayoutNode {
-  id: string;
-  name: string;
-  role: string;
-  status: string;
-  x: number;
-  y: number;
-  children: LayoutNode[];
-}
+/** Zoom change per pixel of ctrl/⌘-scroll; small so trackpads zoom smoothly. */
+const WHEEL_ZOOM_RATE = 0.0025;
+/** Cap per-event delta so one mouse-wheel notch zooms ~12%, not 2x. */
+const WHEEL_ZOOM_MAX_DELTA = 50;
+const KEYBOARD_PAN_STEP = 80;
+const OPEN_TASK_STATUSES = "todo,in_progress,in_review,blocked";
+const SEARCH_RESULT_LIMIT = 6;
 
 interface Point {
   x: number;
   y: number;
 }
 
+interface View extends Point {
+  zoom: number;
+}
+
 interface TouchGesture {
   mode: "pan" | "pinch" | null;
   startPoint: Point;
-  startPan: Point;
-  startZoom: number;
+  startView: View;
   startDistance: number;
   startCenter: Point;
   moved: boolean;
 }
 
-// ── Layout algorithm ────────────────────────────────────────────────────
-
-/** Compute the width each subtree needs. */
-function subtreeWidth(node: OrgNode): number {
-  if (node.reports.length === 0) return CARD_W;
-  const childrenW = node.reports.reduce((sum, c) => sum + subtreeWidth(c), 0);
-  const gaps = (node.reports.length - 1) * GAP_X;
-  return Math.max(CARD_W, childrenW + gaps);
-}
-
-/** Recursively assign x,y positions. */
-function layoutTree(node: OrgNode, x: number, y: number): LayoutNode {
-  const totalW = subtreeWidth(node);
-  const layoutChildren: LayoutNode[] = [];
-
-  if (node.reports.length > 0) {
-    const childrenW = node.reports.reduce((sum, c) => sum + subtreeWidth(c), 0);
-    const gaps = (node.reports.length - 1) * GAP_X;
-    let cx = x + (totalW - childrenW - gaps) / 2;
-
-    for (const child of node.reports) {
-      const cw = subtreeWidth(child);
-      layoutChildren.push(layoutTree(child, cx, y + CARD_H + GAP_Y));
-      cx += cw + GAP_X;
-    }
-  }
-
-  return {
-    id: node.id,
-    name: node.name,
-    role: node.role,
-    status: node.status,
-    x: x + (totalW - CARD_W) / 2,
-    y,
-    children: layoutChildren,
-  };
-}
-
-/** Layout all root nodes side by side. */
-function layoutForest(roots: OrgNode[]): LayoutNode[] {
-  if (roots.length === 0) return [];
-
-  const totalW = roots.reduce((sum, r) => sum + subtreeWidth(r), 0);
-  const gaps = (roots.length - 1) * GAP_X;
-  let x = PADDING;
-  const y = PADDING;
-
-  const result: LayoutNode[] = [];
-  for (const root of roots) {
-    const w = subtreeWidth(root);
-    result.push(layoutTree(root, x, y));
-    x += w + GAP_X;
-  }
-
-  // Compute bounds and return
-  return result;
-}
-
-/** Flatten layout tree to list of nodes. */
-function flattenLayout(nodes: LayoutNode[]): LayoutNode[] {
-  const result: LayoutNode[] = [];
-  function walk(n: LayoutNode) {
-    result.push(n);
-    n.children.forEach(walk);
-  }
-  nodes.forEach(walk);
-  return result;
-}
-
-/** Collect all parent→child edges. */
-function collectEdges(nodes: LayoutNode[]): Array<{ parent: LayoutNode; child: LayoutNode }> {
-  const edges: Array<{ parent: LayoutNode; child: LayoutNode }> = [];
-  function walk(n: LayoutNode) {
-    for (const c of n.children) {
-      edges.push({ parent: n, child: c });
-      walk(c);
-    }
-  }
-  nodes.forEach(walk);
-  return edges;
+interface AgentActivity {
+  statusKey: string;
+  statusLabel: string;
+  reason: string | null;
+  currentTask: CompactIssue | null;
+  openTasks: CompactIssue[];
 }
 
 function clampZoom(value: number): number {
@@ -144,22 +81,29 @@ function fitChartToViewport(
   containerWidth: number,
   containerHeight: number,
   bounds: { width: number; height: number },
-): { zoom: number; pan: Point } | null {
+): View | null {
   if (containerWidth <= FIT_PADDING || containerHeight <= FIT_PADDING) return null;
 
   const scaleX = (containerWidth - FIT_PADDING) / bounds.width;
   const scaleY = (containerHeight - FIT_PADDING) / bounds.height;
-  const zoom = clampZoom(Math.min(scaleX, scaleY, 1));
+  const zoom = clampZoom(Math.max(Math.min(scaleX, scaleY, 1), MIN_FIT_ZOOM));
   const chartWidth = bounds.width * zoom;
   const chartHeight = bounds.height * zoom;
 
+  // A chart too big to fit at a readable size is pinned to the top, centred
+  // across, instead of shrunk to unreadable.
   return {
     zoom,
-    pan: {
-      x: (containerWidth - chartWidth) / 2,
-      y: (containerHeight - chartHeight) / 2,
-    },
+    x: (containerWidth - chartWidth) / 2,
+    y: chartHeight > containerHeight ? FIT_PADDING / 2 : (containerHeight - chartHeight) / 2,
   };
+}
+
+/** Normalise a wheel delta to pixels across deltaMode line/page devices. */
+function wheelPixels(delta: number, mode: number, pageSize: number): number {
+  if (mode === 1) return delta * 16;
+  if (mode === 2) return delta * pageSize;
+  return delta;
 }
 
 function touchPoint(touch: React.Touch): Point {
@@ -167,9 +111,7 @@ function touchPoint(touch: React.Touch): Point {
 }
 
 function touchDistance(a: React.Touch, b: React.Touch): number {
-  const dx = a.clientX - b.clientX;
-  const dy = a.clientY - b.clientY;
-  return Math.hypot(dx, dy);
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 }
 
 function touchCenter(a: React.Touch, b: React.Touch, container: HTMLDivElement): Point {
@@ -180,19 +122,37 @@ function touchCenter(a: React.Touch, b: React.Touch, container: HTMLDivElement):
   };
 }
 
-// ── Status dot colors (raw hex for SVG) ─────────────────────────────────
-
-import { getAdapterLabel } from "../adapters/adapter-display-registry";
-
-const statusDotColor: Record<string, string> = {
-  running: "var(--hex-22d3ee)",
-  active: "var(--hex-4ade80)",
-  paused: "var(--hex-facc15)",
-  idle: "var(--hex-facc15)",
-  error: "var(--hex-f87171)",
-  terminated: "var(--hex-a3a3a3)",
+const pauseReasonLabels: Record<string, string> = {
+  manual: "paused by a person",
+  budget: "budget limit reached",
+  system: "paused by the system",
+  company_archived: "company archived",
+  import: "paused after import",
 };
-const defaultDotColor = "var(--hex-a3a3a3)";
+
+const statusLabels: Record<string, string> = {
+  running: "Running",
+  active: "Idle",
+  idle: "Idle",
+  paused: "Paused",
+  error: "Error",
+  pending_approval: "Waiting for approval",
+  terminated: "Stopped",
+};
+
+function describeStatus(status: string, agent: Agent | undefined, running: boolean) {
+  if (running && status !== "paused" && status !== "error") {
+    return { statusKey: "running", statusLabel: statusLabels.running!, reason: null };
+  }
+  let reason: string | null = null;
+  if (status === "paused") reason = pauseReasonLabels[agent?.pauseReason ?? ""] ?? null;
+  if (status === "error") reason = agent?.errorReason?.trim() || "see agent page";
+  return { statusKey: status, statusLabel: statusLabels[status] ?? status.replace(/_/g, " "), reason };
+}
+
+function taskLabel(task: CompactIssue): string {
+  return task.identifier ? `${task.identifier} ${task.title}` : task.title;
+}
 
 // ── Main component ──────────────────────────────────────────────────────
 
@@ -228,6 +188,21 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId && providedAgents === undefined,
   });
+
+  const { data: liveRuns } = useQuery({
+    queryKey: [...queryKeys.liveRuns(selectedCompanyId!), "org-chart"],
+    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 15_000,
+  });
+
+  const { data: openIssues } = useQuery({
+    queryKey: [...queryKeys.issues.list(selectedCompanyId!), "org-chart-open"],
+    queryFn: () => issuesApi.listCompact(selectedCompanyId!, { status: OPEN_TASK_STATUSES, limit: 1000 }),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 30_000,
+  });
+
   const orgTree = providedOrgTree ?? queriedOrgTree;
   const agents = providedAgents ?? queriedAgents;
 
@@ -237,43 +212,76 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
     return m;
   }, [agents]);
 
+  const activityByAgent = useMemo(() => {
+    const runIssueByAgent = new Map<string, string | null>();
+    for (const run of liveRuns ?? []) {
+      if (run.status !== "running" && run.status !== "queued") continue;
+      if (!runIssueByAgent.has(run.agentId) || !runIssueByAgent.get(run.agentId)) {
+        runIssueByAgent.set(run.agentId, run.issueId ?? null);
+      }
+    }
+    const tasksByAgent = new Map<string, CompactIssue[]>();
+    for (const issue of openIssues ?? []) {
+      if (!issue.assigneeAgentId) continue;
+      const list = tasksByAgent.get(issue.assigneeAgentId) ?? [];
+      list.push(issue);
+      tasksByAgent.set(issue.assigneeAgentId, list);
+    }
+    const result = new Map<string, AgentActivity>();
+    for (const node of flattenOrg(orgTree ?? [])) {
+      const agent = agentMap.get(node.id);
+      const running = runIssueByAgent.has(node.id);
+      const openTasks = tasksByAgent.get(node.id) ?? [];
+      const runIssueId = runIssueByAgent.get(node.id);
+      const currentTask =
+        (runIssueId ? openTasks.find((t) => t.id === runIssueId) : undefined) ??
+        openTasks.find((t) => t.status === "in_progress") ??
+        null;
+      result.set(node.id, {
+        ...describeStatus(agent?.status ?? node.status, agent, running),
+        currentTask,
+        openTasks,
+      });
+    }
+    return result;
+  }, [orgTree, agentMap, liveRuns, openIssues]);
+
   useEffect(() => {
     if (!embedded) setBreadcrumbs([{ label: "Org Chart" }]);
   }, [embedded, setBreadcrumbs]);
 
   // Layout computation
-  const layout = useMemo(() => layoutForest(orgTree ?? []), [orgTree]);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const layout = useMemo(() => layoutForest(orgTree ?? [], collapsed), [orgTree, collapsed]);
   const allNodes = useMemo(() => flattenLayout(layout), [layout]);
+  const nodeById = useMemo(() => new Map(allNodes.map((n) => [n.id, n])), [allNodes]);
   const edges = useMemo(() => collectEdges(layout), [layout]);
-
-  // Compute SVG bounds
-  const bounds = useMemo(() => {
-    if (allNodes.length === 0) return { width: 800, height: 600 };
-    let maxX = 0, maxY = 0;
-    for (const n of allNodes) {
-      maxX = Math.max(maxX, n.x + CARD_W);
-      maxY = Math.max(maxY, n.y + CARD_H);
-    }
-    return { width: maxX + PADDING, height: maxY + PADDING };
-  }, [allNodes]);
+  const bounds = useMemo(() => layoutBounds(allNodes), [allNodes]);
+  const hasChart = allNodes.length > 0;
 
   // Pan & zoom state
   const containerRef = useRef<HTMLDivElement>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 });
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const [dragging, setDragging] = useState(false);
-  const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const dragStart = useRef({ x: 0, y: 0, view });
   const touchGesture = useRef<TouchGesture>({
     mode: null,
     startPoint: { x: 0, y: 0 },
-    startPan: { x: 0, y: 0 },
-    startZoom: 1,
+    startView: view,
     startDistance: 0,
     startCenter: { x: 0, y: 0 },
     moved: false,
   });
   const suppressNextCardClick = useRef(false);
   const suppressClickTimerRef = useRef<number | null>(null);
+
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     return () => {
@@ -296,60 +304,70 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
     if (!fitted) return;
 
     hasInitialized.current = true;
-    setZoom(fitted.zoom);
-    setPan(fitted.pan);
+    setView(fitted);
   }, [allNodes, bounds]);
+
+  const zoomTowardPoint = useCallback((nextZoom: number, point: Point) => {
+    setView((current) => {
+      const zoom = clampZoom(nextZoom);
+      const scale = zoom / current.zoom;
+      return {
+        zoom,
+        x: point.x - scale * (point.x - current.x),
+        y: point.y - scale * (point.y - current.y),
+      };
+    });
+  }, []);
+
+  // Wheel: scroll / two-finger swipe pans; ctrl/⌘ + scroll (and trackpad
+  // pinch, which browsers report as ctrl+wheel) zooms. Bound natively as
+  // non-passive so preventDefault really stops the page scrolling under it.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const dx = wheelPixels(e.deltaX, e.deltaMode, container.clientWidth);
+      const dy = wheelPixels(e.deltaY, e.deltaMode, container.clientHeight);
+      if (e.ctrlKey || e.metaKey) {
+        const delta = Math.max(-WHEEL_ZOOM_MAX_DELTA, Math.min(WHEEL_ZOOM_MAX_DELTA, dy));
+        setView((current) => {
+          const zoom = clampZoom(current.zoom * Math.exp(-delta * WHEEL_ZOOM_RATE));
+          const scale = zoom / current.zoom;
+          const px = e.clientX - rect.left;
+          const py = e.clientY - rect.top;
+          return { zoom, x: px - scale * (px - current.x), y: py - scale * (py - current.y) };
+        });
+        return;
+      }
+      // Shift + mouse wheel scrolls sideways, like a normal page.
+      const panX = e.shiftKey && dx === 0 ? dy : dx;
+      const panY = e.shiftKey && dx === 0 ? 0 : dy;
+      setView((current) => ({ ...current, x: current.x - panX, y: current.y - panY }));
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+    // Re-bind when the viewport mounts after loading/empty states.
+  }, [hasChart]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    // Don't drag if clicking a card
     const target = e.target as HTMLElement;
-    if (target.closest("[data-org-card]")) return;
+    if (target.closest("[data-org-card], [data-org-control]")) return;
     setDragging(true);
-    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
-  }, [pan]);
+    dragStart.current = { x: e.clientX, y: e.clientY, view: viewRef.current };
+  }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragging) return;
-    const dx = e.clientX - dragStart.current.x;
-    const dy = e.clientY - dragStart.current.y;
-    setPan({ x: dragStart.current.panX + dx, y: dragStart.current.panY + dy });
+    const start = dragStart.current;
+    setView({ ...start.view, x: start.view.x + e.clientX - start.x, y: start.view.y + e.clientY - start.y });
   }, [dragging]);
 
   const handleMouseUp = useCallback(() => {
     setDragging(false);
   }, []);
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const container = containerRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const factor = e.deltaY < 0 ? 1.1 : 0.9;
-    const newZoom = clampZoom(zoom * factor);
-
-    // Zoom toward mouse position
-    const scale = newZoom / zoom;
-    setPan({
-      x: mouseX - scale * (mouseX - pan.x),
-      y: mouseY - scale * (mouseY - pan.y),
-    });
-    setZoom(newZoom);
-  }, [zoom, pan]);
-
-  const zoomTowardPoint = useCallback((newZoom: number, point: Point) => {
-    const clampedZoom = clampZoom(newZoom);
-    const scale = clampedZoom / zoom;
-    setPan({
-      x: point.x - scale * (point.x - pan.x),
-      y: point.y - scale * (point.y - pan.y),
-    });
-    setZoom(clampedZoom);
-  }, [zoom, pan]);
 
   const fitToScreen = useCallback(() => {
     if (!containerRef.current) return;
@@ -358,20 +376,150 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
       containerRef.current.clientHeight,
       bounds,
     );
-    if (!fitted) return;
-
-    setZoom(fitted.zoom);
-    setPan(fitted.pan);
+    if (fitted) setView(fitted);
   }, [bounds]);
 
+  /** Pan so a card is centred; keeps the current zoom unless one is given. */
+  const centerOn = useCallback((node: LayoutNode, zoomOverride?: number) => {
+    const container = containerRef.current;
+    if (!container) return;
+    setView((current) => {
+      const zoom = clampZoom(zoomOverride ?? current.zoom);
+      return {
+        zoom,
+        x: container.clientWidth / 2 - (node.x + CARD_W / 2) * zoom,
+        y: container.clientHeight / 2 - (node.y + CARD_H / 2) * zoom,
+      };
+    });
+  }, []);
+
+  /** Pan only if the card is partly off-screen. */
+  const ensureVisible = useCallback((node: LayoutNode) => {
+    const container = containerRef.current;
+    if (!container) return;
+    const { x, y, zoom } = viewRef.current;
+    const left = x + node.x * zoom;
+    const top = y + node.y * zoom;
+    const offscreen =
+      left < 0 ||
+      top < 0 ||
+      left + CARD_W * zoom > container.clientWidth ||
+      top + CARD_H * zoom > container.clientHeight;
+    if (offscreen) centerOn(node);
+  }, [centerOn]);
+
+  const toggleCollapsed = useCallback((id: string) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  /** Expand every collapsed manager above an agent, then centre and focus it. */
+  const jumpTo = useCallback((id: string) => {
+    const ancestors = ancestorIds(orgTree ?? [], id) ?? [];
+    setCollapsed((current) => {
+      if (!ancestors.some((a) => current.has(a))) return current;
+      const next = new Set(current);
+      ancestors.forEach((a) => next.delete(a));
+      return next;
+    });
+    setPendingFocusId(id);
+  }, [orgTree]);
+
+  useEffect(() => {
+    if (!pendingFocusId) return;
+    const node = nodeById.get(pendingFocusId);
+    if (!node) return;
+    setPendingFocusId(null);
+    setFocusedId(node.id);
+    centerOn(node, Math.max(viewRef.current.zoom, 1));
+    cardRefs.current.get(node.id)?.focus({ preventScroll: true });
+  }, [pendingFocusId, nodeById, centerOn]);
+
+  const moveFocus = useCallback((id: string) => {
+    const node = nodeById.get(id);
+    if (!node) return;
+    setFocusedId(id);
+    ensureVisible(node);
+    cardRefs.current.get(id)?.focus({ preventScroll: true });
+  }, [nodeById, ensureVisible]);
+
+  const siblingsOf = useCallback((node: LayoutNode): LayoutNode[] => {
+    if (!node.parentId) return layout;
+    return nodeById.get(node.parentId)?.children ?? [node];
+  }, [layout, nodeById]);
+
+  const handleCardKeyDown = useCallback((e: React.KeyboardEvent, node: LayoutNode) => {
+    const siblings = siblingsOf(node);
+    const index = siblings.findIndex((s) => s.id === node.id);
+    let target: LayoutNode | undefined;
+    switch (e.key) {
+      case "ArrowUp":
+        target = node.parentId ? nodeById.get(node.parentId) : undefined;
+        break;
+      case "ArrowDown":
+        target = node.children[0];
+        break;
+      case "ArrowLeft":
+        target = siblings[index - 1];
+        break;
+      case "ArrowRight":
+        target = siblings[index + 1];
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        setSelectedId(node.id);
+        return;
+      default:
+        return;
+    }
+    e.preventDefault();
+    if (target) moveFocus(target.id);
+  }, [siblingsOf, nodeById, moveFocus]);
+
+  // Arrow keys on the empty canvas pan it.
+  const handleViewportKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.target !== e.currentTarget) return;
+    const step: Record<string, Point> = {
+      ArrowUp: { x: 0, y: KEYBOARD_PAN_STEP },
+      ArrowDown: { x: 0, y: -KEYBOARD_PAN_STEP },
+      ArrowLeft: { x: KEYBOARD_PAN_STEP, y: 0 },
+      ArrowRight: { x: -KEYBOARD_PAN_STEP, y: 0 },
+    };
+    const delta = step[e.key];
+    if (!delta) return;
+    e.preventDefault();
+    setView((current) => ({ ...current, x: current.x + delta.x, y: current.y + delta.y }));
+  }, []);
+
+  const searchResults = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return flattenOrg(orgTree ?? [])
+      .filter((n) => {
+        const agent = agentMap.get(n.id);
+        return [n.name, agent?.title, roleLabel(n.role)].some((v) => v?.toLowerCase().includes(q));
+      })
+      .slice(0, SEARCH_RESULT_LIMIT);
+  }, [query, orgTree, agentMap]);
+
+  const pickSearchResult = useCallback((id: string) => {
+    setQuery("");
+    jumpTo(id);
+  }, [jumpTo]);
+
   const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const startView = viewRef.current;
     if (e.touches.length >= 2 && containerRef.current) {
       const [first, second] = [e.touches[0]!, e.touches[1]!];
       touchGesture.current = {
         mode: "pinch",
         startPoint: { x: 0, y: 0 },
-        startPan: pan,
-        startZoom: zoom,
+        startView,
         startDistance: touchDistance(first, second),
         startCenter: touchCenter(first, second, containerRef.current),
         moved: false,
@@ -384,13 +532,12 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
     touchGesture.current = {
       mode: "pan",
       startPoint: touchPoint(touch),
-      startPan: pan,
-      startZoom: zoom,
+      startView,
       startDistance: 0,
       startCenter: { x: 0, y: 0 },
       moved: false,
     };
-  }, [pan, zoom]);
+  }, []);
 
   const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
     const container = containerRef.current;
@@ -405,8 +552,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
         touchGesture.current = {
           mode: "pinch",
           startPoint: { x: 0, y: 0 },
-          startPan: pan,
-          startZoom: zoom,
+          startView: viewRef.current,
           startDistance: distance,
           startCenter: center,
           moved: false,
@@ -415,32 +561,31 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
       }
 
       const gesture = touchGesture.current;
-      const nextZoom = clampZoom(gesture.startZoom * (distance / gesture.startDistance));
-      const scale = nextZoom / gesture.startZoom;
+      const start = gesture.startView;
+      const zoom = clampZoom(start.zoom * (distance / gesture.startDistance));
+      const scale = zoom / start.zoom;
       const dx = center.x - gesture.startCenter.x;
       const dy = center.y - gesture.startCenter.y;
       gesture.moved =
         gesture.moved ||
         Math.abs(distance - gesture.startDistance) > TOUCH_MOVE_THRESHOLD ||
         Math.hypot(dx, dy) > TOUCH_MOVE_THRESHOLD;
-      setZoom(nextZoom);
-      setPan({
-        x: center.x - scale * (gesture.startCenter.x - gesture.startPan.x),
-        y: center.y - scale * (gesture.startCenter.y - gesture.startPan.y),
+      setView({
+        zoom,
+        x: center.x - scale * (gesture.startCenter.x - start.x),
+        y: center.y - scale * (gesture.startCenter.y - start.y),
       });
       return;
     }
 
     const touch = e.touches[0];
     if (!touch || touchGesture.current.mode !== "pan") return;
-    const dx = touch.clientX - touchGesture.current.startPoint.x;
-    const dy = touch.clientY - touchGesture.current.startPoint.y;
-    touchGesture.current.moved = touchGesture.current.moved || Math.hypot(dx, dy) > TOUCH_MOVE_THRESHOLD;
-    setPan({
-      x: touchGesture.current.startPan.x + dx,
-      y: touchGesture.current.startPan.y + dy,
-    });
-  }, [pan, zoom]);
+    const gesture = touchGesture.current;
+    const dx = touch.clientX - gesture.startPoint.x;
+    const dy = touch.clientY - gesture.startPoint.y;
+    gesture.moved = gesture.moved || Math.hypot(dx, dy) > TOUCH_MOVE_THRESHOLD;
+    setView({ ...gesture.startView, x: gesture.startView.x + dx, y: gesture.startView.y + dy });
+  }, []);
 
   const handleTouchEnd = useCallback(() => {
     if (touchGesture.current.moved) {
@@ -453,16 +598,8 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
         suppressClickTimerRef.current = null;
       }, 400);
     }
-    touchGesture.current = {
-      mode: null,
-      startPoint: { x: 0, y: 0 },
-      startPan: pan,
-      startZoom: zoom,
-      startDistance: 0,
-      startCenter: { x: 0, y: 0 },
-      moved: false,
-    };
-  }, [pan, zoom]);
+    touchGesture.current = { ...touchGesture.current, mode: null, startDistance: 0, moved: false };
+  }, []);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Network} message="Select an organization to view the org chart." />;
@@ -477,6 +614,11 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
       <EmptyState icon={Network} message="No organizational hierarchy defined." action="New agent" onAction={() => navigate("/agents/new")} />
     );
   }
+
+  const tabStopId = focusedId && nodeById.has(focusedId) ? focusedId : allNodes[0]?.id;
+  const selectedNode = selectedId ? nodeById.get(selectedId) ?? null : null;
+  const controlButton =
+    "flex size-9 items-center justify-center rounded border border-border bg-background text-sm transition-colors hover:bg-accent sm:size-7";
 
   return (
     <div
@@ -507,7 +649,10 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
       <div
         ref={containerRef}
         data-testid="org-chart-viewport"
-        className="w-full flex-1 min-h-0 overflow-hidden relative bg-muted/20 border border-border rounded-lg"
+        role="application"
+        aria-label="Org chart. Scroll to move, Ctrl or Command and scroll to zoom, arrow keys to move between agents."
+        tabIndex={-1}
+        className="w-full flex-1 min-h-0 overflow-hidden relative bg-muted/20 border border-border rounded-lg focus-visible:outline-none"
         style={{
           cursor: dragging ? "grabbing" : "grab",
           touchAction: "none",
@@ -517,24 +662,74 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
+        onKeyDown={handleViewportKeyDown}
+        // Focusing a card can scroll an overflow-hidden box; the chart moves by transform only.
+        onScroll={(e) => {
+          e.currentTarget.scrollTop = 0;
+          e.currentTarget.scrollLeft = 0;
+        }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
       >
+        {/* Search */}
+        <div data-org-control className="absolute top-3 left-3 right-14 z-raised sm:right-auto sm:w-56">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchResults[0]) {
+                  e.preventDefault();
+                  pickSearchResult(searchResults[0].id);
+                } else if (e.key === "Escape") {
+                  setQuery("");
+                }
+              }}
+              placeholder="Find an agent"
+              aria-label="Find an agent"
+              className="h-8 bg-background pl-8 text-sm"
+            />
+          </div>
+          {query.trim() ? (
+            <ul
+              role="listbox"
+              aria-label="Matching agents"
+              className="mt-1 overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md"
+            >
+              {searchResults.length === 0 ? (
+                <li className="px-3 py-2 text-sm text-muted-foreground">No agent matches</li>
+              ) : (
+                searchResults.map((n) => (
+                  <li key={n.id} role="option" aria-selected={false}>
+                    <button
+                      type="button"
+                      className="flex w-full flex-col items-start px-3 py-1.5 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                      onClick={() => pickSearchResult(n.id)}
+                    >
+                      <span className="truncate text-sm font-medium">{n.name}</span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {agentMap.get(n.id)?.title ?? roleLabel(n.role)}
+                      </span>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          ) : null}
+        </div>
+
         {/* Zoom controls */}
-        <div className="absolute top-3 right-3 z-raised flex flex-col gap-1.5">
+        <div data-org-control className="absolute top-3 right-3 z-raised flex flex-col gap-1.5">
           <button
-            className="flex size-9 items-center justify-center rounded border border-border bg-background text-sm transition-colors hover:bg-accent sm:size-7"
+            type="button"
+            className={controlButton}
             onClick={() => {
               const container = containerRef.current;
-              if (container) {
-                zoomTowardPoint(zoom * 1.2, {
-                  x: container.clientWidth / 2,
-                  y: container.clientHeight / 2,
-                });
-              }
+              if (container) zoomTowardPoint(view.zoom * 1.2, { x: container.clientWidth / 2, y: container.clientHeight / 2 });
             }}
             title="Zoom in"
             aria-label="Zoom in"
@@ -542,15 +737,11 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
             <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
           </button>
           <button
-            className="flex size-9 items-center justify-center rounded border border-border bg-background text-sm transition-colors hover:bg-accent sm:size-7"
+            type="button"
+            className={controlButton}
             onClick={() => {
               const container = containerRef.current;
-              if (container) {
-                zoomTowardPoint(zoom * 0.8, {
-                  x: container.clientWidth / 2,
-                  y: container.clientHeight / 2,
-                });
-              }
+              if (container) zoomTowardPoint(view.zoom * 0.8, { x: container.clientWidth / 2, y: container.clientHeight / 2 });
             }}
             title="Zoom out"
             aria-label="Zoom out"
@@ -558,7 +749,8 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
             <Minus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
           </button>
           <button
-            className="flex size-9 items-center justify-center rounded border border-border bg-background text-(length:--text-nano) transition-colors hover:bg-accent sm:size-7"
+            type="button"
+            className={controlButton}
             onClick={fitToScreen}
             title="Fit to screen"
             aria-label="Fit chart to screen"
@@ -568,31 +760,11 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
         </div>
 
         {/* SVG layer for edges */}
-        <svg
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            width: "100%",
-            height: "100%",
-          }}
-        >
-          <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-            {edges.map(({ parent, child }) => {
-              const x1 = parent.x + CARD_W / 2;
-              const y1 = parent.y + CARD_H;
-              const x2 = child.x + CARD_W / 2;
-              const y2 = child.y;
-              const midY = (y1 + y2) / 2;
-
-              return (
-                <path
-                  key={`${parent.id}-${child.id}`}
-                  d={`M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`}
-                  fill="none"
-                  stroke="var(--border)"
-                  strokeWidth={1.5}
-                />
-              );
-            })}
+        <svg data-testid="org-chart-edges" className="absolute inset-0 pointer-events-none" style={{ width: "100%", height: "100%" }}>
+          <g transform={`translate(${view.x}, ${view.y}) scale(${view.zoom})`}>
+            {edges.map(({ parent, child, path }) => (
+              <path key={`${parent.id}-${child.id}`} d={path} fill="none" stroke="var(--border)" strokeWidth={1.5} />
+            ))}
           </g>
         </svg>
 
@@ -601,26 +773,40 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
           data-testid="org-chart-card-layer"
           className="absolute inset-0"
           style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
             transformOrigin: "0 0",
           }}
         >
           {allNodes.map((node) => {
             const agent = agentMap.get(node.id);
-            const dotColor = statusDotColor[node.status] ?? defaultDotColor;
+            const activity = activityByAgent.get(node.id);
+            const title = agent?.title ?? roleLabel(node.role);
+            const status = activity
+              ? `${activity.statusLabel}${activity.reason ? ` · ${activity.reason}` : ""}`
+              : node.status;
+            const openCount = activity?.openTasks.length ?? 0;
 
             return (
               <Card
                 key={node.id}
-                data-org-card
-                className="block absolute py-0 hover:shadow-md hover:border-foreground/20 transition-(--tp-box-shadow-border-color) duration-150 cursor-pointer select-none"
-                style={{
-                  left: node.x,
-                  top: node.y,
-                  width: CARD_W,
-                  minHeight: CARD_H,
+                ref={(el: HTMLDivElement | null) => {
+                  if (el) cardRefs.current.set(node.id, el);
+                  else cardRefs.current.delete(node.id);
                 }}
-                onClick={() => navigate(agent ? agentUrl(agent) : `/agents/${node.id}`)}
+                data-org-card
+                data-agent-id={node.id}
+                role="button"
+                tabIndex={node.id === tabStopId ? 0 : -1}
+                aria-label={`${node.name}, ${title}, ${status}`}
+                interactive
+                className={cn(
+                  "absolute gap-0 overflow-hidden py-0 select-none",
+                  node.id === focusedId && "ring-2 ring-ring",
+                )}
+                style={{ left: node.x, top: node.y, width: CARD_W, height: CARD_H }}
+                onFocus={() => setFocusedId(node.id)}
+                onKeyDown={(e) => handleCardKeyDown(e, node)}
+                onClick={() => setSelectedId(node.id)}
                 onClickCapture={(e) => {
                   if (!suppressNextCardClick.current) return;
                   suppressNextCardClick.current = false;
@@ -628,35 +814,56 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
                   e.stopPropagation();
                 }}
               >
-                <div className="flex items-center px-4 py-3 gap-3">
-                  {/* Agent icon + status dot */}
-                  <div className="relative shrink-0">
-                    <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                      <AgentAvatar agent={agent} size={16} className="h-4.5 w-4.5 text-foreground/70"/>
+                <div className="flex h-full flex-col gap-1.5 px-3.5 py-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                      <AgentAvatar agent={agent} size={16} className="h-4 w-4 text-foreground/70" />
                     </div>
-                    <span
-                      className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card"
-                      style={{ backgroundColor: dotColor }}
-                    />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-semibold leading-tight text-foreground" title={node.name}>
+                        {node.name}
+                      </span>
+                      <span className="truncate text-xs leading-tight text-muted-foreground" title={title}>
+                        {title}
+                      </span>
+                    </div>
                   </div>
-                  {/* Name + role + adapter type */}
-                  <div className="flex flex-col items-start min-w-0 flex-1">
-                    <span className="text-sm font-semibold text-foreground leading-tight">
-                      {node.name}
-                    </span>
-                    <span className="text-(length:--text-micro) text-muted-foreground leading-tight mt-0.5">
-                      {agent?.title ?? roleLabel(node.role)}
-                    </span>
-                    {agent && (
-                      <span className="text-(length:--text-nano) text-subtle-foreground font-mono leading-tight mt-1">
-                        {getAdapterLabel(agent.adapterType)}
-                      </span>
+                  <div className="flex min-w-0 items-center gap-1.5 text-xs" data-testid="org-card-status">
+                    <AgentStatusCapsule status={activity?.statusKey ?? node.status} />
+                    <span className="truncate text-foreground" title={status}>{status}</span>
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground" title={activity?.currentTask ? taskLabel(activity.currentTask) : undefined}>
+                    {activity?.currentTask ? (
+                      <>
+                        <span className="font-mono text-foreground/80">{activity.currentTask.identifier}</span>{" "}
+                        {activity.currentTask.title}
+                      </>
+                    ) : (
+                      "No current task"
                     )}
-                    {agent && agent.capabilities && (
-                      <span className="text-(length:--text-nano) text-subtle-foreground leading-tight mt-1 line-clamp-2">
-                        {agent.capabilities}
-                      </span>
-                    )}
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="truncate">
+                      {openCount} open · {agent?.lastHeartbeatAt ? `ran ${relativeTime(agent.lastHeartbeatAt)}` : "never ran"}
+                    </span>
+                    {node.reportCount > 0 ? (
+                      <button
+                        type="button"
+                        data-org-toggle
+                        className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-expanded={!node.collapsed}
+                        aria-label={`${node.collapsed ? "Expand" : "Collapse"} ${node.name}'s ${node.reportCount} reports`}
+                        title={node.collapsed ? "Show reports" : "Hide reports"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleCollapsed(node.id);
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        {node.collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        {node.reportCount}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </Card>
@@ -664,7 +871,123 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
           })}
         </div>
       </div>
+
+      <Sheet open={selectedNode !== null} onOpenChange={(open) => !open && setSelectedId(null)}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+          {selectedNode ? (
+            <AgentPanel
+              node={selectedNode}
+              agent={agentMap.get(selectedNode.id)}
+              activity={activityByAgent.get(selectedNode.id)}
+              manager={selectedNode.parentId ? nodeById.get(selectedNode.parentId) : undefined}
+              onOpenAgent={(path) => navigate(path)}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </div>
+  );
+}
+
+function AgentPanel({
+  node,
+  agent,
+  activity,
+  manager,
+  onOpenAgent,
+}: {
+  node: LayoutNode;
+  agent: Agent | undefined;
+  activity: AgentActivity | undefined;
+  manager: LayoutNode | undefined;
+  onOpenAgent: (path: string) => void;
+}) {
+  const title = agent?.title ?? roleLabel(node.role);
+  const rows: Array<[string, React.ReactNode]> = [
+    ["Last run", agent?.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "Never"],
+    [
+      "Spend this month",
+      agent
+        ? `${formatCents(agent.spentMonthlyCents)}${agent.budgetMonthlyCents > 0 ? ` of ${formatCents(agent.budgetMonthlyCents)}` : ""}`
+        : "—",
+    ],
+    ["Runs on", agent ? getAdapterLabel(agent.adapterType) : "—"],
+    ["Reports to", manager?.name ?? "No one"],
+    ["Direct reports", String(node.reportCount)],
+  ];
+
+  return (
+    <>
+      <SheetHeader className="pr-10">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted">
+            <AgentAvatar agent={agent} size={20} className="h-5 w-5 text-foreground/70" />
+          </div>
+          <div className="min-w-0">
+            <SheetTitle className="truncate">{node.name}</SheetTitle>
+            <SheetDescription className="truncate">{title}</SheetDescription>
+          </div>
+        </div>
+      </SheetHeader>
+      <div className="flex flex-col gap-5 px-4 pb-4 text-sm">
+        <div className="flex items-start gap-2">
+          <AgentStatusCapsule status={activity?.statusKey ?? node.status} />
+          <div className="min-w-0">
+            <div className="font-medium">{activity?.statusLabel ?? node.status}</div>
+            {activity?.reason ? <div className="break-words text-muted-foreground">{activity.reason}</div> : null}
+          </div>
+        </div>
+
+        <section className="flex flex-col gap-1.5">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current task</h3>
+          {activity?.currentTask ? (
+            <Link to={issueUrl(activity.currentTask)} className="break-words hover:underline">
+              {taskLabel(activity.currentTask)}
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">No current task</span>
+          )}
+        </section>
+
+        <section className="flex flex-col gap-1.5">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Open tasks ({activity?.openTasks.length ?? 0})
+          </h3>
+          {activity && activity.openTasks.length > 0 ? (
+            <ul className="flex flex-col gap-1">
+              {activity.openTasks.slice(0, 8).map((task) => (
+                <li key={task.id} className="flex min-w-0 items-baseline gap-2">
+                  <span className="shrink-0 text-xs text-muted-foreground">{task.status.replace(/_/g, " ")}</span>
+                  <Link to={issueUrl(task)} className="truncate hover:underline" title={taskLabel(task)}>
+                    {taskLabel(task)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="text-muted-foreground">None</span>
+          )}
+        </section>
+
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+          {rows.map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 break-words">{value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        {agent?.capabilities ? (
+          <section className="flex flex-col gap-1.5">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Capabilities</h3>
+            <p className="whitespace-pre-line break-words text-muted-foreground">{agent.capabilities}</p>
+          </section>
+        ) : null}
+
+        <Button onClick={() => onOpenAgent(agent ? agentUrl(agent) : `/agents/${node.id}`)}>Open agent page</Button>
+      </div>
+    </>
   );
 }
 

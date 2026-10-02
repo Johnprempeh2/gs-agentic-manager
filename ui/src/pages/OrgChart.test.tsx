@@ -10,6 +10,8 @@ import { OrgChart } from "./OrgChart";
 const navigateMock = vi.fn();
 const orgMock = vi.fn();
 const listMock = vi.fn();
+const issuesMock = vi.fn();
+const liveRunsMock = vi.fn();
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
@@ -28,6 +30,18 @@ vi.mock("../api/agents", () => ({
   agentsApi: {
     org: () => orgMock(),
     list: () => listMock(),
+  },
+}));
+
+vi.mock("../api/issues", () => ({
+  issuesApi: {
+    listCompact: () => issuesMock(),
+  },
+}));
+
+vi.mock("../api/heartbeats", () => ({
+  heartbeatsApi: {
+    liveRunsForCompany: () => liveRunsMock(),
   },
 }));
 
@@ -125,7 +139,23 @@ async function flushReact() {
   });
 }
 
-describe("OrgChart mobile gestures", () => {
+function parseTransform(layer: HTMLDivElement) {
+  const match = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(layer.style.transform);
+  if (!match) throw new Error(`unexpected transform ${layer.style.transform}`);
+  return { x: Number(match[1]), y: Number(match[2]), zoom: Number(match[3]) };
+}
+
+function wheel(target: Element, init: WheelEventInit) {
+  const event = new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init });
+  target.dispatchEvent(event);
+  return event;
+}
+
+function card(container: HTMLElement, agentId: string) {
+  return container.querySelector(`[data-agent-id="${agentId}"]`) as HTMLDivElement | null;
+}
+
+describe("OrgChart", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   let queryClient: QueryClient;
@@ -138,10 +168,14 @@ describe("OrgChart mobile gestures", () => {
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    viewportWidth = 360;
-    viewportHeight = 520;
+    // Wide enough that the two-card test chart fits at zoom 1:
+    // bounds 368 x 456, so the fitted pan is (26, 82).
+    viewportWidth = 420;
+    viewportHeight = 620;
     orgMock.mockResolvedValue(orgTree);
     listMock.mockResolvedValue(agents);
+    issuesMock.mockResolvedValue([]);
+    liveRunsMock.mockResolvedValue([]);
 
     Object.defineProperty(HTMLElement.prototype, "clientWidth", {
       configurable: true,
@@ -156,30 +190,10 @@ describe("OrgChart mobile gestures", () => {
       },
     });
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
-      if (this.getAttribute("data-testid") === "org-chart-viewport") {
-        return {
-          x: 0,
-          y: 0,
-          left: 0,
-          top: 0,
-          right: viewportWidth,
-          bottom: viewportHeight,
-          width: viewportWidth,
-          height: viewportHeight,
-          toJSON: () => ({}),
-        };
-      }
-      return {
-        x: 0,
-        y: 0,
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: 0,
-        height: 0,
-        toJSON: () => ({}),
-      };
+      const isViewport = this.getAttribute("data-testid") === "org-chart-viewport";
+      const width = isViewport ? viewportWidth : 0;
+      const height = isViewport ? viewportHeight : 0;
+      return { x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON: () => ({}) };
     });
   });
 
@@ -212,87 +226,303 @@ describe("OrgChart mobile gestures", () => {
     };
   }
 
-  it("pans the chart with one-finger touch drag", async () => {
-    const { viewport, layer } = await renderOrgChart();
-
+  async function typeSearch(value: string) {
+    const input = container.querySelector('input[aria-label="Find an agent"]') as HTMLInputElement;
     await act(async () => {
-      viewport.dispatchEvent(createTouchEvent("touchstart", [{ clientX: 100, clientY: 100 }]));
-      viewport.dispatchEvent(createTouchEvent("touchmove", [{ clientX: 130, clientY: 145 }]));
-      viewport.dispatchEvent(createTouchEvent("touchend", []));
+      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      nativeSetter.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return input;
+  }
+
+  describe("wheel and trackpad", () => {
+    it("pans the chart on plain scroll and stops the page scrolling", async () => {
+      const { viewport, layer } = await renderOrgChart();
+      const before = parseTransform(layer);
+
+      let event!: WheelEvent;
+      await act(async () => {
+        event = wheel(viewport, { deltaX: 30, deltaY: 50 });
+      });
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(parseTransform(layer)).toEqual({ x: before.x - 30, y: before.y - 50, zoom: before.zoom });
     });
 
-    expect(layer.style.transform).toBe("translate(50px, 105px) scale(1)");
-  });
+    it("pans sideways on shift + mouse wheel", async () => {
+      const { viewport, layer } = await renderOrgChart();
+      const before = parseTransform(layer);
 
-  it("suppresses card navigation after a touch pan", async () => {
-    const { viewport } = await renderOrgChart();
-    const card = container.querySelector("[data-org-card]") as HTMLDivElement;
+      await act(async () => {
+        wheel(viewport, { deltaY: 40, shiftKey: true });
+      });
 
-    await act(async () => {
-      viewport.dispatchEvent(createTouchEvent("touchstart", [{ clientX: 100, clientY: 100 }]));
-      viewport.dispatchEvent(createTouchEvent("touchmove", [{ clientX: 130, clientY: 145 }]));
-      viewport.dispatchEvent(createTouchEvent("touchend", []));
-      card.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      expect(parseTransform(layer)).toEqual({ x: before.x - 40, y: before.y, zoom: before.zoom });
     });
 
-    expect(navigateMock).not.toHaveBeenCalled();
-  });
+    it("zooms toward the pointer on ctrl + scroll", async () => {
+      const { viewport, layer } = await renderOrgChart();
+      const before = parseTransform(layer);
 
-  it("allows card navigation after a touch tap without movement", async () => {
-    const { viewport } = await renderOrgChart();
-    const card = container.querySelector("[data-org-card]") as HTMLDivElement;
+      let event!: WheelEvent;
+      await act(async () => {
+        event = wheel(viewport, { deltaY: -40, ctrlKey: true, clientX: 200, clientY: 300 });
+      });
 
-    await act(async () => {
-      viewport.dispatchEvent(createTouchEvent("touchstart", [{ clientX: 100, clientY: 100 }]));
-      viewport.dispatchEvent(createTouchEvent("touchend", []));
-      card.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      const after = parseTransform(layer);
+      expect(event.defaultPrevented).toBe(true);
+      expect(after.zoom).toBeCloseTo(before.zoom * Math.exp(0.1), 5);
+      // The chart point under the pointer stays under the pointer.
+      expect((200 - after.x) / after.zoom).toBeCloseTo((200 - before.x) / before.zoom, 5);
+      expect((300 - after.y) / after.zoom).toBeCloseTo((300 - before.y) / before.zoom, 5);
     });
 
-    expect(navigateMock).toHaveBeenCalledWith("/agents/ceo");
-  });
-  it("pinch-zooms toward the touch center", async () => {
-    const { viewport, layer } = await renderOrgChart();
+    it("zooms on ⌘ + scroll too", async () => {
+      const { viewport, layer } = await renderOrgChart();
 
-    await act(async () => {
-      viewport.dispatchEvent(createTouchEvent("touchstart", [
-        { clientX: 100, clientY: 100 },
-        { clientX: 200, clientY: 100 },
-      ]));
-      viewport.dispatchEvent(createTouchEvent("touchmove", [
-        { clientX: 75, clientY: 100 },
-        { clientX: 225, clientY: 100 },
-      ]));
-      viewport.dispatchEvent(createTouchEvent("touchend", []));
+      await act(async () => {
+        wheel(viewport, { deltaY: 40, metaKey: true });
+      });
+
+      expect(parseTransform(layer).zoom).toBeLessThan(1);
     });
 
-    expect(layer.style.transform).toBe("translate(-45px, 40px) scale(1.5)");
+    it("zooms at a smooth rate: small trackpad steps barely move, a wheel notch is capped", async () => {
+      const { viewport, layer } = await renderOrgChart();
+
+      await act(async () => {
+        wheel(viewport, { deltaY: -4, ctrlKey: true });
+      });
+      expect(parseTransform(layer).zoom).toBeCloseTo(Math.exp(0.01), 5);
+
+      await act(async () => {
+        wheel(viewport, { deltaY: -500, ctrlKey: true });
+      });
+      expect(parseTransform(layer).zoom).toBeCloseTo(Math.exp(0.01) * Math.exp(0.125), 5);
+    });
   });
 
-  it("does not produce a negative zoom while the viewport has no usable height", async () => {
-    viewportHeight = 2;
-    const { layer } = await renderOrgChart();
+  describe("touch", () => {
+    it("pans the chart with one-finger touch drag", async () => {
+      const { viewport, layer } = await renderOrgChart();
 
-    expect(layer.style.transform).toBe("translate(0px, 0px) scale(1)");
+      await act(async () => {
+        viewport.dispatchEvent(createTouchEvent("touchstart", [{ clientX: 100, clientY: 100 }]));
+        viewport.dispatchEvent(createTouchEvent("touchmove", [{ clientX: 130, clientY: 145 }]));
+        viewport.dispatchEvent(createTouchEvent("touchend", []));
+      });
 
-    await act(async () => {
-      (container.querySelector('[aria-label="Fit chart to screen"]') as HTMLButtonElement).click();
+      expect(layer.style.transform).toBe("translate(56px, 127px) scale(1)");
     });
 
-    expect(layer.style.transform).toBe("translate(0px, 0px) scale(1)");
+    it("pinch-zooms toward the touch center", async () => {
+      const { viewport, layer } = await renderOrgChart();
+
+      await act(async () => {
+        viewport.dispatchEvent(createTouchEvent("touchstart", [
+          { clientX: 100, clientY: 100 },
+          { clientX: 200, clientY: 100 },
+        ]));
+        viewport.dispatchEvent(createTouchEvent("touchmove", [
+          { clientX: 75, clientY: 100 },
+          { clientX: 225, clientY: 100 },
+        ]));
+        viewport.dispatchEvent(createTouchEvent("touchend", []));
+      });
+
+      expect(layer.style.transform).toBe("translate(-36px, 73px) scale(1.5)");
+    });
+
+    it("does not open the side panel after a touch pan", async () => {
+      const { viewport } = await renderOrgChart();
+
+      await act(async () => {
+        viewport.dispatchEvent(createTouchEvent("touchstart", [{ clientX: 100, clientY: 100 }]));
+        viewport.dispatchEvent(createTouchEvent("touchmove", [{ clientX: 130, clientY: 145 }]));
+        viewport.dispatchEvent(createTouchEvent("touchend", []));
+        card(container, "agent-1")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    });
+
+    it("does not produce a negative zoom while the viewport has no usable height", async () => {
+      viewportHeight = 2;
+      const { layer } = await renderOrgChart();
+
+      expect(layer.style.transform).toBe("translate(0px, 0px) scale(1)");
+
+      await act(async () => {
+        (container.querySelector('[aria-label="Fit chart to screen"]') as HTMLButtonElement).click();
+      });
+
+      expect(layer.style.transform).toBe("translate(0px, 0px) scale(1)");
+    });
   });
 
-  it("shows both portability buttons on self-hosted instances", async () => {
-    await renderOrgChart();
+  describe("search", () => {
+    it("lists matches and jumps to the picked agent", async () => {
+      const { layer } = await renderOrgChart();
+      const input = await typeSearch("engin");
 
-    expect(container.textContent).toContain("Import organization");
-    expect(container.textContent).toContain("Export organization");
+      const options = [...container.querySelectorAll('[role="option"]')].map((o) => o.textContent);
+      expect(options).toEqual([expect.stringContaining("Engineer")]);
+
+      await act(async () => {
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      });
+      await flushReact();
+
+      expect(document.activeElement).toBe(card(container, "agent-2"));
+      expect(input.value).toBe("");
+      // Engineer card (x 60, y 260) is centred in the 420 x 620 viewport.
+      expect(layer.style.transform).toBe(`translate(${210 - (60 + 124)}px, ${310 - (260 + 68)}px) scale(1)`);
+    });
+
+    it("expands a collapsed branch to show the found agent", async () => {
+      await renderOrgChart();
+      await act(async () => {
+        (card(container, "agent-1")!.querySelector("[data-org-toggle]") as HTMLButtonElement).click();
+      });
+      expect(card(container, "agent-2")).toBeNull();
+
+      await typeSearch("Engineer");
+      await act(async () => {
+        (container.querySelector('[role="option"] button') as HTMLButtonElement).click();
+      });
+      await flushReact();
+
+      expect(card(container, "agent-2")).not.toBeNull();
+      expect(document.activeElement).toBe(card(container, "agent-2"));
+    });
+
+    it("says so when nothing matches", async () => {
+      await renderOrgChart();
+      await typeSearch("zzz");
+      expect(container.textContent).toContain("No agent matches");
+    });
   });
 
-  it("hides the Import button but keeps Export on a Cloud-managed instance", async () => {
-    queryClient.setQueryData(queryKeys.health, { status: "ok", cloud: { managed: true } });
-    await renderOrgChart();
+  describe("collapse and keyboard", () => {
+    it("collapses and expands a branch", async () => {
+      await renderOrgChart();
+      const toggle = card(container, "agent-1")!.querySelector("[data-org-toggle]") as HTMLButtonElement;
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
 
-    expect(container.textContent).not.toContain("Import organization");
-    expect(container.textContent).toContain("Export organization");
+      await act(async () => toggle.click());
+      expect(card(container, "agent-2")).toBeNull();
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(container.querySelectorAll('[data-testid="org-chart-edges"] path')).toHaveLength(0);
+      // Toggling does not open the side panel.
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+      await act(async () => toggle.click());
+      expect(card(container, "agent-2")).not.toBeNull();
+    });
+
+    it("moves between cards with the arrow keys", async () => {
+      await renderOrgChart();
+      const ceo = card(container, "agent-1")!;
+      expect(ceo.tabIndex).toBe(0);
+      expect(card(container, "agent-2")!.tabIndex).toBe(-1);
+
+      await act(async () => {
+        ceo.focus();
+        ceo.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      });
+      expect(document.activeElement).toBe(card(container, "agent-2"));
+      expect(card(container, "agent-2")!.tabIndex).toBe(0);
+
+      await act(async () => {
+        card(container, "agent-2")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+      });
+      expect(document.activeElement).toBe(ceo);
+    });
+
+    it("opens the side panel with Enter", async () => {
+      await renderOrgChart();
+      await act(async () => {
+        card(container, "agent-2")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      });
+      await flushReact();
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Engineer");
+    });
+  });
+
+  describe("card detail and side panel", () => {
+    it("shows live status, current task, open count and last run", async () => {
+      vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-04-02T12:00:00.000Z") });
+      listMock.mockResolvedValue([
+        { ...agents[0], status: "paused", pauseReason: "budget", lastHeartbeatAt: new Date("2026-04-02T11:55:00.000Z") },
+        { ...agents[1], status: "error", errorReason: "Adapter login expired" },
+      ]);
+      issuesMock.mockResolvedValue([
+        { id: "i-1", identifier: "GRE-1", title: "Ship the board", status: "in_progress", assigneeAgentId: "agent-1" },
+        { id: "i-2", identifier: "GRE-2", title: "Plan Q3", status: "todo", assigneeAgentId: "agent-1" },
+      ]);
+      await renderOrgChart();
+      vi.useRealTimers();
+
+      const ceo = card(container, "agent-1")!;
+      expect(ceo.textContent).toContain("Paused · budget limit reached");
+      expect(ceo.textContent).toContain("GRE-1 Ship the board");
+      expect(ceo.textContent).toContain("2 open · ran 5m ago");
+
+      const engineer = card(container, "agent-2")!;
+      expect(engineer.textContent).toContain("Error · Adapter login expired");
+      expect(engineer.textContent).toContain("No current task");
+      expect(engineer.textContent).toContain("0 open · never ran");
+    });
+
+    it("marks an agent with a live run as running on its run's task", async () => {
+      issuesMock.mockResolvedValue([
+        { id: "i-1", identifier: "GRE-1", title: "First", status: "in_progress", assigneeAgentId: "agent-2" },
+        { id: "i-2", identifier: "GRE-2", title: "Second", status: "in_progress", assigneeAgentId: "agent-2" },
+      ]);
+      liveRunsMock.mockResolvedValue([{ id: "run-1", agentId: "agent-2", status: "running", issueId: "i-2" }]);
+      await renderOrgChart();
+
+      const engineer = card(container, "agent-2")!;
+      expect(engineer.querySelector('[data-testid="org-card-status"]')?.textContent).toBe("Running");
+      expect(engineer.textContent).toContain("GRE-2 Second");
+    });
+
+    it("opens a side panel on tap, with a link to the agent page", async () => {
+      const { viewport } = await renderOrgChart();
+
+      await act(async () => {
+        viewport.dispatchEvent(createTouchEvent("touchstart", [{ clientX: 100, clientY: 100 }]));
+        viewport.dispatchEvent(createTouchEvent("touchend", []));
+        card(container, "agent-1")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
+      await flushReact();
+
+      const panel = document.querySelector('[role="dialog"]') as HTMLElement;
+      expect(panel.textContent).toContain("CEO");
+      expect(panel.textContent).toContain("Spend this month");
+      expect(navigateMock).not.toHaveBeenCalled();
+
+      const openButton = [...panel.querySelectorAll("button")].find((b) => b.textContent === "Open agent page")!;
+      await act(async () => openButton.click());
+      expect(navigateMock).toHaveBeenCalledWith("/agents/ceo");
+    });
+  });
+
+  describe("page actions", () => {
+    it("shows both portability buttons on self-hosted instances", async () => {
+      await renderOrgChart();
+
+      expect(container.textContent).toContain("Import organization");
+      expect(container.textContent).toContain("Export organization");
+    });
+
+    it("hides the Import button but keeps Export on a Cloud-managed instance", async () => {
+      queryClient.setQueryData(queryKeys.health, { status: "ok", cloud: { managed: true } });
+      await renderOrgChart();
+
+      expect(container.textContent).not.toContain("Import organization");
+      expect(container.textContent).toContain("Export organization");
+    });
   });
 });
