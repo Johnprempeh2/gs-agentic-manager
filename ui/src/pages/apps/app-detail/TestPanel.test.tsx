@@ -547,7 +547,7 @@ describe("TestPanel connection check (GRE-341)", () => {
       ok: true,
       reason: null,
       code: null,
-      message: "The app answered with this agent's access.",
+      message: "The app answered with this agent's access. 1 actions allowed, 1 ask first, 1 off.",
       agentId: "agent-claude",
       connectionId: "conn-1",
       grantKind: "organization",
@@ -567,8 +567,22 @@ describe("TestPanel connection check (GRE-341)", () => {
     expect(checkAsAgentMock).toHaveBeenCalledWith("conn-1", "agent-claude");
     expect(runTestCallMock).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="connection-check"]')?.textContent).toContain(
-      "Works. Google Sheets answered with ClaudeCoder's access.",
+      "Works. The app answered with this agent's access. 1 actions allowed, 1 ask first, 1 off.",
     );
+  });
+
+  it("says a local stdio app was not started instead of claiming it answered (GRE-353)", async () => {
+    checkAsAgentMock.mockResolvedValue(checkResult({
+      message: "Grant and credentials found for this agent; the app was not started. 1 actions allowed, 1 ask first, 1 off.",
+    }));
+    await act(() => renderPanel());
+    await flushReact();
+
+    await clickByText("Check connection as ClaudeCoder");
+
+    const text = container.querySelector('[data-testid="connection-check"]')?.textContent ?? "";
+    expect(text).toContain("Works. Grant and credentials found for this agent; the app was not started.");
+    expect(text).not.toContain("answered");
   });
 
   it("shows the failure reason in plain words", async () => {

@@ -552,7 +552,6 @@ function TestAsHeader({
         key={selectedAgent.id}
         connectionId={connectionId}
         agent={selectedAgent}
-        appName={appName}
       />
     </section>
   );
@@ -573,11 +572,9 @@ const CHECK_REASON_LABEL: Record<ToolConnectionAgentCheckReason, string> = {
 function ConnectionCheck({
   connectionId,
   agent,
-  appName,
 }: {
   connectionId: string;
   agent: ToolConnectionTestAgent;
-  appName: string;
 }) {
   const check = useMutation({
     mutationFn: () => toolsApi.checkAsAgent(connectionId, agent.id),
@@ -596,7 +593,7 @@ function ConnectionCheck({
           <p className="flex items-start gap-1.5 text-foreground">
             <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
             <span>
-              <span className="font-medium">Works.</span> {appName} answered with {agent.name}'s access.
+              <span className="font-medium">Works.</span> {result.message}
             </span>
           </p>
         ) : result ? (
