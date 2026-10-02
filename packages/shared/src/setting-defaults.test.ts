@@ -40,13 +40,13 @@ describe("parseSettingDefaults", () => {
     expect(applyOperatorGeneralDefaults(base, defaults).teamCatalogFilter).toBe("all");
   });
 
-  it("lets an operator make the catalogue ask Greatstone instead of installing (GRE-434)", () => {
-    const { defaults } = parseSettingDefaults('{"teamCatalogAddMode":"request"}');
-    expect(defaults).toEqual({ teamCatalogAddMode: "request" });
-    expect(() => parseSettingDefaults('{"teamCatalogAddMode":"buy"}')).toThrow(/teamCatalogAddMode/);
+  it("asks Greatstone to add a team by default; an operator can install directly (GRE-434)", () => {
     const base = instanceGeneralSettingsSchema.parse({});
-    expect(base.teamCatalogAddMode).toBe("install");
-    expect(applyOperatorGeneralDefaults(base, defaults).teamCatalogAddMode).toBe("request");
+    expect(base.teamCatalogAddMode).toBe("request");
+    const { defaults } = parseSettingDefaults('{"teamCatalogAddMode":"install"}');
+    expect(defaults).toEqual({ teamCatalogAddMode: "install" });
+    expect(() => parseSettingDefaults('{"teamCatalogAddMode":"buy"}')).toThrow(/teamCatalogAddMode/);
+    expect(applyOperatorGeneralDefaults(base, defaults).teamCatalogAddMode).toBe("install");
   });
 
   it("fails closed on malformed JSON and non-object shapes", () => {

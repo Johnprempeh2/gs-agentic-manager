@@ -1,0 +1,56 @@
+schema: paperclip/v1
+# Daily run limits from the Greatstone Operations team design (GRE-331).
+# Monthly budgets come from the install's own limits, not from this template.
+agents:
+  operations-coordinator:
+    runtime:
+      heartbeat:
+        maxDailyRuns: 8
+  minutes-taker:
+    runtime:
+      heartbeat:
+        maxDailyRuns: 8
+  operations-reporter:
+    runtime:
+      heartbeat:
+        maxDailyRuns: 4
+  policy-writer:
+    runtime:
+      heartbeat:
+        maxDailyRuns: 4
+routines:
+  daily-triage:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Weekdays at 08:00
+        cronExpression: "0 8 * * 1-5"
+        timezone: Europe/London
+  overdue-chase:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Weekdays at 16:00
+        cronExpression: "0 16 * * 1-5"
+        timezone: Europe/London
+  weekly-status-report:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: Fridays at 14:00
+        cronExpression: "0 14 * * 5"
+        timezone: Europe/London
+  monthly-board-pack:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: 1st of each month at 09:00
+        cronExpression: "0 9 1 * *"
+        timezone: Europe/London
+  monthly-policy-review:
+    status: paused
+    triggers:
+      - kind: schedule
+        label: 1st of each month at 11:00
+        cronExpression: "0 11 1 * *"
+        timezone: Europe/London

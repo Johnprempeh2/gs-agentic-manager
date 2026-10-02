@@ -38,6 +38,7 @@ Designed by Greatstone. This team gives a small business owner one executive ass
 - `daily-inbox-sweep` routine: sorts the inbox, drafts replies and flags overdue invoices each weekday. It ships paused with a schedule for 08:00 Monday to Friday, UK time.
 - `friday-weekly-briefing` routine: a one-page briefing for the owner every Friday. It ships paused with a schedule for 15:00 on Fridays, UK time.
 - `weekly-briefing` skill: the briefing format.
+- One first task, in the backlog: `owner-priorities`. Move it to To do to start.
 
 The owner checks the times and switches both routines on after install.
 

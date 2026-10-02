@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { agents, companies, createDb, routineTriggers, routines } from "@greatstone/db";
+import { agents, companies, createDb, issues, routineTriggers, routines } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -117,10 +117,41 @@ describeEmbeddedPostgres("teams catalog install with no caller adapter overrides
   });
 
   it.each([
-    { slug: "research-and-reporting", agents: 3, schedules: ["0 9 1 * *"] },
-    { slug: "executive-assistant", agents: 1, schedules: ["0 15 * * 5", "0 8 * * 1-5"] },
-    { slug: "marketing-content", agents: 3, schedules: ["0 9 * * 1"] },
-  ])("installs the Greatstone $slug team with its routines paused on schedule", async ({ slug, agents: agentCount, schedules }) => {
+    {
+      slug: "research-and-reporting",
+      agents: 3,
+      schedules: ["0 9 1 * *"],
+      starterTasks: ["Plan the first study"],
+      maxDailyRuns: {},
+    },
+    {
+      slug: "executive-assistant",
+      agents: 1,
+      schedules: ["0 15 * * 5", "0 8 * * 1-5"],
+      starterTasks: ["Learn the owner's priorities and templates"],
+      maxDailyRuns: {},
+    },
+    {
+      slug: "marketing-content",
+      agents: 4,
+      schedules: ["0 9 * * 1", "0 11 * * 1-5", "30 9 * * 1-5", "0 12 * * 5", "0 9 1 * *"],
+      starterTasks: ["Set the results baseline", "Write the brand voice guide"],
+      maxDailyRuns: { "Marketing Lead": 6, "Content Writer": 10, "Social Media Coordinator": 8, "Marketing Analyst": 2 },
+    },
+    {
+      slug: "operations-team",
+      agents: 4,
+      schedules: ["0 8 * * 1-5", "0 16 * * 1-5", "0 14 * * 5", "0 9 1 * *", "0 11 1 * *"],
+      starterTasks: ["Agree the status report template", "Map meetings, reports and owners"],
+      maxDailyRuns: { "Operations Coordinator": 8, "Minutes Taker": 8, "Operations Reporter": 4, "Policy Writer": 4 },
+    },
+  ])("installs the Greatstone $slug team with its routines paused on schedule", async ({
+    slug,
+    agents: agentCount,
+    schedules,
+    starterTasks,
+    maxDailyRuns,
+  }) => {
     const companyId = await seedEmptyCompany();
     const svc = teamsCatalogService(db);
 
@@ -149,6 +180,24 @@ describeEmbeddedPostgres("teams catalog install with no caller adapter overrides
     expect(installedRoutines.map((row) => row.cronExpression).sort()).toEqual([...schedules].sort());
     expect(installedRoutines.every((row) => row.timezone === "Europe/London")).toBe(true);
     expect(installedRoutines.every((row) => row.responsibleUserId === "overseer-1")).toBe(true);
+
+    // Starter tasks (GRE-434) land in the backlog, assigned, so nothing runs until the overseer moves them.
+    const installedTasks = await db
+      .select({ title: issues.title, status: issues.status, assigneeAgentId: issues.assigneeAgentId })
+      .from(issues)
+      .where(eq(issues.companyId, companyId));
+    expect(installedTasks.map((row) => row.title).sort()).toEqual(starterTasks);
+    expect(installedTasks.every((row) => row.status === "backlog" && row.assigneeAgentId)).toBe(true);
+
+    // Daily run limits from the template's sidecar.
+    const runLimits = await db
+      .select({ name: agents.name, runtimeConfig: agents.runtimeConfig })
+      .from(agents)
+      .where(eq(agents.companyId, companyId));
+    for (const [name, limit] of Object.entries(maxDailyRuns)) {
+      const row = runLimits.find((entry) => entry.name === name);
+      expect((row?.runtimeConfig as { heartbeat?: { maxDailyRuns?: number } })?.heartbeat?.maxDailyRuns, name).toBe(limit);
+    }
   });
 
   it("honors an explicit caller adapter override for a single slug while defaulting the rest to claude_local", async () => {

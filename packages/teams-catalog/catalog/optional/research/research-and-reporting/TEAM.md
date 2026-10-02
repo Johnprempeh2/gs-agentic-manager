@@ -43,6 +43,7 @@ The Research Lead reports to the human overseer. The Data Analyst and Report Wri
 - `research-reporting` project: the home for every study.
 - `monthly-report-cycle` routine: the Research Lead's monthly run from new data to a draft report. It ships paused with a schedule for 09:00 on the 1st of each month, UK time. The overseer checks the time and switches it on.
 - `survey-to-report-outline` skill: turns a brief, a questionnaire and a batch of data into a report outline.
+- One first task, in the backlog: `first-study-plan`. Move it to To do to start.
 
 ## Human approval
 
