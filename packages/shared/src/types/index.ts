@@ -68,6 +68,8 @@ export type {
   DecisionClarityResponse,
   DecisionsFeed,
   DecisionsFeedCount,
+  NeedsMe,
+  NeedsMeTask,
 } from "./decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./decisions-feed.js";
 export type {
