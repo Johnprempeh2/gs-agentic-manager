@@ -14,6 +14,9 @@ const listConnectionsMock = vi.hoisted(() => vi.fn());
 const listUserDirectoryMock = vi.hoisted(() => vi.fn());
 const archiveConnectionMock = vi.hoisted(() => vi.fn());
 const updateConnectionMock = vi.hoisted(() => vi.fn());
+const checkConnectionHealthMock = vi.hoisted(() => vi.fn());
+const startOAuthMock = vi.hoisted(() => vi.fn());
+const navigateTopLevelMock = vi.hoisted(() => vi.fn());
 const pushToastMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const setBreadcrumbsMock = vi.hoisted(() => vi.fn());
@@ -33,7 +36,14 @@ vi.mock("@/api/tools", () => ({
     ) => archiveConnectionMock(connectionId),
     updateConnection: (connectionId: string, input: unknown) =>
       updateConnectionMock(connectionId, input),
+    checkConnectionHealth: (connectionId: string) => checkConnectionHealthMock(connectionId),
+    startOAuth: (connectionId: string, input?: unknown) => startOAuthMock(connectionId, input),
   },
+}));
+vi.mock("@/lib/browserNavigation", () => ({ navigateTopLevel: navigateTopLevelMock }));
+vi.mock("@/lib/oauthHandoff", () => ({
+  prepareOAuthNavigation: async (start: { authorizationUrl: string }) => ({ kind: "direct", url: start.authorizationUrl }),
+  savePendingCloudHandoff: vi.fn(),
 }));
 
 vi.mock("@/api/ai-connections", () => ({
@@ -89,6 +99,12 @@ async function flushReact() {
 
 function buttonByText(text: string) {
   return Array.from(document.querySelectorAll("button")).find(
+    (button) => button.textContent?.trim() === text,
+  );
+}
+
+function buttonByTextIn(scope: HTMLElement, text: string) {
+  return Array.from(scope.querySelectorAll("button")).find(
     (button) => button.textContent?.trim() === text,
   );
 }
@@ -472,13 +488,99 @@ describe("Connectors landing page", () => {
       "/apps/connect?source=notion&applicationId=app-notion&name=Notion&new=1",
     );
 
+    // An OAuth account reconnects by reopening the provider sign-in in place.
+    startOAuthMock.mockResolvedValue({ authorizationUrl: "https://notion.example/authorize" });
     const reconnect = Array.from(notion.querySelectorAll("button")).find(
       (button) => button.textContent === "Reconnect",
     );
     await act(async () => {
       reconnect?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(navigateMock).toHaveBeenCalledWith("/apps/conn-expired/permissions");
+    await flushReact();
+    expect(startOAuthMock).toHaveBeenCalledWith("conn-expired", undefined);
+    expect(navigateTopLevelMock).toHaveBeenCalledWith("https://notion.example/authorize");
+    expect(navigateMock).not.toHaveBeenCalledWith("/apps/conn-expired/permissions");
+  });
+
+  it("shows a health badge, last check and last error per account, and tests a connection in place", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
+    listApplicationsMock.mockResolvedValue({ applications: [application()] });
+    listConnectionsMock.mockResolvedValue({
+      connections: [
+        connection({ id: "conn-ok", name: "works@example.com", healthCheckedAt: "2026-10-02T11:55:00Z" }),
+        connection({
+          id: "conn-slow",
+          name: "slow@example.com",
+          healthStatus: "degraded",
+          healthMessage: "Notion answered slowly.",
+          healthCheckedAt: "2026-10-02T09:00:00Z",
+        }),
+        connection({
+          id: "conn-key",
+          name: "key@example.com",
+          authKind: "api_key",
+          healthStatus: "missing_secret",
+          healthMessage: "The saved key is missing.",
+          lastError: "401 Unauthorized",
+          healthCheckedAt: "2026-10-01T12:00:00Z",
+        }),
+        connection({ id: "conn-new", name: "new@example.com", healthStatus: "unknown", healthCheckedAt: null }),
+      ],
+    });
+    checkConnectionHealthMock.mockResolvedValue({
+      connection: connection({ id: "conn-key", healthStatus: "ok" }),
+      runtimeSlot: null,
+    });
+
+    await renderBrowse();
+    vi.useRealTimers();
+
+    const accountRow = (name: string) =>
+      container.querySelector<HTMLButtonElement>(`button[aria-label="Open ${name} permissions"]`)!
+        .closest<HTMLElement>(".px-4")!;
+    expect(accountRow("works@example.com").textContent).toContain("Works");
+    expect(accountRow("works@example.com").textContent).toContain("Checked 5m ago");
+    expect(accountRow("works@example.com").textContent).not.toContain("Reconnect");
+    expect(accountRow("slow@example.com").textContent).toContain("Warning");
+    expect(accountRow("slow@example.com").textContent).toContain("Checked 3h ago");
+    const keyRow = accountRow("key@example.com");
+    expect(keyRow.textContent).toContain("Needs reconnect");
+    expect(keyRow.textContent).toContain("The saved key is missing.");
+    expect(keyRow.textContent).toContain("Last error: 401 Unauthorized");
+    expect(accountRow("new@example.com").textContent).toContain("Not tested");
+    expect(accountRow("new@example.com").textContent).toContain("Not checked yet");
+
+    // A key-based account reconnects on its detail page, where the new key is pasted.
+    await act(() => buttonByTextIn(keyRow, "Reconnect")!.click());
+    expect(navigateMock).toHaveBeenCalledWith("/apps/conn-key/permissions");
+    expect(startOAuthMock).not.toHaveBeenCalled();
+
+    await act(() =>
+      keyRow.querySelector<HTMLButtonElement>('button[aria-label="Test key@example.com connection"]')!.click(),
+    );
+    await flushReact();
+    expect(checkConnectionHealthMock).toHaveBeenCalledWith("conn-key");
+    expect(pushToastMock).toHaveBeenCalledWith({ title: "Connection works", tone: "success" });
+  });
+
+  it("says why a test failed when the connection still needs reconnecting", async () => {
+    listApplicationsMock.mockResolvedValue({ applications: [application()] });
+    listConnectionsMock.mockResolvedValue({ connections: [connection()] });
+    checkConnectionHealthMock.mockResolvedValue({
+      connection: connection({ healthStatus: "failed", healthMessage: "Notion revoked access." }),
+      runtimeSlot: null,
+    });
+    await renderBrowse();
+    await act(() =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Test devinfoley@gmail.com connection"]')!.click(),
+    );
+    await flushReact();
+    expect(pushToastMock).toHaveBeenCalledWith({
+      title: "Connection still needs reconnecting",
+      body: "Notion revoked access.",
+      tone: "error",
+    });
   });
 
   it("says why a paused connection is unusable and resumes it with the existing update call", async () => {
