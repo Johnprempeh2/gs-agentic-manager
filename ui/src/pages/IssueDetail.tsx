@@ -45,6 +45,7 @@ import {
   isWaitingOnMonitor,
 } from "../components/IssueMonitorBanner";
 import { TaskActivityLine } from "../components/TaskActivityLine";
+import { TaskStopReasonLine } from "../components/TaskStopReasonLine";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
 import { type TaskSidePanelProps } from "../components/task-side-panel";
@@ -955,19 +956,29 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       shellSectionClass={shellSectionClass}
       issueStatusControl={issueStatusControl}
       activityLine={
-        <TaskActivityLine
-          issue={issue}
-          hasLiveRuns={hasLiveRuns}
-          waitingOnMonitor={isWaitingOnMonitor(issue)}
-          monitorServiceName={
-            issue.executionState?.monitor?.serviceName ??
-            issue.executionPolicy?.monitor?.serviceName
-          }
-          interactions={interactions}
-          currentUserId={currentUserId}
-          agentNames={agentMap}
-          userLabels={userLabelMap}
-        />
+        <>
+          <TaskActivityLine
+            issue={issue}
+            hasLiveRuns={hasLiveRuns}
+            waitingOnMonitor={isWaitingOnMonitor(issue)}
+            monitorServiceName={
+              issue.executionState?.monitor?.serviceName ??
+              issue.executionPolicy?.monitor?.serviceName
+            }
+            interactions={interactions}
+            currentUserId={currentUserId}
+            agentNames={agentMap}
+            userLabels={userLabelMap}
+          />
+          <TaskStopReasonLine
+            issueId={issue.id}
+            issue={issue}
+            hasLiveRuns={hasLiveRuns}
+            currentUserId={currentUserId}
+            agentNames={agentMap}
+            userLabels={userLabelMap}
+          />
+        </>
       }
       issue={issue}
       updateIssue={updateIssue}
