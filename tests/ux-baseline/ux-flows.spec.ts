@@ -334,6 +334,8 @@ type FlowContext = { page: Page; rec: Recorder; viewport: ViewportName; seed: Se
 /** Untimed set-up a flow needs before each sample, done before the app opens. */
 const PREPARE: Partial<Record<FlowId, (request: APIRequestContext, seedData: Seed, label: string) => Promise<unknown>>> = {
   "2-answer-decision": seedDecision,
+  // Opening the digest marks the visit, so each sample needs new agent work since the last one.
+  "5-overnight-activity": seedDecision,
 };
 
 const FLOWS: Record<FlowId, (ctx: FlowContext) => Promise<void>> = {
