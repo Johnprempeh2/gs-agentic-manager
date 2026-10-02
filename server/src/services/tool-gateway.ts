@@ -4904,6 +4904,7 @@ export function createToolGatewayService(
     connection: typeof toolConnections.$inferSelect,
     template: LocalStdioRuntimeTemplate,
     grant: typeof connectionGrants.$inferSelect,
+    options: { recordHealth?: boolean } = {},
   ): Promise<NodeJS.ProcessEnv> {
     const env: NodeJS.ProcessEnv = {};
     for (const key of [
@@ -4932,11 +4933,13 @@ export function createToolGatewayService(
           grantRef,
         );
       } catch {
-        await markRemoteConnectionHealth(
-          connection,
-          "missing_secret",
-          "A configured local stdio credential could not be resolved.",
-        );
+        if (options.recordHealth !== false) {
+          await markRemoteConnectionHealth(
+            connection,
+            "missing_secret",
+            "A configured local stdio credential could not be resolved.",
+          );
+        }
         throw new ToolGatewayHttpError(
           422,
           "A configured local stdio credential could not be resolved.",
@@ -9003,6 +9006,7 @@ export function createToolGatewayService(
     }): Promise<{
       grantId: string;
       grantKind: "organization" | "user" | "agent";
+      transport: string;
       credentialHeaders?: Record<string, string>;
       endpoint?: string;
     }> {
@@ -9036,15 +9040,24 @@ export function createToolGatewayService(
       };
       const grant = await resolveConnectionGrant(session, connection);
       const grantKind = grant.kind as "organization" | "user" | "agent";
-      if (connection.transport !== "mcp_remote") {
-        return { grantId: grant.id, grantKind };
+      const transport = connection.transport;
+      if (transport === "local_stdio") {
+        // A run reads the grant's env.* secrets before it starts the process
+        // (GRE-350). Resolve them the same way, then drop the values: the
+        // check starts no process and does not mark the shared connection.
+        const template = await resolveLocalStdioRuntimeTemplate(connection);
+        await localStdioEnvironment(session, connection, template, grant, { recordHealth: false });
+        return { grantId: grant.id, grantKind, transport };
+      }
+      if (transport !== "mcp_remote") {
+        return { grantId: grant.id, grantKind, transport };
       }
       const endpoint = await resolvedRemoteEndpoint(session, connection, grant);
       const credentialHeaders = {
         ...projectedConnectionHeaders(connection),
         ...(await resolveCredentialHeaders(session, connection, grant)),
       };
-      return { grantId: grant.id, grantKind, credentialHeaders, endpoint };
+      return { grantId: grant.id, grantKind, transport, credentialHeaders, endpoint };
     },
 
     async executeTestCall(input: ExecuteTestCallInput) {

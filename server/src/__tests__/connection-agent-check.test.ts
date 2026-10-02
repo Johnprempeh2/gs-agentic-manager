@@ -17,6 +17,7 @@ import {
   toolPolicies,
   toolProfileBindings,
   toolProfiles,
+  toolStdioCommandTemplates,
 } from "@greatstone/db";
 import { HttpError } from "../errors.js";
 import { classifyAgentCheckFailure, connectionAgentCheckService } from "../services/connection-agent-check.js";
@@ -60,6 +61,7 @@ describeEmbeddedPostgres("connection agent check (GRE-341)", () => {
     await db.delete(connectionGrants);
     await db.delete(toolConnections);
     await db.delete(toolApplications);
+    await db.delete(toolStdioCommandTemplates);
     await db.delete(toolPolicies);
     await db.delete(toolProfileBindings);
     await db.delete(toolProfiles);
@@ -77,6 +79,8 @@ describeEmbeddedPostgres("connection agent check (GRE-341)", () => {
   async function fixture(input: {
     credentialPolicy?: "shared" | "per_agent";
     upstream?: (method: string) => Response;
+    /** Make the connection local_stdio; the template reads env.API_KEY. */
+    stdio?: { grantSecretRefs: Array<{ secretId: string; configPath: string }> };
   } = {}) {
     const company = await db.insert(companies).values({
       name: `Agent check ${randomUUID()}`,
@@ -104,21 +108,32 @@ describeEmbeddedPostgres("connection agent check (GRE-341)", () => {
       status: "active",
     }).returning().then((rows) => rows[0]!);
     const credentialPolicy = input.credentialPolicy ?? "shared";
+    const templateKey = `stdio-${randomUUID().slice(0, 8)}`;
+    if (input.stdio) {
+      await db.insert(toolStdioCommandTemplates).values({
+        companyId: company.id,
+        templateKey,
+        name: "Stdio app",
+        command: "/bin/false",
+        envKeys: ["API_KEY"],
+      });
+    }
     const connection = await db.insert(toolConnections).values({
       companyId: company.id,
       applicationId: application.id,
       name: "Remote connection",
       uid: `test/${randomUUID()}`,
-      transport: "mcp_remote",
+      transport: input.stdio ? "local_stdio" : "mcp_remote",
       status: "active",
       enabled: true,
       healthStatus: "ok",
       credentialPolicy,
-      config: { url: "https://8.8.8.8/mcp" },
+      config: input.stdio ? { templateId: templateKey } : { url: "https://8.8.8.8/mcp" },
     }).returning().then((rows) => rows[0]!);
+    const credentialSecretRefs = input.stdio?.grantSecretRefs ?? [];
     await db.insert(connectionGrants).values(credentialPolicy === "per_agent"
-      ? { companyId: company.id, connectionId: connection.id, kind: "agent", subjectAgentId: agent.id, credentialSecretRefs: [], status: "active" }
-      : { companyId: company.id, connectionId: connection.id, kind: "organization", credentialSecretRefs: [], status: "active", isDefault: true });
+      ? { companyId: company.id, connectionId: connection.id, kind: "agent", subjectAgentId: agent.id, credentialSecretRefs, status: "active" }
+      : { companyId: company.id, connectionId: connection.id, kind: "organization", credentialSecretRefs, status: "active", isDefault: true });
     await db.insert(toolCatalogEntries).values({
       companyId: company.id,
       applicationId: application.id,
@@ -229,6 +244,28 @@ describeEmbeddedPostgres("connection agent check (GRE-341)", () => {
 
     expect(result).toMatchObject({ ok: false, reason, grantKind: "organization" });
     expect(await connectionHealth(f.connection.id)).toEqual(before);
+    expect(await db.select().from(heartbeatRuns)).toHaveLength(0);
+  });
+
+  it("fails a local_stdio check when the grant's env secret is missing, without starting the app (GRE-350)", async () => {
+    const f = await fixture({ stdio: { grantSecretRefs: [{ secretId: randomUUID(), configPath: "env.API_KEY" }] } });
+    const before = await connectionHealth(f.connection.id);
+
+    const result = await f.check(f.agent.id);
+
+    expect(result).toMatchObject({ ok: false, reason: "expired_token", code: "local_stdio_missing_secret", grantKind: null });
+    expect(await connectionHealth(f.connection.id)).toEqual(before);
+    expect(await db.select().from(heartbeatRuns)).toHaveLength(0);
+    expect(await db.select().from(agentWakeupRequests)).toHaveLength(0);
+  });
+
+  it("says a passing local_stdio check did not start the app", async () => {
+    const f = await fixture({ stdio: { grantSecretRefs: [] } });
+
+    const result = await f.check(f.agent.id);
+
+    expect(result).toMatchObject({ ok: true, grantKind: "organization" });
+    expect(result.message).toMatch(/the app was not started/);
     expect(await db.select().from(heartbeatRuns)).toHaveLength(0);
   });
 });
