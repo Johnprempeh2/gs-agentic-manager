@@ -533,6 +533,52 @@ describe("inbox helpers", () => {
     ]);
   });
 
+  it("sorts an answered (read) task below older unread work on mine (GRE-356)", () => {
+    const answeredIssue = makeIssue("answered", false);
+    answeredIssue.lastActivityAt = new Date("2026-03-11T05:00:00.000Z");
+
+    const olderUnreadIssue = makeIssue("unread", true);
+    olderUnreadIssue.lastActivityAt = new Date("2026-03-11T02:00:00.000Z");
+
+    const olderReadIssue = makeIssue("read", false);
+    olderReadIssue.lastActivityAt = new Date("2026-03-11T01:00:00.000Z");
+
+    const issueIds = (unreadFirst?: boolean) =>
+      getInboxWorkItems({
+        issues: [olderReadIssue, answeredIssue, olderUnreadIssue],
+        approvals: [],
+        unreadFirst,
+      }).map((item) => (item.kind === "issue" ? item.issue.id : item.kind));
+
+    expect(issueIds(true)).toEqual(["unread", "answered", "read"]);
+    // Other tabs keep the plain latest-activity order.
+    expect(issueIds()).toEqual(["answered", "unread", "read"]);
+  });
+
+  it("keeps unread-first order on mine when inbox nesting is on (GRE-356)", () => {
+    const answeredIssue = makeIssue("answered", false);
+    answeredIssue.lastActivityAt = new Date("2026-03-11T05:00:00.000Z");
+
+    const readParent = makeIssue("parent", false);
+    readParent.lastActivityAt = new Date("2026-03-11T01:00:00.000Z");
+    const unreadChild = makeIssue("child", true);
+    unreadChild.parentId = "parent";
+    unreadChild.lastActivityAt = new Date("2026-03-11T02:00:00.000Z");
+
+    const [section] = buildGroupedInboxSections(
+      getInboxWorkItems({ issues: [answeredIssue, readParent, unreadChild], approvals: [], unreadFirst: true }),
+      "none",
+      {},
+      { nestingEnabled: true, unreadFirst: true },
+    );
+
+    expect(section.displayItems.map((item) => (item.kind === "issue" ? item.issue.id : item.kind))).toEqual([
+      "parent",
+      "answered",
+    ]);
+    expect(section.childrenByIssueId.get("parent")?.map((issue) => issue.id)).toEqual(["child"]);
+  });
+
   it("prefers canonical lastActivityAt over comment-only timestamps", () => {
     const activityIssue = makeIssue("1", true);
     activityIssue.lastExternalCommentAt = new Date("2026-03-11T01:00:00.000Z");
