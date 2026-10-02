@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTeam } from "@greatstone/shared";
-import { filterAgentsByTeam, groupAgentsByTeam, NO_TEAM_FILTER, teamsByAgent } from "./agent-teams";
+import {
+  filterAgentsByTeam,
+  groupAgentsByTeam,
+  isTeamAssigneeValue,
+  NO_TEAM_FILTER,
+  teamAssigneeValue,
+  teamAssignmentPatch,
+  teamForAssigneeValue,
+  teamsByAgent,
+} from "./agent-teams";
 
 function team(id: string, name: string, memberAgentIds: string[], leadAgentId: string | null = null): AgentTeam {
   return {
@@ -52,5 +61,27 @@ describe("agent teams helpers", () => {
   it("drops teams with no visible members and an empty No team group", () => {
     const groups = groupAgentsByTeam([agents[2]], teams);
     expect(groups.map((g) => g.team?.name ?? null)).toEqual(["Reliability"]);
+  });
+});
+
+describe("team assignment (GRE-437)", () => {
+  const lead = { id: "t1", leadAgentId: "a1" };
+  const noLead = { id: "t2", leadAgentId: null };
+
+  it("assigns the lead and stores the team", () => {
+    expect(teamAssignmentPatch(lead)).toEqual({ teamId: "t1", assigneeAgentId: "a1", assigneeUserId: null });
+  });
+
+  it("cannot pick a team with no lead", () => {
+    expect(teamAssignmentPatch(noLead)).toBeNull();
+  });
+
+  it("reads team picker values, ignoring teams with no lead", () => {
+    const teams = [team("t1", "Platform", ["a1"], "a1"), team("t2", "Empty", [])];
+    expect(isTeamAssigneeValue(teamAssigneeValue("t1"))).toBe(true);
+    expect(isTeamAssigneeValue("agent:a1")).toBe(false);
+    expect(teamForAssigneeValue("team:t1", teams)?.id).toBe("t1");
+    expect(teamForAssigneeValue("team:t2", teams)).toBeNull();
+    expect(teamForAssigneeValue("team:missing", teams)).toBeNull();
   });
 });

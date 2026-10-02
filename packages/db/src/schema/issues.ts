@@ -20,6 +20,7 @@ import { companies } from "./companies.js";
 import { heartbeatRuns } from "./heartbeat_runs.js";
 import { projectWorkspaces } from "./project_workspaces.js";
 import { executionWorkspaces } from "./execution_workspaces.js";
+import { agentTeams } from "./agent_teams.js";
 import type { IssueReviewPolicy, IssueUnblockDescriptor, SourceTrustMetadata } from "@greatstone/shared";
 
 export const issues = pgTable(
@@ -48,6 +49,9 @@ export const issues = pgTable(
     reviewPolicy: text("review_policy").$type<IssueReviewPolicy>(),
     assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id),
     assigneeUserId: text("assignee_user_id"),
+    // The team the task was assigned to (GRE-437). Assigning to a team sets
+    // the assignee to the team lead; the team stays for filtering and badges.
+    teamId: uuid("team_id").references(() => agentTeams.id, { onDelete: "set null" }),
     checkoutRunId: uuid("checkout_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
     executionRunId: uuid("execution_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
     executionAgentNameKey: text("execution_agent_name_key"),
@@ -122,6 +126,7 @@ export const issues = pgTable(
     responsibleUserIdx: index("issues_company_responsible_user_idx").on(table.companyId, table.responsibleUserId),
     parentIdx: index("issues_company_parent_idx").on(table.companyId, table.parentId),
     projectIdx: index("issues_company_project_idx").on(table.companyId, table.projectId),
+    teamIdx: index("issues_company_team_idx").on(table.companyId, table.teamId),
     originIdx: index("issues_company_origin_idx").on(table.companyId, table.originKind, table.originId),
     projectWorkspaceIdx: index("issues_company_project_workspace_idx").on(table.companyId, table.projectWorkspaceId),
     executionWorkspaceIdx: index("issues_company_execution_workspace_idx").on(table.companyId, table.executionWorkspaceId),

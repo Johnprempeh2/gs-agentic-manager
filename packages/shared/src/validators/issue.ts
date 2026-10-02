@@ -707,6 +707,11 @@ const createIssueBaseSchema = z.object({
   reviewPolicy: z.enum(ISSUE_REVIEW_POLICIES).optional().nullable(),
   assigneeAgentId: z.string().guid().optional().nullable(),
   assigneeUserId: z.string().optional().nullable(),
+  /**
+   * Assign the task to a team (GRE-437). The server sets the assignee to the
+   * team lead; a team with no lead is refused. `null` clears the team.
+   */
+  teamId: z.string().guid().optional().nullable(),
   requestDepth: issueRequestDepthInputSchema.optional().default(0),
   createdByUserId: z.string().optional().nullable(),
   responsibleUserId: z.string().optional().nullable(),

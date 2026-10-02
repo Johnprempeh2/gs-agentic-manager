@@ -2038,6 +2038,13 @@
       "when": 1790966306429,
       "tag": "0292_agent_teams",
       "breakpoints": true
+    },
+    {
+      "idx": 293,
+      "version": "7",
+      "when": 1790968401585,
+      "tag": "0293_issue_team",
+      "breakpoints": true
     }
   ]
 }

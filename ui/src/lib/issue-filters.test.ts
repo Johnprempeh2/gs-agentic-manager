@@ -92,6 +92,20 @@ describe("issue filters", () => {
     expect(filtered.map((issue) => issue.id)).toEqual(["agent-match", "user-match"]);
   });
 
+  it("filters issues by team (GRE-437) and counts it as a filter group", () => {
+    const issues = [
+      makeIssue({ id: "platform", teamId: "team-platform" }),
+      makeIssue({ id: "release", teamId: "team-release" }),
+      makeIssue({ id: "loose", teamId: null }),
+    ];
+    const state = { ...defaultIssueFilterState, teams: ["team-platform"] };
+    expect(applyIssueFilters(issues, state).map((issue) => issue.id)).toEqual(["platform"]);
+    expect(countActiveIssueFilters(state)).toBe(1);
+    // Saved views from before teams existed have no `teams` key.
+    const { teams: _teams, ...legacyState } = defaultIssueFilterState;
+    expect(applyIssueFilters(issues, legacyState)).toHaveLength(3);
+  });
+
   it("counts creator filters as an active filter group", () => {
     expect(countActiveIssueFilters({
       ...defaultIssueFilterState,

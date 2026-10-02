@@ -22,6 +22,10 @@ const mockAgentsApi = vi.hoisted(() => ({
   adapterModels: vi.fn(),
 }));
 
+const mockAgentTeamsApi = vi.hoisted(() => ({
+  list: vi.fn(),
+}));
+
 const mockProjectsApi = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
@@ -75,6 +79,10 @@ vi.mock("../context/SidebarContext", () => ({
 
 vi.mock("../api/agents", () => ({
   agentsApi: mockAgentsApi,
+}));
+
+vi.mock("../api/agentTeams", () => ({
+  agentTeamsApi: mockAgentTeamsApi,
 }));
 
 vi.mock("../api/projects", () => ({
@@ -471,6 +479,7 @@ describe("IssueProperties", () => {
     document.body.appendChild(container);
     mockAgentsApi.list.mockResolvedValue([]);
     mockAgentsApi.adapterModels.mockResolvedValue([]);
+    mockAgentTeamsApi.list.mockResolvedValue([]);
     mockProjectsApi.list.mockResolvedValue([]);
     mockProjectsApi.create.mockReset();
     mockExecutionWorkspacesApi.list.mockResolvedValue([]);
@@ -1058,6 +1067,120 @@ describe("IssueProperties", () => {
     });
     await flush();
     expect(onUpdate).toHaveBeenCalledWith({ assigneeAgentId: "agent-2", assigneeUserId: null });
+
+    act(() => root.unmount());
+  });
+
+  it("offers teams in the assignee picker: a team assigns its lead, a team with no lead cannot be picked", async () => {
+    const minimalAgent = (id: string, name: string) =>
+      ({
+        id,
+        name,
+        role: "",
+        title: null,
+        icon: null,
+        status: "active",
+        orgChainHealth: { status: "ok" },
+      } as unknown as Parameters<typeof mockAgentsApi.list.mockResolvedValue>[0][number]);
+    mockAgentsApi.list.mockResolvedValue([minimalAgent("agent-1", "Lead Agent")]);
+    const team = (id: string, name: string, leadAgentId: string | null) => ({
+      id,
+      companyId: "company-1",
+      name,
+      color: "#2563eb",
+      description: null,
+      leadAgentId,
+      memberAgentIds: leadAgentId ? [leadAgentId] : [],
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    });
+    mockAgentTeamsApi.list.mockResolvedValue([team("team-1", "Platform", "agent-1"), team("team-2", "Leaderless", null)]);
+    const onUpdate = vi.fn();
+    const root = renderProperties(container, {
+      issue: createIssue(),
+      childIssues: [],
+      onUpdate,
+      inline: true,
+    });
+    await flush();
+
+    let trigger: HTMLButtonElement | undefined;
+    await waitForAssertion(() => {
+      trigger = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Unassigned"));
+      expect(trigger).toBeTruthy();
+    });
+    await act(async () => {
+      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    let platform: HTMLButtonElement | undefined;
+    await waitForAssertion(() => {
+      platform = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Platform"));
+      expect(platform).toBeTruthy();
+    });
+    expect(container.textContent).toContain("Teams");
+    expect(platform!.textContent).toContain("Lead: Lead Agent");
+
+    const leaderless = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Leaderless"));
+    expect(leaderless?.disabled).toBe(true);
+    expect(leaderless?.textContent).toContain("No lead. Set a team lead on the Agents page first.");
+    await act(async () => {
+      leaderless!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onUpdate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      platform!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    expect(onUpdate).toHaveBeenCalledWith({ teamId: "team-1", assigneeAgentId: "agent-1", assigneeUserId: null });
+
+    act(() => root.unmount());
+  });
+
+  it("shows the team badge and takes the task off the team when an agent is picked", async () => {
+    mockAgentsApi.list.mockResolvedValue([
+      { id: "agent-1", name: "Lead Agent", role: "", title: null, icon: null, status: "active", orgChainHealth: { status: "ok" } },
+      { id: "agent-2", name: "Other Agent", role: "", title: null, icon: null, status: "active", orgChainHealth: { status: "ok" } },
+    ] as unknown as Parameters<typeof mockAgentsApi.list.mockResolvedValue>[0]);
+    mockAgentTeamsApi.list.mockResolvedValue([
+      {
+        id: "team-1",
+        companyId: "company-1",
+        name: "Platform",
+        color: "#2563eb",
+        description: null,
+        leadAgentId: "agent-1",
+        memberAgentIds: ["agent-1"],
+        createdAt: "2026-10-01T00:00:00.000Z",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      },
+    ]);
+    const onUpdate = vi.fn();
+    const root = renderProperties(container, {
+      issue: createIssue({ assigneeAgentId: "agent-1", teamId: "team-1" }),
+      childIssues: [],
+      onUpdate,
+      inline: true,
+    });
+    await flush();
+
+    await waitForAssertion(() => {
+      expect(container.querySelector("[data-testid='issue-team-badge']")?.textContent).toBe("Platform");
+    });
+
+    const trigger = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.includes("Lead Agent"));
+    await act(async () => {
+      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    const other = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Other Agent");
+    await act(async () => {
+      other!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+    expect(onUpdate).toHaveBeenCalledWith({ assigneeAgentId: "agent-2", assigneeUserId: null, teamId: null });
 
     act(() => root.unmount());
   });
