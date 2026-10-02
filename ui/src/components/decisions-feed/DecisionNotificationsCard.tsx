@@ -1,16 +1,27 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell, BellOff, Loader2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { usePushNotifications } from "../../hooks/usePushNotifications";
 import { useIsPhone } from "../../hooks/useIsPhone";
 
 const DISMISS_KEY = "gsam.decision-notifications.dismissed";
+// The "blocked" notice is shown on one visit only: the person can't act on it
+// here, so repeating it on every visit is noise.
+const BLOCKED_SEEN_KEY = "gsam.decision-notifications.blocked-seen";
 
-function readDismissed() {
+function readFlag(key: string) {
   try {
-    return window.localStorage.getItem(DISMISS_KEY) === "1";
+    return window.localStorage.getItem(key) === "1";
   } catch {
     return false;
+  }
+}
+
+function writeFlag(key: string) {
+  try {
+    window.localStorage.setItem(key, "1");
+  } catch {
+    // A private window keeps the choice for this visit only.
   }
 }
 
@@ -22,15 +33,18 @@ function readDismissed() {
 export function DecisionNotificationsCard({ companyId }: { companyId: string | null | undefined }) {
   const { state, error, enable, disable, sendTest } = usePushNotifications(companyId);
   const isPhone = useIsPhone();
-  const [dismissed, setDismissed] = useState(readDismissed);
+  const [dismissed, setDismissed] = useState(() => readFlag(DISMISS_KEY));
+  // Read once per mount, so the notice stays up for the visit it first shows on.
+  const [blockedSeen] = useState(() => readFlag(BLOCKED_SEEN_KEY));
+  const showBlocked = state === "denied" && !dismissed && !blockedSeen;
+
+  useEffect(() => {
+    if (showBlocked) writeFlag(BLOCKED_SEEN_KEY);
+  }, [showBlocked]);
 
   const dismiss = () => {
     setDismissed(true);
-    try {
-      window.localStorage.setItem(DISMISS_KEY, "1");
-    } catch {
-      // A private window keeps the choice for this visit only.
-    }
+    writeFlag(DISMISS_KEY);
   };
 
   if (state === "unsupported") return null;
@@ -58,7 +72,7 @@ export function DecisionNotificationsCard({ companyId }: { companyId: string | n
     );
   }
   if (state === "denied") {
-    if (dismissed) return null;
+    if (!showBlocked) return null;
     // One quiet line, with advice for the device in hand.
     return (
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="note" data-testid="decision-notifications-denied">
@@ -68,7 +82,7 @@ export function DecisionNotificationsCard({ companyId }: { companyId: string | n
             ? "Notifications are blocked. Turn them on in your phone's Settings, under Notifications."
             : "Notifications are blocked. Allow them for this site in your browser's site settings."}
         </span>
-        <Button type="button" size="xs" variant="ghost" onClick={dismiss}>OK</Button>
+        <Button type="button" size="xs" variant="ghost" onClick={dismiss} aria-label="Dismiss notifications notice">OK</Button>
       </div>
     );
   }

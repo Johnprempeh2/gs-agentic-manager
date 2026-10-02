@@ -47,4 +47,38 @@ describe("DecisionNotificationsCard", () => {
     expect(container.textContent).toContain("phone's Settings");
     unmount();
   });
+
+  it("stays hidden on later visits after OK is pressed", () => {
+    phone.isPhone = false;
+    const first = render();
+    const ok = first.container.querySelector<HTMLButtonElement>('[aria-label="Dismiss notifications notice"]');
+    expect(ok).not.toBeNull();
+    act(() => ok!.click());
+    expect(first.container.querySelector('[data-testid="decision-notifications-denied"]')).toBeNull();
+    first.unmount();
+
+    const later = render();
+    expect(later.container.querySelector('[data-testid="decision-notifications-denied"]')).toBeNull();
+    later.unmount();
+  });
+
+  it("shows the blocked notice on one visit only, even without OK", () => {
+    phone.isPhone = false;
+    const first = render();
+    expect(first.container.querySelector('[data-testid="decision-notifications-denied"]')).not.toBeNull();
+    first.unmount();
+
+    const later = render();
+    expect(later.container.querySelector('[data-testid="decision-notifications-denied"]')).toBeNull();
+    later.unmount();
+  });
+
+  it("still offers notifications after the blocked notice was seen, once they are unblocked", () => {
+    phone.isPhone = false;
+    render().unmount();
+    push.state = "off";
+    const later = render();
+    expect(later.container.querySelector('[data-testid="decision-notifications-offer"]')).not.toBeNull();
+    later.unmount();
+  });
 });
