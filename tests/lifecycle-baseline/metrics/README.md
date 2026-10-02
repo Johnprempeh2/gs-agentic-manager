@@ -190,3 +190,67 @@ can turn the watchdog off (`silentTimeoutSec: 0`) and older windows predate
 it. If GRE-34 or GRE-36 ship a different
 stop code than the ones above, add it to `SILENT_STOP_CODES` or
 `REASSIGN_STOP_CODE` before taking the after number.
+
+## John's time — Chase, Unstick, Decisions, Failed runs (GRE-397)
+
+One line for the 08:00 digest: how much of John's board time went on chasing
+and unsticking rather than decisions. `john-time.mjs` holds the rules;
+`john-time-collect.mjs` reads a database the same way as `collect.mjs` (read
+only, loopback hosts only) and prints the line.
+
+```sh
+pnpm metrics:john-time --company <id>                 # line for the digest, last 24 h + 7-day trend
+pnpm metrics:john-time --company <id> --json          # counts per day and the ids of counted comments
+pnpm metrics:john-time --company <id> --now 2026-10-02T08:00:00Z --john-user-ids local-board,<user id>
+```
+
+Example: `**John's time (24h):** Chase 4 · Unstick 1 · Decisions 14 · Failed
+runs 12 (workspace_validation_failed 4, …). 7 days, oldest first: Chase
+0,0,3,1,2,4,4 · Unstick …`. Today is the 24 hours up to `--now`; the trend is
+the seven 24-hour windows ending at `--now`, oldest first.
+
+**Whose comments.** Only comments with `author_type = 'user'` from one of
+John's user ids: by default every signed-in user plus the `local-board`
+sentinel (one-person board). `board-concierge`, system and agent comments
+never count. Override with `--john-user-ids`.
+
+**Classes.** Each John comment gets one class; the first rule that matches wins.
+Text is normalised first (HTML entities, curly quotes, markdown links and
+images removed).
+
+1. **Unstick, short nudge** (`UNSTICK_SHORT_RULE`): the whole comment is at
+   most 8 words and is only "start", "continue", "run", "retry", "go ahead",
+   "carry on", "proceed", "try again", "keep going" (with "now", "please",
+   "it", "you can"), or "it's free now" / "should be unlocked".
+2. **Repair** (`REPAIR_RULE`, counted under Unstick): a diagnosis of a stopped
+   run posted under John's name — "your last run/wake … failed/hung/ended",
+   "setup failed", "connection/token is fixed/expired", or "please continue /
+   retry" inside a longer note.
+3. **Unstick, restart agents** (`UNSTICK_ANY_RULE`, any length): reactivate /
+   boot up / wake up agents, "activate the others", "get the agents working",
+   "allow the next batch", "you can add/let more".
+4. **Chase** (`CHASE_RULE`): asks for status or a reason — "how is it going",
+   "any update", "is everything okay", "what do you need", "what's wrong",
+   "what is X doing", "you working?", "are you receiving", "how long … take",
+   "why is/doesn't … blocked/failing/taking/access", "what caused … fail",
+   "is it done/stuck", "still working".
+5. Everything else is **other** (instructions, decisions in text, questions
+   about the product).
+
+**Decisions.** Interactions John resolved as `accepted`, `rejected` or
+`answered` (expired and cancelled cards are not decisions), plus approvals he
+decided (`approved`, `rejected`, `revision_requested`).
+
+**Failed runs, by cause.** Runs finished in the window with status `failed`,
+`timed_out` or `interrupted`, or cancelled by a watchdog
+(`run_silent_timeout`, `process_lost`, `adapter_failed`). Cause is the
+`error_code` (status when empty); the line shows the top three and "other".
+Routine cancels (`cancelled` by a person, `issue_reassigned`, dependency
+blocked) are not failures; L1 above covers hung runs a person cancelled.
+
+Error rate: on the 128 John comments from 27 Sep to 2 Oct 2026, the rules
+counted 14 chase, 15 unstick and 8 repair (29 %, close to the "about 1 in 3"
+of the GRE-394 assessment); one known false positive is a status relay that
+ends "I see you are still working". The rules miss wording they do not know.
+Use `--json` to audit by comment id; add misses to the rules and to the
+sample comments in `john-time.test.mjs`.
