@@ -177,16 +177,85 @@ async function readBrokerRejectionReason(response: Response): Promise<string> {
   }
 }
 
+/** Why a broker request produced no HTTP response. A fixed set, never free text. */
+export type PaperclipCloudConnectorTransportReason =
+  | "timeout"
+  | "connect_timeout"
+  | "aborted"
+  | "dns"
+  | "connection_refused"
+  | "connection_reset"
+  | "tls"
+  | "network"
+  | "unknown";
+
 /** Stable public code/status with only allowlisted broker diagnostics. */
 export class PaperclipCloudConnectorError extends Error {
+  /** Set for CONNECTOR_UNAVAILABLE only, so logs can tell a timeout from DNS, TLS or a reset. */
+  declare readonly reason?: PaperclipCloudConnectorTransportReason;
+
   constructor(
     message: string,
     readonly code: string,
     readonly status?: number,
+    options: { reason?: PaperclipCloudConnectorTransportReason; cause?: Error } = {},
   ) {
-    super(message);
+    super(message, options.cause ? { cause: options.cause } : undefined);
     this.name = "PaperclipCloudConnectorError";
+    if (options.reason) this.reason = options.reason;
   }
+}
+
+// Transport errors are reduced to class names and errno/undici codes. Their
+// messages can carry hosts and addresses, and a custom request function could
+// echo request data, so no message text from the original error is retained.
+const TRANSPORT_ERROR_NAME = /^[A-Z][A-Za-z]{0,48}(?:Error|Exception)$/;
+const TRANSPORT_ERROR_CODE = /^[A-Z][A-Z0-9_]{1,47}$/;
+const TRANSPORT_CAUSE_DEPTH = 5;
+const TLS_ERROR_CODES = new Set([
+  "EPROTO", "CERT_HAS_EXPIRED", "CERT_NOT_YET_VALID", "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_GET_ISSUER_CERT", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
+
+function classifyTransportFailure(names: string[], codes: string[]): PaperclipCloudConnectorTransportReason {
+  const hasCode = (...wanted: string[]) => codes.some((code) => wanted.includes(code));
+  if (hasCode("UND_ERR_CONNECT_TIMEOUT")) return "connect_timeout";
+  if (names.includes("TimeoutError") || hasCode("ETIMEDOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT")) {
+    return "timeout";
+  }
+  if (names.includes("AbortError") || hasCode("ABORT_ERR")) return "aborted";
+  if (hasCode("ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EAI_NONAME", "EAI_NODATA")) return "dns";
+  if (hasCode("ECONNREFUSED")) return "connection_refused";
+  if (hasCode("ECONNRESET", "ECONNABORTED", "EPIPE", "UND_ERR_SOCKET", "UND_ERR_CLOSED")) return "connection_reset";
+  if (codes.some((code) => TLS_ERROR_CODES.has(code) || code.startsWith("ERR_TLS_") || code.startsWith("ERR_SSL_"))) {
+    return "tls";
+  }
+  if (hasCode("ENETUNREACH", "EHOSTUNREACH", "ENETDOWN", "EHOSTDOWN")) return "network";
+  return "unknown";
+}
+
+/** Describe a request that produced no response, using only allowlisted names and codes. */
+function describeTransportFailure(error: unknown): { reason: PaperclipCloudConnectorTransportReason; cause: Error } {
+  const names: string[] = [];
+  const codes: string[] = [];
+  const chain: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < TRANSPORT_CAUSE_DEPTH && current && typeof current === "object"; depth += 1) {
+    const candidate = current as { name?: unknown; code?: unknown; cause?: unknown };
+    const name = typeof candidate.name === "string" && TRANSPORT_ERROR_NAME.test(candidate.name)
+      ? candidate.name : "Error";
+    const code = typeof candidate.code === "string" && TRANSPORT_ERROR_CODE.test(candidate.code)
+      ? candidate.code : null;
+    names.push(name);
+    if (code) codes.push(code);
+    chain.push(code ? `${name} [${code}]` : name);
+    current = candidate.cause;
+  }
+  const reason = classifyTransportFailure(names, codes);
+  const cause = new Error(`${reason}: ${chain.length > 0 ? chain.join(" > ") : "non-error rejection"}`);
+  cause.name = "PaperclipCloudConnectorTransportError";
+  return { reason, cause };
 }
 
 export function paperclipCloudConnectorConfigFromEnv(
@@ -307,8 +376,15 @@ export function createPaperclipCloudConnector(input: {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       });
-    } catch {
-      throw new PaperclipCloudConnectorError("Paperclip Cloud connector is unavailable", "CONNECTOR_UNAVAILABLE");
+    } catch (error) {
+      // Keep the public message and code stable; the reason and sanitized cause
+      // say whether the request timed out or failed in DNS, TLS or the socket.
+      throw new PaperclipCloudConnectorError(
+        "Paperclip Cloud connector is unavailable",
+        "CONNECTOR_UNAVAILABLE",
+        undefined,
+        describeTransportFailure(error),
+      );
     }
     if (operation === "revoke" && response.status === 204) return {};
     if (!response.ok) {
