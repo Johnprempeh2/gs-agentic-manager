@@ -215,7 +215,7 @@ export function IssueFiltersPopover({
       <PopoverContent
         align="end"
         className={streamlined
-          ? "w-(--sz-calc-10) max-h-(--sz-calc-9) overflow-y-auto overscroll-contain p-0"
+          ? "issue-filters-popover-scroll w-(--sz-calc-10) overflow-y-auto overscroll-contain p-0"
           : "w-(--sz-calc-10) p-0"}
       >
         <div className="space-y-3 p-3">
