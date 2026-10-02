@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 /** Shared by the saved connection and its interactive review stories. */
 export function RemoteMcpManagement({ providerName, connected = true, canReconnect = true, canDisconnect = true, busy = false, onReconnect, onManage, onDisconnect }: {
@@ -24,7 +25,7 @@ export function RemoteMcpManagement({ providerName, connected = true, canReconne
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect {providerName}?</AlertDialogTitle>
-            <AlertDialogDescription>Delete this connection’s saved credentials and stop further calls through GS Agentic Manager. Other connections are unaffected. Actions already sent to the provider may still complete. Connecting again requires a new sign-in or key.</AlertDialogDescription>
+            <AlertDialogDescription>Delete this connection’s saved credentials and stop further calls through {CLIENT_BRAND_NAME}. Other connections are unaffected. Actions already sent to the provider may still complete. Connecting again requires a new sign-in or key.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>

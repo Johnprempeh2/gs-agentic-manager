@@ -55,7 +55,7 @@ vi.mock("@/lib/router", () => ({
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "GS Agentic Manager" },
+    selectedCompany: { id: "company-1", name: "Greatstone" },
   }),
 }));
 
@@ -167,7 +167,7 @@ describe("Connectors landing page", () => {
           tagline: "Search and draft email.",
           availability: {
             available: false,
-            reason: "Gmail is not available on this GS Agentic Manager instance yet.",
+            reason: "Gmail is not available on this Greatstone instance yet.",
           },
         }),
       ],
@@ -703,7 +703,7 @@ describe("Connectors landing page", () => {
     await act(() => remove!.click());
     await flushReact();
     expect(chatSetupMock).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Existing GS Agentic Manager tasks and conversation history remain available.");
+    expect(document.body.textContent).toContain("Existing Greatstone tasks and conversation history remain available.");
     chatListMock.mockResolvedValue([]);
     await act(() => Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Remove connection")!.click());
     await flushReact();
