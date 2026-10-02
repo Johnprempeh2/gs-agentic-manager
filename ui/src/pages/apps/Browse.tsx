@@ -1215,7 +1215,7 @@ function ConnectionAccountRow({
   return (
     <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
       <div className="flex min-w-0 flex-1 items-start gap-2.5">
-        <ConnectionStatusIcon state={state} />
+        <ConnectionStatusIcon state={state} warning={health?.status === "warning"} />
         <div className="min-w-0">
           <button
             type="button"
@@ -1232,9 +1232,9 @@ function ConnectionAccountRow({
             </div>
           ) : null}
           {details}
-          <ConnectionStateMessage state={state} />
+          <ConnectionStateMessage state={state} warning={health?.status === "warning"} />
           {lastError && lastError !== state.message ? (
-            <div title={lastError} className="line-clamp-2 break-all text-xs text-muted-foreground">
+            <div title={lastError} className="line-clamp-2 break-words text-xs text-muted-foreground">
               Last error: {lastError}
             </div>
           ) : null}
@@ -1341,15 +1341,17 @@ function ConnectionAccountRow({
 }
 
 /** The short reason a connection is not usable; wraps on a phone rather than cutting off. */
-function ConnectionStateMessage({ state }: { state: ConnectionState }) {
+function ConnectionStateMessage({ state, warning = false }: { state: ConnectionState; warning?: boolean }) {
   if (!state.message) return null;
   return (
     <div
       title={state.message}
       className={
-        state.kind === "attention"
-          ? "line-clamp-2 text-xs text-destructive"
-          : "line-clamp-2 text-xs text-muted-foreground"
+        state.kind !== "attention"
+          ? "line-clamp-2 text-xs text-muted-foreground"
+          : warning
+            ? "line-clamp-2 text-xs text-status-warning"
+            : "line-clamp-2 text-xs text-destructive"
       }
     >
       {state.message}
@@ -1357,7 +1359,7 @@ function ConnectionStateMessage({ state }: { state: ConnectionState }) {
   );
 }
 
-function ConnectionStatusIcon({ state }: { state: ConnectionState }) {
+function ConnectionStatusIcon({ state, warning = false }: { state: ConnectionState; warning?: boolean }) {
   if (state.kind === "connected") {
     return (
       <span
@@ -1371,7 +1373,7 @@ function ConnectionStatusIcon({ state }: { state: ConnectionState }) {
   }
   if (state.kind === "attention") {
     return (
-      <span className="mt-0.5 text-destructive" title={state.label}>
+      <span className={warning ? "mt-0.5 text-status-warning" : "mt-0.5 text-destructive"} title={state.label}>
         <AlertTriangle className="h-4 w-4" aria-hidden="true" />
         <span className="sr-only">{state.label}</span>
       </span>
