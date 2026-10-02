@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   LIVE_RELEASE_SWITCH_MS,
   LIVE_RELEASE_WAIT_FOR_RUNS_MS,
+  RELEASE_CARD_OWNER_OR_ADMIN_COMMENT,
   createLiveReleaseService,
   isReleaseRef,
   parseLiveReleaseKey,
@@ -39,6 +40,8 @@ let recoveryReady: boolean;
 let tags: ReleaseTagInfo[];
 let stableTagsMade: Array<{ tag: string; commit: string; notes: string }>;
 let deletedTags: string[];
+/** People the fake mayReleaseFromCard treats as an owner or admin. */
+let cardReleasers: Set<string>;
 
 const CUT: CandidateCut = {
   tag: "rc-x",
@@ -62,6 +65,7 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
     postComment: async (_issueId, body) => {
       comments.push(body);
     },
+    mayReleaseFromCard: async ({ actor }) => cardReleasers.has(actor.actorId),
     applyHold: (hold) => holds.push(hold),
     liftHold: (startedAt) => lifted.push(startedAt),
     startLauncher: ({ jobDir, tag }) => {
@@ -173,6 +177,7 @@ beforeEach(() => {
   tags = [];
   stableTagsMade = [];
   deletedTags = [];
+  cardReleasers = new Set(["john"]);
 });
 
 afterEach(() => {
@@ -214,6 +219,32 @@ describe("\"Update live?\" card", () => {
     expect(holds).toEqual([]);
     expect(launches).toEqual([]);
     expect(comments[0]).toMatch(/only a person/);
+  });
+
+  it("does not release when an operator (not an owner or admin) accepts the card", async () => {
+    const asked: Array<{ issueId: string; actorId: string }> = [];
+    const svc = createLiveReleaseService(deps({
+      mayReleaseFromCard: async ({ issueId, actor }) => {
+        asked.push({ issueId, actorId: actor.actorId });
+        return false;
+      },
+    }));
+    expect(await svc.onConfirmationAccepted({ ...accepted(), actor: { actorType: "user", actorId: "ben", actorSource: "session" } })).toBeNull();
+    expect(asked).toEqual([{ issueId: "issue-1", actorId: "ben" }]);
+    expect(targetChecks).toEqual([]);
+    expect(holds).toEqual([]);
+    expect(launches).toEqual([]);
+    expect(svc.listJobs()).toEqual([]);
+    expect(comments).toEqual([RELEASE_CARD_OWNER_OR_ADMIN_COMMENT]);
+  });
+
+  it("asks about the role only for a live-release card", async () => {
+    let asked = 0;
+    const svc = createLiveReleaseService(deps({ mayReleaseFromCard: async () => (asked += 1, false) }));
+    await svc.onConfirmationAccepted(accepted("confirmation:issue-1:plan:rev-1"));
+    await svc.onConfirmationAccepted(accepted(undefined, "rejected"));
+    expect(asked).toBe(0);
+    expect(comments).toEqual([]);
   });
 
   it("is off unless the server runs from the live checkout", async () => {

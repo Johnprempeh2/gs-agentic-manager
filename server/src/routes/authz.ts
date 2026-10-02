@@ -3,6 +3,10 @@ import type { SecretBindingTargetType } from "@greatstone/shared";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { responsibleUserAuthzShadowMode } from "../services/authorization.js";
+import { isCompanyOwnerOrAdminRole } from "../services/company-member-roles.js";
+
+export const OWNER_OR_ADMIN_REQUIRED_MESSAGE = "Owner or admin role required";
+export const OWNER_OR_ADMIN_REQUIRED_CODE = "owner_or_admin_required";
 
 function throwOrShadowResponsibleUserCompanyAccessDeny(
   req: Request,
@@ -118,6 +122,33 @@ export function assertCompanyAccess(req: Request, companyId: string) {
       }
     }
   }
+}
+
+/**
+ * True when a board actor may take company-wide actions in `companyId`:
+ * the implicit local board (`local_trusted`), an instance admin, or an active
+ * member whose role is owner or admin. Agents are never true. This does not
+ * check company access on its own; `assertCompanyOwnerOrAdmin` does both.
+ */
+export function hasCompanyOwnerOrAdminRole(req: Request, companyId: string): boolean {
+  if (req.actor.type !== "board") return false;
+  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
+  const membership = req.actor.memberships?.find(
+    (item) => item.companyId === companyId && item.status === "active",
+  );
+  return isCompanyOwnerOrAdminRole(membership?.membershipRole);
+}
+
+/**
+ * Guard for company-wide actions: company access first (so another company's
+ * user and viewers keep their existing errors), then a board actor, then the
+ * owner or admin role. Operators get 403 "Owner or admin role required".
+ */
+export function assertCompanyOwnerOrAdmin(req: Request, companyId: string) {
+  assertCompanyAccess(req, companyId);
+  assertBoard(req);
+  if (hasCompanyOwnerOrAdminRole(req, companyId)) return;
+  throw forbidden(OWNER_OR_ADMIN_REQUIRED_MESSAGE, { code: OWNER_OR_ADMIN_REQUIRED_CODE });
 }
 
 /**
