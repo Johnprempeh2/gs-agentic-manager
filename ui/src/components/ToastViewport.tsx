@@ -77,7 +77,7 @@ export function ToastViewport() {
     <aside
       aria-live="polite"
       aria-atomic="false"
-      className="pointer-events-none fixed bottom-(--toast-mobile-bottom) left-3 right-3 z-toast max-w-sm px-1 md:bottom-3"
+      className="pointer-events-none fixed bottom-(--toast-mobile-bottom) left-3 right-3 z-toast max-w-sm px-1 transform-gpu isolate md:bottom-3"
     >
       <ol className="flex w-full flex-col-reverse gap-2">
         {toasts.map((toast) => (

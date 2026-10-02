@@ -319,6 +319,13 @@ export interface ToolGatewaySession {
 
 export type ToolGatewayRuntimeSlot = ToolRuntimeSlotView;
 
+/** Seconds from a Retry-After header (delta-seconds or HTTP date), capped at a day. */
+export function remoteRetryAfterSeconds(header: string | null, now = Date.now()): number | null {
+  if (!header) return null;
+  const seconds = /^\d+$/.test(header.trim()) ? Number(header.trim()) : Math.ceil((Date.parse(header) - now) / 1000);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 86_400) : null;
+}
+
 export class ToolGatewayHttpError extends Error {
   constructor(
     public readonly status: number,
@@ -4897,6 +4904,7 @@ export function createToolGatewayService(
     connection: typeof toolConnections.$inferSelect,
     template: LocalStdioRuntimeTemplate,
     grant: typeof connectionGrants.$inferSelect,
+    options: { recordHealth?: boolean } = {},
   ): Promise<NodeJS.ProcessEnv> {
     const env: NodeJS.ProcessEnv = {};
     for (const key of [
@@ -4925,11 +4933,13 @@ export function createToolGatewayService(
           grantRef,
         );
       } catch {
-        await markRemoteConnectionHealth(
-          connection,
-          "missing_secret",
-          "A configured local stdio credential could not be resolved.",
-        );
+        if (options.recordHealth !== false) {
+          await markRemoteConnectionHealth(
+            connection,
+            "missing_secret",
+            "A configured local stdio credential could not be resolved.",
+          );
+        }
         throw new ToolGatewayHttpError(
           422,
           "A configured local stdio credential could not be resolved.",
@@ -6117,18 +6127,24 @@ export function createToolGatewayService(
           response.headers.get("traceparent"),
       };
       if (!response.ok) {
-        // Session expiration is recoverable on an explicit retry. Marking the
-        // connection unhealthy here would hide every tool and prevent it.
-        if (!sessionExpired) {
+        // Session expiration and rate limits are recoverable on a later retry.
+        // Marking the connection unhealthy here would hide every tool from
+        // every agent until the next health sweep (GRE-335).
+        const rateLimited = response.status === 429;
+        const retryAfterSeconds = rateLimited ? remoteRetryAfterSeconds(response.headers.get("retry-after")) : null;
+        if (!sessionExpired && !rateLimited) {
           await markRemoteConnectionHealth(connection, "error", "Remote MCP server returned an HTTP error.");
         }
         throw new ToolGatewayHttpError(
           502,
-          sessionExpired ? "Remote MCP session expired. Retry the action explicitly to start a new session." : "Remote MCP server returned an HTTP error",
+          sessionExpired ? "Remote MCP session expired. Retry the action explicitly to start a new session."
+            : rateLimited ? `The app is rate limiting requests. The connection still works; retry ${retryAfterSeconds ? `in ${retryAfterSeconds} seconds` : "later"}.`
+            : "Remote MCP server returned an HTTP error",
           "mcp_remote_status",
           {
             status: response.status,
             ...(sessionExpired ? { sessionExpired: true } : {}),
+            ...(rateLimited ? { rateLimited: true, retryAfterSeconds } : {}),
             connectionId: connection.id,
             catalogEntryId: entry.id,
             execution,
@@ -8974,6 +8990,74 @@ export function createToolGatewayService(
           ({ effectiveProfileIds: _effectiveProfileIds, ...tool }) => tool,
         ),
       };
+    },
+
+    /**
+     * Resolve the grant and credential this agent's tool calls would use on a
+     * connection, without calling the app (GRE-341). The session mirrors
+     * {@link executeTestCall}: no run, the operator as the responsible user, so
+     * no authorization card is posted and nothing wakes.
+     */
+    async resolveAgentConnectionCredential(input: {
+      companyId: string;
+      connectionId: string;
+      agentId: string;
+      userId: string;
+    }): Promise<{
+      grantId: string;
+      grantKind: "organization" | "user" | "agent";
+      transport: string;
+      credentialHeaders?: Record<string, string>;
+      endpoint?: string;
+    }> {
+      await assertAgentInCompany(input.companyId, input.agentId);
+      const [connection] = await db
+        .select()
+        .from(toolConnections)
+        .where(
+          and(
+            eq(toolConnections.id, input.connectionId),
+            eq(toolConnections.companyId, input.companyId),
+          ),
+        )
+        .limit(1);
+      if (!connection) {
+        throw new ToolGatewayHttpError(404, "Tool connection not found", "connection_not_found");
+      }
+      const session: ToolGatewaySession = {
+        id: "agent-check",
+        token: "agent-check",
+        companyId: input.companyId,
+        agentId: input.agentId,
+        runId: null,
+        issueId: null,
+        projectId: null,
+        actorType: "user",
+        actorId: input.userId,
+        responsibleUserId: input.userId,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + DEFAULT_SESSION_TTL_MS),
+      };
+      const grant = await resolveConnectionGrant(session, connection);
+      const grantKind = grant.kind as "organization" | "user" | "agent";
+      const transport = connection.transport;
+      if (transport === "local_stdio") {
+        // A run reads the grant's env.* secrets before it starts the process
+        // (GRE-350). Resolve them the same way, then drop the values: the
+        // check starts no process and does not mark the shared connection.
+        const template = await resolveLocalStdioRuntimeTemplate(connection);
+        await localStdioEnvironment(session, connection, template, grant, { recordHealth: false });
+        return { grantId: grant.id, grantKind, transport };
+      }
+      if (transport !== "mcp_remote") {
+        return { grantId: grant.id, grantKind, transport };
+      }
+      const endpoint = await resolvedRemoteEndpoint(session, connection, grant);
+      const credentialHeaders = {
+        ...projectedConnectionHeaders(connection),
+        ...(await resolveCredentialHeaders(session, connection, grant)),
+      };
+      return { grantId: grant.id, grantKind, transport, credentialHeaders, endpoint };
     },
 
     async executeTestCall(input: ExecuteTestCallInput) {

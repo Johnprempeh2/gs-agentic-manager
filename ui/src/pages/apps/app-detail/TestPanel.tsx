@@ -15,6 +15,7 @@ import {
 import type {
   ToolCatalogEntry,
   ToolConnectionAccessSummary,
+  ToolConnectionAgentCheckReason,
   ToolConnectionTestAgent,
   ToolConnectionTestCallResult,
   ToolConnectionTestCallStatus,
@@ -51,6 +52,7 @@ import {
 import { cn, relativeTime } from "@/lib/utils";
 import { appTabHref } from "../app-tabs";
 import { formatActionPermissionSummary } from "./action-permission-summary";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 // ---------------------------------------------------------------------------
 // Small format helpers
@@ -546,7 +548,67 @@ function TestAsHeader({
           {formatActionPermissionSummary(selectedAgent.effectiveAccess)}
         </Link>
       </div>
+      <ConnectionCheck
+        key={selectedAgent.id}
+        connectionId={connectionId}
+        agent={selectedAgent}
+      />
     </section>
+  );
+}
+
+const CHECK_REASON_LABEL: Record<ToolConnectionAgentCheckReason, string> = {
+  no_access: "No access",
+  no_grant: "No grant",
+  expired_token: "Expired token",
+  scope_missing: "Scope missing",
+  service_error: "Service error",
+};
+
+/**
+ * "Check connection" (GRE-341): one read-only check with the selected agent's
+ * access. No run starts and no action runs.
+ */
+function ConnectionCheck({
+  connectionId,
+  agent,
+}: {
+  connectionId: string;
+  agent: ToolConnectionTestAgent;
+}) {
+  const check = useMutation({
+    mutationFn: () => toolsApi.checkAsAgent(connectionId, agent.id),
+  });
+  const result = check.data;
+  return (
+    <div className="flex flex-wrap items-start gap-3" data-testid="connection-check">
+      <Button size="sm" variant="outline" onClick={() => check.mutate()} disabled={check.isPending}>
+        {check.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
+        {check.isPending ? "Checking…" : `Check connection as ${agent.name}`}
+      </Button>
+      <div className="min-w-0 flex-1 text-sm" role="status" aria-live="polite">
+        {check.isError ? (
+          <p className="text-destructive">We couldn't run the check. Try again.</p>
+        ) : result?.ok ? (
+          <p className="flex items-start gap-1.5 text-foreground">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <span>
+              <span className="font-medium">Works.</span> {result.message}
+            </span>
+          </p>
+        ) : result ? (
+          <p className="flex items-start gap-1.5 text-foreground">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <span>
+              <span className="font-medium">{result.reason ? CHECK_REASON_LABEL[result.reason] : "Failed"}.</span>{" "}
+              {result.message.replace(/^[^:]+:\s*/, "")}
+            </span>
+          </p>
+        ) : (
+          <p className="text-muted-foreground">Checks the connection with this agent's access. No run, no action.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -838,7 +900,7 @@ function splitRequiredOptional(schema: JsonSchemaNode): JsonSchemaNode {
 
 const GUT_CHECK: Record<ToolConnectionTestDecision, (app: string, agent: string) => string> = {
   allowed: (app, agent) => `This runs a real call against ${app} as ${agent}.`,
-  ask_first: () => `Waiting for your OK before this call leaves GS Agentic Manager.`,
+  ask_first: () => `Waiting for your OK before this call leaves ${CLIENT_BRAND_NAME}.`,
   off: (_app, agent) => `No call will be made. This action is off for ${agent}.`,
 };
 
@@ -1099,7 +1161,7 @@ function ProviderPendingResult({ pending, appName, connectionId, agent }: { pend
   return (
     <div role="status" className="space-y-3 rounded-md border border-border bg-muted/40 p-4 text-sm">
       <p className="font-medium">{pending.kind === "approval" ? "Approval needed" : "Authorization needed"} in {appName}</p>
-      <p className="text-muted-foreground">GS Agentic Manager allowed this call. The provider needs your input before it can continue.</p>
+      <p className="text-muted-foreground">{CLIENT_BRAND_NAME} allowed this call. The provider needs your input before it can continue.</p>
       {pending.links.map((link) => {
         const checked = checkOAuthEndpointUrl(link.url);
         return checked.ok ? <Button key={checked.url} variant="outline" asChild><a href={checked.url} target="_blank" rel="noopener noreferrer">Continue at {checked.host}</a></Button> : null;
@@ -1112,7 +1174,7 @@ function ProviderPendingResult({ pending, appName, connectionId, agent }: { pend
       {pending.resumeTool && agent ? <ProviderResumeControls pending={pending} connectionId={connectionId} agent={agent} onResult={setResumed} /> :
       <p className="text-muted-foreground">{pending.resumeTool
         ? `After approval, test the ${pending.resumeTool} action with this execution ID. Do not start the original action again.`
-        : "After authorizing, check the provider's result before using Run again. GS Agentic Manager will not repeat the call automatically."}</p>}
+        : `After authorizing, check the provider's result before using Run again. ${CLIENT_BRAND_NAME} will not repeat the call automatically.`}</p>}
     </div>
   );
 }

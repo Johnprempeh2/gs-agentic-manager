@@ -68,8 +68,19 @@ export type {
   DecisionClarityResponse,
   DecisionsFeed,
   DecisionsFeedCount,
+  NeedsMe,
+  NeedsMeTask,
 } from "./decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./decisions-feed.js";
+export type {
+  AgentWorkDigest,
+  AgentWorkDigestAgent,
+  AgentWorkDigestCounts,
+  AgentWorkDigestItem,
+  AgentWorkDigestItemKind,
+  AgentWorkDigestSinceSource,
+  AgentWorkDigestVisit,
+} from "./agent-work-digest.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
@@ -622,6 +633,8 @@ export type {
   ToolConnectionAccessSummary,
   ToolConnectionTestAgent,
   ToolConnectionTestAgentAccessResponse,
+  ToolConnectionAgentCheckReason,
+  ToolConnectionAgentCheckResult,
   ToolConnectionTestAgentsResponse,
   ToolConnectionTestCallResult,
   ToolUpstreamPending,

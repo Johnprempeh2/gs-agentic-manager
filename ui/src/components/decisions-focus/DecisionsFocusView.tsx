@@ -20,7 +20,7 @@ import {
 import type { FocusPrefs } from "../../lib/focus-prefs";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
-import { DECISION_KIND_LABEL, DecisionFeedCard, decisionCardQuestionItem } from "../decisions-feed/DecisionFeedCard";
+import { DecisionFeedCard, decisionCardQuestionItem, decisionKindLabel } from "../decisions-feed/DecisionFeedCard";
 import { FocusQuestionCard } from "./FocusQuestionCard";
 
 export interface DecisionsFocusViewProps {
@@ -154,6 +154,9 @@ export function DecisionsFocusView({
   const current = queue.currentId ? seenCards.get(queue.currentId) ?? null : null;
   const questionItem = current ? decisionCardQuestionItem(current) : null;
   const showQuestion = questionItem !== null && !closedQuestionIds.has(questionItem.id);
+  // The list card repeats the question, so it only follows when the card holds
+  // other work too (GRE-363).
+  const hasOtherWork = !!current && !!questionItem && current.items.some((item) => item.id !== questionItem.id);
 
   // A question answered on a card with nothing else to do finishes the card.
   // On a merged card (question + recovery, say) the card stays for the rest.
@@ -226,7 +229,7 @@ export function DecisionsFocusView({
               >
                 <span className="block font-semibold">{card.waiting?.name ?? card.task?.identifier ?? "Board"}</span>
                 <span className={cn("block text-xs", pending && "text-muted-foreground")}>
-                  {[card.task?.identifier, DECISION_KIND_LABEL[card.kind]].filter(Boolean).join(" · ")}
+                  {[card.task?.identifier, decisionKindLabel(card, card.kind)].filter(Boolean).join(" · ")}
                   {skipped && pending ? " · skipped" : ""}
                 </span>
               </button>
@@ -250,17 +253,19 @@ export function DecisionsFocusView({
             onSkip={handleSkip}
             onStep={handleStep}
           />
-          <DecisionFeedCard
-            key={current.id}
-            card={current}
-            companyId={companyId}
-            assignableAgents={assignableAgents}
-            agentMap={agentMap}
-            currentUserId={currentUserId}
-            hideInlineResolver
-            onActed={() => handleActed(current.id)}
-            className="mx-auto max-w-3xl"
-          />
+          {hasOtherWork && (
+            <DecisionFeedCard
+              key={current.id}
+              card={current}
+              companyId={companyId}
+              assignableAgents={assignableAgents}
+              agentMap={agentMap}
+              currentUserId={currentUserId}
+              hideInlineResolver
+              onActed={() => handleActed(current.id)}
+              className="mx-auto max-w-3xl"
+            />
+          )}
         </div>
       ) : current ? (
         <div className="mx-auto max-w-3xl space-y-3">

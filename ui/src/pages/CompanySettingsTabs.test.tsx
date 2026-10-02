@@ -116,7 +116,7 @@ describe("CompanySettings tabs", () => {
     expect(container.textContent).toContain("Organization name");
     expect(container.textContent).toContain("Require board approval for new hires");
     expect(container.textContent).toContain("Archive organization");
-    expect(sections()).toEqual(["signOut"]);
+    expect(sections()).toEqual(["aiAccessRoute,signOut"]);
     expect(container.querySelector('[data-testid="governance"]')).toBeNull();
   });
 

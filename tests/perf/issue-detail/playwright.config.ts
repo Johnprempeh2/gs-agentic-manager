@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
+import { scrubParentInstanceEnv } from "../../fixtures/sandbox-env";
 
 const PORT = Number(process.env.GSAM_ISSUE_PERF_PORT ?? 3201);
 const EXTERNAL_URL = process.env.GSAM_ISSUE_PERF_BASE_URL;
@@ -20,6 +21,7 @@ const GSAM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-issue-perf-ho
 const GSAM_INSTANCE_ID = "playwright-issue-perf";
 const GSAM_CONFIG = path.join(GSAM_HOME, "instances", GSAM_INSTANCE_ID, "config.json");
 
+scrubParentInstanceEnv(["GSAM_ISSUE_PERF_", "GSAM_UI_DEV_MIDDLEWARE"]);
 process.env.GSAM_HOME = GSAM_HOME;
 process.env.GSAM_CONFIG = GSAM_CONFIG;
 
@@ -42,7 +44,6 @@ export default defineConfig({
     stdout: "pipe",
     stderr: "pipe",
     env: {
-      ...process.env,
       NODE_ENV: "development",
       // Time the built bundle users load (ui/dist, from `pnpm build`), not Vite's unbundled dev modules.
       GSAM_UI_DEV_MIDDLEWARE: process.env.GSAM_UI_DEV_MIDDLEWARE ?? "false",

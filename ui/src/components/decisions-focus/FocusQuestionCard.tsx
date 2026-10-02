@@ -135,6 +135,19 @@ function FocusQuestionBody({
     onAnswered(item.id);
   }, [answeringRef, item.id, onAnswered]);
 
+  // Secondary: after the decision and its actions (GRE-363).
+  const listen = reader.supported ? (
+    <ListenBar
+      playing={reader.playing}
+      currentIndex={reader.currentIndex}
+      total={parts.length}
+      onToggle={reader.toggle}
+      prefs={prefs}
+      onPrefsChange={onPrefsChange}
+      voices={reader.voices}
+    />
+  ) : null;
+
   const background = content.background ? plainTextFromMarkdown(content.background) : "";
   const backgroundSentences = splitSentences(background);
 
@@ -163,18 +176,6 @@ function FocusQuestionBody({
       >
         {content.question}
       </h2>
-
-      {reader.supported && (
-        <ListenBar
-          playing={reader.playing}
-          currentIndex={reader.currentIndex}
-          total={parts.length}
-          onToggle={reader.toggle}
-          prefs={prefs}
-          onPrefsChange={onPrefsChange}
-          voices={reader.voices}
-        />
-      )}
 
       {nativeQuestion && backgroundSentences.length > 0 && (
         <section className="space-y-1.5">
@@ -208,6 +209,7 @@ function FocusQuestionBody({
           answeringRef={answeringRef}
           onSkip={onSkip}
           onStep={onStep}
+          listen={listen}
         />
       ) : (
         <>
@@ -224,6 +226,7 @@ function FocusQuestionBody({
             onSkip={onSkip}
             hint="Answer on the card above. The next question opens when you do."
           />
+          {listen}
           <FocusKeyHints native={false} />
           <FocusKeys onStep={onStep} onTogglePlay={reader.toggle} />
         </>
@@ -253,9 +256,13 @@ function ListenBar({
   const localVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith(language.toLowerCase()));
   const status = playing ? "Playing summary" : currentIndex != null ? "Paused" : "Listen to this question";
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent px-3 py-2.5 text-accent-foreground">
+    <div
+      className="flex flex-wrap items-center gap-2 border-t border-border pt-4"
+      title="Reads: who asks, the task, the question, the short background, and the options."
+    >
       <Button
-        size="icon"
+        size="icon-xs"
+        variant="outline"
         className="shrink-0 rounded-full"
         onClick={onToggle}
         aria-label={playing ? "Pause summary" : "Play summary"}
@@ -263,18 +270,11 @@ function ListenBar({
       >
         {playing ? <Pause /> : <Play />}
       </Button>
-      <AudioLines aria-hidden className={cn("size-6 shrink-0 text-primary", playing && "animate-pulse")} />
-      <div className="min-w-0 flex-1 basis-48" aria-live="polite">
-        <p className="text-sm font-semibold">
-          {status}
-          {currentIndex != null && (
-            <span className="font-normal text-muted-foreground"> · part {currentIndex + 1} of {total}</span>
-          )}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Reads: who asks, the task, the question, the short background, and the options.
-        </p>
-      </div>
+      <AudioLines aria-hidden className={cn("size-4 shrink-0 text-primary", playing && "animate-pulse")} />
+      <p className="min-w-0 flex-1 basis-32 text-xs text-muted-foreground" aria-live="polite">
+        {status}
+        {currentIndex != null && <> · part {currentIndex + 1} of {total}</>}
+      </p>
       {localVoices.length > 1 && (
         <Select
           value={prefs.voiceURI ?? DEFAULT_VOICE}
@@ -318,6 +318,7 @@ function FocusAnswerForm({
   answeringRef,
   onSkip,
   onStep,
+  listen,
 }: {
   companyId: string;
   issueId: string;
@@ -330,6 +331,7 @@ function FocusAnswerForm({
   answeringRef: { current: boolean };
   onSkip: () => void;
   onStep: (direction: 1 | -1) => void;
+  listen: ReactNode;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [note, setNote] = useState("");
@@ -493,6 +495,7 @@ function FocusAnswerForm({
           </Button>
         }
       />
+      {listen}
       <FocusKeyHints native micAvailable={dictation.available} />
       <FocusKeys
         onStep={onStep}
@@ -545,25 +548,30 @@ function Key({ children }: { children: ReactNode }) {
 
 function FocusKeyHints({ native, micAvailable = false }: { native: boolean; micAvailable?: boolean }) {
   return (
-    <p className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-      {native && (
-        <>
-          <Key>1</Key> to <Key>9</Key> pick ·
-        </>
-      )}
-      <Key>Space</Key> play / pause ·
-      {native && micAvailable && (
-        <>
-          <Key>M</Key> speak ·
-        </>
-      )}
-      {native && (
-        <>
-          <Key>⌘↵</Key> submit ·
-        </>
-      )}
-      <Key>J</Key> / <Key>K</Key> next / previous
-    </p>
+    <details className="text-xs text-muted-foreground">
+      <summary className="w-fit cursor-pointer rounded-sm outline-none select-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+        Keyboard shortcuts
+      </summary>
+      <p className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+        {native && (
+          <>
+            <Key>1</Key> to <Key>9</Key> pick ·
+          </>
+        )}
+        <Key>Space</Key> play / pause ·
+        {native && micAvailable && (
+          <>
+            <Key>M</Key> speak ·
+          </>
+        )}
+        {native && (
+          <>
+            <Key>⌘↵</Key> submit ·
+          </>
+        )}
+        <Key>J</Key> / <Key>K</Key> next / previous
+      </p>
+    </details>
   );
 }
 

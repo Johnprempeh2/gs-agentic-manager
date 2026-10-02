@@ -84,6 +84,7 @@ import {
   type ToolGatewayService,
 } from "../services/tool-gateway.js";
 import { toolAccessRoutes } from "../routes/tool-access.js";
+import { connectionIntentService } from "../services/connection-intents.js";
 import { errorHandler } from "../middleware/index.js";
 import * as sentry from "../sentry.js";
 import type { VercelConnectClient } from "../services/vercel-connect.js";
@@ -1598,6 +1599,42 @@ describeEmbeddedPostgres("tool access service", () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error).toContain("need access to this connection");
+  });
+
+  // GRE-335: a tool repaired from Connections left every waiting task's
+  // "Connect" card open, so the tasks stayed paused.
+  it("closes the cards of tasks waiting on a tool once a health check shows it works again", async () => {
+    const company = await createCompany(db);
+    const agent = await createAgent(db, company.id);
+    const userId = "board-user";
+    await db.insert(companyMemberships).values({ companyId: company.id, principalType: "user", principalId: userId, status: "active", membershipRole: "owner" });
+    const [issue] = await db.insert(issues).values({ companyId: company.id, title: "Read Notion", status: "in_progress", assigneeAgentId: agent.id }).returning();
+    const [run] = await db.insert(heartbeatRuns).values({ companyId: company.id, agentId: agent.id, status: "running", responsibleUserId: userId, contextSnapshot: { issueId: issue!.id } }).returning();
+    const card = await connectionIntentService(db).request(
+      { sub: agent.id, company_id: company.id, run_id: run!.id, responsible_user_id: userId }, "notion",
+    );
+    expect(card.state).toBe("needs_user_action");
+
+    const [application] = await db.insert(toolApplications).values({ companyId: company.id, applicationKey: `notion-${randomUUID()}`, name: "Notion", type: "mcp_http", status: "active", metadata: { sourceTemplateKey: "notion" } }).returning();
+    const [connection] = await db.insert(toolConnections).values({
+      companyId: company.id, applicationId: application!.id, name: "Notion", uid: `notion/${randomUUID()}`,
+      transport: "mcp_remote", authKind: "api_key", credentialPolicy: "shared", status: "active", enabled: true,
+      healthStatus: "error", lastError: "Remote MCP server returned an HTTP error.",
+      config: { url: PUBLIC_MCP_FIXTURE_URL, sourceTemplateKey: "notion" }, transportConfig: { sourceTemplateKey: "notion" },
+    }).returning();
+    await db.insert(connectionGrants).values({ companyId: company.id, connectionId: connection!.id, kind: "organization", status: "active", isDefault: true });
+    await db.insert(toolConnectionInstalls).values({ companyId: company.id, connectionId: connection!.id, targetType: "agent", targetId: agent.id });
+    const [profile] = await db.insert(toolProfiles).values({ companyId: company.id, name: "Notion reads", profileKey: `notion-reads-${randomUUID()}`, defaultAction: "allow", status: "active" }).returning();
+    await db.insert(toolProfileBindings).values({ companyId: company.id, profileId: profile!.id, targetType: "agent", targetId: agent.id });
+    await db.insert(toolCatalogEntries).values({ companyId: company.id, connectionId: connection!.id, toolName: "notion-read", name: "notion-read", versionHash: "fixture-v1", status: "active", entryKind: "tool" });
+    mockToolsList([{ name: "notion-read", description: "Read a page.", annotations: { readOnlyHint: true } }]);
+
+    const response = await request(createRouteApp(db)).post(`/api/tool-connections/${connection!.id}/health-check`);
+    expect(response.status).toBe(200);
+    expect(response.body.connection.healthStatus).toBe("ok");
+
+    const [closed] = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.id, card.interactionId!));
+    expect(closed).toMatchObject({ status: "accepted", result: expect.objectContaining({ outcome: "connected", connectionId: connection!.id }) });
   });
 
   it("serializes delegation creation behind membership removal so reauthorization cannot revive stale consent", async () => {

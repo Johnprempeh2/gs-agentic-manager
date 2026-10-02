@@ -7283,9 +7283,10 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
         new Promise<"locked">((resolve) => setTimeout(() => resolve("locked"), 2_000)),
       ]);
 
-      const readinessWaitStartedAt = Date.now();
+      // Monotonic clock: NTP / WSL2 host time sync can step Date.now() back mid-wait (GRE-369).
+      const readinessWaitStartedAt = performance.now();
       await new Promise((resolve) => setTimeout(resolve, 60_250));
-      expect(Date.now() - readinessWaitStartedAt).toBeGreaterThanOrEqual(60_000);
+      expect(performance.now() - readinessWaitStartedAt).toBeGreaterThanOrEqual(60_000);
 
       await fs.writeFile(releaseMarkerPath, "release");
       const started = (await startPromise)[0]!;

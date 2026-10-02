@@ -8,6 +8,7 @@ import {
   type ChatEndpointSetupAction,
 } from "@/api/chatEndpoints";
 import { sanitizedSetupErrorMessage } from "./chat-setup-error";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 export function PhotonConnectStep({
   endpoint,
@@ -126,13 +127,13 @@ export function PhotonConnectStep({
             <p role="alert" className="text-sm text-destructive">
               {inspection.data.allocation === "shared"
                 ? "This shared project already belongs to another channel. Use a separate Photon project for each agent."
-                : "No eligible dedicated number is available. Check the line allocation in Photon and existing GS Agentic Manager channels."}
+                : `No eligible dedicated number is available. Check the line allocation in Photon and existing ${CLIENT_BRAND_NAME} channels.`}
             </p>
           )}
           {inspection.data.allocation === "shared" && inspection.data.eligible && (
             <p className="text-sm text-muted-foreground">
               Direct messages only. Enroll each test sender in your Photon project's Users page,
-              then use the number Photon assigns to that sender. GS Agentic Manager identity linking is
+              then use the number Photon assigns to that sender. {CLIENT_BRAND_NAME} identity linking is
               still required. Groups cannot be enabled on this channel.
             </p>
           )}

@@ -83,6 +83,7 @@ import {
   connectionOwnerProfile,
   type ConnectionOwnerProfile,
 } from "./connection-owner";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 type ConnectorRowModel = {
   key: string;
@@ -408,7 +409,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         title: "Connection removed",
         body:
           target.kind === "chat"
-            ? `${target.providerName} is disconnected. Existing GS Agentic Manager tasks remain available.`
+            ? `${target.providerName} is disconnected. Existing ${CLIENT_BRAND_NAME} tasks remain available.`
             : target.remainingConnectionCount > 0
             ? `${target.providerName} still has ${target.remainingConnectionCount} active ${target.remainingConnectionCount === 1 ? "connection" : "connections"} available to agents.`
             : `${target.providerName} is no longer available to agents through this connection. Its saved credentials were deleted.`,
@@ -853,7 +854,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
             </AlertDialogTitle>
             <AlertDialogDescription>
               {connectionToRemove?.kind === "chat"
-                ? `This connection will stop receiving new work from ${connectionToRemove.providerName}. Existing GS Agentic Manager tasks and conversation history remain available. This does not delete the app, bot, or account in ${connectionToRemove.providerName}.`
+                ? `This connection will stop receiving new work from ${connectionToRemove.providerName}. Existing ${CLIENT_BRAND_NAME} tasks and conversation history remain available. This does not delete the app, bot, or account in ${connectionToRemove.providerName}.`
                 : connectionToRemove &&
                     connectionToRemove.remainingConnectionCount > 0
                   ? `This connection's saved credentials are deleted and agents lose access through it immediately. They can still use ${connectionToRemove.providerName} through ${connectionToRemove.remainingConnectionCount} other active ${connectionToRemove.remainingConnectionCount === 1 ? "connection" : "connections"}.`

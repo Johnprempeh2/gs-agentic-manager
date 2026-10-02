@@ -25,6 +25,7 @@ const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
   listReviewAttention: vi.fn(),
   addComment: vi.fn(),
+  markRead: vi.fn(),
 }));
 
 const mockInteractionService = vi.hoisted(() => ({
@@ -346,6 +347,7 @@ describe.sequential("issue thread interaction routes", () => {
     }));
     mockIssueService.getById.mockResolvedValue(createIssue());
     mockIssueService.listReviewAttention.mockResolvedValue(new Map());
+    mockIssueService.markRead.mockResolvedValue({ lastReadAt: new Date() });
     mockInteractionService.listForIssue.mockResolvedValue([]);
     mockInteractionService.expireRequestConfirmationsSupersededByHistoricalComments.mockResolvedValue([]);
     mockInteractionService.expirePendingInteractionsForTerminalIssue.mockResolvedValue([]);
@@ -908,6 +910,58 @@ describe.sequential("issue thread interaction routes", () => {
         }),
       }),
     );
+  });
+
+  // GRE-356: an answered decision must not stay unread in the answerer's Inbox.
+  it.each([
+    ["accept", "interaction-1/accept", {}],
+    ["reject", "interaction-3/reject", { reason: "Needs changes" }],
+    ["respond", "interaction-2/respond", { answers: [{ questionId: "scope", optionIds: ["phase-1"] }] }],
+    ["verdicts", "interaction-verdicts/verdicts", { verdicts: [{ id: "docs", verdict: "reject", reason: "Missing examples" }] }],
+  ])("marks the issue read for the board user who answers (%s)", async (_name, path, body) => {
+    const app = await createApp();
+
+    const res = await request(app)
+      .post(`/api/issues/${ISSUE_ID}/interactions/${path}`)
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.markRead).toHaveBeenCalledTimes(1);
+    expect(mockIssueService.markRead).toHaveBeenCalledWith(
+      "company-1",
+      ISSUE_ID,
+      "local-board",
+      expect.any(Date),
+    );
+  });
+
+  it("does not mark the issue read when an agent answers", async () => {
+    mockIssueService.getById.mockResolvedValueOnce(createIssue({ status: "todo" }));
+    const app = await createApp({
+      type: "agent",
+      agentId: ASSIGNEE_AGENT_ID,
+      companyId: "company-1",
+      runId: RUN_2,
+    });
+
+    const res = await request(app)
+      .post(`/api/issues/${ISSUE_ID}/interactions/interaction-2/respond`)
+      .send({ answers: [{ questionId: "scope", optionIds: ["phase-1"] }] });
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.markRead).not.toHaveBeenCalled();
+  });
+
+  it("still returns the saved answer when marking the issue read fails", async () => {
+    mockIssueService.markRead.mockRejectedValueOnce(new Error("read state write failed"));
+    const app = await createApp();
+
+    const res = await request(app)
+      .post(`/api/issues/${ISSUE_ID}/interactions/interaction-2/respond`)
+      .send({ answers: [{ questionId: "scope", optionIds: ["phase-1"] }] });
+
+    expect(res.status).toBe(200);
+    expect(mockQuestionResponseDeliveries.deliver).toHaveBeenCalledWith("interaction-2");
   });
 
   it("allows a board user to withdraw and wakes the assignee", async () => {

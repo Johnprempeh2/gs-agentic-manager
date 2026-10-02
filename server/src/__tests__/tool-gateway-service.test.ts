@@ -41,6 +41,7 @@ import { secretService } from "../services/secrets.js";
 import { toolAccessService } from "../services/tool-access.js";
 import {
   createToolGatewayService,
+  remoteRetryAfterSeconds,
   ToolGatewayHttpError,
 } from "../services/tool-gateway.js";
 import { canonicalToolArguments, signToolArguments } from "../services/tool-content-guards.js";
@@ -1401,6 +1402,59 @@ describeEmbeddedPostgres("tool gateway service", () => {
       .filter((payload) => payload.method === "tools/call");
     expect(calls).toHaveLength(1);
     expect(calls[0].params).toEqual({ name: "search_messages", arguments: parameters });
+  });
+
+  // GRE-335: one 429 used to mark the connection failed, which hid the app
+  // from every agent until the next health sweep.
+  it("keeps a rate-limited connection healthy and tells the agent when to retry", async () => {
+    const { company, agent, run } = await createRunFixture(db);
+    const { connection } = await createRemoteMcpToolFixture(db, company.id);
+    await db.insert(toolPolicies).values({
+      companyId: company.id, name: "Allow reads", policyType: "allow", selectors: { riskLevel: "read" },
+    });
+    let callStatus = 429;
+    const provider = vi.fn(async (_url, init) => {
+      const payload = JSON.parse(String(init.body));
+      if (payload.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (payload.method === "initialize") {
+        return Response.json({ jsonrpc: "2.0", id: payload.id, result: {
+          protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" },
+        } });
+      }
+      return new Response("slow down", { status: callStatus, headers: { "retry-after": "30" } });
+    });
+    const gateway = createTestToolGatewayService(db, { remoteHttpRequest: provider });
+    const session = await gateway.createSession({ companyId: company.id, agentId: agent.id, runId: run.id });
+    const tool = (await gateway.listToolsForSession(session.token))
+      .find((candidate) => candidate.upstreamToolName === "needs_input")!;
+
+    await expect(gateway.executeTool({ sessionToken: session.token, tool: tool.name, parameters: {} }))
+      .rejects.toMatchObject({
+        reasonCode: "mcp_remote_status",
+        message: expect.stringContaining("retry in 30 seconds"),
+        details: { status: 429, rateLimited: true, retryAfterSeconds: 30 },
+      });
+    const [afterRateLimit] = await db.select().from(toolConnections).where(eq(toolConnections.id, connection.id));
+    expect(afterRateLimit?.healthStatus).toBe("ok");
+    const next = await gateway.createSession({ companyId: company.id, agentId: agent.id, runId: run.id });
+    expect((await gateway.listToolsForSession(next.token)).some((candidate) => candidate.upstreamToolName === "needs_input")).toBe(true);
+
+    // A real server failure still marks the connection for attention.
+    callStatus = 503;
+    await expect(gateway.executeTool({ sessionToken: session.token, tool: tool.name, parameters: {} }))
+      .rejects.toMatchObject({ reasonCode: "mcp_remote_status", details: { status: 503 } });
+    const [afterFailure] = await db.select().from(toolConnections).where(eq(toolConnections.id, connection.id));
+    expect(afterFailure?.healthStatus).toBe("error");
+  });
+
+  it("reads Retry-After as seconds or an HTTP date", () => {
+    const now = Date.parse("2026-10-02T12:00:00Z");
+    expect(remoteRetryAfterSeconds("30", now)).toBe(30);
+    expect(remoteRetryAfterSeconds("Fri, 02 Oct 2026 12:01:00 GMT", now)).toBe(60);
+    expect(remoteRetryAfterSeconds("0", now)).toBeNull();
+    expect(remoteRetryAfterSeconds("soon", now)).toBeNull();
+    expect(remoteRetryAfterSeconds(null, now)).toBeNull();
+    expect(remoteRetryAfterSeconds("999999", now)).toBe(86_400);
   });
 
   it("explains Google Workspace preview enrollment when a tool call is denied", async () => {

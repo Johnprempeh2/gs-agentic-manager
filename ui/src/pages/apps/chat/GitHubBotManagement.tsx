@@ -16,6 +16,7 @@ import {
   GitHubToggle,
   githubSelectClass,
 } from "./GitHubBotConfiguration";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 export function GitHubBotManagement({
   endpoint,
@@ -84,7 +85,7 @@ export function GitHubBotManagement({
         </h2>
         <p className="text-sm text-muted-foreground">
           {endpoint.assignedAgentName} is permanently assigned to this bot.
-          GitHub messages create or continue GS Agentic Manager tasks; reviews are
+          GitHub messages create or continue {CLIENT_BRAND_NAME} tasks; reviews are
           results of those runs.
         </p>
         <Link
@@ -148,7 +149,7 @@ export function GitHubBotManagement({
             </div>
             <p className="text-xs text-muted-foreground">
               These repositories come from the bot App’s installation. Choose
-              where this bot can receive messages and use tools in GS Agentic Manager.
+              where this bot can receive messages and use tools in {CLIENT_BRAND_NAME}.
             </p>
             {resources.data
               ?.filter((r) => r.type === "repository")
@@ -296,7 +297,7 @@ export function GitHubReviews({ endpointId }: { endpointId: string }) {
       <div>
         <h2 className="text-lg font-semibold">Reviews</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review activity from the agent’s GS Agentic Manager tasks. Open a task for the
+          Review activity from the agent’s {CLIENT_BRAND_NAME} tasks. Open a task for the
           conversation and execution history.
         </p>
       </div>
@@ -346,7 +347,7 @@ export function GitHubReviews({ endpointId }: { endpointId: string }) {
             <code>{review.headSha.slice(0, 12)}</code>
             <span>{formatDateTime(review.updatedAt)}</span>
             <Link className="underline" to={`/issues/${review.issueId}`}>
-              GS Agentic Manager task
+              {CLIENT_BRAND_NAME} task
             </Link>
             {review.runId && (
               <Link

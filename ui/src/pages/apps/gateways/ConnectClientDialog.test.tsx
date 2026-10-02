@@ -127,7 +127,7 @@ function gateway(token: ToolMcpGatewayToken): ToolMcpGatewayWithTokens {
       label: "VS Code",
       config: {
         servers: {
-          "GS Agentic Manager": {
+          "Greatstone": {
             url: "/api/tool-gateway/gateways/public-1/mcp",
             headers: { Authorization: "Bearer pcgw_..." },
           },
@@ -175,7 +175,7 @@ describe("ConnectClientDialog", () => {
     });
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
-    expect(container.textContent).toContain("does not give it access to GS Agentic Manager or skills");
+    expect(container.textContent).toContain("does not give it access to Greatstone or skills");
     const copyButton = [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Copy");
     if (!copyButton) throw new Error("snippet copy button missing");
     copyButton.click();
