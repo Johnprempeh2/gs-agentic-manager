@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   agents,
@@ -169,8 +169,11 @@ describeEmbeddedPostgres("issue routes on a single pooled connection", () => {
     app.use(errorHandler);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([
-        send(app).then((res) => res),
+      const [{ pid }] = await singleDb.execute<{ pid: number }>(
+        sql`select pg_backend_pid() as pid`,
+      );
+      const res = await Promise.race([
+        send(app).then((response) => response),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () => reject(new Error("issue route waited for a second pooled connection")),
@@ -178,6 +181,21 @@ describeEmbeddedPostgres("issue routes on a single pooled connection", () => {
           );
         }),
       ]);
+      // Some routes finish work after they respond. Let that work drain off
+      // the connection before the pool is ended under it.
+      await vi.waitFor(
+        async () => {
+          const [activity] = await db.execute<{ state: string | null; settled: boolean }>(
+            sql`select state, clock_timestamp() - state_change > interval '300 milliseconds' as settled
+                from pg_stat_activity where pid = ${pid}`,
+          );
+          if (activity?.state !== "idle" || !activity.settled) {
+            throw new Error(`the connection is still busy after the response (${activity?.state})`);
+          }
+        },
+        { timeout: 5_000, interval: 100 },
+      );
+      return res;
     } finally {
       clearTimeout(timer);
       // Ends a stuck transaction too, so later tests are not blocked by its
