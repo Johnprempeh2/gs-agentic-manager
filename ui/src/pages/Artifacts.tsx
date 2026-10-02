@@ -17,7 +17,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { ArtifactCard } from "../components/artifacts/ArtifactCard";
 import { ArtifactGroupCard } from "../components/artifacts/ArtifactGroupCard";
-import { useSearchParams, Link } from "@/lib/router";
+import { useSearchParams, Link, useNavigate } from "@/lib/router";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,6 +77,7 @@ export function Artifacts() {
 
   const [draftQuery, setDraftQuery] = useState(query);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const toast = useOptionalToastActions();
   const pushToast = toast?.pushToast ?? (() => null);
   const markDeliverable = useMutation({
@@ -84,6 +85,7 @@ export function Artifacts() {
       deliverablesApi.mark(selectedCompanyId!, { artifactId: artifact.id }),
     onSuccess: (deliverable) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.deliverables.all(selectedCompanyId!) });
+      void queryClient.invalidateQueries({ queryKey: ["artifacts", selectedCompanyId!] });
       pushToast({
         title: "Marked as deliverable",
         body: deliverable.version > 1 ? `Saved as version ${deliverable.version}.` : undefined,
@@ -385,6 +387,7 @@ export function Artifacts() {
                     key={`${artifact.source}:${artifact.id}`}
                     artifact={artifact}
                     onMarkDeliverable={(item) => markDeliverable.mutate(item)}
+                    onOpenDeliverable={(id) => navigate(`/deliverables?open=${id}`)}
                   />
                 ))}
           </div>

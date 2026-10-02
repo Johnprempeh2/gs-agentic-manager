@@ -167,13 +167,22 @@ export function deliverableRoutes(db: Db, storage?: StorageService) {
     if (!attachment) throw notFound("Artifact not found");
     const issue = await issuesSvc.getById(attachment.issueId);
     if (!issue || issue.companyId !== companyId) throw notFound("Issue not found");
+    // Marking the file a deliverable already shows is a no-op, not a new version.
+    const existing = await svc.findLatestByAttachment(companyId, attachment.id);
+    if (existing) {
+      res.status(200).json(existing);
+      return;
+    }
     const { artifactId: _artifactId, ...fields } = body;
     const deliverable = await svc.register({
       issue,
       attachment,
       fields: {
         ...fields,
-        title: fields.title ?? sourceTitle ?? titleFromFilename(attachment.originalFilename),
+        title: fields.title
+          ?? sourceTitle
+          ?? (await svc.readHtmlTitle(attachment))
+          ?? titleFromFilename(attachment.originalFilename),
         summary: fields.summary ?? sourceSummary ?? undefined,
       },
       createdByAgentId: null,
