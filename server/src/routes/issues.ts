@@ -5797,6 +5797,24 @@ export function issueRoutes(
     return { decision, resolverPolicyRestriction } as const;
   }
 
+  // A board user who answers a decision has read the comment that asked it,
+  // so the answered task must not stay unread in their Inbox (GRE-356).
+  // Best effort: the answer is already saved, so a failed read mark only logs.
+  async function markIssueReadByAnsweringUser(
+    req: Request,
+    issue: { id: string; companyId: string },
+  ) {
+    if (req.actor.type !== "board" || !req.actor.userId) return;
+    try {
+      await svc.markRead(issue.companyId, issue.id, req.actor.userId, new Date());
+    } catch (err) {
+      logger.warn(
+        { err, issueId: issue.id },
+        "failed to mark answered decision read for the answering user",
+      );
+    }
+  }
+
   async function getIssueThreadInteractionResolutionAuthorization(
     req: Request,
     res: Response,
@@ -16367,6 +16385,7 @@ export function issueRoutes(
             userId: actor.actorType === "user" ? actor.actorId : null,
           },
         });
+        await markIssueReadByAnsweringUser(req, issue);
         res.json(await interactionSvc.getById(current.id));
         return;
       }
@@ -16383,6 +16402,7 @@ export function issueRoutes(
             resolutionAuthorization.resolverPolicyRestriction,
           suggestedTaskEffectsAuthorized,
         });
+      await markIssueReadByAnsweringUser(req, issue);
       const toolAction =
         interaction.payload && typeof interaction.payload === "object"
           ? (
@@ -16691,6 +16711,7 @@ export function issueRoutes(
             userId: actor.actorType === "user" ? actor.actorId : null,
           },
         });
+        await markIssueReadByAnsweringUser(req, issue);
         res.json(await interactionSvc.getById(current.id));
         return;
       }
@@ -16706,6 +16727,7 @@ export function issueRoutes(
             resolutionAuthorization.resolverPolicyRestriction,
         },
       );
+      await markIssueReadByAnsweringUser(req, issue);
 
       await logActivity(db, {
         companyId: issue.companyId,
@@ -16794,6 +16816,7 @@ export function issueRoutes(
             resolutionAuthorization.resolverPolicyRestriction,
         },
       );
+      await markIssueReadByAnsweringUser(req, issue);
 
       await logActivity(db, {
         companyId: issue.companyId,
@@ -16876,6 +16899,7 @@ export function issueRoutes(
               resolutionAuthorization.resolverPolicyRestriction,
           },
         );
+      await markIssueReadByAnsweringUser(req, issue);
 
       await logActivity(db, {
         companyId: issue.companyId,
