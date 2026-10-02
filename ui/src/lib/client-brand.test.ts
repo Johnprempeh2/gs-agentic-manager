@@ -5,6 +5,7 @@ import { CLIENT_BRAND_NAME } from "./client-brand";
 const CONNECTION_SCREEN_ROOTS = [
   "../features/connections",
   "../pages/apps",
+  "../pages/tools/PasteConfigTab.tsx",
   "../pages/tools/connection-dialogs.tsx",
   "../components/chat/ExternallyConnectedTaskBanner.tsx",
   "../connect-flow-preview-main.tsx",
