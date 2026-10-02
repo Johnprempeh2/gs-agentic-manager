@@ -3,6 +3,7 @@ import { TaskChatPausedTakeover, type TaskComposerPause } from "../components/ta
 
 import { DispositionRecoveryNotice, type DispositionRecoverySnapshot } from "../components/DispositionRecoveryNotice";
 import { RichWorkProductCard } from "../components/task-chat/RichWorkProductCard";
+import { IssueGalleryContext } from "../context/IssueGalleryContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   Agent,
@@ -22,6 +23,7 @@ import type {
   ReactElement,
   ReactNode,
 } from "react";
+import { useContext } from "react";
 import { NavigationType } from "react-router-dom";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -147,6 +149,7 @@ const mockPushToast = vi.hoisted(() => vi.fn());
 const mockIssuesListRender = vi.hoisted(() => vi.fn());
 const mockIssueChatThreadRender = vi.hoisted(() => vi.fn());
 const mockImageGalleryRender = vi.hoisted(() => vi.fn());
+const mockThreadGalleryHandlers = vi.hoisted(() => [] as unknown[]);
 const mockIssueWorkspaceCardRender = vi.hoisted(() => vi.fn());
 const DIRECT_ADAPTER_TYPES = [
   "codex_local",
@@ -422,6 +425,7 @@ vi.mock("../components/TaskChatThread", () => ({
     footer?: ReactNode;
   }) => {
     mockIssueChatThreadRender(props);
+    mockThreadGalleryHandlers.push(useContext(IssueGalleryContext));
     return (
       <div data-testid="task-chat-thread">
         {props.threadHeader}
@@ -1682,6 +1686,35 @@ describe("IssueDetail", () => {
       });
     }
     expect(windowOpen).not.toHaveBeenCalled();
+  });
+
+  it("keeps the thread's gallery handler stable while attachments load", async () => {
+    // Chat bubbles pass this handler to their markdown; a new one re-mounts
+    // every rendered paragraph just after the thread shows.
+    mockThreadGalleryHandlers.length = 0;
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    await act(async () => {
+      root.render(<QueryClientProvider client={queryClient}><IssueDetail /></QueryClientProvider>);
+    });
+    await waitForAssertion(() => {
+      expect(queryClient.getQueryData(queryKeys.issues.attachments("PAP-1"))).toEqual([]);
+    });
+    await flushReact();
+    const handler = mockThreadGalleryHandlers.at(-1) as (src: string) => boolean;
+    expect(handler).toEqual(expect.any(Function));
+
+    const image = createAttachment({ id: "late-image", contentType: "image/png", originalFilename: "late.png" });
+    act(() => { queryClient.setQueryData(queryKeys.issues.attachments("PAP-1"), [image]); });
+    await flushReact();
+
+    expect(mockThreadGalleryHandlers.at(-1)).toBe(handler);
+    // The stable handler still opens the image that arrived after it was made.
+    await act(async () => { expect(handler(image.contentPath)).toBe(true); });
+    expect(mockImageGalleryRender.mock.calls.at(-1)?.[0]).toMatchObject({
+      open: true,
+      initialIndex: 0,
+      items: [{ id: "late-image" }],
+    });
   });
 
   it("loads from the pending state into issue detail without changing hook order", async () => {

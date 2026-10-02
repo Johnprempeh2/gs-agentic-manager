@@ -292,6 +292,9 @@ export function TaskSidePanel({
   const activeTab = controller.tabs.find((tab) => tab.id === controller.activeTabId) ?? null;
   const subtasksAvailable = showSubtasksTab && (taskCount > 0 || tasksTab?.hasError === true);
   const hasSubtasksTab = controller.tabs.some((tab) => tab.id === "subtasks");
+  // GS: a chat opens on an empty Artifacts tab, so when its tasks load or the
+  // agent files a new one, bring Tasks forward until the user picks a tab.
+  const seenTaskCountRef = useRef(0);
 
   useEffect(() => {
     if (!openSkillId) return;
@@ -301,22 +304,31 @@ export function TaskSidePanel({
   }, [controller.openTab, onSkillOpened, openSkillId, openSkillName]);
 
   useEffect(() => {
+    const taskCountGrew = taskCount > seenTaskCountRef.current;
+    seenTaskCountRef.current = taskCount;
     if (!subtasksAvailable) {
       subtasksDismissedRef.current = false;
       if (hasSubtasksTab) controller.closeTab("subtasks");
       return;
     }
+    const focusTasks = taskCountGrew
+      && !userInteractedRef.current
+      && (controller.activeTabId === null || controller.activeTabId === "artifacts");
     if (!hasSubtasksTab && !subtasksDismissedRef.current) {
       controller.resetTabs({
         tabs: insertSubtasksAfterProperties(controller.tabs),
-        activeTabId: controller.activeTabId,
+        activeTabId: focusTasks ? "subtasks" : controller.activeTabId,
       });
+    } else if (hasSubtasksTab && focusTasks) {
+      controller.selectTab("subtasks");
     }
   }, [
     controller.activeTabId,
     controller.closeTab,
     controller.resetTabs,
+    controller.selectTab,
     controller.tabs,
+    taskCount,
     hasSubtasksTab,
     subtasksAvailable,
   ]);

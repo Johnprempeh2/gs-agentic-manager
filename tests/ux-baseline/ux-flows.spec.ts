@@ -395,8 +395,8 @@ const FLOWS: Record<FlowId, (ctx: FlowContext) => Promise<void>> = {
     // Ready once the list has rows: the open task waiting on John is always in the default view.
     await rec.step("tasks-open", page.getByRole("link", { name: new RegExp(seedData.needsMeTitle) }).first());
     const doneChip = page.getByRole("group", { name: "Show tasks" }).getByRole("button", { name: "Done", exact: true });
-    if ((await doneChip.getAttribute("aria-pressed")) !== "true") {
-      // The list opens on Active, so a finished task is behind the Done filter.
+    if ((await row.count()) === 0) {
+      // Only needed when the default view hides finished tasks (it opened on Active before GRE-359).
       await rec.click(doneChip);
       await expect(doneChip).toHaveAttribute("aria-pressed", "true");
       await rec.step("done-filter", row);

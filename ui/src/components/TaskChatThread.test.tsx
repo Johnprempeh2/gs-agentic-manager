@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TaskChatThread } from "./TaskChatThread";
+import { TaskChatScrollNavigation } from "./task-chat/scroll-navigation";
 import type {
   IssueDocument,
   IssueQueuedCommentQueue,
@@ -244,6 +245,81 @@ describe.each(["legacy", "native"] as const)("%s task history readiness", (runti
       ).toBeNull();
     },
   );
+});
+
+describe("opening a task on its latest message", () => {
+  const finishedRun = {
+    runId: "finished-run",
+    runtimeMode: "legacy" as const,
+    status: "succeeded",
+    agentId: "agent-1",
+    adapterType: "codex_local",
+    createdAt: "2026-08-25T18:00:00.000Z",
+    startedAt: "2026-08-25T18:00:00.000Z",
+  };
+  const props = {
+    issueId: "issue-1",
+    comments: createLongThreadComments(),
+    onAdd: async () => {},
+    linkedRuns: [finishedRun],
+    // Activity, runs and attachments are still loading; the comments are in.
+    initialHistoryPending: true,
+    initialCommentsPending: false,
+  };
+
+  beforeEach(() => {
+    // The finished run's log or digest has not arrived yet.
+    transcriptState.hydratedRunIds = new Set();
+  });
+
+  function renderOpened(navigation: { restore: boolean; hash: string }, overrides: Partial<typeof props> = {}) {
+    render(
+      <TaskChatScrollNavigation.Provider value={{ key: "entry-1", ...navigation }}>
+        <TaskChatThread {...props} {...overrides} />
+      </TaskChatScrollNavigation.Provider>,
+    );
+  }
+
+  const loadingOverlay = () =>
+    container.querySelector('[data-testid="task-chat-history-loading"]');
+  const latestRow = () =>
+    container.querySelector('[data-thread-anchor="comment-4"]');
+
+  it("shows the comments, not skeletons, while older history still loads", () => {
+    renderOpened({ restore: false, hash: "" });
+
+    expect(loadingOverlay()).toBeNull();
+    expect(container.querySelector('[aria-busy="false"]')).not.toBeNull();
+    expect(latestRow()).not.toBeNull();
+    expect(latestRow()?.closest("[inert]")).toBeNull();
+    expect(latestRow()?.closest(".invisible")).toBeNull();
+  });
+
+  it("keeps the comments shown when the rest of the history lands", () => {
+    renderOpened({ restore: false, hash: "" });
+    const row = latestRow();
+
+    transcriptState.hydratedRunIds = new Set(["finished-run"]);
+    renderOpened({ restore: false, hash: "" }, { initialHistoryPending: false });
+
+    expect(loadingOverlay()).toBeNull();
+    expect(latestRow()).toBe(row);
+  });
+
+  it.each([
+    ["a linked comment", { restore: false, hash: "#comment-comment-2" }],
+    ["a Back/Forward restore", { restore: true, hash: "" }],
+  ])("waits for the whole history before placing %s", (_label, navigation) => {
+    renderOpened(navigation);
+
+    expect(loadingOverlay()).not.toBeNull();
+  });
+
+  it("waits while the comments themselves are loading", () => {
+    renderOpened({ restore: false, hash: "" }, { initialCommentsPending: true });
+
+    expect(loadingOverlay()).not.toBeNull();
+  });
 });
 
 it("preserves the typed disposition notice through the task-chat adapter", () => {
