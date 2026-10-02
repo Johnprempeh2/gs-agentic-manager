@@ -42,6 +42,9 @@ vi.mock("../services/index.js", () => ({
       },
     })),
   }),
+  agentTeamService: () => ({
+    applyTeamAssignment: vi.fn(async () => undefined),
+  }),
   companySkillService: () => ({
     completeTestRunForIssue: vi.fn(async () => null),
   }),

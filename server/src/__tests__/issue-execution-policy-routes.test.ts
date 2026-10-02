@@ -105,6 +105,9 @@ function registerModuleMocks() {
         },
       })),
     }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
+    }),
     companySkillService: () => ({
       completeTestRunForIssue: vi.fn(async () => null),
     }),
