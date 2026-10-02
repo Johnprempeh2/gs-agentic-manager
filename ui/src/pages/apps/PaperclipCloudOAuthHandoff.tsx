@@ -7,6 +7,7 @@ import {
   prepareOAuthNavigation,
   readPendingCloudHandoff,
 } from "@/lib/oauthHandoff";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 export type ManagedOAuthHandoffPhase = "loading" | "reauthenticating" | "error";
 
@@ -38,15 +39,15 @@ export function ManagedOAuthHandoffState({
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {failed
-              ? error ?? "GS Agentic Manager couldn’t prepare the provider sign-in. Try again."
+              ? error ?? `${CLIENT_BRAND_NAME} couldn’t prepare the provider sign-in. Try again.`
               : phase === "reauthenticating"
-                ? "Your GS Agentic Manager sign-in is being refreshed."
-                : "GS Agentic Manager is opening the provider securely."}
+                ? `Your ${CLIENT_BRAND_NAME} sign-in is being refreshed.`
+                : `${CLIENT_BRAND_NAME} is opening the provider securely.`}
           </p>
           {failed ? (
             <div className="mt-6 flex items-center gap-2">
               <Button type="button" onClick={onRetry}>Try again</Button>
-              <Button type="button" variant="ghost" onClick={onCancel}>Return to GS Agentic Manager</Button>
+              <Button type="button" variant="ghost" onClick={onCancel}>Return to {CLIENT_BRAND_NAME}</Button>
             </div>
           ) : null}
         </div>
@@ -64,7 +65,7 @@ export function PaperclipCloudOAuthHandoffPage() {
     const handoff = readPendingCloudHandoff();
     if (!handoff) {
       setPhase("error");
-      setError("This sign-in expired. Return to GS Agentic Manager and start the connection again.");
+      setError(`This sign-in expired. Return to ${CLIENT_BRAND_NAME} and start the connection again.`);
       return;
     }
     setPhase("loading");
@@ -73,14 +74,14 @@ export function PaperclipCloudOAuthHandoffPage() {
       const target = await prepareOAuthNavigation({ authorizationUrl: "", handoff });
       if (target.kind === "reauthentication") {
         setPhase("error");
-        setError("GS Agentic Manager couldn’t refresh this sign-in. Try again to continue.");
+        setError(`${CLIENT_BRAND_NAME} couldn’t refresh this sign-in. Try again to continue.`);
         return;
       }
       clearPendingCloudHandoff();
       navigateTopLevel(target.url);
     } catch (caught) {
       setPhase("error");
-      setError(caught instanceof Error ? caught.message : "GS Agentic Manager couldn’t prepare secure sign-in.");
+      setError(caught instanceof Error ? caught.message : `${CLIENT_BRAND_NAME} couldn’t prepare secure sign-in.`);
     }
   }, []);
 

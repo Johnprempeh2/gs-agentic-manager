@@ -43,7 +43,7 @@ describe("readGitHubPrivateKeyFile", () => {
         },
       }),
     ).rejects.toThrow(
-      "GS Agentic Manager couldn't read that file. Choose the .pem file again or paste the private key.",
+      "Greatstone couldn't read that file. Choose the .pem file again or paste the private key.",
     );
   });
 

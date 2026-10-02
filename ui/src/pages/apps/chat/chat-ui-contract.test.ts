@@ -82,9 +82,9 @@ describe("chat connector UI contract", () => {
     expect(detail).toContain("Allow direct messages");
     expect(detail).toContain("Allow group chats");
     expect(detail).toContain("Their tasks run only with an isolated workspace");
-    expect(detail).toContain("otherwise GS Agentic Manager safely refuses the request");
+    expect(detail).toContain("otherwise ${CLIENT_BRAND_NAME} safely refuses the request");
     expect(setup).toContain("Link the account you’re testing");
-    expect(setup).toContain("GS Agentic Manager does not replay the refused request");
+    expect(setup).toContain("${CLIENT_BRAND_NAME} does not replay the refused request");
     expect(setup).toContain("Review identity access");
     expect(setup).toContain("instanceSettingsApi.getExperimental()");
     expect(setup).toContain("chatEndpointsApi.listPrincipals(endpointId)");
@@ -132,7 +132,7 @@ describe("chat connector UI contract", () => {
       "does not reinstall the App or change repository access",
       "does not add or remove the bot from the server",
       "does not upload or reinstall the Teams app",
-      "automatically refreshes its GS Agentic Manager webhook and command menu",
+      "automatically refreshes its ${CLIENT_BRAND_NAME} webhook and command menu",
     ]) {
       expect(detail).toContain(reconnectCopy);
       expect(setup).toContain(reconnectCopy);
@@ -143,7 +143,7 @@ describe("chat connector UI contract", () => {
       "It does not uninstall the bot",
       "It does not uninstall the Teams app",
       "queues durable removal of its Telegram webhook and command menu",
-      "After Telegram confirms that cleanup, GS Agentic Manager retires the saved token",
+      "After Telegram confirms that cleanup, ${CLIENT_BRAND_NAME} retires the saved token",
       "BotFather bot and its chat memberships remain",
     ]) {
       expect(detail).toContain(removalCopy);

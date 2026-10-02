@@ -101,6 +101,7 @@ import {
   type GenericMcpAuthMode,
 } from "@/pages/apps/generic-mcp-connect";
 import { autoExtendNotice, INSTALL_ALL_WARNING, installInfoNotice, installPayload } from "@/lib/tool-installs";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 type Step = "gallery" | "access" | "key" | "success";
 export type OAuthConnectPhase = "entry" | "starting" | "redirecting" | "error";
@@ -178,7 +179,7 @@ function oauthCallbackErrorMessage(outcome: string | null, code: string | null):
     return "Authorization was cancelled or declined. Your saved connection was not changed.";
   }
   if (code === "github_installation_required") {
-    return "GitHub access is required. Install GS Agentic Manager and grant at least one repository, then try again.";
+    return `GitHub access is required. Install ${CLIENT_BRAND_NAME} and grant at least one repository, then try again.`;
   }
   return "Authorization did not complete. Your saved connection is still here, so you can try again.";
 }
@@ -741,7 +742,7 @@ function StandardConnectionSetupFlow({
     const popup = oauthPopupRef.current;
     if (!popup || popup.closed) {
       setOAuthPhase("error");
-      setOAuthError("GS Agentic Manager couldn’t open the sign-in window. Open sign-in in a new tab to continue.");
+      setOAuthError(`${CLIENT_BRAND_NAME} couldn’t open the sign-in window. Open sign-in in a new tab to continue.`);
       onPhaseChange?.("needs_retry");
       return;
     }
@@ -781,7 +782,7 @@ function StandardConnectionSetupFlow({
       if (target.kind === "reauthentication") {
         const destination = host === "dialog" ? oauthPopupRef.current : window;
         if (!destination || destination.closed || !start.handoff) {
-          throw new Error("GS Agentic Manager couldn’t preserve this sign-in while refreshing your account.");
+          throw new Error(`${CLIENT_BRAND_NAME} couldn’t preserve this sign-in while refreshing your account.`);
         }
         savePendingCloudHandoff(start.handoff.session, destination.sessionStorage);
         setOAuthPhase("starting");
@@ -793,7 +794,7 @@ function StandardConnectionSetupFlow({
     } catch (error) {
       if (controller.signal.aborted) return;
       setOAuthPhase("error");
-      setOAuthError(error instanceof Error ? error.message : "GS Agentic Manager couldn’t start secure sign-in. Try again.");
+      setOAuthError(error instanceof Error ? error.message : `${CLIENT_BRAND_NAME} couldn’t start secure sign-in. Try again.`);
       onPhaseChange?.("needs_retry");
     } finally {
       if (oauthHandoffAbortRef.current === controller) oauthHandoffAbortRef.current = null;
@@ -1079,7 +1080,7 @@ function StandardConnectionSetupFlow({
     onError: (error) => {
       closeEnrollmentPopup();
       setConnectorEnrollmentError(
-        error instanceof Error ? error.message : "GS Agentic Manager couldn’t reach Paperclip Cloud. Try again.",
+        error instanceof Error ? error.message : `${CLIENT_BRAND_NAME} couldn’t reach Paperclip Cloud. Try again.`,
       );
     },
   });
@@ -1227,7 +1228,7 @@ function StandardConnectionSetupFlow({
           ? "Your authorization expired or was revoked. Reconnect to continue."
           : error instanceof Error
             ? error.message
-            : "GS Agentic Manager couldn’t start secure sign-in. Try again.",
+            : `${CLIENT_BRAND_NAME} couldn’t start secure sign-in. Try again.`,
       );
     },
   });
@@ -1399,7 +1400,7 @@ function StandardConnectionSetupFlow({
             ? "Your authorization expired or was revoked. Reconnect to continue."
             : error instanceof Error
               ? error.message
-              : "GS Agentic Manager couldn’t start secure sign-in. Try again.",
+              : `${CLIENT_BRAND_NAME} couldn’t start secure sign-in. Try again.`,
         );
         return;
       }
@@ -1564,7 +1565,7 @@ function StandardConnectionSetupFlow({
     if (automaticOAuth && directOAuthRetryingRef.current) return;
     if (automaticOAuth && (applicationsQuery.isError || connectionsQuery.isError)) {
       setOAuthPhase("error");
-      setOAuthError("GS Agentic Manager couldn’t check for an existing connection. Try again.");
+      setOAuthError(`${CLIENT_BRAND_NAME} couldn’t check for an existing connection. Try again.`);
       setStep("key");
       return;
     }
@@ -1746,7 +1747,7 @@ function StandardConnectionSetupFlow({
       <div className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">Couldn’t load connection setup</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          GS Agentic Manager couldn’t check the retained connection. The retained connection was not changed.
+          {CLIENT_BRAND_NAME} couldn’t check the retained connection. The retained connection was not changed.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           <Button
@@ -1812,7 +1813,7 @@ function StandardConnectionSetupFlow({
       <div className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">Couldn’t load connection setup</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          GS Agentic Manager couldn’t load the provider details needed to restore this connection. The retained connection was not changed.
+          {CLIENT_BRAND_NAME} couldn’t load the provider details needed to restore this connection. The retained connection was not changed.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           <Button type="button" onClick={() => void galleryQuery.refetch()}>
@@ -1831,7 +1832,7 @@ function StandardConnectionSetupFlow({
       <div className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">This connection can’t be reconnected</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          GS Agentic Manager no longer has a supported setup method for this retained connection. The retained connection was not changed.
+          {CLIENT_BRAND_NAME} no longer has a supported setup method for this retained connection. The retained connection was not changed.
         </p>
         <Button type="button" variant="outline" className="mt-5" onClick={() => navigate("/apps")}>
           Back to apps
@@ -1969,7 +1970,7 @@ function StandardConnectionSetupFlow({
             ]);
             if (applicationsResult.isError || connectionsResult.isError) {
               setOAuthPhase("error");
-              setOAuthError("GS Agentic Manager couldn’t check for an existing connection. Try again.");
+              setOAuthError(`${CLIENT_BRAND_NAME} couldn’t check for an existing connection. Try again.`);
               return;
             }
             const refreshedResumeConnection = resumeConnectionId
@@ -2199,7 +2200,7 @@ function StandardConnectionSetupFlow({
         <div className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6">
           <h2 className="text-lg font-semibold text-foreground">{entry.name} sign-in is unavailable</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            This instance is connected to GS Agentic Manager, but {entry.name} sign-in is not currently available. Try again shortly or contact your instance administrator.
+            This instance is connected to {CLIENT_BRAND_NAME}, but {entry.name} sign-in is not currently available. Try again shortly or contact your instance administrator.
           </p>
           <div className="mt-6 flex items-center justify-between gap-3">
             <Button type="button" variant="ghost" onClick={() => setAppStep("access")}>Back</Button>
@@ -2218,17 +2219,17 @@ function StandardConnectionSetupFlow({
               </div>
               <div className="min-w-0">
                 <h2 className="text-lg font-semibold text-foreground">
-                  Connect with GS Agentic Manager
+                  Connect with {CLIENT_BRAND_NAME}
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  You must connect this instance to GS Agentic Manager to connect to {entry.name} (you only need to do this once).
+                  You must connect this instance to {CLIENT_BRAND_NAME} to connect to {entry.name} (you only need to do this once).
                 </p>
               </div>
             </div>
 
             {connectorEnrollmentQuery.isError || connectorEnrollmentError ? (
               <InlineBanner tone="danger" className="mt-4">
-                {connectorEnrollmentError ?? "GS Agentic Manager couldn’t check Cloud registration. Try again."}
+                {connectorEnrollmentError ?? `${CLIENT_BRAND_NAME} couldn’t check Cloud registration. Try again.`}
               </InlineBanner>
             ) : null}
 
@@ -2259,7 +2260,7 @@ function StandardConnectionSetupFlow({
                 {startConnectorEnrollment.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {connectorEnrollmentQuery.data?.status === "pending"
                   ? "Continue"
-                  : "Connect with GS Agentic Manager"}
+                  : `Connect with ${CLIENT_BRAND_NAME}`}
               </Button>
             </div>
           </div>
@@ -2589,15 +2590,15 @@ export function OAuthConnectStateScreen({
     ? {
         title: resuming
           ? `Finish connecting ${serverName}`
-          : `Connect ${serverName} to GS Agentic Manager`,
+          : `Connect ${serverName} to ${CLIENT_BRAND_NAME}`,
         body: resuming
           ? `Your connection is saved. Continue in ${serverName} to approve access; its identity and agent access will stay the same.`
-          : `GS Agentic Manager will open ${serverName} so you can choose a workspace and approve access.`,
+          : `${CLIENT_BRAND_NAME} will open ${serverName} so you can choose a workspace and approve access.`,
       }
     : phase === "starting"
       ? {
           title: "Preparing secure sign-in",
-          body: `GS Agentic Manager is creating a secure ${serverName} connection.`,
+          body: `${CLIENT_BRAND_NAME} is creating a secure ${serverName} connection.`,
         }
       : phase === "redirecting"
         ? {
@@ -2608,7 +2609,7 @@ export function OAuthConnectStateScreen({
           }
         : {
             title: `${serverName} couldn’t connect`,
-            body: error ?? "GS Agentic Manager couldn’t start secure sign-in. Try again.",
+            body: error ?? `${CLIENT_BRAND_NAME} couldn’t start secure sign-in. Try again.`,
           };
 
   return (
@@ -2645,7 +2646,7 @@ export function OAuthConnectStateScreen({
             {recoveryActions.installationUrl ? (
               <Button type="button" variant="outline" asChild>
                 <a href={recoveryActions.installationUrl} target="_blank" rel="noreferrer">
-                  Install GS Agentic Manager on GitHub
+                  Install {CLIENT_BRAND_NAME} on GitHub
                   <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
                 </a>
               </Button>
@@ -2818,7 +2819,7 @@ function GalleryStep({
             <div>
               <h2 className="text-lg font-bold tracking-tight">Connect through Vercel</h2>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                Create and manage the provider connector in Vercel. GS Agentic Manager stores its reference and applies agent access, policy, approval, and audit controls here.
+                Create and manage the provider connector in Vercel. {CLIENT_BRAND_NAME} stores its reference and applies agent access, policy, approval, and audit controls here.
               </p>
             </div>
             {vercelConnectAvailability ? (
@@ -3090,7 +3091,7 @@ function LinkConnectStep({
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <AppLogo name={matchedEntry.name} logoUrl={matchedEntry.branding.logoUrl} darkLogoUrl={matchedEntry.branding.darkLogoUrl} size={24} />
-            <span className="truncate">GS Agentic Manager has a guided setup for {matchedEntry.name}.</span>
+            <span className="truncate">{CLIENT_BRAND_NAME} has a guided setup for {matchedEntry.name}.</span>
           </div>
           <Button type="button" size="sm" variant="outline" onClick={onUseMatchedEntry}>
             Use {matchedEntry.name}
@@ -3217,8 +3218,8 @@ function LinkConnectStep({
             {authMode === "oauth" ? (
               <div className="space-y-4">
                 <p className="text-xs text-muted-foreground">
-                  GS Agentic Manager sets sign-in up on its own whenever the server allows it. Only fill these in when the
-                  server's docs tell you to register GS Agentic Manager yourself first.
+                  {CLIENT_BRAND_NAME} sets sign-in up on its own whenever the server allows it. Only fill these in when the
+                  server's docs tell you to register {CLIENT_BRAND_NAME} yourself first.
                 </p>
                 <div>
                   <label className="text-sm font-medium text-foreground" htmlFor="generic-mcp-client-id">
@@ -3275,8 +3276,8 @@ function LinkConnectStep({
 const GENERIC_AUTH_MODE_OPTIONS: Array<{ mode: GenericMcpAuthMode; label: string; hint: string }> = [
   {
     mode: "auto",
-    label: "Let GS Agentic Manager check",
-    hint: "GS Agentic Manager asks the server what it needs and walks you through it. Start here.",
+    label: `Let ${CLIENT_BRAND_NAME} check`,
+    hint: `${CLIENT_BRAND_NAME} asks the server what it needs and walks you through it. Start here.`,
   },
   {
     mode: "none",
@@ -3286,17 +3287,17 @@ const GENERIC_AUTH_MODE_OPTIONS: Array<{ mode: GenericMcpAuthMode; label: string
   {
     mode: "bearer",
     label: "Key or token",
-    hint: "GS Agentic Manager sends your key as an Authorization header.",
+    hint: `${CLIENT_BRAND_NAME} sends your key as an Authorization header.`,
   },
   {
     mode: "custom_headers",
     label: "Custom headers",
-    hint: "For servers that name their own headers. Values are stored as GS Agentic Manager secrets and can\u2019t be read back.",
+    hint: `For servers that name their own headers. Values are stored as ${CLIENT_BRAND_NAME} secrets and can’t be read back.`,
   },
   {
     mode: "oauth",
     label: "Browser sign-in",
-    hint: "You\u2019ll sign in at the provider. Add a client ID and secret only if the provider requires you to register GS Agentic Manager first.",
+    hint: `You’ll sign in at the provider. Add a client ID and secret only if the provider requires you to register ${CLIENT_BRAND_NAME} first.`,
   },
 ];
 
@@ -3473,7 +3474,7 @@ function KeyStep({
   const hasAdvancedSettings = advancedConfigFields.length > 0 || optionalCustomerOAuthClient;
   const capabilitySelection = capabilityGroups.length > 1 ? (
     <div>
-      <label className="text-sm font-medium text-foreground">What should GS Agentic Manager be able to do?</label>
+      <label className="text-sm font-medium text-foreground">What should {CLIENT_BRAND_NAME} be able to do?</label>
       <RadioCardGroup
         ariaLabel={`Access level for ${entry.name}`}
         className="mt-2"
@@ -3513,7 +3514,7 @@ function KeyStep({
       disabled={submitting}
       onClick={() => onMethodChange(usingCustomGoogleOAuth ? managedGoogleMethod : customerGoogleMethod)}
     >
-      {usingCustomGoogleOAuth ? "Use GS Agentic Manager instead" : "Use your own Google OAuth app"}
+      {usingCustomGoogleOAuth ? `Use ${CLIENT_BRAND_NAME} instead` : "Use your own Google OAuth app"}
     </Button>
   ) : capabilityMethods.length > 1 ? (
     <div>
@@ -3622,7 +3623,7 @@ function KeyStep({
             <div>
               <div className="text-sm font-medium text-foreground">Create or attach the connector in Vercel</div>
               <p className="mt-1 text-xs text-muted-foreground">
-                GS Agentic Manager does not copy Vercel’s setup forms. Finish connector setup there, then paste its UID below.
+                {CLIENT_BRAND_NAME} does not copy Vercel’s setup forms. Finish connector setup there, then paste its UID below.
               </p>
               <a
                 href={vercelConnectAvailability.manageUrl}
@@ -3647,7 +3648,7 @@ function KeyStep({
                 className="mt-2 h-11 font-mono"
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                GS Agentic Manager validates the connector and stores only its reference and redacted verification metadata.
+                {CLIENT_BRAND_NAME} validates the connector and stores only its reference and redacted verification metadata.
               </p>
             </div>
           </div>
@@ -3810,7 +3811,7 @@ function OAuthClientFields({
           {required ? "Your OAuth app" : "Use your own OAuth app"}
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          Register GS Agentic Manager's callback URI in {entry.name}, then enter the customer-owned client details.
+          Register {CLIENT_BRAND_NAME}'s callback URI in {entry.name}, then enter the customer-owned client details.
         </p>
         {method.consoleLinks?.register ? (
           <a
@@ -3826,7 +3827,7 @@ function OAuthClientFields({
       </div>
       {callbackUrl ? (
         <div>
-          <label className="text-sm font-medium text-foreground">GS Agentic Manager callback URL</label>
+          <label className="text-sm font-medium text-foreground">{CLIENT_BRAND_NAME} callback URL</label>
           <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
             <div
               title={callbackUrl}

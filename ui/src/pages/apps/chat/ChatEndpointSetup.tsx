@@ -50,6 +50,7 @@ import {
   createGitHubPrivateKeyReadGuard,
   readGitHubPrivateKeyFile,
 } from "./github-private-key-file";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 const providerNames: Record<ChatProvider, string> = {
   agentmail: "AgentMail",
@@ -135,7 +136,7 @@ function ChatConnectionPurpose({ provider, onChat, onTools }: {
             </span>
             <span className="mt-1 block text-sm text-muted-foreground">
               People in {providerNames[provider]} can start and continue
-              GS Agentic Manager tasks.
+              {" "}{CLIENT_BRAND_NAME} tasks.
             </span>
           </button>
           <button
@@ -762,7 +763,7 @@ function ProviderConnectStep({
       setPrivateKeyFileError(
         error instanceof Error
           ? error.message
-          : "GS Agentic Manager couldn't read that file. Choose the .pem file again or paste the private key.",
+          : `${CLIENT_BRAND_NAME} couldn't read that file. Choose the .pem file again or paste the private key.`,
       );
     } finally {
       if (privateKeyReadGuard.isCurrent(readRevision)) {
@@ -820,7 +821,7 @@ features:
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   agent_view:
-    agent_description: "Work with a GS Agentic Manager agent in a task-backed conversation."
+    agent_description: "Work with a ${CLIENT_BRAND_NAME} agent in a task-backed conversation."
   bot_user:
     display_name: ${JSON.stringify(slackBotName)}
   slash_commands:
@@ -900,11 +901,11 @@ settings:
               commands: [
                 {
                   title: "/status",
-                  description: "Show the active GS Agentic Manager task status",
+                  description: `Show the active ${CLIENT_BRAND_NAME} task status`,
                 },
                 {
                   title: "/new",
-                  description: "Start a new GS Agentic Manager task in this chat",
+                  description: `Start a new ${CLIENT_BRAND_NAME} task in this chat`,
                 },
                 {
                   title: "/close",
@@ -945,7 +946,7 @@ settings:
           <p className="mt-1 text-sm text-muted-foreground">
             {repairing
               ? "Reconnect verifies this same Discord application and server installation. It does not add or remove the bot from the server. Leave fields blank to reuse saved credentials."
-              : "Create one dedicated Discord application and bot for this GS Agentic Manager agent."}
+              : `Create one dedicated Discord application and bot for this ${CLIENT_BRAND_NAME} agent.`}
           </p>
         </div>
       <ol className="list-decimal space-y-2 pl-5 text-sm">
@@ -987,7 +988,7 @@ settings:
         <p className="text-sm text-muted-foreground">
           The install link grants only View Channels, Send Messages, Create
           Public Threads, Send Messages in Threads, Read Message History, Add
-          Reactions, Embed Links, and Attach Files. GS Agentic Manager still requires
+          Reactions, Embed Links, and Attach Files. {CLIENT_BRAND_NAME} still requires
           each discovered channel to be enabled in Access.
         </p>
         <Button
@@ -1015,7 +1016,7 @@ settings:
           <h1 className="text-xl font-bold">Create {agentName} in Telegram</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {repairing
-              ? "Reconnect verifies this same BotFather bot and automatically refreshes its GS Agentic Manager webhook and command menu. It does not recreate the bot or change its chat memberships. Leave the token blank to reuse the saved credential."
+              ? `Reconnect verifies this same BotFather bot and automatically refreshes its ${CLIENT_BRAND_NAME} webhook and command menu. It does not recreate the bot or change its chat memberships. Leave the token blank to reuse the saved credential.`
               : "Create a bot with BotFather, then paste the token it gives you."}
           </p>
         </div>
@@ -1029,7 +1030,7 @@ settings:
           </li>
         </ol>
         <p className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-          GS Agentic Manager works with Telegram&apos;s default bot privacy mode and
+          {CLIENT_BRAND_NAME} works with Telegram&apos;s default bot privacy mode and
           registers its command menu automatically. In a group, ordinary
           mentions are not delivered to bots: start or continue work with{" "}
           <code>/task@bot_username &lt;request&gt;</code>, or reply directly to
@@ -1044,7 +1045,7 @@ settings:
         {field("botToken", "Bot token")}
         {!endpoint.setup?.webhookUrl && (
           <p className="text-sm text-destructive">
-            Configure a public HTTPS URL for this GS Agentic Manager instance before
+            Configure a public HTTPS URL for this {CLIENT_BRAND_NAME} instance before
             connecting Telegram.
           </p>
         )}
@@ -1092,7 +1093,7 @@ settings:
           </li>
           <li>
             In Azure, create an Azure Bot. Choose Single Tenant, use that
-            Application ID, set its messaging endpoint to the GS Agentic Manager URL
+            Application ID, set its messaging endpoint to the {CLIENT_BRAND_NAME} URL
             below, and add the Microsoft Teams channel.
           </li>
           <li>
@@ -1136,7 +1137,7 @@ settings:
           </Button>
         </div>
         {endpointValue(
-          "GS Agentic Manager messaging endpoint",
+          `${CLIENT_BRAND_NAME} messaging endpoint`,
           endpoint.setup?.messagingEndpoint,
         )}
         {field("clientId", "Application / Client ID", "text")}
@@ -1172,7 +1173,7 @@ settings:
               <strong>Single Tenant</strong>, set <strong>Creation type</strong>{" "}
               to <strong>Use existing app registration</strong>, and enter the
               Application ID and Tenant ID above. After creation, open{" "}
-              <strong>Settings · Configuration</strong> and paste the GS Agentic Manager{" "}
+              <strong>Settings · Configuration</strong> and paste the {CLIENT_BRAND_NAME}{" "}
               <strong>Messaging endpoint</strong>; then open{" "}
               <strong>Settings · Channels</strong> and enable{" "}
               <strong>Microsoft Teams</strong>.
@@ -1229,13 +1230,13 @@ settings:
         <p className="text-sm text-muted-foreground">
           Enter the Application / Client ID above before copying so the block
           contains the real bot identity. This block contains the
-          GS Agentic Manager-specific fields to verify in Developer Portal or merge into
+          {" "}{CLIENT_BRAND_NAME}-specific fields to verify in Developer Portal or merge into
           a complete Teams app manifest. It is not a complete app package;
           Developer Portal supplies the remaining required metadata and packages
           the manifest with your app icons.
         </p>
         <p className="text-sm text-muted-foreground">
-          GS Agentic Manager does not use Teams single sign-on in this release. The
+          {CLIENT_BRAND_NAME} does not use Teams single sign-on in this release. The
           copied <code>webApplicationInfo</code> entry only associates the RSC
           permissions with the same Entra Application ID. Its nonempty resource
           is an RSC placeholder; you do not need to register an Entra
@@ -1244,7 +1245,7 @@ settings:
         <p className="text-sm text-muted-foreground">
           The two application RSC permissions let the bot receive every message,
           without an @mention, in each team or group chat where it is installed.
-          GS Agentic Manager retains and acts only on messages admitted by your GS Agentic Manager
+          {" "}{CLIENT_BRAND_NAME} retains and acts only on messages admitted by your {CLIENT_BRAND_NAME}{" "}
           reach and access rules. Make this provider access clear in the app
           description shown to installers.
         </p>
@@ -1257,7 +1258,7 @@ settings:
         </p>
         {!endpoint.setup?.messagingEndpoint && (
           <p className="text-sm text-destructive">
-            Configure a public HTTPS URL for this GS Agentic Manager instance before
+            Configure a public HTTPS URL for this {CLIENT_BRAND_NAME} instance before
             connecting Microsoft Teams.
           </p>
         )}
@@ -1293,7 +1294,7 @@ settings:
           <p className="mt-1 text-sm text-muted-foreground">
             {repairing
               ? "Reconnect verifies this same App and installation, then updates its webhook URL, secret, and secure delivery settings. It does not reinstall the App or change repository access. Leave App ID and private key blank to reuse saved credentials. Keep Webhooks · Active enabled in GitHub; send a test conversation after reconnecting."
-              : "Configure its webhook and permissions, then verify the App with GS Agentic Manager."}
+              : `Configure its webhook and permissions, then verify the App with ${CLIENT_BRAND_NAME}.`}
           </p>
         </div>
         {!repairing && (
@@ -1301,11 +1302,11 @@ settings:
             <li>
               Under the target user or organization, create a new GitHub App.
               Give it a globally unique name (34 characters or fewer), use the
-              GS Agentic Manager homepage URL below, and leave user authorization off.
+              {" "}{CLIENT_BRAND_NAME} homepage URL below, and leave user authorization off.
             </li>
             <li>
-              Keep <strong>Webhooks · Active</strong> on. Enter the GS Agentic Manager
-              webhook URL and the GS Agentic Manager-generated webhook secret below, and
+              Keep <strong>Webhooks · Active</strong> on. Enter the {CLIENT_BRAND_NAME}{" "}
+              webhook URL and the {CLIENT_BRAND_NAME}-generated webhook secret below, and
               keep <strong>Enable SSL verification</strong> selected.
             </li>
             <li>
@@ -1331,10 +1332,10 @@ settings:
           </ol>
         )}
         {endpointValue(
-          "GS Agentic Manager homepage URL",
+          `${CLIENT_BRAND_NAME} homepage URL`,
           publicOrigin(endpoint.setup?.webhookUrl),
         )}
-        {endpointValue("GS Agentic Manager webhook URL", endpoint.setup?.webhookUrl)}
+        {endpointValue(`${CLIENT_BRAND_NAME} webhook URL`, endpoint.setup?.webhookUrl)}
         <Button
           variant="outline"
           onClick={() =>
@@ -1464,14 +1465,14 @@ settings:
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                Copy this value now. GS Agentic Manager will not show it again.
+                Copy this value now. {CLIENT_BRAND_NAME} will not show it again.
               </p>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
               {endpoint.setup?.webhookSecretConfigured
                 ? "A webhook secret is configured and cannot be shown again."
-                : "Generate the secret in GS Agentic Manager, then paste it into the GitHub App."}
+                : `Generate the secret in ${CLIENT_BRAND_NAME}, then paste it into the GitHub App.`}
             </p>
           )}
           <div>
@@ -1508,7 +1509,7 @@ settings:
         </div>
         {!endpoint.setup?.webhookUrl && (
           <p className="text-sm text-destructive">
-            Configure a public HTTPS URL for this GS Agentic Manager instance before
+            Configure a public HTTPS URL for this {CLIENT_BRAND_NAME} instance before
             connecting GitHub.
           </p>
         )}
@@ -1537,7 +1538,7 @@ settings:
         <div>
           <h1 className="text-xl font-bold">Verify Slack connection</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Slack needs to confirm that it can reach your GS Agentic Manager instance.
+            Slack needs to confirm that it can reach your {CLIENT_BRAND_NAME} instance.
           </p>
         </div>
         <ol className="list-decimal space-y-2 pl-5 text-sm">
@@ -1561,7 +1562,7 @@ settings:
           <summary className="cursor-pointer text-muted-foreground">Troubleshooting</summary>
           <div className="mt-3 space-y-3">
             <p className="text-muted-foreground">If the Request URL is missing or different, paste this URL into Event Subscriptions. If verification fails, check that your public HTTPS server is reachable and your Signing Secret is correct.</p>
-            {endpointValue("GS Agentic Manager webhook URL", endpoint.setup?.webhookUrl)}
+            {endpointValue(`${CLIENT_BRAND_NAME} webhook URL`, endpoint.setup?.webhookUrl)}
           </div>
         </details>
         <div className="flex items-center justify-between gap-3">
@@ -1584,7 +1585,7 @@ settings:
           <div className="space-y-1">
             <p className="text-sm font-semibold">Public HTTPS URL required</p>
             <p className="text-sm">
-              Slack needs a public HTTPS URL to send messages to GS Agentic Manager.
+              Slack needs a public HTTPS URL to send messages to {CLIENT_BRAND_NAME}.
               Configure one for this instance before creating or connecting your Slack app.
             </p>
             <a
@@ -1885,7 +1886,7 @@ function TryStep({
             ? {
                 tone: "warning" as const,
                 title: "Link the account you’re testing",
-                body: `An observed external account is unlinked, and isolated guest work is off, so it cannot safely start ${agentName}. Link the account in Access, then ${freshConversationInstruction}; GS Agentic Manager does not replay the refused request.`,
+                body: `An observed external account is unlinked, and isolated guest work is off, so it cannot safely start ${agentName}. Link the account in Access, then ${freshConversationInstruction}; ${CLIENT_BRAND_NAME} does not replay the refused request.`,
               }
             : {
                 tone: "info" as const,
@@ -1905,7 +1906,7 @@ function TryStep({
   const instructions =
     provider === "imessage-photon" ? [
       photonAllocation === "shared" ? "In your Photon project, enroll your sender in Users and find its assigned number in Get started. Send a fresh message to that number from Apple Messages." : `Open Apple Messages and send a fresh message to ${botUsername ?? botLabel ?? "the dedicated number"}.`,
-      "Link the discovered sender to a GS Agentic Manager person in Access, then send a fresh request.",
+      `Link the discovered sender to a ${CLIENT_BRAND_NAME} person in Access, then send a fresh request.`,
       "Wait for the agent’s actual reply. Setup completes after that reply is delivered.",
       ...(photonAllocation === "shared" ? ["This Pro-compatible channel supports DMs only. Group messages cannot start work."] : ["For a group: add the number in Messages, send a message, enable the discovered group in Settings, then send a fresh request."]),
     ] : provider === "discord"

@@ -31,6 +31,7 @@ import { AgentCharacter } from "./components/AgentCharacter";
 import { SleepingZs } from "./components/onboarding/SleepingZs";
 import { Stepper } from "./components/onboarding/Stepper";
 import "./index.css";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 /**
  * Backend-free walkthrough of the connect step's sign-in, deployed so the flow
@@ -312,7 +313,7 @@ function ConnectFlowPreview({
             lede={
               done
                 ? "The step advances straight to Review — there is no success screen."
-                : "GS Agentic Manager works with your existing subscription or API keys."
+                : `${CLIENT_BRAND_NAME} works with your existing subscription or API keys.`
             }
           />
         </div>
