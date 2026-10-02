@@ -2345,7 +2345,9 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
           >
           <ThreadComponent
             key={conversationMode ? draftKey : issueId}
-            {...(!classicTaskInterfaceEnabled ? { creationActivity: resolvedActivity } : {})}
+            {...(!classicTaskInterfaceEnabled
+              ? { creationActivity: resolvedActivity, initialCommentsPending: commentsInitialLoading }
+              : {})}
             onOpenSkill={onOpenSkill}
             initialHistoryPending={!!issueId && (
               initialHistoryPending ||
