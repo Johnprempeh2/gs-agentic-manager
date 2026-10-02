@@ -14,6 +14,15 @@ import {
   resolveNativeRunnerRequirement,
 } from "./dev-runner-native-binary.mjs";
 import { applyDevRunnerOptions } from "./dev-runner-options.ts";
+import {
+  SERVER_TREE_STOP_TIMEOUT_MS,
+  serverChildUsesProcessGroup,
+  signalServerProcessTreeOnExit,
+  stopServerProcessTree,
+  type ServerChildExit,
+  type ServerProcessTree,
+  type StopServerProcessTreeResult,
+} from "./dev-runner-process.ts";
 import { collectWatchedSnapshot as collectDevServerWatchedSnapshot, diffSnapshots } from "./dev-runner-snapshot.mjs";
 import { createDevServiceIdentity, repoRoot } from "./dev-service-profile.ts";
 import { bootstrapDevRunnerWorktreeEnv, shouldBlockDevRunnerForPendingSeed } from "../server/src/dev-runner-worktree.ts";
@@ -65,7 +74,7 @@ if (shouldBlockDevRunnerForPendingSeed(repoRoot, dataDir)) {
 
 const scanIntervalMs = 1500;
 const autoRestartPollIntervalMs = 2500;
-const gracefulShutdownTimeoutMs = 10_000;
+const gracefulShutdownTimeoutMs = SERVER_TREE_STOP_TIMEOUT_MS;
 const changedPathSampleLimit = 5;
 const devServerStatusFilePath = path.join(repoRoot, ".gsam", "dev-server-status.json");
 const devServerRestartRequestFilePath = path.join(repoRoot, ".gsam", "dev-server-restart-request.json");
@@ -256,7 +265,14 @@ let restartInFlight = false;
 let shuttingDown = false;
 let childExitWasExpected = false;
 let child: ReturnType<typeof spawn> | null = null;
-let childExitPromise: Promise<{ code: number; signal: NodeJS.Signals | null }> | null = null;
+let childExitPromise: Promise<ServerChildExit> | null = null;
+// The server child's whole process tree (see dev-runner-process.ts). It stays
+// set after the head exits until the runner knows the rest of the tree is gone.
+let serverTree: ServerProcessTree | null = null;
+let serverTreeStop: {
+  tree: ServerProcessTree;
+  promise: Promise<StopServerProcessTreeResult>;
+} | null = null;
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let autoRestartTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -300,7 +316,14 @@ function exitForSignal(signal: NodeJS.Signals) {
   if (signal === "SIGTERM") {
     process.exit(143);
   }
+  if (signal === "SIGHUP") {
+    process.exit(129);
+  }
   process.exit(1);
+}
+
+function logServerTree(message: string) {
+  process.stderr.write(`[paperclip] ${message}\n`);
 }
 
 function collectWatchedSnapshot() {
@@ -682,20 +705,32 @@ async function waitForChildExit() {
   return await childExitPromise;
 }
 
-async function stopChildForRestart() {
-  if (!child) return { code: 0, signal: null };
+// One stop per tree: a shutdown signal that arrives while a restart is already
+// stopping the old server waits for that stop instead of signalling again.
+function stopServerTree(tree: ServerProcessTree) {
+  if (serverTreeStop?.tree === tree) return serverTreeStop.promise;
+  const promise = stopServerProcessTree(tree, {
+    signal: "SIGTERM",
+    timeoutMs: gracefulShutdownTimeoutMs,
+    log: logServerTree,
+  });
+  serverTreeStop = { tree, promise };
+  return promise;
+}
+
+// Resolves only when the whole old server tree has gone: the next server must
+// not start while the old one still holds its port, its embedded PostgreSQL or
+// an unwritten hot-restart shutdown snapshot.
+async function stopChildForRestart(): Promise<ServerChildExit> {
+  const tree = serverTree;
+  if (!child || !tree) return { code: 0, signal: null };
   childExitWasExpected = true;
-  child.kill("SIGTERM");
-  const killTimer = setTimeout(() => {
-    if (child) {
-      child.kill("SIGKILL");
-    }
-  }, gracefulShutdownTimeoutMs);
-  try {
-    return await waitForChildExit();
-  } finally {
-    clearTimeout(killTimer);
-  }
+  const result = await stopServerTree(tree);
+  if (serverTree === tree) serverTree = null;
+  console.log(
+    `[paperclip] old server stopped for restart (${result.outcome}, ${(result.elapsedMs / 1000).toFixed(1)}s)`,
+  );
+  return result.exit ?? { code: 0, signal: null };
 }
 
 async function startServerChild() {
@@ -703,10 +738,13 @@ async function startServerChild() {
   await buildPluginSdk();
 
   const serverScript = mode === "watch" ? "dev:watch" : "dev";
+  // Its own process group on POSIX, so stopping it can reach every process of
+  // the server tree (see dev-runner-process.ts).
+  const detached = serverChildUsesProcessGroup();
   child = spawn(
     pnpmBin,
     ["--filter", "@greatstone/server", serverScript, ...forwardedArgs],
-    { stdio: "inherit", env, shell: process.platform === "win32" },
+    { stdio: "inherit", env, shell: process.platform === "win32", detached },
   );
 
   childExitPromise = new Promise((resolve, reject) => {
@@ -736,6 +774,9 @@ async function startServerChild() {
       process.exit(code ?? 0);
     });
   });
+  serverTree = child.pid
+    ? { pid: child.pid, processGroupId: detached ? child.pid : null, exited: childExitPromise }
+    : null;
 
   await markChildAsCurrent();
 }
@@ -802,6 +843,8 @@ async function maybeAutoRestartChild() {
     // child and let the next poll retry the restart.
     if (!migrationsReady) return;
     await stopChildForRestart();
+    // A shutdown signal that arrived during the stop owns the exit now.
+    if (shuttingDown) return;
     const restartRequestConsumed = manualRestartRequest
       ? removeDevServerRestartRequest(
         manualRestartRequest.requestId
@@ -856,18 +899,29 @@ function clearDevIntervals() {
 async function shutdown(signal: NodeJS.Signals) {
   if (shuttingDown) return;
   shuttingDown = true;
+  // Ask the server to stop before tidying up, so it is already stopping if
+  // something kills this supervisor in the meantime. The server tree no longer
+  // shares the terminal's process group, so this is the only way a Ctrl-C or a
+  // hangup reaches it. SIGTERM is what its coordinated shutdown is built around.
+  const tree = serverTree;
+  const stopInProgress = tree !== null && serverTreeStop?.tree === tree;
+  if (tree && child) childExitWasExpected = true;
+  const stopping = tree && (child || stopInProgress) ? stopServerTree(tree) : null;
   clearDevIntervals();
   clearDevServerStatus();
   await removeLocalServiceRegistryRecord(devService.serviceKey);
 
-  if (!child) {
+  if (!stopping) {
     exitForSignal(signal);
     return;
   }
 
-  childExitWasExpected = true;
-  child.kill(signal);
-  const exit = await waitForChildExit();
+  const { exit } = await stopping;
+  if (serverTree === tree) serverTree = null;
+  if (!exit) {
+    exitForSignal(signal);
+    return;
+  }
   if (exit.signal) {
     exitForSignal(exit.signal);
     return;
@@ -876,9 +930,20 @@ async function shutdown(signal: NodeJS.Signals) {
 }
 
 // Whatever ends the supervisor, do not leave a status file that tells the
-// server a supervisor is still listening (GRE-166).
+// server a supervisor is still listening (GRE-166), and do not leave the server
+// tree running in its own process group with nobody supervising it (an
+// uncaught error, a failed restart, or a server that exited and left its
+// embedded PostgreSQL behind).
 process.on("exit", () => {
   clearDevServerStatus();
+  const tree = serverTree;
+  if (!tree) return;
+  const signalled = signalServerProcessTreeOnExit(tree, { headRunning: child !== null });
+  if (signalled === "head") {
+    logServerTree(`dev runner exiting; sent SIGTERM to the server (pid ${tree.pid})`);
+  } else if (signalled === "group") {
+    logServerTree(`dev runner exiting; sent SIGTERM to what is left of process group ${tree.processGroupId}`);
+  }
 });
 
 process.on("SIGINT", () => {
@@ -886,6 +951,11 @@ process.on("SIGINT", () => {
 });
 process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
+});
+// Closing the terminal used to hang up the server too, because it shared the
+// terminal's process group. It now has its own, so stop it on purpose.
+process.on("SIGHUP", () => {
+  void shutdown("SIGHUP");
 });
 
 // The managed runtime readiness window is tight, so reuse a fresh bundle
@@ -907,9 +977,13 @@ installDevIntervals();
 
 if (mode === "watch") {
   const exit = await waitForChildExit();
-  await removeLocalServiceRegistryRecord(devService.serviceKey);
-  if (exit.signal) {
-    exitForSignal(exit.signal);
+  // Once a signal started shutdown(), it owns the exit: it is still waiting for
+  // the rest of the server tree after the head process exits.
+  if (!shuttingDown) {
+    await removeLocalServiceRegistryRecord(devService.serviceKey);
+    if (exit.signal) {
+      exitForSignal(exit.signal);
+    }
+    process.exit(exit.code ?? 0);
   }
-  process.exit(exit.code ?? 0);
 }
