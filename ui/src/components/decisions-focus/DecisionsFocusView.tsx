@@ -154,8 +154,8 @@ export function DecisionsFocusView({
   const current = queue.currentId ? seenCards.get(queue.currentId) ?? null : null;
   const questionItem = current ? decisionCardQuestionItem(current) : null;
   const showQuestion = questionItem !== null && !closedQuestionIds.has(questionItem.id);
-  // The list card repeats the question, so it only follows when the card holds
-  // other work too (GRE-363).
+  // The card's other work (a blocker, a recovery) goes inside the question card,
+  // without the question again: one issue is one card (GRE-363, GRE-431).
   const hasOtherWork = !!current && !!questionItem && current.items.some((item) => item.id !== questionItem.id);
 
   // A question answered on a card with nothing else to do finishes the card.
@@ -239,20 +239,19 @@ export function DecisionsFocusView({
       )}
 
       {current && showQuestion && questionItem ? (
-        <div className="space-y-3">
-          <FocusQuestionCard
-            key={questionItem.id}
-            item={questionItem}
-            companyId={companyId}
-            agentMap={agentMap}
-            currentUserId={currentUserId}
-            prefs={prefs}
-            onPrefsChange={onPrefsChange}
-            onAnswered={() => finishQuestion(current.id, questionItem.id, "answered")}
-            onGone={() => finishQuestion(current.id, questionItem.id, "gone")}
-            onSkip={handleSkip}
-            onStep={handleStep}
-          />
+        <FocusQuestionCard
+          key={questionItem.id}
+          item={questionItem}
+          companyId={companyId}
+          agentMap={agentMap}
+          currentUserId={currentUserId}
+          prefs={prefs}
+          onPrefsChange={onPrefsChange}
+          onAnswered={() => finishQuestion(current.id, questionItem.id, "answered")}
+          onGone={() => finishQuestion(current.id, questionItem.id, "gone")}
+          onSkip={handleSkip}
+          onStep={handleStep}
+        >
           {hasOtherWork && (
             <DecisionFeedCard
               key={current.id}
@@ -262,11 +261,11 @@ export function DecisionsFocusView({
               agentMap={agentMap}
               currentUserId={currentUserId}
               hideInlineResolver
+              embedded
               onActed={() => handleActed(current.id)}
-              className="mx-auto max-w-3xl"
             />
           )}
-        </div>
+        </FocusQuestionCard>
       ) : current ? (
         <div className="mx-auto max-w-3xl space-y-3">
           <DecisionFeedCard

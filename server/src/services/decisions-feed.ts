@@ -81,10 +81,22 @@ function readString(record: Record<string, unknown> | undefined, key: string) {
 }
 
 /** The task a row is about. Issue-subject rows (reviews, blockers) are about their subject. */
-function taskIdOf(item: AttentionItem) {
+export function taskIdOf(item: AttentionItem) {
   if (item.subject.kind === "issue") return item.subject.id;
   if (item.relatedIssue) return item.relatedIssue.id;
-  return readString(item.subject.metadata, "issueId") ?? readString(item.subject.metadata, "sourceIssueId");
+  return readString(item.subject.metadata, "issueId")
+    ?? readString(item.subject.metadata, "sourceIssueId")
+    ?? readString(item.subject.metadata, "originIssueId");
+}
+
+/**
+ * A stalled-blocker row is about blocker Y, but the board sees it because
+ * blocked task X waits on it. Returns X when the row names a different task.
+ */
+function blockedTaskIdOf(item: AttentionItem) {
+  if (item.sourceKind !== "blocker_attention" || item.subject.kind !== "issue") return null;
+  const blockedId = item.relatedIssue?.id;
+  return blockedId && blockedId !== item.subject.id ? blockedId : null;
 }
 
 function clip(text: string) {
@@ -313,13 +325,30 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         sharedTasks.set(key, (sharedTasks.get(key) ?? new Set()).add(taskId));
       }
 
+      // One task, one card (GRE-431): a stalled-blocker row joins the card of
+      // the task it blocks when that task already has its own open row (a
+      // question, an approval), instead of opening a second card about it.
+      const anchoredTasks = new Set<string>();
+      const sharedKeyOf = (item: AttentionItem) => {
+        const key = sharedConnectionKey(item);
+        return key && isOpenRow(item) && (sharedTasks.get(key)?.size ?? 0) > 1 ? key : null;
+      };
+      for (const item of rawItems) {
+        if (blockedTaskIdOf(item) || sharedKeyOf(item) || !isOpenRow(item)) continue;
+        const taskId = taskIdOf(item);
+        if (taskId) anchoredTasks.add(taskId);
+      }
+      const groupTaskIdOf = (item: AttentionItem) => {
+        const blockedId = blockedTaskIdOf(item);
+        return blockedId && anchoredTasks.has(blockedId) ? blockedId : taskIdOf(item);
+      };
+
       type Group = { key: string; taskId: string | null; items: AttentionItem[]; cleared: AttentionItem[]; aiRepairedAt: number | null; shared?: SharedConnection };
       const groups = new Map<string, Group>();
       let staleCleared = 0;
       for (const item of rawItems) {
-        const sharedKey = sharedConnectionKey(item);
-        const shared = sharedKey && isOpenRow(item) && (sharedTasks.get(sharedKey)?.size ?? 0) > 1 ? sharedKey : null;
-        const taskId = shared ? null : taskIdOf(item);
+        const shared = sharedKeyOf(item);
+        const taskId = shared ? null : groupTaskIdOf(item);
         const key = shared ?? (taskId ? `task:${taskId}` : `item:${item.dedupKey}`);
         const group = groups.get(key) ?? { key, taskId, items: [], cleared: [], aiRepairedAt: null };
         if (shared && !group.shared) {
@@ -498,7 +527,12 @@ function buildCard(input: {
 
   // Who is waiting: the owner of the task. For a stalled blocker, the owner of
   // the blocked task behind it waits too, but the blocker's owner acts.
-  const blockedItem = byKind("blocked");
+  // A stalled blocker that joined this card is about another task: its own
+  // actions target that blocker, and its counts are not this task's.
+  const isForeignBlocker = (item: AttentionItem) =>
+    cardKind(item) === "blocked" && task !== null && item.subject.id !== task.id;
+  const foreignBlocker = items.find(isForeignBlocker) ?? null;
+  const blockedItem = items.find((item) => cardKind(item) === "blocked" && !isForeignBlocker(item)) ?? null;
   const blockedTaskAgentId = readString(blockedItem?.relatedIssue?.metadata, "assigneeAgentId");
   const waiting = sharedAgent
     ?? agentRef(task?.assigneeAgentId)
@@ -561,9 +595,15 @@ function buildCard(input: {
   if (shared) {
     nextStepByKind.connection = `${waiting?.name ?? "The agent"} stays stopped on these tasks until you answer. Connect ${shared.serviceName} once and each task continues one time.`;
   }
-  const nextStep = clarity && !clarity.answer
+  const blockerLabel = foreignBlocker
+    ? foreignBlocker.subject.identifier ?? foreignBlocker.subject.title ?? "Its blocker"
+    : null;
+  const blockerNote = blockerLabel
+    ? ` It is also blocked by ${blockerLabel}, which has no live next step.`
+    : "";
+  const nextStep = (clarity && !clarity.answer
     ? `Waiting for ${clarity.agent?.name ?? "the agent"} to answer your question. ${nextStepByKind[kind]}`
-    : nextStepByKind[kind];
+    : nextStepByKind[kind]) + blockerNote;
 
   const actions: DecisionCardAction[] = [];
   // Native decisions first: the card's own question or approval.
@@ -580,6 +620,26 @@ function buildCard(input: {
         ? linkAction("reconnect", "Connect", `Open the request and connect ${shared.serviceName}. Every waiting task continues.`, item.subject.href)
         : linkAction("reconnect", "Reconnect", "Open the AI connection and reconnect it.", item.subject.href));
     }
+  }
+
+  // The blocker's own way forward, on the blocked task's card.
+  if (foreignBlocker && blockerLabel) {
+    const blockerPath = `/api/issues/${foreignBlocker.subject.id}`;
+    actions.push(requestAction(
+      "reassign_blocker",
+      `Reassign ${blockerLabel}`,
+      `Give the blocker ${blockerLabel} to another agent. The new owner is woken.`,
+      [request("PATCH", blockerPath, { assigneeUserId: null })],
+      { field: "assigneeAgentId", type: "agent", label: "New owner", required: true },
+    ));
+    actions.push(requestAction(
+      "instruct_blocker",
+      `Instruct ${blockerLabel}`,
+      `Post an instruction on the blocker ${blockerLabel} and wake its owner.`,
+      [request("POST", `${blockerPath}/comments`,
+        isExplicitResumeCapableStatus(foreignBlocker.subject.status) ? { resume: true } : {})],
+      { field: "body", type: "text", label: "Instruction", required: true },
+    ));
   }
 
   if (task && taskOpen) {

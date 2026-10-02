@@ -11,6 +11,7 @@ import {
   companyMemberships,
   connectionGrants,
   createDb,
+  decisions,
   heartbeatRunEvents,
   heartbeatRuns,
   inboxDismissals,
@@ -46,7 +47,7 @@ const { issueRoutes } = await import("../routes/issues.js");
 const { inboxDismissalRoutes } = await import("../routes/inbox-dismissals.js");
 const { decisionsFeedRoutes } = await import("../routes/decisions-feed.js");
 const { sidebarBadgeRoutes } = await import("../routes/sidebar-badges.js");
-const { decisionsFeedService } = await import("../services/decisions-feed.js");
+const { decisionsFeedService, taskIdOf } = await import("../services/decisions-feed.js");
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -73,6 +74,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
   afterEach(async () => {
     wakeup.mockClear();
     await db.delete(inboxDismissals);
+    await db.delete(decisions);
     await db.delete(issueComments);
     await db.delete(issueThreadInteractions);
     await db.delete(issueRecoveryActions);
@@ -392,6 +394,120 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     await run(app(seeded.companyId), action(card, "retry"));
     const [retried] = await db.select().from(issues).where(eq(issues.id, seeded.gre138));
     expect(retried?.status).toBe("todo");
+  });
+
+  /** X is blocked by Y; Y has no owner, so nothing moves without the board. */
+  async function seedBlockedPair() {
+    const companyId = randomUUID();
+    const workerId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: "GRE", requireBoardApprovalForNewAgents: false });
+    await db.insert(agents).values({
+      id: workerId, companyId, name: "Worker", role: "engineer", status: "idle", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    });
+    await db.insert(companyMemberships).values({
+      companyId, principalType: "user", principalId: USER_ID, status: "active", membershipRole: "owner",
+    });
+    const blocker = randomUUID();
+    const blocked = randomUUID();
+    await db.insert(issues).values([
+      { id: blocker, companyId, identifier: "GRE-158", issueNumber: 158, title: "Pick a ledger owner", status: "todo", priority: "high" },
+      { id: blocked, companyId, identifier: "GRE-159", issueNumber: 159, title: "Ledger export", status: "blocked", priority: "high", assigneeAgentId: workerId },
+    ]);
+    await db.insert(issueRelations).values({ companyId, issueId: blocker, relatedIssueId: blocked, type: "blocks" });
+    return { companyId, workerId, blocker, blocked };
+  }
+
+  async function addOpenDecision(seeded: { companyId: string; workerId: string }, issueId: string) {
+    const runId = randomUUID();
+    await db.insert(heartbeatRuns).values({ id: runId, companyId: seeded.companyId, agentId: seeded.workerId, status: "succeeded", contextSnapshot: { issueId } });
+    const decisionId = randomUUID();
+    await db.insert(decisions).values({
+      id: decisionId,
+      companyId: seeded.companyId,
+      originAgentId: seeded.workerId,
+      originIssueId: issueId,
+      originRunId: runId,
+      title: "Which ledger format?",
+      body: "CSV or JSON.",
+      options: [],
+      status: "open",
+      expiresAt: new Date(Date.now() + 24 * HOUR),
+      signedSpec: "test",
+      targetSnapshots: {},
+    });
+    return decisionId;
+  }
+
+  async function expectBadge(companyId: string, count: number) {
+    const testApp = app(companyId);
+    expect((await request(testApp).get(`/api/companies/${companyId}/decisions-feed/count`).expect(200)).body.count).toBe(count);
+    expect((await request(testApp).get(`/api/companies/${companyId}/sidebar-badges`).expect(200)).body.decisions).toBe(count);
+  }
+
+  it("shows one card for a blocked task with its own question and a stalled blocker (GRE-431)", async () => {
+    const seeded = await seedBlockedPair();
+    await db.insert(issueThreadInteractions).values({
+      companyId: seeded.companyId,
+      issueId: seeded.blocked,
+      kind: "ask_user_questions",
+      status: "pending",
+      title: "Which month should the ledger export first?",
+      createdByAgentId: seeded.workerId,
+      payload: { version: 1, questions: [{ id: "month", prompt: "Which month?", selectionMode: "single", options: [{ id: "sep", label: "September" }] }] },
+    });
+
+    const feed = await build(seeded.companyId);
+
+    // Both rows are about GRE-159: its question, and the blocker it waits on.
+    expect(feed.cards).toHaveLength(1);
+    expect(feed.count).toBe(1);
+    const card = feed.cards[0]!;
+    expect(card).toMatchObject({ id: `task:${seeded.blocked}`, kind: "question", kinds: ["question", "blocked"], title: "GRE-159 Ledger export" });
+    expect(card.items.map((item) => item.sourceKind).sort()).toEqual(["blocker_attention", "issue_thread_interaction"]);
+    expect(card.nextStep).toContain("blocked by GRE-158");
+    expect(card.actions.map((candidate) => candidate.id)).toEqual(expect.arrayContaining(["reassign_blocker", "instruct_blocker", "reassign", "instruct", "cancel_task"]));
+    // The blocker's actions act on the blocker; the task's own act on the task.
+    expect(action(card, "reassign_blocker").requests[0]!.path).toBe(`/api/issues/${seeded.blocker}`);
+    expect(action(card, "instruct_blocker").requests[0]!.path).toBe(`/api/issues/${seeded.blocker}/comments`);
+    expect(action(card, "reassign").requests[0]!.path).toBe(`/api/issues/${seeded.blocked}`);
+    await expectBadge(seeded.companyId, 1);
+
+    await run(app(seeded.companyId), action(card, "reassign_blocker"), seeded.workerId);
+    const [reassigned] = await db.select().from(issues).where(eq(issues.id, seeded.blocker));
+    expect(reassigned?.assigneeAgentId).toBe(seeded.workerId);
+  });
+
+  it("keeps a stalled blocker on its own card when the blocked task has nothing else", async () => {
+    const seeded = await seedBlockedPair();
+
+    const feed = await build(seeded.companyId);
+
+    expect(feed.cards.map((card) => card.id)).toEqual([`task:${seeded.blocker}`]);
+    expect(feed.cards[0]!.actions.map((candidate) => candidate.id)).not.toContain("reassign_blocker");
+  });
+
+  it("groups a decision row into its origin issue's card, even without a related issue (GRE-431)", async () => {
+    const seeded = await seedBlockedPair();
+    await addOpenDecision(seeded, seeded.blocked);
+
+    const feed = await build(seeded.companyId);
+
+    expect(feed.cards).toHaveLength(1);
+    expect(feed.cards[0]).toMatchObject({ id: `task:${seeded.blocked}`, kinds: ["blocked", "decision"] });
+    const decisionRow = feed.cards[0]!.items.find((item) => item.sourceKind === "decision")!;
+    expect(taskIdOf({ ...decisionRow, relatedIssue: null })).toBe(seeded.blocked);
+  });
+
+  it("shows one card for a blocker that waits on an open decision, with no extra blocker card (GRE-431)", async () => {
+    const seeded = await seedBlockedPair();
+    await addOpenDecision(seeded, seeded.blocker);
+
+    const feed = await build(seeded.companyId);
+
+    // The open decision is a live wait on the board, so GRE-158 is not a stalled blocker.
+    expect(feed.cards).toHaveLength(1);
+    expect(feed.cards[0]).toMatchObject({ id: `task:${seeded.blocker}`, kind: "decision", kinds: ["decision"] });
+    await expectBadge(seeded.companyId, 1);
   });
 
   it("runs each action against the real endpoints", async () => {

@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DecisionCard } from "@greatstone/shared";
 import { defaultFocusPrefs, type FocusPrefs } from "../../lib/focus-prefs";
-import { blockedCard, fixtureAgents, questionCard } from "../../fixtures/decisionsFeedFixtures";
+import { blockedCard, fixtureAgents, questionCard, questionWithBlockerCard } from "../../fixtures/decisionsFeedFixtures";
 
 const state = vi.hoisted(() => ({
   interactionsByIssue: new Map<string, unknown[]>(),
@@ -257,11 +257,19 @@ describe("DecisionsFocusView", () => {
     expect(container.querySelector("[data-decision-card]")).toBeNull();
   });
 
-  it("keeps the card's other work under a question on a merged card", () => {
-    const merged = questionCard("int-1", "issue-44", "GRE-44");
-    merged.items = [...merged.items, { ...merged.items[0]!, id: "recovery-1", sourceKind: "recovery" } as never];
-    render([merged]);
-    expect(container.querySelector("[data-decision-card='task:issue-44']")).not.toBeNull();
+  it("shows one card for an issue with a question and other work, with every action inside it (GRE-431)", () => {
+    render([questionWithBlockerCard()]);
+    // One issue, one card: the question card holds the blocker's work too.
+    expect(container.querySelectorAll("article")).toHaveLength(1);
+    const card = container.querySelector("article")!;
+    expect(card.textContent).toContain("When a run is stuck, should I restart it?");
+    expect(card.querySelector("[data-decision-card='task:issue-44']")).not.toBeNull();
+    expect(card.textContent).toContain("It is also blocked by GRE-58");
+    // The question is answered once, not repeated under it.
+    expect(card.querySelectorAll("[role='radiogroup']")).toHaveLength(1);
+    for (const label of ["Submit & next", "Reassign GRE-58", "Instruct GRE-58", "Reassign", "Give an instruction", "Cancel the task", "Ask for clarity"]) {
+      expect(card.contains(button(label)), label).toBe(true);
+    }
   });
 
   it("drops a question answered elsewhere without submitting it", () => {
