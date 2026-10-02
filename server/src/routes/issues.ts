@@ -226,6 +226,7 @@ import {
 } from "../errors.js";
 import { privateJsonEtag } from "../middleware/private-json-etag.js";
 import { createRequestPromiseMemo } from "../lib/request-promise-memo.js";
+import { createConcurrencyLimiter } from "../lib/concurrency-limiter.js";
 import {
   assertBoard,
   assertCompanyAccess,
@@ -3523,6 +3524,16 @@ function logIssueListRequest(input: {
     );
   });
 }
+
+// A same-turn steering transaction keeps the issue, wake and run rows locked
+// while it waits (bounded) for the native runtime to acknowledge the message.
+// Cap how many may hold a pooled connection at once so that a slow or stuck
+// runtime cannot take over the pool. Waiters queue in memory, not on a
+// connection.
+export const QUEUED_STEERING_TRANSACTION_LIMIT = 2;
+const queuedSteeringTransactions = createConcurrencyLimiter(
+  QUEUED_STEERING_TRANSACTION_LIMIT,
+);
 
 export function issueRoutes(
   db: Db,
@@ -15875,9 +15886,25 @@ export function issueRoutes(
       let steeringDeliveryAttempted = false;
       let acknowledgedTurnId: string | null = null;
       let duplicate = false;
-      let queue: IssueQueuedCommentQueue;
+      // The response snapshot is built after the transaction ends. Building it
+      // can probe the native runtime for the steering disposition, and no
+      // runtime call may run while the issue, wake and run rows are locked
+      // beyond the bounded steering call itself.
+      let queueSnapshot: Pick<
+        Parameters<typeof buildQueuedCommentQueue>[0],
+        "activeRun" | "queueState"
+      >;
+      // A late provider acknowledgement settles the identity reservation on
+      // its own connection. Start that only after this transaction has
+      // committed or rolled back: while it is open it holds the issue row lock
+      // the reconciliation needs, and the callback would sit on a second
+      // pooled connection waiting for it.
+      let markSteeringTransactionSettled!: () => void;
+      const steeringTransactionSettled = new Promise<void>((resolve) => {
+        markSteeringTransactionSettled = resolve;
+      });
       try {
-        queue = await db.transaction(async (tx) => {
+        queueSnapshot = await queuedSteeringTransactions.run(() => db.transaction(async (tx) => {
           // A client can lose the successful response after the final queued
           // message cancels its wake. Lock the original queue and target run
           // first so that the persisted acknowledgement remains a durable
@@ -15943,12 +15970,9 @@ export function issueRoutes(
               typeof retryAcknowledgement.turnId === "string"
                 ? retryAcknowledgement.turnId
                 : null;
-            return buildQueuedCommentQueue({
-              executor: tx,
-              issue,
+            return {
               activeRun: retryRun.status === "running" ? retryRun : null,
-              actor,
-            });
+            };
           }
 
           const locked = await lockQueuedCommentState({
@@ -15977,13 +16001,10 @@ export function issueRoutes(
               typeof priorAcknowledgement.turnId === "string"
                 ? priorAcknowledgement.turnId
                 : null;
-            return buildQueuedCommentQueue({
-              executor: tx,
-              issue,
+            return {
               activeRun: locked.activeRun,
-              actor,
               queueState: locked.queueState,
-            });
+            };
           }
           assertQueueMutationTarget({
             queue: locked.queue,
@@ -16019,7 +16040,10 @@ export function issueRoutes(
               message: entry.comment.body,
               correlationId: commentId,
               onAcknowledged: steeringIdentity
-                ? () => reconcileSteeredIdentity(db, steeringIdentity)
+                ? () =>
+                    steeringTransactionSettled.then(() =>
+                      reconcileSteeredIdentity(db, steeringIdentity),
+                    )
                 : undefined,
             }));
           if (steeringIdentity)
@@ -16067,16 +16091,13 @@ export function issueRoutes(
               updatedAt: now,
             })
             .where(eq(heartbeatRuns.id, locked.activeRun.id));
-          return buildQueuedCommentQueue({
-            executor: tx,
-            issue,
+          return {
             activeRun: locked.activeRun,
-            actor,
             queueState: nextWake
-              ? { wake: nextWake, state: "deferred", queueRun: null }
+              ? { wake: nextWake, state: "deferred" as const, queueRun: null }
               : null,
-          });
-        });
+          };
+        }));
       } catch (error) {
         const uncertain =
           steeringDeliveryAttempted &&
@@ -16089,7 +16110,15 @@ export function issueRoutes(
           throw conflict(error.message, { code: error.code, retryable: true });
         }
         throw error;
+      } finally {
+        markSteeringTransactionSettled();
       }
+      const queue = await buildQueuedCommentQueue({
+        executor: db,
+        issue,
+        actor,
+        ...queueSnapshot,
+      });
       await logActivity(db, {
         companyId: issue.companyId,
         actorType: actor.actorType,
