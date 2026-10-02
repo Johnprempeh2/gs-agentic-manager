@@ -9903,12 +9903,13 @@ export function heartbeatService(
   }
 
   const wakeQueue = createWakeQueue(db, {
-    resolveResponsibleUserId: async (input) => {
+    // These three run inside the wake-queue release transaction: `executor`
+    // is that transaction, so every read below stays on its connection.
+    resolveResponsibleUserId: async (input, executor) => {
       // `input.issue` is the wake-queue module's own transaction-scoped
       // snapshot; using it here, instead of re-reading the issue through
-      // `getIssueExecutionContext`, keeps this read off a second connection
-      // while the module's transaction is open, and keeps it seeing the
-      // in-transaction issue status rather than a stale one.
+      // `getIssueExecutionContext`, keeps it seeing the in-transaction issue
+      // status rather than a stale one.
       return resolveResponsibleUserIdForRunSeed({
         companyId: input.companyId,
         contextSnapshot: input.contextSnapshot,
@@ -9924,25 +9925,30 @@ export function heartbeatService(
         source: input.source as WakeupOptions["source"],
         triggerDetail: input.triggerDetail as WakeupOptions["triggerDetail"],
         existingRunResponsibleUserId: input.existingRunResponsibleUserId,
+        executor,
       });
     },
-    getRoutineEnv: async (input) => {
+    getRoutineEnv: async (input, executor) => {
       // Same reason as `resolveResponsibleUserId` above: use the passed-in
       // transaction-scoped issue snapshot instead of reading the issue again.
-      return getRoutineEnvForExecutionIssue(input.companyId, input.issue);
+      return getRoutineEnvForExecutionIssue(input.companyId, input.issue, executor);
     },
-    resolveSessionBeforeForWakeup: async (input) => {
+    resolveSessionBeforeForWakeup: async (input, executor) => {
       // Scoped to this port only, so a wake-queue agent id can never resolve
       // a session against another company's agent row. The shared `getAgent`
       // helper below has no company predicate, so this reads the agent
       // directly with the company named in its own `WHERE` clause.
-      const agent = await db
+      const agent = await executor
         .select()
         .from(agents)
         .where(and(eq(agents.id, input.agentId), eq(agents.companyId, input.companyId)))
         .then((rows) => rows[0] ?? null);
       if (!agent) return null;
-      return resolveSessionBeforeForWakeup(await withAiAccessRoute(agent), input.taskKey);
+      return resolveSessionBeforeForWakeup(
+        await withAiAccessRoute(agent, executor),
+        input.taskKey,
+        executor,
+      );
     },
     // These four helpers stay in this file today; the wake-queue module
     // receives them here so it never imports this file, the service it is
@@ -10812,8 +10818,8 @@ export function heartbeatService(
   // The install-wide AI access route (GRE-139) decides the harness and account
   // type of every Claude/Codex agent. Runs, claims and session lookups all read
   // the agent through here, so they agree on the harness.
-  async function withAiAccessRoute<T extends typeof agents.$inferSelect>(agent: T): Promise<T> {
-    return applyAiAccessRoute(agent, readAiAccessRoute(await instanceSettings.getGeneral()));
+  async function withAiAccessRoute<T extends typeof agents.$inferSelect>(agent: T, executor: Db = db): Promise<T> {
+    return applyAiAccessRoute(agent, readAiAccessRoute(await instanceSettings.getGeneral({ db: executor })));
   }
 
   async function getAgent(agentId: string) {
@@ -11335,8 +11341,8 @@ export function heartbeatService(
     });
   }
 
-  async function getRuntimeState(agentId: string) {
-    return db
+  async function getRuntimeState(agentId: string, executor: Db = db) {
+    return executor
       .select()
       .from(agentRuntimeState)
       .where(eq(agentRuntimeState.agentId, agentId))
@@ -11373,8 +11379,9 @@ export function heartbeatService(
     agentId: string,
     adapterType: string,
     taskKey: string,
+    executor: Db = db,
   ) {
-    return db
+    return executor
       .select()
       .from(agentTaskSessions)
       .where(
@@ -12508,6 +12515,7 @@ export function heartbeatService(
   async function resolveSessionBeforeForWakeup(
     agent: typeof agents.$inferSelect,
     taskKey: string | null,
+    executor: Db = db,
   ) {
     if (taskKey) {
       const codec = getAdapterSessionCodec(agent.adapterType);
@@ -12516,6 +12524,7 @@ export function heartbeatService(
         agent.id,
         agent.adapterType,
         taskKey,
+        executor,
       );
       const parsedParams = normalizeSessionParams(
         codec.deserialize(existingTaskSession?.sessionParamsJson ?? null),
@@ -12527,7 +12536,7 @@ export function heartbeatService(
       );
     }
 
-    const runtimeForRun = await getRuntimeState(agent.id);
+    const runtimeForRun = await getRuntimeState(agent.id, executor);
     return runtimeForRun?.sessionId ?? null;
   }
 
