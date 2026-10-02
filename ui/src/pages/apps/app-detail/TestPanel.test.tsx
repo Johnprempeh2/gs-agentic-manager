@@ -13,6 +13,7 @@ const getTestAgentAccessMock = vi.hoisted(() => vi.fn());
 const runTestCallMock = vi.hoisted(() => vi.fn());
 const getTestCallStatusMock = vi.hoisted(() => vi.fn());
 const declineActionRequestMock = vi.hoisted(() => vi.fn());
+const checkAsAgentMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/tools", () => ({
   toolsApi: {
@@ -24,6 +25,7 @@ vi.mock("@/api/tools", () => ({
       getTestCallStatusMock(connectionId, actionRequestId),
     declineActionRequest: (companyId: string, actionRequestId: string) =>
       declineActionRequestMock(companyId, actionRequestId),
+    checkAsAgent: (connectionId: string, agentId: string) => checkAsAgentMock(connectionId, agentId),
   },
 }));
 
@@ -203,6 +205,7 @@ beforeEach(() => {
   runTestCallMock.mockReset();
   getTestCallStatusMock.mockReset();
   declineActionRequestMock.mockReset();
+  checkAsAgentMock.mockReset();
   listTestAgentsMock.mockResolvedValue({ agents: [agent()] });
   getTestAgentAccessMock.mockResolvedValue({ access: agent().effectiveAccess });
   // Default ask-first polls report the request still waiting on approval.
@@ -535,6 +538,56 @@ describe("TestPanel", () => {
 
     expect(container.textContent).toContain("This action is new and hasn't been turned on yet.");
     expect(runTestCallMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("TestPanel connection check (GRE-341)", () => {
+  function checkResult(overrides: Record<string, unknown> = {}) {
+    return {
+      ok: true,
+      reason: null,
+      code: null,
+      message: "The app answered with this agent's access.",
+      agentId: "agent-claude",
+      connectionId: "conn-1",
+      grantKind: "organization",
+      access: { toolCount: 3, allowedCount: 1, askFirstCount: 1, offCount: 1 },
+      checkedAt: "2026-10-02T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("checks as the selected agent and shows a pass without running an action", async () => {
+    checkAsAgentMock.mockResolvedValue(checkResult());
+    await act(() => renderPanel());
+    await flushReact();
+
+    await clickByText("Check connection as ClaudeCoder");
+
+    expect(checkAsAgentMock).toHaveBeenCalledWith("conn-1", "agent-claude");
+    expect(runTestCallMock).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="connection-check"]')?.textContent).toContain(
+      "Works. Google Sheets answered with ClaudeCoder's access.",
+    );
+  });
+
+  it("shows the failure reason in plain words", async () => {
+    checkAsAgentMock.mockResolvedValue(checkResult({
+      ok: false,
+      reason: "expired_token",
+      code: "oauth_reauthorization_required",
+      message: "Expired token: OAuth authorization expired. Reconnect this app to continue.",
+      grantKind: "user",
+    }));
+    await act(() => renderPanel());
+    await flushReact();
+
+    await clickByText("Check connection as ClaudeCoder");
+
+    const text = container.querySelector('[data-testid="connection-check"]')?.textContent ?? "";
+    expect(text).toContain("Expired token.");
+    expect(text).toContain("OAuth authorization expired. Reconnect this app to continue.");
+    expect(text).not.toContain("Expired token: ");
   });
 });
 
