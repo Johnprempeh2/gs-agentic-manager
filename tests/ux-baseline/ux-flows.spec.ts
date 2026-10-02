@@ -389,10 +389,14 @@ const FLOWS: Record<FlowId, (ctx: FlowContext) => Promise<void>> = {
 
   async "4-task-latest-result"({ page, rec, viewport, seed: seedData }) {
     await rec.click(nav(page, viewport).link(viewport === "desktop" ? /Agent tasks/ : /Tasks/));
-    const row = page.getByRole("link", { name: new RegExp(seedData.resultTask.title) }).first();
+    const chips = page.getByRole("group", { name: "Show tasks" });
+    // The dashboard links the same tasks (Open tasks, Recent runs), so look only
+    // inside the page once it holds the task list's chips (GRE-372).
+    const list = page.locator("#main-content").filter({ has: chips });
+    const row = list.getByRole("link", { name: new RegExp(seedData.resultTask.title) }).first();
     // Ready once the list has rows: the open task waiting on John is always in the default view.
-    await rec.step("tasks-open", page.getByRole("link", { name: new RegExp(seedData.needsMeTitle) }).first());
-    const doneChip = page.getByRole("group", { name: "Show tasks" }).getByRole("button", { name: "Done", exact: true });
+    await rec.step("tasks-open", list.getByRole("link", { name: new RegExp(seedData.needsMeTitle) }).first());
+    const doneChip = chips.getByRole("button", { name: "Done", exact: true });
     if ((await doneChip.getAttribute("aria-pressed")) !== "true") {
       // The list opens on Active, so a finished task is behind the Done filter.
       await rec.click(doneChip);
