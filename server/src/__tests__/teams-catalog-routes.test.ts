@@ -17,7 +17,13 @@ const mockTeamsCatalogService = vi.hoisted(() => ({
   listInstalledCatalogTeams: vi.fn(),
 }));
 
+const mockInstanceSettingsService = vi.hoisted(() => ({
+  getGeneral: vi.fn(),
+}));
+
 const mockCatalogModule = vi.hoisted(() => ({
+  catalogTeamMatchesFilter: (team: { tags: string[] }, filter?: string) =>
+    !filter || filter === "all" || team.tags.includes("greatstone"),
   listCatalogTeams: vi.fn(),
   getCatalogTeamOrThrow: vi.fn(),
   readCatalogTeamFile: vi.fn(),
@@ -28,6 +34,7 @@ function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
     accessService: () => mockAccessService,
     agentService: () => mockAgentService,
+    instanceSettingsService: () => mockInstanceSettingsService,
   }));
 
   vi.doMock("../services/teams-catalog.js", () => mockCatalogModule);
@@ -86,6 +93,7 @@ describe("teams catalog routes", () => {
     vi.resetModules();
     registerModuleMocks();
     vi.clearAllMocks();
+    mockInstanceSettingsService.getGeneral.mockResolvedValue({ teamCatalogFilter: "all" });
     mockAccessService.canUser.mockResolvedValue(true);
     mockAccessService.hasPermission.mockResolvedValue(false);
     mockAgentService.getById.mockResolvedValue({
@@ -315,5 +323,78 @@ describe("teams catalog routes", () => {
 
     expect(res.status, JSON.stringify(res.body)).toBe(403);
     expect(mockTeamsCatalogService.installCatalogTeam).not.toHaveBeenCalled();
+  });
+
+  describe("Greatstone-only catalogue filter (GRE-427)", () => {
+    const boardActor = {
+      type: "board",
+      userId: "local-board",
+      companyIds: [companyId],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    };
+
+    beforeEach(() => {
+      mockInstanceSettingsService.getGeneral.mockResolvedValue({ teamCatalogFilter: "greatstone" });
+    });
+
+    it("asks the catalogue for Greatstone teams only when the filter is on", async () => {
+      const app = await createApp(boardActor);
+
+      const list = await request(app).get("/api/teams/catalog?kind=optional");
+
+      expect(list.status, JSON.stringify(list.body)).toBe(200);
+      expect(mockCatalogModule.listCatalogTeams).toHaveBeenCalledWith({
+        kind: "optional",
+        filter: "greatstone",
+      });
+    });
+
+    it("lists every team when the filter is off", async () => {
+      mockInstanceSettingsService.getGeneral.mockResolvedValue({ teamCatalogFilter: "all" });
+      const app = await createApp(boardActor);
+
+      await request(app).get("/api/teams/catalog");
+
+      expect(mockCatalogModule.listCatalogTeams).toHaveBeenCalledWith({});
+    });
+
+    it("hides an upstream engineering team from detail, files, preview and install", async () => {
+      const app = await createApp(boardActor);
+
+      const detail = await request(app).get("/api/teams/catalog/product-engineering");
+      const file = await request(app).get("/api/teams/catalog/product-engineering/files?path=TEAM.md");
+      const preview = await request(app)
+        .post(`/api/companies/${companyId}/teams/catalog/product-engineering/preview`)
+        .send({});
+      const install = await request(app)
+        .post(`/api/companies/${companyId}/teams/catalog/product-engineering/install`)
+        .send({});
+
+      for (const res of [detail, file, preview, install]) {
+        expect(res.status, JSON.stringify(res.body)).toBe(404);
+      }
+      expect(mockCatalogModule.readCatalogTeamFile).not.toHaveBeenCalled();
+      expect(mockTeamsCatalogService.previewCatalogTeamImport).not.toHaveBeenCalled();
+      expect(mockTeamsCatalogService.installCatalogTeam).not.toHaveBeenCalled();
+    });
+
+    it("still installs a Greatstone team when the filter is on", async () => {
+      mockCatalogModule.getCatalogTeamOrThrow.mockReturnValue(
+        catalogTeam({ slug: "marketing-content", tags: ["greatstone", "marketing"] }),
+      );
+      const app = await createApp(boardActor);
+
+      const res = await request(app)
+        .post(`/api/companies/${companyId}/teams/catalog/marketing-content/install`)
+        .send({ targetManagerAgentId: "33333333-3333-4333-8333-333333333333" });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockTeamsCatalogService.installCatalogTeam).toHaveBeenCalledWith(
+        companyId,
+        "marketing-content",
+        expect.objectContaining({ targetManagerAgentId: "33333333-3333-4333-8333-333333333333" }),
+      );
+    });
   });
 });

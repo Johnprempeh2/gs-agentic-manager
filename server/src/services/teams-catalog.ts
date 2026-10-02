@@ -19,8 +19,9 @@ import type {
   CompanyPortabilityPreview,
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
+  TeamCatalogFilter,
 } from "@greatstone/shared";
-import { normalizeAgentUrlKey } from "@greatstone/shared";
+import { GREATSTONE_TEAM_TAG, normalizeAgentUrlKey } from "@greatstone/shared";
 import { parseFrontmatterMarkdown } from "@greatstone/shared/frontmatter";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { agentService } from "./agents.js";
@@ -35,6 +36,17 @@ export interface CatalogTeamListQuery {
   kind?: CatalogTeamKind;
   category?: string;
   q?: string;
+  /** Instance `teamCatalogFilter` (GRE-427). Absent = every team. */
+  filter?: TeamCatalogFilter;
+}
+
+/** Whether a team is offered under the instance's catalogue filter (GRE-427). */
+export function catalogTeamMatchesFilter(
+  team: Pick<CatalogTeam, "tags">,
+  filter: TeamCatalogFilter | undefined,
+): boolean {
+  if (!filter || filter === "all") return true;
+  return team.tags.includes(GREATSTONE_TEAM_TAG);
 }
 
 export interface CatalogTeamSourcePolicy {
@@ -215,6 +227,7 @@ function searchText(team: CatalogTeam) {
 export async function listCatalogTeams(query: CatalogTeamListQuery = {}): Promise<CatalogTeam[]> {
   const normalizedQuery = query.q?.trim().toLowerCase() ?? "";
   return (await getCatalogTeams())
+    .filter((team) => catalogTeamMatchesFilter(team, query.filter))
     .filter((team) => !query.kind || team.kind === query.kind)
     .filter((team) => !query.category || team.category === query.category)
     .filter((team) => !normalizedQuery || searchText(team).includes(normalizedQuery))
