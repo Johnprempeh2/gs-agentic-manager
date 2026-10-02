@@ -532,6 +532,10 @@ describe("issue attachment routes", () => {
       expect(csp).not.toContain("allow-forms");
       expect(csp).toContain("connect-src 'none'");
       expect(csp).toContain("form-action 'none'");
+      // No remote hosts at all: a remote image or script would leak who opened the page.
+      expect(csp).not.toMatch(/https?:/);
+      expect(csp).not.toContain("*");
+      expect(csp).toContain("img-src data: blob:");
     }
   });
 
