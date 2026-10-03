@@ -1937,10 +1937,11 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     const cleanupLock = workspace.providerType === "git_worktree" && (workspace.providerRef ?? workspace.cwd)
       ? await acquireGitWorktreeCleanupLock(workspace.providerRef ?? workspace.cwd!)
       : null;
+    let savedPatch: Awaited<ReturnType<typeof saveTerminalWorkspacePatch>> | null = null;
     try {
       // Save the uncommitted changes first, under the cleanup lock, so every
       // check below compares the worktree against the saved patch.
-      const savedPatch = options.savePatch ? await saveTerminalWorkspacePatch(workspace) : null;
+      savedPatch = options.savePatch ? await saveTerminalWorkspacePatch(workspace) : null;
       const savedPatchDigest = savedPatch?.digest ?? null;
       await assertTerminalCleanupGitStateUnchanged(workspace, expectedHeadSha, savedPatchDigest);
       await opts.beforeTerminalWorkspaceCleanup?.(workspace);
@@ -1992,13 +1993,34 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           })
           .where(eq(executionWorkspaces.id, workspace.id));
       }
+      if (!cleanup.cleaned && (await discardTerminalWorkspacePatchIfWorktreeKept(workspace, savedPatch))) {
+        savedPatch = null;
+      }
       return {
         ...cleanup,
         ...(savedPatch ? { patch: { path: savedPatch.patchPath, fileCount: savedPatch.fileCount } } : {}),
       };
+    } catch (error) {
+      await discardTerminalWorkspacePatchIfWorktreeKept(workspace, savedPatch);
+      throw error;
     } finally {
       await cleanupLock?.release();
     }
+  }
+
+  // A refused or failed removal leaves the worktree, and its changes, in place.
+  // Delete the patch saved for that attempt so each sweep does not add another
+  // copy (GRE-457). If the worktree is gone, the patch is the only copy and stays.
+  async function discardTerminalWorkspacePatchIfWorktreeKept(
+    workspace: ExecutionWorkspaceRow,
+    savedPatch: { patchPath: string } | null,
+  ) {
+    const workspacePath = readNullableString(workspace.providerRef) ?? readNullableString(workspace.cwd);
+    if (!savedPatch || !workspacePath) return false;
+    const worktreeKept = await fs.stat(workspacePath).then(() => true, () => false);
+    if (!worktreeKept) return false;
+    await fs.rm(savedPatch.patchPath, { force: true }).catch(() => {});
+    return true;
   }
 
   // Write the cleanup-failed status under the per-workspace lifecycle lock, but

@@ -708,6 +708,18 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       await expect(fs.readFile(path.join(restored, "delivered.txt"), "utf8")).resolves.toBe("delivered\nedited later\n");
     }, 60_000);
 
+    it("records a clean merged removal as branch deleted for the digest (GRE-457)", async () => {
+      const seeded = await seedTerminalWorkspace({ mergedPr: true });
+      await markRuntimeOwnedBranch(seeded.executionWorkspaceId);
+
+      const sweep = await svc.sweepTerminalWorkspaces();
+
+      expect(sweep).toMatchObject({ archived: 1, patchedAndRemoved: 0, cleanupFailed: 0 });
+      expect(await branchExists(seeded.repoRoot)).toBe(false);
+      const [activity] = await readPatchActivity(seeded.executionWorkspaceId);
+      expect(activity?.details).toMatchObject({ branchKept: false, patchPath: null, patchFileCount: 0 });
+    }, 60_000);
+
     it("keeps a dirty merged worktree that an open issue still uses (GRE-229)", async () => {
       const seeded = await seedTerminalWorkspace({ mergedPr: true });
       await fs.writeFile(path.join(seeded.worktreePath, "scratch-notes.txt"), "untracked\n", "utf8");
@@ -1321,6 +1333,10 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(workspace?.cleanupReason).toContain("differ from the saved patch");
     await expect(fs.readFile(path.join(seeded.worktreePath, "late-work.txt"), "utf8")).resolves.toBe("not in the patch\n");
     await expect(fs.readFile(path.join(seeded.worktreePath, "uncommitted.txt"), "utf8")).resolves.toBe("saved\n");
+    // The worktree still holds the changes, so the refused attempt's patch is
+    // deleted and later sweeps do not pile up copies (GRE-457).
+    await racingService.sweepTerminalWorkspaces();
+    await expect(fs.readdir(path.join(worktreePatchDir, seeded.companyId))).resolves.toEqual([]);
   });
 
   it("refuses cleanup when the worktree changes after delivery assessment", async () => {
