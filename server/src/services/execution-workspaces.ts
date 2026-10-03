@@ -1666,7 +1666,9 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
   // Save the worktree's uncommitted and untracked changes as a patch file under
   // the instance data folder (GRE-452). The file is written before anything is
   // removed, and the cleanup then removes the worktree only while its changes
-  // still match this patch.
+  // still match this patch. The file name carries the patch digest, so a later
+  // attempt on the same changes reuses the file instead of adding a copy, and a
+  // patch with different changes never overwrites an earlier one (GRE-457).
   async function saveTerminalWorkspacePatch(workspace: ExecutionWorkspaceRow) {
     const workspacePath = readNullableString(workspace.providerRef) ?? readNullableString(workspace.cwd);
     if (!workspacePath) throw new Error("Refusing to save a workspace patch because the worktree path is unknown");
@@ -1679,15 +1681,20 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           .then((rows) => rows[0] ?? null)
       : null;
     const label = sanitizePatchFileSegment(workspace.branchName ?? sourceIssue?.identifier ?? workspace.id);
-    const stamp = now().toISOString().replace(/[:.]/g, "-");
     const dir = path.join(
       opts.worktreePatchDir ?? path.resolve(resolvePaperclipInstanceRoot(), "data", "worktree-patches"),
       workspace.companyId,
     );
     await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-    const patchPath = path.join(dir, `${label}-${stamp}-${workspace.id.slice(0, 8)}.patch`);
-    await fs.writeFile(patchPath, patch, { mode: 0o600, flag: "wx" });
-    return { patchPath, digest, fileCount };
+    const patchPath = path.join(dir, `${label}-${workspace.id.slice(0, 8)}-${digest.slice(0, 12)}.patch`);
+    const created = await fs.writeFile(patchPath, patch, { mode: 0o600, flag: "wx" }).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "EEXIST") return false;
+        throw error;
+      },
+    );
+    return { patchPath, digest, fileCount, created };
   }
 
   async function hydrateWorkspace(row: ExecutionWorkspaceRow, runtimeServices: WorkspaceRuntimeService[] = []) {
@@ -1937,10 +1944,12 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     const cleanupLock = workspace.providerType === "git_worktree" && (workspace.providerRef ?? workspace.cwd)
       ? await acquireGitWorktreeCleanupLock(workspace.providerRef ?? workspace.cwd!)
       : null;
+    let savedPatch: Awaited<ReturnType<typeof saveTerminalWorkspacePatch>> | null = null;
+    let removalStarted = false;
     try {
       // Save the uncommitted changes first, under the cleanup lock, so every
       // check below compares the worktree against the saved patch.
-      const savedPatch = options.savePatch ? await saveTerminalWorkspacePatch(workspace) : null;
+      savedPatch = options.savePatch ? await saveTerminalWorkspacePatch(workspace) : null;
       const savedPatchDigest = savedPatch?.digest ?? null;
       await assertTerminalCleanupGitStateUnchanged(workspace, expectedHeadSha, savedPatchDigest);
       await opts.beforeTerminalWorkspaceCleanup?.(workspace);
@@ -1950,6 +1959,9 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         executionWorkspaceId: workspace.id,
         workspaceCwd: workspace.cwd,
       });
+      // From here a forced removal can fail part-way, so the patch may be the
+      // only full copy of the changes and must stay (GRE-457).
+      removalStarted = true;
       const cleanup = await cleanupExecutionWorkspaceArtifacts({
         workspace,
         projectWorkspace,
@@ -1996,6 +2008,14 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         ...cleanup,
         ...(savedPatch ? { patch: { path: savedPatch.patchPath, fileCount: savedPatch.fileCount } } : {}),
       };
+    } catch (error) {
+      // A check refused the removal before it started, so the worktree still
+      // holds every change. Delete the patch this attempt wrote so refused
+      // sweeps do not pile up copies (GRE-457).
+      if (!removalStarted && savedPatch?.created) {
+        await fs.rm(savedPatch.patchPath, { force: true }).catch(() => {});
+      }
+      throw error;
     } finally {
       await cleanupLock?.release();
     }
@@ -3202,7 +3222,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           if (cleanup.skippedReopened) result.skippedReopened += 1;
           else if (!cleanup.cleaned) result.cleanupFailed += 1;
           else result.archived += 1;
-          if (cleanup.patch) result.patchedAndRemoved += 1;
+          if (cleanup.cleaned && cleanup.patch) result.patchedAndRemoved += 1;
           // One record per removed worktree, with the patch path when the
           // changes were saved. The 08:00 digest lists these (GRE-452).
           if (cleanup.cleaned && archived.providerType === "git_worktree") {
