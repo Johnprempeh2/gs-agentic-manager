@@ -72,7 +72,7 @@ describe("Paperclip Cloud connector", () => {
       status: originRejectionContract.status,
     }))).toMatchObject({
       code: "CONNECTOR_REQUEST_FAILED", status: 400,
-      message: "Paperclip Cloud connector rejected the request (operation=session, status=400, reason=RETURN_ORIGIN_NOT_ENROLLED)",
+      message: "Cloud connector rejected the request (operation=session, status=400, reason=RETURN_ORIGIN_NOT_ENROLLED)",
     });
   });
 
@@ -84,7 +84,7 @@ describe("Paperclip Cloud connector", () => {
     expect(error).toBeInstanceOf(PaperclipCloudConnectorError);
     expect(error).toMatchObject({
       code: "CONNECTOR_REQUEST_FAILED", status: 400,
-      message: "Paperclip Cloud connector rejected the request (operation=session, status=400, reason=RETURN_ORIGIN_NOT_ENROLLED)",
+      message: "Cloud connector rejected the request (operation=session, status=400, reason=RETURN_ORIGIN_NOT_ENROLLED)",
     });
     expect(JSON.stringify(error)).not.toMatch(/DO_NOT_REPORT|private-state|access-secret|private\.example/);
   });
@@ -98,7 +98,7 @@ describe("Paperclip Cloud connector", () => {
     const error = await rejection(new Response(body, { status: 409 }));
     expect(error).toMatchObject({
       code: "REAUTHORIZATION_REQUIRED", status: 409,
-      message: "Paperclip Cloud connector rejected the request (operation=session, status=409, reason=UNKNOWN_BROKER_ERROR)",
+      message: "Cloud connector rejected the request (operation=session, status=409, reason=UNKNOWN_BROKER_ERROR)",
     });
   });
 
@@ -582,7 +582,7 @@ describe("Paperclip Cloud connector", () => {
     expect(error).toBeInstanceOf(PaperclipCloudConnectorError);
     expect(error).toMatchObject({
       code: "CONNECTOR_UNAVAILABLE",
-      message: "Paperclip Cloud connector is unavailable",
+      message: "Cloud connector is unavailable",
       status: undefined,
       reason,
     });
@@ -591,7 +591,7 @@ describe("Paperclip Cloud connector", () => {
     // The server logger serializes the cause chain, so check what a log line would carry.
     const logged = JSON.stringify(pino.stdSerializers.err(error));
     expect(logged).toContain(`"reason":"${reason}"`);
-    expect(logged).toContain("Paperclip Cloud connector is unavailable");
+    expect(logged).toContain("Cloud connector is unavailable");
     for (const surface of [logged, String(error), JSON.stringify(error), error.cause.message, error.cause.stack]) {
       expect(surface).not.toMatch(/DO_NOT_REPORT|refresh-secret|203\.0\.113|my\.example\.test/);
     }

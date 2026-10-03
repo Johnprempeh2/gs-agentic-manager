@@ -34689,7 +34689,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       filename: string;
       mimeType: string;
     };
-    expect(uploaded.filename).toBe("paperclip-response.md");
+    expect(uploaded.filename).toBe("gsam-response.md");
     expect(uploaded.mimeType).toBe("text/markdown; charset=utf-8");
     expect(Buffer.isBuffer(uploaded.data)).toBe(true);
     // The attachment is lossless after GS Agentic Manager's mandatory provider-safety
@@ -35433,7 +35433,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     };
     expect(attachment).toMatchObject({
       mimeType: "text/markdown; charset=utf-8",
-      name: "paperclip-response.md",
+      name: "gsam-response.md",
       size: Buffer.byteLength(providerSafeSource),
       type: "file",
     });

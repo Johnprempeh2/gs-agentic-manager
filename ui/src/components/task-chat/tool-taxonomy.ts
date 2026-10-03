@@ -128,7 +128,9 @@ export function humanizeToolName(name: string | undefined | null): string {
   const raw = (name ?? "").trim();
   if (isGenericToolName(raw)) return "Unnamed tool";
   const mcp = mcpToolIdentity(raw);
-  return sentenceCase(identifierWords(mcp?.name ?? raw));
+  const words = identifierWords(mcp?.name ?? raw);
+  // Built-in tools keep the upstream `paperclip` prefix on the wire (paperclipListIssues); never in the label.
+  return sentenceCase(words.length > 1 && words[0] === "paperclip" ? words.slice(1) : words);
 }
 
 /** Humanized MCP tool segment for both mcp__server__tool and mcp.server.tool. */

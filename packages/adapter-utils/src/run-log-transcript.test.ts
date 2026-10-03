@@ -5,6 +5,7 @@ import {
   digestTranscript,
   mergeRunLogChunks,
   parsePersistedLogContent,
+  rebrandRunLogText,
   TASK_VIEW_MAX_BYTES_PER_RUN,
 } from "./run-log-transcript.js";
 import { parseAcpxStdoutLine } from "./acpx-engine/ui.js";
@@ -57,5 +58,25 @@ describe("digestTranscript", () => {
       ["tool_result", "2026-09-30T18:00:02.000Z"],
       ["stderr", "2026-09-30T18:00:03.000Z"],
     ]);
+  });
+});
+
+describe("rebrandRunLogText", () => {
+  it("shows runs stored before the rename with [gsam...] tags", () => {
+    const parse = (line: string, ts: string): TranscriptEntry[] => [{ kind: "stdout", ts, text: line }];
+    const entries = buildTranscript([
+      { ts: "t1", stream: "stderr", chunk: "[paperclip] Skipping saved session resume\n" },
+      { ts: "t2", stream: "system", chunk: "[paperclip-runner] transport mode=local_loopback state=connecting\n" },
+      { ts: "t3", stream: "stdout", chunk: "[paperclip-bridge] ready\n[paperclip truncated run log chunk: omitted 9 chars]\n" },
+    ], parse);
+    expect(entries.map((entry) => ("text" in entry ? entry.text : "")).join("\n")).not.toContain("paperclip");
+    expect(entries[0]).toMatchObject({ kind: "stderr", text: "[gsam] Skipping saved session resume\n" });
+    expect(entries[2]).toMatchObject({ text: "[gsam-bridge] ready" });
+  });
+
+  it("leaves new [gsam] logs and other paperclip text alone", () => {
+    expect(rebrandRunLogText("[gsam-runner] ok")).toBe("[gsam-runner] ok");
+    expect(rebrandRunLogText("skills/paperclip/SKILL.md [paperclip-board](x)")).toBe("skills/paperclip/SKILL.md [paperclip-board](x)");
+    expect(rebrandRunLogText("[paperclip-acpx-sidecar] a [paperclip selection debug] b")).toBe("[gsam-acpx-sidecar] a [gsam selection debug] b");
   });
 });

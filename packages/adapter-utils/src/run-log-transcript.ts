@@ -27,6 +27,17 @@ export const RUN_LOG_READ_LIMIT_BYTES = 256_000;
  */
 export const TASK_VIEW_MAX_BYTES_PER_RUN = 2_000_000;
 
+// Run log lines the platform itself writes carry an upstream "[paperclip...]"
+// tag. Clients only ever see "[gsam...]": logs are rewritten when stored and
+// again when a transcript is built, so runs stored before the rename read the same.
+const LEGACY_RUN_LOG_TAG_RE =
+  /\[paperclip(?=\]|-runner\]|-bridge\]|-acpx-sidecar\]| selection debug\]| truncated run log chunk)/g;
+
+/** Rewrite the platform's own "[paperclip...]" run log tags to "[gsam...]". */
+export function rebrandRunLogText(text: string): string {
+  return text.includes("[paperclip") ? text.replace(LEGACY_RUN_LOG_TAG_RE, "[gsam") : text;
+}
+
 export type RunLogChunk = { ts: string; stream: "stdout" | "stderr" | "system"; chunk: string; seq?: number };
 type TranscriptBuildOptions = { censorUsernameInLogs?: boolean };
 type RedactionOptions = { enabled: boolean };
@@ -137,15 +148,15 @@ export function buildTranscript(
 
   for (const chunk of chunks) {
     if (chunk.stream === "stderr") {
-      entries.push({ kind: "stderr", ts: chunk.ts, text: redactHomePathUserSegments(chunk.chunk, redactionOptions) });
+      entries.push({ kind: "stderr", ts: chunk.ts, text: redactHomePathUserSegments(rebrandRunLogText(chunk.chunk), redactionOptions) });
       continue;
     }
     if (chunk.stream === "system") {
-      entries.push({ kind: "system", ts: chunk.ts, text: redactHomePathUserSegments(chunk.chunk, redactionOptions) });
+      entries.push({ kind: "system", ts: chunk.ts, text: redactHomePathUserSegments(rebrandRunLogText(chunk.chunk), redactionOptions) });
       continue;
     }
 
-    const combined = stdoutBuffer + chunk.chunk;
+    const combined = rebrandRunLogText(stdoutBuffer + chunk.chunk);
     const lines = combined.split(/\r?\n/);
     stdoutBuffer = lines.pop() ?? "";
     for (const line of lines) {
