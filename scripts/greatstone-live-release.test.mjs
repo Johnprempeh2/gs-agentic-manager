@@ -647,9 +647,11 @@ async function fullRestartSandbox(t) {
   const env = { ...box.env(url), GSAM_RELEASE_FROM_APP: "", FAKE_PORT: String(port) };
   const pids = [];
   const start = (args) => { const p = spawn(args[0], args.slice(1), { cwd: serverDir, env, detached: true, stdio: "ignore" }); p.unref(); pids.push(p.pid); return p.pid; };
+  // releaseSandbox removes box.root in an earlier after hook, so server.pid is
+  // gone by now; find the server start-live.sh started by its unique path.
   t.after(() => {
-    const newer = existsSync(join(box.root, "server.pid")) ? [Number(readFileSync(join(box.root, "server.pid"), "utf8"))] : [];
-    for (const pid of [...pids, ...newer]) { try { process.kill(pid, "SIGKILL"); } catch {} }
+    for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch {} }
+    spawnSync("pkill", ["-KILL", "-f", fakeTsx]);
   });
   const runner = start(["node", "-e", "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);", "dev-runner.ts", "dev"]);
   start(["node", fakeTsx, "src/index.ts"]);
