@@ -35,6 +35,7 @@ const rows = await sql.begin("read only", (tx) => tx`
          a.details ->> 'worktreePath' as "worktreePath",
          a.details ->> 'branchName' as "branchName",
          a.details ->> 'patchPath' as "patchPath",
+         (a.details ->> 'branchKept')::boolean as "branchKept",
          coalesce((a.details ->> 'patchFileCount')::int, 0) as "patchFileCount"
   from activity_log a
   left join issues i on i.id::text = a.details ->> 'sourceIssueId'
