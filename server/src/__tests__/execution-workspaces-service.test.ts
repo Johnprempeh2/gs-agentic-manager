@@ -1309,20 +1309,28 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       .resolves.toContain("+not delivered");
   });
 
+  // Put a closed workspace back in front of the sweep, so a test can run a
+  // second cleanup attempt on the same worktree.
+  async function reopenForAnotherSweep(executionWorkspaceId: string) {
+    await db.update(executionWorkspaces)
+      .set({ status: "active", closedAt: null, updatedAt: new Date(Date.now() - 1_000) })
+      .where(eq(executionWorkspaces.id, executionWorkspaceId));
+  }
+
   it("refuses to remove a patched worktree whose changes moved after the patch was saved", async () => {
     const seeded = await seedTerminalWorkspace({ mergedPr: true });
     await fs.writeFile(path.join(seeded.worktreePath, "uncommitted.txt"), "saved\n", "utf8");
-    const racingService = executionWorkspaceService(db, {
+    const createRacingService = () => executionWorkspaceService(db, {
       resolvePullRequestDetails: async (_companyId, reference) =>
         pullRequestDetailsByKey.get(`${seeded.companyId}:${reference.number}`) ?? { state: "unknown" },
       workspaceReaperCooldownDays: 0,
       worktreePatchDir,
       beforeTerminalWorkspaceCleanup: async () => {
-        await fs.writeFile(path.join(seeded.worktreePath, "late-work.txt"), "not in the patch\n", "utf8");
+        await fs.appendFile(path.join(seeded.worktreePath, "late-work.txt"), "not in the patch\n", "utf8");
       },
     });
 
-    const sweep = await racingService.sweepTerminalWorkspaces();
+    const sweep = await createRacingService().sweepTerminalWorkspaces();
     const [workspace] = await db
       .select({ status: executionWorkspaces.status, cleanupReason: executionWorkspaces.cleanupReason })
       .from(executionWorkspaces)
@@ -1333,11 +1341,51 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(workspace?.cleanupReason).toContain("differ from the saved patch");
     await expect(fs.readFile(path.join(seeded.worktreePath, "late-work.txt"), "utf8")).resolves.toBe("not in the patch\n");
     await expect(fs.readFile(path.join(seeded.worktreePath, "uncommitted.txt"), "utf8")).resolves.toBe("saved\n");
-    // The worktree still holds the changes, so the refused attempt's patch is
-    // deleted and later sweeps do not pile up copies (GRE-457).
-    await racingService.sweepTerminalWorkspaces();
+    // The check refused before removal started, so the worktree still holds
+    // the changes and the attempt's patch is deleted. A second refused attempt
+    // leaves no patch either (GRE-457).
+    await expect(fs.readdir(path.join(worktreePatchDir, seeded.companyId))).resolves.toEqual([]);
+    await reopenForAnotherSweep(seeded.executionWorkspaceId);
+    expect(await createRacingService().sweepTerminalWorkspaces()).toMatchObject({ cleanupFailed: 1 });
     await expect(fs.readdir(path.join(worktreePatchDir, seeded.companyId))).resolves.toEqual([]);
   });
+
+  it("keeps the patch when a forced removal fails part-way (GRE-457)", async () => {
+    const seeded = await seedTerminalWorkspace({ mergedPr: true });
+    await fs.writeFile(path.join(seeded.worktreePath, "loose.txt"), "removed first\n", "utf8");
+    const lockedDir = path.join(seeded.worktreePath, "locked");
+    await fs.mkdir(lockedDir);
+    await fs.writeFile(path.join(lockedDir, "notes.txt"), "cannot be removed\n", "utf8");
+    // A read-only folder makes `git worktree remove --force` fail after it has
+    // started deleting files.
+    await fs.chmod(lockedDir, 0o555);
+    try {
+      const sweep = await svc.sweepTerminalWorkspaces();
+
+      expect(sweep).toMatchObject({ archived: 0, cleanupFailed: 1, patchedAndRemoved: 0 });
+      await expect(fs.access(path.join(lockedDir, "notes.txt"))).resolves.toBeUndefined();
+      const patchFiles = await fs.readdir(path.join(worktreePatchDir, seeded.companyId));
+      expect(patchFiles).toHaveLength(1);
+      const patchPath = path.join(worktreePatchDir, seeded.companyId, patchFiles[0]!);
+      const patch = await fs.readFile(patchPath, "utf8");
+      expect(patch).toContain("+removed first");
+      expect(patch).toContain("+cannot be removed");
+
+      // A later sweep checks the part-deleted worktree again. It can no longer
+      // prove delivery, so it skips it and the full copy stays as it was.
+      await reopenForAnotherSweep(seeded.executionWorkspaceId);
+      const retry = await executionWorkspaceService(db, {
+        resolvePullRequestDetails: async (_companyId, reference) =>
+          pullRequestDetailsByKey.get(`${seeded.companyId}:${reference.number}`) ?? { state: "unknown" },
+        workspaceReaperCooldownDays: 0,
+        worktreePatchDir,
+      }).sweepTerminalWorkspaces();
+      expect(retry).toMatchObject({ checked: 1, skippedUndelivered: 1, cleanupFailed: 0 });
+      await expect(fs.readFile(patchPath, "utf8")).resolves.toBe(patch);
+    } finally {
+      await fs.chmod(lockedDir, 0o755).catch(() => {});
+    }
+  }, 60_000);
 
   it("refuses cleanup when the worktree changes after delivery assessment", async () => {
     const seeded = await seedTerminalWorkspace({ mergedPr: true });
