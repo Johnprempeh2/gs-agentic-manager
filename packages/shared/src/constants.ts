@@ -1001,6 +1001,13 @@ export type InviteType = (typeof INVITE_TYPES)[number];
 export const INVITE_JOIN_TYPES = ["human", "agent", "both"] as const;
 export type InviteJoinType = (typeof INVITE_JOIN_TYPES)[number];
 
+/**
+ * Request header the invite landing page sends with `POST /api/auth/sign-up/email`.
+ * When public sign-up is closed, the server creates the account only if this
+ * header carries a pending, unexpired, unrevoked invite that admits a human.
+ */
+export const INVITE_SIGN_UP_TOKEN_HEADER = "x-gsam-invite-token";
+
 export const JOIN_REQUEST_TYPES = ["human", "agent"] as const;
 export type JoinRequestType = (typeof JOIN_REQUEST_TYPES)[number];
 

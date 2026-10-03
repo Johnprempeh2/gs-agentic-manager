@@ -321,6 +321,7 @@ describe("HTTP logger redaction", () => {
     expect(HTTP_LOG_REDACT_PATHS).toContain(
       'req.headers["x-telegram-bot-api-secret-token"]',
     );
+    expect(HTTP_LOG_REDACT_PATHS).toContain('req.headers["x-gsam-invite-token"]');
     expect(HTTP_LOG_REDACT_PATHS).toContain("reqBody.credentials");
     expect(HTTP_LOG_REDACT_PATHS).toContain("errorContext.details.credentials");
   });
@@ -425,6 +426,38 @@ describe("HTTP logger redaction", () => {
     const log = JSON.parse(output.trim());
     expect(log.req.headers["x-paperclip-github-capability"]).toBe("[Redacted]");
     expect(log.req.url).toBe("/runtime-tools/github/credentials");
+    expect(log.res.statusCode).toBe(status);
+  });
+
+  it.each([200, 400])("redacts the invite sign-up token header from HTTP %i logs", async (status) => {
+    const inviteToken = "pcp_invite_sign-up-log-canary-5d2e7a";
+    const chunks: string[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(chunk.toString());
+        callback();
+      },
+    });
+    const app = express();
+    app.use(createHttpLogger(pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, stream)));
+    app.post("/api/auth/sign-up/email", (_req, res) => {
+      res.status(status).json(
+        status === 400
+          ? { code: "EMAIL_PASSWORD_SIGN_UP_DISABLED", message: "Email and password sign up is not enabled" }
+          : { token: null },
+      );
+    });
+
+    await request(app)
+      .post("/api/auth/sign-up/email")
+      .set("X-Gsam-Invite-Token", inviteToken)
+      .send({})
+      .expect(status);
+
+    const output = chunks.join("");
+    expect(output).not.toContain(inviteToken);
+    const log = JSON.parse(output.trim());
+    expect(log.req.headers["x-gsam-invite-token"]).toBe("[Redacted]");
     expect(log.res.statusCode).toBe(status);
   });
 
