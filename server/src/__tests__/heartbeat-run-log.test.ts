@@ -18,7 +18,8 @@ describe("compactRunLogChunk", () => {
     const compacted = compactRunLogChunk(chunk, 16_384);
 
     expect(compacted.length).toBeLessThan(chunk.length);
-    expect(compacted).toContain("[paperclip truncated run log chunk:");
+    expect(compacted).toContain("[gsam truncated run log chunk:");
+    expect(compacted).not.toContain("paperclip");
     expect(compacted.endsWith("tail")).toBe(true);
   });
 
@@ -39,5 +40,25 @@ describe("compactRunLogChunk", () => {
     expect(compacted).not.toContain("refresh-token-fixture-secret");
     expect(compacted).not.toContain("paperclip-json-secret");
     expect(compacted).not.toContain("paperclip-flag-secret");
+  });
+
+  it("stores the platform's own log tags as [gsam...]", () => {
+    const chunk = [
+      "[paperclip] Skipping saved session resume",
+      "[paperclip-runner] transport mode=local_loopback state=connecting",
+      "[paperclip-bridge] ready",
+      "[paperclip-acpx-sidecar] up",
+      "[paperclip selection debug] picked",
+      "see skills/paperclip/SKILL.md and [paperclip-board](link)",
+    ].join("\n");
+
+    expect(compactRunLogChunk(chunk)).toBe([
+      "[gsam] Skipping saved session resume",
+      "[gsam-runner] transport mode=local_loopback state=connecting",
+      "[gsam-bridge] ready",
+      "[gsam-acpx-sidecar] up",
+      "[gsam selection debug] picked",
+      "see skills/paperclip/SKILL.md and [paperclip-board](link)",
+    ].join("\n"));
   });
 });
