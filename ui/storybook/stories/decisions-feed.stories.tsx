@@ -229,6 +229,36 @@ function beforeAfterCard(): DecisionCard {
 
 export const UiChangeBeforeAndAfter: Story = { render: () => <CardFrame card={beforeAfterCard()} /> };
 
+/** A one-page deck standing in for an agent's HTML deliverable. */
+function mockDeck(title: string, accent: string) {
+  const html = `<!doctype html><html><body style="margin:0;font-family:Montserrat,sans-serif;background:#121212;color:#f5f5f0"><div style="padding:56px 64px"><p style="margin:0;color:${accent};font-size:14px;letter-spacing:.12em;text-transform:uppercase">Greatstone</p><h1 style="margin:16px 0 8px;font-size:44px">${title}</h1><p style="margin:0 0 32px;font-size:18px;color:#b8bdb9">Three editions, one price page.</p><div style="display:flex;gap:16px">${["Starter", "Team", "Business"].map((name) => `<div style="flex:1;border:1px solid #2a2e2b;border-radius:16px;padding:24px"><p style="margin:0;font-weight:700">${name}</p><p style="margin:12px 0 0;font-size:32px;color:${accent}">£</p></div>`).join("")}</div></div></body></html>`;
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+/** GRE-451: an approval card that carries the real thing, open on the card. */
+function deliverableApprovalCard(withDeliverables = true): DecisionCard {
+  const card = questionCard("int-1", "issue-44", "GRE-44");
+  const deliverables = withDeliverables
+    ? [
+        { id: "deck-v2", title: "Pricing deck", contentType: "text/html", contentPath: mockDeck("Pricing deck", "#c8ff00"), originalFilename: "pricing-deck.html" },
+        { id: "brief-v1", title: "Pricing brief", contentType: "text/html", contentPath: mockDeck("Pricing brief", "#4ecdc4"), originalFilename: "pricing-brief.html" },
+      ]
+    : [];
+  return {
+    ...card,
+    title: "GRE-44 Approve the pricing deck",
+    reason: "The deck is ready. Approve it and I will send it to the client.",
+    items: card.items.map((item) => ({
+      ...item,
+      detail: { kind: "confirmation", promptExcerpt: "Approve the pricing deck?", isPlanTarget: false, images: [], deliverables },
+    })),
+  };
+}
+
+export const ApprovalWithDeliverable: Story = { render: () => <CardFrame card={deliverableApprovalCard()} /> };
+/** Before GRE-451: the same ask, with only the words on the card. */
+export const ApprovalWithDeliverableBefore: Story = { render: () => <CardFrame card={deliverableApprovalCard(false)} /> };
+
 export const TaskPageTabledBanner: Story = {
   render: () => (
     <div className="max-w-3xl">
