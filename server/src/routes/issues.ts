@@ -341,6 +341,11 @@ import {
   type IssueThreadInteractionResolverRestriction,
 } from "../services/issue-thread-interaction-resolution.js";
 import { resolveSelectedSuggestedTasks } from "../services/issue-thread-interactions.js";
+import {
+  asksToApproveVisualWork,
+  issueHasApprovalEvidence,
+  MISSING_APPROVAL_EVIDENCE_MESSAGE,
+} from "../services/approval-evidence.js";
 import { LIVE_RELEASE_KEY_PREFIX, liveReleaseService } from "../services/live-release.js";
 import { assertReleaseReauth, releaseReauth } from "../services/release-reauth.js";
 import {
@@ -16284,6 +16289,17 @@ export function issueRoutes(
         throw unprocessable(
           "payload.secretProposal is server-owned metadata and cannot be supplied when creating an interaction",
         );
+      }
+      // GRE-451: an agent may not ask John to approve a design, screen, deck,
+      // video or document the task does not carry.
+      if (
+        req.actor.type === "agent" &&
+        asksToApproveVisualWork(req.body) &&
+        !(await issueHasApprovalEvidence(db, issue.companyId, issue.id))
+      ) {
+        throw unprocessable(MISSING_APPROVAL_EVIDENCE_MESSAGE, {
+          code: "approval_evidence_missing",
+        });
       }
 
       // Plan-document confirmation targets are validated authoritatively inside
