@@ -10,6 +10,7 @@ import { DECISIONS_VIEW_KEY } from "@/lib/focus-prefs";
 import { focusSessionKey } from "@/lib/focus-queue";
 import {
   approvalCard,
+  atDeskCard,
   blockedCard,
   connectionAlertCard,
   failedRunCard,
@@ -72,7 +73,22 @@ const QUESTION = {
   },
 };
 
-function Seeded({ children, view }: { children: ReactNode; view: "list" | "focus" }) {
+/** The WSL ask as a plain confirmation: what the card showed before GRE-450. */
+const DESK_CONFIRMATION = {
+  id: "int-wsl",
+  companyId: COMPANY_ID,
+  issueId: "issue-407",
+  kind: "request_confirmation",
+  status: "pending",
+  title: null,
+  summary: null,
+  createdByAgentId: "agent-ridge",
+  createdAt: "2026-09-29T21:00:00.000Z",
+  updatedAt: "2026-09-29T21:00:00.000Z",
+  payload: { version: 1, prompt: "WSL is stuck. Restart it on the host (wsl --shutdown), then accept.", atDesk: { command: "wsl --shutdown" } },
+};
+
+function Seeded({ children, view, cards = CARDS }: { children: ReactNode; view: "list" | "focus"; cards?: DecisionCard[] }) {
   const queryClient = useQueryClient();
   useState(() => {
     try {
@@ -81,7 +97,7 @@ function Seeded({ children, view }: { children: ReactNode; view: "list" | "focus
     } catch {
       // Storybook without storage still renders the list.
     }
-    queryClient.setQueryData(queryKeys.decisionsFeed.feed(COMPANY_ID), fixtureFeed(CARDS));
+    queryClient.setQueryData(queryKeys.decisionsFeed.feed(COMPANY_ID), fixtureFeed(cards));
     queryClient.setQueryData(queryKeys.tabledIssues(COMPANY_ID), TABLED);
     queryClient.setQueryData([...queryKeys.attention(COMPANY_ID), "with-dismissed"], {
       companyId: COMPANY_ID,
@@ -90,6 +106,7 @@ function Seeded({ children, view }: { children: ReactNode; view: "list" | "focus
     });
     queryClient.setQueryData(queryKeys.agents.list(COMPANY_ID), storybookAgents);
     queryClient.setQueryData(queryKeys.issues.interactions("issue-44"), [QUESTION]);
+    queryClient.setQueryData(queryKeys.issues.interactions("issue-407"), [DESK_CONFIRMATION]);
     queryClient.setQueryData(queryKeys.decisionQueues.list(COMPANY_ID), []);
     return true;
   });
@@ -115,6 +132,40 @@ export const List: Story = {
 export const Focus: Story = {
   render: () => (
     <Seeded view="focus">
+      <WhatNeedsMe />
+    </Seeded>
+  ),
+};
+
+/** GRE-450: Ridge needs John at the computer to restart WSL. */
+const DESK_CARDS: DecisionCard[] = [atDeskCard(), questionCard("int-1", "issue-44", "GRE-44"), approvalCard(), reviewCard()];
+/** Before GRE-450: the same ask, mixed in with the phone decisions and counted. */
+const MIXED_CARDS: DecisionCard[] = [
+  { ...atDeskCard(), atDesk: null, actions: atDeskCard().actions.filter((action) => action.id !== "done") },
+  questionCard("int-1", "issue-44", "GRE-44"),
+  approvalCard(),
+  reviewCard(),
+];
+
+export const AtYourDeskList: Story = {
+  render: () => (
+    <Seeded view="list" cards={DESK_CARDS}>
+      <WhatNeedsMe />
+    </Seeded>
+  ),
+};
+
+export const AtYourDeskFocus: Story = {
+  render: () => (
+    <Seeded view="focus" cards={DESK_CARDS}>
+      <WhatNeedsMe />
+    </Seeded>
+  ),
+};
+
+export const AtYourDeskBefore: Story = {
+  render: () => (
+    <Seeded view="list" cards={MIXED_CARDS}>
       <WhatNeedsMe />
     </Seeded>
   ),
