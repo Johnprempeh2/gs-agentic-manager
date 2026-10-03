@@ -37,6 +37,7 @@ export type {
 } from "./summary-slot.js";
 export type {
   AttentionDecisionVerb,
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,

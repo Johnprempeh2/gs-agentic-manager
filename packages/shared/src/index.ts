@@ -181,6 +181,7 @@ export {
 } from "./responsible-user-denial.js";
 export type {
   AttentionDecisionVerb,
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,

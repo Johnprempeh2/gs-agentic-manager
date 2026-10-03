@@ -102,6 +102,15 @@ export interface AttentionDetailImage {
   alt?: string | null;
 }
 
+/** The latest version of a deliverable on the task, shown inline on a Decisions card (GRE-451). */
+export interface AttentionDetailDeliverable {
+  id: string;
+  title: string;
+  contentType: string;
+  contentPath: string;
+  originalFilename?: string | null;
+}
+
 export interface AttentionItemDismissal {
   kind: InboxDismissalKind;
   dismissedAt: string;
@@ -122,36 +131,42 @@ export type AttentionItemDetail =
       planTitle: string | null;
       summaryExcerpt: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "confirmation";
       promptExcerpt: string | null;
       isPlanTarget: false;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "questions";
       questionCount: number;
       firstQuestionText: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "suggested_tasks";
       taskCount: number;
       firstTaskTitle: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "checkbox_confirmation";
       optionCount: number;
       promptExcerpt: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "item_verdicts";
       itemCount: number;
       promptExcerpt: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "failed_run";

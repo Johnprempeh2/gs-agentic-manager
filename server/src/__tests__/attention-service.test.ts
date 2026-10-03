@@ -31,6 +31,7 @@ import {
   issueRecoveryActions,
   issueRelations,
   issueThreadInteractions,
+  issueWorkProducts,
   issues,
   joinRequests,
   projects,
@@ -1221,6 +1222,72 @@ describeEmbeddedPostgres("attention service", () => {
       kind: "item_verdicts",
       itemCount: 2,
       promptExcerpt: "Approve these screenshots",
+    });
+  });
+
+  it("puts the task's latest deliverable versions on an approval card (GRE-451)", async () => {
+    const { companyId, workerId } = await seedCompany("ATD");
+    const issueId = randomUUID();
+    const deckV1 = randomUUID();
+    const deckV2 = randomUUID();
+    const brief = randomUUID();
+    await insertIssue({
+      id: issueId,
+      companyId,
+      identifier: "ATD-1",
+      title: "Pricing deck",
+      status: "in_progress",
+      assigneeAgentId: workerId,
+    });
+    const deliverable = (id: string, key: string, version: number, title: string, minute: number) => ({
+      id,
+      companyId,
+      issueId,
+      type: "deliverable",
+      provider: "paperclip",
+      externalId: key,
+      title,
+      status: "active",
+      metadata: {
+        version,
+        attachmentId: `att-${id}`,
+        contentType: "text/html",
+        originalFilename: `${key}-v${version}.html`,
+      },
+      createdAt: new Date(`2026-07-09T12:0${minute}:00.000Z`),
+      updatedAt: new Date(`2026-07-09T12:0${minute}:00.000Z`),
+    });
+    await db.insert(issueWorkProducts).values([
+      deliverable(deckV1, "pricing-deck", 1, "Pricing deck", 1),
+      deliverable(brief, "pricing-brief", 1, "Pricing brief", 2),
+      deliverable(deckV2, "pricing-deck", 2, "Pricing deck v2", 3),
+    ]);
+    await db.insert(issueThreadInteractions).values({
+      id: randomUUID(),
+      companyId,
+      issueId,
+      kind: "request_confirmation",
+      status: "pending",
+      continuationPolicy: "wake_assignee",
+      title: "Approve the deck",
+      payload: { version: 1, prompt: "Approve the pricing deck?" },
+    });
+
+    const feed = await attentionService(db).list(companyId, { userId: "board-user" });
+    const item = feed.items.find((row) => row.sourceKind === "issue_thread_interaction");
+    expect(item?.detail).toMatchObject({
+      kind: "confirmation",
+      // Newest first, one entry per deliverable: version 1 of the deck is gone.
+      deliverables: [
+        {
+          id: deckV2,
+          title: "Pricing deck v2",
+          contentType: "text/html",
+          contentPath: `/api/attachments/att-${deckV2}/content`,
+          originalFilename: "pricing-deck-v2.html",
+        },
+        expect.objectContaining({ id: brief, title: "Pricing brief" }),
+      ],
     });
   });
 

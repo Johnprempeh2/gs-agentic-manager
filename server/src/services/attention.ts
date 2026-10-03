@@ -21,6 +21,7 @@ import {
   issueRecoveryActions,
   issueRelations,
   issueThreadInteractions,
+  issueWorkProducts,
   issues,
   joinRequests,
   documents,
@@ -39,6 +40,7 @@ import type {
   AttentionDecisionVerb,
   AttentionFeed,
   AttentionFeedQuery,
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionItem,
   AttentionItemDetail,
@@ -282,6 +284,7 @@ function interactionDetail(input: {
   issue: IssueSummaryRow | null;
   planDocument: PlanDocumentSummary | null;
   images: AttentionDetailImage[];
+  deliverables: AttentionDetailDeliverable[];
 }): AttentionItemDetail {
   if (input.kind === "request_confirmation" && isPlanDocumentTarget(input.payload)) {
     return {
@@ -290,6 +293,7 @@ function interactionDetail(input: {
       planTitle: input.planDocument?.title ?? "Plan",
       summaryExcerpt: excerpt(input.planDocument?.body ?? input.payload.detailsMarkdown ?? input.payload.prompt),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -300,6 +304,7 @@ function interactionDetail(input: {
       questionCount: questions.length,
       firstQuestionText: readString(questions[0]?.prompt),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -310,6 +315,7 @@ function interactionDetail(input: {
       taskCount: tasks.length,
       firstTaskTitle: readString(tasks[0]?.title),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -319,6 +325,7 @@ function interactionDetail(input: {
       optionCount: readArray(input.payload.options).length,
       promptExcerpt: excerpt(input.payload.prompt),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -328,6 +335,7 @@ function interactionDetail(input: {
       itemCount: readArray(input.payload.items).length,
       promptExcerpt: excerpt(input.payload.prompt),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -336,6 +344,7 @@ function interactionDetail(input: {
     promptExcerpt: excerpt(input.payload.prompt ?? input.payload.detailsMarkdown),
     isPlanTarget: false,
     images: input.images,
+    deliverables: input.deliverables,
   };
 }
 
@@ -911,6 +920,55 @@ async function issueImageMap(db: Db, companyId: string, issueIds: Array<string |
   return map;
 }
 
+const DETAIL_DELIVERABLE_LIMIT = 3;
+
+/**
+ * The latest version of each deliverable on the tasks, newest first (GRE-451):
+ * an approval card shows the real thing inline, not only its screenshots.
+ */
+async function issueDeliverableMap(db: Db, companyId: string, issueIds: Array<string | null | undefined>) {
+  const ids = [...new Set(issueIds.filter((value): value is string => Boolean(value)))];
+  if (ids.length === 0) return new Map<string, AttentionDetailDeliverable[]>();
+  const rows = await db
+    .select({
+      id: issueWorkProducts.id,
+      issueId: issueWorkProducts.issueId,
+      key: issueWorkProducts.externalId,
+      title: issueWorkProducts.title,
+      metadata: issueWorkProducts.metadata,
+    })
+    .from(issueWorkProducts)
+    .where(and(
+      eq(issueWorkProducts.companyId, companyId),
+      eq(issueWorkProducts.type, "deliverable"),
+      inArray(issueWorkProducts.issueId, ids),
+    ))
+    .orderBy(asc(issueWorkProducts.issueId), desc(issueWorkProducts.createdAt), desc(issueWorkProducts.id));
+
+  const map = new Map<string, AttentionDetailDeliverable[]>();
+  const seenKeys = new Set<string>();
+  for (const row of rows) {
+    // Newest first, so the first row of a key is its latest version.
+    const versionKey = `${row.issueId}:${row.key ?? row.id}`;
+    if (seenKeys.has(versionKey)) continue;
+    seenKeys.add(versionKey);
+    const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+    const attachmentId = typeof metadata.attachmentId === "string" ? metadata.attachmentId : null;
+    if (!attachmentId) continue;
+    const deliverables = map.get(row.issueId) ?? [];
+    if (deliverables.length >= DETAIL_DELIVERABLE_LIMIT) continue;
+    deliverables.push({
+      id: row.id,
+      title: row.title,
+      contentType: typeof metadata.contentType === "string" ? metadata.contentType : "application/octet-stream",
+      contentPath: `/api/attachments/${attachmentId}/content`,
+      originalFilename: typeof metadata.originalFilename === "string" ? metadata.originalFilename : null,
+    });
+    map.set(row.issueId, deliverables);
+  }
+  return map;
+}
+
 async function planDocumentMap(db: Db, companyId: string, issueIds: Array<string | null | undefined>) {
   const ids = [...new Set(issueIds.filter((value): value is string => Boolean(value)))];
   if (ids.length === 0) return new Map<string, PlanDocumentSummary>();
@@ -1237,10 +1295,11 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         && (row.addresseeUserId === null || row.addresseeUserId === options.userId)
       );
       const visibleInteractionRows = collapsePendingConfirmationsToNewest(boardInteractionRows);
-      const [interactionIssueMap, interactionImageMap, interactionPlanDocumentMap] = await Promise.all([
+      const [interactionIssueMap, interactionImageMap, interactionPlanDocumentMap, interactionDeliverableMap] = await Promise.all([
         issueSummaryMap(db, companyId, visibleInteractionRows.map((row) => row.issueId)),
         issueImageMap(db, companyId, visibleInteractionRows.map((row) => row.issueId)),
         planDocumentMap(db, companyId, visibleInteractionRows.map((row) => row.issueId)),
+        issueDeliverableMap(db, companyId, visibleInteractionRows.map((row) => row.issueId)),
       ]);
 
       for (const interaction of visibleInteractionRows) {
@@ -1252,6 +1311,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           issue,
           planDocument: interactionPlanDocumentMap.get(interaction.issueId) ?? null,
           images: issueImages(interactionImageMap, interaction.issueId),
+          deliverables: interactionDeliverableMap.get(interaction.issueId) ?? [],
         });
         const isPlanTarget = detail.kind === "plan_approval";
         const dedupKey = `interaction:${interaction.id}`;

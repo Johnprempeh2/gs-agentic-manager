@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, Loader2, MessageCircleQuestion, MoreHorizontal } from "lucide-react";
+import { ArrowUpRight, ExternalLink, Loader2, MessageCircleQuestion, MoreHorizontal } from "lucide-react";
 import type {
   Agent,
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionItem,
   DecisionCard,
@@ -12,7 +13,7 @@ import type {
 } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { decisionsFeedApi, runDecisionCardAction } from "../../api/decisionsFeed";
-import { attentionDetailImages, attentionImageUrl, severityStyle } from "../../lib/attention";
+import { attentionDetailDeliverables, attentionDetailImages, attentionImageUrl, severityStyle } from "../../lib/attention";
 import { focusItemIssueId, focusItemKind, isFocusItem } from "../../lib/focus-items";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn, relativeTime } from "../../lib/utils";
@@ -28,6 +29,7 @@ import { NotNowButton } from "./NotNowButton";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
+import { DeliverableDocumentView } from "../deliverables/DeliverableDocument";
 
 export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   question: "Question",
@@ -67,6 +69,12 @@ export function decisionCardTaskId(card: DecisionCard): string | null {
 export function decisionCardImages(card: DecisionCard): AttentionDetailImage[] {
   const byAsset = new Map(card.items.flatMap(attentionDetailImages).map((image) => [image.assetId, image]));
   return [...byAsset.values()];
+}
+
+/** The task's deliverables across the card's rows, in feed order, each once (GRE-451). */
+export function decisionCardDeliverables(card: DecisionCard): AttentionDetailDeliverable[] {
+  const byId = new Map(card.items.flatMap(attentionDetailDeliverables).map((deliverable) => [deliverable.id, deliverable]));
+  return [...byId.values()];
 }
 
 /** The first row Focus can answer natively (question, confirmation, suggested tasks). */
@@ -223,6 +231,8 @@ export function DecisionFeedCard({
         </CardFact>
         <CardFact label="Next">{card.nextStep}</CardFact>
       </dl>
+
+      <DecisionCardDeliverables card={card} />
 
       <DecisionCardImages card={card} />
 
@@ -662,6 +672,50 @@ function DecisionCardImages({ card }: { card: DecisionCard }) {
         onOpenChange={(open) => { if (!open) setOpenIndex(null); }}
       />
     </>
+  );
+}
+
+/**
+ * The real thing John is asked to approve, open on the card (GRE-451): he
+ * judges the deliverable itself without leaving the Decisions feed.
+ */
+function DecisionCardDeliverables({ card }: { card: DecisionCard }) {
+  const deliverables = decisionCardDeliverables(card);
+  const [shownId, setShownId] = useState<string | null>(null);
+  const shown = deliverables.find((deliverable) => deliverable.id === shownId) ?? deliverables[0] ?? null;
+  if (!shown) return null;
+  return (
+    <section className="overflow-hidden rounded-lg border border-border" aria-label="Deliverable" data-decision-deliverable>
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/30 px-3 py-2">
+        {deliverables.length > 1 ? (
+          <div className="flex min-w-0 flex-1 flex-wrap gap-1" role="group" aria-label="Deliverables on this task">
+            {deliverables.map((deliverable) => (
+              <Button
+                key={deliverable.id}
+                type="button"
+                size="xs"
+                variant={deliverable.id === shown.id ? "secondary" : "ghost"}
+                aria-pressed={deliverable.id === shown.id}
+                onClick={() => setShownId(deliverable.id)}
+              >
+                {deliverable.title}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <p className="min-w-0 flex-1 truncate text-sm font-medium">{shown.title}</p>
+        )}
+        <Button asChild size="xs" variant="ghost">
+          <a href={shown.contentPath} target="_blank" rel="noreferrer">
+            Open full size
+            <ExternalLink />
+          </a>
+        </Button>
+      </div>
+      <div className="h-80 sm:h-96">
+        <DeliverableDocumentView source={{ ...shown, originalFilename: shown.originalFilename ?? null }} />
+      </div>
+    </section>
   );
 }
 
