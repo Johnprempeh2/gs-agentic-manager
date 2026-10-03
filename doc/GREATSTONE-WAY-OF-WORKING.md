@@ -277,6 +277,15 @@ Merging does not change the live app. A version goes live in these steps.
    backup file. The new `live-*` tag gets the rc tag's title and changelog. The
    script refuses to run when its release scripts are older than origin/main;
    pull first.
+
+   **Full stop and start.** When the release card says so (a fix to the dev
+   runner itself, such as #274), John runs
+   `scripts/greatstone-release.sh --full-restart rc-YYYY-MM-DD.N` instead.
+   It takes the same backup and tag, then stops all of live (the dev runner,
+   any server it leaves behind, and the live database), checks that nothing
+   of live is left and nothing answers on port 3100, and starts live with
+   `~/GSAM/start-live.sh`. If something does not stop, it starts nothing and
+   names the processes. It cannot run from the app.
 7. **Check live (Flint, then Keystone).** Flint runs
    `curl -s http://localhost:3100/api/health`: the `commit` is the tag's
    commit. Flint spot-checks the changes in live and reports on the release

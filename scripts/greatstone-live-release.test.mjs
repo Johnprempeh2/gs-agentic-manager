@@ -614,3 +614,84 @@ test("a UI-only release rebuilds the built UI that live serves", async (t) => {
   assert.match(release.stdout, /^Rebuilt the UI for live-\d{4}-\d{2}-\d{2}\.1$/m);
   assert.equal(readFileSync(join(box.live, "ui", "dist", "index.html"), "utf8"), "built new");
 });
+
+// GRE-442: --full-restart stops all of live and starts it with start-live.sh.
+// The fake live is the 2 Oct case on Linux: the runner exits on SIGTERM and
+// leaves its server (tsx) and the database running. Each is a real process
+// with its working folder in the fake live checkout, as pids_in_dir finds them.
+const FAKE_SERVER = `import http from "node:http"; import { execFileSync } from "node:child_process"; import fs from "node:fs";
+const root = process.env.GSAM_ROOT; const startedAt = new Date().toISOString();
+fs.writeFileSync(root + "/server.pid", String(process.pid));
+const server = http.createServer((req, res) => {
+  const body = { "/api/health": { status: "ok", commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(), serverInfo: { processStartedAt: startedAt } }, "/api/companies": [] }[req.url];
+  res.writeHead(body ? 200 : 404, { "content-type": "application/json" }); res.end(JSON.stringify(body ?? {}));
+});
+server.listen(Number(process.env.FAKE_PORT), "127.0.0.1");
+process.on("SIGTERM", () => { fs.appendFileSync(root + "/server-stopped", startedAt + "\\n"); process.exit(0); });
+`;
+
+function freePort() {
+  return new Promise((resolve) => {
+    const s = http.createServer().listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => resolve(port)); });
+  });
+}
+
+async function fullRestartSandbox(t) {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: { ...EMPTY_WORKSPACE, "server/VERSION": "old" }, rc: { "server/VERSION": "new" } });
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}`;
+  const serverDir = join(box.live, "server");
+  const fakeTsx = join(box.root, "fake", "tsx", "dist", "cli.mjs");
+  mkdirSync(join(fakeTsx, ".."), { recursive: true });
+  writeFileSync(fakeTsx, FAKE_SERVER);
+  const env = { ...box.env(url), GSAM_RELEASE_FROM_APP: "", FAKE_PORT: String(port) };
+  const pids = [];
+  const start = (args) => { const p = spawn(args[0], args.slice(1), { cwd: serverDir, env, detached: true, stdio: "ignore" }); p.unref(); pids.push(p.pid); return p.pid; };
+  t.after(() => {
+    const newer = existsSync(join(box.root, "server.pid")) ? [Number(readFileSync(join(box.root, "server.pid"), "utf8"))] : [];
+    for (const pid of [...pids, ...newer]) { try { process.kill(pid, "SIGKILL"); } catch {} }
+  });
+  const runner = start(["node", "-e", "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);", "dev-runner.ts", "dev"]);
+  start(["node", fakeTsx, "src/index.ts"]);
+  const db = start(["sleep", "600"]);
+  writeFileSync(join(box.root, "data", "instances", "default", "db", "postmaster.pid"), `${db}\n/x\n0\n5432\n`);
+  writeFileSync(join(box.root, "start-live.sh"), `#!/bin/sh\necho started >> "$GSAM_ROOT/start-live.log"\ncd "$GSAM_ROOT/live/server" && nohup node "${fakeTsx}" src/index.ts >/dev/null 2>&1 &\n`, { mode: 0o755 });
+  for (let i = 0; i < 100; i++) {
+    try { await fetch(`${url}/api/health`); break; } catch { await new Promise((r) => setTimeout(r, 50)); }
+  }
+  return { ...box, env, url, runner, db };
+}
+
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+test("--full-restart stops the runner, the server it leaves and the database, then starts live on the new tag", { skip: process.platform !== "linux" && "reads /proc" }, async (t) => {
+  const box = await fullRestartSandbox(t);
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "--full-restart", "rc-2026-09-29.1"], box.env);
+  assert.equal(release.status, 0, release.stdout + release.stderr);
+  assert.match(release.stdout, /^Stopping the live dev runner \(pid \d+\)/m);
+  assert.match(release.stdout, /^Stopping the live server left by the runner \(tsx pid \d+\)/m);
+  assert.match(release.stdout, /^Stopping the live database \(pid \d+\)/m);
+  assert.match(release.stdout, /^Live is stopped:/m);
+  assert.match(release.stdout, /^Started the live server$/m);
+  assert.match(release.stdout, new RegExp(`^Live app at .* is running ${esc(TODAY_TAG)} `, "m"));
+  assert.match(release.stdout, /^Roll back with: scripts\/greatstone-release\.sh --full-restart live-2026-09-01\.1$/m);
+  assert.doesNotMatch(release.stdout, /Asked the live server to restart/);
+  // The old server got SIGTERM (so it could write its snapshot); nothing old is left.
+  assert.equal(readFileSync(join(box.root, "server-stopped"), "utf8").trim().split("\n").length, 1);
+  assert.equal(alive(box.runner), false);
+  assert.equal(alive(box.db), false);
+  assert.equal(readFileSync(join(box.root, "start-live.log"), "utf8"), "started\n");
+  assert.equal(git(box.origin, "tag", "--list", TODAY_TAG), TODAY_TAG);
+});
+
+test("--full-restart refuses to run from the app before anything moves", (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE });
+  const run = spawnSync("bash", [join(box.dev, "scripts", "greatstone-release.sh"), "--full-restart", "rc-2026-09-29.1"], {
+    encoding: "utf8",
+    env: box.env("http://127.0.0.1:9"),
+  });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /--full-restart stops the live server, so it cannot run from the app/);
+  assert.equal(git(box.dev, "tag", "--list", "live-*"), "live-2026-09-01.1");
+  assert.equal(git(box.live, "describe", "--tags"), "live-2026-09-01.1");
+});
