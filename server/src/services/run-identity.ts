@@ -10,6 +10,7 @@ import {
   type Db,
 } from "@greatstone/db";
 import { conflict, forbidden } from "../errors.js";
+import { isDeadlockDetected } from "../db-errors.js";
 import { isUuidLike } from "@greatstone/shared";
 import { queuedCommentIdsFromRunContext, queuedCommentIdsFromWakePayload } from "./issue-queued-comment-queue.js";
 
@@ -64,6 +65,28 @@ export async function explicitOperatorRunIdentity(
 export type RunIdentityContext = typeof runIdentityContexts.$inferSelect;
 type Executor = Pick<Db, "select" | "insert" | "update">;
 
+/**
+ * Identity changes lock the task row, then the run row, with FOR NO KEY UPDATE.
+ *
+ * Never FOR UPDATE here. Every insert of a row that references a run or a task
+ * (document revisions, comments, audit rows, events) takes FOR KEY SHARE on the
+ * parent row in its foreign key check, and FOR UPDATE is the only row lock that
+ * conflicts with FOR KEY SHARE. A writer that references the run before the task
+ * then waits for this task lock while this transaction waits for the writer's
+ * run key share: a deadlock (live, 2 to 3 Oct 2026). NO KEY UPDATE still excludes
+ * every other identity transaction and every UPDATE of these rows.
+ */
+const IDENTITY_ROW_LOCK = "no key update" as const;
+
+/** The task a run is bound to, or `invalid` when the stored reference is malformed. */
+function identityTaskId(
+  run: Pick<typeof heartbeatRuns.$inferSelect, "contextSnapshot" | "nativeIssueId">,
+): string | null | "invalid" {
+  const issueId = run.contextSnapshot?.issueId ?? run.contextSnapshot?.taskId ?? run.nativeIssueId;
+  if (issueId === undefined || issueId === null) return null;
+  return typeof issueId === "string" && isUuidLike(issueId) ? issueId : "invalid";
+}
+
 /** Match task mutation ordering: lock the task before the run, never the reverse. */
 async function lockIdentityTask(
   executor: Pick<Db, "select">,
@@ -72,27 +95,21 @@ async function lockIdentityTask(
 ) {
   const [run] = await executor
     .select({
-      context: heartbeatRuns.contextSnapshot,
-      issueId: heartbeatRuns.nativeIssueId,
+      contextSnapshot: heartbeatRuns.contextSnapshot,
+      nativeIssueId: heartbeatRuns.nativeIssueId,
     })
     .from(heartbeatRuns)
     .where(
       and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.companyId, companyId)),
     );
-  const issueId = run?.context?.issueId ?? run?.context?.taskId ?? run?.issueId;
-  if (
-    issueId !== undefined &&
-    issueId !== null &&
-    (typeof issueId !== "string" || !isUuidLike(issueId))
-  ) {
-    throw forbidden("Run task identity is invalid");
-  }
-  if (typeof issueId === "string")
+  const issueId = run ? identityTaskId(run) : null;
+  if (issueId === "invalid") throw forbidden("Run task identity is invalid");
+  if (issueId)
     await executor
       .select({ id: issues.id })
       .from(issues)
       .where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)))
-      .for("update");
+      .for(IDENTITY_ROW_LOCK);
 }
 
 async function append(
@@ -188,7 +205,7 @@ export async function initializeRunIdentity(
           eq(heartbeatRuns.companyId, input.companyId),
         ),
       )
-      .for("update");
+      .for(IDENTITY_ROW_LOCK);
     if (!run) throw forbidden("Run identity does not belong to this company");
     if (run.activeIdentityContextId) {
       const [current] = await tx
@@ -352,7 +369,7 @@ export async function reserveSteeredIdentity(
           eq(heartbeatRuns.companyId, input.companyId),
         ),
       )
-      .for("update");
+      .for(IDENTITY_ROW_LOCK);
     // Processes started before the broker rollout keep their original environment.
     if (!run?.activeIdentityContextId) return null;
     const [pending] = await tx
@@ -429,10 +446,79 @@ export async function acceptSteeredIdentity(
   if (accepted) await activate(executor, accepted);
 }
 
-export async function captureRunIdentity(
-  db: Db,
-  input: { companyId: string; runId: string; agentId: string },
-) {
+type RunIdentityInput = { companyId: string; runId: string; agentId: string };
+
+/**
+ * The current identity of a running run, read without row locks, or null when
+ * the locked path must decide (a pending steering identity, a run that is not
+ * this agent's running run, or a malformed task reference).
+ *
+ * One statement is one snapshot. Steering commits its pending identity before
+ * it delivers the message, and acceptance clears the pending row and activates
+ * the new identity in one transaction. A snapshot without a pending row
+ * therefore shows either the identity from before the message was delivered or
+ * the accepted one, exactly what the locked read would return.
+ */
+async function readSettledRunIdentity(db: Pick<Db, "select">, input: RunIdentityInput) {
+  const [row] = await db
+    .select({
+      run: heartbeatRuns,
+      context: runIdentityContexts,
+      steeringPending: sql<boolean>`exists (
+        select 1 from run_identity_contexts pending_identity
+        where pending_identity.run_id = ${heartbeatRuns.id}
+          and pending_identity.status = 'pending'
+      )`,
+    })
+    .from(heartbeatRuns)
+    .leftJoin(
+      runIdentityContexts,
+      and(
+        eq(runIdentityContexts.id, heartbeatRuns.activeIdentityContextId),
+        eq(runIdentityContexts.runId, heartbeatRuns.id),
+      ),
+    )
+    .where(
+      and(
+        eq(heartbeatRuns.id, input.runId),
+        eq(heartbeatRuns.companyId, input.companyId),
+        eq(heartbeatRuns.agentId, input.agentId),
+      ),
+    );
+  if (
+    !row ||
+    row.run.status !== "running" ||
+    row.steeringPending === true ||
+    identityTaskId(row.run) === "invalid"
+  )
+    return null;
+  return { run: row.run, context: row.context ?? null };
+}
+
+const IDENTITY_CAPTURE_ATTEMPTS = 3;
+
+/**
+ * Resolve the identity a running run acts for. Agents call this for every git
+ * credential, runtime tool and API request, often dozens of times a second, so
+ * the common case is a lock-free snapshot. Only a pending steering identity
+ * (or an error case) takes the task and run locks.
+ */
+export async function captureRunIdentity(db: Db, input: RunIdentityInput) {
+  const settled = await readSettledRunIdentity(db, input);
+  if (settled) return settled;
+  // The locked transaction is idempotent and Postgres rolls a deadlock victim
+  // back whole, so a bounded retry is safe. It is a backstop, not the fix.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await captureRunIdentityLocked(db, input);
+    } catch (error) {
+      if (attempt >= IDENTITY_CAPTURE_ATTEMPTS || !isDeadlockDetected(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25 * attempt + Math.floor(Math.random() * 25)));
+    }
+  }
+}
+
+async function captureRunIdentityLocked(db: Db, input: RunIdentityInput) {
   // Lock acquisition serializes with steering delivery and its durable acknowledgement.
   return db.transaction(async (tx) => {
     await lockIdentityTask(tx, input.companyId, input.runId);
@@ -446,7 +532,7 @@ export async function captureRunIdentity(
           eq(heartbeatRuns.agentId, input.agentId),
         ),
       )
-      .for("update");
+      .for(IDENTITY_ROW_LOCK);
     if (!run || run.status !== "running")
       throw forbidden(
         "Credential acquisition requires this agent's active run",
@@ -519,7 +605,7 @@ export async function reconcileSteeredIdentity(
           eq(heartbeatRuns.companyId, context.companyId),
         ),
       )
-      .for("update");
+      .for(IDENTITY_ROW_LOCK);
     if (!run) return;
     await acceptSteeredIdentity(tx, context);
   });
