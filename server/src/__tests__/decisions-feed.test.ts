@@ -700,4 +700,91 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       .expect(403);
     expect(wakeup).not.toHaveBeenCalled();
   });
+
+  // GRE-450: asks that need John at the computer stay off the phone count.
+  it("keeps 'at your desk' cards apart: out of the count, with the command and a Done that wakes the agent", async () => {
+    const companyId = randomUUID();
+    const workerId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: "GRE", requireBoardApprovalForNewAgents: false });
+    await db.insert(agents).values({
+      id: workerId, companyId, name: "Ridge", role: "engineer", status: "idle",
+      adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    });
+    await db.insert(companyMemberships).values({
+      companyId, principalType: "user", principalId: USER_ID, status: "active", membershipRole: "owner",
+    });
+    const deskTask = randomUUID();
+    const phoneTask = randomUUID();
+    await db.insert(issues).values([
+      { id: deskTask, companyId, identifier: "GRE-407", issueNumber: 407, title: "Restart WSL", status: "in_review", priority: "high", assigneeAgentId: workerId },
+      { id: phoneTask, companyId, identifier: "GRE-408", issueNumber: 408, title: "Pick a name", status: "in_review", priority: "medium", assigneeAgentId: workerId },
+    ]);
+    const testApp = app(companyId);
+
+    // The field rides on request_confirmation; "none" becomes a wake so Done reaches the agent.
+    const created = await request(testApp)
+      .post(`/api/issues/${deskTask}/interactions`)
+      .send({
+        kind: "request_confirmation",
+        continuationPolicy: "none",
+        payload: { version: 1, prompt: "Restart WSL on the host, then press Done.", atDesk: { command: "wsl --shutdown" } },
+      });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    expect(created.body).toMatchObject({ continuationPolicy: "wake_assignee", payload: { atDesk: { command: "wsl --shutdown" } } });
+    // And on ask_user_questions.
+    await request(testApp)
+      .post(`/api/issues/${deskTask}/interactions`)
+      .send({
+        kind: "ask_user_questions",
+        payload: {
+          version: 1,
+          atDesk: {},
+          questions: [{ id: "wsl", prompt: "Did WSL come back?", selectionMode: "single", options: [{ id: "yes", label: "Yes" }] }],
+        },
+      })
+      .expect(201);
+    await request(testApp)
+      .post(`/api/issues/${phoneTask}/interactions`)
+      .send({ kind: "request_confirmation", payload: { version: 1, prompt: "Use the name Atlas?" } })
+      .expect(201);
+
+    const feed = await build(companyId);
+    expect(feed.cards).toHaveLength(2);
+    expect(cardFor(feed, phoneTask)?.atDesk).toBeNull();
+    const desk = cardFor(feed, deskTask)!;
+    expect(desk.atDesk).toEqual({ command: "wsl --shutdown" });
+    // Only the phone card counts: badge, needs-me and the count route agree.
+    expect(feed).toMatchObject({ count: 1, atDeskCount: 1 });
+    const badge = await request(testApp).get(`/api/companies/${companyId}/sidebar-badges`).expect(200);
+    expect(badge.body.decisions).toBe(1);
+    const needsMe = await request(testApp).get(`/api/companies/${companyId}/needs-me`).expect(200);
+    expect(needsMe.body.count).toBe(1);
+    const count = await request(testApp).get(`/api/companies/${companyId}/decisions-feed/count`).expect(200);
+    expect(count.body.count).toBe(1);
+
+    // Done accepts the confirmation and wakes the agent to check.
+    await run(testApp, action(desk, "done"));
+    const [accepted] = await db.select().from(issueThreadInteractions)
+      .where(eq(issueThreadInteractions.id, created.body.id));
+    expect(accepted?.status).toBe("accepted");
+    await vi.waitFor(() => expect(wakeup).toHaveBeenCalledWith(workerId, expect.anything()));
+  });
+
+  it("keeps a card on the phone when an at-desk ask shares it with phone work", async () => {
+    const seeded = await seedLiveScenario();
+    await db.insert(issueThreadInteractions).values({
+      companyId: seeded.companyId,
+      issueId: seeded.gre138,
+      kind: "request_confirmation",
+      status: "pending",
+      createdByAgentId: seeded.workerId,
+      payload: { version: 1, prompt: "Save the token on the host.", atDesk: { command: null } },
+    });
+    const feed = await build(seeded.companyId);
+    const card = cardFor(feed, seeded.gre138)!;
+    expect(card.kinds).toContain("recovery");
+    expect(card.atDesk).toBeNull();
+    expect(card.actions.map((candidate) => candidate.id)).not.toContain("done");
+    expect(feed.atDeskCount).toBe(0);
+  });
 });

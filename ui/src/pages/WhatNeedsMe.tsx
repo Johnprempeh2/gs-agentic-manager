@@ -34,6 +34,8 @@ import {
 } from "../lib/focus-prefs";
 import { cn } from "../lib/utils";
 import { ErrorState } from "../components/ErrorState";
+import { AtDeskGroup, splitAtDeskCards } from "../components/decisions-feed/AtDeskGroup";
+import { useIsPhone } from "../hooks/useIsPhone";
 
 /** Curtain rows never expand; module-level so memoized rows see one identity. */
 const noopToggleExpand = () => {};
@@ -133,6 +135,9 @@ export function WhatNeedsMe() {
 
   const cards = useMemo(() => feed?.cards ?? [], [feed]);
   const assignableAgents = useMemo(() => feed?.assignableAgents ?? [], [feed]);
+  // At your desk (GRE-450): first on a laptop, folded last on a phone.
+  const isPhone = useIsPhone();
+  const { phone: phoneCards, desk: deskCards } = useMemo(() => splitAtDeskCards(cards), [cards]);
   const count = needsMe?.count ?? feed?.count ?? 0;
   const assignedList = needsMe ? <NeedsMeList needsMe={needsMe} /> : null;
   const hasAssigned = (needsMe?.assignedTasks.length ?? 0) > 0;
@@ -172,6 +177,16 @@ export function WhatNeedsMe() {
   }
 
   const viewSwitch = <DecisionsViewSwitch view={view} onChange={updateView} />;
+  const deskGroup = (
+    <AtDeskGroup
+      cards={deskCards}
+      defaultOpen={!isPhone}
+      companyId={selectedCompanyId}
+      assignableAgents={assignableAgents}
+      agentMap={agentMap}
+      currentUserId={currentUserId}
+    />
+  );
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <BrandPageTitle
@@ -215,8 +230,9 @@ export function WhatNeedsMe() {
         {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
         {/* Assigned tasks are counted in the header but are not focus cards. */}
         {assignedList}
+        {isPhone ? null : deskGroup}
         <DecisionsFocusView
-          cards={cards}
+          cards={phoneCards}
           assignableAgents={assignableAgents}
           companyId={selectedCompanyId}
           agentMap={agentMap}
@@ -225,6 +241,7 @@ export function WhatNeedsMe() {
           onPrefsChange={updateFocusPrefs}
           onShowList={() => updateView("list")}
         />
+        {isPhone ? deskGroup : null}
       </div>
     );
   }
@@ -244,11 +261,13 @@ export function WhatNeedsMe() {
 
       {assignedList}
 
-      {cards.length === 0 ? (
-        hasAssigned ? null : <ZeroState />
+      {isPhone ? null : deskGroup}
+
+      {phoneCards.length === 0 ? (
+        hasAssigned || (!isPhone && deskCards.length > 0) ? null : <ZeroState />
       ) : (
         <div className="space-y-4">
-          {cards.map((card) => (
+          {phoneCards.map((card) => (
             <DecisionFeedCard
               key={card.id}
               card={card}
@@ -260,6 +279,8 @@ export function WhatNeedsMe() {
           ))}
         </div>
       )}
+
+      {isPhone ? deskGroup : null}
 
       <div className="space-y-4">
         {tabledCount > 0 && (

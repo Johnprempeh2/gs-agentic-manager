@@ -181,6 +181,7 @@ export {
 } from "./responsible-user-denial.js";
 export type {
   AttentionDecisionVerb,
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,
@@ -212,6 +213,7 @@ export type {
   DecisionClarityResponse,
   DecisionsFeed,
   DecisionsFeedCount,
+  DecisionCardAtDesk,
   NeedsMe,
   NeedsMeTask,
 } from "./types/decisions-feed.js";
@@ -1206,6 +1208,7 @@ export type {
   PaperclipQuestionSetQuestion,
   PaperclipQuestionSetPayload,
   AskUserQuestionsPayload,
+  InteractionAtDesk,
   AskUserQuestionsAnswer,
   AskUserQuestionsResult,
   RequestConfirmationIssueDocumentTarget,
@@ -2047,6 +2050,7 @@ export {
   askUserQuestionsQuestionSchema,
   paperclipQuestionSetPayloadSchema,
   askUserQuestionsPayloadSchema,
+  interactionAtDeskSchema,
   askUserQuestionsAnswerSchema,
   askUserQuestionsResultSchema,
   requestConfirmationIssueDocumentTargetSchema,

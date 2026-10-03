@@ -156,7 +156,9 @@ export function pushNotificationService(
       let sent = 0;
       for (const { companyId, userId, prefix } of audiences) {
         try {
-          const feed = await buildFeed(companyId, userId);
+          const built = await buildFeed(companyId, userId);
+          // "At your desk" cards never go to the phone (GRE-450).
+          const feed = { ...built, cards: built.cards.filter((card) => !card.atDesk) };
           const known = new Set(
             (await db
               .select({ cardId: pushNotifiedDecisions.cardId })

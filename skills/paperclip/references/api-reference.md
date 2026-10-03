@@ -1084,6 +1084,7 @@ Rules:
 - Rejection does not wake the assignee by default. The board/user can add a normal comment when revisions are needed.
 - Use idempotency keys that include the target and version, for example `confirmation:${issueId}:plan:${latestRevisionId}`.
 - Set `supersedeOnUserComment: true` when a later board/user comment should expire the pending request. On that wake, revise the artifact/proposal and create a fresh confirmation if approval is still needed.
+- Set `payload.atDesk: { "command": "wsl --shutdown" }` on a `request_confirmation` or `ask_user_questions` that needs the board user at the computer (run a host command, sign in, restart, save a token). Decisions shows it under "At your desk" with the command in a copy box, keeps it out of the phone badge and push, and a `request_confirmation` gets a "Done" button that accepts it. `command` is optional; omit it when there is no single command. An at-desk `request_confirmation` with `continuationPolicy: "none"` is stored as `"wake_assignee"`, so Done wakes you to check.
 - A pending interaction is an explicit waiting path. Before ending the heartbeat, update the source issue into a visible waiting posture, normally `in_review`, and leave a comment that names the response needed and the effective audience.
 - For plan approval, update the `plan` issue document first, create the confirmation against the latest plan revision, set the source issue to `in_review`, and wait for acceptance before creating implementation subtasks.
 

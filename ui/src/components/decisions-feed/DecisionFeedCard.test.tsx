@@ -273,6 +273,43 @@ describe("DecisionFeedCard rendering per kind", () => {
     expect(container.querySelector("[data-decision-images]")).toBeNull();
   });
 
+  it("shows the task's deliverable inline, and lets John switch between several (GRE-451)", () => {
+    const card = confirmationCard();
+    const deliverable = (id: string, title: string) => ({
+      id,
+      title,
+      contentType: "text/html",
+      contentPath: `/api/attachments/${id}/content`,
+      originalFilename: `${id}.html`,
+    });
+    card.items = card.items.map((item) => ({
+      ...item,
+      detail: {
+        kind: "confirmation",
+        promptExcerpt: "Approve the pricing deck?",
+        isPlanTarget: false,
+        images: [],
+        deliverables: [deliverable("deck-v2", "Pricing deck"), deliverable("brief-v1", "Pricing brief")],
+      },
+    })) as DecisionCard["items"];
+    render(card);
+
+    const section = container.querySelector("[data-decision-deliverable]");
+    expect(section).not.toBeNull();
+    const frame = () => section!.querySelector("[data-testid='deliverable-preview-frame']") as HTMLIFrameElement;
+    expect(frame().getAttribute("src")).toBe("/api/attachments/deck-v2/content");
+    expect(frame().getAttribute("sandbox")).toBeTruthy();
+    const open = [...section!.querySelectorAll("a")].find((link) => link.textContent?.includes("Open full size"));
+    expect(open?.getAttribute("href")).toBe("/api/attachments/deck-v2/content");
+
+    act(() => button("Pricing brief").click());
+    expect(frame().getAttribute("src")).toBe("/api/attachments/brief-v1/content");
+    expect(button("Pricing brief").getAttribute("aria-pressed")).toBe("true");
+
+    render(blockedCard());
+    expect(container.querySelector("[data-decision-deliverable]")).toBeNull();
+  });
+
   it("keeps ask_clarity out of the plain action buttons", () => {
     expect(visibleCardActions(blockedCard()).map((action) => action.id)).toEqual(["reassign", "instruct", "cancel_task"]);
     expect(visibleCardActions(questionCard()).map((action) => action.id)).not.toContain("open");

@@ -461,6 +461,7 @@ export {
   askUserQuestionsQuestionSchema,
   paperclipQuestionSetPayloadSchema,
   askUserQuestionsPayloadSchema,
+  interactionAtDeskSchema,
   askUserQuestionsAnswerSchema,
   askUserQuestionsResultSchema,
   requestConfirmationIssueDocumentTargetSchema,

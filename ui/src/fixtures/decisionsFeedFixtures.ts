@@ -348,13 +348,48 @@ export function noOwnerCard(): DecisionCard {
   };
 }
 
+/** GRE-450: Ridge needs John at the computer to restart WSL. */
+export function atDeskCard(interactionId = "int-wsl", issueId = "issue-407", identifier = "GRE-407"): DecisionCard {
+  const id = `task:${issueId}`;
+  const item = questionItem(interactionId, issueId, identifier);
+  return card({
+    id,
+    kind: "question",
+    task: task(issueId, identifier, "Restart WSL"),
+    title: `${identifier} Restart WSL`,
+    reason: "WSL is stuck. Restart it on the host, then press Done.",
+    waiting: { id: "agent-ridge", name: "Ridge" },
+    nextStep: "Ridge waits for your answer, then continues.",
+    actions: [
+      {
+        id: "done",
+        label: "Done",
+        description: "Tell Ridge it is done. The agent is woken to check.",
+        type: "request",
+        requests: [{ method: "POST", path: `/api/issues/${issueId}/interactions/${interactionId}/accept`, body: {} }],
+        href: null,
+        input: null,
+      },
+      { id: "open", label: "Answer", description: "Open the question on the task.", type: "link", requests: [], href: `/issues/${identifier}`, input: null },
+      ...taskActions(issueId, id),
+    ],
+    items: [{
+      ...item,
+      subject: { ...item.subject, title: "Restart WSL", metadata: { ...item.subject.metadata, kind: "request_confirmation" } },
+    }] as DecisionCard["items"],
+    atDesk: { command: "wsl --shutdown" },
+  });
+}
+
 export function fixtureFeed(cards: DecisionCard[]): DecisionsFeed {
   const countsByKind = {} as DecisionsFeed["countsByKind"];
   for (const entry of cards) countsByKind[entry.kind] = (countsByKind[entry.kind] ?? 0) + 1;
+  const atDeskCount = cards.filter((entry) => entry.atDesk).length;
   return {
     companyId: FIXTURE_COMPANY_ID,
     generatedAt: NOW,
-    count: cards.length,
+    count: cards.length - atDeskCount,
+    atDeskCount,
     countsByKind,
     staleCleared: 0,
     assignableAgents: fixtureAgents,

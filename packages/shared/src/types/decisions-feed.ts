@@ -34,6 +34,7 @@ export type DecisionCardActionId =
   | "reject"
   | "reconnect"
   | "dismiss"
+  | "done"
   | "open";
 
 /** One HTTP call. `path` is absolute from the server root (starts with /api). */
@@ -79,6 +80,16 @@ export interface DecisionCardClarity {
   answer: { commentId: string; body: string; answeredAt: string } | null;
 }
 
+/**
+ * A card that needs the board user at the computer (GRE-450): a host command,
+ * a sign-in, a restart. It shows under "At your desk" and is not in the phone
+ * count or push.
+ */
+export interface DecisionCardAtDesk {
+  /** The exact command to run, shown in a copy box. Null when there is none. */
+  command: string | null;
+}
+
 export interface DecisionCard {
   /** `task:<issueId>` for task cards, `item:<dedupKey>` for company-level cards. */
   id: string;
@@ -103,13 +114,20 @@ export interface DecisionCard {
   clarity: DecisionCardClarity | null;
   /** Source rows merged into this card. Native resolvers (question forms) use these. */
   items: AttentionItem[];
+  /** Set when every row on the card needs the board user at the computer. */
+  atDesk?: DecisionCardAtDesk | null;
 }
 
 export interface DecisionsFeed {
   companyId: string;
   generatedAt: string;
-  /** The one count: sidebar badge, list header and Focus all show this number. */
+  /**
+   * The one count: sidebar badge, list header and Focus all show this number.
+   * "At your desk" cards are not in it (GRE-450).
+   */
   count: number;
+  /** Cards that need the board user at the computer, outside `count`. */
+  atDeskCount?: number;
   countsByKind: Record<DecisionCardKind, number>;
   /** Source rows dropped because their cause is gone. Diagnostic only. */
   staleCleared: number;
