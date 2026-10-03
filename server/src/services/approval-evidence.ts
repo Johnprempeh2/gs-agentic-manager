@@ -19,14 +19,16 @@ export const MISSING_APPROVAL_EVIDENCE_MESSAGE =
 
 type ConfirmationInput = {
   kind?: unknown;
-  payload?: { prompt?: unknown; target?: { type?: unknown } | null } | null;
+  payload?: { prompt?: unknown; target?: { type?: unknown; key?: unknown } | null } | null;
 };
 
 /** True when a request_confirmation's prompt asks to approve visual or document work. */
 export function asksToApproveVisualWork(input: ConfirmationInput): boolean {
   if (input.kind !== "request_confirmation") return false;
   // A plan confirmation points at the plan document itself; the card shows it.
-  if (input.payload?.target?.type === "issue_document") return false;
+  // Any other document (a pitch, a price sheet) still needs the real thing attached.
+  const target = input.payload?.target;
+  if (target?.type === "issue_document" && target.key === "plan") return false;
   const prompt = typeof input.payload?.prompt === "string" ? input.payload.prompt : "";
   return VISUAL_WORK_WORDS.test(prompt) || UI_WORD.test(prompt);
 }

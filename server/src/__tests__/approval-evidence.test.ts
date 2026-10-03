@@ -29,8 +29,24 @@ describe("asksToApproveVisualWork (GRE-451)", () => {
 
   it("does not count a plan confirmation, which already shows its document", () => {
     expect(
-      asksToApproveVisualWork(card("Approve the plan document?", { target: { type: "issue_document" } })),
+      asksToApproveVisualWork(card("Approve the plan document?", { target: { type: "issue_document", key: "plan" } })),
     ).toBe(false);
+  });
+
+  it("asks for evidence on a card that targets any other document (the GRE-413 pitch case)", () => {
+    expect(
+      asksToApproveVisualWork(
+        card("Approve the pitch one-pager?", { target: { type: "issue_document", key: "pitch" } }),
+      ),
+    ).toBe(true);
+    expect(
+      asksToApproveVisualWork(card("Approve the price sheet document?", { target: { type: "issue_document" } })),
+    ).toBe(true);
+  });
+
+  it("asks for evidence on a release card that names a UI change", () => {
+    // Release tasks carry Flint's screenshots, so these cards pass the check in practice.
+    expect(asksToApproveVisualWork(card("Update live to rc-2026.10.03 (UI sweep)?"))).toBe(true);
   });
 
   it("only checks request_confirmation", () => {
