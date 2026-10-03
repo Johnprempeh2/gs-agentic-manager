@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyJohnComment, computeJohnTime, computeWindow, formatDigestLine } from "./john-time.mjs";
+import { approvalRounds, classifyJohnComment, computeJohnTime, computeWindow, formatDigestLine } from "./john-time.mjs";
 
 // Sample comments in the shape John writes them (GRE-394 assessment, 27 Sep to
 // 2 Oct). Each is the class the rules must give.
@@ -142,7 +142,77 @@ test("trend: seven 24-hour windows, oldest first, today last; digest line format
   assert.deepEqual(report.trend.map((day) => day.unstick), [0, 0, 0, 0, 0, 1, 0]);
   assert.equal(
     formatDigestLine(report),
-    "**John's time (24h):** Chase 1 · Unstick 0 · Decisions 0 · Failed runs 5 (setup_failed 2, claude_auth_required 1, configuration_incomplete 1, other 1). " +
-      "7 days, oldest first: Chase 1,0,0,0,0,0,1 · Unstick 0,0,0,0,0,1,0 · Decisions 0,0,0,0,0,0,0 · Failed 0,0,0,0,0,0,5.",
+    "**John's time (24h):** Chase 1 · Unstick 0 · Decisions 0 · Cards rejected 0 · Failed runs 5 (setup_failed 2, claude_auth_required 1, configuration_incomplete 1, other 1). " +
+      "Rounds per approved card (7d): - over 0. " +
+      "7 days, oldest first: Chase 1,0,0,0,0,0,1 · Unstick 0,0,0,0,0,1,0 · Decisions 0,0,0,0,0,0,0 · Rejected 0,0,0,0,0,0,0 · Rounds -,-,-,-,-,-,- · Failed 0,0,0,0,0,0,5.",
   );
+});
+
+// Approval cards (GRE-453). `card` is one interaction John (or someone else)
+// resolved; the issue id groups the rounds.
+const card = (issueId, status, hours, { kind = "request_confirmation", resolvedByUserId = "local-board" } = {}) => ({ kind, status, issueId, resolvedByUserId, resolvedAt: hoursAgo(hours) });
+
+test("cards rejected: John's rejected approval cards in the window, not other kinds or other resolvers", () => {
+  const snapshot = base({
+    interactions: [
+      card("A", "rejected", 1),
+      card("A", "rejected", 2, { kind: "request_checkbox_confirmation" }),
+      card("B", "rejected", 3, { resolvedByUserId: "john-login" }),
+      card("C", "rejected", 4, { resolvedByUserId: null }),
+      card("D", "rejected", 5, { kind: "suggest_tasks" }),
+      card("E", "expired", 6),
+      card("F", "accepted", 7),
+      card("G", "rejected", 30),
+    ],
+  });
+  const day = computeWindow(snapshot, { since: Date.parse(now) - 86_400_000, now: Date.parse(now) });
+  assert.equal(day.cardsRejected, 3);
+});
+
+test("cards rejected: GRE-449 baseline shape, 15 of 33 approval cards rejected", () => {
+  const interactions = Array.from({ length: 33 }, (_, index) => card(`T${index}`, index < 15 ? "rejected" : "accepted", 1 + index * 0.5));
+  const day = computeWindow(base({ interactions }), { since: Date.parse(now) - 86_400_000, now: Date.parse(now) });
+  assert.equal(day.cardsRejected, 15);
+  assert.equal(day.cardsApproved, 18);
+});
+
+test("rounds: 1 + rejections on the same task since its last accepted card, including before the window", () => {
+  const snapshot = base({
+    interactions: [
+      card("A", "rejected", 40),
+      card("A", "rejected", 30),
+      card("A", "accepted", 10),
+      card("B", "accepted", 9),
+      card("C", "rejected", 50),
+      card("C", "accepted", 45),
+      card("C", "rejected", 8),
+      card("C", "accepted", 5),
+      card("D", "rejected", 3),
+      card("E", "rejected", 4, { resolvedByUserId: null }),
+      card("E", "accepted", 2),
+    ],
+  });
+  const window = { since: Date.parse(now) - 86_400_000, now: Date.parse(now) };
+  assert.deepEqual(approvalRounds(snapshot, window), [3, 1, 2, 1]);
+  const day = computeWindow(snapshot, window);
+  assert.equal(day.roundsPerApproval, 1.8);
+  assert.equal(day.cardsApproved, 4);
+});
+
+test("digest line: cards rejected today and rounds per approved card over 7 days, with 7-day history", () => {
+  const snapshot = base({
+    interactions: [
+      card("A", "rejected", 6 * 24 + 2),
+      card("A", "accepted", 6 * 24 + 1),
+      card("B", "rejected", 3),
+      card("B", "rejected", 2),
+      card("C", "accepted", 1),
+    ],
+  });
+  const report = computeJohnTime(snapshot, { now });
+  assert.deepEqual(report.trend.map((day) => day.cardsRejected), [1, 0, 0, 0, 0, 0, 2]);
+  assert.deepEqual(report.week, { cardsApproved: 2, roundsPerApproval: 1.5 });
+  const line = formatDigestLine(report);
+  assert.match(line, /Decisions 3 · Cards rejected 2 · Failed runs 0\. Rounds per approved card \(7d\): 1\.5 over 2\./);
+  assert.match(line, / · Rejected 1,0,0,0,0,0,2 · Rounds 2.0,-,-,-,-,-,1.0 · /);
 });
