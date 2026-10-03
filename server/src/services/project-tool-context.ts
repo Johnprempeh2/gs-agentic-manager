@@ -9,8 +9,9 @@ export async function projectToolContext(db: Db, actor: Request["actor"], write 
   if (actor.type !== "agent" || actor.source !== "agent_jwt" || !actor.runId || !actor.agentId || !actor.companyId) {
     throw forbidden(`${resource} tools require an authenticated agent run`);
   }
-  // Acquire task/run locks before checking mode and session generation. A reset,
-  // cancellation, or steering update cannot race a committing project mutation.
+  // Capture the run's current identity before checking mode and session
+  // generation. This is a consistent snapshot; a pending steering update takes
+  // the task and run locks inside captureRunIdentity before it is resolved.
   const identity = await captureRunIdentity(db, { companyId: actor.companyId, agentId: actor.agentId, runId: actor.runId });
   const run = identity.run;
   const snapshot = run.contextSnapshot ?? {};

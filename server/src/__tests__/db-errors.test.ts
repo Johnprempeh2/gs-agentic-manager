@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { isUniqueViolation } from "../db-errors.js";
+import { isDeadlockDetected, isUniqueViolation } from "../db-errors.js";
+
+describe("isDeadlockDetected", () => {
+  it("matches a bare or Drizzle-wrapped postgres.js deadlock", () => {
+    expect(isDeadlockDetected({ code: "40P01" })).toBe(true);
+    const wrapped = new Error("Failed query: select ... from \"heartbeat_runs\" ... for no key update");
+    (wrapped as { cause?: unknown }).cause = { code: "40P01", message: "deadlock detected" };
+    expect(isDeadlockDetected(wrapped)).toBe(true);
+  });
+
+  it("ignores other errors and stops on a self-referential cause chain", () => {
+    expect(isDeadlockDetected({ cause: { code: "40001" } })).toBe(false);
+    expect(isDeadlockDetected(new Error("deadlock detected"))).toBe(false);
+    expect(isDeadlockDetected(null)).toBe(false);
+    const looped: { cause?: unknown } = {};
+    looped.cause = looped;
+    expect(isDeadlockDetected(looped)).toBe(false);
+  });
+});
 
 const CONSTRAINT = "issues_open_routine_execution_uq";
 
