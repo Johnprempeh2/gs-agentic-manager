@@ -191,7 +191,7 @@ it. If GRE-34 or GRE-36 ship a different
 stop code than the ones above, add it to `SILENT_STOP_CODES` or
 `REASSIGN_STOP_CODE` before taking the after number.
 
-## John's time — Chase, Unstick, Decisions, Failed runs (GRE-397)
+## John's time — Chase, Unstick, Decisions, Cards rejected, Rounds, Failed runs (GRE-397, GRE-453)
 
 One line for the 08:00 digest: how much of John's board time went on chasing
 and unsticking rather than decisions. `john-time.mjs` holds the rules;
@@ -240,6 +240,23 @@ images removed).
 **Decisions.** Interactions John resolved as `accepted`, `rejected` or
 `answered` (expired and cancelled cards are not decisions), plus approvals he
 decided (`approved`, `rejected`, `revision_requested`).
+
+**Cards rejected and rounds per approved card (GRE-453).** Rework on approval
+cards: interactions of kind `request_confirmation` or
+`request_checkbox_confirmation` that John resolved as `accepted` or
+`rejected`. *Cards rejected* is the number he rejected in the 24 hours.
+*Rounds* for a card he accepted is 1 plus the cards he rejected on the same
+task since the last card he accepted there (rejections before the window
+count; the collector reads 30 extra days of approval cards for this). The line
+gives the average over the 7 days and how many approvals it covers, e.g.
+`Rounds per approved card (7d): 1.2 over 47`; the history shows `Rejected` per
+day and `Rounds` per day (`-` when nothing was approved that day). A task
+rejected and never accepted adds to Cards rejected but not to Rounds.
+
+Baseline (GRE-449 assessment): 15 of 33 approval cards rejected, 30 Sep to
+3 Oct 2026. These rules give 16 rejected of 34 decided for the four 24-hour
+windows ending 3 Oct 08:00 UTC, and 1.2 rounds over 47 approvals for the 7
+days to then (`pnpm metrics:john-time --now 2026-10-03T08:00:00Z`).
 
 **Failed runs, by cause.** Runs finished in the window with status `failed`,
 `timed_out` or `interrupted`, or cancelled by a watchdog

@@ -6,6 +6,9 @@
 //               retry, plus repair notes posted under his name
 //   Decisions — cards (interactions) and approvals John answered
 //   Failed    — runs that failed, by cause (error code)
+//   Rejected  — approval cards John rejected (GRE-453)
+//   Rounds    — cards per approval: 1 + the cards John rejected on the same
+//               task before he accepted one, averaged over 7 days (GRE-453)
 //
 // Classification is best effort: simple keyword rules on the comment text,
 // limited to comments whose author is one of John's user ids. A small error
@@ -92,6 +95,35 @@ const FAILED_STATUSES = new Set(["failed", "timed_out", "interrupted"]);
 const WATCHDOG_CANCEL_CODES = new Set(["run_silent_timeout", "process_lost", "adapter_failed"]);
 export const isFailedRun = (run) => FAILED_STATUSES.has(run.status) || (run.status === "cancelled" && WATCHDOG_CANCEL_CODES.has(run.errorCode));
 
+// Approval cards: the interactions that ask John to accept or reject. Only
+// cards John resolved count; expired and cancelled cards are not rework.
+export const APPROVAL_CARD_KINDS = new Set(["request_confirmation", "request_checkbox_confirmation"]);
+const johnApprovalCards = (snapshot, john) =>
+  snapshot.interactions
+    .filter((row) => APPROVAL_CARD_KINDS.has(row.kind) && john.has(row.resolvedByUserId) && (row.status === "accepted" || row.status === "rejected"))
+    .sort((a, b) => time(a.resolvedAt) - time(b.resolvedAt));
+
+// Rounds for each card John accepted in the window: 1 + the cards he rejected
+// on the same task since the last card he accepted there. Rejections before the
+// window count, so the snapshot must reach back further than the window.
+export function approvalRounds(snapshot, { since, now }) {
+  const rejectedSinceAccept = new Map();
+  const rounds = [];
+  for (const card of johnApprovalCards(snapshot, new Set(snapshot.johnUserIds))) {
+    if (time(card.resolvedAt) > now) break;
+    const pending = rejectedSinceAccept.get(card.issueId) ?? 0;
+    if (card.status === "rejected") {
+      rejectedSinceAccept.set(card.issueId, pending + 1);
+      continue;
+    }
+    rejectedSinceAccept.set(card.issueId, 0);
+    if (time(card.resolvedAt) > since) rounds.push(pending + 1);
+  }
+  return rounds;
+}
+
+const average = (values) => (values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 : null);
+
 export function computeWindow(snapshot, { since, now }) {
   const john = new Set(snapshot.johnUserIds);
   const comments = snapshot.comments
@@ -101,6 +133,8 @@ export function computeWindow(snapshot, { since, now }) {
   const decisions =
     snapshot.interactions.filter((row) => john.has(row.resolvedByUserId) && DECIDED_INTERACTION.has(row.status) && inWindow(row.resolvedAt, since, now)).length +
     snapshot.approvals.filter((row) => john.has(row.decidedByUserId) && DECIDED_APPROVAL.has(row.status) && inWindow(row.decidedAt, since, now)).length;
+  const cardsRejected = johnApprovalCards(snapshot, john).filter((card) => card.status === "rejected" && inWindow(card.resolvedAt, since, now)).length;
+  const rounds = approvalRounds(snapshot, { since, now });
   const failed = snapshot.runs.filter((run) => isFailedRun(run) && inWindow(run.finishedAt, since, now));
   const causes = {};
   for (const run of failed) {
@@ -113,6 +147,9 @@ export function computeWindow(snapshot, { since, now }) {
     unstick: count("unstick") + count("repair"),
     repair: count("repair"),
     decisions,
+    cardsRejected,
+    cardsApproved: rounds.length,
+    roundsPerApproval: average(rounds),
     failedRuns: failed.length,
     failedByCause: Object.fromEntries(Object.entries(causes).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))),
     // Ids only: reports never carry comment bodies.
@@ -121,27 +158,38 @@ export function computeWindow(snapshot, { since, now }) {
 }
 
 // Today is the 24 hours up to `now`; the trend is the seven 24-hour windows
-// before and including today, oldest first.
+// before and including today, oldest first. Rounds per approval is also given
+// over the whole `days` window, since one day rarely holds enough approvals.
 export function computeJohnTime(snapshot, { now, days = 7 }) {
   const end = time(now);
   const trend = Array.from({ length: days }, (_, index) => {
     const windowEnd = end - (days - 1 - index) * DAY;
     return { windowEnd: new Date(windowEnd).toISOString(), ...computeWindow(snapshot, { since: windowEnd - DAY, now: windowEnd }) };
   });
-  return { windowEnd: new Date(end).toISOString(), today: trend[trend.length - 1], trend };
+  const rounds = approvalRounds(snapshot, { since: end - days * DAY, now: end });
+  return {
+    windowEnd: new Date(end).toISOString(),
+    today: trend[trend.length - 1],
+    trend,
+    week: { cardsApproved: rounds.length, roundsPerApproval: average(rounds) },
+  };
 }
 
-export function formatDigestLine({ today, trend }, { topCauses = 3 } = {}) {
+export function formatDigestLine({ today, trend, week }, { topCauses = 3 } = {}) {
   const causes = Object.entries(today.failedByCause);
   const shown = causes.slice(0, topCauses).map(([cause, n]) => `${cause} ${n}`);
   const rest = causes.slice(topCauses).reduce((total, [, n]) => total + n, 0);
   if (rest) shown.push(`other ${rest}`);
   const series = (key) => trend.map((day) => day[key]).join(",");
+  const oneDecimal = (value) => (value == null ? "-" : value.toFixed(1));
+  const roundsSeries = trend.map((day) => oneDecimal(day.roundsPerApproval)).join(",");
   return (
     `**John's time (24h):** Chase ${today.chase} · Unstick ${today.unstick}` +
     (today.repair ? ` (${today.repair} repair)` : "") +
-    ` · Decisions ${today.decisions} · Failed runs ${today.failedRuns}` +
+    ` · Decisions ${today.decisions} · Cards rejected ${today.cardsRejected} · Failed runs ${today.failedRuns}` +
     (shown.length ? ` (${shown.join(", ")})` : "") +
-    `. 7 days, oldest first: Chase ${series("chase")} · Unstick ${series("unstick")} · Decisions ${series("decisions")} · Failed ${series("failedRuns")}.`
+    `. Rounds per approved card (7d): ${oneDecimal(week.roundsPerApproval)} over ${week.cardsApproved}.` +
+    ` 7 days, oldest first: Chase ${series("chase")} · Unstick ${series("unstick")} · Decisions ${series("decisions")}` +
+    ` · Rejected ${series("cardsRejected")} · Rounds ${roundsSeries} · Failed ${series("failedRuns")}.`
   );
 }
