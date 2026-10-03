@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
-import { connectionGrants, createDb, principalPermissionGrants, toolPolicies, toolProfiles, startEmbeddedPostgresTestDatabase, getEmbeddedPostgresTestSupport } from "@paperclipai/db";
+import { connectionGrants, createDb, principalPermissionGrants, toolPolicies, toolProfiles, startEmbeddedPostgresTestDatabase, getEmbeddedPostgresTestSupport } from "@greatstone/db";
 import { toolAccessPolicyService } from "../services/tool-access-policy.js";
 import { createToolGatewayService } from "../services/tool-gateway.js";
 import { mcpGatewayProtocolRoutes } from "../routes/tool-gateway.js";
