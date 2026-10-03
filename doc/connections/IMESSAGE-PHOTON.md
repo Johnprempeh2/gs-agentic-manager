@@ -209,7 +209,7 @@ and synthetic gRPC are not live-provider proof. A dedicated test line, known
 participants, real iPhone HEIC, and native polls are required before claiming the
 full live acceptance loop.
 
-Pinned dependencies: `@photon-ai/advanced-imessage@2.1.0`, `@grpc/grpc-js@1.14.4`,
+Pinned dependencies: `@photon-ai/advanced-imessage@2.1.0`, `@grpc/grpc-js@1.14.5`,
 `nice-grpc@2.1.17`, `nice-grpc-common@2.0.4`, `heif2jpeg@0.1.6`.
 
 First-party references inspected on 2026-09-11:
