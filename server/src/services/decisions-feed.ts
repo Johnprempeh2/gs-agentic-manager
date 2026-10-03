@@ -49,6 +49,9 @@ type TaskRow = {
   assigneeUserId: string | null;
 };
 
+/** An interaction that needs the board user at the computer (GRE-450). */
+type DeskAsk = { interactionId: string; issueId: string; kind: string; command: string | null };
+
 /** An agent's open cards for one missing connection, shown as one card. */
 type SharedConnection = { agentId: string; serviceName: string; tasks: TaskRow[] };
 
@@ -185,7 +188,8 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
 
       const taskIds = [...new Set(rawItems.map(taskIdOf).filter((id): id is string => Boolean(id)))];
       const recoveryIds = rawItems.filter((item) => item.sourceKind === "recovery_action").map((item) => item.subject.id);
-      const intentIds = rawItems.filter((item) => cardKind(item) === "connection" && item.sourceKind === "issue_thread_interaction")
+      // Every interaction's payload: connection intents and "at your desk" asks.
+      const interactionIds = rawItems.filter((item) => item.sourceKind === "issue_thread_interaction")
         .map((item) => item.subject.id);
       const failedRunIds = rawItems.filter((item) => item.sourceKind === "failed_run").map((item) => item.subject.id);
 
@@ -217,20 +221,33 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           })
           .from(issueRecoveryActions)
           .where(and(eq(issueRecoveryActions.companyId, companyId), inArray(issueRecoveryActions.id, recoveryIds))),
-        intentIds.length === 0 ? Promise.resolve([]) : db
+        interactionIds.length === 0 ? Promise.resolve([]) : db
           .select({
             id: issueThreadInteractions.id,
+            issueId: issueThreadInteractions.issueId,
+            kind: issueThreadInteractions.kind,
             payload: issueThreadInteractions.payload,
             createdAt: issueThreadInteractions.createdAt,
           })
           .from(issueThreadInteractions)
-          .where(and(eq(issueThreadInteractions.companyId, companyId), inArray(issueThreadInteractions.id, intentIds))),
+          .where(and(eq(issueThreadInteractions.companyId, companyId), inArray(issueThreadInteractions.id, interactionIds))),
         loadAiHealth(companyId, options.userId, now),
       ]);
       const taskById = new Map(taskRows.map((row) => [row.id, row]));
       const agentById = new Map(agentRows.map((row) => [row.id, row]));
       const recoveryById = new Map(recoveryRows.map((row) => [row.id, row]));
       const intentById = new Map(intentRows.map((row) => [row.id, row]));
+      const deskById = new Map<string, DeskAsk>();
+      for (const row of intentRows) {
+        const atDesk = (row.payload as { atDesk?: unknown } | null)?.atDesk;
+        if (!atDesk || typeof atDesk !== "object") continue;
+        deskById.set(row.id, {
+          interactionId: row.id,
+          issueId: row.issueId,
+          kind: row.kind,
+          command: readString(atDesk as Record<string, unknown>, "command"),
+        });
+      }
 
       // Which failing runs were an AI-connection failure, and when they ran.
       const runIds = [
@@ -397,6 +414,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           clarity: group.taskId ? clarityByTask.get(group.taskId) ?? null : null,
           agentRef,
           recoveryById,
+          deskById,
         }));
       }
       cards.sort((left, right) =>
@@ -407,10 +425,14 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
       const countsByKind = Object.fromEntries(DECISION_CARD_KINDS.map((kind) => [kind, 0])) as Record<DecisionCardKind, number>;
       for (const card of cards) countsByKind[card.kind] += 1;
 
+      // "At your desk" cards wait for John at the computer: not in the phone count (GRE-450).
+      const atDeskCount = cards.filter((card) => card.atDesk).length;
+
       return {
         companyId,
         generatedAt: new Date(now).toISOString(),
-        count: cards.length,
+        count: cards.length - atDeskCount,
+        atDeskCount,
         countsByKind,
         staleCleared,
         assignableAgents,
@@ -506,6 +528,7 @@ function buildCard(input: {
   clarity: DecisionCardClarity | null;
   agentRef: (agentId: string | null | undefined) => DecisionCardAgentRef | null;
   recoveryById: Map<string, { id: string; evidence: unknown; nextAction: string }>;
+  deskById: Map<string, DeskAsk>;
 }): DecisionCard {
   const { companyId, group, task, readyToRetry, clarity, agentRef } = input;
   const items = [...group.items].sort((left, right) =>
@@ -605,7 +628,28 @@ function buildCard(input: {
     ? `Waiting for ${clarity.agent?.name ?? "the agent"} to answer your question. ${nextStepByKind[kind]}`
     : nextStepByKind[kind]) + blockerNote;
 
+  // At your desk (GRE-450): every row asks for John at the computer. A card
+  // that also holds phone work (an approval, a retry) stays a phone card.
+  const deskAsks = items.map((item) =>
+    item.sourceKind === "issue_thread_interaction" ? input.deskById.get(item.subject.id) ?? null : null);
+  const atDesk = items.length > 0 && deskAsks.every(Boolean)
+    ? { command: deskAsks.find((ask) => ask?.command)?.command ?? null }
+    : null;
+
   const actions: DecisionCardAction[] = [];
+  // Done accepts a desk confirmation; it wakes the agent to check the work.
+  const doneRequests = atDesk
+    ? deskAsks.filter((ask) => ask?.kind === "request_confirmation")
+      .map((ask) => request("POST", `/api/issues/${ask!.issueId}/interactions/${ask!.interactionId}/accept`))
+    : [];
+  if (doneRequests.length > 0) {
+    actions.push(requestAction(
+      "done",
+      "Done",
+      `Tell ${waiting?.name ?? "the agent"} it is done. The agent is woken to check.`,
+      doneRequests,
+    ));
+  }
   // Native decisions first: the card's own question or approval.
   for (const item of items) {
     if (item.sourceKind === "approval") {
@@ -764,6 +808,7 @@ function buildCard(input: {
     actions,
     clarity,
     items,
+    atDesk,
   };
 }
 

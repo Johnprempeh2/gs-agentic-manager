@@ -844,6 +844,11 @@ function normalizeCreateInteractionInput(
     case "request_confirmation":
       return {
         ...input,
+        // "Done" on an at-your-desk card wakes the agent to check (GRE-450).
+        continuationPolicy:
+          input.payload.atDesk && input.continuationPolicy === "none"
+            ? "wake_assignee"
+            : input.continuationPolicy,
         payload: {
           ...input.payload,
           supersedeOnUserComment: input.payload.supersedeOnUserComment ?? true,

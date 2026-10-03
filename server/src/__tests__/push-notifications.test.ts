@@ -72,6 +72,13 @@ describe("decision push notifications", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("never sends an 'at your desk' card to the phone (GRE-450)", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    feedCards = [{ ...card("task:wsl", "Restart WSL"), atDesk: { command: "wsl --shutdown" } }];
+    expect(await service().notifyNewDecisions()).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
   it("forgets a decision that left the feed, so a new one on the same task notifies again", async () => {
     await service().subscribe(companyId, "john", phone(1));
     feedCards = [card("task:a")];
