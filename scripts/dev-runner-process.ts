@@ -1,3 +1,4 @@
+import { isatty } from "node:tty";
 import { isPidAlive, isProcessGroupAlive } from "../server/src/services/local-service-supervisor.ts";
 
 /**
@@ -65,6 +66,55 @@ const TIMED_OUT = Symbol("timed out");
 /** Whether the runner should start its server child as a process group leader. */
 export function serverChildUsesProcessGroup(platform: NodeJS.Platform = process.platform) {
   return platform !== "win32";
+}
+
+/**
+ * Whether the runner is attached to a terminal: one of its standard streams is
+ * one. nohup redirects every standard stream that is a terminal, and systemd
+ * and scripts that log to a file give it none, so a runner started to outlive
+ * its session never counts as attached.
+ */
+export function devRunnerAttachedToTerminal(isTerminal: (fd: number) => boolean = isatty) {
+  return isTerminal(0) || isTerminal(1) || isTerminal(2);
+}
+
+export type DevRunnerHangupAction = "stop_server" | "ignore";
+
+/**
+ * What a hangup (SIGHUP) means to the runner. In a terminal it means the
+ * terminal closed: the server tree has its own process group and gets no
+ * hangup of its own (#274), so the runner stops it. A runner that is not
+ * attached to a terminal was started to keep running after its session ends,
+ * as live is, so it ignores the hangup: on 3 Oct 2026 the end of the session
+ * that started live hung up the runner, and it stopped live.
+ */
+export function devRunnerHangupAction(attachedToTerminal: boolean): DevRunnerHangupAction {
+  return attachedToTerminal ? "stop_server" : "ignore";
+}
+
+/**
+ * Always installs a SIGHUP listener, also where the hangup is ignored. Node
+ * resets a SIGHUP that nohup set to "ignore" back to the default when it
+ * starts, and the default ends the runner at once, without stopping the server
+ * tree it supervises.
+ */
+export function handleDevRunnerHangups(options: {
+  attachedToTerminal: boolean;
+  stopServer: () => void;
+  log: (message: string) => void;
+  target?: Pick<NodeJS.Process, "on">;
+}): DevRunnerHangupAction {
+  const action = devRunnerHangupAction(options.attachedToTerminal);
+  (options.target ?? process).on("SIGHUP", () => {
+    if (action === "stop_server") {
+      options.stopServer();
+      return;
+    }
+    options.log(
+      "ignored SIGHUP: this dev runner is not attached to a terminal (nohup, systemd or a script started it), so a hangup does not stop it; stop it with SIGTERM or pnpm dev:stop",
+    );
+  });
+  return action;
 }
 
 function sendSignal(target: number, signal: NodeJS.Signals) {

@@ -16,6 +16,8 @@ import {
 import { applyDevRunnerOptions } from "./dev-runner-options.ts";
 import {
   SERVER_TREE_STOP_TIMEOUT_MS,
+  devRunnerAttachedToTerminal,
+  handleDevRunnerHangups,
   serverChildUsesProcessGroup,
   signalServerProcessTreeOnExit,
   stopServerProcessTree,
@@ -953,9 +955,15 @@ process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
 });
 // Closing the terminal used to hang up the server too, because it shared the
-// terminal's process group. It now has its own, so stop it on purpose.
-process.on("SIGHUP", () => {
-  void shutdown("SIGHUP");
+// terminal's process group. It now has its own, so a runner in a terminal stops
+// it on purpose. A runner with no terminal (live, under nohup) ignores the
+// hangup, so the end of the session that started it cannot stop live.
+handleDevRunnerHangups({
+  attachedToTerminal: devRunnerAttachedToTerminal(),
+  stopServer: () => {
+    void shutdown("SIGHUP");
+  },
+  log: logServerTree,
 });
 
 // The managed runtime readiness window is tight, so reuse a fresh bundle

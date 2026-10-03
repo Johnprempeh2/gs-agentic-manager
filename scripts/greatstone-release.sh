@@ -146,13 +146,13 @@ if [ "$FULL_RESTART" = 1 ]; then
     || die "live did not stop completely (see above). Live code is on $LIVE_TAG and nothing new was started; stop what is left by hand, then run $GS_ROOT/start-live.sh, or roll back with: $ROLLBACK"
   say "Live is stopped: no runner, server or database of $LIVE_DIR is left, and nothing answers on $LIVE_URL"
   [ -x "$GS_ROOT/start-live.sh" ] || die "there is no $GS_ROOT/start-live.sh. Live code is on $LIVE_TAG and live is stopped; start the live server by hand."
-  "$GS_ROOT/start-live.sh" </dev/null || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: $ROLLBACK"
+  start_live_server || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: $ROLLBACK"
   say "Started the live server"
 elif [ -z "$STARTED_BEFORE" ]; then
   # No live server answered before the switch (for example a rollback after a
   # failed version): start it instead of asking it to restart.
   [ -x "$GS_ROOT/start-live.sh" ] || die "the live server is not running and there is no $GS_ROOT/start-live.sh. Live code is on $LIVE_TAG; start the live server by hand."
-  "$GS_ROOT/start-live.sh" </dev/null || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: $ROLLBACK"
+  start_live_server || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: $ROLLBACK"
   say "Started the live server"
 else
   RESTART=""

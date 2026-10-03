@@ -657,7 +657,7 @@ async function fullRestartSandbox(t) {
   start(["node", fakeTsx, "src/index.ts"]);
   const db = start(["sleep", "600"]);
   writeFileSync(join(box.root, "data", "instances", "default", "db", "postmaster.pid"), `${db}\n/x\n0\n5432\n`);
-  writeFileSync(join(box.root, "start-live.sh"), `#!/bin/sh\necho started >> "$GSAM_ROOT/start-live.log"\ncd "$GSAM_ROOT/live/server" && nohup node "${fakeTsx}" src/index.ts >/dev/null 2>&1 &\n`, { mode: 0o755 });
+  writeFileSync(join(box.root, "start-live.sh"), `#!/bin/sh\necho started >> "$GSAM_ROOT/start-live.log"\nread -r stat < /proc/$$/stat\necho "$$ $stat" > "$GSAM_ROOT/start-live.session"\ncd "$GSAM_ROOT/live/server" && nohup node "${fakeTsx}" src/index.ts >/dev/null 2>&1 &\n`, { mode: 0o755 });
   for (let i = 0; i < 100; i++) {
     try { await fetch(`${url}/api/health`); break; } catch { await new Promise((r) => setTimeout(r, 50)); }
   }
@@ -665,6 +665,14 @@ async function fullRestartSandbox(t) {
 }
 
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+// "<pid> <contents of /proc/<pid>/stat>" as the fake start-live.sh writes it.
+function startLiveSession(file) {
+  const line = readFileSync(file, "utf8").trim();
+  const pid = Number(line.slice(0, line.indexOf(" ")));
+  const [, , , sid] = line.slice(line.lastIndexOf(")") + 2).split(" ");
+  return { pid, sid: Number(sid) };
+}
 
 test("--full-restart stops the runner, the server it leaves and the database, then starts live on the new tag", { skip: process.platform !== "linux" && "reads /proc" }, async (t) => {
   const box = await fullRestartSandbox(t);
@@ -683,7 +691,45 @@ test("--full-restart stops the runner, the server it leaves and the database, th
   assert.equal(alive(box.runner), false);
   assert.equal(alive(box.db), false);
   assert.equal(readFileSync(join(box.root, "start-live.log"), "utf8"), "started\n");
+  // start-live.sh led a session of its own, so the end of the session that ran
+  // the release cannot hang up the live server it started (3 Oct 2026).
+  const session = startLiveSession(join(box.root, "start-live.session"));
+  assert.equal(session.sid, session.pid);
   assert.equal(git(box.origin, "tag", "--list", TODAY_TAG), TODAY_TAG);
+});
+
+test("--full-restart still fails with the rollback hint when start-live.sh fails", { skip: process.platform !== "linux" && "reads /proc" }, async (t) => {
+  const box = await fullRestartSandbox(t);
+  writeFileSync(join(box.root, "start-live.sh"), '#!/bin/sh\necho started >> "$GSAM_ROOT/start-live.log"\nexit 3\n', { mode: 0o755 });
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "--full-restart", "rc-2026-09-29.1"], box.env);
+  assert.notEqual(release.status, 0);
+  assert.match(release.stderr, /^release: the live server did not start on live-\d{4}-\d{2}-\d{2}\.1; see ~\/GSAM\/logs\/live\.log\. Roll back with: scripts\/greatstone-release\.sh --full-restart live-2026-09-01\.1$/m);
+  assert.doesNotMatch(release.stdout, /^Started the live server$/m);
+  assert.equal(readFileSync(join(box.root, "start-live.log"), "utf8"), "started\n");
+});
+
+// start_live_server on its own: a session of its own where setsid exists, and a
+// direct call where it does not (macOS). Either way the exit status of
+// start-live.sh comes back, so the release can die with the rollback hint.
+test("start_live_server gives start-live.sh its own session and keeps its exit status, with or without setsid", { skip: process.platform !== "linux" && "reads /proc" }, (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gs-start-live-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // Builtins only, so it also runs with PATH emptied below.
+  writeFileSync(join(root, "start-live.sh"), '#!/bin/sh\nread -r stat < /proc/$$/stat\necho "$$ $stat" > "$GSAM_ROOT/start-live.session"\nexit 3\n', { mode: 0o755 });
+  const run = (pathOverride) => spawnSync("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; ${pathOverride}start_live_server`], {
+    encoding: "utf8",
+    env: { ...process.env, GSAM_ROOT: root },
+  });
+
+  const withSetsid = run("");
+  assert.equal(withSetsid.status, 3, withSetsid.stderr);
+  const own = startLiveSession(join(root, "start-live.session"));
+  assert.equal(own.sid, own.pid);
+
+  const withoutSetsid = run("PATH=/nonexistent; ");
+  assert.equal(withoutSetsid.status, 3, withoutSetsid.stderr);
+  const shared = startLiveSession(join(root, "start-live.session"));
+  assert.notEqual(shared.sid, shared.pid);
 });
 
 test("--full-restart refuses to run from the app before anything moves", (t) => {

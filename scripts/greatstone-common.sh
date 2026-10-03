@@ -314,3 +314,17 @@ stop_live_server() {
     return 1
   fi
 }
+
+# Starts live with $GS_ROOT/start-live.sh in a session of its own, so that the
+# end of the session this script runs in (a closed terminal, an SSH logout, the
+# end of a wsl.exe call) cannot hang up the live server. On 3 Oct 2026 the end
+# of the wsl.exe call that ran a --full-restart release stopped live moments
+# after it reported healthy. --wait keeps the exit status of start-live.sh.
+# macOS has no setsid; there start-live.sh runs directly, as before.
+start_live_server() {
+  if command -v setsid >/dev/null 2>&1; then
+    setsid --wait "$GS_ROOT/start-live.sh" </dev/null
+  else
+    "$GS_ROOT/start-live.sh" </dev/null
+  fi
+}

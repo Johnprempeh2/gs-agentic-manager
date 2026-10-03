@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -6,6 +7,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  devRunnerAttachedToTerminal,
+  devRunnerHangupAction,
+  handleDevRunnerHangups,
   serverChildUsesProcessGroup,
   signalServerProcessTreeOnExit,
   stopServerProcessTree,
@@ -178,6 +182,60 @@ describe("serverChildUsesProcessGroup", () => {
     expect(serverChildUsesProcessGroup("linux")).toBe(true);
     expect(serverChildUsesProcessGroup("darwin")).toBe(true);
     expect(serverChildUsesProcessGroup("win32")).toBe(false);
+  });
+});
+
+describe("dev runner hangups (SIGHUP)", () => {
+  it("counts the runner as attached when any standard stream is a terminal", () => {
+    const only = (terminalFd: number | null) => (fd: number) => fd === terminalFd;
+    expect(devRunnerAttachedToTerminal(only(0))).toBe(true);
+    expect(devRunnerAttachedToTerminal(only(1))).toBe(true);
+    expect(devRunnerAttachedToTerminal(only(2))).toBe(true);
+    // nohup, systemd, or a script with its output in a log (live, 3 Oct 2026).
+    expect(devRunnerAttachedToTerminal(only(null))).toBe(false);
+  });
+
+  it("stops the server on a hangup only in a terminal", () => {
+    expect(devRunnerHangupAction(true)).toBe("stop_server");
+    expect(devRunnerHangupAction(false)).toBe("ignore");
+  });
+
+  function hangupHarness(attachedToTerminal: boolean) {
+    const target = new EventEmitter();
+    const stops: number[] = [];
+    const logs: string[] = [];
+    const action = handleDevRunnerHangups({
+      attachedToTerminal,
+      stopServer: () => stops.push(Date.now()),
+      log: (message) => logs.push(message),
+      target: target as unknown as Pick<NodeJS.Process, "on">,
+    });
+    return { target, stops, logs, action };
+  }
+
+  it("in a terminal, stops the server tree when the terminal closes (#274)", () => {
+    const { target, stops, logs, action } = hangupHarness(true);
+    expect(action).toBe("stop_server");
+    target.emit("SIGHUP");
+    expect(stops).toHaveLength(1);
+    expect(logs).toEqual([]);
+  });
+
+  it("with no terminal, keeps a listener that ignores the hangup instead of leaving the default, which would end the runner", () => {
+    const { target, stops, logs, action } = hangupHarness(false);
+    expect(action).toBe("ignore");
+    expect(target.listenerCount("SIGHUP")).toBe(1);
+    target.emit("SIGHUP");
+    target.emit("SIGHUP");
+    expect(stops).toEqual([]);
+    expect(logs).toHaveLength(2);
+    expect(logs[0]).toMatch(/ignored SIGHUP/);
+  });
+
+  it("leaves SIGINT and SIGTERM to the runner", () => {
+    const { target } = hangupHarness(false);
+    expect(target.listenerCount("SIGINT")).toBe(0);
+    expect(target.listenerCount("SIGTERM")).toBe(0);
   });
 });
 
