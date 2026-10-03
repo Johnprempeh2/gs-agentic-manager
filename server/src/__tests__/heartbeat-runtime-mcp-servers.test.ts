@@ -213,7 +213,7 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
   });
 
   async function seedAssignedAgents(count: number) {
-    process.env.PAPERCLIP_API_URL = "https://paperclip.example.test";
+    process.env.GSAM_API_URL = "https://paperclip.example.test";
     const [company] = await db.insert(companies).values({
       name: `Runtime MCP ${randomUUID()}`,
       issuePrefix: `RM${randomUUID().slice(0, 5).toUpperCase()}`,

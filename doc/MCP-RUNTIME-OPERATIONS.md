@@ -15,7 +15,7 @@ Tool action approvals require `GSAM_TOOL_ACTION_SIGNING_SECRET` to be set indepe
 
 ## Native runtime gateway ownership
 
-Paperclip Runner creates an immutable MCP assignment for one agent. Its gateway
+GS Agentic Manager Runner creates an immutable MCP assignment for one agent. Its gateway
 stores the owner in `agentId` and the agent context scope. Authentication checks
 that the run belongs to that owner and that the gateway and profile metadata
 refer to the same assignment. Invalid ownership or assignment metadata rejects
@@ -27,7 +27,7 @@ a shared gateway. Invalid JSON metadata, including JSON `null`, returns the same
 authentication rejection. Use an ordinary profile for an explicit shared gateway.
 
 Older native gateways can have a null `agentId`. Authentication still checks
-their metadata owner. When the owner reuses the assignment, Paperclip validates
+their metadata owner. When the owner reuses the assignment, GS Agentic Manager validates
 the gateway and profile before it binds the gateway to that agent. A conflicting
 owner is never overwritten.
 
