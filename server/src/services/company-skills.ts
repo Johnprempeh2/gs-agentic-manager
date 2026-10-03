@@ -26,7 +26,12 @@ import {
   issueThreadInteractions,
   issueWorkProducts,
 } from "@greatstone/db";
-import { readPaperclipSkillSyncPreference, writePaperclipSkillSyncPreference } from "@greatstone/adapter-utils/server-utils";
+import {
+  GSAM_SKILL_DISPLAY_NAMES,
+  rebrandGsamSkillText,
+  readPaperclipSkillSyncPreference,
+  writePaperclipSkillSyncPreference,
+} from "@greatstone/adapter-utils/server-utils";
 import type { PaperclipDesiredSkillEntry, PaperclipSkillEntry } from "@greatstone/adapter-utils/server-utils";
 import type {
   AgentDesiredSkillEntry,
@@ -5859,7 +5864,10 @@ export function companySkillService(db: Db) {
     }
   }
 
-  async function materializedVersionSnapshotMatches(skillDir: string, version: CompanySkillVersion) {
+  async function materializedVersionSnapshotMatches(
+    skillDir: string,
+    version: { fileInventory: Array<{ path: string; content: string }> },
+  ) {
     const expected = new Map<string, string>();
     let sawSkillFile = false;
     for (const entry of version.fileInventory) {
@@ -5908,6 +5916,38 @@ export function companySkillService(db: Db) {
       throw unprocessable("Company skill version could not be materialized because its SKILL.md snapshot is missing.");
     }
 
+    return skillDir;
+  }
+
+  /**
+   * Built-in skills reach agents under their Greatstone name (gsam, ...): a
+   * renamed copy at a stable path, so symlinked skill homes see content
+   * updates without relinking. Rewritten only when the content changes, and
+   * swapped in whole so a concurrent run never reads a half-written copy.
+   */
+  async function materializeGsamSkillAlias(companyId: string, source: string, name: string) {
+    const files = (await listMaterializedFiles(source)) ?? [];
+    const fileInventory = await Promise.all(files.map(async (relativePath) => {
+      const content = await fs.readFile(path.join(source, relativePath), "utf8");
+      return { path: relativePath, content: relativePath.endsWith(".md") ? rebrandGsamSkillText(content) : content };
+    }));
+    const skillDir = path.resolve(resolveManagedSkillsRoot(companyId), "__runtime__", "__gsam__", name);
+    if (await materializedVersionSnapshotMatches(skillDir, { fileInventory })) return skillDir;
+    const staging = `${skillDir}.${randomUUID()}.tmp`;
+    const retired = `${skillDir}.${randomUUID()}.old`;
+    try {
+      for (const file of fileInventory) {
+        const target = path.join(staging, file.path);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.writeFile(target, file.content, "utf8");
+      }
+      await fs.rename(skillDir, retired).catch(() => {});
+      // A concurrent run may have published first; its copy has the same content.
+      await fs.rename(staging, skillDir).catch(() => {});
+    } finally {
+      await fs.rm(staging, { recursive: true, force: true });
+      await fs.rm(retired, { recursive: true, force: true });
+    }
     return skillDir;
   }
 
@@ -6011,10 +6051,17 @@ export function companySkillService(db: Db) {
       const sourceResolution = await resolveRuntimeSkillSource(companyId, skill, options);
       if (!sourceResolution) continue;
 
+      const gsamName = GSAM_SKILL_DISPLAY_NAMES[skill.key];
+      const gsamSource = gsamName && sourceResolution.status === "available"
+        ? await materializeGsamSkillAlias(companyId, sourceResolution.source, gsamName).catch((error) => {
+          logger.warn({ err: error, skillKey: skill.key }, "Could not materialise the GSAM-named skill copy; mounting the original");
+          return null;
+        })
+        : null;
       out.push({
         key: skill.key,
-        runtimeName: buildSkillRuntimeName(skill.key, skill.slug),
-        source: sourceResolution.source,
+        runtimeName: gsamSource ? gsamName! : buildSkillRuntimeName(skill.key, skill.slug),
+        source: gsamSource ?? sourceResolution.source,
         versionId: options.versionSelections?.get(skill.key) ?? null,
         currentVersionId: skill.currentVersionId,
         sourceStatus: sourceResolution.status,

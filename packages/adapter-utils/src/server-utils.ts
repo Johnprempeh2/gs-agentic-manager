@@ -4276,6 +4276,31 @@ export const GSAM_BUILT_IN_SKILL_KEYS = [
   "paperclipai/paperclip/ponytail",
 ];
 
+/**
+ * Agents see the built-in operational skills under Greatstone names. Keys,
+ * repo folders, routes and the capability inventory keep "paperclip"; only the
+ * folder name and the SKILL text an agent reads change, at materialisation.
+ */
+export const GSAM_SKILL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  "paperclipai/paperclip/paperclip": "gsam",
+  "paperclipai/paperclip/paperclip-board": "gsam-board",
+  "paperclipai/paperclip/paperclip-converting-plans-to-tasks": "gsam-plans-to-tasks",
+  "paperclipai/paperclip/paperclip-create-agent": "gsam-create-agent",
+};
+
+/** Rename the built-in skills in text an agent reads: the frontmatter name, `name` mentions and skills/<name>/references/ paths. */
+export function rebrandGsamSkillText(text: string): string {
+  let out = text;
+  for (const [key, name] of Object.entries(GSAM_SKILL_DISPLAY_NAMES)) {
+    const legacy = key.slice(key.lastIndexOf("/") + 1);
+    out = out
+      .replace(new RegExp(`^name:[ \\t]*${legacy}[ \\t]*$`, "m"), `name: ${name}`)
+      .replaceAll(`\`${legacy}\``, `\`${name}\``)
+      .replaceAll(`skills/${legacy}/references/`, `skills/${name}/references/`);
+  }
+  return out;
+}
+
 export function resolveLegacyPaperclipDesiredSkillNames(
   config: Record<string, unknown>,
   availableEntries: Array<{ key: string; runtimeName?: string | null }>,

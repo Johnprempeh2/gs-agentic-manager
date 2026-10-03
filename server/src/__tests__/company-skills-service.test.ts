@@ -20,6 +20,8 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { ensureCodexSkillsInjected } from "@greatstone/adapter-codex-local/server";
+import { rebrandGsamSkillText } from "@greatstone/adapter-utils/server-utils";
 import { companySkillService } from "../services/company-skills.ts";
 import { removeRuntimeSkillCache } from "../services/runtime-skill-cache.js";
 import { folderService } from "../services/folders.js";
@@ -686,6 +688,39 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     });
   });
 
+  it("mounts the built-in skills for an agent run under their GSAM names", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "GSAM names", issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}` });
+    const entries = await svc.listRuntimeSkillEntries(companyId);
+    const core = entries.find((entry) => entry.key === "paperclipai/paperclip/paperclip")!;
+    expect(core.runtimeName).toBe("gsam");
+    expect(entries.find((entry) => entry.key === "paperclipai/paperclip/paperclip-board")?.runtimeName).toBe("gsam-board");
+    expect(entries.find((entry) => entry.key === "paperclipai/paperclip/paperclip-converting-plans-to-tasks")?.runtimeName).toBe("gsam-plans-to-tasks");
+    expect(entries.find((entry) => entry.key === "paperclipai/paperclip/paperclip-create-agent")?.runtimeName).toBe("gsam-create-agent");
+
+    // A Codex home from before the rename still links the repo folder by its old name.
+    const repoSkill = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../skills/paperclip");
+    const skillsHome = await fs.mkdtemp(path.join(os.tmpdir(), "gsam-codex-skills-"));
+    cleanupDirs.add(skillsHome);
+    await fs.symlink(repoSkill, path.join(skillsHome, "paperclip"));
+    await ensureCodexSkillsInjected(async () => {}, { skillsHome, skillsEntries: entries, desiredSkillNames: [core.key] });
+
+    expect(await fs.readdir(skillsHome)).toEqual(["gsam"]);
+    const markdown = await fs.readFile(path.join(skillsHome, "gsam", "SKILL.md"), "utf8");
+    expect(parseFrontmatterMarkdown(markdown).frontmatter.name).toBe("gsam");
+    expect(markdown).toContain("use the `gsam-create-agent` skill");
+    expect(markdown).toContain("`skills/gsam/references/api-reference.md`");
+    expect(markdown).not.toContain("`paperclip-create-agent`");
+    await fs.access(path.join(skillsHome, "gsam", "references", "api-reference.md"));
+    // The repo copy, pinned by the capability inventory, is untouched.
+    expect(parseFrontmatterMarkdown(await fs.readFile(path.join(repoSkill, "SKILL.md"), "utf8")).frontmatter.name).toBe("paperclip");
+
+    // Stable and idempotent: the next run neither moves nor rewrites the copy.
+    const before = await fs.stat(path.join(core.source, "SKILL.md"));
+    expect((await svc.listRuntimeSkillEntries(companyId)).find((entry) => entry.key === core.key)).toEqual(core);
+    expect((await fs.stat(path.join(core.source, "SKILL.md"))).mtimeMs).toBe(before.mtimeMs);
+  });
+
   it("does not retouch unchanged bundled skills during list refresh", async () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
@@ -810,7 +845,11 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       }
     }
     await walk(materialized.source);
-    expect(materializedHashes).toEqual(championHashes);
+    // The agent-facing copy is the frozen snapshot with its GSAM name applied.
+    expect(materializedHashes).toEqual(Object.fromEntries(champion.fileInventory.map((entry) => [
+      entry.path,
+      createHash("sha256").update(entry.path.endsWith(".md") ? rebrandGsamSkillText(entry.content) : entry.content).digest("hex"),
+    ])));
     expect(materializedHashes).not.toHaveProperty("EDITS.md");
   });
 
