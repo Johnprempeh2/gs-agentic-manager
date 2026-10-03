@@ -26,6 +26,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { NotNowButton } from "./NotNowButton";
+import { AtDeskPanel } from "./AtDeskPanel";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
@@ -87,6 +88,8 @@ export function visibleCardActions(card: DecisionCard): DecisionCardAction[] {
   const answersInPlace = decisionCardQuestionItem(card) !== null;
   return card.actions.filter((action) => {
     if (action.id === "ask_clarity") return false;
+    // Done sits in the "At your desk" panel, next to the command (GRE-450).
+    if (action.id === "done") return false;
     // A question is answered on the card, so its "Answer" link is not needed.
     if (answersInPlace && action.type === "link" && action.id === "open") return false;
     return true;
@@ -155,7 +158,13 @@ export function DecisionFeedCard({
   const clarityAction = card.actions.find((action) => action.id === "ask_clarity") ?? null;
   const actions = visibleCardActions(card);
   const openAction = actions.find((action) => action.id === openActionId) ?? null;
-  const questionItem = hideInlineResolver ? null : decisionCardQuestionItem(card);
+  const doneAction = card.actions.find((action) => action.id === "done") ?? null;
+  // An at-desk confirmation is answered with Done, not a second Accept.
+  const questionItem = hideInlineResolver
+    ? null
+    : doneAction
+      ? card.items.find((item) => isFocusItem(item) && focusItemKind(item) !== "request_confirmation") ?? null
+      : decisionCardQuestionItem(card);
   // A card answered in place has its main action (Approve, Submit) in the
   // question itself; the card's own actions are then the rare ones and fold
   // into a menu, so the answer sits higher (GRE-360).
@@ -231,6 +240,15 @@ export function DecisionFeedCard({
         </CardFact>
         <CardFact label="Next">{card.nextStep}</CardFact>
       </dl>
+
+      {card.atDesk ? (
+        <AtDeskPanel
+          command={card.atDesk.command}
+          doneAction={doneAction}
+          pending={actionMutation.isPending && actionMutation.variables?.action.id === "done"}
+          onDone={() => doneAction && runAction(doneAction)}
+        />
+      ) : null}
 
       <DecisionCardDeliverables card={card} />
 
