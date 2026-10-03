@@ -121,6 +121,19 @@ a merge on `local-ci` is not blocked there. If a branch rule is added later
 that requires the "Fork CI" check, it must also accept `local-ci` (or let
 Keystone bypass it), or the fallback cannot merge.
 
+## Asking John to approve something you made
+
+John approves what he can see, not a description (GRE-449). Before you post
+a card that asks him to approve a design, screen, deck, video or document:
+
+1. **Check the draft first.** Hold it against the `greatstone-brand` skill and
+   the `lessons` document on GRE-13. Fix what they catch before John sees it.
+2. **Attach the real thing.** Upload it to the task as an attachment, or
+   register it as a deliverable. The Decisions card shows the latest
+   deliverable inline, so John does not leave the card.
+3. **Then post the card.** Without an attachment on the task the server refuses
+   the card with a `422` (`approval_evidence_missing`).
+
 ## When something is unclear or blocked
 
 Say so on the issue in one or two sentences, set it to `blocked`, and name who
