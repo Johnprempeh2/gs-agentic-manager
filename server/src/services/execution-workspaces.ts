@@ -2,6 +2,7 @@ import { createWorkspaceGitInspectionCache } from "./workspace-git-inspection-ca
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, notExists, notInArray, or, sql } from "drizzle-orm";
@@ -36,6 +37,7 @@ import type {
 } from "@greatstone/shared";
 import { deriveProjectUrlKey, WORKSPACE_OVERVIEW_LINKED_ISSUE_LIMIT } from "@greatstone/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { logger } from "../middleware/logger.js";
 import {
   applyIssueExecutionPolicyTransition,
@@ -64,6 +66,13 @@ import {
 } from "./workspace-runtime-read-model.js";
 
 type ExecutionWorkspaceRow = typeof executionWorkspaces.$inferSelect;
+type TerminalWorkspaceCleanupOptions = { deleteBranch: boolean; savePatch?: boolean };
+type TerminalWorkspaceCleanupResult = {
+  cleaned: boolean;
+  warnings: string[];
+  skippedReopened?: boolean;
+  patch?: { path: string; fileCount: number };
+};
 type WorkspaceRuntimeServiceRow = typeof workspaceRuntimeServices.$inferSelect;
 type RuntimeServiceReadDb = Pick<Db, "select">;
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -252,7 +261,11 @@ export type ExecutionWorkspaceServiceOptions = {
   // the cooldown. The default is 0, so a closed issue's workspace is archived
   // on the next sweep (GRE-208).
   workspaceReaperCooldownDays?: number;
-  inspectGitCloseReadiness?: (workspace: ExecutionWorkspace) => Promise<{
+  // Where the terminal reaper saves the uncommitted changes of a finished
+  // worktree before it removes it. Defaults to `data/worktree-patches` under the
+  // instance root (GRE-452).
+  worktreePatchDir?: string;
+  inspectGitCloseReadiness?:(workspace: ExecutionWorkspace) => Promise<{
     git: ExecutionWorkspaceCloseGitReadiness | null;
     warnings: string[];
   }>;
@@ -446,6 +459,8 @@ async function readGitStdout(args: string[], cwd: string): Promise<string | null
 // The metadata key that records the one notice the terminal reaper posts when it
 // keeps a finished workspace because archiving it would lose work.
 export const TERMINAL_WORKSPACE_KEPT_NOTICE_METADATA_KEY = "terminalCleanupKeptNotice";
+// The activity the terminal reaper records for each worktree it removes.
+export const TERMINAL_WORKTREE_REMOVED_ACTION = "execution_workspace.issue_terminal_worktree_removed";
 const TERMINAL_WORKSPACE_KEPT_NOTICE_LIST_LIMIT = 10;
 
 // Count the commits on HEAD that no remote-tracking ref contains. Zero means
@@ -477,6 +492,40 @@ async function inspectUnpushedCommits(workspacePath: string, baseRef: string | n
   } catch {
     return null;
   }
+}
+
+const WORKSPACE_CHANGES_PATCH_MAX_BYTES = 512 * 1024 * 1024;
+
+// Build one binary patch of every uncommitted and untracked change against HEAD,
+// so the terminal reaper can save the work before it removes a finished worktree
+// (GRE-452). A throwaway index keeps the worktree's own index untouched. Ignored
+// files stay out, the same as in git status. The digest is the SHA-256 of the
+// patch; the cleanup recomputes it to prove nothing changed after the save.
+async function buildWorkspaceChangesPatch(workspacePath: string): Promise<{
+  patch: Buffer;
+  digest: string;
+  fileCount: number;
+}> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "gsam-worktree-patch-"));
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(tempDir, "index") };
+  try {
+    await execFileAsync("git", ["-C", workspacePath, "read-tree", "HEAD"], { cwd: workspacePath, env });
+    await execFileAsync("git", ["-C", workspacePath, "add", "-A"], { cwd: workspacePath, env });
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", workspacePath, "diff", "--cached", "--binary", "--full-index", "--no-color", "--no-ext-diff", "HEAD"],
+      { cwd: workspacePath, env, encoding: "buffer", maxBuffer: WORKSPACE_CHANGES_PATCH_MAX_BYTES },
+    );
+    const patch = Buffer.from(stdout);
+    const fileCount = patch.toString("utf8").match(/^diff --git /gm)?.length ?? 0;
+    return { patch, digest: createHash("sha256").update(patch).digest("hex"), fileCount };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function sanitizePatchFileSegment(value: string) {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "workspace";
 }
 
 async function listUncommittedChanges(workspacePath: string): Promise<{ count: number; entries: string[] }> {
@@ -1579,9 +1628,12 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     };
   }
 
+  // A null `savedPatchDigest` requires a clean worktree. A digest allows only
+  // the exact uncommitted changes that the saved patch holds.
   async function assertTerminalCleanupGitStateUnchanged(
     workspace: ExecutionWorkspaceRow,
     expectedHeadSha: string | null,
+    savedPatchDigest: string | null = null,
   ) {
     if (workspace.providerType !== "git_worktree") return;
     const workspacePath = readNullableString(workspace.providerRef) ?? readNullableString(workspace.cwd);
@@ -1597,15 +1649,45 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     if (!current.statusInspectionSucceeded) {
       throw new Error("Refusing terminal workspace cleanup because the git status could not be verified");
     }
+    const dirty = Boolean(current.git?.hasDirtyTrackedFiles || current.git?.hasUntrackedFiles);
     if (
       !current.git?.repoRoot
-      || current.git.hasDirtyTrackedFiles
-      || current.git.hasUntrackedFiles
+      || (dirty && !savedPatchDigest)
       || currentHeadSha !== expectedHeadSha
       || (workspace.branchName && currentBranchName !== workspace.branchName)
     ) {
       throw new Error("Refusing terminal workspace cleanup because the git worktree changed after delivery was verified");
     }
+    if (savedPatchDigest && (await buildWorkspaceChangesPatch(workspacePath)).digest !== savedPatchDigest) {
+      throw new Error("Refusing terminal workspace cleanup because the uncommitted changes differ from the saved patch");
+    }
+  }
+
+  // Save the worktree's uncommitted and untracked changes as a patch file under
+  // the instance data folder (GRE-452). The file is written before anything is
+  // removed, and the cleanup then removes the worktree only while its changes
+  // still match this patch.
+  async function saveTerminalWorkspacePatch(workspace: ExecutionWorkspaceRow) {
+    const workspacePath = readNullableString(workspace.providerRef) ?? readNullableString(workspace.cwd);
+    if (!workspacePath) throw new Error("Refusing to save a workspace patch because the worktree path is unknown");
+    const { patch, digest, fileCount } = await buildWorkspaceChangesPatch(workspacePath);
+    const sourceIssue = workspace.sourceIssueId
+      ? await db
+          .select({ identifier: issues.identifier })
+          .from(issues)
+          .where(and(eq(issues.companyId, workspace.companyId), eq(issues.id, workspace.sourceIssueId)))
+          .then((rows) => rows[0] ?? null)
+      : null;
+    const label = sanitizePatchFileSegment(workspace.branchName ?? sourceIssue?.identifier ?? workspace.id);
+    const stamp = now().toISOString().replace(/[:.]/g, "-");
+    const dir = path.join(
+      opts.worktreePatchDir ?? path.resolve(resolvePaperclipInstanceRoot(), "data", "worktree-patches"),
+      workspace.companyId,
+    );
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+    const patchPath = path.join(dir, `${label}-${stamp}-${workspace.id.slice(0, 8)}.patch`);
+    await fs.writeFile(patchPath, patch, { mode: 0o600, flag: "wx" });
+    return { patchPath, digest, fileCount };
   }
 
   async function hydrateWorkspace(row: ExecutionWorkspaceRow, runtimeServices: WorkspaceRuntimeService[] = []) {
@@ -1794,8 +1876,8 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     workspace: ExecutionWorkspaceRow,
     expectedHeadSha: string | null,
     capturedGeneration: number,
-    options: { deleteBranch: boolean } = { deleteBranch: true },
-  ): Promise<{ cleaned: boolean; warnings: string[]; skippedReopened?: boolean }> {
+    options: TerminalWorkspaceCleanupOptions = { deleteBranch: true },
+  ): Promise<TerminalWorkspaceCleanupResult> {
     // The gateway holds the per-workspace lifecycle lock across the destructive
     // actions. A reopen takes the same lock, so a reopen cannot rebuild the
     // worktree while this cleanup runs, and this cleanup cannot delete a worktree
@@ -1804,7 +1886,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     // the pooled connection without a self-block. A reopen restored this
     // workspace after it was archived when the guard fails, so the cleanup skips
     // and does not destroy the rebuilt worktree.
-    return fenceLifecycleGenerationWrite<{ cleaned: boolean; warnings: string[]; skippedReopened?: boolean }>({
+    return fenceLifecycleGenerationWrite<TerminalWorkspaceCleanupResult>({
       workspaceId: workspace.id,
       expectedGeneration: capturedGeneration,
       isWriteTarget: (fresh) => isClosedExecutionWorkspaceStatus(fresh.status),
@@ -1820,8 +1902,8 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
   async function runTerminalWorkspaceCleanup(
     workspace: ExecutionWorkspaceRow,
     expectedHeadSha: string | null,
-    options: { deleteBranch: boolean },
-  ) {
+    options: TerminalWorkspaceCleanupOptions,
+  ): Promise<TerminalWorkspaceCleanupResult> {
     const [
       {
         acquireGitWorktreeCleanupLock,
@@ -1856,9 +1938,13 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
       ? await acquireGitWorktreeCleanupLock(workspace.providerRef ?? workspace.cwd!)
       : null;
     try {
-      await assertTerminalCleanupGitStateUnchanged(workspace, expectedHeadSha);
+      // Save the uncommitted changes first, under the cleanup lock, so every
+      // check below compares the worktree against the saved patch.
+      const savedPatch = options.savePatch ? await saveTerminalWorkspacePatch(workspace) : null;
+      const savedPatchDigest = savedPatch?.digest ?? null;
+      await assertTerminalCleanupGitStateUnchanged(workspace, expectedHeadSha, savedPatchDigest);
       await opts.beforeTerminalWorkspaceCleanup?.(workspace);
-      await assertTerminalCleanupGitStateUnchanged(workspace, expectedHeadSha);
+      await assertTerminalCleanupGitStateUnchanged(workspace, expectedHeadSha, savedPatchDigest);
       await stopRuntimeServicesForExecutionWorkspace({
         db,
         executionWorkspaceId: workspace.id,
@@ -1873,7 +1959,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           companyId: workspace.companyId,
           executionWorkspaceId: workspace.id,
         }),
-        assertSafeToCleanup: () => assertTerminalCleanupGitStateUnchanged(workspace, expectedHeadSha),
+        assertSafeToCleanup: () => assertTerminalCleanupGitStateUnchanged(workspace, expectedHeadSha, savedPatchDigest),
         beforeBranchDelete: () => cleanupLock?.releaseBranchRefLock() ?? Promise.resolve(),
         expectedBranchHeadSha: expectedHeadSha,
         // Git index, HEAD, and branch-ref locks prevent a clean HEAD change
@@ -1881,7 +1967,9 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         // after non-forced worktree removal, then deletion is anchored to the
         // verified HEAD so a raced ref update fails closed.
         runCleanupCommands: false,
-        forceWorktreeRemoval: false,
+        // A saved patch holds the uncommitted changes, and the check right
+        // before removal proves they still match it, so force is safe here.
+        forceWorktreeRemoval: Boolean(savedPatch),
         deleteBranch: options.deleteBranch,
       });
       if (cleanup.cleaned && workspace.mode === "shared_workspace") {
@@ -1904,7 +1992,10 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           })
           .where(eq(executionWorkspaces.id, workspace.id));
       }
-      return cleanup;
+      return {
+        ...cleanup,
+        ...(savedPatch ? { patch: { path: savedPatch.patchPath, fileCount: savedPatch.fileCount } } : {}),
+      };
     } finally {
       await cleanupLock?.release();
     }
@@ -2797,6 +2888,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         skippedCooldown: 0,
         clearedStaleReopenPending: 0,
         keptNoticePosted: 0,
+        patchedAndRemoved: 0,
       };
 
       for (const workspace of candidates) {
@@ -2871,7 +2963,16 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           ? await inspectUnpushedCommits(git.workspacePath, git.baseRef)
           : null;
         const pushedOnly = !merged && unpushed?.count === 0;
-        if (!recordOnly && (assessment.workspaceDirty || (!merged && !pushedOnly))) {
+        // A merged worktree that only holds uncommitted or untracked changes is
+        // removed too: the cleanup saves those changes as a patch file first and
+        // keeps the branch (GRE-452). Before this, such worktrees stayed for
+        // ever and John removed them by hand.
+        const savePatch = !recordOnly
+          && merged
+          && assessment.workspaceDirty
+          && workspace.providerType === "git_worktree"
+          && Boolean(git?.repoRoot && assessment.workspaceHeadSha);
+        if (!recordOnly && !savePatch && (assessment.workspaceDirty || (!merged && !pushedOnly))) {
           // Name the unpushed commits only when git confirmed them and no merged
           // pull request is pending a lookup, so the notice never guesses.
           const confirmedUnpushed = unpushed && unpushed.count > 0 && assessment.deliveryState === "unmerged"
@@ -3082,7 +3183,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           details: {
             sourceIssueId: archived.sourceIssueId,
             deliveryState: assessment.deliveryState,
-            branchKept: pushedOnly,
+            branchKept: pushedOnly || savePatch,
             cleanupEligibleAt: archived.cleanupEligibleAt?.toISOString() ?? null,
             cleanupReason: ISSUE_TERMINAL_WORKSPACE_CLEANUP_REASON,
           },
@@ -3096,11 +3197,32 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
             archived,
             assessment.workspaceHeadSha,
             capturedGeneration,
-            { deleteBranch: !pushedOnly },
+            { deleteBranch: !pushedOnly && !savePatch, savePatch },
           );
           if (cleanup.skippedReopened) result.skippedReopened += 1;
           else if (!cleanup.cleaned) result.cleanupFailed += 1;
           else result.archived += 1;
+          if (cleanup.patch) result.patchedAndRemoved += 1;
+          // One record per removed worktree, with the patch path when the
+          // changes were saved. The 08:00 digest lists these (GRE-452).
+          if (cleanup.cleaned && archived.providerType === "git_worktree") {
+            await logActivity(db, {
+              companyId: archived.companyId,
+              actorType: "system",
+              actorId: "workspace_terminality_reaper",
+              action: TERMINAL_WORKTREE_REMOVED_ACTION,
+              entityType: "execution_workspace",
+              entityId: archived.id,
+              details: {
+                sourceIssueId: archived.sourceIssueId,
+                worktreePath: archived.providerRef ?? archived.cwd,
+                branchName: archived.branchName,
+                branchKept: pushedOnly || savePatch,
+                patchPath: cleanup.patch?.path ?? null,
+                patchFileCount: cleanup.patch?.fileCount ?? 0,
+              },
+            });
+          }
         } catch (error) {
           result.cleanupFailed += 1;
           const failure = error instanceof Error ? error.message : String(error);
