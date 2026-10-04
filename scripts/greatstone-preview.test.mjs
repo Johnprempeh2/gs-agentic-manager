@@ -3,7 +3,7 @@
 // under ~/GSAM is read or written.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -149,4 +149,71 @@ test("status shows the origin, and old state files without run or issue still wo
   withFakePreview({}, (root) => {
     assert.match(runPreview(["status"], root).out, /origin: +started at an unknown time by run unknown for issue unknown/);
   });
+});
+
+// A fake `node` first on PATH for `shot`: it records its arguments and writes
+// the two PNG paths it is given, so no browser starts and no port is opened.
+function withFakeNode(fn) {
+  const bin = mkdtempSync(join(tmpdir(), "gs-preview-bin-"));
+  const log = join(bin, "calls.log");
+  writeFileSync(join(bin, "node"), `#!/usr/bin/env bash\nprintf '%s\\n' "$@" >>${JSON.stringify(log)}\ntouch "$3" "$4"\n`, { mode: 0o755 });
+  try {
+    return fn({ PATH: `${bin}:${process.env.PATH}` }, () => (existsSync(log) ? readFileSync(log, "utf8") : ""));
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
+  }
+}
+
+test("shot saves laptop and phone PNGs named after the preview tag and prints their paths (GRE-606)", () => {
+  withFakePreview({ tag: "rc-2026-10-04.1", port: 3200 }, (root) => withFakeNode((env, calls) => {
+    const { code, out } = runPreview(["shot", "/GRE/issues", "inbox"], root, { ...env, GSAM_PREVIEW_PORT: "3200" });
+    assert.equal(code, 0, out);
+    const laptop = join(root, "preview", "shots", "rc-2026-10-04.1-inbox-laptop.png");
+    const phone = join(root, "preview", "shots", "rc-2026-10-04.1-inbox-phone.png");
+    assert.deepEqual(out.trim().split("\n"), [laptop, phone]);
+    assert.ok(existsSync(laptop) && existsSync(phone));
+    assert.deepEqual(calls().trim().split("\n"), ["scripts/preview-shot.mjs", "http://localhost:3200/GRE/issues", laptop, phone]);
+  }));
+});
+
+test("shot refuses any port other than 3200 and never calls the browser (GRE-606)", () => {
+  withFakePreview({ port: 3200 }, (root) => withFakeNode((env, calls) => {
+    for (const port of ["3100", "3201"]) {
+      const { code, out } = runPreview(["shot", "/", "home"], root, { ...env, GSAM_PREVIEW_PORT: port });
+      assert.equal(code, 1);
+      assert.match(out, new RegExp(`shot only opens the preview on port 3200, not port ${port}\\.`));
+    }
+    assert.equal(calls(), "");
+  }));
+  // A state file that says the running preview is on another port.
+  withFakePreview({ port: 3100 }, (root) => withFakeNode((env, calls) => {
+    const { code, out } = runPreview(["shot", "/", "home"], root, { ...env, GSAM_PREVIEW_PORT: "3200" });
+    assert.equal(code, 1);
+    assert.match(out, /the running preview is on port 3100; shot only opens port 3200\./);
+    assert.equal(calls(), "");
+  }));
+});
+
+test("shot fails with a clear message when no preview runs (GRE-606)", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    withFakeNode((env, calls) => {
+      const { code, out } = runPreview(["shot", "/", "home"], root, { ...env, GSAM_PREVIEW_PORT: "3200" });
+      assert.equal(code, 1);
+      assert.match(out, /no preview is running; start one with 'greatstone-preview\.sh start <tag>'\./);
+      assert.equal(calls(), "");
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("shot checks its arguments before anything else (GRE-606)", () => {
+  withFakePreview({ port: 3200 }, (root) => withFakeNode((env, calls) => {
+    const run = (...args) => runPreview(["shot", ...args], root, { ...env, GSAM_PREVIEW_PORT: "3200" });
+    assert.match(run("/").out, /usage: greatstone-preview\.sh shot <page path> <name>/);
+    assert.match(run("GRE/issues", "x").out, /the page path must start with \//);
+    assert.match(run("/", "../x").out, /the name may use only letters/);
+    assert.equal(calls(), "");
+  }));
 });
