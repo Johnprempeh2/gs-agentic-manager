@@ -700,6 +700,13 @@ const responses = {
     description: "Too many requests",
     content: { "application/json": { schema: ErrorSchema } },
   },
+  // MCP Streamable HTTP: GET opens an optional SSE stream. Endpoints that
+  // offer none answer 405 with `Allow: POST` and a JSON-RPC error body.
+  mcpNoSseStream: {
+    description: "Method not allowed: the MCP endpoint offers no SSE stream; send JSON-RPC messages with POST",
+    headers: { Allow: { description: "POST", schema: { type: "string" } } },
+    content: { "application/json": { schema: z.record(z.string(), z.unknown()) } },
+  },
 };
 
 const jsonBody = (schema: z.ZodTypeAny) => ({
@@ -1311,6 +1318,7 @@ const PUBLIC_OPERATIONS = new Set([
   "GET /api/invites/{token}/test-resolution",
   "POST /api/invites/{token}/accept",
   "POST /api/join-requests/{requestId}/claim-api-key",
+  "GET /api/mcp/project-tools",
   "GET /mcp/gateways/{gatewayPublicId}",
   "POST /mcp/gateways/{gatewayPublicId}",
   "GET /api/tool-gateway/gateways/{gatewayId}/mcp",
@@ -10760,6 +10768,14 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/mcp/project-tools",
+  tags: ["projects"],
+  summary: "Refuse an MCP SSE stream request: the project tools endpoint is POST only",
+  responses: { 405: r.mcpNoSseStream },
+});
+
+registerCurrentRoute({
   method: "post",
   path: "/runtime-tools/github/credentials",
   tags: ["connection-intents"],
@@ -10777,7 +10793,15 @@ registerCurrentRoute({
   method: "get",
   path: "/mcp/runtime-tools",
   tags: ["connection-intents"],
-  summary: "Inspect the heartbeat-bound runtime tools MCP endpoint",
+  summary: "Validate the runtime tools token, then refuse an MCP SSE stream request: the endpoint is POST only",
+  responses: {
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    405: r.mcpNoSseStream,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
 });
 
 registerCurrentRoute({
@@ -10790,7 +10814,10 @@ registerCurrentRoute({
     202: r.ok(),
     400: r.badRequest,
     401: r.unauthorized,
+    403: r.forbidden,
     404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
   },
 });
 
@@ -11777,7 +11804,8 @@ registerCurrentRoute({
   method: "get",
   path: "/mcp/gateways/{gatewayPublicId}",
   tags: ["tool-gateway"],
-  summary: "Describe a public MCP gateway endpoint",
+  summary: "Refuse an MCP SSE stream request: the public gateway endpoint is POST only",
+  responses: { 405: r.mcpNoSseStream },
 });
 
 registerCurrentRoute({
@@ -11870,7 +11898,8 @@ registerCurrentRoute({
   method: "get",
   path: "/api/tool-gateway/gateways/{gatewayId}/mcp",
   tags: ["tool-gateway"],
-  summary: "Describe a named MCP gateway endpoint",
+  summary: "Refuse an MCP SSE stream request: the named gateway endpoint is POST only",
+  responses: { 405: r.mcpNoSseStream },
 });
 
 registerCurrentRoute({
