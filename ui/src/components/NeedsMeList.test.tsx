@@ -149,6 +149,11 @@ describe("NeedsMeList (GRE-358)", () => {
     expect(formatWaitAge(27 * hour + 59 * 60 * 1000)).toBe("1d 3h");
   });
 
+  it("leaves assigned tasks out when asked, as on the Decisions page (GRE-586)", () => {
+    render(<NeedsMeList needsMe={needsMe()} includeAssigned={false} />);
+    expect(container.innerHTML).toBe("");
+  });
+
   it("renders nothing when nothing is assigned and decisions are left out", () => {
     render(<NeedsMeList needsMe={needsMe({ assignedTasks: [] })} />);
     expect(container.innerHTML).toBe("");

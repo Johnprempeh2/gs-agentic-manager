@@ -12,7 +12,7 @@ import { useCompany } from "../context/CompanyContext";
 import { DecisionNotificationsCard } from "../components/decisions-feed/DecisionNotificationsCard";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useInboxDismissals } from "../hooks/useInboxBadge";
-import { useDecisionsFeed, useNeedsMe } from "../hooks/useDecisionsFeed";
+import { decisionsCountOf, useDecisionsFeed, useNeedsMe } from "../hooks/useDecisionsFeed";
 import { NeedsMeList } from "../components/NeedsMeList";
 import { queryKeys } from "../lib/queryKeys";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -74,8 +74,8 @@ export function WhatNeedsMe() {
   // One feed (GRE-263): one card per task, every kind, one count. List, Focus
   // and the sidebar badge all read the same build.
   const { data: feed, isLoading, error, refetch } = useDecisionsFeed(selectedCompanyId);
-  // The header counts what Inbox Mine and the badge count (GRE-358): the
-  // cards plus tasks assigned to John, which show under "Assigned to you".
+  // The header counts what the badge counts: decisions and overdue waits only.
+  // Tasks assigned to John live in My tasks (GRE-586).
   const { data: needsMe } = useNeedsMe(selectedCompanyId);
 
   // Dismissed rows are not in the feed; the curtain still lets John restore them.
@@ -138,9 +138,9 @@ export function WhatNeedsMe() {
   // At your desk (GRE-450): first on a laptop, folded last on a phone.
   const isPhone = useIsPhone();
   const { phone: phoneCards, desk: deskCards } = useMemo(() => splitAtDeskCards(cards), [cards]);
-  const count = needsMe?.count ?? feed?.count ?? 0;
-  const assignedList = needsMe ? <NeedsMeList needsMe={needsMe} /> : null;
-  const hasAssigned = (needsMe?.assignedTasks.length ?? 0) + (needsMe?.overdueWaits?.length ?? 0) > 0;
+  const count = needsMe ? decisionsCountOf(needsMe) : feed?.count ?? 0;
+  const waitsList = needsMe ? <NeedsMeList needsMe={needsMe} includeAssigned={false} /> : null;
+  const hasWaits = (needsMe?.overdueWaits?.length ?? 0) > 0;
 
   const dismissedItems = useMemo(
     () =>
@@ -228,8 +228,8 @@ export function WhatNeedsMe() {
       <div className="mx-auto max-w-5xl space-y-4">
         {header}
         {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
-        {/* Assigned tasks are counted in the header but are not focus cards. */}
-        {assignedList}
+        {/* Overdue waits are counted in the header but are not focus cards. */}
+        {waitsList}
         {isPhone ? null : deskGroup}
         <DecisionsFocusView
           cards={phoneCards}
@@ -259,12 +259,12 @@ export function WhatNeedsMe() {
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
-      {assignedList}
+      {waitsList}
 
       {isPhone ? null : deskGroup}
 
       {phoneCards.length === 0 ? (
-        hasAssigned || (!isPhone && deskCards.length > 0) ? null : <ZeroState />
+        hasWaits || (!isPhone && deskCards.length > 0) ? null : <ZeroState />
       ) : (
         <div className="space-y-4">
           {phoneCards.map((card) => (
