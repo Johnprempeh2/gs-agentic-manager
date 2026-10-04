@@ -54,6 +54,39 @@ describe("scrubAcpSessionEnvironments (GRE-510)", () => {
     expect(result.skippedPaths).toEqual([path.join(sessionsDir, "bad.json")]);
   });
 
+  it("redacts the record's own env values from printed tool output (GRE-517)", async () => {
+    const record = sessionRecord(true);
+    const printed = `GSAM_API_KEY=${FAKE_KEY}\nHOME=/fixture`;
+    record.messages = [{ Agent: { content: [{ Text: printed }], tool_results: { t1: { output: printed } } } }] as never;
+    await writeFile(path.join(sessionsDir, "a.json"), JSON.stringify(record));
+
+    const result = await scrubAcpSessionEnvironments(root);
+
+    expect(result).toMatchObject({ cleaned: 1, failed: 0 });
+    const text = await readFile(path.join(sessionsDir, "a.json"), "utf8");
+    expect(text).not.toContain(FAKE_KEY);
+    const saved = JSON.parse(text);
+    expect(saved.messages[0].Agent.tool_results.t1.output).toBe("GSAM_API_KEY=***REDACTED***\nHOME=/fixture");
+    expect(saved.messages[0].Agent.content[0].Text).toBe("GSAM_API_KEY=***REDACTED***\nHOME=/fixture");
+  });
+
+  it("redacts run tokens by shape when env was already removed, and keeps other JWTs (GRE-517)", async () => {
+    const jwt = (claims: Record<string, unknown>) =>
+      [{ alg: "HS256", typ: "JWT" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".")
+      + ".c2lnbmF0dXJlLWZpeHR1cmUtdmFsdWU";
+    const runToken = jwt({ sub: "agent-1", company_id: "company-1", run_id: "run-1", exp: 1 });
+    const otherToken = jwt({ sub: "user-1", aud: "elsewhere" });
+    const record = sessionRecord(false);
+    record.messages = [{ Agent: { tool_results: { t1: { output: `GSAM_API_KEY=${runToken}\nOTHER=${otherToken}` } } } }] as never;
+    await writeFile(path.join(sessionsDir, "a.json"), JSON.stringify(record));
+
+    const result = await scrubAcpSessionEnvironments(root);
+
+    expect(result).toMatchObject({ cleaned: 1, failed: 0 });
+    const saved = JSON.parse(await readFile(path.join(sessionsDir, "a.json"), "utf8"));
+    expect(saved.messages[0].Agent.tool_results.t1.output).toBe(`GSAM_API_KEY=***REDACTED***\nOTHER=${otherToken}`);
+  });
+
   it("does no writes on a second start", async () => {
     await writeFile(path.join(sessionsDir, "a.json"), JSON.stringify(sessionRecord(true)));
     await scrubAcpSessionEnvironments(root);

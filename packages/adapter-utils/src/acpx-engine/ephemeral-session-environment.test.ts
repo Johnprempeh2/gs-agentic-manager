@@ -162,4 +162,15 @@ describe("ephemeral ACPX session environment", () => {
     const input = freeze(record()); await expect(wrapper.save(input)).rejects.toBe(failure);
     expect(input.acpx?.session_options?.env).toEqual(currentEnvironment);
   });
+
+  it("redacts the run's own credential from printed tool output before save (GRE-517)", async () => {
+    const disk = await diskStore(), input = record();
+    const printed = `GSAM_API_KEY=${currentEnvironment.GSAM_API_KEY}\nPATH=${currentEnvironment.PATH}`;
+    input.messages = [{ Agent: { content: [{ Text: printed }], tool_results: { "tool-1": { output: printed } } } }] as unknown as AcpSessionRecord["messages"];
+    await createEphemeralSessionEnvironmentStore(disk.store, currentEnvironment).save(freeze(input));
+    const text = await readFile(disk.file, "utf8"), saved = JSON.parse(text);
+    expect(text).not.toContain(currentEnvironment.GSAM_API_KEY);
+    expect(saved.messages[0].Agent.tool_results["tool-1"].output).toBe(`GSAM_API_KEY=***REDACTED***\nPATH=${currentEnvironment.PATH}`);
+    expect(saved.messages[0].Agent.content[0].Text).toBe(`GSAM_API_KEY=***REDACTED***\nPATH=${currentEnvironment.PATH}`);
+  });
 });
