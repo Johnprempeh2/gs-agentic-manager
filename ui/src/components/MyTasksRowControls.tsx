@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { Issue } from "@greatstone/shared";
-import { MessageCircleQuestion, UserRoundPlus } from "lucide-react";
+import { MessageCircleQuestion, MessagesSquare, UserRoundPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -67,6 +67,7 @@ export function MyTasksHandOff<T extends HandOffAgent>({
   agents,
   leadAgentId,
   pending,
+  compact,
   onHandOff,
 }: {
   issue: Pick<Issue, "identifier" | "title" | "assigneeAgentId">;
@@ -74,6 +75,8 @@ export function MyTasksHandOff<T extends HandOffAgent>({
   agents: readonly T[];
   leadAgentId: string | null;
   pending?: boolean;
+  /** Icon only, for when the Discuss panel narrows the list. */
+  compact?: boolean;
   onHandOff: (agent: T, instruction: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -106,13 +109,14 @@ export function MyTasksHandOff<T extends HandOffAgent>({
         <Button
           type="button"
           variant="ghost"
-          size="xs"
+          size={compact ? "icon-xs" : "xs"}
           disabled={pending || agents.length === 0}
           aria-label={`Hand ${issueLabel(issue)} to an agent`}
+          title={compact ? "Hand to agent" : undefined}
           className="text-muted-foreground hover:text-foreground"
         >
           <UserRoundPlus aria-hidden />
-          Hand to agent
+          {compact ? null : "Hand to agent"}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-0">
@@ -166,27 +170,63 @@ export function MyTasksAskButton({
   issue,
   expanded,
   controlsId,
+  compact,
   onToggle,
 }: {
   issue: Pick<Issue, "id" | "identifier" | "title">;
   expanded: boolean;
   controlsId: string;
+  compact?: boolean;
   onToggle: () => void;
 }) {
   return (
     <Button
       type="button"
       variant="ghost"
-      size="xs"
+      size={compact ? "icon-xs" : "xs"}
       data-my-tasks-ask={issue.id}
       aria-expanded={expanded}
       aria-controls={expanded ? controlsId : undefined}
       aria-label={`Ask about ${issueLabel(issue)}`}
+      title={compact ? "Ask" : undefined}
       onClick={onToggle}
       className={cn("text-muted-foreground hover:text-foreground", expanded && "bg-accent text-foreground")}
     >
       <MessageCircleQuestion aria-hidden />
-      Ask
+      {compact ? null : "Ask"}
+    </Button>
+  );
+}
+
+/** Opens the task's thread in the Discuss panel (GRE-620). */
+export function MyTasksDiscussButton({
+  issue,
+  open,
+  controlsId,
+  compact,
+  onToggle,
+}: {
+  issue: Pick<Issue, "id" | "identifier" | "title">;
+  open: boolean;
+  controlsId: string;
+  compact?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size={compact ? "icon-xs" : "xs"}
+      data-my-tasks-discuss={issue.id}
+      aria-expanded={open}
+      aria-controls={open ? controlsId : undefined}
+      aria-label={`Discuss ${issueLabel(issue)}`}
+      title={compact ? "Discuss" : undefined}
+      onClick={onToggle}
+      className={cn("text-muted-foreground hover:text-foreground", open && "bg-accent text-foreground")}
+    >
+      <MessagesSquare aria-hidden />
+      {compact ? null : "Discuss"}
     </Button>
   );
 }

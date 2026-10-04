@@ -505,6 +505,9 @@ describe("IssueChatThread", () => {
         className: expect.stringContaining("paperclip-markdown-on-accent"),
       }),
     );
+    // The bubble sets --gs-human-bubble-fg in both themes; the markdown above
+    // inherits it, so the human's text stays readable in dark mode (GRE-620).
+    expect(container.querySelector(".gs-human-bubble")).not.toBeNull();
 
     act(() => {
       root.unmount();
