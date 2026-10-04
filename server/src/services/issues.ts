@@ -87,6 +87,7 @@ import type {
   IssueReviewAttentionPath,
   IssueBlockedInboxAttention,
   IssueBlockedInboxIssueRef,
+  IssueLatestRun,
   IssueRelationIssueSummary,
   IssueWatchdogSummary,
   LowTrustBoundary,
@@ -3440,6 +3441,60 @@ async function activeRunMapForIssues(
     for (const [runId, execution] of projections) {
       const row = map.get(runId);
       if (row) row.execution = execution;
+    }
+  }
+  return map;
+}
+
+/**
+ * The most recent finished run per issue, one query per chunk of issues, so
+ * list rows can show why a task stopped (GRE-403).
+ */
+async function latestFinishedRunMapForIssues(
+  dbOrTx: any,
+  companyId: string,
+  issueIds: string[],
+): Promise<Map<string, IssueLatestRun>> {
+  const map = new Map<string, IssueLatestRun>();
+  const uniqueIssueIds = [...new Set(issueIds)];
+  if (uniqueIssueIds.length === 0) return map;
+
+  const contextIssueId = sql<string>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
+  for (const issueIdChunk of chunkList(
+    uniqueIssueIds,
+    ISSUE_LIST_RELATED_QUERY_CHUNK_SIZE,
+  )) {
+    const rows: Array<{
+      issueId: string;
+      status: string;
+      errorCode: string | null;
+      finishedAt: Date | null;
+    }> = await dbOrTx
+      .selectDistinctOn([contextIssueId], {
+        issueId: contextIssueId,
+        status: heartbeatRuns.status,
+        errorCode: heartbeatRuns.errorCode,
+        finishedAt: heartbeatRuns.finishedAt,
+      })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          inArray(contextIssueId, issueIdChunk),
+          isNotNull(heartbeatRuns.finishedAt),
+        ),
+      )
+      .orderBy(
+        contextIssueId,
+        desc(heartbeatRuns.finishedAt),
+        desc(heartbeatRuns.id),
+      );
+    for (const row of rows) {
+      map.set(row.issueId, {
+        status: row.status,
+        errorCode: row.errorCode ?? null,
+        finishedAt: row.finishedAt,
+      });
     }
   }
   return map;
@@ -8120,6 +8175,9 @@ export function issueService(db: Db) {
       }
 
       const issueIds = withRuns.map((row) => row.id);
+      const blockedIssueIds = withRuns
+        .filter((row) => row.status === "blocked")
+        .map((row) => row.id);
       const [
         statsRows,
         readRows,
@@ -8128,6 +8186,8 @@ export function issueService(db: Db) {
         blockedByMap,
         blocksMap,
         liveDescendantCountByIssueId,
+        latestRunByIssueId,
+        scheduledRetryByIssueId,
       ] = await Promise.all([
         contextUserId
           ? userCommentStatsForIssues(db, companyId, contextUserId, issueIds)
@@ -8139,16 +8199,28 @@ export function issueService(db: Db) {
         contextUserId
           ? inboxArchiveRowsForIssues(db, companyId, contextUserId, issueIds)
           : Promise.resolve([]),
-        includeBlockedBy
-          ? blockedByMapForIssues(db, companyId, issueIds)
-          : Promise.resolve(new Map<string, IssueRelationIssueSummary[]>()),
+        // Blocked rows always carry their blockers so rows can name who must act (GRE-403).
+        blockedByMapForIssues(
+          db,
+          companyId,
+          includeBlockedBy ? issueIds : blockedIssueIds,
+        ),
         includeBlocks
           ? blocksMapForIssues(db, companyId, issueIds)
           : Promise.resolve(new Map<string, IssueRelationIssueSummary[]>()),
         includeLiveDescendantSummary
           ? liveDescendantCountMapForIssues(db, companyId, issueIds)
           : Promise.resolve(new Map<string, number>()),
+        latestFinishedRunMapForIssues(db, companyId, issueIds),
+        getCurrentScheduledRetriesForIssues(issueIds, companyId, db),
       ]);
+      const stopReasonFields = (row: { id: string; status: string }) => ({
+        ...(includeBlockedBy || row.status === "blocked"
+          ? { blockedBy: blockedByMap.get(row.id) ?? [] }
+          : {}),
+        latestRun: latestRunByIssueId.get(row.id) ?? null,
+        scheduledRetry: scheduledRetryByIssueId.get(row.id) ?? null,
+      });
       const statsByIssueId = new Map(
         statsRows.map((row) => [row.issueId, row]),
       );
@@ -8181,9 +8253,7 @@ export function issueService(db: Db) {
             ) ?? row.updatedAt;
           return {
             ...row,
-            ...(includeBlockedBy
-              ? { blockedBy: blockedByMap.get(row.id) ?? [] }
-              : {}),
+            ...stopReasonFields(row),
             ...(includeBlocks ? { blocks: blocksMap.get(row.id) ?? [] } : {}),
             lastActivityAt,
             ...(blockerAttentionByIssueId.has(row.id)
@@ -8225,9 +8295,7 @@ export function issueService(db: Db) {
             archiveByIssueId.get(row.id),
             lastActivityAt,
           ),
-          ...(includeBlockedBy
-            ? { blockedBy: blockedByMap.get(row.id) ?? [] }
-            : {}),
+          ...stopReasonFields(row),
           ...(includeBlocks ? { blocks: blocksMap.get(row.id) ?? [] } : {}),
           lastActivityAt,
           ...(blockerAttentionByIssueId.has(row.id)

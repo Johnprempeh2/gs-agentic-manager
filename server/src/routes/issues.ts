@@ -3099,7 +3099,9 @@ function toCompactIssue(issue: any): CompactIssue {
     ...(issue.blockedInboxAttention !== undefined
       ? { blockedInboxAttention: issue.blockedInboxAttention }
       : {}),
+    ...(issue.unblockDescriptor ? { unblockDescriptor: issue.unblockDescriptor } : {}),
     ...(issue.scheduledRetry ? { scheduledRetry: issue.scheduledRetry } : {}),
+    ...(issue.latestRun !== undefined ? { latestRun: issue.latestRun } : {}),
     ...(issue.monitorNextCheckAt ? { monitorNextCheckAt: issue.monitorNextCheckAt } : {}),
     ...(issue.liveDescendantCount !== undefined
       ? { liveDescendantCount: issue.liveDescendantCount }
