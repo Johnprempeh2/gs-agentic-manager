@@ -18,6 +18,7 @@ import {
   buildInboxKeyboardNavEntries,
   buildInboxDismissedAtByKey,
   computeInboxBadgeData,
+  getLatestFailedRunsByAgent,
   filterInboxIssues,
   getArchivedInboxSearchIssues,
   getAvailableInboxIssueColumns,
@@ -365,6 +366,47 @@ describe("inbox helpers", () => {
       mineIssues: 0,
       alerts: 0,
     });
+  });
+
+  it("ignores the failed latest run of a terminated agent but keeps an active agent's", () => {
+    const heartbeatRuns = [
+      makeRun("run-terminated", "failed", "2026-03-11T00:00:00.000Z", "agent-terminated"),
+      makeRun("run-active", "failed", "2026-03-11T01:00:00.000Z", "agent-active"),
+    ];
+    const agents = [
+      { id: "agent-terminated", status: "terminated" as const },
+      { id: "agent-active", status: "active" as const },
+    ];
+
+    expect(getLatestFailedRunsByAgent(heartbeatRuns, agents).map((run) => run.id)).toEqual(["run-active"]);
+
+    const result = computeInboxBadgeData({
+      approvals: [],
+      joinRequests: [],
+      dashboard: undefined,
+      heartbeatRuns,
+      agents,
+      mineIssues: [],
+      dismissedAlerts: new Set<string>(),
+      dismissedAtByKey: new Map<string, number>(),
+      currentUserId: "user-1",
+    });
+    expect(result.failedRuns).toBe(1);
+    expect(result.inbox).toBe(1);
+
+    const onlyTerminated = computeInboxBadgeData({
+      approvals: [],
+      joinRequests: [],
+      dashboard: undefined,
+      heartbeatRuns: [heartbeatRuns[0]!],
+      agents,
+      mineIssues: [],
+      dismissedAlerts: new Set<string>(),
+      dismissedAtByKey: new Map<string, number>(),
+      currentUserId: "user-1",
+    });
+    expect(onlyTerminated.failedRuns).toBe(0);
+    expect(onlyTerminated.inbox).toBe(0);
   });
 
   it("excludes read mine issues from the inbox badge count", () => {
