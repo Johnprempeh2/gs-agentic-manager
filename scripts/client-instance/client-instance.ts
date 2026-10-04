@@ -34,6 +34,7 @@ import { INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor } from "./releases.js";
+import { backupStatusLines, releaseStatusLines } from "./status.js";
 
 const CODE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const INSTANCE_ID = "default";
@@ -969,6 +970,8 @@ async function main() {
       say(`${root}: edition ${state.edition}${state.passedBetaFeatures.length ? ` + ${state.passedBetaFeatures.join(", ")}` : ""}, port ${state.port}, database port ${state.dbPort}`);
       say(pid ? `running (pid ${pid}), health ${String(body?.status ?? "no answer")}` : "not running");
       say(`limits: ${state.limits ? describeLimits(state.limits) : "none (made before GRE-141; set them with limits)"}`);
+      // Read-only; a WARNING does not change the exit code (GRE-533).
+      for (const line of [...backupStatusLines(backupDir(root)), ...releaseStatusLines(state)]) say(line);
       return;
     }
     case "backup":
