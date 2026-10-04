@@ -49,7 +49,14 @@ export function teamsCatalogRoutes(db: Db) {
     return undefined;
   }
 
-  async function assertCanInstallCatalogTeam(req: Request, companyId: string) {
+  // `action` is what the caller wants to do. With add mode `request` (GRE-434),
+  // a client board user may only ask; the instance admin (Greatstone operator)
+  // can still install directly (GRE-668). Agents keep their own rule.
+  async function assertCanInstallCatalogTeam(
+    req: Request,
+    companyId: string,
+    action: "install" | "request",
+  ) {
     assertCompanyAccess(req, companyId);
 
     if (req.actor.type === "board") {
@@ -57,6 +64,9 @@ export function teamsCatalogRoutes(db: Db) {
       const allowed = await access.canUser(companyId, req.actor.userId, "agents:create");
       if (!allowed) {
         throw forbidden("Missing permission: agents:create");
+      }
+      if (action === "install" && (await instanceSettings.getGeneral()).teamCatalogAddMode === "request") {
+        throw forbidden("This instance adds catalogue teams on request. Use request instead.");
       }
       return;
     }
@@ -131,7 +141,7 @@ export function teamsCatalogRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
-      await assertCanInstallCatalogTeam(req, companyId);
+      await assertCanInstallCatalogTeam(req, companyId, "install");
       await assertCatalogTeamOffered(catalogRef);
       const result = await svc.installCatalogTeam(companyId, catalogRef, {
         ...req.body,
@@ -146,7 +156,7 @@ export function teamsCatalogRoutes(db: Db) {
   router.post("/companies/:companyId/teams/catalog/:catalogId/request", async (req, res) => {
     const companyId = req.params.companyId as string;
     const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
-    await assertCanInstallCatalogTeam(req, companyId);
+    await assertCanInstallCatalogTeam(req, companyId, "request");
     const team = await assertCatalogTeamOffered(catalogRef);
     if ((await instanceSettings.getGeneral()).teamCatalogAddMode !== "request") {
       throw conflict("This instance installs catalogue teams directly. Use install instead.");
