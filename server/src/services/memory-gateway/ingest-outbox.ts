@@ -19,6 +19,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  MEMORY_ENGINE_RETAIN_TIMEOUT_MS,
   MEMORY_ENGINE_TIMEOUT_MS,
   withEngineTimeout,
   type MemoryEngine,
@@ -127,18 +128,22 @@ export interface MemoryIngestDeletePayload {
  * The drain's single engine route: the gateway's configured `MemoryEngine`.
  * A `retain` payload is the exact `MemoryEngineDocument` built in
  * `contribute()`. Every call is bounded so a stuck engine cannot hold a lease.
+ * A retain gets the adapter's retain bound, not the 8 s request bound: Claude
+ * extraction can take longer, and cutting it short would defer and resend the
+ * same entry forever. `timeoutMs` overrides both bounds (tests).
  */
 export function memoryIngestEngineFor(
   engine: MemoryEngine,
   options: { timeoutMs?: number } = {},
 ): MemoryIngestEngine {
   const timeoutMs = options.timeoutMs ?? MEMORY_ENGINE_TIMEOUT_MS;
+  const retainTimeoutMs = options.timeoutMs ?? MEMORY_ENGINE_RETAIN_TIMEOUT_MS;
   return {
     async apply(entry) {
       if (entry.op === "retain") {
         const result = await withEngineTimeout(
           Promise.resolve().then(() => engine.retain(entry.payload as unknown as MemoryEngineDocument)),
-          timeoutMs,
+          retainTimeoutMs,
         );
         return { usage: result?.usage ?? null };
       }

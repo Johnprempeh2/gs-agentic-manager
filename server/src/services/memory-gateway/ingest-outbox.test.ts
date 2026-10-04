@@ -1,9 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import {
+  MEMORY_ENGINE_RETAIN_TIMEOUT_MS,
+  MEMORY_ENGINE_TIMEOUT_MS,
+  MemoryEngineUnavailableError,
+  type MemoryEngine,
+} from "./engine.js";
 import {
   classifyEngineError,
   createInMemoryMemoryIngestStore,
   drainMemoryIngestOutbox,
   getDailyPlanUsage,
+  memoryIngestEngineFor,
   nextAttemptAt,
   parsePlanResetAt,
   startMemoryIngestDrain,
@@ -302,6 +309,48 @@ describe("startMemoryIngestDrain", () => {
       expect(await drain.tick()).not.toBeNull();
     } finally {
       drain.stop();
+    }
+  });
+});
+
+describe("memoryIngestEngineFor", () => {
+  function slowEngine(delayMs: number) {
+    return {
+      retain: () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ usage: { inputTokens: 10, outputTokens: 2 } }), delayMs),
+        ),
+      deleteDocument: () => new Promise((resolve) => setTimeout(resolve, delayMs)),
+    } as unknown as MemoryEngine;
+  }
+  const entry = (op: MemoryIngestEntry["op"]) =>
+    ({ op, payload: { bankId: "b", documentId: "d" } }) as unknown as MemoryIngestEntry;
+
+  it("lets a slow retain (Claude extraction) finish past the 8 s request bound", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = memoryIngestEngineFor(slowEngine(30_000)).apply(entry("retain"));
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(pending).resolves.toEqual({ usage: { inputTokens: 10, outputTokens: 2 } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still bounds retain at the adapter retain timeout, and delete at the request bound", async () => {
+    vi.useFakeTimers();
+    try {
+      const engine = memoryIngestEngineFor(slowEngine(10 * 60_000));
+      const retain = engine.apply(entry("retain"));
+      const del = engine.apply(entry("delete"));
+      const retainResult = expect(retain).rejects.toBeInstanceOf(MemoryEngineUnavailableError);
+      const deleteResult = expect(del).rejects.toBeInstanceOf(MemoryEngineUnavailableError);
+      await vi.advanceTimersByTimeAsync(MEMORY_ENGINE_TIMEOUT_MS);
+      await deleteResult;
+      await vi.advanceTimersByTimeAsync(MEMORY_ENGINE_RETAIN_TIMEOUT_MS - MEMORY_ENGINE_TIMEOUT_MS);
+      await retainResult;
+    } finally {
+      vi.useRealTimers();
     }
   });
 });
