@@ -115,6 +115,11 @@ or partial ports, so git cannot tell what we already have. Three records do:
 and partial ones in their own list. It only reads git. Fetch first:
 `git fetch https://github.com/paperclipai/paperclip.git master:refs/upstream/master`.
 
+For each upstream batch, Delta also runs
+`scripts/licence-diff.sh origin/main refs/upstream/master --fetch` and pastes
+any `check` lines (GPL, AGPL, LGPL, SSPL, BUSL, unknown, none) on the
+"Upstream log" issue for Harbor before the sync pull request.
+
 ## Never
 
 - Edit, run git in, install into, or restart anything under `~/GSAM/`.
@@ -209,6 +214,11 @@ Merging does not change the live app. A version goes live in these steps.
    the page is slower", unless John or Everest has accepted the slowdown;
    then merge it and list it on the next release task with the numbers.
    Nothing runs this on GitHub; Keystone runs it locally.
+
+   **Licence check (GRE-624).** If the pull request changes `pnpm-lock.yaml`,
+   run `scripts/licence-diff.sh origin/main <pr-head>` (add `--fetch` if it
+   says the pnpm store lacks a package). Paste every `check` line on the issue
+   for Harbor. No `check` lines: say "licences ok" in the ready check.
 2. **Merge (Keystone).** `gh pr merge` when the verdict is "Ready to merge" and
    CI is green (Fork CI, or `local-ci` when GitHub could not start it; see
    "The merge rule"); for a big change, also after Flint's checks pass. Keystone never
