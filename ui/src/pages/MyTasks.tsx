@@ -457,11 +457,15 @@ export function MyTasks() {
     <MyTasksTickBox issue={issue} onCheckedChange={(done) => tick(issue, done)} />
   );
 
+  // The docked panel narrows the list: actions go icon only so titles keep their room.
+  const compactActions = discussId !== null && !discussOverlay;
+
   const renderDiscuss = (issue: Issue) => (
     <MyTasksDiscussButton
       issue={issue}
       open={discussId === issue.id}
       controlsId={DISCUSS_PANEL_ID}
+      compact={compactActions}
       onToggle={() => (discussId === issue.id ? closeDiscuss() : openDiscuss(issue))}
     />
   );
@@ -476,12 +480,14 @@ export function MyTasks() {
           issue={issue}
           agents={handOffAgents}
           leadAgentId={leadAgentId}
+          compact={compactActions}
           onHandOff={(agent, instruction) => handOff.mutate({ issue, agent, instruction })}
         />
         <MyTasksAskButton
           issue={issue}
           expanded={askOpenId === issue.id}
           controlsId={askBoxId(issue.id)}
+          compact={compactActions}
           onToggle={() => (askOpenId === issue.id ? closeAsk(issue.id) : setAskOpenId(issue.id))}
         />
         {renderDiscuss(issue)}

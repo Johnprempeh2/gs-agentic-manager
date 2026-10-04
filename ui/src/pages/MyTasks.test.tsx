@@ -344,6 +344,9 @@ describe("MyTasks Discuss panel (GRE-620)", () => {
     expect(document.activeElement?.hasAttribute("data-my-tasks-discuss-close")).toBe(true);
     // The list stays on screen beside the panel.
     expect(container.querySelector('[data-row="2"]')).not.toBeNull();
+    // Row actions go icon only so the titles keep their room.
+    expect(container.querySelector('[data-my-tasks-ask="2"]')?.textContent).toBe("");
+    expect(container.querySelector('[data-my-tasks-ask="2"]')?.getAttribute("aria-label")).toBe("Ask about GRE-2: Task 2");
     expect(panel()?.querySelector('a[href="/issues/GRE-1"]')?.textContent).toContain("Open task");
   });
 
@@ -357,6 +360,7 @@ describe("MyTasks Discuss panel (GRE-620)", () => {
     await flush();
     expect(panel()).toBeNull();
     expect(document.activeElement?.getAttribute("data-my-tasks-discuss")).toBe("1");
+    expect(container.querySelector('[data-my-tasks-ask="1"]')?.textContent).toBe("Ask");
 
     click(container.querySelector('[data-my-tasks-discuss="1"]'));
     await flush();
