@@ -413,6 +413,7 @@ import { visibleIssueCondition } from "./issue-visibility.js";
 import { ISSUE_BLOCKERS_RESOLVED_WAKE_REASON } from "./issue-dependency-wakeups.js";
 import {
   buildIssueMonitorClearedPatch,
+  buildIssueMonitorDeferredPatch,
   buildIssueMonitorRestoredPatch,
   buildIssueMonitorTriggeredPatch,
   normalizeIssueExecutionPolicy,
@@ -497,7 +498,7 @@ import {
   SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
   readContinuationAttempt,
 } from "./recovery/index.js";
-import { REVIEW_WAIT_MONITOR_SERVICE_NAME } from "./recovery/review-wait.js";
+import { REVIEW_WAIT_MONITOR_SERVICE_NAME, REVIEW_WAIT_RECHECK_MS } from "./recovery/review-wait.js";
 import {
   buildConfigurationIncompleteRecoveryNoticeSeed,
   buildExecutionReviewParticipantRecoveryNoticeSeed,
@@ -11980,6 +11981,55 @@ export function heartbeatService(
         runId: input.runId,
         activitySource: input.activitySource,
       });
+    }
+
+    // GRE-589: a reviewer run for an in_review issue with an open blocker is
+    // cancelled at dispatch (issue_dependencies_blocked), so starting one only
+    // wastes a run. Keep the monitor armed and check again later; the attempt
+    // count is unchanged because nothing was dispatched. Once the blocker is
+    // done, the next check wakes the reviewer once, as before.
+    if (isReviewWaitMonitor) {
+      const readiness = (
+        await issuesSvc.listDependencyReadiness(claimed.companyId, [claimed.id])
+      ).get(claimed.id);
+      if (readiness && !readiness.isDependencyReady) {
+        const nextCheckAt = new Date(input.now.getTime() + REVIEW_WAIT_RECHECK_MS);
+        const patch = buildIssueMonitorDeferredPatch({
+          issue: claimed,
+          executionPolicy: claimed.executionPolicy,
+          nextCheckAt,
+        });
+        if (patch) {
+          await db
+            .update(issues)
+            .set({ ...patch, updatedAt: new Date() })
+            .where(eq(issues.id, claimed.id));
+          await logActivity(db, {
+            companyId: claimed.companyId,
+            actorType: input.actorType,
+            actorId: input.actorId,
+            agentId: input.agentId,
+            runId: input.runId,
+            action: "issue.monitor_deferred",
+            entityType: "issue",
+            entityId: claimed.id,
+            details: {
+              identifier: claimed.identifier,
+              reason: "issue_dependencies_blocked",
+              unresolvedBlockerIssueIds: readiness.unresolvedBlockerIssueIds,
+              previousNextCheckAt: scheduledAtIso,
+              nextCheckAt: nextCheckAt.toISOString(),
+              attemptCount: claimed.monitorAttemptCount ?? 0,
+              targetAgentId,
+              source: input.activitySource,
+            },
+          });
+          return {
+            outcome: "skipped" as const,
+            reason: "issue_dependencies_blocked",
+          };
+        }
+      }
     }
 
     try {
