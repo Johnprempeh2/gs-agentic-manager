@@ -50,7 +50,31 @@ export const MANAGED_FEATURES_OFF = [
   "enableNativeRunner",
   "enableEnvironments",
   "enableOwnerInstanceAdmin",
+  // GRE-575: beta history view on task pages; off by default, now pinned off.
+  "enableIssuePlanDecompositions",
 ] as const satisfies readonly InstanceFeatureKey[];
+
+/**
+ * Section 5, "Default is OK" (GRE-575): switches a client install leaves at the
+ * app default, with the reason. Every catalog switch must be in exactly one of
+ * MANAGED_FEATURES_ON, MANAGED_FEATURES_OFF or this list; editions.test.ts
+ * fails and names any switch that has no decision.
+ */
+export const CLIENT_DEFAULT_OK = {
+  enableApps: "Compatibility key; Apps is always on and the app ignores the value.",
+  enableMcpAggregators: "Compatibility key; MCP aggregators are always on and the app ignores the value.",
+  enableRunnerPreviewIngress: "Deprecated compatibility key; runner ingress follows the Runner setting.",
+  enableDecisions: "Off in client installs (Cloud default). Turning it on needs a code change, not an edition value.",
+  enableClassicTaskInterface: "Off by default; clients use the chat task page.",
+  enableGoalsSidebarLink: "Off by default; Goals is still being evaluated.",
+  enableExperimentalFileViewer: "Off by default; experimental and its settings are hidden.",
+  enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",
+  enableSimplifiedEnglishInteractions: "Off by default; a Greatstone house style, not a client setting.",
+  enableBetaSkills: "Off by default; clients run released skills only.",
+  enablePaperclipDeveloperMode: "Off by default; maintainer tools only.",
+  enableServerInfoDebugView: "Off by default; maintainer debug view only.",
+  autoRestartDevServerWhenIdle: "Off by default; local development only.",
+} as const satisfies Partial<Record<InstanceFeatureKey, string>>;
 
 /** Section 5, Managed, "Hidden settings". Managed plus keeps the same list. */
 export const MANAGED_HIDDEN_SETTINGS = [
@@ -143,8 +167,7 @@ export function buildEditionValues(input: EditionInput): EditionValues {
   const on = new Set<InstanceFeatureKey>([...MANAGED_FEATURES_ON, ...(passed as InstanceFeatureKey[])]);
 
   // GSAM_MANAGED_CONFIG accepts only tier "managed" keys. Pin exactly the
-  // section 5 keys; managed keys that section 5 does not name keep the app
-  // default until the brief names them.
+  // section 5 keys; CLIENT_DEFAULT_OK keys keep the app default.
   const features: Record<string, boolean> = {};
   for (const key of INSTANCE_FEATURE_KEYS) {
     if (tierOf(key) !== "managed") continue;
