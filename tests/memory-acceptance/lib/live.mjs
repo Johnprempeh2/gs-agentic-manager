@@ -81,20 +81,56 @@ export function createLiveTarget(cfg) {
     return { reached: true, status: res.status, detail: JSON.stringify(res.body).slice(0, 200), dataReturned };
   }
 
-  function tcpProbe(port) {
+  // The engine's PostgreSQL listens on loopback, so a TCP connect from the
+  // agent's shell succeeds by design. The control is that a login without
+  // the engine's password is refused. Send a startup message with no password
+  // and read the first reply: an auth request or an error is a refusal;
+  // AuthenticationOk (R, code 0) means anyone on the box can get in.
+  function pgLoginProbe(port, user) {
     return new Promise((resolve) => {
       const sock = net.connect({ host: cfg.engine.host, port, timeout: cfg.timeoutMs });
-      sock.once("connect", () => {
+      const done = (r) => {
         sock.destroy();
-        resolve({ reached: true, status: null, detail: "TCP connection accepted", dataReturned: false });
-      });
-      const fail = (detail) => {
-        sock.destroy();
-        resolve({ reached: false, status: null, detail, dataReturned: false });
+        resolve({ reached: false, status: null, dataReturned: false, ...r });
       };
-      sock.once("error", (e) => fail(e.code ?? e.message));
-      sock.once("timeout", () => fail("timeout"));
+      sock.once("connect", () => {
+        const params = Buffer.from(`user\0${user}\0database\0${user}\0\0`);
+        const head = Buffer.alloc(8);
+        head.writeInt32BE(8 + params.length, 0);
+        head.writeInt32BE(196608, 4); // protocol 3.0
+        sock.write(Buffer.concat([head, params]));
+      });
+      let buf = Buffer.alloc(0);
+      sock.on("data", (chunk) => {
+        buf = Buffer.concat([buf, chunk]);
+        if (buf.length < 1) return;
+        const type = String.fromCharCode(buf[0]);
+        if (type === "E") return done({ reached: true, loginAccepted: false, detail: `login as ${user} refused: server error` });
+        if (type !== "R") return done({ reached: true, loginAccepted: null, detail: `unexpected reply ${JSON.stringify(type)}` });
+        if (buf.length < 9) return;
+        const code = buf.readInt32BE(5);
+        if (code === 0) return done({ reached: true, loginAccepted: true, detail: `login as ${user} accepted without a password` });
+        done({ reached: true, loginAccepted: false, detail: `login as ${user} needs a password (auth code ${code})` });
+      });
+      sock.once("error", (e) => done({ detail: e.code ?? e.message }));
+      sock.once("timeout", () => done({ detail: "timeout" }));
     });
+  }
+
+  async function pgProbe(port) {
+    const users = ["hindsight", "postgres"];
+    const results = [];
+    for (const u of users) results.push(await pgLoginProbe(port, u));
+    const reached = results.some((r) => r.reached);
+    const accepted = results.find((r) => r.loginAccepted === true);
+    const unclear = results.find((r) => r.reached && r.loginAccepted == null);
+    return {
+      reached,
+      status: null,
+      dataReturned: false,
+      loginAccepted: accepted ? true : unclear ? null : reached ? false : undefined,
+      detail: results.map((r) => r.detail).join("; "),
+    };
   }
 
   let lastSince = 0;
@@ -165,7 +201,7 @@ export function createLiveTarget(cfg) {
         case "control-plane":
           return engineHttp(controlPlanePort, "/");
         case "postgres":
-          return tcpProbe(postgresPort);
+          return pgProbe(postgresPort);
         default:
           throw new Error(`Unknown probe: ${kind}`);
       }

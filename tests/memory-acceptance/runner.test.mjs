@@ -87,3 +87,33 @@ test("live target with no engine reports engine tests inconclusive, never pass",
   assert.equal(byId["MT-05"], "fail", "an unreachable gateway is not 'rejected'");
   assert.ok(report.results.every((r) => r.status !== "pass"), "nothing passes against an unreachable gateway");
 });
+
+// Fake PostgreSQL that answers every startup message with one auth reply.
+async function fakePg(authCode) {
+  const net = await import("node:net");
+  const server = net.createServer((sock) => {
+    sock.once("data", () => {
+      const r = Buffer.alloc(9);
+      r.write("R", 0);
+      r.writeInt32BE(8, 1);
+      r.writeInt32BE(authCode, 5);
+      sock.end(r);
+    });
+  });
+  await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+  return server;
+}
+
+for (const [code, want] of [[10, false], [3, false], [0, true]]) {
+  test(`PostgreSQL probe: auth code ${code} means login accepted = ${want}`, async () => {
+    const server = await fakePg(code);
+    const cfg = { gatewayUrl: "http://127.0.0.1:9", companyId: "x", engine: { host: "127.0.0.1", postgresPort: server.address().port }, timeoutMs: 1000 };
+    const dir = mkdtempSync(join(tmpdir(), "mem-acc-"));
+    const path = join(dir, "live.json");
+    writeFileSync(path, JSON.stringify(cfg));
+    const pg = await createLiveTarget(loadLiveConfig(path)).probeEngine("postgres");
+    server.close();
+    assert.equal(pg.reached, true);
+    assert.equal(pg.loginAccepted, want, pg.detail);
+  });
+}

@@ -173,15 +173,18 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
     return { status: 201, body: { id: rec.id, contributor, status: rec.status, detection: DETECTION_NOTE } };
   }
 
-  // Direct engine calls from an agent's shell. Correct config: nothing answers
-  // without the gateway key; the database and control plane are not reachable.
+  // Direct engine calls from an agent's shell. Correct config (GRE-674): REST
+  // answers 401 without the gateway key, MCP is off (404), the control plane
+  // is not running, and PostgreSQL listens on loopback but refuses any login
+  // without the engine's password.
   function probeEngine(kind, { bank = "cl-alder" } = {}) {
     if (!on.has("engine-open")) {
-      const refused = ["control-plane", "postgres"].includes(kind);
-      return refused
-        ? { reached: false, status: null, detail: "connection refused", dataReturned: false }
-        : { reached: true, status: 401, detail: "missing or invalid gateway assertion", dataReturned: false };
+      if (kind === "control-plane") return { reached: false, status: null, detail: "connection refused", dataReturned: false };
+      if (kind === "postgres") return { reached: true, status: null, detail: "server asked for a password", loginAccepted: false, dataReturned: false };
+      if (kind.startsWith("mcp-")) return { reached: true, status: 404, detail: "Not Found", dataReturned: false };
+      return { reached: true, status: 401, detail: "missing or invalid gateway key", dataReturned: false };
     }
+    if (kind === "postgres") return { reached: true, status: null, detail: "login accepted without a password", loginAccepted: true, dataReturned: false };
     if (kind === "rest-retain") {
       records.push({ id: `MR-${nextId++}`, scope: bank, status: "observation", contributor: "unknown", text: "direct-probe" });
     }
