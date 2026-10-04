@@ -81,6 +81,7 @@ import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
+import { memoryToolRoutes } from "./routes/memory-tools.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
 import { boardChatRoutes } from "./routes/board-chat.js";
 import { approvalRoutes } from "./routes/approvals.js";
@@ -790,6 +791,7 @@ export async function createApp(
   api.use(goalRoutes(db));
   api.use(agentTeamRoutes(db));
   api.use(memoryRoutes(db));
+  api.use(memoryToolRoutes(db));
   api.use(onboardingSeedRoutes(db));
   api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
   api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));

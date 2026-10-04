@@ -1324,6 +1324,7 @@ const PUBLIC_OPERATIONS = new Set([
   "POST /api/invites/{token}/accept",
   "POST /api/join-requests/{requestId}/claim-api-key",
   "GET /api/mcp/project-tools",
+  "GET /api/mcp/memory-tools",
   "GET /mcp/gateways/{gatewayPublicId}",
   "POST /mcp/gateways/{gatewayPublicId}",
   "GET /api/tool-gateway/gateways/{gatewayId}/mcp",
@@ -1673,7 +1674,7 @@ function resolveOperationAuthLevel(
 ): OpenApiAuthLevel {
   const key = operationKey(method, path);
   if (PUBLIC_OPERATIONS.has(key)) return "public";
-  if (key === "POST /api/mcp/project-tools" || key === "POST /api/companies/{companyId}/slack/tasks/{issueId}/tools") return "agent_run";
+  if (key === "POST /api/mcp/project-tools" || key === "POST /api/mcp/memory-tools" || key === "POST /api/companies/{companyId}/slack/tasks/{issueId}/tools") return "agent_run";
   if (RUNTIME_TOOLS_OPERATIONS.has(key)) return "runtime_tools";
   if (INSTANCE_ADMIN_OPERATIONS.has(key)) return "instance_admin";
   if (
@@ -10839,6 +10840,28 @@ registerCurrentRoute({
     params: z.record(z.string(), z.unknown()).optional(),
   }),
   responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/mcp/memory-tools",
+  tags: ["memory"],
+  summary: "Call memory_recall, memory_contribute and memory_get through the active task run's MCP transport; 404 while memory is off",
+  body: z.object({
+    jsonrpc: z.literal("2.0"),
+    id: z.union([z.string(), z.number()]).nullable().optional(),
+    method: z.string(),
+    params: z.record(z.string(), z.unknown()).optional(),
+  }),
+  responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/mcp/memory-tools",
+  tags: ["memory"],
+  summary: "Refuse an MCP SSE stream request: the memory tools endpoint is POST only",
+  responses: { 405: r.mcpNoSseStream },
 });
 
 registerCurrentRoute({
