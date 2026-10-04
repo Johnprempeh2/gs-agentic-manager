@@ -8,6 +8,7 @@
 #   scripts/greatstone-preview.sh shot <path> <name>
 #                                               screenshot http://localhost:3200<path> at laptop and
 #                                               phone size into ~/GSAM/preview/shots/<tag>-<name>-*.png
+#                                               and its console errors and failed requests into <tag>-<name>-console.txt
 #   scripts/greatstone-preview.sh stop          stop the preview (only the preview)
 #
 # The preview lives in ~/GSAM/preview: code/ is its own clone at <tag>, data/
@@ -246,11 +247,13 @@ cmd_shot() {
   [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || die "the preview state has no usable tag ('$tag')."
   local dir="$PREVIEW_ROOT/shots"
   local laptop="$dir/$tag-$name-laptop.png" phone="$dir/$tag-$name-phone.png"
+  local console_log="$dir/$tag-$name-console.txt"
   mkdir -p "$dir"
-  (cd "$GS_TOOLS_ROOT" && node scripts/preview-shot.mjs "http://localhost:3200$page" "$laptop" "$phone") \
+  (cd "$GS_TOOLS_ROOT" && node scripts/preview-shot.mjs "http://localhost:3200$page" "$laptop" "$phone" "$console_log") \
     || die "the screenshot of http://localhost:3200$page failed."
   say "$laptop"
   say "$phone"
+  say "$console_log"
 }
 
 case "${1:-}" in
