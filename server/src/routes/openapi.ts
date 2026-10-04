@@ -5110,6 +5110,18 @@ registry.registerPath({
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/plan-usage",
+  tags: ["memory"],
+  summary: "Daily Claude plan use by memory extraction (engine deliveries and model tokens per Europe/London day); 404 while memory is off",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({ days: z.coerce.number().int().min(1).max(90).optional() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
 // ─── Goals ───────────────────────────────────────────────────────────────────
 
 registry.registerPath({
