@@ -2800,6 +2800,8 @@ export function PromptsTab({
             <div className="flex items-center gap-1">
               {!showNewFileInput && (
                 <Button
+                  aria-label="New file"
+                  title="New file"
                   type="button"
                   size="icon"
                   variant="outline"
@@ -2811,6 +2813,8 @@ export function PromptsTab({
               )}
               {isMobile && (
                 <Button
+                  aria-label="Close files"
+                  title="Close files"
                   type="button"
                   size="icon"
                   variant="ghost"
@@ -2930,6 +2934,8 @@ export function PromptsTab({
             <div className="flex items-center gap-2 min-w-0">
               {isMobile && (
                 <Button
+                  aria-label="Show files"
+                  title="Show files"
                   type="button"
                   size="icon"
                   variant="outline"

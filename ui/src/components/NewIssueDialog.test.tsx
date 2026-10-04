@@ -427,6 +427,25 @@ describe("NewIssueDialog", () => {
     act(() => rerendered.root.unmount());
   });
 
+  it("names the icon-only header buttons for screen readers", async () => {
+    const { root } = renderDialog(container);
+    await flush();
+
+    const buttonByName = (name: string) =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.getAttribute("aria-label") === name,
+      );
+
+    const close = buttonByName("Close");
+    expect(close?.getAttribute("title")).toBe("Close");
+    expect(buttonByName("Expand")?.getAttribute("title")).toBe("Expand");
+
+    act(() => close!.click());
+    expect(dialogState.closeNewIssue).toHaveBeenCalledTimes(1);
+
+    act(() => root.unmount());
+  });
+
   it("uses the compact composer control proportions for mobile task fields", async () => {
     const { root } = renderDialog(container);
     await flush();
