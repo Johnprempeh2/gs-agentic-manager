@@ -3109,6 +3109,9 @@ export function deriveIssueUserContext(
 
   return {
     myLastTouchAt,
+    // My tasks tells "Waiting for answer" from "Answer ready" by comparing
+    // this with lastExternalCommentAt; myLastTouchAt also moves on a read.
+    myLastCommentAt,
     lastExternalCommentAt,
     isUnreadForMe,
   };
@@ -6450,6 +6453,7 @@ async function listBlockedInboxIssues(
       liveDescendantCount?: number;
       lastActivityAt: Date;
       myLastTouchAt?: Date | null;
+      myLastCommentAt?: Date | null;
       lastExternalCommentAt?: Date | null;
       isUnreadForMe?: boolean;
     }

@@ -29,6 +29,7 @@ describe("deriveIssueUserContext", () => {
     );
 
     expect(context.myLastTouchAt?.toISOString()).toBe("2026-03-06T12:00:00.000Z");
+    expect(context.myLastCommentAt?.toISOString()).toBe("2026-03-06T12:00:00.000Z");
     expect(context.lastExternalCommentAt?.toISOString()).toBe("2026-03-06T13:00:00.000Z");
     expect(context.isUnreadForMe).toBe(true);
   });
