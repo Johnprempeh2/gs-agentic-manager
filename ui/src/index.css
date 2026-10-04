@@ -491,6 +491,10 @@
   --side-panel-tab-radius: var(--radius-xl);
   --side-panel-control-radius: var(--radius-xl);
   --side-panel-launcher-width: var(--sz-320px);
+  /* My tasks Discuss panel (GRE-620): docked beside the list, the height of
+     the page area under the 60px bar less main's top and bottom padding. */
+  --my-tasks-discuss-width: var(--sz-420px);
+  --my-tasks-discuss-height: calc(100dvh - var(--sz-60px) - 3rem);
   --side-panel-bg: var(--gs-panel-bg); /* Greatstone: a translucent panel over the atmosphere */
   --side-panel-fg: var(--foreground);
   --streamlined-task-detail-bg: transparent; /* let the atmosphere reach the task thread */

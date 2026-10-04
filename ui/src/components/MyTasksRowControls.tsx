@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { Issue } from "@greatstone/shared";
-import { MessageCircleQuestion, UserRoundPlus } from "lucide-react";
+import { MessageCircleQuestion, MessagesSquare, UserRoundPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -187,6 +187,36 @@ export function MyTasksAskButton({
     >
       <MessageCircleQuestion aria-hidden />
       Ask
+    </Button>
+  );
+}
+
+/** Opens the task's thread in the Discuss panel (GRE-620). */
+export function MyTasksDiscussButton({
+  issue,
+  open,
+  controlsId,
+  onToggle,
+}: {
+  issue: Pick<Issue, "id" | "identifier" | "title">;
+  open: boolean;
+  controlsId: string;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="xs"
+      data-my-tasks-discuss={issue.id}
+      aria-expanded={open}
+      aria-controls={open ? controlsId : undefined}
+      aria-label={`Discuss ${issueLabel(issue)}`}
+      onClick={onToggle}
+      className={cn("text-muted-foreground hover:text-foreground", open && "bg-accent text-foreground")}
+    >
+      <MessagesSquare aria-hidden />
+      Discuss
     </Button>
   );
 }

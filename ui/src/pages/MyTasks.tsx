@@ -41,9 +41,11 @@ import {
   MyTasksAskBox,
   MyTasksAskButton,
   MyTasksAskStateBadge,
+  MyTasksDiscussButton,
   MyTasksHandOff,
   MyTasksTickBox,
 } from "../components/MyTasksRowControls";
+import { MyTasksDiscussPanel, useMyTasksDiscussOverlay } from "../components/MyTasksDiscussPanel";
 
 /** Tasks behind decisions are fetched one by one; the Decisions page holds the rest. */
 const DECISION_ISSUE_FETCH_LIMIT = 50;
@@ -54,6 +56,7 @@ const HANDED_OFF_FETCH_LIMIT = 200;
 const UNDO_TOAST_MS = 5000;
 
 const askBoxId = (issueId: string) => `my-tasks-ask-${issueId}`;
+const DISCUSS_PANEL_ID = "my-tasks-discuss-panel";
 
 /** The visible copy of a row control: phone and laptop layouts each render one. */
 function visibleElement(selector: string): HTMLElement | null {
@@ -87,6 +90,8 @@ export function MyTasks() {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [askOpenId, setAskOpenId] = useState<string | null>(null);
+  const [discussId, setDiscussId] = useState<string | null>(null);
+  const discussOverlay = useMyTasksDiscussOverlay();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "My tasks" }]);
@@ -403,6 +408,46 @@ export function MyTasks() {
     focusSoon(`[data-my-tasks-ask="${issueId}"]`);
   };
 
+  // Opening the thread reads it, so an "Answer ready" row settles.
+  const markRead = useMutation({
+    mutationFn: (issue: Issue) => issuesApi.markRead(issue.id),
+    onMutate: (issue) => patchIssueLocally(issue, { myLastReadAt: new Date() }),
+    onSettled: (_data, _err, issue) => refreshMyTasks(issue.id),
+  });
+
+  // A plain comment: the server wakes the assignee agent as on the task page.
+  const reply = useMutation({
+    mutationFn: ({ issue, body, clientRequestId }: { issue: Issue; body: string; clientRequestId?: string }) =>
+      issuesApi.addComment(issue.id, body, undefined, undefined, undefined, clientRequestId ?? crypto.randomUUID()),
+    onMutate: ({ issue }) => {
+      patchIssueLocally(issue, { myLastCommentAt: new Date() });
+    },
+    onError: (err, { issue }) => {
+      patchIssueLocally(issue, issue);
+      pushToast({
+        title: "Could not send the reply",
+        body: err instanceof Error ? err.message : undefined,
+        tone: "error",
+      });
+    },
+    onSettled: (_data, _err, { issue }) => {
+      refreshMyTasks(issue.id);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issue.id) });
+    },
+  });
+
+  const openDiscuss = (issue: Issue) => {
+    setDiscussId(issue.id);
+    const answerReady = myTasksAskState(issue) === "answered";
+    if (answerReady) markRead.mutate(issue);
+  };
+
+  const closeDiscuss = () => {
+    const issueId = discussId;
+    setDiscussId(null);
+    if (issueId) focusSoon(`[data-my-tasks-discuss="${issueId}"]`);
+  };
+
   const askTargetOf = (issue: Issue) => {
     const id = askTargetAgentId(issue, leadAgentId);
     return id ? agentById.get(id) ?? null : null;
@@ -412,8 +457,17 @@ export function MyTasks() {
     <MyTasksTickBox issue={issue} onCheckedChange={(done) => tick(issue, done)} />
   );
 
+  const renderDiscuss = (issue: Issue) => (
+    <MyTasksDiscussButton
+      issue={issue}
+      open={discussId === issue.id}
+      controlsId={DISCUSS_PANEL_ID}
+      onToggle={() => (discussId === issue.id ? closeDiscuss() : openDiscuss(issue))}
+    />
+  );
+
   const renderRowActions = (issue: Issue) => {
-    if (issue.status === "done") return null;
+    if (issue.status === "done") return renderDiscuss(issue);
     const askState = myTasksAskState(issue);
     return (
       <>
@@ -430,6 +484,7 @@ export function MyTasks() {
           controlsId={askBoxId(issue.id)}
           onToggle={() => (askOpenId === issue.id ? closeAsk(issue.id) : setAskOpenId(issue.id))}
         />
+        {renderDiscuss(issue)}
       </>
     );
   };
@@ -462,9 +517,23 @@ export function MyTasks() {
   }
 
   const nothingNeedsYou = listedIssues.length === 0 && merged.decisionsWithoutIssue.length === 0;
+  const discussIssue = discussId ? listedIssues.find((issue) => issue.id === discussId) ?? null : null;
+  const discussPanel = discussIssue ? (
+    <MyTasksDiscussPanel
+      id={DISCUSS_PANEL_ID}
+      issue={discussIssue}
+      agents={agents}
+      currentUserId={currentUserId}
+      issueLinkState={issueLinkState}
+      onReply={async (body, clientRequestId) => {
+        await reply.mutateAsync({ issue: discussIssue, body, clientRequestId });
+      }}
+      onClose={closeDiscuss}
+    />
+  ) : null;
 
-  return (
-    <div className="space-y-6">
+  const page = (
+    <div className="min-w-0 flex-1 space-y-6">
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {nothingNeedsYou ? (
@@ -499,6 +568,15 @@ export function MyTasks() {
           )}
         </>
       )}
+    </div>
+  );
+
+  // One wrapper either way, so opening the panel does not remount the list.
+  // Docked: the list keeps the space beside the panel. Overlay: the panel covers it.
+  return (
+    <div className={discussPanel && !discussOverlay ? "flex items-start gap-4" : undefined}>
+      {page}
+      {discussPanel}
     </div>
   );
 }

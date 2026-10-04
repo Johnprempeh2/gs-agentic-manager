@@ -16,6 +16,8 @@ const issuesListMock = vi.fn<(companyId: string, filters?: Record<string, unknow
 const issuesUpdateMock = vi.fn<(id: string, data: Record<string, unknown>) => Promise<Issue>>();
 const addCommentMock = vi.fn<(id: string, body: string, ...rest: unknown[]) => Promise<unknown>>();
 const pushToastMock = vi.fn<(input: ToastInput) => string | null>();
+const listCommentsMock = vi.fn<(id: string, filters?: Record<string, unknown>) => Promise<unknown[]>>();
+const markReadMock = vi.fn<(id: string) => Promise<unknown>>();
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; children: ReactNode }) => (
@@ -46,7 +48,27 @@ vi.mock("../api/issues", () => ({
     get: vi.fn(),
     update: (id: string, data: Record<string, unknown>) => issuesUpdateMock(id, data),
     addComment: (id: string, body: string, ...rest: unknown[]) => addCommentMock(id, body, ...rest),
+    listComments: (id: string, filters?: Record<string, unknown>) => listCommentsMock(id, filters),
+    markRead: (id: string) => markReadMock(id),
   },
+}));
+vi.mock("../hooks/useStandardMarkdownMentionOptions", () => ({ useStandardMarkdownMentionOptions: () => [] }));
+
+// The real thread is covered elsewhere; this stub shows the comments and sends a reply.
+vi.mock("../components/IssueChatThread", () => ({
+  IssueChatThread: (props: {
+    comments: { id: string; body: string }[];
+    onAdd: (body: string, ...rest: unknown[]) => Promise<void>;
+  }) => (
+    <div data-thread>
+      {props.comments.map((comment) => (
+        <p key={comment.id} data-comment>{comment.body}</p>
+      ))}
+      <button type="button" data-send onClick={() => void props.onAdd("Looks good, go ahead")}>
+        Send
+      </button>
+    </div>
+  ),
 }));
 
 // The real list is covered elsewhere; this stub shows the groups and the page's row slots.
@@ -174,6 +196,14 @@ beforeEach(() => {
     return { id: "comment-1" };
   });
   pushToastMock.mockReset().mockReturnValue("toast-1");
+  listCommentsMock.mockReset().mockImplementation(async (id) => [
+    { id: `${id}-c2`, body: `Second on ${id}` },
+    { id: `${id}-c1`, body: `First on ${id}` },
+  ]);
+  markReadMock.mockReset().mockImplementation(async (id) => {
+    openIssues = openIssues.map((issue) => (issue.id === id ? { ...issue, myLastReadAt: new Date() } : issue));
+    return { id };
+  });
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0));
 });
 
@@ -291,5 +321,121 @@ describe("MyTasks rows (GRE-619)", () => {
     });
     await flush();
     expect(addCommentMock.mock.calls[0]![1]).toBe("And the tests?");
+  });
+});
+
+describe("MyTasks Discuss panel (GRE-620)", () => {
+  const panel = () => document.querySelector<HTMLElement>("[data-my-tasks-discuss-panel]");
+  const comments = () => [...document.querySelectorAll("[data-comment]")].map((node) => node.textContent);
+
+  it("opens the thread next to the list, oldest first, and moves focus in", async () => {
+    openIssues = [makeIssue("1"), makeIssue("2")];
+    await renderPage();
+
+    const discuss = container.querySelector('[data-my-tasks-discuss="1"]');
+    click(discuss);
+    await flush();
+
+    expect(panel()?.getAttribute("data-my-tasks-discuss-panel")).toBe("1");
+    expect(panel()?.querySelector("section")?.getAttribute("aria-label")).toBe("Discuss GRE-1: Task 1");
+    expect(discuss?.getAttribute("aria-expanded")).toBe("true");
+    expect(listCommentsMock).toHaveBeenCalledWith("1", { order: "desc", limit: 50 });
+    expect(comments()).toEqual(["First on 1", "Second on 1"]);
+    expect(document.activeElement?.hasAttribute("data-my-tasks-discuss-close")).toBe(true);
+    // The list stays on screen beside the panel.
+    expect(container.querySelector('[data-row="2"]')).not.toBeNull();
+    expect(panel()?.querySelector('a[href="/issues/GRE-1"]')?.textContent).toContain("Open task");
+  });
+
+  it("closes with the close button and with Escape, and focus goes back to the row", async () => {
+    openIssues = [makeIssue("1")];
+    await renderPage();
+
+    click(container.querySelector('[data-my-tasks-discuss="1"]'));
+    await flush();
+    click(document.querySelector("[data-my-tasks-discuss-close]"));
+    await flush();
+    expect(panel()).toBeNull();
+    expect(document.activeElement?.getAttribute("data-my-tasks-discuss")).toBe("1");
+
+    click(container.querySelector('[data-my-tasks-discuss="1"]'));
+    await flush();
+    flushSync(() => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await flush();
+    expect(panel()).toBeNull();
+    expect(document.activeElement?.getAttribute("data-my-tasks-discuss")).toBe("1");
+  });
+
+  it("switches to another row's thread", async () => {
+    openIssues = [makeIssue("1"), makeIssue("2")];
+    await renderPage();
+
+    click(container.querySelector('[data-my-tasks-discuss="1"]'));
+    await flush();
+    click(container.querySelector('[data-my-tasks-discuss="2"]'));
+    await flush();
+
+    expect(panel()?.getAttribute("data-my-tasks-discuss-panel")).toBe("2");
+    expect(comments()).toEqual(["First on 2", "Second on 2"]);
+    expect(container.querySelector('[data-my-tasks-discuss="1"]')?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("a reply posts a plain comment and the row waits for the answer", async () => {
+    openIssues = [makeIssue("1", { assigneeAgentId: "agent-ridge" })];
+    await renderPage();
+
+    click(container.querySelector('[data-my-tasks-discuss="1"]'));
+    await flush();
+    listCommentsMock.mockClear();
+    click(document.querySelector("[data-send]"));
+    await flush();
+
+    expect(addCommentMock).toHaveBeenCalledTimes(1);
+    expect(addCommentMock.mock.calls[0]![0]).toBe("1");
+    expect(addCommentMock.mock.calls[0]![1]).toBe("Looks good, go ahead");
+    expect(container.querySelector('[data-row="1"] [data-ask-state="waiting"]')).not.toBeNull();
+    // The thread refetches so the reply shows.
+    expect(listCommentsMock).toHaveBeenCalledWith("1", { order: "desc", limit: 50 });
+  });
+
+  it("below 900px the panel is a full-width dialog that Escape closes", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(width < 56.25rem)",
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    openIssues = [makeIssue("1")];
+    await renderPage();
+
+    click(container.querySelector('[data-my-tasks-discuss="1"]'));
+    await flush();
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute("data-my-tasks-discuss-panel")).toBe("1");
+    expect(dialog?.getAttribute("aria-labelledby")).toBeTruthy();
+    expect(document.activeElement?.hasAttribute("data-my-tasks-discuss-close")).toBe(true);
+
+    flushSync(() => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await flush();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement?.getAttribute("data-my-tasks-discuss")).toBe("1");
+  });
+
+  it("opening a row with an answer ready marks it read", async () => {
+    const asked = new Date(Date.now() - 60_000);
+    openIssues = [
+      makeIssue("1", { assigneeAgentId: "agent-ridge", myLastCommentAt: asked, lastExternalCommentAt: new Date(), myLastReadAt: asked }),
+    ];
+    await renderPage();
+    expect(container.querySelector('[data-row="1"] [data-ask-state="answered"]')).not.toBeNull();
+
+    click(container.querySelector('[data-my-tasks-discuss="1"]'));
+    await flush();
+    expect(markReadMock).toHaveBeenCalledWith("1");
+    expect(container.querySelector('[data-row="1"] [data-ask-state="answered"]')).toBeNull();
   });
 });
