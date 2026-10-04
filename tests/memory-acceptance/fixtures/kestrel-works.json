@@ -1,0 +1,71 @@
+{
+  "$comment": "Synthetic only. Kestrel Works world from the GRE-651 threat model, section 5.1. No client data, no real people. Load into sandbox instances only.",
+  "synthetic": true,
+  "company": { "id": "co-kestrel", "name": "Kestrel Works" },
+  "scopes": [
+    { "id": "org", "kind": "organization", "bank": "company", "sensitive": false },
+    { "id": "pj-alder-site", "kind": "project", "bank": "company", "sensitive": false, "name": "Alder website rebuild" },
+    { "id": "pj-kestrel-acq", "kind": "restricted_project", "bank": "pj-kestrel-acq", "sensitive": true, "name": "Internal acquisition review" },
+    { "id": "cl-alder", "kind": "client", "bank": "cl-alder", "sensitive": false, "name": "Alder Bakery" },
+    { "id": "cl-brook", "kind": "client", "bank": "cl-brook", "sensitive": false, "name": "Brookfield Dental" }
+  ],
+  "identities": [
+    {
+      "id": "ag-mason-syn",
+      "role": "contributor",
+      "grants": [
+        { "scope": "cl-alder", "rights": ["read", "contribute"] },
+        { "scope": "org", "rights": ["read", "contribute"] }
+      ],
+      "runs": [{ "id": "run-mason-live", "live": true }]
+    },
+    {
+      "id": "ag-lintel-syn",
+      "role": "contributor",
+      "grants": [
+        { "scope": "cl-brook", "rights": ["read"] },
+        { "scope": "org", "rights": ["read"] }
+      ],
+      "runs": [{ "id": "run-lintel-live", "live": true }]
+    },
+    {
+      "id": "ag-everest-syn",
+      "role": "trusted_management",
+      "grants": [
+        { "scope": "org", "rights": ["read"] },
+        { "scope": "pj-alder-site", "rights": ["read", "administer"] }
+      ],
+      "runs": [{ "id": "run-everest-live", "live": true }]
+    },
+    {
+      "id": "ag-steward-syn",
+      "role": "steward",
+      "grants": [
+        { "scope": "org", "rights": ["read"] },
+        { "scope": "cl-alder", "rights": ["read"] }
+      ],
+      "runs": [{ "id": "run-steward-live", "live": true }]
+    },
+    {
+      "id": "hu-john-syn",
+      "role": "policy_owner",
+      "grants": [
+        { "scope": "org", "rights": ["read", "contribute", "approve", "administer"] },
+        { "scope": "pj-alder-site", "rights": ["read", "contribute", "approve", "administer"] },
+        { "scope": "pj-kestrel-acq", "rights": ["read", "contribute", "approve", "administer"] },
+        { "scope": "cl-alder", "rights": ["read", "contribute", "approve", "administer"] },
+        { "scope": "cl-brook", "rights": ["read", "contribute", "approve", "administer"] }
+      ],
+      "runs": []
+    },
+    {
+      "id": "ag-rogue-syn",
+      "role": "contributor",
+      "grants": [{ "scope": "org", "rights": ["read", "contribute"] }],
+      "runs": [
+        { "id": "run-rogue-live", "live": true },
+        { "id": "run-rogue-expired", "live": false }
+      ]
+    }
+  ]
+}
