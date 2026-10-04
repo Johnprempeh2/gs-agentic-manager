@@ -170,6 +170,7 @@ import {
   workspaceOperations,
 } from "@greatstone/db";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
+import { REFERENCED_ROW_LOCK } from "../row-locks.js";
 import {
   getStartupTraceContext,
   getStartupTracer,
@@ -18256,6 +18257,9 @@ export function heartbeatService(
     }
     // All ordinary and comment claims use the same company-scoped issue
     // lock. A batch may claim several runs before executeRun tracks any owner.
+    // Claims only update non-key issue columns, so NO KEY UPDATE still
+    // serialises claimants and every other writer of the issue, without
+    // waiting on writes that merely reference the task.
     async function lockIssueExecutionClaim(tx: Db) {
       const [owner] = issueId ? await tx.select({
         assigneeAgentId: issues.assigneeAgentId,
@@ -18263,7 +18267,7 @@ export function heartbeatService(
         checkoutRunId: issues.checkoutRunId,
       }).from(issues).where(and(
         eq(issues.id, issueId), eq(issues.companyId, run.companyId),
-      )).for("update") : [];
+      )).for(REFERENCED_ROW_LOCK) : [];
       const ownsIssue = owner?.assigneeAgentId === run.agentId &&
         context.wakeReason !== "source_scoped_recovery_action";
       if (ownsIssue && run.scheduledRetryReason === "native_safe_replacement" &&
