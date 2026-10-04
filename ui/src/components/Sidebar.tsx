@@ -155,13 +155,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Greatstone (GRE-191): Goals graduated from Experimental; always shown.
   const goalsItem = <SidebarNavItem to="/goals" label="Goals" icon={Target} />;
   const routinesItem = <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />;
-  const artifactsItem = (
-    <>
-      {/* GRE-388: finished documents sit directly above everything agents made. */}
-      <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
-      <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
-    </>
-  );
+  const artifactsItem = <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />;
   const casesItem = showCases ? (
     <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
   ) : null;
@@ -242,7 +236,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               collapsed rail, where the old header icon was dropped entirely.
               Cmd/Ctrl+K remains the keyboard path (command palette). */}
           <SidebarNavItem to="/search" label="Search" icon={Search} />
-          {/* GRE-259: the chat with Everest sits directly under Search. */}
+          {/* GRE-585: finished documents sit in the top group, above Everest. */}
+          <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
+          {/* GRE-259: the chat with Everest sits directly under Search and Deliverables. */}
           {streamlinedUiEnabled && showAgentChats ? <SidebarAgentChats inline /> : null}
           {streamlinedUiEnabled ? null : (
             <>

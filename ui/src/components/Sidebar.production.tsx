@@ -127,6 +127,8 @@ export function Sidebar() {
               collapsed rail, where the old header icon was dropped entirely.
               Cmd/Ctrl+K remains the keyboard path (command palette). */}
           <SidebarNavItem to="/search" label="Search" icon={Search} />
+          {/* GRE-585: finished documents sit in the top group, under Search. */}
+          <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
           <SidebarNavItem
             to="/inbox"
@@ -170,7 +172,6 @@ export function Sidebar() {
           ) : null}
           {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-          <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (
