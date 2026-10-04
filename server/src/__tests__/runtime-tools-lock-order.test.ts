@@ -268,7 +268,8 @@ const support = await getEmbeddedPostgresTestSupport();
     const results = await Promise.all(work);
 
     expect(failures).toEqual([]);
-    expect(results.filter((result) => !["credentials 200 available", "runtime-tools 200", "document ok"].includes(result)))
+    // GET validates the run, then answers 405: the endpoint offers no SSE stream.
+    expect(results.filter((result) => !["credentials 200 available", "runtime-tools 405", "document ok"].includes(result)))
       .toEqual([]);
     const audits = await db.execute(sql`select count(*)::int as count from secret_access_events where heartbeat_run_id = ${input.runId}`);
     expect(Number((audits[0] as { count: unknown }).count)).toBe(20);

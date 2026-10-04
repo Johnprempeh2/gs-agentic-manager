@@ -83,6 +83,29 @@ export function isSecretSensitiveHttpRequest(
   return SECRET_SENSITIVE_HTTP_PATHS.some((pattern) => pattern.test(pathname));
 }
 
+const MCP_ENDPOINT_PATHS = [
+  /^\/mcp\/gateways\/[^/]+\/?$/,
+  /^\/mcp\/runtime-tools\/?$/,
+  /^\/api\/mcp\/project-tools\/?$/,
+  /^\/api\/tool-gateway\/gateways\/[^/]+\/mcp\/?$/,
+];
+
+/**
+ * MCP clients GET their server endpoint once per session to open an optional
+ * SSE stream. GS Agentic Manager's MCP endpoints offer none and answer 405, as
+ * the Streamable HTTP transport specifies. That is protocol negotiation, not a
+ * failure, so it is logged at info rather than as a warning.
+ */
+export function isMcpSseStreamRefusal(
+  method: string | undefined,
+  url: string | undefined,
+  statusCode: number,
+): boolean {
+  if (statusCode !== 405 || method?.toUpperCase() !== "GET" || !url) return false;
+  const pathname = normalizePath(url);
+  return MCP_ENDPOINT_PATHS.some((pattern) => pattern.test(pathname));
+}
+
 export function shouldSilenceHttpSuccessLog(
   method: string | undefined,
   url: string | undefined,
