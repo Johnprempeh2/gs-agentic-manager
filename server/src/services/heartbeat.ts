@@ -21086,6 +21086,10 @@ export function heartbeatService(
     return recovery.reconcileResolvedDependencyWakeBackstop(opts);
   }
 
+  async function reconcileOverdueHumanWaits(opts?: { companyId?: string | null; now?: Date }) {
+    return recovery.reconcileOverdueHumanWaits(opts);
+  }
+
   async function updateRuntimeState(
     agent: typeof agents.$inferSelect,
     run: typeof heartbeatRuns.$inferSelect,
@@ -32122,6 +32126,8 @@ export function heartbeatService(
     sweepStaleIssueLocks,
 
     reconcileResolvedDependencyWakes,
+
+    reconcileOverdueHumanWaits,
 
     scanSilentActiveRuns,
     stopSilentRuns,
