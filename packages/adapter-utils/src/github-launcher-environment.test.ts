@@ -227,6 +227,17 @@ describe("managed GitHub launcher environment", () => {
     },
   );
 
+  it("does not stage process guards on a remote target, which does not share the server's processes", async () => {
+    const fixture = await sandbox("usr/bin");
+    const env = await prepareGitHubOperationLaunchers({
+      runId: "run-remote-guard", target: fixture.target, cwd: fixture.root, env: { PATH: fixture.remotePath },
+      processGuard: { protectedPaths: [path.join(fixture.root, "live")], serverPid: process.pid },
+    });
+    for (const name of ["pkill", "killall"]) {
+      await expect(readFile(path.join(env.GSAM_GITHUB_LAUNCHER_DIR, name), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    }
+  });
+
   it("preserves an explicit remote PATH without querying the remote environment", async () => {
     const fixture = await sandbox("custom/bin");
     const env = await prepareGitHubOperationLaunchers({

@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { githubLauncherSource } from "./github-launcher.js";
+import { processKillGuardFiles, type ProcessKillGuard } from "./process-kill-guard.js";
 import type { SshRemoteExecutionSpec } from "./ssh.js";
 import {
   prepareCommandManagedRuntime,
@@ -1712,6 +1713,12 @@ printf '\0GSAM_GIT_CONTEXT_END\0'
 /** Stage token-free launchers next to the execution, not in shared global Git config. */
 export async function prepareGitHubOperationLaunchers(input: {
   runId: string; target: AdapterExecutionTarget | null | undefined; cwd: string; env: Record<string, string>;
+  /**
+   * Live processes the run's pkill/killall must leave alone. Local runs on
+   * Linux and macOS get guard wrappers in this directory, which is first on
+   * PATH; remote targets do not share the controller's processes.
+   */
+  processGuard?: ProcessKillGuard | null;
 }): Promise<Record<string, string>> {
   const remote = input.target?.kind === "remote" ? input.target : null;
   const directory = githubOperationLauncherDirectory(input);
@@ -1751,6 +1758,14 @@ export async function prepareGitHubOperationLaunchers(input: {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
     await fs.mkdir(configDirectory, { recursive: true, mode: 0o700 });
     for (const [program, body] of Object.entries(files)) await fs.writeFile(path.join(directory, program), body, { mode: 0o700 });
+    const guards = processKillGuardFiles(input.processGuard
+      ? { ...input.processGuard, ownWorkspace: input.processGuard.ownWorkspace ?? input.cwd }
+      : null);
+    for (const [program, body] of Object.entries(guards)) {
+      const file = path.join(directory, program);
+      await fs.writeFile(file, body, { mode: 0o700 });
+      await fs.chmod(file, 0o700);
+    }
   }
   return { ...input.env, PATH: managedPath, ZDOTDIR: directory, BASH_ENV: `${directory}/.bashrc`,
     GH_CONFIG_DIR: configDirectory, GSAM_GITHUB_LAUNCHER_DIR: directory };
