@@ -203,6 +203,26 @@ describe("environment instance routes", () => {
     expect(mockEnvironmentService.list).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    "/api/companies/company-2/environments",
+    "/api/companies/company-2/environments/capabilities",
+  ])("refuses a board member of another company on %s", async (path) => {
+    mockEnvironmentService.list.mockResolvedValue([createEnvironment()]);
+    const app = createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", membershipRole: "member", status: "active" }],
+      isInstanceAdmin: false,
+    });
+
+    const res = await request(app).get(path);
+
+    expect(res.status).toBe(403);
+    expect(mockEnvironmentService.list).not.toHaveBeenCalled();
+  });
+
   it("rejects company agents from enumerating the shared environment catalog", async () => {
     const app = createApp({
       type: "agent",
