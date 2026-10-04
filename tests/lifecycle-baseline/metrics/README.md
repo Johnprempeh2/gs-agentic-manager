@@ -77,6 +77,13 @@ between. Reading, starring and trace inspection do not count as acting. The
 unattended share is auto-recovered failures divided by failures that have an
 issue. Failures with no issue are counted separately.
 
+The **platform failure rate** is the same rate with rejected logins (below)
+left out of both the failed count and the finished count. A refused login is
+an account problem for the board, not a platform fault, so the R2 budget
+checks the platform rate and the report shows login refusals as a separate
+count (GRE-590). The all-in `failureRate` is still saved. The unattended
+share still includes rejected logins.
+
 **R2 detail — rejected logins.** A failed run whose login the provider
 refused: its error code is `<provider>_auth_required`, or (servers before
 GRE-15) its error text says "terminal access failure". Only that boolean is
