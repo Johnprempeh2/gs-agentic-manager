@@ -15,7 +15,13 @@
  * Usage:
  *   node server/scripts/memory-egress-check.mjs sample --root-pid <pid> [--root-pid <pid>] \
  *     --out <log.jsonl> [--interval-ms 200] [--duration-s 600]
+ *   node server/scripts/memory-egress-check.mjs sample --unit gs-memory-hindsight --out <log.jsonl>
  *   node server/scripts/memory-egress-check.mjs check --log <log.jsonl> [--json]
+ *
+ * `ss -p` shows socket owners only for the caller's own processes (or all, as
+ * root). The shared engine runs as user `gsmemory`, so sample it as root or as
+ * that user; the sampler refuses to run when it could not see the engine's
+ * sockets, and `check` fails an empty log, so a blind run never passes.
  *
  * Limits: polling can miss a connection that opens and closes between two
  * samples. Extraction calls hold a TLS connection for seconds, so they are
@@ -132,6 +138,12 @@ export function parseSsOutput(text) {
   return sockets;
 }
 
+/** Reads the real uid from /proc/<pid>/status text. */
+export function parseUid(statusText) {
+  const match = /^Uid:\s+(\d+)/m.exec(statusText);
+  return match ? Number(match[1]) : null;
+}
+
 /** Parses /proc/<pid>/stat text into its parent pid. The command field may contain spaces and ')'. */
 export function parsePpid(statText) {
   const close = statText.lastIndexOf(")");
@@ -226,7 +238,9 @@ export function summarizeEgress(records, context) {
     destinations: list.sort((a, b) => a.kind.localeCompare(b.kind) || a.host.localeCompare(b.host)),
     outsideKinds: [...new Set(outside.map((item) => item.kind))].sort(),
     violations,
-    pass: violations.length === 0,
+    // An empty log means the sampler saw nothing (wrong pid, or no permission): not evidence of a clean run.
+    empty: records.length === 0,
+    pass: records.length > 0 && violations.length === 0,
   };
 }
 
@@ -242,8 +256,28 @@ function parseArgs(argv) {
   return args;
 }
 
+async function resolveUnitPid(unit) {
+  const { stdout } = await execFileAsync("systemctl", ["show", "-p", "MainPID", "--value", unit]);
+  const pid = Number(stdout.trim());
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`unit ${unit} is not running`);
+  return pid;
+}
+
+function assertCanSeeSockets(rootPids) {
+  const myUid = process.getuid();
+  if (myUid === 0) return;
+  for (const pid of rootPids) {
+    const ownerUid = parseUid(readFileSync(`/proc/${pid}/status`, "utf8"));
+    if (ownerUid !== myUid) {
+      throw new Error(`pid ${pid} runs as uid ${ownerUid}; ss cannot see its sockets from uid ${myUid}. Run as root or as that user.`);
+    }
+  }
+}
+
 async function sample(args) {
-  if (!args.rootPids.length || !args.out) throw new Error("sample needs --root-pid and --out");
+  if (args.unit) args.rootPids.push(await resolveUnitPid(args.unit));
+  if (!args.rootPids.length || !args.out) throw new Error("sample needs --root-pid or --unit, and --out");
+  assertCanSeeSockets(args.rootPids);
   const interval = Number(args["interval-ms"] ?? 200);
   const until = args["duration-s"] ? Date.now() + Number(args["duration-s"]) * 1000 : Infinity;
   let stop = false;
@@ -299,7 +333,7 @@ async function check(args) {
       );
     }
     process.stdout.write(
-      `outside destinations: ${summary.outsideKinds.join(", ") || "none"}\nresult: ${summary.pass ? "PASS" : "FAIL"}\n`,
+      `${summary.empty ? "no samples: the engine was not seen (check pid and permissions)\n" : ""}outside destinations: ${summary.outsideKinds.join(", ") || "none"}\nresult: ${summary.pass ? "PASS" : "FAIL"}\n`,
     );
   }
   process.exitCode = summary.pass ? 0 : 1;

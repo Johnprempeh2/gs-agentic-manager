@@ -4,6 +4,7 @@ import {
   descendants,
   ipInCidr,
   parsePpid,
+  parseUid,
   parseSsOutput,
   readResolvers,
   summarizeEgress,
@@ -86,6 +87,17 @@ describe("summarizeEgress", () => {
     const summary = summarizeEgress(records, context);
     expect(summary.pass).toBe(true);
     expect(summary.outsideKinds).toEqual(["anthropic"]);
+  });
+
+  it("fails an empty log: a sampler that saw nothing is not a clean run", () => {
+    const summary = summarizeEgress([], context);
+    expect(summary.empty).toBe(true);
+    expect(summary.pass).toBe(false);
+  });
+
+  it("reads the real uid of the engine process", () => {
+    expect(parseUid("Name:\tpython\nUid:\t998\t998\t998\t998\nGid:\t998\n")).toBe(998);
+    expect(parseUid("Name:\tpython\n")).toBeNull();
   });
 
   it("allows a resolved Anthropic host address and names tailnet leaks", () => {
