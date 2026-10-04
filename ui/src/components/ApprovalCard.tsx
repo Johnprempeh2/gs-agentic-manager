@@ -52,6 +52,8 @@ export function ApprovalCard({
     approval.type !== "budget_override_required" &&
     (approval.status === "pending" || approval.status === "revision_requested");
   const hasFooter = showResolutionButtons || Boolean(detailLink || onOpen);
+  // GRE-601: a missing-permission request reads as Grant / Deny.
+  const isPermissionGrant = approval.type === "permission_grant";
 
   return (
     <Card className="block border-border/70 p-4">
@@ -120,7 +122,9 @@ export function ApprovalCard({
                   onClick={onApprove}
                   disabled={isPending}
                 >
-                  {pendingAction === "approve" ? "Approving..." : "Approve"}
+                  {pendingAction === "approve"
+                    ? (isPermissionGrant ? "Granting..." : "Approving...")
+                    : (isPermissionGrant ? "Grant" : "Approve")}
                 </Button>
                 <Button
                   variant="destructive"
@@ -128,7 +132,9 @@ export function ApprovalCard({
                   onClick={onReject}
                   disabled={isPending}
                 >
-                  {pendingAction === "reject" ? "Rejecting..." : "Reject"}
+                  {pendingAction === "reject"
+                    ? (isPermissionGrant ? "Denying..." : "Rejecting...")
+                    : (isPermissionGrant ? "Deny" : "Reject")}
                 </Button>
               </>
             )}

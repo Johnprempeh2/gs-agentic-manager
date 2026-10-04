@@ -1225,12 +1225,20 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
               issueId: approvalIssueMap.get(approval.id) ?? null,
             },
           },
-          whyNow: "Approval is pending a board decision.",
-          decisionVerbs: decisionVerbs(
-            { id: "approve", label: "Approve", description: "Approve the request." },
-            { id: "reject", label: "Reject", description: "Reject the request." },
-            { id: "request_revision", label: "Request revision", description: "Send the request back for changes." },
-          ),
+          whyNow: approval.type === "permission_grant"
+            ? "An agent was refused for a missing permission and its task is waiting."
+            : "Approval is pending a board decision.",
+          // GRE-601: a missing-permission request is only granted or denied.
+          decisionVerbs: approval.type === "permission_grant"
+            ? decisionVerbs(
+              { id: "reject", label: "Deny", description: "Deny the grant and tell the blocked task." },
+              { id: "approve", label: "Grant", description: "Approve and write the grant, then wake the blocked task." },
+            )
+            : decisionVerbs(
+              { id: "approve", label: "Approve", description: "Approve the request." },
+              { id: "reject", label: "Reject", description: "Reject the request." },
+              { id: "request_revision", label: "Request revision", description: "Send the request back for changes." },
+            ),
           inlineResolvable: approval.type !== "request_board_approval",
           entryRule: "approvals.status = 'pending'",
           exitRule: "Approval leaves pending status.",

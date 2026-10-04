@@ -122,6 +122,32 @@ function recordResponsibleUserDenialFromHttpError(
   });
 }
 
+/** GRE-601: a `Missing permission: <key>` refusal to an agent opens a Grant / Deny item. */
+function recordMissingPermissionRefusal(req: Request, err: HttpError) {
+  if (err.status !== 403 || req.actor?.type !== "agent") return;
+  if (!err.message.startsWith("Missing permission: ")) return;
+  const agentId = req.actor.agentId ?? null;
+  const companyId = req.actor.companyId ?? null;
+  const runId = req.actor.runId ?? null;
+  const db = getPaperclipDb(req);
+  if (!agentId || !companyId || !db) return;
+
+  // Loaded lazily: the service pulls in the issue service, which the error
+  // handler must not import at startup.
+  void import("../services/permission-grant-requests.js")
+    .then(({ parseMissingPermissionKey, permissionGrantRequestService }) => {
+      const permissionKey = parseMissingPermissionKey(err.message);
+      if (!permissionKey) return null;
+      return permissionGrantRequestService(db).recordRefusal({ companyId, agentId, permissionKey, runId });
+    })
+    .catch((recordErr) => {
+      logger.warn(
+        { err: recordErr, agentId, companyId, message: err.message },
+        "failed to open permission grant request after refusal",
+      );
+    });
+}
+
 export function errorHandler(
   err: unknown,
   req: Request,
@@ -161,6 +187,7 @@ export function errorHandler(
         ? (responseDetailsValue as Record<string, unknown>)
         : null;
     recordResponsibleUserDenialFromHttpError(req, details);
+    recordMissingPermissionRefusal(req, err);
     if (err.status >= 500) {
       const reportableError = sanitizeSecretSensitiveError(req, err);
       attachErrorContext(
