@@ -92,6 +92,30 @@ test("a later taken line closes a partial", () => {
   }
 });
 
+test("--clash marks each pending commit clean or conflict and writes nothing", () => {
+  const { dir, base, up } = fixture();
+  try {
+    // main writes its own g, so upstream's g clashes; f touches nothing of ours.
+    writeFileSync(join(dir, "g"), "ours\n");
+    git(dir, "add", "g");
+    git(dir, "commit", "--quiet", "-m", "feat: our own g");
+    const plainOut = run(dir, "--base", base, "--main", "main");
+    assert.ok(!/clean|conflict/.test(plainOut), `no marks without --clash:\n${plainOut}`);
+    const before = git(dir, "status", "--porcelain");
+    const refsBefore = git(dir, "show-ref");
+    const out = run(dir, "--base", base, "--main", "main", "--clash");
+    const short = (sha) => sha.slice(0, 7);
+    assert.match(out, new RegExp(`^${short(up.security)} .*  \\[clean\\]$`, "m"));
+    assert.match(out, new RegExp(`^${short(up.plain)} .*  \\[conflict: g\\]$`, "m"));
+    assert.equal(out.replace(/  \[[^\]]*\]$/gm, ""), plainOut, "same lines as without --clash");
+    assert.equal(run(dir, "--base", base, "--main", "main", "--count", "--clash").trim(), "2");
+    assert.equal(git(dir, "status", "--porcelain"), before, "working tree unchanged");
+    assert.equal(git(dir, "show-ref"), refsBefore, "refs unchanged");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("fails with the fetch command when the upstream ref is missing", () => {
   const { dir, base } = fixture();
   try {
