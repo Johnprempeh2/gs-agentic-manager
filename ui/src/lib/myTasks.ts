@@ -200,7 +200,7 @@ export const MY_TASKS_ASK_STATE_LABELS: Record<MyTasksAskState, string> = {
 /** Older comments from you are history, not a question still open. */
 export const MY_TASKS_ASK_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
-type AskStateIssue = Pick<Issue, "myLastCommentAt" | "lastExternalCommentAt" | "isUnreadForMe">;
+type AskStateIssue = Pick<Issue, "myLastCommentAt" | "lastExternalCommentAt" | "myLastReadAt">;
 
 function toTime(value: Date | string | null | undefined): number | null {
   if (!value) return null;
@@ -210,14 +210,17 @@ function toTime(value: Date | string | null | undefined): number | null {
 
 /**
  * "waiting": your last comment is newer than anyone else's.
- * "answered": someone answered after your last comment and you have not read it.
+ * "answered": someone answered after your last comment and you have not
+ * opened the task since. (isUnreadForMe cannot say this for tasks assigned
+ * to you: any update, the reply included, counts as you touching it.)
  */
 export function myTasksAskState(issue: AskStateIssue, now: number = Date.now()): MyTasksAskState | null {
   const mine = toTime(issue.myLastCommentAt);
   if (mine === null || now - mine > MY_TASKS_ASK_WINDOW_MS) return null;
   const theirs = toTime(issue.lastExternalCommentAt);
   if (theirs === null || mine >= theirs) return "waiting";
-  return issue.isUnreadForMe ? "answered" : null;
+  const read = toTime(issue.myLastReadAt);
+  return read !== null && read >= theirs ? null : "answered";
 }
 
 export function isDoneToday(issue: Pick<Issue, "status" | "completedAt">, now: Date = new Date()): boolean {

@@ -94,7 +94,7 @@ function makeIssue(id: string, overrides: Partial<Issue> = {}): Issue {
     completedAt: null,
     myLastCommentAt: null,
     lastExternalCommentAt: null,
-    isUnreadForMe: false,
+    myLastReadAt: null,
     createdAt: new Date("2026-10-01T00:00:00.000Z"),
     updatedAt: new Date("2026-10-01T00:00:00.000Z"),
     ...overrides,
@@ -276,7 +276,7 @@ describe("MyTasks rows (GRE-619)", () => {
         assigneeAgentId: "agent-ridge",
         myLastCommentAt: asked,
         lastExternalCommentAt: new Date(),
-        isUnreadForMe: true,
+        myLastReadAt: asked,
       }),
     ];
     await renderPage();

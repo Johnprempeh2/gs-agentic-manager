@@ -255,14 +255,19 @@ describe("My tasks row actions (GRE-619)", () => {
 
     it("is answered when an agent replied and you have not read it", () => {
       expect(myTasksAskState(
-        { myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("14:30:00"), isUnreadForMe: true },
+        { myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("14:30:00"), myLastReadAt: at("14:10:00") },
         NOW.getTime(),
       )).toBe("answered");
     });
 
+    it("is answered when you never opened the task", () => {
+      expect(myTasksAskState({ myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("14:30:00"), myLastReadAt: null }, NOW.getTime()))
+        .toBe("answered");
+    });
+
     it("clears once you read the answer", () => {
       expect(myTasksAskState(
-        { myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("14:30:00"), isUnreadForMe: false },
+        { myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("14:30:00"), myLastReadAt: at("14:45:00") },
         NOW.getTime(),
       )).toBeNull();
     });
@@ -293,7 +298,7 @@ describe("My tasks row actions (GRE-619)", () => {
       const asked = { status: "todo" as const, assigneeAgentId: null, myLastCommentAt: at("14:00:00"), lastExternalCommentAt: null };
       expect(myTasksGroupOf(asked, ["assigned"], NOW.getTime())).toBe("waiting");
       expect(myTasksGroupOf(
-        { ...asked, lastExternalCommentAt: at("14:30:00"), isUnreadForMe: true },
+        { ...asked, lastExternalCommentAt: at("14:30:00"), myLastReadAt: at("14:10:00") },
         ["assigned"],
         NOW.getTime(),
       )).toBe("needs_you");
@@ -332,7 +337,7 @@ describe("My tasks row actions (GRE-619)", () => {
       assigneeAgentId: "agent-ridge",
       myLastCommentAt: at("10:00:00"),
       lastExternalCommentAt: at("11:00:00"),
-      isUnreadForMe: false,
+      myLastReadAt: at("11:30:00"),
     });
     const closed = makeIssue("4", { status: "done", assigneeUserId: null, assigneeAgentId: "agent-everest", myLastCommentAt: at("14:00:00") });
     expect(selectHandedOffTasks([handed, mine, read, closed], ME, now).map((issue) => issue.id)).toEqual(["1"]);
