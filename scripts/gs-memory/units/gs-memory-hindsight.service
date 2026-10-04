@@ -1,0 +1,32 @@
+# Organization memory engine (Hindsight, pinned). GRE-674. Not enabled at boot: start by hand.
+# Starting this unit starts gs-memory-postgres. Stopping it never touches live GSAM.
+[Unit]
+Description=GS organization memory - Hindsight engine (127.0.0.1:18888)
+Requires=gs-memory-postgres.service
+After=gs-memory-postgres.service
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+ExecStart=@ROOT@/app/setup/gs-memory.sh serve-hindsight
+Restart=on-failure
+RestartSec=10
+UnsetEnvironment=ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN OPENAI_API_KEY
+
+MemoryHigh=5G
+MemoryMax=6G
+CPUQuota=600%
+TasksMax=512
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@ROOT@
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

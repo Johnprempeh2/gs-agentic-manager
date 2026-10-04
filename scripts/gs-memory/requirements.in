@@ -1,0 +1,2 @@
+hindsight-api-slim[local-ml]==0.10.2
+torch==2.*
