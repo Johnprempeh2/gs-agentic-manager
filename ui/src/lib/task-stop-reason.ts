@@ -338,7 +338,30 @@ export function describeTaskStopReason(input: TaskStopReasonInput): TaskStopReas
   return null;
 }
 
+/** "You to act", "Ridge to act", "Nobody needs to act". */
+export function taskStopReasonWhoLabel(reason: TaskStopReason): string {
+  return reason.who ? `${reason.who === "you" ? "You" : reason.who} to act` : "Nobody needs to act";
+}
+
 export function formatTaskStopReason(reason: TaskStopReason): string {
-  const who = reason.who ? `${reason.who === "you" ? "You" : reason.who} to act` : "Nobody needs to act";
-  return `${reason.stopped} · ${who} · ${reason.next}`;
+  return `${reason.stopped} · ${taskStopReasonWhoLabel(reason)} · ${reason.next}`;
+}
+
+export type TaskStopReasonRowContext = Pick<TaskStopReasonInput, "currentUserId" | "agentNames" | "userLabels">;
+
+/**
+ * The stop reason for a task list row. List rows carry the latest run summary,
+ * scheduled retry, recovery action and blocker owners (GRE-403), so this needs
+ * no extra fetch per row.
+ */
+export function describeIssueRowStopReason(
+  issue: TaskStopReasonInput["issue"] & Pick<Issue, "latestRun" | "activeRun" | "executionRunId">,
+  context: TaskStopReasonRowContext,
+): TaskStopReason | null {
+  return describeTaskStopReason({
+    ...context,
+    issue,
+    lastRun: issue.latestRun ?? null,
+    hasLiveRuns: Boolean(issue.activeRun || issue.executionRunId),
+  });
 }

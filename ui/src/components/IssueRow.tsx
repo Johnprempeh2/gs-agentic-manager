@@ -25,6 +25,12 @@ import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
 import { ExternalObjectStatusSummary } from "./ExternalObjectStatusSummary";
 import { externalObjectToneSeverity } from "../lib/external-objects";
 import { Badge } from "@/components/ui/badge";
+import {
+  describeIssueRowStopReason,
+  formatTaskStopReason,
+  taskStopReasonWhoLabel,
+  type TaskStopReasonRowContext,
+} from "../lib/task-stop-reason";
 
 export type IssueRowUnreadState = "hidden" | "visible" | "fading";
 export type IssueRowPresentation = "legacy" | "task";
@@ -61,6 +67,11 @@ export interface IssueRowProps {
   titleSuffix?: ReactNode;
   /** Who the task is for (see TaskOwnerLabel); sits right after the title. */
   ownerLabel?: ReactNode;
+  /**
+   * Names for the plain stop reason ("Claude is signed out · You to act") on
+   * failed or blocked rows. Without it the row keeps the short blocked note.
+   */
+  stopReasonContext?: TaskStopReasonRowContext;
   titleClassName?: string;
   checklistStepNumber?: number | string | null;
   checklistCurrentStep?: boolean;
@@ -141,6 +152,7 @@ export function IssueRow({
   trailingMeta,
   titleSuffix,
   ownerLabel,
+  stopReasonContext,
   titleClassName,
   checklistStepNumber = null,
   checklistCurrentStep = false,
@@ -166,7 +178,18 @@ export function IssueRow({
   // Why a blocked task is stuck, in words: the icon's label was screen-reader only.
   const blockedLabel = issue.status === "blocked" ? blockedAttentionLabel(issue.blockerAttention) : null;
   const blockedReason = blockedLabel?.startsWith("Blocked · ") ? blockedLabel.slice("Blocked · ".length) : null;
-  const blockedNote = blockedReason ? (
+  const stopReason = stopReasonContext ? describeIssueRowStopReason(issue, stopReasonContext) : null;
+  const blockedNote = stopReason ? (
+    <span
+      data-slot="task-row-stop-reason"
+      className="min-w-0 shrink truncate text-xs text-muted-foreground max-sm:basis-full sm:max-w-80"
+      title={formatTaskStopReason(stopReason)}
+    >
+      <span className="font-medium text-foreground">{stopReason.stopped}</span>
+      {" · "}
+      {taskStopReasonWhoLabel(stopReason)}
+    </span>
+  ) : blockedReason ? (
     <span data-slot="task-row-blocked" className="min-w-0 max-w-64 shrink truncate text-xs text-destructive max-sm:basis-full" title={blockedLabel ?? undefined}>
       {blockedReason}
     </span>

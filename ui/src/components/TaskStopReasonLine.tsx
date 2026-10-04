@@ -7,6 +7,7 @@ import {
   describeTaskStopReason,
   formatTaskStopReason,
   runStoppedTheTask,
+  taskStopReasonWhoLabel,
   type TaskStopReasonInput,
 } from "../lib/task-stop-reason";
 
@@ -31,7 +32,7 @@ export function TaskStopReasonLine({ issueId, className, ...input }: TaskStopRea
   const reason = describeTaskStopReason({ ...input, lastRun });
   if (!reason) return null;
   const runLink = lastRun && runStoppedTheTask(lastRun) ? `/agents/${lastRun.agentId}/runs/${lastRun.runId}` : null;
-  const who = reason.who ? `${reason.who === "you" ? "You" : reason.who} to act` : "Nobody needs to act";
+  const who = taskStopReasonWhoLabel(reason);
   return (
     <p
       data-testid="task-stop-reason-line"
