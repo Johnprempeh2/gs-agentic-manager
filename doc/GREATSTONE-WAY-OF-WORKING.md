@@ -275,7 +275,9 @@ Merging does not change the live app. A version goes live in these steps.
    A failure names the switch, the test file and the test, and fails the
    candidate. A new switch needs an entry in that file. The preview check comment
    starts with the change list from `scripts/greatstone-changes.mjs`, so John
-   knows which page to open.
+   knows which page to open. For the 2-week beta graduation rule,
+   `GSAM_API_URL=<base> GSAM_API_KEY=<key> scripts/beta-switch-age.sh` (GET
+   only) prints each switch's on/off, on since, days on and "2-week rule met".
 5. **Release task (Keystone).** Releases happen outside the app (John,
    GRE-489, 4 Oct). There is no "Update live?" card. When Flint reports "All
    pass", Keystone creates a task assigned to John, a child of the release
