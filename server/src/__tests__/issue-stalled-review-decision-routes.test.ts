@@ -246,7 +246,7 @@ describeEmbeddedPostgres("stalled review decision routes", () => {
     const selfRunId = await seedRun(primary.companyId, primary.assigneeAgentId, issueId);
     const selfApproval = await request(app(agentActor(primary.companyId, primary.assigneeAgentId, selfRunId)))
       .patch(`/api/issues/${issueId}`)
-      .send({ status: "done" });
+      .send({ status: "done", comment: "Shipped." });
     expect(selfApproval.status, JSON.stringify(selfApproval.body)).toBe(200);
     expect(selfApproval.body).toMatchObject({ id: issueId, status: "done" });
   });
