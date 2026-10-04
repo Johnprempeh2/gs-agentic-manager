@@ -114,6 +114,7 @@ import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
+import { supportQueueService } from "./services/support-queue.js";
 import { scrubAcpSessionEnvironments } from "./services/acp-session-env-scrub.js";
 import { resolvePaperclipInstanceRoot } from "./home-paths.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -1390,6 +1391,20 @@ async function startServerWithDatabaseTeardown(
     const terminalWorkspaces = executionWorkspaceService(db as any, {
       workspaceReaperCooldownDays: config.workspaceReaperCooldownDays,
     });
+    const supportQueue = supportQueueService(db as any, { wakeup: heartbeat.wakeup });
+    const scheduleSupportClockSweep = () => {
+      if (heartbeatSchedulerStopped) return;
+      trackHeartbeatSchedulerWork(supportQueue
+        .sweep()
+        .then((result) => {
+          if (result.responded + result.warned + result.breached > 0) {
+            logger.info(result, "support clock sweep changed tickets");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "support clock sweep failed");
+        }));
+    };
     const scheduleMergedPullRequestConfirmationSweep = () => {
       if (heartbeatSchedulerStopped) return;
       trackHeartbeatSchedulerWork(mergedPullRequestConfirmations
@@ -1781,6 +1796,7 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionEventPoll();
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
+        scheduleSupportClockSweep();
         scheduleUnrecordedWorktreeSweep();
         scheduleAdapterLoginReaperSweep();
         scheduleSetupTokenReaperSweep();

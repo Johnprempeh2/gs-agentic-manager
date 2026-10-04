@@ -43,6 +43,8 @@ import { emailConnectionService } from "./email-connections.js";
 import { secretService } from "./secrets.js";
 import { authorizationService } from "./authorization.js";
 import { issueService } from "./issues.js";
+import { supportQueueService } from "./support-queue.js";
+import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { toolAccessPolicyService } from "./tool-access-policy.js";
@@ -116,6 +118,7 @@ const diagnostic = (e: unknown) =>
 
 export function emailChannelService(db: Db, options: EmailChannelOptions) {
   const secrets = secretService(db);
+  const support = supportQueueService(db, { wakeup: options.heartbeat.wakeup });
   const fetchImpl = options.fetch ?? fetch;
   const owner = randomUUID();
   const sockets = new Map<
@@ -1184,6 +1187,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       commentId?: string;
       wakePending?: boolean;
       admissionToWakeMs?: number;
+      supportReceivedAt?: string;
     };
     if (event.inbox_id !== endpoint.botExternalId)
       throw forbidden("Email delivery inbox mismatch");
@@ -1313,6 +1317,16 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
             endpoint.companyId,
             endpoint.assignedAgentId,
           );
+          // A client support inbox (GRE-665) files the thread in its queue's
+          // project with the client code, priority and routed owner.
+          const supportQueue = await support.queueForEmailEndpoint(endpoint.id);
+          const supportFields = supportQueue
+            ? (await support.issueFields(supportQueue, {
+                subject: message.subject,
+                body: emailText(message),
+                receivedAt: new Date(message.timestamp),
+              })).fields
+            : null;
           const task = await issueService(db).create(
             endpoint.companyId,
             {
@@ -1323,12 +1337,14 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
               priority: "medium",
               assigneeAgentId: endpoint.assignedAgentId,
               responsibleUserId: endpoint.sponsorUserId,
+              ...supportFields,
               originKind: "chat_channel",
               originId: `email:${endpoint.id}:${message.thread_id}`,
               idempotencyKey: `email:${endpoint.id}:${message.thread_id}`,
             },
             tx,
           );
+          if (supportQueue) event.supportReceivedAt = message.timestamp;
           [conversation] = await tx
             .insert(chatConversations)
             .values({
@@ -1403,6 +1419,13 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           .where(eq(chatConversations.id, conversation.id));
       });
     }
+    // Idempotent: a retried delivery finds the ticket already open.
+    if (event.supportReceivedAt && event.issueId)
+      await support
+        .afterEmailIntake(endpoint.id, event.issueId, new Date(event.supportReceivedAt))
+        .catch((err: unknown) =>
+          logger.warn({ err, issueId: event.issueId }, "support ticket intake failed"),
+        );
     if (event.wakePending && event.issueId) {
       await active(endpoint);
       await options.heartbeat.wakeup(endpoint.assignedAgentId, {
