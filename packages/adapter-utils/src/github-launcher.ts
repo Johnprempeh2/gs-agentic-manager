@@ -19,7 +19,7 @@ if (!['git', 'gh'].includes(program) || !executable) {
 }
 async function main() {
   let env = { ...process.env };
-  const diagnostic = (code) => process.stderr.write('GS Agentic Manager: GitHub ' + code + '; continuing without managed credentials.\n');
+  const diagnostic = (code, detail) => process.stderr.write('GS Agentic Manager: GitHub ' + code + (detail ? ' (' + detail + ')' : '') + '; continuing without managed credentials.\n');
   const configRoot = env.GH_CONFIG_DIR || os.tmpdir();
   // A missing/unwritable scratch directory must not break local Git. The
   // fallback deliberately cannot load the host's gh authentication files.
@@ -65,8 +65,20 @@ async function main() {
         await response.arrayBuffer();
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      if (!response.ok) {
-        diagnostic(response.status === 401 || response.status === 403 ? 'capability_rejected' : 'broker_response_unavailable');
+      if (response.status === 401 || response.status === 403) {
+        // Say why. A refusal body is fixed server text; never echo anything else.
+        let detail = '';
+        try {
+          const refusal = await response.json();
+          if (refusal && refusal.code === 'run_not_active') {
+            detail = 'this run has already ended, so GS Agentic Manager no longer issues GitHub credentials for it';
+          } else if (refusal && typeof refusal.error === 'string') {
+            detail = refusal.error.replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 200);
+          }
+        } catch {}
+        diagnostic('capability_rejected', detail);
+      } else if (!response.ok) {
+        diagnostic('broker_response_unavailable');
       } else {
       const result = await response.json();
       if (result.status === 'unavailable') {

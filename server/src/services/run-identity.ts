@@ -15,6 +15,8 @@ import { isUuidLike } from "@greatstone/shared";
 import { queuedCommentIdsFromRunContext, queuedCommentIdsFromWakePayload } from "./issue-queued-comment-queue.js";
 
 export const QUEUED_INTERRUPT_SPENT = "queued_interrupt_spent";
+/** Error code for a credential or tool request from a run that is no longer running. */
+export const RUN_NOT_ACTIVE = "run_not_active";
 
 /** Resolve an explicit click from persisted receipts, never caller context or message authors. */
 export async function explicitOperatorRunIdentity(
@@ -533,9 +535,12 @@ async function captureRunIdentityLocked(db: Db, input: RunIdentityInput) {
         ),
       )
       .for(IDENTITY_ROW_LOCK);
+    // The code lets callers tell a run that has already ended (a late git or
+    // tool call from a provider that is still exiting) from other refusals.
     if (!run || run.status !== "running")
       throw forbidden(
         "Credential acquisition requires this agent's active run",
+        { code: RUN_NOT_ACTIVE },
       );
     const [pending] = await tx
       .select()

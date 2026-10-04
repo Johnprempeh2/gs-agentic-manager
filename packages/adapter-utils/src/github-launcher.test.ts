@@ -63,6 +63,36 @@ describe("managed GitHub launchers", () => {
     } });
   });
 
+  // A git command can outlive its run by a moment (the provider runs `git status`
+  // as it exits). The refusal must say so, not just "capability_rejected".
+  it.each([
+    [403, { error: "Credential acquisition requires this agent's active run", code: "run_not_active" }, "this run has already ended"],
+    [401, { error: "Invalid GitHub runtime capability\n\u001b[31mspoofed" }, "Invalid GitHub runtime capability"],
+  ] as const)("explains a %i refusal and keeps local Git usable", async (status, body, explanation) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-github-refusal-"));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    const bin = path.join(root, "managed");
+    await mkdir(bin);
+    await exec("git", ["init", root]);
+    await writeFile(path.join(bin, "git"), githubLauncherSource(), { mode: 0o700 });
+    const server = createServer((_req, res) => {
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(JSON.stringify(body));
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => new Promise<void>(resolve => server.close(() => resolve())));
+    const { port } = server.address() as { port: number };
+    const result = await exec(path.join(bin, "git"), ["status", "--porcelain"], { cwd: root, env: {
+      ...process.env, ...githubBrokerEnvironment({}, { url: `http://127.0.0.1:${port}`, token: "private-capability" }),
+      GH_CONFIG_DIR: path.join(root, "config"), PATH: `${bin}:${process.env.PATH}`,
+    } });
+    expect(result.stdout).toBe("?? managed/\n"); // the real git ran
+    expect(result.stderr).toContain("GitHub capability_rejected (");
+    expect(result.stderr).toContain(explanation);
+    expect(result.stderr).toContain("continuing without managed credentials");
+    expect(result.stderr).not.toMatch(/private-capability|\u001b/);
+  });
+
   it("explains unavailable access while allowing local work without credentials", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-github-diagnostic-"));
     cleanups.push(() => rm(root, {recursive:true,force:true}));
