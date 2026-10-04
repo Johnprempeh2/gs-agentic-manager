@@ -119,6 +119,11 @@ except as part of `upgrade` (below): systemd then loses track of the server.
 As in the run-book: hourly app backups in the instance folder, `backup`,
 `restore-check`. Off-host backups and the host watch are GRE-666 (Ridge).
 
+The host watch reaches the app on `127.0.0.1:<port>`, so on its own it stays
+green when Caddy, the certificate or DNS fails. Each hosted install also needs
+a check of `https://<code>.<client domain>/api/health` from the public side
+(the watch's public-URL probe, GRE-666).
+
 ## Upgrade
 
 After John promotes a Stable release, and with his go-ahead on the issue for
