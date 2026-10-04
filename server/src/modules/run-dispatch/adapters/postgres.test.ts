@@ -325,6 +325,8 @@ describeEmbeddedPostgres("run-dispatch postgres adapter", () => {
 
   async function waitForBlockedForUpdate(tableName: string) {
     for (let attempt = 0; attempt < 80; attempt += 1) {
+      // The adapter locks with FOR NO KEY UPDATE, which waits behind this
+      // test's FOR UPDATE just the same; match either spelling.
       const [waiting] = await db.execute<{ waiting: boolean }>(sql`
         SELECT EXISTS (
           SELECT 1
@@ -332,7 +334,7 @@ describeEmbeddedPostgres("run-dispatch postgres adapter", () => {
           WHERE state = 'active'
             AND wait_event_type = 'Lock'
             AND query ILIKE ${`%${tableName}%`}
-            AND query ILIKE '%for update%'
+            AND (query ILIKE '%for update%' OR query ILIKE '%for no key update%')
         ) AS waiting
       `);
       if (waiting?.waiting) return true;

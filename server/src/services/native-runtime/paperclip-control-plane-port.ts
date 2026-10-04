@@ -24,6 +24,7 @@ import {
   validatePrpStructuredRunResult,
 } from "../../vendor/paperclip-runner/index.js";
 import { appendHeartbeatRunEvent } from "../heartbeat-run-events.js";
+import { REFERENCED_ROW_LOCK } from "../../row-locks.js";
 import { publishChatPublicationCommitSignal } from "../chat-publication-reconciliation.js";
 import { nativeSha256 } from "./canonical.js";
 
@@ -160,8 +161,10 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
       || this.#sessionId !== identity.sessionId
     ) throw new Error("native_session_checkpoint_binding_mismatch");
     await this.#db.transaction(async (tx) => {
+      // Only non-key run columns change; NO KEY UPDATE serialises checkpoint
+      // writers without waiting on writes that merely reference the run.
       const run = await tx.select().from(heartbeatRuns)
-        .where(eq(heartbeatRuns.id, this.#binding.runId)).for("update").limit(1)
+        .where(eq(heartbeatRuns.id, this.#binding.runId)).for(REFERENCED_ROW_LOCK).limit(1)
         .then((rows) => rows[0] ?? null);
       if (!run || !this.#matchesPersistedBinding(run)) {
         throw new Error("native_session_checkpoint_binding_mismatch");
@@ -295,8 +298,10 @@ export class PaperclipControlPlanePort implements ControlPlanePort {
       await tx.select({ id: issues.id }).from(issues)
         .where(and(eq(issues.id, this.#binding.issueId), eq(issues.companyId, this.#binding.companyId)))
         .for("key share");
+      // Only non-key run columns change below. FOR UPDATE here still waited on
+      // writers that referenced the run before the task.
       const run = await tx.select().from(heartbeatRuns)
-        .where(eq(heartbeatRuns.id, this.#binding.runId)).for("update").limit(1)
+        .where(eq(heartbeatRuns.id, this.#binding.runId)).for(REFERENCED_ROW_LOCK).limit(1)
         .then((rows) => rows[0] ?? null);
       if (!run || !this.#matchesPersistedBinding(run)) {
         throw new Error("native_result_binding_mismatch");
