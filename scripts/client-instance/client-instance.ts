@@ -10,6 +10,8 @@
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
 //   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
 //   scripts/client-instance.sh restore <dir> <backup file>
+//   scripts/client-instance.sh restore-check --root <dir> [backup file]
+//                                     (restores a backup into a throwaway database; the instance is not touched)
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
 //                                      Stable image: scripts/greatstone-stable-image.sh)
@@ -22,9 +24,9 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { homedir, userInfo } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -34,7 +36,7 @@ import { INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor } from "./releases.js";
-import { backupStatusLines, releaseStatusLines } from "./status.js";
+import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, type RestoreCheck } from "./status.js";
 
 const CODE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const INSTANCE_ID = "default";
@@ -77,6 +79,8 @@ const USAGE = `usage:
   verify --root <dir>                      (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
   upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
   restore <dir> <backup file>
+  restore-check --root <dir> [backup file] restore the newest (or named) backup into a throwaway
+                                           database and count its rows; the instance is not touched
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -107,6 +111,8 @@ interface InstanceState {
   /** Written before the upgrade stops the instance, so `restore` can move back. */
   lastUpgrade?: { from: ReleaseRef; to: ReleaseRef; backupFile: string; at: string };
   lastRestore?: { to: ReleaseRef; backupFile: string; safetyBackupFile: string | null; at: string };
+  /** Written by restore-check (GRE-616); `status` warns when it is missing, failed or older than 7 days. */
+  lastRestoreCheck?: RestoreCheck;
   /** Absent on instances made before GRE-141: no limits until `limits` sets them. */
   limits?: InstallLimits;
 }
@@ -607,6 +613,15 @@ function backupNow(root: string, state: InstanceState, prefix = "client-instance
   return real;
 }
 
+/** A backup file of this instance, by path or by name in its backups folder. */
+function instanceBackup(root: string, rawBackup: string): string {
+  const candidate = path.isAbsolute(rawBackup) || existsSync(rawBackup) ? path.resolve(rawBackup) : path.join(backupDir(root), rawBackup);
+  if (!existsSync(candidate)) die(`backup ${rawBackup} not found`);
+  const backupFile = realpathSync(candidate);
+  if (!backupFile.startsWith(`${realpathSync(backupDir(root))}${path.sep}`)) die(`${backupFile} is not a backup of this instance`);
+  return backupFile;
+}
+
 // ---------------------------------------------------------------- releases (upgrade, restore)
 
 function git(args: string[], cwd?: string): { ok: boolean; out: string; err: string } {
@@ -706,6 +721,70 @@ async function restoreDatabase(root: string, state: InstanceState, backupFile: s
   } finally {
     await pg.stop();
   }
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Restore a backup into a throwaway embedded Postgres under $TMPDIR, apply
+ * the migrations of this checkout and count the key rows. Reads only the
+ * backup file: the instance's database folder, ports and process are never used.
+ */
+async function restoreIntoThrowaway(state: InstanceState, backupFile: string): Promise<string> {
+  const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
+  const db = await import("../../packages/db/src/index.js");
+  const scratch = mkdtempSync(path.join(tmpdir(), "client-instance-restore-check-"));
+  const preferred = await firstFreePort(55500, 55599, new Set([state.port, state.dbPort]));
+  let pg: { port: number; stop: () => Promise<void> } | null = null;
+  let url = "";
+  try {
+    pg = await ensureEmbeddedPostgres(path.join(scratch, "db"), preferred, { allowExisting: false });
+    if (pg.port === state.port || pg.port === state.dbPort || FORBIDDEN_PORTS.has(pg.port)) {
+      throw new Error(`the throwaway database started on port ${pg.port}, which it must not use`);
+    }
+    const at = (name: string) => `postgres://paperclip:paperclip@127.0.0.1:${pg!.port}/${name}`;
+    url = at("paperclip");
+    await db.resetPostgresDatabase(at("postgres"), "paperclip");
+    await db.runDatabaseRestore({ connectionString: url, backupFile });
+    await db.applyPendingMigrations(url);
+    const conn = db.createDb(url);
+    const companies = await conn.$count(db.companies);
+    const users = await conn.$count(db.authUsers);
+    const issues = await conn.$count(db.issues);
+    if (companies < 1) throw new Error("the restored database has no company");
+    if (users < 1) throw new Error("the restored database has no user");
+    return `${plural(companies, "company", "companies")}, ${plural(users, "user", "users")}, ${plural(issues, "issue", "issues")}`;
+  } finally {
+    if (url) await db.closeRegisteredClients(url);
+    if (pg) await pg.stop();
+    rmSync(scratch, { recursive: true, force: true });
+    if (pg && !(await portFree(pg.port))) say(`WARNING: port ${pg.port} is still in use after the throwaway database stopped`);
+  }
+}
+
+/**
+ * restore-check --root <dir> [backup]: prove the newest (or named) backup
+ * restores. Writes only lastRestoreCheck in client-instance.json.
+ */
+async function cmdRestoreCheck(root: string, state: InstanceState, rawBackup: string | undefined) {
+  const backupFile = rawBackup ? instanceBackup(root, rawBackup) : newestBackup(backupDir(root))?.file;
+  if (!backupFile) die(`no backup in ${backupDir(root)}`);
+  const name = path.basename(backupFile);
+  say(`restore-check: restoring ${name} into a throwaway database under ${tmpdir()}`);
+  let check: RestoreCheck;
+  try {
+    const counts = await restoreIntoThrowaway(state, backupFile);
+    check = { ok: true, line: `restore-check OK: ${name}, ${counts}`, backupFile, at: new Date().toISOString() };
+  } catch (err) {
+    const reason = (err instanceof Error ? err.message : String(err)).split("\n")[0]!.slice(0, 300);
+    check = { ok: false, line: `restore-check FAILED: ${name}: ${reason}`, backupFile, at: new Date().toISOString() };
+  }
+  // Read again: only this one field changes.
+  const fresh = readState(root);
+  fresh.lastRestoreCheck = check;
+  writeState(root, fresh);
+  if (!check.ok) die(check.line);
+  say(check.line);
 }
 
 // ---------------------------------------------------------------- install limits
@@ -898,10 +977,7 @@ async function cmdUpgrade(root: string, state: InstanceState, tag: string, opts:
 async function cmdRestore(root: string, state: InstanceState, rawBackup: string) {
   const last = state.lastUpgrade;
   if (!last) die("this instance has no upgrade to move back from (no lastUpgrade in client-instance.json)");
-  const candidate = path.isAbsolute(rawBackup) || existsSync(rawBackup) ? path.resolve(rawBackup) : path.join(backupDir(root), rawBackup);
-  if (!existsSync(candidate)) die(`backup ${rawBackup} not found`);
-  const backupFile = realpathSync(candidate);
-  if (!backupFile.startsWith(`${realpathSync(backupDir(root))}${path.sep}`)) die(`${backupFile} is not a backup of this instance`);
+  const backupFile = instanceBackup(root, rawBackup);
   if (!existsSync(last.backupFile) || realpathSync(last.backupFile) !== backupFile) {
     die(`restore takes the backup made just before the last upgrade: ${last.backupFile}`);
   }
@@ -956,6 +1032,11 @@ async function main() {
     if (!value) die("usage: restore <root> <backup file>");
     return cmdRestore(root, state, value);
   }
+  if (command === "restore-check") {
+    if (positional.length > 1) die("usage: restore-check --root <dir> [backup file]");
+    const root = resolveRoot(opts.root);
+    return cmdRestoreCheck(root, readState(root), positional[0]);
+  }
   if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
   const root = resolveRoot(opts.root);
   const state = readState(root);
@@ -971,7 +1052,13 @@ async function main() {
       say(pid ? `running (pid ${pid}), health ${String(body?.status ?? "no answer")}` : "not running");
       say(`limits: ${state.limits ? describeLimits(state.limits) : "none (made before GRE-141; set them with limits)"}`);
       // Read-only; a WARNING does not change the exit code (GRE-533).
-      for (const line of [...backupStatusLines(backupDir(root)), ...releaseStatusLines(state)]) say(line);
+      for (const line of [
+        ...backupStatusLines(backupDir(root)),
+        ...restoreCheckStatusLines(state.lastRestoreCheck),
+        ...releaseStatusLines(state),
+      ]) {
+        say(line);
+      }
       return;
     }
     case "backup":

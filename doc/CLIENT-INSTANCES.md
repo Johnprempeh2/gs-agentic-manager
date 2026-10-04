@@ -148,8 +148,8 @@ scripts/client-instance.sh status --root <root>
 
 The same `--root` always gives the same edition, ports and data.
 
-`status` also shows the newest backup and its age, the current release tag,
-and the last upgrade and restore. It prints a `WARNING` line when there is no
+`status` also shows the newest backup and its age, the last restore-check,
+the current release tag, and the last upgrade and restore. It prints a `WARNING` line when there is no
 backup or the newest is older than 2 hours; the exit code stays 0. Run
 `status` before and after each upgrade.
 
@@ -180,6 +180,23 @@ scripts/client-instance.sh backup --root <root>    # the instance must be runnin
 
 The file goes to `<root>/instances/default/data/backups/`. The script fails if
 the file lands anywhere else. Scheduled backups go to the same folder.
+
+### Prove a backup restores (GRE-616)
+
+```sh
+scripts/client-instance.sh restore-check --root <root> [backup file]   # newest backup if none named
+```
+
+It restores the backup into a throwaway database under `$TMPDIR` on a free
+port, applies this release's migrations, counts companies, users and issues,
+then deletes the throwaway database. It prints one line, for example
+`restore-check OK: <file>, 1 company, 2 users, 0 issues`, or
+`restore-check FAILED: <file>: <reason>` with exit code 1. It reads only the
+backup file: the instance's database, ports and process are not touched, and
+it can run while the instance runs. The result is kept as `lastRestoreCheck`
+in `client-instance.json`; `status` shows it and prints a `WARNING` when there
+is no check, the last one failed, or it is older than 7 days. Run it at least
+once a week. Sandbox test: `scripts/client-instance/restore-check.sandbox-test.sh <empty dir>`.
 
 ## Agree the update time with the client
 
