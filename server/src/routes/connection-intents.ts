@@ -19,6 +19,13 @@ import type { heartbeatService } from "../services/heartbeat.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { resolveGitHubOperationCredentials } from "../services/github-operation-credentials.js";
 import { RUN_NOT_ACTIVE } from "../services/run-identity.js";
+import {
+  acceptMcpMessage,
+  classifyMcpMessage,
+  sendMcpGetNotAllowed,
+  sendMcpInvalidRequest,
+  sendMcpMethodNotFound,
+} from "./mcp-streamable-http.js";
 
 function bearer(req: Request) {
   const value = req.header("authorization") ?? "";
@@ -84,8 +91,11 @@ export function runtimeConnectionIntentRoutes(db: Db) {
   });
 
   router.get("/mcp/runtime-tools", async (req, res) => {
+    // GET is an MCP client opening an optional SSE stream. There is none, so
+    // 405 stops the client retrying it. The token is still checked first so an
+    // ended, reassigned or closed-task run keeps its 401/403/409/422 answer.
     await service.validate(runtimeClaims(req));
-    res.json({ name: "paperclip-runtime-tools", protocolVersion: "2025-03-26" });
+    sendMcpGetNotAllowed(res);
   });
 
   router.post("/mcp/runtime-tools", async (req, res) => {
@@ -94,8 +104,17 @@ export function runtimeConnectionIntentRoutes(db: Db) {
     // run before initialize/list as well as before an actual tool call so an
     // ended heartbeat cannot keep probing the endpoint with a once-valid token.
     await service.validate(claims);
-    const request = req.body as { jsonrpc?: string; id?: unknown; method?: string; params?: unknown };
-    const id = request.id ?? null;
+    const message = classifyMcpMessage(req.body);
+    if (message.kind === "invalid") {
+      sendMcpInvalidRequest(res);
+      return;
+    }
+    if (message.kind !== "request") {
+      acceptMcpMessage(res);
+      return;
+    }
+    const request = message;
+    const id = request.id;
     if (request.method === "initialize") {
       res.json({
         jsonrpc: "2.0",
@@ -108,8 +127,8 @@ export function runtimeConnectionIntentRoutes(db: Db) {
       });
       return;
     }
-    if (request.method === "notifications/initialized") {
-      res.status(202).end();
+    if (request.method === "ping") {
+      res.json({ jsonrpc: "2.0", id, result: {} });
       return;
     }
     if (request.method === "tools/list") {
@@ -139,18 +158,16 @@ export function runtimeConnectionIntentRoutes(db: Db) {
         res.json({ jsonrpc: "2.0", id, result: resultContent(result) });
         return;
       }
-      res.status(404).json({
+      // MCP reports an unknown tool as invalid params in a normal JSON-RPC
+      // response, not as an HTTP error.
+      res.json({
         jsonrpc: "2.0",
         id,
-        error: { code: -32601, message: `Unknown tool: ${name || "missing"}` },
+        error: { code: -32602, message: `Unknown tool: ${name || "missing"}` },
       });
       return;
     }
-    res.status(404).json({
-      jsonrpc: "2.0",
-      id,
-      error: { code: -32601, message: `Unknown method: ${request.method ?? "missing"}` },
-    });
+    sendMcpMethodNotFound(res, id);
   });
 
   router.post("/runtime-tools/connections/search", async (req, res) => {

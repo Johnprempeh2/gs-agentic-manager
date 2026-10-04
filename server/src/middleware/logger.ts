@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import { pinoHttp } from "pino-http";
 import { HTTP_LOG_REDACT_PATHS } from "./http-log-redaction.js";
 import {
+  isMcpSseStreamRefusal,
   isPrivateWebhookHttpRequest,
   isSecretSensitiveHttpRequest,
   shouldSilenceHttpSuccessLog,
@@ -129,6 +130,9 @@ export function createHttpLogger(baseLogger: Logger) {
         return "silent";
       }
       if (err || res.statusCode >= 500) return "error";
+      if (isMcpSseStreamRefusal(_req.method, requestClassificationUrl(_req), res.statusCode)) {
+        return "info";
+      }
       if (res.statusCode >= 400) return "warn";
       return "info";
     },
