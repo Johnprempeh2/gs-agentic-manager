@@ -42,6 +42,13 @@ test("R1: an agent-assigned open tree with no path is stranded; each live path c
   assert.deepEqual(parentOnly.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["CHILD"]);
 });
 
+test("R1: an agent chat waiting on its user is covered; one on the agent's turn is not", () => {
+  // Chats are created `in_review` with an agent assignee; `waiting` means the user's turn.
+  const chat = (conversationState) => base({ issues: [issue("chat", { status: "in_review", conversationUserId: "u1", conversationState })] });
+  assert.equal(computeStrandedTrees(chat("waiting")).total, 0);
+  assert.equal(computeStrandedTrees(chat("active")).total, 1);
+});
+
 test("R1: a paused agent's timer heartbeat is not a live path", () => {
   const snapshot = base({ issues: [issue("root")], agents: [{ id: "a1", status: "paused", timerHeartbeat: true }] });
   assert.equal(computeStrandedTrees(snapshot).total, 1);

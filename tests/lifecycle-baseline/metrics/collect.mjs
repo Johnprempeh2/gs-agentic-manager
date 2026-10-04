@@ -38,6 +38,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
   const issues = await tx`
     select id, company_id as "companyId", identifier, parent_id as "parentId", status,
       assignee_agent_id as "assigneeAgentId", assignee_user_id as "assigneeUserId",
+      conversation_user_id as "conversationUserId", conversation_state as "conversationState",
       monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt", hidden_at as "hiddenAt",
       updated_at as "updatedAt", completed_at as "completedAt"
     from issues where true ${scope("company_id")}`;

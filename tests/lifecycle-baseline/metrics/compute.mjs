@@ -160,7 +160,9 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
     if (!openBlockers.has(relation.blockedIssueId)) openBlockers.set(relation.blockedIssueId, []);
     openBlockers.get(relation.blockedIssueId).push(relation.blockerIssueId);
   }
-  const covered = new Set(open.filter((issue) => liveReasons.has(issue.id) || issue.assigneeUserId || isHeld(issue)).map((issue) => issue.id));
+  // An agent chat in `waiting` is on its user's turn, so the user owns it.
+  const waitsOnUser = (issue) => Boolean(issue.conversationUserId) && issue.conversationState === "waiting";
+  const covered = new Set(open.filter((issue) => liveReasons.has(issue.id) || issue.assigneeUserId || waitsOnUser(issue) || isHeld(issue)).map((issue) => issue.id));
   // A parent waits on its open children and a blocked issue on its blockers:
   // either is covered once what it waits on is covered. Iterate to a fixed point.
   for (let changed = true; changed;) {
