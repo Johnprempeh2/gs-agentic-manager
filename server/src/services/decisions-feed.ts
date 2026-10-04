@@ -799,7 +799,9 @@ function buildCard(input: {
   const blockedCount = (blockedItem?.detail as { blockedTaskCount?: unknown } | null)?.blockedTaskCount;
   const nextStepByKind: Record<DecisionCardKind, string> = {
     question: `${waiting?.name ?? "The agent"} waits for your answer, then continues.`,
-    approval: "Nothing moves until you approve or reject it.",
+    approval: main?.subject.metadata?.type === "permission_grant"
+      ? `${waiting?.name ?? "The agent"} stays blocked until you grant or deny the permission.`
+      : "Nothing moves until you approve or reject it.",
     connection: task
       ? `${waiting?.name ?? "The agent"} stays stopped until the connection works. Reconnect it, then retry.`
       : "Runs that use this connection stay stopped until it is reconnected.",
@@ -863,9 +865,12 @@ function buildCard(input: {
   // Native decisions first: the card's own question or approval.
   for (const item of items) {
     if (item.sourceKind === "approval") {
+      // The attention item names its verbs: a permission request says Grant / Deny (GRE-601).
+      const approve = item.decisionVerbs.find((verb) => verb.id === "approve");
+      const reject = item.decisionVerbs.find((verb) => verb.id === "reject");
       actions.push(
-        requestAction("approve", "Approve", "Approve the request.", [request("POST", `/api/approvals/${item.subject.id}/approve`)]),
-        requestAction("reject", "Reject", "Reject the request.", [request("POST", `/api/approvals/${item.subject.id}/reject`)]),
+        requestAction("approve", approve?.label ?? "Approve", approve?.description ?? "Approve the request.", [request("POST", `/api/approvals/${item.subject.id}/approve`)]),
+        requestAction("reject", reject?.label ?? "Reject", reject?.description ?? "Reject the request.", [request("POST", `/api/approvals/${item.subject.id}/reject`)]),
       );
     } else if (item.sourceKind === "issue_thread_interaction" && cardKind(item) === "question" && item.subject.href) {
       actions.push(linkAction("open", "Answer", "Open the question on the task.", item.subject.href));

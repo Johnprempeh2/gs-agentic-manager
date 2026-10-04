@@ -209,6 +209,11 @@ export function approvalService(db: Db) {
         }
       }
 
+      if (applied && updated.type === "permission_grant") {
+        const { permissionGrantRequestService } = await import("./permission-grant-requests.js");
+        await permissionGrantRequestService(db).applyGrant(updated, decidedByUserId === "board" ? null : decidedByUserId);
+      }
+
       return { approval: updated, applied };
     },
 
