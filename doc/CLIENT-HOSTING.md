@@ -41,16 +41,33 @@ The server listens on 127.0.0.1 only. Caddy is the one way in (ports 80 and
 1. Make the server (Hetzner Cloud CX43, Ubuntu 24.04, EU) in Greatstone's
    project, with our SSH key and backups on. Point `<code>.<client domain>`
    (an A record) at its IPv4 address.
-2. As root on the server, clone the Stable tag with a read-only deploy key and
-   run the setup:
+2. Copy the read-only deploy key (given outside the app) to the server as
+   `/root/.ssh/gsam_deploy`, mode 0600.
+3. As root on the server, clone the Stable tag into a temporary folder and run
+   the setup from there. `setup-host.sh` makes user `gsam` and `/srv/gsam`, so
+   nothing can be owned by `gsam` before it runs:
 
    ```sh
    TAG=<stable tag>
-   install -d -o gsam -g gsam -m 0750 /srv/gsam /srv/gsam/releases
-   runuser -u gsam -- git clone --branch "$TAG" <repo url> "/srv/gsam/releases/$TAG"
+   apt-get install -y -q git
+   SETUP="$(mktemp -d)"
+   GIT_SSH_COMMAND="ssh -i /root/.ssh/gsam_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+     git clone --depth 1 --branch "$TAG" <repo url> "$SETUP/gsam"
+   "$SETUP/gsam/scripts/client-instance/host/setup-host.sh"
+   rm -rf "$SETUP"
+   ```
+
+4. Give the deploy key to `gsam` (its default key, so `upgrade` can fetch new
+   tags too), remove root's copy, and clone the release as `gsam`:
+
+   ```sh
+   install -d -o gsam -g gsam -m 0700 /home/gsam/.ssh
+   install -o gsam -g gsam -m 0600 /root/.ssh/gsam_deploy /home/gsam/.ssh/id_ed25519
+   rm /root/.ssh/gsam_deploy
+   runuser -u gsam -- env HOME=/home/gsam GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" \
+     git clone --branch "$TAG" <repo url> "/srv/gsam/releases/$TAG"
    runuser -u gsam -- git -C "/srv/gsam/releases/$TAG" remote set-url --push origin DISABLED
-   "/srv/gsam/releases/$TAG/scripts/client-instance/host/setup-host.sh"
-   runuser -u gsam -- bash -c "cd /srv/gsam/releases/$TAG && pnpm install --frozen-lockfile && pnpm --filter @greatstone/plugin-sdk build && pnpm --filter @greatstone/ui build"
+   runuser -u gsam -- env HOME=/home/gsam bash -c "cd /srv/gsam/releases/$TAG && pnpm install --frozen-lockfile && pnpm --filter @greatstone/plugin-sdk build && pnpm --filter @greatstone/ui build"
    ```
 
 ## Make the instance
