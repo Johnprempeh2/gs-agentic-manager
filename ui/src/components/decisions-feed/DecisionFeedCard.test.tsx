@@ -16,6 +16,7 @@ import {
   noOwnerCard,
   questionCard,
   reviewCard,
+  setupCard,
 } from "../../fixtures/decisionsFeedFixtures";
 
 const api = vi.hoisted(() => ({
@@ -313,6 +314,30 @@ describe("DecisionFeedCard rendering per kind", () => {
   it("keeps ask_clarity out of the plain action buttons", () => {
     expect(visibleCardActions(blockedCard()).map((action) => action.id)).toEqual(["reassign", "instruct", "cancel_task"]);
     expect(visibleCardActions(questionCard()).map((action) => action.id)).not.toContain("open");
+  });
+});
+
+describe("DecisionFeedCard for a repeated setup failure (GRE-504)", () => {
+  it("shows the count, last seen, the stopped tasks and the fix link on one card", () => {
+    render(setupCard());
+    const card = document.querySelector("[data-decision-card]")!;
+    expect(card.querySelector("[data-setup-count]")?.textContent).toMatch(/^4 failures, last /);
+    const links = [...card.querySelectorAll("a")].map((link) => [link.textContent?.trim(), link.getAttribute("href")]);
+    expect(links).toEqual(expect.arrayContaining([
+      ["GRE-601", "/issues/GRE-601"],
+      ["GRE-602", "/issues/GRE-602"],
+      ["Fix setup", "/agents/agent-everest/runtime"],
+    ]));
+    // A card for several tasks has no single task to table or ask about.
+    expect(hasButton("Not now")).toBe(false);
+    expect(hasButton("Ask for clarity")).toBe(false);
+  });
+
+  it("Retry all sends every stopped task back in one press", async () => {
+    render(setupCard());
+    await click(button("Retry all 2"));
+    expect(api.post).toHaveBeenCalledTimes(2);
+    expect(api.post).toHaveBeenCalledWith("/issues/issue-602/recovery-actions/resolve", expect.objectContaining({ actionId: "rec-602" }));
   });
 });
 

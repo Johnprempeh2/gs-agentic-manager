@@ -19,6 +19,7 @@ import {
   mergedCard,
   questionCard,
   reviewCard,
+  setupCard,
   tabledIssue,
 } from "@/fixtures/decisionsFeedFixtures";
 import { storybookAgents } from "../fixtures/paperclipData";
@@ -189,6 +190,31 @@ export const ApprovalCard: Story = { render: () => <CardFrame card={approvalCard
 export const FailedRunCard: Story = { render: () => <CardFrame card={failedRunCard()} /> };
 export const ReviewCard: Story = { render: () => <CardFrame card={reviewCard()} /> };
 export const ConnectionCard: Story = { render: () => <CardFrame card={connectionAlertCard()} /> };
+
+/** GRE-504 before: one stopped card per task, for the same setup gap of the same agent. */
+function setupTaskCard(issueId: string, identifier: string, title: string): DecisionCard {
+  const base = setupCard();
+  return {
+    ...base,
+    id: `task:${issueId}`,
+    task: { kind: "issue", id: issueId, companyId: COMPANY_ID, title, identifier, status: "blocked", href: `/issues/${identifier}`, metadata: {} } as DecisionCard["task"],
+    title: `${identifier} ${title}`,
+    reason: "The run stopped before it started: setup is not complete.",
+    nextStep: "The task stays stopped until you retry, reassign, resolve or cancel it.",
+    setup: null,
+    actions: base.actions.filter((action) => action.id === "retry").map((action) => ({ ...action, label: "Retry", requests: action.requests.slice(0, 1) })),
+  };
+}
+
+export const SetupFailuresBefore: Story = {
+  render: () => (
+    <div className="flex flex-col gap-3">
+      <CardFrame card={setupTaskCard("issue-601", "GRE-601", "Weekly brief")} />
+      <CardFrame card={setupTaskCard("issue-602", "GRE-602", "Board pack")} />
+    </div>
+  ),
+};
+export const SetupFailuresAfter: Story = { render: () => <CardFrame card={setupCard()} /> };
 
 /** Two mock screens standing in for the screenshots an agent attaches to a design choice. */
 function mockScreen(label: string, accent: string) {
