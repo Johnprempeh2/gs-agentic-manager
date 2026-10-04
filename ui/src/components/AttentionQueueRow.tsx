@@ -784,6 +784,8 @@ function ApprovalResolver({ item, companyId, toggle }: { item: AttentionItem; co
     onSuccess: invalidate,
   });
   const pending = approve.isPending || reject.isPending || revise.isPending;
+  // GRE-601: a missing-permission request is only granted or denied.
+  const isPermissionGrant = item.subject.metadata?.type === "permission_grant";
 
   // Verb order matches the collapsed row exactly (revise → reject → approve),
   // so expanding never moves the button the operator was already aiming at.
@@ -796,17 +798,19 @@ function ApprovalResolver({ item, companyId, toggle }: { item: AttentionItem; co
         className="min-h-16 text-sm"
       />
       <ResolverFooter toggle={toggle}>
-        <Button size="sm" variant="outline" onClick={() => revise.mutate()} disabled={pending}>
-          {revise.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Request revision
-        </Button>
+        {!isPermissionGrant && (
+          <Button size="sm" variant="outline" onClick={() => revise.mutate()} disabled={pending}>
+            {revise.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Request revision
+          </Button>
+        )}
         <Button size="sm" variant="destructive" onClick={() => reject.mutate()} disabled={pending}>
           {reject.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Reject
+          {isPermissionGrant ? "Deny" : "Reject"}
         </Button>
         <Button size="sm" onClick={() => approve.mutate()} disabled={pending}>
           {approve.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Approve
+          {isPermissionGrant ? "Grant" : "Approve"}
         </Button>
       </ResolverFooter>
     </>

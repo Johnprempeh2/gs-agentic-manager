@@ -539,6 +539,55 @@ describe("AttentionQueueRow", () => {
     );
   });
 
+  // GRE-601: a missing-permission refusal reads as Grant / Deny, collapsed and expanded.
+  function permissionGrantItem() {
+    return buildItem({
+      subject: {
+        kind: "approval",
+        id: "approval-grant",
+        companyId: "c1",
+        title: "Cairn needs inbox:manage for GRE-448",
+        identifier: null,
+        status: "pending",
+        href: "/GRE/approvals/approval-grant",
+        metadata: { type: "permission_grant", requestedByAgentId: "agent-1", issueId: "issue-1" },
+      },
+      decisionVerbs: [
+        { id: "reject", label: "Deny", description: "Deny the grant and tell the blocked task." },
+        { id: "approve", label: "Grant", description: "Approve and write the grant, then wake the blocked task." },
+      ],
+    });
+  }
+
+  it("renders a permission request with Grant and Deny in the compact action bar", async () => {
+    vi.mocked(approvalsApi.approve).mockResolvedValue({} as never);
+    render(
+      <AttentionQueueRow item={permissionGrantItem()} companyId="c1" expanded={false} onToggleExpand={noop} onDismiss={noop} />,
+    );
+
+    expect(container?.textContent).toContain("Cairn needs inbox:manage for GRE-448");
+    const decisionActions = container?.querySelector('[aria-label="Decision actions"]');
+    const buttons = Array.from(decisionActions?.querySelectorAll("button") ?? []);
+    expect(buttons.map((button) => button.textContent)).toEqual(["Deny", "Grant"]);
+    expect(buttons[0]?.getAttribute("data-variant")).toBe("destructive");
+    expect(buttons[1]?.getAttribute("data-variant")).toBe("default");
+
+    act(() => buttons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(approvalsApi.approve).toHaveBeenCalledWith("approval-grant");
+  });
+
+  it("renders a permission request expanded with Grant and Deny and no revision", () => {
+    const el = render(
+      <AttentionQueueRow item={permissionGrantItem()} companyId="c1" expanded onToggleExpand={noop} onDismiss={noop} />,
+    );
+    const labels = Array.from(el.querySelectorAll("button")).map((button) => button.textContent);
+    expect(labels).toContain("Grant");
+    expect(labels).toContain("Deny");
+    expect(labels).not.toContain("Approve");
+    expect(labels).not.toContain("Request revision");
+  });
+
   it("submits a compact approval without expanding the card and confirms it", async () => {
     const onToggleExpand = vi.fn();
     vi.mocked(approvalsApi.approve).mockResolvedValue({} as never);

@@ -533,6 +533,8 @@ function ApprovalInboxRow({
   const showResolutionButtons =
     approval.type !== "budget_override_required" &&
     ACTIONABLE_APPROVAL_STATUSES.has(approval.status);
+  // GRE-601: a missing-permission request reads as Grant / Deny.
+  const isPermissionGrant = approval.type === "permission_grant";
   const showUnreadSlot = unreadState !== null;
   const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
@@ -601,7 +603,7 @@ function ApprovalInboxRow({
                   onClick={onApprove}
                   disabled={isPending}
                 >
-                  Approve
+                  {isPermissionGrant ? "Grant" : "Approve"}
                 </Button>
                 <Button
                   variant="destructive"
@@ -610,7 +612,7 @@ function ApprovalInboxRow({
                   onClick={onReject}
                   disabled={isPending}
                 >
-                  Reject
+                  {isPermissionGrant ? "Deny" : "Reject"}
                 </Button>
               </>
             ) : null}
@@ -625,7 +627,7 @@ function ApprovalInboxRow({
             onClick={onApprove}
             disabled={isPending}
           >
-            Approve
+            {isPermissionGrant ? "Grant" : "Approve"}
           </Button>
           <Button
             variant="destructive"
@@ -634,7 +636,7 @@ function ApprovalInboxRow({
             onClick={onReject}
             disabled={isPending}
           >
-            Reject
+            {isPermissionGrant ? "Deny" : "Reject"}
           </Button>
         </div>
       ) : null}
