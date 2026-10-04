@@ -1397,7 +1397,7 @@ async function startServerWithDatabaseTeardown(
       trackHeartbeatSchedulerWork(supportQueue
         .sweep()
         .then((result) => {
-          if (result.responded + result.warned + result.breached > 0) {
+          if (result.repaired + result.responded + result.warned + result.breached > 0) {
             logger.info(result, "support clock sweep changed tickets");
           }
         })

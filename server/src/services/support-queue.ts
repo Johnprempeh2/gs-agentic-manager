@@ -10,19 +10,22 @@
  * decisions feed and phone. Sweep steps are guarded updates, so a repeated
  * or overlapping sweep never warns twice.
  */
-import { and, asc, eq, gte, inArray, isNull, notInArray } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, min, notInArray } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
   chatConversations,
+  chatEndpoints,
+  companyMemberships,
   emailMessages,
   issues,
   labels,
+  projects,
   supportQueues,
   supportTickets,
 } from "@greatstone/db";
 import type { IssuePriority } from "@greatstone/shared";
-import { badRequest, notFound } from "../errors.js";
+import { badRequest, notFound, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 import type { heartbeatService } from "./heartbeat.js";
@@ -112,6 +115,18 @@ export type SupportIntakeInput = {
   from?: string | null;
   receivedAt?: Date;
   priority?: SupportPriority;
+};
+
+export type QueueConfigInput = {
+  clientCode: string;
+  projectId: string;
+  triageAgentId: string;
+  emailEndpointId?: string | null;
+  installAgentId?: string | null;
+  reliabilityAgentId?: string | null;
+  coverAgentId?: string | null;
+  p1UserId?: string | null;
+  holidays?: string[];
 };
 
 export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () => Date } = {}) {
@@ -290,11 +305,19 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
     return created;
   }
 
-  /** The email path calls this after it commits a new support issue. */
-  async function afterEmailIntake(endpointId: string, issueId: string, receivedAt: Date) {
-    const [queue] = await db.select().from(supportQueues).where(eq(supportQueues.emailEndpointId, endpointId));
+  async function queueForEmailEndpoint(companyId: string, endpointId: string) {
+    const [queue] = await db
+      .select()
+      .from(supportQueues)
+      .where(and(eq(supportQueues.companyId, companyId), eq(supportQueues.emailEndpointId, endpointId)));
+    return queue ?? null;
+  }
+
+  /** The email path calls this after it commits a new support issue. Idempotent per issue. */
+  async function afterEmailIntake(companyId: string, endpointId: string, issueId: string, receivedAt: Date) {
+    const queue = await queueForEmailEndpoint(companyId, endpointId);
     if (!queue) return null;
-    const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
+    const [issue] = await db.select().from(issues).where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)));
     if (!issue) return null;
     const priority = (Object.entries(SUPPORT_ISSUE_PRIORITY).find(([, value]) => value === issue.priority)?.[0] ?? "P2") as SupportPriority;
     const ticket = await openTicket(queue, issueId, priority, receivedAt);
@@ -377,8 +400,53 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
    * warning point and escalates a missed target to the named human. Each step
    * claims its row with a guarded update first, so it runs once.
    */
+  /**
+   * An email filed in a support project with no ticket: the ticket step after
+   * the email commit failed, and the delivery is already processed, so nothing
+   * else would retry it. Open the missing ticket (clock, wake, P1 alert).
+   */
+  async function repairEmailTickets() {
+    const missing = await db
+      .select({
+        companyId: supportQueues.companyId,
+        endpointId: chatConversations.endpointId,
+        issueId: issues.id,
+        createdAt: issues.createdAt,
+        firstInboundAt: min(emailMessages.timestamp),
+      })
+      .from(supportQueues)
+      .innerJoin(chatConversations, and(
+        eq(chatConversations.endpointId, supportQueues.emailEndpointId),
+        eq(chatConversations.companyId, supportQueues.companyId),
+      ))
+      .innerJoin(issues, and(
+        eq(issues.id, chatConversations.issueId),
+        eq(issues.projectId, supportQueues.projectId),
+        gte(issues.createdAt, supportQueues.createdAt),
+      ))
+      .leftJoin(supportTickets, eq(supportTickets.issueId, issues.id))
+      .leftJoin(emailMessages, and(eq(emailMessages.conversationId, chatConversations.id), eq(emailMessages.direction, "inbound")))
+      .where(and(
+        isNotNull(supportQueues.emailEndpointId),
+        isNull(supportTickets.id),
+        notInArray(issues.status, ["done", "cancelled"]),
+      ))
+      .groupBy(supportQueues.companyId, chatConversations.endpointId, issues.id, issues.createdAt);
+    let repaired = 0;
+    for (const row of missing) {
+      try {
+        const ticket = await afterEmailIntake(row.companyId, row.endpointId, row.issueId, row.firstInboundAt ?? row.createdAt);
+        if (ticket) repaired += 1;
+      } catch (err) {
+        logger.warn({ err, issueId: row.issueId }, "support ticket repair failed");
+      }
+    }
+    return repaired;
+  }
+
   async function sweep() {
     const at = now();
+    const repaired = await repairEmailTickets();
     // Every running clock is checked each pass: a reply email can arrive at
     // any time, and support volume is a handful of open tickets.
     const rows = await db
@@ -386,7 +454,7 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
       .from(supportTickets)
       .innerJoin(issues, eq(issues.id, supportTickets.issueId))
       .where(and(isNull(supportTickets.firstResponseAt), notInArray(issues.status, ["done", "cancelled"])));
-    const result = { responded: 0, warned: 0, breached: 0 };
+    const result = { repaired, responded: 0, warned: 0, breached: 0 };
     if (rows.length === 0) return result;
     const open = rows.map((row) => row.ticket);
     const issueById = new Map(rows.map((row) => [row.issue.id, row.issue]));
@@ -443,21 +511,49 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
     return result;
   }
 
-  async function configureQueue(
-    companyId: string,
-    input: {
-      clientCode: string;
-      projectId: string;
-      triageAgentId: string;
-      emailEndpointId?: string | null;
-      installAgentId?: string | null;
-      reliabilityAgentId?: string | null;
-      coverAgentId?: string | null;
-      p1UserId?: string | null;
-      holidays?: string[];
-    },
-  ) {
+  /**
+   * Every link on a queue must belong to the queue's company. Without this an
+   * owner of one company could bind another company's inbox (and take its
+   * mail) or send P1 alerts to a person outside the company.
+   */
+  async function assertQueueLinksInCompany(companyId: string, input: QueueConfigInput) {
+    const [project] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, input.projectId), eq(projects.companyId, companyId)));
+    if (!project) throw unprocessable("Project is not in this company");
+    if (input.emailEndpointId) {
+      const [endpoint] = await db
+        .select({ id: chatEndpoints.id })
+        .from(chatEndpoints)
+        .where(and(eq(chatEndpoints.id, input.emailEndpointId), eq(chatEndpoints.companyId, companyId)));
+      if (!endpoint) throw unprocessable("Email inbox is not in this company");
+    }
+    const agentIds = [input.triageAgentId, input.installAgentId, input.reliabilityAgentId, input.coverAgentId]
+      .filter((id): id is string => Boolean(id));
+    const found = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(inArray(agents.id, agentIds), eq(agents.companyId, companyId)));
+    if (new Set(found.map((row) => row.id)).size !== new Set(agentIds).size)
+      throw unprocessable("Every support agent must be in this company");
+    if (input.p1UserId) {
+      const [member] = await db
+        .select({ id: companyMemberships.id })
+        .from(companyMemberships)
+        .where(and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, input.p1UserId),
+          eq(companyMemberships.status, "active"),
+        ));
+      if (!member) throw unprocessable("The P1 person must be an active member of this company");
+    }
+  }
+
+  async function configureQueue(companyId: string, input: QueueConfigInput) {
     const clientCode = normalizeClientCode(input.clientCode);
+    await assertQueueLinksInCompany(companyId, input);
     const values = {
       companyId,
       clientCode,
@@ -491,8 +587,7 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
   return {
     configureQueue,
     listQueues: (companyId: string) => db.select().from(supportQueues).where(eq(supportQueues.companyId, companyId)),
-    queueForEmailEndpoint: async (endpointId: string) =>
-      (await db.select().from(supportQueues).where(eq(supportQueues.emailEndpointId, endpointId)))[0] ?? null,
+    queueForEmailEndpoint,
     issueFields,
     afterEmailIntake,
     intake,

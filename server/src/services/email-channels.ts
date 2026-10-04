@@ -1319,7 +1319,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           );
           // A client support inbox (GRE-665) files the thread in its queue's
           // project with the client code, priority and routed owner.
-          const supportQueue = await support.queueForEmailEndpoint(endpoint.id);
+          const supportQueue = await support.queueForEmailEndpoint(endpoint.companyId, endpoint.id);
           const supportFields = supportQueue
             ? (await support.issueFields(supportQueue, {
                 subject: message.subject,
@@ -1419,12 +1419,13 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           .where(eq(chatConversations.id, conversation.id));
       });
     }
-    // Idempotent: a retried delivery finds the ticket already open.
+    // Idempotent: a retried delivery finds the ticket already open. If this
+    // fails, the support clock sweep opens the missing ticket.
     if (event.supportReceivedAt && event.issueId)
       await support
-        .afterEmailIntake(endpoint.id, event.issueId, new Date(event.supportReceivedAt))
+        .afterEmailIntake(endpoint.companyId, endpoint.id, event.issueId, new Date(event.supportReceivedAt))
         .catch((err: unknown) =>
-          logger.warn({ err, issueId: event.issueId }, "support ticket intake failed"),
+          logger.warn({ err, issueId: event.issueId }, "support ticket intake failed; the clock sweep will repair it"),
         );
     if (event.wakePending && event.issueId) {
       await active(endpoint);

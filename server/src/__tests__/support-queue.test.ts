@@ -6,6 +6,7 @@ import {
   chatConversations,
   chatEndpoints,
   companies,
+  companyMemberships,
   createDb,
   emailMessages,
   issueComments,
@@ -70,6 +71,7 @@ describeEmbeddedPostgres("client support queue", () => {
     await db.delete(labels);
     await db.delete(projects);
     await db.delete(agents);
+    await db.delete(companyMemberships);
     await db.delete(companies);
   });
 
@@ -89,6 +91,7 @@ describeEmbeddedPostgres("client support queue", () => {
       { id: cover, companyId, name: "Cover", role: "general", status: "idle", adapterType: "codex_local" },
     ]);
     await db.insert(projects).values({ id: projectId, companyId, name: "Client support" });
+    await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: JOHN, membershipRole: "owner" });
     const wakeup = vi.fn(async () => null);
     let clock = RECEIVED;
     const svc = supportQueueService(db, { wakeup: wakeup as never, now: () => clock });
@@ -178,12 +181,12 @@ describeEmbeddedPostgres("client support queue", () => {
 
     // Wed 12:00 BST: nothing due yet.
     s.setNow(new Date("2026-10-07T11:00:00.000Z"));
-    expect(await s.svc.sweep()).toEqual({ responded: 0, warned: 0, breached: 0 });
+    expect(await s.svc.sweep()).toEqual({ repaired: 0, responded: 0, warned: 0, breached: 0 });
 
     // P2 warn point is 75% of 510 min = 383 min after Wed 10:00 -> Wed 16:23 BST.
     s.setNow(new Date("2026-10-07T15:30:00.000Z"));
-    expect(await s.svc.sweep()).toEqual({ responded: 0, warned: 1, breached: 0 });
-    expect(await s.svc.sweep()).toEqual({ responded: 0, warned: 0, breached: 0 });
+    expect(await s.svc.sweep()).toEqual({ repaired: 0, responded: 0, warned: 1, breached: 0 });
+    expect(await s.svc.sweep()).toEqual({ repaired: 0, responded: 0, warned: 0, breached: 0 });
     expect(s.wakeup).toHaveBeenCalledTimes(1);
 
     // A reply email to the client on the P3 thread stops its clock.
@@ -197,8 +200,8 @@ describeEmbeddedPostgres("client support queue", () => {
 
     // Thu 10:00 BST: P2 target missed, P3 already answered.
     s.setNow(new Date("2026-10-08T09:00:00.000Z"));
-    expect(await s.svc.sweep()).toEqual({ responded: 1, warned: 0, breached: 1 });
-    expect(await s.svc.sweep()).toEqual({ responded: 0, warned: 0, breached: 0 });
+    expect(await s.svc.sweep()).toEqual({ repaired: 0, responded: 1, warned: 0, breached: 1 });
+    expect(await s.svc.sweep()).toEqual({ repaired: 0, responded: 0, warned: 0, breached: 0 });
     const [p3Ticket] = await db.select().from(supportTickets).where(eq(supportTickets.issueId, p3.issue.id));
     expect(p3Ticket!.firstResponseAt?.toISOString()).toBe(replyAt.toISOString());
     const breachAlerts = await interactionsFor(p2.issue.id);
@@ -218,16 +221,70 @@ describeEmbeddedPostgres("client support queue", () => {
     await db.insert(toolConnections).values({ id: connectionId, companyId: s.companyId, applicationId, name: "mail", uid: `chat-agentmail-${endpointId}`, connectionPurpose: "channel", transport: "chat_sdk", status: "active", enabled: true });
     await db.insert(chatEndpoints).values({ id: endpointId, companyId: s.companyId, connectionId, provider: "agentmail", publicationMode: "explicit", externalExecutionPolicy: "agent", publicId: randomUUID(), assignedAgentId: s.triage });
     await s.svc.configureQueue(s.companyId, { clientCode: "TST", projectId: s.projectId, triageAgentId: s.triage, emailEndpointId: endpointId, p1UserId: JOHN });
-    const queue = await s.svc.queueForEmailEndpoint(endpointId);
+    const queue = await s.svc.queueForEmailEndpoint(s.companyId, endpointId);
     const { fields } = await s.svc.issueFields(queue!, { subject: "Site is down", body: "Nobody can log in", receivedAt: RECEIVED });
     const [issue] = await db.insert(issues).values({ companyId: s.companyId, ...fields, labelIds: undefined } as never).returning();
-    const first = await s.svc.afterEmailIntake(endpointId, issue!.id, RECEIVED);
-    const retry = await s.svc.afterEmailIntake(endpointId, issue!.id, RECEIVED);
+    const first = await s.svc.afterEmailIntake(s.companyId, endpointId, issue!.id, RECEIVED);
+    const retry = await s.svc.afterEmailIntake(s.companyId, endpointId, issue!.id, RECEIVED);
     expect(first?.priority).toBe("P1");
     expect(retry).toBeNull();
     expect(await db.select().from(supportTickets).where(eq(supportTickets.issueId, issue!.id))).toHaveLength(1);
     expect(await interactionsFor(issue!.id)).toHaveLength(1);
     expect(s.wakeup).toHaveBeenCalledTimes(1);
+  });
+
+  async function agentmailEndpoint(companyId: string, agentId: string) {
+    const [endpointId, applicationId, connectionId] = [randomUUID(), randomUUID(), randomUUID()];
+    await db.insert(toolApplications).values({ id: applicationId, companyId, applicationKey: `chat:agentmail:${endpointId}`, name: "mail", type: "chat", status: "active" });
+    await db.insert(toolConnections).values({ id: connectionId, companyId, applicationId, name: "mail", uid: `chat-agentmail-${endpointId}`, connectionPurpose: "channel", transport: "chat_sdk", status: "active", enabled: true });
+    await db.insert(chatEndpoints).values({ id: endpointId, companyId, connectionId, provider: "agentmail", publicationMode: "explicit", externalExecutionPolicy: "agent", publicId: randomUUID(), assignedAgentId: agentId });
+    return endpointId;
+  }
+
+  it("opens the missing ticket on the next sweep when the ticket step after an email failed", async () => {
+    const s = await seed();
+    const endpointId = await agentmailEndpoint(s.companyId, s.triage);
+    await s.svc.configureQueue(s.companyId, { clientCode: "TST", projectId: s.projectId, triageAgentId: s.triage, emailEndpointId: endpointId, p1UserId: JOHN });
+    const queue = await s.svc.queueForEmailEndpoint(s.companyId, endpointId);
+    const { fields } = await s.svc.issueFields(queue!, { subject: "Site is down", body: "Nobody can log in", receivedAt: RECEIVED });
+    // The email committed its issue and thread, but afterEmailIntake never ran.
+    const [issue] = await db.insert(issues).values({ companyId: s.companyId, ...fields, labelIds: undefined } as never).returning();
+    const [conversation] = await db.insert(chatConversations).values({ companyId: s.companyId, endpointId, issueId: issue!.id, externalConversationId: "inbox", externalThreadId: "t1", externalLabel: "Site is down" }).returning();
+    await db.insert(emailMessages).values({ companyId: s.companyId, endpointId, conversationId: conversation!.id, providerMessageId: "m1", envelope: {} as never, text: "Nobody can log in", direction: "inbound", timestamp: RECEIVED });
+
+    s.setNow(new Date("2026-10-07T09:05:00.000Z"));
+    expect((await s.svc.sweep()).repaired).toBe(1);
+    expect((await s.svc.sweep()).repaired).toBe(0);
+    const tickets = await db.select().from(supportTickets).where(eq(supportTickets.issueId, issue!.id));
+    expect(tickets).toHaveLength(1);
+    // The clock runs from the email, not from the repair.
+    expect(tickets[0]!.receivedAt.toISOString()).toBe(RECEIVED.toISOString());
+    expect(tickets[0]!.dueAt.toISOString()).toBe("2026-10-07T13:00:00.000Z");
+    expect((await interactionsFor(issue!.id))[0]?.addresseeUserId).toBe(JOHN);
+  });
+
+  it("rejects queue links from another company, and never routes one company's inbox to another's queue", async () => {
+    const s = await seed();
+    const other = await seed();
+    const otherEndpoint = await agentmailEndpoint(other.companyId, other.triage);
+    const base = { clientCode: "TST", projectId: s.projectId, triageAgentId: s.triage };
+    const cases: Array<[Partial<typeof base> & Record<string, unknown>, RegExp]> = [
+      [{ projectId: other.projectId }, /Project/],
+      [{ emailEndpointId: otherEndpoint }, /Email inbox/],
+      [{ triageAgentId: other.triage }, /support agent/],
+      [{ installAgentId: other.bedrock }, /support agent/],
+      [{ reliabilityAgentId: other.ridge }, /support agent/],
+      [{ coverAgentId: other.cover }, /support agent/],
+      [{ p1UserId: "user-outsider" }, /P1 person/],
+    ];
+    for (const [change, message] of cases)
+      await expect(s.svc.configureQueue(s.companyId, { ...base, ...change })).rejects.toMatchObject({ status: 422, message: expect.stringMatching(message) });
+    const [stored] = await db.select().from(supportQueues).where(eq(supportQueues.companyId, s.companyId));
+    expect(stored!.emailEndpointId).toBeNull();
+
+    // A queue row that names another company's inbox (bad data) is still not used for it.
+    await db.update(supportQueues).set({ emailEndpointId: otherEndpoint }).where(eq(supportQueues.id, s.queue.id));
+    expect(await s.svc.queueForEmailEndpoint(other.companyId, otherEndpoint)).toBeNull();
   });
 
   it("rejects client names in place of a client code", async () => {
