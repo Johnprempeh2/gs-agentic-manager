@@ -32,7 +32,16 @@ to it.
    root (`npx vitest run <files>`, `npx tsc --noEmit -p <package>`). When you
    need the running app, start a sandbox from the worktree:
    `pnpm dev:once --data-dir ./tmp/sandbox`. It picks the next free port (never
-   3100) and has its own empty data. Stop it when you are done.
+   3100) and has its own empty data. Stop it when you are done, from the
+   worktree root, with `pnpm dev:stop --data-dir ./tmp/sandbox` (the same
+   `--data-dir` you started it with; it stops only the services registered for
+   this worktree), or with `kill <pid>` using the runner PID you recorded
+   (`pnpm dev:list --data-dir ./tmp/sandbox` shows it). Never stop it with
+   `pkill -f`, `killall` or `kill` on a pattern or name: live runs the same
+   commands (`dev-runner`, `dev:once`, `tsx`, `node`, `postgres`, `pnpm`) under
+   the same user, so the pattern matches live too. On 4 Oct 2026
+   `pkill -f "dev-runner.ts dev"` from an agent sandbox stopped live for 8.5
+   hours.
 4. **Commit.** Small commits with plain-English messages that say what changed
    and why. Stage files by name; never `git add -A` or `git add .`.
 5. **Pull request.** `git push -u origin <branch>`, then
@@ -110,6 +119,12 @@ and partial ones in their own list. It only reads git. Fetch first:
 
 - Edit, run git in, install into, or restart anything under `~/GSAM/`.
 - Restart or stop the server on port 3100, or run a server with `~/GSAM/data`.
+- Use `pkill -f`, `killall` or `kill` on a pattern or name you did not start
+  yourself (`dev-runner`, `dev:once`, `tsx`, `node`, `postgres`, `pnpm`). Live
+  runs the same commands under the same user, so the pattern also matches
+  live: on 4 Oct 2026 `pkill -f "dev-runner.ts dev"` stopped live for 8.5
+  hours. Stop your sandbox with `pnpm dev:stop --data-dir ./tmp/sandbox` from
+  the worktree root, or by the PID you recorded.
 - Push to `main`, force-push, merge your own pull request, or delete branches
   or tags.
 - Push to `public-fork` or open pull requests on `Johnprempeh2/GS-Clip`.
@@ -132,6 +147,13 @@ from the release script, a push that deletes a branch or tag, and any push to
 `public-fork`. It does not stop edits, installs or git commands under `~/GSAM/`,
 server restarts, force-pushes to other branches, merges, or pull requests on
 `Johnprempeh2/GS-Clip`. You must keep those rules yourself.
+A local agent run with managed GitHub access (the usual case here) also has a
+process guard: `pkill` and `killall` wrappers first on its PATH. They work out
+what the command would signal, leave live's processes alone (anything from
+`~/GSAM/live` or `~/GSAM/data`, and the live server with the processes that
+started it), signal the rest and say how many they left. They do not cover
+`kill`, a full path such as `/usr/bin/pkill`, a run that uses the host's own
+GitHub login, or a remote sandbox, so keep the rule above yourself.
 A `pre-commit` hook, installed automatically when an agent worktree is created
 (`scripts/git-hooks/install.sh`), refuses a commit when the branch or worktree
 is not the run's `GSAM_WORKSPACE_BRANCH` / `GSAM_WORKSPACE_WORKTREE_PATH`; it
