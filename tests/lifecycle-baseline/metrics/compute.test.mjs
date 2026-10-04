@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeParkedWakes, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -343,4 +343,23 @@ test("percentile uses nearest rank", () => {
   assert.equal(percentile(values, 95), 19);
   assert.equal(percentile(values, 50), 10);
   assert.equal(percentile([], 95), null);
+});
+
+test("R1 parked wakes: counts old deferred wakes on issues with no live run, by reason (GRE-685)", () => {
+  const minutesAgo = (minutes) => new Date(Date.parse(now) - minutes * 60_000).toISOString();
+  const parked = (issueId, reason, requestedAt) => ({ issueId, reason, requestedAt, status: "deferred_issue_execution" });
+  const snapshot = base({
+    issues: [issue("dead"), issue("live", { executionRunId: "run-1" }), issue("fresh")],
+    wakeRequests: [
+      parked("dead", "execution_review_requested", minutesAgo(45)), // no live run, old: counted
+      parked("live", "execution_review_requested", minutesAgo(45)), // live run holds the issue: not counted
+      parked("fresh", "execution_review_requested", minutesAgo(5)), // younger than 10 min: not counted
+      { issueId: "dead", reason: "issue_assigned", requestedAt: minutesAgo(45), status: "queued" }, // not parked
+    ],
+  });
+  const result = computeParkedWakes(snapshot);
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.byReason, [{ reason: "execution_review_requested", count: 1 }]);
+  // Zero is reported as zero, not missing.
+  assert.deepEqual(computeParkedWakes(base()), { minAgeMinutes: 10, total: 0, byReason: [] });
 });

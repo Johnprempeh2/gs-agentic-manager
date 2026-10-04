@@ -67,6 +67,14 @@ weekly number counts stranded trees whose last activity falls in the window,
 i.e. trees that stopped this week. The report also lists every stranded tree
 of any age, with the uncovered issues in it.
 
+**R1 detail — parked wakes with no live run** (`parkedWakes` in
+`metrics.json`, GRE-685). Count of `deferred_issue_execution` wakes requested at
+least 10 minutes ago whose issue has no `execution_run_id`, split by wake
+`reason`. Nothing will drain such a wake, and the stranded-queue sweep promotes
+it only when it carries comment ids or an interaction answer, so review
+hand-offs, "blockers resolved" and assignment wakes stay parked. Report only:
+it sizes the problem before the sweep change. Zero is printed as zero.
+
 **R2 — run failure rate and unattended recovery.** Among runs that finished in
 the window, failure rate is `failed + timed_out + interrupted` divided by those
 plus `succeeded`. Cancelled runs are reported but excluded, because
