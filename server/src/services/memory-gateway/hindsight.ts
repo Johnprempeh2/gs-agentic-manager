@@ -5,6 +5,7 @@ import path from "node:path";
 import type { MemoryRetainMode } from "@greatstone/shared";
 import { logger } from "../../middleware/logger.js";
 import {
+  MEMORY_ENGINE_RETAIN_TIMEOUT_MS,
   MEMORY_ENGINE_TIMEOUT_MS,
   MemoryEngineUnavailableError,
   unconfiguredMemoryEngine,
@@ -72,11 +73,14 @@ export function createHindsightMemoryEngine(options: {
   apiKey: string;
   assertionSecret: string;
   timeoutMs?: number;
+  /** Retain with Claude extraction can take far longer than a recall. */
+  retainTimeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): MemoryEngine {
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? MEMORY_ENGINE_TIMEOUT_MS;
+  const retainTimeoutMs = options.retainTimeoutMs ?? MEMORY_ENGINE_RETAIN_TIMEOUT_MS;
   /** Bank → retain mode last set on the engine, so a mode switch reconfigures the bank once. */
   const bankModes = new Map<string, MemoryRetainMode>();
 
@@ -85,6 +89,7 @@ export function createHindsightMemoryEngine(options: {
     route: string,
     claims: Omit<MemoryAssertionClaims, "v" | "iat" | "exp" | "nonce">,
     body?: unknown,
+    callTimeoutMs = timeoutMs,
   ) {
     let response: Response;
     try {
@@ -96,16 +101,20 @@ export function createHindsightMemoryEngine(options: {
           [MEMORY_ASSERTION_HEADER]: signMemoryAssertion(options.assertionSecret, claims),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(callTimeoutMs),
       });
     } catch (error) {
       throw new MemoryEngineUnavailableError("Memory engine is not reachable", { cause: error });
     }
     if (!response.ok) {
-      const text = (await response.text().catch(() => "")).slice(0, 300);
+      const text = (await response.text().catch(() => "")).slice(0, 1000);
       // 5xx, 429 and auth failures all mean "memory unavailable" to callers;
-      // the message stays in logs and sync_error for whoever fixes it.
-      throw new MemoryEngineUnavailableError(`Memory engine answered ${response.status} on ${method} ${route}: ${text}`);
+      // the message stays in logs and sync_error for whoever fixes it. The raw
+      // status and detail are kept so the outbox can tell a plan limit or a
+      // rejected entry from an outage.
+      throw new MemoryEngineUnavailableError(`Memory engine answered ${response.status} on ${method} ${route}: ${text}`, {
+        status: response.status,
+      });
     }
     return response.status === 204 ? null : response.json().catch(() => null);
   }
@@ -144,6 +153,7 @@ export function createHindsightMemoryEngine(options: {
             },
           ],
         },
+        retainTimeoutMs,
       )) as { usage?: { input_tokens?: number; output_tokens?: number } | null } | null;
       const usage = result?.usage;
       return usage

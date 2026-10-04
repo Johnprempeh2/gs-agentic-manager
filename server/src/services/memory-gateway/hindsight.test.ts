@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { MemoryEngineUnavailableError } from "./engine.js";
+import { classifyEngineError } from "./ingest-outbox.js";
 import {
   MEMORY_ASSERTION_HEADER,
   createHindsightMemoryEngine,
@@ -107,6 +108,47 @@ describe("Hindsight memory engine adapter", () => {
         MemoryEngineUnavailableError,
       );
     }
+  });
+
+  it("keeps the raw engine status and detail so the outbox can classify the failure", async () => {
+    const now = new Date("2026-10-04T10:00:00.000Z");
+    const cases: Array<[Response, string]> = [
+      [json({ detail: "You've hit your weekly limit · resets Oct 6, 12pm (UTC)" }, 500), "plan_limit"],
+      [json({ detail: "content too large" }, 422), "rejected"],
+      [json({ detail: "boom" }, 503), "engine_unavailable"],
+    ];
+    for (const [response, kind] of cases) {
+      const { fetchImpl } = recordingFetch((url) => (url.endsWith("/memories") ? response : json({})));
+      const engine = createHindsightMemoryEngine({ baseUrl: "http://e", apiKey: "k", assertionSecret: SECRET, fetchImpl });
+      const error = await engine.retain(doc).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(MemoryEngineUnavailableError);
+      expect((error as MemoryEngineUnavailableError).status).toBe(response.status);
+      expect(classifyEngineError(error, now).kind).toBe(kind);
+    }
+  });
+
+  it("gives retain its own, longer timeout than recall", async () => {
+    const hang = (_url: string, init: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(json({ success: true, usage: { input_tokens: 12, output_tokens: 3 } })), 80);
+        init.signal!.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(init.signal!.reason);
+        });
+      });
+    const { fetchImpl } = recordingFetch((url, init) => (url.endsWith("/memories") || url.endsWith("/recall") ? hang(url, init) : json({})));
+    const engine = createHindsightMemoryEngine({
+      baseUrl: "http://e",
+      apiKey: "k",
+      assertionSecret: SECRET,
+      fetchImpl,
+      timeoutMs: 20,
+      retainTimeoutMs: 1_000,
+    });
+    await expect(engine.retain(doc)).resolves.toEqual({ usage: { inputTokens: 12, outputTokens: 3 } });
+    await expect(engine.recall({ bankId: "b", query: "q", tags: ["scope:org"], limit: 1 })).rejects.toBeInstanceOf(
+      MemoryEngineUnavailableError,
+    );
   });
 
   describe("gateway config file", () => {

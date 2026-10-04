@@ -53,9 +53,13 @@ export interface MemoryEngine {
 
 /** The engine is not configured, not reachable, timed out or answered with a server error. */
 export class MemoryEngineUnavailableError extends Error {
-  constructor(message = "Memory engine unavailable", options?: { cause?: unknown }) {
+  /** HTTP status the engine answered with, when it answered at all. */
+  readonly status?: number;
+
+  constructor(message = "Memory engine unavailable", options?: { cause?: unknown; status?: number }) {
     super(message, options);
     this.name = "MemoryEngineUnavailableError";
+    if (options?.status !== undefined) this.status = options.status;
   }
 }
 
@@ -68,6 +72,8 @@ export function unconfiguredMemoryEngine(): MemoryEngine {
 }
 
 export const MEMORY_ENGINE_TIMEOUT_MS = 8_000;
+/** Upper bound for one retain at the adapter; the request path still caps it with `withEngineTimeout`. */
+export const MEMORY_ENGINE_RETAIN_TIMEOUT_MS = 120_000;
 
 /** Bounds every engine call so a stuck engine never hangs an agent run. */
 export async function withEngineTimeout<T>(work: Promise<T>, timeoutMs = MEMORY_ENGINE_TIMEOUT_MS): Promise<T> {
