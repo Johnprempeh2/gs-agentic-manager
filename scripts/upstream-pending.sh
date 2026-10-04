@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# List the upstream Paperclip commits we have not yet taken or skipped
+# List the upstream (`paperclipai/paperclip`) commits we have not yet taken or skipped
 # (see doc/GREATSTONE-WAY-OF-WORKING.md, "Taking upstream code").
 #
 #   scripts/upstream-pending.sh [--upstream <ref>] [--main <ref>] [--base <sha>] [--count]

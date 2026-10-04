@@ -1,4 +1,4 @@
-# Upstream Paperclip commits taken before the Upstream-Commit trailer rule (GRE-532).
+# Upstream commits (`paperclipai/paperclip`) taken before the Upstream-Commit trailer rule (GRE-532).
 # Read by scripts/upstream-pending.sh. New takes carry the trailer in the commit
 # message instead; do not add them here.
 # Format: <upstream sha> taken|partial <our commit> <note>

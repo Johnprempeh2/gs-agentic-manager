@@ -88,7 +88,7 @@ to it.
 
 ## Taking upstream code
 
-We take Paperclip (`paperclipai/paperclip`, `master`) changes as cherry-picks
+We take upstream (`paperclipai/paperclip`, `master`) changes as cherry-picks
 or partial ports, so git cannot tell what we already have. Three records do:
 
 - **Every commit that takes upstream code ends with one line per upstream

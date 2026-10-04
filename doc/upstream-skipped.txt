@@ -1,4 +1,4 @@
-# Upstream Paperclip commits we decided not to take (GRE-532).
+# Upstream commits (`paperclipai/paperclip`) we decided not to take (GRE-532).
 # Read by scripts/upstream-pending.sh. Add a line when the daily check or a
 # sync skips a commit; the reason must say why (see the Upstream log on GRE-82).
 # Format: <upstream sha> <reason>
