@@ -55,7 +55,7 @@ import {
   type ReadyPluginWorkerRecovery,
 } from "../services/plugin-environment-driver.js";
 import { getConfiguredSecretProvider } from "../secrets/configured-provider.js";
-import { assertBoardOrgAccess, getActorInfo } from "./authz.js";
+import { assertBoardOrgAccess, assertCompanyAccess, getActorInfo } from "./authz.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
@@ -710,6 +710,7 @@ export function environmentRoutes(
 
   router.get("/companies/:companyId/environments", async (req, res) => {
     assertCanReadInstanceEnvironments(req);
+    assertCompanyAccess(req, req.params.companyId as string);
     const rows = await svc.list({
       status: req.query.status as string | undefined,
       driver: req.query.driver as string | undefined,
@@ -732,6 +733,7 @@ export function environmentRoutes(
 
   router.get("/companies/:companyId/environments/capabilities", async (req, res) => {
     assertCanReadInstanceEnvironments(req);
+    assertCompanyAccess(req, req.params.companyId as string);
     const pluginDrivers = await listReadyPluginEnvironmentDrivers({
       db,
       workerManager: options.pluginWorkerManager,

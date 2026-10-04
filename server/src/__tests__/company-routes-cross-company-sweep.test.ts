@@ -38,13 +38,7 @@ vi.mock("../middleware/validate.js", async (importOriginal) => {
 
 // Routes that are meant to answer another company's caller. Each entry needs a
 // reason. Key is `METHOD /api/companies/:companyId/...` as listed by the sweep.
-const ALLOWED_CROSS_COMPANY: Record<string, string> = {
-  // GRE-505 follow-up issue asks whether these should check the company too.
-  "GET /api/companies/:companyId/environments":
-    "Environments are instance-wide: the list ignores :companyId, returns the same redacted rows for any id, and holds no company data.",
-  "GET /api/companies/:companyId/environments/capabilities":
-    "Static adapter and sandbox driver capabilities for the instance; ignores :companyId and holds no company data.",
-};
+const ALLOWED_CROSS_COMPANY: Record<string, string> = {};
 
 // A few handlers parse their own body before the company check, so they need a
 // body that parses. Any other route gets `{}`.
