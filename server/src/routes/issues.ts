@@ -349,6 +349,13 @@ import {
 import { LIVE_RELEASE_KEY_PREFIX, liveReleaseService } from "../services/live-release.js";
 import { assertReleaseReauth, releaseReauth } from "../services/release-reauth.js";
 import {
+  AGENT_DONE_WITHOUT_RESULT_CODE,
+  AGENT_DONE_WITHOUT_RESULT_MESSAGE,
+  agentDoneGuardApplies,
+  agentDoneHasResult,
+  loadAgentDoneResultEvidence,
+} from "../services/agent-done-result-guard.js";
+import {
   crossIssueInfluenceLimitError,
   crossIssueInfluenceRunContextError,
   observeCrossIssueInfluence,
@@ -13139,6 +13146,31 @@ export function issueRoutes(
         existing.status !== "cancelled" && updateFields.status === "cancelled";
       if (resumeRequested === true && !commentBody) {
         res.status(400).json({ error: "Follow-up intent requires a comment" });
+        return;
+      }
+      if (
+        agentDoneGuardApplies({
+          actorType: actor.actorType,
+          actorAgentId: actor.agentId,
+          actorRunId: actor.runId,
+          existingStatus: existing.status,
+          existingAssigneeAgentId: existing.assigneeAgentId,
+          requestedStatus: updateFields.status,
+          inlineComment: commentBody,
+        }) &&
+        !agentDoneHasResult(
+          await loadAgentDoneResultEvidence(db, {
+            companyId: existing.companyId,
+            issueId: existing.id,
+            agentId: actor.agentId!,
+            runId: actor.runId!,
+          }),
+        )
+      ) {
+        res.status(422).json({
+          error: AGENT_DONE_WITHOUT_RESULT_MESSAGE,
+          code: AGENT_DONE_WITHOUT_RESULT_CODE,
+        });
         return;
       }
       if (
