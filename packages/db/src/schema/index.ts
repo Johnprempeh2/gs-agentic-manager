@@ -216,3 +216,4 @@ export * from "./email.js";
 export { announcementDismissals, announcementPublications } from "./announcement_dismissals.js";
 export { pushSubscriptions, pushNotifiedDecisions } from "./push_subscriptions.js";
 export { memorySettings, memoryScopes, memoryRecords, memoryOperations } from "./memory.js";
+export { memoryIngestOutbox } from "./memory_ingest_outbox.js";
