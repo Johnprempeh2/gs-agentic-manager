@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatDateTime, formatShortDate } from "./utils";
+import { formatDate, formatDateTime, formatShortDate, formatTime } from "./utils";
 
 describe("formatDateTime", () => {
   // Local construction avoids assuming the test runner's timezone.
@@ -31,5 +31,20 @@ describe("British dates", () => {
   it("puts the day before the month", () => {
     expect(formatDate(timestamp)).toBe("30 Sept 2026");
     expect(formatShortDate(timestamp)).toBe("30 Sept");
+  });
+});
+
+describe("formatTime", () => {
+  it("uses the 24-hour clock with seconds", () => {
+    expect(formatTime(new Date(2026, 8, 7, 13, 2, 54))).toBe("13:02:54");
+  });
+
+  it("shows midnight as 00, not 24", () => {
+    expect(formatTime(new Date(2026, 8, 7, 0, 5, 9))).toBe("00:05:09");
+  });
+
+  it("formats serialized server timestamps identically to Date values", () => {
+    const timestamp = new Date(2026, 8, 7, 9, 4, 1);
+    expect(formatTime(timestamp.toISOString())).toBe(formatTime(timestamp));
   });
 });

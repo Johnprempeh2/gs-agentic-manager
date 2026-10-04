@@ -87,6 +87,15 @@ export function formatShortDate(date: Date | string): string {
   });
 }
 
+/** 24-hour clock time with seconds, e.g. `13:02:54`. */
+export function formatTime(date: Date | string): string {
+  return new Date(date).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export function relativeTime(date: Date | string): string {
   const now = Date.now();
   const then = new Date(date).getTime();
