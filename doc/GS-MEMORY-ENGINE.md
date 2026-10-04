@@ -13,7 +13,7 @@ The change list is GRE-649 section 5.3, approved by John on 4 Oct 2026.
 | Service user | `gsmemory` (system user, no login shell). Agents run as `johnprempeh` and cannot read its files. |
 | Root folder | `/home/gsmemory/gs-memory/` (`~/gs-memory/` of the service user), mode `0700` |
 | Sub-folders | `app/` (venv, `hindsight.env`, `setup/` copy of `scripts/gs-memory`), `pg/data`, `pg/run` (socket), `models/`, `secrets/`, `backups/`, `logs/`, `home/` |
-| Engine | `127.0.0.1:18888`, every API call needs the gateway key. MCP off. |
+| Engine | `127.0.0.1:18888`, every API call needs the gateway key. MCP off. Prompt log off. Claude CLI telemetry, error reports and update checks off (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`). Main PID for the egress check: `systemctl show -p MainPID --value gs-memory-hindsight`. |
 | Database | `127.0.0.1:15432`, role `hindsight` with a password only the engine holds. Socket folder is `0700`. Any other login is rejected. |
 | Windows copy | `C:\GreatstoneBackups\gs-memory\` (`/mnt/c/GreatstoneBackups/gs-memory/`) |
 | Units | `gs-memory-postgres.service`, `gs-memory-hindsight.service` (not enabled at boot), `gs-memory-backup.timer` (enabled, 02:30 nightly) |
