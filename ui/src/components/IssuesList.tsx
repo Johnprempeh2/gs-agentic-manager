@@ -1011,6 +1011,14 @@ function StreamlinedIssuesList({
     () => buildCompanyUserLabelMap(companyMembers?.users),
     [companyMembers?.users],
   );
+  const stopReasonContext = useMemo(
+    () => ({
+      currentUserId,
+      agentNames: new Map((agents ?? []).map((agent) => [agent.id, { name: agent.name }])),
+      userLabels: companyUserLabelMap,
+    }),
+    [agents, companyUserLabelMap, currentUserId],
+  );
   const companyUserProfileMap = useMemo(
     () => buildCompanyUserProfileMap(companyMembers?.users),
     [companyMembers?.users],
@@ -2285,6 +2293,7 @@ function StreamlinedIssuesList({
                         checklistRowId={checklistRowId}
                         titleClassName={doneRowTitleClass}
                         ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
+                        stopReasonContext={stopReasonContext}
                         externalObjectSummary={externalObjectSummaryByIssueId.get(issue.id) ?? null}
                         titleSuffix={(
                           <>

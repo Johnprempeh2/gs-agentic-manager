@@ -110,6 +110,64 @@ describe("IssueRow", () => {
     act(() => root.unmount());
   });
 
+  it("shows the plain stop reason on failed and blocked rows only", () => {
+    const stopReasonContext = {
+      currentUserId: "user-1",
+      agentNames: new Map([["agent-ridge", { name: "Ridge" }], ["agent-mica", { name: "Mica" }]]),
+    };
+    const failedRun = { status: "failed", errorCode: "claude_auth_required", finishedAt: "2026-10-04T10:00:00.000Z" };
+    const line = () => container.querySelector('[data-slot="task-row-stop-reason"]');
+    const root = createRoot(container);
+    for (const presentation of ["legacy", "task"] as const) {
+      act(() => root.render(
+        <IssueRow
+          presentation={presentation}
+          issue={createIssue({ status: "todo", assigneeAgentId: "agent-mica", latestRun: failedRun })}
+          stopReasonContext={stopReasonContext}
+        />,
+      ));
+      expect(line()?.textContent).toBe("Claude is signed out · You to act");
+      expect(line()?.getAttribute("title")).toBe(
+        "Claude is signed out · You to act · Waiting for you to reconnect Claude",
+      );
+    }
+
+    // Blocked rows name the blocker's owner straight from the list row.
+    const blockedBy = [{
+      id: "issue-2", identifier: "GRE-306", title: "Fix login", status: "in_progress",
+      priority: "medium", assigneeAgentId: "agent-ridge", assigneeUserId: null,
+    }] as NonNullable<Issue["blockedBy"]>;
+    act(() => root.render(
+      <IssueRow issue={createIssue({ status: "blocked", blockedBy })} stopReasonContext={stopReasonContext} />,
+    ));
+    expect(line()?.textContent).toBe("Waiting for GRE-306 · Ridge to act");
+
+    // Nothing for a running row, a done row, or a run that went fine.
+    act(() => root.render(
+      <IssueRow
+        issue={createIssue({ status: "in_progress", latestRun: failedRun, executionRunId: "run-2" })}
+        stopReasonContext={stopReasonContext}
+      />,
+    ));
+    expect(line()).toBeNull();
+    act(() => root.render(
+      <IssueRow issue={createIssue({ status: "done", latestRun: failedRun })} stopReasonContext={stopReasonContext} />,
+    ));
+    expect(line()).toBeNull();
+    act(() => root.render(
+      <IssueRow
+        issue={createIssue({ status: "todo", latestRun: { status: "succeeded", errorCode: null, finishedAt: null } })}
+        stopReasonContext={stopReasonContext}
+      />,
+    ));
+    expect(line()).toBeNull();
+
+    // Without names (other lists) the row keeps its old note.
+    act(() => root.render(<IssueRow issue={createIssue({ status: "todo", latestRun: failedRun })} />));
+    expect(line()).toBeNull();
+    act(() => root.unmount());
+  });
+
   it("flags linked work on the row only when it needs a look", () => {
     const summary = (tone: "success" | "danger") => ({
       total: 2,
