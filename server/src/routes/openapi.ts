@@ -98,6 +98,11 @@ import {
   // Agent teams
   addAgentTeamMemberSchema,
   createAgentTeamSchema,
+  // Organization memory
+  contributeMemorySchema,
+  createMemoryScopeSchema,
+  recallMemorySchema,
+  updateMemorySettingsSchema,
   updateAgentTeamSchema,
   // Goal
   createGoalSchema,
@@ -1594,6 +1599,8 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/environments/{environmentId}/custom-image-setup-sessions",
   "POST /api/companies/{companyId}/goals",
   "POST /api/companies/{companyId}/agent-teams",
+  "POST /api/companies/{companyId}/memory/scopes",
+  "POST /api/companies/{companyId}/memory/records",
   "POST /api/companies/{companyId}/labels",
   "POST /api/issues/{id}/documents/{key}/annotations",
   "POST /api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
@@ -5033,6 +5040,73 @@ registry.registerPath({
   summary: "Remove an agent from a team",
   request: { params: z.object({ id: z.string(), agentId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+// ─── Organization memory ─────────────────────────────────────────────────────
+
+const memoryCompanyParams = z.object({ companyId: z.string() });
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/settings",
+  tags: ["memory"],
+  summary: "Get the company's memory setting (off by default) and retain mode",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/memory/settings",
+  tags: ["memory"],
+  summary: "Turn memory on or off, or switch retain mode (extract or chunks); owner or admin only",
+  request: { params: memoryCompanyParams, body: jsonBody(updateMemorySettingsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/scopes",
+  tags: ["memory"],
+  summary: "List the memory scopes the caller may read; 404 while memory is off",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/scopes",
+  tags: ["memory"],
+  summary: "Create a memory scope (project, restricted project, client or agent); owner or admin only",
+  request: { params: memoryCompanyParams, body: jsonBody(createMemoryScopeSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records",
+  tags: ["memory"],
+  summary: "Contribute a memory record under the caller's identity; kept as pending when the engine is down",
+  request: { params: memoryCompanyParams, body: jsonBody(contributeMemorySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/records/{recordId}",
+  tags: ["memory"],
+  summary: "Get one memory record the caller may read",
+  request: { params: z.object({ companyId: z.string(), recordId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/recall",
+  tags: ["memory"],
+  summary: "Recall memory across the caller's readable scopes; returns available=false when the engine is down",
+  request: { params: memoryCompanyParams, body: jsonBody(recallMemorySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 // ─── Goals ───────────────────────────────────────────────────────────────────
