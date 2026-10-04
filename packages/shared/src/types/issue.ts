@@ -597,6 +597,13 @@ export interface IssueScheduledRetry {
   errorCode?: string | null;
 }
 
+/** The task's most recent finished run, so list rows can say why it stopped (GRE-403). */
+export interface IssueLatestRun {
+  status: string;
+  errorCode: string | null;
+  finishedAt: Date | string | null;
+}
+
 export type IssueRetryNowOutcome =
   | "promoted"
   | "already_promoted"
@@ -852,6 +859,7 @@ export interface Issue {
   executionBlocker?: ExecutionBlocker | null;
   watchdog?: IssueWatchdogSummary | null;
   scheduledRetry?: IssueScheduledRetry | null;
+  latestRun?: IssueLatestRun | null;
   liveDescendantCount?: number;
   relatedWork?: IssueRelatedWorkSummary;
   referencedIssueIdentifiers?: string[];
@@ -920,7 +928,9 @@ export type CompactIssue = Pick<
   blockerAttention?: IssueBlockerAttention;
   reviewAttention?: IssueReviewAttention;
   blockedInboxAttention?: IssueBlockedInboxAttention | null;
+  unblockDescriptor?: IssueUnblockDescriptor | null;
   scheduledRetry?: IssueScheduledRetry | null;
+  latestRun?: IssueLatestRun | null;
   /** Lets list rows show the waiting clock without the full monitor object. */
   monitorNextCheckAt?: Date | null;
   liveDescendantCount?: number;
