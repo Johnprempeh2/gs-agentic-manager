@@ -22,6 +22,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { GithubIcon } from "@/components/icons/github-icon";
 import { cn } from "@/lib/utils";
+import { Link } from "@/lib/router";
 
 type StateChip = {
   label: string;
@@ -243,6 +244,9 @@ export function RichWorkProductCard({ workProduct, href, variant = "card" }: Ric
       ? attachmentDownloadPath({ contentPath: artifactContentPath })
       : href)
     : href;
+  // A deliverable opens in Quick Look inside the app, so Back returns to this
+  // chat, also in the installed app with no browser Back (GRE-611).
+  const deliverablePath = workProduct.type === "deliverable" ? `/deliverables?open=${workProduct.id}` : null;
   const openGallery = () => {
     if (mediaPath && !openIssueGallery?.(mediaPath)) setGalleryOpen(true);
   };
@@ -266,7 +270,7 @@ export function RichWorkProductCard({ workProduct, href, variant = "card" }: Ric
     <article
       className={cn(
         "@container relative flex min-w-0 rounded-md border border-border bg-card/60",
-        (mediaPath || actionHref) && "hover:bg-accent/50",
+        (mediaPath || deliverablePath || actionHref) && "hover:bg-accent/50",
         compact ? "items-center gap-2 px-2.5 py-1.5" : "items-start gap-3 px-3 py-2.5",
       )}
       data-testid={`task-chat-rich-work-product-${workProduct.type}`}
@@ -293,6 +297,10 @@ export function RichWorkProductCard({ workProduct, href, variant = "card" }: Ric
           <button type="button" onClick={openGallery} aria-label={`${action}: ${workProduct.title}`} className="inline-flex items-center gap-1 text-xs font-medium text-foreground after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring">
             {compact ? null : <span className="hidden @sm:inline">{action}</span>}<Maximize2 aria-hidden className="h-3 w-3" />
           </button>
+        ) : deliverablePath ? (
+          <Link to={deliverablePath} aria-label={`${action}: ${workProduct.title}`} className="inline-flex items-center gap-1 text-xs font-medium text-foreground after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring">
+            {compact ? null : <span className="hidden @sm:inline">{action}</span>}<Maximize2 aria-hidden className="h-3 w-3" />
+          </Link>
         ) : actionHref ? (
           <a href={actionHref} aria-label={`${action}: ${workProduct.title}`} className="inline-flex items-center gap-1 text-xs font-medium text-foreground after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring" target={actionHref.startsWith("http") ? "_blank" : undefined} rel={actionHref.startsWith("http") ? "noreferrer" : undefined}>
             {compact ? null : <span className="hidden @sm:inline">{action}</span>}<ExternalLink aria-hidden className="h-3 w-3" />

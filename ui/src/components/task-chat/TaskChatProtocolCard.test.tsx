@@ -43,6 +43,11 @@ function workProduct(overrides: Partial<IssueWorkProduct> = {}): IssueWorkProduc
   };
 }
 
+vi.mock("@/context/CompanyContext", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/context/CompanyContext")>()),
+  useCompany: () => ({ selectedCompany: null }),
+}));
+
 vi.mock("@/components/MarkdownEditor", () => ({
   MarkdownEditor: forwardRef(function MockMarkdownEditor(
     {
@@ -153,6 +158,31 @@ describe("TaskChatProtocolCard", () => {
     expect(action?.querySelector("span")?.className).toContain("hidden @sm:inline");
     const stats = Array.from(container.querySelectorAll("p")).find((node) => node.textContent === "+17 −5 · 3 files");
     expect(stats?.className).toContain("whitespace-nowrap");
+  });
+
+  it("opens a deliverable in the in-app Quick Look, not the raw file (GRE-611)", () => {
+    const product = workProduct({
+      id: "deliverable-1",
+      type: "deliverable",
+      provider: "paperclip",
+      url: null,
+      title: "Q4 hiring brief",
+      metadata: { contentType: "text/html", openPath: "/api/attachments/a-1/content" },
+    });
+    renderCard(root, {
+      id: "resource:deliverable:deliverable-1",
+      kind: "protocol",
+      surface: "resource",
+      resourceKind: "deliverable",
+      title: product.title,
+      subtitle: "deliverable · active",
+      href: "/api/attachments/a-1/content",
+      workProduct: product,
+    });
+
+    const action = container.querySelector<HTMLAnchorElement>('a[aria-label="Open: Q4 hiring brief"]');
+    expect(action?.getAttribute("href")).toBe("/deliverables?open=deliverable-1");
+    expect(action?.target).toBe("");
   });
 
   it("shows pending artifacts with a dashed Pending chip", () => {

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS } from "@greatstone/shared";
 import type { Deliverable, DeliverablesResponse } from "../api/deliverables";
@@ -28,6 +28,7 @@ vi.mock("@/lib/router", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return {
     useSearchParams: actual.useSearchParams,
+    useNavigate: actual.useNavigate,
     Link: ({ to, children, disableIssueQuicklook: _ignored, ...props }: { to: string; children: ReactNode; disableIssueQuicklook?: boolean }) => (
       <a href={to} {...props}>{children}</a>
     ),
@@ -93,19 +94,33 @@ describe("Deliverables page", () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  function render(entry = "/deliverables") {
+  function LocationProbe() {
+    const location = useLocation();
+    return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
+  }
+
+  function render(entry: string | string[] = "/deliverables") {
+    const entries = Array.isArray(entry) ? entry : [entry];
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     root = createRoot(container);
     act(() => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <MemoryRouter initialEntries={[entry]}>
-            <Deliverables />
+          <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+            <LocationProbe />
+            <Routes>
+              <Route path="/deliverables" element={<Deliverables />} />
+              <Route path="*" element={<p>Chat page</p>} />
+            </Routes>
           </MemoryRouter>
         </QueryClientProvider>,
       );
     });
   }
+
+  const quickLook = () => document.querySelector<HTMLElement>("[data-testid='deliverable-quicklook']");
+  const backButton = () => document.querySelector<HTMLButtonElement>("[data-testid='deliverable-quicklook-back']");
+  const currentLocation = () => container.querySelector("[data-testid='location']")?.textContent;
 
   beforeEach(() => {
     container = document.createElement("div");
@@ -123,6 +138,7 @@ describe("Deliverables page", () => {
   });
 
   afterEach(() => {
+    window.history.replaceState(null, "");
     act(() => root.unmount());
     container.remove();
     document.body.innerHTML = "";
@@ -188,8 +204,8 @@ describe("Deliverables page", () => {
       container.querySelector<HTMLButtonElement>("[data-testid='deliverable-card-preview']")!.click();
     });
     await flush();
-    const quickLook = () => document.querySelector<HTMLElement>("[data-testid='deliverable-quicklook']");
     expect(quickLook()?.textContent).toContain("First");
+    expect(backButton()).toBeNull();
     expect(quickLook()?.textContent).toContain("1 of 2");
     expect(document.querySelector("[data-testid='deliverable-preview-frame']")?.getAttribute("sandbox"))
       .toBe(DELIVERABLE_IFRAME_SANDBOX);
@@ -213,6 +229,56 @@ describe("Deliverables page", () => {
     });
     await flush();
     expect(quickLook()).toBeNull();
+  });
+
+  it("returns to the chat it was opened from on Back and on Escape (GRE-611)", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "d-1", title: "First" }),
+      sample({ id: "d-2", title: "Second" }),
+    ]));
+    // BrowserRouter keeps its history index here; > 0 means an in-app page came before.
+    window.history.replaceState({ idx: 1 }, "");
+    render(["/issues/GRE-296", "/deliverables?open=d-1"]);
+    await flush();
+    expect(quickLook()?.textContent).toContain("First");
+
+    // Moving to the next deliverable still returns to the chat.
+    act(() => {
+      quickLook()!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    await flush();
+    expect(quickLook()?.textContent).toContain("Second");
+
+    act(() => backButton()!.click());
+    await flush();
+    expect(currentLocation()).toBe("/issues/GRE-296");
+    expect(quickLook()).toBeNull();
+    expect(container.textContent).toContain("Chat page");
+
+    act(() => root.unmount());
+    render(["/issues/GRE-296", "/deliverables?open=d-1"]);
+    await flush();
+    act(() => {
+      quickLook()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await flush();
+    expect(currentLocation()).toBe("/issues/GRE-296");
+  });
+
+  it("closes a shared link to the Deliverables list, with no Back button", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([sample({ id: "d-1", title: "First" })]));
+    render("/deliverables?open=d-1");
+    await flush();
+    expect(quickLook()?.textContent).toContain("First");
+    expect(backButton()).toBeNull();
+
+    act(() => {
+      quickLook()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await flush();
+    expect(quickLook()).toBeNull();
+    expect(currentLocation()).toBe("/deliverables");
+    expect(container.querySelectorAll("[data-testid='deliverable-card']")).toHaveLength(1);
   });
 
   it("explains the page and shows an example prompt when there is nothing yet", async () => {

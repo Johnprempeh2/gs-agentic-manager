@@ -39,6 +39,7 @@ import {
   externalObjectProviderLabel,
 } from "../lib/external-objects";
 import { normalizeExternalObjectHref } from "../lib/external-object-href";
+import { inAppDeliverablePath } from "../lib/deliverable-links";
 import { copyTextToClipboard } from "../lib/clipboard";
 import type {
   ExternalObjectLivenessState,
@@ -871,6 +872,19 @@ function MarkdownBodyImpl({
           <Link
             to={href}
             {...anchorProps}
+            rel="noreferrer"
+            style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
+          >
+            {linkChildren}
+          </Link>
+        );
+      }
+
+      const deliverablePath = inAppDeliverablePath(href);
+      if (deliverablePath) {
+        return (
+          <Link
+            to={deliverablePath}
             rel="noreferrer"
             style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
           >
