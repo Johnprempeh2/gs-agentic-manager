@@ -5,7 +5,9 @@
 //                                     [--passed-features a,b] [--port N] [--db-port N]
 //                                     [--company-name X] [--client-email X]
 //                                     [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
+//                                     [--ai-route R] [--board-approval on|off]
 //   scripts/client-instance.sh limits --root <dir> [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
+//   scripts/client-instance.sh ai-route --root <dir> [--ai-route R]
 //   scripts/client-instance.sh start|stop|status|backup --root <dir>
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
 //   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
@@ -38,7 +40,9 @@ import { fileURLToPath } from "node:url";
 import { FEEDBACK_DATA_SHARING_PREFERENCES } from "../../packages/shared/src/types/feedback.js";
 import { DAILY_RETENTION_PRESETS, DEFAULT_BACKUP_RETENTION } from "../../packages/shared/src/types/instance.js";
 import { INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog.js";
+import { AI_ACCESS_ROUTES, type AiAccessRoute } from "../../packages/shared/src/ai-connections.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
+import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor } from "./releases.js";
 import {
@@ -108,7 +112,11 @@ const LIMIT_FLAGS: Record<string, keyof InstallLimits> = {
 const USAGE = `usage:
   create --root <dir> --edition managed|managed-plus [--passed-features a,b] [--port N] [--db-port N]
          [--company-name X] [--client-email X] [limit flags]
+         [--ai-route R]                    AI access route, set at every start [${DEFAULT_AI_ROUTE}]
+                                           (${AI_ACCESS_ROUTES.join(", ")})
+         [--board-approval on|off]         board approval for new agents in the company [on]
   limits --root <dir> [limit flags]        show or change the install limits (used at the next start)
+  ai-route --root <dir> [--ai-route R]     show or change the AI access route (used at the next start)
   start|stop|status|backup --root <dir>
   verify --root <dir>                      (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
   upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
@@ -161,6 +169,10 @@ interface InstanceState {
   lastOffsiteBackup?: OffsiteBackup;
   /** Absent on instances made before GRE-141: no limits until `limits` sets them. */
   limits?: InstallLimits;
+  /** GRE-667: written to the instance settings at every start. Absent on older instances until `ai-route` sets it. */
+  aiAccessRoute?: AiAccessRoute;
+  /** GRE-667: set on the company at create; `verify` checks it. Absent means on. */
+  requireBoardApprovalForNewAgents?: boolean;
 }
 
 interface ReleaseRef {
@@ -406,6 +418,7 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
       }
       say(`up on ${baseUrl(state)}`);
       if (mode === "normal") {
+        await applyAiRoute(state);
         state.release = currentRelease();
         writeState(root, state);
       }
@@ -413,6 +426,29 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
     }
   }
   die(`the server did not answer within 5 minutes; see ${path.join(root, LOG_FILE)}`);
+}
+
+/**
+ * Write the AI access route into the running instance's own database. There
+ * is no env value for it, and the operator password is never stored, so the
+ * script writes the setting row itself. The server reads the row on every
+ * run; nothing else needs to change.
+ */
+async function applyAiRoute(state: InstanceState) {
+  if (!state.aiAccessRoute) return;
+  const { createDb, closeRegisteredClients } = await import("../../packages/db/src/index.js");
+  const url = `postgres://paperclip:paperclip@127.0.0.1:${state.dbPort}/paperclip`;
+  try {
+    await createDb(url).$client.unsafe(
+      `INSERT INTO instance_settings (singleton_key, general) VALUES ('default', jsonb_build_object('aiAccessRoute', $1::text))
+       ON CONFLICT (singleton_key) DO UPDATE
+       SET general = instance_settings.general || jsonb_build_object('aiAccessRoute', $1::text), updated_at = now()`,
+      [state.aiAccessRoute],
+    );
+  } finally {
+    await closeRegisteredClients(url);
+  }
+  say(`AI access route: ${state.aiAccessRoute}`);
 }
 
 async function stopServer(root: string, state: InstanceState) {
@@ -608,6 +644,12 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   // Company and client log-in.
   const companies = (await operator.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
   check(Array.isArray(companies) && companies.length === 1, `exactly one company (found ${Array.isArray(companies) ? companies.length : "?"})`);
+  const generalNow = await operator.expect("GET", "/api/instance/settings/general", undefined, [200]);
+  results.push(aiRouteCheck(state.aiAccessRoute, generalNow));
+  if (Array.isArray(companies) && companies.length === 1) {
+    const company = await operator.expect("GET", `/api/companies/${(companies[0] as { id?: string }).id}`, undefined, [200]);
+    results.push(boardApprovalCheck(state.requireBoardApprovalForNewAgents, company));
+  }
   if (state.limits && Array.isArray(companies) && companies.length === 1) {
     const companyId = (companies[0] as { id?: string }).id;
     const agentList = (await operator.expect("GET", `/api/companies/${companyId}/agents`, undefined, [200])) as unknown as Array<{
@@ -1133,6 +1175,28 @@ function cmdLimits(root: string, state: InstanceState, opts: Record<string, stri
   if (readPid(root)) say("the instance is running; stop and start it to use the new limits");
 }
 
+function orDie<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    die(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** ai-route --root <dir> [--ai-route R]: show, or change and save; the next start writes it. */
+function cmdAiRoute(root: string, state: InstanceState, opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => flag !== "root" && flag !== "ai-route");
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (opts["ai-route"] === undefined) {
+    say(`AI access route: ${state.aiAccessRoute ?? "none (made before GRE-667; set it with ai-route --ai-route R)"}`);
+    return;
+  }
+  state.aiAccessRoute = orDie(() => parseAiRoute(opts["ai-route"]));
+  writeState(root, state);
+  say(`AI access route saved: ${state.aiAccessRoute}`);
+  if (readPid(root)) say("the instance is running; stop and start it to use the new route");
+}
+
 // ---------------------------------------------------------------- commands
 
 async function cmdCreate(opts: Record<string, string>) {
@@ -1153,12 +1217,24 @@ async function cmdCreate(opts: Record<string, string>) {
   if (port === dbPort) die("--port and --db-port must differ");
 
   const limits = readLimitFlags(opts, DEFAULT_INSTALL_LIMITS);
-  const state: InstanceState = { edition, passedBetaFeatures: [...passed].sort(), port, dbPort, createdAt: new Date().toISOString(), limits };
+  const aiAccessRoute = orDie(() => parseAiRoute(opts["ai-route"]));
+  const requireBoardApprovalForNewAgents = orDie(() => parseBoardApproval(opts["board-approval"]));
+  const state: InstanceState = {
+    edition,
+    passedBetaFeatures: [...passed].sort(),
+    port,
+    dbPort,
+    createdAt: new Date().toISOString(),
+    limits,
+    aiAccessRoute,
+    requireBoardApprovalForNewAgents,
+  };
   editionValues(state); // fail before anything is written
   mkdirSync(root, { recursive: true });
   writeInstanceFiles(root, state);
   say(`instance folder ${root}, edition ${edition}${passed.length ? ` + ${passed.join(", ")}` : ""}, port ${port}, database port ${dbPort}`);
   say(`limits: ${describeLimits(limits)}`);
+  say(`AI access route ${aiAccessRoute}, board approval for new agents ${requireBoardApprovalForNewAgents ? "on" : "off"}`);
 
   // 1. Setup start: operator (instance admin), one company, one client log-in.
   await startServer(root, state, "provision");
@@ -1173,6 +1249,7 @@ async function cmdCreate(opts: Record<string, string>) {
   await operator.expect("POST", `/api/invites/${token}/accept`, { requestType: "human" }, [200, 202]);
 
   const company = await operator.expect("POST", "/api/companies", { name: opts["company-name"] ?? "Client company" }, [200, 201]);
+  await operator.expect("PATCH", `/api/companies/${company.id}`, { requireBoardApprovalForNewAgents }, [200]);
   const invite = await operator.expect(
     "POST",
     `/api/companies/${company.id}/invites`,
@@ -1361,6 +1438,7 @@ async function main() {
       say(`${root}: edition ${state.edition}${state.passedBetaFeatures.length ? ` + ${state.passedBetaFeatures.join(", ")}` : ""}, port ${state.port}, database port ${state.dbPort}`);
       say(pid ? `running (pid ${pid}), health ${String(body?.status ?? "no answer")}` : "not running");
       say(`limits: ${state.limits ? describeLimits(state.limits) : "none (made before GRE-141; set them with limits)"}`);
+      say(`AI access route: ${state.aiAccessRoute ?? "none (made before GRE-667; set it with ai-route)"}`);
       // Read-only; a WARNING does not change the exit code (GRE-533).
       for (const line of [
         ...backupStatusLines(backupDir(root)),
@@ -1386,6 +1464,8 @@ async function main() {
       return cmdOffsiteBackup(root, opts);
     case "watch":
       return cmdWatch(root, state, opts);
+    case "ai-route":
+      return cmdAiRoute(root, state, opts);
     default:
       die(USAGE);
   }

@@ -82,8 +82,8 @@ edition values. `verify` then checks only health,
 the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
-free from 55400), `--company-name`, `--client-email`, and the install limits
-below.
+free from 55400), `--company-name`, `--client-email`, the install limits
+and the AI access settings below.
 
 ### Install limits (GRE-141)
 
@@ -122,6 +122,29 @@ memory is below 2048 MB or free disk (data dir and home volume) is below
 20 GB (GRE-207). The OS memory-pressure level does not hold runs (GRE-198).
 Change them in Instance → General → Run limits; 0 turns a floor off.
 
+### AI access route and board approval (GRE-667)
+
+The script sets both. There is no hand step after `create`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--ai-route R` | The AI access route of the install: `claude_api_key` (default; GRE-142 marks it as clearly allowed for unattended agents), `claude_subscription`, `codex_api_key` or `codex_subscription`. Kept in `<root>/client-instance.json` and written to the instance settings (`general.aiAccessRoute`) at every start. |
+| `--board-approval on\|off` | Board approval for new agents in the company (`requireBoardApprovalForNewAgents`). Default `on`. Set once at create. |
+
+Show or change the route (the next start writes it):
+
+```sh
+scripts/client-instance.sh ai-route --root <root>
+scripts/client-instance.sh ai-route --root <root> --ai-route codex_api_key
+scripts/client-instance.sh stop --root <root> && scripts/client-instance.sh start --root <root>
+```
+
+A change made in the app is put back at the next start: the route in
+`client-instance.json` wins. An instance made before GRE-667 has no route
+until `ai-route` sets it, and `verify` fails until then. If the board turns
+board approval off in the app, `verify` fails; turn it on again in Company →
+Settings.
+
 `create` does, in order:
 
 1. Checks the edition against this build (unknown or wrong-tier features stop it).
@@ -129,9 +152,10 @@ Change them in Instance → General → Run limits; 0 turns a floor off.
    edition value (the app refuses company creation while
    `GSAM_MANAGED_CONFIG` is set, and invites while `company.invites` is
    hidden) and makes: one operator log-in (instance admin, for Greatstone), one
-   company, one client log-in (board owner of that company, not instance admin).
+   company (board approval for new agents on), one client log-in (board owner
+   of that company, not instance admin).
 3. Stops, closes sign-up (`auth.disableSignUp: true`), then starts with both
-   edition values.
+   edition values and writes the AI access route.
 4. Runs every check (below) and writes the first backup.
 5. Prints both log-ins **once** to the terminal. Give them to John. They are
    not stored anywhere else.
@@ -141,7 +165,7 @@ It stops with an error if any check fails; the instance stays up so you can look
 ## Start, stop, status
 
 ```sh
-scripts/client-instance.sh start  --root <root>   # always with both edition values
+scripts/client-instance.sh start  --root <root>   # always with both edition values and the AI route
 scripts/client-instance.sh stop   --root <root>   # server and its database
 scripts/client-instance.sh status --root <root>
 ```
@@ -161,7 +185,9 @@ CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh verify --root <
 
 It checks: health; every hidden setting is reported hidden; each section 5
 "on" feature is on and each "off" feature is off; a change request to each
-floored hidden setting returns 403; exactly one company; the client log-in
+floored hidden setting returns 403; exactly one company; the AI access route
+is the one in `client-instance.json`; board approval for new agents is on (or
+off when created with `--board-approval off`); the client log-in
 gets 403 on the release API (`instance.releases`, no Releases page on a client
 edition); every agent has a monthly budget (when the instance has install
 limits); new sign-ups are refused. A refused request
