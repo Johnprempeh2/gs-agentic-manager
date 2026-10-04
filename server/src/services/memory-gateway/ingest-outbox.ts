@@ -18,6 +18,12 @@
  */
 
 import { randomUUID } from "node:crypto";
+import {
+  MEMORY_ENGINE_TIMEOUT_MS,
+  withEngineTimeout,
+  type MemoryEngine,
+  type MemoryEngineDocument,
+} from "./engine.js";
 
 export type MemoryIngestOp = "retain" | "delete" | "retag";
 
@@ -109,6 +115,45 @@ export interface MemoryIngestStore {
 /** The single engine route. Implemented by the gateway's Hindsight adapter. */
 export interface MemoryIngestEngine {
   apply(entry: MemoryIngestEntry): Promise<{ usage?: MemoryIngestUsage | null }>;
+}
+
+/** Payload of a `delete` entry. */
+export interface MemoryIngestDeletePayload {
+  bankId: string;
+  documentId: string;
+}
+
+/**
+ * The drain's single engine route: the gateway's configured `MemoryEngine`.
+ * A `retain` payload is the exact `MemoryEngineDocument` built in
+ * `contribute()`. Every call is bounded so a stuck engine cannot hold a lease.
+ */
+export function memoryIngestEngineFor(
+  engine: MemoryEngine,
+  options: { timeoutMs?: number } = {},
+): MemoryIngestEngine {
+  const timeoutMs = options.timeoutMs ?? MEMORY_ENGINE_TIMEOUT_MS;
+  return {
+    async apply(entry) {
+      if (entry.op === "retain") {
+        const result = await withEngineTimeout(
+          Promise.resolve().then(() => engine.retain(entry.payload as unknown as MemoryEngineDocument)),
+          timeoutMs,
+        );
+        return { usage: result?.usage ?? null };
+      }
+      if (entry.op === "delete") {
+        const payload = entry.payload as unknown as MemoryIngestDeletePayload;
+        await withEngineTimeout(
+          Promise.resolve().then(() => engine.deleteDocument(payload.bankId, payload.documentId)),
+          timeoutMs,
+        );
+        return { usage: null };
+      }
+      // No engine call for this op yet: park it for a named owner, never drop it.
+      throw Object.assign(new Error(`Memory ingest op "${entry.op}" is not supported yet`), { status: 422 });
+    },
+  };
 }
 
 export interface ClassifiedEngineError {

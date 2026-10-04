@@ -35,9 +35,16 @@ import { logger } from "../../middleware/logger.js";
 import {
   MemoryEngineUnavailableError,
   unconfiguredMemoryEngine,
+  MEMORY_ENGINE_TIMEOUT_MS,
   withEngineTimeout,
   type MemoryEngine,
+  type MemoryEngineDocument,
 } from "./engine.js";
+import { classifyEngineError, nextAttemptAt } from "./ingest-outbox.js";
+import { enqueueMemoryIngest, settleDirectMemoryIngest } from "./ingest-outbox-db.js";
+
+/** Slack after the direct call's timeout before the drain may take the entry. */
+const DIRECT_RETAIN_GRACE_MS = 5_000;
 
 /**
  * Who is calling the gateway. Built from the authenticated actor only; nothing
@@ -142,13 +149,32 @@ function toRecord(row: RecordRow, scope: ScopeRow): MemoryRecord {
   };
 }
 
+/**
+ * Cheap check used when deciding whether to give a run the memory tools. A
+ * failed lookup means no memory tools for that run; the run itself goes on.
+ */
+export async function companyMemoryEnabled(db: Db, companyId: string) {
+  try {
+    const row = await db
+      .select({ enabled: memorySettings.enabled })
+      .from(memorySettings)
+      .where(eq(memorySettings.companyId, companyId))
+      .then((rows) => rows[0] ?? null);
+    return row?.enabled === true;
+  } catch (error) {
+    logger.warn({ err: error, companyId }, "memory setting lookup failed; run starts without memory tools");
+    return false;
+  }
+}
+
 export function memoryGatewayService(
   db: Db,
   options: { engine?: MemoryEngine; engineTimeoutMs?: number } = {},
 ) {
   const engine = options.engine ?? unconfiguredMemoryEngine();
+  const engineTimeoutMs = options.engineTimeoutMs ?? MEMORY_ENGINE_TIMEOUT_MS;
   const callEngine = <T>(work: () => Promise<T>) =>
-    withEngineTimeout(Promise.resolve().then(work), options.engineTimeoutMs);
+    withEngineTimeout(Promise.resolve().then(work), engineTimeoutMs);
 
   async function logOperation(
     caller: MemoryCaller,
@@ -366,64 +392,96 @@ export function memoryGatewayService(
       throw badRequest("effectiveTo must not be before effectiveFrom");
     }
 
-    const [row] = await db
-      .insert(memoryRecords)
-      .values({
+    // The record and its outbox entry are written together, so a record never
+    // exists without a way to reach the engine (GRE-673).
+    const { row, document, entry } = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(memoryRecords)
+        .values({
+          companyId: caller.companyId,
+          scopeId: scope.id,
+          kind: "source_statement",
+          status: input.status,
+          sensitivity: input.sensitivity,
+          title: input.title ?? null,
+          content: input.content,
+          entities: input.entities,
+          topics: input.topics,
+          contributorAgentId: caller.agentId,
+          contributorUserId: caller.userId,
+          runId: caller.runId,
+          sourceKind: input.sourceKind ?? null,
+          sourceId: input.sourceId ?? null,
+          evidence: input.evidence ?? null,
+          effectiveFrom: input.effectiveFrom ?? null,
+          effectiveTo: input.effectiveTo ?? null,
+          retainMode: settings.retainMode,
+          syncState: "pending",
+        })
+        .returning();
+      const doc: MemoryEngineDocument = {
+        bankId: scope.bankId,
+        documentId: inserted.id,
+        content: inserted.title ? `${inserted.title}\n\n${inserted.content}` : inserted.content!,
+        context: inserted.sourceKind ? `${inserted.sourceKind}:${inserted.sourceId ?? ""}` : null,
+        tags: [
+          scope.tag,
+          `status:${inserted.status}`,
+          `sens:${inserted.sensitivity}`,
+          caller.agentId ? `by:agent:${caller.agentId}` : `by:user:${caller.userId}`,
+        ],
+        entities: inserted.entities,
+        metadata: { gsamRecordId: inserted.id, gsamScopeId: scope.id },
+        timestamp: (inserted.effectiveFrom ?? inserted.createdAt).toISOString(),
+        mode: settings.retainMode,
+      };
+      const queued = await enqueueMemoryIngest(tx, {
         companyId: caller.companyId,
-        scopeId: scope.id,
-        kind: "source_statement",
-        status: input.status,
-        sensitivity: input.sensitivity,
-        title: input.title ?? null,
-        content: input.content,
-        entities: input.entities,
-        topics: input.topics,
-        contributorAgentId: caller.agentId,
-        contributorUserId: caller.userId,
-        runId: caller.runId,
-        sourceKind: input.sourceKind ?? null,
-        sourceId: input.sourceId ?? null,
-        evidence: input.evidence ?? null,
-        effectiveFrom: input.effectiveFrom ?? null,
-        effectiveTo: input.effectiveTo ?? null,
-        retainMode: settings.retainMode,
-        syncState: "pending",
-      })
-      .returning();
+        recordId: inserted.id,
+        op: "retain",
+        payload: doc as unknown as Record<string, unknown>,
+        // Keep the drain off the entry while the call below is in flight.
+        notBefore: new Date(Date.now() + engineTimeoutMs + DIRECT_RETAIN_GRACE_MS),
+      });
+      return { row: inserted, document: doc, entry: queued };
+    });
 
+    // One direct call so the caller hears "ok" when the engine is up. On any
+    // failure the entry stays queued and the drain retries it; a plan limit
+    // or an outage never fails the record.
     let engineAvailable = true;
     let synced = row;
     try {
-      await callEngine(() =>
-        engine.retain({
-          bankId: scope.bankId,
-          documentId: row.id,
-          content: row.title ? `${row.title}\n\n${row.content}` : row.content!,
-          context: row.sourceKind ? `${row.sourceKind}:${row.sourceId ?? ""}` : null,
-          tags: [
-            scope.tag,
-            `status:${row.status}`,
-            `sens:${row.sensitivity}`,
-            caller.agentId ? `by:agent:${caller.agentId}` : `by:user:${caller.userId}`,
-          ],
-          entities: row.entities,
-          metadata: { gsamRecordId: row.id, gsamScopeId: scope.id },
-          timestamp: (row.effectiveFrom ?? row.createdAt).toISOString(),
-          mode: settings.retainMode,
-        }),
-      );
+      const result = await callEngine(() => engine.retain(document));
+      const now = new Date();
+      await settleDirectMemoryIngest(db, entry.id, { now, outcome: "synced", usage: result?.usage ?? null });
       [synced] = await db
         .update(memoryRecords)
-        .set({ syncState: "synced", syncedAt: new Date(), syncError: null, updatedAt: new Date() })
+        .set({ syncState: "synced", syncedAt: now, syncError: null, updatedAt: now })
         .where(eq(memoryRecords.id, row.id))
         .returning();
     } catch (error) {
       engineAvailable = false;
-      const message = error instanceof Error ? error.message : String(error);
-      logger.warn({ err: error, recordId: row.id }, "memory engine retain failed; record kept as pending");
+      const now = new Date();
+      const classified = classifyEngineError(error, now);
+      logger.warn(
+        { err: error, recordId: row.id, kind: classified.kind },
+        "memory engine retain failed; record kept as pending and queued for retry",
+      );
+      await settleDirectMemoryIngest(db, entry.id, {
+        now,
+        outcome: "deferred",
+        // A rejection is retried once by the drain, which parks it for a named owner.
+        nextAttemptAt:
+          classified.kind === "rejected"
+            ? now
+            : nextAttemptAt({ now, attempts: entry.attempts + 1, classified }),
+        kind: classified.kind,
+        error: classified.message,
+      });
       [synced] = await db
         .update(memoryRecords)
-        .set({ syncError: message.slice(0, 500), updatedAt: new Date() })
+        .set({ syncError: `${classified.kind}: ${classified.message}`.slice(0, 500), updatedAt: now })
         .where(eq(memoryRecords.id, row.id))
         .returning();
     }

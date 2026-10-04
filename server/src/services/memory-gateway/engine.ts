@@ -34,8 +34,19 @@ export interface MemoryEngineHit {
   score: number | null;
 }
 
+/** Model tokens the engine reported for one retain (Claude plan use). */
+export interface MemoryEngineUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface MemoryEngineRetainResult {
+  usage?: MemoryEngineUsage | null;
+}
+
 export interface MemoryEngine {
-  retain(document: MemoryEngineDocument): Promise<void>;
+  /** Idempotent: `documentId` is the record id, so a replay replaces the same document. */
+  retain(document: MemoryEngineDocument): Promise<MemoryEngineRetainResult | void>;
   recall(request: MemoryEngineRecallRequest): Promise<MemoryEngineHit[]>;
   deleteDocument(bankId: string, documentId: string): Promise<void>;
 }
