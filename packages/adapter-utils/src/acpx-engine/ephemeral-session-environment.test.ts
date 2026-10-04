@@ -6,11 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEphemeralSessionEnvironmentStore } from "./ephemeral-session-environment.js";
 
 const currentEnvironment = Object.freeze({
-  PAPERCLIP_API_KEY: "current-credential-fixture",
-  PAPERCLIP_RUN_ID: "current-run-fixture",
+  GSAM_API_KEY: "current-credential-fixture",
+  GSAM_RUN_ID: "current-run-fixture",
   PATH: "/fixture/current-bin",
 });
-const oldEnvironment = { PAPERCLIP_API_KEY: "old-credential-fixture", OLD_RUN_PATH: "/fixture/old-run" };
+const oldEnvironment = { GSAM_API_KEY: "old-credential-fixture", OLD_RUN_PATH: "/fixture/old-run" };
 
 function record(): AcpSessionRecord {
   return {
@@ -108,8 +108,8 @@ describe("ephemeral ACPX session environment", () => {
     expect(loaded?.acpx?.session_options).not.toBe(stored.acpx?.session_options);
     expect(loaded?.acpx?.session_options?.env).not.toBe(currentEnvironment);
     expect(stored.acpx?.session_options?.env).toEqual(oldEnvironment);
-    loaded!.acpx!.session_options!.env!.PAPERCLIP_API_KEY = "isolated-loaded-fixture";
-    expect(currentEnvironment.PAPERCLIP_API_KEY).toBe("current-credential-fixture");
+    loaded!.acpx!.session_options!.env!.GSAM_API_KEY = "isolated-loaded-fixture";
+    expect(currentEnvironment.GSAM_API_KEY).toBe("current-credential-fixture");
   });
 
   it("saves only a copied env-free projection, preserving unrelated and caller metadata", async () => {
