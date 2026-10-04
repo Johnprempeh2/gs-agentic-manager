@@ -690,6 +690,10 @@ async function scanForBackendChanges() {
   }
 }
 
+type DevHealthPayload = {
+  devServer?: { enabled?: boolean; autoRestartEnabled?: boolean; activeRunCount?: number };
+};
+
 async function getDevHealthPayload() {
   const response = await fetch(`http://127.0.0.1:${serverPort}/api/health`, {
     headers: devServerStatusToken ? { [devServerStatusTokenHeader]: devServerStatusToken } : undefined,
@@ -697,7 +701,7 @@ async function getDevHealthPayload() {
   if (!response.ok) {
     throw new Error(`Health request failed (${response.status})`);
   }
-  return await parseJsonResponseWithLimit(response);
+  return await parseJsonResponseWithLimit<DevHealthPayload>(response);
 }
 
 async function waitForChildExit() {
@@ -789,7 +793,7 @@ async function maybeAutoRestartChild() {
   if (!manualRestartRequest && dirtyPaths.size === 0 && pendingMigrations.length === 0) return;
 
   restartInFlight = true;
-  let health: { devServer?: { enabled?: boolean; autoRestartEnabled?: boolean; activeRunCount?: number } } | null = null;
+  let health: DevHealthPayload | null = null;
   try {
     health = await getDevHealthPayload();
   } catch {
