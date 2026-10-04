@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import test from "node:test";
-import { formatTable, switchAges } from "./beta-switch-age.mjs";
+import { readFileSync } from "node:fs";
+import { formatTable, isTestFile, parseRetiredKeys, switchAges, testFileCounts } from "./beta-switch-age.mjs";
 
 const SCRIPT = new URL("./beta-switch-age.sh", import.meta.url).pathname;
 const DAY = 24 * 60 * 60 * 1000;
@@ -104,4 +105,47 @@ test("shell script sends only GET requests and prints one row per switch", async
 test("formatTable aligns columns", () => {
   const out = formatTable([{ key: "a", state: "on", onSince: "unknown", days: null, ruleMet: "unknown" }]);
   assert.equal(out, "switch  state  on since  days on  2-week rule met\na       on     unknown   -        unknown");
+});
+
+test("retired switches show retired, whatever their stored value", () => {
+  const rows = byKey(switchAges({ ...SETTINGS, oldSwitch: false }, ACTIVITY, { now: NOW, retired: ["oldSwitch", "onLong"] }));
+  assert.deepEqual(rows.oldSwitch, { key: "oldSwitch", state: "retired", onSince: "-", days: null, ruleMet: "n/a" });
+  assert.equal(rows.onLong.state, "retired");
+  assert.equal(rows.onShort.state, "on");
+});
+
+test("parseRetiredKeys reads the real feature catalog", () => {
+  const source = readFileSync(new URL("../packages/shared/src/feature-catalog.ts", import.meta.url), "utf8");
+  assert.deepEqual(parseRetiredKeys(source), [
+    "enableClassicTaskInterface",
+    "enableSmokeLab",
+    "enablePaperclipDeveloperMode",
+    "autoRestartDevServerWhenIdle",
+  ]);
+  assert.throws(() => parseRetiredKeys("export const X = 1;"), /not found/);
+});
+
+test("test files: a file naming every switch is a list file and is not counted", () => {
+  const keys = ["enableA", "enableAB", "enableC"];
+  const { counts, listFiles } = testFileCounts(keys, [
+    { path: "ui/Settings.test.tsx", text: "enableA enableAB enableC" },
+    { path: "server/a.test.ts", text: "settings.enableA = true" },
+    { path: "server/ab.test.ts", text: "{ enableAB: true, enableC: false }" },
+    { path: "server/none.test.ts", text: "enableAx is not a switch" },
+  ]);
+  assert.deepEqual(listFiles, ["ui/Settings.test.tsx"]);
+  // Whole-word match: "enableAB" does not count for "enableA".
+  assert.deepEqual(counts, { enableA: 1, enableAB: 1, enableC: 1 });
+});
+
+test("isTestFile matches test, spec and __tests__ files only", () => {
+  for (const path of ["a/b.test.ts", "ui/X.test.tsx", "s/x.spec.mjs", "server/src/__tests__/helper.ts"]) {
+    assert.ok(isTestFile(path), path);
+  }
+  for (const path of ["a/b.ts", "doc/test.md", "a/latest.ts"]) assert.ok(!isTestFile(path), path);
+});
+
+test("formatTable adds the test files column only when counted", () => {
+  const out = formatTable([{ key: "a", state: "retired", onSince: "-", days: null, ruleMet: "n/a", testFiles: 2 }]);
+  assert.equal(out, "switch  state    on since  days on  2-week rule met  test files\na       retired  -         -        n/a              2");
 });

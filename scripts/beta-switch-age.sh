@@ -2,10 +2,13 @@
 # Show how long each beta (experimental) switch has been on, for the beta
 # graduation rule (a switch must be on in live for 2 weeks).
 #
-#   GSAM_API_URL=<base> [GSAM_API_KEY=<key>] [GSAM_COMPANY_ID=<id>] scripts/beta-switch-age.sh
+#   GSAM_API_URL=<base> [GSAM_API_KEY=<key>] [GSAM_COMPANY_ID=<id>] scripts/beta-switch-age.sh [--tests]
 #
 # One row per switch in GET /api/instance/settings/experimental: on/off, on
 # since (date of the change that turned it on), days on, and 2-week rule met.
+# Retired switches (RETIRED_INSTANCE_FEATURE_KEYS) show "retired". --tests
+# adds "test files": tracked test files that name the switch, not counting
+# files that name every switch (the settings list tests).
 # The dates come from the `instance.settings.experimental_updated` activity
 # rows of one company (every change is logged for each company). A switch with
 # no logged change shows "unknown"; the script does not guess.
@@ -16,8 +19,8 @@
 set -euo pipefail
 
 case "${1:-}" in
-  -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-  "") ;;
+  -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  ""|--tests) ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
 
@@ -45,4 +48,4 @@ fi
 get "instance/settings/experimental" "$TMP/settings.json"
 get "companies/$COMPANY_ID/activity?action=instance.settings.experimental_updated&limit=$LIMIT" "$TMP/activity.json"
 
-node "$(dirname "$0")/beta-switch-age.mjs" "$TMP/settings.json" "$TMP/activity.json" --limit "$LIMIT"
+node "$(dirname "$0")/beta-switch-age.mjs" "$TMP/settings.json" "$TMP/activity.json" --limit "$LIMIT" ${1:+"$1"}
