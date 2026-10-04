@@ -60,13 +60,13 @@ to it.
   more than about 1,000 lines outside tests. If unsure, it is big. Keystone
   merges a big change after the ready check and Flint's checks pass; there is
   no card per merge. Keystone lists each big change at the top of the next
-  release card (what changes, why it is big, what could break, how to roll
-  back). If John says "not yet", the change stays out of live until it is
+  release task for John (what changes, why it is big, what could break, how
+  to roll back). If John says "not yet", the change stays out of live until it is
   fixed or reverted.
 - **Keystone's own pull requests go to Flint.** Keystone never merges its own
   work. It sets Flint (release verifier) as the `review` stage participant.
   Flint does the ready check and merges; a big change is listed on the release
-  card in the same way.
+  task in the same way.
 - **When GitHub cannot run CI: `local-ci` (GRE-201).** "CI is green" means
   Fork CI is green, or, only when GitHub could not start Fork CI on the pull
   request's head, the commit status `local-ci` is green on that same head.
@@ -157,19 +157,17 @@ Merging does not change the live app. A version goes live in these steps.
    check. If it says FAIL, run it once more (the machine is shared, so one slow
    run can be noise). If it still fails, the verdict is "Not ready, because
    the page is slower", unless John or Everest has accepted the slowdown;
-   then merge it and list it on the next release card with the numbers.
+   then merge it and list it on the next release task with the numbers.
    Nothing runs this on GitHub; Keystone runs it locally.
 2. **Merge (Keystone).** `gh pr merge` when the verdict is "Ready to merge" and
    CI is green (Fork CI, or `local-ci` when GitHub could not start it; see
    "The merge rule"); for a big change, also after Flint's checks pass. Keystone never
    merges its own pull requests; Flint checks and merges those.
-3. **Candidate (Keystone, once a day; optional since GRE-121).** The Releases
-   page can release `origin/main` at any time and cuts the candidate itself.
-   A daily candidate is still useful for Flint's preview check. Each morning, if `main` has changed
+3. **Candidate (Keystone, once a day).** Each morning, if `main` has changed
    since live, tag the merged `main` as a candidate and write the release note
    (big changes first, then each change, its issue, what to check) on a release
-   issue. The candidate is checked and its card is ready for John's 08:00
-   digest. One candidate per day; a newer merge waits for the next day. Tag it:
+   issue. The candidate is checked and John's release task is ready for his
+   08:00 digest. One candidate per day; a newer merge waits for the next day. Tag it:
 
    ```sh
    git fetch origin
@@ -191,9 +189,7 @@ Merging does not change the live app. A version goes live in these steps.
    a version that never ran (GRE-239). A release from the app that is cancelled,
    or stops before the switch, deletes the `rc-*` tag it cut.
 
-   Do not cut an `rc-*` tag for the Releases page. The page shows the next
-   version from `origin/main` and cuts its own candidate at **Release now**;
-   it has no "candidate" field any more. Cut an `rc-*` only for a preview check.
+   John releases the `rc-*` tag that Flint checked, by hand (step 6).
 
    The release note starts with the change list. Do not write it by hand:
 
@@ -226,11 +222,18 @@ Merging does not change the live app. A version goes live in these steps.
    candidate. A new switch needs an entry in that file. The preview check comment
    starts with the change list from `scripts/greatstone-changes.mjs`, so John
    knows which page to open.
-5. **Agree (John).** John may try the preview too. He decides on the
-   Releases page (step 6); nobody asks him whether something is released.
-   "Not yet" leaves live as it is; the fixes become new issues.
-6. **Release (John, from the app).** John releases from the **Releases** page
-   (board only; agents get 403 on every release action). The page shows the
+5. **Release task (Keystone).** Releases happen outside the app (John,
+   GRE-489, 4 Oct). There is no "Update live?" card. When Flint reports "All
+   pass", Keystone creates a task assigned to John, a child of the release
+   issue, titled "John: release rc-YYYY-MM-DD.N to live (by hand)". It holds
+   the change list (big changes first), the proof for each line, the release
+   command (step 6, "By hand") and the rollback command. Keystone also creates
+   a Flint "check live" task blocked by John's task. John may try the preview
+   too. "Not yet" leaves live as it is; the fixes become new issues.
+6. **Release (John, by hand).** John runs the release from the dev checkout
+   (see "By hand" below) and marks his task done. The **Releases** page in the
+   app (board only; agents get 403 on every release action) still works but
+   is not part of the normal flow. For reference, the page shows the
    live version, the next version (the pull requests merged into `main` since
    live, a proposed title and the changelog, and Fork CI on that commit), the
    history, and the progress. **Release now** needs no prepared candidate: the
@@ -240,7 +243,7 @@ Merging does not change the live app. A version goes live in these steps.
    (`PATCH /api/companies/:companyId/releases/next`); nothing else. The
    "Update live?" card (a `request_confirmation` with `idempotencyKey`
    `live-release:rc-YYYY-MM-DD.N`) still works and calls the same service, but
-   nothing waits for a card any more.
+   agents do not post it any more.
 
    The release goes through these states, shown on the page:
 
@@ -277,8 +280,8 @@ Merging does not change the live app. A version goes live in these steps.
    release works with no preview running. Release works only on the server that
    runs from `~/GSAM/live`; elsewhere the page says it is off.
 
-   **By hand (fallback).** If the app cannot be used, John runs from the dev
-   checkout, when no agent is running:
+   **By hand (the normal way).** John runs from the dev checkout, when no
+   agent is running:
 
    ```sh
    git pull --ff-only origin main
@@ -290,7 +293,7 @@ Merging does not change the live app. A version goes live in these steps.
    script refuses to run when its release scripts are older than origin/main;
    pull first.
 
-   **Full stop and start.** When the release card says so (a fix to the dev
+   **Full stop and start.** When the release task says so (a fix to the dev
    runner itself, such as #274), John runs
    `scripts/greatstone-release.sh --full-restart rc-YYYY-MM-DD.N` instead.
    It takes the same backup and tag, then stops all of live (the dev runner,
@@ -298,7 +301,7 @@ Merging does not change the live app. A version goes live in these steps.
    of live is left and nothing answers on port 3100, and starts live with
    `~/GSAM/start-live.sh`. If something does not stop, it starts nothing and
    names the processes. It cannot run from the app.
-7. **Check live (Flint, then Keystone).** Flint runs
+7. **Check live (Flint, then Keystone).** When John's task is done, Flint runs
    `curl -s http://localhost:3100/api/health`: the `commit` is the tag's
    commit. Flint spot-checks the changes in live and reports on the release
    issue. Keystone closes it, or gives John the rollback command if live is
@@ -333,8 +336,9 @@ file. To move live back later, pick any earlier version in the history on the
 Releases page and choose **Roll back**. It takes the same path: the same
 checks, the same progress, the same hot restart
 (`POST /api/companies/:companyId/releases/rollback` with `{"tag": "live-YYYY-MM-DD.N"}`).
-When the page says the automatic rollback failed, or the app is down, John
-runs from the dev checkout:
+As releases are by hand, the normal way to roll back is by hand too. John
+runs from the dev checkout (also when the automatic rollback failed, or the
+app is down):
 
 ```sh
 scripts/greatstone-release.sh live-YYYY-MM-DD.N   # the previous live tag
