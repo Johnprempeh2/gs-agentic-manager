@@ -29,6 +29,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
+import { AgentPermissionGrantsList } from "../components/AgentPermissionGrantsList";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -2225,6 +2226,8 @@ export function ConfigurationTab({
           </div>
         </div>
       </div> : null}
+
+      {content === "permissions" ? <AgentPermissionGrantsList grants={agent.access?.grants ?? []} /> : null}
     </div>
   );
 }
