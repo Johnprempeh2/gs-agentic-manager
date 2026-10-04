@@ -105,6 +105,29 @@ test("start records the agent run and issue in the preview state (GRE-525)", () 
   }
 });
 
+test("start from a run scratch clone leaves release.conf unchanged (GRE-529)", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  const scratch = mkdtempSync(join(tmpdir(), "paperclip-run-test-"));
+  try {
+    const conf = join(root, "release.conf");
+    writeFileSync(conf, "release_repo=/dev/checkout\n");
+    const clone = join(scratch, "pr299");
+    mkdirSync(clone);
+    for (const name of ["GSAM_RUN_SCRATCH_DIR", "GSAM_TASK_SCRATCH_DIR", "GSAM_SCRATCH_DIR", "GSAM_TMPDIR"]) {
+      runSetup(`record_release_repo ${JSON.stringify(clone)} 2>/dev/null`, { GSAM_ROOT: root, [name]: `${scratch}/` });
+      assert.equal(readFileSync(conf, "utf8"), "release_repo=/dev/checkout\n", name);
+    }
+    // A repo outside the scratch folder is still recorded, in or out of a run.
+    runSetup(`record_release_repo ${JSON.stringify(root)}`, { GSAM_ROOT: root, GSAM_RUN_SCRATCH_DIR: scratch });
+    assert.equal(readFileSync(conf, "utf8"), `release_repo=${root}\n`);
+    runSetup(`record_release_repo ${JSON.stringify(clone)}`, { GSAM_ROOT: root });
+    assert.equal(readFileSync(conf, "utf8"), `release_repo=${clone}\n`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
 test("a second start names the run, issue and age of the running preview (GRE-525)", () => {
   withFakePreview({ started_at: hoursAgo(3.1), run_id: "run-1", issue_id: "issue-1" }, (root) => {
     const { code, out } = runPreview(["start", "rc-other"], root);
