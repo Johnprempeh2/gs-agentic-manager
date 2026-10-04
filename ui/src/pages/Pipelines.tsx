@@ -118,7 +118,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { shouldDisableRerunForPermission, type LivenessRetryKind } from "../lib/pipeline-liveness";
-import { cn, formatNumber, relativeTime } from "../lib/utils";
+import { cn, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault } from "../lib/status-colors";
 import { formatBytes } from "../lib/issue-output";
 import { createIssueDetailPath, withIssueDetailHeaderSeed } from "../lib/issueDetailBreadcrumb";
@@ -581,7 +581,7 @@ function formatPipelineActivity(value: string | Date | null) {
   if (diffDays < 7) return `${diffDays} days ago`;
   if (diffDays < 14) return "last week";
   if (diffDays < 30) return `${Math.round(diffDays / 7)} weeks ago`;
-  return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return formatUkShortDate(value);
 }
 
 function PipelineStatusChip({ archivedAt }: { archivedAt: Date | string | null }) {
