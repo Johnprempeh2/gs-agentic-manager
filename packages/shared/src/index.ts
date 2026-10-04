@@ -216,6 +216,7 @@ export type {
   DecisionCardAtDesk,
   NeedsMe,
   NeedsMeTask,
+  NeedsMeOverdueWait,
 } from "./types/decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./types/decisions-feed.js";
 export type {

@@ -5882,7 +5882,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/needs-me",
   tags: ["inbox"],
-  summary: "List what needs the board user: open decisions plus tasks assigned to them that are not done",
+  summary: "List what needs the board user: open decisions, tasks assigned to them that are not done, and waits on them or the board older than 24h with their age",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
