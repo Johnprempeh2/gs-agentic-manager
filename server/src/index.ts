@@ -1919,6 +1919,12 @@ async function startServerWithDatabaseTeardown(
               }
             })
             .then(async () => {
+              const reconciled = await heartbeat.reconcileOverdueHumanWaits();
+              if (reconciled.issueIds.length > 0) {
+                logger.info({ ...reconciled }, "periodic 24h human-wait sweep woke assignees to re-check");
+              }
+            })
+            .then(async () => {
               const scanned = await heartbeat.scanSilentActiveRuns({ skipSilentStops: true });
               if (scanned.created > 0 || scanned.escalated > 0) {
                 logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");

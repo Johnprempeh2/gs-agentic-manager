@@ -178,6 +178,20 @@ export interface NeedsMeTask {
 }
 
 /**
+ * A task that has waited on the user or the board for more than 24h
+ * (GRE-500). `waitingForMs` is its age at `generatedAt`.
+ */
+export interface NeedsMeOverdueWait extends NeedsMeTask {
+  assigneeAgentId: string | null;
+  owner: "board" | "user";
+  action: string;
+  waitingSinceAt: string;
+  waitingForMs: number;
+  /** When the assignee was woken once to re-check the block; null until then. */
+  recheckWokenAt: string | null;
+}
+
+/**
  * What truly needs the board user: open decisions waiting on them, plus
  * tasks assigned to them that are not done. Tasks they only created or
  * commented on are not included.
@@ -185,13 +199,18 @@ export interface NeedsMeTask {
 export interface NeedsMe {
   companyId: string;
   generatedAt: string;
-  /** decisionCount + assignedTaskCount. A task is never counted twice. */
+  /** Decisions, assigned tasks and overdue waits. A task is never counted twice. */
   count: number;
   decisionCount: number;
   assignedTaskCount: number;
   decisions: DecisionCard[];
   /** Assigned open tasks, without the ones already shown as a decision card. */
   assignedTasks: NeedsMeTask[];
+  /**
+   * Waits on the user or the board older than 24h, oldest first. A task here
+   * is not repeated in `assignedTasks`; it may also have a decision card.
+   */
+  overdueWaits: NeedsMeOverdueWait[];
 }
 
 export interface DecisionClarityRequest {

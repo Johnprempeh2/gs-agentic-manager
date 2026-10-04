@@ -1,5 +1,6 @@
 import { getAgentWorkEligibility, isAgentInvokable, type IssueUnblockDescriptor } from "@greatstone/shared";
 import { buildIssueGraphLivenessIncidentKey } from "./origins.js";
+import { isHumanUnblockOwner } from "./human-wait-deadline.js";
 
 export type IssueLivenessSeverity = "warning" | "critical";
 
@@ -547,8 +548,10 @@ export function classifyIssueGraphLiveness(input: IssueGraphLivenessInput): Issu
   ): IssueLivenessFinding | null {
     if (parked.status !== "blocked" || !parked.assigneeAgentId) return null;
     if (hasUnresolvedBlocker(parked) || hasExplicitWaitingPath(parked)) return null;
-    const descriptorOwner = parked.unblockDescriptor?.owner;
-    if (descriptorOwner === "board" || (descriptorOwner && "userId" in descriptorOwner)) return null;
+    // A wait on John or the board is a live path, not a strand. Its 24h limit
+    // (the needs-me list and one assignee re-check wake) lives in
+    // human-wait-deadline.ts, not in a recovery finding (GRE-500).
+    if (isHumanUnblockOwner(parked.unblockDescriptor)) return null;
 
     // The assignee parked it, so it is not its own way out: start at its manager.
     const ownerCandidates = ownerCandidatesForRecoveryIssue(parked, input.agents, agentsById)

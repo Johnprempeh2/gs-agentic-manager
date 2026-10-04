@@ -18,6 +18,7 @@ import {
   gte,
   inArray,
   isNull,
+  lte,
   not,
   notInArray,
   or,
@@ -139,6 +140,12 @@ import {
 import { withRecoveryContext } from "./status-only-context.js";
 import { isAutomaticRecoverySuppressedByPauseHold } from "./pause-hold-guard.js";
 import {
+  HUMAN_WAIT_RECHECK_WAKE_REASON,
+  buildHumanWaitRecheckIdempotencyKey,
+  humanWaitRecheckCutoff,
+  needsHumanWaitRecheckWake,
+} from "./human-wait-deadline.js";
+import {
   REVIEW_WAIT_ACTIVITY_SOURCE,
   REVIEW_WAIT_MONITOR_SERVICE_NAME,
   decideReviewWait,
@@ -181,6 +188,7 @@ const STRANDED_BOARD_ESCALATION_POLICY = "board_escalation_no_takeover_v1";
 const DISPOSITION_REPAIR_IDEMPOTENCY_INDEX =
   "agent_wakeup_requests_disposition_repair_idempotency_uq";
 const RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT = 500;
+const HUMAN_WAIT_RECHECK_CANDIDATE_LIMIT = 200;
 
 // GGU-809: when a stranded `in_progress` issue would otherwise hit the
 // `isRepeatedProductiveContinuationRecovery` escalation path, exempt the
@@ -6000,6 +6008,152 @@ export function recoveryService(
     return result;
   }
 
+  // GRE-500: a wait on John or the board older than 24h wakes its assignee
+  // once to re-check that the block is still true. The claim is a guarded
+  // update on this blocked cycle's `blockedOwnerNotifiedAt`, so two sweeps
+  // cannot both wake, and a new wait (new transition) resets it.
+  async function reconcileOverdueHumanWaits(opts?: { companyId?: string | null; now?: Date }) {
+    const result = {
+      checked: 0,
+      woken: 0,
+      pauseHoldSkipped: 0,
+      claimLost: 0,
+      deferred: 0,
+      enqueueFailed: 0,
+      issueIds: [] as string[],
+    };
+    const now = opts?.now ?? new Date();
+    const filters = [
+      eq(issues.status, "blocked"),
+      visibleIssueCondition(),
+      sql`${issues.assigneeAgentId} is not null`,
+      sql`(${issues.unblockDescriptor}->>'owner' = 'board' or ${issues.unblockDescriptor}->'owner'->>'userId' is not null)`,
+      isNull(issues.blockedOwnerNotifiedAt),
+      lte(issues.blockedTransitionAt, humanWaitRecheckCutoff(now)),
+    ];
+    if (opts?.companyId) filters.push(eq(issues.companyId, opts.companyId));
+
+    const candidates = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        status: issues.status,
+        assigneeAgentId: issues.assigneeAgentId,
+        unblockDescriptor: issues.unblockDescriptor,
+        blockedTransitionAt: issues.blockedTransitionAt,
+        blockedOwnerNotifiedAt: issues.blockedOwnerNotifiedAt,
+      })
+      .from(issues)
+      .where(and(...filters))
+      .orderBy(asc(issues.blockedTransitionAt))
+      .limit(HUMAN_WAIT_RECHECK_CANDIDATE_LIMIT);
+
+    for (const candidate of candidates) {
+      const agentId = candidate.assigneeAgentId;
+      const blockedTransitionAt = candidate.blockedTransitionAt;
+      if (!agentId || !blockedTransitionAt || !needsHumanWaitRecheckWake(candidate, now)) continue;
+      result.checked += 1;
+
+      if (
+        await isAutomaticRecoverySuppressedByPauseHold(
+          db,
+          candidate.companyId,
+          candidate.id,
+          treeControlSvc,
+        )
+      ) {
+        result.pauseHoldSkipped += 1;
+        continue;
+      }
+
+      const claimedAt = new Date();
+      const claimed = await db
+        .update(issues)
+        .set({ blockedOwnerNotifiedAt: claimedAt })
+        .where(and(
+          eq(issues.id, candidate.id),
+          eq(issues.companyId, candidate.companyId),
+          eq(issues.status, "blocked"),
+          eq(issues.assigneeAgentId, agentId),
+          eq(issues.blockedTransitionAt, blockedTransitionAt),
+          isNull(issues.blockedOwnerNotifiedAt),
+        ))
+        .returning({ id: issues.id });
+      if (claimed.length === 0) {
+        result.claimLost += 1;
+        continue;
+      }
+
+      const descriptor = candidate.unblockDescriptor;
+      const waitingSinceAt = blockedTransitionAt.toISOString();
+      const idempotencyKey = buildHumanWaitRecheckIdempotencyKey(candidate.id, blockedTransitionAt);
+      try {
+        const wake = await deps.enqueueWakeup(agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: HUMAN_WAIT_RECHECK_WAKE_REASON,
+          payload: {
+            issueId: candidate.id,
+            waitingSinceAt,
+            unblockOwner: descriptor?.owner ?? null,
+            unblockAction: descriptor?.action ?? null,
+            instruction:
+              "This task has waited on John or the board for more than 24 hours. Check once that the block is still true. " +
+              "If it is, leave it blocked; you will not be woken again for this wait. If it is not, move the task forward.",
+          },
+          idempotencyKey,
+          requestedByActorType: "system",
+          requestedByActorId: "human_wait_deadline",
+          contextSnapshot: {
+            issueId: candidate.id,
+            taskId: candidate.id,
+            wakeReason: HUMAN_WAIT_RECHECK_WAKE_REASON,
+            waitingSinceAt,
+          },
+          issueStateGuard: { statuses: ["blocked"], assigneeAgentId: agentId },
+        });
+        // A null wake is a normal deferral (wake-on-demand off, budget,
+        // concurrency). The one attempt for this wait is spent either way;
+        // the wait still shows in the needs-me list for John.
+        if (wake) {
+          result.woken += 1;
+        } else {
+          result.deferred += 1;
+        }
+        result.issueIds.push(candidate.id);
+        await logActivity(db, {
+          companyId: candidate.companyId,
+          actorType: "system",
+          actorId: "human_wait_deadline",
+          agentId,
+          action: "issue.human_wait_recheck_woken",
+          entityType: "issue",
+          entityId: candidate.id,
+          details: {
+            waitingSinceAt,
+            wakeupRunId: wake?.id ?? null,
+            deferred: !wake,
+            idempotencyKey,
+          },
+        });
+      } catch (err) {
+        // Release the claim so the next sweep can retry this wait.
+        result.enqueueFailed += 1;
+        await db
+          .update(issues)
+          .set({ blockedOwnerNotifiedAt: null })
+          .where(and(eq(issues.id, candidate.id), eq(issues.blockedOwnerNotifiedAt, claimedAt)))
+          .catch(() => undefined);
+        logger.warn(
+          { err, issueId: candidate.id, agentId, idempotencyKey },
+          "failed to enqueue 24h human-wait re-check wake",
+        );
+      }
+    }
+
+    return result;
+  }
+
   function readRecoveryTimerIntervalMs(raw: unknown, fallback: number) {
     return Math.max(1, Math.floor(asNumber(raw, fallback)));
   }
@@ -6442,6 +6596,7 @@ export function recoveryService(
     legacyRepairDispatchBlock,
     sweepStaleIssueLocks,
     reconcileResolvedDependencyWakeBackstop,
+    reconcileOverdueHumanWaits,
     readRecoveryTimerIntervalMs,
   };
 }

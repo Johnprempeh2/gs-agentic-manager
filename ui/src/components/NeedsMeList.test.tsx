@@ -14,7 +14,7 @@ vi.mock("@/lib/router", () => ({
   ),
 }));
 
-import { NeedsMeList } from "./NeedsMeList";
+import { NeedsMeList, formatWaitAge } from "./NeedsMeList";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -39,6 +39,7 @@ function needsMe(overrides: Partial<NeedsMe> = {}): NeedsMe {
     assignedTaskCount: assignedTasks.length,
     decisions,
     assignedTasks,
+    overdueWaits: overrides.overdueWaits ?? [],
   };
 }
 
@@ -82,6 +83,70 @@ describe("NeedsMeList (GRE-358)", () => {
     expect(section!.querySelectorAll("li")).toHaveLength(1);
     expect(container.textContent).toContain("Sign off the Indago statement of work");
     expect(container.textContent).not.toContain("Decision");
+  });
+
+  it("lists a wait over 24h first, with its age, once (GRE-500)", () => {
+    const card = questionCard();
+    const data = needsMe({
+      decisions: [card],
+      assignedTasks: [],
+      overdueWaits: [
+        {
+          id: card.task!.id,
+          identifier: card.task!.identifier,
+          title: "Pick the release month",
+          status: "blocked",
+          priority: "high",
+          updatedAt: "2026-10-01T05:00:00.000Z",
+          assigneeAgentId: "agent-1",
+          owner: "board",
+          action: "John picks the month.",
+          waitingSinceAt: "2026-10-01T03:00:00.000Z",
+          waitingForMs: 26 * 60 * 60 * 1000,
+          recheckWokenAt: null,
+        },
+      ],
+    });
+    render(<NeedsMeList needsMe={data} includeDecisions />);
+
+    const items = container.querySelectorAll("li");
+    // The wait replaces its own decision card: one row, not two.
+    expect(items).toHaveLength(1);
+    expect(items[0]!.textContent).toContain("Waiting 1d 2h");
+    expect(items[0]!.textContent).toContain("Pick the release month");
+  });
+
+  it("shows waits on the Decisions page too, under Needs you", () => {
+    const data = needsMe({
+      assignedTasks: [],
+      overdueWaits: [
+        {
+          id: "issue-7",
+          identifier: "GRE-7",
+          title: "Sign the contract",
+          status: "blocked",
+          priority: "high",
+          updatedAt: "2026-10-01T05:00:00.000Z",
+          assigneeAgentId: "agent-1",
+          owner: "user",
+          action: "John signs.",
+          waitingSinceAt: "2026-09-30T03:00:00.000Z",
+          waitingForMs: 48 * 60 * 60 * 1000,
+          recheckWokenAt: "2026-10-01T03:00:00.000Z",
+        },
+      ],
+    });
+    render(<NeedsMeList needsMe={data} />);
+    expect(container.querySelector('section[aria-label="Needs you"]')).not.toBeNull();
+    expect(container.textContent).toContain("Waiting 2d");
+    expect(container.querySelector('a[href="/issues/GRE-7"]')).not.toBeNull();
+  });
+
+  it("formats wait ages in days and hours", () => {
+    const hour = 60 * 60 * 1000;
+    expect(formatWaitAge(5 * hour)).toBe("5h");
+    expect(formatWaitAge(24 * hour)).toBe("1d");
+    expect(formatWaitAge(27 * hour + 59 * 60 * 1000)).toBe("1d 3h");
   });
 
   it("renders nothing when nothing is assigned and decisions are left out", () => {

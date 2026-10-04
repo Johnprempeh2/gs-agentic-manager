@@ -76,6 +76,7 @@ const {
       issueIds: [],
     })),
     reconcileResolvedDependencyWakes: vi.fn(async () => ({ healed: 0 })),
+    reconcileOverdueHumanWaits: vi.fn(async () => ({ issueIds: [] })),
     reconcileTaskWatchdogs: vi.fn(async () => ({ triggered: 0 })),
     scanSilentActiveRuns: vi.fn(async () => ({ created: 0, escalated: 0, silentStops: { stopped: 0, retried: 0, escalated: 0, runIds: [] } })),
     stopSilentRuns: vi.fn(async () => ({

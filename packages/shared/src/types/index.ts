@@ -73,6 +73,7 @@ export type {
   DecisionCardSetup,
   NeedsMe,
   NeedsMeTask,
+  NeedsMeOverdueWait,
 } from "./decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./decisions-feed.js";
 export type {
