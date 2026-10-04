@@ -211,6 +211,30 @@ test("R2: failure rate excludes cancellations; recovery is split by human interv
   assert.equal(r2.unattendedRecoveryShare, 1 / 3);
 });
 
+test("R2: platform failure rate leaves rejected logins out; they are counted on their own", () => {
+  const runs = [
+    { id: "ok1", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(10) },
+    { id: "ok2", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(9) },
+    { id: "ok3", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(8) },
+    { id: "p1", issueId: "i2", status: "failed", errorCode: "adapter_failed", finishedAt: hoursAgo(9) },
+    { id: "a1", issueId: "i3", status: "failed", errorCode: "claude_auth_required", finishedAt: hoursAgo(9) },
+    { id: "a2", issueId: "i3", status: "failed", errorCode: "acpx_turn_failed", errorMentionsAccessFailure: true, finishedAt: hoursAgo(8) },
+    { id: "c", issueId: "i3", status: "cancelled", errorCode: "claude_auth_required", finishedAt: hoursAgo(7) },
+  ];
+  const r2 = computeRunFailures(base({ runs }));
+  assert.equal(r2.failureRate, 3 / 6, "the all-in rate still counts every failure");
+  assert.equal(r2.loginRefusals, 2, "both codings count; a cancelled run is not a refusal");
+  assert.equal(r2.platformFailed, 1);
+  assert.equal(r2.platformFinished, 4);
+  assert.equal(r2.platformFailureRate, 1 / 4);
+  assert.deepEqual(r2.failures.map((entry) => [entry.runId, entry.loginRefusal]), [["p1", false], ["a1", true], ["a2", true]]);
+  assert.equal(r2.failuresWithIssue, 3);
+
+  const onlyRefusals = computeRunFailures(base({ runs: [runs[4]] }));
+  assert.equal(onlyRefusals.platformFailureRate, null, "no platform runs, no rate");
+  assert.equal(onlyRefusals.loginRefusals, 1);
+});
+
 test("R2: an issue completed after the failure counts as recovered", () => {
   const r2 = computeRunFailures(base({
     issues: [issue("i1", { status: "done", completedAt: hoursAgo(1) })],

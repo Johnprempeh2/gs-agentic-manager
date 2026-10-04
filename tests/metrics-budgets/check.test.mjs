@@ -65,3 +65,15 @@ function fixtureFor(file) {
   }
   return report;
 }
+
+test("the committed R2 budgets judge the platform rate, not login refusals, and floor the unattended share", () => {
+  const r2 = config.budgets.filter((budget) => budget.number === "R2");
+  assert.deepEqual(r2.map((budget) => budget.path).sort(), ["r2.platformFailureRate", "r2.unattendedRecoveryShare"]);
+  const report = (fields) => ({ r2: { platformFinished: 200, failuresWithIssue: 50, platformFailureRate: 0.03, unattendedRecoveryShare: 0.5, ...fields } });
+  const failing = (fields) => checkBudgets(config, { group: "weekly", readReport: () => report(fields) })
+    .results.filter((entry) => entry.number === "R2" && entry.status === "fail").map((entry) => entry.id);
+  assert.deepEqual(failing({}), []);
+  assert.deepEqual(failing({ failureRate: 0.2, loginRefusals: 30 }), [], "a login outage alone does not break R2");
+  assert.deepEqual(failing({ platformFailureRate: 0.09 }), ["r2-platform-failure-rate"]);
+  assert.deepEqual(failing({ unattendedRecoveryShare: 0.3 }), ["r2-unattended-recovery-share"]);
+});

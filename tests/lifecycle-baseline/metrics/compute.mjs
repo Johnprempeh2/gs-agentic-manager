@@ -240,6 +240,10 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
  * A failed run on an issue is recovered without a human when a later run on the
  * same issue succeeds, or the issue reaches done, with no human intervention on
  * that issue in between.
+ *
+ * Platform failure rate leaves out rejected logins (`isAuthFailure`) from both
+ * sides: a refused login is an account problem for the board, not a platform
+ * fault (GRE-590). They are counted on their own as `loginRefusals`.
  */
 export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   const nowMs = ms(now ?? snapshot.now);
@@ -251,6 +255,8 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   const succeeded = finished.filter((run) => run.status === "succeeded");
   const failed = finished.filter((run) => FAILED_RUN_STATUSES.has(run.status));
   const cancelled = finished.filter((run) => run.status === "cancelled");
+  const loginRefusals = failed.filter(isAuthFailure).length;
+  const platformFailed = failed.length - loginRefusals;
 
   const humanByIssue = new Map();
   for (const row of snapshot.activity ?? []) {
@@ -264,7 +270,7 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   for (const run of failed) {
     if (!run.issueId) {
       outcomes.noIssue += 1;
-      failures.push({ runId: run.id, status: run.status, errorCode: run.errorCode ?? null, outcome: "no_issue" });
+      failures.push({ runId: run.id, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), outcome: "no_issue" });
       continue;
     }
     const failedAt = ms(run.finishedAt);
@@ -280,10 +286,11 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
       outcome = touched ? "human" : "auto";
     }
     outcomes[outcome] += 1;
-    failures.push({ runId: run.id, issueId: run.issueId, status: run.status, errorCode: run.errorCode ?? null, outcome });
+    failures.push({ runId: run.id, issueId: run.issueId, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), outcome });
   }
   const attributable = failed.length - outcomes.noIssue;
   const denominator = succeeded.length + failed.length;
+  const platformDenominator = succeeded.length + platformFailed;
   return {
     windowDays,
     finishedRuns: finished.length,
@@ -291,10 +298,15 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
     failed: failed.length,
     cancelled: cancelled.length,
     failureRate: denominator ? failed.length / denominator : null,
+    platformFailed,
+    platformFinished: platformDenominator,
+    platformFailureRate: platformDenominator ? platformFailed / platformDenominator : null,
+    loginRefusals,
     recoveredWithoutHuman: outcomes.auto,
     recoveredWithHuman: outcomes.human,
     unresolved: outcomes.unresolved,
     failedWithoutIssue: outcomes.noIssue,
+    failuresWithIssue: attributable,
     unattendedRecoveryShare: attributable ? outcomes.auto / attributable : null,
     failures,
   };
