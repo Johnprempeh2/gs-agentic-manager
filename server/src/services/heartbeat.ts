@@ -17698,6 +17698,7 @@ export function heartbeatService(
       });
       if (staleness.outcome === "cancelled") {
         applyRunDispatchPostCommitEffects(staleness.postCommitEffects);
+        await promoteDeferredWakesAfterStaleRunCancel(run);
         logger.info(
           { runId: run.id, issueId, errorCode: staleness.errorCode },
           "claimQueuedRun: cancelled stale queued run",
@@ -22403,6 +22404,7 @@ export function heartbeatService(
           });
           if (staleness.outcome === "cancelled") {
             applyRunDispatchPostCommitEffects(staleness.postCommitEffects);
+            await promoteDeferredWakesAfterStaleRunCancel(run);
             return;
           }
           throw error;
@@ -24456,6 +24458,7 @@ export function heartbeatService(
           applyRunDispatchPostCommitEffects(
             gate.cancellation.postCommitEffects,
           );
+          await promoteDeferredWakesAfterStaleRunCancel(run);
         }
         return { dispatched: false };
       };
@@ -27769,6 +27772,28 @@ export function heartbeatService(
       return;
     }
     await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true });
+  }
+
+  // GRE-631: the stale-run gate cancels a queued or starting run and clears
+  // its issue lock without the release drain. Wakes parked behind that run
+  // (for example the new owner's review wake after a reassignment) would stay
+  // deferred_issue_execution forever. Replay the release through the
+  // cancelled run so they get the normal admission gates.
+  async function promoteDeferredWakesAfterStaleRunCancel(run: Pick<typeof heartbeatRuns.$inferSelect, "id" | "companyId">) {
+    try {
+      const cancelled = await getRun(run.id);
+      const issueId = readNonEmptyString(parseObject(cancelled?.contextSnapshot).issueId);
+      if (!cancelled || !issueId || cancelled.status !== "cancelled") return;
+      const [pending] = await db.select({ id: agentWakeupRequests.id }).from(agentWakeupRequests).where(and(
+        eq(agentWakeupRequests.companyId, run.companyId),
+        eq(agentWakeupRequests.status, "deferred_issue_execution"),
+        sql`${agentWakeupRequests.payload}->>'issueId' = ${issueId}`,
+      )).limit(1);
+      if (!pending) return;
+      await releaseIssueExecutionAndPromote(cancelled, { suppressImmediateRecovery: true });
+    } catch (err) {
+      logger.warn({ err, runId: run.id }, "failed to promote deferred wakes after stale run cancel");
+    }
   }
 
   async function enqueueWakeup(agentId: string, opts: WakeupOptions = {}, executionWaitRequestId?: string) {
