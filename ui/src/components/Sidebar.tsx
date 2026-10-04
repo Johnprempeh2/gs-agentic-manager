@@ -41,7 +41,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
-import { useDecisionsCount } from "../hooks/useDecisionsFeed";
+import { useDecisionsCount, useMyTasksCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { useLiveAgents } from "../hooks/useLiveAgents";
@@ -106,6 +106,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
+  // Tasks assigned to the user count on My tasks, not Decisions (GRE-586).
+  const myTasksCount = useMyTasksCount(selectedCompanyId);
   const showCases = experimentalSettings?.enableCases === true;
   // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
   const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
@@ -133,7 +135,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
       alert={inboxBadge.failedRuns > 0}
     />
   );
-  const myTasksItem = <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />;
+  const myTasksItem = (
+    <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} badge={myTasksCount} badgeLabel="open" />
+  );
   // Decisions (attention home, PAP-13481) graduated out of Experimental
   // (GRE-66): always shown, whatever the stored enableDecisions value says.
   const decisionsItem = (

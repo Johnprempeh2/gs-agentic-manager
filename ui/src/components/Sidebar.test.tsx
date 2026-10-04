@@ -436,6 +436,30 @@ describe("Sidebar", () => {
     });
   });
 
+  it("counts assigned tasks on My tasks, not on Decisions (GRE-586)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    mockDecisionsFeedApi.needsMe.mockResolvedValue({
+      companyId: "company-1",
+      generatedAt: "2026-10-04T00:00:00.000Z",
+      count: 2,
+      decisionCount: 0,
+      assignedTaskCount: 2,
+      decisions: [],
+      assignedTasks: [],
+      overdueWaits: [],
+    });
+    const root = await renderSidebar();
+
+    const link = (href: string) =>
+      [...container.querySelectorAll("nav a")].find((anchor) => anchor.getAttribute("href") === href);
+    expect(link("/my-tasks")?.textContent?.trim()).toBe("My tasks2");
+    expect(link("/decisions")?.textContent?.trim()).toBe("Decisions");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("shows Decisions with the default experimental settings (GRE-64)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue(
       instanceExperimentalSettingsSchema.parse({}),

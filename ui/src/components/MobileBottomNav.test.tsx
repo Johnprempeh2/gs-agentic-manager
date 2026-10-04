@@ -59,7 +59,7 @@ describe("MobileBottomNav", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    // One "needs me" count (GRE-358): 2 decisions + 1 assigned task.
+    // 2 decisions + 1 assigned task: the badge counts only the decisions (GRE-586).
     mockDecisionsFeedApi.needsMe.mockResolvedValue({
       companyId: "company-1",
       generatedAt: "2026-09-29T00:00:00.000Z",
@@ -95,7 +95,8 @@ describe("MobileBottomNav", () => {
       (anchor) => anchor.textContent?.includes("Decisions"),
     );
     expect(decisionsLink?.getAttribute("href")).toBe("/decisions");
-    expect(decisionsLink?.textContent).toContain("3");
+    expect(decisionsLink?.textContent).toContain("2");
+    expect(decisionsLink?.textContent).not.toContain("3");
     expect(mockDecisionsFeedApi.needsMe).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
