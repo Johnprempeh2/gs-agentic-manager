@@ -1,4 +1,5 @@
 import type {
+  Agent,
   Approval,
   DashboardSummary,
   HeartbeatRun,
@@ -728,7 +729,14 @@ export function getInboxKeyboardSelectionIndex(
     : Math.max(previousIndex - 1, 0);
 }
 
-export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[] {
+// A terminated agent will not run again, so its last failure is not actionable.
+export function getLatestFailedRunsByAgent(
+  runs: HeartbeatRun[],
+  agents?: ReadonlyArray<Pick<Agent, "id" | "status">>,
+): HeartbeatRun[] {
+  const terminatedAgentIds = new Set(
+    (agents ?? []).filter((agent) => agent.status === "terminated").map((agent) => agent.id),
+  );
   const sorted = [...runs].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
@@ -740,7 +748,9 @@ export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[]
     }
   }
 
-  return Array.from(latestByAgent.values()).filter((run) => FAILED_RUN_STATUSES.has(run.status));
+  return Array.from(latestByAgent.values()).filter(
+    (run) => FAILED_RUN_STATUSES.has(run.status) && !terminatedAgentIds.has(run.agentId),
+  );
 }
 
 export function normalizeTimestamp(value: string | Date | null | undefined): number {
@@ -1302,6 +1312,7 @@ export function computeInboxBadgeData({
   joinRequests,
   dashboard,
   heartbeatRuns,
+  agents,
   mineIssues,
   dismissedAlerts,
   dismissedAtByKey,
@@ -1311,6 +1322,7 @@ export function computeInboxBadgeData({
   joinRequests: JoinRequest[];
   dashboard: DashboardSummary | undefined;
   heartbeatRuns: HeartbeatRun[];
+  agents?: ReadonlyArray<Pick<Agent, "id" | "status">>;
   mineIssues: Issue[];
   dismissedAlerts: Set<string>;
   dismissedAtByKey: ReadonlyMap<string, number>;
@@ -1322,7 +1334,7 @@ export function computeInboxBadgeData({
       ACTIONABLE_APPROVAL_STATUSES.has(approval.status) &&
       !isInboxEntityDismissed(dismissedAtByKey, `approval:${approval.id}`, approval.updatedAt),
   ).length;
-  const failedRuns = getLatestFailedRunsByAgent(heartbeatRuns).filter(
+  const failedRuns = getLatestFailedRunsByAgent(heartbeatRuns, agents).filter(
     (run) => !isInboxEntityDismissed(dismissedAtByKey, `run:${run.id}`, run.createdAt),
   ).length;
   const visibleJoinRequests = joinRequests.filter(
