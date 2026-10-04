@@ -174,3 +174,122 @@ export function mergeMyTasks<TItem extends DecisionItem>(input: {
   }
   return { issues: [...byId.values()], reasonsById, decisionsWithoutIssue };
 }
+
+/**
+ * My tasks rows John can act on (GRE-619): tick to finish, hand to an agent,
+ * or ask. Rows sit in three groups. The Ask state comes from comment times
+ * the list already returns with a user context (touchedByUserId=me).
+ */
+
+export const MY_TASKS_GROUPS = ["needs_you", "waiting", "done_today"] as const;
+export type MyTasksGroup = (typeof MY_TASKS_GROUPS)[number];
+
+export const MY_TASKS_GROUP_LABELS: Record<MyTasksGroup, string> = {
+  needs_you: "Needs you",
+  waiting: "Waiting on an agent",
+  done_today: "Done today",
+};
+
+export type MyTasksAskState = "waiting" | "answered";
+
+export const MY_TASKS_ASK_STATE_LABELS: Record<MyTasksAskState, string> = {
+  waiting: "Waiting for answer",
+  answered: "Answer ready",
+};
+
+/** Older comments from you are history, not a question still open. */
+export const MY_TASKS_ASK_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+type AskStateIssue = Pick<Issue, "myLastCommentAt" | "lastExternalCommentAt" | "isUnreadForMe">;
+
+function toTime(value: Date | string | null | undefined): number | null {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+/**
+ * "waiting": your last comment is newer than anyone else's.
+ * "answered": someone answered after your last comment and you have not read it.
+ */
+export function myTasksAskState(issue: AskStateIssue, now: number = Date.now()): MyTasksAskState | null {
+  const mine = toTime(issue.myLastCommentAt);
+  if (mine === null || now - mine > MY_TASKS_ASK_WINDOW_MS) return null;
+  const theirs = toTime(issue.lastExternalCommentAt);
+  if (theirs === null || mine >= theirs) return "waiting";
+  return issue.isUnreadForMe ? "answered" : null;
+}
+
+export function isDoneToday(issue: Pick<Issue, "status" | "completedAt">, now: Date = new Date()): boolean {
+  if (issue.status !== "done") return false;
+  const completed = toTime(issue.completedAt);
+  if (completed === null) return false;
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return completed >= startOfDay;
+}
+
+/**
+ * Blocking work, an open decision or an answer to read keep a task in Needs
+ * you. A question still open, or a task handed to an agent, waits.
+ */
+export function myTasksGroupOf(
+  issue: AskStateIssue & Pick<Issue, "status" | "assigneeAgentId">,
+  reasons: readonly MyTasksReason[],
+  now: number = Date.now(),
+): MyTasksGroup {
+  if (issue.status === "done") return "done_today";
+  if (reasons.includes("blocking") || reasons.includes("decision")) return "needs_you";
+  const ask = myTasksAskState(issue, now);
+  if (ask === "answered") return "needs_you";
+  if (ask === "waiting" || (issue.assigneeAgentId && reasons.length === 0)) return "waiting";
+  return "needs_you";
+}
+
+/**
+ * Open tasks you handed to an agent or asked about, from the list of tasks
+ * you touched. Tasks still assigned to you are already in My tasks.
+ */
+export function selectHandedOffTasks(
+  touched: readonly Issue[],
+  currentUserId: string | null | undefined,
+  now: number = Date.now(),
+): Issue[] {
+  if (!currentUserId) return [];
+  return touched.filter(
+    (issue) =>
+      isOpenIssueStatus(issue.status) &&
+      issue.assigneeUserId !== currentUserId &&
+      Boolean(issue.assigneeAgentId) &&
+      myTasksAskState(issue, now) !== null,
+  );
+}
+
+/** Done tasks closed today, newest first. */
+export function selectDoneToday(issues: readonly Issue[], now: Date = new Date()): Issue[] {
+  return issues
+    .filter((issue) => isDoneToday(issue, now))
+    .sort((a, b) => (toTime(b.completedAt) ?? 0) - (toTime(a.completedAt) ?? 0));
+}
+
+type AgentChoice = { id: string; name: string; role?: string | null; status?: string | null; reportsTo?: string | null };
+
+const NOT_ASSIGNABLE_AGENT_STATUSES = new Set(["terminated", "pending_approval", "paused"]);
+
+/** Active agents by name, with the lead (Everest) first. */
+export function handOffAgentChoices<T extends AgentChoice>(agents: readonly T[], leadAgentId: string | null): T[] {
+  return agents
+    .filter((agent) => !NOT_ASSIGNABLE_AGENT_STATUSES.has(agent.status ?? ""))
+    .sort((a, b) => {
+      if (a.id === leadAgentId) return -1;
+      if (b.id === leadAgentId) return 1;
+      return a.name.localeCompare(b.name);
+    });
+}
+
+/** Who an Ask goes to: the assignee agent, else the agent that made the task, else the lead. */
+export function askTargetAgentId(
+  issue: Pick<Issue, "assigneeAgentId" | "createdByAgentId">,
+  leadAgentId: string | null,
+): string | null {
+  return issue.assigneeAgentId ?? issue.createdByAgentId ?? leadAgentId;
+}
