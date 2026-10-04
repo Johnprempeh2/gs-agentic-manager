@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, X } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, X } from "lucide-react";
 import { deliverablesApi, type Deliverable } from "@/api/deliverables";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +29,8 @@ function PanelRow({ label, children }: { label: string; children: React.ReactNod
 /**
  * Full-screen Quick Look for deliverables. ← / → move through `items`, Esc
  * closes (Radix). The side panel carries the task, author, versions and the
- * file actions.
+ * file actions. `onBack` shows a Back button for a deliverable opened from
+ * another page, so the installed app (no browser Back) can return there.
  */
 export function DeliverableQuickLook({
   companyId,
@@ -37,6 +38,7 @@ export function DeliverableQuickLook({
   index,
   onIndexChange,
   onClose,
+  onBack,
   onCopyLink,
 }: {
   companyId: string;
@@ -44,6 +46,7 @@ export function DeliverableQuickLook({
   index: number;
   onIndexChange: (index: number) => void;
   onClose: () => void;
+  onBack?: () => void;
   onCopyLink: (id: string) => void;
 }) {
   const current = items[index] ?? null;
@@ -91,6 +94,14 @@ export function DeliverableQuickLook({
       >
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3">
+            {onBack ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={onBack} data-testid="deliverable-quicklook-back">
+                  <ArrowLeft /> Back
+                </Button>
+                <span className="h-5 w-px bg-border" aria-hidden="true" />
+              </>
+            ) : null}
             <Button
               variant="ghost"
               size="icon-sm"

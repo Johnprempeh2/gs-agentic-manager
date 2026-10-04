@@ -29,14 +29,17 @@ const mockIssuesApi = vi.hoisted(() => ({
   get: vi.fn(),
 }));
 
+const routerLinkTargets = vi.hoisted(() => [] as string[]);
+
 vi.mock("@/lib/router", () => ({
   Link: ({
     children,
     to,
     ...props
-  }: { children: ReactNode; to: string } & React.ComponentProps<"a">) => (
-    <a href={to} {...props}>{children}</a>
-  ),
+  }: { children: ReactNode; to: string } & React.ComponentProps<"a">) => {
+    routerLinkTargets.push(to);
+    return <a href={to} {...props}>{children}</a>;
+  },
   useLocation: () => ({
     pathname: "/PAP/issues/PAP-10306",
     search: "",
@@ -409,6 +412,16 @@ describe("MarkdownBody", () => {
     expect(html).not.toContain('href="/issues/PAP-1271"');
     expect(html).toContain("Depends on PAP-1271");
     expect(html).toContain('href="PAP-1271"');
+  });
+
+  it("routes deliverable links inside the app so Quick Look can return to the chat (GRE-611)", () => {
+    routerLinkTargets.length = 0;
+    const html = renderMarkdown(
+      "See [the brief](/GRE/deliverables?open=d-1) and [the file](/api/attachments/a-1/content).",
+    );
+    expect(routerLinkTargets).toEqual(["/GRE/deliverables?open=d-1"]);
+    expect(html).toContain('href="/GRE/deliverables?open=d-1"');
+    expect(html).toContain('href="/api/attachments/a-1/content"');
   });
 
   it("leaves wiki links as text unless explicitly enabled", () => {

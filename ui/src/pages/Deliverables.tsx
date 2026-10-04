@@ -20,7 +20,8 @@ import {
   deliverableShareUrl,
 } from "../components/deliverables/DeliverableCard";
 import { DeliverableQuickLook } from "../components/deliverables/DeliverableQuickLook";
-import { useSearchParams } from "@/lib/router";
+import { useNavigate, useSearchParams } from "@/lib/router";
+import { goBackOr } from "@/lib/mobile-back";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -173,6 +174,15 @@ export function Deliverables() {
   const openId = searchParams.get("open");
 
   const [draftQuery, setDraftQuery] = useState(query);
+  const navigate = useNavigate();
+  // Arriving on a deliverable from another page in the app (a chat link, a
+  // toast) closes back to that page; the installed app has no browser Back.
+  // A shared link (first page of the visit) and a card opened here close to
+  // the list.
+  const [returnOnClose, setReturnOnClose] = useState(() => {
+    const historyIndex = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    return !!openId && historyIndex > 0;
+  });
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Deliverables" }]);
@@ -284,7 +294,14 @@ export function Deliverables() {
     }
   }, [pushToast]);
 
-  const closeQuickLook = useCallback(() => setParam("open", null), [setParam]);
+  const closeQuickLook = useCallback(() => {
+    if (returnOnClose) {
+      setReturnOnClose(false);
+      goBackOr(navigate, "/deliverables");
+    } else {
+      setParam("open", null);
+    }
+  }, [navigate, returnOnClose, setParam]);
   const navigateQuickLook = useCallback(
     (id: string) => updateParams((next) => next.set("open", id), true),
     [updateParams],
@@ -500,6 +517,7 @@ export function Deliverables() {
           openIndex={openIndex}
           onNavigate={navigateQuickLook}
           onClose={closeQuickLook}
+          onBack={returnOnClose ? closeQuickLook : undefined}
           onCopyLink={(id) => void copyLink(id)}
         />
       ) : null}
@@ -518,6 +536,7 @@ function DeliverableQuickLookHost({
   openIndex,
   onNavigate,
   onClose,
+  onBack,
   onCopyLink,
 }: {
   companyId: string;
@@ -526,6 +545,7 @@ function DeliverableQuickLookHost({
   openIndex: number;
   onNavigate: (id: string) => void;
   onClose: () => void;
+  onBack?: () => void;
   onCopyLink: (id: string) => void;
 }) {
   const [single, setSingle] = useState<Deliverable | null>(null);
@@ -547,6 +567,7 @@ function DeliverableQuickLookHost({
         index={openIndex}
         onIndexChange={(index) => onNavigate(ordered[index]!.id)}
         onClose={onClose}
+        onBack={onBack}
         onCopyLink={onCopyLink}
       />
     );
@@ -559,6 +580,7 @@ function DeliverableQuickLookHost({
       index={0}
       onIndexChange={() => undefined}
       onClose={onClose}
+      onBack={onBack}
       onCopyLink={onCopyLink}
     />
   );
