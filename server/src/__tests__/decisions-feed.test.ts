@@ -787,4 +787,193 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     expect(card.actions.map((candidate) => candidate.id)).not.toContain("done");
     expect(feed.atDeskCount).toBe(0);
   });
+
+  /**
+   * The live board on 3-4 Oct (GRE-504): one agent's runs stopped on setup
+   * again and again, one failed run per wake, on several tasks.
+   */
+  const NO_DEFAULT = "Connect an account and choose your personal default";
+  const NOT_PERMITTED = "This connection is not permitted for this agent";
+
+  async function seedSetupFailures() {
+    const companyId = randomUUID();
+    const everestId = randomUUID();
+    const beaconId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: "GRE", requireBoardApprovalForNewAgents: false });
+    await db.insert(agents).values([everestId, beaconId].map((id) => ({
+      id,
+      companyId,
+      name: id === everestId ? "Everest" : "Beacon",
+      role: "engineer",
+      status: "idle",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: { aiConnection: { provider: "openai" } },
+      permissions: {},
+    })));
+    await db.insert(companyMemberships).values({
+      companyId, principalType: "user", principalId: USER_ID, status: "active", membershipRole: "owner",
+    });
+    let issueNumber = 600;
+    async function task(agentId: string) {
+      const id = randomUUID();
+      issueNumber += 1;
+      await db.insert(issues).values({
+        id, companyId, identifier: `GRE-${issueNumber}`, issueNumber, title: `Task ${issueNumber}`, status: "blocked", priority: "medium", assigneeAgentId: agentId,
+      });
+      return id;
+    }
+    async function fail(agentId: string, issueId: string, error: string, at: Date) {
+      const runId = randomUUID();
+      await db.insert(heartbeatRuns).values({
+        id: runId,
+        companyId,
+        agentId,
+        invocationSource: "assignment",
+        status: "failed",
+        errorCode: "configuration_incomplete",
+        error,
+        resultJson: { configurationIncomplete: { reason: "ai_connection_unavailable", actionUrl: `/agents/${agentId}/runtime` } },
+        contextSnapshot: { issueId },
+        createdAt: at,
+        finishedAt: at,
+      });
+      return runId;
+    }
+    /** The recovery the failure left on the task; it points at the newest run. */
+    async function recover(agentId: string, issueId: string, latestRunId: string, at: Date) {
+      const id = randomUUID();
+      await db.insert(issueRecoveryActions).values({
+        id,
+        companyId,
+        sourceIssueId: issueId,
+        kind: "configuration_validation",
+        status: "active",
+        ownerType: "board",
+        previousOwnerAgentId: agentId,
+        returnOwnerAgentId: agentId,
+        cause: "configuration_incomplete",
+        fingerprint: `setup:${issueId}`,
+        evidence: { latestRunId, failureSummary: "The run stopped before it started: setup is not complete." },
+        nextAction: RECONNECT,
+        createdAt: at,
+        updatedAt: at,
+      });
+      return id;
+    }
+    const t0 = Date.now() - 6 * HOUR;
+    const at = (hours: number) => new Date(t0 + hours * HOUR);
+    const first = await task(everestId);
+    const second = await task(everestId);
+    await fail(everestId, first, NO_DEFAULT, at(0));
+    const firstRun = await fail(everestId, first, NO_DEFAULT, at(1));
+    const secondRun = await fail(everestId, second, NO_DEFAULT, at(2));
+    const firstRecovery = await recover(everestId, first, firstRun, at(1));
+    const secondRecovery = await recover(everestId, second, secondRun, at(2));
+    return { companyId, everestId, beaconId, first, second, firstRecovery, secondRecovery, at, task, fail, recover };
+  }
+
+  function setupCards(feed: DecisionsFeed) {
+    return feed.cards.filter((card) => card.setup);
+  }
+
+  it("shows repeated setup failures of one agent and cause as one card with a count, last seen and the fix link (GRE-504)", async () => {
+    const seeded = await seedSetupFailures();
+
+    const feed = await build(seeded.companyId);
+
+    expect(feed.cards).toHaveLength(1);
+    const card = feed.cards[0]!;
+    expect(card.id).toMatch(new RegExp(`^setup:${seeded.everestId}:ai_connection_unavailable:`));
+    expect(card).toMatchObject({
+      kind: "recovery",
+      task: null,
+      title: "Everest cannot start: setup is not complete",
+      reason: NO_DEFAULT,
+      waiting: { id: seeded.everestId, name: "Everest" },
+    });
+    expect(card.setup).toEqual({
+      agent: { id: seeded.everestId, name: "Everest" },
+      cause: NO_DEFAULT,
+      failureCount: 3,
+      lastSeenAt: seeded.at(2).toISOString(),
+      fixHref: `/agents/${seeded.everestId}/runtime`,
+      tasks: [
+        { id: seeded.first, identifier: "GRE-601", title: "Task 601" },
+        { id: seeded.second, identifier: "GRE-602", title: "Task 602" },
+      ],
+      fixedAt: null,
+    });
+    expect(card.actions[0]).toMatchObject({ id: "fix_setup", type: "link", href: `/agents/${seeded.everestId}/runtime` });
+    expect(feed.count).toBe(1);
+
+    // A later failure with the same cause adds to the count, not a new card.
+    await seeded.fail(seeded.everestId, seeded.second, NO_DEFAULT, seeded.at(3));
+    const later = await build(seeded.companyId);
+    expect(later.cards).toHaveLength(1);
+    expect(later.cards[0]!.setup).toMatchObject({ failureCount: 4, lastSeenAt: seeded.at(3).toISOString() });
+
+    // Retry all sends every stopped task back to its owner, through the same endpoint as one task's Retry.
+    const retry = action(card, "retry");
+    expect(retry.label).toBe("Retry all 2");
+    await run(app(seeded.companyId), retry);
+    const retried = await db.select({ status: issues.status }).from(issues).where(eq(issues.assigneeAgentId, seeded.everestId));
+    expect(retried.map((row) => row.status)).toEqual(["todo", "todo"]);
+  });
+
+  it("keeps a different cause or a different agent on its own card (GRE-504)", async () => {
+    const seeded = await seedSetupFailures();
+    const third = await seeded.task(seeded.everestId);
+    const thirdRun = await seeded.fail(seeded.everestId, third, NOT_PERMITTED, seeded.at(3));
+    await seeded.recover(seeded.everestId, third, thirdRun, seeded.at(3));
+    const beaconTask = await seeded.task(seeded.beaconId);
+    const beaconRun = await seeded.fail(seeded.beaconId, beaconTask, NO_DEFAULT, seeded.at(4));
+    await seeded.recover(seeded.beaconId, beaconTask, beaconRun, seeded.at(4));
+
+    const feed = await build(seeded.companyId);
+
+    const cards = setupCards(feed);
+    expect(cards).toHaveLength(3);
+    expect(feed.count).toBe(3);
+    const byCause = (agentId: string, cause: string) =>
+      cards.filter((card) => card.setup!.agent?.id === agentId && card.setup!.cause === cause);
+    expect(byCause(seeded.everestId, NO_DEFAULT)).toHaveLength(1);
+    expect(byCause(seeded.everestId, NO_DEFAULT)[0]!.setup!.failureCount).toBe(3);
+    // One task of its own keeps its task card, with the setup count and fix link on it.
+    const notPermitted = byCause(seeded.everestId, NOT_PERMITTED)[0]!;
+    expect(notPermitted).toMatchObject({ id: `task:${third}`, title: "GRE-603 Task 603" });
+    expect(notPermitted.setup).toMatchObject({ failureCount: 1, fixHref: `/agents/${seeded.everestId}/runtime` });
+    expect(notPermitted.actions.map((candidate) => candidate.id)).toEqual(expect.arrayContaining(["fix_setup", "retry", "reassign"]));
+    const beacon = byCause(seeded.beaconId, NO_DEFAULT)[0]!;
+    expect(beacon).toMatchObject({ id: `task:${beaconTask}`, waiting: { name: "Beacon" } });
+    expect(beacon.setup).toMatchObject({ failureCount: 1, fixHref: `/agents/${seeded.beaconId}/runtime` });
+  });
+
+  it("clears the setup card once the agent's next run succeeds (GRE-504)", async () => {
+    const seeded = await seedSetupFailures();
+    await db.insert(heartbeatRuns).values({
+      companyId: seeded.companyId,
+      agentId: seeded.everestId,
+      invocationSource: "assignment",
+      status: "succeeded",
+      createdAt: seeded.at(4),
+      finishedAt: seeded.at(4),
+    });
+
+    const fixed = await build(seeded.companyId);
+
+    // The setup item is gone. The two tasks it stopped are still blocked, so
+    // one card says the setup works again and offers one Retry for both.
+    expect(fixed.cards).toHaveLength(1);
+    const card = fixed.cards[0]!;
+    expect(card.title).toBe("Everest's setup works again: 2 tasks still stopped");
+    expect(card.reason).toContain("The setup works again");
+    expect(card.setup?.fixedAt).toBe(seeded.at(4).toISOString());
+    expect(card.actions.map((candidate) => candidate.id)).not.toContain("fix_setup");
+    expect(action(card, "retry").requests).toHaveLength(2);
+
+    // Once the tasks move on, nothing is left.
+    await db.update(issues).set({ status: "todo" }).where(eq(issues.assigneeAgentId, seeded.everestId));
+    expect((await build(seeded.companyId)).cards).toEqual([]);
+  });
 });

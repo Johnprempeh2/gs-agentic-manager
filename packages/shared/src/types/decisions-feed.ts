@@ -35,7 +35,8 @@ export type DecisionCardActionId =
   | "reconnect"
   | "dismiss"
   | "done"
-  | "open";
+  | "open"
+  | "fix_setup";
 
 /** One HTTP call. `path` is absolute from the server root (starts with /api). */
 export interface DecisionCardRequest {
@@ -90,8 +91,31 @@ export interface DecisionCardAtDesk {
   command: string | null;
 }
 
+/**
+ * Runs of one agent that stopped for the same setup gap (GRE-504):
+ * `configuration_incomplete` with the same reason and message. Every later
+ * failure adds to `failureCount`; it does not open a new card.
+ */
+export interface DecisionCardSetup {
+  agent: DecisionCardAgentRef | null;
+  /** The plain failure message, for example "Connect an account and choose your personal default". */
+  cause: string;
+  /** Failures with this cause since the agent's last successful run. */
+  failureCount: number;
+  lastSeenAt: string;
+  /** In-app page where the setup is fixed. */
+  fixHref: string;
+  /** Open tasks stopped by this cause. */
+  tasks: Array<{ id: string; identifier: string | null; title: string }>;
+  /** Set once the agent finished a run after the failures: the setup works again. */
+  fixedAt: string | null;
+}
+
 export interface DecisionCard {
-  /** `task:<issueId>` for task cards, `item:<dedupKey>` for company-level cards. */
+  /**
+   * `task:<issueId>` for task cards, `item:<dedupKey>` for company-level cards,
+   * `setup:<agentId>:<cause>` for one setup gap that stopped several tasks.
+   */
   id: string;
   /** The main kind, used for the title and the next step. */
   kind: DecisionCardKind;
@@ -116,6 +140,8 @@ export interface DecisionCard {
   items: AttentionItem[];
   /** Set when every row on the card needs the board user at the computer. */
   atDesk?: DecisionCardAtDesk | null;
+  /** Set when the card is about a repeated setup failure (GRE-504). */
+  setup?: DecisionCardSetup | null;
 }
 
 export interface DecisionsFeed {
