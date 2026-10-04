@@ -11,6 +11,8 @@ import {
   memAvailableFromMeminfo,
   memorySignal,
   parseWatchConfig,
+  publicHealthUrl,
+  publicUrlSignal,
 } from "./watch.js";
 
 const NOW = Date.parse("2026-10-04T12:00:00Z");
@@ -99,10 +101,34 @@ test("the alert mail names the code and the failing checks only", () => {
 
 test("a watch config must tell someone", () => {
   const ok = parseWatchConfig("WATCH_OPERATOR_PASSWORD=pw\nWATCH_PING_URL=https://hc-ping.com/uuid\nWATCH_ALERT_EMAIL=oncall@example.com\nWATCH_MAIL_COMMAND=/usr/sbin/sendmail -t\n");
-  assert.deepEqual(ok, { operatorPassword: "pw", pingUrl: "https://hc-ping.com/uuid", alertEmail: "oncall@example.com", mailCommand: ["/usr/sbin/sendmail", "-t"] });
+  assert.deepEqual(ok, { operatorPassword: "pw", pingUrl: "https://hc-ping.com/uuid", alertEmail: "oncall@example.com", mailCommand: ["/usr/sbin/sendmail", "-t"], publicUrl: null });
   assert.match((parseWatchConfig("WATCH_OPERATOR_PASSWORD=pw\n") as { error: string }).error, /set WATCH_PING_URL/);
   assert.match((parseWatchConfig("WATCH_PING_URL=https://x\n") as { error: string }).error, /WATCH_OPERATOR_PASSWORD is missing/);
   assert.match((parseWatchConfig("WATCH_OPERATOR_PASSWORD=pw\nWATCH_ALERT_EMAIL=a@b\n") as { error: string }).error, /both/);
   assert.match((parseWatchConfig("WATCH_OPERATOR_PASSWORD=pw\nWATCH_PING_URL=ftp://x\n") as { error: string }).error, /http/);
   assert.match((parseWatchConfig("OTHER=1\n") as { error: string }).error, /not a watch setting/);
+});
+
+test("the public URL probe takes https only (http only on loopback) and probes /api/health", () => {
+  assert.equal(publicHealthUrl("https://c001.example.com"), "https://c001.example.com/api/health");
+  assert.equal(publicHealthUrl("https://c001.example.com/"), "https://c001.example.com/api/health");
+  assert.equal(publicHealthUrl("http://127.0.0.1:3901"), "http://127.0.0.1:3901/api/health");
+  assert.match((publicHealthUrl("http://c001.example.com") as { error: string }).error, /https/);
+  assert.match((publicHealthUrl("c001.example.com") as { error: string }).error, /not a URL/);
+  assert.match((publicHealthUrl("https://u:p@c001.example.com") as { error: string }).error, /log-in/);
+  const config = parseWatchConfig("WATCH_OPERATOR_PASSWORD=pw\nWATCH_PING_URL=https://hc-ping.com/uuid\nWATCH_PUBLIC_URL=https://c001.example.com\n");
+  assert.equal((config as { publicUrl: string }).publicUrl, "https://c001.example.com");
+  assert.match((parseWatchConfig("WATCH_OPERATOR_PASSWORD=pw\nWATCH_PING_URL=https://x\nWATCH_PUBLIC_URL=http://c001.example.com\n") as { error: string }).error, /^WATCH_PUBLIC_URL: .*https/);
+});
+
+test("the public URL probe passes only on HTTP 200 with health ok", () => {
+  const url = "https://c001.example.com/api/health";
+  assert.deepEqual(publicUrlSignal(url, { status: 200, body: { status: "ok" } }), { key: "public-url", ok: true, detail: `${url}: health ok` });
+  assert.match(publicUrlSignal(url, { error: "fetch failed: CERT_HAS_EXPIRED" }).detail, /no answer \(fetch failed: CERT_HAS_EXPIRED\)/);
+  assert.match(publicUrlSignal(url, { status: 502, body: null }).detail, /HTTP 502$/);
+  assert.match(publicUrlSignal(url, { status: 403, body: { error: "forbidden" } }).detail, /HTTP 403$/);
+  assert.match(publicUrlSignal(url, { status: 308, body: null }).detail, /HTTP 308$/);
+  assert.match(publicUrlSignal(url, { status: 200, body: null }).detail, /health not JSON$/);
+  assert.match(publicUrlSignal(url, { status: 200, body: { status: "degraded" } }).detail, /health degraded$/);
+  for (const r of [{ error: "x" }, { status: 502, body: null }, { status: 200, body: { status: "degraded" } }]) assert.equal(publicUrlSignal(url, r).ok, false);
 });

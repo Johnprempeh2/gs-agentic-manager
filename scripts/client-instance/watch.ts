@@ -100,6 +100,37 @@ export function aiSignals(companyId: string, connections: AiConnectionView[], ru
   return [connectionSignal, runSignal];
 }
 
+/**
+ * The health URL behind a public base URL. Only https, except on loopback (the
+ * sandbox test): a plain-http probe would not see a failed certificate.
+ */
+export function publicHealthUrl(base: string): string | { error: string } {
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    return { error: `public URL ${base} is not a URL` };
+  }
+  const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) return { error: "public URL must be https://<host>" };
+  if (url.search || url.hash || url.username || url.password) return { error: "public URL takes no query, fragment or log-in" };
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}/api/health`;
+}
+
+/**
+ * The app as a person outside reaches it: DNS, Caddy, the certificate, then
+ * the app. The loopback health check stays green when any of the first three
+ * fails. `result` is the HTTP answer, or the fetch error.
+ */
+export function publicUrlSignal(url: string, result: { status: number; body: unknown } | { error: string }): WatchSignal {
+  const key = "public-url";
+  if ("error" in result) return { key, ok: false, detail: `${url}: no answer (${result.error})` };
+  const status = (result.body as { status?: unknown } | null)?.status;
+  if (result.status !== 200) return { key, ok: false, detail: `${url}: HTTP ${result.status}` };
+  if (status !== "ok") return { key, ok: false, detail: `${url}: health ${String(status ?? "not JSON")}` };
+  return { key, ok: true, detail: `${url}: health ok` };
+}
+
 export interface AlertState {
   /** Keys that failed at the last alert, sorted. Empty after a recovery mail. */
   failing: string[];
@@ -145,12 +176,14 @@ export interface WatchConfig {
   alertEmail: string | null;
   /** argv of a sendmail-style command that reads the mail on stdin, for example `/usr/sbin/sendmail -t`. */
   mailCommand: string[] | null;
+  /** Public base URL (`https://<host>`); when set, the watch probes `<url>/api/health` through DNS, Caddy and TLS. */
+  publicUrl: string | null;
 }
 
 /** Parse a watch config file (KEY=VALUE lines). Returns the config or the reason it is refused. */
 export function parseWatchConfig(text: string): WatchConfig | { error: string } {
   const values: Record<string, string> = {};
-  const allowed = new Set(["WATCH_OPERATOR_PASSWORD", "WATCH_PING_URL", "WATCH_ALERT_EMAIL", "WATCH_MAIL_COMMAND"]);
+  const allowed = new Set(["WATCH_OPERATOR_PASSWORD", "WATCH_PING_URL", "WATCH_ALERT_EMAIL", "WATCH_MAIL_COMMAND", "WATCH_PUBLIC_URL"]);
   for (const [index, raw] of text.split("\n").entries()) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
@@ -168,5 +201,10 @@ export function parseWatchConfig(text: string): WatchConfig | { error: string } 
   if (Boolean(alertEmail) !== Boolean(mailCommand)) return { error: "set both WATCH_ALERT_EMAIL and WATCH_MAIL_COMMAND, or neither" };
   // A watch that tells no one is not an alert.
   if (!pingUrl && !alertEmail) return { error: "set WATCH_PING_URL, or WATCH_ALERT_EMAIL with WATCH_MAIL_COMMAND, or both" };
-  return { operatorPassword: values.WATCH_OPERATOR_PASSWORD, pingUrl, alertEmail, mailCommand };
+  const publicUrl = values.WATCH_PUBLIC_URL || null;
+  if (publicUrl) {
+    const health = publicHealthUrl(publicUrl);
+    if (typeof health !== "string") return { error: `WATCH_PUBLIC_URL: ${health.error}` };
+  }
+  return { operatorPassword: values.WATCH_OPERATOR_PASSWORD, pingUrl, alertEmail, mailCommand, publicUrl };
 }

@@ -15,8 +15,8 @@
 //   scripts/client-instance.sh offsite-init|offsite-backup --root <dir> --offsite-config <file> [--restic <bin>]
 //   scripts/client-instance.sh offsite-check --code <code> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
 //                                     (off-host backups with restic, GRE-666)
-//   scripts/client-instance.sh watch --root <dir> --watch-config <file>
-//                                     (host watch: health, backups, disk, memory, AI access; GRE-666)
+//   scripts/client-instance.sh watch --root <dir> --watch-config <file> [--public-url https://<host>]
+//                                     (host watch: health, backups, disk, memory, AI access, public URL; GRE-666)
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
 //                                      Stable image: scripts/greatstone-stable-image.sh)
@@ -63,6 +63,8 @@ import {
   memAvailableFromMeminfo,
   memorySignal,
   parseWatchConfig,
+  publicHealthUrl,
+  publicUrlSignal,
   type AiConnectionView,
   type AlertState,
   type RunView,
@@ -120,8 +122,9 @@ const USAGE = `usage:
   offsite-check --code <code> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
                                            pull the newest off-host copy into the sandbox, restore-check it,
                                            then delete the copy
-  watch --root <dir> --watch-config <file> host watch (every 5 min): health, backups, restore-check,
-                                           disk, memory, AI access; pings the dead-man check, mails on failure
+  watch --root <dir> --watch-config <file> [--public-url https://<host>]
+                                           host watch (every 5 min): health, backups, restore-check, disk,
+                                           memory, AI access, public URL; pings the dead-man check, mails on failure
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -964,13 +967,32 @@ async function pullAndCheck(config: OffsiteConfig, opts: Record<string, string>,
 
 // ---------------------------------------------------------------- host watch (GRE-666)
 
-function loadWatchConfig(file: string | undefined): WatchConfig {
+function loadWatchConfig(file: string | undefined, publicUrl: string | undefined): WatchConfig {
   if (!file) die("--watch-config <file> is required");
   const fileError = checkPrivateFile(path.resolve(file), "watch config");
   if (fileError) die(fileError);
   const config = parseWatchConfig(readFileSync(path.resolve(file), "utf8"));
   if ("error" in config) die(config.error);
+  if (publicUrl !== undefined) {
+    const health = publicHealthUrl(publicUrl);
+    if (typeof health !== "string") die(`--public-url: ${health.error}`);
+    config.publicUrl = publicUrl;
+  }
   return config;
+}
+
+/** GET <public URL>/api/health, as a person outside would: DNS, Caddy, the certificate, the app. */
+async function publicUrlWatchSignal(publicUrl: string): Promise<WatchSignal> {
+  const url = publicHealthUrl(publicUrl) as string;
+  try {
+    const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+    const body = await res.json().catch(() => null);
+    return publicUrlSignal(url, { status: res.status, body });
+  } catch (err) {
+    // A TLS or DNS failure is in err.cause (undici); the message alone says only "fetch failed".
+    const cause = err instanceof Error && err.cause instanceof Error ? `: ${(err.cause as Error & { code?: string }).code ?? err.cause.message}` : "";
+    return publicUrlSignal(url, { error: `${err instanceof Error ? err.message : String(err)}${cause}` });
+  }
 }
 
 /** AI access per company, read as the operator log-in (GRE-15 records the state; this only reads it). */
@@ -1013,6 +1035,7 @@ async function watchSignals(root: string, state: InstanceState, config: WatchCon
     diskSignal(Number(disk.bavail) * Number(disk.bsize)),
     memorySignal(meminfo ?? freemem()),
     ...(up ? await aiWatchSignals(state, config) : [{ key: "ai", ok: false, detail: "not checked: the app is not up" }]),
+    ...(config.publicUrl ? [await publicUrlWatchSignal(config.publicUrl)] : []),
   ];
 }
 
@@ -1026,7 +1049,7 @@ const WATCH_STATE_FILE = "watch-state.json";
  */
 async function cmdWatch(root: string, state: InstanceState, opts: Record<string, string>) {
   const code = instanceCode(root);
-  const config = loadWatchConfig(opts["watch-config"]);
+  const config = loadWatchConfig(opts["watch-config"], opts["public-url"]);
   const at = new Date().toISOString();
   const signals = await watchSignals(root, state, config);
   for (const s of signals) say(`${s.ok ? "PASS" : "FAIL"} ${s.key}: ${s.detail}`);

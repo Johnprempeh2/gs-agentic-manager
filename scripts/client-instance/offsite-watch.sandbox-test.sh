@@ -10,7 +10,9 @@
 # restore-check passes on it and the copy is deleted. Watch: all pass and the
 # dead-man check gets an ok ping; a refused AI run and a wrong operator
 # password each fail, ping /fail and send one mail; the same failure again
-# sends no second mail; recovery sends one. Stops the instance at the end.
+# sends no second mail; recovery sends one. The public URL probe passes on a
+# working URL and fails (ping, mail) on a TLS failure while loopback health
+# still passes. Stops the instance at the end.
 set -euo pipefail
 
 CODE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -169,5 +171,25 @@ OUT="$(clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env")"
 [ "$(mails)" = 4 ] && grep -q '^Subject: \[GSAM c917\] all checks pass again' "$S/mail.log" && pass "one recovery mail" || fail "no recovery mail"
 clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env" >/dev/null || fail "watch"
 [ "$(mails)" = 4 ] && pass "no more mail while all pass" || fail "extra mail"
+
+echo "== watch: the public URL probe (plain http is allowed on loopback only)"
+# Each pass signs in once; the app allows 3 sign-ins per 10 s, and real passes are 5 min apart.
+pause_sign_in() { sleep 11; }
+pause_sign_in
+APP_PORT="$(node -e 'console.log(require(process.argv[1]).port)' "$ROOT/client-instance.json")"
+OUT="$(clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env" --public-url "http://127.0.0.1:$APP_PORT")" || { echo "$OUT"; fail "watch with a working public URL"; }
+echo "$OUT" | grep -q "^client-instance: PASS public-url: http://127.0.0.1:$APP_PORT/api/health: health ok" && pass "PASS public-url" || { echo "$OUT"; fail "no PASS public-url"; }
+if clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env" --public-url "http://c917.example.invalid" >/dev/null 2>&1; then fail "plain http accepted for a public host"; fi
+pass "plain http refused for a public host"
+pause_sign_in
+# TLS against a plain-http port: the handshake fails, as a broken certificate or proxy would.
+if OUT="$(clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env" --public-url "https://127.0.0.1:$APP_PORT")"; then fail "watch passed with TLS failing"; fi
+echo "$OUT" | grep -q '^client-instance: FAIL public-url: https://127.0.0.1:.*/api/health: no answer' && pass "FAIL public-url" || { echo "$OUT"; fail "no FAIL public-url"; }
+echo "$OUT" | grep -q '^client-instance: PASS health' && pass "loopback health still passes (the gap this probe closes)" || fail "loopback health"
+tail -n 1 "$S/pings.log" | grep -q '^POST /ping/sandbox/fail 1$' && pass "fail ping sent" || fail "no fail ping"
+[ "$(mails)" = 5 ] && grep -q '^Subject: \[GSAM c917\] 1 check(s) failing: public-url$' "$S/mail.log" && pass "one alert mail for the public URL" || { cat "$S/mail.log"; fail "public-url mail"; }
+pause_sign_in
+clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env" --public-url "http://127.0.0.1:$APP_PORT" >/dev/null || fail "watch after the public URL is back"
+[ "$(mails)" = 6 ] && pass "one recovery mail" || fail "no recovery mail"
 
 echo "ALL PASSED"
