@@ -36,11 +36,41 @@ PREVIEW_ENV=(
 
 port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
+# Writes the state file for a started preview: <tag> <commit> <pid> <source repo>,
+# and the agent run and issue that started it (empty outside an agent run).
+write_preview_state() {
+  cat >"$PREVIEW_STATE_FILE" <<EOF
+tag=$1
+commit=$2
+pid=$3
+port=$PREVIEW_PORT
+source_repo=$4
+started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+run_id=$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')
+issue_id=$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')
+EOF
+}
+
+# Says when and by whom the running preview was started, e.g. "started 3h ago
+# by run <id> for issue <id>", so a preview left by a run that ended early can
+# be traced (GRE-525). State files written before that have no run or issue.
+preview_origin() {
+  local age
+  age="$(perl -MTime::Local -e '
+    my ($y, $mo, $d, $h, $mi, $s) = ($ARGV[0] // "") =~ /^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z$/ or exit;
+    my $t = time - timegm($s, $mi, $h, $d, $mo - 1, $y);
+    $t = 0 if $t < 0;
+    print $t < 60 ? "${t}s ago" : $t < 3600 ? int($t / 60) . "m ago" : $t < 86400 ? int($t / 3600) . "h ago" : int($t / 86400) . "d ago";
+  ' "$(preview_state started_at)" 2>/dev/null || true)"
+  printf 'started %s by run %s for issue %s' "${age:-at an unknown time}" \
+    "$(preview_state run_id | grep . || echo unknown)" "$(preview_state issue_id | grep . || echo unknown)"
+}
+
 cmd_start() {
   local tag="${1:-}"
   [ -n "$tag" ] || die "usage: greatstone-preview.sh start <tag>"
   if preview_running; then
-    die "a preview of $(preview_state tag) is already running; run 'greatstone-preview.sh stop' first."
+    die "a preview of $(preview_state tag) is already running ($(preview_origin)); run 'greatstone-preview.sh stop' first."
   fi
   port_in_use "$PREVIEW_PORT" && die "port $PREVIEW_PORT is in use by another process."
   case "$PREVIEW_ROOT/" in "$LIVE_DIR/"* | "$LIVE_DATA_DIR/"*) die "the preview folder must be outside the live folders." ;; esac
@@ -101,14 +131,7 @@ cmd_start() {
   (cd "$PREVIEW_CODE_DIR" && exec env -i "${PREVIEW_ENV[@]}" pnpm dev:once --data-dir "$PREVIEW_DATA_DIR") >"$PREVIEW_LOG" 2>&1 &
   local pid=$!
   set +m
-  cat >"$PREVIEW_STATE_FILE" <<EOF
-tag=$tag
-commit=$commit
-pid=$pid
-port=$PREVIEW_PORT
-source_repo=$(dirname "$source_git")
-started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-EOF
+  write_preview_state "$tag" "$commit" "$pid" "$(dirname "$source_git")"
   record_release_repo "$(dirname "$source_git")"
 
   for _ in $(seq 1 150); do
@@ -134,6 +157,7 @@ cmd_status() {
   say "  tag:        $(preview_state tag)"
   say "  commit:     ${commit:-<no answer from /api/health>} (expected $(preview_state commit))"
   say "  process:    $(preview_state pid) (started $started)"
+  say "  origin:     $(preview_origin)"
   say "  data:       $PREVIEW_DATA_DIR"
   say "  agents off: HEARTBEAT_SCHEDULER_ENABLED=false GSAM_RESTORE_IN_PROGRESS=true"
   node --input-type=module -e '

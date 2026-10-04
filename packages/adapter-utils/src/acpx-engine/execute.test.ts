@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AcpRuntimeOptions } from "acpx/runtime";
+import { createRuntimeStore, type AcpRuntimeOptions, type AcpSessionRecord, type AcpSessionStore } from "acpx/runtime";
 import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@greatstone/adapter-utils";
 import {
   DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC,
@@ -375,6 +375,42 @@ const ALLOWED_TURN_SPAN_ATTRIBUTE_KEYS = new Set<string>([
 ]);
 
 describe("shared ACPX engine runtime behavior", () => {
+  it("integrates the env-free store while delivering current credentials and options to the provider", async () => {
+    const root = await makeTempRoot();
+    const stateDir = path.join(root, "state");
+    const first = await runExecutor({ agent: "claude", agentCommand: "node ./fake-acp.js", cwd: root, stateDir,
+      env: { ANTHROPIC_API_KEY: "first-fixture-credential" } });
+    const liveEnvironment = (first.sessionInputs[0]!.sessionOptions as { env: Record<string, string> }).env;
+    expect(liveEnvironment.ANTHROPIC_API_KEY).toBe("first-fixture-credential");
+    const store = first.runtimeOptions[0]!.sessionStore as AcpSessionStore;
+    const record: AcpSessionRecord = {
+      schema: "acpx.session.v1", acpxRecordId: "integration-record", acpSessionId: "integration-session",
+      agentCommand: "fixture-provider", cwd: root, name: "fixture", createdAt: "2026-10-03T00:00:00.000Z",
+      lastUsedAt: "2026-10-03T00:00:01.000Z", lastSeq: 0,
+      eventLog: { active_path: path.join(stateDir, "fixture.jsonl"), segment_count: 1, max_segment_bytes: 1024, max_segments: 2 },
+      messages: [], updated_at: "2026-10-03T00:00:01.000Z", cumulative_token_usage: {}, request_token_usage: {},
+      acpx: { session_options: { env: { ...liveEnvironment }, model: "retained-model", max_turns: 4 } },
+    };
+    await store.save(record);
+    const file = path.join(stateDir, "sessions", "integration-record.json");
+    const saved = await fs.readFile(file, "utf8");
+    expect(saved).not.toContain("first-fixture-credential");
+    expect(JSON.parse(saved).acpx.session_options).toEqual({ model: "retained-model", max_turns: 4 });
+    expect(record.acpx?.session_options?.env).toEqual(liveEnvironment);
+    // A file written by the prior engine is loaded with the current run's env,
+    // without altering the provider launch or deleting unrelated options.
+    record.acpx!.session_options!.env = { ANTHROPIC_API_KEY: "legacy-fixture-credential" };
+    await createRuntimeStore({ stateDir }).save(record);
+    const second = await runExecutor({ agent: "claude", agentCommand: "node ./fake-acp.js", cwd: root, stateDir,
+      env: { ANTHROPIC_API_KEY: "rotated-fixture-credential" } }, { runtime: { sessionParams: first.result.sessionParams } });
+    expect((second.sessionInputs[0]!.sessionOptions as { env: Record<string, string> }).env.ANTHROPIC_API_KEY).toBe("rotated-fixture-credential");
+    const rotatedStore = second.runtimeOptions[0]!.sessionStore as AcpSessionStore;
+    const loaded = await rotatedStore.load(record.acpxRecordId);
+    expect(loaded?.acpx?.session_options).toMatchObject({ env: { ANTHROPIC_API_KEY: "rotated-fixture-credential" }, model: "retained-model", max_turns: 4 });
+    await rotatedStore.save(loaded!);
+    const resaved = await fs.readFile(file, "utf8");
+    for (const value of ["first-fixture-credential", "legacy-fixture-credential", "rotated-fixture-credential"]) expect(resaved).not.toContain(value);
+  });
   it.each(["claude", "codex", "gemini", "kimi", "custom"])("defaults the legacy %s engine to full auto on fresh and resumed runs", async (agent) => {
     const root = await makeTempRoot();
     const config = {

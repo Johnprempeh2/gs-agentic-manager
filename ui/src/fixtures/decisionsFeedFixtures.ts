@@ -335,6 +335,46 @@ export function connectionAlertCard(): DecisionCard {
   });
 }
 
+/** GRE-504: one agent's runs stopped on the same setup gap, on two tasks. */
+export function setupCard(): DecisionCard {
+  return card({
+    id: "setup:agent-everest:ai_connection_unavailable:abc123",
+    kind: "recovery",
+    severity: "high",
+    title: "Everest cannot start: setup is not complete",
+    reason: "Connect an account and choose your personal default",
+    waiting: { id: "agent-everest", name: "Everest" },
+    nextStep: "Everest stops the same way on every run until the setup is fixed. Fix it, then retry.",
+    setup: {
+      agent: { id: "agent-everest", name: "Everest" },
+      cause: "Connect an account and choose your personal default",
+      failureCount: 4,
+      lastSeenAt: NOW,
+      fixHref: "/agents/agent-everest/runtime",
+      tasks: [
+        { id: "issue-601", identifier: "GRE-601", title: "Weekly brief" },
+        { id: "issue-602", identifier: "GRE-602", title: "Board pack" },
+      ],
+      fixedAt: null,
+    },
+    actions: [
+      { id: "fix_setup", label: "Fix setup", description: "Open the page where Everest's setup is fixed.", type: "link", requests: [], href: "/agents/agent-everest/runtime", input: null },
+      {
+        id: "retry",
+        label: "Retry all 2",
+        description: "Send each stopped task back to its owner to try again.",
+        type: "request",
+        requests: [
+          request("POST", "/api/issues/issue-601/recovery-actions/resolve", { actionId: "rec-601", outcome: "restored", sourceIssueStatus: "todo" }),
+          request("POST", "/api/issues/issue-602/recovery-actions/resolve", { actionId: "rec-602", outcome: "restored", sourceIssueStatus: "todo" }),
+        ],
+        href: null,
+        input: null,
+      },
+    ],
+  });
+}
+
 export function noOwnerCard(): DecisionCard {
   const base = blockedCard();
   return {

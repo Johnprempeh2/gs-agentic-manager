@@ -207,8 +207,22 @@ release_scripts_current() {
 # Records <dir> as the release repo in $GS_ROOT/release.conf, where the live
 # server finds it to release from the app (GRE-121). Nothing removes this file,
 # so it survives `greatstone-preview.sh stop` (GRE-71).
+# A <dir> inside an agent run's scratch folder is not recorded: that folder is
+# removed when the run ends, and release.conf would then name a missing repo
+# (GRE-529). The release.conf already there is kept.
 RELEASE_CONF_FILE="$GS_ROOT/release.conf"
 record_release_repo() {
+  local dir scratch
+  dir="$(cd "$1" 2>/dev/null && pwd -P || printf '%s' "$1")"
+  for scratch in "${GSAM_RUN_SCRATCH_DIR:-}" "${GSAM_TASK_SCRATCH_DIR:-}" "${GSAM_SCRATCH_DIR:-}" "${GSAM_TMPDIR:-}"; do
+    [ -n "$scratch" ] || continue
+    scratch="$(cd "$scratch" 2>/dev/null && pwd -P || printf '%s' "${scratch%/}")"
+    case "$dir/" in
+      "$scratch/"*)
+        say "Not recording $1 as the release repo: it is in the run scratch folder $scratch, which is removed when the run ends. $RELEASE_CONF_FILE is unchanged." >&2
+        return 0 ;;
+    esac
+  done
   mkdir -p "$GS_ROOT"
   printf 'release_repo=%s\n' "$1" >"$RELEASE_CONF_FILE.tmp" && mv "$RELEASE_CONF_FILE.tmp" "$RELEASE_CONF_FILE"
 }

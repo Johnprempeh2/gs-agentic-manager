@@ -76,6 +76,7 @@ import {
   type PaperclipSkillEntry,
 } from "@greatstone/adapter-utils/server-utils";
 import { shellQuote } from "@greatstone/adapter-utils/ssh";
+import { createEphemeralSessionEnvironmentStore } from "./ephemeral-session-environment.js";
 import {
   createAcpRuntime,
   createAgentRegistry,
@@ -91,7 +92,6 @@ import {
   type AcpRuntimeTurnResult,
   type AcpRuntimeUsageBreakdown,
   type AcpRuntimeUsageCost,
-  type AcpSessionStore,
 } from "acpx/runtime";
 import {
   ACPX_DUPLEX_LOSS_CANCEL_DEADLINE_MS,
@@ -4216,26 +4216,9 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
         flushChildStderr(childStderrState);
         childStderrState.logPath = prepared.childStderrLogPath;
         const persistedRuntimeStore = createRuntimeStore({ stateDir: prepared.stateDir });
-        const runtimeStore: AcpSessionStore = {
-          async load(id) {
-            const record = await persistedRuntimeStore.load(id);
-            if (!record) return undefined;
-            // ACPX resumes from the stored session options rather than the
-            // options passed to ensureSession. Keep conversation state, but
-            // launch the provider with this run's credentials and scratch paths.
-            return {
-              ...record,
-              acpx: {
-                ...record.acpx,
-                session_options: {
-                  ...record.acpx?.session_options,
-                  env: { ...prepared.env },
-                },
-              },
-            };
-          },
-          save: (record) => persistedRuntimeStore.save(record),
-        };
+        // Resume with this run's launch environment; keep it out of the saved
+        // conversation record without mutating the live runtime's options.
+        const runtimeStore = createEphemeralSessionEnvironmentStore(persistedRuntimeStore, prepared.env);
         const runtimeOptions: PaperclipAcpRuntimeOptions = {
           cwd: prepared.cwd,
           // Host-only spawn cwd for the relay proxy on the remote process-session

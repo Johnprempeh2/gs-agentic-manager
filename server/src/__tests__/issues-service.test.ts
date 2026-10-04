@@ -2768,8 +2768,12 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
       type: "blocks",
     });
 
+    // GRE-403: blocked rows carry their blockers even without includeBlockedBy.
     const defaultResult = await svc.list(companyId);
-    expect(defaultResult.find((issue) => issue.id === blockedId)?.blockedBy).toBeUndefined();
+    expect(defaultResult.find((issue) => issue.id === blockedId)?.blockedBy).toEqual([
+      expect.objectContaining({ id: blockerId }),
+    ]);
+    expect(defaultResult.find((issue) => issue.id === unblockedId)?.blockedBy).toBeUndefined();
 
     const result = await svc.list(companyId, { includeBlockedBy: true });
     const byId = new Map(result.map((issue) => [issue.id, issue]));
@@ -2785,6 +2789,113 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     ]);
     expect(byId.get(blockerId)?.blockedBy).toEqual([]);
     expect(byId.get(unblockedId)?.blockedBy).toEqual([]);
+  });
+
+  // GRE-403: list rows carry what they need to say why a task stopped.
+  it("adds the latest finished run, scheduled retry and blocker owners to list rows", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const noRunsId = randomUUID();
+    const failedId = randomUUID();
+    const blockerId = randomUUID();
+    const blockedId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Ridge",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(issues).values([
+      { id: noRunsId, companyId, title: "Never ran", status: "todo", priority: "medium" },
+      { id: failedId, companyId, title: "Last run failed", status: "todo", priority: "medium" },
+      {
+        id: blockerId,
+        companyId,
+        title: "Blocker",
+        status: "in_progress",
+        priority: "high",
+        assigneeAgentId: agentId,
+      },
+      { id: blockedId, companyId, title: "Waiting", status: "blocked", priority: "medium" },
+    ]);
+    await db.insert(issueRelations).values({
+      companyId,
+      issueId: blockerId,
+      relatedIssueId: blockedId,
+      type: "blocks",
+    });
+
+    const failedRunId = randomUUID();
+    await db.insert(heartbeatRuns).values([
+      {
+        id: randomUUID(),
+        companyId,
+        agentId,
+        status: "succeeded",
+        contextSnapshot: { issueId: failedId },
+        startedAt: new Date("2026-10-01T09:00:00.000Z"),
+        finishedAt: new Date("2026-10-01T09:10:00.000Z"),
+      },
+      {
+        id: failedRunId,
+        companyId,
+        agentId,
+        status: "failed",
+        errorCode: "claude_auth_required",
+        contextSnapshot: { issueId: failedId },
+        startedAt: new Date("2026-10-01T10:00:00.000Z"),
+        finishedAt: new Date("2026-10-01T10:05:00.000Z"),
+      },
+      {
+        // Still waiting: not finished, so it is the retry, not the latest run.
+        id: randomUUID(),
+        companyId,
+        agentId,
+        status: "scheduled_retry",
+        retryOfRunId: failedRunId,
+        scheduledRetryAt: new Date("2026-10-01T10:40:00.000Z"),
+        scheduledRetryAttempt: 1,
+        scheduledRetryReason: "transient_failure",
+        contextSnapshot: { issueId: failedId },
+      },
+    ]);
+
+    const byId = new Map((await svc.list(companyId)).map((issue) => [issue.id, issue]));
+
+    expect(byId.get(noRunsId)?.latestRun).toBeNull();
+    expect(byId.get(noRunsId)?.scheduledRetry).toBeNull();
+
+    expect(byId.get(failedId)?.latestRun).toEqual({
+      status: "failed",
+      errorCode: "claude_auth_required",
+      finishedAt: new Date("2026-10-01T10:05:00.000Z"),
+    });
+    expect(byId.get(failedId)?.scheduledRetry).toEqual(
+      expect.objectContaining({
+        status: "scheduled_retry",
+        agentId,
+        agentName: "Ridge",
+        retryOfRunId: failedRunId,
+        scheduledRetryAttempt: 1,
+      }),
+    );
+
+    expect(byId.get(blockedId)?.blockedBy).toEqual([
+      expect.objectContaining({ id: blockerId, assigneeAgentId: agentId, assigneeUserId: null }),
+    ]);
+    expect(byId.get(failedId)?.blockedBy).toBeUndefined();
   });
 
   it("includes blocks summaries (issues this one blocks) when includeBlocks is set", async () => {

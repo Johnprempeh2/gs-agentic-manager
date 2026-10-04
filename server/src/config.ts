@@ -380,7 +380,9 @@ export function loadConfig(): Config {
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
     companyDeletionEnabled,
-    telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
+    // Off unless an install opts in: the default endpoint belongs to the
+    // upstream project, and client installs must not report to it.
+    telemetryEnabled: fileConfig?.telemetry?.enabled ?? false,
     // Only a feed we configure: never the upstream project's announcements.
     announcementsEnabled: Boolean(process.env.GSAM_ANNOUNCEMENTS_FEED_URL?.trim()) && process.env.GSAM_ANNOUNCEMENTS_ENABLED !== "false",
     announcementsFeedUrl: process.env.GSAM_ANNOUNCEMENTS_FEED_URL?.trim() ?? "",

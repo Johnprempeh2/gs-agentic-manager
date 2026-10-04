@@ -214,8 +214,10 @@ export type {
   DecisionsFeed,
   DecisionsFeedCount,
   DecisionCardAtDesk,
+  DecisionCardSetup,
   NeedsMe,
   NeedsMeTask,
+  NeedsMeOverdueWait,
 } from "./types/decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./types/decisions-feed.js";
 export type {
@@ -1165,6 +1167,7 @@ export type {
   SuccessfulRunHandoffState,
   SuccessfulRunHandoffStateKind,
   IssueScheduledRetry,
+  IssueLatestRun,
   IssueScheduledRetryStatus,
   IssueRetryNowOutcome,
   IssueRetryNowResponse,

@@ -1,0 +1,87 @@
+{
+  "baselineRecorded": {
+    "date": "2026-10-04",
+    "commit": "0b7aec9c0 + GRE-501 board-filter fix to the harness",
+    "machine": "Keystone host: Linux x86_64 (WSL2), 24 cores, 47 GB; other agents running (load average 3-15 during the runs)",
+    "command": "pnpm test:metrics:s2 --skip-build (x5), then the median of each measure across runs",
+    "task": "GRE-501"
+  },
+  "note": "S2 merge-check budgets for the machine Keystone runs on. budgets.json stays the Apple-silicon calibration; see README.",
+  "inputs": {
+    "s2": "test-results/issue-detail-perf/metrics.json"
+  },
+  "budgets": [
+    {
+      "id": "s2-issue-cold-p95-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailColdContentPaint.p95Ms",
+      "samplesPath": "s2.unthrottled.issueDetailColdContentPaint.n",
+      "minSamples": 20,
+      "baseline": 1125,
+      "margin": "+150% (same margin as budgets.json). Median of 5 runs x 20 samples: 1015, 1025, 1125, 1505, 1786 ms; worst run 1.59x baseline, 64% of the limit.",
+      "max": 2810
+    },
+    {
+      "id": "s2-issue-warm-p95-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailWarmContentPaint.p95Ms",
+      "samplesPath": "s2.unthrottled.issueDetailWarmContentPaint.n",
+      "minSamples": 20,
+      "baseline": 307,
+      "margin": "+100% (same margin as budgets.json). Median of 5 runs x 20 samples: 264, 294, 307, 372, 488 ms; worst run 1.59x baseline, 80% of the limit.",
+      "max": 610
+    },
+    {
+      "id": "s2-board-cold-p95-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.boardColdReady.p95Ms",
+      "samplesPath": "s2.unthrottled.boardColdReady.n",
+      "minSamples": 20,
+      "baseline": 1094,
+      "margin": "+100% (same margin as budgets.json). Median of 5 runs x 20 samples: 861, 894, 1094, 1164, 1328 ms; worst run 1.21x baseline, 61% of the limit.",
+      "max": 2190
+    },
+    {
+      "id": "s2-issue-cold-median-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailColdContentPaint.medianMs",
+      "samplesPath": "s2.unthrottled.issueDetailColdContentPaint.n",
+      "minSamples": 20,
+      "baseline": 917,
+      "margin": "+50% (same margin as budgets.json). Median of 5 runs x 20 samples: 872, 878, 917, 935, 946 ms; worst run 1.03x baseline, 69% of the limit.",
+      "max": 1380
+    },
+    {
+      "id": "s2-issue-warm-median-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.issueDetailWarmContentPaint.medianMs",
+      "samplesPath": "s2.unthrottled.issueDetailWarmContentPaint.n",
+      "minSamples": 20,
+      "baseline": 260,
+      "margin": "+50% (same margin as budgets.json). Median of 5 runs x 20 samples: 243, 244, 260, 271, 277 ms; worst run 1.07x baseline, 71% of the limit.",
+      "max": 390
+    },
+    {
+      "id": "s2-board-cold-median-unthrottled",
+      "number": "S2",
+      "group": "ci",
+      "input": "s2",
+      "path": "s2.unthrottled.boardColdReady.medianMs",
+      "samplesPath": "s2.unthrottled.boardColdReady.n",
+      "minSamples": 20,
+      "baseline": 812,
+      "margin": "+50% (same margin as budgets.json). Median of 5 runs x 20 samples: 767, 784, 812, 852, 876 ms; worst run 1.08x baseline, 72% of the limit.",
+      "max": 1220
+    }
+  ]
+}

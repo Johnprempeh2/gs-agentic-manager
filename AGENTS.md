@@ -69,6 +69,18 @@ rm -rf data/pglite
 pnpm dev
 ```
 
+Stop a dev server or sandbox you started with `pnpm dev:stop` from the same
+checkout, passing the same `--data-dir` you started it with (it stops only the
+services registered for that checkout), or with `kill <pid>` using the PID you
+recorded. Never use `pkill -f`, `killall` or `kill` on a pattern or name you did
+not start yourself (`dev-runner`, `dev:once`, `tsx`, `node`, `postgres`,
+`pnpm`). Where GS Agentic Manager runs for real, the live server runs the same
+commands under the same user, so the pattern matches live too: on 4 Oct 2026
+`pkill -f "dev-runner.ts dev"` from an agent sandbox stopped live for 8.5
+hours. On the Greatstone machine, follow `doc/GREATSTONE-WAY-OF-WORKING.md`:
+start a sandbox with `pnpm dev:once --data-dir ./tmp/sandbox` and stop it with
+`pnpm dev:stop --data-dir ./tmp/sandbox`.
+
 ## 5. Core Engineering Rules
 
 1. Keep changes company-scoped.

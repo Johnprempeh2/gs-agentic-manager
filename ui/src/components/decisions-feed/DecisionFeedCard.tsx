@@ -239,6 +239,7 @@ export function DecisionFeedCard({
           {card.waiting ? card.waiting.name : <span className="text-muted-foreground">No agent owns this yet.</span>}
         </CardFact>
         <CardFact label="Next">{card.nextStep}</CardFact>
+        {card.setup ? <SetupFacts setup={card.setup} showTasks={!card.task} /> : null}
       </dl>
 
       {card.atDesk ? (
@@ -449,8 +450,34 @@ function CardFact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** How often one setup gap stopped the agent, and which tasks wait on it (GRE-504). */
+function SetupFacts({ setup, showTasks }: { setup: NonNullable<DecisionCard["setup"]>; showTasks: boolean }) {
+  return (
+    <>
+      <CardFact label="Seen">
+        <span data-setup-count>
+          {setup.failureCount} {setup.failureCount === 1 ? "failure" : "failures"}, last{" "}
+          <span title={new Date(setup.lastSeenAt).toLocaleString()}>{relativeTime(setup.lastSeenAt)}</span>
+        </span>
+      </CardFact>
+      {showTasks && setup.tasks.length > 0 ? (
+        <CardFact label="Tasks">
+          <span className="flex flex-wrap gap-x-2 gap-y-1">
+            {setup.tasks.map((task) => (
+              <Link key={task.id} to={`/issues/${task.identifier ?? task.id}`} className="hover:underline" title={task.title}>
+                {task.identifier ?? task.title}
+              </Link>
+            ))}
+          </span>
+        </CardFact>
+      ) : null}
+    </>
+  );
+}
+
 function isPrimaryCardAction(action: DecisionCardAction): boolean {
-  return action.id === "approve" || action.id === "retry" || action.id === "reconnect" || action.id === "open";
+  return action.id === "approve" || action.id === "retry" || action.id === "reconnect" || action.id === "open"
+    || action.id === "fix_setup";
 }
 
 function CardActionButton({

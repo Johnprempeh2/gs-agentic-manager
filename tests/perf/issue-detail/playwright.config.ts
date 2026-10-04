@@ -17,7 +17,11 @@ if (EXTERNAL_URL) {
   }
 }
 const BASE_URL = EXTERNAL_URL ?? `http://127.0.0.1:${PORT}`;
-const GSAM_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-issue-perf-home-"));
+// GSAM_ISSUE_PERF_HOME pins the sandbox data dir (`pnpm test:metrics:s2` uses ./tmp/s2-check-*).
+const GSAM_HOME = process.env.GSAM_ISSUE_PERF_HOME
+  ? path.resolve(process.env.GSAM_ISSUE_PERF_HOME)
+  : fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-issue-perf-home-"));
+fs.mkdirSync(GSAM_HOME, { recursive: true });
 const GSAM_INSTANCE_ID = "playwright-issue-perf";
 const GSAM_CONFIG = path.join(GSAM_HOME, "instances", GSAM_INSTANCE_ID, "config.json");
 

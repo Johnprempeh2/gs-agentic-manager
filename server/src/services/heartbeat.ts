@@ -42,6 +42,7 @@ export { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-
 import { buildExecutionContinuation } from "./execution-continuation.js";
 import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-utils";
 import { rebrandRunLogText } from "@greatstone/adapter-utils/run-log-transcript";
+import { collectRunSecretValues, redactRunSecretValues } from "@greatstone/adapter-utils/run-secret-values";
 import { PROJECT_REPOSITORIES_DIR, readGitWorkspaceSnapshot } from "@greatstone/adapter-utils/git-workspace-sync";
 import { isWorkspaceGitScanError, WorkspaceGitScanError, WORKSPACE_GIT_SCAN_ERROR_CODES } from "./workspace-git-operation-scheduler.js";
 import { captureDirectorySnapshot, mergeDirectoryWithBaseline } from "@greatstone/adapter-utils/workspace-restore-merge";
@@ -21087,6 +21088,10 @@ export function heartbeatService(
     return recovery.reconcileResolvedDependencyWakeBackstop(opts);
   }
 
+  async function reconcileOverdueHumanWaits(opts?: { companyId?: string | null; now?: Date }) {
+    return recovery.reconcileOverdueHumanWaits(opts);
+  }
+
   async function updateRuntimeState(
     agent: typeof agents.$inferSelect,
     run: typeof heartbeatRuns.$inferSelect,
@@ -25634,9 +25639,19 @@ export function heartbeatService(
 
         const currentUserRedactionOptions =
           await getCurrentUserRedactionOptions();
+        // Tool output that prints the environment carries the run's own
+        // credentials; redact them by value before the log is saved (GRE-517).
+        // The run API key is minted later and added to this list then.
+        let runSecretValues = collectRunSecretValues(
+          parseObject(runtimeConfig.env),
+          { secretKeys },
+        );
         const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
           const sanitizedChunk = compactRunLogChunk(
-            redactCurrentUserText(chunk, currentUserRedactionOptions),
+            redactRunSecretValues(
+              redactCurrentUserText(chunk, currentUserRedactionOptions),
+              runSecretValues,
+            ),
           );
           if (stream === "stdout")
             stdoutExcerpt = appendExcerpt(stdoutExcerpt, sanitizedChunk);
@@ -26612,6 +26627,12 @@ export function heartbeatService(
                 localAgentJwtScope,
               )
             : null;
+        if (authToken) {
+          runSecretValues = collectRunSecretValues(
+            parseObject(runtimeConfig.env),
+            { secretKeys, extraValues: [authToken] },
+          );
+        }
         if (
           nativeRuntimeResolution.kind === "legacy" &&
           adapter.supportsLocalAgentJwt &&
@@ -32123,6 +32144,8 @@ export function heartbeatService(
     sweepStaleIssueLocks,
 
     reconcileResolvedDependencyWakes,
+
+    reconcileOverdueHumanWaits,
 
     scanSilentActiveRuns,
     stopSilentRuns,

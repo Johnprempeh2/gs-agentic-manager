@@ -114,6 +114,8 @@ import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
+import { scrubAcpSessionEnvironments } from "./services/acp-session-env-scrub.js";
+import { resolvePaperclipInstanceRoot } from "./home-paths.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
@@ -994,6 +996,29 @@ async function startServerWithDatabaseTeardown(
   process.env.GSAM_RUNTIME_API_URL = runtimeApiUrl;
   process.env.GSAM_RUNTIME_API_CANDIDATES_JSON = JSON.stringify(runtimeApiCandidates);
   process.env.GSAM_API_URL = configuredApiUrl;
+
+  // Remove run credentials from ACP session records saved before #290
+  // (GRE-510). Runs before the listener binds so no session saves race it.
+  // Never fails startup.
+  await scrubAcpSessionEnvironments(resolvePaperclipInstanceRoot())
+    .then((result) => {
+      if (result.alreadyDone) return;
+      const skipped = result.unparseable + result.failed;
+      (skipped > 0 ? logger.warn.bind(logger) : logger.info.bind(logger))(
+        {
+          scanned: result.scanned,
+          cleaned: result.cleaned,
+          skipped,
+          unparseable: result.unparseable,
+          failed: result.failed,
+          skippedPaths: result.skippedPaths,
+        },
+        "scrubbed run environment from saved ACP session records",
+      );
+    })
+    .catch((err) => {
+      logger.error({ err }, "startup scrub of ACP session records failed");
+    });
 
   let startupListenerBound = false;
   try {
@@ -1916,6 +1941,12 @@ async function startServerWithDatabaseTeardown(
               const reconciled = await heartbeat.reconcileTaskWatchdogs();
               if (reconciled.triggered > 0) {
                 logger.warn({ ...reconciled }, "periodic task-watchdog reconciliation triggered watchdog work");
+              }
+            })
+            .then(async () => {
+              const reconciled = await heartbeat.reconcileOverdueHumanWaits();
+              if (reconciled.issueIds.length > 0) {
+                logger.info({ ...reconciled }, "periodic 24h human-wait sweep woke assignees to re-check");
               }
             })
             .then(async () => {
