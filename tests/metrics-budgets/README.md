@@ -29,6 +29,30 @@ calibration).
   CI does not have. The weekly routine runs `metrics:collect` against the
   local instance and then this check. A breach is reported on the weekly task.
 
+## S2 check before merge (Keystone)
+
+Keystone runs the S2 page-load check on each pull request that can change
+the issue page or the board. Nothing runs it on GitHub per pull request.
+
+```sh
+pnpm metrics:s2-needed --pr 123     # "S2 page-load check needed: yes|no" and why
+pnpm test:metrics:s2                # build UI, measure (n=20, unthrottled), check
+pnpm test:metrics:s2 --metrics test-results/issue-detail-perf/metrics.json   # check only
+```
+
+`s2-paths.mjs` holds the path rule: `ui/**` (not tests, stories or docs), the
+issue routes under `server/src/routes/`, `server/src/services/issues.ts`, the
+S2 harness, and these budget files. `s2-check.mjs` measures with the instance
+data in `./tmp/s2-check-*` (deleted afterwards). It prints one PASS or FAIL
+line that names each broken budget, and exits 1 on FAIL.
+
+It judges against `budgets.keystone-host.json`, the S2 budgets calibrated on
+the machine Keystone runs on (Linux, WSL2). It uses the same margins as
+`budgets.json`. Pass `--budgets tests/metrics-budgets/budgets.json` to use the
+Apple-silicon calibration. If the Keystone machine changes, recalibrate:
+run `pnpm test:metrics:s2 --skip-build` five times on unchanged `main`, take
+the median of each measure, and apply the margins.
+
 ## Margins
 
 A margin must be wider than the noise between runs, or CI becomes flaky. p95
