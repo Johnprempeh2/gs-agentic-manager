@@ -224,7 +224,6 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
         status: "todo" as const,
         priority: SUPPORT_ISSUE_PRIORITY[priority],
         assigneeAgentId: route.agentId,
-        responsibleUserId: queue.p1UserId,
       },
     };
   }

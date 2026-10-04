@@ -127,6 +127,10 @@ describeEmbeddedPostgres("client support queue", () => {
     expect(p1.ticket.dueAt.toISOString()).toBe("2026-10-07T13:00:00.000Z");
     expect(p2.ticket.dueAt.toISOString()).toBe("2026-10-08T09:00:00.000Z");
     expect(p3.ticket.dueAt.toISOString()).toBe("2026-10-09T09:00:00.000Z");
+    // Warnings at 75%: P1 Wed 13:00, P2 Wed 16:23, P3 Thu 14:15 BST.
+    expect(p1.ticket.warnAt.toISOString()).toBe("2026-10-07T12:00:00.000Z");
+    expect(p2.ticket.warnAt.toISOString()).toBe("2026-10-07T15:23:00.000Z");
+    expect(p3.ticket.warnAt.toISOString()).toBe("2026-10-08T13:15:00.000Z");
 
     const [label] = await db.select().from(labels).where(eq(labels.companyId, s.companyId));
     expect(label!.name).toBe("client:TST");
@@ -205,6 +209,25 @@ describeEmbeddedPostgres("client support queue", () => {
     await s.svc.triage(p2.issue.id, { respondedAt: new Date("2026-10-08T09:30:00.000Z") });
     const [p2Ticket] = await db.select().from(supportTickets).where(eq(supportTickets.issueId, p2.issue.id));
     expect(p2Ticket!.firstResponseAt).not.toBeNull();
+  });
+
+  it("opens one clock for an email-filed ticket, even when the delivery is retried", async () => {
+    const s = await seed();
+    const [endpointId, applicationId, connectionId] = [randomUUID(), randomUUID(), randomUUID()];
+    await db.insert(toolApplications).values({ id: applicationId, companyId: s.companyId, applicationKey: `chat:agentmail:${endpointId}`, name: "mail", type: "chat", status: "active" });
+    await db.insert(toolConnections).values({ id: connectionId, companyId: s.companyId, applicationId, name: "mail", uid: `chat-agentmail-${endpointId}`, connectionPurpose: "channel", transport: "chat_sdk", status: "active", enabled: true });
+    await db.insert(chatEndpoints).values({ id: endpointId, companyId: s.companyId, connectionId, provider: "agentmail", publicationMode: "explicit", externalExecutionPolicy: "agent", publicId: randomUUID(), assignedAgentId: s.triage });
+    await s.svc.configureQueue(s.companyId, { clientCode: "TST", projectId: s.projectId, triageAgentId: s.triage, emailEndpointId: endpointId, p1UserId: JOHN });
+    const queue = await s.svc.queueForEmailEndpoint(endpointId);
+    const { fields } = await s.svc.issueFields(queue!, { subject: "Site is down", body: "Nobody can log in", receivedAt: RECEIVED });
+    const [issue] = await db.insert(issues).values({ companyId: s.companyId, ...fields, labelIds: undefined } as never).returning();
+    const first = await s.svc.afterEmailIntake(endpointId, issue!.id, RECEIVED);
+    const retry = await s.svc.afterEmailIntake(endpointId, issue!.id, RECEIVED);
+    expect(first?.priority).toBe("P1");
+    expect(retry).toBeNull();
+    expect(await db.select().from(supportTickets).where(eq(supportTickets.issueId, issue!.id))).toHaveLength(1);
+    expect(await interactionsFor(issue!.id)).toHaveLength(1);
+    expect(s.wakeup).toHaveBeenCalledTimes(1);
   });
 
   it("rejects client names in place of a client code", async () => {
