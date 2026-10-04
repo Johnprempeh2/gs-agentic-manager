@@ -16,6 +16,14 @@ Use `--input <name>=<path>` to point a budget input at another report, and
 `--budgets <file>` to use another budget file (for example, a CI-runner
 calibration).
 
+## Watch mark
+
+The table shows each budget's `baseline` and the value as a multiple of it
+(`x baseline`; `-` when there is no baseline or it is 0). A passing value at
+2x baseline or more (0.7x or less for a `min` floor) prints `PASS (watch)`.
+The exit code does not change. Summit opens a look-into task for each watch
+row in the weekly report, and the owning engineer does the fix.
+
 ## Groups
 
 - **ci** — S2 (issue detail and board, p95 and median) and task-chat

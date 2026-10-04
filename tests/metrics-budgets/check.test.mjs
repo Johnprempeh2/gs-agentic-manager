@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { checkBudgets, evaluateBudget } from "./check.mjs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { checkBudgets, evaluateBudget, formatRow } from "./check.mjs";
 
 const config = JSON.parse(readFileSync(resolve(import.meta.dirname, "budgets.json"), "utf8"));
 
@@ -76,4 +78,63 @@ test("the committed R2 budgets judge the platform rate, not login refusals, and 
   assert.deepEqual(failing({ failureRate: 0.2, loginRefusals: 30 }), [], "a login outage alone does not break R2");
   assert.deepEqual(failing({ platformFailureRate: 0.09 }), ["r2-platform-failure-rate"]);
   assert.deepEqual(failing({ unattendedRecoveryShare: 0.3 }), ["r2-unattended-recovery-share"]);
+});
+
+test("a passing max budget at 2x baseline or more is marked PASS (watch)", () => {
+  // R2 platform failure rate, week to 2026-10-04: 4.9% against a 1.88% baseline, under the 8% limit.
+  const budget = { id: "r2", number: "R2", path: "r2.rate", baseline: 0.0188, max: 0.08 };
+  const watched = evaluateBudget(budget, { r2: { rate: 0.049 } });
+  assert.equal(watched.status, "pass");
+  assert.equal(watched.watch, true);
+  assert.match(formatRow(watched), /\| 0\.049 \| 0\.0188 \| 2\.61x \| 0\.08 \| - \| PASS \(watch\): /);
+  assert.equal(evaluateBudget(budget, { r2: { rate: 0.0376 } }).watch, true, "exactly 2x is watched");
+  const quiet = evaluateBudget(budget, { r2: { rate: 0.037 } });
+  assert.equal(quiet.watch, undefined);
+  assert.match(formatRow(quiet), /\| 1\.97x \| .* \| PASS: within budget \|$/);
+  assert.equal(evaluateBudget(budget, { r2: { rate: 0.09 } }).status, "fail", "over the limit still fails, not watch");
+});
+
+test("a passing min floor at 0.7x baseline or less is marked PASS (watch)", () => {
+  const budget = { id: "share", number: "R2", path: "r2.share", baseline: 0.5, min: 0.3 };
+  const watched = evaluateBudget(budget, { r2: { share: 0.35 } });
+  assert.equal(watched.status, "pass");
+  assert.equal(watched.watch, true);
+  assert.match(formatRow(watched), /\| 0\.70x \| 0\.3 \| - \| PASS \(watch\): /);
+  assert.equal(evaluateBudget(budget, { r2: { share: 0.36 } }).watch, undefined);
+  assert.equal(evaluateBudget(budget, { r2: { share: 1.5 } }).watch, undefined, "a high value on a floor is not drift");
+});
+
+test("a budget with no baseline (or a zero baseline) shows - and is never watched", () => {
+  const none = evaluateBudget({ id: "n", number: "S1", path: "v", max: 10 }, { v: 9 });
+  assert.equal(none.watch, undefined);
+  assert.match(formatRow(none), /^\| n \| S1 \| 9 \| - \| - \| 10 \| - \| PASS: within budget \|$/);
+  const zero = evaluateBudget({ id: "z", number: "R1", path: "v", baseline: 0, max: 2 }, { v: 1 });
+  assert.equal(zero.watch, undefined);
+  assert.match(formatRow(zero), /^\| z \| R1 \| 1 \| 0 \| - \| 2 \|/);
+});
+
+test("a watch row does not change the exit code", () => {
+  const dir = mkdtempSync(join(tmpdir(), "metric-budgets-"));
+  try {
+    const run = (rate) => {
+      writeFileSync(join(dir, "report.json"), JSON.stringify({ r2: { rate } }));
+      writeFileSync(join(dir, "budgets.json"), JSON.stringify({
+        inputs: { r: join(dir, "report.json") },
+        budgets: [{ id: "r2", number: "R2", group: "weekly", input: "r", path: "r2.rate", baseline: 0.0188, max: 0.08 }],
+      }));
+      try {
+        return { code: 0, out: execFileSync(process.execPath, [resolve(import.meta.dirname, "check.mjs"), "--group", "weekly", "--budgets", join(dir, "budgets.json")], { encoding: "utf8", stdio: "pipe" }) };
+      } catch (error) {
+        return { code: error.status, out: error.stdout };
+      }
+    };
+    const watched = run(0.049);
+    assert.equal(watched.code, 0);
+    assert.match(watched.out, /\| Budget \| # \| Value \| Baseline \| x baseline \| Limit \| Samples \| Result \|/);
+    assert.match(watched.out, /PASS \(watch\)/);
+    assert.equal(run(0.02).code, 0);
+    assert.equal(run(0.09).code, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
