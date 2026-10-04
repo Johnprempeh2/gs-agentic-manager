@@ -385,6 +385,9 @@ describe("Sidebar", () => {
     expect(labels).not.toContain("Projects");
     expect(container.querySelector('a[href="/agents"]')).toBeNull();
     expect(container.querySelector("aside")?.classList).toContain("border-r");
+    // GRE-585: Deliverables sits under Search in the top group, once.
+    expect(container.querySelector("nav > div:first-child")?.textContent).toMatch(/^New TaskSearchDeliverables/);
+    expect(container.querySelectorAll('a[href="/deliverables"]')).toHaveLength(1);
 
     flushSync(() => {
       root.unmount();
@@ -495,12 +498,13 @@ describe("Sidebar", () => {
     }
   });
 
-  it("puts the Everest chat directly under Search (GRE-259)", async () => {
+  it("puts Deliverables then the Everest chat directly under Search (GRE-259, GRE-585)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
     const root = await renderSidebar();
 
     const top = container.querySelector("nav > div:first-child");
-    expect(top?.textContent).toBe("New TaskSearchEverest");
+    expect(top?.textContent).toBe("New TaskSearchDeliverablesEverest");
+    expect(container.querySelectorAll('a[href="/deliverables"]')).toHaveLength(1);
     expect(top?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
     expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
 
@@ -525,7 +529,7 @@ describe("Sidebar", () => {
     expect(headings).toEqual(["Work", "Team", "Build", "Company"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Inbox", "My tasks", "Decisions", "Agent tasks", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workspaces", "Deliverables", "Artifacts", "Casesbeta"]);
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workspaces", "Artifacts", "Casesbeta"]);
     expect(sectionLabels("Company")).toEqual(["Skills", "Connectors", "Audit", "Releases", "Settings"]);
     expect(
       container.querySelector('a[href="/issues"] svg')?.classList.contains("lucide-circle-check"),
@@ -541,7 +545,7 @@ describe("Sidebar", () => {
   it("shows Deep Dive after Cases only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Deliverables", "Artifacts", "Casesbeta", "Deep Divebeta"]);
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Artifacts", "Casesbeta", "Deep Divebeta"]);
     flushSync(() => {
       root.unmount();
     });
