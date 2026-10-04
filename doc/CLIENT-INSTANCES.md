@@ -148,6 +148,11 @@ scripts/client-instance.sh status --root <root>
 
 The same `--root` always gives the same edition, ports and data.
 
+`status` also shows the newest backup and its age, the current release tag,
+and the last upgrade and restore. It prints a `WARNING` line when there is no
+backup or the newest is older than 2 hours; the exit code stays 0. Run
+`status` before and after each upgrade.
+
 ## Check an instance
 
 ```sh
