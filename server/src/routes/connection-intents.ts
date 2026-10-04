@@ -9,7 +9,7 @@ import {
   connectionsSearchInputSchema,
   declineConnectionIntentSchema,
 } from "@greatstone/shared";
-import { forbidden, unauthorized } from "../errors.js";
+import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { verifyRuntimeToolsToken } from "../runtime-tools-token.js";
 import { connectionIntentService } from "../services/connection-intents.js";
 import { logActivity } from "../services/activity-log.js";
@@ -18,6 +18,7 @@ import { accessService } from "../services/access.js";
 import type { heartbeatService } from "../services/heartbeat.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { resolveGitHubOperationCredentials } from "../services/github-operation-credentials.js";
+import { RUN_NOT_ACTIVE } from "../services/run-identity.js";
 
 function bearer(req: Request) {
   const value = req.header("authorization") ?? "";
@@ -40,6 +41,25 @@ function resultContent(value: unknown) {
 export { RUNTIME_CONNECTION_TOOL_DEFINITIONS } from "../services/connection-tool-definitions.js";
 import { RUNTIME_CONNECTION_TOOL_DEFINITIONS } from "../services/connection-tool-definitions.js";
 
+/**
+ * The HTTP log line for a refused GitHub credential request carries only the
+ * route and status. Record which run was refused and why, so the warning can
+ * be explained from the log alone. Refusal messages are fixed server text and
+ * the capability itself is never logged.
+ */
+function logGitHubCredentialRefusal(error: unknown, run: { runId: string; agentId: string }) {
+  if (!(error instanceof HttpError) || error.status >= 500) return;
+  const details = error.details && typeof error.details === "object"
+    ? error.details as { code?: unknown } : {};
+  const code = typeof details.code === "string" ? details.code : undefined;
+  logger.info(
+    { ...run, status: error.status, ...(code ? { code } : {}), reason: error.message.slice(0, 200) },
+    code === RUN_NOT_ACTIVE
+      ? "GitHub credentials refused: the run had already ended (a late git command from a finished run)"
+      : "GitHub credentials refused",
+  );
+}
+
 /** Public, token-authenticated routes mounted before the general actor middleware. */
 export function runtimeConnectionIntentRoutes(db: Db) {
   const router = Router();
@@ -53,9 +73,14 @@ export function runtimeConnectionIntentRoutes(db: Db) {
       ? req.headers["x-paperclip-github-capability"] : bearer(req), "github_credentials");
     if (!claims) throw unauthorized("Invalid GitHub runtime capability");
     res.setHeader("Cache-Control", "no-store");
-    res.json(await resolveGitHubOperationCredentials(db, {
-      companyId: claims.company_id, agentId: claims.sub, runId: claims.run_id,
-    }));
+    try {
+      res.json(await resolveGitHubOperationCredentials(db, {
+        companyId: claims.company_id, agentId: claims.sub, runId: claims.run_id,
+      }));
+    } catch (error) {
+      logGitHubCredentialRefusal(error, { runId: claims.run_id, agentId: claims.sub });
+      throw error;
+    }
   });
 
   router.get("/mcp/runtime-tools", async (req, res) => {

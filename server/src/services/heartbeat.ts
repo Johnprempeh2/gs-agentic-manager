@@ -17,6 +17,7 @@ import { admitExplicitNativeContinuation, undeliveredLegacyUserCommentIds } from
 import { connectionIntentService } from "./connection-intents.js";
 import { agentAiAccessRoute, applyAiAccessRoute, readAiAccessRoute, resolveAiAccessRouteBinding } from "./ai-access-route.js";
 import { managedAiSessionFingerprintConfig, prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings, isAiConnectionBusy, AI_AUTH_ENV_KEYS } from "./ai-connection-runtime.js";
+import { managedAiCleanupLogFields } from "./managed-ai-cleanup.js";
 import { aiConnectionService } from "./ai-connections.js";
 import { AI_ACCESS_ROUTE_DEFINITIONS, aiConnectionBindingSchema, isAiAuthRequiredErrorCode } from "@greatstone/shared";
 import { executionBlockerPredicate, getExecutionBlocker } from "./execution-blocker.js";
@@ -28251,7 +28252,7 @@ export function heartbeatService(
         }
       }
     } finally {
-      if (managedAiRuntime) await managedAiRuntime.cleanup().catch(() => logger.warn({ runId: run.id }, "AI connection refresh or cleanup failed"));
+      if (managedAiRuntime) await managedAiRuntime.cleanup().catch((error) => logger.warn({ runId: run.id, ...managedAiCleanupLogFields(error) }, "AI connection refresh or cleanup failed"));
       let latestRun = await getRun(run.id).catch(() => null);
       // The provider refused the managed credential. Once the refusal is
       // confirmed, show the connection as needing attention so the next runs

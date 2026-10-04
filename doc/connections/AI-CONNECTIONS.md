@@ -168,7 +168,10 @@ persists; a tie or an unparseable freshness value keeps the stored
 credential, so a spent single-use refresh token never overwrites a good one.
 Refreshes are merged only into the originating active grant, with a
 revocation check. Temporary homes are removed on normal completion or
-failure.
+failure. Removal retries for about 1.5 seconds, because the provider can still
+be writing into its home as it exits. If the write-back or the removal still
+fails, the warning `AI connection refresh or cleanup failed` names the
+provider, the step (`refresh` or `cleanup`) and a redacted cause.
 
 A fresh task execution cannot enter subscription contention. The freshest-write
 rule above resolves the conflict instead. A run that already entered this wait
