@@ -3109,6 +3109,11 @@ export function deriveIssueUserContext(
 
   return {
     myLastTouchAt,
+    // My tasks tells "Waiting for answer" from "Answer ready" with these.
+    // myLastTouchAt cannot: it moves on a read, and on any update to a task
+    // assigned to me, so an agent's reply never reads as unread there.
+    myLastCommentAt,
+    myLastReadAt,
     lastExternalCommentAt,
     isUnreadForMe,
   };
@@ -6450,6 +6455,8 @@ async function listBlockedInboxIssues(
       liveDescendantCount?: number;
       lastActivityAt: Date;
       myLastTouchAt?: Date | null;
+      myLastCommentAt?: Date | null;
+      myLastReadAt?: Date | null;
       lastExternalCommentAt?: Date | null;
       isUnreadForMe?: boolean;
     }

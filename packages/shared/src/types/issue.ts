@@ -874,6 +874,10 @@ export interface Issue {
   externalChannelBinding?: import("./chat-channels.js").ExternalChannelBindingSummary | null;
   mentionedProjects?: Project[];
   myLastTouchAt?: Date | null;
+  /** When the signed-in user last commented; only on lists asked for with a user context. */
+  myLastCommentAt?: Date | null;
+  /** When the signed-in user last opened the task; same lists as myLastCommentAt. */
+  myLastReadAt?: Date | null;
   lastExternalCommentAt?: Date | null;
   lastActivityAt?: Date | null;
   isUnreadForMe?: boolean;
@@ -935,6 +939,10 @@ export type CompactIssue = Pick<
   monitorNextCheckAt?: Date | null;
   liveDescendantCount?: number;
   myLastTouchAt?: Date | null;
+  /** When the signed-in user last commented; only on lists asked for with a user context. */
+  myLastCommentAt?: Date | null;
+  /** When the signed-in user last opened the task; same lists as myLastCommentAt. */
+  myLastReadAt?: Date | null;
   lastExternalCommentAt?: Date | null;
   lastActivityAt?: Date | null;
   isUnreadForMe?: boolean;

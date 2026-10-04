@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { AttentionItem, AttentionSubject, Issue, IssueRelationIssueSummary } from "@greatstone/shared";
-import { mergeMyTasks, selectMyTasks } from "./myTasks";
+import {
+  askTargetAgentId,
+  handOffAgentChoices,
+  isDoneToday,
+  mergeMyTasks,
+  myTasksAskState,
+  myTasksGroupOf,
+  selectDoneToday,
+  selectHandedOffTasks,
+  selectMyTasks,
+} from "./myTasks";
 
 const ME = "user-john";
 
@@ -228,5 +238,125 @@ describe("mergeMyTasks", () => {
     });
 
     expect(result.issues.map((issue) => issue.id)).toEqual(["x"]);
+  });
+});
+
+describe("My tasks row actions (GRE-619)", () => {
+  const NOW = new Date("2026-10-04T15:00:00");
+  const at = (time: string) => new Date(`2026-10-04T${time}`);
+
+  describe("myTasksAskState", () => {
+    it("is waiting while your question is the newest comment", () => {
+      expect(myTasksAskState({ myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("09:00:00") }, NOW.getTime()))
+        .toBe("waiting");
+      expect(myTasksAskState({ myLastCommentAt: at("14:00:00"), lastExternalCommentAt: null }, NOW.getTime()))
+        .toBe("waiting");
+    });
+
+    it("is answered when an agent replied and you have not read it", () => {
+      expect(myTasksAskState(
+        { myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("14:30:00"), myLastReadAt: at("14:10:00") },
+        NOW.getTime(),
+      )).toBe("answered");
+    });
+
+    it("is answered when you never opened the task", () => {
+      expect(myTasksAskState({ myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("14:30:00"), myLastReadAt: null }, NOW.getTime()))
+        .toBe("answered");
+    });
+
+    it("clears once you read the answer", () => {
+      expect(myTasksAskState(
+        { myLastCommentAt: at("14:00:00"), lastExternalCommentAt: at("14:30:00"), myLastReadAt: at("14:45:00") },
+        NOW.getTime(),
+      )).toBeNull();
+    });
+
+    it("ignores tasks you never commented on, or long ago", () => {
+      expect(myTasksAskState({ myLastCommentAt: null, lastExternalCommentAt: at("14:30:00") }, NOW.getTime())).toBeNull();
+      expect(myTasksAskState(
+        { myLastCommentAt: new Date("2026-09-01T10:00:00"), lastExternalCommentAt: null },
+        NOW.getTime(),
+      )).toBeNull();
+    });
+  });
+
+  describe("myTasksGroupOf", () => {
+    const quiet = { myLastCommentAt: null, lastExternalCommentAt: null };
+
+    it("puts done tasks in Done today", () => {
+      expect(myTasksGroupOf({ ...quiet, status: "done", assigneeAgentId: null }, ["assigned"], NOW.getTime()))
+        .toBe("done_today");
+    });
+
+    it("keeps your own tasks in Needs you", () => {
+      expect(myTasksGroupOf({ ...quiet, status: "todo", assigneeAgentId: null }, ["assigned"], NOW.getTime()))
+        .toBe("needs_you");
+    });
+
+    it("moves a task you asked about to Waiting, and back when the answer is ready", () => {
+      const asked = { status: "todo" as const, assigneeAgentId: null, myLastCommentAt: at("14:00:00"), lastExternalCommentAt: null };
+      expect(myTasksGroupOf(asked, ["assigned"], NOW.getTime())).toBe("waiting");
+      expect(myTasksGroupOf(
+        { ...asked, lastExternalCommentAt: at("14:30:00"), myLastReadAt: at("14:10:00") },
+        ["assigned"],
+        NOW.getTime(),
+      )).toBe("needs_you");
+    });
+
+    it("puts handed-off tasks in Waiting", () => {
+      expect(myTasksGroupOf(
+        { status: "todo", assigneeAgentId: "agent-everest", myLastCommentAt: at("14:00:00"), lastExternalCommentAt: null },
+        [],
+        NOW.getTime(),
+      )).toBe("waiting");
+    });
+
+    it("keeps blocking work and decisions in Needs you even while you wait", () => {
+      const asked = { status: "todo" as const, assigneeAgentId: "agent-ridge", myLastCommentAt: at("14:00:00"), lastExternalCommentAt: null };
+      expect(myTasksGroupOf(asked, ["blocking", "assigned"], NOW.getTime())).toBe("needs_you");
+      expect(myTasksGroupOf(asked, ["decision"], NOW.getTime())).toBe("needs_you");
+    });
+  });
+
+  it("Done today keeps only tasks closed since midnight, newest first", () => {
+    const early = makeIssue("1", { status: "done", completedAt: at("08:00:00") });
+    const late = makeIssue("2", { status: "done", completedAt: at("13:00:00") });
+    const yesterday = makeIssue("3", { status: "done", completedAt: new Date("2026-10-03T23:59:00") });
+    const open = makeIssue("4", { status: "todo", completedAt: at("09:00:00") });
+    expect(isDoneToday(yesterday, NOW)).toBe(false);
+    expect(selectDoneToday([early, yesterday, late, open], NOW).map((issue) => issue.id)).toEqual(["2", "1"]);
+  });
+
+  it("finds open tasks handed to an agent that you are waiting on", () => {
+    const now = NOW.getTime();
+    const handed = makeIssue("1", { assigneeUserId: null, assigneeAgentId: "agent-everest", myLastCommentAt: at("14:00:00") });
+    const mine = makeIssue("2", { myLastCommentAt: at("14:00:00") });
+    const read = makeIssue("3", {
+      assigneeUserId: null,
+      assigneeAgentId: "agent-ridge",
+      myLastCommentAt: at("10:00:00"),
+      lastExternalCommentAt: at("11:00:00"),
+      myLastReadAt: at("11:30:00"),
+    });
+    const closed = makeIssue("4", { status: "done", assigneeUserId: null, assigneeAgentId: "agent-everest", myLastCommentAt: at("14:00:00") });
+    expect(selectHandedOffTasks([handed, mine, read, closed], ME, now).map((issue) => issue.id)).toEqual(["1"]);
+  });
+
+  it("lists active agents by name with the lead first", () => {
+    const agents = [
+      { id: "a-mica", name: "Mica", status: "idle" },
+      { id: "a-everest", name: "Everest", status: "running" },
+      { id: "a-old", name: "Old", status: "terminated" },
+      { id: "a-paused", name: "Paused", status: "paused" },
+      { id: "a-flint", name: "Flint", status: "active" },
+    ];
+    expect(handOffAgentChoices(agents, "a-everest").map((agent) => agent.name)).toEqual(["Everest", "Flint", "Mica"]);
+  });
+
+  it("asks the assignee agent, else the agent that made the task, else the lead", () => {
+    expect(askTargetAgentId({ assigneeAgentId: "a-ridge", createdByAgentId: "a-mica" }, "a-everest")).toBe("a-ridge");
+    expect(askTargetAgentId({ assigneeAgentId: null, createdByAgentId: "a-mica" }, "a-everest")).toBe("a-mica");
+    expect(askTargetAgentId({ assigneeAgentId: null, createdByAgentId: null }, "a-everest")).toBe("a-everest");
   });
 });

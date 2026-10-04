@@ -47,7 +47,10 @@ export interface IssueRowProps {
   statusSlot?: ReactNode;
   /** Stable metadata slot before the task's optional collection columns. */
   metadata?: ReactNode;
-  /** Stable interactive action slot before the identifier and timestamp columns. */
+  /**
+   * Stable interactive action slot before the identifier and timestamp
+   * columns. On a phone the actions sit on their own line under the title.
+   */
   actions?: ReactNode;
   /** Controls the canonical trailing identifier without affecting legacy layouts. */
   showIdentifier?: boolean;
@@ -369,6 +372,9 @@ export function IssueRow({
           {mobileMeta ? (
             <span className="text-xs text-muted-foreground sm:hidden">{mobileMeta}</span>
           ) : null}
+          {actions ? (
+            <span data-slot="task-row-actions-phone" className="flex flex-wrap items-center gap-1 sm:hidden">{actions}</span>
+          ) : null}
         </span>
 
         <span
@@ -456,6 +462,9 @@ export function IssueRow({
             {checklistDependencyChips}
           </span>
         ) : null}
+        {actions ? (
+          <span data-slot="task-row-actions-phone" className="flex flex-wrap items-center gap-1 sm:hidden">{actions}</span>
+        ) : null}
         <span className="flex items-center gap-2 self-stretch sm:order-1 sm:shrink-0">
           {showUnreadSlot ? (
             // Reserved leftmost dot gutter (desktop). Present on read and unread
@@ -530,8 +539,9 @@ export function IssueRow({
           ) : null}
         </span>
       </span>
-      {(onArchive || desktopTrailing || trailingMeta || externalObjectSummary) ? (
+      {(onArchive || desktopTrailing || trailingMeta || externalObjectSummary || actions) ? (
         <span className="ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
+          {actions ? <span data-slot="task-row-actions" className="flex shrink-0 items-center gap-1">{actions}</span> : null}
           {onArchive ? (
             <InboxArchiveButton onArchive={onArchive} disabled={archiveDisabled} />
           ) : null}
