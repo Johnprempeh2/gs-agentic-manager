@@ -1,9 +1,10 @@
 // Run: node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/editions.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { INSTANCE_FEATURE_CATALOG } from "../../packages/shared/src/feature-catalog.js";
+import { INSTANCE_FEATURE_CATALOG, INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog.js";
 import { parseManagedConfigEnv } from "../../server/src/services/managed-config.js";
 import {
+  CLIENT_DEFAULT_OK,
   MANAGED_FEATURES_OFF,
   MANAGED_FEATURES_ON,
   MANAGED_HIDDEN_SETTINGS,
@@ -33,6 +34,33 @@ test("Managed pins exactly the section 5 features", () => {
   assert.deepEqual(Object.keys(parsed.features).sort(), [...managedOn, ...MANAGED_FEATURES_OFF].sort());
   assert.deepEqual(values.expectOff, [...MANAGED_FEATURES_OFF].sort());
   assert.deepEqual(values.expectOn, [...MANAGED_FEATURES_ON].sort());
+});
+
+test("every feature switch has one client-install decision (GRE-575)", () => {
+  const decisions = new Map<string, string[]>();
+  const add = (key: string, list: string) => decisions.set(key, [...(decisions.get(key) ?? []), list]);
+  for (const key of MANAGED_FEATURES_ON) add(key, "Managed on");
+  for (const key of MANAGED_FEATURES_OFF) add(key, "Managed off");
+  for (const key of Object.keys(CLIENT_DEFAULT_OK)) add(key, "default is OK");
+
+  const missing = INSTANCE_FEATURE_KEYS.filter((key) => !decisions.has(key));
+  assert.deepEqual(missing, [], `No client-install decision for: ${missing.join(", ")}`);
+  const twice = [...decisions].filter(([, lists]) => lists.length > 1).map(([key, lists]) => `${key} (${lists.join(", ")})`);
+  assert.deepEqual(twice, [], `More than one decision for: ${twice.join(", ")}`);
+  const unknown = [...decisions.keys()].filter((key) => !Object.hasOwn(INSTANCE_FEATURE_CATALOG, key));
+  assert.deepEqual(unknown, [], `Not in the feature catalog: ${unknown.join(", ")}`);
+  for (const [key, reason] of Object.entries(CLIENT_DEFAULT_OK)) {
+    assert.ok(reason.trim().length > 0, `"default is OK" needs a reason: ${key}`);
+  }
+});
+
+test("\"default is OK\" switches are not pinned", () => {
+  const values = buildEditionValues({ edition: "managed", catalogVersion });
+  const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
+  assert.ok(parsed);
+  for (const key of Object.keys(CLIENT_DEFAULT_OK)) {
+    assert.equal(Object.hasOwn(parsed.features, key), false, key);
+  }
 });
 
 test("client installs never show Deep Dive (deep dive design, section 5 rule 12)", () => {
