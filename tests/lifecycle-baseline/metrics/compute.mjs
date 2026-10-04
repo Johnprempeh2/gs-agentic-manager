@@ -234,6 +234,40 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
 }
 
 /**
+ * R1 detail — parked wakes on issues with no live run (register row 51, GRE-685).
+ *
+ * A parked wake (`deferred_issue_execution`) whose issue has no
+ * `executionRunId` waits for a drain that will not come. The server's
+ * stranded-queue sweep promotes it only when it carries comment ids or an
+ * interaction answer, so review hand-offs, "blockers resolved" and assignment
+ * wakes stay parked. Counts such wakes requested at least `minAgeMinutes` ago,
+ * split by wake reason. Read-only measurement before the sweep change (row 50).
+ */
+export function computeParkedWakes(snapshot, { now, parkedWakeMinAgeMinutes = 10 } = {}) {
+  const nowMs = ms(now ?? snapshot.now);
+  const cutoff = nowMs - parkedWakeMinAgeMinutes * 60_000;
+  const byId = new Map((snapshot.issues ?? []).map((issue) => [issue.id, issue]));
+  const counts = new Map();
+  let total = 0;
+  for (const wake of snapshot.wakeRequests ?? []) {
+    if (wake.status !== "deferred_issue_execution") continue;
+    const requested = ms(wake.requestedAt);
+    if (requested == null || requested > cutoff) continue;
+    // The sweep matches the issue on payload.issueId; older wakes name it elsewhere.
+    const issue = [wake.issueId, wake.taskId, wake.contextIssueId, wake.contextTaskId].map((id) => id && byId.get(id)).find(Boolean);
+    if (!issue || issue.executionRunId) continue;
+    const reason = wake.reason ?? "unknown";
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    total += 1;
+  }
+  return {
+    minAgeMinutes: parkedWakeMinAgeMinutes,
+    total,
+    byReason: [...counts].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
+  };
+}
+
+/**
  * R2 — run failure rate and unattended recovery share.
  *
  * Denominator: runs that finished inside the window as succeeded or failed
@@ -449,6 +483,7 @@ export function computeAuthFailures(snapshot, { now, windowDays = 7 } = {}) {
 export function computeAll(snapshot, options = {}) {
   return {
     r1: computeStrandedTrees(snapshot, options),
+    parkedWakes: computeParkedWakes(snapshot, options),
     r2: computeRunFailures(snapshot, options),
     auth: computeAuthFailures(snapshot, options),
     s1: computeWakeLatency(snapshot, options),

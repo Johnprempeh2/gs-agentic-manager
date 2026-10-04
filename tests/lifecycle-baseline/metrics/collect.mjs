@@ -40,7 +40,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
       assignee_agent_id as "assigneeAgentId", assignee_user_id as "assigneeUserId",
       conversation_user_id as "conversationUserId", conversation_state as "conversationState",
       monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt", hidden_at as "hiddenAt",
-      updated_at as "updatedAt", completed_at as "completedAt"
+      execution_run_id as "executionRunId", updated_at as "updatedAt", completed_at as "completedAt"
     from issues where true ${scope("company_id")}`;
   const runs = await tx`
     select r.id, r.company_id as "companyId", r.agent_id as "agentId", r.status,
@@ -59,7 +59,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
       run_id as "runId", created_at as "createdAt"
     from activity_log where created_at >= ${since} ${scope("company_id")}`;
   const wakeRequests = await tx`
-    select status, payload->>'issueId' as "issueId", payload->>'taskId' as "taskId",
+    select status, reason, requested_at as "requestedAt", payload->>'issueId' as "issueId", payload->>'taskId' as "taskId",
       payload->'_paperclipWakeContext'->>'issueId' as "contextIssueId",
       payload->'_paperclipWakeContext'->>'taskId' as "contextTaskId"
     from agent_wakeup_requests
@@ -111,6 +111,7 @@ const markdown = [
   "| # | Number | Value | Sample |",
   "|---|---|---:|---|",
   `| R1 | Stranded task trees stopped in window | ${metrics.r1.weekly} | ${metrics.r1.treesWithOpenWork} trees with open work; ${metrics.r1.total} stranded in total |`,
+  `| R1 | Parked wakes on an issue with no live run, older than ${metrics.parkedWakes.minAgeMinutes} min | ${metrics.parkedWakes.total} | ${metrics.parkedWakes.byReason.length ? `top reasons: ${metrics.parkedWakes.byReason.slice(0, 5).map((entry) => `${entry.reason} ${entry.count}`).join(", ")}` : "none"} |`,
   `| R2 | Platform failure rate | ${pct(metrics.r2.platformFailureRate)} | ${metrics.r2.platformFailed} failed / ${metrics.r2.platformFinished} finished, rejected logins left out (all-in ${pct(metrics.r2.failureRate)}; ${metrics.r2.cancelled} cancelled, excluded) |`,
   `| R2 | Login refusals (count) | ${metrics.r2.loginRefusals} | ${metrics.auth.retriesAfterAuthFailure} retries after them; ${metrics.auth.retryExhaustionsFromAuthFailures} of ${metrics.auth.retryExhaustions} \`Bounded retry exhausted\` events follow one |`,
   `| R2 | Failures recovered without a human | ${pct(metrics.r2.unattendedRecoveryShare)} | ${metrics.r2.recoveredWithoutHuman} auto, ${metrics.r2.recoveredWithHuman} human, ${metrics.r2.unresolved} unresolved, ${metrics.r2.failedWithoutIssue} without issue |`,
