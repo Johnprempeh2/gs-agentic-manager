@@ -147,6 +147,18 @@ Merging does not change the live app. A version goes live in these steps.
    the tests the pull request names pass again, the issue's "Done when" list is
    met, and the diff does not touch `~/GSAM/`, secrets or client data. Keystone
    posts "Ready to merge" or "Not ready, because ..." on the issue.
+
+   **Page-load check (S2, GRE-501).** In the pull request's checkout, run
+   `pnpm metrics:s2-needed --pr <number>`. If it says "yes" (the pull request
+   changes `ui/`, the issue/board API routes, or the S2 harness or budgets),
+   run `pnpm test:metrics:s2` there. It builds the UI, times the issue page
+   and the board on a throwaway instance under `./tmp/`, and takes about two
+   minutes. Paste its first line and the six result lines into the ready
+   check. If it says FAIL, run it once more (the machine is shared, so one slow
+   run can be noise). If it still fails, the verdict is "Not ready, because
+   the page is slower", unless John or Everest has accepted the slowdown;
+   then merge it and list it on the next release card with the numbers.
+   Nothing runs this on GitHub; Keystone runs it locally.
 2. **Merge (Keystone).** `gh pr merge` when the verdict is "Ready to merge" and
    CI is green (Fork CI, or `local-ci` when GitHub could not start it; see
    "The merge rule"); for a big change, also after Flint's checks pass. Keystone never

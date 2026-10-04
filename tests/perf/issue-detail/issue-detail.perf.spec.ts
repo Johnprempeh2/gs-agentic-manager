@@ -351,6 +351,8 @@ async function prepareBoardStorageState(browser: Browser, baseURL: string, seedD
   const page = await context.newPage();
   await page.goto(`/${seedData.prefix}/issues`);
   await page.getByRole("button", { name: "Board view" }).click();
+  // The board defaults to "Recent", which hides backlog; the baseline timed every open column.
+  await page.getByRole("group", { name: "Show tasks" }).getByRole("button", { name: "All", exact: true }).click();
   await expect(page.getByText(seedData.boardMarkerTitles[0]).first()).toBeVisible({ timeout: PAGE_READY_TIMEOUT_MS });
   const statePath = path.join(OUTPUT_DIR, "board-storage-state.json");
   await context.storageState({ path: statePath });
