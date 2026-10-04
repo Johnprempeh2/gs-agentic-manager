@@ -92,6 +92,8 @@
     "test:lifecycle-baseline": "node tests/lifecycle-baseline/run.mjs",
     "test:lifecycle-baseline:support": "node --test tests/lifecycle-baseline/report.test.mjs",
     "test:lifecycle-baseline:typecheck": "tsc -p tests/lifecycle-baseline/tsconfig.json",
+    "test:memory-acceptance": "node tests/memory-acceptance/run.mjs",
+    "test:memory-acceptance:self": "node --test tests/memory-acceptance/runner.test.mjs",
     "metrics:collect": "node tests/lifecycle-baseline/metrics/collect.mjs",
     "metrics:budgets": "node tests/metrics-budgets/check.mjs",
     "metrics:lost-time": "node tests/lifecycle-baseline/metrics/lost-time-collect.mjs",
