@@ -602,8 +602,14 @@ const UI_WORKSPACE = {
   "pnpm-lock.yaml": "lockfileVersion: '9.0'\n\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\n\nimporters:\n\n  .: {}\n\n  ui: {}\n",
 };
 
+// This fake pnpm runs the UI build the way the real one does, so the test does
+// not need a real pnpm. On the Mac, greatstone-common.sh puts
+// /opt/homebrew/opt/node@24/bin, with the real pnpm, ahead of the fake. On
+// Linux the fake runs, and a fake that only exits 0 never built the UI.
+const UI_BUILD_PNPM = '#!/bin/sh\nif [ "$1" = --filter ] && [ "$2" = @greatstone/ui ] && [ "$3" = build ]; then cd ui && exec node build.mjs; fi\nexit 0\n';
+
 test("a UI-only release rebuilds the built UI that live serves", async (t) => {
-  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: UI_WORKSPACE, rc: { "ui/VERSION": "new" } });
+  const box = releaseSandbox(t, UI_BUILD_PNPM, { base: UI_WORKSPACE, rc: { "ui/VERSION": "new" } });
   mkdirSync(join(box.live, "ui", "dist"), { recursive: true });
   writeFileSync(join(box.live, "ui", "dist", "index.html"), "built old");
   const fake = await fakeRestartNotRequired(box.live);

@@ -1447,6 +1447,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/tool-connections/{connectionId}/activity",
   "GET /api/tool-connections/{connectionId}/test-agents",
   "GET /api/tool-connections/{connectionId}/test-agents/{agentId}/access",
+  "POST /api/tool-connections/{connectionId}/test-agents/{agentId}/check",
   "POST /api/tool-connections/{connectionId}/test-calls",
   "GET /api/tool-connections/{connectionId}/test-calls/{actionRequestId}",
   "POST /api/agents/me/connections/{connectionId}/start-authorization",
@@ -2846,6 +2847,75 @@ for (const route of [
     summary: route[2],
   });
 }
+
+// "Ask Greatstone to add" (GRE-434). The route returns the approval row it
+// created, or the open one it reused for the same catalogue team.
+const catalogTeamRequestApprovalResponseSchema = z.object({
+  id: z.string().uuid(),
+  companyId: z.string().uuid(),
+  type: z.literal("request_board_approval"),
+  requestedByAgentId: z.string().uuid().nullable(),
+  requestedByUserId: z.string().nullable(),
+  status: z.enum(["pending", "revision_requested"]),
+  payload: z.object({
+    title: z.string(),
+    summary: z.string(),
+    recommendedAction: z.string(),
+    nextActionOnApproval: z.string(),
+    source: z.literal("team_catalog"),
+    catalogTeamId: z.string(),
+    catalogTeamKey: z.string(),
+    catalogTeamName: z.string(),
+  }),
+  decisionNote: z.string().nullable(),
+  decidedByUserId: z.string().nullable(),
+  decidedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/teams/catalog/{catalogId}/request",
+  tags: ["teams"],
+  summary: "Ask the board to add a catalog team",
+  description:
+    "Creates a request_board_approval card that names the catalog team. Nothing is " +
+    "installed. Only allowed when the instance setting teamCatalogAddMode is `request`; " +
+    "otherwise 409 (use the install route). Uses the install permission check: a board " +
+    "user with agents:create (or instance admin / local implicit board), or an agent of " +
+    "this company that can create agents. A team hidden by the instance catalog filter " +
+    "reads as not found. While an open card (pending or revision_requested) already " +
+    "exists for the same team, that card is returned with 200 instead of a new one. No " +
+    "request body.",
+  request: {
+    params: z.object({ companyId: z.string(), catalogId: z.string() }),
+    query: z.object({
+      ref: z
+        .string()
+        .optional()
+        .describe("Catalog team reference; overrides the catalogId path segment."),
+    }),
+  },
+  responses: {
+    200: {
+      description: "An open approval card for this team already existed and is returned",
+      content: {
+        "application/json": { schema: catalogTeamRequestApprovalResponseSchema },
+      },
+    },
+    201: {
+      description: "A new approval card was created",
+      content: {
+        "application/json": { schema: catalogTeamRequestApprovalResponseSchema },
+      },
+    },
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
 
 // ─── Agents ──────────────────────────────────────────────────────────────────
 
@@ -11189,6 +11259,68 @@ registerCurrentRoute({
   path: "/api/tool-connections/{connectionId}/test-agents/{agentId}/access",
   tags: ["tool-access"],
   summary: "Summarize one agent's effective access to a tool connection",
+});
+
+// "Test as agent" (GRE-341). Mirrors ToolConnectionAgentCheckResult in
+// @greatstone/shared. A failed check is still a 200 with ok: false.
+const toolConnectionAgentCheckResultSchema = z
+  .object({
+    ok: z.boolean(),
+    reason: z
+      .enum([
+        "no_access",
+        "no_grant",
+        "expired_token",
+        "scope_missing",
+        "service_error",
+      ])
+      .nullable(),
+    code: z.string().nullable(),
+    message: z.string(),
+    agentId: z.string(),
+    connectionId: z.string(),
+    grantKind: z.enum(["organization", "user", "agent"]).nullable(),
+    access: z
+      .object({
+        toolCount: z.number().int().nonnegative(),
+        allowedCount: z.number().int().nonnegative(),
+        askFirstCount: z.number().int().nonnegative(),
+        offCount: z.number().int().nonnegative(),
+      })
+      .strict(),
+    checkedAt: z.string().datetime(),
+  })
+  .strict();
+
+registry.registerPath({
+  method: "post",
+  path: "/api/tool-connections/{connectionId}/test-agents/{agentId}/check",
+  tags: ["tool-access"],
+  summary: "Check a tool connection with one agent's access",
+  description:
+    "Board actors only, with tools:use or tools:manage_connections in the connection's " +
+    "company and permission to assign work to the agent. Resolves the agent's tool " +
+    "profile, policies, grant and credential, then runs one read-only tools/list probe " +
+    "with that credential. Starts no run, calls no model, and does not save the result " +
+    "as the connection's health. A failed check returns 200 with ok: false and a reason. " +
+    "No request body.",
+  request: {
+    params: z.object({ connectionId: z.string(), agentId: z.string() }),
+  },
+  responses: {
+    200: r.ok(toolConnectionAgentCheckResultSchema),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: {
+      description: "AI connections are checked from the AI account, not as an agent",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    501: {
+      description: "Tool gateway service is not configured",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
 });
 
 registerCurrentRoute({
