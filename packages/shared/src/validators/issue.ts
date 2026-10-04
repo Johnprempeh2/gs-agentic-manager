@@ -707,6 +707,11 @@ const createIssueBaseSchema = z.object({
   reviewPolicy: z.enum(ISSUE_REVIEW_POLICIES).optional().nullable(),
   assigneeAgentId: z.string().guid().optional().nullable(),
   assigneeUserId: z.string().optional().nullable(),
+  /**
+   * Assign the task to a team (GRE-437). The server sets the assignee to the
+   * team lead; a team with no lead is refused. `null` clears the team.
+   */
+  teamId: z.string().guid().optional().nullable(),
   requestDepth: issueRequestDepthInputSchema.optional().default(0),
   createdByUserId: z.string().optional().nullable(),
   responsibleUserId: z.string().optional().nullable(),
@@ -1366,6 +1371,16 @@ export const paperclipQuestionSetPayloadSchema = z
     }
   });
 
+/**
+ * Marks a card that needs the board user at the computer (GRE-450): a host
+ * command, a sign-in, a restart. Decisions keeps these in "At your desk" and
+ * leaves them out of the phone badge and push.
+ */
+export const interactionAtDeskSchema = z.object({
+  /** The exact command to run, shown in a copy box. */
+  command: z.string().trim().min(1).max(4000).nullable().optional(),
+});
+
 export const askUserQuestionsPayloadSchema = z
   .object({
     version: z.literal(1),
@@ -1377,6 +1392,7 @@ export const askUserQuestionsPayloadSchema = z
     questionSet: paperclipQuestionSetPayloadSchema.optional(),
     /** Stable correlation for draft handoff from a live runtime request. */
     runtimeRequestId: z.string().trim().min(1).max(255).nullable().optional(),
+    atDesk: interactionAtDeskSchema.nullable().optional(),
   })
   .superRefine((value, ctx) => {
     const seenQuestionIds = new Set<string>();
@@ -1536,6 +1552,7 @@ export const requestConfirmationPayloadSchema = z.object({
   target: requestConfirmationTargetSchema.nullable().optional(),
   toolAction: requestConfirmationToolActionPayloadSchema.optional(),
   secretProposal: requestConfirmationSecretProposalPayloadSchema.optional(),
+  atDesk: interactionAtDeskSchema.nullable().optional(),
 });
 
 export const requestCheckboxConfirmationOptionSchema = z.object({

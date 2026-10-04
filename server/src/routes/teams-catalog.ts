@@ -6,14 +6,15 @@ import {
   catalogTeamPreviewSchema,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
-import { accessService, agentService } from "../services/index.js";
+import { accessService, agentService, instanceSettingsService } from "../services/index.js";
 import {
+  catalogTeamMatchesFilter,
   getCatalogTeamOrThrow,
   listCatalogTeams,
   readCatalogTeamFile,
   teamsCatalogService,
 } from "../services/teams-catalog.js";
-import { forbidden } from "../errors.js";
+import { conflict, forbidden, notFound } from "../errors.js";
 import { assertAuthenticated, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function teamsCatalogRoutes(db: Db) {
@@ -21,6 +22,21 @@ export function teamsCatalogRoutes(db: Db) {
   const agents = agentService(db);
   const access = accessService(db);
   const svc = teamsCatalogService(db);
+  const instanceSettings = instanceSettingsService(db);
+
+  async function catalogFilter() {
+    return (await instanceSettings.getGeneral()).teamCatalogFilter;
+  }
+
+  // A team hidden by the instance filter (GRE-427) reads as absent everywhere:
+  // listing, detail, files, preview and install.
+  async function assertCatalogTeamOffered(catalogRef: string) {
+    const team = await getCatalogTeamOrThrow(catalogRef);
+    if (!catalogTeamMatchesFilter(team, await catalogFilter())) {
+      throw notFound("Catalog team not found");
+    }
+    return team;
+  }
 
   function canCreateAgents(agent: { permissions: Record<string, unknown> | null | undefined }) {
     if (!agent.permissions || typeof agent.permissions !== "object") return false;
@@ -69,20 +85,22 @@ export function teamsCatalogRoutes(db: Db) {
       category: firstQueryString(req.query.category),
       q: firstQueryString(req.query.q),
     });
-    res.json(await listCatalogTeams(query));
+    const filter = await catalogFilter();
+    res.json(await listCatalogTeams(filter === "all" ? query : { ...query, filter }));
   });
 
   router.get("/teams/catalog/:catalogId/files", async (req, res) => {
     assertAuthenticated(req);
     const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
     const relativePath = firstQueryString(req.query.path) ?? "TEAM.md";
+    await assertCatalogTeamOffered(catalogRef);
     res.json(await readCatalogTeamFile(catalogRef, relativePath));
   });
 
   router.get("/teams/catalog/:catalogId", async (req, res) => {
     assertAuthenticated(req);
     const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
-    res.json(await getCatalogTeamOrThrow(catalogRef));
+    res.json(await assertCatalogTeamOffered(catalogRef));
   });
 
   router.get("/companies/:companyId/teams/catalog/installed", async (req, res) => {
@@ -98,6 +116,7 @@ export function teamsCatalogRoutes(db: Db) {
       const companyId = req.params.companyId as string;
       const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
       assertCompanyAccess(req, companyId);
+      await assertCatalogTeamOffered(catalogRef);
       const result = await svc.previewCatalogTeamImport(companyId, catalogRef, {
         ...req.body,
         actor: getActorInfo(req),
@@ -113,6 +132,7 @@ export function teamsCatalogRoutes(db: Db) {
       const companyId = req.params.companyId as string;
       const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
       await assertCanInstallCatalogTeam(req, companyId);
+      await assertCatalogTeamOffered(catalogRef);
       const result = await svc.installCatalogTeam(companyId, catalogRef, {
         ...req.body,
         actor: getActorInfo(req),
@@ -120,6 +140,20 @@ export function teamsCatalogRoutes(db: Db) {
       res.status(201).json(result);
     },
   );
+
+  // "Ask Greatstone to add" (GRE-434): with add mode `request`, the board asks
+  // for a team through an approval card. Same permission check as install.
+  router.post("/companies/:companyId/teams/catalog/:catalogId/request", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
+    await assertCanInstallCatalogTeam(req, companyId);
+    const team = await assertCatalogTeamOffered(catalogRef);
+    if ((await instanceSettings.getGeneral()).teamCatalogAddMode !== "request") {
+      throw conflict("This instance installs catalogue teams directly. Use install instead.");
+    }
+    const { approval, created } = await svc.requestCatalogTeam(companyId, team, getActorInfo(req));
+    res.status(created ? 201 : 200).json(approval);
+  });
 
   return router;
 }

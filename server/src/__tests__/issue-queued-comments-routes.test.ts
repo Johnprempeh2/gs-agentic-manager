@@ -23,7 +23,7 @@ import {
   runIdentityContexts,
 } from "@greatstone/db";
 import { errorHandler } from "../middleware/index.js";
-import { issueRoutes } from "../routes/issues.js";
+import { issueRoutes, QUEUED_STEERING_TRANSACTION_LIMIT } from "../routes/issues.js";
 import { heartbeatService } from "../services/heartbeat.js";
 import { initializeRunIdentity, reconcileSteeredIdentity } from "../services/run-identity.js";
 import {
@@ -32,10 +32,22 @@ import {
 } from "./helpers/embedded-postgres.js";
 
 const steerNativeSessionMock = vi.hoisted(() => vi.fn());
+const getNativeSessionSteeringStateMock = vi.hoisted(() => vi.fn());
 vi.mock("../services/native-runtime/native-session-executor.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../services/native-runtime/native-session-executor.js")>();
   steerNativeSessionMock.mockImplementation(actual.steerNativeSession);
-  return { ...actual, steerNativeSession: steerNativeSessionMock };
+  getNativeSessionSteeringStateMock.mockImplementation(actual.getNativeSessionSteeringState);
+  return {
+    ...actual,
+    steerNativeSession: steerNativeSessionMock,
+    getNativeSessionSteeringState: getNativeSessionSteeringStateMock,
+  };
+});
+const reconcileSteeredIdentityMock = vi.hoisted(() => vi.fn());
+vi.mock("../services/run-identity.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/run-identity.js")>();
+  reconcileSteeredIdentityMock.mockImplementation(actual.reconcileSteeredIdentity);
+  return { ...actual, reconcileSteeredIdentity: reconcileSteeredIdentityMock };
 });
 const { NativeSessionSteeringError } = await import("../services/native-runtime/native-session-executor.js");
 
@@ -50,11 +62,15 @@ if (!embeddedPostgresSupport.supported) {
 
 describeEmbeddedPostgres("issue queued-comment routes", () => {
   let db!: ReturnType<typeof createDb>;
+  // Serves the route on a single pooled connection: any await inside a route
+  // transaction that needs a second connection would hang the request.
+  let singleConnectionDb!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-queued-comments-");
     db = createDb(tempDb.connectionString);
+    singleConnectionDb = createDb(tempDb.connectionString, { maxConnections: 1 });
   }, 30_000);
 
   const testProcesses = new Map<string, ChildProcess>();
@@ -74,7 +90,12 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
     await tempDb?.cleanup();
   });
 
-  function app(companyId: string, userId = "queue-owner", agentActor?: { agentId: string; runId: string }) {
+  function app(
+    companyId: string,
+    userId = "queue-owner",
+    agentActor?: { agentId: string; runId: string },
+    routeDb: ReturnType<typeof createDb> = db,
+  ) {
     const testApp = express();
     testApp.use(express.json());
     testApp.use((req, _res, next) => {
@@ -89,12 +110,12 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
       };
       next();
     });
-    testApp.use("/api", issueRoutes(db, {} as any, {}));
+    testApp.use("/api", issueRoutes(routeDb, {} as any, {}));
     testApp.use(errorHandler);
     return testApp;
   }
 
-  async function seedQueue() {
+  async function seedQueue(issuePrefix = "QUE") {
     const companyId = randomUUID();
     const agentId = randomUUID();
     const issueId = randomUUID();
@@ -104,7 +125,7 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
     await db.insert(companies).values({
       id: companyId,
       name: "Queue Test Company",
-      issuePrefix: "QUE",
+      issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
     await db.insert(agents).values({
@@ -167,7 +188,7 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
     await db.insert(issues).values({
       id: issueId,
       companyId,
-      identifier: "QUE-1",
+      identifier: `${issuePrefix}-1`,
       title: "Queued steering",
       status: "in_progress",
       priority: "medium",
@@ -1528,6 +1549,141 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
       .then((rows) => rows[0]);
     expect(rejected?.status).toBe("rejected");
   });
+
+  /** True while another transaction holds the issue row lock. */
+  async function issueRowLockHeld(issueId: string) {
+    try {
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`select id from issues where id = ${issueId} for update nowait`);
+      });
+      return false;
+    } catch (error) {
+      const failure = error as { code?: string; cause?: { code?: string } };
+      if ((failure.code ?? failure.cause?.code) === "55P03") return true;
+      throw error;
+    }
+  }
+
+  it("keeps runtime probes and late identity reconciliation out of the steering transaction on one pooled connection", async () => {
+    const seeded = await seedQueue();
+    const dispatchIdentity = await seedDispatchIdentity(seeded);
+    const client = app(seeded.companyId, "queue-owner", undefined, singleConnectionDb);
+    const initial = await request(client)
+      .get(`/api/issues/${seeded.issueId}/queued-comments`)
+      .expect(200);
+
+    const observed: Array<{ call: "steer" | "reconcile" | "probe"; lockHeld: boolean }> = [];
+    const defaultProbe = getNativeSessionSteeringStateMock.getMockImplementation()!;
+    const defaultReconcile = reconcileSteeredIdentityMock.getMockImplementation()!;
+    const reconcileCallsBefore = reconcileSteeredIdentityMock.mock.calls.length;
+    getNativeSessionSteeringStateMock.mockImplementation(async () => {
+      observed.push({ call: "probe", lockHeld: await issueRowLockHeld(seeded.issueId) });
+      return { disposition: "available", activeTurnId: "turn-1" };
+    });
+    // The reconciliation takes the issue row lock itself. Hold it back until
+    // the response is in so that its own lock cannot be mistaken for the
+    // steering transaction's lock by the probe observation.
+    let responseReceived!: () => void;
+    const afterResponse = new Promise<void>((resolve) => {
+      responseReceived = resolve;
+    });
+    reconcileSteeredIdentityMock.mockImplementationOnce(async (...args: unknown[]) => {
+      observed.push({ call: "reconcile", lockHeld: await issueRowLockHeld(seeded.issueId) });
+      await afterResponse;
+      return defaultReconcile(...args);
+    });
+    steerNativeSessionMock.mockImplementationOnce(async (input: { onAcknowledged?: () => Promise<void> }) => {
+      observed.push({ call: "steer", lockHeld: await issueRowLockHeld(seeded.issueId) });
+      // The runtime acknowledges and fires the persistence callback without
+      // awaiting it, exactly as steerNativeSession does.
+      void input.onAcknowledged?.();
+      // Leave time for a premature reconciliation to start under the lock.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return { turnId: "turn-1" };
+    });
+
+    try {
+      const steered = await request(client)
+        .post(`/api/issues/${seeded.issueId}/queued-comments/${seeded.commentIds[0]}/steer`)
+        .send({ queueId: seeded.wakeId, targetRunId: seeded.runId, revision: initial.body.revision });
+      responseReceived();
+      expect(steered.status, JSON.stringify(steered.body)).toBe(200);
+      expect(steered.body.entries.map((entry: any) => entry.comment.id)).toEqual([seeded.commentIds[1]]);
+      expect(steered.body.steeringDisposition).toBe("available");
+      await vi.waitFor(() =>
+        expect(reconcileSteeredIdentityMock.mock.calls.length).toBeGreaterThan(reconcileCallsBefore));
+      await reconcileSteeredIdentityMock.mock.results[reconcileCallsBefore]?.value;
+    } finally {
+      responseReceived();
+      getNativeSessionSteeringStateMock.mockImplementation(defaultProbe);
+    }
+
+    // The bounded steering call is the only runtime work under the lock.
+    expect(observed.filter((entry) => entry.call === "steer")).toEqual([{ call: "steer", lockHeld: true }]);
+    // The response probe and the late reconciliation wait for the commit.
+    expect(observed.filter((entry) => entry.call === "probe")).toEqual([{ call: "probe", lockHeld: false }]);
+    expect(observed.filter((entry) => entry.call === "reconcile")).toEqual([{ call: "reconcile", lockHeld: false }]);
+
+    const [steeringIdentity] = await db
+      .select()
+      .from(runIdentityContexts)
+      .where(eq(runIdentityContexts.messageId, seeded.commentIds[0]));
+    expect(steeringIdentity).toMatchObject({ status: "accepted", parentContextId: dispatchIdentity.id });
+    const [run] = await db
+      .select({ resultJson: heartbeatRuns.resultJson, activeIdentityContextId: heartbeatRuns.activeIdentityContextId })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.id, seeded.runId));
+    expect(run?.activeIdentityContextId).toBe(steeringIdentity!.id);
+    expect((run?.resultJson as any)?.queuedSteeringAcknowledgements?.[seeded.commentIds[0]]).toMatchObject({
+      status: "acknowledged",
+      queueId: seeded.wakeId,
+      turnId: "turn-1",
+    });
+  });
+
+  it("caps how many steering transactions hold a pooled connection at once", async () => {
+    const queues = await Promise.all(
+      Array.from({ length: QUEUED_STEERING_TRANSACTION_LIMIT + 1 }, (_, index) => seedQueue(`QU${String.fromCharCode(65 + index)}`)),
+    );
+    const revisions = await Promise.all(queues.map(async (seeded) => {
+      const queue = await request(app(seeded.companyId))
+        .get(`/api/issues/${seeded.issueId}/queued-comments`)
+        .expect(200);
+      return queue.body.revision as string;
+    }));
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let overLimit!: () => void;
+    const limitExceeded = new Promise<void>((resolve) => {
+      overLimit = resolve;
+    });
+    const defaultSteer = steerNativeSessionMock.getMockImplementation()!;
+    steerNativeSessionMock.mockImplementation(async (input: { runId: string }) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      if (inFlight > QUEUED_STEERING_TRANSACTION_LIMIT) overLimit();
+      // Hold the transaction open like a slow runtime. Without the cap every
+      // request reaches this point together and releases the others at once.
+      await Promise.race([limitExceeded, new Promise((resolve) => setTimeout(resolve, 750))]);
+      inFlight -= 1;
+      return { turnId: `turn-${input.runId}` };
+    });
+
+    try {
+      const responses = await Promise.all(queues.map((seeded, index) =>
+        request(app(seeded.companyId))
+          .post(`/api/issues/${seeded.issueId}/queued-comments/${seeded.commentIds[0]}/steer`)
+          .send({ queueId: seeded.wakeId, targetRunId: seeded.runId, revision: revisions[index] })));
+      for (const response of responses) {
+        expect(response.status, JSON.stringify(response.body)).toBe(200);
+      }
+    } finally {
+      steerNativeSessionMock.mockImplementation(defaultSteer);
+    }
+    expect(maxInFlight).toBeGreaterThan(0);
+    expect(maxInFlight).toBeLessThanOrEqual(QUEUED_STEERING_TRANSACTION_LIMIT);
+  }, 30_000);
 
   it("throws queued_comment_order_mismatch and changes no row for an invalid reorder set", async () => {
     const seeded = await seedQueue();

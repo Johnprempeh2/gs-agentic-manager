@@ -12,6 +12,9 @@ import { MissingUserSecretsBanner } from "../pages/secrets/MissingUserSecretsBan
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
+import { agentTeamsApi } from "../api/agentTeams";
+import { isTeamAssigneeValue, teamAssigneeValue, teamForAssigneeValue } from "../lib/agent-teams";
+import { TeamColorDot } from "./AgentTeamsDialog";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
@@ -553,6 +556,11 @@ export function NewIssueDialog() {
     queryFn: () => agentsApi.list(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
+  const { data: agentTeams } = useQuery({
+    queryKey: queryKeys.agentTeams.list(effectiveCompanyId!),
+    queryFn: () => agentTeamsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newIssueOpen,
+  });
 
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(effectiveCompanyId!),
@@ -603,7 +611,17 @@ export function NewIssueDialog() {
     userId: currentUserId,
   });
 
-  const selectedAssignee = useMemo(() => parseAssigneeValue(assigneeValue), [assigneeValue]);
+  // A `team:<id>` value (GRE-437) assigns the team lead and stores the team.
+  const resolveAssigneeValue = useCallback(
+    (value: string) => {
+      if (!isTeamAssigneeValue(value)) return parseAssigneeValue(value);
+      const team = teamForAssigneeValue(value, agentTeams);
+      return { assigneeAgentId: team?.leadAgentId ?? null, assigneeUserId: null };
+    },
+    [agentTeams],
+  );
+  const selectedTeam = useMemo(() => teamForAssigneeValue(assigneeValue, agentTeams), [assigneeValue, agentTeams]);
+  const selectedAssignee = useMemo(() => resolveAssigneeValue(assigneeValue), [assigneeValue, resolveAssigneeValue]);
   const selectedAssigneeAgentId = selectedAssignee.assigneeAgentId;
   const selectedAssigneeUserId = selectedAssignee.assigneeUserId;
 
@@ -1093,6 +1111,7 @@ export function NewIssueDialog() {
       workMode,
       ...(selectedAssigneeAgentId ? { assigneeAgentId: selectedAssigneeAgentId } : {}),
       ...(selectedAssigneeUserId ? { assigneeUserId: selectedAssigneeUserId } : {}),
+      ...(selectedTeam ? { teamId: selectedTeam.id } : {}),
       ...(newIssueDefaults.parentId ? { parentId: newIssueDefaults.parentId } : {}),
       ...(newIssueDefaults.goalId ? { goalId: newIssueDefaults.goalId } : {}),
       ...(projectId ? { projectId } : {}),
@@ -1254,6 +1273,21 @@ export function NewIssueDialog() {
       })),
     ],
     [agents, companyMembers?.users, currentUserId, recentAssigneeIds],
+  );
+  // Teams go only in the assignee picker, not the reviewer picker. Teams with
+  // no lead cannot take a task, so they are left out here.
+  const assigneeOptionsWithTeams = useMemo<InlineEntityOption[]>(
+    () => [
+      ...(agentTeams ?? [])
+        .filter((team) => team.leadAgentId)
+        .map((team) => ({
+          id: teamAssigneeValue(team.id),
+          label: `Team: ${team.name}`,
+          searchText: `team ${team.name}`,
+        })),
+      ...assigneeOptions,
+    ],
+    [agentTeams, assigneeOptions],
   );
   const watchdogAgentOptions = useMemo<InlineEntityOption[]>(
     () =>
@@ -1524,7 +1558,7 @@ export function NewIssueDialog() {
               <InlineEntitySelector
                 ref={assigneeSelectorRef}
                 value={assigneeValue}
-                options={assigneeOptions}
+                options={assigneeOptionsWithTeams}
                 recentOptionIds={recentAssigneeOptionIds}
                 placeholder="Assignee"
                 className="h-8 px-2.5 py-0 sm:h-auto sm:px-2 sm:py-1"
@@ -1534,8 +1568,8 @@ export function NewIssueDialog() {
                 searchPlaceholder="Search assignees..."
                 emptyMessage="No assignees found."
                 onChange={(value) => {
-                  const nextAssignee = parseAssigneeValue(value);
-                  if (nextAssignee.assigneeAgentId) {
+                  const nextAssignee = resolveAssigneeValue(value);
+                  if (nextAssignee.assigneeAgentId && !isTeamAssigneeValue(value)) {
                     trackRecentAssignee(nextAssignee.assigneeAgentId);
                   }
                   setAssigneeValue(value);
@@ -1567,6 +1601,15 @@ export function NewIssueDialog() {
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const team = teamForAssigneeValue(option.id, agentTeams);
+                  if (team) {
+                    return (
+                      <>
+                        <TeamColorDot color={team.color} className="h-2 w-2" />
+                        <span className="truncate">{option.label}</span>
+                      </>
+                    );
+                  }
                   const assignee = parseAssigneeValue(option.id).assigneeAgentId
                     ? (agents ?? []).find((agent) => agent.id === parseAssigneeValue(option.id).assigneeAgentId)
                     : null;

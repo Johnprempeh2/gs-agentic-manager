@@ -1,7 +1,8 @@
 // Reads a local GS Agentic Manager database in a read-only transaction and
 // prints the "John's time" line for the 08:00 digest (GRE-397): Chase,
-// Unstick, Decisions and Failed runs for the last 24 hours, plus the 7-day
-// trend. Rules are in john-time.mjs.
+// Unstick, Decisions, Cards rejected and Failed runs for the last 24 hours,
+// rounds per approved card over 7 days, plus the 7-day trend. Rules are in
+// john-time.mjs.
 //
 //   pnpm metrics:john-time [--database-url URL] [--company ID] [--now ISO] [--john-user-ids a,b] [--json]
 //
@@ -11,7 +12,7 @@
 // database. Output never carries comment bodies, only ids.
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
-import { computeJohnTime, formatDigestLine } from "./john-time.mjs";
+import { APPROVAL_CARD_KINDS, computeJohnTime, formatDigestLine } from "./john-time.mjs";
 
 const root = resolve(import.meta.dirname, "../../..");
 const argv = process.argv.slice(2);
@@ -24,6 +25,8 @@ const companyId = flag("company");
 const now = new Date(flag("now", new Date().toISOString()));
 const johnFlag = flag("john-user-ids");
 const days = 7;
+// Rounds per approved card count rejections on the same task before the window.
+const roundsLookbackDays = 30;
 
 const host = new URL(databaseUrl).hostname;
 if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(host)) {
@@ -33,6 +36,7 @@ if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(host)) {
 const postgres = createRequire(join(root, "packages/db/package.json"))("postgres");
 const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 const since = new Date(now.getTime() - days * 86_400_000);
+const approvalSince = new Date(now.getTime() - (days + roundsLookbackDays) * 86_400_000);
 const scope = (column) => (companyId ? sql`and ${sql(column)} = ${companyId}` : sql``);
 
 const snapshot = await sql.begin("read only", async (tx) => {
@@ -43,8 +47,10 @@ const snapshot = await sql.begin("read only", async (tx) => {
     where c.author_type = 'user' and c.author_user_id in ${sql(johnUserIds)} and c.deleted_at is null
       and c.created_at > ${since} and c.created_at <= ${now} ${scope("c.company_id")}`;
   const interactions = await tx`
-    select status, resolved_by_user_id as "resolvedByUserId", resolved_at as "resolvedAt"
-    from issue_thread_interactions where resolved_at > ${since} and resolved_at <= ${now} ${scope("company_id")}`;
+    select kind, status, issue_id as "issueId", resolved_by_user_id as "resolvedByUserId", resolved_at as "resolvedAt"
+    from issue_thread_interactions
+    where (resolved_at > ${since} or (kind in ${sql([...APPROVAL_CARD_KINDS])} and resolved_at > ${approvalSince}))
+      and resolved_at <= ${now} ${scope("company_id")}`;
   const approvals = await tx`
     select status, decided_by_user_id as "decidedByUserId", decided_at as "decidedAt"
     from approvals where decided_at > ${since} and decided_at <= ${now} ${scope("company_id")}`;

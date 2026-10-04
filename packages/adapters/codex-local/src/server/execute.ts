@@ -38,6 +38,7 @@ import {
   buildInvocationEnvForLogs,
   ensureAbsoluteDirectory,
   ensurePaperclipSkillSymlink,
+  GSAM_SKILL_DISPLAY_NAMES,
   ensurePathInEnv,
   refreshPaperclipWorkspaceEnvForExecution,
   isPaperclipSkillSourceMissing,
@@ -558,6 +559,20 @@ export async function ensureCodexSkillsInjected(
         `[paperclip] Failed to inject Codex skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
+  }
+
+  // Built-ins now mount under their GSAM names; drop the old paperclip-named
+  // links into the repo so Codex lists each skill once.
+  for (const entry of skillsEntries) {
+    if (GSAM_SKILL_DISPLAY_NAMES[entry.key] !== entry.runtimeName) continue;
+    const legacyName = entry.key.slice(entry.key.lastIndexOf("/") + 1);
+    const legacyTarget = path.join(skillsHome, legacyName);
+    const linkedPath = await fs.readlink(legacyTarget).catch(() => null);
+    if (!linkedPath) continue;
+    const resolvedLinkedPath = path.resolve(skillsHome, linkedPath);
+    if (!(await isLikelyPaperclipRuntimeSkillPath(resolvedLinkedPath, legacyName, { requireSkillMarkdown: false }))) continue;
+    await fs.unlink(legacyTarget).catch(() => {});
+    await onLog("stdout", `[paperclip] Removed Codex skill "${legacyName}", now mounted as "${entry.runtimeName}"\n`);
   }
 
   await pruneBrokenUnavailablePaperclipSkillSymlinks(

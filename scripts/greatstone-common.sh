@@ -234,3 +234,97 @@ preview_running() {
   kill -0 "$pid" 2>/dev/null || return 1
   ps -o command= -p "$pid" | grep -qF -- "$PREVIEW_DATA_DIR"
 }
+
+# Prints the PIDs whose command line matches <pattern> (extended regex) and
+# whose working folder is <dir> or inside it. The folder tells live (~/GSAM/live)
+# from the preview (~/GSAM/preview/code) and from sandboxes in worktrees.
+pids_in_dir() {
+  local dir="$1" pattern="$2" pid cwd
+  for pid in $(pgrep -f -- "$pattern" 2>/dev/null || true); do
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+    case "$cwd" in "$dir" | "$dir"/*) printf '%s\n' "$pid" ;; esac
+  done
+}
+
+# Waits up to <seconds> for every PID in the list to exit. Fails if one is left.
+wait_gone() {
+  local secs="$1"
+  shift
+  [ "$#" -gt 0 ] || return 0
+  for _ in $(seq 1 "$secs"); do
+    kill -0 "$@" 2>/dev/null || return 0
+    sleep 1
+  done
+  ! kill -0 "$@" 2>/dev/null
+}
+
+# Stops the whole live server (GRE-442): its dev runner, every server tree in
+# the live checkout the runner leaves behind, and the live database. Before
+# #274 a stopped runner on Linux orphaned tsx, the server and PostgreSQL (the
+# 2 Oct bug), so each step looks for what the step before it left. Fails, and
+# names what is still running on stderr; then nothing new may start.
+stop_live_server() {
+  local dir pids pgfile pgpid left
+  dir="$(cd -P "$LIVE_DIR" && pwd)"
+  pids="$(pids_in_dir "$dir" 'dev-runner\.ts')"
+  if [ -n "$pids" ]; then
+    say "Stopping the live dev runner (pid $(echo $pids))..."
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+    # The runner from #274 on stops its server group in up to ~15s.
+    # shellcheck disable=SC2086
+    wait_gone 30 $pids || { printf '%s\n' "the live dev runner (pid $(echo $pids)) did not stop within 30s" >&2; return 1; }
+  fi
+  # tsx passes SIGTERM on to the server, which writes its hot-restart snapshot
+  # and stops PostgreSQL. Only tsx gets it: a second SIGTERM to the server
+  # itself could cut that short.
+  pids="$(pids_in_dir "$dir" 'tsx/dist/cli\.mjs .*src/index\.ts')"
+  if [ -n "$pids" ]; then
+    say "Stopping the live server left by the runner (tsx pid $(echo $pids))..."
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+    # shellcheck disable=SC2086
+    wait_gone 30 $pids || true
+  fi
+  # A server with no tsx above it.
+  pids="$(pids_in_dir "$dir" 'src/index\.ts')"
+  if [ -n "$pids" ]; then
+    say "Stopping the live server process (pid $(echo $pids))..."
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+    # shellcheck disable=SC2086
+    wait_gone 30 $pids || true
+  fi
+  # The live database, if it outlived the server. SIGINT is a fast shutdown.
+  pgfile="$LIVE_DATA_DIR/instances/$INSTANCE_ID/db/postmaster.pid"
+  pgpid="$(sed -n 1p "$pgfile" 2>/dev/null || true)"
+  if [ -n "$pgpid" ] && kill -0 "$pgpid" 2>/dev/null; then
+    say "Stopping the live database (pid $pgpid)..."
+    kill -INT "$pgpid" 2>/dev/null || true
+    wait_gone 30 "$pgpid" || true
+  fi
+  left="$(pids_in_dir "$dir" 'dev-runner\.ts|src/index\.ts')"
+  if [ -n "$pgpid" ] && kill -0 "$pgpid" 2>/dev/null; then left="$left $pgpid"; fi
+  if [ -n "$(echo $left)" ]; then
+    printf '%s\n' "these live processes did not stop: $(echo $left) (see: ps -o pid,pgid,args -p $(echo $left | tr ' ' ','))" >&2
+    return 1
+  fi
+  if curl -fsS -m 2 -o /dev/null "$LIVE_URL/api/health" 2>/dev/null; then
+    printf '%s\n' "a server still answers on $LIVE_URL after live was stopped" >&2
+    return 1
+  fi
+}
+
+# Starts live with $GS_ROOT/start-live.sh in a session of its own, so that the
+# end of the session this script runs in (a closed terminal, an SSH logout, the
+# end of a wsl.exe call) cannot hang up the live server. On 3 Oct 2026 the end
+# of the wsl.exe call that ran a --full-restart release stopped live moments
+# after it reported healthy. --wait keeps the exit status of start-live.sh.
+# macOS has no setsid; there start-live.sh runs directly, as before.
+start_live_server() {
+  if command -v setsid >/dev/null 2>&1; then
+    setsid --wait "$GS_ROOT/start-live.sh" </dev/null
+  else
+    "$GS_ROOT/start-live.sh" </dev/null
+  fi
+}

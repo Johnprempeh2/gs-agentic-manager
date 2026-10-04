@@ -51,6 +51,9 @@ import {
   linkIssueApprovalSchema,
   createIssueWorkProductSchema,
   updateIssueWorkProductSchema,
+  createDeliverableSchema,
+  markDeliverableSchema,
+  deliverablesQuerySchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
   upsertIssueFeedbackVoteSchema,
@@ -92,6 +95,10 @@ import {
   moveFolderItemSchema,
   moveFolderSchema,
   updateFolderSchema,
+  // Agent teams
+  addAgentTeamMemberSchema,
+  createAgentTeamSchema,
+  updateAgentTeamSchema,
   // Goal
   createGoalSchema,
   createGoalCheckInSchema,
@@ -1577,12 +1584,15 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/environments",
   "POST /api/environments/{environmentId}/custom-image-setup-sessions",
   "POST /api/companies/{companyId}/goals",
+  "POST /api/companies/{companyId}/agent-teams",
   "POST /api/companies/{companyId}/labels",
   "POST /api/issues/{id}/documents/{key}/annotations",
   "POST /api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
   "POST /api/routines/{id}/description/annotations",
   "POST /api/routines/{id}/description/annotations/{threadId}/comments",
   "POST /api/issues/{id}/work-products",
+  "POST /api/issues/{id}/deliverables",
+  "POST /api/companies/{companyId}/deliverables/mark",
   "POST /api/issues/{id}/low-trust/promotions",
   "POST /api/issues/{id}/approvals",
   "POST /api/companies/{companyId}/issues",
@@ -4158,6 +4168,60 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/deliverables",
+  tags: ["issues"],
+  summary: "List the latest version of each deliverable, with search, filters and sort",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: deliverablesQuerySchema,
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/deliverables/{id}",
+  tags: ["issues"],
+  summary: "Get a deliverable with its version history",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/{id}/opened",
+  tags: ["issues"],
+  summary: "Record that a deliverable was opened (for the recently opened sort)",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/mark",
+  tags: ["issues"],
+  summary: "Mark an existing artifact as a deliverable (board only)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(markDeliverableSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/deliverables",
+  tags: ["issues"],
+  summary: "Register a deliverable on an issue; the same key makes the next version",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(createDeliverableSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
   method: "patch",
   path: "/api/work-products/{id}",
   tags: ["issues"],
@@ -4816,6 +4880,80 @@ registry.registerPath({
   tags: ["routines"],
   summary: "Fire a public routine trigger",
   request: { params: z.object({ publicId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+// ─── Agent teams ─────────────────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/agent-teams",
+  tags: ["agents"],
+  summary: "List agent teams in a company, with member agent ids",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/agent-teams",
+  tags: ["agents"],
+  summary: "Create an agent team",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(createAgentTeamSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agent-teams/{id}",
+  tags: ["agents"],
+  summary: "Get an agent team",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/agent-teams/{id}",
+  tags: ["agents"],
+  summary: "Update an agent team; memberAgentIds, when sent, replaces the member list",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(updateAgentTeamSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/agent-teams/{id}",
+  tags: ["agents"],
+  summary: "Delete an agent team",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/agent-teams/{id}/members",
+  tags: ["agents"],
+  summary: "Add an agent to a team",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(addAgentTeamMemberSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/agent-teams/{id}/members/{agentId}",
+  tags: ["agents"],
+  summary: "Remove an agent from a team",
+  request: { params: z.object({ id: z.string(), agentId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 

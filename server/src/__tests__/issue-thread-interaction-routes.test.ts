@@ -159,7 +159,13 @@ vi.mock("../services/trust-preset-resolver.js", () => ({
   resolveCoreTrustPreset: mockResolveCoreTrustPreset,
 }));
 
+const mockIssueHasApprovalEvidence = vi.hoisted(() => vi.fn(async () => true));
+
 function registerModuleMocks() {
+  vi.doMock("../services/approval-evidence.js", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../services/approval-evidence.js")>()),
+    issueHasApprovalEvidence: mockIssueHasApprovalEvidence,
+  }));
   vi.doMock("../services/question-response-delivery.js", () => ({
     questionResponseDeliveryService: () => mockQuestionResponseDeliveries,
   }));
@@ -178,6 +184,9 @@ function registerModuleMocks() {
         ambiguous: false,
         agent: { id: raw },
       })),
+    }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
     }),
     clampIssueListLimit: (value: number) => value,
     companySkillService: () => ({
@@ -2371,6 +2380,74 @@ describe.sequential("issue thread interaction routes", () => {
         userId: null,
       },
     );
+  });
+
+  describe("approval cards for visual work (GRE-451)", () => {
+    const agentActor = {
+      type: "agent",
+      agentId: CREATED_AGENT_ID,
+      companyId: "company-1",
+      runId: RUN_1,
+    };
+    const designCard = {
+      kind: "request_confirmation",
+      idempotencyKey: "confirmation:design-1",
+      payload: { version: 1, prompt: "Approve the new Decisions card design?" },
+    };
+
+    it("returns 422 with a plain message when the task has nothing attached", async () => {
+      mockIssueHasApprovalEvidence.mockResolvedValueOnce(false);
+      const app = await createApp(agentActor);
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send(designCard);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toContain("John approves what he can see");
+      expect(res.body.error).toContain("/attachments");
+      expect(mockIssueHasApprovalEvidence).toHaveBeenCalledWith(mockDb, "company-1", ISSUE_ID);
+      expect(mockInteractionService.create).not.toHaveBeenCalled();
+    });
+
+    it("creates the card when the task has an attachment or deliverable", async () => {
+      mockIssueHasApprovalEvidence.mockResolvedValueOnce(true);
+      const app = await createApp(agentActor);
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send(designCard);
+
+      expect(res.status).toBe(201);
+      expect(mockInteractionService.create).toHaveBeenCalled();
+    });
+
+    it("does not ask for an attachment on cards that are not about visual work", async () => {
+      const app = await createApp(agentActor);
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send({
+          kind: "request_confirmation",
+          idempotencyKey: "confirmation:migration-1",
+          payload: { version: 1, prompt: "Run the backfill on the sandbox database?" },
+        });
+
+      expect(res.status).toBe(201);
+      expect(mockIssueHasApprovalEvidence).not.toHaveBeenCalled();
+    });
+
+    it("does not apply to board users", async () => {
+      mockIssueHasApprovalEvidence.mockResolvedValue(false);
+      const app = await createApp();
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send(designCard);
+
+      expect(res.status).toBe(201);
+      expect(mockIssueHasApprovalEvidence).not.toHaveBeenCalled();
+    });
   });
 
   it("allows a different in-scope agent run to respond when policy permits", async () => {

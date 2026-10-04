@@ -224,6 +224,9 @@ function registerRouteMocks() {
     ISSUE_LIST_MAX_LIMIT: 500,
     accessService: () => mockAccessService,
     agentService: () => mockAgentService,
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
+    }),
     budgetService: () => mockBudgetService,
     clampIssueListLimit: (value: number) => Math.min(Math.max(value, 1), 500),
     companySkillService: () => ({

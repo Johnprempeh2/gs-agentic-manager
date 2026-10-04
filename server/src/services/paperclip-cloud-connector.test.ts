@@ -9,6 +9,7 @@ import {
 } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import pino from "pino";
 
 import {
   createPaperclipCloudConnector,
@@ -546,6 +547,79 @@ describe("Paperclip Cloud connector", () => {
     expect(String(error)).not.toContain("access-secret");
     expect(String(error)).not.toContain("refresh-secret");
     expect(request).toHaveBeenCalledOnce();
+  });
+
+  function transportError(name: string, message: string, code?: string, cause?: unknown): Error {
+    const error = new Error(message, cause === undefined ? undefined : { cause });
+    error.name = name;
+    if (code) Object.assign(error, { code });
+    return error;
+  }
+
+  function fetchFailed(cause: Error): TypeError {
+    return new TypeError("fetch failed DO_NOT_REPORT refresh-secret", { cause });
+  }
+
+  it.each([
+    ["timeout", new DOMException("The operation was aborted due to timeout", "TimeoutError"), "TimeoutError"],
+    ["connect_timeout", fetchFailed(transportError("ConnectTimeoutError", "Connect Timeout Error 203.0.113.9:443 DO_NOT_REPORT", "UND_ERR_CONNECT_TIMEOUT")), "TypeError > ConnectTimeoutError [UND_ERR_CONNECT_TIMEOUT]"],
+    ["timeout", fetchFailed(transportError("HeadersTimeoutError", "Headers Timeout Error DO_NOT_REPORT", "UND_ERR_HEADERS_TIMEOUT")), "TypeError > HeadersTimeoutError [UND_ERR_HEADERS_TIMEOUT]"],
+    ["dns", fetchFailed(transportError("Error", "getaddrinfo ENOTFOUND my.example.test DO_NOT_REPORT", "ENOTFOUND")), "TypeError > Error [ENOTFOUND]"],
+    ["connection_refused", fetchFailed(transportError("Error", "connect ECONNREFUSED 203.0.113.9:443 DO_NOT_REPORT", "ECONNREFUSED")), "TypeError > Error [ECONNREFUSED]"],
+    ["connection_reset", fetchFailed(transportError("SocketError", "other side closed DO_NOT_REPORT", "UND_ERR_SOCKET")), "TypeError > SocketError [UND_ERR_SOCKET]"],
+    ["connection_reset", fetchFailed(transportError("Error", "read ECONNRESET DO_NOT_REPORT", "ECONNRESET")), "TypeError > Error [ECONNRESET]"],
+    ["tls", fetchFailed(transportError("Error", "certificate has expired DO_NOT_REPORT", "CERT_HAS_EXPIRED")), "TypeError > Error [CERT_HAS_EXPIRED]"],
+    ["tls", fetchFailed(transportError("Error", "Hostname/IP does not match DO_NOT_REPORT", "ERR_TLS_CERT_ALTNAME_INVALID")), "TypeError > Error [ERR_TLS_CERT_ALTNAME_INVALID]"],
+    ["network", fetchFailed(transportError("Error", "connect EHOSTUNREACH DO_NOT_REPORT", "EHOSTUNREACH")), "TypeError > Error [EHOSTUNREACH]"],
+    ["aborted", new DOMException("This operation was aborted DO_NOT_REPORT", "AbortError"), "AbortError"],
+    ["unknown", fetchFailed(transportError("refresh-secret", "DO_NOT_REPORT", "refresh-secret")), "TypeError > Error"],
+  ] as const)("classifies a %s transport failure without retaining its message", async (reason, thrown, chain) => {
+    const keys = config();
+    const request = vi.fn(async () => { throw thrown; });
+    const connector = createPaperclipCloudConnector({ config: keys.config, request: request as typeof fetch });
+
+    const error = await connector.refresh({ subject, companyId, refreshToken: "refresh-secret" }).catch((caught) => caught);
+    expect(error).toBeInstanceOf(PaperclipCloudConnectorError);
+    expect(error).toMatchObject({
+      code: "CONNECTOR_UNAVAILABLE",
+      message: "Paperclip Cloud connector is unavailable",
+      status: undefined,
+      reason,
+    });
+    expect(error.cause).toBeInstanceOf(Error);
+    expect(error.cause.message).toBe(`${reason}: ${chain}`);
+    // The server logger serializes the cause chain, so check what a log line would carry.
+    const logged = JSON.stringify(pino.stdSerializers.err(error));
+    expect(logged).toContain(`"reason":"${reason}"`);
+    expect(logged).toContain("Paperclip Cloud connector is unavailable");
+    for (const surface of [logged, String(error), JSON.stringify(error), error.cause.message, error.cause.stack]) {
+      expect(surface).not.toMatch(/DO_NOT_REPORT|refresh-secret|203\.0\.113|my\.example\.test/);
+    }
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it("classifies a lease request that ends without a response and gives the request a timeout", async () => {
+    const keys = config();
+    let signal: AbortSignal | null | undefined;
+    const request = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      signal = init?.signal;
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    const connector = createPaperclipCloudConnector({ config: keys.config, request: request as typeof fetch });
+
+    await expect(connector.leaseEvents({ subject, companyId })).rejects.toMatchObject({
+      code: "CONNECTOR_UNAVAILABLE",
+      reason: "timeout",
+    });
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(request).toHaveBeenCalledWith("https://my.example.test/v1/connector/events/lease", expect.anything());
+  });
+
+  it("does not add a transport reason to broker rejections", async () => {
+    const error = await rejection(Response.json({ error: "RATE_LIMITED" }, { status: 429 }));
+    expect(error).toMatchObject({ code: "CONNECTOR_REQUEST_FAILED", status: 429 });
+    expect((error as PaperclipCloudConnectorError).reason).toBeUndefined();
+    expect((error as PaperclipCloudConnectorError).cause).toBeUndefined();
   });
 
   it("requires an all-or-nothing environment configuration and loopback for HTTP", () => {

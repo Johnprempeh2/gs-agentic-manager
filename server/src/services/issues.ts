@@ -43,6 +43,7 @@ import {
   assets,
   companies,
   companyMemberships,
+  decisions,
   documentRevisions,
   documents,
   goals,
@@ -1814,6 +1815,7 @@ export interface IssueFilters {
   descendantOf?: string;
   createdFromIssueId?: string;
   labelId?: string;
+  teamId?: string;
   originKind?: string;
   originKindPrefix?: string;
   originId?: string;
@@ -3946,6 +3948,20 @@ async function listIssueBlockerAttentionMap(
           ),
         );
       for (const row of approvalRows) explicitWaitingIssueIds.add(row.issueId);
+
+      // An open agent decision waits on the board like a pending question, so
+      // its issue already has a Decisions card and is not a stalled blocker.
+      const decisionRows: Array<{ issueId: string }> = await dbOrTx
+        .select({ issueId: decisions.originIssueId })
+        .from(decisions)
+        .where(
+          and(
+            eq(decisions.companyId, companyId),
+            eq(decisions.status, "open"),
+            inArray(decisions.originIssueId, chunk),
+          ),
+        );
+      for (const row of decisionRows) explicitWaitingIssueIds.add(row.issueId);
     }
 
     // Recovery rows are intentionally company-wide: a liveness escalation for
@@ -4879,6 +4895,7 @@ const issueListSelect = {
   reviewPolicy: issues.reviewPolicy,
   assigneeAgentId: issues.assigneeAgentId,
   assigneeUserId: issues.assigneeUserId,
+  teamId: issues.teamId,
   checkoutRunId: issues.checkoutRunId,
   executionRunId: issues.executionRunId,
   executionAgentNameKey: issues.executionAgentNameKey,
@@ -6307,6 +6324,7 @@ async function blockedInboxIssueConditions(
     conditions.push(unreadForUserCondition(companyId, unreadForUserId));
   if (filters?.projectId)
     conditions.push(eq(issues.projectId, filters.projectId));
+  if (filters?.teamId) conditions.push(eq(issues.teamId, filters.teamId));
   if (filters?.workspaceId) {
     conditions.push(
       or(
@@ -7143,8 +7161,12 @@ export function issueService(db: Db) {
     });
   }
 
-  async function assertAssignableUser(companyId: string, userId: string) {
-    const membership = await db
+  async function assertAssignableUser(
+    companyId: string,
+    userId: string,
+    dbOrTx: DbReader = db,
+  ) {
+    const membership = await dbOrTx
       .select({ id: companyMemberships.id })
       .from(companyMemberships)
       .where(
@@ -7991,6 +8013,8 @@ export function issueService(db: Db) {
       }
       if (filters?.projectId)
         conditions.push(eq(issues.projectId, filters.projectId));
+      if (filters?.teamId)
+        conditions.push(eq(issues.teamId, filters.teamId));
       if (filters?.workspaceId) {
         conditions.push(
           or(
@@ -8264,6 +8288,8 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
       if (filters?.projectId)
         conditions.push(eq(issues.projectId, filters.projectId));
+      if (filters?.teamId)
+        conditions.push(eq(issues.teamId, filters.teamId));
       if (filters?.workspaceId) {
         conditions.push(
           or(
@@ -10685,8 +10711,12 @@ export function issueService(db: Db) {
           );
         }
       }
+      // No read in `update` may use the outer `db` directly. When the caller
+      // passes its transaction, a read through the outer pool would wait for a
+      // second connection while the caller holds this one, and enough
+      // concurrent callers leave the whole pool idle in transaction.
       const isolatedWorkspacesEnabled = (
-        await instanceSettings.getExperimental()
+        await instanceSettings.getExperimental({ db: dbOrTx })
       ).enableIsolatedWorkspaces;
       if (options.bindRuntimeSharedWorkspace) {
         const workspaceId = issueData.executionWorkspaceId ?? existing.executionWorkspaceId;
@@ -10816,6 +10846,7 @@ export function issueService(db: Db) {
         await assertAssignableUser(
           existing.companyId,
           issueData.assigneeUserId,
+          dbOrTx,
         );
       }
       let nextProjectId =
@@ -10854,6 +10885,7 @@ export function issueService(db: Db) {
           existing.companyId,
           null,
           nextProjectWorkspaceId,
+          dbOrTx,
         );
         validatedProjectWorkspace = workspace;
         nextProjectId = workspace.projectId;
@@ -10864,6 +10896,7 @@ export function issueService(db: Db) {
           existing.companyId,
           null,
           nextExecutionWorkspaceId,
+          dbOrTx,
         );
         validatedExecutionWorkspace = workspace;
         nextProjectId = workspace.projectId;
@@ -10875,6 +10908,7 @@ export function issueService(db: Db) {
             existing.companyId,
             nextProjectId,
             nextProjectWorkspaceId,
+            dbOrTx,
           );
         }
       }
@@ -10884,6 +10918,7 @@ export function issueService(db: Db) {
             existing.companyId,
             nextProjectId,
             nextExecutionWorkspaceId,
+            dbOrTx,
           );
         }
       }

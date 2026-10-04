@@ -15,6 +15,7 @@ import {
   Plus,
   Search,
   ServerCog,
+  Stethoscope,
   Trash2,
 } from "lucide-react";
 import type { ToolApplication, ToolConnection } from "@greatstone/shared";
@@ -61,6 +62,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/StatusBadge";
 import { buildCompanyUserProfileMap } from "@/lib/company-members";
 import { AppLogo } from "./AppLogo";
 import {
@@ -83,6 +85,11 @@ import {
   connectionOwnerProfile,
   type ConnectionOwnerProfile,
 } from "./connection-owner";
+import {
+  connectionCheckedLabel,
+  connectionHealthBadge,
+  startOAuthReconnect,
+} from "./connection-health";
 import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 type ConnectorRowModel = {
@@ -304,6 +311,15 @@ function aiReconnectHref(connection: ToolConnection): string | null {
   return `/apps/connect?source=${ai.provider}&reconnect=${connection.id}&method=ai-${ai.method}`;
 }
 
+/** OAuth accounts reconnect straight from this page by reopening the provider sign-in. */
+function reconnectsWithOAuth(connection: ToolConnection): boolean {
+  return connection.authKind === "oauth"
+    && connection.connectionPurpose !== "ai"
+    && connection.requiresReauthorization !== false
+    && connection.credentialSource !== "vercel_connect"
+    && !isRetiredComposioConnection(connection);
+}
+
 /**
  * The Apps landing page is the single connector catalog and account-management
  * surface. Connected providers sort first and expand in place to show every
@@ -391,6 +407,40 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     onError: (error) =>
       pushToast({
         title: "Couldn't resume the connection",
+        body: error instanceof Error ? error.message : "Please try again.",
+        tone: "error",
+      }),
+  });
+  // A test or reconnect that works resumes every task waiting on the connection (GRE-335).
+  const testConnection = useMutation({
+    mutationFn: (connection: ToolConnection) => toolsApi.checkConnectionHealth(connection.id),
+    onSuccess: (result) => {
+      invalidateConnectors();
+      const badge = connectionHealthBadge(result.connection);
+      if (badge.status === "ok" || badge.status === "unchecked") {
+        pushToast({ title: "Connection works", tone: "success" });
+        return;
+      }
+      pushToast({
+        title: badge.status === "warning" ? "Connection works with warnings" : "Connection still needs reconnecting",
+        body: result.connection.healthMessage?.trim() || result.connection.lastError?.trim() || undefined,
+        tone: badge.status === "warning" ? "warn" : "error",
+      });
+    },
+    onError: (error) => {
+      invalidateConnectors();
+      pushToast({
+        title: "Connection test failed",
+        body: error instanceof Error ? error.message : "Please try again.",
+        tone: "error",
+      });
+    },
+  });
+  const reconnectOAuth = useMutation({
+    mutationFn: (connection: ToolConnection) => startOAuthReconnect(connection),
+    onError: (error) =>
+      pushToast({
+        title: "Couldn’t start sign-in",
         body: error instanceof Error ? error.message : "Please try again.",
         tone: "error",
       }),
@@ -790,6 +840,10 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
                     onRequestRemove={setConnectionToRemove}
                     onResume={resumeConnection.mutate}
                     resumingId={resumeConnection.isPending ? (resumeConnection.variables?.id ?? null) : null}
+                    onTest={testConnection.mutate}
+                    testingId={testConnection.isPending ? (testConnection.variables?.id ?? null) : null}
+                    onReconnectOAuth={reconnectOAuth.mutate}
+                    reconnectingId={reconnectOAuth.isPending ? (reconnectOAuth.variables?.id ?? null) : null}
                     preselectedAgentId={preselectedChatAgentId}
                     chatConnectorsEnabled={chatConnectorsEnabled}
                   />
@@ -897,6 +951,10 @@ export function ConnectorCard({
   onRequestRemove,
   onResume,
   resumingId = null,
+  onTest,
+  testingId = null,
+  onReconnectOAuth,
+  reconnectingId = null,
   preselectedAgentId,
   chatConnectorsEnabled,
 }: {
@@ -908,6 +966,10 @@ export function ConnectorCard({
   onRequestRemove: (target: ConnectionRemovalTarget) => void;
   onResume?: (target: ResumeTarget) => void;
   resumingId?: string | null;
+  onTest?: (connection: ToolConnection) => void;
+  testingId?: string | null;
+  onReconnectOAuth?: (connection: ToolConnection) => void;
+  reconnectingId?: string | null;
   preselectedAgentId?: string | null;
   chatConnectorsEnabled: boolean;
 }) {
@@ -981,6 +1043,10 @@ export function ConnectorCard({
               owner={connectionOwnerProfile(connection, userProfileById)}
               onNavigate={onNavigate}
               resuming={resumingId === connection.id}
+              onTest={onTest ? () => onTest(connection) : undefined}
+              testing={testingId === connection.id}
+              onReconnectOAuth={onReconnectOAuth ? () => onReconnectOAuth(connection) : undefined}
+              reconnecting={reconnectingId === connection.id}
               onResume={
                 onResume
                   ? () => onResume({ kind: "tool", id: connection.id, status: connection.status })
@@ -1110,6 +1176,10 @@ function ConnectionAccountRow({
   onRemove,
   onResume,
   resuming,
+  onTest,
+  testing = false,
+  onReconnectOAuth,
+  reconnecting = false,
 }: {
   details?: ReactNode;
   row: ConnectorRowModel;
@@ -1119,10 +1189,23 @@ function ConnectionAccountRow({
   onRemove: () => void;
   onResume?: () => void;
   resuming: boolean;
+  onTest?: () => void;
+  testing?: boolean;
+  onReconnectOAuth?: () => void;
+  reconnecting?: boolean;
 }) {
   const state = connectionState(connection);
   const actionHref = accountActionHref(row, connection);
   const reconnectHref = aiReconnectHref(connection);
+  const oauthReconnect = onReconnectOAuth && reconnectsWithOAuth(connection) ? onReconnectOAuth : null;
+  const live = state.kind === "connected" || state.kind === "attention";
+  const retired = isRetiredComposioConnection(connection);
+  const health = live && !retired
+    ? connectionHealthBadge(connection, state.kind === "attention")
+    : null;
+  const lastError = health && health.status !== "ok"
+    ? connection.lastError?.trim() || null
+    : null;
   const accountName = connectionDisplayNameForOwner(
     connection,
     row.name,
@@ -1132,7 +1215,7 @@ function ConnectionAccountRow({
   return (
     <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
       <div className="flex min-w-0 flex-1 items-start gap-2.5">
-        <ConnectionStatusIcon state={state} />
+        <ConnectionStatusIcon state={state} warning={health?.status === "warning"} />
         <div className="min-w-0">
           <button
             type="button"
@@ -1142,8 +1225,19 @@ function ConnectionAccountRow({
           >
             {accountName}
           </button>
+          {health ? (
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <StatusBadge status={health.status} label={health.label} />
+              <span>{connectionCheckedLabel(connection)}</span>
+            </div>
+          ) : null}
           {details}
-          <ConnectionStateMessage state={state} />
+          <ConnectionStateMessage state={state} warning={health?.status === "warning"} />
+          {lastError && lastError !== state.message ? (
+            <div title={lastError} className="line-clamp-2 break-words text-xs text-muted-foreground">
+              Last error: {lastError}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1162,13 +1256,39 @@ function ConnectionAccountRow({
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => onNavigate(actionHref)}
+            disabled={state.kind === "attention" && reconnecting}
+            onClick={() => {
+              if (state.kind === "attention" && oauthReconnect) oauthReconnect();
+              else onNavigate(actionHref);
+            }}
           >
+            {state.kind === "attention" && reconnecting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : null}
             {state.kind === "attention"
               ? connection.requiresReauthorization === false
                 ? "Retry access"
-                : "Reconnect"
+                : reconnecting
+                  ? "Opening sign-in…"
+                  : "Reconnect"
               : "Finish setup"}
+          </Button>
+        ) : null}
+        {health && onTest ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={testing}
+            onClick={onTest}
+            aria-label={`Test ${accountName} connection`}
+          >
+            {testing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Stethoscope aria-hidden="true" />
+            )}
+            {testing ? "Testing…" : "Test"}
           </Button>
         ) : null}
         {state.kind === "paused" && onResume ? (
@@ -1203,6 +1323,10 @@ function ConnectionAccountRow({
               <DropdownMenuItem onSelect={() => onNavigate(reconnectHref)}>
                 Reconnect
               </DropdownMenuItem>
+            ) : oauthReconnect && state.kind === "connected" ? (
+              <DropdownMenuItem disabled={reconnecting} onSelect={oauthReconnect}>
+                Reconnect
+              </DropdownMenuItem>
             ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={onRemove}>
@@ -1217,15 +1341,17 @@ function ConnectionAccountRow({
 }
 
 /** The short reason a connection is not usable; wraps on a phone rather than cutting off. */
-function ConnectionStateMessage({ state }: { state: ConnectionState }) {
+function ConnectionStateMessage({ state, warning = false }: { state: ConnectionState; warning?: boolean }) {
   if (!state.message) return null;
   return (
     <div
       title={state.message}
       className={
-        state.kind === "attention"
-          ? "line-clamp-2 text-xs text-destructive"
-          : "line-clamp-2 text-xs text-muted-foreground"
+        state.kind !== "attention"
+          ? "line-clamp-2 text-xs text-muted-foreground"
+          : warning
+            ? "line-clamp-2 text-xs text-status-warning"
+            : "line-clamp-2 text-xs text-destructive"
       }
     >
       {state.message}
@@ -1233,7 +1359,7 @@ function ConnectionStateMessage({ state }: { state: ConnectionState }) {
   );
 }
 
-function ConnectionStatusIcon({ state }: { state: ConnectionState }) {
+function ConnectionStatusIcon({ state, warning = false }: { state: ConnectionState; warning?: boolean }) {
   if (state.kind === "connected") {
     return (
       <span
@@ -1247,7 +1373,7 @@ function ConnectionStatusIcon({ state }: { state: ConnectionState }) {
   }
   if (state.kind === "attention") {
     return (
-      <span className="mt-0.5 text-destructive" title={state.label}>
+      <span className={warning ? "mt-0.5 text-status-warning" : "mt-0.5 text-destructive"} title={state.label}>
         <AlertTriangle className="h-4 w-4" aria-hidden="true" />
         <span className="sr-only">{state.label}</span>
       </span>

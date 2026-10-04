@@ -215,6 +215,8 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       ...(parsed.data.runAdmission ? { runAdmission: parsed.data.runAdmission } : {}),
       // Absent/null => each agent's own harness and AI connection (GRE-139).
       ...(parsed.data.aiAccessRoute ? { aiAccessRoute: parsed.data.aiAccessRoute } : {}),
+      teamCatalogFilter: parsed.data.teamCatalogFilter ?? "greatstone",
+      teamCatalogAddMode: parsed.data.teamCatalogAddMode ?? "request",
     };
   }
   return {
@@ -222,6 +224,8 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
     keyboardShortcuts: false,
     feedbackDataSharingPreference: DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
     backupRetention: DEFAULT_BACKUP_RETENTION,
+    teamCatalogFilter: "greatstone",
+    teamCatalogAddMode: "request",
   };
 }
 
@@ -548,8 +552,10 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
       return toGeneralView(row.general);
     },
 
-    getExperimental: async (): Promise<InstanceExperimentalSettingsWithManaged> => {
-      const row = await getOrCreateRow();
+    getExperimental: async (
+      readOptions?: { db?: InstanceSettingsWriteDb },
+    ): Promise<InstanceExperimentalSettingsWithManaged> => {
+      const row = await getOrCreateRow(readOptions?.db);
       return toExperimentalView(row.experimental);
     },
 

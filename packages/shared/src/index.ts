@@ -181,6 +181,7 @@ export {
 } from "./responsible-user-denial.js";
 export type {
   AttentionDecisionVerb,
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,
@@ -212,6 +213,7 @@ export type {
   DecisionClarityResponse,
   DecisionsFeed,
   DecisionsFeedCount,
+  DecisionCardAtDesk,
   NeedsMe,
   NeedsMeTask,
 } from "./types/decisions-feed.js";
@@ -367,6 +369,8 @@ export {
   SELF_SERVE_MCP_RESEARCH,
 } from "./self-serve-mcp-research.js";
 export * from "./validators/status-card.js";
+export * from "./types/deliverable.js";
+export * from "./validators/deliverable.js";
 export { appDefinitionSchema, appDefinitionsSchema, connectionMethodDefSchema } from "./validators/app-definition.js";
 export * from "./types/chat-channels.js";
 export * from "./types/chat-github.js";
@@ -540,6 +544,7 @@ export {
   INSTANCE_USER_ROLES,
   INVITE_TYPES,
   INVITE_JOIN_TYPES,
+  INVITE_SIGN_UP_TOKEN_HEADER,
   JOIN_REQUEST_TYPES,
   JOIN_REQUEST_STATUSES,
   PERMISSION_KEYS,
@@ -1204,6 +1209,7 @@ export type {
   PaperclipQuestionSetQuestion,
   PaperclipQuestionSetPayload,
   AskUserQuestionsPayload,
+  InteractionAtDesk,
   AskUserQuestionsAnswer,
   AskUserQuestionsResult,
   RequestConfirmationIssueDocumentTarget,
@@ -1814,6 +1820,11 @@ export {
   DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
   DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB,
   GSAM_CLOUD_MANAGED_BY,
+  GREATSTONE_TEAM_TAG,
+  TEAM_CATALOG_ADD_MODES,
+  TEAM_CATALOG_FILTERS,
+  type TeamCatalogAddMode,
+  type TeamCatalogFilter,
 } from "./types/instance.js";
 
 export type {
@@ -2040,6 +2051,7 @@ export {
   askUserQuestionsQuestionSchema,
   paperclipQuestionSetPayloadSchema,
   askUserQuestionsPayloadSchema,
+  interactionAtDeskSchema,
   askUserQuestionsAnswerSchema,
   askUserQuestionsResultSchema,
   requestConfirmationIssueDocumentTargetSchema,
@@ -2844,6 +2856,7 @@ export {
   type ApiEquivalentInput,
   type ApiModelPrice,
 } from "./api-pricing.js";
+export { agentWorkHours, minimumWageEquivalentCents } from "./agent-hours.js";
 export type { ExecutionContinuationEnvelope } from "./types/execution-continuation.js";
 export type { ExecutionProjection, ExecutionReconciliation, ExecutionBlocker } from "./types/execution-projection.js";
 
@@ -2868,3 +2881,13 @@ export * from "./connection-routing.js";
 export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorkspaceRestorePath } from "./workspace-restore.js";
 
 export * from "./deep-dive.js";
+export {
+  AGENT_TEAM_COLORS,
+  addAgentTeamMemberSchema,
+  createAgentTeamSchema,
+  updateAgentTeamSchema,
+  type AddAgentTeamMember,
+  type AgentTeam,
+  type CreateAgentTeam,
+  type UpdateAgentTeam,
+} from "./agent-teams.js";

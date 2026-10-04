@@ -33,6 +33,7 @@ vi.mock("../services/activity-log.js", () => ({
 }));
 
 const {
+  listCatalogTeams,
   collectCatalogTeamSkillPreparations,
   readCatalogTeamProvenance,
   teamsCatalogService,
@@ -484,5 +485,25 @@ describe("teamsCatalogService", () => {
       'Skill requirement "missing" is unresolved in catalog manifest.',
     ]);
     expect(result.preparations.map((entry) => entry.action)).toEqual(["blocked", "blocked"]);
+  });
+
+  describe("Greatstone-only filter on the shipped catalogue (GRE-427)", () => {
+    it("lists only teams tagged greatstone and hides the upstream engineering teams", async () => {
+      const all = await listCatalogTeams();
+      const filtered = await listCatalogTeams({ filter: "greatstone" });
+
+      expect(filtered.length).toBeGreaterThan(0);
+      expect(filtered.length).toBeLessThan(all.length);
+      expect(filtered.every((team) => team.tags.includes("greatstone"))).toBe(true);
+      const slugs = filtered.map((team) => team.slug);
+      expect(slugs).toEqual(expect.arrayContaining(["marketing-content", "executive-assistant", "research-and-reporting"]));
+      for (const upstream of ["core-exec-team", "product-engineering", "product-design"]) {
+        expect(slugs).not.toContain(upstream);
+      }
+    });
+
+    it("leaves the list unchanged when the filter is all", async () => {
+      expect(await listCatalogTeams({ filter: "all" })).toEqual(await listCatalogTeams());
+    });
   });
 });

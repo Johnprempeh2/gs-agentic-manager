@@ -178,8 +178,12 @@ cmd_stop() {
   pid="$(preview_state pid)"
   say "Stopping the preview (process group $pid)..."
   kill -TERM -- "-$pid" 2>/dev/null || true
+  # Wait for the whole group, not just its leader: the dev runner in it starts
+  # the server in a process group of its own and needs time to stop it (up to
+  # ~20s, then it kills it). Killing the runner early would leave that server
+  # unsupervised.
   for _ in $(seq 1 30); do
-    kill -0 "$pid" 2>/dev/null || break
+    kill -0 -- "-$pid" 2>/dev/null || break
     sleep 1
   done
   kill -KILL -- "-$pid" 2>/dev/null || true

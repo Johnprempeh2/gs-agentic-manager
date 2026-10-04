@@ -1,4 +1,5 @@
 import {
+  INVITE_SIGN_UP_TOKEN_HEADER,
   authSessionSchema,
   currentUserPreferencesSchema,
   type CurrentUserPreferences,
@@ -114,13 +115,17 @@ function logAuthHttpError(method: string, path: string, status: number, statusTe
   });
 }
 
-async function authPost(path: string, body: Record<string, unknown>): Promise<unknown> {
+async function authPost(
+  path: string,
+  body: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
+): Promise<unknown> {
   let res: Response;
   try {
     res = await fetch(`/api/auth${path}`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...extraHeaders },
       body: JSON.stringify(body),
     });
   } catch (networkError) {
@@ -176,8 +181,21 @@ export const authApi = {
     await authPost("/sign-in/email", input);
   },
 
-  signUpEmail: async (input: { name: string; email: string; password: string }) => {
-    await authPost("/sign-up/email", input);
+  /**
+   * `inviteToken` is sent from the invite landing page only. While public
+   * sign-up is closed, the server creates the account only when it names a
+   * pending invite that admits a human; it does not accept the invite.
+   */
+  signUpEmail: async (
+    input: { name: string; email: string; password: string },
+    options: { inviteToken?: string | null } = {},
+  ) => {
+    const inviteToken = options.inviteToken?.trim();
+    await authPost(
+      "/sign-up/email",
+      input,
+      inviteToken ? { [INVITE_SIGN_UP_TOKEN_HEADER]: inviteToken } : {},
+    );
   },
 
   getPreferences: async (expectedUserId: string): Promise<CurrentUserPreferences> => {

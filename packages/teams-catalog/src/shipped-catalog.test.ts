@@ -16,6 +16,7 @@ const EXPECTED_OPTIONAL_KEYS = [
   "paperclipai/optional/content/content-machine",
   "paperclipai/optional/marketing/marketing-content",
   "paperclipai/optional/operations/executive-assistant",
+  "paperclipai/optional/operations/operations-team",
   "paperclipai/optional/research/research-and-reporting",
 ];
 
@@ -60,6 +61,48 @@ describe("shipped teams catalog", () => {
       }
       if (team.rootAgentSlugs.length === 0) {
         issues.push(`${team.key} must list a root agent slug`);
+      }
+    }
+    expect(issues).toEqual([]);
+  });
+
+  it("ships every Greatstone team with a department, industries, a starter task and paused routines (GRE-434)", () => {
+    const greatstone = catalogTeams.filter((team) => team.tags.includes("greatstone"));
+    expect(greatstone.map((team) => team.slug).sort()).toEqual([
+      "executive-assistant",
+      "marketing-content",
+      "operations-team",
+      "research-and-reporting",
+    ]);
+
+    const issues: string[] = [];
+    for (const team of greatstone) {
+      if (!team.category) issues.push(`${team.key} must set a category`);
+      if (team.recommendedForCompanyTypes.length === 0) issues.push(`${team.key} must list recommendedForCompanyTypes`);
+      if (team.counts.tasks < 1 || team.counts.tasks > 2) issues.push(`${team.key} must ship one or two starter tasks`);
+
+      const sidecarPath = path.join(PACKAGE_DIR, team.path, ".paperclip.yaml");
+      const sidecar = fs.existsSync(sidecarPath) ? fs.readFileSync(sidecarPath, "utf8") : "";
+      const routineCount = (sidecar.match(/^ {4}status: paused$/gm) ?? []).length;
+      if (routineCount !== team.counts.routines) {
+        issues.push(`${team.key} must ship every routine paused (${routineCount} of ${team.counts.routines})`);
+      }
+    }
+    expect(issues).toEqual([]);
+  });
+
+  it("gives the Marketing Content Team an Analyst (GRE-434)", () => {
+    const team = catalogTeams.find((entry) => entry.slug === "marketing-content");
+    expect(team?.agentSlugs).toContain("marketing-analyst");
+    expect(team?.rootAgentSlugs).toEqual(["marketing-lead"]);
+  });
+
+  it("keeps prices out of every Greatstone team", () => {
+    const issues: string[] = [];
+    for (const team of catalogTeams.filter((entry) => entry.tags.includes("greatstone"))) {
+      for (const file of team.files) {
+        const content = fs.readFileSync(path.join(PACKAGE_DIR, team.path, file.path), "utf8");
+        if (/[£$€]\s?\d|budgetMonthlyCents/.test(content)) issues.push(`${team.key}/${file.path}`);
       }
     }
     expect(issues).toEqual([]);

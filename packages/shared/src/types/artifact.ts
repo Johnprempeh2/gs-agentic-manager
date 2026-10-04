@@ -35,6 +35,8 @@ export interface CompanyArtifact {
   createdByAgent: CompanyArtifactAgentSummary | null;
   updatedAt: string;
   href: string;
+  /** Latest version of the deliverable this file already is, if any (GRE-406). */
+  deliverableId?: string | null;
 }
 
 export interface CompanyArtifactGroup {

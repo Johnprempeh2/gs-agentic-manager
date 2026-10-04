@@ -50,6 +50,7 @@ import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
 import { Releases } from "./pages/Releases";
 import { Artifacts } from "./pages/Artifacts";
+import { Deliverables } from "./pages/Deliverables";
 import { GoalDetail } from "./pages/GoalDetail";
 import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
@@ -86,6 +87,7 @@ import { PaperclipCloudOAuthHandoffPage } from "./pages/apps/PaperclipCloudOAuth
 import { GatewaysList } from "./pages/apps/gateways/GatewaysList";
 import { GatewayDetail } from "./pages/apps/gateways/GatewayDetail";
 import { CompanySkills } from "./pages/CompanySkills";
+import { TeamCatalog } from "./pages/TeamCatalog";
 import { SkillStudio } from "./pages/SkillStudio";
 import { Secrets } from "./pages/Secrets";
 import { CompanyImport } from "./pages/CompanyImport";
@@ -141,7 +143,7 @@ const ProductionCosts = lazy(() =>
   import("./pages/Costs.production").then((module) => ({ default: module.Costs })),
 );
 const ProductionOrgChart = lazy(() =>
-  import("./pages/OrgChart.production").then((module) => ({ default: module.OrgChart })),
+  import("./pages/OrgChart").then((module) => ({ default: module.OrgChart })),
 );
 
 function ProductionSurface({ children }: { children: ReactNode }) {
@@ -268,6 +270,8 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         path="skills/*"
         element={streamlinedUiEnabled ? <CompanySkills /> : <ProductionSurface><ProductionCompanySkills /></ProductionSurface>}
       />
+      {/* Team Catalogue (GRE-434): reachable by link, not in the sidebar yet. */}
+      <Route path="teams-catalog/*" element={<TeamCatalog />} />
       <Route path="settings" element={<LegacySettingsRedirect />} />
       <Route path="settings/*" element={<LegacySettingsRedirect />} />
       <Route path="plugins/:pluginId" element={<PluginPage />} />
@@ -387,6 +391,7 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         <Route path="releases" element={<Releases />} />
       </Route>
       <Route path="goals/:goalId" element={<GoalDetail />} />
+      <Route path="deliverables" element={<Deliverables />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
@@ -801,6 +806,7 @@ export function App() {
           <Route path="pipelines/:pipelineId/items/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
+          <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
           {streamlinedUiEnabled ? (
             <>
@@ -820,6 +826,7 @@ export function App() {
           <Route path="skills/studio/:skillId" element={<UnprefixedBoardRedirect />} />
           <Route path="skills/:skillId/studio" element={<LegacySkillStudioRedirect />} />
           <Route path="skills/*" element={<UnprefixedBoardRedirect />} />
+          <Route path="teams-catalog/*" element={<UnprefixedBoardRedirect />} />
           <Route path="settings" element={<LegacySettingsRedirect />} />
           <Route path="settings/*" element={<LegacySettingsRedirect />} />
           <Route path="agents" element={<UnprefixedBoardRedirect />} />

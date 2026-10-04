@@ -835,9 +835,11 @@ export function Releases() {
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-6">
           <div className="flex items-center gap-2 text-foreground">
             <ShieldAlert className="h-5 w-5 text-muted-foreground" aria-hidden />
-            <h1 className="text-lg font-semibold">Releases are for the board</h1>
+            <h1 className="text-lg font-semibold">Releases are for owners and admins</h1>
           </div>
-          <p className="text-sm text-muted-foreground">Only the board can see and release versions of the app.</p>
+          <p className="text-sm text-muted-foreground">
+            Only a company owner or admin can see and release versions of the app.
+          </p>
         </div>
       </div>
     );

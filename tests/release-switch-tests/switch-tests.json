@@ -1,7 +1,7 @@
 {
   "_about": "Experimental switch -> vitest files. The release candidate check runs the files of every switch that is on in live (run.mjs, GRE-101). One entry per boolean key of INSTANCE_FEATURE_CATALOG (packages/shared/src/feature-catalog.ts); run.test.mjs fails if a key is missing. Paths are repo-relative. Source: Beacon's beta scorecard on GRE-81 (28 Sep 2026). Playwright specs (tests/e2e) are not listed: they need a running app.",
   "knownFlaky": {
-    "server/src/__tests__/chat-channels.integration.test.ts": "GRE-280: 4 cases failed inside the full gate on a busy machine and passed alone; two were 1s vi.waitFor limits (fixed), two 15s timeouts not reproduced",
+    "server/src/__tests__/chat-channels.integration.test.ts": "GRE-280, GRE-407: cases that compare timestamps fail when the machine clock is stepped back during them (WSL2 tsc clock source runs fast; NTP steps it about -2s every 32s). In one 8 min run 5 of 6 failures had a step inside the case. Load only makes the run longer. The fix is the machine clock; the report shows the clock step",
     "server/src/__tests__/tool-access-service.test.ts": "GRE-282: under CPU load a supertest request can die with 'socket hang up' (ECONNRESET), not a timeout or leaked state; seen once in 'tracks new profile tools' (gate) and once in 'rejects unavailable Workspace chat.read' (5 parallel runs + burners, load ~21-45); each case passes alone in <100ms"
   },
   "switches": {

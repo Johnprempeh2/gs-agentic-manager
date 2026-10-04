@@ -1,5 +1,6 @@
 export { companyService } from "./companies.js";
 export { companyArtifactsService } from "./company-artifacts.js";
+export { deliverableService } from "./deliverables.js";
 export { companySearchService } from "./company-search.js";
 export { companySearchExtractService } from "./company-search-extract.js";
 export { feedbackService } from "./feedback.js";
@@ -223,3 +224,4 @@ export {
   type RemoteAgentProfileInput,
   type RemoteAgentService,
 } from "./remote-agent-profiles.js";
+export { agentTeamService } from "./agent-teams.js";

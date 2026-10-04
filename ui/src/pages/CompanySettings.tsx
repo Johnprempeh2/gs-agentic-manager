@@ -33,6 +33,7 @@ import {
   ToggleField,
 } from "../components/agent-config-primitives";
 import { InstanceGeneralSettings, type InstanceGeneralSection } from "./InstanceGeneralSettings";
+import { hourlyRateInputValue, parseHourlyRateInput } from "../lib/minimum-wage";
 
 const SECURITY_SECTIONS: readonly InstanceGeneralSection[] = ["deploymentStatus", "censorUsernameInLogs"];
 const BACKUP_SECTIONS: readonly InstanceGeneralSection[] = ["backupRetention", "feedbackDataSharingPreference"];
@@ -89,6 +90,7 @@ export function CompanySettings() {
   const [logoUrl, setLogoUrl] = useState("");
   const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
   const [governance, setGovernance] = useState<InteractionResolverGovernance>({});
+  const [hourlyRate, setHourlyRate] = useState("");
 
   // Sync local state from selected company
   useEffect(() => {
@@ -97,6 +99,7 @@ export function CompanySettings() {
     setDescription(selectedCompany.description ?? "");
     setLogoUrl(selectedCompany.logoUrl ?? "");
     setGovernance(selectedCompany.interactionResolverGovernance ?? {});
+    setHourlyRate(hourlyRateInputValue(selectedCompany.minimumWageHourlyCents));
   }, [selectedCompany]);
 
   const generalDirty =
@@ -121,6 +124,19 @@ export function CompanySettings() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+    }
+  });
+
+  const parsedHourlyRate = parseHourlyRateInput(hourlyRate);
+  const hourlyRateDirty =
+    !!selectedCompany && parsedHourlyRate !== (selectedCompany.minimumWageHourlyCents ?? null);
+
+  const hourlyRateMutation = useMutation({
+    mutationFn: (minimumWageHourlyCents: number | null) =>
+      companiesApi.update(selectedCompanyId!, { minimumWageHourlyCents }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      queryClient.invalidateQueries({ queryKey: ["api-equivalent", selectedCompanyId] });
     }
   });
 
@@ -402,6 +418,48 @@ export function CompanySettings() {
             </div>
           </div>
 
+          {/* Agent hours */}
+          <div className="gs-glass-card max-w-2xl space-y-4 rounded-xl border p-5" data-testid="company-settings-hourly-rate-section">
+            <div className="gs-prop-heading text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Agent hours
+            </div>
+            <Field
+              label="Hourly wage"
+              hint="The dashboard values agent hours at this rate per hour, for example a local minimum wage or an agency rate. Leave empty to show hours only."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  className="w-40 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="Hourly wage"
+                  value={hourlyRate}
+                  placeholder="Not set"
+                  onChange={(e) => setHourlyRate(e.target.value)}
+                />
+                {hourlyRateDirty && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (parsedHourlyRate !== "invalid") hourlyRateMutation.mutate(parsedHourlyRate);
+                    }}
+                    disabled={hourlyRateMutation.isPending || parsedHourlyRate === "invalid"}
+                  >
+                    {hourlyRateMutation.isPending ? "Saving..." : "Save rate"}
+                  </Button>
+                )}
+              </div>
+              {parsedHourlyRate === "invalid" && (
+                <p className="mt-1 text-xs text-destructive">Enter an amount like 12.50, or leave it empty.</p>
+              )}
+              {hourlyRateMutation.isError && (
+                <p className="mt-1 text-xs text-destructive">
+                  {hourlyRateMutation.error instanceof Error ? hourlyRateMutation.error.message : "Failed to save"}
+                </p>
+              )}
+            </Field>
+          </div>
+
           <InstanceGeneralSettings embedded sections={["aiAccessRoute", "signOut"]} />
 
           {/* Danger Zone */}
@@ -453,7 +511,7 @@ export function CompanySettings() {
         </TabsContent>
 
         <TabsContent value="agents" className="space-y-8">
-          <InstanceGeneralSettings embedded sections={["runAdmission"]} />
+          <InstanceGeneralSettings embedded sections={["runAdmission", "teamCatalogFilter", "teamCatalogAddMode"]} />
           <InteractionGovernancePanel
             governance={governance}
             onChange={handleGovernanceChange}

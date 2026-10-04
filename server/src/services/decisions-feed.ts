@@ -49,6 +49,9 @@ type TaskRow = {
   assigneeUserId: string | null;
 };
 
+/** An interaction that needs the board user at the computer (GRE-450). */
+type DeskAsk = { interactionId: string; issueId: string; kind: string; command: string | null };
+
 /** An agent's open cards for one missing connection, shown as one card. */
 type SharedConnection = { agentId: string; serviceName: string; tasks: TaskRow[] };
 
@@ -81,10 +84,22 @@ function readString(record: Record<string, unknown> | undefined, key: string) {
 }
 
 /** The task a row is about. Issue-subject rows (reviews, blockers) are about their subject. */
-function taskIdOf(item: AttentionItem) {
+export function taskIdOf(item: AttentionItem) {
   if (item.subject.kind === "issue") return item.subject.id;
   if (item.relatedIssue) return item.relatedIssue.id;
-  return readString(item.subject.metadata, "issueId") ?? readString(item.subject.metadata, "sourceIssueId");
+  return readString(item.subject.metadata, "issueId")
+    ?? readString(item.subject.metadata, "sourceIssueId")
+    ?? readString(item.subject.metadata, "originIssueId");
+}
+
+/**
+ * A stalled-blocker row is about blocker Y, but the board sees it because
+ * blocked task X waits on it. Returns X when the row names a different task.
+ */
+function blockedTaskIdOf(item: AttentionItem) {
+  if (item.sourceKind !== "blocker_attention" || item.subject.kind !== "issue") return null;
+  const blockedId = item.relatedIssue?.id;
+  return blockedId && blockedId !== item.subject.id ? blockedId : null;
 }
 
 function clip(text: string) {
@@ -173,7 +188,8 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
 
       const taskIds = [...new Set(rawItems.map(taskIdOf).filter((id): id is string => Boolean(id)))];
       const recoveryIds = rawItems.filter((item) => item.sourceKind === "recovery_action").map((item) => item.subject.id);
-      const intentIds = rawItems.filter((item) => cardKind(item) === "connection" && item.sourceKind === "issue_thread_interaction")
+      // Every interaction's payload: connection intents and "at your desk" asks.
+      const interactionIds = rawItems.filter((item) => item.sourceKind === "issue_thread_interaction")
         .map((item) => item.subject.id);
       const failedRunIds = rawItems.filter((item) => item.sourceKind === "failed_run").map((item) => item.subject.id);
 
@@ -205,20 +221,33 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           })
           .from(issueRecoveryActions)
           .where(and(eq(issueRecoveryActions.companyId, companyId), inArray(issueRecoveryActions.id, recoveryIds))),
-        intentIds.length === 0 ? Promise.resolve([]) : db
+        interactionIds.length === 0 ? Promise.resolve([]) : db
           .select({
             id: issueThreadInteractions.id,
+            issueId: issueThreadInteractions.issueId,
+            kind: issueThreadInteractions.kind,
             payload: issueThreadInteractions.payload,
             createdAt: issueThreadInteractions.createdAt,
           })
           .from(issueThreadInteractions)
-          .where(and(eq(issueThreadInteractions.companyId, companyId), inArray(issueThreadInteractions.id, intentIds))),
+          .where(and(eq(issueThreadInteractions.companyId, companyId), inArray(issueThreadInteractions.id, interactionIds))),
         loadAiHealth(companyId, options.userId, now),
       ]);
       const taskById = new Map(taskRows.map((row) => [row.id, row]));
       const agentById = new Map(agentRows.map((row) => [row.id, row]));
       const recoveryById = new Map(recoveryRows.map((row) => [row.id, row]));
       const intentById = new Map(intentRows.map((row) => [row.id, row]));
+      const deskById = new Map<string, DeskAsk>();
+      for (const row of intentRows) {
+        const atDesk = (row.payload as { atDesk?: unknown } | null)?.atDesk;
+        if (!atDesk || typeof atDesk !== "object") continue;
+        deskById.set(row.id, {
+          interactionId: row.id,
+          issueId: row.issueId,
+          kind: row.kind,
+          command: readString(atDesk as Record<string, unknown>, "command"),
+        });
+      }
 
       // Which failing runs were an AI-connection failure, and when they ran.
       const runIds = [
@@ -313,13 +342,30 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         sharedTasks.set(key, (sharedTasks.get(key) ?? new Set()).add(taskId));
       }
 
+      // One task, one card (GRE-431): a stalled-blocker row joins the card of
+      // the task it blocks when that task already has its own open row (a
+      // question, an approval), instead of opening a second card about it.
+      const anchoredTasks = new Set<string>();
+      const sharedKeyOf = (item: AttentionItem) => {
+        const key = sharedConnectionKey(item);
+        return key && isOpenRow(item) && (sharedTasks.get(key)?.size ?? 0) > 1 ? key : null;
+      };
+      for (const item of rawItems) {
+        if (blockedTaskIdOf(item) || sharedKeyOf(item) || !isOpenRow(item)) continue;
+        const taskId = taskIdOf(item);
+        if (taskId) anchoredTasks.add(taskId);
+      }
+      const groupTaskIdOf = (item: AttentionItem) => {
+        const blockedId = blockedTaskIdOf(item);
+        return blockedId && anchoredTasks.has(blockedId) ? blockedId : taskIdOf(item);
+      };
+
       type Group = { key: string; taskId: string | null; items: AttentionItem[]; cleared: AttentionItem[]; aiRepairedAt: number | null; shared?: SharedConnection };
       const groups = new Map<string, Group>();
       let staleCleared = 0;
       for (const item of rawItems) {
-        const sharedKey = sharedConnectionKey(item);
-        const shared = sharedKey && isOpenRow(item) && (sharedTasks.get(sharedKey)?.size ?? 0) > 1 ? sharedKey : null;
-        const taskId = shared ? null : taskIdOf(item);
+        const shared = sharedKeyOf(item);
+        const taskId = shared ? null : groupTaskIdOf(item);
         const key = shared ?? (taskId ? `task:${taskId}` : `item:${item.dedupKey}`);
         const group = groups.get(key) ?? { key, taskId, items: [], cleared: [], aiRepairedAt: null };
         if (shared && !group.shared) {
@@ -368,6 +414,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           clarity: group.taskId ? clarityByTask.get(group.taskId) ?? null : null,
           agentRef,
           recoveryById,
+          deskById,
         }));
       }
       cards.sort((left, right) =>
@@ -378,10 +425,14 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
       const countsByKind = Object.fromEntries(DECISION_CARD_KINDS.map((kind) => [kind, 0])) as Record<DecisionCardKind, number>;
       for (const card of cards) countsByKind[card.kind] += 1;
 
+      // "At your desk" cards wait for John at the computer: not in the phone count (GRE-450).
+      const atDeskCount = cards.filter((card) => card.atDesk).length;
+
       return {
         companyId,
         generatedAt: new Date(now).toISOString(),
-        count: cards.length,
+        count: cards.length - atDeskCount,
+        atDeskCount,
         countsByKind,
         staleCleared,
         assignableAgents,
@@ -477,6 +528,7 @@ function buildCard(input: {
   clarity: DecisionCardClarity | null;
   agentRef: (agentId: string | null | undefined) => DecisionCardAgentRef | null;
   recoveryById: Map<string, { id: string; evidence: unknown; nextAction: string }>;
+  deskById: Map<string, DeskAsk>;
 }): DecisionCard {
   const { companyId, group, task, readyToRetry, clarity, agentRef } = input;
   const items = [...group.items].sort((left, right) =>
@@ -498,7 +550,12 @@ function buildCard(input: {
 
   // Who is waiting: the owner of the task. For a stalled blocker, the owner of
   // the blocked task behind it waits too, but the blocker's owner acts.
-  const blockedItem = byKind("blocked");
+  // A stalled blocker that joined this card is about another task: its own
+  // actions target that blocker, and its counts are not this task's.
+  const isForeignBlocker = (item: AttentionItem) =>
+    cardKind(item) === "blocked" && task !== null && item.subject.id !== task.id;
+  const foreignBlocker = items.find(isForeignBlocker) ?? null;
+  const blockedItem = items.find((item) => cardKind(item) === "blocked" && !isForeignBlocker(item)) ?? null;
   const blockedTaskAgentId = readString(blockedItem?.relatedIssue?.metadata, "assigneeAgentId");
   const waiting = sharedAgent
     ?? agentRef(task?.assigneeAgentId)
@@ -561,11 +618,38 @@ function buildCard(input: {
   if (shared) {
     nextStepByKind.connection = `${waiting?.name ?? "The agent"} stays stopped on these tasks until you answer. Connect ${shared.serviceName} once and each task continues one time.`;
   }
-  const nextStep = clarity && !clarity.answer
+  const blockerLabel = foreignBlocker
+    ? foreignBlocker.subject.identifier ?? foreignBlocker.subject.title ?? "Its blocker"
+    : null;
+  const blockerNote = blockerLabel
+    ? ` It is also blocked by ${blockerLabel}, which has no live next step.`
+    : "";
+  const nextStep = (clarity && !clarity.answer
     ? `Waiting for ${clarity.agent?.name ?? "the agent"} to answer your question. ${nextStepByKind[kind]}`
-    : nextStepByKind[kind];
+    : nextStepByKind[kind]) + blockerNote;
+
+  // At your desk (GRE-450): every row asks for John at the computer. A card
+  // that also holds phone work (an approval, a retry) stays a phone card.
+  const deskAsks = items.map((item) =>
+    item.sourceKind === "issue_thread_interaction" ? input.deskById.get(item.subject.id) ?? null : null);
+  const atDesk = items.length > 0 && deskAsks.every(Boolean)
+    ? { command: deskAsks.find((ask) => ask?.command)?.command ?? null }
+    : null;
 
   const actions: DecisionCardAction[] = [];
+  // Done accepts a desk confirmation; it wakes the agent to check the work.
+  const doneRequests = atDesk
+    ? deskAsks.filter((ask) => ask?.kind === "request_confirmation")
+      .map((ask) => request("POST", `/api/issues/${ask!.issueId}/interactions/${ask!.interactionId}/accept`))
+    : [];
+  if (doneRequests.length > 0) {
+    actions.push(requestAction(
+      "done",
+      "Done",
+      `Tell ${waiting?.name ?? "the agent"} it is done. The agent is woken to check.`,
+      doneRequests,
+    ));
+  }
   // Native decisions first: the card's own question or approval.
   for (const item of items) {
     if (item.sourceKind === "approval") {
@@ -580,6 +664,26 @@ function buildCard(input: {
         ? linkAction("reconnect", "Connect", `Open the request and connect ${shared.serviceName}. Every waiting task continues.`, item.subject.href)
         : linkAction("reconnect", "Reconnect", "Open the AI connection and reconnect it.", item.subject.href));
     }
+  }
+
+  // The blocker's own way forward, on the blocked task's card.
+  if (foreignBlocker && blockerLabel) {
+    const blockerPath = `/api/issues/${foreignBlocker.subject.id}`;
+    actions.push(requestAction(
+      "reassign_blocker",
+      `Reassign ${blockerLabel}`,
+      `Give the blocker ${blockerLabel} to another agent. The new owner is woken.`,
+      [request("PATCH", blockerPath, { assigneeUserId: null })],
+      { field: "assigneeAgentId", type: "agent", label: "New owner", required: true },
+    ));
+    actions.push(requestAction(
+      "instruct_blocker",
+      `Instruct ${blockerLabel}`,
+      `Post an instruction on the blocker ${blockerLabel} and wake its owner.`,
+      [request("POST", `${blockerPath}/comments`,
+        isExplicitResumeCapableStatus(foreignBlocker.subject.status) ? { resume: true } : {})],
+      { field: "body", type: "text", label: "Instruction", required: true },
+    ));
   }
 
   if (task && taskOpen) {
@@ -704,6 +808,7 @@ function buildCard(input: {
     actions,
     clarity,
     items,
+    atDesk,
   };
 }
 

@@ -17,7 +17,8 @@ export function selectDashboardDecisions(feed: DecisionsFeed | null | undefined)
   count: number;
   preview: DecisionCard[];
 } {
-  const cards = feed?.cards ?? [];
+  // "At your desk" cards are not in the count (GRE-450).
+  const cards = (feed?.cards ?? []).filter((card) => !card.atDesk);
   return {
     count: Math.max(feed?.count ?? 0, cards.length),
     preview: cards.slice(0, DASHBOARD_DECISION_PREVIEW_LIMIT),

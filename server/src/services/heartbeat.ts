@@ -392,6 +392,7 @@ import {
   WORKTREE_INSTANCE_ROOT_METADATA_KEY,
 } from "./workspace-instance-cleanup.js";
 import { issueService } from "./issues.js";
+import { agentTeamService } from "./agent-teams.js";
 import {
   blockRunnerGoalRecovery,
   failRunnerGoalAction,
@@ -4822,6 +4823,11 @@ export async function buildPaperclipRuntimeMcpServers(input: {
     }
   }
 
+  if (profile!.metadata?.source !== "paperclip_runner" || profile!.metadata?.agentId !== input.agent.id ||
+      profile!.metadata?.assignmentDigest !== assignmentDigest) {
+    throw new Error("Invalid native runtime profile provenance");
+  }
+
   let [gateway] = (
     await input.db
       .select()
@@ -4835,8 +4841,32 @@ export async function buildPaperclipRuntimeMcpServers(input: {
       )
   ).filter(
     (candidate) =>
-      candidate.metadata?.nativeRuntimeAssignmentDigest === assignmentDigest,
+      candidate.metadata?.nativeRuntimeAssignmentDigest === assignmentDigest &&
+      candidate.metadata?.agentId === input.agent.id &&
+      candidate.profileId === profile!.id &&
+      (!candidate.agentId || candidate.agentId === input.agent.id),
   );
+  // Gateways created before the agent binding existed have a null agentId, and
+  // named-gateway auth only rejects another agent's run token when it is set.
+  // The assignment digest includes the agent id, so a reused gateway is this
+  // agent's own: bind it here instead of waiting for the assignment to change.
+  if (gateway && !gateway.agentId) {
+    await input.db
+      .update(toolMcpGateways)
+      .set({ agentId: input.agent.id, contextScopeType: "agent", contextScopeId: input.agent.id, updatedAt: new Date() })
+      .where(
+        and(
+          eq(toolMcpGateways.id, gateway.id),
+          eq(toolMcpGateways.companyId, input.agent.companyId),
+          isNull(toolMcpGateways.agentId),
+        ),
+      );
+    [gateway] = await input.db
+      .select()
+      .from(toolMcpGateways)
+      .where(eq(toolMcpGateways.id, gateway.id))
+      .limit(1);
+  }
   if (!gateway) {
     const slug = `native-${input.agent.id.replaceAll("-", "").slice(0, 12)}-${assignmentDigest.slice(0, 16)}`;
     try {
@@ -4848,6 +4878,9 @@ export async function buildPaperclipRuntimeMcpServers(input: {
           description: "Run-scoped GS Agentic Manager Runner MCP gateway.",
           profileId: profile!.id,
           defaultProfileMode: "gateway_only",
+          agentId: input.agent.id,
+          contextScopeType: "agent",
+          contextScopeId: input.agent.id,
           metadata: {
             nativeRuntimeAssignmentDigest: assignmentDigest,
             agentId: input.agent.id,
@@ -4873,6 +4906,12 @@ export async function buildPaperclipRuntimeMcpServers(input: {
         .limit(1);
       if (!gateway) throw error;
     }
+  }
+
+  if (gateway!.agentId !== input.agent.id || gateway!.profileId !== profile!.id ||
+      gateway!.metadata?.agentId !== input.agent.id ||
+      gateway!.metadata?.nativeRuntimeAssignmentDigest !== assignmentDigest) {
+    throw new Error("Invalid native runtime gateway provenance");
   }
 
   const token = await service.createNamedGatewayToken({
@@ -5082,6 +5121,15 @@ export async function createManagedMcpRunConfig(input: {
         eq(toolMcpGateways.companyId, input.agent.companyId),
         eq(toolMcpGateways.status, "active"),
         isNull(toolMcpGateways.archivedAt),
+        // A native profile remains an immutable assignment even if gateway
+        // metadata is cleared. Explicit shared gateways use ordinary profiles.
+        sql`not exists (
+          select 1 from ${toolProfiles}
+          where ${toolProfiles.id} = ${toolMcpGateways.profileId}
+            and ${toolProfiles.companyId} = ${toolMcpGateways.companyId}
+            and (${toolProfiles.profileKey} like 'native:%'
+              or ${toolProfiles.metadata}->>'source' = 'paperclip_runner')
+        )`,
       ),
     )
     .orderBy(asc(toolMcpGateways.name));
@@ -5152,7 +5200,9 @@ export async function createManagedMcpRunConfig(input: {
   );
 
   const applicableGateways = rows.filter((gateway) =>
-    gatewayAppliesToRun({
+    // The immutable native assignment is delivered separately. Including any
+    // historical native gateway here duplicates and broadens that assignment.
+    !Object.hasOwn(gateway.metadata ?? {}, "nativeRuntimeAssignmentDigest") && gatewayAppliesToRun({
       gateway,
       agentId: input.agent.id,
       projectId: input.projectId,
@@ -8681,6 +8731,12 @@ export function buildPaperclipTaskMarkdown(input: {
     status?: string | null;
     priority?: string | null;
   }> | null;
+  /** Set when the woken agent leads the team the task is assigned to (GRE-437). */
+  team?: {
+    id: string;
+    name: string;
+    members: Array<{ id: string; name: string; role: string; title: string | null }>;
+  } | null;
   wakeComment?: {
     id: string;
     body: string;
@@ -8941,6 +8997,20 @@ export function buildPaperclipTaskMarkdown(input: {
       lines.push(
         `- [ancestor context truncated after ${ancestors.length} entries]`,
       );
+    }
+  }
+  if (input.team) {
+    lines.push(
+      "",
+      `Team context: this task is assigned to team "${input.team.name}" and you are its lead.`,
+      "Delegate parts of it by creating child issues assigned to team members:",
+    );
+    if (input.team.members.length === 0) {
+      lines.push("- The team has no other members yet.");
+    }
+    for (const member of input.team.members) {
+      const role = member.title ? `${member.title}, ${member.role}` : member.role;
+      lines.push(`- ${member.name} (${role}): agent ${member.id}`);
     }
   }
   if (effectiveWakeComments.length === 1) {
@@ -9903,12 +9973,13 @@ export function heartbeatService(
   }
 
   const wakeQueue = createWakeQueue(db, {
-    resolveResponsibleUserId: async (input) => {
+    // These three run inside the wake-queue release transaction: `executor`
+    // is that transaction, so every read below stays on its connection.
+    resolveResponsibleUserId: async (input, executor) => {
       // `input.issue` is the wake-queue module's own transaction-scoped
       // snapshot; using it here, instead of re-reading the issue through
-      // `getIssueExecutionContext`, keeps this read off a second connection
-      // while the module's transaction is open, and keeps it seeing the
-      // in-transaction issue status rather than a stale one.
+      // `getIssueExecutionContext`, keeps it seeing the in-transaction issue
+      // status rather than a stale one.
       return resolveResponsibleUserIdForRunSeed({
         companyId: input.companyId,
         contextSnapshot: input.contextSnapshot,
@@ -9924,25 +9995,30 @@ export function heartbeatService(
         source: input.source as WakeupOptions["source"],
         triggerDetail: input.triggerDetail as WakeupOptions["triggerDetail"],
         existingRunResponsibleUserId: input.existingRunResponsibleUserId,
+        executor,
       });
     },
-    getRoutineEnv: async (input) => {
+    getRoutineEnv: async (input, executor) => {
       // Same reason as `resolveResponsibleUserId` above: use the passed-in
       // transaction-scoped issue snapshot instead of reading the issue again.
-      return getRoutineEnvForExecutionIssue(input.companyId, input.issue);
+      return getRoutineEnvForExecutionIssue(input.companyId, input.issue, executor);
     },
-    resolveSessionBeforeForWakeup: async (input) => {
+    resolveSessionBeforeForWakeup: async (input, executor) => {
       // Scoped to this port only, so a wake-queue agent id can never resolve
       // a session against another company's agent row. The shared `getAgent`
       // helper below has no company predicate, so this reads the agent
       // directly with the company named in its own `WHERE` clause.
-      const agent = await db
+      const agent = await executor
         .select()
         .from(agents)
         .where(and(eq(agents.id, input.agentId), eq(agents.companyId, input.companyId)))
         .then((rows) => rows[0] ?? null);
       if (!agent) return null;
-      return resolveSessionBeforeForWakeup(await withAiAccessRoute(agent), input.taskKey);
+      return resolveSessionBeforeForWakeup(
+        await withAiAccessRoute(agent, executor),
+        input.taskKey,
+        executor,
+      );
     },
     // These four helpers stay in this file today; the wake-queue module
     // receives them here so it never imports this file, the service it is
@@ -10812,8 +10888,8 @@ export function heartbeatService(
   // The install-wide AI access route (GRE-139) decides the harness and account
   // type of every Claude/Codex agent. Runs, claims and session lookups all read
   // the agent through here, so they agree on the harness.
-  async function withAiAccessRoute<T extends typeof agents.$inferSelect>(agent: T): Promise<T> {
-    return applyAiAccessRoute(agent, readAiAccessRoute(await instanceSettings.getGeneral()));
+  async function withAiAccessRoute<T extends typeof agents.$inferSelect>(agent: T, executor: Db = db): Promise<T> {
+    return applyAiAccessRoute(agent, readAiAccessRoute(await instanceSettings.getGeneral({ db: executor })));
   }
 
   async function getAgent(agentId: string) {
@@ -10924,8 +11000,10 @@ export function heartbeatService(
       .then((rows) => rows[0] ?? null);
   }
 
-  async function getIssueExecutionContext(companyId: string, issueId: string) {
-    return db
+  // `executor` lets a caller inside an open transaction read through it
+  // instead of asking the pool for a second connection.
+  async function getIssueExecutionContext(companyId: string, issueId: string, executor: Db = db) {
+    return executor
       .select({
         chatCommunicationGuidance: chatConversations.communicationGuidance,
         chatAssignedAgentId: chatEndpoints.assignedAgentId,
@@ -10948,6 +11026,7 @@ export function heartbeatService(
         executionWorkspaceId: issues.executionWorkspaceId,
         executionWorkspacePreference: issues.executionWorkspacePreference,
         assigneeAgentId: issues.assigneeAgentId,
+        teamId: issues.teamId,
         assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
         executionPolicy: issues.executionPolicy,
         executionState: issues.executionState,
@@ -11035,6 +11114,7 @@ export function heartbeatService(
   async function getRoutineEnvForExecutionIssue(
     companyId: string,
     issueContext: { originKind: string | null; originId: string | null; originRunId: string | null } | null,
+    executor: Db = db,
   ) {
     if (
       !issueContext ||
@@ -11045,7 +11125,7 @@ export function heartbeatService(
     }
 
     const routineRun = issueContext.originRunId
-      ? await db
+      ? await executor
           .select({
             routineRevisionId: routineRuns.routineRevisionId,
             responsibleUserId: routineRuns.responsibleUserId,
@@ -11062,7 +11142,7 @@ export function heartbeatService(
       : null;
 
     if (routineRun?.routineRevisionId) {
-      const revision = await db
+      const revision = await executor
         .select({
           snapshot: routineRevisions.snapshot,
           responsibleUserId: routineRevisions.responsibleUserId,
@@ -11091,7 +11171,7 @@ export function heartbeatService(
       }
     }
 
-    const routine = await db
+    const routine = await executor
       .select({
         env: routines.env,
         responsibleUserId: routines.responsibleUserId,
@@ -11112,8 +11192,8 @@ export function heartbeatService(
     };
   }
 
-  async function resolveCompanyDefaultResponsibleUserId(companyId: string) {
-    const company = await db
+  async function resolveCompanyDefaultResponsibleUserId(companyId: string, executor: Db = db) {
+    const company = await executor
       .select({ defaultResponsibleUserId: companies.defaultResponsibleUserId })
       .from(companies)
       .where(eq(companies.id, companyId))
@@ -11123,7 +11203,7 @@ export function heartbeatService(
     );
     if (explicitDefault) return explicitDefault;
 
-    const owner = await db
+    const owner = await executor
       .select({ userId: companyMemberships.principalId })
       .from(companyMemberships)
       .where(
@@ -11139,7 +11219,7 @@ export function heartbeatService(
       .then((rows) => rows[0] ?? null);
     if (owner?.userId) return owner.userId;
 
-    const firstUser = await db
+    const firstUser = await executor
       .select({ userId: companyMemberships.principalId })
       .from(companyMemberships)
       .where(
@@ -11158,9 +11238,10 @@ export function heartbeatService(
   async function resolveParentIssueResponsibleUserId(
     companyId: string,
     parentId: string | null | undefined,
+    executor: Db = db,
   ) {
     if (!parentId) return null;
-    const parent = await db
+    const parent = await executor
       .select({
         responsibleUserId: issues.responsibleUserId,
         createdByUserId: issues.createdByUserId,
@@ -11196,7 +11277,9 @@ export function heartbeatService(
     source?: WakeupOptions["source"] | null;
     triggerDetail?: WakeupOptions["triggerDetail"] | null;
     existingRunResponsibleUserId?: string | null;
+    executor?: Db;
   }) {
+    const executor = input.executor ?? db;
     const contextResponsibleUserId = readNonEmptyString(
       input.contextSnapshot.responsibleUserId,
     );
@@ -11216,7 +11299,7 @@ export function heartbeatService(
       messageIds.length &&
       !input.contextSnapshot.retryOfRunId
     ) {
-      const messages = await db
+      const messages = await executor
         .select({
           id: issueComments.id,
           authorUserId: issueComments.authorUserId,
@@ -11241,7 +11324,7 @@ export function heartbeatService(
     }
     const retryOfRunId = readNonEmptyString(input.contextSnapshot.retryOfRunId);
     if (retryOfRunId) {
-      const [origin] = await db
+      const [origin] = await executor
         .select({ responsibleUserId: heartbeatRuns.responsibleUserId })
         .from(heartbeatRuns)
         .where(
@@ -11263,11 +11346,12 @@ export function heartbeatService(
     const parentResponsibleUserId = await resolveParentIssueResponsibleUserId(
       input.companyId,
       input.issueContext?.parentId,
+      executor,
     );
     if (parentResponsibleUserId) return parentResponsibleUserId;
     if (!input.issueContext && requestedUserId) return requestedUserId;
     input.contextSnapshot.executionIdentityCause = "company_default";
-    return resolveCompanyDefaultResponsibleUserId(input.companyId);
+    return resolveCompanyDefaultResponsibleUserId(input.companyId, executor);
   }
 
   async function resolveResponsibleUserIdForRun(input: {
@@ -11328,8 +11412,8 @@ export function heartbeatService(
     });
   }
 
-  async function getRuntimeState(agentId: string) {
-    return db
+  async function getRuntimeState(agentId: string, executor: Db = db) {
+    return executor
       .select()
       .from(agentRuntimeState)
       .where(eq(agentRuntimeState.agentId, agentId))
@@ -11366,8 +11450,9 @@ export function heartbeatService(
     agentId: string,
     adapterType: string,
     taskKey: string,
+    executor: Db = db,
   ) {
-    return db
+    return executor
       .select()
       .from(agentTaskSessions)
       .where(
@@ -12501,6 +12586,7 @@ export function heartbeatService(
   async function resolveSessionBeforeForWakeup(
     agent: typeof agents.$inferSelect,
     taskKey: string | null,
+    executor: Db = db,
   ) {
     if (taskKey) {
       const codec = getAdapterSessionCodec(agent.adapterType);
@@ -12509,6 +12595,7 @@ export function heartbeatService(
         agent.id,
         agent.adapterType,
         taskKey,
+        executor,
       );
       const parsedParams = normalizeSessionParams(
         codec.deserialize(existingTaskSession?.sessionParamsJson ?? null),
@@ -12520,7 +12607,7 @@ export function heartbeatService(
       );
     }
 
-    const runtimeForRun = await getRuntimeState(agent.id);
+    const runtimeForRun = await getRuntimeState(agent.id, executor);
     return runtimeForRun?.sessionId ?? null;
   }
 
@@ -23362,6 +23449,20 @@ export function heartbeatService(
       const issueAncestors = issueRef
         ? await issuesSvc.getAncestors(issueRef.id)
         : [];
+      // A team task wakes the team lead; give the lead the members to delegate to.
+      const teamDelegation =
+        issueContext?.teamId && issueContext.assigneeAgentId === agent.id
+          ? await agentTeamService(db).getDelegationContext(agent.companyId, issueContext.teamId)
+          : null;
+      const issueTeam =
+        teamDelegation && teamDelegation.leadAgentId === agent.id
+          ? { id: teamDelegation.id, name: teamDelegation.name, members: teamDelegation.members }
+          : null;
+      if (issueTeam) {
+        context.paperclipIssueTeam = issueTeam;
+      } else {
+        delete context.paperclipIssueTeam;
+      }
       if (continuationSummary) {
         context.paperclipContinuationSummary = {
           key: safeContinuationSummary!.key,
@@ -23491,6 +23592,7 @@ export function heartbeatService(
             }
           : null,
         ancestors: issueAncestors,
+        team: issueTeam,
         wakeComment: safeWakeCommentContext,
         wakeComments: safeWakeComments,
         attachmentOmissions: paperclipWakePayload?.attachmentOmissions,
@@ -28743,15 +28845,20 @@ export function heartbeatService(
       : false;
     let operatorResponsibleUserId: string | null = opts.manualUserWake ? opts.requestedByActorId! : null;
     let queuedResponsibleUserIdPromise: Promise<string> | null = null;
-    const resolveQueuedResponsibleUserId = () => {
+    // Called inside the admission transaction: pass its `tx` so these reads
+    // stay on the connection that transaction already holds. Reading through
+    // the pool here needs a second connection, and a burst of wakes then
+    // holds every connection while each waits for one more (pool deadlock).
+    const resolveQueuedResponsibleUserId = (executor: Db = db) => {
       if (operatorResponsibleUserId) return Promise.resolve(operatorResponsibleUserId);
       queuedResponsibleUserIdPromise ??= (async () => {
         const queuedIssueContext = issueId
-          ? await getIssueExecutionContext(agent.companyId, issueId)
+          ? await getIssueExecutionContext(agent.companyId, issueId, executor)
           : null;
         const queuedRoutineEnvContext = await getRoutineEnvForExecutionIssue(
           agent.companyId,
           queuedIssueContext,
+          executor,
         );
         const queuedResponsibleUserId =
           await resolveResponsibleUserIdForRunSeed({
@@ -28763,6 +28870,7 @@ export function heartbeatService(
             requestedByActorId: opts.requestedByActorId ?? null,
             source,
             triggerDetail,
+            executor,
           });
         if (!queuedResponsibleUserId) {
           throw new HttpError(
@@ -30233,7 +30341,7 @@ export function heartbeatService(
               invocationSource: source,
               triggerDetail,
               status: "queued",
-              responsibleUserId: await resolveQueuedResponsibleUserId(),
+              responsibleUserId: await resolveQueuedResponsibleUserId(tx as unknown as Db),
               wakeupRequestId: wakeupRequest.id,
               retryOfRunId: failedChatRetry
                 ? durableRequest!.failedRunRetry!.failedRunId
@@ -30505,7 +30613,7 @@ export function heartbeatService(
           invocationSource: source,
           triggerDetail,
           status: "queued",
-          responsibleUserId: await resolveQueuedResponsibleUserId(),
+          responsibleUserId: await resolveQueuedResponsibleUserId(tx as unknown as Db),
           wakeupRequestId: wakeupRequest.id,
           contextSnapshot: enrichedContextSnapshot,
           sessionIdBefore: sessionBefore,

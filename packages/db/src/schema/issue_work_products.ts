@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -5,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import type { SourceTrustMetadata } from "@greatstone/shared";
@@ -62,5 +64,11 @@ export const issueWorkProducts = pgTable(
       table.companyId,
       table.updatedAt,
     ),
+    // Deliverables (GRE-388): one row per version. The key lives in
+    // external_id and the version number in metadata.version, so two writers
+    // racing to register the same version cannot both win.
+    deliverableVersionUq: uniqueIndex("issue_work_products_deliverable_version_uq")
+      .on(table.companyId, table.issueId, table.externalId, sql`((${table.metadata}->>'version')::integer)`)
+      .where(sql`${table.type} = 'deliverable'`),
   }),
 );

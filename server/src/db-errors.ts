@@ -1,6 +1,22 @@
 const UNIQUE_VIOLATION = "23505";
 const FOREIGN_KEY_VIOLATION = "23503";
+const DEADLOCK_DETECTED = "40P01";
 const MAX_CAUSE_DEPTH = 4;
+
+/**
+ * Recognizes a Postgres deadlock abort (SQLSTATE 40P01). Postgres rolls the
+ * whole transaction back, so an idempotent transaction can be run again.
+ * Like the helpers below, it walks Drizzle's `cause` chain to the driver error.
+ */
+export function isDeadlockDetected(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH && current && typeof current === "object"; depth += 1) {
+    const candidate = current as { code?: unknown; cause?: unknown };
+    if (candidate.code === DEADLOCK_DETECTED) return true;
+    current = candidate.cause;
+  }
+  return false;
+}
 
 /**
  * Recognizes a Postgres unique-constraint violation (SQLSTATE 23505).

@@ -272,4 +272,59 @@ describe("ArtifactCard", () => {
     expect(markup).not.toContain('aria-label="Download file"');
     expect(markup).not.toContain('aria-label="Open file in new tab"');
   });
+
+  it("offers Mark as deliverable on stored files only, without following the card link (GRE-388)", () => {
+    const onMark = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const artifact = makeArtifact();
+    flushSync(() => {
+      root.render(<ArtifactCard artifact={artifact} onMarkDeliverable={onMark} />);
+    });
+    const button = container.querySelector<HTMLButtonElement>("[data-testid='artifact-mark-deliverable']");
+    expect(button?.getAttribute("aria-label")).toBe("Mark as deliverable");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    button!.dispatchEvent(click);
+    expect(onMark).toHaveBeenCalledWith(artifact);
+    expect(click.defaultPrevented).toBe(true);
+    flushSync(() => root.unmount());
+    container.remove();
+
+    const documentMarkup = renderToStaticMarkup(
+      <ArtifactCard
+        artifact={makeArtifact({ source: "document", mediaKind: "document", downloadPath: null })}
+        onMarkDeliverable={onMark}
+      />,
+    );
+    expect(documentMarkup).not.toContain("artifact-mark-deliverable");
+    expect(renderToStaticMarkup(<ArtifactCard artifact={makeArtifact()} />)).not.toContain("artifact-mark-deliverable");
+  });
+
+  it("offers View deliverable instead of Mark when the file already is a deliverable (GRE-406)", () => {
+    const onMark = vi.fn();
+    const onOpen = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    flushSync(() => {
+      root.render(
+        <ArtifactCard
+          artifact={makeArtifact({ deliverableId: "deliverable-1" })}
+          onMarkDeliverable={onMark}
+          onOpenDeliverable={onOpen}
+        />,
+      );
+    });
+    expect(container.querySelector("[data-testid='artifact-mark-deliverable']")).toBeNull();
+    const button = container.querySelector<HTMLButtonElement>("[data-testid='artifact-view-deliverable']");
+    expect(button?.getAttribute("aria-label")).toBe("View deliverable");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    button!.dispatchEvent(click);
+    expect(onOpen).toHaveBeenCalledWith("deliverable-1");
+    expect(onMark).not.toHaveBeenCalled();
+    expect(click.defaultPrevented).toBe(true);
+    flushSync(() => root.unmount());
+    container.remove();
+  });
 });

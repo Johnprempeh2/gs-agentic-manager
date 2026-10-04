@@ -66,6 +66,8 @@ import { Identity } from "./Identity";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
 import { IssueRow, type IssueRowPresentation } from "./IssueRow";
+import { TeamBadge } from "./TeamBadge";
+import { agentTeamsApi } from "../api/agentTeams";
 import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { CollectionToolbar, type CollectionToolbarProps } from "./CollectionToolbar";
 import { IssuesList as LegacyIssuesList } from "./LegacyIssuesList";
@@ -1322,6 +1324,12 @@ function StreamlinedIssuesList({
     queryFn: () => issuesApi.listLabels(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: agentTeams } = useQuery({
+    queryKey: queryKeys.agentTeams.list(selectedCompanyId!),
+    queryFn: () => agentTeamsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const teamById = useMemo(() => new Map((agentTeams ?? []).map((team) => [team.id, team])), [agentTeams]);
 
   const activeFilterCount = countActiveIssueFilters(viewState, enableRoutineVisibilityFilter);
   const boardHighVolume = viewState.viewMode === "board" && filtered.length > KANBAN_BOARD_HIGH_VOLUME_THRESHOLD;
@@ -1970,6 +1978,7 @@ function StreamlinedIssuesList({
             creators={creatorOptions}
             projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
             labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
+            teams={agentTeams?.map((team) => ({ id: team.id, name: team.name, color: team.color }))}
             currentUserId={currentUserId}
             enableExternalObjectFilters={externalObjectsEnabled}
             enableRoutineVisibilityFilter={enableRoutineVisibilityFilter}
@@ -2173,6 +2182,7 @@ function StreamlinedIssuesList({
                   const parentIssue = issue.parentId ? issueById.get(issue.parentId) ?? null : null;
                   const issueBadge = issueBadgeById?.get(issue.id);
                   const issueTags = issueTagsById?.get(issue.id) ?? [];
+                  const issueTeam = issue.teamId ? teamById.get(issue.teamId) ?? null : null;
                   const isMutedIssue = mutedIssueIds?.has(issue.id) === true;
                   const assigneeUserProfile = issue.assigneeUserId
                     ? companyUserProfileMap.get(issue.assigneeUserId) ?? null
@@ -2283,6 +2293,7 @@ function StreamlinedIssuesList({
                                 ({totalDescendants} sub-task{totalDescendants !== 1 ? "s" : ""})
                               </span>
                             ) : null}
+                            {issueTeam ? <TeamBadge team={issueTeam} className="ml-1.5 px-1.5 py-0 text-(length:--text-nano)" /> : null}
                             {issueTags.map((tag) => (
                               <Badge key={tag} variant="outline" className="ml-1.5 px-1.5 text-(length:--text-nano) text-muted-foreground">
                                 {tag}

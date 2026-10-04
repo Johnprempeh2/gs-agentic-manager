@@ -545,6 +545,9 @@ export const queryKeys = {
   },
   releases: (companyId: string) => ["releases", companyId] as const,
   clientVersion: (companyId: string) => ["client-version", companyId] as const,
+  agentTeams: {
+    list: (companyId: string) => ["agent-teams", companyId] as const,
+  },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
@@ -566,6 +569,12 @@ export const queryKeys = {
         groupBy ?? "none",
         groupIssueId ?? "",
       ] as const,
+  },
+  deliverables: {
+    all: (companyId: string) => ["deliverables", companyId] as const,
+    list: (companyId: string, params: Record<string, string | undefined>) =>
+      ["deliverables", companyId, "list", params] as const,
+    detail: (companyId: string, id: string) => ["deliverables", companyId, "detail", id] as const,
   },
   budgets: {
     overview: (companyId: string) =>

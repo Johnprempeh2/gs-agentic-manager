@@ -30,6 +30,8 @@ export type InstanceGeneralSection =
   | "backupRetention"
   | "feedbackDataSharingPreference"
   | "aiAccessRoute"
+  | "teamCatalogFilter"
+  | "teamCatalogAddMode"
   | "signOut";
 
 export function InstanceGeneralSettings({
@@ -98,6 +100,8 @@ export function InstanceGeneralSettings({
   }
 
   const censorUsernameInLogs = generalQuery.data?.censorUsernameInLogs === true;
+  const greatstoneTeamsOnly = generalQuery.data?.teamCatalogFilter === "greatstone";
+  const askGreatstoneToAdd = generalQuery.data?.teamCatalogAddMode === "request";
   const feedbackDataSharingPreference = generalQuery.data?.feedbackDataSharingPreference ?? "prompt";
   const backupRetention: BackupRetentionPolicy = generalQuery.data?.backupRetention ?? DEFAULT_BACKUP_RETENTION;
   const hiddenSettings = new Set(healthQuery.data?.hiddenSettings ?? []);
@@ -109,6 +113,8 @@ export function InstanceGeneralSettings({
   const showRunAdmission = shows("runAdmission");
   const showFeedbackDataSharing = shows("feedbackDataSharingPreference");
   const showAiAccessRoute = shows("aiAccessRoute");
+  const showTeamCatalogFilter = shows("teamCatalogFilter");
+  const showTeamCatalogAddMode = shows("teamCatalogAddMode");
   const showSignOut = shows("signOut");
   const visibleTopics = [
     ...(showCensorUsernameInLogs ? ["log display"] : []),
@@ -197,6 +203,50 @@ export function InstanceGeneralSettings({
             onCheckedChange={() => updateGeneralMutation.mutate({ censorUsernameInLogs: !censorUsernameInLogs })}
             disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
             aria-label="Toggle username log censoring"
+          />
+        </div>
+      </section>
+      )}
+
+      {showTeamCatalogFilter && (
+      <section>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Show only Greatstone teams</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Team Catalogue and the new-company flow offer only teams made by Greatstone. Other teams, such as
+              the engineering teams, are hidden and cannot be installed. On by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={greatstoneTeamsOnly}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({ teamCatalogFilter: greatstoneTeamsOnly ? "all" : "greatstone" })
+            }
+            disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+            aria-label="Show only Greatstone teams"
+          />
+        </div>
+      </section>
+      )}
+
+      {showTeamCatalogAddMode && (
+      <section>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Ask Greatstone to add teams</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Team Catalogue shows "Ask Greatstone to add" in place of Install. The button makes an approval card
+              for the board and installs nothing. On by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={askGreatstoneToAdd}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({ teamCatalogAddMode: askGreatstoneToAdd ? "install" : "request" })
+            }
+            disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+            aria-label="Ask Greatstone to add teams"
           />
         </div>
       </section>

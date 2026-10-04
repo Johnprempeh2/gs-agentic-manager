@@ -23,7 +23,11 @@ to it.
 1. **Task.** A GRE issue in the "GS Agentic Manager platform" project. Its
    branch is named after the issue, for example `GRE-12-faster-board`.
 2. **Build in your worktree.** Work only inside your worktree. Keep the change
-   to what the issue asks for.
+   to what the issue asks for. If your run started in your parent task's
+   worktree, work there and commit on the parent's branch, and say on the issue
+   that the change ships in the parent's pull request. If it started in the dev
+   checkout and the task needs a branch, do not make a worktree by hand: say so
+   on the issue, set it to `blocked` and name Keystone.
 3. **Test in a sandbox.** Run the tests for what you touched from the worktree
    root (`npx vitest run <files>`, `npx tsc --noEmit -p <package>`). When you
    need the running app, start a sandbox from the worktree:
@@ -91,6 +95,14 @@ to it.
 - Push to `public-fork` or open pull requests on `Johnprempeh2/GS-Clip`.
 - Run `git clean -x`, `git reset --hard`, `git stash` or `git checkout` of
   another branch in the dev checkout. Your worktree is your only workspace.
+- Run `git worktree add` under `.gsam/worktrees/`. GS Agentic Manager does not
+  record a worktree you make there, so nothing removes it, and with its
+  `node_modules` each one costs gigabytes. For a throwaway check of a pull
+  request, a release candidate or a tag, add a detached checkout inside your
+  run's scratch folder (`git worktree add --detach
+  "$GSAM_RUN_SCRATCH_DIR/check" <sha or tag>`) and remove it with
+  `git worktree remove --force "$GSAM_RUN_SCRATCH_DIR/check"` before you
+  finish. The scratch folder is deleted when the run ends.
 - Commit secrets, tokens, `.env` files, client names or personal data.
 - Widen a task on your own. Propose follow-up work as a new issue instead.
 
@@ -108,6 +120,19 @@ does nothing at a terminal where those are not set.
 a merge on `local-ci` is not blocked there. If a branch rule is added later
 that requires the "Fork CI" check, it must also accept `local-ci` (or let
 Keystone bypass it), or the fallback cannot merge.
+
+## Asking John to approve something you made
+
+John approves what he can see, not a description (GRE-449). Before you post
+a card that asks him to approve a design, screen, deck, video or document:
+
+1. **Check the draft first.** Hold it against the `greatstone-brand` skill and
+   the `lessons` document on GRE-13. Fix what they catch before John sees it.
+2. **Attach the real thing.** Upload it to the task as an attachment, or
+   register it as a deliverable. The Decisions card shows the latest
+   deliverable inline, so John does not leave the card.
+3. **Then post the card.** Without an attachment on the task the server refuses
+   the card with a `422` (`approval_evidence_missing`).
 
 ## When something is unclear or blocked
 
@@ -252,6 +277,15 @@ Merging does not change the live app. A version goes live in these steps.
    backup file. The new `live-*` tag gets the rc tag's title and changelog. The
    script refuses to run when its release scripts are older than origin/main;
    pull first.
+
+   **Full stop and start.** When the release card says so (a fix to the dev
+   runner itself, such as #274), John runs
+   `scripts/greatstone-release.sh --full-restart rc-YYYY-MM-DD.N` instead.
+   It takes the same backup and tag, then stops all of live (the dev runner,
+   any server it leaves behind, and the live database), checks that nothing
+   of live is left and nothing answers on port 3100, and starts live with
+   `~/GSAM/start-live.sh`. If something does not stop, it starts nothing and
+   names the processes. It cannot run from the app.
 7. **Check live (Flint, then Keystone).** Flint runs
    `curl -s http://localhost:3100/api/health`: the `commit` is the tag's
    commit. Flint spot-checks the changes in live and reports on the release

@@ -19,6 +19,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "../../api/access";
 import { agentsApi } from "../../api/agents";
+import { agentTeamsApi } from "../../api/agentTeams";
+import { TEAM_NO_LEAD_MESSAGE, teamAssignmentPatch } from "../../lib/agent-teams";
+import { TeamColorDot } from "../AgentTeamsDialog";
+import { TeamBadge } from "../TeamBadge";
 import { authApi } from "../../api/auth";
 import { executionWorkspacesApi } from "../../api/execution-workspaces";
 import { instanceSettingsApi } from "../../api/instanceSettings";
@@ -359,6 +363,7 @@ export function IssueProperties({
   const [pendingAssignee, setPendingAssignee] = useState<{
     assigneeAgentId: string | null;
     assigneeUserId: string | null;
+    teamId?: string | null;
     label: string;
     track?: () => void;
   } | null>(null);
@@ -421,6 +426,12 @@ export function IssueProperties({
     queryFn: () => agentsApi.list(companyId!),
     enabled: !!companyId,
   });
+  const { data: agentTeams } = useQuery({
+    queryKey: queryKeys.agentTeams.list(companyId!),
+    queryFn: () => agentTeamsApi.list(companyId!),
+    enabled: !!companyId,
+  });
+  const issueTeam = issue.teamId ? (agentTeams ?? []).find((team) => team.id === issue.teamId) ?? null : null;
   const { data: companyMembers } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(companyId!),
     queryFn: () => accessApi.listUserDirectory(companyId!),
@@ -948,7 +959,9 @@ export function IssueProperties({
     originatingActor?.kind === "user" && originatingActor.viaAgentId
       ? agentName(originatingActor.viaAgentId) ?? originatingActor.viaAgentId.slice(0, 8)
       : null;
-  const selectedAssigneeValue = issue.assigneeAgentId
+  const selectedAssigneeValue = issue.teamId
+    ? `team:${issue.teamId}`
+    : issue.assigneeAgentId
     ? `agent:${issue.assigneeAgentId}`
     : issue.assigneeUserId
       ? `user:${issue.assigneeUserId}`
@@ -972,18 +985,22 @@ export function IssueProperties({
     setAssigneeSearch("");
     setPendingAssignee(null);
   };
-  const applyAssignee = (next: { assigneeAgentId: string | null; assigneeUserId: string | null }, track?: () => void) => {
+  type AssigneeSelection = { assigneeAgentId: string | null; assigneeUserId: string | null; teamId?: string | null };
+  const applyAssignee = (next: AssigneeSelection, track?: () => void) => {
     track?.();
-    onUpdate(next);
+    // Picking an agent or a user takes the task off its team.
+    onUpdate(issue.teamId && next.teamId === undefined ? { ...next, teamId: null } : next);
     closeAssigneePicker();
   };
   /** Apply a selection immediately, or stage it for confirmation while a run is live. */
   const selectAssignee = (
-    next: { assigneeAgentId: string | null; assigneeUserId: string | null },
+    next: AssigneeSelection,
     label: string,
     track?: () => void,
   ) => {
-    const nextValue = next.assigneeAgentId
+    const nextValue = next.teamId
+      ? `team:${next.teamId}`
+      : next.assigneeAgentId
       ? `agent:${next.assigneeAgentId}`
       : next.assigneeUserId
         ? `user:${next.assigneeUserId}`
@@ -1797,6 +1814,41 @@ export function IssueProperties({
     matchesAssigneeSearch(option.label, option.searchText),
   );
   const showNoAssigneeOption = matchesAssigneeSearch("No assignee", "");
+  // Teams (GRE-437): picking a team assigns its lead. A team with no lead is
+  // shown but cannot be picked.
+  const visibleTeamOptions = (agentTeams ?? []).filter((team) => matchesAssigneeSearch(team.name, "team"));
+  const renderTeamOption = (team: (typeof visibleTeamOptions)[number]) => {
+    const patch = teamAssignmentPatch(team);
+    const value = `team:${team.id}`;
+    const leadName = team.leadAgentId ? agents?.find((agent) => agent.id === team.leadAgentId)?.name : null;
+    return (
+      <button
+        key={value}
+        type="button"
+        disabled={!patch}
+        title={patch ? `Assigns the team lead${leadName ? `, ${leadName}` : ""}` : TEAM_NO_LEAD_MESSAGE}
+        className={cn(
+          "flex items-start gap-2 w-full px-2 py-1.5 text-xs rounded text-left",
+          patch ? "hover:bg-accent/50" : "cursor-not-allowed opacity-60",
+          value === selectedAssigneeValue && "bg-accent",
+        )}
+        onClick={() => {
+          if (patch) selectAssignee(patch, team.name);
+        }}
+      >
+        <TeamColorDot color={team.color} className="mt-1 h-2 w-2" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{team.name}</span>
+          <span className="block truncate text-muted-foreground">
+            {patch ? `Lead: ${leadName ?? "unknown agent"}` : TEAM_NO_LEAD_MESSAGE}
+          </span>
+        </span>
+        {value === selectedAssigneeValue ? (
+          <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true" />
+        ) : null}
+      </button>
+    );
+  };
   const sectionHeader = (text: string) => (
     <div className="px-2 pb-0.5 pt-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
       {text}
@@ -1811,7 +1863,11 @@ export function IssueProperties({
         resolvers={handoffResolvers}
         onConfirm={() =>
           applyAssignee(
-            { assigneeAgentId: pendingAssignee.assigneeAgentId, assigneeUserId: pendingAssignee.assigneeUserId },
+            {
+              assigneeAgentId: pendingAssignee.assigneeAgentId,
+              assigneeUserId: pendingAssignee.assigneeUserId,
+              ...(pendingAssignee.teamId !== undefined ? { teamId: pendingAssignee.teamId } : {}),
+            },
             pendingAssignee.track,
           )
         }
@@ -1836,6 +1892,12 @@ export function IssueProperties({
         {showNoAssigneeOption
           ? renderAssigneeOption({ kind: "none", value: "", label: "No assignee", searchText: "" })
           : null}
+        {visibleTeamOptions.length > 0 ? (
+          <>
+            {sectionHeader("Teams")}
+            {visibleTeamOptions.map((team) => renderTeamOption(team))}
+          </>
+        ) : null}
         {visibleAgentOptions.length > 0 ? (
           <>
             {sectionHeader("Agents")}
@@ -1848,7 +1910,7 @@ export function IssueProperties({
             {visibleUserOptions.map((option) => renderAssigneeOption(option))}
           </>
         ) : null}
-        {!showNoAssigneeOption && visibleAgentOptions.length === 0 && visibleUserOptions.length === 0 ? (
+        {!showNoAssigneeOption && visibleTeamOptions.length === 0 && visibleAgentOptions.length === 0 && visibleUserOptions.length === 0 ? (
           <div className="px-2 py-2 text-xs text-muted-foreground">No matches.</div>
         ) : null}
       </div>
@@ -2431,6 +2493,12 @@ export function IssueProperties({
         >
           {assigneeContent}
         </PropertyPicker>
+
+        {issueTeam ? (
+          <PropertyRow label="Team">
+            <TeamBadge team={issueTeam} />
+          </PropertyRow>
+        ) : null}
 
         {showAssigneeAdapterOptions ? (
           <PropertyPicker

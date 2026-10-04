@@ -37,6 +37,7 @@ export type {
 } from "./summary-slot.js";
 export type {
   AttentionDecisionVerb,
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,
@@ -68,6 +69,7 @@ export type {
   DecisionClarityResponse,
   DecisionsFeed,
   DecisionsFeedCount,
+  DecisionCardAtDesk,
   NeedsMe,
   NeedsMeTask,
 } from "./decisions-feed.js";
@@ -157,6 +159,11 @@ export {
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
   GSAM_CLOUD_MANAGED_BY,
+  GREATSTONE_TEAM_TAG,
+  TEAM_CATALOG_ADD_MODES,
+  TEAM_CATALOG_FILTERS,
+  type TeamCatalogAddMode,
+  type TeamCatalogFilter,
 } from "./instance.js";
 export {
   TRUST_PRESETS,
@@ -762,6 +769,7 @@ export type {
   PaperclipQuestionSetQuestion,
   PaperclipQuestionSetPayload,
   AskUserQuestionsPayload,
+  InteractionAtDesk,
   AskUserQuestionsAnswer,
   AskUserQuestionsResult,
   RequestConfirmationIssueDocumentTarget,

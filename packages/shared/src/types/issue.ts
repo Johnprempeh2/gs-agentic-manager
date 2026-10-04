@@ -795,6 +795,8 @@ export interface Issue {
   reviewPolicy: IssueReviewPolicy | null;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
+  /** The team the task was assigned to (GRE-437); the assignee is its lead. */
+  teamId?: string | null;
   checkoutRunId: string | null;
   executionRunId: string | null;
   executionAgentNameKey: string | null;
@@ -1230,6 +1232,14 @@ export interface AskUserQuestionsPayload {
   questionSet?: PaperclipQuestionSetPayload;
   /** Correlates a recovered interaction with the live runtime request it replaces. */
   runtimeRequestId?: string | null;
+  /** Needs the board user at the computer (GRE-450). */
+  atDesk?: InteractionAtDesk | null;
+}
+
+/** A card that needs the board user at the computer, not on the phone (GRE-450). */
+export interface InteractionAtDesk {
+  /** The exact command to run, shown in a copy box. */
+  command?: string | null;
 }
 
 export interface AskUserQuestionsAnswer {
@@ -1397,6 +1407,8 @@ export interface RequestConfirmationPayload {
   toolAction?: RequestConfirmationToolActionPayload;
   secretProposal?: RequestConfirmationSecretProposalPayload;
   connectionAuthorization?: RequestConfirmationConnectionAuthorizationPayload;
+  /** Needs the board user at the computer (GRE-450). */
+  atDesk?: InteractionAtDesk | null;
 }
 
 export interface RequestCheckboxConfirmationOption {

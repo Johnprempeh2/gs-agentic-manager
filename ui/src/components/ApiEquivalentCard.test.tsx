@@ -44,6 +44,9 @@ const summary: ApiEquivalentSummary = {
     },
   ],
   byAgent: [],
+  agentWorkMs: 0,
+  minimumWageHourlyCents: null,
+  minimumWageEquivalentCents: null,
   byModel: [
     {
       provider: "openai",

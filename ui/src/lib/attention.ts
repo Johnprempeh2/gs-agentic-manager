@@ -1,4 +1,5 @@
 import type {
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionFeed,
   AttentionFeedQuery,
@@ -253,6 +254,12 @@ export function attentionDetailLine(item: AttentionItem): string | null {
 /** Screenshot / thumbnail images attached to the detail block, if any. */
 export function attentionDetailImages(item: AttentionItem): AttentionDetailImage[] {
   return (item.detail as AttentionItemDetail | null)?.images ?? [];
+}
+
+/** The task's latest deliverables an approval card shows inline (GRE-451). */
+export function attentionDetailDeliverables(item: AttentionItem): AttentionDetailDeliverable[] {
+  const detail = item.detail as AttentionItemDetail | null;
+  return detail && "deliverables" in detail ? detail.deliverables ?? [] : [];
 }
 
 /**

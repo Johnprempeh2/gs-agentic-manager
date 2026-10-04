@@ -1,5 +1,4 @@
 import {
-  createHash,
   generateKeyPairSync,
   randomBytes,
   timingSafeEqual
@@ -113,9 +112,12 @@ import {
 import { claimFirstInstanceAdmin } from "../first-admin-claim.js";
 import { getStorageService } from "../storage/index.js";
 import { secretService } from "../services/secrets.js";
+import { hashInviteToken } from "../lib/invite-token-hash.js";
 
+// The same sha256 hex digest the invite-backed sign-up gate uses to find an
+// invite, so both always agree on which invite a token names.
 function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
+  return hashInviteToken(token);
 }
 
 const INVITE_TOKEN_PREFIX = "pcp_invite_";

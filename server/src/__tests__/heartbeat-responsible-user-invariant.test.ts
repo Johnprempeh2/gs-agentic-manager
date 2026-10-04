@@ -426,6 +426,83 @@ describeEmbeddedPostgres("heartbeat responsible-user invariant", () => {
     expect(completed?.responsibleUserId).toBe(ownerUserId);
   });
 
+  // The wake admission transaction resolves the run's responsible user. Those
+  // reads must go through the transaction: a read through the outer pool needs
+  // a second connection while the first is held, and a burst of such wakes
+  // (one per pool slot) left every connection idle in transaction for good.
+  // A one-connection pool turns that into a deterministic hang.
+  describe("on a single pooled connection", () => {
+    async function wakeOnSingleConnection(
+      agentId: string,
+      opts: Parameters<ReturnType<typeof heartbeatService>["wakeup"]>[1],
+    ) {
+      const singleDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+      const singleHeartbeat = heartbeatService(singleDb);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const run = await Promise.race([
+          singleHeartbeat.wakeup(agentId, opts),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("wake admission waited for a second pooled connection")),
+              10_000,
+            );
+          }),
+        ]);
+        await drainHeartbeatRunsToQuiescence(singleDb, singleHeartbeat);
+        return run;
+      } finally {
+        clearTimeout(timer);
+        // Ends a stuck admission transaction too, so teardown is not blocked
+        // by its row locks.
+        await singleDb.$client.end({ timeout: 1 });
+      }
+    }
+
+    it("admits an issue-scoped system wake", async () => {
+      const { companyId, agentId } = await seedCompany();
+      const issueResponsibleUserId = `issue-owner-${randomUUID()}`;
+      const issueId = randomUUID();
+      await db.insert(issues).values({
+        id: issueId,
+        companyId,
+        title: "Single-connection admission",
+        status: "todo",
+        assigneeAgentId: agentId,
+        responsibleUserId: issueResponsibleUserId,
+      });
+
+      const run = await wakeOnSingleConnection(agentId, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: "issue_assigned",
+        payload: { issueId },
+        requestedByActorType: "system",
+        requestedByActorId: null,
+        contextSnapshot: { issueId, taskId: issueId, wakeReason: "issue_assigned" },
+      });
+
+      expect(run).not.toBeNull();
+      expect(run!.responsibleUserId).toBe(issueResponsibleUserId);
+    }, 30_000);
+
+    it("admits a system wake without an issue through the company default", async () => {
+      const { agentId, ownerUserId } = await seedCompany();
+
+      const run = await wakeOnSingleConnection(agentId, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: "scheduled_maintenance",
+        requestedByActorType: "system",
+        requestedByActorId: null,
+        contextSnapshot: { wakeReason: "scheduled_maintenance" },
+      });
+
+      expect(run).not.toBeNull();
+      expect(run!.responsibleUserId).toBe(ownerUserId);
+    }, 30_000);
+  });
+
   it("does not use an issue creator as an implicit responsible user for automated issue runs", async () => {
     const { companyId, agentId, ownerUserId } = await seedCompany();
     const creatorUserId = `creator-${randomUUID()}`;

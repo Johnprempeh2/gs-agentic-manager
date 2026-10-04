@@ -75,6 +75,9 @@ vi.mock("../services/index.js", () => ({
       agent: { id: raw },
     })),
   }),
+  agentTeamService: () => ({
+    applyTeamAssignment: vi.fn(async () => undefined),
+  }),
   companySkillService: () => ({
     completeTestRunForIssue: vi.fn(async () => null),
   }),
@@ -145,6 +148,9 @@ function registerModuleMocks() {
         ambiguous: false,
         agent: { id: raw },
       })),
+    }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
     }),
     companySkillService: () => ({
       completeTestRunForIssue: vi.fn(async () => null),

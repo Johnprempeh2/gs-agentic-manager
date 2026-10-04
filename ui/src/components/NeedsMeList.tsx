@@ -15,7 +15,8 @@ interface NeedsMeListProps {
  * assigned to the user. Renders nothing when there is nothing to show.
  */
 export function NeedsMeList({ needsMe, includeDecisions = false, title }: NeedsMeListProps) {
-  const decisions = includeDecisions ? needsMe.decisions : [];
+  // "At your desk" cards wait for the computer, not this count (GRE-450).
+  const decisions = includeDecisions ? needsMe.decisions.filter((card) => !card.atDesk) : [];
   const tasks = needsMe.assignedTasks;
   const shown = decisions.length + tasks.length;
   if (shown === 0) return null;

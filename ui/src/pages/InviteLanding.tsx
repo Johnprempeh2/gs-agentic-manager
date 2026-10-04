@@ -378,11 +378,17 @@ export function InviteLandingPage() {
         await authApi.signInEmail({ email: email.trim(), password });
         return;
       }
-      await authApi.signUpEmail({
-        name: name.trim(),
-        email: email.trim(),
-        password,
-      });
+      // The invite token lets the server create this account even while public
+      // sign-up is closed. Creating the account does not accept the invite; the
+      // accept call below (or the auto-accept effect) still does that.
+      await authApi.signUpEmail(
+        {
+          name: name.trim(),
+          email: email.trim(),
+          password,
+        },
+        { inviteToken: token },
+      );
     },
     onSuccess: async () => {
       setAuthFeedback(null);
