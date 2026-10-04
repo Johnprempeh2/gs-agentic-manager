@@ -202,6 +202,18 @@ Merging does not change the live app. A version goes live in these steps.
    "No visible change". The page comes from the pull request's
    **Where to see it:** line; without that line the script guesses it from the
    changed UI files. Fix a wrong guess in the pull request, not in the list.
+
+   For what to check, list each merge with its issue's "Done when":
+
+   ```sh
+   scripts/greatstone-release-note.sh live-YYYY-MM-DD.N [ref]   # ref defaults to origin/main
+   ```
+
+   It prints one line per merged pull request: the GRE id, the title and the
+   issue's "Done when" items. A pull request with no `GRE-###` in its title or
+   branch name is flagged "NO GRE ID"; find its issue before the release note
+   goes out. It only reads git, `gh pr view` and the app. Tests:
+   `node --test scripts/greatstone-release-note.test.mjs`.
 4. **Preview (Flint).** Keystone hands the release issue to Flint with the
    `rc-*` tag and the release note. Flint starts the candidate on a copy of the
    live data, checks it, stops it, and hands the issue back with a verdict.
