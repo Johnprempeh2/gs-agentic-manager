@@ -298,7 +298,9 @@ is refused.
 through `instance-ctl.sh`, from the release folder the instance last started
 from. The config files are `/etc/gsam/offsite/<code>.env` and
 `/etc/gsam/watch/<code>.env` (owner `gsam`, mode 600), the key file next to
-the off-host one. The units are in `scripts/client-instance/host/`:
+the off-host one. The units are in `scripts/client-instance/host/`.
+`setup-host.sh` installs them and makes the two config folders; run the
+`install` lines below again only after an upgrade changes the units.
 
 | Timer | Runs | When |
 | --- | --- | --- |

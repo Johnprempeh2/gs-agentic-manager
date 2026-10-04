@@ -63,7 +63,12 @@ install -d -m 0755 /usr/local/lib/gsam
 install -m 0755 "$HERE/instance-ctl.sh" /usr/local/lib/gsam/instance-ctl.sh
 install -m 0755 "$HERE/public-url.sh" /usr/local/lib/gsam/public-url.sh
 install -m 0644 "$HERE/gsam-client@.service" /etc/systemd/system/gsam-client@.service
+# Watch, off-host backup and restore-check timers (GRE-666); enabled per instance.
+install -m 0644 "$HERE"/gsam-{watch,offsite,restore-check}@.{service,timer} /etc/systemd/system/
 systemctl daemon-reload
+# Per-instance configs for those timers: /etc/gsam/{offsite,watch}/<code>.env.
+install -d -o root -g gsam -m 0750 /etc/gsam
+install -d -o gsam -g gsam -m 0700 /etc/gsam/offsite /etc/gsam/watch
 
 say "reserve instance ports"
 # Server ports start at 3300 and database ports at 55400 (client-instance.sh).
