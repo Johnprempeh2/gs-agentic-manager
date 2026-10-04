@@ -9,6 +9,8 @@ import {
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/index.js";
 import type { MemoryEngine } from "../services/memory-gateway/engine.js";
+import { getDailyPlanUsage } from "../services/memory-gateway/ingest-outbox.js";
+import { createDbMemoryIngestStore } from "../services/memory-gateway/ingest-outbox-db.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
 
@@ -106,6 +108,16 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
   router.post("/companies/:companyId/memory/recall", requireEnabled, validate(recallMemorySchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     res.json(await svc.recall(memoryCallerFromRequest(req, companyId), req.body));
+  });
+
+  // Daily Claude plan use by memory extraction (GRE-673): engine deliveries and
+  // the model tokens the engine reported, per Europe/London day. `days` is 1-90.
+  router.get("/companies/:companyId/memory/plan-usage", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const requested = Number.parseInt(String(req.query.days ?? "7"), 10);
+    const days = Number.isFinite(requested) ? Math.min(90, Math.max(1, requested)) : 7;
+    const usage = await getDailyPlanUsage({ store: createDbMemoryIngestStore(db), companyId, days });
+    res.json({ companyId, days, usage });
   });
 
   return router;

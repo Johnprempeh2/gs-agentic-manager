@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import {
   activityLog,
   agents,
+  memoryIngestOutbox,
   memoryOperations,
   memoryRecords,
   memoryScopes,
@@ -72,6 +73,7 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
   const ctx = useEmbeddedPostgres("gsam-memory-", {
     resetEach: async (db) => {
       await db.delete(activityLog);
+      await db.delete(memoryIngestOutbox);
       await db.delete(memoryOperations);
       await db.delete(memoryRecords);
       await db.delete(memoryScopes);
@@ -365,6 +367,29 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(pending.map((row) => row.syncState)).toEqual(["pending", "pending"]);
     const outcomes = (await ctx.db.select().from(memoryOperations)).map((op) => op.outcome);
     expect(outcomes.filter((outcome) => outcome === "unavailable")).toHaveLength(4);
+  });
+
+  it("reports daily plan use by memory from the token counts the engine returns", async () => {
+    const { board, asAgent, base, companyId, fake } = await setup("PlanUse");
+    const mason = await seedAgent(companyId, "Mason");
+    const retain = fake.engine.retain;
+    fake.engine.retain = async (doc) => {
+      await retain(doc);
+      return { usage: { inputTokens: 1200, outputTokens: 300 } };
+    };
+    expect((await request(board).get(`${base}/plan-usage`)).status).toBe(404);
+    await enable(board, base);
+    const agent = asAgent(mason.id);
+    const scope = await scopeOf(agent, base, "agent");
+    for (const content of ["Kestrel Works ships on Fridays", "Kestrel Works uses blue crates"]) {
+      expect((await request(agent).post(`${base}/records`).send({ scopeId: scope.id, content })).status).toBe(201);
+    }
+
+    const res = await request(board).get(`${base}/plan-usage?days=500`);
+    expect(res.status).toBe(200);
+    expect(res.body.days).toBe(90);
+    expect(res.body.usage).toHaveLength(1);
+    expect(res.body.usage[0]).toMatchObject({ modelCalls: 2, deliveries: 2, inputTokens: 2400, outputTokens: 600 });
   });
 
   it("chunks mode stores contributions with no model step", async () => {

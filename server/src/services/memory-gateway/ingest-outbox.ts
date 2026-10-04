@@ -492,6 +492,50 @@ export async function drainMemoryIngestOutbox(
   return result;
 }
 
+export const MEMORY_INGEST_DRAIN_INTERVAL_MS = 30_000;
+
+export interface MemoryIngestDrainScheduler {
+  /** Runs one pass now unless one is already running. Resolves to null when skipped. */
+  tick(): Promise<DrainMemoryIngestResult | null>;
+  stop(): void;
+}
+
+/**
+ * Drains the outbox on a fixed interval. Off unless the caller passes a
+ * configured engine: with no engine there is nothing to deliver to, and the
+ * entries stay queued. Passes never overlap, and a failed pass is logged and
+ * the next tick retries, so the timer itself can never strand the queue.
+ */
+export function startMemoryIngestDrain(
+  options: Omit<DrainMemoryIngestOptions, "engine"> & {
+    engine: MemoryIngestEngine | null;
+    intervalMs?: number;
+    onResult?: (result: DrainMemoryIngestResult) => void;
+    onError?: (error: unknown) => void;
+  },
+): MemoryIngestDrainScheduler | null {
+  const { engine, intervalMs, onResult, onError, ...drainOptions } = options;
+  if (!engine) return null;
+  let running = false;
+  const tick = async () => {
+    if (running) return null;
+    running = true;
+    try {
+      const result = await drainMemoryIngestOutbox({ ...drainOptions, engine });
+      onResult?.(result);
+      return result;
+    } catch (error) {
+      onError?.(error);
+      return null;
+    } finally {
+      running = false;
+    }
+  };
+  const timer = setInterval(() => void tick(), intervalMs ?? MEMORY_INGEST_DRAIN_INTERVAL_MS);
+  timer.unref?.();
+  return { tick, stop: () => clearInterval(timer) };
+}
+
 export interface DailyPlanUsage {
   /** Calendar day in Europe/London, YYYY-MM-DD. */
   date: string;

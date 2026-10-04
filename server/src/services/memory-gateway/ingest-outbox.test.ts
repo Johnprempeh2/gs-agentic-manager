@@ -6,6 +6,7 @@ import {
   getDailyPlanUsage,
   nextAttemptAt,
   parsePlanResetAt,
+  startMemoryIngestDrain,
   type MemoryIngestEngine,
   type MemoryIngestEntry,
 } from "./ingest-outbox.js";
@@ -265,5 +266,42 @@ describe("getDailyPlanUsage", () => {
       { date: "2026-10-04", modelCalls: 1, deliveries: 2, inputTokens: 1000, outputTokens: 200 },
       { date: "2026-10-05", modelCalls: 1, deliveries: 1, inputTokens: 500, outputTokens: 50 },
     ]);
+  });
+});
+
+describe("startMemoryIngestDrain", () => {
+  it("stays off when no engine is configured", () => {
+    const store = createInMemoryMemoryIngestStore();
+    expect(startMemoryIngestDrain({ store, engine: null })).toBeNull();
+  });
+
+  it("never overlaps passes and survives a failed pass", async () => {
+    const t = clock("2026-10-04T20:00:00Z");
+    const store = createInMemoryMemoryIngestStore();
+    await seed(store, t.now(), 1);
+    let release: () => void = () => {};
+    const engine: MemoryIngestEngine = {
+      apply: () => new Promise((resolve) => (release = () => resolve({ usage: null }))),
+    };
+    const errors: unknown[] = [];
+    const drain = startMemoryIngestDrain({ store, engine, now: t.now, intervalMs: 60_000, onError: (e) => errors.push(e) })!;
+    try {
+      const first = drain.tick();
+      expect(await drain.tick()).toBeNull();
+      await new Promise((resolve) => setImmediate(resolve));
+      release();
+      expect((await first)?.synced).toBe(1);
+
+      const claimDue = store.claimDue;
+      store.claimDue = async () => {
+        throw new Error("database gone");
+      };
+      expect(await drain.tick()).toBeNull();
+      expect(errors).toHaveLength(1);
+      store.claimDue = claimDue;
+      expect(await drain.tick()).not.toBeNull();
+    } finally {
+      drain.stop();
+    }
   });
 });
