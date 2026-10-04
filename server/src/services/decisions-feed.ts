@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   activityLog,
@@ -26,6 +27,7 @@ import type {
   DecisionCardAgentRef,
   DecisionCardClarity,
   DecisionCardKind,
+  DecisionCardSetup,
   DecisionsFeed,
 } from "@greatstone/shared";
 import { attentionService, type AttentionServiceOptions } from "./attention.js";
@@ -39,6 +41,9 @@ const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 const SEVERITY_RANK: Record<AttentionSeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 const KIND_RANK = new Map<DecisionCardKind, number>(DECISION_CARD_KINDS.map((kind, index) => [kind, index]));
 const REASON_LIMIT = 600;
+const CONFIGURATION_INCOMPLETE = "configuration_incomplete";
+/** How far back a repeated setup failure is counted (GRE-504). */
+const SETUP_HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 
 type TaskRow = {
   id: string;
@@ -54,6 +59,26 @@ type DeskAsk = { interactionId: string; issueId: string; kind: string; command: 
 
 /** An agent's open cards for one missing connection, shown as one card. */
 type SharedConnection = { agentId: string; serviceName: string; tasks: TaskRow[] };
+
+/**
+ * One setup gap of one agent (GRE-504): a `configuration_incomplete` run, keyed
+ * by the agent, the recorded reason and the failure message.
+ */
+type SetupIdentity = { key: string; runId: string; agentId: string; cause: string; fixHref: string; runAt: number };
+
+type Group = {
+  key: string;
+  taskId: string | null;
+  items: AttentionItem[];
+  cleared: AttentionItem[];
+  aiRepairedAt: number | null;
+  /** The agent finished a run after the setup failure (GRE-504). */
+  setupFixedAt: number | null;
+  shared?: SharedConnection;
+  setup?: DecisionCardSetup;
+  /** Every task stopped by the setup gap, closed ones included. */
+  setupTasks?: TaskRow[];
+};
 
 type AiHealth = {
   /** Newest time a healthy connection was saved, per provider. */
@@ -118,6 +143,15 @@ function timeOf(value: Date | string | null | undefined) {
   if (!value) return 0;
   const time = value instanceof Date ? value.getTime() : Date.parse(value);
   return Number.isFinite(time) ? time : 0;
+}
+
+function setupKey(agentId: string, reason: string, cause: string) {
+  return `setup:${agentId}:${reason}:${createHash("sha256").update(cause).digest("hex").slice(0, 12)}`;
+}
+
+/** The run's own fix page when it is an in-app path, else the agent's runtime page. */
+function setupFixHref(actionUrl: string | null, agentId: string) {
+  return actionUrl && actionUrl.startsWith("/") && !actionUrl.startsWith("//") ? actionUrl : `/agents/${agentId}/runtime`;
 }
 
 function hhmm(time: number) {
@@ -257,12 +291,75 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
       const runRows = runIds.length === 0 ? [] : await db
         .select({
           id: heartbeatRuns.id,
+          agentId: heartbeatRuns.agentId,
           createdAt: heartbeatRuns.createdAt,
+          errorCode: heartbeatRuns.errorCode,
+          error: heartbeatRuns.error,
           gapReason: sql<string | null>`${heartbeatRuns.resultJson} -> 'configurationIncomplete' ->> 'reason'`,
+          actionUrl: sql<string | null>`${heartbeatRuns.resultJson} -> 'configurationIncomplete' ->> 'actionUrl'`,
         })
         .from(heartbeatRuns)
         .where(and(eq(heartbeatRuns.companyId, companyId), inArray(heartbeatRuns.id, [...new Set(runIds)])));
       const runById = new Map(runRows.map((row) => [row.id, row]));
+
+      // Repeated setup failures (GRE-504): one card per agent and cause.
+      const setupIdentityOfRun = (run: (typeof runRows)[number] | undefined): SetupIdentity | null => {
+        if (!run || run.errorCode !== CONFIGURATION_INCOMPLETE) return null;
+        const cause = run.error?.replace(/\s+/g, " ").trim() || "Setup is not complete";
+        return {
+          key: setupKey(run.agentId, run.gapReason ?? "unknown", cause),
+          runId: run.id,
+          agentId: run.agentId,
+          cause,
+          fixHref: setupFixHref(run.actionUrl, run.agentId),
+          runAt: timeOf(run.createdAt),
+        };
+      };
+      const setupIdentityOf = (item: AttentionItem): SetupIdentity | null => {
+        if (item.sourceKind === "recovery_action") {
+          const recovery = recoveryById.get(item.subject.id);
+          if (!recovery || recovery.cause !== CONFIGURATION_INCOMPLETE) return null;
+          return setupIdentityOfRun(runById.get(readString(recovery.evidence as Record<string, unknown>, "latestRunId") ?? ""));
+        }
+        if (item.sourceKind === "failed_run") return setupIdentityOfRun(runById.get(item.subject.id));
+        return null;
+      };
+      const setupAgentIds = [...new Set(rawItems.map((item) => setupIdentityOf(item)?.agentId).filter((id): id is string => Boolean(id)))];
+      const setupHistory = setupAgentIds.length === 0 ? [] : await db
+        .select({
+          id: heartbeatRuns.id,
+          agentId: heartbeatRuns.agentId,
+          status: heartbeatRuns.status,
+          createdAt: heartbeatRuns.createdAt,
+          errorCode: heartbeatRuns.errorCode,
+          error: heartbeatRuns.error,
+          gapReason: sql<string | null>`${heartbeatRuns.resultJson} -> 'configurationIncomplete' ->> 'reason'`,
+        })
+        .from(heartbeatRuns)
+        .where(and(
+          eq(heartbeatRuns.companyId, companyId),
+          inArray(heartbeatRuns.agentId, setupAgentIds),
+          gt(heartbeatRuns.createdAt, new Date(now - SETUP_HISTORY_MS)),
+          or(eq(heartbeatRuns.status, "succeeded"), eq(heartbeatRuns.errorCode, CONFIGURATION_INCOMPLETE)),
+        ));
+      const successesByAgent = new Map<string, number[]>();
+      const failuresByKey = new Map<string, Array<{ id: string; at: number }>>();
+      for (const row of setupHistory) {
+        if (row.status === "succeeded") {
+          successesByAgent.set(row.agentId, [...(successesByAgent.get(row.agentId) ?? []), timeOf(row.createdAt)]);
+        } else {
+          const cause = row.error?.replace(/\s+/g, " ").trim() || "Setup is not complete";
+          const key = setupKey(row.agentId, row.gapReason ?? "unknown", cause);
+          failuresByKey.set(key, [...(failuresByKey.get(key) ?? []), { id: row.id, at: timeOf(row.createdAt) }]);
+        }
+      }
+      /** The agent's first successful run after a setup failure: the setup works again. */
+      const setupFixedAt = (item: AttentionItem): number | null => {
+        const identity = setupIdentityOf(item);
+        if (!identity) return null;
+        const after = (successesByAgent.get(identity.agentId) ?? []).filter((time) => time > identity.runAt);
+        return after.length > 0 ? Math.min(...after) : null;
+      };
 
       const agentRef = (agentId: string | null | undefined): DecisionCardAgentRef | null => {
         if (!agentId) return null;
@@ -333,7 +430,8 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         const upstream = readString(payload.upstreamService as Record<string, unknown> | undefined, "slug") ?? "";
         return `connection:${agentId}:${service}:${upstream}`;
       };
-      const isOpenRow = (item: AttentionItem) => !isClosedTaskRow(item) && !blocksNothing(item) && aiRepairedAt(item) === null;
+      const isOpenRow = (item: AttentionItem) =>
+        !isClosedTaskRow(item) && !blocksNothing(item) && aiRepairedAt(item) === null && setupFixedAt(item) === null;
       const sharedTasks = new Map<string, Set<string>>();
       for (const item of rawItems) {
         const key = sharedConnectionKey(item);
@@ -360,14 +458,87 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         return blockedId && anchoredTasks.has(blockedId) ? blockedId : taskIdOf(item);
       };
 
-      type Group = { key: string; taskId: string | null; items: AttentionItem[]; cleared: AttentionItem[]; aiRepairedAt: number | null; shared?: SharedConnection };
+      const baseKeyOf = (item: AttentionItem) => {
+        const shared = sharedKeyOf(item);
+        if (shared) return shared;
+        const taskId = groupTaskIdOf(item);
+        return taskId ? `task:${taskId}` : `item:${item.dedupKey}`;
+      };
+
+      // A task (or task-less failed run) whose only rows are one setup gap of
+      // one agent, plus that agent's AI connection request, joins that gap's
+      // card (GRE-504). A task with anything else (a question, an approval, a
+      // blocker) keeps its own card, so one task stays one card.
+      const isAiRequest = (item: AttentionItem) =>
+        item.sourceKind === "issue_thread_interaction" && cardKind(item) === "connection"
+        && ((intentById.get(item.subject.id)?.payload ?? {}) as Record<string, unknown>).purpose === "ai";
+      const unitSetup = new Map<string, { keys: Set<string>; other: boolean }>();
+      for (const item of rawItems) {
+        if (isClosedTaskRow(item) || blocksNothing(item)) continue;
+        const unit = baseKeyOf(item);
+        const entry = unitSetup.get(unit) ?? { keys: new Set<string>(), other: false };
+        const identity = setupIdentityOf(item);
+        if (identity) entry.keys.add(identity.key);
+        else if (!isAiRequest(item)) entry.other = true;
+        unitSetup.set(unit, entry);
+      }
+      const setupKeyOfUnit = new Map<string, string>();
+      const setupUnits = new Map<string, Set<string>>();
+      for (const [unit, entry] of unitSetup) {
+        if (entry.other || entry.keys.size !== 1 || unit.startsWith("connection:")) continue;
+        const key = [...entry.keys][0]!;
+        setupKeyOfUnit.set(unit, key);
+        setupUnits.set(key, (setupUnits.get(key) ?? new Set()).add(unit));
+      }
+
+      /** Count, last seen and fix link of one setup gap, across every failed run of it. */
+      const describeSetup = (key: string, units: Set<string>): DecisionCardSetup => {
+        const identities = rawItems
+          .filter((item) => units.has(baseKeyOf(item)))
+          .map(setupIdentityOf)
+          .filter((identity): identity is SetupIdentity => identity?.key === key)
+          .sort((left, right) => right.runAt - left.runAt);
+        const newest = identities[0]!;
+        const failures = [
+          ...(failuresByKey.get(key) ?? []),
+          ...identities.map((identity) => ({ id: identity.runId, at: identity.runAt })),
+        ];
+        const lastSeen = Math.max(...failures.map((failure) => failure.at));
+        // Count from the agent's last success before the newest failure, so a
+        // fixed-then-broken setup starts a fresh count.
+        const since = Math.max(0, ...(successesByAgent.get(newest.agentId) ?? []).filter((time) => time < lastSeen));
+        const counted = new Set(failures.filter((failure) => failure.at > since).map((failure) => failure.id));
+        return {
+          agent: agentRef(newest.agentId),
+          cause: newest.cause,
+          failureCount: counted.size,
+          lastSeenAt: new Date(lastSeen).toISOString(),
+          fixHref: newest.fixHref,
+          tasks: [...units]
+            .map((unit) => (unit.startsWith("task:") ? taskById.get(unit.slice("task:".length)) : undefined))
+            .filter((row): row is TaskRow => Boolean(row) && !CLOSED_ISSUE_STATUSES.has(row!.status))
+            .map((row) => ({ id: row.id, identifier: row.identifier, title: row.title }))
+            .sort((left, right) => (left.identifier ?? left.id).localeCompare(right.identifier ?? right.id)),
+          fixedAt: null,
+        };
+      };
+
       const groups = new Map<string, Group>();
       let staleCleared = 0;
       for (const item of rawItems) {
         const shared = sharedKeyOf(item);
-        const taskId = shared ? null : groupTaskIdOf(item);
-        const key = shared ?? (taskId ? `task:${taskId}` : `item:${item.dedupKey}`);
-        const group = groups.get(key) ?? { key, taskId, items: [], cleared: [], aiRepairedAt: null };
+        const baseKey = baseKeyOf(item);
+        const setup = setupKeyOfUnit.get(baseKey) ?? null;
+        const mergedSetup = setup && (setupUnits.get(setup)?.size ?? 0) > 1 ? setup : null;
+        const taskId = shared || mergedSetup ? null : groupTaskIdOf(item);
+        const key = mergedSetup ?? baseKey;
+        const group: Group = groups.get(key) ?? { key, taskId, items: [], cleared: [], aiRepairedAt: null, setupFixedAt: null };
+        if (setup && !group.setup) {
+          group.setup = describeSetup(setup, setupUnits.get(setup)!);
+          group.setupTasks = [...setupUnits.get(setup)!]
+            .map((unit) => (unit.startsWith("task:") ? taskById.get(unit.slice("task:".length)) : undefined))
+            .filter((row): row is TaskRow => Boolean(row));
+        }
         if (shared && !group.shared) {
           const payload = (intentById.get(item.subject.id)?.payload ?? {}) as Record<string, unknown>;
           group.shared = {
@@ -382,13 +553,20 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           continue;
         }
         const repairedAt = aiRepairedAt(item);
-        if (repairedAt !== null) {
+        const fixedAt = repairedAt === null ? setupFixedAt(item) : null;
+        if (repairedAt !== null || fixedAt !== null) {
           staleCleared += 1;
-          group.aiRepairedAt = Math.max(group.aiRepairedAt ?? 0, repairedAt);
+          if (repairedAt !== null) group.aiRepairedAt = Math.max(group.aiRepairedAt ?? 0, repairedAt);
+          if (fixedAt !== null) group.setupFixedAt = Math.max(group.setupFixedAt ?? 0, fixedAt);
           group.cleared.push(item);
           continue;
         }
         group.items.push(item);
+      }
+      for (const group of groups.values()) {
+        if (group.setup && group.items.length === 0) {
+          group.setup.fixedAt = new Date(group.setupFixedAt ?? group.aiRepairedAt ?? now).toISOString();
+        }
       }
 
       const clarityByTask = await loadClarity(companyId, [...groups.values()]
@@ -401,9 +579,13 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
       const cards: DecisionCard[] = [];
       for (const group of groups.values()) {
         const task = group.taskId ? taskById.get(group.taskId) ?? null : null;
-        // A fixed AI connection clears its cards. A task it left blocked keeps
-        // one card so it is not stranded: it still needs a retry.
-        const readyToRetry = group.items.length === 0 && group.aiRepairedAt !== null && task?.status === "blocked";
+        // A fixed AI connection or setup clears its cards. A task it left
+        // blocked keeps one card so it is not stranded: it still needs a retry.
+        const leftBlocked = task
+          ? task.status === "blocked"
+          : group.taskId === null && Boolean(group.setupTasks?.some((row) => row.status === "blocked"));
+        const readyToRetry = group.items.length === 0
+          && (group.aiRepairedAt !== null || group.setupFixedAt !== null) && leftBlocked;
         if (group.items.length === 0 && !readyToRetry) continue;
         cards.push(buildCard({
           companyId,
@@ -521,7 +703,7 @@ function findTaskSubject(items: AttentionItem[], taskId: string): AttentionSubje
 
 function buildCard(input: {
   companyId: string;
-  group: { key: string; taskId: string | null; items: AttentionItem[]; cleared: AttentionItem[]; aiRepairedAt: number | null; shared?: SharedConnection };
+  group: Group;
   task: TaskRow | null;
   readyToRetry: boolean;
   taskSubject: AttentionSubject | null;
@@ -544,9 +726,19 @@ function buildCard(input: {
   const shared = group.shared;
   const sharedAgent = shared ? agentRef(shared.agentId) : null;
   const sharedTaskList = shared?.tasks.map((row) => row.identifier ?? row.id.slice(0, 8)).sort().join(", ");
+  // A setup card that stands for several tasks or task-less runs (GRE-504).
+  const setup = group.setup ?? null;
+  const setupCard = setup !== null && group.taskId === null;
+  const setupAgentName = setup?.agent?.name ?? "The agent";
+  const setupTaskCount = setup?.tasks.length ?? 0;
+  const setupTasksLabel = setupTaskCount === 1 ? "1 task" : `${setupTaskCount} tasks`;
   const title = shared
     ? `${sharedAgent?.name ?? "An agent"} needs ${shared.serviceName} for ${shared.tasks.length} tasks`
-    : taskLabel ?? main?.subject.title ?? "Needs your decision";
+    : setupCard
+      ? readyToRetry
+        ? `${setupAgentName}'s setup works again: ${setupTasksLabel} still stopped`
+        : `${setupAgentName} cannot start: setup is not complete`
+      : taskLabel ?? main?.subject.title ?? "Needs your decision";
 
   // Who is waiting: the owner of the task. For a stalled blocker, the owner of
   // the blocked task behind it waits too, but the blocker's owner acts.
@@ -558,6 +750,7 @@ function buildCard(input: {
   const blockedItem = items.find((item) => cardKind(item) === "blocked" && !isForeignBlocker(item)) ?? null;
   const blockedTaskAgentId = readString(blockedItem?.relatedIssue?.metadata, "assigneeAgentId");
   const waiting = sharedAgent
+    ?? (setupCard ? setup!.agent : null)
     ?? agentRef(task?.assigneeAgentId)
     ?? agentRef(blockedTaskAgentId)
     ?? agentRef(readString(main?.subject.metadata, "createdByAgentId"))
@@ -567,15 +760,23 @@ function buildCard(input: {
   // A ready-to-retry card retries through the recovery the fixed connection left open.
   // A task the fixed connection left blocked keeps Retry even when other rows
   // (a question, a blocker) still hold the card open.
-  const retryAfterRepair = group.aiRepairedAt !== null && task?.status === "blocked";
+  const repairedAt = group.aiRepairedAt ?? group.setupFixedAt;
+  const retryAfterRepair = repairedAt !== null && task?.status === "blocked";
   const recoveryItem = byKind("recovery")
     ?? (retryAfterRepair ? group.cleared.find((item) => item.sourceKind === "recovery_action") ?? null : null);
   const recovery = recoveryItem ? input.recoveryById.get(recoveryItem.subject.id) ?? null : null;
   let reason: string;
   if (shared) {
     reason = `${shared.tasks.length} tasks wait for the same ${shared.serviceName} connection: ${sharedTaskList}. One answer covers all of them.`;
+  } else if (readyToRetry && group.aiRepairedAt === null) {
+    reason = `The setup works again: ${setup?.agent?.name ?? waiting?.name ?? "The agent"} finished a run at ${hhmm(group.setupFixedAt!)}. `
+      + (setupCard
+        ? `${setupTasksLabel} ${setupTaskCount === 1 ? "is" : "are"} still stopped from the earlier failure.`
+        : "The task is still stopped from the earlier failure.");
   } else if (readyToRetry) {
     reason = `The AI connection works again (since ${hhmm(group.aiRepairedAt!)}). The task is still stopped from the earlier failure.`;
+  } else if (setupCard) {
+    reason = setup!.cause;
   } else if (kind === "recovery" && recovery) {
     reason = readString(recovery.evidence as Record<string, unknown>, "failureSummary") ?? recovery.nextAction;
   } else if (kind === "failed_run") {
@@ -615,6 +816,11 @@ function buildCard(input: {
     agent_error: "The agent takes no work until the error is fixed.",
     join_request: "The request waits for your approval.",
   };
+  if (setupCard && !readyToRetry) {
+    nextStepByKind[kind] = `${setupAgentName} stops the same way on every run until the setup is fixed. Fix it, then retry.`;
+  } else if (setupCard) {
+    nextStepByKind[kind] = `Retry to continue ${setupTaskCount === 1 ? "the task" : "the tasks"}.`;
+  }
   if (shared) {
     nextStepByKind.connection = `${waiting?.name ?? "The agent"} stays stopped on these tasks until you answer. Connect ${shared.serviceName} once and each task continues one time.`;
   }
@@ -637,6 +843,10 @@ function buildCard(input: {
     : null;
 
   const actions: DecisionCardAction[] = [];
+  // The fix comes first while the setup is still broken (GRE-504).
+  if (setup && !setup.fixedAt) {
+    actions.push(linkAction("fix_setup", "Fix setup", `Open the page where ${setupAgentName}'s setup is fixed.`, setup.fixHref));
+  }
   // Done accepts a desk confirmation; it wakes the agent to check the work.
   const doneRequests = atDesk
     ? deskAsks.filter((ask) => ask?.kind === "request_confirmation")
@@ -777,6 +987,8 @@ function buildCard(input: {
     actions.push(requestAction("cancel_task", "Cancel the task", `Stop the task for good.${waitingNote}`, [
       request("PATCH", issuePath, { status: "cancelled", blockedDependents: { action: "remove" } }),
     ]));
+  } else if (setupCard) {
+    actions.push(...setupRetryActions(companyId, group));
   } else if (!task && main) {
     if (main.subject.href && !actions.some((action) => action.type === "link")) {
       actions.push(linkAction("open", "Open", "Open the details.", main.subject.href));
@@ -797,6 +1009,7 @@ function buildCard(input: {
     id: group.key,
     kind,
     kinds,
+    ...(setup ? { setup } : {}),
     task: input.taskSubject,
     title,
     reason: clip(reason),
@@ -810,6 +1023,60 @@ function buildCard(input: {
     items,
     atDesk,
   };
+}
+
+/**
+ * Retry for a setup card that stands for several tasks: one call per stopped
+ * task, through the same endpoints as the task card's own Retry. Task-less
+ * failed runs are dismissed instead; their next run starts on its own.
+ */
+function setupRetryActions(companyId: string, group: Group): DecisionCardAction[] {
+  const tasks = group.setupTasks ?? [];
+  // A recovery only goes back to its owner from blocked; a task that moved on keeps its status.
+  const blockedTasks = new Set(tasks.filter((row) => row.status === "blocked").map((row) => row.id));
+  const openTasks = new Set(tasks.filter((row) => !CLOSED_ISSUE_STATUSES.has(row.status)).map((row) => row.id));
+  const rows = [...group.items, ...group.cleared];
+  const retried = new Set<string>();
+  const requests: DecisionCardAction["requests"] = [];
+  for (const item of rows) {
+    const taskId = taskIdOf(item);
+    if (!taskId || !blockedTasks.has(taskId) || retried.has(taskId)) continue;
+    if (item.sourceKind === "recovery_action") {
+      retried.add(taskId);
+      requests.push(request("POST", `/api/issues/${taskId}/recovery-actions/resolve`, {
+        actionId: item.subject.id,
+        outcome: "restored",
+        sourceIssueStatus: "todo",
+        resolutionNote: "Retried from Decisions.",
+      }));
+    }
+  }
+  for (const item of rows) {
+    const taskId = taskIdOf(item);
+    const agentId = readString(item.subject.metadata, "agentId");
+    if (item.sourceKind !== "failed_run" || !taskId || !openTasks.has(taskId) || retried.has(taskId) || !agentId) continue;
+    retried.add(taskId);
+    requests.push(request("POST", `/api/agents/${agentId}/wakeup`, {
+      source: "on_demand",
+      triggerDetail: "manual",
+      reason: "retry_failed_run",
+      failedRunId: item.subject.id,
+    }));
+  }
+  const actions: DecisionCardAction[] = [];
+  if (requests.length > 0) {
+    actions.push(requestAction(
+      "retry",
+      requests.length === 1 ? "Retry" : `Retry all ${requests.length}`,
+      requests.length === 1 ? "Send the task back to its owner to try again." : "Send each stopped task back to its owner to try again.",
+      requests,
+    ));
+  }
+  const failedRuns = group.items.filter((item) => item.sourceKind === "failed_run");
+  if (failedRuns.length > 0 && failedRuns.length === group.items.length) {
+    actions.push(dismissAction(companyId, failedRuns, "Dismiss"));
+  }
+  return actions;
 }
 
 function dismissAction(companyId: string, items: AttentionItem[], label: string): DecisionCardAction {

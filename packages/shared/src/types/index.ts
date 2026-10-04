@@ -70,6 +70,7 @@ export type {
   DecisionsFeed,
   DecisionsFeedCount,
   DecisionCardAtDesk,
+  DecisionCardSetup,
   NeedsMe,
   NeedsMeTask,
 } from "./decisions-feed.js";

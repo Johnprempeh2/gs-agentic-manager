@@ -214,6 +214,7 @@ export type {
   DecisionsFeed,
   DecisionsFeedCount,
   DecisionCardAtDesk,
+  DecisionCardSetup,
   NeedsMe,
   NeedsMeTask,
 } from "./types/decisions-feed.js";
