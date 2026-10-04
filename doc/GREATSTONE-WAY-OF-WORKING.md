@@ -190,6 +190,14 @@ Merging does not change the live app. A version goes live in these steps.
    met, and the diff does not touch `~/GSAM/`, secrets or client data. Keystone
    posts "Ready to merge" or "Not ready, because ..." on the issue.
 
+   **Draft (GRE-605).** `node scripts/greatstone-local-ci.mjs ready <pr>`
+   does the mechanical part in the reused local-ci checkout: it reads Fork CI,
+   reruns the PR body's "Tests run" commands, runs the S2 steps below, flags
+   "big change" triggers (migrations, auth/permissions, `scripts/greatstone-*`,
+   CI files, more than 1,000 changed lines outside tests) and `~/GSAM` or
+   secret-shaped lines, and prints a 5-line draft verdict. It posts nothing.
+   Keystone reads it, checks the "Done when" list, and decides.
+
    **Page-load check (S2, GRE-501).** In the pull request's checkout, run
    `pnpm metrics:s2-needed --pr <number>`. If it says "yes" (the pull request
    changes `ui/`, the issue/board API routes, or the S2 harness or budgets),
