@@ -212,8 +212,8 @@ export const TESTS = [
       const path = await target.probeEngine("mcp-path", { bank: "cl-alder" });
       const header = await target.probeEngine("mcp-header", { bank: "cl-alder" });
       const checks = [];
-      check(checks, refusedOr401(path), `/mcp/cl-alder/ refused or 401 (got ${describeProbe(path)})`);
-      check(checks, refusedOr401(header), `/mcp with X-Bank-Id refused or 401 (got ${describeProbe(header)})`);
+      check(checks, mcpClosed(path), `/mcp/cl-alder/ refused, 401 or 404 (got ${describeProbe(path)})`);
+      check(checks, mcpClosed(header), `/mcp with X-Bank-Id refused, 401 or 404 (got ${describeProbe(header)})`);
       check(checks, !path.dataReturned && !header.dataReturned, "no data returned");
       return { checks, observed: { path, header }, audit: [], auditNote: "direct engine calls bypass the gateway; evidence is the probe result" };
     },
@@ -231,8 +231,8 @@ export const TESTS = [
       const configAfter = await target.adminBankConfig("cl-alder");
       const checks = [];
       check(checks, refusedOr401(cp), `control plane refused (got ${describeProbe(cp)})`);
-      check(checks, !pg.reached, `PostgreSQL refused (got ${describeProbe(pg)})`);
-      check(checks, refusedOr401(cfg), `MCP bank-config update refused (got ${describeProbe(cfg)})`);
+      check(checks, !pg.reached || pg.loginAccepted === false, `PostgreSQL connection or login without the password refused (got ${describeProbe(pg)})`);
+      check(checks, mcpClosed(cfg), `MCP bank-config update refused (got ${describeProbe(cfg)})`);
       check(checks, configBefore?.memoryDefense === "block", `Memory Defense on before the attempt (got ${configBefore?.memoryDefense})`);
       check(checks, JSON.stringify(configAfter) === JSON.stringify(configBefore), "bank config unchanged, read back by admin");
       return { checks, observed: { cp, pg, cfg, configBefore, configAfter }, audit: [], auditNote: "direct engine calls bypass the gateway; evidence is the probe result and admin read-back" };
@@ -292,8 +292,15 @@ function refusedOr401(p) {
   return !p.reached || p.status === 401 || p.status === 403;
 }
 
+// MCP is switched off on the engine (GRE-674), so 404 with no data is also a
+// closed door. REST stays strict: a 404 there could hide a missing key check.
+function mcpClosed(p) {
+  return refusedOr401(p) || (p.status === 404 && !p.dataReturned);
+}
+
 function describeProbe(p) {
-  return p.reached ? `HTTP ${p.status}` : `not reached: ${p.detail}`;
+  if (!p.reached) return `not reached: ${p.detail}`;
+  return p.status == null ? p.detail : `HTTP ${p.status}`;
 }
 
 function redactAuditRow(items) {
