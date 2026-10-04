@@ -880,6 +880,10 @@ export function createPostgresRunDispatchAdapter(
           errorCode: decision.errorCode,
           resultJson: {
             ...parseObject(run.resultJson),
+            // Every caller cancels before adapter dispatch. Without this
+            // evidence the release drain holds wakes queued behind the run
+            // for execution reconciliation that can never apply (GRE-631).
+            executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
             stopReason: decision.errorCode,
             ...(decision.errorCode === "execution_reconciliation_required"
               ? { executionWait: decision.details }
