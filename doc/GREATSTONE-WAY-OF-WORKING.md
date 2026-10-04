@@ -86,6 +86,26 @@ to it.
   Note on the issue that the merge used `local-ci`. Runner and vitest lanes are
   not part of it; they are not part of Fork CI on pull requests either.
 
+## Taking upstream code
+
+We take Paperclip (`paperclipai/paperclip`, `master`) changes as cherry-picks
+or partial ports, so git cannot tell what we already have. Three records do:
+
+- **Every commit that takes upstream code ends with one line per upstream
+  commit:** `Upstream-Commit: <sha> taken` (all of it) or
+  `Upstream-Commit: <sha> partial` (only some of it). Use the upstream sha, 9
+  or more characters. When the rest of a partial commit is taken later, that
+  commit says `taken`; if the rest is skipped, add a skip line.
+- **Skipped upstream commits** go in `doc/upstream-skipped.txt`, one per line:
+  `<sha> <reason>`.
+- `doc/upstream-taken.txt` holds commits taken before this rule (4 Oct 2026).
+  Do not add new lines there; use the commit line.
+
+`scripts/upstream-pending.sh` lists the upstream commits since the split
+(`01d9a1218`) that none of these records name, security-looking ones first,
+and partial ones in their own list. It only reads git. Fetch first:
+`git fetch https://github.com/paperclipai/paperclip.git master:refs/upstream/master`.
+
 ## Never
 
 - Edit, run git in, install into, or restart anything under `~/GSAM/`.

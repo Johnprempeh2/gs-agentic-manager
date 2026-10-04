@@ -1,0 +1,10 @@
+# Upstream Paperclip commits taken before the Upstream-Commit trailer rule (GRE-532).
+# Read by scripts/upstream-pending.sh. New takes carry the trailer in the commit
+# message instead; do not add them here.
+# Format: <upstream sha> taken|partial <our commit> <note>
+6f40e2353 taken 1a724a151 PR #68: redact cloud authentication headers
+8b4aa0692 taken 8d59b1b46 PR #215: multer 2.4.0 (CVE-2026-88932)
+483dbc889 taken d277166c9 PR #275: enforce stored tool grant restrictions
+c46e41e81 taken 2d4052797 PR #275: validate native MCP gateway ownership
+b17019e14 partial a11103cec PR #290: only the ACP session-env security part; rest waits for a sync
+cad26c6bf partial 2cb0c980b PR #275: only the test helper tool-gateway-listing-fixture.ts; the fix itself waits for a sync
