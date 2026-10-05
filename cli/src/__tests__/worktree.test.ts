@@ -27,6 +27,8 @@ import {
   routines,
   routineTriggers,
   workspaceRuntimeServices,
+  resolveEmbeddedPostgresClientPassword,
+  resolveEmbeddedPostgresConnectionString,
 } from "@greatstone/db";
 import {
   copyGitHooksToWorktreeGitDir,
@@ -1642,7 +1644,7 @@ describe("worktree helpers", () => {
       const targetPg = new EmbeddedPostgres({
         databaseDir: targetConfig.database.embeddedPostgresDataDir,
         user: "paperclip",
-        password: "paperclip",
+        password: resolveEmbeddedPostgresClientPassword(targetConfig.database.embeddedPostgresDataDir),
         port: targetConfig.database.embeddedPostgresPort,
         persistent: true,
         initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -1652,8 +1654,12 @@ describe("worktree helpers", () => {
 
       await targetPg.start();
       onTestFinished(() => targetPg.stop());
+      // The seeded target is a new cluster with its own random password (GRE-930).
       const targetDb = createDb(
-        `postgres://paperclip:paperclip@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/paperclip`,
+        resolveEmbeddedPostgresConnectionString({
+          dataDir: targetConfig.database.embeddedPostgresDataDir,
+          port: targetConfig.database.embeddedPostgresPort,
+        }),
       );
       const [seededLocalBoard] = await targetDb
         .select({ id: authUsers.id })
@@ -1804,7 +1810,7 @@ describe("worktree helpers", () => {
       const targetPg = new EmbeddedPostgres({
         databaseDir: targetConfig.database.embeddedPostgresDataDir,
         user: "paperclip",
-        password: "paperclip",
+        password: resolveEmbeddedPostgresClientPassword(targetConfig.database.embeddedPostgresDataDir),
         port: targetConfig.database.embeddedPostgresPort,
         persistent: true,
         initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -1814,8 +1820,12 @@ describe("worktree helpers", () => {
 
       await targetPg.start();
       onTestFinished(() => targetPg.stop());
+      // The seeded target is a new cluster with its own random password (GRE-930).
       const targetDb = createDb(
-        `postgres://paperclip:paperclip@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/paperclip`,
+        resolveEmbeddedPostgresConnectionString({
+          dataDir: targetConfig.database.embeddedPostgresDataDir,
+          port: targetConfig.database.embeddedPostgresPort,
+        }),
       );
       const seededUsers = await targetDb.select().from(authUsers);
       expect(seededUsers.some((row) => row.email === "existing@paperclip.ing")).toBe(true);

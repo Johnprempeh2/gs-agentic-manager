@@ -10,6 +10,7 @@
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { WORKTREE_REMOVED_ACTION, formatWorktreeCleanupLine } from "./worktree-cleanup.mjs";
+import { defaultDatabaseUrl } from "./default-database-url.mjs";
 
 const root = resolve(import.meta.dirname, "../../..");
 const argv = process.argv.slice(2);
@@ -17,7 +18,7 @@ const flag = (name, fallback = null) => {
   const index = argv.indexOf(`--${name}`);
   return index >= 0 ? argv[index + 1] : fallback;
 };
-const databaseUrl = flag("database-url", process.env.GSAM_METRICS_DATABASE_URL ?? "postgres://paperclip:paperclip@127.0.0.1:54329/paperclip");
+const databaseUrl = flag("database-url", process.env.GSAM_METRICS_DATABASE_URL ?? defaultDatabaseUrl());
 const companyId = flag("company");
 const now = new Date(flag("now", new Date().toISOString()));
 

@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { createDb } from "@greatstone/db";
+import { createDb, resolveEmbeddedPostgresConnectionString } from "@greatstone/db";
 import { loadPaperclipEnvFile } from "../config/env.js";
 import { readConfig, resolveConfigPath } from "../config/store.js";
 
@@ -21,7 +21,7 @@ export function resolveResetPasswordDbUrl(configPath: string, explicitDbUrl?: st
   }
   const dataDir = config?.database.embeddedPostgresDataDir ?? path.join(path.dirname(configPath), "db");
   const port = readEmbeddedPostgresPort(dataDir) ?? config?.database.embeddedPostgresPort ?? null;
-  return port ? `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip` : null;
+  return port ? resolveEmbeddedPostgresConnectionString({ dataDir, port }) : null;
 }
 
 export function readEmbeddedPostgresPort(dataDir: string): number | null {

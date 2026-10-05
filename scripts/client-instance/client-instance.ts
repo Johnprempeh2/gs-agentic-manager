@@ -426,7 +426,7 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
       }
       say(`up on ${baseUrl(state)}`);
       if (mode === "normal") {
-        await applyAiRoute(state);
+        await applyAiRoute(root, state);
         state.release = currentRelease();
         writeState(root, state);
       }
@@ -442,10 +442,10 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
  * script writes the setting row itself. The server reads the row on every
  * run; nothing else needs to change.
  */
-async function applyAiRoute(state: InstanceState) {
+async function applyAiRoute(root: string, state: InstanceState) {
   if (!state.aiAccessRoute) return;
-  const { createDb, closeRegisteredClients } = await import("../../packages/db/src/index.js");
-  const url = `postgres://paperclip:paperclip@127.0.0.1:${state.dbPort}/paperclip`;
+  const { createDb, closeRegisteredClients, resolveEmbeddedPostgresConnectionString } = await import("../../packages/db/src/index.js");
+  const url = resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
   try {
     await createDb(url).$client.unsafe(
       `INSERT INTO instance_settings (singleton_key, general) VALUES ('default', jsonb_build_object('aiAccessRoute', $1::text))
@@ -811,11 +811,11 @@ async function startFrom(root: string, state: InstanceState, dir: string, releas
 async function restoreDatabase(root: string, state: InstanceState, backupFile: string) {
   if (readPid(root)) throw new Error("stop the instance before a database restore");
   const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
-  const { resetPostgresDatabase, runDatabaseRestore } = await import("../../packages/db/src/index.js");
+  const { embeddedPostgresConnectionString, resetPostgresDatabase, runDatabaseRestore } = await import("../../packages/db/src/index.js");
   const pg = await ensureEmbeddedPostgres(path.join(instanceDir(root), "db"), state.dbPort, { allowExisting: false });
   try {
     if (pg.port !== state.dbPort) throw new Error(`the database started on port ${pg.port}, not ${state.dbPort}`);
-    const url = (db: string) => `postgres://paperclip:paperclip@127.0.0.1:${pg.port}/${db}`;
+    const url = (database: string) => embeddedPostgresConnectionString({ ...pg, database });
     await resetPostgresDatabase(url("postgres"), "paperclip");
     await runDatabaseRestore({ connectionString: url("paperclip"), backupFile });
   } finally {
@@ -835,14 +835,14 @@ async function restoreIntoThrowaway(state: InstanceState, backupFile: string): P
   const db = await import("../../packages/db/src/index.js");
   const scratch = mkdtempSync(path.join(tmpdir(), "client-instance-restore-check-"));
   const preferred = await firstFreePort(55500, 55599, new Set([state.port, state.dbPort]));
-  let pg: { port: number; stop: () => Promise<void> } | null = null;
+  let pg: { port: number; password: string; stop: () => Promise<void> } | null = null;
   let url = "";
   try {
     pg = await ensureEmbeddedPostgres(path.join(scratch, "db"), preferred, { allowExisting: false });
     if (pg.port === state.port || pg.port === state.dbPort || FORBIDDEN_PORTS.has(pg.port)) {
       throw new Error(`the throwaway database started on port ${pg.port}, which it must not use`);
     }
-    const at = (name: string) => `postgres://paperclip:paperclip@127.0.0.1:${pg!.port}/${name}`;
+    const at = (name: string) => db.embeddedPostgresConnectionString({ ...pg!, database: name });
     url = at("paperclip");
     await db.resetPostgresDatabase(at("postgres"), "paperclip");
     await db.runDatabaseRestore({ connectionString: url, backupFile });
