@@ -2,9 +2,14 @@
 // switch has been in its current state, from the
 // `instance.settings.experimental_updated` activity rows.
 //
-//   node scripts/beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>]
+//   node scripts/beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>] [--tests] [--scorecard <file>]
 //
-// Pure: reads the two files the shell script fetched and prints a table.
+// Reads the two files the shell script fetched and prints a table. Retired
+// switches come from RETIRED_INSTANCE_FEATURE_KEYS in the shared feature
+// catalog. `--tests` also reads the repo's tracked test files (read-only).
+// `--scorecard` reads a saved copy of the beta scorecard (GRE-81) and lists
+// catalog switches with no row and rows whose key left the catalog.
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -18,7 +23,7 @@ const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
  * `activity` is the activity list as the API returns it (any order).
  * `truncated` means the API hit its row limit, so older changes may be missing.
  */
-export function switchAges(settings, activity, { now = Date.now(), truncated = false } = {}) {
+export function switchAges(settings, activity, { now = Date.now(), truncated = false, retired = [] } = {}) {
   const events = activity
     .filter((row) => row?.action === "instance.settings.experimental_updated")
     .map((row) => ({
@@ -37,6 +42,8 @@ export function switchAges(settings, activity, { now = Date.now(), truncated = f
       const state = typeof value === "boolean" ? (value ? "on" : "off") : JSON.stringify(value);
       const changes = events.filter((event) => event.changedKeys.includes(key));
       const row = { key, state, onSince: "unknown", days: null, ruleMet: "unknown" };
+      // A retired switch always reads off and cannot graduate.
+      if (retired.includes(key)) return { ...row, state: "retired", onSince: "-", ruleMet: "n/a" };
       if (typeof value !== "boolean") return { ...row, ruleMet: "n/a" };
       // The last logged value must match the current one; if not, the change
       // happened without a log row and we do not guess.
@@ -61,9 +68,98 @@ export function switchAges(settings, activity, { now = Date.now(), truncated = f
     });
 }
 
+/** Keys listed in `export const RETIRED_INSTANCE_FEATURE_KEYS = [...]` of the catalog source. */
+export function parseRetiredKeys(catalogSource) {
+  const match = catalogSource.match(/RETIRED_INSTANCE_FEATURE_KEYS\s*=\s*\[([^\]]*)\]/);
+  if (!match) throw new Error("RETIRED_INSTANCE_FEATURE_KEYS not found in the feature catalog");
+  return [...match[1].matchAll(/["'](\w+)["']/g)].map((m) => m[1]);
+}
+
+/** Top-level keys of `export const INSTANCE_FEATURE_CATALOG ... = { ... };` in the catalog source. */
+export function parseCatalogKeys(catalogSource) {
+  const match = catalogSource.match(/INSTANCE_FEATURE_CATALOG\b[^=]*=\s*\{\n([\s\S]*?)\n\};/);
+  if (!match) throw new Error("INSTANCE_FEATURE_CATALOG not found in the feature catalog");
+  return [...match[1].matchAll(/^  (\w+): \{/gm)].map((m) => m[1]);
+}
+
+/**
+ * Keys named in the switch column of the scorecard table: rows that start
+ * with a row number, e.g. `| 1 | Environments (`enableEnvironments`) | ...`.
+ */
+export function parseScorecardKeys(scorecardText) {
+  const keys = [];
+  for (const line of scorecardText.split("\n")) {
+    const cells = line.split("|").map((c) => c.trim());
+    if (cells.length < 4 || cells[0] !== "" || !/^\d+$/.test(cells[1])) continue;
+    for (const m of cells[2].matchAll(/`(\w+)`/g)) keys.push(m[1]);
+  }
+  return keys;
+}
+
+/** Catalog keys with no scorecard row (`noRow`) and scorecard keys not in the catalog (`gone`). */
+export function scorecardGaps(catalogKeys, scorecardKeys) {
+  const rows = new Set(scorecardKeys);
+  const catalog = new Set(catalogKeys);
+  return {
+    noRow: [...catalog].filter((key) => !rows.has(key)).sort(),
+    gone: [...rows].filter((key) => !catalog.has(key)).sort(),
+  };
+}
+
+export function formatScorecardGaps({ noRow, gone }) {
+  const list = (keys) => (keys.length === 0 ? "none" : keys.join(", "));
+  return `scorecard: no row: ${list(noRow)}\nscorecard: gone: ${list(gone)}`;
+}
+
+export const isTestFile = (path) => /(^|\/)__tests__\/|\.(test|spec)\.[cm]?[jt]sx?$/.test(path);
+
+/**
+ * For each key, the number of test files that name it (as a whole word).
+ * A file that names every key is a list of all switches (the settings page
+ * and service tests), not a test of any one switch, so it is not counted.
+ * `files` is `[{ path, text }]`.
+ */
+export function testFileCounts(keys, files) {
+  const patterns = keys.map((key) => [key, new RegExp(`\\b${key}\\b`)]);
+  const counts = Object.fromEntries(keys.map((key) => [key, 0]));
+  const listFiles = [];
+  for (const { path, text } of files) {
+    const named = patterns.filter(([, re]) => re.test(text)).map(([key]) => key);
+    if (keys.length > 1 && named.length === keys.length) {
+      listFiles.push(path);
+      continue;
+    }
+    for (const key of named) counts[key] += 1;
+  }
+  return { counts, listFiles };
+}
+
+function readTestFiles(repoRoot) {
+  const paths = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+    .split("\0")
+    .filter(isTestFile);
+  const files = [];
+  for (const path of paths) {
+    try {
+      files.push({ path, text: readFileSync(`${repoRoot}/${path}`, "utf8") });
+    } catch {
+      // Deleted in the working tree but still tracked: skip.
+    }
+  }
+  return files;
+}
+
 export function formatTable(rows) {
-  const header = ["switch", "state", "on since", "days on", "2-week rule met"];
-  const body = rows.map((r) => [r.key, r.state, r.onSince, r.days === null ? "-" : String(r.days), r.ruleMet]);
+  const withTests = rows.some((r) => r.testFiles !== undefined);
+  const header = ["switch", "state", "on since", "days on", "2-week rule met", ...(withTests ? ["test files"] : [])];
+  const body = rows.map((r) => [
+    r.key,
+    r.state,
+    r.onSince,
+    r.days === null ? "-" : String(r.days),
+    r.ruleMet,
+    ...(withTests ? [String(r.testFiles ?? "-")] : []),
+  ]);
   const widths = header.map((h, i) => Math.max(h.length, ...body.map((cells) => cells[i].length)));
   const line = (cells) => cells.map((c, i) => c.padEnd(widths[i])).join("  ").trimEnd();
   return [line(header), ...body.map(line)].join("\n");
@@ -72,7 +168,7 @@ export function formatTable(rows) {
 function main(argv) {
   const [settingsPath, activityPath, ...rest] = argv;
   if (!settingsPath || !activityPath) {
-    console.error("usage: beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>]");
+    console.error("usage: beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>] [--tests] [--scorecard <file>]");
     process.exit(2);
   }
   const limitIndex = rest.indexOf("--limit");
@@ -80,7 +176,25 @@ function main(argv) {
   const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
   const activity = JSON.parse(readFileSync(activityPath, "utf8"));
   const truncated = activity.length >= limit;
-  console.log(formatTable(switchAges(settings, activity, { truncated })));
+  const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+  const catalogSource = readFileSync(`${repoRoot}/packages/shared/src/feature-catalog.ts`, "utf8");
+  const retired = parseRetiredKeys(catalogSource);
+  let rows = switchAges(settings, activity, { truncated, retired });
+  let listFiles = [];
+  if (rest.includes("--tests")) {
+    const tests = testFileCounts(rows.map((r) => r.key), readTestFiles(repoRoot));
+    rows = rows.map((r) => ({ ...r, testFiles: tests.counts[r.key] }));
+    listFiles = tests.listFiles;
+  }
+  console.log(formatTable(rows));
+  if (listFiles.length > 0) {
+    console.log(`\nnot counted (name every switch): ${listFiles.join(", ")}`);
+  }
+  const scorecardIndex = rest.indexOf("--scorecard");
+  if (scorecardIndex >= 0) {
+    const scorecardKeys = parseScorecardKeys(readFileSync(rest[scorecardIndex + 1], "utf8"));
+    console.log(`\n${formatScorecardGaps(scorecardGaps(parseCatalogKeys(catalogSource), scorecardKeys))}`);
+  }
   if (truncated) {
     console.log(`\nnote: the activity log returned its ${limit}-row limit; older changes are not shown.`);
   }

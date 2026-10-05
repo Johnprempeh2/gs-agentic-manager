@@ -50,6 +50,26 @@ export function backupStatusLines(dir: string, now = Date.now()): string[] {
   return lines;
 }
 
+/** A restore-check older than this gives a WARNING in `status` (GRE-616). */
+export const RESTORE_CHECK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface RestoreCheck {
+  ok: boolean;
+  /** The line restore-check printed. */
+  line: string;
+  backupFile: string;
+  at: string;
+}
+
+/** The last restore-check, and a WARNING line when there is none, it failed, or it is older than 7 days. */
+export function restoreCheckStatusLines(check: RestoreCheck | undefined, now = Date.now()): string[] {
+  if (!check) return ["last restore-check: none", "WARNING: no restore-check yet; run restore-check to prove the newest backup restores"];
+  const lines = [`last restore-check: ${check.line} at ${check.at}`];
+  if (!check.ok) lines.push("WARNING: the last restore-check failed; see the line above");
+  else if (now - Date.parse(check.at) > RESTORE_CHECK_MAX_AGE_MS) lines.push("WARNING: no restore-check in the last 7 days; run restore-check");
+  return lines;
+}
+
 const tagOf = (ref: ReleaseRef) => ref.tag ?? `untagged (${ref.dir})`;
 
 /** The current release, and the last upgrade and restore from client-instance.json. */

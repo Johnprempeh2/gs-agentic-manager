@@ -105,6 +105,7 @@ import {
 } from "@greatstone/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
+import { REFERENCED_ROW_LOCK } from "../row-locks.js";
 import { logger } from "../middleware/logger.js";
 import { parseObject } from "../adapters/utils.js";
 import {
@@ -3108,6 +3109,11 @@ export function deriveIssueUserContext(
 
   return {
     myLastTouchAt,
+    // My tasks tells "Waiting for answer" from "Answer ready" with these.
+    // myLastTouchAt cannot: it moves on a read, and on any update to a task
+    // assigned to me, so an agent's reply never reads as unread there.
+    myLastCommentAt,
+    myLastReadAt,
     lastExternalCommentAt,
     isUnreadForMe,
   };
@@ -6449,6 +6455,8 @@ async function listBlockedInboxIssues(
       liveDescendantCount?: number;
       lastActivityAt: Date;
       myLastTouchAt?: Date | null;
+      myLastCommentAt?: Date | null;
+      myLastReadAt?: Date | null;
       lastExternalCommentAt?: Date | null;
       isUnreadForMe?: boolean;
     }
@@ -12278,11 +12286,13 @@ export function issueService(db: Db) {
             // cannot publish the same visible result twice. This needs no schema
             // change: the issue row is the transaction fence, and the recursive
             // call below performs the lookup and insert while holding it.
+            // NO KEY UPDATE fences comment writers against each other as before
+            // without blocking writes that only reference the task.
             await tx
               .select({ id: issues.id })
               .from(issues)
               .where(eq(issues.id, issueId))
-              .for("update");
+              .for(REFERENCED_ROW_LOCK);
             return addComment(issueId, body, actor, options, tx);
           });
         return options?.authorizationReason ===
@@ -12292,7 +12302,7 @@ export function issueService(db: Db) {
       }
       // Callers supplying a transaction still share the settlement fence.
       if (actor.userId && dbOrTx !== db) {
-        await dbOrTx.select({ id: issues.id }).from(issues).where(eq(issues.id, issueId)).for("update");
+        await dbOrTx.select({ id: issues.id }).from(issues).where(eq(issues.id, issueId)).for(REFERENCED_ROW_LOCK);
       }
       const issue = await dbOrTx
         .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId })
@@ -12398,7 +12408,9 @@ export function issueService(db: Db) {
         // for serialization. Lock both stable parents here before selecting or
         // binding files. Concurrent helper calls for the same run then observe
         // one another's committed selection count instead of both admitting a
-        // twenty-first attachment.
+        // twenty-first attachment. NO KEY UPDATE keeps that mutual exclusion;
+        // FOR UPDATE also waited on any write referencing the run, and a
+        // document write that referenced the run and then the task deadlocked.
         const [lockedIssue] = await dbOrTx
           .select({ id: issues.id })
           .from(issues)
@@ -12408,7 +12420,7 @@ export function issueService(db: Db) {
               eq(issues.companyId, issue.companyId),
             ),
           )
-          .for("update");
+          .for(REFERENCED_ROW_LOCK);
         if (!lockedIssue) throw notFound("Issue not found");
         const [lockedRun] = await dbOrTx
           .select({ id: heartbeatRuns.id })
@@ -12420,7 +12432,7 @@ export function issueService(db: Db) {
               eq(heartbeatRuns.agentId, actor.agentId),
             ),
           )
-          .for("update");
+          .for(REFERENCED_ROW_LOCK);
         if (!lockedRun) {
           throw unprocessable(
             "Agent comment attachments require the current registered run",
@@ -12906,6 +12918,9 @@ export function issueService(db: Db) {
       if (!issue) throw notFound("Issue not found");
 
       return db.transaction(async (tx) => {
+        // Task, run and comment locks serialise attachment selection for one
+        // run. This transaction only inserts, so NO KEY UPDATE keeps that
+        // exclusion without waiting on writes that merely reference these rows.
         if (input.createdByAgentId && input.issueCommentId) {
           const [lockedIssue] = await tx
             .select({ id: issues.id })
@@ -12916,7 +12931,7 @@ export function issueService(db: Db) {
                 eq(issues.companyId, issue.companyId),
               ),
             )
-            .for("update");
+            .for(REFERENCED_ROW_LOCK);
           if (!lockedIssue) throw notFound("Issue not found");
         }
         const registeredRun =
@@ -12936,7 +12951,7 @@ export function issueService(db: Db) {
                       : []),
                   ),
                 )
-                .for("update")
+                .for(REFERENCED_ROW_LOCK)
                 .then((rows) => rows[0] ?? null)
             : null;
         const registeredRunId = registeredRun?.id ?? null;
@@ -12958,7 +12973,7 @@ export function issueService(db: Db) {
                   isNull(issueComments.deletedAt),
                 ),
               )
-              .for("update")
+              .for(REFERENCED_ROW_LOCK)
               .then((rows) => rows[0] ?? null)
           : null;
         if (input.issueCommentId && !parentComment) {

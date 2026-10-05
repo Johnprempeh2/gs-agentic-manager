@@ -29,6 +29,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
+import { AgentPermissionGrantsList } from "../components/AgentPermissionGrantsList";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -59,7 +60,7 @@ import { SourceResolvedFoldBadge } from "../components/SourceResolvedFoldBadge";
 import { readSourceResolvedWatchdogFold } from "../lib/source-resolved-watchdog-fold";
 import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { tryCreateWebSocket } from "../lib/websocket";
-import { formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
+import { formatDate, formatNumber, formatTime, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
@@ -640,7 +641,7 @@ function WorkspaceOperationLogViewer({
               {chunks.map((chunk, index) => (
                 <div key={`${chunk.ts}-${index}`} className="flex gap-2">
                   <span className="shrink-0 text-neutral-500">
-                    {new Date(chunk.ts).toLocaleTimeString("en-US", { hour12: false })}
+                    {formatTime(chunk.ts)}
                   </span>
                   <span
                     className={cn(
@@ -2225,6 +2226,8 @@ export function ConfigurationTab({
           </div>
         </div>
       </div> : null}
+
+      {content === "permissions" ? <AgentPermissionGrantsList grants={agent.access?.grants ?? []} /> : null}
     </div>
   );
 }
@@ -2797,6 +2800,8 @@ export function PromptsTab({
             <div className="flex items-center gap-1">
               {!showNewFileInput && (
                 <Button
+                  aria-label="New file"
+                  title="New file"
                   type="button"
                   size="icon"
                   variant="outline"
@@ -2808,6 +2813,8 @@ export function PromptsTab({
               )}
               {isMobile && (
                 <Button
+                  aria-label="Close files"
+                  title="Close files"
                   type="button"
                   size="icon"
                   variant="ghost"
@@ -2927,6 +2934,8 @@ export function PromptsTab({
             <div className="flex items-center gap-2 min-w-0">
               {isMobile && (
                 <Button
+                  aria-label="Show files"
+                  title="Show files"
                   type="button"
                   size="icon"
                   variant="outline"
@@ -3446,9 +3455,8 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
     return () => clearInterval(id);
   }, [isRunning, run.startedAt]);
 
-  const timeFormat: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
-  const startTime = run.startedAt ? new Date(run.startedAt).toLocaleTimeString("en-US", timeFormat) : null;
-  const endTime = run.finishedAt ? new Date(run.finishedAt).toLocaleTimeString("en-US", timeFormat) : null;
+  const startTime = run.startedAt ? formatTime(run.startedAt) : null;
+  const endTime = run.finishedAt ? formatTime(run.finishedAt) : null;
   const durationSec = run.startedAt && run.finishedAt
     ? Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
     : null;
@@ -4427,9 +4435,9 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
               {loadingMoreLog ? "Loading..." : "Load more log"}
             </Button>
             <span className="text-xs text-muted-foreground">
-              Showing the first {Math.round(logOffset / 1024).toLocaleString("en-US")} KB
+              Showing the first {formatNumber(Math.round(logOffset / 1024))} KB
               {typeof run.logBytes === "number" && run.logBytes > 0
-                ? ` of ${Math.round(run.logBytes / 1024).toLocaleString("en-US")} KB`
+                ? ` of ${formatNumber(Math.round(run.logBytes / 1024))} KB`
                 : ""}
             </span>
           </div>
@@ -4491,7 +4499,7 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
               return (
                 <div key={evt.id} className="flex gap-2">
                   <span className="text-neutral-400 dark:text-neutral-600 shrink-0 select-none w-16">
-                    {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
+                    {formatTime(evt.createdAt)}
                   </span>
                   <span className={cn("shrink-0 w-14", evt.stream ? (streamColors[evt.stream] ?? "text-neutral-500") : "text-neutral-500")}>
                     {evt.stream ? `[${evt.stream}]` : ""}

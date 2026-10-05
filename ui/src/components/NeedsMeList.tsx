@@ -7,6 +7,8 @@ interface NeedsMeListProps {
   needsMe: NeedsMe;
   /** Inbox shows decisions too; Decisions and Focus already show them as cards. */
   includeDecisions?: boolean;
+  /** Inbox Mine lists assigned tasks; Decisions does not (GRE-586). */
+  includeAssigned?: boolean;
   title?: string;
 }
 
@@ -25,7 +27,7 @@ export function formatWaitAge(ms: number) {
  * decisions and tasks assigned to the user. Renders nothing when there is
  * nothing to show.
  */
-export function NeedsMeList({ needsMe, includeDecisions = false, title }: NeedsMeListProps) {
+export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned = true, title }: NeedsMeListProps) {
   // "At your desk" cards wait for the computer, not this count (GRE-450).
   const waits = needsMe.overdueWaits ?? [];
   const waitIds = new Set(waits.map((wait) => wait.id));
@@ -33,7 +35,7 @@ export function NeedsMeList({ needsMe, includeDecisions = false, title }: NeedsM
   const decisions = includeDecisions
     ? needsMe.decisions.filter((card) => !card.atDesk && !(card.task && waitIds.has(card.task.id)))
     : [];
-  const tasks = needsMe.assignedTasks;
+  const tasks = includeAssigned ? needsMe.assignedTasks : [];
   const shown = waits.length + decisions.length + tasks.length;
   if (shown === 0) return null;
 

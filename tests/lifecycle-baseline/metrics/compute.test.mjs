@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeParkedWakes, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -40,6 +40,13 @@ test("R1: an agent-assigned open tree with no path is stranded; each live path c
   // A path on the parent does not cover the child beneath it.
   const parentOnly = computeStrandedTrees({ ...snapshot, wakeRequests: [{ issueId: "root", status: "queued" }] });
   assert.deepEqual(parentOnly.stranded[0].uncoveredIssues.map((entry) => entry.identifier), ["CHILD"]);
+});
+
+test("R1: an agent chat waiting on its user is covered; one on the agent's turn is not", () => {
+  // Chats are created `in_review` with an agent assignee; `waiting` means the user's turn.
+  const chat = (conversationState) => base({ issues: [issue("chat", { status: "in_review", conversationUserId: "u1", conversationState })] });
+  assert.equal(computeStrandedTrees(chat("waiting")).total, 0);
+  assert.equal(computeStrandedTrees(chat("active")).total, 1);
 });
 
 test("R1: a paused agent's timer heartbeat is not a live path", () => {
@@ -211,6 +218,30 @@ test("R2: failure rate excludes cancellations; recovery is split by human interv
   assert.equal(r2.unattendedRecoveryShare, 1 / 3);
 });
 
+test("R2: platform failure rate leaves rejected logins out; they are counted on their own", () => {
+  const runs = [
+    { id: "ok1", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(10) },
+    { id: "ok2", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(9) },
+    { id: "ok3", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(8) },
+    { id: "p1", issueId: "i2", status: "failed", errorCode: "adapter_failed", finishedAt: hoursAgo(9) },
+    { id: "a1", issueId: "i3", status: "failed", errorCode: "claude_auth_required", finishedAt: hoursAgo(9) },
+    { id: "a2", issueId: "i3", status: "failed", errorCode: "acpx_turn_failed", errorMentionsAccessFailure: true, finishedAt: hoursAgo(8) },
+    { id: "c", issueId: "i3", status: "cancelled", errorCode: "claude_auth_required", finishedAt: hoursAgo(7) },
+  ];
+  const r2 = computeRunFailures(base({ runs }));
+  assert.equal(r2.failureRate, 3 / 6, "the all-in rate still counts every failure");
+  assert.equal(r2.loginRefusals, 2, "both codings count; a cancelled run is not a refusal");
+  assert.equal(r2.platformFailed, 1);
+  assert.equal(r2.platformFinished, 4);
+  assert.equal(r2.platformFailureRate, 1 / 4);
+  assert.deepEqual(r2.failures.map((entry) => [entry.runId, entry.loginRefusal]), [["p1", false], ["a1", true], ["a2", true]]);
+  assert.equal(r2.failuresWithIssue, 3);
+
+  const onlyRefusals = computeRunFailures(base({ runs: [runs[4]] }));
+  assert.equal(onlyRefusals.platformFailureRate, null, "no platform runs, no rate");
+  assert.equal(onlyRefusals.loginRefusals, 1);
+});
+
 test("R2: an issue completed after the failure counts as recovered", () => {
   const r2 = computeRunFailures(base({
     issues: [issue("i1", { status: "done", completedAt: hoursAgo(1) })],
@@ -312,4 +343,23 @@ test("percentile uses nearest rank", () => {
   assert.equal(percentile(values, 95), 19);
   assert.equal(percentile(values, 50), 10);
   assert.equal(percentile([], 95), null);
+});
+
+test("R1 parked wakes: counts old deferred wakes on issues with no live run, by reason (GRE-685)", () => {
+  const minutesAgo = (minutes) => new Date(Date.parse(now) - minutes * 60_000).toISOString();
+  const parked = (issueId, reason, requestedAt) => ({ issueId, reason, requestedAt, status: "deferred_issue_execution" });
+  const snapshot = base({
+    issues: [issue("dead"), issue("live", { executionRunId: "run-1" }), issue("fresh")],
+    wakeRequests: [
+      parked("dead", "execution_review_requested", minutesAgo(45)), // no live run, old: counted
+      parked("live", "execution_review_requested", minutesAgo(45)), // live run holds the issue: not counted
+      parked("fresh", "execution_review_requested", minutesAgo(5)), // younger than 10 min: not counted
+      { issueId: "dead", reason: "issue_assigned", requestedAt: minutesAgo(45), status: "queued" }, // not parked
+    ],
+  });
+  const result = computeParkedWakes(snapshot);
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.byReason, [{ reason: "execution_review_requested", count: 1 }]);
+  // Zero is reported as zero, not missing.
+  assert.deepEqual(computeParkedWakes(base()), { minAgeMinutes: 10, total: 0, byReason: [] });
 });

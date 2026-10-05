@@ -5493,6 +5493,38 @@ export function createToolGatewayService(
     return result ?? {};
   }
 
+  async function discoverNamedGatewayTools(input: {
+    gatewayId?: string | null;
+    gatewayPublicId?: string | null;
+    bearerToken: string;
+    callerHeaders?: Record<string, string | string[] | undefined>;
+  }) {
+    const session = await namedGatewaySessionFromBearer({
+      gatewayId: input.gatewayId ?? null,
+      gatewayPublicId: input.gatewayPublicId ?? null,
+      bearerToken: input.bearerToken,
+      protocolMethod: "tools/list",
+      callerHeaders: input.callerHeaders,
+    });
+    await assertGatewayTokenAction(session, "tools/list");
+    const tools = await listToolsForContext(session);
+    await writeAudit({
+      session,
+      companyId: session.companyId,
+      agentId: session.agentId,
+      runId: session.runId,
+      issueId: session.issueId,
+      action: "tool_gateway.discovery",
+      details: {
+        decision: "allow",
+        reasonCode: "named_gateway_discovery_filtered",
+        visibleToolCount: tools.length,
+        visibleTools: tools.map((tool) => tool.name),
+      },
+    });
+    return { tools, allowedActions: session.gatewayTokenAllowedActions ?? null };
+  }
+
   async function connectedRemoteApprovalSnapshot(
     session: ToolGatewaySession,
     tool: ToolGatewayDescriptor,
@@ -8807,30 +8839,24 @@ export function createToolGatewayService(
       bearerToken: string;
       callerHeaders?: Record<string, string | string[] | undefined>;
     }): Promise<ToolGatewayDescriptor[]> {
-      const session = await namedGatewaySessionFromBearer({
-        gatewayId: input.gatewayId ?? null,
-        gatewayPublicId: input.gatewayPublicId ?? null,
-        bearerToken: input.bearerToken,
-        protocolMethod: "tools/list",
-        callerHeaders: input.callerHeaders,
-      });
-      await assertGatewayTokenAction(session, "tools/list");
-      const tools = await listToolsForContext(session);
-      await writeAudit({
-        session,
-        companyId: session.companyId,
-        agentId: session.agentId,
-        runId: session.runId,
-        issueId: session.issueId,
-        action: "tool_gateway.discovery",
-        details: {
-          decision: "allow",
-          reasonCode: "named_gateway_discovery_filtered",
-          visibleToolCount: tools.length,
-          visibleTools: tools.map((tool) => tool.name),
-        },
-      });
-      return tools;
+      return (await discoverNamedGatewayTools(input)).tools;
+    },
+
+    /**
+     * tools/list for the MCP protocol route: the visible tools plus the MCP
+     * actions the bearer token may perform, so the route does not advertise
+     * resource or prompt helpers the token would be refused.
+     */
+    async discoverNamedGatewayTools(input: {
+      gatewayId?: string | null;
+      gatewayPublicId?: string | null;
+      bearerToken: string;
+      callerHeaders?: Record<string, string | string[] | undefined>;
+    }): Promise<{
+      tools: ToolGatewayDescriptor[];
+      allowedActions: ToolMcpGatewayTokenAction[] | null;
+    }> {
+      return discoverNamedGatewayTools(input);
     },
 
     async executeContextForNamedGateway(input: {

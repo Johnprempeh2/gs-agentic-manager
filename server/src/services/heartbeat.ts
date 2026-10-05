@@ -17,6 +17,7 @@ import { admitExplicitNativeContinuation, undeliveredLegacyUserCommentIds } from
 import { connectionIntentService } from "./connection-intents.js";
 import { agentAiAccessRoute, applyAiAccessRoute, readAiAccessRoute, resolveAiAccessRouteBinding } from "./ai-access-route.js";
 import { managedAiSessionFingerprintConfig, prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings, isAiConnectionBusy, AI_AUTH_ENV_KEYS } from "./ai-connection-runtime.js";
+import { managedAiCleanupLogFields } from "./managed-ai-cleanup.js";
 import { aiConnectionService } from "./ai-connections.js";
 import { AI_ACCESS_ROUTE_DEFINITIONS, aiConnectionBindingSchema, isAiAuthRequiredErrorCode } from "@greatstone/shared";
 import { executionBlockerPredicate, getExecutionBlocker } from "./execution-blocker.js";
@@ -171,6 +172,7 @@ import {
   workspaceOperations,
 } from "@greatstone/db";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
+import { REFERENCED_ROW_LOCK } from "../row-locks.js";
 import {
   getStartupTraceContext,
   getStartupTracer,
@@ -414,6 +416,7 @@ import { visibleIssueCondition } from "./issue-visibility.js";
 import { ISSUE_BLOCKERS_RESOLVED_WAKE_REASON } from "./issue-dependency-wakeups.js";
 import {
   buildIssueMonitorClearedPatch,
+  buildIssueMonitorDeferredPatch,
   buildIssueMonitorRestoredPatch,
   buildIssueMonitorTriggeredPatch,
   normalizeIssueExecutionPolicy,
@@ -498,7 +501,7 @@ import {
   SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
   readContinuationAttempt,
 } from "./recovery/index.js";
-import { REVIEW_WAIT_MONITOR_SERVICE_NAME } from "./recovery/review-wait.js";
+import { REVIEW_WAIT_MONITOR_SERVICE_NAME, REVIEW_WAIT_RECHECK_MS } from "./recovery/review-wait.js";
 import {
   buildConfigurationIncompleteRecoveryNoticeSeed,
   buildExecutionReviewParticipantRecoveryNoticeSeed,
@@ -11983,6 +11986,55 @@ export function heartbeatService(
       });
     }
 
+    // GRE-589: a reviewer run for an in_review issue with an open blocker is
+    // cancelled at dispatch (issue_dependencies_blocked), so starting one only
+    // wastes a run. Keep the monitor armed and check again later; the attempt
+    // count is unchanged because nothing was dispatched. Once the blocker is
+    // done, the next check wakes the reviewer once, as before.
+    if (isReviewWaitMonitor) {
+      const readiness = (
+        await issuesSvc.listDependencyReadiness(claimed.companyId, [claimed.id])
+      ).get(claimed.id);
+      if (readiness && !readiness.isDependencyReady) {
+        const nextCheckAt = new Date(input.now.getTime() + REVIEW_WAIT_RECHECK_MS);
+        const patch = buildIssueMonitorDeferredPatch({
+          issue: claimed,
+          executionPolicy: claimed.executionPolicy,
+          nextCheckAt,
+        });
+        if (patch) {
+          await db
+            .update(issues)
+            .set({ ...patch, updatedAt: new Date() })
+            .where(eq(issues.id, claimed.id));
+          await logActivity(db, {
+            companyId: claimed.companyId,
+            actorType: input.actorType,
+            actorId: input.actorId,
+            agentId: input.agentId,
+            runId: input.runId,
+            action: "issue.monitor_deferred",
+            entityType: "issue",
+            entityId: claimed.id,
+            details: {
+              identifier: claimed.identifier,
+              reason: "issue_dependencies_blocked",
+              unresolvedBlockerIssueIds: readiness.unresolvedBlockerIssueIds,
+              previousNextCheckAt: scheduledAtIso,
+              nextCheckAt: nextCheckAt.toISOString(),
+              attemptCount: claimed.monitorAttemptCount ?? 0,
+              targetAgentId,
+              source: input.activitySource,
+            },
+          });
+          return {
+            outcome: "skipped" as const,
+            reason: "issue_dependencies_blocked",
+          };
+        }
+      }
+    }
+
     try {
       if (monitor?.serviceName === PROVIDER_QUOTA_MONITOR_SERVICE_NAME) {
         // Normalized monitor projections redact externalRef. Read the claimed
@@ -18172,6 +18224,7 @@ export function heartbeatService(
       });
       if (staleness.outcome === "cancelled") {
         applyRunDispatchPostCommitEffects(staleness.postCommitEffects);
+        await promoteDeferredWakesAfterStaleRunCancel(run);
         logger.info(
           { runId: run.id, issueId, errorCode: staleness.errorCode },
           "claimQueuedRun: cancelled stale queued run",
@@ -18207,6 +18260,9 @@ export function heartbeatService(
     }
     // All ordinary and comment claims use the same company-scoped issue
     // lock. A batch may claim several runs before executeRun tracks any owner.
+    // Claims only update non-key issue columns, so NO KEY UPDATE still
+    // serialises claimants and every other writer of the issue, without
+    // waiting on writes that merely reference the task.
     async function lockIssueExecutionClaim(tx: Db) {
       const [owner] = issueId ? await tx.select({
         assigneeAgentId: issues.assigneeAgentId,
@@ -18214,7 +18270,7 @@ export function heartbeatService(
         checkoutRunId: issues.checkoutRunId,
       }).from(issues).where(and(
         eq(issues.id, issueId), eq(issues.companyId, run.companyId),
-      )).for("update") : [];
+      )).for(REFERENCED_ROW_LOCK) : [];
       const ownsIssue = owner?.assigneeAgentId === run.agentId &&
         context.wakeReason !== "source_scoped_recovery_action";
       if (ownsIssue && run.scheduledRetryReason === "native_safe_replacement" &&
@@ -23075,6 +23131,7 @@ export function heartbeatService(
           });
           if (staleness.outcome === "cancelled") {
             applyRunDispatchPostCommitEffects(staleness.postCommitEffects);
+            await promoteDeferredWakesAfterStaleRunCancel(run);
             return;
           }
           throw error;
@@ -25143,6 +25200,7 @@ export function heartbeatService(
           applyRunDispatchPostCommitEffects(
             gate.cancellation.postCommitEffects,
           );
+          await promoteDeferredWakesAfterStaleRunCancel(run);
         }
         return { dispatched: false };
       };
@@ -28202,7 +28260,7 @@ export function heartbeatService(
         }
       }
     } finally {
-      if (managedAiRuntime) await managedAiRuntime.cleanup().catch(() => logger.warn({ runId: run.id }, "AI connection refresh or cleanup failed"));
+      if (managedAiRuntime) await managedAiRuntime.cleanup().catch((error) => logger.warn({ runId: run.id, ...managedAiCleanupLogFields(error) }, "AI connection refresh or cleanup failed"));
       let latestRun = await getRun(run.id).catch(() => null);
       // The provider refused the managed credential. Once the refusal is
       // confirmed, show the connection as needing attention so the next runs
@@ -28483,6 +28541,28 @@ export function heartbeatService(
       return;
     }
     await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true });
+  }
+
+  // GRE-631: the stale-run gate cancels a queued or starting run and clears
+  // its issue lock without the release drain. Wakes parked behind that run
+  // (for example the new owner's review wake after a reassignment) would stay
+  // deferred_issue_execution forever. Replay the release through the
+  // cancelled run so they get the normal admission gates.
+  async function promoteDeferredWakesAfterStaleRunCancel(run: Pick<typeof heartbeatRuns.$inferSelect, "id" | "companyId">) {
+    try {
+      const cancelled = await getRun(run.id);
+      const issueId = readNonEmptyString(parseObject(cancelled?.contextSnapshot).issueId);
+      if (!cancelled || !issueId || cancelled.status !== "cancelled") return;
+      const [pending] = await db.select({ id: agentWakeupRequests.id }).from(agentWakeupRequests).where(and(
+        eq(agentWakeupRequests.companyId, run.companyId),
+        eq(agentWakeupRequests.status, "deferred_issue_execution"),
+        sql`${agentWakeupRequests.payload}->>'issueId' = ${issueId}`,
+      )).limit(1);
+      if (!pending) return;
+      await releaseIssueExecutionAndPromote(cancelled, { suppressImmediateRecovery: true });
+    } catch (err) {
+      logger.warn({ err, runId: run.id }, "failed to promote deferred wakes after stale run cancel");
+    }
   }
 
   async function enqueueWakeup(agentId: string, opts: WakeupOptions = {}, executionWaitRequestId?: string) {

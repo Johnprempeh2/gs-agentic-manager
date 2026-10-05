@@ -160,7 +160,9 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
     if (!openBlockers.has(relation.blockedIssueId)) openBlockers.set(relation.blockedIssueId, []);
     openBlockers.get(relation.blockedIssueId).push(relation.blockerIssueId);
   }
-  const covered = new Set(open.filter((issue) => liveReasons.has(issue.id) || issue.assigneeUserId || isHeld(issue)).map((issue) => issue.id));
+  // An agent chat in `waiting` is on its user's turn, so the user owns it.
+  const waitsOnUser = (issue) => Boolean(issue.conversationUserId) && issue.conversationState === "waiting";
+  const covered = new Set(open.filter((issue) => liveReasons.has(issue.id) || issue.assigneeUserId || waitsOnUser(issue) || isHeld(issue)).map((issue) => issue.id));
   // A parent waits on its open children and a blocked issue on its blockers:
   // either is covered once what it waits on is covered. Iterate to a fixed point.
   for (let changed = true; changed;) {
@@ -232,6 +234,40 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
 }
 
 /**
+ * R1 detail — parked wakes on issues with no live run (register row 51, GRE-685).
+ *
+ * A parked wake (`deferred_issue_execution`) whose issue has no
+ * `executionRunId` waits for a drain that will not come. The server's
+ * stranded-queue sweep promotes it only when it carries comment ids or an
+ * interaction answer, so review hand-offs, "blockers resolved" and assignment
+ * wakes stay parked. Counts such wakes requested at least `minAgeMinutes` ago,
+ * split by wake reason. Read-only measurement before the sweep change (row 50).
+ */
+export function computeParkedWakes(snapshot, { now, parkedWakeMinAgeMinutes = 10 } = {}) {
+  const nowMs = ms(now ?? snapshot.now);
+  const cutoff = nowMs - parkedWakeMinAgeMinutes * 60_000;
+  const byId = new Map((snapshot.issues ?? []).map((issue) => [issue.id, issue]));
+  const counts = new Map();
+  let total = 0;
+  for (const wake of snapshot.wakeRequests ?? []) {
+    if (wake.status !== "deferred_issue_execution") continue;
+    const requested = ms(wake.requestedAt);
+    if (requested == null || requested > cutoff) continue;
+    // The sweep matches the issue on payload.issueId; older wakes name it elsewhere.
+    const issue = [wake.issueId, wake.taskId, wake.contextIssueId, wake.contextTaskId].map((id) => id && byId.get(id)).find(Boolean);
+    if (!issue || issue.executionRunId) continue;
+    const reason = wake.reason ?? "unknown";
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    total += 1;
+  }
+  return {
+    minAgeMinutes: parkedWakeMinAgeMinutes,
+    total,
+    byReason: [...counts].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
+  };
+}
+
+/**
  * R2 — run failure rate and unattended recovery share.
  *
  * Denominator: runs that finished inside the window as succeeded or failed
@@ -240,6 +276,10 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
  * A failed run on an issue is recovered without a human when a later run on the
  * same issue succeeds, or the issue reaches done, with no human intervention on
  * that issue in between.
+ *
+ * Platform failure rate leaves out rejected logins (`isAuthFailure`) from both
+ * sides: a refused login is an account problem for the board, not a platform
+ * fault (GRE-590). They are counted on their own as `loginRefusals`.
  */
 export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   const nowMs = ms(now ?? snapshot.now);
@@ -251,6 +291,8 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   const succeeded = finished.filter((run) => run.status === "succeeded");
   const failed = finished.filter((run) => FAILED_RUN_STATUSES.has(run.status));
   const cancelled = finished.filter((run) => run.status === "cancelled");
+  const loginRefusals = failed.filter(isAuthFailure).length;
+  const platformFailed = failed.length - loginRefusals;
 
   const humanByIssue = new Map();
   for (const row of snapshot.activity ?? []) {
@@ -264,7 +306,7 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   for (const run of failed) {
     if (!run.issueId) {
       outcomes.noIssue += 1;
-      failures.push({ runId: run.id, status: run.status, errorCode: run.errorCode ?? null, outcome: "no_issue" });
+      failures.push({ runId: run.id, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), outcome: "no_issue" });
       continue;
     }
     const failedAt = ms(run.finishedAt);
@@ -280,10 +322,11 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
       outcome = touched ? "human" : "auto";
     }
     outcomes[outcome] += 1;
-    failures.push({ runId: run.id, issueId: run.issueId, status: run.status, errorCode: run.errorCode ?? null, outcome });
+    failures.push({ runId: run.id, issueId: run.issueId, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), outcome });
   }
   const attributable = failed.length - outcomes.noIssue;
   const denominator = succeeded.length + failed.length;
+  const platformDenominator = succeeded.length + platformFailed;
   return {
     windowDays,
     finishedRuns: finished.length,
@@ -291,10 +334,15 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
     failed: failed.length,
     cancelled: cancelled.length,
     failureRate: denominator ? failed.length / denominator : null,
+    platformFailed,
+    platformFinished: platformDenominator,
+    platformFailureRate: platformDenominator ? platformFailed / platformDenominator : null,
+    loginRefusals,
     recoveredWithoutHuman: outcomes.auto,
     recoveredWithHuman: outcomes.human,
     unresolved: outcomes.unresolved,
     failedWithoutIssue: outcomes.noIssue,
+    failuresWithIssue: attributable,
     unattendedRecoveryShare: attributable ? outcomes.auto / attributable : null,
     failures,
   };
@@ -435,6 +483,7 @@ export function computeAuthFailures(snapshot, { now, windowDays = 7 } = {}) {
 export function computeAll(snapshot, options = {}) {
   return {
     r1: computeStrandedTrees(snapshot, options),
+    parkedWakes: computeParkedWakes(snapshot, options),
     r2: computeRunFailures(snapshot, options),
     auth: computeAuthFailures(snapshot, options),
     s1: computeWakeLatency(snapshot, options),

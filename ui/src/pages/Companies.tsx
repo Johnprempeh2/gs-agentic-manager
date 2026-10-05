@@ -174,6 +174,8 @@ export function Companies() {
                         }}
                       />
                       <Button
+                        aria-label="Save name"
+                        title="Save name"
                         variant="ghost"
                         size="icon-xs"
                         onClick={saveEdit}
@@ -181,7 +183,7 @@ export function Companies() {
                       >
                         <Check className="h-3.5 w-3.5 text-green-500" />
                       </Button>
-                      <Button variant="ghost" size="icon-xs" onClick={cancelEdit}>
+                      <Button aria-label="Cancel" title="Cancel" variant="ghost" size="icon-xs" onClick={cancelEdit}>
                         <X className="h-3.5 w-3.5 text-muted-foreground" />
                       </Button>
                     </div>
@@ -200,6 +202,8 @@ export function Companies() {
                         {company.status}
                       </Badge>
                       <Button
+                        aria-label="Rename company"
+                        title="Rename company"
                         variant="ghost"
                         size="icon-xs"
                         className="text-muted-foreground opacity-0 group-hover:opacity-100"
@@ -224,6 +228,8 @@ export function Companies() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
+                        aria-label="Company actions"
+                        title="Company actions"
                         variant="ghost"
                         size="icon-xs"
                         className="text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"

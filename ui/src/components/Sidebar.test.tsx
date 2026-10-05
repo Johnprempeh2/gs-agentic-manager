@@ -385,6 +385,9 @@ describe("Sidebar", () => {
     expect(labels).not.toContain("Projects");
     expect(container.querySelector('a[href="/agents"]')).toBeNull();
     expect(container.querySelector("aside")?.classList).toContain("border-r");
+    // GRE-585: Deliverables sits under Search in the top group, once.
+    expect(container.querySelector("nav > div:first-child")?.textContent).toMatch(/^New TaskSearchDeliverables/);
+    expect(container.querySelectorAll('a[href="/deliverables"]')).toHaveLength(1);
 
     flushSync(() => {
       root.unmount();
@@ -430,6 +433,30 @@ describe("Sidebar", () => {
     const root = await renderSidebar();
 
     expect(container.textContent).not.toContain("Workspaces");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("counts assigned tasks on My tasks, not on Decisions (GRE-586)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    mockDecisionsFeedApi.needsMe.mockResolvedValue({
+      companyId: "company-1",
+      generatedAt: "2026-10-04T00:00:00.000Z",
+      count: 2,
+      decisionCount: 0,
+      assignedTaskCount: 2,
+      decisions: [],
+      assignedTasks: [],
+      overdueWaits: [],
+    });
+    const root = await renderSidebar();
+
+    const link = (href: string) =>
+      [...container.querySelectorAll("nav a")].find((anchor) => anchor.getAttribute("href") === href);
+    expect(link("/my-tasks")?.textContent?.trim()).toBe("My tasks2");
+    expect(link("/decisions")?.textContent?.trim()).toBe("Decisions");
 
     flushSync(() => {
       root.unmount();
@@ -495,12 +522,13 @@ describe("Sidebar", () => {
     }
   });
 
-  it("puts the Everest chat directly under Search (GRE-259)", async () => {
+  it("puts Deliverables then the Everest chat directly under Search (GRE-259, GRE-585)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
     const root = await renderSidebar();
 
     const top = container.querySelector("nav > div:first-child");
-    expect(top?.textContent).toBe("New TaskSearchEverest");
+    expect(top?.textContent).toBe("New TaskSearchDeliverablesEverest");
+    expect(container.querySelectorAll('a[href="/deliverables"]')).toHaveLength(1);
     expect(top?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
     expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
 
@@ -525,7 +553,7 @@ describe("Sidebar", () => {
     expect(headings).toEqual(["Work", "Team", "Build", "Company"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Inbox", "My tasks", "Decisions", "Agent tasks", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workspaces", "Deliverables", "Artifacts", "Casesbeta"]);
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workspaces", "Artifacts", "Casesbeta"]);
     expect(sectionLabels("Company")).toEqual(["Skills", "Connectors", "Audit", "Releases", "Settings"]);
     expect(
       container.querySelector('a[href="/issues"] svg')?.classList.contains("lucide-circle-check"),
@@ -541,7 +569,7 @@ describe("Sidebar", () => {
   it("shows Deep Dive after Cases only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Deliverables", "Artifacts", "Casesbeta", "Deep Divebeta"]);
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Artifacts", "Casesbeta", "Deep Divebeta"]);
     flushSync(() => {
       root.unmount();
     });

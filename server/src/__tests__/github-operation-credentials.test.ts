@@ -4,6 +4,7 @@ import request from "supertest";
 import { runtimeConnectionIntentRoutes } from "../routes/connection-intents.js";
 import { createRuntimeToolsToken } from "../runtime-tools-token.js";
 import { errorHandler } from "../middleware/index.js";
+import { logger } from "../middleware/logger.js";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -907,6 +908,55 @@ const support = await getEmbeddedPostgresTestSupport();
       expect(
         (await post().set("Authorization", `Bearer ${token}`)).status,
       ).toBe(403);
+    });
+
+    // Live, 4 Oct 2026: nine refusals in the second a run ended. The provider
+    // was still running `git status` as it exited. The refusal and the log
+    // must say the run had ended, and name the run.
+    it("explains a refusal for a run that has already ended", async () => {
+      const input = await seed();
+      await grant(input, "A");
+      const app = express();
+      app.use(express.json());
+      app.use(runtimeConnectionIntentRoutes(db));
+      app.use(errorHandler);
+      const token = createRuntimeToolsToken({
+        ...input,
+        responsibleUserId: "A",
+        scope: "github_credentials",
+      })!.token;
+      await db
+        .update(heartbeatRuns)
+        .set({ status: "succeeded" })
+        .where(eq(heartbeatRuns.id, input.runId));
+      const info = vi.spyOn(logger, "info");
+      try {
+        const refused = await request(app)
+          .post("/runtime-tools/github/credentials")
+          .set("Authorization", `Bearer ${token}`);
+        expect(refused.status).toBe(403);
+        expect(refused.body).toMatchObject({
+          error: "Credential acquisition requires this agent's active run",
+          code: "run_not_active",
+        });
+        expect(JSON.stringify(refused.body)).not.toContain(token);
+        const logged = info.mock.calls.find(([, message]) =>
+          String(message).startsWith("GitHub credentials refused"));
+        expect(logged?.[0]).toEqual({
+          runId: input.runId,
+          agentId: input.agentId,
+          status: 403,
+          code: "run_not_active",
+          reason: "Credential acquisition requires this agent's active run",
+        });
+        expect(logged?.[1]).toContain("the run had already ended");
+        expect(JSON.stringify(logged)).not.toContain(token);
+        expect(vault.resolveUserSecretValue).not.toHaveBeenCalledWith(
+          input.companyId, expect.anything(), expect.objectContaining({ heartbeatRunId: input.runId }),
+        );
+      } finally {
+        info.mockRestore();
+      }
     });
   },
 );

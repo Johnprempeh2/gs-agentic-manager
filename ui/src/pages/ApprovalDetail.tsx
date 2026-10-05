@@ -151,6 +151,8 @@ export function ApprovalDetail() {
   const linkedAgentId = typeof payload.agentId === "string" ? payload.agentId : null;
   const isActionable = approval.status === "pending" || approval.status === "revision_requested";
   const isBudgetApproval = approval.type === "budget_override_required";
+  // GRE-601: a missing-permission request is only granted or denied.
+  const isPermissionGrant = approval.type === "permission_grant";
   const TypeIcon = typeIcon[approval.type] ?? defaultTypeIcon;
   const showApprovedBanner = searchParams.get("resolved") === "approved" && approval.status === "approved";
   const primaryLinkedIssue = linkedIssues?.[0] ?? null;
@@ -272,7 +274,7 @@ export function ApprovalDetail() {
                 onClick={() => approveMutation.mutate()}
                 disabled={approveMutation.isPending}
               >
-                Approve
+                {isPermissionGrant ? "Grant" : "Approve"}
               </Button>
               <Button
                 variant="destructive"
@@ -280,7 +282,7 @@ export function ApprovalDetail() {
                 onClick={() => rejectMutation.mutate()}
                 disabled={rejectMutation.isPending}
               >
-                Reject
+                {isPermissionGrant ? "Deny" : "Reject"}
               </Button>
             </>
           )}
@@ -289,7 +291,7 @@ export function ApprovalDetail() {
               Resolve this budget stop from the budget controls on <Link to="/costs" className="underline underline-offset-2">/costs</Link>.
             </p>
           )}
-          {approval.status === "pending" && (
+          {approval.status === "pending" && !isPermissionGrant && (
             <Button
               size="sm"
               variant="outline"

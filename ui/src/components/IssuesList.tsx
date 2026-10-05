@@ -520,6 +520,12 @@ interface IssuesListProps {
   customGrouping?: IssuesCustomGrouping;
   /** Neutral tags shown after the title, for example why a task is on My tasks. */
   issueTagsById?: Map<string, readonly string[]>;
+  /** Page control before the status, for example My tasks' tick box. */
+  renderRowLeading?: (issue: Issue) => ReactNode;
+  /** Page buttons on the row; on a phone they sit under the title. */
+  renderRowActions?: (issue: Issue) => ReactNode;
+  /** Page content under the row, for example an inline question box. */
+  renderRowFooter?: (issue: Issue) => ReactNode;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -794,6 +800,9 @@ function StreamlinedIssuesList({
   toolbarPresentation = "legacy",
   customGrouping,
   issueTagsById,
+  renderRowLeading,
+  renderRowActions,
+  renderRowFooter,
   onUpdateIssue,
 }: IssuesListProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -2190,6 +2199,8 @@ function StreamlinedIssuesList({
                   const parentIssue = issue.parentId ? issueById.get(issue.parentId) ?? null : null;
                   const issueBadge = issueBadgeById?.get(issue.id);
                   const issueTags = issueTagsById?.get(issue.id) ?? [];
+                  const rowLeading = renderRowLeading?.(issue) ?? null;
+                  const rowFooter = renderRowFooter?.(issue) ?? null;
                   const issueTeam = issue.teamId ? teamById.get(issue.teamId) ?? null : null;
                   const isMutedIssue = mutedIssueIds?.has(issue.id) === true;
                   const assigneeUserProfile = issue.assigneeUserId
@@ -2337,7 +2348,8 @@ function StreamlinedIssuesList({
                           </>
                         )}
                         className={cn(isMutedIssue && "opacity-70", selectedNavKey === `issue:${issue.id}` && "bg-accent/50 hover:bg-accent/50")}
-                        leadingControl={rowPresentation === "task" ? (
+                        actions={renderRowActions?.(issue) ?? undefined}
+                        leadingControl={rowPresentation === "task" ? (<>{rowLeading}{
                           hasChildren ? (
                             <button
                               type="button"
@@ -2351,7 +2363,7 @@ function StreamlinedIssuesList({
                           ) : (
                             <span data-slot="task-row-disclosure-spacer" className="h-4 w-4 shrink-0" aria-hidden="true" />
                           )
-                        ) : undefined}
+                        }</>) : undefined}
                         statusSlot={rowPresentation === "task" ? (
                           <span className="relative inline-flex items-start self-stretch sm:items-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
                             <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
@@ -2371,7 +2383,7 @@ function StreamlinedIssuesList({
                           />
                         ) : undefined}
                         showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
-                        mobileLeading={
+                        mobileLeading={<>{rowLeading}{
                           hasChildren ? (
                             <button type="button" data-slot="icon-button" onClick={toggleCollapse}>
                               <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
@@ -2381,9 +2393,10 @@ function StreamlinedIssuesList({
                               <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
                             </span>
                           )
-                        }
+                        }</>}
                         desktopMetaLeading={rowPresentation === "legacy" ? (
                           <>
+                            {rowLeading ? <span className="hidden shrink-0 items-center sm:inline-flex">{rowLeading}</span> : null}
                             {hasChildren ? (
                               <button
                                 type="button"
@@ -2548,6 +2561,7 @@ function StreamlinedIssuesList({
                           ) : undefined
                         )}
                       />
+                      {rowFooter}
                     </div>
                   );
                 };

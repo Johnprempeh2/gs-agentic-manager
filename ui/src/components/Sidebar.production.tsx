@@ -36,7 +36,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
-import { useDecisionsCount } from "../hooks/useDecisionsFeed";
+import { useDecisionsCount, useMyTasksCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useLiveAgents } from "../hooks/useLiveAgents";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -68,6 +68,8 @@ export function Sidebar() {
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
+  // Tasks assigned to the user count on My tasks, not Decisions (GRE-586).
+  const myTasksCount = useMyTasksCount(selectedCompanyId);
   const showCases = experimentalSettings?.enableCases === true;
   // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
   const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
@@ -127,6 +129,8 @@ export function Sidebar() {
               collapsed rail, where the old header icon was dropped entirely.
               Cmd/Ctrl+K remains the keyboard path (command palette). */}
           <SidebarNavItem to="/search" label="Search" icon={Search} />
+          {/* GRE-585: finished documents sit in the top group, under Search. */}
+          <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
           <SidebarNavItem
             to="/inbox"
@@ -137,7 +141,13 @@ export function Sidebar() {
             badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "quiet"}
             alert={inboxBadge.failedRuns > 0}
           />
-          <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />
+          <SidebarNavItem
+            to="/my-tasks"
+            label="My tasks"
+            icon={UserCheck}
+            badge={myTasksCount}
+            badgeLabel="open"
+          />
           {/* Decisions (attention home, PAP-13481) graduated out of
               Experimental (GRE-66): always shown, whatever the stored
               enableDecisions value says. */}
@@ -170,7 +180,6 @@ export function Sidebar() {
           ) : null}
           {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-          <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (

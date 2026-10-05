@@ -22,6 +22,7 @@ import { isHeartbeatWakeOnDemandEnabled } from "../../../services/heartbeat-poli
 import { collectDispositionRepairSourceState } from "../../../services/recovery/disposition-repair.js";
 import { legacyDispositionEpisode, legacyDispositionFingerprint } from "../../../services/recovery/legacy-continuation.js";
 import { appendHeartbeatRunEvent } from "../../../services/heartbeat-run-events.js";
+import { REFERENCED_ROW_LOCK } from "../../../row-locks.js";
 import { emitAgentTaskRun } from "../../../services/agent-task-run-telemetry.js";
 import { issueService } from "../../../services/issues.js";
 import {
@@ -195,6 +196,11 @@ export function createPostgresRunDispatchAdapter(
     // immutable issue reference without a lock first, then acquire issue ->
     // run here as well. Locking the run first can deadlock with a claimant
     // that owns the issue lock and is waiting for the run.
+    //
+    // Both locks are NO KEY UPDATE: the operations only update non-key
+    // columns of these rows. FOR UPDATE also waited for writers that had
+    // referenced the run (an event, comment or document revision) and then
+    // referenced the task this transaction already held, a deadlock.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const hint = await db
         .select({ contextSnapshot: heartbeatRuns.contextSnapshot })
@@ -212,7 +218,7 @@ export function createPostgresRunDispatchAdapter(
               .select({ id: issues.id })
               .from(issues)
               .where(and(eq(issues.id, hintedIssueId), eq(issues.companyId, input.companyId)))
-              .for("update");
+              .for(REFERENCED_ROW_LOCK);
           }
 
           const run = await typedTx
@@ -224,7 +230,7 @@ export function createPostgresRunDispatchAdapter(
             // Keep the run status stable through the semantic decision and any
             // resulting mutation and synchronous dispatch handoff. Never await
             // adapter-owned work while this transaction holds the row locks.
-            .for("update")
+            .for(REFERENCED_ROW_LOCK)
             .then((rows) => rows[0] ?? null);
           if (!run) return { kind: "missing" as const };
 
@@ -346,8 +352,10 @@ export function createPostgresRunDispatchAdapter(
     // Locking the row here, only when a caller opened a transaction for the
     // promote-or-cancel write, is what makes that write's decision hold: a
     // concurrent reassignment, pause, or status change blocks on this lock
-    // instead of landing between this read and that write.
-    const issue = await (tx ? issueQuery.for("update") : issueQuery).then(
+    // instead of landing between this read and that write. Those are all
+    // UPDATEs, which NO KEY UPDATE blocks; it also matches the lock the
+    // caller's withIssueThenRunLocks already holds, so it never upgrades.
+    const issue = await (tx ? issueQuery.for(REFERENCED_ROW_LOCK) : issueQuery).then(
       (rows) => rows[0] ?? null,
     );
 
@@ -522,7 +530,8 @@ export function createPostgresRunDispatchAdapter(
       })
       .from(issues)
       .where(and(eq(issues.id, issueId), eq(issues.companyId, input.companyId)));
-    const issue = await (tx ? issueQuery.for("update") : issueQuery).then(
+    // Same lock as withIssueThenRunLocks already holds on this row.
+    const issue = await (tx ? issueQuery.for(REFERENCED_ROW_LOCK) : issueQuery).then(
       (rows) => rows[0] ?? null,
     );
 
@@ -871,6 +880,10 @@ export function createPostgresRunDispatchAdapter(
           errorCode: decision.errorCode,
           resultJson: {
             ...parseObject(run.resultJson),
+            // Every caller cancels before adapter dispatch. Without this
+            // evidence the release drain holds wakes queued behind the run
+            // for execution reconciliation that can never apply (GRE-631).
+            executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
             stopReason: decision.errorCode,
             ...(decision.errorCode === "execution_reconciliation_required"
               ? { executionWait: decision.details }

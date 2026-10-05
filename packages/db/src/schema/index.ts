@@ -215,3 +215,4 @@ export { aiProviderDefaults } from "./ai_provider_defaults.js";
 export * from "./email.js";
 export { announcementDismissals, announcementPublications } from "./announcement_dismissals.js";
 export { pushSubscriptions, pushNotifiedDecisions } from "./push_subscriptions.js";
+export * from "./support.js";

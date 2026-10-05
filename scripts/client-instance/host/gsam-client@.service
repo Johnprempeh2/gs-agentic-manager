@@ -1,0 +1,29 @@
+# One client instance on a hosted server (GRE-664). %i is the instance code.
+# Installed by setup-host.sh; see doc/CLIENT-HOSTING.md.
+[Unit]
+Description=GS Agentic Manager client instance %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=gsam
+Group=gsam
+Environment=GSAM_HOSTED_ROOT=/srv/gsam
+# A server started outside systemd (for example by `upgrade`) is stopped first,
+# so `systemctl restart` always ends with the server under this unit.
+ExecStartPre=/usr/local/lib/gsam/instance-ctl.sh stop %i
+ExecStart=/usr/local/lib/gsam/instance-ctl.sh start %i
+ExecStop=/usr/local/lib/gsam/instance-ctl.sh stop %i
+PIDFile=/srv/gsam/instances/%i/server.pid
+# `start` waits up to 5 minutes for health (first start runs migrations).
+TimeoutStartSec=6min
+TimeoutStopSec=90
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

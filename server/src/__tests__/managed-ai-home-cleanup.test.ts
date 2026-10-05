@@ -10,6 +10,7 @@ import { aiConnectionService } from "../services/ai-connections.js";
 import { heartbeatService } from "../services/heartbeat.js";
 import { getServerAdapter, registerServerAdapter, unregisterServerAdapter } from "../adapters/index.js";
 import { prepareManagedAiRuntime } from "../services/ai-connection-runtime.js";
+import { ManagedAiCleanupError, managedAiCleanupLogFields } from "../services/managed-ai-cleanup.js";
 import {
   claimManagedAiHome,
   removeManagedAiHome,
@@ -17,6 +18,12 @@ import {
   sweepStaleManagedAiHomes,
   sweepStaleTestTempDirs,
 } from "../services/managed-ai-home-sweep.js";
+
+// Pass-through, so one test can make a removal fail the way the live one did.
+vi.mock("../services/managed-ai-home-sweep.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/managed-ai-home-sweep.js")>();
+  return { ...actual, removeManagedAiHome: vi.fn(actual.removeManagedAiHome) };
+});
 
 // GRE-209: 380 per-run AI homes were left in the temp folder. Every run end
 // must remove the home, and a sweep must remove homes with no live run.
@@ -140,6 +147,37 @@ describe("per-run AI home is removed when the run ends", { timeout: 60_000 }, ()
       await runtime.cleanup();
     }
     expect(await exists(runtime.home)).toBe(false);
+  });
+
+  // The live warning dropped its error. A failed removal must say which
+  // provider and step failed, and why, without the home's IDs or any secret.
+  it("names the provider, step and cause when the home cannot be removed", async () => {
+    const f = await fixture();
+    const runtime = await prepareManagedAiRuntime(db, { companyId: f.companyId, agentId: f.agentId, responsibleUserId: f.userId, adapterType: "claude_local", binding: f.binding, config: {} });
+    const target = path.join(runtime.home, "provider", "Library", "Caches");
+    vi.mocked(removeManagedAiHome).mockRejectedValueOnce(Object.assign(
+      new Error(`ENOTEMPTY: directory not empty, rmdir '${target}'`),
+      { code: "ENOTEMPTY", errno: -39, syscall: "rmdir", path: target },
+    ));
+    try {
+      const failure = await runtime.cleanup().then(() => null, (error: unknown) => error);
+      expect(failure).toBeInstanceOf(ManagedAiCleanupError);
+      const fields = managedAiCleanupLogFields(failure);
+      expect(fields).toEqual({
+        provider: "anthropic",
+        method: "api_key",
+        step: "cleanup",
+        cause: {
+          chain: "Error [ENOTEMPTY]",
+          code: "ENOTEMPTY",
+          syscall: "rmdir",
+          message: "ENOTEMPTY: directory not empty, rmdir '<ai-home>/provider/Library/Caches'",
+        },
+      });
+      expect(JSON.stringify(fields)).not.toMatch(new RegExp(`${f.companyId}|fixture-api-key`));
+    } finally {
+      await removeManagedAiHome(runtime.home, { lateWriteRetryMs: 0 });
+    }
   });
 });
 

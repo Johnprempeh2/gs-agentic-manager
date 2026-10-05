@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { backupStatusLines, releaseStatusLines } from "./status.js";
+import { backupStatusLines, releaseStatusLines, restoreCheckStatusLines } from "./status.js";
 
 const base = mkdtempSync(path.join(process.env.GSAM_RUN_SCRATCH_DIR ?? tmpdir(), "status-test-"));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -77,4 +77,20 @@ test("release lines with the last upgrade and restore", () => {
       "last restore: to untagged (/code) at 2026-10-02T20:30:00.000Z",
     ],
   );
+});
+
+test("restore-check lines: none, recent, older than 7 days, failed", () => {
+  assert.deepEqual(restoreCheckStatusLines(undefined, NOW), [
+    "last restore-check: none",
+    "WARNING: no restore-check yet; run restore-check to prove the newest backup restores",
+  ]);
+  const okLine = "restore-check OK: client-instance-a.sql.gz, 1 company, 2 users, 0 issues";
+  const recent = { ok: true, line: okLine, backupFile: "/b/client-instance-a.sql.gz", at: new Date(NOW - 6 * 24 * 60 * MIN).toISOString() };
+  assert.deepEqual(restoreCheckStatusLines(recent, NOW), [`last restore-check: ${okLine} at ${recent.at}`]);
+  const old = { ...recent, at: new Date(NOW - 8 * 24 * 60 * MIN).toISOString() };
+  const oldLines = restoreCheckStatusLines(old, NOW);
+  assert.equal(oldLines.length, 2);
+  assert.match(oldLines[1] ?? "", /^WARNING: no restore-check in the last 7 days/);
+  const failed = { ...recent, ok: false, line: "restore-check FAILED: bad.sql.gz: no companies" };
+  assert.match(restoreCheckStatusLines(failed, NOW)[1] ?? "", /^WARNING: the last restore-check failed/);
 });

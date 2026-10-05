@@ -9,7 +9,7 @@ import {
   connectionsSearchInputSchema,
   declineConnectionIntentSchema,
 } from "@greatstone/shared";
-import { forbidden, unauthorized } from "../errors.js";
+import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { verifyRuntimeToolsToken } from "../runtime-tools-token.js";
 import { connectionIntentService } from "../services/connection-intents.js";
 import { logActivity } from "../services/activity-log.js";
@@ -18,6 +18,14 @@ import { accessService } from "../services/access.js";
 import type { heartbeatService } from "../services/heartbeat.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { resolveGitHubOperationCredentials } from "../services/github-operation-credentials.js";
+import { RUN_NOT_ACTIVE } from "../services/run-identity.js";
+import {
+  acceptMcpMessage,
+  classifyMcpMessage,
+  sendMcpGetNotAllowed,
+  sendMcpInvalidRequest,
+  sendMcpMethodNotFound,
+} from "./mcp-streamable-http.js";
 
 function bearer(req: Request) {
   const value = req.header("authorization") ?? "";
@@ -40,6 +48,25 @@ function resultContent(value: unknown) {
 export { RUNTIME_CONNECTION_TOOL_DEFINITIONS } from "../services/connection-tool-definitions.js";
 import { RUNTIME_CONNECTION_TOOL_DEFINITIONS } from "../services/connection-tool-definitions.js";
 
+/**
+ * The HTTP log line for a refused GitHub credential request carries only the
+ * route and status. Record which run was refused and why, so the warning can
+ * be explained from the log alone. Refusal messages are fixed server text and
+ * the capability itself is never logged.
+ */
+function logGitHubCredentialRefusal(error: unknown, run: { runId: string; agentId: string }) {
+  if (!(error instanceof HttpError) || error.status >= 500) return;
+  const details = error.details && typeof error.details === "object"
+    ? error.details as { code?: unknown } : {};
+  const code = typeof details.code === "string" ? details.code : undefined;
+  logger.info(
+    { ...run, status: error.status, ...(code ? { code } : {}), reason: error.message.slice(0, 200) },
+    code === RUN_NOT_ACTIVE
+      ? "GitHub credentials refused: the run had already ended (a late git command from a finished run)"
+      : "GitHub credentials refused",
+  );
+}
+
 /** Public, token-authenticated routes mounted before the general actor middleware. */
 export function runtimeConnectionIntentRoutes(db: Db) {
   const router = Router();
@@ -53,14 +80,22 @@ export function runtimeConnectionIntentRoutes(db: Db) {
       ? req.headers["x-paperclip-github-capability"] : bearer(req), "github_credentials");
     if (!claims) throw unauthorized("Invalid GitHub runtime capability");
     res.setHeader("Cache-Control", "no-store");
-    res.json(await resolveGitHubOperationCredentials(db, {
-      companyId: claims.company_id, agentId: claims.sub, runId: claims.run_id,
-    }));
+    try {
+      res.json(await resolveGitHubOperationCredentials(db, {
+        companyId: claims.company_id, agentId: claims.sub, runId: claims.run_id,
+      }));
+    } catch (error) {
+      logGitHubCredentialRefusal(error, { runId: claims.run_id, agentId: claims.sub });
+      throw error;
+    }
   });
 
   router.get("/mcp/runtime-tools", async (req, res) => {
+    // GET is an MCP client opening an optional SSE stream. There is none, so
+    // 405 stops the client retrying it. The token is still checked first so an
+    // ended, reassigned or closed-task run keeps its 401/403/409/422 answer.
     await service.validate(runtimeClaims(req));
-    res.json({ name: "paperclip-runtime-tools", protocolVersion: "2025-03-26" });
+    sendMcpGetNotAllowed(res);
   });
 
   router.post("/mcp/runtime-tools", async (req, res) => {
@@ -69,8 +104,17 @@ export function runtimeConnectionIntentRoutes(db: Db) {
     // run before initialize/list as well as before an actual tool call so an
     // ended heartbeat cannot keep probing the endpoint with a once-valid token.
     await service.validate(claims);
-    const request = req.body as { jsonrpc?: string; id?: unknown; method?: string; params?: unknown };
-    const id = request.id ?? null;
+    const message = classifyMcpMessage(req.body);
+    if (message.kind === "invalid") {
+      sendMcpInvalidRequest(res);
+      return;
+    }
+    if (message.kind !== "request") {
+      acceptMcpMessage(res);
+      return;
+    }
+    const request = message;
+    const id = request.id;
     if (request.method === "initialize") {
       res.json({
         jsonrpc: "2.0",
@@ -83,8 +127,8 @@ export function runtimeConnectionIntentRoutes(db: Db) {
       });
       return;
     }
-    if (request.method === "notifications/initialized") {
-      res.status(202).end();
+    if (request.method === "ping") {
+      res.json({ jsonrpc: "2.0", id, result: {} });
       return;
     }
     if (request.method === "tools/list") {
@@ -114,18 +158,16 @@ export function runtimeConnectionIntentRoutes(db: Db) {
         res.json({ jsonrpc: "2.0", id, result: resultContent(result) });
         return;
       }
-      res.status(404).json({
+      // MCP reports an unknown tool as invalid params in a normal JSON-RPC
+      // response, not as an HTTP error.
+      res.json({
         jsonrpc: "2.0",
         id,
-        error: { code: -32601, message: `Unknown tool: ${name || "missing"}` },
+        error: { code: -32602, message: `Unknown tool: ${name || "missing"}` },
       });
       return;
     }
-    res.status(404).json({
-      jsonrpc: "2.0",
-      id,
-      error: { code: -32601, message: `Unknown method: ${request.method ?? "missing"}` },
-    });
+    sendMcpMethodNotFound(res, id);
   });
 
   router.post("/runtime-tools/connections/search", async (req, res) => {

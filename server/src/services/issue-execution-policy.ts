@@ -1276,6 +1276,41 @@ export function buildIssueMonitorRestoredPatch(input: {
   };
 }
 
+/**
+ * GRE-589: moves a scheduled monitor's next check to `nextCheckAt` without
+ * dispatching it. The attempt count is unchanged, because no run was started.
+ * Reads the stored policy, not the normalized one, so externalRef is kept.
+ * Returns null when the stored policy has no monitor.
+ */
+export function buildIssueMonitorDeferredPatch(input: {
+  issue: IssueLike;
+  executionPolicy: unknown;
+  nextCheckAt: Date;
+}) {
+  const storedPolicy =
+    input.executionPolicy && typeof input.executionPolicy === "object" && !Array.isArray(input.executionPolicy)
+      ? (input.executionPolicy as Record<string, unknown>)
+      : null;
+  const storedMonitor =
+    storedPolicy?.monitor && typeof storedPolicy.monitor === "object" && !Array.isArray(storedPolicy.monitor)
+      ? (storedPolicy.monitor as Record<string, unknown>)
+      : null;
+  if (!storedPolicy || !storedMonitor) return null;
+
+  const nextCheckAt = input.nextCheckAt.toISOString();
+  const existingState = parseIssueExecutionState(input.issue.executionState);
+  const previous = existingState?.monitor ?? null;
+  return {
+    executionPolicy: { ...storedPolicy, monitor: { ...storedMonitor, nextCheckAt } },
+    executionState: executionStateWithMonitor(
+      existingState,
+      previous ? { ...previous, status: "scheduled", nextCheckAt } : null,
+    ) as Record<string, unknown> | null,
+    monitorNextCheckAt: input.nextCheckAt,
+    monitorWakeRequestedAt: null,
+  };
+}
+
 export function applyIssueExecutionPolicyTransition(input: TransitionInput): TransitionResult {
   const stageResult = applyIssueExecutionStageTransition(input);
   const monitorPatch = applyMonitorTransition(input, stageResult.patch);

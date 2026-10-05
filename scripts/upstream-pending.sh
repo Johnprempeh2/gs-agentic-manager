@@ -2,7 +2,7 @@
 # List the upstream (`paperclipai/paperclip`) commits we have not yet taken or skipped
 # (see doc/GREATSTONE-WAY-OF-WORKING.md, "Taking upstream code").
 #
-#   scripts/upstream-pending.sh [--upstream <ref>] [--main <ref>] [--base <sha>] [--count]
+#   scripts/upstream-pending.sh [--upstream <ref>] [--main <ref>] [--base <sha>] [--count] [--clash]
 #
 # Upstream commits in <base>..<upstream> (default 01d9a1218..refs/upstream/master),
 # minus:
@@ -15,23 +15,32 @@
 # list, but is shown under "Partial" until a `taken` line or a skip line
 # closes it.
 #
-# Read-only. It runs only `git log`, `git rev-parse` and `git cherry`. It never
-# fetches: refresh the upstream ref first with
+# Read-only. It runs only `git log`, `git rev-parse`, `git cherry` and (with
+# --clash) `git merge-tree`. It never fetches: refresh the upstream ref first with
 #   git fetch https://github.com/paperclipai/paperclip.git master:refs/upstream/master
 # --count prints only the number of pending commits.
+# --clash adds "clean" or "conflict: <files>" to each listed commit: the result of
+# cherry-picking it alone onto <main>, by `git merge-tree` (git 2.40+). No worktree,
+# index or ref change.
+# A commit that adds a migration (packages/db/src/migrations/NNNN_*.sql) gets
+# "[migration: NNNN clash]" when <main> has its own NNNN_*.sql, else "NNNN free".
+# Different file names merge without a conflict, so --clash does not see it.
+# Renumber steps: doc/DATABASE.md, "Taking upstream migrations".
 set -euo pipefail
 
 BASE="01d9a1218"
 UPSTREAM="refs/upstream/master"
 MAIN=""
 COUNT_ONLY=0
+CLASH=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --upstream) UPSTREAM="$2"; shift 2 ;;
     --main) MAIN="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     --count) COUNT_ONLY=1; shift ;;
-    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --clash) CLASH=1; shift ;;
+    -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -109,10 +118,42 @@ done < <(git cherry "$MAIN" "$UPSTREAM" "$BASE")
 SECURITY_SUBJECT_RE='\(auth|secur|vulnerab|xss|csrf|ssrf|inject|traversal|redact|leak|credential|secret|sanitiz|bypass|privilege|authoriz|authenticat|permission|grant|token|ownership'
 SECURITY_ID_RE='cve-[0-9]{4}-[0-9]+|ghsa-[0-9a-z]{4}-'
 
+# "clean" or "conflict: <files>" for cherry-picking $1 alone onto $MAIN.
+clash() {
+  local out rc=0
+  out="$(git merge-tree --write-tree --name-only --no-messages --merge-base="$1^" "$MAIN" "$1")" || rc=$?
+  case "$rc" in
+    0) echo "clean" ;;
+    1) echo "conflict: $(printf '%s\n' "$out" | sed 1d | sort -u | paste -sd ' ' -)" ;;
+    *) echo "error: git merge-tree failed on $1 (needs git 2.40+)" >&2; exit 1 ;;
+  esac
+}
+
+MIGRATIONS_DIR="packages/db/src/migrations"
+# Our migration numbers on $MAIN, one per line.
+OUR_MIGRATIONS="$NL$(git ls-tree --name-only "$MAIN" "$MIGRATIONS_DIR/" \
+  | sed -nE 's#^.*/([0-9]{4})_[^/]*\.sql$#\1#p' | sort -u)$NL"
+
+# "  [migration: NNNN clash|free, ...]" when $1 adds a migration, else nothing.
+migration() {
+  local nums n tags=""
+  nums="$(git diff-tree --no-commit-id -r --name-only --diff-filter=A "$1" -- "$MIGRATIONS_DIR/" \
+    | sed -nE "s#^$MIGRATIONS_DIR/([0-9]{4})_[^/]*\.sql\$#\1#p" | sort -u)"
+  [ -n "$nums" ] || return 0
+  for n in $nums; do
+    if has "$OUR_MIGRATIONS" "$n"; then tags="$tags, $n clash"; else tags="$tags, $n free"; fi
+  done
+  printf '  [migration: %s]' "${tags#, }"
+}
+
 security=() other=() partial=()
 while read -r sha; do
   if has "$TAKEN" "$sha" || has "$SKIPPED" "$sha"; then continue; fi
-  line="$(git log -1 --format='%h %cs %s' "$sha")"
+  if [ "$COUNT_ONLY" -eq 0 ] && [ "$CLASH" -eq 1 ]; then
+    line="$(git log -1 --format='%h %cs %s' "$sha")$(migration "$sha")  [$(clash "$sha")]"
+  else
+    line="$(git log -1 --format='%h %cs %s' "$sha")$(migration "$sha")"
+  fi
   if has "$PARTIAL" "$sha"; then partial+=("$line"); continue; fi
   if git log -1 --format=%s "$sha" | grep -qiE "$SECURITY_SUBJECT_RE" \
     || git log -1 --format=%B "$sha" | grep -qiE "$SECURITY_ID_RE"; then

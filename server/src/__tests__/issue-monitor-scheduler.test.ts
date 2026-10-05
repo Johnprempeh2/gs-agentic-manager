@@ -16,6 +16,7 @@ import {
   heartbeatRunEvents,
   heartbeatRuns,
   issueComments,
+  issueRelations,
   issueRecoveryActions,
   issueDocuments,
   issues,
@@ -27,6 +28,7 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { heartbeatService } from "../services/heartbeat.ts";
 import { normalizeIssueExecutionPolicy, parseIssueExecutionState } from "../services/issue-execution-policy.ts";
+import { REVIEW_WAIT_MONITOR_SERVICE_NAME, REVIEW_WAIT_RECHECK_MS } from "../services/recovery/review-wait.ts";
 import { registerServerAdapter, unregisterServerAdapter } from "../adapters/index.ts";
 
 /** GRE-295: fails like an ACP startup deadline that passed while the host slept. */
@@ -133,6 +135,7 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
     await db.delete(activityLog);
     await db.delete(environmentLeases);
     await db.delete(workspaceRuntimeServices);
+    await db.delete(issueRelations);
     await db.delete(issues);
     await db.delete(heartbeatRuns);
     await db.delete(agentWakeupRequests);
@@ -712,6 +715,143 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
         status: "scheduled",
         attemptCount: 1,
       });
+    });
+  });
+
+  describe("GRE-589: a review-wait monitor on an issue with an open blocker", () => {
+    /** An in_review issue whose reviewer waits on a check, optionally behind an open blocker. */
+    async function seedReviewWait(input: { blocked: boolean }) {
+      const fixture = await seedFixture({
+        issueStatus: "in_review",
+        monitor: { kind: "external_service", serviceName: REVIEW_WAIT_MONITOR_SERVICE_NAME, externalRef: randomUUID() },
+      });
+      const reviewerAgentId = randomUUID();
+      await db.insert(agents).values({
+        id: reviewerAgentId,
+        companyId: fixture.companyId,
+        name: "Reviewer",
+        role: "engineer",
+        status: "active",
+        adapterType: "process",
+        adapterConfig: { command: process.execPath, args: ["-e", ""], cwd: process.cwd() },
+        runtimeConfig: { heartbeat: { enabled: false, wakeOnDemand: true } },
+        permissions: {},
+      });
+      seededAgentIds.add(reviewerAgentId);
+      const monitorState = await db.select({ executionState: issues.executionState }).from(issues)
+        .where(eq(issues.id, fixture.issueId))
+        .then((rows) => parseIssueExecutionState(rows[0]?.executionState ?? null)?.monitor ?? null);
+      await db.update(issues).set({
+        executionState: {
+          status: "pending",
+          currentStageId: randomUUID(),
+          currentStageIndex: 0,
+          currentStageType: "review",
+          currentParticipant: { type: "agent", agentId: reviewerAgentId, userId: null },
+          returnAssignee: { type: "agent", agentId: fixture.agentId, userId: null },
+          reviewRequest: null,
+          completedStageIds: [],
+          lastDecisionId: null,
+          lastDecisionOutcome: null,
+          monitor: monitorState,
+        },
+      }).where(eq(issues.id, fixture.issueId));
+
+      let blockerIssueId: string | null = null;
+      if (input.blocked) {
+        blockerIssueId = randomUUID();
+        const [issue] = await db.select().from(issues).where(eq(issues.id, fixture.issueId));
+        await db.insert(issues).values({
+          id: blockerIssueId,
+          companyId: fixture.companyId,
+          title: "Blocker",
+          status: "in_progress",
+          priority: "medium",
+          issueNumber: 2,
+          identifier: issue!.identifier!.replace(/-1$/, "-2"),
+        });
+        await db.insert(issueRelations).values({
+          companyId: fixture.companyId,
+          issueId: blockerIssueId,
+          relatedIssueId: fixture.issueId,
+          type: "blocks",
+        });
+      }
+      return { ...fixture, reviewerAgentId, blockerIssueId };
+    }
+
+    async function reviewerWakeups(reviewerAgentId: string) {
+      return db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.agentId, reviewerAgentId));
+    }
+
+    it("creates no run while the blocker is open and keeps the monitor armed", async () => {
+      const { issueId, reviewerAgentId, blockerIssueId } = await seedReviewWait({ blocked: true });
+      const tickAt = new Date("2026-04-11T12:31:00.000Z");
+
+      await heartbeatService(db).tickTimers(tickAt);
+
+      expect(await db.select().from(agentWakeupRequests)).toHaveLength(0);
+      expect(await db.select().from(heartbeatRuns)).toHaveLength(0);
+      const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      const nextCheckAt = new Date(tickAt.getTime() + REVIEW_WAIT_RECHECK_MS).toISOString();
+      expect(issue.monitorNextCheckAt?.toISOString()).toBe(nextCheckAt);
+      expect(issue.monitorWakeRequestedAt).toBeNull();
+      expect(issue.monitorAttemptCount).toBe(0);
+      expect(normalizeIssueExecutionPolicy(issue.executionPolicy ?? null)?.monitor).toMatchObject({
+        nextCheckAt,
+        serviceName: REVIEW_WAIT_MONITOR_SERVICE_NAME,
+      });
+      expect(parseIssueExecutionState(issue.executionState)?.monitor).toMatchObject({
+        status: "scheduled",
+        nextCheckAt,
+        attemptCount: 0,
+      });
+      const deferred = await db.select().from(activityLog).where(eq(activityLog.entityId, issueId))
+        .then((rows) => rows.filter((row) => row.action === "issue.monitor_deferred"));
+      expect(deferred).toHaveLength(1);
+      expect(deferred[0]?.details).toMatchObject({
+        reason: "issue_dependencies_blocked",
+        unresolvedBlockerIssueIds: [blockerIssueId],
+        targetAgentId: reviewerAgentId,
+      });
+    });
+
+    it("wakes the reviewer once after the blocker is done", async () => {
+      const { issueId, reviewerAgentId, blockerIssueId } = await seedReviewWait({ blocked: true });
+      const heartbeat = heartbeatService(db);
+      const firstTick = new Date("2026-04-11T12:31:00.000Z");
+      await heartbeat.tickTimers(firstTick);
+      expect(await reviewerWakeups(reviewerAgentId)).toHaveLength(0);
+
+      await db.update(issues).set({ status: "done", completedAt: firstTick }).where(eq(issues.id, blockerIssueId!));
+      const dueTick = new Date(firstTick.getTime() + REVIEW_WAIT_RECHECK_MS + 60_000);
+      await heartbeat.tickTimers(dueTick);
+      await heartbeat.tickTimers(new Date(dueTick.getTime() + REVIEW_WAIT_RECHECK_MS + 60_000));
+
+      const wakeups = await reviewerWakeups(reviewerAgentId);
+      expect(wakeups).toHaveLength(1);
+      expect(wakeups[0]).toMatchObject({ reason: "execution_review_participant_recovery" });
+      const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      expect(issue.monitorNextCheckAt).toBeNull();
+      expect(issue.monitorAttemptCount).toBe(1);
+    });
+
+    it("wakes the reviewer as before when the issue has no blocker", async () => {
+      const { issueId, agentId, reviewerAgentId } = await seedReviewWait({ blocked: false });
+
+      await heartbeatService(db).tickTimers(new Date("2026-04-11T12:31:00.000Z"));
+
+      const wakeups = await db.select().from(agentWakeupRequests);
+      expect(wakeups).toHaveLength(1);
+      expect(wakeups[0]).toMatchObject({ agentId: reviewerAgentId, reason: "execution_review_participant_recovery" });
+      expect(wakeups.some((wake) => wake.agentId === agentId)).toBe(false);
+      const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      expect(issue.monitorNextCheckAt).toBeNull();
+      expect(issue.monitorAttemptCount).toBe(1);
+      const actions = await db.select().from(activityLog).where(eq(activityLog.entityId, issueId))
+        .then((rows) => rows.map((row) => row.action));
+      expect(actions).toContain("issue.monitor_triggered");
+      expect(actions).not.toContain("issue.monitor_deferred");
     });
   });
 });

@@ -67,6 +67,14 @@ weekly number counts stranded trees whose last activity falls in the window,
 i.e. trees that stopped this week. The report also lists every stranded tree
 of any age, with the uncovered issues in it.
 
+**R1 detail — parked wakes with no live run** (`parkedWakes` in
+`metrics.json`, GRE-685). Count of `deferred_issue_execution` wakes requested at
+least 10 minutes ago whose issue has no `execution_run_id`, split by wake
+`reason`. Nothing will drain such a wake, and the stranded-queue sweep promotes
+it only when it carries comment ids or an interaction answer, so review
+hand-offs, "blockers resolved" and assignment wakes stay parked. Report only:
+it sizes the problem before the sweep change. Zero is printed as zero.
+
 **R2 — run failure rate and unattended recovery.** Among runs that finished in
 the window, failure rate is `failed + timed_out + interrupted` divided by those
 plus `succeeded`. Cancelled runs are reported but excluded, because
@@ -76,6 +84,13 @@ succeeds, or the issue reaches `done`, and no human acted on that issue in
 between. Reading, starring and trace inspection do not count as acting. The
 unattended share is auto-recovered failures divided by failures that have an
 issue. Failures with no issue are counted separately.
+
+The **platform failure rate** is the same rate with rejected logins (below)
+left out of both the failed count and the finished count. A refused login is
+an account problem for the board, not a platform fault, so the R2 budget
+checks the platform rate and the report shows login refusals as a separate
+count (GRE-590). The all-in `failureRate` is still saved. The unattended
+share still includes rejected logins.
 
 **R2 detail — rejected logins.** A failed run whose login the provider
 refused: its error code is `<provider>_auth_required`, or (servers before

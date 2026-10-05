@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { NeedsMe } from "@greatstone/shared";
 import { decisionsFeedApi } from "../api/decisionsFeed";
 import { queryKeys } from "../lib/queryKeys";
 
@@ -27,10 +28,25 @@ export function useNeedsMe(companyId: string | null | undefined) {
 }
 
 /**
- * The one "needs me" count: sidebar badge and mobile nav. Same query as Inbox
- * Mine and the Decisions header, so the numbers cannot disagree.
+ * What needs a decision from the user (GRE-586): decision cards plus overdue
+ * waits that have no card. Tasks merely assigned to the user are not
+ * decisions; they count on My tasks instead.
+ */
+export function decisionsCountOf(needsMe: Pick<NeedsMe, "count" | "assignedTaskCount">): number {
+  return Math.max(0, needsMe.count - needsMe.assignedTaskCount);
+}
+
+/**
+ * The one Decisions count: sidebar badge, mobile nav and the Decisions header
+ * all read it from the same query, so the numbers cannot disagree.
  */
 export function useDecisionsCount(companyId: string | null | undefined): number {
   const { data } = useNeedsMe(companyId);
-  return data?.count ?? 0;
+  return data ? decisionsCountOf(data) : 0;
+}
+
+/** Open tasks assigned to the user that are not already a decision (GRE-586). */
+export function useMyTasksCount(companyId: string | null | undefined): number {
+  const { data } = useNeedsMe(companyId);
+  return data?.assignedTaskCount ?? 0;
 }

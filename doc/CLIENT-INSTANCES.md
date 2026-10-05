@@ -82,8 +82,10 @@ edition values. `verify` then checks only health,
 the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
-free from 55400), `--company-name`, `--client-email`, and the install limits
-below.
+free from 55400), `--company-name`, `--client-email`, the install limits
+and the AI access settings below.
+`create` also skips the ports in each sibling folder's `client-instance.json`
+(stopped instances too), and refuses a `--port` or `--db-port` that a sibling claims.
 
 ### Install limits (GRE-141)
 
@@ -122,6 +124,29 @@ memory is below 2048 MB or free disk (data dir and home volume) is below
 20 GB (GRE-207). The OS memory-pressure level does not hold runs (GRE-198).
 Change them in Instance → General → Run limits; 0 turns a floor off.
 
+### AI access route and board approval (GRE-667)
+
+The script sets both. There is no hand step after `create`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--ai-route R` | The AI access route of the install: `claude_api_key` (default; GRE-142 marks it as clearly allowed for unattended agents), `claude_subscription`, `codex_api_key` or `codex_subscription`. Kept in `<root>/client-instance.json` and written to the instance settings (`general.aiAccessRoute`) at every start. |
+| `--board-approval on\|off` | Board approval for new agents in the company (`requireBoardApprovalForNewAgents`). Default `on`. Set once at create. |
+
+Show or change the route (the next start writes it):
+
+```sh
+scripts/client-instance.sh ai-route --root <root>
+scripts/client-instance.sh ai-route --root <root> --ai-route codex_api_key
+scripts/client-instance.sh stop --root <root> && scripts/client-instance.sh start --root <root>
+```
+
+A change made in the app is put back at the next start: the route in
+`client-instance.json` wins. An instance made before GRE-667 has no route
+until `ai-route` sets it, and `verify` fails until then. If the board turns
+board approval off in the app, `verify` fails; turn it on again in Company →
+Settings.
+
 `create` does, in order:
 
 1. Checks the edition against this build (unknown or wrong-tier features stop it).
@@ -129,9 +154,10 @@ Change them in Instance → General → Run limits; 0 turns a floor off.
    edition value (the app refuses company creation while
    `GSAM_MANAGED_CONFIG` is set, and invites while `company.invites` is
    hidden) and makes: one operator log-in (instance admin, for Greatstone), one
-   company, one client log-in (board owner of that company, not instance admin).
+   company (board approval for new agents on), one client log-in (board owner
+   of that company, not instance admin).
 3. Stops, closes sign-up (`auth.disableSignUp: true`), then starts with both
-   edition values.
+   edition values and writes the AI access route.
 4. Runs every check (below) and writes the first backup.
 5. Prints both log-ins **once** to the terminal. Give them to John. They are
    not stored anywhere else.
@@ -141,15 +167,15 @@ It stops with an error if any check fails; the instance stays up so you can look
 ## Start, stop, status
 
 ```sh
-scripts/client-instance.sh start  --root <root>   # always with both edition values
+scripts/client-instance.sh start  --root <root>   # always with both edition values and the AI route
 scripts/client-instance.sh stop   --root <root>   # server and its database
 scripts/client-instance.sh status --root <root>
 ```
 
 The same `--root` always gives the same edition, ports and data.
 
-`status` also shows the newest backup and its age, the current release tag,
-and the last upgrade and restore. It prints a `WARNING` line when there is no
+`status` also shows the newest backup and its age, the last restore-check,
+the last off-host backup, the current release tag, and the last upgrade and restore. It prints a `WARNING` line when there is no
 backup or the newest is older than 2 hours; the exit code stays 0. Run
 `status` before and after each upgrade.
 
@@ -161,7 +187,9 @@ CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh verify --root <
 
 It checks: health; every hidden setting is reported hidden; each section 5
 "on" feature is on and each "off" feature is off; a change request to each
-floored hidden setting returns 403; exactly one company; the client log-in
+floored hidden setting returns 403; exactly one company; the AI access route
+is the one in `client-instance.json`; board approval for new agents is on (or
+off when created with `--board-approval off`); the client log-in
 gets 403 on the release API (`instance.releases`, no Releases page on a client
 edition); every agent has a monthly budget (when the instance has install
 limits); new sign-ups are refused. A refused request
@@ -180,6 +208,151 @@ scripts/client-instance.sh backup --root <root>    # the instance must be runnin
 
 The file goes to `<root>/instances/default/data/backups/`. The script fails if
 the file lands anywhere else. Scheduled backups go to the same folder.
+
+### Prove a backup restores (GRE-616)
+
+```sh
+scripts/client-instance.sh restore-check --root <root> [backup file]   # newest backup if none named
+```
+
+It restores the backup into a throwaway database under `$TMPDIR` on a free
+port, applies this release's migrations, counts companies, users and issues,
+then deletes the throwaway database. It prints one line, for example
+`restore-check OK: <file>, 1 company, 2 users, 0 issues`, or
+`restore-check FAILED: <file>: <reason>` with exit code 1. It reads only the
+backup file: the instance's database, ports and process are not touched, and
+it can run while the instance runs. The result is kept as `lastRestoreCheck`
+in `client-instance.json`; `status` shows it and prints a `WARNING` when there
+is no check, the last one failed, or it is older than 7 days. Run it at least
+once a week. Sandbox test: `scripts/client-instance/restore-check.sandbox-test.sh <empty dir>`.
+
+### Off-host backups (GRE-666)
+
+Every night the host copies `client-instance.json` and the backups folder to
+an encrypted [restic](https://restic.net) repository off the host (the
+Storage Box in "Client hosting options" on GRE-664). One instance code has
+its own repository, its own key and its own target account, so one client's
+host cannot read another client's copies.
+
+The config is one file per code, mode 600, outside `<root>`. It names the
+repository and the key file; it never holds the key:
+
+```sh
+# /etc/gsam/offsite/c001.env  (chmod 600)
+RESTIC_REPOSITORY=sftp:<sub-account for c001>@<storage box>:/home/c001
+RESTIC_PASSWORD_FILE=/etc/gsam/offsite/c001.key   # chmod 600
+```
+
+The repository must end in `/<code>`, and the code is the `<root>` folder
+name; the script refuses anything else. A local folder (`/srv/offsite/c001`)
+works the same way for tests. Give the sub-account an SSH key in the host's
+`~/.ssh/config`, never a password.
+
+```sh
+scripts/client-instance.sh offsite-init   --root <root> --offsite-config <file>   # once
+scripts/client-instance.sh offsite-backup --root <root> --offsite-config <file>   # every night
+```
+
+`offsite-init` makes the repository; run twice, it changes nothing. Keep a
+copy of the key file somewhere other than the host (John's password
+manager): without it the copies cannot be read. `offsite-backup` takes one
+snapshot, then keeps 30 daily and 12 weekly ones and deletes the rest. It
+prints `offsite-backup OK: snapshot <id>, <n> files` or
+`offsite-backup FAILED: <reason>` with exit code 1, and keeps the result as
+`lastOffsiteBackup` in `client-instance.json`. `status` prints a `WARNING`
+when there is none, the last one failed, or it is older than 26 hours. Add
+`--restic <path>` when `restic` is not on the `PATH`.
+
+**Prove the off-host copy restores.** Once a month, on a sandbox machine (not
+the client's host), with the same config file:
+
+```sh
+scripts/client-instance.sh offsite-check --code c001 --offsite-config <file> --sandbox <empty dir>
+```
+
+It restores the newest snapshot of that code into the sandbox, runs
+`restore-check` on that copy, then deletes the copy (it holds client data).
+It prints `offsite-check OK: c001, snapshot <id> of <time>: restore-check OK: ...`
+or `offsite-check FAILED: ...` with exit code 1. Put the line on the
+instance's issue.
+
+### Host watch (GRE-666)
+
+Every 5 minutes the host runs one pass of the watch:
+
+```sh
+scripts/client-instance.sh watch --root <root> --watch-config <file>
+```
+
+It checks: the app runs and health is `ok`; the newest backup is under 2 h
+old; the last restore-check passed and is under 7 days old; the last
+off-host backup passed and is under 26 h old; free disk is at least 20 GB and
+free memory at least 2048 MB (the floors below which the app holds runs,
+GRE-207); and AI access, read through the operator log-in (GRE-15): each AI
+connection is `connected`, no token expires in under 7 days, and no run was
+refused by the AI provider in the last hour. The run check also covers a
+client's personal AI log-in, which the operator cannot list.
+
+It prints one `PASS` or `FAIL` line per check, keeps them in
+`<root>/watch-state.json` (the same signals the health check-in, GRE-144,
+will send), and exits 1 when any check fails. Then:
+
+- **Dead-man check.** It pings `WATCH_PING_URL` (a healthchecks.io check, one
+  per instance code, period 5 min, grace 10 min) when all pass, and
+  `<url>/fail` with the report when not. healthchecks.io mails its alert
+  address when a `/fail` arrives or the pings stop (the host or the timer is
+  down).
+- **Mail.** With `WATCH_ALERT_EMAIL` and `WATCH_MAIL_COMMAND` (any command
+  that reads a mail with `To:` and `Subject:` lines on stdin, for example
+  `/usr/sbin/sendmail -t`), it mails that address when the set of failing
+  checks changes, again every 24 h while it stays failing, and once when all
+  pass again. A mail that fails to send is tried again at the next pass.
+
+The alert address is the Greatstone person on call; until the support rota
+exists (GRE-665) that is John. The config file, mode 600, outside `<root>`:
+
+```sh
+# /etc/gsam/watch/c001.env  (chmod 600)
+WATCH_OPERATOR_PASSWORD=<operator log-in password from create>
+WATCH_PING_URL=https://hc-ping.com/<check uuid>
+WATCH_ALERT_EMAIL=<on-call address>
+WATCH_MAIL_COMMAND=/usr/sbin/sendmail -t
+```
+
+It needs the ping URL, or the mail pair, or both: a watch that tells no one
+is refused.
+
+**On a hosted server** (`doc/CLIENT-HOSTING.md`), timers run all three
+through `instance-ctl.sh`, from the release folder the instance last started
+from. The config files are `/etc/gsam/offsite/<code>.env` and
+`/etc/gsam/watch/<code>.env` (owner `gsam`, mode 600), the key file next to
+the off-host one. The units are in `scripts/client-instance/host/`.
+`setup-host.sh` installs them and makes the two config folders; run the
+`install` lines below again only after an upgrade changes the units.
+
+| Timer | Runs | When |
+| --- | --- | --- |
+| `gsam-watch@<code>.timer` | `watch` | every 5 minutes |
+| `gsam-offsite@<code>.timer` | `offsite-backup` | every night, 02:30 to 03:00 |
+| `gsam-restore-check@<code>.timer` | `restore-check` | every Sunday, 03:30 to 04:00 |
+
+```sh
+install -m 0644 "$REL"/scripts/client-instance/host/gsam-{watch,offsite,restore-check}@.{service,timer} /etc/systemd/system/
+install -m 0755 "$REL"/scripts/client-instance/host/instance-ctl.sh /usr/local/lib/gsam/
+systemctl daemon-reload
+systemctl enable --now gsam-watch@<code>.timer gsam-offsite@<code>.timer gsam-restore-check@<code>.timer
+```
+
+Run `offsite-init` once by hand (as `gsam`) before the first night.
+
+Sandbox test of off-host backups and the watch (a local repository, a stand-in
+dead-man endpoint and mail command, a refused AI run, a wrong operator
+password, the app down, and recovery):
+
+```sh
+RESTIC=/path/to/restic scripts/client-instance/offsite-watch.sandbox-test.sh <empty scratch dir>
+node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/offsite.test.ts scripts/client-instance/watch.test.ts
+```
 
 ## Agree the update time with the client
 

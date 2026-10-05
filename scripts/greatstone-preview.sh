@@ -5,6 +5,13 @@
 #   scripts/greatstone-preview.sh status        say what the preview runs and whether any agent run started
 #   scripts/greatstone-preview.sh switch-tests  run the tests of every Experimental switch that is on
 #                                               (the preview has live's values); fails when one fails
+#   scripts/greatstone-preview.sh shot <path> <name>
+#                                               screenshot http://localhost:3200<path> at laptop and
+#                                               phone size into ~/GSAM/preview/shots/<tag>-<name>-*.png
+#                                               and its console errors and failed requests into <tag>-<name>-console.txt
+#   scripts/greatstone-preview.sh evidence [<tag>]
+#                                               print a Markdown table of the shots of <tag> (default: the
+#                                               running preview's) with console error and failed request counts
 #   scripts/greatstone-preview.sh stop          stop the preview (only the preview)
 #
 # The preview lives in ~/GSAM/preview: code/ is its own clone at <tag>, data/
@@ -225,10 +232,86 @@ cmd_stop() {
   say "Preview stopped."
 }
 
+# Screenshots one page of the running preview at laptop and phone size, named
+# after the preview's tag, for the preview check (GRE-606). Only ever opens
+# http://localhost:3200: any other port, from the caller or the state file, is
+# refused, so it can never shoot the live app on 3100.
+cmd_shot() {
+  local page="${1:-}" name="${2:-}"
+  [ -n "$page" ] && [ -n "$name" ] || die "usage: greatstone-preview.sh shot <page path> <name>"
+  case "$page" in /*) ;; *) die "the page path must start with /, e.g. /GRE/issues" ;; esac
+  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "the name may use only letters, digits, '.', '_' and '-'."
+  [ "$PREVIEW_PORT" = 3200 ] || die "shot only opens the preview on port 3200, not port $PREVIEW_PORT."
+  preview_running || die "no preview is running; start one with 'greatstone-preview.sh start <tag>'."
+  local port tag
+  port="$(preview_state port)"
+  [ "$port" = 3200 ] || die "the running preview is on port ${port:-<unknown>}; shot only opens port 3200."
+  tag="$(preview_state tag)"
+  [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || die "the preview state has no usable tag ('$tag')."
+  local dir="$PREVIEW_ROOT/shots"
+  local laptop="$dir/$tag-$name-laptop.png" phone="$dir/$tag-$name-phone.png"
+  local console_log="$dir/$tag-$name-console.txt"
+  mkdir -p "$dir"
+  (cd "$GS_TOOLS_ROOT" && node scripts/preview-shot.mjs "http://localhost:3200$page" "$laptop" "$phone" "$console_log") \
+    || die "the screenshot of http://localhost:3200$page failed."
+  say "$laptop"
+  say "$phone"
+  say "$console_log"
+}
+
+# Prints the preview check's evidence for one tag as a Markdown table: one row
+# per shot name with its laptop and phone files, the console errors (console
+# and uncaught page errors) and failed requests counted from its console file,
+# and "check" when either is above 0 or a file is missing (GRE-700). Shots of
+# other tags are left out. Only reads ~/GSAM/preview/shots: writes nothing and
+# opens no port. The tag is the running preview's unless one is given.
+cmd_evidence() {
+  local tag="${1:-}"
+  if [ -z "$tag" ]; then
+    preview_running || die "no preview is running; give the tag: greatstone-preview.sh evidence <tag>"
+    tag="$(preview_state tag)"
+  fi
+  [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || die "the tag may use only letters, digits, '.', '_' and '-' ('$tag')."
+  local dir="$PREVIEW_ROOT/shots" names
+  names="$(
+    shopt -s nullglob
+    for f in "$dir/$tag-"*-laptop.png "$dir/$tag-"*-phone.png "$dir/$tag-"*-console.txt; do
+      f="${f#"$dir/$tag-"}"
+      f="${f%-laptop.png}"; f="${f%-phone.png}"; f="${f%-console.txt}"
+      printf '%s\n' "$f"
+    done | sort -u
+  )"
+  if [ -z "$names" ]; then
+    say "No shots for $tag in $dir."
+    return 0
+  fi
+  say "Preview evidence for $tag ($dir)"
+  say ""
+  say "| Shot | Laptop | Phone | Console errors | Failed requests | Result |"
+  say "|---|---|---|---|---|---|"
+  local name laptop phone console_log errors failed result
+  while IFS= read -r name; do
+    laptop="$tag-$name-laptop.png" phone="$tag-$name-phone.png" console_log="$dir/$tag-$name-console.txt"
+    result=ok
+    [ -f "$dir/$laptop" ] || { laptop="missing"; result=check; }
+    [ -f "$dir/$phone" ] || { phone="missing"; result=check; }
+    if [ -f "$console_log" ]; then
+      errors="$(grep -cE '^\[[^]]*\] (console|pageerror): ' "$console_log" || true)"
+      failed="$(grep -cE '^\[[^]]*\] http [0-9]+: ' "$console_log" || true)"
+      [ "$errors" -eq 0 ] && [ "$failed" -eq 0 ] || result=check
+    else
+      errors="no console file" failed="no console file" result=check
+    fi
+    say "| $name | $laptop | $phone | $errors | $failed | $result |"
+  done <<<"$names"
+}
+
 case "${1:-}" in
   start) shift; cmd_start "$@" ;;
   status) cmd_status ;;
   switch-tests) cmd_switch_tests ;;
+  shot) shift; cmd_shot "$@" ;;
+  evidence) shift; cmd_evidence "$@" ;;
   stop) cmd_stop ;;
-  *) die "usage: greatstone-preview.sh start <tag> | status | switch-tests | stop" ;;
+  *) die "usage: greatstone-preview.sh start <tag> | status | switch-tests | shot <page path> <name> | evidence [<tag>] | stop" ;;
 esac

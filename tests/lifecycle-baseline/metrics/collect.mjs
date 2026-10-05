@@ -38,8 +38,9 @@ const snapshot = await sql.begin("read only", async (tx) => {
   const issues = await tx`
     select id, company_id as "companyId", identifier, parent_id as "parentId", status,
       assignee_agent_id as "assigneeAgentId", assignee_user_id as "assigneeUserId",
+      conversation_user_id as "conversationUserId", conversation_state as "conversationState",
       monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt", hidden_at as "hiddenAt",
-      updated_at as "updatedAt", completed_at as "completedAt"
+      execution_run_id as "executionRunId", updated_at as "updatedAt", completed_at as "completedAt"
     from issues where true ${scope("company_id")}`;
   const runs = await tx`
     select r.id, r.company_id as "companyId", r.agent_id as "agentId", r.status,
@@ -58,7 +59,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
       run_id as "runId", created_at as "createdAt"
     from activity_log where created_at >= ${since} ${scope("company_id")}`;
   const wakeRequests = await tx`
-    select status, payload->>'issueId' as "issueId", payload->>'taskId' as "taskId",
+    select status, reason, requested_at as "requestedAt", payload->>'issueId' as "issueId", payload->>'taskId' as "taskId",
       payload->'_paperclipWakeContext'->>'issueId' as "contextIssueId",
       payload->'_paperclipWakeContext'->>'taskId' as "contextTaskId"
     from agent_wakeup_requests
@@ -110,15 +111,19 @@ const markdown = [
   "| # | Number | Value | Sample |",
   "|---|---|---:|---|",
   `| R1 | Stranded task trees stopped in window | ${metrics.r1.weekly} | ${metrics.r1.treesWithOpenWork} trees with open work; ${metrics.r1.total} stranded in total |`,
-  `| R2 | Run failure rate | ${pct(metrics.r2.failureRate)} | ${metrics.r2.failed} failed / ${metrics.r2.succeeded + metrics.r2.failed} finished (${metrics.r2.cancelled} cancelled, excluded) |`,
+  `| R1 | Parked wakes on an issue with no live run, older than ${metrics.parkedWakes.minAgeMinutes} min | ${metrics.parkedWakes.total} | ${metrics.parkedWakes.byReason.length ? `top reasons: ${metrics.parkedWakes.byReason.slice(0, 5).map((entry) => `${entry.reason} ${entry.count}`).join(", ")}` : "none"} |`,
+  `| R2 | Platform failure rate | ${pct(metrics.r2.platformFailureRate)} | ${metrics.r2.platformFailed} failed / ${metrics.r2.platformFinished} finished, rejected logins left out (all-in ${pct(metrics.r2.failureRate)}; ${metrics.r2.cancelled} cancelled, excluded) |`,
+  `| R2 | Login refusals (count) | ${metrics.r2.loginRefusals} | ${metrics.auth.retriesAfterAuthFailure} retries after them; ${metrics.auth.retryExhaustionsFromAuthFailures} of ${metrics.auth.retryExhaustions} \`Bounded retry exhausted\` events follow one |`,
   `| R2 | Failures recovered without a human | ${pct(metrics.r2.unattendedRecoveryShare)} | ${metrics.r2.recoveredWithoutHuman} auto, ${metrics.r2.recoveredWithHuman} human, ${metrics.r2.unresolved} unresolved, ${metrics.r2.failedWithoutIssue} without issue |`,
-  `| R2 | Rejected-login failures | ${metrics.auth.authFailedRuns} | ${metrics.auth.retriesAfterAuthFailure} retries after them; ${metrics.auth.retryExhaustionsFromAuthFailures} of ${metrics.auth.retryExhaustions} \`Bounded retry exhausted\` events follow one |`,
   `| S1 | Wake → first useful action, median | ${fmt(metrics.s1.medianMs, " ms")} | n=${metrics.s1.sampleSize} (${metrics.s1.runsWithoutUsefulAction} runs without a useful action) |`,
   `| S1 | Wake → first useful action, p95 | ${fmt(metrics.s1.p95Ms, " ms")} | n=${metrics.s1.sampleSize}; queue delay median ${fmt(metrics.s1.queueDelayMedianMs, " ms")} |`,
   `| S1-work | Wake → first useful non-comment action, median | ${fmt(metrics.s1.work.medianMs, " ms")} | n=${metrics.s1.work.sampleSize} (${metrics.s1.work.runsWithCommentsOnly} timed runs only commented) |`,
   `| S1-work | Wake → first useful non-comment action, p95 | ${fmt(metrics.s1.work.p95Ms, " ms")} | n=${metrics.s1.work.sampleSize} |`,
   `| S1 | of which setup (wake → prompt sent), median | ${fmt(metrics.s1.split.setupMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.setupP95Ms, " ms")} |`,
   `| S1 | of which agent (prompt sent → first useful action), median | ${fmt(metrics.s1.split.agentMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.agentP95Ms, " ms")} |`,
+  "",
+  "- **Platform failure rate**: runs that failed because of the platform. Rejected logins are left out of both sides; this is the number the R2 budget checks.",
+  "- **Login refusals**: runs that failed because the provider refused the login. That is an account problem for John, not a platform bug.",
   "",
   "## Stranded trees",
   "",

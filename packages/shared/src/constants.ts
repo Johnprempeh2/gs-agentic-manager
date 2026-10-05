@@ -698,6 +698,8 @@ export const APPROVAL_TYPES = [
   "approve_ceo_strategy",
   "budget_override_required",
   "request_board_approval",
+  // Opened by the server when an agent is refused for a missing grant (GRE-601).
+  "permission_grant",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 

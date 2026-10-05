@@ -5,7 +5,13 @@ import { join } from "node:path";
 import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { agentApiKeys, agents, authUsers, companies, companyMemberships } from "@greatstone/db";
+import {
+  agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
+  companyMemberships, companySecretProviderConfigs, companySecrets, environmentLeases,
+  executionWorkspaces, goals, heartbeatRuns, issueAttachments, issues, issueWorkProducts, labels, pipelines,
+  plugins, projects, routines, routineTriggers, statusCards, toolApplications, toolConnections, toolProfiles,
+  workspaceOperations,
+} from "@greatstone/db";
 import { createApp } from "../app.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { ensureHumanRoleDefaultGrants } from "../services/principal-access-compatibility.js";
@@ -23,6 +29,10 @@ import { describeEmbeddedPostgres, useEmbeddedPostgres } from "./helpers/route-t
  * ("Board access required"), so the agent pass alone says nothing about their
  * company check; the board pass covers them.
  *
+ * GRE-694 adds a second sweep for routes that take a record id directly
+ * (`/api/issues/:id`, `/api/agents/:id`, ...): one record per resource is
+ * seeded in company A and the same two callers must be refused on every route.
+ *
  * Express 5 does not keep the mount path on a router layer, so the sweep wraps
  * `Router.prototype.use` before the app is built and records it on each layer.
  */
@@ -38,13 +48,7 @@ vi.mock("../middleware/validate.js", async (importOriginal) => {
 
 // Routes that are meant to answer another company's caller. Each entry needs a
 // reason. Key is `METHOD /api/companies/:companyId/...` as listed by the sweep.
-const ALLOWED_CROSS_COMPANY: Record<string, string> = {
-  // GRE-505 follow-up issue asks whether these should check the company too.
-  "GET /api/companies/:companyId/environments":
-    "Environments are instance-wide: the list ignores :companyId, returns the same redacted rows for any id, and holds no company data.",
-  "GET /api/companies/:companyId/environments/capabilities":
-    "Static adapter and sandbox driver capabilities for the instance; ignores :companyId and holds no company data.",
-};
+const ALLOWED_CROSS_COMPANY: Record<string, string> = {};
 
 // A few handlers parse their own body before the company check, so they need a
 // body that parses. Any other route gets `{}`.
@@ -58,6 +62,7 @@ const REQUEST_BODIES: Record<string, unknown> = {
   "POST /api/companies/:companyId/ai-connections/local": loginIntent,
   "POST /api/companies/:companyId/ai-connections/local/check": loginIntent,
   "POST /api/companies/:companyId/ai-connections/local/attempts": loginIntent,
+  "POST /api/agents/:id/skills/sync": { mode: "add", desiredSkills: [] },
 };
 
 // Path params that must name something real before the company check runs.
@@ -65,6 +70,62 @@ const PARAM_VALUES: Record<string, string> = { type: "process" };
 
 const REFUSED = new Set([403, 404]);
 const COMPANY_PREFIX = /^\/api\/companies\/:companyId(?:\/|$)/;
+
+// GRE-694: routes outside `/api/companies/:companyId` that take a record id in
+// the path. Every one must start with a seeded prefix (below, filled with a
+// real company A record) or an allow-listed prefix with a reason. A new id
+// route that is neither fails "classifies every id route".
+const ID_ROUTE = /^\/api\/(?!companies\/:companyId(?:\/|$))[^?]*\/:/;
+
+// Id routes left out of the id sweep, by path prefix. Each prefix must still
+// match a live route. "Not seeded yet" entries are company records this sweep
+// does not create yet; the rest do not take a company record id.
+const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
+  "/api/invites/:token": "Public invite link, the token is the credential.",
+  "/api/invites/:inviteId": "Not seeded yet: invites need a hashed token and an inviter.",
+  "/api/board-claim/:token": "Public board-claim link, the token is the credential.",
+  "/api/join-requests/:requestId": "Not seeded yet: join requests need an invite.",
+  "/api/board-api-keys/:keyId": "Board API keys belong to the signed-in user, not a company.",
+  "/api/cli-auth/challenges/:id": "CLI login challenges belong to the signed-in user, not a company.",
+  "/api/admin/users/:userId": "Instance-admin only; the id is a user, not a company record.",
+  "/api/adapters/:type": "Adapter types are instance-wide code, not company records.",
+  "/api/skills/:skillName": "Bundled skill docs, the same for every company.",
+  "/api/skills/catalog/:catalogId": "Instance-wide skill catalog, the same for every company.",
+  "/api/teams/catalog/:catalogId": "Instance-wide team catalog, the same for every company.",
+  "/api/agent-avatars/:version": "Static avatar images, the same for every company.",
+  "/api/llms/agent-configuration/": "Static adapter docs, the same for every company.",
+  "/api/environments/:id": "Environments are instance-wide (no company column), not company records.",
+  "/api/environments/:environmentId": "Environments are instance-wide (no company column), not company records.",
+  "/api/announcements/:id": "Product announcements are instance-wide, not company records.",
+  "/api/chat-webhooks/:publicId": "Inbound provider webhook; authenticated by provider signature, not a session.",
+  "/api/chat-webhooks/agentmail/:publicId": "Inbound provider webhook; authenticated by provider signature, not a session.",
+  "/api/routine-triggers/public/:publicId": "Public routine webhook; authenticated by the trigger secret, not a session.",
+  "/api/companies/import/": "Import jobs and transfers belong to the user who started them, before a company exists.",
+  "/api/agents/me/": "Acts on the calling agent's own company; there is no other company's id to pass.",
+  "/api/connection-intents/:interactionId": "Not seeded yet: needs an issue thread interaction of the connection-intent kind.",
+  "/api/feedback-traces/:traceId": "Not seeded yet: needs a feedback vote and export.",
+  "/api/environment-custom-image-setup-sessions/:sessionId": "Not seeded yet: needs a custom image template and provider.",
+  "/api/tool-profile-entries/:entryId": "Not seeded yet: needs a tool profile entry row.",
+  "/api/decision-training/:id": "Not seeded yet: needs a decision training example with a snapshot.",
+  "/api/decisions/:id": "Not seeded yet: needs a signed decision spec and target snapshots.",
+  "/api/tool-gateway/": "Not seeded yet: gateways, tokens, sessions and runtime slots need a gateway setup.",
+  "/api/plugins/:pluginId": "Plugins are instance-wide (no company column). Company data sits under "
+    + "/plugins/:pluginId/companies/:companyId, which is swept, or in the request body, which this sweep does not fill.",
+};
+
+// Id routes that answer 200 with an empty body for both "missing" and "another
+// company's", so the answer says nothing about company A's record.
+const ID_ROUTES_EMPTY_ANSWER: Record<string, string> = {
+  "GET /api/heartbeat-runs/:runId/issues": "Returns 200 [] for a missing or cross-company run (activity.ts, legacy contract).",
+  "GET /api/issues/:issueId/chat-binding": "Returns 200 null when the issue has no chat binding; a binding is checked against its endpoint's company.",
+};
+
+// Id routes that answer another company's caller today. Listed so the sweep
+// passes while the fix is decided (GRE-694, register row 55); delete an entry
+// once its route refuses, the sweep fails until you do.
+const KNOWN_ID_ROUTE_LEAKS: Record<string, string> = {
+  "GET /api/environment-leases/:leaseId": "Only checks board org access, then returns any company's lease by id.",
+};
 
 type RouteLayer = {
   route?: { path: unknown; methods: Record<string, boolean> };
@@ -116,6 +177,23 @@ function fillPath(path: string, companyId: string) {
     .replace(/:([A-Za-z0-9_]+)/g, (_match, name: string) => PARAM_VALUES[name] ?? randomUUID());
 }
 
+// A prefix ending in "/" matches anything under it; otherwise it must end at a
+// path segment, so "/api/invites/:token" does not match "/api/invites/:tokenX".
+function matchesPrefix(path: string, prefix: string) {
+  return prefix.endsWith("/") ? path.startsWith(prefix) : path === prefix || path.startsWith(`${prefix}/`);
+}
+
+function fillIdPath(path: string, seeded: Record<string, string>, companyId: string) {
+  const prefix = Object.keys(seeded).find((key) => matchesPrefix(path, key));
+  const head = prefix ? seeded[prefix]! : "";
+  const rest = prefix ? path.slice(prefix.length) : path;
+  return head + rest
+    .replace(/\{\/?\*[A-Za-z0-9_]+\}|\*[A-Za-z0-9_]+/g, "x")
+    .replace(/[{}]/g, "")
+    .replace(/:companyId\b/g, companyId)
+    .replace(/:([A-Za-z0-9_]+)/g, (_match, name: string) => PARAM_VALUES[name] ?? randomUUID());
+}
+
 describeEmbeddedPostgres("company routes refuse another company's caller (GRE-505)", () => {
   let app: express.Express | undefined;
   let root: string | undefined;
@@ -127,6 +205,9 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
   });
   const ctx = useEmbeddedPostgres("paperclip-cross-company-sweep-");
   let routes: { method: string; path: string }[] = [];
+  let idRoutes: { method: string; path: string }[] = [];
+  // Id route prefix -> the same path with company A's seeded record id.
+  let seeded: Record<string, string> = {};
   const companyAId = randomUUID();
   const companyBId = randomUUID();
   const agentBId = randomUUID();
@@ -145,18 +226,23 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     return req;
   }
 
-  async function sweep(caller: Caller) {
+  async function sweep(caller: Caller, list: typeof routes, fill: (path: string) => string) {
     const leaks: string[] = [];
-    for (const route of routes) {
+    for (const route of list) {
       const key = `${route.method} ${route.path}`;
       if (ALLOWED_CROSS_COMPANY[key]) continue;
       let status: number | string;
+      let body: unknown;
       try {
-        status = (await call(caller, route.method, fillPath(route.path, companyAId), REQUEST_BODIES[key])).status;
+        const res = await call(caller, route.method, fill(route.path), REQUEST_BODIES[key]);
+        status = res.status;
+        body = res.body;
       } catch (error) {
         status = (error as { status?: number }).status ?? `error: ${(error as Error).message}`;
       }
-      if (typeof status !== "number" || !REFUSED.has(status)) leaks.push(`${key} -> ${status}`);
+      const emptyAnswer = ID_ROUTES_EMPTY_ANSWER[key] && status === 200
+        && (body === null || (Array.isArray(body) && body.length === 0));
+      if (typeof status !== "number" || !(REFUSED.has(status) || emptyAnswer)) leaks.push(`${key} -> ${status}`);
     }
     return leaks;
   }
@@ -180,8 +266,9 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     } finally {
       routerProto.use = originalUse;
     }
-    routes = listRoutes((app as unknown as { router: { stack: RouteLayer[] } }).router.stack)
-      .filter((route) => COMPANY_PREFIX.test(route.path));
+    const allRoutes = listRoutes((app as unknown as { router: { stack: RouteLayer[] } }).router.stack);
+    routes = allRoutes.filter((route) => COMPANY_PREFIX.test(route.path));
+    idRoutes = allRoutes.filter((route) => ID_ROUTE.test(route.path));
 
     // Flagged features answer 404 while off, which would hide their company check.
     await instanceSettingsService(ctx.db).updateExperimental({
@@ -219,7 +306,95 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       agentId: agentBId, companyId: companyBId, name: "sweep", responsibleUserId: ownerBId,
       keyHash: createHash("sha256").update(tokenB).digest("hex"),
     });
+    seeded = await seedCompanyARecords();
   }, 60_000);
+
+  // One record per id resource, all in company A. Keys are the id route
+  // prefixes as the router lists them.
+  async function seedCompanyARecords(): Promise<Record<string, string>> {
+    const A = { companyId: companyAId };
+    const id = () => randomUUID();
+    const agentId = id(), issueId = id(), caseId = id(), pluginId = id(), applicationId = id();
+    const connectionId = id(), endpointId = id(), profileId = id(), pipelineId = id(), runId = id();
+    const routineId = id(), triggerId = id(), projectId = id(), goalId = id(), approvalId = id();
+    const statusCardId = id(), teamId = id(), workspaceId = id(), secretId = id();
+    const providerConfigId = id(), labelId = id(), assetId = id(), attachmentId = id(), workProductId = id();
+    const operationId = id(), leaseId = id();
+
+    await ctx.db.insert(agents).values({
+      ...A, id: agentId, name: "Company A agent", role: "engineer", adapterType: "process",
+      adapterConfig: {}, runtimeConfig: { heartbeat: { enabled: false } }, status: "active",
+    });
+    await ctx.db.insert(projects).values({ ...A, id: projectId, name: "Company A project" });
+    await ctx.db.insert(goals).values({ ...A, id: goalId, title: "Company A goal" });
+    await ctx.db.insert(issues).values({ ...A, id: issueId, title: "Company A issue", projectId });
+    await ctx.db.insert(cases).values({
+      ...A, id: caseId, caseNumber: 1, identifier: "ACASE-1", caseType: "general", title: "Company A case",
+    });
+    await ctx.db.insert(plugins).values({
+      id: pluginId, pluginKey: `sweep.plugin.${pluginId}`, packageName: "@sweep/plugin", version: "1.0.0",
+      manifestJson: { id: `sweep.plugin.${pluginId}`, version: "1.0.0" },
+    });
+    await ctx.db.insert(toolApplications).values({ ...A, id: applicationId, name: "Company A app", type: "mcp" });
+    await ctx.db.insert(toolConnections).values({
+      ...A, id: connectionId, applicationId, name: "Company A connection", uid: `a-${connectionId}`, transport: "mcp_remote",
+    });
+    await ctx.db.insert(chatEndpoints).values({
+      ...A, id: endpointId, connectionId, provider: "slack", publicId: `a-${endpointId}`, assignedAgentId: agentId,
+    });
+    await ctx.db.insert(toolProfiles).values({ ...A, id: profileId, profileKey: "a-profile", name: "Company A profile" });
+    await ctx.db.insert(pipelines).values({ ...A, id: pipelineId, key: "a-pipeline", name: "Company A pipeline" });
+    await ctx.db.insert(heartbeatRuns).values({ ...A, id: runId, agentId });
+    await ctx.db.insert(routines).values({ ...A, id: routineId, title: "Company A routine" });
+    await ctx.db.insert(routineTriggers).values({ ...A, id: triggerId, routineId, kind: "schedule" });
+    await ctx.db.insert(approvals).values({ ...A, id: approvalId, type: "hire_agent", payload: {} });
+    await ctx.db.insert(statusCards).values({
+      ...A, id: statusCardId, interestPrompt: "Company A card", refreshPolicy: { kind: "manual" },
+    });
+    await ctx.db.insert(agentTeams).values({ ...A, id: teamId, name: "Company A team", color: "#000000" });
+    await ctx.db.insert(executionWorkspaces).values({
+      ...A, id: workspaceId, projectId, mode: "isolated_workspace", strategyType: "git_worktree", name: "Company A ws",
+    });
+    await ctx.db.insert(companySecrets).values({ ...A, id: secretId, key: "A_SECRET", name: "Company A secret" });
+    await ctx.db.insert(companySecretProviderConfigs).values({
+      ...A, id: providerConfigId, provider: "local_encrypted", displayName: "Company A vault",
+    });
+    await ctx.db.insert(labels).values({ ...A, id: labelId, name: "Company A label", color: "#000000" });
+    await ctx.db.insert(assets).values({
+      ...A, id: assetId, provider: "local_disk", objectKey: `a/${assetId}`, contentType: "text/plain",
+      byteSize: 1, sha256: "0".repeat(64),
+    });
+    await ctx.db.insert(issueAttachments).values({ ...A, id: attachmentId, issueId, assetId });
+    await ctx.db.insert(issueWorkProducts).values({
+      ...A, id: workProductId, issueId, type: "pull_request", provider: "github", title: "Company A PR", status: "open",
+    });
+    await ctx.db.insert(workspaceOperations).values({ ...A, id: operationId, phase: "worktree_prepare" });
+    await ctx.db.insert(environmentLeases).values({ ...A, id: leaseId });
+
+    const byPrefix: Record<string, string> = {
+      "/api/issues/:id": issueId, "/api/issues/:issueId": issueId,
+      "/api/agents/:id": agentId, "/api/agents/:agentId": agentId,
+      "/api/cases/:id": caseId, "/api/cases/:caseId": caseId,
+      "/api/plugins/:pluginId/companies/:companyId": pluginId,
+      "/api/chat-endpoints/:endpointId": endpointId, "/api/email/inboxes/:endpointId": endpointId,
+      "/api/tool-connections/:connectionId": connectionId, "/api/tools/oauth/:connectionId": connectionId,
+      "/api/tool-applications/:applicationId": applicationId,
+      "/api/tool-profiles/:profileId": profileId,
+      "/api/pipelines/:pipelineId": pipelineId,
+      "/api/heartbeat-runs/:runId": runId,
+      "/api/routines/:id": routineId, "/api/routine-triggers/:id": triggerId,
+      "/api/projects/:id": projectId, "/api/goals/:id": goalId, "/api/approvals/:id": approvalId,
+      "/api/status-cards/:id": statusCardId, "/api/agent-teams/:id": teamId,
+      "/api/execution-workspaces/:id": workspaceId,
+      "/api/secrets/:id": secretId, "/api/secret-provider-configs/:id": providerConfigId,
+      "/api/labels/:labelId": labelId, "/api/assets/:assetId": assetId,
+      "/api/attachments/:attachmentId": attachmentId, "/api/work-products/:id": workProductId,
+      "/api/workspace-operations/:operationId": operationId, "/api/environment-leases/:leaseId": leaseId,
+    };
+    return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
+      prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),
+    ]));
+  }
 
   it("lists the company routes from the router", () => {
     // ~360 today. A sharp drop means discovery broke, not that routes left.
@@ -232,8 +407,50 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
   });
 
   it.each([agentKeyB, boardOwnerB])("refuses company B's $name on every company A route", async (caller) => {
-    expect(await sweep(caller)).toEqual([]);
+    expect(await sweep(caller, routes, (path) => fillPath(path, companyAId))).toEqual([]);
   }, 300_000);
+
+  it("lists the id routes from the router", () => {
+    // ~470 today. A sharp drop means discovery broke, not that routes left.
+    expect(idRoutes.length).toBeGreaterThan(300);
+  });
+
+  it("classifies every id route as swept or allow-listed", () => {
+    const prefixes = [...Object.keys(seeded), ...Object.keys(ID_ROUTES_NOT_SWEPT)];
+    const unclassified = idRoutes
+      .filter((route) => !prefixes.some((prefix) => matchesPrefix(route.path, prefix)))
+      .map((route) => `${route.method} ${route.path}`);
+    expect(unclassified, "seed the record in seedCompanyARecords or allow-list it with a reason").toEqual([]);
+  });
+
+  const sweptIdRoutes = () => idRoutes.filter((route) => Object.keys(seeded).some((prefix) => matchesPrefix(route.path, prefix)));
+
+  it.each([agentKeyB, boardOwnerB])("refuses company B's $name on every company A id route", async (caller) => {
+    const leaks = await sweep(caller, sweptIdRoutes(), (path) => fillIdPath(path, seeded, companyAId));
+    expect(leaks.filter((leak) => !KNOWN_ID_ROUTE_LEAKS[leak.split(" -> ")[0]!])).toEqual([]);
+  }, 300_000);
+
+  it("still sees every known id route leak, so a fixed one is removed from the list", async () => {
+    const leaks = (await sweep(boardOwnerB, sweptIdRoutes(), (path) => fillIdPath(path, seeded, companyAId)))
+      .map((leak) => leak.split(" -> ")[0]);
+    for (const key of Object.keys(KNOWN_ID_ROUTE_LEAKS)) {
+      expect(leaks, `${key} now refuses; delete it from KNOWN_ID_ROUTE_LEAKS`).toContain(key);
+    }
+  }, 300_000);
+
+  it("keeps every id allow-list entry pointed at a live route with a reason", () => {
+    for (const [prefix, reason] of Object.entries(ID_ROUTES_NOT_SWEPT)) {
+      expect(idRoutes.some((route) => matchesPrefix(route.path, prefix)), `stale allow-list entry: ${prefix}`).toBe(true);
+      expect(reason.trim().length, `allow-list entry needs a reason: ${prefix}`).toBeGreaterThan(10);
+    }
+    const live = new Set(idRoutes.map((route) => `${route.method} ${route.path}`));
+    for (const key of [...Object.keys(ID_ROUTES_EMPTY_ANSWER), ...Object.keys(KNOWN_ID_ROUTE_LEAKS)]) {
+      expect(live.has(key), `stale entry: ${key}`).toBe(true);
+    }
+    for (const prefix of Object.keys(seeded)) {
+      expect(idRoutes.some((route) => matchesPrefix(route.path, prefix)), `stale seeded prefix: ${prefix}`).toBe(true);
+    }
+  });
 
   it("keeps every allow-list entry pointed at a live route with a reason", () => {
     const live = new Set(routes.map((route) => `${route.method} ${route.path}`));
