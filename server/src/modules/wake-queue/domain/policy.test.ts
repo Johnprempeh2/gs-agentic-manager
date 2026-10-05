@@ -282,6 +282,7 @@ const baseReleaseRecoveryFacts: ReleaseRecoveryFacts = {
     applies: false,
     isExecutionReviewParticipantRecoveryRun: false,
     reviewerWaitingOnCheck: false,
+    hasOpenBlocker: false,
   },
   immediate: {
     applies: false,
@@ -418,7 +419,7 @@ describe("decideReleaseRecovery", () => {
       name: "released: a review-participant recovery run ended waiting on a pending card that wakes the issue (GRE-35)",
       facts: {
         ...baseReleaseRecoveryFacts,
-        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: false },
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: false, hasOpenBlocker: false },
         shared: { ...baseReleaseRecoveryFacts.shared, hasPendingWakeInteraction: true },
       },
       expected: { kind: "released" },
@@ -427,7 +428,7 @@ describe("decideReleaseRecovery", () => {
       name: "blocked: a review-participant recovery run ended and no pending card is left (GRE-35)",
       facts: {
         ...baseReleaseRecoveryFacts,
-        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: false },
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: false, hasOpenBlocker: false },
       },
       expected: { kind: "blocked", notice: "execution_review_participant" },
     },
@@ -435,7 +436,7 @@ describe("decideReleaseRecovery", () => {
       name: "defer_review_wait: a review-participant recovery run ended while the reviewer waits on CI or a check (GRE-97)",
       facts: {
         ...baseReleaseRecoveryFacts,
-        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: true },
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: true, hasOpenBlocker: false },
       },
       expected: { kind: "defer_review_wait" },
     },
@@ -443,10 +444,26 @@ describe("decideReleaseRecovery", () => {
       name: "blocked: a waiting reviewer that is no longer invokable cannot be woken later (GRE-97)",
       facts: {
         ...baseReleaseRecoveryFacts,
-        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: true },
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: true, hasOpenBlocker: false },
         shared: { ...baseReleaseRecoveryFacts.shared, recoveryAgentInvokable: false },
       },
       expected: { kind: "blocked", notice: "execution_review_participant" },
+    },
+    {
+      name: "released: the first review run ended while the issue still has an open blocker (GRE-755)",
+      facts: {
+        ...baseReleaseRecoveryFacts,
+        reviewParticipant: { ...baseReleaseRecoveryFacts.reviewParticipant, applies: true, hasOpenBlocker: true },
+      },
+      expected: { kind: "released" },
+    },
+    {
+      name: "released: a review-participant recovery run ended while the issue still has an open blocker (GRE-755)",
+      facts: {
+        ...baseReleaseRecoveryFacts,
+        reviewParticipant: { applies: true, isExecutionReviewParticipantRecoveryRun: true, reviewerWaitingOnCheck: false, hasOpenBlocker: true },
+      },
+      expected: { kind: "released" },
     },
     {
       name: "released: immediate recovery applies but a pending card will wake the assignee",
