@@ -87,6 +87,20 @@ export const MEMORY_DETECTION_NOTE = "Sensitive-content detection is pattern-bas
 export const MEMORY_CONFLICT_NOTE =
   "Possible conflict found by matching names and topics. It can miss conflicts and flag unrelated entries; it is not proof either way.";
 
+/**
+ * Contribution flags (GRE-886 item 5). A flag marks text for a reviewer; it
+ * never refuses, approves or grants anything.
+ */
+export const MEMORY_CONTRIBUTION_FLAGS = [
+  "instruction_like_text",
+  "claims_approval_without_record",
+  "possible_conflict",
+] as const;
+export type MemoryContributionFlag = (typeof MEMORY_CONTRIBUTION_FLAGS)[number];
+
+export const MEMORY_FLAG_NOTE =
+  "Flags come from pattern checks. They can miss things and mark harmless text; a flag is not proof. Approval comes only from a review record.";
+
 export const MEMORY_UNAVAILABLE_MESSAGE = "Memory unavailable. Carry on without it; contributions are kept and sent later.";
 
 export interface MemorySettings {
@@ -159,10 +173,12 @@ export interface MemoryRecallHit {
   conflicts: MemoryConflictLink[];
   /** Set when the gateway added this record because a match conflicts with it or was superseded by it. */
   addedBecause?: "conflict" | "supersession";
+  /** Only with `asOf`: approved and in its effective window on that date. */
+  inForceAsOf?: boolean;
 }
 
 export type MemoryRecallResult =
-  | { available: true; note: string; conflictNote: string; results: MemoryRecallHit[] }
+  | { available: true; note: string; conflictNote: string; asOf?: string; results: MemoryRecallHit[] }
   | { available: false; message: string; results: [] };
 
 export type MemoryContributeResult = {
@@ -173,6 +189,9 @@ export type MemoryContributeResult = {
   /** Approved records this one may contradict. Fallible; see `conflictNote`. */
   possibleConflicts: MemoryConflictLink[];
   conflictNote: string | null;
+  /** Pattern-check flags for the reviewer. Empty means none found, not that the text is safe. */
+  flags: MemoryContributionFlag[];
+  flagNote: string | null;
 };
 
 export interface MemoryReviewEvent {
@@ -318,6 +337,8 @@ export const recallMemorySchema = z
     /** Limit recall to these scopes. Omitted: every scope the caller may read, except hard boundaries. */
     scopeIds: z.array(z.string().guid()).max(50).optional(),
     limit: z.number().int().min(1).max(50).default(10),
+    /** Rank what was approved and in its effective window on this date first. */
+    asOf: z.coerce.date().optional(),
   })
   .strict();
 export type RecallMemory = z.infer<typeof recallMemorySchema>;

@@ -16,12 +16,14 @@ import {
 import {
   MEMORY_CONFLICT_NOTE,
   MEMORY_EVIDENCE_NOTE,
+  MEMORY_FLAG_NOTE,
   MEMORY_HARD_BOUNDARY_KINDS,
   MEMORY_UNAVAILABLE_MESSAGE,
   type ContributeMemory,
   type CreateMemoryScope,
   type MemoryConflictLink,
   type MemoryContributeResult,
+  type MemoryContributionFlag,
   type MemoryDecisionClass,
   type MemoryEntryType,
   type MemoryRecallHit,
@@ -49,6 +51,7 @@ import {
   type MemoryEngineDocument,
   type MemoryEngineHit,
 } from "./engine.js";
+import { detectContributionFlags } from "./contribution-flags.js";
 import { classifyEngineError, nextAttemptAt } from "./ingest-outbox.js";
 import { enqueueMemoryIngest, settleDirectMemoryIngest } from "./ingest-outbox-db.js";
 import { flagPossibleConflicts, insertReviewEvent, openConflictLinks } from "./review-store.js";
@@ -573,10 +576,13 @@ export function memoryGatewayService(
         .returning();
     }
 
+    // Marks for the reviewer only; nothing here changes the record's status.
+    const flags: MemoryContributionFlag[] = detectContributionFlags([input.title, input.content].filter(Boolean).join("\n"));
+    if (possibleConflicts.length > 0) flags.push("possible_conflict");
     await logOperation(caller, "contribute", engineAvailable ? "ok" : "unavailable", {
       scopeIds: [scope.id],
       recordId: row.id,
-      detail: { retainMode: settings.retainMode, entryType: row.entryType, possibleConflicts: possibleConflicts.length },
+      detail: { retainMode: settings.retainMode, entryType: row.entryType, possibleConflicts: possibleConflicts.length, flags },
     });
     return {
       record: toRecord(synced, scope),
@@ -584,6 +590,8 @@ export function memoryGatewayService(
       message: engineAvailable ? null : MEMORY_UNAVAILABLE_MESSAGE,
       possibleConflicts,
       conflictNote: possibleConflicts.length > 0 ? MEMORY_CONFLICT_NOTE : null,
+      flags,
+      flagNote: flags.length > 0 ? MEMORY_FLAG_NOTE : null,
     };
   }
 
@@ -647,6 +655,41 @@ export function memoryGatewayService(
     } catch (error) {
       logger.warn({ err: error, companyId }, "memory extracted-fact provenance write failed; recall goes on");
     }
+  }
+
+  /**
+   * Records that held approval and were in their effective window on `asOf`.
+   * A superseded record counts when it was ever approved; supersession sets
+   * its `effectiveTo` to the replacement's start. The window is the dates the
+   * contributor gave (or the creation time), not when the review happened.
+   */
+  async function inForceAsOf(companyId: string, records: MemoryRecord[], asOf: Date) {
+    const inWindow = records.filter((record) => {
+      const from = new Date(record.effectiveFrom ?? record.createdAt);
+      const to = record.effectiveTo ? new Date(record.effectiveTo) : null;
+      return from <= asOf && (!to || to > asOf);
+    });
+    const superseded = inWindow.filter((record) => record.status === "superseded").map((record) => record.id);
+    const wasApproved = new Set(
+      superseded.length === 0
+        ? []
+        : await db
+            .selectDistinct({ recordId: memoryReviewEvents.recordId })
+            .from(memoryReviewEvents)
+            .where(
+              and(
+                eq(memoryReviewEvents.companyId, companyId),
+                inArray(memoryReviewEvents.recordId, superseded),
+                eq(memoryReviewEvents.toStatus, "approved"),
+              ),
+            )
+            .then((rows) => rows.map((row) => row.recordId)),
+    );
+    return new Set(
+      inWindow
+        .filter((record) => record.status === "approved" || wasApproved.has(record.id))
+        .map((record) => record.id),
+    );
   }
 
   async function recall(caller: MemoryCaller, input: RecallMemory): Promise<MemoryRecallResult> {
@@ -731,6 +774,8 @@ export function memoryGatewayService(
     for (const hit of matched) {
       for (const link of links.get(hit.record.id) ?? []) if (!link.isApprovedSide) relatedIds.add(link.otherRecordId);
       if (hit.record.supersededById) relatedIds.add(hit.record.supersededById);
+      // As of a past date the answer may be the record a match replaced.
+      if (input.asOf && hit.record.supersedesId) relatedIds.add(hit.record.supersedesId);
     }
     matchedIds.forEach((id) => relatedIds.delete(id));
     const relatedRows = relatedIds.size === 0
@@ -751,7 +796,9 @@ export function memoryGatewayService(
       excerpt: [row.title, row.content].filter(Boolean).join("\n\n").slice(0, 2_000),
       score: null,
       conflicts: [],
-      addedBecause: matched.some((hit) => hit.record.supersededById === row.id) ? "supersession" : "conflict",
+      addedBecause: matched.some((hit) => hit.record.supersededById === row.id || hit.record.supersedesId === row.id)
+        ? "supersession"
+        : "conflict",
     }));
     // Both sides of a conflict always sit in one scope, so every link here is
     // to a record this caller may read.
@@ -760,10 +807,17 @@ export function memoryGatewayService(
     for (const hit of added) hit.conflicts = addedLinks.get(hit.record.id) ?? [];
 
     // Approved knowledge first, then disputes, then unreviewed, then history.
-    // Newest is never treated as correct.
+    // Newest is never treated as correct. With `asOf`, what was in force on
+    // that date goes before everything else.
     const rank: Record<string, number> = { approved: 0, disputed: 1, unreviewed: 2, superseded: 3 };
-    const results = [...matched, ...added].sort((a, b) => {
-      const byStatus = (rank[a.record.status] ?? 9) - (rank[b.record.status] ?? 9);
+    const candidates = [...matched, ...added];
+    if (input.asOf) {
+      const inForce = await inForceAsOf(caller.companyId, candidates.map((hit) => hit.record), input.asOf);
+      for (const hit of candidates) hit.inForceAsOf = inForce.has(hit.record.id);
+    }
+    const order = (hit: MemoryRecallHit) => (hit.inForceAsOf === false ? 10 : 0) + (rank[hit.record.status] ?? 9);
+    const results = candidates.sort((a, b) => {
+      const byStatus = order(a) - order(b);
       return byStatus !== 0 ? byStatus : (b.score ?? -1) - (a.score ?? -1);
     });
 
@@ -780,7 +834,13 @@ export function memoryGatewayService(
       scopeIds,
       detail: { returned: results.length, engineHits: hits.length },
     });
-    return { available: true, note: MEMORY_EVIDENCE_NOTE, conflictNote: MEMORY_CONFLICT_NOTE, results };
+    return {
+      available: true,
+      note: MEMORY_EVIDENCE_NOTE,
+      conflictNote: MEMORY_CONFLICT_NOTE,
+      ...(input.asOf ? { asOf: input.asOf.toISOString() } : {}),
+      results,
+    };
   }
 
   return {
