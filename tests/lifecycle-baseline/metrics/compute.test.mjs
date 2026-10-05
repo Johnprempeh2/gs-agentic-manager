@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeParkedWakes, computeRepairEscalations, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { ACCOUNT_REFUSAL_REASONS, EXECUTION_HOLD_CAUSES, accountRefusalReason, computeAuthFailures, computeParkedWakes, computeRepairEscalations, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -240,6 +240,44 @@ test("R2: platform failure rate leaves rejected logins out; they are counted on 
   const onlyRefusals = computeRunFailures(base({ runs: [runs[4]] }));
   assert.equal(onlyRefusals.platformFailureRate, null, "no platform runs, no rate");
   assert.equal(onlyRefusals.loginRefusals, 1);
+});
+
+test("R2: account and setup refusals are left out by reason and counted as accountRefusals (GRE-745)", () => {
+  const failed = (id, errorCode, errorText) => ({ id, issueId: "i1", status: "failed", errorCode, errorText, finishedAt: hoursAgo(9) });
+  const runs = [
+    { id: "ok1", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(10) },
+    { id: "ok2", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(10) },
+    failed("x1", "configuration_incomplete", "This Claude token expired at 2026-09-30T03:40:28.966Z. Reconnect it. `claude setup-token` gives a token that lasts about a year."),
+    failed("x2", "configuration_incomplete", "Connect an account and choose your personal default"),
+    failed("x3", "configuration_incomplete", "This connection is not permitted for this agent"),
+    failed("x4", "low_trust_requires_sandbox_environment", "Low-trust execution requires a sandbox environment driver."),
+    failed("x5", "workspace_validation_failed", 'Issue GRE-306 requested isolated_workspace with git_worktree, but base workspace "/w" is not a git checkout. This task needs a project / project workspace or a reusable execution workspace before it can run.'),
+    // Stay counted: the GRE-236 bug shares the code, and the other codes are not proven account state.
+    failed("k1", "configuration_incomplete", "Reconnect or validate the selected AI account"),
+    failed("k2", "acpx_turn_failed", "ACP agent reported a terminal service failure."),
+    failed("k3", "workspace_validation_failed", 'Cannot refresh reused git worktree "/w": git index lock "/w/index.lock" exists'),
+    failed("k4", "configuration_incomplete", null),
+    // A login refusal is counted once, as a login refusal.
+    { ...failed("a1", "claude_auth_required", "This Claude token expired at 2026-09-30T03:40:28.966Z."), errorCode: "claude_auth_required" },
+    { id: "c1", issueId: "i1", status: "cancelled", errorCode: "low_trust_requires_sandbox_environment", finishedAt: hoursAgo(9) },
+  ];
+  const r2 = computeRunFailures(base({ runs }));
+  assert.equal(r2.accountRefusals, 5);
+  assert.deepEqual(r2.accountRefusalsByReason, {
+    expired_credential: 1, no_personal_default: 1, connection_not_permitted: 1, low_trust_no_sandbox: 1, no_project_workspace: 1,
+  });
+  assert.deepEqual(Object.keys(r2.accountRefusalsByReason), ACCOUNT_REFUSAL_REASONS.map((entry) => entry.reason), "every reason is reported, zero included");
+  assert.equal(r2.loginRefusals, 1);
+  assert.equal(r2.failed, 10, "the all-in count keeps every failure");
+  assert.equal(r2.platformFailed, 4, "k1-k4 stay counted");
+  assert.equal(r2.platformFinished, 6);
+  assert.equal(r2.platformFailureRate, 4 / 6);
+  assert.deepEqual(
+    r2.failures.map((entry) => [entry.runId, entry.accountRefusal]),
+    [["x1", "expired_credential"], ["x2", "no_personal_default"], ["x3", "connection_not_permitted"], ["x4", "low_trust_no_sandbox"], ["x5", "no_project_workspace"],
+      ["k1", null], ["k2", null], ["k3", null], ["k4", null], ["a1", null]],
+  );
+  assert.equal(accountRefusalReason({ status: "cancelled", errorCode: "low_trust_requires_sandbox_environment" }), null, "only failed runs");
 });
 
 test("R2: an issue completed after the failure counts as recovered", () => {
