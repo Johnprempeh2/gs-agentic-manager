@@ -101,6 +101,76 @@ describeEmbeddedPostgres("heartbeat list", () => {
     }
   });
 
+  it("filters by status and bounds by createdAt (GRE-794)", async () => {
+    const companyId = randomUUID();
+    const otherCompanyId = randomUUID();
+    const agentId = randomUUID();
+    const otherAgentId = randomUUID();
+
+    for (const id of [companyId, otherCompanyId]) {
+      await db.insert(companies).values({
+        id,
+        name: "GS Agentic Manager",
+        issuePrefix: `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+        requireBoardApprovalForNewAgents: false,
+      });
+    }
+    for (const [id, company] of [[agentId, companyId], [otherAgentId, otherCompanyId]] as const) {
+      await db.insert(agents).values({
+        id,
+        companyId: company,
+        name: "CodexCoder",
+        role: "engineer",
+        status: "idle",
+        adapterType: "codex_local",
+        adapterConfig: {},
+        runtimeConfig: {},
+        permissions: {},
+      });
+    }
+
+    const run = (status: string, createdAt: string, company = companyId, agent = agentId) => ({
+      id: randomUUID(),
+      companyId: company,
+      agentId: agent,
+      invocationSource: "assignment",
+      status,
+      createdAt: new Date(createdAt),
+    });
+    const rows = [
+      run("failed", "2026-09-27T10:00:00Z"),
+      run("succeeded", "2026-09-28T10:00:00Z"),
+      run("interrupted", "2026-09-29T10:00:00Z"),
+      run("failed", "2026-10-01T10:00:00Z"),
+      run("cancelled", "2026-10-02T10:00:00Z"),
+      run("failed", "2026-09-30T10:00:00Z", otherCompanyId, otherAgentId),
+    ];
+    await db.insert(heartbeatRuns).values(rows);
+    const ids = (list: { id: string }[]) => list.map((r) => r.id);
+    const svc = heartbeatService(db);
+
+    // No new filter: every company row, newest first, as before.
+    expect(ids(await svc.list(companyId))).toEqual([rows[4].id, rows[3].id, rows[2].id, rows[1].id, rows[0].id]);
+
+    const failed = await svc.list(companyId, undefined, undefined, { statuses: ["failed"] });
+    expect(failed.map((r) => r.status)).toEqual(["failed", "failed"]);
+    expect(ids(failed)).toEqual([rows[3].id, rows[0].id]);
+
+    // since is inclusive, before is exclusive.
+    const window = await svc.list(companyId, undefined, undefined, {
+      since: new Date("2026-09-28T10:00:00Z"),
+      before: new Date("2026-10-01T10:00:00Z"),
+    });
+    expect(ids(window)).toEqual([rows[2].id, rows[1].id]);
+
+    const combined = await svc.list(companyId, agentId, 1, {
+      summary: true,
+      statuses: ["failed", "interrupted", "cancelled"],
+      before: new Date("2026-10-02T10:00:00Z"),
+    });
+    expect(ids(combined)).toEqual([rows[3].id]);
+  });
+
   it("returns small result json payloads unchanged from getRun", async () => {
     const companyId = randomUUID();
     const agentId = randomUUID();

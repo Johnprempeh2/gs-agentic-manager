@@ -32007,10 +32007,25 @@ export function heartbeatService(
       companyId: string,
       agentId?: string,
       limit?: number,
-      options: { summary?: boolean } = {},
+      options: {
+        summary?: boolean;
+        // Optional filters (GRE-794). `since` is inclusive and `before` is
+        // exclusive, both on `createdAt`, so a caller pages back by passing
+        // the oldest `createdAt` of the last page as `before`.
+        statuses?: readonly string[];
+        since?: Date;
+        before?: Date;
+      } = {},
     ) => {
       const safeForLegacyEncoding = await hasUnsafeTextProjectionDatabase();
       const summary = options.summary === true;
+      const conditions = [eq(heartbeatRuns.companyId, companyId)];
+      if (agentId) conditions.push(eq(heartbeatRuns.agentId, agentId));
+      if (options.statuses && options.statuses.length > 0) {
+        conditions.push(inArray(heartbeatRuns.status, [...options.statuses]));
+      }
+      if (options.since) conditions.push(gte(heartbeatRuns.createdAt, options.since));
+      if (options.before) conditions.push(lt(heartbeatRuns.createdAt, options.before));
       const query = db
         .select(
           summary
@@ -32031,14 +32046,7 @@ export function heartbeatService(
                 },
         )
         .from(heartbeatRuns)
-        .where(
-          agentId
-            ? and(
-                eq(heartbeatRuns.companyId, companyId),
-                eq(heartbeatRuns.agentId, agentId),
-              )
-            : eq(heartbeatRuns.companyId, companyId),
-        )
+        .where(conditions.length === 1 ? conditions[0] : and(...conditions))
         .orderBy(desc(heartbeatRuns.createdAt));
 
       const rows = limit ? await query.limit(limit) : await query;

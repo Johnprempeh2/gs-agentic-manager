@@ -2,13 +2,16 @@
 // switch has been in its current state, from the
 // `instance.settings.experimental_updated` activity rows.
 //
-//   node scripts/beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>] [--tests] [--scorecard <file>]
+//   node scripts/beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>] [--tests] [--scorecard <file>] [--failed-runs <runs.json>]
+//   node scripts/beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>] --earliest-on-since
 //
 // Reads the two files the shell script fetched and prints a table. Retired
 // switches come from RETIRED_INSTANCE_FEATURE_KEYS in the shared feature
 // catalog. `--tests` also reads the repo's tracked test files (read-only).
 // `--scorecard` reads a saved copy of the beta scorecard (GRE-81) and lists
 // catalog switches with no row and rows whose key left the catalog.
+// `--failed-runs <runs.json>` lists the failed, interrupted and cancelled runs
+// since each on switch's "on since" time, grouped by error code (GRE-794).
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -41,7 +44,7 @@ export function switchAges(settings, activity, { now = Date.now(), truncated = f
       const value = settings[key];
       const state = typeof value === "boolean" ? (value ? "on" : "off") : JSON.stringify(value);
       const changes = events.filter((event) => event.changedKeys.includes(key));
-      const row = { key, state, onSince: "unknown", days: null, ruleMet: "unknown" };
+      const row = { key, state, onSince: "unknown", days: null, ruleMet: "unknown", sinceAt: null };
       // A retired switch always reads off and cannot graduate.
       if (retired.includes(key)) return { ...row, state: "retired", onSince: "-", ruleMet: "n/a" };
       if (typeof value !== "boolean") return { ...row, ruleMet: "n/a" };
@@ -62,6 +65,10 @@ export function switchAges(settings, activity, { now = Date.now(), truncated = f
       return {
         ...row,
         onSince,
+        // Exact time of the change (for --failed-runs); with an open start it
+        // is the oldest logged row, not the real start.
+        sinceAt: new Date(since).toISOString(),
+        openStart,
         days: openStart ? `${days}+` : days,
         ruleMet: met ? "yes" : openStart ? "unknown" : "no",
       };
@@ -149,6 +156,62 @@ function readTestFiles(repoRoot) {
   return files;
 }
 
+export const FAILED_RUN_STATUSES = ["failed", "interrupted", "cancelled"];
+
+/** Earliest "on since" time of the switches that are on, or null. */
+export function earliestOnSince(rows) {
+  const times = rows.filter((r) => r.state === "on" && r.sinceAt).map((r) => r.sinceAt).sort();
+  return times[0] ?? null;
+}
+
+/**
+ * `fetched` is `{ runs, complete }`: the run list pages the shell script
+ * read, and false `complete` when paging stopped before the API ran out of
+ * rows. For each on switch: failed, interrupted and cancelled runs created at
+ * or after its "on since" time, grouped by error code. It does not decide
+ * which runs are linked to the switch; Beacon does that on the scorecard.
+ * `cutAt` is set when the history read does not reach "on since".
+ */
+export function failedRunsBySwitch(rows, { runs, complete }) {
+  const wanted = runs.filter((run) => FAILED_RUN_STATUSES.includes(run?.status));
+  const oldest = runs.map((run) => run.createdAt).filter(Boolean).sort()[0] ?? null;
+  return rows
+    .filter((r) => r.state === "on")
+    .map((r) => {
+      if (!r.sinceAt) return { key: r.key, onSince: r.onSince, unknown: true, groups: [], count: 0, cutAt: null };
+      const since = Date.parse(r.sinceAt);
+      const matched = wanted.filter((run) => Date.parse(run.createdAt) >= since);
+      const byCode = new Map();
+      for (const run of matched) {
+        const code = run.errorCode || "(no code)";
+        if (!byCode.has(code)) byCode.set(code, []);
+        byCode.get(code).push(run.id);
+      }
+      const groups = [...byCode]
+        .map(([code, ids]) => ({ code, ids }))
+        .sort((a, b) => b.ids.length - a.ids.length || a.code.localeCompare(b.code));
+      let cutAt = null;
+      // An open start began before the oldest activity row, so runs before it are not read.
+      if (r.openStart) cutAt = r.sinceAt;
+      else if (!complete && (oldest === null || Date.parse(oldest) > since)) cutAt = oldest ?? "now";
+      return { key: r.key, onSince: r.onSince, unknown: false, groups, count: matched.length, cutAt };
+    });
+}
+
+export function formatFailedRuns(items) {
+  const lines = [`failed runs since on (${FAILED_RUN_STATUSES.join(", ")}), by error code:`];
+  for (const item of items) {
+    if (item.unknown) {
+      lines.push(`${item.key} (on since unknown): not checked`);
+      continue;
+    }
+    const cut = item.cutAt ? `; history cut at ${item.cutAt}` : "";
+    lines.push(`${item.key} (on since ${item.onSince}): ${item.count === 0 ? "none" : `${item.count} runs`}${cut}`);
+    for (const { code, ids } of item.groups) lines.push(`  ${code} (${ids.length}): ${ids.join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
 export function formatTable(rows) {
   const withTests = rows.some((r) => r.testFiles !== undefined);
   const header = ["switch", "state", "on since", "days on", "2-week rule met", ...(withTests ? ["test files"] : [])];
@@ -168,7 +231,7 @@ export function formatTable(rows) {
 function main(argv) {
   const [settingsPath, activityPath, ...rest] = argv;
   if (!settingsPath || !activityPath) {
-    console.error("usage: beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>] [--tests] [--scorecard <file>]");
+    console.error("usage: beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>] [--tests] [--scorecard <file>] [--failed-runs <runs.json>] [--earliest-on-since]");
     process.exit(2);
   }
   const limitIndex = rest.indexOf("--limit");
@@ -180,6 +243,11 @@ function main(argv) {
   const catalogSource = readFileSync(`${repoRoot}/packages/shared/src/feature-catalog.ts`, "utf8");
   const retired = parseRetiredKeys(catalogSource);
   let rows = switchAges(settings, activity, { truncated, retired });
+  if (rest.includes("--earliest-on-since")) {
+    // Used by the shell script to pick the `since` of the run list fetch.
+    process.stdout.write(earliestOnSince(rows) ?? "");
+    return;
+  }
   let listFiles = [];
   if (rest.includes("--tests")) {
     const tests = testFileCounts(rows.map((r) => r.key), readTestFiles(repoRoot));
@@ -194,6 +262,11 @@ function main(argv) {
   if (scorecardIndex >= 0) {
     const scorecardKeys = parseScorecardKeys(readFileSync(rest[scorecardIndex + 1], "utf8"));
     console.log(`\n${formatScorecardGaps(scorecardGaps(parseCatalogKeys(catalogSource), scorecardKeys))}`);
+  }
+  const failedRunsIndex = rest.indexOf("--failed-runs");
+  if (failedRunsIndex >= 0) {
+    const fetched = JSON.parse(readFileSync(rest[failedRunsIndex + 1], "utf8"));
+    console.log(`\n${formatFailedRuns(failedRunsBySwitch(rows, fetched))}`);
   }
   if (truncated) {
     console.log(`\nnote: the activity log returned its ${limit}-row limit; older changes are not shown.`);

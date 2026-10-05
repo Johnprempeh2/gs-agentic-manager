@@ -1,4 +1,4 @@
-import { resolveAgentAppearance, agentAvatarUrl } from "@greatstone/shared";
+import { resolveAgentAppearance, agentAvatarUrl, HEARTBEAT_RUN_STATUSES } from "@greatstone/shared";
 import { listOpenRouterModels } from "../services/openrouter-models.js";
 import { prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings } from "../services/ai-connection-runtime.js";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE, AI_CONNECTION_CAPABILITIES, aiConnectionBindingSchema, type AiConnectionBinding } from "@greatstone/shared";
@@ -283,6 +283,44 @@ function mergeDesiredSkillEntries(
 
 const RUN_LOG_DEFAULT_LIMIT_BYTES = 256_000;
 const RUN_LOG_MAX_LIMIT_BYTES = 1024 * 1024;
+
+const HEARTBEAT_RUN_STATUS_SET = new Set<string>(HEARTBEAT_RUN_STATUSES);
+const ISO_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+function readRunListTime(query: Request["query"], name: "since" | "before") {
+  const value = query[name];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !ISO_TIME_PATTERN.test(value) || Number.isNaN(Date.parse(value))) {
+    throw badRequest(`${name} must be one ISO 8601 time, e.g. 2026-10-02T08:41:00Z`);
+  }
+  return new Date(value);
+}
+
+/**
+ * Optional filters of GET /companies/:companyId/heartbeat-runs (GRE-794):
+ * `status` (comma list of run statuses), `since` (inclusive) and `before`
+ * (exclusive) on `createdAt`. A bad value is a 400, never a silent ignore.
+ */
+export function parseHeartbeatRunListFilters(query: Request["query"]) {
+  const filters: { statuses?: string[]; since?: Date; before?: Date } = {};
+  const status = query.status;
+  if (status !== undefined) {
+    if (typeof status !== "string") throw badRequest("status must be one comma-separated list");
+    const statuses = [...new Set(status.split(",").map((value) => value.trim()).filter(Boolean))];
+    const unknown = statuses.filter((value) => !HEARTBEAT_RUN_STATUS_SET.has(value));
+    if (statuses.length === 0 || unknown.length > 0) {
+      throw badRequest(
+        `Unknown run status: ${unknown.join(", ") || "(empty)"}; use ${HEARTBEAT_RUN_STATUSES.join(", ")}`,
+      );
+    }
+    filters.statuses = statuses;
+  }
+  const since = readRunListTime(query, "since");
+  const before = readRunListTime(query, "before");
+  if (since) filters.since = since;
+  if (before) filters.before = before;
+  return filters;
+}
 
 function readRunLogLimitBytes(value: unknown) {
   const parsed = Number(value ?? RUN_LOG_DEFAULT_LIMIT_BYTES);
@@ -6686,7 +6724,8 @@ export function agentRoutes(
     const limitParam = req.query.limit as string | undefined;
     const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10) || 200)) : undefined;
     const summary = req.query.summary === "true" || req.query.summary === "1";
-    const runs = await heartbeat.list(companyId, agentId, limit, { summary });
+    const filters = parseHeartbeatRunListFilters(req.query);
+    const runs = await heartbeat.list(companyId, agentId, limit, { summary, ...filters });
     res.json(await runRedactions.redactForRuns(companyId, runs));
   });
 

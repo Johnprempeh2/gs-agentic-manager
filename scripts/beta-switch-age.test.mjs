@@ -8,6 +8,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  earliestOnSince,
+  failedRunsBySwitch,
+  formatFailedRuns,
   formatScorecardGaps,
   formatTable,
   isTestFile,
@@ -46,10 +49,10 @@ const byKey = (rows) => Object.fromEntries(rows.map((r) => [r.key, r]));
 test("on 20 days: met; on 5 days: not met; on then off: off, not met; never changed: unknown", () => {
   const rows = byKey(switchAges(SETTINGS, ACTIVITY, { now: NOW }));
   // onLong was re-saved on day 12; the clock still starts on day 20.
-  assert.deepEqual(rows.onLong, { key: "onLong", state: "on", onSince: "2026-09-14", days: 20, ruleMet: "yes" });
-  assert.deepEqual(rows.onShort, { key: "onShort", state: "on", onSince: "2026-09-29", days: 5, ruleMet: "no" });
-  assert.deepEqual(rows.onThenOff, { key: "onThenOff", state: "off", onSince: "-", days: null, ruleMet: "no" });
-  assert.deepEqual(rows.neverChanged, { key: "neverChanged", state: "on", onSince: "unknown", days: null, ruleMet: "unknown" });
+  assert.deepEqual(rows.onLong, { key: "onLong", state: "on", onSince: "2026-09-14", days: 20, ruleMet: "yes", sinceAt: ago(20), openStart: false });
+  assert.deepEqual(rows.onShort, { key: "onShort", state: "on", onSince: "2026-09-29", days: 5, ruleMet: "no", sinceAt: ago(5), openStart: false });
+  assert.deepEqual(rows.onThenOff, { key: "onThenOff", state: "off", onSince: "-", days: null, ruleMet: "no", sinceAt: null });
+  assert.deepEqual(rows.neverChanged, { key: "neverChanged", state: "on", onSince: "unknown", days: null, ruleMet: "unknown", sinceAt: null });
 });
 
 test("a last logged value that differs from the current one is unknown, not a guess", () => {
@@ -67,8 +70,30 @@ test("cut-off history: a run that reaches the oldest row is open-ended", () => {
 
 test("non-switch values and managedKeys", () => {
   const rows = switchAges({ maxThing: 3, managedKeys: ["x"] }, [], { now: NOW });
-  assert.deepEqual(rows, [{ key: "maxThing", state: "3", onSince: "unknown", days: null, ruleMet: "n/a" }]);
+  assert.deepEqual(rows, [{ key: "maxThing", state: "3", onSince: "unknown", days: null, ruleMet: "n/a", sinceAt: null }]);
 });
+
+// Run list fixture, relative to the real clock like the shifted activity rows.
+// onLong has been on 20 days, onShort 5 days. 1003 failed runs 2 days ago
+// force a second page of the 1000-row run list.
+let runsFixture = () => [];
+let ignoreRunFilters = false;
+const realAgo = (days) => new Date(Date.now() - days * DAY).toISOString();
+function defaultRunsFixture() {
+  return [
+    { id: "r-old", status: "failed", errorCode: "model_error", createdAt: realAgo(25) },
+    { id: "r-long-1", status: "failed", errorCode: "model_error", createdAt: realAgo(15) },
+    { id: "r-long-2", status: "interrupted", errorCode: "process_lost", createdAt: realAgo(10) },
+    { id: "r-ok", status: "succeeded", errorCode: null, createdAt: realAgo(4) },
+    { id: "r-short-1", status: "cancelled", errorCode: null, createdAt: realAgo(3) },
+    ...Array.from({ length: 1003 }, (_, i) => ({
+      id: `r-bulk-${i}`,
+      status: "failed",
+      errorCode: "provider_quota",
+      createdAt: new Date(Date.now() - 2 * DAY - i * 1000).toISOString(),
+    })),
+  ];
+}
 
 // Runs the shell script against a stub API; returns { code, stdout, stderr, requests }.
 async function runScript(args = []) {
@@ -79,6 +104,23 @@ async function runScript(args = []) {
     res.setHeader("content-type", "application/json");
     if (url.pathname === "/api/agents/me") return res.end(JSON.stringify({ companyId: "c1" }));
     if (url.pathname === "/api/instance/settings/experimental") return res.end(JSON.stringify(SETTINGS));
+    if (url.pathname === "/api/companies/c1/heartbeat-runs") {
+      // Honours the GRE-794 filters like the real route: status, since, before, newest first.
+      const statuses = url.searchParams.get("status").split(",");
+      const since = Date.parse(url.searchParams.get("since"));
+      const before = url.searchParams.has("before") ? Date.parse(url.searchParams.get("before")) : Infinity;
+      const limit = Number(url.searchParams.get("limit"));
+      if (ignoreRunFilters) {
+        const newest = runsFixture().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+        return res.end(JSON.stringify(newest.slice(0, limit)));
+      }
+      const rows = runsFixture()
+        .filter((run) => statuses.includes(run.status))
+        .filter((run) => Date.parse(run.createdAt) >= since && Date.parse(run.createdAt) < before)
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .slice(0, limit);
+      return res.end(JSON.stringify(rows));
+    }
     if (url.pathname === "/api/companies/c1/activity") {
       const shifted = ACTIVITY.map((row) => ({ ...row, createdAt: new Date(Date.parse(row.createdAt) - NOW + Date.now()).toISOString() }));
       return res.end(JSON.stringify(shifted));
@@ -150,7 +192,7 @@ test("formatTable aligns columns", () => {
 
 test("retired switches show retired, whatever their stored value", () => {
   const rows = byKey(switchAges({ ...SETTINGS, oldSwitch: false }, ACTIVITY, { now: NOW, retired: ["oldSwitch", "onLong"] }));
-  assert.deepEqual(rows.oldSwitch, { key: "oldSwitch", state: "retired", onSince: "-", days: null, ruleMet: "n/a" });
+  assert.deepEqual(rows.oldSwitch, { key: "oldSwitch", state: "retired", onSince: "-", days: null, ruleMet: "n/a", sinceAt: null });
   assert.equal(rows.onLong.state, "retired");
   assert.equal(rows.onShort.state, "on");
 });
@@ -220,4 +262,92 @@ test("scorecard: one missing row and one gone row", () => {
   assert.deepEqual(gaps, { noRow: ["enableDeepDive"], gone: ["enableOldThing"] });
   assert.equal(formatScorecardGaps(gaps), "scorecard: no row: enableDeepDive\nscorecard: gone: enableOldThing");
   assert.equal(formatScorecardGaps({ noRow: [], gone: [] }), "scorecard: no row: none\nscorecard: gone: none");
+});
+
+const ROWS = switchAges(SETTINGS, ACTIVITY, { now: NOW });
+
+test("failed runs: only failed, interrupted and cancelled runs since on, grouped by error code", () => {
+  const runs = [
+    { id: "a", status: "failed", errorCode: "model_error", createdAt: ago(25) },
+    { id: "b", status: "failed", errorCode: "model_error", createdAt: ago(15) },
+    { id: "c", status: "interrupted", errorCode: "process_lost", createdAt: ago(10) },
+    { id: "d", status: "succeeded", errorCode: null, createdAt: ago(4) },
+    { id: "e", status: "cancelled", errorCode: null, createdAt: ago(3) },
+    { id: "f", status: "failed", errorCode: "model_error", createdAt: ago(2) },
+  ];
+  const items = Object.fromEntries(failedRunsBySwitch(ROWS, { runs, complete: true }).map((i) => [i.key, i]));
+  assert.deepEqual(Object.keys(items).sort(), ["neverChanged", "onLong", "onShort"]);
+  assert.deepEqual(items.onLong.groups, [
+    { code: "model_error", ids: ["b", "f"] },
+    { code: "(no code)", ids: ["e"] },
+    { code: "process_lost", ids: ["c"] },
+  ]);
+  assert.equal(items.onLong.cutAt, null);
+  assert.deepEqual(items.onShort.groups, [{ code: "(no code)", ids: ["e"] }, { code: "model_error", ids: ["f"] }]);
+  assert.equal(items.neverChanged.unknown, true);
+  assert.equal(earliestOnSince(ROWS), ago(20));
+
+  const text = formatFailedRuns(failedRunsBySwitch(ROWS, { runs: [], complete: true }));
+  assert.match(text, /^onShort \(on since 2026-09-29\): none$/m);
+  assert.match(text, /^neverChanged \(on since unknown\): not checked$/m);
+});
+
+test("failed runs: history cut when the run list or the activity log does not reach on since", () => {
+  const runs = [{ id: "x", status: "failed", errorCode: "model_error", createdAt: ago(8) }];
+  const items = Object.fromEntries(failedRunsBySwitch(ROWS, { runs, complete: false }).map((i) => [i.key, i]));
+  assert.equal(items.onLong.cutAt, ago(8)); // on 20 days, history read back to 8 days
+  assert.equal(items.onShort.cutAt, null); // on 5 days, history reaches it
+  assert.match(formatFailedRuns([items.onLong]), /^onLong \(on since 2026-09-14\): 1 runs; history cut at 2026-09-26T12:00:00.000Z$/m);
+
+  // Activity log cut: the switch was on before the oldest logged row.
+  const recent = ACTIVITY.filter((row) => Date.parse(row.createdAt) > NOW - 10 * DAY);
+  const open = failedRunsBySwitch(switchAges({ onShort: true }, recent, { now: NOW, truncated: true }), { runs: [], complete: true });
+  assert.equal(open[0].cutAt, ago(5));
+});
+
+test("shell script --failed-runs pages the run list to the earliest on since; table unchanged; exit 0", async () => {
+  runsFixture = defaultRunsFixture;
+  try {
+    const plain = await runScript();
+    const { code, stdout, stderr, requests } = await runScript(["--failed-runs"]);
+    assert.equal(code, 0, stderr);
+    assert.ok(requests.every((r) => r.method === "GET"));
+    assert.ok(stdout.startsWith(plain.stdout), "the switch table is unchanged");
+
+    const runCalls = requests.map((r) => new URL(r.url, "http://x")).filter((u) => u.pathname.endsWith("/heartbeat-runs"));
+    assert.equal(runCalls.length, 2, "1003 matching runs need two 1000-row pages");
+    assert.equal(runCalls[0].searchParams.get("status"), "failed,interrupted,cancelled");
+    assert.equal(runCalls[0].searchParams.has("before"), false);
+    assert.ok(runCalls[1].searchParams.has("before"));
+    // since is onLong's on time (20 days ago), so the 25-day-old run is not read.
+    assert.ok(Math.abs(Date.parse(runCalls[0].searchParams.get("since")) - (Date.now() - 20 * DAY)) < 60_000);
+
+    assert.match(stdout, /^onLong \(on since \d{4}-\d\d-\d\d\): 1006 runs$/m);
+    assert.match(stdout, /^  provider_quota \(1003\): r-bulk-0, /m);
+    assert.match(stdout, /^  model_error \(1\): r-long-1$/m);
+    assert.match(stdout, /^  process_lost \(1\): r-long-2$/m);
+    assert.match(stdout, /^onShort \(on since \d{4}-\d\d-\d\d\): 1004 runs$/m);
+    assert.match(stdout, /^neverChanged \(on since unknown\): not checked$/m);
+    assert.doesNotMatch(stdout, /r-old|r-ok|history cut/);
+  } finally {
+    runsFixture = () => [];
+  }
+});
+
+test("shell script --failed-runs marks history cut when the server ignores the filters", async () => {
+  // A server without the GRE-794 filters returns the newest 1000 runs of any
+  // status whatever the query, so paging cannot move back.
+  const fixed = defaultRunsFixture();
+  runsFixture = () => fixed;
+  ignoreRunFilters = true;
+  try {
+    const { code, stdout, stderr, requests } = await runScript(["--failed-runs"]);
+    assert.equal(code, 0, stderr);
+    assert.equal(requests.filter((r) => r.url.includes("/heartbeat-runs")).length, 2);
+    assert.match(stdout, /^onLong \(on since \d{4}-\d\d-\d\d\): 1000 runs; history cut at \d{4}-\d\d-\d\dT[\d:.]+Z$/m);
+    assert.match(stdout, /^onShort \(on since \d{4}-\d\d-\d\d\): 1000 runs; history cut at /m);
+  } finally {
+    ignoreRunFilters = false;
+    runsFixture = () => [];
+  }
 });
