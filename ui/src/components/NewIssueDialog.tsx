@@ -43,6 +43,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -1499,7 +1500,10 @@ export function NewIssueDialog() {
               </PopoverContent>
             </Popover>
             <span className="text-subtle-foreground">&rsaquo;</span>
-            <span>{isSubIssueMode ? "New sub-task" : "New task"}</span>
+            {/* Visible breadcrumb text doubles as the dialog's accessible name. */}
+            <DialogTitle className="text-sm font-normal leading-normal">
+              {isSubIssueMode ? "New sub-task" : "New task"}
+            </DialogTitle>
           </div>
           <div className="flex items-center gap-1">
             <Button

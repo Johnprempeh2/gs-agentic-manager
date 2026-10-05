@@ -72,11 +72,14 @@ export const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
 
 /* ---- Primitive components ---- */
 
-export function HintIcon({ text }: { text: string }) {
+export function HintIcon({ text, label }: { text: string; label?: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="inline-flex items-center justify-center text-subtle-foreground hover:text-muted-foreground transition-colors">
+        <button
+          type="button"
+          aria-label={label ? `About ${label}` : "More info"}
+          className="inline-flex items-center justify-center text-subtle-foreground hover:text-muted-foreground transition-colors">
           <HelpCircle className="h-3 w-3" />
         </button>
       </TooltipTrigger>
@@ -92,7 +95,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
     <div>
       <div className="flex items-center gap-1.5 mb-1">
         <label className="text-xs text-muted-foreground">{label}</label>
-        {hint && <HintIcon text={hint} />}
+        {hint && <HintIcon text={hint} label={label} />}
       </div>
       {children}
     </div>
@@ -116,13 +119,14 @@ export function ToggleField({
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-1.5">
         <span className="text-xs text-muted-foreground">{label}</span>
-        {hint && <HintIcon text={hint} />}
+        {hint && <HintIcon text={hint} label={label} />}
       </div>
       {/* Gallery feedback r3: was a hand-rolled h-5 w-9 pill with a bg-green-600
           track — the app's second switch implementation. Converged on the one
           canonical ToggleSwitch (status-green on-state), DESIGN.md principle 1. */}
       <ToggleSwitch
         data-testid={toggleTestId}
+        aria-label={label}
         checked={checked}
         onCheckedChange={onChange}
       />
@@ -158,9 +162,10 @@ export function ToggleWithNumber({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">{label}</span>
-          {hint && <HintIcon text={hint} />}
+          {hint && <HintIcon text={hint} label={label} />}
         </div>
         <ToggleSwitch
+          aria-label={label}
           checked={checked}
           onCheckedChange={onCheckedChange}
         />
@@ -175,7 +180,7 @@ export function ToggleWithNumber({
             onChange={(e) => onNumberChange(Number(e.target.value))}
           />
           <span>{numberLabel}</span>
-          {numberHint && <HintIcon text={numberHint} />}
+          {numberHint && <HintIcon text={numberHint} label={numberLabel} />}
         </div>
       )}
     </div>
@@ -453,7 +458,7 @@ export function InlineField({ label, hint, children }: { label: string; hint?: s
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-1.5 shrink-0">
         <label className="text-xs text-muted-foreground">{label}</label>
-        {hint && <HintIcon text={hint} />}
+        {hint && <HintIcon text={hint} label={label} />}
       </div>
       <div className="w-24 ml-auto">{children}</div>
     </div>
