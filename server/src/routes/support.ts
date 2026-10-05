@@ -7,7 +7,7 @@ import { badRequest, forbidden, notFound } from "../errors.js";
 import type { heartbeatService } from "../services/heartbeat.js";
 import { supportQueueService } from "../services/support-queue.js";
 import { SUPPORT_PRIORITIES } from "../services/support-hours.js";
-import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin } from "./authz.js";
+import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, hasCompanyAccess } from "./authz.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -86,7 +86,7 @@ export function supportRoutes(db: Db, opts: { heartbeat?: Pick<ReturnType<typeof
       .innerJoin(issues, eq(issues.id, supportTickets.issueId))
       .innerJoin(supportQueues, eq(supportQueues.id, supportTickets.queueId))
       .where(eq(supportTickets.issueId, issueId));
-    if (!row) throw notFound("This issue is not a support ticket");
+    if (!row || !hasCompanyAccess(req, row.issue.companyId)) throw notFound("This issue is not a support ticket");
     assertCompanyAccess(req, row.issue.companyId);
     if (req.actor.type === "agent") {
       const allowed = [row.issue.assigneeAgentId, row.queue.triageAgentId, row.queue.coverAgentId];
