@@ -121,7 +121,7 @@ export function KeyboardShortcutsCheatsheet({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md gap-0 p-0 overflow-hidden" showCloseButton={false}>
+      <DialogContent aria-describedby={undefined} className="sm:max-w-md gap-0 p-0 overflow-hidden" showCloseButton={false}>
         <DialogHeader className="px-5 pt-5 pb-3">
           <DialogTitle className="text-base">Keyboard shortcuts</DialogTitle>
         </DialogHeader>

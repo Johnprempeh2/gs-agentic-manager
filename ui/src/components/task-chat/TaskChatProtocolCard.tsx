@@ -463,7 +463,7 @@ function WorkspaceChangeCard({ item }: { item: TaskChatWorkspaceChangeItem }) {
           if (!open) setSelectedPath(null);
         }}
       >
-        <DialogContent className="w-full max-w-(--pct-90) overflow-hidden">
+        <DialogContent aria-describedby={undefined} className="w-full max-w-(--pct-90) overflow-hidden">
           <DialogHeader>
             <DialogTitle className="font-mono text-sm">
               {selected?.path ?? "Workspace diff"}
@@ -551,7 +551,7 @@ function WorkspaceFileCard({ item }: { item: TaskChatWorkspaceFileItem }) {
         </div>
       </CardShell>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-full max-w-(--pct-90) overflow-hidden">
+        <DialogContent aria-describedby={undefined} className="w-full max-w-(--pct-90) overflow-hidden">
           <DialogHeader>
             <DialogTitle>{item.displayName}</DialogTitle>
           </DialogHeader>
