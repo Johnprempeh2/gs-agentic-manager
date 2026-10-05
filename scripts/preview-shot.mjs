@@ -9,6 +9,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "@playwright/test";
+import { browserFix } from "./preview-browser-fix.mjs";
 
 const [, , url, laptopOut, phoneOut, consoleOut] = process.argv;
 if (!url || !laptopOut || !phoneOut || !consoleOut) {
@@ -28,7 +29,7 @@ const views = [
 
 const browser = await chromium.launch({ headless: true }).catch((error) => {
   console.error(`preview-shot: could not start the browser: ${error.message.split("\n")[0]}`);
-  console.error("Install it with: npx playwright install chromium (and, on Linux, npx playwright install-deps).");
+  console.error(browserFix(error.message, process.env.PLAYWRIGHT_BROWSERS_PATH));
   process.exit(1);
 });
 const errors = [];

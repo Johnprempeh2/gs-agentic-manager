@@ -80,6 +80,7 @@ cmd_start() {
     die "a preview of $(preview_state tag) is already running ($(preview_origin)); run 'greatstone-preview.sh stop' first."
   fi
   port_in_use "$PREVIEW_PORT" && die "port $PREVIEW_PORT is in use by another process."
+  gs_tools_installed || exit 1
   case "$PREVIEW_ROOT/" in "$LIVE_DIR/"* | "$LIVE_DATA_DIR/"*) die "the preview folder must be outside the live folders." ;; esac
   [ -d "$LIVE_DATA_DIR/instances/$INSTANCE_ID" ] || die "no live data at $LIVE_DATA_DIR"
   local source_url
@@ -232,6 +233,14 @@ cmd_stop() {
   say "Preview stopped."
 }
 
+# Playwright's default browser folder in the account home (not $HOME).
+shared_browsers_path() {
+  case "$(uname -s)" in
+    Darwin) printf '%s/Library/Caches/ms-playwright' "${GS_USER_HOME:-$HOME}" ;;
+    *) printf '%s/.cache/ms-playwright' "${GS_USER_HOME:-$HOME}" ;;
+  esac
+}
+
 # Screenshots one page of the running preview at laptop and phone size, named
 # after the preview's tag, for the preview check (GRE-606). Only ever opens
 # http://localhost:3200: any other port, from the caller or the state file, is
@@ -252,6 +261,10 @@ cmd_shot() {
   local laptop="$dir/$tag-$name-laptop.png" phone="$dir/$tag-$name-phone.png"
   local console_log="$dir/$tag-$name-console.txt"
   mkdir -p "$dir"
+  # Agent runs have a temp HOME, so Playwright's default browser folder is new
+  # and empty in each run. Use the account's own folder instead, where a
+  # one-time install puts the browser (GRE-732).
+  export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$(shared_browsers_path)}"
   (cd "$GS_TOOLS_ROOT" && node scripts/preview-shot.mjs "http://localhost:3200$page" "$laptop" "$phone" "$console_log") \
     || die "the screenshot of http://localhost:3200$page failed."
   say "$laptop"

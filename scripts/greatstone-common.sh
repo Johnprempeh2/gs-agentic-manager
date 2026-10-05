@@ -88,8 +88,17 @@ live_curl() {
   fi
 }
 
-# Runs scripts/greatstone-db.ts with this checkout's dependencies.
+# Runs scripts/greatstone-db.ts with this checkout's dependencies. A fresh
+# clone (for example a scratch checkout of a tag) has none yet (GRE-732).
+gs_tools_installed() {
+  [ -f "$GS_TOOLS_ROOT/cli/node_modules/tsx/dist/cli.mjs" ] && return 0
+  printf '%s: this checkout has no dependencies installed; run first: (cd %q && pnpm install --frozen-lockfile)\n' \
+    "$(basename "$0" .sh)" "$GS_TOOLS_ROOT" >&2
+  return 1
+}
+
 gs_db() {
+  gs_tools_installed || return 1
   (cd "$GS_TOOLS_ROOT" && node cli/node_modules/tsx/dist/cli.mjs scripts/greatstone-db.ts "$@")
 }
 
