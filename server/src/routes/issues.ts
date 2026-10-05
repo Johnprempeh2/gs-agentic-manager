@@ -12002,11 +12002,27 @@ export function issueRoutes(
         typeof normalizedAssigneeAgentId === "string" &&
         normalizedAssigneeAgentId.length > 0 &&
         normalizedAssigneeAgentId !== actor.agentId;
-      const runWorkspaceInheritanceSourceIssueId =
-        hasExplicitIssueWorkspaceCreateSelection(rawCreateBody) ||
-        assignedToAnotherAgent
-          ? null
-          : await resolveRunIssueWorkspaceInheritanceSource(companyId, actor);
+      const runIssueSourceId = hasExplicitIssueWorkspaceCreateSelection(
+        rawCreateBody,
+      )
+        ? null
+        : await resolveRunIssueWorkspaceInheritanceSource(companyId, actor);
+      const runWorkspaceInheritanceSourceIssueId = assignedToAnotherAgent
+        ? null
+        : runIssueSourceId;
+      // The peer task still keeps the run issue's project when the creator
+      // names none, so it gets that project's own worktree (GRE-845).
+      let peerTaskRunProjectId: string | null = null;
+      if (
+        assignedToAnotherAgent &&
+        runIssueSourceId &&
+        rawCreateBody.projectId === undefined
+      ) {
+        const runIssue = await svc.getById(runIssueSourceId);
+        if (runIssue && runIssue.companyId === companyId) {
+          peerTaskRunProjectId = runIssue.projectId ?? null;
+        }
+      }
       // When this is genuinely the onboarding first task, the server owns the task
       // description: invoke the first-task skill and save the proposal mode the
       // enableFirstTaskPlanProposal toggle selects, read once here at creation
@@ -12039,6 +12055,7 @@ export function issueRoutes(
                 runWorkspaceInheritanceSourceIssueId,
             }
           : {}),
+        ...(peerTaskRunProjectId ? { projectId: peerTaskRunProjectId } : {}),
         ...(isOnboardingFirstTask && !watchdogProductBugFollowUp
           ? {
               originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND,

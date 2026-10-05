@@ -1399,6 +1399,34 @@ describe("agent issue mutation checkout ownership", () => {
       );
     });
 
+    it("keeps the run issue's project, but not its workspace, for a task for another agent (GRE-845)", async () => {
+      const runProjectId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+      mockIssueService.getById.mockResolvedValue(makeIssue({ projectId: runProjectId }));
+      resolveAssignee(peerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({ title: "Peer task, no project", assigneeAgentId: peerAgentId });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      const created = mockIssueService.create.mock.calls[0]?.[1];
+      expect(created).toMatchObject({ assigneeAgentId: peerAgentId, projectId: runProjectId });
+      expect(created).not.toHaveProperty("inheritExecutionWorkspaceFromIssueId");
+      expect(created).not.toHaveProperty("executionWorkspaceId");
+    });
+
+    it("keeps an explicit project over the run issue's project for a task for another agent", async () => {
+      mockIssueService.getById.mockResolvedValue(
+        makeIssue({ projectId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }),
+      );
+      resolveAssignee(peerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({ title: "Peer task, chosen project", projectId: null, assigneeAgentId: peerAgentId });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.create.mock.calls[0]?.[1]).toMatchObject({ projectId: null });
+    });
+
     it("keeps an explicit inherit request for a task for another agent", async () => {
       resolveAssignee(peerAgentId);
       const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
