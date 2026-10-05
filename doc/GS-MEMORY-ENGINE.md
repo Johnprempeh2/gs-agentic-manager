@@ -134,6 +134,15 @@ signing helper that agents cannot read.
 
 - Nightly at 02:30 the timer runs `backup`: `pg_dump -Fc` to `backups/` plus a `.sha256`, and a copy to
   `C:\GreatstoneBackups\gs-memory\`. 14 dumps kept in each place. If the database is not running it skips.
+- **Deleted content leaves every backup within 90 days** (G1 decision 7, GRE-887). A delete removes the content from
+  the engine and leaves a tombstone in GSAM, but older dumps still hold it until they expire. `backup` therefore
+  removes any dump (and its `.sha256`) whose name stamp is older than `GS_MEMORY_BACKUP_MAX_AGE_DAYS` (default 90,
+  values above 90 are capped at 90), in both places, whatever `GS_MEMORY_BACKUP_KEEP` says. It also does this on a
+  night the database is down, so old dumps cannot outlive the limit because no new dump was made. In practice the
+  14-dump rule removes them after about 14 days; 90 days is the hard ceiling.
+- GSAM's own database backups also hold memory records until a delete clears them. They expire after
+  `GSAM_DB_BACKUP_RETENTION_DAYS` (default 7). While memory is on, this must stay at 90 or less.
+- Any other copy (the future off-disk copy, a manual export) must follow the same 90-day rule before G4.
 - By hand: `sudo -u gsmemory .../gs-memory.sh backup`
 - Restore test (throwaway cluster on a free port, removed after): `sudo -u gsmemory .../gs-memory.sh restore-test [dump]`
 - Real restore: stop the engine, `dropdb`/`createdb hindsight -O hindsight` over the socket, `pg_restore --no-owner --role=hindsight`, start.
