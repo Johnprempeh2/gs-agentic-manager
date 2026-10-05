@@ -2,6 +2,7 @@ import { and, eq, inArray, like, ne } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  heartbeatRuns,
   memoryOperations,
   memoryRecords,
   memoryScopes,
@@ -42,9 +43,16 @@ import {
 } from "./engine.js";
 import { classifyEngineError, nextAttemptAt } from "./ingest-outbox.js";
 import { enqueueMemoryIngest, settleDirectMemoryIngest } from "./ingest-outbox-db.js";
+import {
+  detectSensitiveContent,
+  MEMORY_SENSITIVE_CONTENT_CODE,
+  MemorySensitiveContentError,
+} from "./sensitive-content.js";
 
 /** Slack after the direct call's timeout before the drain may take the entry. */
 const DIRECT_RETAIN_GRACE_MS = 5_000;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Who is calling the gateway. Built from the authenticated actor only; nothing
@@ -194,6 +202,39 @@ export function memoryGatewayService(
       recordId: extra.recordId ?? null,
       detail: extra.detail ?? null,
     });
+  }
+
+  /**
+   * An agent may name only its own running run (GRE-867). Anything else is
+   * refused and logged without the claimed run, so another agent's run never
+   * appears as the run of this call.
+   */
+  async function assertLiveRun(caller: MemoryCaller, operation: string, claimedRunId: string) {
+    if (caller.actorType !== "agent" || !caller.agentId) return;
+    const live = UUID_RE.test(claimedRunId)
+      ? await db
+          .select({ id: heartbeatRuns.id })
+          .from(heartbeatRuns)
+          .where(
+            and(
+              eq(heartbeatRuns.id, claimedRunId),
+              eq(heartbeatRuns.companyId, caller.companyId),
+              eq(heartbeatRuns.agentId, caller.agentId),
+              eq(heartbeatRuns.status, "running"),
+            ),
+          )
+          .then((rows) => rows[0] ?? null)
+      : null;
+    if (live) return;
+    await logOperation({ ...caller, runId: null }, operation, "denied", {
+      detail: { reason: "run_not_live", claimedRunId: claimedRunId.slice(0, 100) },
+    });
+    throw forbidden("X-Paperclip-Run-Id is not a running run of this agent");
+  }
+
+  /** A refused write still leaves a trace under the real caller (GRE-651, GRE-867). Field names only, never values. */
+  async function recordRejectedContribute(caller: MemoryCaller, rejected: { unrecognizedFields: string[]; invalidFields: string[] }) {
+    await logOperation(caller, "contribute", "denied", { detail: { reason: "invalid_body", ...rejected } });
   }
 
   async function getSettings(companyId: string): Promise<MemorySettings> {
@@ -390,6 +431,20 @@ export function memoryGatewayService(
     }
     if (input.effectiveFrom && input.effectiveTo && input.effectiveTo < input.effectiveFrom) {
       throw badRequest("effectiveTo must not be before effectiveFrom");
+    }
+    // Checked before anything is written, so a refused value is in no table
+    // here or in the engine (GRE-868). The audit row names pattern types only.
+    const matchedTypes = detectSensitiveContent(
+      [input.title, input.content, input.sourceId, ...input.entities, ...input.topics, input.evidence ? JSON.stringify(input.evidence) : null]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    if (matchedTypes.length > 0) {
+      await logOperation(caller, "contribute", "denied", {
+        scopeIds: [scope.id],
+        detail: { reason: MEMORY_SENSITIVE_CONTENT_CODE, matchedTypes },
+      });
+      throw new MemorySensitiveContentError(matchedTypes);
     }
 
     // The record and its outbox entry are written together, so a record never
@@ -605,6 +660,8 @@ export function memoryGatewayService(
     getSettings,
     updateSettings,
     assertEnabled,
+    assertLiveRun,
+    recordRejectedContribute,
     listScopes,
     createScope,
     contribute,

@@ -61,25 +61,31 @@ describe("Hindsight memory engine adapter", () => {
     // The bank is configured once for its mode, then reused.
     expect(calls.map((call) => `${call.init.method} ${new URL(call.url).pathname}`)).toEqual([
       "PUT /v1/default/banks/gs-c1-main",
+      "PATCH /v1/default/banks/gs-c1-main/config",
       "POST /v1/default/banks/gs-c1-main/memories",
       "POST /v1/default/banks/gs-c1-main/memories",
       "POST /v1/default/banks/gs-c1-main/memories/recall",
     ]);
     expect(JSON.parse(calls[0].init.body as string)).toEqual({ retain_extraction_mode: "chunks", enable_observations: false });
+    // Memory Defense blocks secret patterns on every gateway bank (GRE-868).
+    expect(calls[1].claims).toMatchObject({ op: "configure", read: [], write: [] });
+    expect(JSON.parse(calls[1].init.body as string)).toEqual({
+      updates: { memory_defense: { enabled: true, rules: [{ on: "sensitive_data", action: "block" }] } },
+    });
     for (const call of calls) {
       expect((call.init.headers as Record<string, string>).Authorization).toBe("Bearer k");
       expect(call.claims.bank).toBe("gs-c1-main");
       expect((call.claims.exp as number) - (call.claims.iat as number)).toBe(60);
     }
-    expect(calls[1].claims).toMatchObject({ op: "retain", write: doc.tags, read: [], doc: doc.documentId });
-    expect(JSON.parse(calls[1].init.body as string).items[0]).toMatchObject({
+    expect(calls[2].claims).toMatchObject({ op: "retain", write: doc.tags, read: [], doc: doc.documentId });
+    expect(JSON.parse(calls[2].init.body as string).items[0]).toMatchObject({
       document_id: doc.documentId,
       tags: doc.tags,
       entities: [{ text: "Kestrel Works" }],
       resolve_entities: false,
     });
-    expect(calls[3].claims).toMatchObject({ op: "recall", read: ["scope:org", "scope:agent:a1"], write: [] });
-    expect(JSON.parse(calls[3].init.body as string)).toMatchObject({ tags_match: "any_strict" });
+    expect(calls[4].claims).toMatchObject({ op: "recall", read: ["scope:org", "scope:agent:a1"], write: [] });
+    expect(JSON.parse(calls[4].init.body as string)).toMatchObject({ tags_match: "any_strict" });
     expect(hits).toEqual([{ documentId: doc.documentId, text: "hit", score: 0.7 }]);
   });
 
@@ -108,6 +114,20 @@ describe("Hindsight memory engine adapter", () => {
         MemoryEngineUnavailableError,
       );
     }
+  });
+
+  it("treats a bank the engine has not made yet as empty on recall (GRE-867)", async () => {
+    // Banks are made on the first retain; until then the engine answers 404.
+    const { fetchImpl } = recordingFetch(() => json({ detail: "Bank 'gs-c1-main' not found" }, 404));
+    const engine = createHindsightMemoryEngine({ baseUrl: "http://e", apiKey: "k", assertionSecret: SECRET, fetchImpl });
+    await expect(engine.recall({ bankId: "gs-c1-main", query: "q", tags: ["scope:org"], limit: 1 })).resolves.toEqual([]);
+
+    // Any other 404 still means the engine is not answering as expected.
+    const other = recordingFetch(() => json({ detail: "Not Found" }, 404));
+    const broken = createHindsightMemoryEngine({ baseUrl: "http://e", apiKey: "k", assertionSecret: SECRET, fetchImpl: other.fetchImpl });
+    await expect(broken.recall({ bankId: "gs-c1-main", query: "q", tags: ["scope:org"], limit: 1 })).rejects.toBeInstanceOf(
+      MemoryEngineUnavailableError,
+    );
   });
 
   it("keeps the raw engine status and detail so the outbox can classify the failure", async () => {
