@@ -41,7 +41,15 @@ to it.
    commands (`dev-runner`, `dev:once`, `tsx`, `node`, `postgres`, `pnpm`) under
    the same user, so the pattern matches live too. On 4 Oct 2026
    `pkill -f "dev-runner.ts dev"` from an agent sandbox stopped live for 8.5
-   hours.
+   hours. Anything your run leaves running (a sandbox and its database, a
+   Storybook or other dev server started in the background) is now stopped
+   when the run ends: GS Agentic Manager stops every process that still
+   carries your run's `GSAM_RUN_ID` (SIGTERM, then SIGKILL after 5 seconds),
+   and a sweep every five minutes catches what a restart missed. That is a
+   safety net, not the way to finish: it gives no clean shutdown, so still stop
+   your sandbox yourself, and do not leave a server running for a later run.
+   On 5 Oct 2026 two Storybook servers from finished runs had run for 15 and
+   22 hours, 2.2 and 2.5 GB each, in worktrees that were already deleted.
 4. **Commit.** Small commits with plain-English messages that say what changed
    and why. Stage files by name; never `git add -A` or `git add .`.
 5. **Pull request.** `git push -u origin <branch>`, then

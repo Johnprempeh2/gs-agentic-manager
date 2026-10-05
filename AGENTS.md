@@ -81,6 +81,13 @@ hours. On the Greatstone machine, follow `doc/GREATSTONE-WAY-OF-WORKING.md`:
 start a sandbox with `pnpm dev:once --data-dir ./tmp/sandbox` and stop it with
 `pnpm dev:stop --data-dir ./tmp/sandbox`.
 
+What a local run leaves running is now stopped when the run ends (on Linux):
+every process that still carries the run's `GSAM_RUN_ID` gets SIGTERM, then
+SIGKILL after 5 seconds, and a sweep every five minutes catches what a restart
+missed (see "Leftover Run Processes" in `doc/DEVELOPING.md`). It is a safety
+net with no clean shutdown, so still stop your sandbox yourself, and do not
+leave a server running for a later run.
+
 ## 5. Core Engineering Rules
 
 1. Keep changes company-scoped.
