@@ -2653,6 +2653,45 @@ describe("environment routes", () => {
     expect(mockEnvironmentService.getLeaseById).toHaveBeenCalledWith("lease-1");
   });
 
+  it("lets a board user read a lease of their own company", async () => {
+    mockEnvironmentService.getLeaseById.mockResolvedValue({
+      id: "lease-1",
+      companyId: "company-1",
+      provider: "ssh",
+    });
+    const app = createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      companyIds: ["company-1"],
+    });
+
+    const res = await request(app).get("/api/environment-leases/lease-1");
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe("lease-1");
+  });
+
+  it("refuses a board user reading another company's lease (GRE-754)", async () => {
+    mockEnvironmentService.getLeaseById.mockResolvedValue({
+      id: "lease-1",
+      companyId: "company-1",
+      provider: "ssh",
+      providerLeaseId: "ssh://ssh-user@example.test:22/workspace",
+    });
+    const app = createApp({
+      type: "board",
+      userId: "user-2",
+      source: "session",
+      companyIds: ["company-2"],
+    });
+
+    const res = await request(app).get("/api/environment-leases/lease-1");
+
+    expect(res.status).toBe(403);
+    expect(res.body.providerLeaseId).toBeUndefined();
+  });
+
   it("rejects agent access regardless of company when environment management is instance-scoped", async () => {
     mockEnvironmentService.list.mockResolvedValue([]);
     const app = createApp({
