@@ -199,7 +199,9 @@ function ActivityItem({ item, agentNames }: { item: MemoryActivityItem; agentNam
           <ul className="space-y-0.5 text-xs">
             {steps.map((event) => (
               <li key={event.id}>
-                {EVENT_LABEL[event.action]} by {actorLabel(stepActor(event.agentId, event.userId))}
+                {event.action === "conflict_flagged"
+                  ? "Possible conflict found by the conflict check"
+                  : `${EVENT_LABEL[event.action]} by ${actorLabel(stepActor(event.agentId, event.userId))}`}
                 <span className="text-muted-foreground"> · {formatDateTime(event.createdAt)}</span>
                 {event.relatedRecordId && (event.action === "supersede" || event.action === "superseded_by") ? (
                   <>
@@ -345,6 +347,7 @@ export function MemoryActivity() {
         agents={(agents.data ?? []).map((agent) => ({ id: agent.id, name: agent.name }))}
         scopes={scopes.data ?? []}
       >
+        <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           From
           <Input type="date" className="h-9 w-auto" value={params.get("from") ?? ""} onChange={(event) => updateParams({ from: event.target.value || undefined })} />
@@ -353,6 +356,7 @@ export function MemoryActivity() {
           To
           <Input type="date" className="h-9 w-auto" value={params.get("to") ?? ""} onChange={(event) => updateParams({ to: event.target.value || undefined })} />
         </label>
+        </div>
       </MemoryFilterBar>
 
       {counts.data ? (

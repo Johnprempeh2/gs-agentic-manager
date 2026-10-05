@@ -16,10 +16,10 @@ export interface LayoutResult {
 }
 
 const ITERATIONS = 240;
-const REPULSION = 5200;
-const SPRING_LENGTH = 110;
+const REPULSION = 14000;
+const SPRING_LENGTH = 170;
 const SPRING_STRENGTH = 0.04;
-const CENTER_PULL = 0.012;
+const CENTER_PULL = 0.008;
 const PADDING = 48;
 
 export function layoutMemoryGraph(nodeIds: string[], links: Array<{ fromId: string; toId: string }>): LayoutResult {

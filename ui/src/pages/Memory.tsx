@@ -188,6 +188,8 @@ export function Memory() {
               onSelectNode={selectNode}
               onSelectEdge={selectEdge}
             />
+          </div>
+          <div className="min-w-0 space-y-4 self-start lg:sticky lg:top-0 lg:max-h-(--sz-memory-list-max) lg:overflow-y-auto">
             {selectedNodeId ? (
               <MemoryNodeDetail
                 key={selectedNodeId}
@@ -208,22 +210,19 @@ export function Memory() {
                 onClose={clearSelection}
               />
             ) : null}
+            <section className="overflow-hidden rounded-lg border border-border bg-card" aria-label="Memory list">
+              <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+                {nodes.length} {nodes.length === 1 ? "entry" : "entries"}, {edges.length} {edges.length === 1 ? "connection" : "connections"}
+                {graph.data?.truncated ? <span className="block">Showing the first {nodes.length}. Narrow the filters to see the rest.</span> : null}
+              </div>
+              <MemoryRecordList
+                nodes={nodes}
+                edges={edges}
+                selectedNodeId={selectedNode?.id ?? null}
+                onSelectNode={selectNode}
+              />
+            </section>
           </div>
-          <section
-            className="min-w-0 self-start overflow-hidden rounded-lg border border-border bg-card lg:sticky lg:top-0 lg:max-h-(--sz-memory-list-max) lg:overflow-y-auto"
-            aria-label="Memory list"
-          >
-            <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
-              {nodes.length} {nodes.length === 1 ? "entry" : "entries"}, {edges.length} {edges.length === 1 ? "connection" : "connections"}
-              {graph.data?.truncated ? <span className="block">Showing the first {nodes.length}. Narrow the filters to see the rest.</span> : null}
-            </div>
-            <MemoryRecordList
-              nodes={nodes}
-              edges={edges}
-              selectedNodeId={selectedNode?.id ?? null}
-              onSelectNode={selectNode}
-            />
-          </section>
         </div>
       )}
     </div>

@@ -6,7 +6,12 @@ import { EDGE_KIND_LABEL, edgeLabel, memoryStatusMeta } from "./memoryLabels";
 import { nodeHeading } from "./MemoryRecordList";
 
 const NODE_RADIUS = 11;
-const LABEL_MAX = 26;
+const LABEL_MAX = 22;
+/** The smallest drawing area, so a small graph is not scaled up into giant labels. */
+const MIN_WIDTH = 760;
+const MIN_HEIGHT = 420;
+/** Room for half a label beyond the outermost nodes. */
+const LABEL_GUTTER = 80;
 
 /** Shape and fill carry the state, not hue alone: dashed = unreviewed, hollow grey = superseded. */
 const nodeStyle: Record<MemoryRecordStatus, string> = {
@@ -57,18 +62,22 @@ export function MemoryGraphCanvas({ nodes, edges, selectedNodeId, selectedEdgeId
     return ids;
   }, [edges, selectedNodeId, selectedEdgeId]);
   const showAllLabels = nodes.length <= 40;
-  const width = Math.max(layout.width, 320);
-  const height = Math.max(layout.height, 240);
+  const width = Math.max(layout.width + LABEL_GUTTER * 2, MIN_WIDTH);
+  const height = Math.max(layout.height + 24, MIN_HEIGHT);
+  const offsetX = (width - layout.width) / 2;
+  const offsetY = (height - layout.height) / 2;
 
   return (
     <figure className="space-y-2 rounded-lg border border-border bg-card p-2">
+      <div className="overflow-x-auto">
       <svg
         role="group"
         aria-label="Memory graph. Use Tab to move between records and connections; Enter selects."
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="xMidYMid meet"
-        className="h-(--sz-memory-graph-height) w-full"
+        className="h-(--sz-memory-graph-height) w-full min-w-(--sz-memory-graph-min-width)"
       >
+        <g transform={`translate(${offsetX} ${offsetY})`}>
         <defs>
           <marker id={markerId} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" className="fill-muted-foreground" />
@@ -149,7 +158,13 @@ export function MemoryGraphCanvas({ nodes, edges, selectedNodeId, selectedEdgeId
                   </text>
                 ) : null}
                 {showLabel ? (
-                  <text y={NODE_RADIUS + 14} textAnchor="middle" className="fill-foreground text-xs" aria-hidden="true">
+                  <text
+                    y={NODE_RADIUS + 14}
+                    textAnchor="middle"
+                    strokeWidth={4}
+                    className="fill-foreground stroke-card text-xs [paint-order:stroke]"
+                    aria-hidden="true"
+                  >
                     {shortLabel(node)}
                   </text>
                 ) : null}
@@ -157,7 +172,9 @@ export function MemoryGraphCanvas({ nodes, edges, selectedNodeId, selectedEdgeId
             );
           })}
         </g>
+        </g>
       </svg>
+      </div>
       <MemoryGraphLegend />
     </figure>
   );
