@@ -138,6 +138,95 @@ describeEmbeddedPostgres("company skill import with stripScripts (GRE-757)", () 
     expect((await db.select().from(companySkills)).some((row) => row.slug === "impeccable")).toBe(false);
   });
 
+  describe("scripts outside scripts/ (GRE-776)", () => {
+    // Windows launchers and extensionless executables anywhere in the skill,
+    // next to markdown and text files that must stay untouched.
+    const TREE: Array<{ path: string; mode?: string; body: string }> = [
+      { path: "tool/SKILL.md", body: "---\nname: tool\ndescription: Tool skill\n---\n# Tool\n" },
+      { path: "tool/tool.cmd", body: "@echo off\r\n" },
+      { path: "tool/bin/run.ps1", body: "Write-Host hi\n" },
+      { path: "tool/references/setup.bat", body: "@echo off\r\n" },
+      { path: "tool/bin/launch", body: "#!/usr/bin/env node\nconsole.log(1)\n" },
+      { path: "tool/assets/helper", body: "﻿#!/bin/sh\necho hi\n" },
+      { path: "tool/bin/exec-bit", mode: "100755", body: "binary-ish\n" },
+      { path: "tool/LICENSE", body: "MIT License\n" },
+      { path: "tool/notes.txt", body: "#!/bin/sh but this is plain text\n" },
+      { path: "tool/references/guide.md", body: "#!/bin/sh\n# Guide\n" },
+    ];
+    const EXPECTED_SCRIPTS = [
+      "assets/helper",
+      "bin/exec-bit",
+      "bin/launch",
+      "bin/run.ps1",
+      "references/setup.bat",
+      "tool.cmd",
+    ];
+    const EXPECTED_KEPT = ["LICENSE", "notes.txt", "references/guide.md", "SKILL.md"];
+
+    function stubToolRepo() {
+      vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/commits/")) return Response.json({ sha: "c".repeat(40) });
+        if (url.includes("/git/trees/")) {
+          return Response.json({ tree: TREE.map((entry) => ({ path: entry.path, type: "blob", mode: entry.mode ?? "100644" })) });
+        }
+        const file = TREE.find((entry) => url.endsWith(`/${entry.path}`));
+        if (file) return new Response(file.body);
+        return Response.json({ default_branch: "main" });
+      }));
+    }
+
+    it("refuses .cmd, .ps1, .bat and shebang files without stripScripts", async () => {
+      const companyId = await createCompany();
+      stubToolRepo();
+      const svc = companySkillService(db);
+
+      const error = await svc.importFromSource(companyId, "https://github.com/acme/tool").catch((err: unknown) => err);
+      expect(error).toMatchObject({ status: 422, details: { reason: "scripts_executables_blocked" } });
+      const scriptPaths = [...(error as { details: { scriptPaths: string[] } }).details.scriptPaths].sort();
+      expect(scriptPaths).toEqual(EXPECTED_SCRIPTS);
+    });
+
+    it("strips and lists them with stripScripts, keeping markdown and text files", async () => {
+      const companyId = await createCompany();
+      stubToolRepo();
+      const svc = companySkillService(db);
+
+      const result = await svc.importFromSource(companyId, "https://github.com/acme/tool", { stripScripts: true });
+
+      const skill = result.imported[0]!;
+      expect(result.strippedFiles).toEqual([{ skillKey: skill.key, slug: "tool", paths: EXPECTED_SCRIPTS }]);
+      expect(skill.fileInventory.map((entry) => entry.path).sort((a, b) => a.localeCompare(b)))
+        .toEqual([...EXPECTED_KEPT].sort((a, b) => a.localeCompare(b)));
+      expect(skill.fileInventory.some((entry) => entry.kind === "script")).toBe(false);
+    });
+
+    it("classifies the same files as scripts in a local skill folder", async () => {
+      const companyId = await createCompany();
+      const projectId = randomUUID();
+      const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-strip-local-"));
+      cleanupDirs.add(workspace);
+      for (const entry of TREE) {
+        const target = path.join(workspace, entry.path);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.writeFile(target, entry.body, "utf8");
+      }
+      await db.insert(projects).values({ id: projectId, companyId, name: "Local project" });
+      await db.insert(projectWorkspaces).values({ companyId, projectId, name: "Primary", cwd: workspace, isPrimary: true });
+      const svc = companySkillService(db);
+
+      const result = await svc.importFromSource(companyId, workspace);
+
+      const kinds = Object.fromEntries(result.imported[0]!.fileInventory.map((entry) => [entry.path, entry.kind]));
+      // No exec bit on disk here, so bin/exec-bit (no shebang) stays non-script locally.
+      for (const script of EXPECTED_SCRIPTS.filter((entry) => entry !== "bin/exec-bit")) {
+        expect(kinds[script], script).toBe("script");
+      }
+      expect(kinds["bin/exec-bit"]).not.toBe("script");
+      for (const kept of EXPECTED_KEPT) expect(kinds[kept], kept).not.toBe("script");
+    });
+  });
+
   it("still refuses local paths outside approved roots, including traversal, even with stripScripts", async () => {
     const companyId = await createCompany();
     const projectId = randomUUID();

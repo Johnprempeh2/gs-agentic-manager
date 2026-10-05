@@ -712,26 +712,61 @@ function deriveCanonicalSkillKey(
   return `company/${companyId}/${slug}`;
 }
 
-function classifyInventoryKind(relativePath: string): CompanySkillFileInventoryEntry["kind"] {
+const SCRIPT_FILE_EXTENSIONS = new Set([
+  ".sh",
+  ".bash",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".py",
+  ".rb",
+  ".cmd",
+  ".bat",
+  ".ps1",
+]);
+
+// A file with no extension can only be judged by its content: a leading "#!"
+// makes it an executable script (e.g. a launcher like `bin/tool`).
+function isExtensionlessFile(relativePath: string) {
+  return path.posix.extname(path.posix.basename(normalizePortablePath(relativePath))) === "";
+}
+
+function startsWithShebang(content: string | Buffer | null | undefined) {
+  if (content == null) return false;
+  if (typeof content === "string") return content.replace(/^﻿/, "").startsWith("#!");
+  const offset = content.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])) ? 3 : 0;
+  return content[offset] === 0x23 && content[offset + 1] === 0x21;
+}
+
+async function readLocalFileHead(absolutePath: string): Promise<Buffer | null> {
+  const handle = await fs.open(absolutePath, "r").catch(() => null);
+  if (!handle) return null;
+  try {
+    const buffer = Buffer.alloc(8);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+// Script detection runs before the references/ and assets/ folders so an
+// executable is a script wherever it sits in the skill. `content` (or its first
+// bytes) is only needed for files with no extension.
+function classifyInventoryKind(
+  relativePath: string,
+  content?: string | Buffer | null,
+): CompanySkillFileInventoryEntry["kind"] {
   const normalized = normalizePortablePath(relativePath).toLowerCase();
   if (normalized.endsWith("/skill.md") || normalized === "skill.md") return "skill";
-  if (normalized.startsWith("references/")) return "reference";
   if (normalized.startsWith("scripts/")) return "script";
+  const fileName = path.posix.basename(normalized);
+  if (SCRIPT_FILE_EXTENSIONS.has(path.posix.extname(fileName))) return "script";
+  if (isExtensionlessFile(normalized) && startsWithShebang(content)) return "script";
+  if (normalized.startsWith("references/")) return "reference";
   if (normalized.startsWith("assets/")) return "asset";
   if (normalized.endsWith(".md")) return "markdown";
-  const fileName = path.posix.basename(normalized);
-  if (
-    fileName.endsWith(".sh")
-    || fileName.endsWith(".js")
-    || fileName.endsWith(".mjs")
-    || fileName.endsWith(".cjs")
-    || fileName.endsWith(".ts")
-    || fileName.endsWith(".py")
-    || fileName.endsWith(".rb")
-    || fileName.endsWith(".bash")
-  ) {
-    return "script";
-  }
   if (
     fileName.endsWith(".png")
     || fileName.endsWith(".jpg")
@@ -1105,7 +1140,7 @@ function readInlineSkillImports(companyId: string, files: Record<string, string>
         const relative = entry === skillPath ? "SKILL.md" : entry.slice(skillDir.length + 1);
         return {
           path: normalizePortablePath(relative),
-          kind: classifyInventoryKind(relative),
+          kind: classifyInventoryKind(relative, normalizedFiles[entry]),
         };
       })
       .sort((left, right) => left.path.localeCompare(right.path));
@@ -1280,12 +1315,14 @@ async function collectLocalSkillInventory(
     }
   }
 
-  return Array.from(allFiles)
-    .map((relativePath) => ({
-      path: normalizePortablePath(relativePath),
-      kind: classifyInventoryKind(relativePath),
-    }))
-    .sort((left, right) => left.path.localeCompare(right.path));
+  const inventory = await Promise.all(Array.from(allFiles).map(async (relativePath) => ({
+    path: normalizePortablePath(relativePath),
+    kind: classifyInventoryKind(
+      relativePath,
+      isExtensionlessFile(relativePath) ? await readLocalFileHead(path.join(skillDir, relativePath)) : null,
+    ),
+  })));
+  return inventory.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function inventoryEntriesEqual(
@@ -1614,15 +1651,18 @@ async function readLocalSkillImports(companyId: string, sourcePath: string): Pro
   const imports: ImportedSkill[] = [];
   for (const skillPath of skillPaths) {
     const skillDir = path.posix.dirname(skillPath);
-    const inventory = allFiles
+    const inventory = (await Promise.all(allFiles
       .filter((entry) => entry === skillPath || entry.startsWith(`${skillDir}/`))
-      .map((entry) => {
+      .map(async (entry) => {
         const relative = entry === skillPath ? "SKILL.md" : entry.slice(skillDir.length + 1);
         return {
           path: normalizePortablePath(relative),
-          kind: classifyInventoryKind(relative),
+          kind: classifyInventoryKind(
+            relative,
+            isExtensionlessFile(relative) ? await readLocalFileHead(path.join(root, entry)) : null,
+          ),
         };
-      })
+      })))
       .sort((left, right) => left.path.localeCompare(right.path));
     const imported = await readLocalSkillImportFromDirectory(companyId, path.join(root, skillDir));
     imported.fileInventory = inventory;
@@ -1646,15 +1686,15 @@ async function readUrlSkillImports(
     const apiBase = gitHubApiBase(parsed.hostname);
     const { pinnedRef, trackingRef } = await resolveGitHubPinnedRef(parsed);
     let ref = pinnedRef;
-    const tree = await fetchJson<{ tree?: Array<{ path: string; type: string }> }>(
+    const tree = await fetchJson<{ tree?: Array<{ path: string; type: string; mode?: string }> }>(
       `${apiBase}/repos/${parsed.owner}/${parsed.repo}/git/trees/${ref}?recursive=1`,
     ).catch(() => {
       throw unprocessable(`Failed to read GitHub tree for ${url}`);
     });
-    const allPaths = (tree.tree ?? [])
-      .filter((entry) => entry.type === "blob")
-      .map((entry) => entry.path)
-      .filter((entry): entry is string => typeof entry === "string");
+    const blobs = (tree.tree ?? [])
+      .filter((entry) => entry.type === "blob" && typeof entry.path === "string");
+    const allPaths = blobs.map((entry) => entry.path);
+    const executablePaths = new Set(blobs.filter((entry) => entry.mode === "100755").map((entry) => entry.path));
     const basePrefix = parsed.basePath ? `${parsed.basePath.replace(/^\/+|\/+$/g, "")}/` : "";
     const scopedPaths = basePrefix
       ? allPaths.filter((entry) => entry.startsWith(basePrefix))
@@ -1698,12 +1738,21 @@ async function readUrlSkillImports(
           slug,
         ),
       };
-      const inventory = filteredPaths
+      // Files with no extension are judged by content: the executable bit in
+      // the tree, else a "#!" at the start of the raw file.
+      const inventory = (await Promise.all(filteredPaths
         .filter((entry) => entry === relativeSkillPath || entry.startsWith(`${skillDir}/`))
-        .map((entry) => ({
-          path: entry === relativeSkillPath ? "SKILL.md" : entry.slice(skillDir.length + 1),
-          kind: classifyInventoryKind(entry === relativeSkillPath ? "SKILL.md" : entry.slice(skillDir.length + 1)),
-        }))
+        .map(async (entry) => {
+          const relative = entry === relativeSkillPath ? "SKILL.md" : entry.slice(skillDir.length + 1);
+          let content: string | null = null;
+          if (relative !== "SKILL.md" && isExtensionlessFile(relative)) {
+            const repoPath = basePrefix ? `${basePrefix}${entry}` : entry;
+            content = executablePaths.has(repoPath)
+              ? "#!"
+              : await fetchText(resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, repoPath));
+          }
+          return { path: relative, kind: classifyInventoryKind(relative, content) };
+        })))
         .sort((left, right) => left.path.localeCompare(right.path));
       skills.push({
         key: deriveCanonicalSkillKey(companyId, {
@@ -2510,7 +2559,7 @@ async function collectSkillFileBytes(skillDir: string): Promise<{
         path: relativePath,
         bytes,
         sizeBytes: lstat.size,
-        kind: classifyInventoryKind(relativePath),
+        kind: classifyInventoryKind(relativePath, bytes),
       });
     }
   }
