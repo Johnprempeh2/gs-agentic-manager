@@ -156,7 +156,7 @@ export function phase3Views({ on, records, byName, events, relationships, engine
 
   function activityItems(actor, f, { ignoreGrants = false, skipSuperseded = false } = {}) {
     return visibleFor(actor, { ignoreGrants })
-      .filter((r) => (!f.agent || r.contributor === f.agent) && (!f.from || day(r.at) >= f.from) && (!f.to || day(r.at) <= f.to))
+      .filter((r) => (!f.agent || r.contributor === f.agent) && (!f.scope || r.scope === f.scope) && (!f.from || day(r.at) >= f.from) && (!f.to || day(r.at) <= f.to))
       .filter((r) => !skipSuperseded || r.status !== "superseded")
       .sort((a, b) => String(a.at).localeCompare(String(b.at)))
       .map((r) => ({

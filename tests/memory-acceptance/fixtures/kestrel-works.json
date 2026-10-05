@@ -2,6 +2,8 @@
   "$comment": "Synthetic only. Kestrel Works world from the GRE-651 threat model, section 5.1. No client data, no real people. Load into sandbox instances only.",
   "synthetic": true,
   "company": { "id": "co-kestrel", "name": "Kestrel Works" },
+  "$defaultReadComment": "Every company member reads organization memory without a grant (gateway service.ts canRead, phase 1).",
+  "defaultRead": ["org"],
   "scopes": [
     { "id": "org", "kind": "organization", "bank": "company", "sensitive": false },
     { "id": "pj-alder-site", "kind": "project", "bank": "company", "sensitive": false, "name": "Alder website rebuild" },
@@ -84,7 +86,7 @@
     {
       "id": "ag-quill-syn",
       "role": "contributor",
-      "$comment": "Added for GRE-866. No memory grants: every phase 3 view must answer it with a clean empty result, not an error.",
+      "$comment": "Added for GRE-866. No memory grants, so it reads only the organization scope (defaultRead). Its client and project views must be clean empty results, not errors.",
       "grants": [],
       "runs": [{ "id": "run-quill-live", "live": true }]
     },

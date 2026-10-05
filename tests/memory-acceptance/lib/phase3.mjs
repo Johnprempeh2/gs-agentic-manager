@@ -26,6 +26,7 @@
 // maps the gateway's routes and field names onto it.
 
 import { check, client } from "./checks.mjs";
+import { grantedScopes } from "./fixtures.mjs";
 import { RouteMissing } from "./phase2.mjs";
 
 const PHASE3_STATUSES = ["unreviewed", "approved", "disputed", "superseded"];
@@ -87,8 +88,7 @@ function d9(ctx, id) {
 }
 
 function readScopes(ctx, identity) {
-  const ident = ctx.world.identities.find((i) => i.id === identity);
-  return ident.grants.filter((g) => g.rights.includes("read")).map((g) => g.scope);
+  return grantedScopes(ctx.world, identity, "read");
 }
 
 /** Every agent and person that contributes in D9. */
@@ -613,21 +613,21 @@ export const PHASE3_TESTS = [
     id: "MT-52",
     phase: 3,
     threat: "8.4.3 empty and restricted views",
-    title: "No-grant callers and filters with no match get a clean empty 200 in every view",
+    title: "A caller with no grants (org only) and filters with no match get a clean empty 200 in every view",
     needs: ["graph", "memoryList", "activity", "counts"],
     async run(target, ctx) {
       await ensureD9(target, ctx);
       const checks = [];
-      const views = async (v, f) => [
-        ["graph", await v.graph(f), (res) => nodesOf(res).length + edgesOf(res).length],
-        ["list", await v.list(f), (res) => itemsOf(res).length],
-        ["activity", await v.activity(f.q ? {} : f), (res) => itemsOf(res).length],
-        ["counts", await v.counts({ from: "2026-09-28", to: "2026-10-04" }), (res) => (res.body?.agents ?? []).reduce((n, a) => n + Number(a.contributions ?? a.count ?? 0), 0)],
-      ];
-      for (const [what, res, size] of await views(p3(target, "ag-quill-syn"), {})) {
-        check(checks, res.status === 200, `no-grant caller: ${what} answers 200 (got ${res.status})`);
-        check(checks, size(res) === 0, `no-grant caller: ${what} is empty (size ${size(res)})`);
+      // Quill has no grants: it reads org (every member does) and nothing else.
+      const quill = p3(target, "ag-quill-syn");
+      for (const scope of ["cl-alder", "cl-brook", "pj-alder-site", "pj-kestrel-acq"]) {
+        for (const [what, res] of [["graph", await quill.graph({ scope })], ["list", await quill.list({ scope })], ["activity", await quill.activity({ scope })]]) {
+          const n = (res.body?.nodes ?? res.body?.items ?? []).length + (res.body?.edges ?? []).length;
+          check(checks, res.status === 200 && n === 0, `no-grant caller, ${scope} ${what}: empty 200 (got ${res.status}, ${n})`);
+        }
       }
+      const own = await quill.graph();
+      check(checks, own.status === 200 && nodesOf(own).every((n) => n.scope === "org"), `no-grant caller: the unfiltered graph holds org records only (${JSON.stringify([...new Set(nodesOf(own).map((n) => n.scope))])})`);
       const john = p3(target, "hu-john-syn");
       for (const [f, what] of [
         [{ q: "no-such-term-zz9" }, "search with no match"],

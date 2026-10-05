@@ -229,6 +229,9 @@ The UI list itself is covered by GRE-865's component tests. The gateway takes
 date. Ground truth comes from the sandbox database: `memory_relationships`,
 supersession links, open `memory_conflicts` and `memory_extracted_facts`. In
 `chunks` retain mode the engine extracts nothing, so MT-47 is inconclusive.
+Phase 3 never reads from the engine, so `--phase 3` can run without one: set
+`"requireEngine": false` in the config (contributions then wait in the outbox).
+Phases 1 and 2 still need the engine.
 
 ## Live config
 

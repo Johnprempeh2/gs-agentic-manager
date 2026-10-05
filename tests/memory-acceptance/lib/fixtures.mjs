@@ -27,9 +27,11 @@ export function scope(world, id) {
 }
 
 export function grantedScopes(world, identityId, right) {
-  return identity(world, identityId)
+  const granted = identity(world, identityId)
     .grants.filter((g) => g.rights.includes(right))
     .map((g) => g.scope);
+  // Every member reads organization memory by default (gateway service.ts canRead).
+  return right === "read" ? [...new Set([...granted, ...(world.defaultRead ?? [])])] : granted;
 }
 
 // D7 values are stored in parts so the committed file never holds a token-shaped string.

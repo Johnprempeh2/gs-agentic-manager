@@ -426,7 +426,8 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
           },
         });
         if (res.status >= 300) throw new Error(`Seeding ${r.id} failed: ${res.status} ${JSON.stringify(res.body)}`);
-        if (res.body?.engineAvailable !== true) throw new Error(`Seeding ${r.id}: gateway could not reach the engine (${res.body?.message})`);
+        // `requireEngine: false` is for phase 3 runs only: the graph reads GSAM's stores, never the engine.
+        if (res.body?.engineAvailable !== true && cfg.requireEngine !== false) throw new Error(`Seeding ${r.id}: gateway could not reach the engine (${res.body?.message})`);
         remember(res.body.record.id, r.id);
       }
     },

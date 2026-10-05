@@ -175,8 +175,8 @@
       "hiddenStrings": ["Alder Bakery", "menu page", "PLOVER", "KINGFISHER", "HERON", "allergen"]
     },
     "ag-quill-syn": {
-      "hiddenRecords": ["R-901", "R-902", "R-903", "R-904", "R-905", "R-906", "R-907", "R-908", "R-909", "R-910", "R-911"],
-      "hiddenStrings": ["Alder", "Brookfield", "WAGTAIL", "PLOVER", "KINGFISHER", "supplier sheet", "status notes"]
+      "hiddenRecords": ["R-901", "R-902", "R-903", "R-904", "R-905", "R-906", "R-908", "R-909", "R-301", "R-302", "R-303"],
+      "hiddenStrings": ["Alder Bakery", "Brookfield", "WAGTAIL", "PLOVER", "KINGFISHER", "HERON", "menu page", "allergen"]
     }
   }
 }

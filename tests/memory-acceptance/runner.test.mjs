@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createDoubleTarget, FAULTS } from "./lib/double.mjs";
-import { d7Items, loadFixtures } from "./lib/fixtures.mjs";
+import { d7Items, grantedScopes, loadFixtures } from "./lib/fixtures.mjs";
 import { createLiveTarget, loadLiveConfig } from "./lib/live.mjs";
 import { loadGsamConfig } from "./lib/gsam.mjs";
 import { PHASE1_TESTS, PHASE2_TESTS, PHASE3_TESTS, runAll } from "./lib/tests.mjs";
@@ -51,7 +51,7 @@ test("phase 3 fixture D9 is synthetic and its hidden strings are really hidden",
     assert.equal(from.scope, to.scope, `${e.id} must stay in one scope`);
   }
   // Every string a restricted caller must not see appears in no record it may read.
-  const readable = (who) => world.identities.find((i) => i.id === who).grants.filter((g) => g.rights.includes("read")).map((g) => g.scope);
+  const readable = (who) => grantedScopes(world, who, "read");
   const records = [...graph.records, ...Object.values(scenarios).flatMap((s) => [...(s.records ?? []), ...(s.entries ?? []).map((e) => ({ ...e, id: e.recordId }))])];
   for (const [who, r] of Object.entries(graph.restricted)) {
     const visible = records.filter((x) => readable(who).includes(x.scope));
@@ -140,13 +140,14 @@ const EXPECTED_RED = {
   // Edges never cross scopes, so a kept half-hidden edge shows only in filtered views.
   "dangling-edges": ["MT-42"],
   "edges-ignore-grants": ["MT-42", "MT-50", "MT-52"],
-  "counts-include-hidden": ["MT-45", "MT-51", "MT-52"],
+  "counts-include-hidden": ["MT-45", "MT-51"],
   "activity-ignores-grants": ["MT-45", "MT-51", "MT-52"],
   "count-drilldown-mismatch": ["MT-45", "MT-51"],
   "roles-merged": ["MT-46"],
   "extraction-unlinked": ["MT-47"],
   "list-graph-mismatch": ["MT-42"],
-  "restricted-errors": ["MT-50", "MT-51", "MT-52"],
+  // Every caller reads org, so only filtered views are empty.
+  "restricted-errors": ["MT-52"],
   "hidden-id-distinguishable": ["MT-50"],
   "status-drift": ["MT-42", "MT-43", "MT-44", "MT-49"],
   "nav-no-source": ["MT-43", "MT-47", "MT-48"],
