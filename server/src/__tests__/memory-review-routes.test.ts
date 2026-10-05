@@ -256,6 +256,26 @@ describeEmbeddedPostgres("organization memory review workflow (GRE-886)", () => 
     expect((await request(board).get(`${base}/conflicts`)).body.groups).toEqual([]);
   });
 
+  it("refuses an untagged proposal in a client scope, stores nothing and audits it", async () => {
+    const { board, base, org, userId } = await setup("Untagged");
+    const client = await request(board).post(`${base}/scopes`).send({ kind: "client", name: "Heron" });
+    const before = (await ctx.db.select().from(memoryRecords)).length;
+
+    const untagged = await request(board)
+      .post(`${base}/records`)
+      .send({ scopeId: client.body.id, content: "Heron care plan is GBP 120 a month.", entities: ["Heron"] });
+    expect(untagged.status).toBe(400);
+    expect(untagged.body.error).toMatch(/topic/);
+    expect((await ctx.db.select().from(memoryRecords)).length).toBe(before);
+    expect(await ctx.db.select().from(memoryIngestOutbox)).toEqual([]);
+    expect(await deniedReasons(userId)).toContain("memory_topics_required");
+
+    // Tagged client proposals, client observations and untagged org proposals still go through.
+    await contribute(board, base, { scopeId: client.body.id, content: "Heron care plan is GBP 120 a month.", topics: ["care plan price"] });
+    await contribute(board, base, { scopeId: client.body.id, content: "Heron asked about the plan.", entryType: "observation" });
+    await contribute(board, base, { scopeId: org.id, content: "Stand-up is at 09:30." });
+  });
+
   it("shows a dispute on recall, ranked after approved knowledge", async () => {
     const { board, asAgent, base, org, companyId } = await setup("Dispute");
     const mason = await seedAgent(companyId, "Mason");

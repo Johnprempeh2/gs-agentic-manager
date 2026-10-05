@@ -61,6 +61,8 @@ import {
   MemorySensitiveContentError,
 } from "./sensitive-content.js";
 
+export const MEMORY_TOPICS_REQUIRED_CODE = "memory_topics_required";
+
 /** Slack after the direct call's timeout before the drain may take the entry. */
 export const DIRECT_RETAIN_GRACE_MS = 5_000;
 
@@ -459,6 +461,18 @@ export function memoryGatewayService(
       throw badRequest("entryType and status must match; send entryType only");
     }
     const entryType = input.entryType ?? input.status ?? "proposal";
+    // The conflict check matches topics, not text, so an untagged client
+    // proposal would skip it. Refused before anything is written (GRE-886).
+    if (scope.kind === "client" && entryType === "proposal" && input.topics.length === 0) {
+      await logOperation(caller, "contribute", "denied", {
+        scopeIds: [scope.id],
+        detail: { reason: MEMORY_TOPICS_REQUIRED_CODE },
+      });
+      throw badRequest(
+        "A proposal in a client scope needs at least one topic, so it can be checked for conflicts with approved decisions",
+        { code: MEMORY_TOPICS_REQUIRED_CODE },
+      );
+    }
     // Checked before anything is written, so a refused value is in no table
     // here or in the engine (GRE-868). The audit row names pattern types only.
     const matchedTypes = detectSensitiveContent(

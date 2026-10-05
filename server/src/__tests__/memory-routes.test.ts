@@ -432,8 +432,8 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(kestrel.status).toBe(201);
     expect(heron.status).toBe(201);
 
-    const kestrelNote = await request(board).post(`${base}/records`).send({ scopeId: kestrel.body.id, content: "Kestrel price list v3 is 120 per seat" });
-    const heronNote = await request(board).post(`${base}/records`).send({ scopeId: heron.body.id, content: "Heron price list is 90 per seat" });
+    const kestrelNote = await request(board).post(`${base}/records`).send({ scopeId: kestrel.body.id, content: "Kestrel price list v3 is 120 per seat", topics: ["price list"] });
+    const heronNote = await request(board).post(`${base}/records`).send({ scopeId: heron.body.id, content: "Heron price list is 90 per seat", topics: ["price list"] });
     expect(kestrelNote.status).toBe(201);
     expect(heronNote.status).toBe(201);
     expect(new Set(fake.state.docs.map((doc) => doc.bankId)).size).toBe(2);
