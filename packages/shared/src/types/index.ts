@@ -70,6 +70,7 @@ export type {
   DecisionsFeed,
   DecisionsFeedCount,
   DecisionCardAtDesk,
+  DecisionCardReviewer,
   DecisionCardSetup,
   NeedsMe,
   NeedsMeTask,

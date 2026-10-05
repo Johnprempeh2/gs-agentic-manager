@@ -319,6 +319,27 @@ export function reviewCard(): DecisionCard {
   });
 }
 
+/** GRE-870: the task waits on your own review stage; Mason gets it back. */
+export function humanReviewCard(): DecisionCard {
+  const id = "task:issue-800";
+  return card({
+    id,
+    kind: "review",
+    severity: "medium",
+    task: task("issue-800", "GRE-800", "Approval card shows the full send"),
+    title: "GRE-800 Approval card shows the full send",
+    reason: "Approval card shows the full send",
+    waiting: { id: "agent-mason", name: "Mason" },
+    reviewer: { type: "user", id: "user-john", name: "John Prempeh", isYou: true },
+    nextStep: "The task stays in review until you approve it or ask for changes.",
+    actions: [
+      { id: "approve", label: "Approve", description: "Approve the review. The task moves to its next stage or is done.", type: "request", requests: [request("PATCH", "/api/issues/issue-800", { status: "done", comment: "Approved from Decisions." })], href: null, input: null },
+      { id: "request_changes", label: "Request changes", description: "Send the task back to its owner with what must change. The owner is woken.", type: "request", requests: [request("PATCH", "/api/issues/issue-800", { status: "in_progress" })], href: null, input: { field: "comment", type: "text", label: "What must change", required: true } },
+      ...taskActions("issue-800", id),
+    ],
+  });
+}
+
 /** Company-level card: no task, so no Not now or Ask for clarity. */
 export function connectionAlertCard(): DecisionCard {
   return card({

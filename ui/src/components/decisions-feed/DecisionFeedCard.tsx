@@ -235,9 +235,14 @@ export function DecisionFeedCard({
 
       <dl className="grid gap-x-3 gap-y-1.5 text-sm sm:grid-cols-(--gtc-16)">
         <CardFact label="Why">{card.reason}</CardFact>
-        <CardFact label="Waiting">
-          {card.waiting ? card.waiting.name : <span className="text-muted-foreground">No agent owns this yet.</span>}
-        </CardFact>
+        {card.reviewer ? (
+          <CardFact label="Reviewer">{card.reviewer.isYou ? `You (${card.reviewer.name})` : card.reviewer.name}</CardFact>
+        ) : null}
+        {card.waiting || !card.reviewer ? (
+          <CardFact label="Waiting">
+            {card.waiting ? card.waiting.name : <span className="text-muted-foreground">No agent owns this yet.</span>}
+          </CardFact>
+        ) : null}
         <CardFact label="Next">{card.nextStep}</CardFact>
         {card.setup ? <SetupFacts setup={card.setup} showTasks={!card.task} /> : null}
       </dl>
