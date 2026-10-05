@@ -172,6 +172,24 @@ test("status names the migrations the preview applied on start: none, some, or u
   assert.match(noLog.out, /^  migrations applied on start: unknown \(no log\)$/m);
 });
 
+test("status names the migrations `pnpm db:migrate` applied before the server started (GRE-902)", () => {
+  const status = (log) => withFakePreview({ started_at: hoursAgo(0.1) }, (root) => {
+    writeFileSync(join(root, "preview", "preview.log"), log);
+    return runPreview(["status"], root);
+  });
+  const named = status(
+    "Migrating database via embedded-postgres\n" +
+      "Applying 3 pending migration(s): 0294_support_queues.sql, 0295_memory_gateway.sql, 0296_memory_ingest_outbox.sql\n" +
+      "Migrations complete\n" +
+      "[10:00:00] INFO: Server listening on 127.0.0.1:3200\n");
+  assert.equal(named.code, 0);
+  assert.match(named.out,
+    /^  migrations applied on start: 0294_support_queues\.sql, 0295_memory_gateway\.sql, 0296_memory_ingest_outbox\.sql$/m);
+  // Tags from before GRE-902 log the count only.
+  const countOnly = status("Applying 3 pending migration(s)...\nMigrations complete\n");
+  assert.match(countOnly.out, /^  migrations applied on start: 3 migrations \(names not in the log\)$/m);
+});
+
 test("start prints the migrations line under 'Preview is up' (GRE-827)", () => {
   withFakePreview({}, (root) => {
     writeFileSync(join(root, "preview", "preview.log"), '{"pendingMigrations":["0104_y.sql"],"msg":"Applying 1 pending migrations for PostgreSQL"}\n');

@@ -76,15 +76,20 @@ preview_origin() {
 
 # Says which migrations the preview server applied to its data copy when it
 # started, from its "Applying N pending migrations" log line(s), so the
-# release task's "Migrations:" line can be checked (GRE-827). Reads only the
-# preview log; a missing or unreadable log gives "unknown (no log)".
+# release task's "Migrations:" line can be checked (GRE-827). The server logs
+# "Applying N pending migrations for <db> {"pendingMigrations":[...]}"; the
+# dev runner's `pnpm db:migrate`, which applies them first in the preview,
+# logs "Applying N pending migration(s): a.sql, b.sql" (GRE-902; older tags
+# end with "..." and no names). Reads only the preview log; a missing or
+# unreadable log gives "unknown (no log)".
 preview_migrations() {
   local names
   if [ ! -r "$PREVIEW_LOG" ] || ! names="$(perl -ne '
     s/\e\[[0-9;]*m//g;
-    next unless /Applying (\d+) pending migrations/;
+    next unless /Applying (\d+) pending migration(?:s|\(s\))/;
     my $n = $1;
-    my @found = /"pendingMigrations":\[([^\]]*)\]/ ? ($1 =~ /"([^"]+)"/g) : ();
+    my @found = /"pendingMigrations":\[([^\]]*)\]/ ? ($1 =~ /"([^"]+)"/g)
+      : /pending migration\(s\): (.+?)\s*$/ ? split(/,\s*/, $1) : ();
     @found = ("$n migrations (names not in the log)") unless @found;
     for (@found) { print "$_\n" unless $seen{$_}++ }
   ' "$PREVIEW_LOG" 2>/dev/null)"; then
