@@ -4,6 +4,7 @@ import { pinoHttp } from "pino-http";
 import { HTTP_LOG_REDACT_PATHS } from "./http-log-redaction.js";
 import {
   isMcpSseStreamRefusal,
+  isMemoryContentHttpRequest,
   isPrivateWebhookHttpRequest,
   isSecretSensitiveHttpRequest,
   shouldSilenceHttpSuccessLog,
@@ -176,6 +177,12 @@ export function createHttpLogger(baseLogger: Logger) {
               : {}),
           };
         }
+        // Memory text is omitted whole: a refused secret sits in a free-text
+        // field that key-name redaction cannot see (GRE-879).
+        const memoryContentRoute = isMemoryContentHttpRequest(
+          req.method,
+          requestClassificationUrl(req),
+        );
         if (ctx) {
           const secretSensitiveRoute = isSecretSensitiveHttpRequest(
             req.method,
@@ -188,14 +195,18 @@ export function createHttpLogger(baseLogger: Logger) {
             errorContext: secretSensitiveRoute
               ? { name: "Error" }
               : redactSensitive(ctx.error),
-            reqBody: redactSensitive(ctx.reqBody),
+            reqBody: memoryContentRoute
+              ? "[REDACTED]"
+              : redactSensitive(ctx.reqBody),
             reqParams: redactSensitive(ctx.reqParams),
           };
         }
         const props: Record<string, unknown> = {};
         const { body, params } = req as any;
         if (body && typeof body === "object" && Object.keys(body).length > 0) {
-          props.reqBody = redactSensitive(body);
+          props.reqBody = memoryContentRoute
+            ? "[REDACTED]"
+            : redactSensitive(body);
         }
         if (
           params &&

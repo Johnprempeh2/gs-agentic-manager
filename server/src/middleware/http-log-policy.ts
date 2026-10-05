@@ -83,6 +83,27 @@ export function isSecretSensitiveHttpRequest(
   return SECRET_SENSITIVE_HTTP_PATHS.some((pattern) => pattern.test(pathname));
 }
 
+const MEMORY_CONTENT_HTTP_PATHS = [
+  /^\/api\/companies\/[^/]+\/memory\/(?:records|recall)\/?$/i,
+  /^\/api\/mcp\/memory-tools\/?$/i,
+];
+
+/**
+ * Memory contributions and recall queries carry free text. A refused
+ * contribution (422 memory_sensitive_content, GRE-868) holds the very secret
+ * or personal data the gateway declined to store, and key-name redaction
+ * cannot find a value inside `content`. Failure logs omit these bodies (GRE-879).
+ */
+export function isMemoryContentHttpRequest(
+  method: string | undefined,
+  url: string | undefined,
+): boolean {
+  if (!method || !url) return false;
+  if (!SECRET_SENSITIVE_HTTP_METHODS.has(method.toUpperCase())) return false;
+  const pathname = normalizePath(url);
+  return MEMORY_CONTENT_HTTP_PATHS.some((pattern) => pattern.test(pathname));
+}
+
 const MCP_ENDPOINT_PATHS = [
   /^\/mcp\/gateways\/[^/]+\/?$/,
   /^\/mcp\/runtime-tools\/?$/,
