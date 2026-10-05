@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Organization memory acceptance runner: phase 1 (GRE-675) and phase 2 (GRE-888).
+// Organization memory acceptance runner: phase 1 (GRE-675), phase 2 (GRE-888) and phase 3 (GRE-866).
 //
-//   node tests/memory-acceptance/run.mjs                      # test double, phase 1 and 2
+//   node tests/memory-acceptance/run.mjs                      # test double, phases 1 to 3
 //   node tests/memory-acceptance/run.mjs --phase 2            # phase 2 exit tests only
+//   node tests/memory-acceptance/run.mjs --phase 3            # phase 3 graph and contribution tests only
 //   node tests/memory-acceptance/run.mjs --break engine-open  # prove the tests can fail
 //   MEMORY_ACCEPTANCE_LIVE_CONFIG=path node tests/memory-acceptance/run.mjs --target live
 //
@@ -36,7 +37,7 @@ if (values["list-faults"]) {
   process.exit(0);
 }
 
-const { world, scenarios } = loadFixtures();
+const { world, scenarios, graph } = loadFixtures();
 let target;
 if (values.target === "double") {
   target = createDoubleTarget({ world, faults: values.break });
@@ -50,9 +51,9 @@ if (values.target === "double") {
   throw new Error(`Unknown --target ${values.target} (double | live | gsam)`);
 }
 
-const phases = { all: [1, 2], 1: [1], 2: [2] }[values.phase];
-if (!phases) throw new Error(`Unknown --phase ${values.phase} (1 | 2 | all)`);
-const report = await runAll(target, { scenarios, only: values.only?.split(","), phases });
+const phases = { all: [1, 2, 3], 1: [1], 2: [2], 3: [3] }[values.phase];
+if (!phases) throw new Error(`Unknown --phase ${values.phase} (1 | 2 | 3 | all)`);
+const report = await runAll(target, { scenarios, graph, only: values.only?.split(","), phases });
 report.generatedAt = new Date().toISOString();
 console.log(formatReport(report, { verbose: values.verbose }));
 

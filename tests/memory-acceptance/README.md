@@ -1,7 +1,8 @@
 # Organization memory acceptance tests
 
-Acceptance runner for the organization memory gateway: phase 1 (GRE-675) and
-the phase 2 exit tests (GRE-888, see "Phase 2" below). The
+Acceptance runner for the organization memory gateway: phase 1 (GRE-675),
+the phase 2 exit tests (GRE-888, see "Phase 2" below) and the phase 3 graph
+and contribution tests (GRE-866, see "Phase 3" below). The
 tests and the threat model behind them are in the GRE-651 document "Threat
 model and acceptance-test dataset". Design: `doc/adr/0001-organization-memory-gateway-on-hindsight.md`.
 
@@ -10,11 +11,11 @@ Kestrel Works fixtures in `fixtures/`. Load them into sandbox instances only.
 
 ## Commands
 
-Run the phase 1 and phase 2 tests against the in-process test double:
+Run the phase 1 to 3 tests against the in-process test double:
 
 ```sh
 pnpm test:memory-acceptance            # one line per test, exit 0 only if all pass
-pnpm test:memory-acceptance -- --phase 2   # phase 2 only (1 | 2 | all)
+pnpm test:memory-acceptance -- --phase 2   # phase 2 only (1 | 2 | 3 | all)
 pnpm test:memory-acceptance -- -v      # every check plus the audit rows used as evidence
 pnpm test:memory-acceptance -- --json tmp/memory-acceptance.json
 ```
@@ -176,6 +177,59 @@ answers "API route not found" makes its test inconclusive, never a pass.
 
 The sandbox server for phase 2 also needs `GSAM_MEMORY_STEWARD_SANDBOX_GRANTS=true`.
 
+## Phase 3 (GRE-866)
+
+Plan GRE-646 section 8: John can see memory connections and what each agent
+contributes. Fixture D9 (`fixtures/graph.json`) has eleven records by Mason,
+Scribe, Wren and Rogue across both clients, the Alder site project, the
+restricted project and org. John approves or disputes them, and edits R-903
+by superseding it with R-904. Four relationships are stated (one is in the
+restricted project). R-911 is added after the reviews, so the conflict check
+opens one possible conflict with the approved R-907. That is the inferred
+edge. GRE-864 draws inferred edges only from open conflict-check rows; engine
+entity links are not stored in GSAM, so they are never edges.
+`ensureD9` seeds it once per run, then backdates records, review events and
+relationships to 28 Sep to 4 Oct so that date ranges split them.
+
+Two identities were added: `ag-wren-syn` (Brookfield contributor) and
+`ag-quill-syn` (no memory grants: every view must be an empty 200).
+
+| Plan point | Test | What it checks |
+|---|---|---|
+| 8.1.1 | MT-40 | Every explicit edge has a stored relationship or supersession row, every inferred edge an open conflict-check row; each stated relationship drawn once; no edge on the five "no edge" pairs (shared words across scopes, different clients) |
+| 8.1.4 | MT-41 | Stated relationships are `explicit` with type, author and source; R-911 ~ R-907 is `inferred`, authored by a check, not a person; no label or meaning claims cause (sentences that deny cause are allowed) |
+| 8.1.2, 8.1.5 | MT-42 | Agent, scope, status and text filters (alone and combined) return the right D9 records; the list has the same records as the graph; edges stay inside the filtered view |
+| 8.1.3 | MT-43 | Node detail: text, source, status. Edge detail: meaning, type, author, source, for explicit and inferred edges |
+| 8.2.1, 8.2.2 | MT-44 | Activity by agent and date: contributor, time, originating task or document, status; R-903 shows its supersession by the edit R-904; R-902 shows John's dispute |
+| 8.2.3 | MT-45 | For John, Mason and Lintel, every agent and four date ranges (one is today), count = drill-down rows = fixture count of readable records; no score, rank or quality fields |
+| 8.3.1 | MT-46 | Contributor stays the contributor after review; the reviewer is listed separately; the engine is never a reviewer; the contributor is never the approver |
+| 8.3.2 | MT-47 | Every `memory_extracted_facts` row names a record and contributor, and node detail traces each fact to the contributing agent and the source |
+| 8.3.3 | MT-48 | Activity item -> graph node (in the agent-filtered graph) -> source; source search -> memory; node -> contributor's activity |
+| 8.3.4 | MT-49 | Only `unreviewed`, `approved`, `disputed`, `superseded`, and the same value per record in graph, list, activity and detail |
+| 8.4.1, 8.4.2 | MT-50 | Mason, Lintel and Quill: no hidden ids, labels, entities or code names in graph or list; no dangling edges; a hidden-scope filter looks like an unknown scope; a hidden node or edge id answers like a missing one |
+| 8.4.2 | MT-51 | The same callers: no hidden records in activity (overall and per agent); counts equal the readable fixture count |
+| 8.4.3 | MT-52 | No-grant caller: every view an empty 200. John with a search or agent that matches nothing: empty 200 |
+
+Hidden strings per restricted caller are in `graph.json` (`restricted`). The
+self-test checks that none of them appear in a record that caller may read, so
+a match in a response is a leak and not a fixture accident.
+
+Every phase 3 control has a fault switch (`--list-faults`; `graph-*`,
+`counts-*`, `activity-*`, `roles-merged`, and so on). The self-test pins each one
+to the tests it turns red.
+
+On `--target gsam`, the phase 3 reads use `PHASE3_ROUTES` in `lib/gsam.mjs`
+(GRE-864: `/graph`, `/graph/nodes/:id`, `/graph/edges/:id`, `/activity`,
+`/activity/counts`). The adapter maps the gateway's fields onto the runner's
+shape and keeps the raw response under `raw`, so the leak checks scan
+everything the gateway sent. There is no list route: the list view is built
+from `/graph`, so on this target MT-42's list check holds by construction.
+The UI list itself is covered by GRE-865's component tests. The gateway takes
+`to` as exclusive, so the adapter adds a day to the fixture's inclusive end
+date. Ground truth comes from the sandbox database: `memory_relationships`,
+supersession links, open `memory_conflicts` and `memory_extracted_facts`. In
+`chunks` retain mode the engine extracts nothing, so MT-47 is inconclusive.
+
 ## Live config
 
 `MEMORY_ACCEPTANCE_LIVE_CONFIG` points at a JSON file (keep it out of git; it
@@ -211,8 +265,11 @@ ADR-0001 section 6 and will be matched to the gateway routes when GRE-672 lands.
 
 - `fixtures/kestrel-works.json` — company, scopes, six identities and their grants (GRE-651 §5.1)
 - `fixtures/scenarios.json` — scenario fixtures D1–D7 (GRE-651 §5.2) and D8 (GRE-888 probes)
+- `fixtures/graph.json` — D9, the phase 3 graph and contribution fixture (GRE-866)
 - `lib/tests.mjs` — the 11 phase 1 tests and `runAll`
 - `lib/phase2.mjs` — the 14 phase 2 exit tests
+- `lib/phase3.mjs` — the 13 phase 3 graph, contribution and permission tests
+- `lib/double-graph.mjs` — the double's phase 3 views and their fault switches
 - `lib/checks.mjs` — helpers both phases share
 - `lib/double.mjs` — gateway and engine test double, with fault switches
 - `lib/live.mjs` — generic HTTP target and the direct engine probes

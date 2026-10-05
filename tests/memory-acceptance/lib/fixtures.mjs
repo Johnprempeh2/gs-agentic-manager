@@ -10,8 +10,10 @@ function readJson(name) {
 export function loadFixtures() {
   const world = readJson("kestrel-works.json");
   const { scenarios } = readJson("scenarios.json");
+  const graph = readJson("graph.json");
   if (world.synthetic !== true) throw new Error("kestrel-works.json must be marked synthetic");
-  return { world, scenarios };
+  if (graph.synthetic !== true) throw new Error("graph.json must be marked synthetic");
+  return { world, scenarios, graph };
 }
 
 export function identity(world, id) {

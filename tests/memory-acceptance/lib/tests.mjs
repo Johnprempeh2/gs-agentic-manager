@@ -8,6 +8,7 @@
 import { auditHas, check, client, denied, leaked, resultIds, searched, verdict, withAudit } from "./checks.mjs";
 import { d7Items, grantedScopes, loadFixtures, record } from "./fixtures.mjs";
 import { PHASE2_TESTS, RouteMissing } from "./phase2.mjs";
+import { PHASE3_TESTS } from "./phase3.mjs";
 
 export const PHASE1_SEED = ["R-301", "R-302", "R-303"];
 
@@ -340,16 +341,17 @@ function redactAuditRow(items) {
 }
 
 export { PHASE2_TESTS };
-export const TESTS = [...PHASE1_TESTS, ...PHASE2_TESTS];
+export { PHASE3_TESTS };
+export const TESTS = [...PHASE1_TESTS, ...PHASE2_TESTS, ...PHASE3_TESTS];
 
-/** `phases`: which phases to run (default both). `only`: test ids. */
-export async function runAll(target, { scenarios, world, only, phases = [1, 2] } = {}) {
+/** `phases`: which phases to run (default all). `only`: test ids. */
+export async function runAll(target, { scenarios, world, graph, only, phases = [1, 2, 3] } = {}) {
   scenariosRef = scenarios;
   worldRef = world ?? loadFixtures().world;
   const pre = await target.preflight();
   await target.seed(PHASE1_SEED.map((id) => record(scenarios, id)));
-  const selected = [...(phases.includes(1) ? PHASE1_TESTS : []), ...(phases.includes(2) ? PHASE2_TESTS : [])];
-  const ctx = { scenarios, world: worldRef, cache: new Map() };
+  const selected = [...(phases.includes(1) ? PHASE1_TESTS : []), ...(phases.includes(2) ? PHASE2_TESTS : []), ...(phases.includes(3) ? PHASE3_TESTS : [])];
+  const ctx = { scenarios, world: worldRef, graph: graph ?? loadFixtures().graph, cache: new Map() };
   const results = [];
   for (const t of selected) {
     if (only && !only.includes(t.id)) continue;
