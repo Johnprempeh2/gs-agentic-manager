@@ -99,24 +99,47 @@ export STUB_USER=root STUB_RUNUSER_DENIED=1
 out="$("$SCRIPT" system-setup 2>&1)"; rc=$?
 [[ "$rc" != 0 && "$out" == *"cannot write"* ]] && pass "copy folder not writable by the engine user: system-setup stops" || fail "copy folder not writable: rc=$rc out=$out"
 
-# --- 6. backup: copy failure -> non-zero; success -> dump and checksum in both places --------
+# --- 6. backup: copy failure -> non-zero; success -> local dump, encrypted Windows copy (GRE-777 D2) --
 fresh backup-ok
-mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"
 out="$("$SCRIPT" backup 2>&1)"; rc=$?
-copied=("$GS_MEMORY_WINDOWS_BACKUPS"/hindsight-*.dump)
-if [[ "$rc" == 0 && -f "${copied[0]}" && -f "${copied[0]}.sha256" ]]; then pass "backup: dump and .sha256 copied, exit 0"; else fail "backup ok case: rc=$rc out=$out"; fi
+copied=("$GS_MEMORY_WINDOWS_BACKUPS"/hindsight-*.dump.enc)
+if [[ "$rc" == 0 && -f "${copied[0]}" && -f "${copied[0]}.sha256" ]]; then pass "backup: encrypted dump and .sha256 copied, exit 0"; else fail "backup ok case: rc=$rc out=$out"; fi
+compgen -G "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-*.dump" >/dev/null && fail "backup: a plain dump reached the Windows folder" || pass "backup: no plain dump in the Windows folder"
+grep -rqa synthetic-dump "$GS_MEMORY_WINDOWS_BACKUPS" && fail "backup: plain dump text found in the Windows folder" || pass "backup: Windows copy does not hold the dump text"
+key="$GS_MEMORY_ROOT/secrets/backup.key"
+[[ "$(stat -c %a "$key" 2>/dev/null)" == 600 ]] && pass "backup: key made in secrets/, mode 600" || fail "backup: key missing or not mode 600"
+grep -rqaF "$(cat "$key")" "$GS_MEMORY_WINDOWS_BACKUPS" "$CASE/win" && fail "backup: key text found on the Windows side" || pass "backup: key is not on the Windows side"
+[[ "$out" != *"$(cat "$key")"* ]] && pass "backup: key not printed" || fail "backup: key printed"
+
+fresh backup-migrate
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"
+old_plain="hindsight-$(date -u -d '-2 days' +%Y%m%dT%H%M%SZ).dump"
+(cd "$GS_MEMORY_WINDOWS_BACKUPS" && echo synthetic-dump > "$old_plain" && sha256sum "$old_plain" > "$old_plain.sha256")
+out="$("$SCRIPT" backup 2>&1)"; rc=$?
+if [[ "$rc" == 0 && -f "$GS_MEMORY_WINDOWS_BACKUPS/$old_plain.enc" && ! -e "$GS_MEMORY_WINDOWS_BACKUPS/$old_plain" \
+  && ! -e "$GS_MEMORY_WINDOWS_BACKUPS/$old_plain.sha256" ]]; then
+  pass "backup: an old plain copy is encrypted, then the plain file is removed"
+else fail "backup migrate: rc=$rc out=$out"; fi
+
+fresh backup-lost-key
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"
+touch "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-20261001T000000Z.dump.enc"
+out="$("$SCRIPT" backup 2>&1)"; rc=$?
+[[ "$rc" != 0 && "$out" == *"Put the saved key back"* && ! -e "$GS_MEMORY_ROOT/secrets/backup.key" ]] \
+  && pass "backup: lost key with encrypted copies -> stops, makes no new key" || fail "backup lost key: rc=$rc out=$out"
 
 fresh backup-missing
-mkdir -p "$GS_MEMORY_ROOT/backups"
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets"
 out="$("$SCRIPT" backup 2>&1)"; rc=$?
 [[ "$rc" != 0 && "$out" == *"ERROR"*"missing"* ]] && pass "backup: missing copy folder -> exit $rc" || fail "backup missing folder: rc=$rc out=$out"
 ls "$GS_MEMORY_ROOT/backups"/hindsight-*.dump >/dev/null 2>&1 && pass "backup: local dump kept when the copy fails" || fail "backup: local dump lost"
 
 if [[ "$IS_ROOT" == 0 ]]; then
   fresh backup-readonly
-  mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS" && chmod 0555 "$GS_MEMORY_WINDOWS_BACKUPS"
+  mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS" && chmod 0555 "$GS_MEMORY_WINDOWS_BACKUPS"
   out="$("$SCRIPT" backup 2>&1)"; rc=$?
-  [[ "$rc" != 0 && "$out" == *"ERROR: cannot copy"* ]] && pass "backup: read-only copy folder -> exit $rc" || fail "backup read-only folder: rc=$rc out=$out"
+  [[ "$rc" != 0 && "$out" == *"ERROR: cannot write the encrypted copy"* ]] && pass "backup: read-only copy folder -> exit $rc" || fail "backup read-only folder: rc=$rc out=$out"
   chmod 0755 "$GS_MEMORY_WINDOWS_BACKUPS"
 fi
 
@@ -124,23 +147,23 @@ fi
 make_dump() { (cd "$1" && echo synthetic-dump > "hindsight-$2.dump" && sha256sum "hindsight-$2.dump" > "hindsight-$2.dump.sha256"); }
 old="$(date -u -d '-91 days' +%Y%m%dT%H%M%SZ)"; recent="$(date -u -d '-89 days' +%Y%m%dT%H%M%SZ)"
 fresh backup-expiry
-mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"
 for d in "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"; do make_dump "$d" "$old"; make_dump "$d" "$recent"; done
 out="$(GS_MEMORY_BACKUP_KEEP=500 "$SCRIPT" backup 2>&1)"; rc=$?
 if [[ "$rc" == 0 && ! -e "$GS_MEMORY_ROOT/backups/hindsight-$old.dump" && ! -e "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-$old.dump" \
   && ! -e "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-$old.dump.sha256" ]]; then
   pass "backup expiry: 91-day-old dump and checksum removed in both places with KEEP=500"
 else fail "backup expiry: old dump kept: rc=$rc out=$out"; fi
-[[ -e "$GS_MEMORY_ROOT/backups/hindsight-$recent.dump" && -e "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-$recent.dump" ]] \
-  && pass "backup expiry: 89-day-old dump kept" || fail "backup expiry: recent dump removed"
+[[ -e "$GS_MEMORY_ROOT/backups/hindsight-$recent.dump" && -e "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-$recent.dump.enc" ]] \
+  && pass "backup expiry: 89-day-old dump kept (Windows copy now encrypted)" || fail "backup expiry: recent dump removed"
 
 fresh backup-expiry-cap
-mkdir -p "$GS_MEMORY_ROOT/backups"; make_dump "$GS_MEMORY_ROOT/backups" "$old"
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets"; make_dump "$GS_MEMORY_ROOT/backups" "$old"
 GS_MEMORY_BACKUP_MAX_AGE_DAYS=365 GS_MEMORY_WINDOWS_BACKUPS="$CASE/win" "$SCRIPT" backup >/dev/null 2>&1
 [[ ! -e "$GS_MEMORY_ROOT/backups/hindsight-$old.dump" ]] && pass "backup expiry: MAX_AGE_DAYS above 90 is capped at 90" || fail "backup expiry: MAX_AGE_DAYS=365 kept a 91-day dump"
 
 fresh backup-expiry-down
-mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"
 for d in "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"; do make_dump "$d" "$old"; done
 printf '#!/usr/bin/env bash\nexit 1\n' > "$PGBIN/pg_isready"
 out="$("$SCRIPT" backup 2>&1)"; rc=$?
@@ -170,7 +193,7 @@ out="$(printf '%s\n' "$token" | "$SCRIPT" link-claude 2>&1)"; rc=$?
 
 # --- 9. restore-test: fixed C.UTF-8 locale, whatever the caller's locale is (GRE-674) ---------
 fresh restore-locale
-mkdir -p "$GS_MEMORY_ROOT/backups"
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets"
 (cd "$GS_MEMORY_ROOT/backups" && echo synthetic-dump > hindsight-20261005T000000Z.dump \
   && sha256sum hindsight-20261005T000000Z.dump > hindsight-20261005T000000Z.dump.sha256)
 # initdb stub: fails like the real one when LC_CTYPE is not a valid locale; records its env and args.
@@ -181,6 +204,35 @@ chmod +x "$PGBIN"/*
 out="$(LC_CTYPE=UTF-8 LANG=en_GB.UTF-8 "$SCRIPT" restore-test 2>&1)"; rc=$?
 [[ "$rc" == 0 && "$out" == *"restore test passed"* ]] && pass "restore-test: passes with a Mac ssh locale (LC_CTYPE=UTF-8)" || fail "restore-test locale: rc=$rc out=$out"
 called "initdb LC_ALL=C.UTF-8 LC_CTYPE= .*--locale=C.UTF-8" && pass "restore-test: initdb runs with C.UTF-8" || fail "restore-test: initdb locale not fixed: $(cat "$CALLS")"
+
+# --- 10. restore-test from the encrypted Windows copy (GRE-777 D2) --------------------------
+# pg_restore stub: records the file it gets and its content, so the test sees the decrypted dump.
+printf '#!/usr/bin/env bash\nfor a; do f="$a"; done; echo "pg_restore $(cat "$f")" >> "$CALLS"\n' > "$PGBIN/pg_restore"
+chmod +x "$PGBIN/pg_restore"
+fresh restore-enc
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"
+"$SCRIPT" backup >/dev/null 2>&1
+out="$("$SCRIPT" restore-test --windows 2>&1)"; rc=$?
+[[ "$rc" == 0 && "$out" == *"restore test passed: hindsight-"*".dump.enc"* ]] && called "pg_restore synthetic-dump" \
+  && pass "restore-test --windows: decrypts the Windows copy and restores the plain dump" || fail "restore-test --windows: rc=$rc out=$out"
+cp "$GS_MEMORY_ROOT/secrets/backup.key" "$CASE/key.saved"
+openssl rand -base64 48 > "$GS_MEMORY_ROOT/secrets/backup.key"
+out="$("$SCRIPT" restore-test --windows 2>&1)"; rc=$?
+[[ "$rc" != 0 && ( "$out" == *"cannot decrypt"* || "$out" == *"does not match its plain checksum"* ) ]] \
+  && pass "restore-test --windows: a wrong key is refused" || fail "restore-test wrong key: rc=$rc out=$out"
+cp "$CASE/key.saved" "$GS_MEMORY_ROOT/secrets/backup.key"
+enc=("$GS_MEMORY_WINDOWS_BACKUPS"/hindsight-*.dump.enc); printf x >> "${enc[0]}"
+out="$("$SCRIPT" restore-test --windows 2>&1)"; rc=$?
+[[ "$rc" != 0 && "$out" == *"checksum mismatch"* ]] && pass "restore-test --windows: a changed copy is refused" || fail "restore-test tampered: rc=$rc out=$out"
+
+# --- 11. check: a plain dump in the Windows folder is a FAIL ------------------------------
+fresh check-plain
+mkdir -p "$GS_MEMORY_WINDOWS_BACKUPS" && echo synthetic-dump > "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-20261005T000000Z.dump"
+out="$(GS_MEMORY_CHECK_KEY= timeout 60 "$SCRIPT" check 2>&1)"
+[[ "$out" == *"FAIL  unencrypted dump in $GS_MEMORY_WINDOWS_BACKUPS"* ]] && pass "check: a plain dump on the Windows side -> FAIL" || fail "check plain dump: $out"
+rm "$GS_MEMORY_WINDOWS_BACKUPS"/*.dump
+out="$(GS_MEMORY_CHECK_KEY= timeout 60 "$SCRIPT" check 2>&1)"
+[[ "$out" == *"PASS  no unencrypted dump in"* ]] && pass "check: no plain dump -> PASS line" || fail "check no plain dump: $out"
 
 echo
 if [[ "$failures" == 0 ]]; then echo "ALL PASS"; else echo "$failures FAILED"; exit 1; fi

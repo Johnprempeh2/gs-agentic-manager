@@ -5,6 +5,7 @@ import {
   activityLog,
   agents,
   heartbeatRuns,
+  issues,
   memoryConflicts,
   memoryExtractedFacts,
   memoryIngestOutbox,
@@ -111,7 +112,7 @@ describeEmbeddedPostgres("memory graph and contribution activity (GRE-864)", () 
 
   async function contribute(app: ReturnType<typeof routeApp>, base: string, body: Record<string, unknown>) {
     const res = await request(app).post(`${base}/records`).send(body);
-    expect(res.status).toBe(201);
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
     return res.body.record as { id: string };
   }
 
@@ -426,5 +427,45 @@ describeEmbeddedPostgres("memory graph and contribution activity (GRE-864)", () 
     expect(ops.filter((op) => op.outcome === "denied").map((op) => op.operation)).toEqual(
       expect.arrayContaining(["graph_node", "graph_edge"]),
     );
+  });
+
+  it("finds a task's memory by its key as well as its id, inside the caller's view (GRE-929)", async () => {
+    const f = await seedOrgFixture("Task key");
+    const outsider = await seedAgent(f.companyId, "Outsider");
+    const [task] = await ctx.db
+      .insert(issues)
+      .values({ companyId: f.companyId, title: "Kestrel onboarding", status: "todo", identifier: "KW-646", issueNumber: 646 })
+      .returning();
+    const visible = await contribute(f.board, f.base, { scopeId: f.org.id, content: "Kestrel kickoff is on Monday.", sourceKind: "issue", sourceId: task.id });
+    const client = await request(f.board).post(`${f.base}/scopes`).send({ kind: "client", name: "Kestrel Works client" });
+    const hidden = await contribute(f.board, f.base, { scopeId: client.body.id, title: "Hidden label", content: "Kestrel budget note.", topics: ["budget"], sourceKind: "issue", sourceId: task.id });
+
+    // Key and id give the same records, any case.
+    const byId = await ok<MemoryGraph>(f.board, `${f.base}/graph?q=${task.id}`);
+    expect(byId.nodes.map((node) => node.id).sort()).toEqual([visible.id, hidden.id].sort());
+    for (const q of ["KW-646", "kw-646"]) {
+      const byKey = await ok<MemoryGraph>(f.board, `${f.base}/graph?q=${q}`);
+      expect(byKey.nodes.map((node) => node.id).sort()).toEqual(byId.nodes.map((node) => node.id).sort());
+    }
+    const feed = await ok<MemoryActivityFeed>(f.board, `${f.base}/activity?q=KW-646`);
+    expect(feed.items.map((item) => item.record.id).sort()).toEqual([visible.id, hidden.id].sort());
+
+    // A caller without the client grant gets only what they may read: no hidden node, label or count.
+    const app = f.asAgent(outsider.id);
+    const restricted = await ok<MemoryGraph>(app, `${f.base}/graph?q=KW-646`);
+    expect(restricted.nodes.map((node) => node.id)).toEqual([visible.id]);
+    expect(JSON.stringify(restricted)).not.toContain("Hidden label");
+    expect((await ok<MemoryActivityFeed>(app, `${f.base}/activity?q=KW-646`)).items.map((item) => item.record.id)).toEqual([visible.id]);
+    const counts = await ok<MemoryActivityCounts>(app, `${f.base}/activity/counts?q=KW-646`);
+    expect(counts.contributors.reduce((sum, row) => sum + row.contributionCount, 0)).toBe(1);
+
+    // Another company's task with the same key never matches here.
+    const other = await setup("Other org");
+    const [otherTask] = await ctx.db
+      .insert(issues)
+      .values({ companyId: other.companyId, title: "Other", status: "todo", identifier: "KX-646", issueNumber: 646 })
+      .returning();
+    await contribute(other.board, other.base, { scopeId: other.org.id, content: "Other org note.", sourceKind: "issue", sourceId: otherTask.id });
+    expect((await ok<MemoryGraph>(f.board, `${f.base}/graph?q=KX-646`)).nodes).toEqual([]);
   });
 });

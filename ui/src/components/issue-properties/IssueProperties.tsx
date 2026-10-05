@@ -127,6 +127,7 @@ import {
 import { issueReviewPolicyBadge } from "../../lib/review-policy";
 import { IssueCasesPanel } from "../IssueCasesPanel";
 import { ExpandRelationListButton, RemovableIssueReferencePill } from "./relation-controls";
+import { IssueMemoryRow } from "./IssueMemoryRow";
 import { Badge } from "@/components/ui/badge";
 import {
   TaskDetailReferencesPanel,
@@ -2720,6 +2721,8 @@ export function IssueProperties({
           externalObjectsError={externalObjectsError}
           onRetryExternalObjects={onRetryExternalObjects}
         />
+
+        {companyId ? <IssueMemoryRow companyId={companyId} issueId={issue.id} issueKey={issue.identifier} /> : null}
       </PropertySection>
 
       <PropertySection title="Execution" streamlined={streamlinedPropertiesEnabled}>

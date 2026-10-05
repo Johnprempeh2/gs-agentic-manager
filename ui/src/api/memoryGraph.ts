@@ -40,6 +40,7 @@ function toQuery(params: object) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (typeof value === "string" && value) search.set(key, value);
+    else if (typeof value === "number") search.set(key, String(value));
   }
   const query = search.toString();
   return query ? `?${query}` : "";
@@ -48,7 +49,8 @@ function toQuery(params: object) {
 export const memoryGraphApi = {
   /** Whether organisation memory is switched on for the company (the sidebar's Memory link). */
   settings: (companyId: string) => api.get<MemorySettings>(`/companies/${companyId}/memory/settings`),
-  graph: (companyId: string, filters: MemoryGraphFilters = {}) =>
+  /** `limit` caps the nodes returned (server default 200). */
+  graph: (companyId: string, filters: MemoryGraphFilters & { limit?: number } = {}) =>
     api.get<MemoryGraph>(`/companies/${companyId}/memory/graph${toQuery(filters)}`),
   node: (companyId: string, recordId: string) =>
     api.get<MemoryGraphNodeDetail>(`/companies/${companyId}/memory/graph/nodes/${encodeURIComponent(recordId)}`),

@@ -11,7 +11,7 @@
 #   install        (gsmemory)  database cluster, pinned venv, models, extension, secrets. Safe to run again.
 #   link-gateway   (root)      copy the key and assertion secret to the GSAM user's ~/gs-memory/secrets/gateway.env.
 #   link-claude    (gsmemory)  read a `claude setup-token` token on stdin; engine uses John's Claude plan.
-#   backup         (gsmemory)  pg_dump to ~/gs-memory/backups and the Windows copy folder. Exit 1 if the copy fails.
+#   backup         (gsmemory)  pg_dump to ~/gs-memory/backups, encrypted copy to the Windows folder. Exit 1 if the copy fails.
 #   check          (any user)  bind, key and reachability checks. Exit 1 on any failure.
 #   serve-postgres / serve-hindsight  (gsmemory) foreground processes used by the systemd units.
 #
@@ -57,6 +57,8 @@ MODELS="$GS_MEMORY_ROOT/models"
 SECRETS="$GS_MEMORY_ROOT/secrets"
 BACKUPS="$GS_MEMORY_ROOT/backups"
 LOGS="$GS_MEMORY_ROOT/logs"
+# Opens the Windows copies (GRE-777 D2). Stays in secrets/, never on /mnt/c; John keeps a second copy off the PC.
+BACKUP_KEY="$SECRETS/backup.key"
 
 DB_NAME=hindsight
 DB_ROLE=hindsight
@@ -84,6 +86,20 @@ require_user() {
 new_secret() { "$GS_MEMORY_PYTHON" -c 'import secrets; print(secrets.token_urlsafe(32))'; }
 
 pg() { "$GS_MEMORY_PG_BIN/$1" "${@:2}"; }
+
+# Made once. A new key cannot open old copies, so it is never made silently while encrypted copies exist.
+ensure_backup_key() {
+  [[ -s "$BACKUP_KEY" ]] && return 0
+  if compgen -G "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-*.dump.enc" >/dev/null; then
+    die "no $BACKUP_KEY, but encrypted copies exist in $GS_MEMORY_WINDOWS_BACKUPS. Put the saved key back (doc/GS-MEMORY-ENGINE.md, \"Backup key\")"
+  fi
+  (umask 077; openssl rand -base64 48 > "$BACKUP_KEY")
+  log "new backup key written to $BACKUP_KEY (mode 600). Save a copy off this PC (doc/GS-MEMORY-ENGINE.md, \"Backup key\")"
+}
+
+# AES-256 with a PBKDF2 key from the key file. Integrity comes from the plain dump's checksum, checked after decrypt.
+encrypt_file() { openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$BACKUP_KEY" -in "$1" -out "$2"; }
+decrypt_file() { openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$BACKUP_KEY" -in "$1" -out "$2"; }
 
 # --------------------------------------------------------------------------------------------
 # system-setup (root). Items 1, 2, 3 and 6 of the G2 change list.
@@ -266,6 +282,12 @@ cmd_preflight() {
   free_gb="$(df -Pk "$win" | awk 'NR==2 {print int($4/1048576)}')"
   if (( free_gb >= 1 )); then pass "$free_gb GB free at $win"; else bad "$free_gb GB free at $win (need 1 GB)"; fi
 
+  if command -v openssl >/dev/null; then
+    pass "openssl is installed (encrypts the Windows copies)"
+  else
+    bad "openssl is not installed; backup cannot encrypt the Windows copy"
+  fi
+
   preflight_claude_cli
   [[ "$fail" == 0 ]] && echo "RESULT: PASS" || echo "RESULT: FAIL"
   return "$fail"
@@ -332,7 +354,8 @@ cmd_install() {
       "$assertion" "$assertion" >> "$SECRETS/engine.env"
   fi
   write_gateway_env "$SECRETS/gateway.env"
-  chmod 0600 "$SECRETS"/*.env
+  ensure_backup_key
+  chmod 0600 "$SECRETS"/*.env "$BACKUP_KEY"
   # shellcheck disable=SC1091
   source "$SECRETS/db.env"
 
@@ -511,16 +534,18 @@ cmd_serve_hindsight() {
 }
 
 # --------------------------------------------------------------------------------------------
-# backup (gsmemory). Nightly local dump. The off-disk copy waits for John's choice (GRE-674).
+# backup (gsmemory). Nightly local dump. The Windows copy is encrypted (GRE-777 D2): /mnt/c is readable by
+# every Linux user and by Windows. The off-disk copy waits for John's choice (GRE-674).
 cmd_backup() {
   umask 077
   if ! pg pg_isready -q -h "$PGRUN" -p "$GS_MEMORY_PG_PORT"; then
     log "database not running; no backup tonight"
     # Old dumps still expire on a night with no new dump.
     prune "$BACKUPS"
-    [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]] && prune "$GS_MEMORY_WINDOWS_BACKUPS"
+    [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]] && prune "$GS_MEMORY_WINDOWS_BACKUPS" .dump.enc && prune "$GS_MEMORY_WINDOWS_BACKUPS"
     return 0
   fi
+  ensure_backup_key
   local stamp file
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   file="$BACKUPS/hindsight-$stamp.dump"
@@ -533,24 +558,58 @@ cmd_backup() {
   local name
   name="$(basename "$file")"
   [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]] || die "Windows copy folder missing: $GS_MEMORY_WINDOWS_BACKUPS (local dump kept: $file)"
-  cp "$file" "$file.sha256" "$GS_MEMORY_WINDOWS_BACKUPS/" \
-    || die "cannot copy $name and its .sha256 to $GS_MEMORY_WINDOWS_BACKUPS (local dump kept)"
-  (cd "$GS_MEMORY_WINDOWS_BACKUPS" && sha256sum -c --quiet "$name.sha256" >/dev/null 2>&1) \
-    || die "checksum of the copy in $GS_MEMORY_WINDOWS_BACKUPS does not match (local dump kept)"
-  log "copied to $GS_MEMORY_WINDOWS_BACKUPS (checksum verified)"
-  prune "$GS_MEMORY_WINDOWS_BACKUPS"
+  copy_encrypted "$file" || die "cannot write the encrypted copy of $name to $GS_MEMORY_WINDOWS_BACKUPS (local dump kept)"
+  log "encrypted copy written to $GS_MEMORY_WINDOWS_BACKUPS (checksum and decrypt verified)"
+  # Copies made before D2 are plain dumps. Encrypt each one, then remove the plain file.
+  local plain
+  for plain in "$GS_MEMORY_WINDOWS_BACKUPS"/hindsight-*.dump; do
+    [[ -e "$plain" ]] || continue
+    if [[ ! -e "$plain.enc" ]]; then
+      copy_encrypted "$plain" || die "cannot encrypt the old plain copy $plain (it is kept)"
+    fi
+    rm -f "$plain" "$plain.sha256"
+    log "old plain copy replaced by its encrypted copy: $plain"
+  done
+  prune "$GS_MEMORY_WINDOWS_BACKUPS" .dump.enc
 }
 
+# Writes <dump>.enc and <dump>.enc.sha256 (plain and encrypted checksums) to the Windows folder. The file is
+# encrypted on the Linux side, so no plain byte reaches /mnt/c. The copy counts only after a decrypt gives the
+# plain checksum back.
+copy_encrypted() {
+  local src="$1" name sums part check win="$GS_MEMORY_WINDOWS_BACKUPS"
+  name="$(basename "$src")"
+  if [[ -s "$src.sha256" ]]; then
+    sums="$(grep "  $name\$" "$src.sha256")" || return 1
+  else
+    sums="$(cd "$(dirname "$src")" && sha256sum "$name")" || return 1
+  fi
+  part="$BACKUPS/.$name.enc.part"; check="$BACKUPS/.$name.check"
+  encrypt_file "$src" "$part" || { rm -f "$part"; return 1; }
+  sums+=$'\n'"$(sha256sum < "$part" | cut -d' ' -f1)  $name.enc"
+  if cp "$part" "$win/$name.enc.part" && mv "$win/$name.enc.part" "$win/$name.enc" \
+    && printf '%s\n' "$sums" > "$win/$name.enc.sha256" \
+    && (cd "$win" && grep "  $name.enc\$" "$name.enc.sha256" | sha256sum -c --quiet - >/dev/null 2>&1) \
+    && decrypt_file "$win/$name.enc" "$check" \
+    && [[ "$(sha256sum < "$check" | cut -d' ' -f1)" == "${sums%%  *}" ]]; then
+    rm -f "$part" "$check"
+    return 0
+  fi
+  rm -f "$part" "$check" "$win/$name.enc.part" "$win/$name.enc" "$win/$name.enc.sha256"
+  return 1
+}
+
+# prune <dir> [ext]. ext is .dump (local dumps, and plain copies made before D2) or .dump.enc (Windows copies).
 prune() {
-  local dir="$1" old cutoff f stamp
+  local dir="$1" ext="${2:-.dump}" old cutoff f stamp
   # Newest first; keep the first GS_MEMORY_BACKUP_KEEP dumps.
-  mapfile -t old < <(ls -1t "$dir"/hindsight-*.dump 2>/dev/null | tail -n +"$((GS_MEMORY_BACKUP_KEEP + 1))")
+  mapfile -t old < <(ls -1t "$dir"/hindsight-*"$ext" 2>/dev/null | tail -n +"$((GS_MEMORY_BACKUP_KEEP + 1))")
   for f in "${old[@]}"; do rm -f "$f" "$f.sha256"; done
   # Age cap by the UTC stamp in the name, not mtime: a copy to Windows gets a new mtime.
   cutoff="$(date -u -d "-$GS_MEMORY_BACKUP_MAX_AGE_DAYS days" +%Y%m%dT%H%M%SZ)"
-  for f in "$dir"/hindsight-*.dump; do
+  for f in "$dir"/hindsight-*"$ext"; do
     [[ -e "$f" ]] || continue
-    stamp="$(basename "$f" .dump)"; stamp="${stamp#hindsight-}"
+    stamp="$(basename "$f" "$ext")"; stamp="${stamp#hindsight-}"
     if [[ "$stamp" < "$cutoff" ]]; then
       rm -f "$f" "$f.sha256"
       log "expired backup removed (older than $GS_MEMORY_BACKUP_MAX_AGE_DAYS days): $f"
@@ -559,16 +618,35 @@ prune() {
 }
 
 # --------------------------------------------------------------------------------------------
-# restore-test (gsmemory). Restores the newest dump into a throwaway cluster on a free port, then removes it.
+# restore-test [dump | dump.enc | --windows] (gsmemory). Restores the newest local dump (or the given one, or the
+# newest encrypted Windows copy) into a throwaway cluster on a free port, then removes it.
 cmd_restore_test() {
-  local dump="${1:-$(ls -1t "$BACKUPS"/hindsight-*.dump 2>/dev/null | head -1)}"
+  local dump="${1:-}"
+  if [[ "$dump" == --windows ]]; then
+    dump="$(ls -1t "$GS_MEMORY_WINDOWS_BACKUPS"/hindsight-*.dump.enc 2>/dev/null | head -1)"
+    [[ -n "$dump" ]] || die "no encrypted copy found in $GS_MEMORY_WINDOWS_BACKUPS"
+  fi
+  [[ -n "$dump" ]] || dump="$(ls -1t "$BACKUPS"/hindsight-*.dump 2>/dev/null | head -1)"
   [[ -n "$dump" && -f "$dump" ]] || die "no dump found in $BACKUPS"
-  (cd "$(dirname "$dump")" && sha256sum -c "$(basename "$dump").sha256" >/dev/null) || die "checksum mismatch: $dump"
-  local tmp port
+  local label tmp port
+  label="$(basename "$dump")"
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/gs-memory-restore.XXXXXX")"
-  port="$("$GS_MEMORY_PYTHON" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
   # The trap clears itself: a RETURN trap stays set after this function and would run again with $tmp unset.
   trap 'pg pg_ctl -D "$tmp/data" -m immediate stop >/dev/null 2>&1 || true; rm -rf "$tmp"; trap - RETURN' RETURN
+  if [[ "$dump" == *.enc ]]; then
+    [[ -s "$BACKUP_KEY" ]] || die "no backup key at $BACKUP_KEY; cannot open $label"
+    local plain sums="$dump.sha256"
+    plain="$tmp/$(basename "$dump" .enc)"
+    (cd "$(dirname "$dump")" && grep "  $label\$" "$sums" | sha256sum -c --quiet - >/dev/null 2>&1) \
+      || die "checksum mismatch: $dump"
+    decrypt_file "$dump" "$plain" 2>/dev/null || die "cannot decrypt $label with $BACKUP_KEY (wrong key?)"
+    (cd "$tmp" && grep "  $(basename "$plain")\$" "$sums" | sha256sum -c --quiet - >/dev/null 2>&1) \
+      || die "decrypted $label does not match its plain checksum"
+    dump="$plain"
+  else
+    (cd "$(dirname "$dump")" && sha256sum -c "$label.sha256" >/dev/null) || die "checksum mismatch: $dump"
+  fi
+  port="$("$GS_MEMORY_PYTHON" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
   pg initdb -D "$tmp/data" -U "$(id -un)" --auth-local=peer --auth-host=reject \
     --encoding=UTF8 --locale=C.UTF-8 >/dev/null
   pg pg_ctl -D "$tmp/data" -o "-c listen_addresses='' -c port=$port -c unix_socket_directories=$tmp" -l "$tmp/log" -w start >/dev/null
@@ -576,7 +654,7 @@ cmd_restore_test() {
   pg pg_restore -h "$tmp" -p "$port" -d "$DB_NAME" --no-owner "$dump"
   local tables
   tables="$(pg psql -X -At -h "$tmp" -p "$port" -d "$DB_NAME" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'")"
-  log "restore test passed: $(basename "$dump") -> $tables tables in a throwaway cluster"
+  log "restore test passed: $label -> $tables tables in a throwaway cluster"
 }
 
 # --------------------------------------------------------------------------------------------
@@ -682,6 +760,15 @@ PY
     code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" -H "x-gsam-memory-assertion: $assertion" \
       -H 'Content-Type: application/json' -d "$body" "$base/v1/default/banks/other-bank/memories/recall" || true)"
     [[ "$code" == 401 || "$code" == 403 ]] && ok "signed assertion for another bank -> $code" || bad "signed assertion for another bank -> $code"
+  fi
+
+  # /mnt/c is readable by every Linux user and by Windows: only encrypted copies may be there (GRE-777 D2).
+  if [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]]; then
+    if compgen -G "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-*.dump" >/dev/null; then
+      bad "unencrypted dump in $GS_MEMORY_WINDOWS_BACKUPS (the next backup encrypts it)"
+    else
+      ok "no unencrypted dump in $GS_MEMORY_WINDOWS_BACKUPS"
+    fi
   fi
 
   if [[ "$(id -un)" != "$GS_MEMORY_USER" ]]; then

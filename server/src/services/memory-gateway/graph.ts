@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, gte, inArray, lt, ne, or, sql, type SQL } fr
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  issues,
   memoryConflicts,
   memoryExtractedFacts,
   memoryRecords,
@@ -49,6 +50,8 @@ import { toRecord, toScope, type MemoryCaller, type MemoryGatewayService, type R
 // returned only when both of its ends are readable records in the result.
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A task key such as `GRE-646`. */
+const ISSUE_KEY_RE = /^[a-z][a-z0-9]*-\d+$/i;
 const EXCERPT_LENGTH = 280;
 
 /** Steps a person or agent takes on someone's record (plan 8.3: reviewer/editor role). */
@@ -175,6 +178,13 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
           sql`coalesce(${memoryRecords.title}, '') ilike ${pattern}`,
           sql`coalesce(${memoryRecords.content}, '') ilike ${pattern}`,
           sql`coalesce(${memoryRecords.sourceId}, '') ilike ${pattern}`,
+          // A task key finds the same records as the task id (GRE-929). Only
+          // this company's tasks; the scope check above still applies.
+          ...(ISSUE_KEY_RE.test(query.q)
+            ? [
+                sql`${memoryRecords.sourceId} in (select ${issues.id}::text from ${issues} where ${issues.companyId} = ${caller.companyId} and ${issues.identifier} = ${query.q.toUpperCase()})`,
+              ]
+            : []),
         )!,
       );
     }
