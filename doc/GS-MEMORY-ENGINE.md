@@ -75,7 +75,7 @@ ignores the owner and shows every folder as `rwxrwxrwx`, so `gsmemory` can write
 `system-setup` stops with an error. The nightly `backup` fails (non-zero exit, `systemctl --failed` shows
 `gs-memory-backup.service`) if the folder is missing, the copy fails or the copy's checksum does not match; the
 local dump is kept. After the first `backup`, prove the copy with `ls -l /mnt/c/GreatstoneBackups/gs-memory/`
-(a `.dump` and its `.sha256`).
+(a `.dump.enc` and its `.sha256`; never a plain `.dump`, see "Back up and restore").
 
 ## Link the Claude plan (one time, John, in private)
 
@@ -192,8 +192,14 @@ Read-only routes under `/api/companies/:id/memory`; types in `packages/shared/sr
 
 ## Back up and restore
 
-- Nightly at 02:30 the timer runs `backup`: `pg_dump -Fc` to `backups/` plus a `.sha256`, and a copy to
-  `C:\GreatstoneBackups\gs-memory\`. 14 dumps kept in each place. If the database is not running it skips.
+- Nightly at 02:30 the timer runs `backup`: `pg_dump -Fc` to `backups/` plus a `.sha256`, and an **encrypted** copy
+  to `C:\GreatstoneBackups\gs-memory\`. 14 dumps kept in each place. If the database is not running it skips.
+- **The Windows copy is encrypted** (GRE-777 D2). `/mnt/c` is readable by every Linux user (agents included) and by
+  Windows, so only `hindsight-<stamp>.dump.enc` goes there: AES-256 (`openssl enc -aes-256-cbc -pbkdf2`), encrypted
+  on the Linux side before the copy. Its `.dump.enc.sha256` holds two lines: the checksum of the encrypted file and of
+  the plain dump. A copy counts only when the encrypted checksum matches and a decrypt gives the plain checksum back;
+  if not, `backup` fails and the local dump is kept. A plain `.dump` left in the folder from before D2 is encrypted
+  by the next `backup`, then removed. `check` fails while any plain `.dump` is in the folder.
 - **Deleted content leaves every backup within 90 days** (G1 decision 7, GRE-887). A delete removes the content from
   the engine and leaves a tombstone in GSAM, but older dumps still hold it until they expire. `backup` therefore
   removes any dump (and its `.sha256`) whose name stamp is older than `GS_MEMORY_BACKUP_MAX_AGE_DAYS` (default 90,
@@ -204,11 +210,28 @@ Read-only routes under `/api/companies/:id/memory`; types in `packages/shared/sr
   `GSAM_DB_BACKUP_RETENTION_DAYS` (default 7). While memory is on, this must stay at 90 or less.
 - Any other copy (the future off-disk copy, a manual export) must follow the same 90-day rule before G4.
 - By hand: `sudo -u gsmemory .../gs-memory.sh backup`
-- Restore test (throwaway cluster on a free port, removed after): `sudo -u gsmemory .../gs-memory.sh restore-test [dump]`
+- Restore test (throwaway cluster on a free port, removed after): `sudo -u gsmemory .../gs-memory.sh restore-test
+  [dump | dump.enc | --windows]`. No argument: the newest local dump. `--windows`: the newest encrypted Windows copy,
+  decrypted into the throwaway folder and checked against its plain checksum first.
 - Real restore: stop the engine, `dropdb`/`createdb hindsight -O hindsight` over the socket, `pg_restore --no-owner --role=hindsight`, start.
-- **Open:** the off-disk copy (external drive or encrypted OneDrive) waits for John's choice. The Windows copy is
-  on the same physical disk and is readable by Windows and by `johnprempeh`; fine for synthetic data, must be
-  encrypted or moved before G4.
+  From a Windows copy, first decrypt it into `backups/` (never onto `/mnt/c`):
+  `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:secrets/backup.key -in <copy>.dump.enc -out backups/<copy>.dump`
+  and check it against the plain line of `<copy>.dump.enc.sha256`.
+- **Open:** the off-disk copy (external drive or OneDrive) waits for John's choice. The Windows copy is on the same
+  physical disk. It is encrypted, so an off-disk copy of that folder needs no other encryption.
+
+### Backup key
+
+- `install` (or the first `backup`) makes `secrets/backup.key`: 48 random bytes, base64, owner `gsmemory`, mode `600`,
+  in `/home/gsmemory/gs-memory/secrets/` (mode `700`). It is never written to `/mnt/c` and never printed or logged.
+  Agents (user `johnprempeh`) cannot read it.
+- **John keeps a second copy off the PC** (password manager). Without it, a lost WSL disk means the Windows copies
+  cannot be opened. One time, in John's own terminal: `sudo cat /home/gsmemory/gs-memory/secrets/backup.key`, paste
+  it into the password manager, clear the screen. Never paste it into GSAM, an issue, a chat or a file on `/mnt/c`.
+- Lost key on the PC: put the saved copy back as `secrets/backup.key` (owner `gsmemory`, mode `600`). `backup` stops
+  with an error rather than make a new key while encrypted copies exist, because a new key cannot open them.
+- Changing the key: move the old `.dump.enc` files out of the folder, delete `secrets/backup.key`, run `backup`, save
+  the new key. Keep the old key until the old copies expire (90 days at most).
 
 ## Upgrade Hindsight
 
@@ -223,7 +246,10 @@ Read-only routes under `/api/companies/:id/memory`; types in `packages/shared/sr
 The safety guards have a shell test with stubbed system commands (no PostgreSQL, no sudo, no PC change):
 `bash scripts/gs-memory/gs-memory.test.sh`. It covers: an existing cluster or active `postgresql.service` stops
 `system-setup`; the opt-in disables only the service and drops no cluster; a copy folder `gsmemory` cannot write
-stops `system-setup`; a failed backup copy exits non-zero; `preflight` output; `link-claude` never prints the token.
+stops `system-setup`; a failed backup copy exits non-zero; `preflight` output; `link-claude` never prints the token;
+the Windows copy is encrypted (no plain dump, no key there, an old plain copy is replaced); a lost key stops `backup`;
+`restore-test --windows` restores the decrypted copy and refuses a wrong key or a changed copy; `check` fails on a plain
+dump in the Windows folder.
 
 For the full engine:
 
@@ -238,6 +264,7 @@ mkdir -p $S/win && scripts/gs-memory/gs-memory.sh install && scripts/gs-memory/g
 scripts/gs-memory/gs-memory.sh serve-postgres & sleep 3; scripts/gs-memory/gs-memory.sh serve-hindsight &
 scripts/gs-memory/gs-memory.sh check
 scripts/gs-memory/gs-memory.sh backup && scripts/gs-memory/gs-memory.sh restore-test
+scripts/gs-memory/gs-memory.sh restore-test --windows
 ```
 
 Stop both processes and remove `$S` after.
