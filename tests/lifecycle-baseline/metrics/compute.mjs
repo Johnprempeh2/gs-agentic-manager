@@ -329,6 +329,62 @@ export function computeRepairEscalations(snapshot, { now, windowDays = 7 } = {})
 }
 
 /**
+ * R1 detail — throttled rewakes (register row 126, GRE-893).
+ *
+ * The rewake throttle skips a state-asserting wake on an issue whose agent has
+ * had a streak of no-progress runs, and writes a `skipped` wake request with
+ * reason `issue_rewake_throttled` (payload `heartbeatSkip.noProgressStreak`).
+ * It never stops the loop and the run API does not show skipped wakes, so this
+ * counts those records requested in the window: total, per agent, and per
+ * (issue, agent) with the highest streak seen. Report only: it sizes row 125.
+ */
+export const REWAKE_THROTTLED_REASON = "issue_rewake_throttled";
+
+export function computeThrottledRewakes(snapshot, { now, windowDays = 7, topIssues = 10 } = {}) {
+  const nowMs = ms(now ?? snapshot.now);
+  const windowStart = nowMs - windowDays * 86_400_000;
+  const byId = new Map((snapshot.issues ?? []).map((issue) => [issue.id, issue]));
+  const agentNames = new Map((snapshot.agents ?? []).map((agent) => [agent.id, agent.name ?? null]));
+  const perAgent = new Map();
+  const perIssue = new Map();
+  let total = 0;
+  for (const wake of snapshot.throttledWakes ?? []) {
+    const at = ms(wake.requestedAt);
+    if (wake.reason !== REWAKE_THROTTLED_REASON || at == null || at < windowStart || at > nowMs) continue;
+    total += 1;
+    const agentId = wake.agentId ?? "unknown";
+    const agent = perAgent.get(agentId) ?? { agentId, name: agentNames.get(agentId) ?? null, count: 0, issueIds: new Set() };
+    agent.count += 1;
+    const issueId = wake.issueId ?? "unknown";
+    agent.issueIds.add(issueId);
+    perAgent.set(agentId, agent);
+    const key = `${issueId}\u0000${agentId}`;
+    const entry = perIssue.get(key) ?? {
+      issueId, identifier: byId.get(issueId)?.identifier ?? issueId, agentId, count: 0, maxStreak: 0, lastAt: 0, requestedReasons: new Set(),
+    };
+    entry.count += 1;
+    entry.maxStreak = Math.max(entry.maxStreak, Number(wake.noProgressStreak) || 0);
+    entry.lastAt = Math.max(entry.lastAt, at);
+    if (wake.requestedReason) entry.requestedReasons.add(wake.requestedReason);
+    perIssue.set(key, entry);
+  }
+  const issues = [...perIssue.values()]
+    .sort((a, b) => b.count - a.count || b.maxStreak - a.maxStreak || a.identifier.localeCompare(b.identifier))
+    .map(({ requestedReasons, lastAt, ...entry }) => ({ ...entry, lastAt: new Date(lastAt).toISOString(), requestedReasons: [...requestedReasons].sort() }));
+  return {
+    windowDays,
+    reason: REWAKE_THROTTLED_REASON,
+    total,
+    issues: issues.length,
+    maxStreak: issues.reduce((max, entry) => Math.max(max, entry.maxStreak), 0),
+    byAgent: [...perAgent.values()]
+      .map(({ issueIds, ...agent }) => ({ ...agent, issues: issueIds.size }))
+      .sort((a, b) => b.count - a.count || a.agentId.localeCompare(b.agentId)),
+    topIssues: issues.slice(0, topIssues),
+  };
+}
+
+/**
  * R2 — run failure rate and unattended recovery share.
  *
  * Denominator: runs that finished inside the window as succeeded or failed
@@ -578,6 +634,7 @@ export function computeAll(snapshot, options = {}) {
     r1: computeStrandedTrees(snapshot, options),
     parkedWakes: computeParkedWakes(snapshot, options),
     repairEscalations: computeRepairEscalations(snapshot, options),
+    throttledRewakes: computeThrottledRewakes(snapshot, options),
     r2: computeRunFailures(snapshot, options),
     auth: computeAuthFailures(snapshot, options),
     s1: computeWakeLatency(snapshot, options),
