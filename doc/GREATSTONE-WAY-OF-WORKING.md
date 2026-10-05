@@ -227,7 +227,11 @@ Merging does not change the live app. A version goes live in these steps.
    since live, tag the merged `main` as a candidate and write the release note
    (big changes first, then each change, its issue, what to check) on a release
    issue. The candidate is checked and John's release task is ready for his
-   08:00 digest. One candidate per day; a newer merge waits for the next day. Tag it:
+   08:00 digest. One candidate per day; a newer merge waits for the next day.
+   First run `scripts/greatstone-release-audit.sh` (read-only; Flint also runs
+   it at the start of each live check): it shows what live runs against John's
+   open release task, and for each `live-*` tag of the last 7 days marked
+   `NOT CHECKED`, Keystone gives Flint one live check (GRE-767). Tag it:
 
    ```sh
    git fetch origin
@@ -296,6 +300,8 @@ Merging does not change the live app. A version goes live in these steps.
    knows which page to open. For the 2-week beta graduation rule,
    `GSAM_API_URL=<base> GSAM_API_KEY=<key> scripts/beta-switch-age.sh` (GET
    only) prints each switch's on/off, on since, days on and "2-week rule met".
+   `--scorecard <file>` (a saved copy of the GRE-81 scorecard) also lists
+   switches with no scorecard row and rows whose switch left the catalog.
 5. **Release task (Keystone).** Releases happen outside the app (John,
    GRE-489, 4 Oct). There is no "Update live?" card. When Flint reports "All
    pass", Keystone creates a task assigned to John, a child of the release
@@ -422,8 +428,64 @@ This moves live back to that tag the same way (backup first, then restart). If
 the live server is down it starts it with `~/GSAM/start-live.sh`. If the live
 database is down too, a rollback after a one-click release keeps the backup
 taken before that release. It does not undo database migrations. If the older
-code cannot run on the newer database, restore the backup the release printed;
-ask Keystone for the steps.
+code cannot run on the newer database, restore the backup the release printed
+(below). Each release task says "Migrations: none" or names the migrations
+the candidate adds, so you know before you release if this can happen.
+
+#### Restore the live database from a release backup (John)
+
+Only when the older code fails on the newer database (live does not come up
+after the rollback, or `~/GSAM/logs/live.log` shows a database error). The
+restore puts back the database as it was just before the release. **Work done
+in live after that release is lost**; step 2 keeps a copy of it. No agent may
+be running. Run from the dev checkout, in this order:
+
+```sh
+cd ~/Desktop/Code/gs-clip
+# The file the release printed ("Database backup from before this release: ..."),
+# from the release that added the migration. To find it: ls -t ~/GSAM/backups/release-*/before-*.sql.gz
+BACKUP=~/GSAM/backups/release-<time>-<rc-tag>/before-<rc-tag>-<stamp>.sql.gz
+PREVIOUS=live-YYYY-MM-DD.N        # the live tag before that release
+export BACKUP DB_DIR=~/GSAM/data/instances/default/db
+
+# 1. Stop live (runner, server and database).
+bash -c 'source scripts/greatstone-common.sh && stop_live_server'
+
+# 2. Keep the current database folder, in case you must go back to it.
+cp -a "$DB_DIR" ~/GSAM/backups/db-before-restore-$(date +%Y%m%dT%H%M%S)
+
+# 3. Restore the backup into the live database (it starts and stops it again).
+node cli/node_modules/tsx/dist/cli.mjs --eval '
+(async () => {
+  const { ensureEmbeddedPostgres } = await import("./cli/src/commands/worktree.ts");
+  const { resetPostgresDatabase, runDatabaseRestore } = await import("./packages/db/src/index.ts");
+  const pg = await ensureEmbeddedPostgres(process.env.DB_DIR, 54339, { allowExisting: false });
+  try {
+    const url = (db) => `postgres://paperclip:paperclip@127.0.0.1:${pg.port}/${db}`;
+    await resetPostgresDatabase(url("postgres"), "paperclip");
+    await runDatabaseRestore({ connectionString: url("paperclip"), backupFile: process.env.BACKUP });
+    console.log(`Restored ${process.env.BACKUP} into ${process.env.DB_DIR}`);
+  } finally { await pg.stop(); }
+})().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
+'
+
+# 4. Move the code back and start live. The database is down, so tell the
+#    script which backup to keep instead of taking a new one.
+GSAM_RELEASE_EXISTING_BACKUP="$BACKUP" scripts/greatstone-release.sh "$PREVIOUS"
+#    If it says "live is already on $PREVIOUS" (the automatic rollback moved
+#    the code already), start live instead: ~/GSAM/start-live.sh
+
+# 5. Check: status "ok" and the commit of $PREVIOUS.
+curl -s http://localhost:3100/api/health
+git rev-parse "$PREVIOUS^{commit}"
+```
+
+Step 3 prints `Restored ...`. If it fails, live is still stopped, the code has
+not moved and the copy from step 2 is untouched: put it back with
+`rm -rf "$DB_DIR" && cp -a ~/GSAM/backups/db-before-restore-<stamp> "$DB_DIR"`,
+start live with `~/GSAM/start-live.sh` and tell Keystone. After a restore, tell
+Keystone too, so Flint checks live and the migration is fixed before the next
+candidate.
 
 ### Promote to Stable (John)
 
@@ -529,6 +591,28 @@ on a throwaway sandbox, in both modes.
   the preview.
 - `stop` stops only the preview process group and its database. The code and
   data folders stay until the next `start` replaces them.
+- **Run from a fresh checkout:** the script uses the dependencies of the
+  checkout it runs from. In a fresh clone of a tag, run
+  `pnpm install --frozen-lockfile` there first; `start` says so if you forget.
+
+### Screenshots (`shot`): one-time host setup
+
+`shot` uses Playwright's Chromium headless shell. Agent runs have a temp
+`HOME`, so `shot` looks for the browser in the account's own folder
+(`~/.cache/ms-playwright` on Linux, `~/Library/Caches/ms-playwright` on macOS),
+not in `$HOME`. Set `PLAYWRIGHT_BROWSERS_PATH` to use another folder.
+
+The host needs this once. John runs it in the dev checkout, as his own user:
+
+```sh
+npx playwright install chromium-headless-shell   # the browser, in ~/.cache/ms-playwright
+sudo npx playwright install-deps chromium        # system libraries (libnss3, libnspr4, libasound2, ...)
+```
+
+The second line needs `sudo`, so only John can run it. Until both are done,
+`shot` stops and names the missing step: "The browser is not installed" (any
+agent may run the first line) or "The host is missing system libraries" (John
+must run the second). After a Playwright upgrade, run the first line again.
 
 ### Sandbox test of the scripts
 

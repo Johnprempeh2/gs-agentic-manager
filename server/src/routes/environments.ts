@@ -1117,8 +1117,23 @@ export function environmentRoutes(
       res.status(404).json({ error: "Environment not found" });
       return;
     }
+    // The environment is instance-wide but its leases are company-owned
+    // (GRE-772): list only the caller's companies. `?companyId=` narrows to
+    // one company the caller can access. Only the implicit local board (the
+    // single trusted operator of a local install) sees every company's leases.
+    const requestedCompanyId =
+      typeof req.query.companyId === "string" && req.query.companyId.trim().length > 0
+        ? req.query.companyId.trim()
+        : null;
+    if (requestedCompanyId) assertCompanyAccess(req, requestedCompanyId);
+    const companyIds = requestedCompanyId
+      ? [requestedCompanyId]
+      : req.actor.type === "board" && req.actor.source === "local_implicit"
+        ? undefined
+        : (req.actor.companyIds ?? []);
     const leases = await svc.listLeases(environment.id, {
       status: req.query.status as string | undefined,
+      companyIds,
     });
     res.json(leases);
   });
@@ -1130,6 +1145,8 @@ export function environmentRoutes(
       res.status(404).json({ error: "Environment lease not found" });
       return;
     }
+    // Leases are company-owned; environment read access alone is instance-wide.
+    assertCompanyAccess(req, lease.companyId);
     res.json(lease);
   });
 

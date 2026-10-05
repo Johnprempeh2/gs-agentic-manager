@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { ACCOUNT_REFUSAL_REASONS, EXECUTION_HOLD_CAUSES, accountRefusalReason, computeAuthFailures, computeParkedWakes, computeRepairEscalations, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -242,6 +242,44 @@ test("R2: platform failure rate leaves rejected logins out; they are counted on 
   assert.equal(onlyRefusals.loginRefusals, 1);
 });
 
+test("R2: account and setup refusals are left out by reason and counted as accountRefusals (GRE-745)", () => {
+  const failed = (id, errorCode, errorText) => ({ id, issueId: "i1", status: "failed", errorCode, errorText, finishedAt: hoursAgo(9) });
+  const runs = [
+    { id: "ok1", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(10) },
+    { id: "ok2", issueId: "i1", status: "succeeded", finishedAt: hoursAgo(10) },
+    failed("x1", "configuration_incomplete", "This Claude token expired at 2026-09-30T03:40:28.966Z. Reconnect it. `claude setup-token` gives a token that lasts about a year."),
+    failed("x2", "configuration_incomplete", "Connect an account and choose your personal default"),
+    failed("x3", "configuration_incomplete", "This connection is not permitted for this agent"),
+    failed("x4", "low_trust_requires_sandbox_environment", "Low-trust execution requires a sandbox environment driver."),
+    failed("x5", "workspace_validation_failed", 'Issue GRE-306 requested isolated_workspace with git_worktree, but base workspace "/w" is not a git checkout. This task needs a project / project workspace or a reusable execution workspace before it can run.'),
+    // Stay counted: the GRE-236 bug shares the code, and the other codes are not proven account state.
+    failed("k1", "configuration_incomplete", "Reconnect or validate the selected AI account"),
+    failed("k2", "acpx_turn_failed", "ACP agent reported a terminal service failure."),
+    failed("k3", "workspace_validation_failed", 'Cannot refresh reused git worktree "/w": git index lock "/w/index.lock" exists'),
+    failed("k4", "configuration_incomplete", null),
+    // A login refusal is counted once, as a login refusal.
+    { ...failed("a1", "claude_auth_required", "This Claude token expired at 2026-09-30T03:40:28.966Z."), errorCode: "claude_auth_required" },
+    { id: "c1", issueId: "i1", status: "cancelled", errorCode: "low_trust_requires_sandbox_environment", finishedAt: hoursAgo(9) },
+  ];
+  const r2 = computeRunFailures(base({ runs }));
+  assert.equal(r2.accountRefusals, 5);
+  assert.deepEqual(r2.accountRefusalsByReason, {
+    expired_credential: 1, no_personal_default: 1, connection_not_permitted: 1, low_trust_no_sandbox: 1, no_project_workspace: 1,
+  });
+  assert.deepEqual(Object.keys(r2.accountRefusalsByReason), ACCOUNT_REFUSAL_REASONS.map((entry) => entry.reason), "every reason is reported, zero included");
+  assert.equal(r2.loginRefusals, 1);
+  assert.equal(r2.failed, 10, "the all-in count keeps every failure");
+  assert.equal(r2.platformFailed, 4, "k1-k4 stay counted");
+  assert.equal(r2.platformFinished, 6);
+  assert.equal(r2.platformFailureRate, 4 / 6);
+  assert.deepEqual(
+    r2.failures.map((entry) => [entry.runId, entry.accountRefusal]),
+    [["x1", "expired_credential"], ["x2", "no_personal_default"], ["x3", "connection_not_permitted"], ["x4", "low_trust_no_sandbox"], ["x5", "no_project_workspace"],
+      ["k1", null], ["k2", null], ["k3", null], ["k4", null], ["a1", null]],
+  );
+  assert.equal(accountRefusalReason({ status: "cancelled", errorCode: "low_trust_requires_sandbox_environment" }), null, "only failed runs");
+});
+
 test("R2: an issue completed after the failure counts as recovered", () => {
   const r2 = computeRunFailures(base({
     issues: [issue("i1", { status: "done", completedAt: hoursAgo(1) })],
@@ -343,4 +381,70 @@ test("percentile uses nearest rank", () => {
   assert.equal(percentile(values, 95), 19);
   assert.equal(percentile(values, 50), 10);
   assert.equal(percentile([], 95), null);
+});
+
+test("R1 parked wakes: counts old deferred wakes on issues with no live run, by reason (GRE-685)", () => {
+  const minutesAgo = (minutes) => new Date(Date.parse(now) - minutes * 60_000).toISOString();
+  const parked = (issueId, reason, requestedAt) => ({ issueId, reason, requestedAt, status: "deferred_issue_execution" });
+  const snapshot = base({
+    issues: [issue("dead"), issue("live", { executionRunId: "run-1" }), issue("fresh")],
+    wakeRequests: [
+      parked("dead", "execution_review_requested", minutesAgo(45)), // no live run, old: counted
+      parked("live", "execution_review_requested", minutesAgo(45)), // live run holds the issue: not counted
+      parked("fresh", "execution_review_requested", minutesAgo(5)), // younger than 10 min: not counted
+      { issueId: "dead", reason: "issue_assigned", requestedAt: minutesAgo(45), status: "queued" }, // not parked
+    ],
+  });
+  const result = computeParkedWakes(snapshot);
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.byReason, [{ reason: "execution_review_requested", count: 1 }]);
+  // Zero is reported as zero, not missing.
+  assert.deepEqual(computeParkedWakes(base()), { minAgeMinutes: 10, total: 0, byReason: [] });
+});
+
+test("R1 repair escalations: 2x2 split by agent-only task and repair comments, with issue ids (GRE-725)", () => {
+  const escalation = (issueId, fields = {}) => ({
+    issueId, createdAt: hoursAgo(2), terminalReason: "unchanged_source_state_exhausted",
+    recoveryActionId: `ra-${issueId}`, fingerprint: `fp-${issueId}`, sourceAssigneeBefore: { agentId: "a1", userId: null }, ...fields,
+  });
+  // Each attempt has its own recovery action, unlike the escalation's (as on GRE-712).
+  const repairRun = (issueId, commentCount, fields = {}) => ({ id: `run-${issueId}-${commentCount}`, issueId, recoveryActionId: `ra-attempt-${commentCount}`, fingerprint: `fp-${issueId}`, createdAt: hoursAgo(3), commentCount, ...fields });
+  const reviewByUser = { stages: [{ id: "s1", type: "review", participants: [{ id: "p", type: "user", userId: "u1" }] }] };
+  const reviewByAgent = { stages: [{ id: "s1", type: "review", participants: [{ id: "p", type: "agent", agentId: "a2" }] }] };
+  const snapshot = base({
+    issues: [
+      issue("ac", { executionPolicy: reviewByAgent }), issue("an"),
+      issue("hc", { executionPolicy: reviewByUser }), issue("hn"), issue("chat", { conversationUserId: "u1" }),
+      issue("old"), issue("other"),
+    ],
+    repairEscalations: [
+      escalation("ac"), // agent-only, repair run commented
+      escalation("an"), // agent-only, repair runs silent
+      escalation("hc"), // a user reviews: has a human, commented
+      escalation("hn", { sourceAssigneeBefore: { agentId: null, userId: "u1" } }), // user assignee before escalation
+      escalation("chat"), // agent chat with a user: has a human
+      escalation("old", { createdAt: hoursAgo(24 * 8) }), // before the window
+      escalation("other", { terminalReason: "owner_not_invokable" }), // another terminal reason
+    ],
+    repairRuns: [
+      repairRun("ac", 0), repairRun("ac", 2),
+      repairRun("an", 0), repairRun("an", 1, { fingerprint: "fp-stale" }), // a different source state does not count
+      repairRun("an", 3, { createdAt: hoursAgo(1) }), // started after the escalation: does not count
+      repairRun("hc", 1),
+      repairRun("chat", 0),
+    ],
+  });
+  const result = computeRepairEscalations(snapshot);
+  assert.equal(result.total, 5);
+  assert.deepEqual(result.agentOnlyCommented.map((entry) => entry.identifier), ["AC"]);
+  assert.equal(result.agentOnlyCommented[0].repairComments, 2);
+  assert.equal(result.agentOnlyCommented[0].repairRuns, 2);
+  assert.deepEqual(result.agentOnlyNoComment.map((entry) => entry.identifier), ["AN"]);
+  assert.deepEqual(result.otherCommented.map((entry) => entry.identifier), ["HC"]);
+  assert.deepEqual(result.otherNoComment.map((entry) => entry.identifier).sort(), ["CHAT", "HN"]);
+  // Empty window: zero in every cell, not missing.
+  assert.deepEqual(computeRepairEscalations(base()), {
+    windowDays: 7, terminalReason: "unchanged_source_state_exhausted", total: 0,
+    agentOnlyCommented: [], agentOnlyNoComment: [], otherCommented: [], otherNoComment: [],
+  });
 });

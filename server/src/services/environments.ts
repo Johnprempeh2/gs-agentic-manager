@@ -1370,10 +1370,14 @@ export function environmentService(db: Db) {
       environmentId: string,
       filters: {
         status?: string;
+        /** Only leases owned by these companies. Omit for every company. */
+        companyIds?: string[];
       } = {},
     ): Promise<EnvironmentLease[]> => {
+      if (filters.companyIds && filters.companyIds.length === 0) return [];
       const conditions = [eq(environmentLeases.environmentId, environmentId)];
       if (filters.status) conditions.push(eq(environmentLeases.status, filters.status));
+      if (filters.companyIds) conditions.push(inArray(environmentLeases.companyId, filters.companyIds));
       const rows = await db
         .select()
         .from(environmentLeases)

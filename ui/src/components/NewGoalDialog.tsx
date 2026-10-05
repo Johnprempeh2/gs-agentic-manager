@@ -9,6 +9,7 @@ import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,6 +118,7 @@ export function NewGoalDialog() {
     >
       <DialogContent
         showCloseButton={false}
+        aria-describedby={undefined}
         className={cn("p-0 gap-0", expanded ? "sm:max-w-2xl" : "sm:max-w-lg")}
         onKeyDown={handleKeyDown}
       >
@@ -129,10 +131,14 @@ export function NewGoalDialog() {
               </span>
             )}
             <span className="text-subtle-foreground">&rsaquo;</span>
-            <span>{newGoalDefaults.parentId ? "New sub-goal" : "New goal"}</span>
+            <DialogTitle className="text-sm font-normal">
+              {newGoalDefaults.parentId ? "New sub-goal" : "New goal"}
+            </DialogTitle>
           </div>
           <div className="flex items-center gap-1">
             <Button
+              aria-label={expanded ? "Collapse" : "Expand"}
+              title={expanded ? "Collapse" : "Expand"}
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
@@ -141,6 +147,8 @@ export function NewGoalDialog() {
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
             <Button
+              aria-label="Close"
+              title="Close"
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"

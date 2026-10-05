@@ -199,6 +199,21 @@ When authoring migrations or one-time backfills:
 - The repo keeps only the newest 5 snapshots. `generate` runs `prune:snapshots` afterwards to delete older ones. Drizzle only reads the newest snapshot, and each snapshot is a full copy of the schema (over 1 MB each). Older snapshots are still in git history.
 - `packages/db/src/migration-snapshot-drift.test.ts` is the enforcement backstop. It repeats the diff that `generate` performs and fails when the newest snapshot no longer matches `packages/db/src/schema/`.
 
+## Taking upstream migrations
+
+Since the split from upstream (`01d9a1218`), both sides number new migrations from `0285`, so the numbers clash. Two files with different names merge without a conflict, so a clash check by file does not see it. `scripts/upstream-pending.sh` tags each upstream commit that adds a migration with `[migration: NNNN clash]` (we have our own `NNNN`) or `NNNN free`.
+
+When a sync pull request takes such a commit:
+
+1. Take the commit without its migration files: apply only its `packages/db/src/schema/` change (for example `git show <sha> -- packages/db/src/schema | git apply`). Do not take its `.sql`, snapshot or `_journal.json`.
+2. Run `pnpm --filter @greatstone/db generate`. It writes the next number after our last migration and a new journal entry and snapshot.
+3. Compare the new `.sql` with upstream's. If upstream hand-edited it (for example `IF NOT EXISTS`), copy upstream's body into the new file.
+4. Name the mapping in the commit message, for example `0294_chilly_marvel_apes -> 0295_glamorous_thaddeus_ross`, next to the `Upstream-Commit:` line.
+5. Never rename, renumber or edit a migration that is in a release. The live database finds each applied migration by a hash of its content and by its place in the journal; a changed file can run again or fail. Renumber only upstream's files, which our databases never ran.
+6. Run `pnpm --filter @greatstone/db check:migrations`, then apply the migrations to a copy of live data before the pull request leaves draft.
+
+Dry run (GRE-705, 5 Oct 2026), not on live: `cad26c6bf` (upstream `0294_chilly_marvel_apes`, one index on `tool_mcp_gateway_tokens`) on `main` at `6536cd3fc`. `generate` wrote `0295_glamorous_thaddeus_ross` and a journal entry with `idx` 295; its SQL matched upstream's except upstream's `IF NOT EXISTS`, so upstream's body was kept. `check:migrations` passed. On a scratch PostgreSQL restored from the newest live backup (`paperclip-20261005-013700.sql.gz`), `migrate` applied 2 pending migrations (our unreleased `0294` and the new `0295`), the index was present, and a second `migrate` said "No pending migrations".
+
 ## Cloud runtime identity singleton
 
 The private `instance_settings` row whose singleton key is

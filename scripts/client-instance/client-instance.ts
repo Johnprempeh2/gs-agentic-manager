@@ -5,13 +5,20 @@
 //                                     [--passed-features a,b] [--port N] [--db-port N]
 //                                     [--company-name X] [--client-email X]
 //                                     [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
+//                                     [--ai-route R] [--board-approval on|off]
 //   scripts/client-instance.sh limits --root <dir> [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
+//   scripts/client-instance.sh ai-route --root <dir> [--ai-route R]
 //   scripts/client-instance.sh start|stop|status|backup --root <dir>
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
 //   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
 //   scripts/client-instance.sh restore <dir> <backup file>
 //   scripts/client-instance.sh restore-check --root <dir> [backup file]
 //                                     (restores a backup into a throwaway database; the instance is not touched)
+//   scripts/client-instance.sh offsite-init|offsite-backup --root <dir> --offsite-config <file> [--restic <bin>]
+//   scripts/client-instance.sh offsite-check --code <code> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
+//                                     (off-host backups with restic, GRE-666)
+//   scripts/client-instance.sh watch --root <dir> --watch-config <file> [--public-url https://<host>]
+//                                     (host watch: health, backups, disk, memory, AI access, public URL; GRE-666)
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
 //                                      Stable image: scripts/greatstone-stable-image.sh)
@@ -24,19 +31,51 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { homedir, tmpdir, userInfo } from "node:os";
+import { freemem, homedir, tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { FEEDBACK_DATA_SHARING_PREFERENCES } from "../../packages/shared/src/types/feedback.js";
 import { DAILY_RETENTION_PRESETS, DEFAULT_BACKUP_RETENTION } from "../../packages/shared/src/types/instance.js";
 import { INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog.js";
+import { AI_ACCESS_ROUTES, type AiAccessRoute } from "../../packages/shared/src/ai-connections.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
+import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
+import { choosePorts, siblingPortClaims } from "./ports.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor } from "./releases.js";
+import {
+  OFFSITE_PATHS,
+  OFFSITE_RETENTION,
+  checkCode,
+  checkPrivateFile,
+  loadOffsiteConfig,
+  offsiteStatusLines,
+  resticEnv,
+  snapshotRoot,
+  type OffsiteBackup,
+  type OffsiteConfig,
+} from "./offsite.js";
 import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, type RestoreCheck } from "./status.js";
+import {
+  aiSignals,
+  alertMessage,
+  decideAlert,
+  diskSignal,
+  linesSignal,
+  memAvailableFromMeminfo,
+  memorySignal,
+  parseWatchConfig,
+  publicHealthUrl,
+  publicUrlSignal,
+  type AiConnectionView,
+  type AlertState,
+  type RunView,
+  type WatchConfig,
+  type WatchSignal,
+} from "./watch.js";
 
 const CODE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const INSTANCE_ID = "default";
@@ -74,13 +113,27 @@ const LIMIT_FLAGS: Record<string, keyof InstallLimits> = {
 const USAGE = `usage:
   create --root <dir> --edition managed|managed-plus [--passed-features a,b] [--port N] [--db-port N]
          [--company-name X] [--client-email X] [limit flags]
+         [--ai-route R]                    AI access route, set at every start [${DEFAULT_AI_ROUTE}]
+                                           (${AI_ACCESS_ROUTES.join(", ")})
+         [--board-approval on|off]         board approval for new agents in the company [on]
   limits --root <dir> [limit flags]        show or change the install limits (used at the next start)
+  ai-route --root <dir> [--ai-route R]     show or change the AI access route (used at the next start)
   start|stop|status|backup --root <dir>
   verify --root <dir>                      (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
   upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
   restore <dir> <backup file>
   restore-check --root <dir> [backup file] restore the newest (or named) backup into a throwaway
                                            database and count its rows; the instance is not touched
+  offsite-init --root <dir> --offsite-config <file> [--restic <bin>]
+                                           make the instance's off-host restic repository (once)
+  offsite-backup --root <dir> --offsite-config <file> [--restic <bin>]
+                                           copy the backups folder off the host; keep 30 daily, 12 weekly
+  offsite-check --code <code> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
+                                           pull the newest off-host copy into the sandbox, restore-check it,
+                                           then delete the copy
+  watch --root <dir> --watch-config <file> [--public-url https://<host>]
+                                           host watch (every 5 min): health, backups, restore-check, disk,
+                                           memory, AI access, public URL; pings the dead-man check, mails on failure
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -113,8 +166,14 @@ interface InstanceState {
   lastRestore?: { to: ReleaseRef; backupFile: string; safetyBackupFile: string | null; at: string };
   /** Written by restore-check (GRE-616); `status` warns when it is missing, failed or older than 7 days. */
   lastRestoreCheck?: RestoreCheck;
+  /** Written by offsite-backup (GRE-666); `status` and `watch` warn when it is missing, failed or older than 26 h. */
+  lastOffsiteBackup?: OffsiteBackup;
   /** Absent on instances made before GRE-141: no limits until `limits` sets them. */
   limits?: InstallLimits;
+  /** GRE-667: written to the instance settings at every start. Absent on older instances until `ai-route` sets it. */
+  aiAccessRoute?: AiAccessRoute;
+  /** GRE-667: set on the company at create; `verify` checks it. Absent means on. */
+  requireBoardApprovalForNewAgents?: boolean;
 }
 
 interface ReleaseRef {
@@ -360,6 +419,7 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
       }
       say(`up on ${baseUrl(state)}`);
       if (mode === "normal") {
+        await applyAiRoute(state);
         state.release = currentRelease();
         writeState(root, state);
       }
@@ -367,6 +427,29 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
     }
   }
   die(`the server did not answer within 5 minutes; see ${path.join(root, LOG_FILE)}`);
+}
+
+/**
+ * Write the AI access route into the running instance's own database. There
+ * is no env value for it, and the operator password is never stored, so the
+ * script writes the setting row itself. The server reads the row on every
+ * run; nothing else needs to change.
+ */
+async function applyAiRoute(state: InstanceState) {
+  if (!state.aiAccessRoute) return;
+  const { createDb, closeRegisteredClients } = await import("../../packages/db/src/index.js");
+  const url = `postgres://paperclip:paperclip@127.0.0.1:${state.dbPort}/paperclip`;
+  try {
+    await createDb(url).$client.unsafe(
+      `INSERT INTO instance_settings (singleton_key, general) VALUES ('default', jsonb_build_object('aiAccessRoute', $1::text))
+       ON CONFLICT (singleton_key) DO UPDATE
+       SET general = instance_settings.general || jsonb_build_object('aiAccessRoute', $1::text), updated_at = now()`,
+      [state.aiAccessRoute],
+    );
+  } finally {
+    await closeRegisteredClients(url);
+  }
+  say(`AI access route: ${state.aiAccessRoute}`);
 }
 
 async function stopServer(root: string, state: InstanceState) {
@@ -562,6 +645,12 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   // Company and client log-in.
   const companies = (await operator.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
   check(Array.isArray(companies) && companies.length === 1, `exactly one company (found ${Array.isArray(companies) ? companies.length : "?"})`);
+  const generalNow = await operator.expect("GET", "/api/instance/settings/general", undefined, [200]);
+  results.push(aiRouteCheck(state.aiAccessRoute, generalNow));
+  if (Array.isArray(companies) && companies.length === 1) {
+    const company = await operator.expect("GET", `/api/companies/${(companies[0] as { id?: string }).id}`, undefined, [200]);
+    results.push(boardApprovalCheck(state.requireBoardApprovalForNewAgents, company));
+  }
   if (state.limits && Array.isArray(companies) && companies.length === 1) {
     const companyId = (companies[0] as { id?: string }).id;
     const agentList = (await operator.expect("GET", `/api/companies/${companyId}/agents`, undefined, [200])) as unknown as Array<{
@@ -767,6 +856,13 @@ async function restoreIntoThrowaway(state: InstanceState, backupFile: string): P
  * restores. Writes only lastRestoreCheck in client-instance.json.
  */
 async function cmdRestoreCheck(root: string, state: InstanceState, rawBackup: string | undefined) {
+  const check = await runRestoreCheck(root, state, rawBackup);
+  if (!check.ok) die(check.line);
+  say(check.line);
+}
+
+/** restore-check without exiting: offsite-check reports the result in its own line. */
+async function runRestoreCheck(root: string, state: InstanceState, rawBackup: string | undefined): Promise<RestoreCheck> {
   const backupFile = rawBackup ? instanceBackup(root, rawBackup) : newestBackup(backupDir(root))?.file;
   if (!backupFile) die(`no backup in ${backupDir(root)}`);
   const name = path.basename(backupFile);
@@ -783,8 +879,264 @@ async function cmdRestoreCheck(root: string, state: InstanceState, rawBackup: st
   const fresh = readState(root);
   fresh.lastRestoreCheck = check;
   writeState(root, fresh);
-  if (!check.ok) die(check.line);
-  say(check.line);
+  return check;
+}
+
+// ---------------------------------------------------------------- off-host backups (GRE-666)
+
+/** The instance code is the folder name (c001), never a client name. */
+function instanceCode(root: string): string {
+  const code = path.basename(root);
+  const error = checkCode(code);
+  if (error) die(error);
+  return code;
+}
+
+function offsiteConfig(opts: Record<string, string>, code: string): OffsiteConfig {
+  if (!opts["offsite-config"]) die("--offsite-config <file> is required");
+  const config = loadOffsiteConfig(path.resolve(opts["offsite-config"]), code);
+  if ("error" in config) die(config.error);
+  return config;
+}
+
+/** Run restic with the instance's repository and key file only. */
+function restic(config: OffsiteConfig, opts: Record<string, string>, args: string[]) {
+  const result = spawnSync(opts.restic ?? "restic", args, {
+    env: resticEnv(config, process.env),
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error) die(`restic could not start (${opts.restic ?? "restic"}): ${result.error.message}`);
+  const err = (result.stderr ?? "").trim().split("\n").filter(Boolean).pop() ?? `exit code ${result.status}`;
+  return { ok: result.status === 0, out: result.stdout ?? "", err };
+}
+
+function cmdOffsiteInit(root: string, opts: Record<string, string>) {
+  const config = offsiteConfig(opts, instanceCode(root));
+  if (restic(config, opts, ["cat", "config"]).ok) return say("offsite-init: the repository already exists; nothing changed");
+  const init = restic(config, opts, ["init"]);
+  if (!init.ok) die(`offsite-init FAILED: ${init.err}`);
+  say("offsite-init: repository made. Keep a copy of the key file off the host: without it the copies cannot be read.");
+}
+
+/**
+ * offsite-backup: copy client-instance.json and the backups folder to the
+ * instance's own restic repository, then keep 30 daily and 12 weekly
+ * snapshots. Writes only lastOffsiteBackup in client-instance.json.
+ */
+function cmdOffsiteBackup(root: string, opts: Record<string, string>) {
+  const code = instanceCode(root);
+  const config = offsiteConfig(opts, code);
+  const at = new Date().toISOString();
+  const failed = (reason: string): OffsiteBackup => ({ ok: false, line: `offsite-backup FAILED: ${reason.slice(0, 300)}`, snapshot: null, at });
+  let result: OffsiteBackup;
+  if (!restic(config, opts, ["cat", "config"]).ok) {
+    result = failed("the repository cannot be read (run offsite-init once, or check the target and key file)");
+  } else {
+    const backup = restic(config, opts, ["backup", "--json", "--host", code, "--tag", code, ...OFFSITE_PATHS.map((p) => path.join(root, p))]);
+    const summary = backup.out
+      .split("\n")
+      .map((line) => {
+        try {
+          return JSON.parse(line) as { message_type?: string; snapshot_id?: string; total_files_processed?: number };
+        } catch {
+          return null;
+        }
+      })
+      .find((message) => message?.message_type === "summary");
+    if (!backup.ok || !summary?.snapshot_id) {
+      result = failed(`restic backup: ${backup.err}`);
+    } else {
+      const snapshot = summary.snapshot_id.slice(0, 8);
+      const forget = restic(config, opts, ["forget", "--host", code, "--tag", code, ...OFFSITE_RETENTION, "--prune"]);
+      result = forget.ok
+        ? { ok: true, line: `offsite-backup OK: snapshot ${snapshot}, ${summary.total_files_processed ?? 0} files`, snapshot, at }
+        : failed(`snapshot ${snapshot} written, but keeping 30 daily and 12 weekly failed: ${forget.err}`);
+    }
+  }
+  // Read again: only this one field changes.
+  const fresh = readState(root);
+  fresh.lastOffsiteBackup = result;
+  writeState(root, fresh);
+  if (!result.ok) die(result.line);
+  say(result.line);
+}
+
+/**
+ * offsite-check: restore the newest off-host snapshot of one code into an
+ * empty sandbox folder, run restore-check on that copy, then delete the copy.
+ * This proves the off-host copy, not only the one on the host.
+ */
+async function cmdOffsiteCheck(opts: Record<string, string>) {
+  const code = opts.code ?? die("--code <instance code> is required");
+  const codeError = checkCode(code);
+  if (codeError) die(codeError);
+  const config = offsiteConfig(opts, code);
+  const sandbox = resolveRoot(opts.sandbox ?? die("--sandbox <empty dir> is required"));
+  if (existsSync(sandbox) && readdirSync(sandbox).length > 0) die(`${sandbox} must be empty`);
+  mkdirSync(sandbox, { recursive: true });
+  const target = path.join(sandbox, "restore");
+  let line: string;
+  let ok = false;
+  try {
+    ({ ok, line } = await pullAndCheck(config, opts, code, target));
+  } finally {
+    // The copy holds client data: never leave it behind.
+    rmSync(target, { recursive: true, force: true });
+  }
+  if (!ok) die(line);
+  say(line);
+}
+
+async function pullAndCheck(config: OffsiteConfig, opts: Record<string, string>, code: string, target: string) {
+  const fail = (reason: string) => ({ ok: false, line: `offsite-check FAILED: ${code}: ${reason.slice(0, 300)}` });
+  const list = restic(config, opts, ["snapshots", "--json", "--host", code, "--tag", code]);
+  if (!list.ok) return fail(`restic snapshots: ${list.err}`);
+  const snapshots = JSON.parse(list.out || "[]") as Array<{ id: string; short_id?: string; time: string; paths: string[] }>;
+  const newest = snapshots.sort((a, b) => Date.parse(b.time) - Date.parse(a.time))[0];
+  if (!newest) return fail("no off-host snapshot");
+  const label = `snapshot ${newest.short_id ?? newest.id.slice(0, 8)} of ${newest.time}`;
+  const original = snapshotRoot(newest.paths);
+  if (!original) return fail(`${label} has no client-instance.json`);
+  say(`offsite-check: restoring ${label} into ${target}`);
+  const restore = restic(config, opts, ["restore", newest.id, "--target", target]);
+  if (!restore.ok) return fail(`restic restore: ${restore.err}`);
+  const copy = path.join(target, original);
+  if (!existsSync(path.join(copy, STATE_FILE))) return fail(`${label} restored without client-instance.json`);
+  if (!newestBackup(backupDir(copy))) return fail(`${label} holds no backup file`);
+  const check = await runRestoreCheck(copy, readState(copy), undefined);
+  return { ok: check.ok, line: `offsite-check ${check.ok ? "OK" : "FAILED"}: ${code}, ${label}: ${check.line}` };
+}
+
+// ---------------------------------------------------------------- host watch (GRE-666)
+
+function loadWatchConfig(file: string | undefined, publicUrl: string | undefined): WatchConfig {
+  if (!file) die("--watch-config <file> is required");
+  const fileError = checkPrivateFile(path.resolve(file), "watch config");
+  if (fileError) die(fileError);
+  const config = parseWatchConfig(readFileSync(path.resolve(file), "utf8"));
+  if ("error" in config) die(config.error);
+  if (publicUrl !== undefined) {
+    const health = publicHealthUrl(publicUrl);
+    if (typeof health !== "string") die(`--public-url: ${health.error}`);
+    config.publicUrl = publicUrl;
+  }
+  return config;
+}
+
+/** GET <public URL>/api/health, as a person outside would: DNS, Caddy, the certificate, the app. */
+async function publicUrlWatchSignal(publicUrl: string): Promise<WatchSignal> {
+  const url = publicHealthUrl(publicUrl) as string;
+  try {
+    const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+    const body = await res.json().catch(() => null);
+    return publicUrlSignal(url, { status: res.status, body });
+  } catch (err) {
+    // A TLS or DNS failure is in err.cause (undici); the message alone says only "fetch failed".
+    const cause = err instanceof Error && err.cause instanceof Error ? `: ${(err.cause as Error & { code?: string }).code ?? err.cause.message}` : "";
+    return publicUrlSignal(url, { error: `${err instanceof Error ? err.message : String(err)}${cause}` });
+  }
+}
+
+/** AI access per company, read as the operator log-in (GRE-15 records the state; this only reads it). */
+async function aiWatchSignals(state: InstanceState, config: WatchConfig): Promise<WatchSignal[]> {
+  const fail = (detail: string): WatchSignal[] => [{ key: "ai", ok: false, detail }];
+  try {
+    const operator = new Session(baseUrl(state));
+    const signIn = await operator.request("POST", "/api/auth/sign-in/email", { email: OPERATOR_EMAIL, password: config.operatorPassword });
+    if (signIn.status !== 200) return fail(`operator log-in refused (${signIn.status}); AI access not checked`);
+    const companies = await operator.request("GET", "/api/companies");
+    if (companies.status !== 200 || !Array.isArray(companies.json)) return fail(`GET /api/companies returned ${companies.status}`);
+    const signals: WatchSignal[] = [];
+    for (const company of companies.json as Array<{ id: string }>) {
+      const connections = await operator.request("GET", `/api/companies/${company.id}/ai-connections`);
+      const runs = await operator.request("GET", `/api/companies/${company.id}/heartbeat-runs?limit=100&summary=true`);
+      if (connections.status !== 200 || runs.status !== 200 || !Array.isArray(runs.json)) {
+        signals.push({ key: `ai:${company.id.slice(0, 8)}`, ok: false, detail: `AI state not readable (${connections.status}, ${runs.status})` });
+        continue;
+      }
+      const list = ((connections.json as { connections?: AiConnectionView[] }).connections ?? []) as AiConnectionView[];
+      signals.push(...aiSignals(company.id, list, runs.json as RunView[]));
+    }
+    return signals.length ? signals : fail("no company on this instance");
+  } catch (err) {
+    return fail(`AI access not checked: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+async function watchSignals(root: string, state: InstanceState, config: WatchConfig): Promise<WatchSignal[]> {
+  const pid = readPid(root);
+  const body = pid ? await health(state) : null;
+  const up = Boolean(pid) && body?.status === "ok";
+  const disk = statfsSync(root);
+  const meminfo = existsSync("/proc/meminfo") ? memAvailableFromMeminfo(readFileSync("/proc/meminfo", "utf8")) : null;
+  return [
+    { key: "health", ok: up, detail: pid ? `pid ${pid}, health ${String(body?.status ?? "no answer")}` : "not running" },
+    linesSignal("backup", backupStatusLines(backupDir(root))),
+    linesSignal("restore-check", restoreCheckStatusLines(state.lastRestoreCheck)),
+    linesSignal("offsite-backup", offsiteStatusLines(state.lastOffsiteBackup)),
+    diskSignal(Number(disk.bavail) * Number(disk.bsize)),
+    memorySignal(meminfo ?? freemem()),
+    ...(up ? await aiWatchSignals(state, config) : [{ key: "ai", ok: false, detail: "not checked: the app is not up" }]),
+    ...(config.publicUrl ? [await publicUrlWatchSignal(config.publicUrl)] : []),
+  ];
+}
+
+const WATCH_STATE_FILE = "watch-state.json";
+
+/**
+ * watch: one pass of the host watch. Prints PASS/FAIL per signal, writes them
+ * to watch-state.json (for the GRE-144 check-in), pings the dead-man check
+ * and mails the alert address when the failing set changes. Exit code 1 when
+ * any signal fails. A timer runs it every 5 minutes.
+ */
+async function cmdWatch(root: string, state: InstanceState, opts: Record<string, string>) {
+  const code = instanceCode(root);
+  const config = loadWatchConfig(opts["watch-config"], opts["public-url"]);
+  const at = new Date().toISOString();
+  const signals = await watchSignals(root, state, config);
+  for (const s of signals) say(`${s.ok ? "PASS" : "FAIL"} ${s.key}: ${s.detail}`);
+  const failing = signals.filter((s) => !s.ok).map((s) => s.key);
+
+  const stateFile = path.join(root, WATCH_STATE_FILE);
+  const previous: AlertState = existsSync(stateFile) ? (JSON.parse(readFileSync(stateFile, "utf8")) as AlertState) : { failing: [], alertedAt: null };
+  let alert: AlertState = { failing: previous.failing, alertedAt: previous.alertedAt };
+  let delivered = true;
+
+  if (config.pingUrl) {
+    const report = signals.map((s) => `${s.ok ? "PASS" : "FAIL"} ${s.key}: ${s.detail}`).join("\n");
+    try {
+      const res = await fetch(failing.length ? `${config.pingUrl.replace(/\/$/, "")}/fail` : config.pingUrl, {
+        method: "POST",
+        body: report,
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      say(`dead-man check pinged (${failing.length ? "fail" : "ok"})`);
+    } catch (err) {
+      // The dead-man check alerts by itself when pings stop.
+      say(`WARNING: dead-man ping failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const decision = decideAlert(previous, failing);
+  if (decision.send) {
+    if (config.alertEmail && config.mailCommand) {
+      const { subject, body } = alertMessage(code, decision.kind, signals, at);
+      const [command, ...args] = config.mailCommand;
+      const mail = spawnSync(command!, args, {
+        input: `To: ${config.alertEmail}\nSubject: ${subject}\n\n${body}\n`,
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      delivered = mail.status === 0;
+      say(delivered ? `alert mailed (${decision.kind})` : `WARNING: alert mail failed (${mail.error?.message ?? `exit code ${mail.status}`}); the next pass tries again`);
+    }
+    // Not delivered: keep the old state so the next pass sends it again.
+    if (delivered) alert = { failing: [...failing].sort(), alertedAt: at };
+  }
+  writeFileSync(stateFile, `${JSON.stringify({ ...alert, lastRun: { at, signals } }, null, 2)}\n`);
+  if (failing.length) process.exit(1);
 }
 
 // ---------------------------------------------------------------- install limits
@@ -824,6 +1176,28 @@ function cmdLimits(root: string, state: InstanceState, opts: Record<string, stri
   if (readPid(root)) say("the instance is running; stop and start it to use the new limits");
 }
 
+function orDie<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    die(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** ai-route --root <dir> [--ai-route R]: show, or change and save; the next start writes it. */
+function cmdAiRoute(root: string, state: InstanceState, opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => flag !== "root" && flag !== "ai-route");
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (opts["ai-route"] === undefined) {
+    say(`AI access route: ${state.aiAccessRoute ?? "none (made before GRE-667; set it with ai-route --ai-route R)"}`);
+    return;
+  }
+  state.aiAccessRoute = orDie(() => parseAiRoute(opts["ai-route"]));
+  writeState(root, state);
+  say(`AI access route saved: ${state.aiAccessRoute}`);
+  if (readPid(root)) say("the instance is running; stop and start it to use the new route");
+}
+
 // ---------------------------------------------------------------- commands
 
 async function cmdCreate(opts: Record<string, string>) {
@@ -837,19 +1211,35 @@ async function cmdCreate(opts: Record<string, string>) {
   }
   if (existsSync(root) && readdirSync(root).length > 0) die(`${root} is not empty; pick a new folder for a new instance`);
 
-  const port = opts.port ? Number(opts.port) : await firstFreePort(3300, 3399, new Set());
-  const dbPort = opts["db-port"] ? Number(opts["db-port"]) : await firstFreePort(55400, 55499, new Set([port]));
+  const { port, dbPort } = await choosePorts({
+    port: opts.port ? Number(opts.port) : undefined,
+    dbPort: opts["db-port"] ? Number(opts["db-port"]) : undefined,
+    claims: siblingPortClaims(root),
+    firstFree: firstFreePort,
+  }).catch((err: Error) => die(err.message));
   checkPort(port, "--port");
   checkPort(dbPort, "--db-port");
   if (port === dbPort) die("--port and --db-port must differ");
 
   const limits = readLimitFlags(opts, DEFAULT_INSTALL_LIMITS);
-  const state: InstanceState = { edition, passedBetaFeatures: [...passed].sort(), port, dbPort, createdAt: new Date().toISOString(), limits };
+  const aiAccessRoute = orDie(() => parseAiRoute(opts["ai-route"]));
+  const requireBoardApprovalForNewAgents = orDie(() => parseBoardApproval(opts["board-approval"]));
+  const state: InstanceState = {
+    edition,
+    passedBetaFeatures: [...passed].sort(),
+    port,
+    dbPort,
+    createdAt: new Date().toISOString(),
+    limits,
+    aiAccessRoute,
+    requireBoardApprovalForNewAgents,
+  };
   editionValues(state); // fail before anything is written
   mkdirSync(root, { recursive: true });
   writeInstanceFiles(root, state);
   say(`instance folder ${root}, edition ${edition}${passed.length ? ` + ${passed.join(", ")}` : ""}, port ${port}, database port ${dbPort}`);
   say(`limits: ${describeLimits(limits)}`);
+  say(`AI access route ${aiAccessRoute}, board approval for new agents ${requireBoardApprovalForNewAgents ? "on" : "off"}`);
 
   // 1. Setup start: operator (instance admin), one company, one client log-in.
   await startServer(root, state, "provision");
@@ -864,6 +1254,7 @@ async function cmdCreate(opts: Record<string, string>) {
   await operator.expect("POST", `/api/invites/${token}/accept`, { requestType: "human" }, [200, 202]);
 
   const company = await operator.expect("POST", "/api/companies", { name: opts["company-name"] ?? "Client company" }, [200, 201]);
+  await operator.expect("PATCH", `/api/companies/${company.id}`, { requireBoardApprovalForNewAgents }, [200]);
   const invite = await operator.expect(
     "POST",
     `/api/companies/${company.id}/invites`,
@@ -1018,6 +1409,7 @@ async function main() {
   const { command, opts, positional } = parseArgs(argv);
   if (command === "create") return cmdCreate(opts);
   if (command === "edition-env") return cmdEditionEnv(opts);
+  if (command === "offsite-check") return cmdOffsiteCheck(opts);
   if (command === "upgrade" || command === "restore") {
     const [rootArg, second, ...extra] = positional;
     if (extra.length > 0 || (opts.root && rootArg && second)) die(`too many arguments for ${command}`);
@@ -1051,10 +1443,12 @@ async function main() {
       say(`${root}: edition ${state.edition}${state.passedBetaFeatures.length ? ` + ${state.passedBetaFeatures.join(", ")}` : ""}, port ${state.port}, database port ${state.dbPort}`);
       say(pid ? `running (pid ${pid}), health ${String(body?.status ?? "no answer")}` : "not running");
       say(`limits: ${state.limits ? describeLimits(state.limits) : "none (made before GRE-141; set them with limits)"}`);
+      say(`AI access route: ${state.aiAccessRoute ?? "none (made before GRE-667; set it with ai-route)"}`);
       // Read-only; a WARNING does not change the exit code (GRE-533).
       for (const line of [
         ...backupStatusLines(backupDir(root)),
         ...restoreCheckStatusLines(state.lastRestoreCheck),
+        ...offsiteStatusLines(state.lastOffsiteBackup),
         ...releaseStatusLines(state),
       ]) {
         say(line);
@@ -1069,6 +1463,14 @@ async function main() {
       return cmdVerify(root, state);
     case "limits":
       return cmdLimits(root, state, opts);
+    case "offsite-init":
+      return cmdOffsiteInit(root, opts);
+    case "offsite-backup":
+      return cmdOffsiteBackup(root, opts);
+    case "watch":
+      return cmdWatch(root, state, opts);
+    case "ai-route":
+      return cmdAiRoute(root, state, opts);
     default:
       die(USAGE);
   }

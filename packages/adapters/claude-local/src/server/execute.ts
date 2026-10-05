@@ -100,6 +100,11 @@ import { isBedrockModelId } from "./models.js";
 import { prepareClaudePromptBundle } from "./prompt-cache.js";
 import { buildClaudeExecutionPermissionArgs, claudeSandboxPermissionEnv } from "./permissions.js";
 import {
+  killCommandHookEntry,
+  withKillCommandHook,
+  writeKillCommandHook,
+} from "@greatstone/adapter-utils/kill-command-hook";
+import {
   FALLBACK_CLAUDE_LOCAL_MODEL,
   isImplicitClaudeDefaultModel,
   resolveClaudeModel,
@@ -574,6 +579,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     servers: runtimeMcpServers,
   });
   const localMcpConfigDir = path.dirname(localMcpConfigPath);
+  // Refuse pkill, killall and kill by name or pattern before they run: they
+  // can match the live server, which runs as the same user (GRE-746). A remote
+  // target cannot reach the host's processes, so it gets no hook.
+  const killCommandHookPath = executionTargetIsRemote
+    ? null
+    : await writeKillCommandHook(path.join(claudeRuntimeStateDir, "hooks"));
+  const killCommandHookSettings = killCommandHookPath
+    ? JSON.stringify({ hooks: withKillCommandHook(undefined, killCommandHookEntry(killCommandHookPath)) })
+    : null;
   const sharedClaudeConfigDir = config.managedAiConnection ? asString(configEnv.CLAUDE_CONFIG_DIR, "") : resolveSharedClaudeConfigDir(process.env);
   const networkScope = parseLocalProcessNetworkScope(config.networkScope);
   const filesystemScope = parseLocalProcessFilesystemScope(config.filesystemScope);
@@ -587,6 +601,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
             { path: path.join(path.dirname(sharedClaudeConfigDir), ".claude.json"), access: "rw" },
             { path: promptBundle.addDir, access: "ro" },
             { path: localMcpConfigDir, access: "ro" },
+            ...(killCommandHookPath ? [{ path: path.dirname(killCommandHookPath), access: "ro" as const }] : []),
           ],
           extraPaths: parseLocalProcessSandboxExtraPaths(config.filesystemExtraPaths),
           homeDir: filesystemScope ? path.dirname(sharedClaudeConfigDir) : null,
@@ -892,6 +907,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   ) => {
     const args = ["--print", "--output-format", "stream-json", "--verbose"];
     if (config.managedAiConnection) args.push("--setting-sources", "user");
+    if (killCommandHookSettings) args.push("--settings", killCommandHookSettings);
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     args.push(...buildClaudeExecutionPermissionArgs({
       dangerouslySkipPermissions,

@@ -3,7 +3,7 @@
 // under ~/GSAM is read or written.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -156,9 +156,11 @@ test("status shows the origin, and old state files without run or issue still wo
 function withFakeNode(fn) {
   const bin = mkdtempSync(join(tmpdir(), "gs-preview-bin-"));
   const log = join(bin, "calls.log");
-  writeFileSync(join(bin, "node"), `#!/usr/bin/env bash\nprintf '%s\\n' "$@" >>${JSON.stringify(log)}\ntouch "$3" "$4"\n`, { mode: 0o755 });
+  const envLog = join(bin, "env.log");
+  writeFileSync(join(bin, "node"), `#!/usr/bin/env bash\nprintf '%s\\n' "$@" >>${JSON.stringify(log)}\nprintf '%s\\n' "\${PLAYWRIGHT_BROWSERS_PATH-<unset>}" >>${JSON.stringify(envLog)}\ntouch "$3" "$4"\n`, { mode: 0o755 });
   try {
-    return fn({ PATH: `${bin}:${process.env.PATH}` }, () => (existsSync(log) ? readFileSync(log, "utf8") : ""));
+    return fn({ PATH: `${bin}:${process.env.PATH}` }, () => (existsSync(log) ? readFileSync(log, "utf8") : ""),
+      () => (existsSync(envLog) ? readFileSync(envLog, "utf8") : ""));
   } finally {
     rmSync(bin, { recursive: true, force: true });
   }
@@ -170,9 +172,10 @@ test("shot saves laptop and phone PNGs named after the preview tag and prints th
     assert.equal(code, 0, out);
     const laptop = join(root, "preview", "shots", "rc-2026-10-04.1-inbox-laptop.png");
     const phone = join(root, "preview", "shots", "rc-2026-10-04.1-inbox-phone.png");
-    assert.deepEqual(out.trim().split("\n"), [laptop, phone]);
+    const consoleLog = join(root, "preview", "shots", "rc-2026-10-04.1-inbox-console.txt");
+    assert.deepEqual(out.trim().split("\n"), [laptop, phone, consoleLog]);
     assert.ok(existsSync(laptop) && existsSync(phone));
-    assert.deepEqual(calls().trim().split("\n"), ["scripts/preview-shot.mjs", "http://localhost:3200/GRE/issues", laptop, phone]);
+    assert.deepEqual(calls().trim().split("\n"), ["scripts/preview-shot.mjs", "http://localhost:3200/GRE/issues", laptop, phone, consoleLog]);
   }));
 });
 
@@ -216,4 +219,127 @@ test("shot checks its arguments before anything else (GRE-606)", () => {
     assert.match(run("/", "../x").out, /the name may use only letters/);
     assert.equal(calls(), "");
   }));
+});
+
+test("shot looks for the browser in the account home, not the agent's temp HOME (GRE-732)", () => {
+  const shared = join(userInfo().homedir, process.platform === "darwin" ? "Library/Caches/ms-playwright" : ".cache/ms-playwright");
+  withFakePreview({ port: 3200 }, (root) => withFakeNode((env, calls, browsersPath) => {
+    // runPreview sets HOME to a temp folder, as an agent run does.
+    assert.equal(runPreview(["shot", "/", "home"], root, { ...env, GSAM_PREVIEW_PORT: "3200" }).code, 0);
+    assert.equal(runPreview(["shot", "/", "home"], root, { ...env, GSAM_PREVIEW_PORT: "3200", PLAYWRIGHT_BROWSERS_PATH: "/opt/pw" }).code, 0);
+    assert.deepEqual(browsersPath().trim().split("\n"), [shared, "/opt/pw"]);
+  }));
+});
+
+test("start in a checkout with no dependencies says to run pnpm install, before copying anything (GRE-732)", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  const clone = mkdtempSync(join(tmpdir(), "gs-preview-clone-"));
+  try {
+    mkdirSync(join(clone, "scripts"));
+    for (const f of ["greatstone-preview.sh", "greatstone-common.sh"]) {
+      writeFileSync(join(clone, "scripts", f), readFileSync(join(scriptsDir, f)));
+    }
+    mkdirSync(join(root, "data", "instances", "default"), { recursive: true });
+    const result = (() => {
+      try {
+        return execFileSync("bash", [join(clone, "scripts", "greatstone-preview.sh"), "start", "rc-1"], {
+          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+          env: { PATH: process.env.PATH, HOME: root, GSAM_ROOT: root, GSAM_PREVIEW_PORT: "1" },
+        });
+      } catch (error) {
+        return { code: error.status, out: `${error.stdout}${error.stderr}` };
+      }
+    })();
+    assert.equal(result.code, 1);
+    assert.match(result.out, /no dependencies installed; run first: \(cd .*gs-preview-clone-.* && pnpm install --frozen-lockfile\)/);
+    assert.ok(!existsSync(join(root, "preview")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(clone, { recursive: true, force: true });
+  }
+});
+
+// Shot files as `shot` leaves them: <tag>-<name>-{laptop,phone}.png and a
+// console file in preview-shot.mjs's format. Returns a listing of the folder.
+function writeShots(root, shots) {
+  const dir = join(root, "preview", "shots");
+  mkdirSync(dir, { recursive: true });
+  for (const [file, body] of Object.entries(shots)) writeFileSync(join(dir, file), body);
+  return () => readdirSync(dir).sort().map((f) => `${f}:${statSync(join(dir, f)).mtimeMs}`);
+}
+
+const consoleFile = (...lines) => `http://localhost:3200/\nconsole errors: ${lines.length}\n${lines.map((l) => `${l}\n`).join("")}`;
+
+test("evidence prints one row per shot of the running tag with its error counts (GRE-700)", () => {
+  withFakePreview({ tag: "rc-2026-10-05.1", port: 3200 }, (root) => {
+    const listing = writeShots(root, {
+      "rc-2026-10-05.1-inbox-laptop.png": "", "rc-2026-10-05.1-inbox-phone.png": "",
+      "rc-2026-10-05.1-inbox-console.txt": consoleFile(),
+      "rc-2026-10-05.1-board-laptop.png": "", "rc-2026-10-05.1-board-phone.png": "",
+      "rc-2026-10-05.1-board-console.txt": consoleFile(
+        "[laptop] console: TypeError: x is undefined", "[phone] pageerror: boom",
+        "[phone] console: TypeError: x is undefined", "[laptop] http 500: GET /api/issues"),
+      // Another tag's shots, including one whose tag starts with this tag.
+      "rc-2026-10-04.1-inbox-laptop.png": "", "rc-2026-10-04.1-inbox-phone.png": "",
+      "rc-2026-10-04.1-inbox-console.txt": consoleFile("[laptop] http 404: GET /x"),
+      "rc-2026-10-05.10-inbox-laptop.png": "",
+    });
+    const before = listing();
+    const { code, out } = runPreview(["evidence"], root, { GSAM_PREVIEW_PORT: "3200" });
+    assert.equal(code, 0, out);
+    const rows = out.split("\n").filter((l) => l.startsWith("| ") && !l.startsWith("| Shot"));
+    assert.deepEqual(rows, [
+      "| board | rc-2026-10-05.1-board-laptop.png | rc-2026-10-05.1-board-phone.png | 3 | 1 | check |",
+      "| inbox | rc-2026-10-05.1-inbox-laptop.png | rc-2026-10-05.1-inbox-phone.png | 0 | 0 | ok |",
+    ]);
+    assert.match(out, /^\| Shot \| Laptop \| Phone \| Console errors \| Failed requests \| Result \|$/m);
+    assert.doesNotMatch(out, /rc-2026-10-04\.1|rc-2026-10-05\.10/);
+    assert.deepEqual(listing(), before, "evidence must not write or delete files");
+  });
+});
+
+test("evidence marks a failed request alone, a missing file or no console file as check (GRE-700)", () => {
+  withFakePreview({ tag: "rc-t", port: 3200 }, (root) => {
+    writeShots(root, {
+      "rc-t-a-laptop.png": "", "rc-t-a-phone.png": "", "rc-t-a-console.txt": consoleFile("[phone] http 404: GET /api/x"),
+      "rc-t-b-laptop.png": "", "rc-t-b-console.txt": consoleFile(),
+      "rc-t-c-laptop.png": "", "rc-t-c-phone.png": "",
+    });
+    const rows = runPreview(["evidence"], root).out.split("\n").filter((l) => /^\| [abc] /.test(l));
+    assert.deepEqual(rows, [
+      "| a | rc-t-a-laptop.png | rc-t-a-phone.png | 0 | 1 | check |",
+      "| b | rc-t-b-laptop.png | missing | 0 | 0 | check |",
+      "| c | rc-t-c-laptop.png | rc-t-c-phone.png | no console file | no console file | check |",
+    ]);
+  });
+});
+
+test("evidence with no shots for the tag prints one line and exits 0 (GRE-700)", () => {
+  withFakePreview({ tag: "rc-new", port: 3200 }, (root) => {
+    writeShots(root, { "rc-old-inbox-laptop.png": "", "rc-old-inbox-console.txt": consoleFile() });
+    const { code, out } = runPreview(["evidence"], root);
+    assert.equal(code, 0, out);
+    assert.equal(out, `No shots for rc-new in ${join(root, "preview", "shots")}.\n`);
+  });
+  // No shots folder at all: still one line, and the folder is not created.
+  withFakePreview({ tag: "rc-new" }, (root) => {
+    const { code, out } = runPreview(["evidence"], root);
+    assert.equal(code, 0, out);
+    assert.match(out, /^No shots for rc-new in .*\.\n$/);
+    assert.ok(!existsSync(join(root, "preview", "shots")));
+  });
+});
+
+test("evidence takes a tag when no preview runs, and refuses a bad one (GRE-700)", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    assert.match(runPreview(["evidence"], root).out, /no preview is running; give the tag: greatstone-preview\.sh evidence <tag>/);
+    writeShots(root, { "rc-x-home-laptop.png": "", "rc-x-home-phone.png": "", "rc-x-home-console.txt": consoleFile() });
+    assert.match(runPreview(["evidence", "rc-x"], root).out, /^\| home \| rc-x-home-laptop\.png \| rc-x-home-phone\.png \| 0 \| 0 \| ok \|$/m);
+    const bad = runPreview(["evidence", "../x"], root);
+    assert.equal(bad.code, 1);
+    assert.match(bad.out, /the tag may use only letters/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

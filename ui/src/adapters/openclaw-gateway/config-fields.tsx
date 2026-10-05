@@ -239,7 +239,7 @@ export function OpenClawGatewayConfigFields({
             }
             immediate
             className={inputClass}
-            placeholder="paperclip"
+            placeholder="agent-session"
           />
         </Field>
       )}
@@ -323,7 +323,7 @@ export function OpenClawGatewayConfigFields({
           }
           immediate
           className={inputClass}
-          placeholder="https://paperclip.example"
+          placeholder="https://gsam.example.com"
         />
       </Field>
 

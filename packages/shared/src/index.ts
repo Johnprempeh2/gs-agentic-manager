@@ -26,6 +26,12 @@ export {
   CONNECTIONS_SEARCH_TOOL_DESCRIPTION,
 } from "./connection-intent-guidance.js";
 export {
+  hasMcpToolHints,
+  mcpToolHints,
+  type McpToolEffect,
+  type McpToolHints,
+} from "./mcp-tool-hints.js";
+export {
   nativeFinalizationResultSchema,
   nativeFinalizationResultV1Schema,
   nativeReportedWorkDispositionSchema,
@@ -875,6 +881,7 @@ export type {
   CompanySkillResetRequest,
   CompanySkillImportRequest,
   CompanySkillImportResult,
+  CompanySkillImportStrippedFiles,
   CompanySkillProjectScanRequest,
   CompanySkillProjectBrowseRequest,
   CompanySkillProjectBrowseEntry,

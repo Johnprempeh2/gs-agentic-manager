@@ -508,4 +508,94 @@ describe("teams catalog routes", () => {
       expect(mockTeamsCatalogService.requestCatalogTeam).not.toHaveBeenCalled();
     });
   });
+
+  describe("install honours the add mode (GRE-668)", () => {
+    const clientBoardUser = {
+      type: "board",
+      userId: "client-owner",
+      companyIds: [companyId],
+      source: "session",
+      isInstanceAdmin: false,
+    };
+    const instanceAdmin = {
+      type: "board",
+      userId: "greatstone-operator",
+      companyIds: [companyId],
+      source: "session",
+      isInstanceAdmin: true,
+    };
+
+    function installAs(actor: Record<string, unknown>) {
+      return createApp(actor).then((app) =>
+        request(app).post(`/api/companies/${companyId}/teams/catalog/product-engineering/install`).send({}),
+      );
+    }
+
+    function setAddMode(teamCatalogAddMode: "request" | "install") {
+      mockInstanceSettingsService.getGeneral.mockResolvedValue({ teamCatalogFilter: "all", teamCatalogAddMode });
+    }
+
+    it("refuses a client board user in request mode and installs nothing", async () => {
+      setAddMode("request");
+
+      const res = await installAs(clientBoardUser);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+      expect(res.body.error).toMatch(/use request/i);
+      expect(mockTeamsCatalogService.installCatalogTeam).not.toHaveBeenCalled();
+    });
+
+    it("lets the instance admin install in request mode", async () => {
+      setAddMode("request");
+
+      const res = await installAs(instanceAdmin);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockTeamsCatalogService.installCatalogTeam).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets a client board user install in install mode", async () => {
+      setAddMode("install");
+
+      const res = await installAs(clientBoardUser);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockAccessService.canUser).toHaveBeenCalledWith(companyId, "client-owner", "agents:create");
+      expect(mockTeamsCatalogService.installCatalogTeam).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets the instance admin install in install mode", async () => {
+      setAddMode("install");
+
+      const res = await installAs(instanceAdmin);
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockTeamsCatalogService.installCatalogTeam).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the agent rule in request mode", async () => {
+      setAddMode("request");
+
+      const res = await installAs({ type: "agent", agentId: "agent-1", companyId, runId: "run-1" });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockTeamsCatalogService.installCatalogTeam).toHaveBeenCalledTimes(1);
+    });
+
+    it("still lets a client board user ask in request mode", async () => {
+      setAddMode("request");
+      mockTeamsCatalogService.requestCatalogTeam.mockResolvedValue({
+        approval: { id: "approval-1", type: "request_board_approval", status: "pending" },
+        created: true,
+      });
+      const app = await createApp(clientBoardUser);
+
+      const res = await request(app)
+        .post(`/api/companies/${companyId}/teams/catalog/product-engineering/request`)
+        .send({});
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockTeamsCatalogService.installCatalogTeam).not.toHaveBeenCalled();
+    });
+  });
 });

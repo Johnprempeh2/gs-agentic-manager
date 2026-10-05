@@ -67,6 +67,26 @@ weekly number counts stranded trees whose last activity falls in the window,
 i.e. trees that stopped this week. The report also lists every stranded tree
 of any age, with the uncovered issues in it.
 
+**R1 detail — parked wakes with no live run** (`parkedWakes` in
+`metrics.json`, GRE-685). Count of `deferred_issue_execution` wakes requested at
+least 10 minutes ago whose issue has no `execution_run_id`, split by wake
+`reason`. Nothing will drain such a wake, and the stranded-queue sweep promotes
+it only when it carries comment ids or an interaction answer, so review
+hand-offs, "blockers resolved" and assignment wakes stay parked. Report only:
+it sizes the problem before the sweep change. Zero is printed as zero.
+
+**R1 detail — repair escalations to the board** (`repairEscalations` in
+`metrics.json`, register row 76, GRE-725). Count of
+`issue.disposition_repair_escalated` activity in the window whose
+`terminalReason` is `unchanged_source_state_exhausted`, in a 2x2 split:
+agent-only task or not (agent assignee before escalation, no user assignee, no
+chat user, every execution stage participant an agent), and whether any repair
+run for that escalation posted a comment (agent `issue.comment_added` on a run
+woken with `issue_disposition_repair` on the same issue, with the same
+source-state fingerprint, started no later than the escalation; recovery action
+ids differ per attempt, so they are not matched). Each cell lists its issue identifiers. Report only:
+it sizes row 75 (who owns the escalation). Zero is printed as zero.
+
 **R2 — run failure rate and unattended recovery.** Among runs that finished in
 the window, failure rate is `failed + timed_out + interrupted` divided by those
 plus `succeeded`. Cancelled runs are reported but excluded, because
@@ -83,6 +103,17 @@ an account problem for the board, not a platform fault, so the R2 budget
 checks the platform rate and the report shows login refusals as a separate
 count (GRE-590). The all-in `failureRate` is still saved. The unattended
 share still includes rejected logins.
+
+Account and setup refusals are left out the same way and counted as
+`r2.accountRefusals`, split by reason in `r2.accountRefusalsByReason`
+(GRE-745): an expired credential, no personal default account, a connection
+not permitted for the agent, low trust with no sandbox environment
+(`low_trust_requires_sandbox_environment`), and a task with no project
+workspace. Each is matched on its error code plus the fixed server message for
+that one reason, never on a whole code: `configuration_incomplete` also carried
+the GRE-236 platform bug, which stays counted, and so does `acpx_turn_failed`.
+The collector reads a failed run's error text in memory for this match; the
+text is not saved in the report.
 
 **R2 detail — rejected logins.** A failed run whose login the provider
 refused: its error code is `<provider>_auth_required`, or (servers before

@@ -40,13 +40,14 @@ const snapshot = await sql.begin("read only", async (tx) => {
       assignee_agent_id as "assigneeAgentId", assignee_user_id as "assigneeUserId",
       conversation_user_id as "conversationUserId", conversation_state as "conversationState",
       monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt", hidden_at as "hiddenAt",
-      updated_at as "updatedAt", completed_at as "completedAt"
+      execution_run_id as "executionRunId", execution_policy as "executionPolicy", updated_at as "updatedAt", completed_at as "completedAt"
     from issues where true ${scope("company_id")}`;
   const runs = await tx`
     select r.id, r.company_id as "companyId", r.agent_id as "agentId", r.status,
       r.context_snapshot->>'issueId' as "issueId", r.context_snapshot->>'taskId' as "taskId",
       r.native_issue_id as "nativeIssueId", r.error_code as "errorCode",
       coalesce(r.error ilike '%terminal access failure%', false) as "errorMentionsAccessFailure",
+      case when r.status in ('failed', 'timed_out', 'interrupted') then left(r.error, 2000) end as "errorText",
       r.retry_of_run_id as "retryOfRunId",
       r.created_at as "createdAt", r.started_at as "startedAt", r.last_output_at as "lastOutputAt", r.finished_at as "finishedAt",
       w.requested_at as "wakeRequestedAt",
@@ -59,7 +60,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
       run_id as "runId", created_at as "createdAt"
     from activity_log where created_at >= ${since} ${scope("company_id")}`;
   const wakeRequests = await tx`
-    select status, payload->>'issueId' as "issueId", payload->>'taskId' as "taskId",
+    select status, reason, requested_at as "requestedAt", payload->>'issueId' as "issueId", payload->>'taskId' as "taskId",
       payload->'_paperclipWakeContext'->>'issueId' as "contextIssueId",
       payload->'_paperclipWakeContext'->>'taskId' as "contextTaskId"
     from agent_wakeup_requests
@@ -85,7 +86,25 @@ const snapshot = await sql.begin("read only", async (tx) => {
   const retryExhaustions = await tx`
     select e.run_id as "runId", e.created_at as "createdAt" from heartbeat_run_events e
     where e.message like 'Bounded retry exhausted%' and e.created_at >= ${since} ${scope("e.company_id")}`;
-  return { now, issues, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents };
+  // Row 76 (GRE-725): disposition repair escalations and the repair runs behind them.
+  const repairEscalations = await tx`
+    select entity_id as "issueId", created_at as "createdAt", details->>'identifier' as identifier,
+      details->>'terminalReason' as "terminalReason", details->>'recoveryActionId' as "recoveryActionId",
+      details->>'sourceStateFingerprint' as fingerprint, details->'sourceAssigneeBefore' as "sourceAssigneeBefore"
+    from activity_log
+    where action = 'issue.disposition_repair_escalated' and created_at >= ${since} ${scope("company_id")}`;
+  const repairRuns = await tx`
+    select r.id, r.context_snapshot->>'issueId' as "issueId", r.created_at as "createdAt",
+      r.context_snapshot->>'dispositionRepairFingerprint' as fingerprint,
+      (select count(*)::int from activity_log a
+        where a.run_id = r.id and a.actor_type = 'agent' and a.action = 'issue.comment_added') as "commentCount"
+    from heartbeat_runs r
+    where r.context_snapshot->>'wakeReason' = 'issue_disposition_repair'
+      and r.context_snapshot->>'issueId' in (
+        select entity_id from activity_log
+        where action = 'issue.disposition_repair_escalated' and created_at >= ${since} ${scope("company_id")})
+      ${scope("r.company_id")}`;
+  return { now, issues, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents, repairEscalations, repairRuns };
 });
 await sql.end();
 
@@ -111,8 +130,10 @@ const markdown = [
   "| # | Number | Value | Sample |",
   "|---|---|---:|---|",
   `| R1 | Stranded task trees stopped in window | ${metrics.r1.weekly} | ${metrics.r1.treesWithOpenWork} trees with open work; ${metrics.r1.total} stranded in total |`,
-  `| R2 | Platform failure rate | ${pct(metrics.r2.platformFailureRate)} | ${metrics.r2.platformFailed} failed / ${metrics.r2.platformFinished} finished, rejected logins left out (all-in ${pct(metrics.r2.failureRate)}; ${metrics.r2.cancelled} cancelled, excluded) |`,
+  `| R1 | Parked wakes on an issue with no live run, older than ${metrics.parkedWakes.minAgeMinutes} min | ${metrics.parkedWakes.total} | ${metrics.parkedWakes.byReason.length ? `top reasons: ${metrics.parkedWakes.byReason.slice(0, 5).map((entry) => `${entry.reason} ${entry.count}`).join(", ")}` : "none"} |`,
+  `| R2 | Platform failure rate | ${pct(metrics.r2.platformFailureRate)} | ${metrics.r2.platformFailed} failed / ${metrics.r2.platformFinished} finished, rejected logins and account refusals left out (all-in ${pct(metrics.r2.failureRate)}; ${metrics.r2.cancelled} cancelled, excluded) |`,
   `| R2 | Login refusals (count) | ${metrics.r2.loginRefusals} | ${metrics.auth.retriesAfterAuthFailure} retries after them; ${metrics.auth.retryExhaustionsFromAuthFailures} of ${metrics.auth.retryExhaustions} \`Bounded retry exhausted\` events follow one |`,
+  `| R2 | Account and setup refusals (count) | ${metrics.r2.accountRefusals} | ${Object.entries(metrics.r2.accountRefusalsByReason).map(([reason, count]) => `${reason} ${count}`).join(", ")} |`,
   `| R2 | Failures recovered without a human | ${pct(metrics.r2.unattendedRecoveryShare)} | ${metrics.r2.recoveredWithoutHuman} auto, ${metrics.r2.recoveredWithHuman} human, ${metrics.r2.unresolved} unresolved, ${metrics.r2.failedWithoutIssue} without issue |`,
   `| S1 | Wake → first useful action, median | ${fmt(metrics.s1.medianMs, " ms")} | n=${metrics.s1.sampleSize} (${metrics.s1.runsWithoutUsefulAction} runs without a useful action) |`,
   `| S1 | Wake → first useful action, p95 | ${fmt(metrics.s1.p95Ms, " ms")} | n=${metrics.s1.sampleSize}; queue delay median ${fmt(metrics.s1.queueDelayMedianMs, " ms")} |`,
@@ -121,8 +142,21 @@ const markdown = [
   `| S1 | of which setup (wake → prompt sent), median | ${fmt(metrics.s1.split.setupMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.setupP95Ms, " ms")} |`,
   `| S1 | of which agent (prompt sent → first useful action), median | ${fmt(metrics.s1.split.agentMedianMs, " ms")} | n=${metrics.s1.split.sampleSize}; p95 ${fmt(metrics.s1.split.agentP95Ms, " ms")} |`,
   "",
-  "- **Platform failure rate**: runs that failed because of the platform. Rejected logins are left out of both sides; this is the number the R2 budget checks.",
+  "- **Platform failure rate**: runs that failed because of the platform. Rejected logins and account or setup refusals are left out of both sides; this is the number the R2 budget checks.",
   "- **Login refusals**: runs that failed because the provider refused the login. That is an account problem for John, not a platform bug.",
+  "- **Account and setup refusals**: runs refused for an expired credential, no personal default account, a connection not permitted for the agent, low trust with no sandbox, or a task with no project workspace (GRE-745). Account or setup state for the board, not a platform bug.",
+  "",
+  "## Repair escalations to the board",
+  "",
+  `\`${metrics.repairEscalations.terminalReason}\` escalations in the last ${windowDays} days: **${metrics.repairEscalations.total}** (register row 76).`,
+  "",
+  "| Task | Repair runs posted a comment | No comment |",
+  "|---|---:|---:|",
+  `| Agent-only | ${metrics.repairEscalations.agentOnlyCommented.length} | ${metrics.repairEscalations.agentOnlyNoComment.length} |`,
+  `| Has a human | ${metrics.repairEscalations.otherCommented.length} | ${metrics.repairEscalations.otherNoComment.length} |`,
+  "",
+  ...[["Agent-only, commented", "agentOnlyCommented"], ["Agent-only, no comment", "agentOnlyNoComment"], ["Has a human, commented", "otherCommented"], ["Has a human, no comment", "otherNoComment"]]
+    .map(([label, key]) => `- ${label}: ${metrics.repairEscalations[key].length ? metrics.repairEscalations[key].map((entry) => entry.identifier).join(", ") : "none"}`),
   "",
   "## Stranded trees",
   "",

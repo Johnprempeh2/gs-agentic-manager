@@ -1,6 +1,6 @@
 {
-  "id": "b11c7a1c-3b01-45f5-b4d8-39b0ea1afdd2",
-  "prevId": "c53d7d6e-f5e0-4fa6-9828-fedd4f3643fc",
+  "id": "61219330-e108-49e8-bb74-c78882a6f4b7",
+  "prevId": "186bb76d-4190-4c27-901b-32bde09f5e78",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -32179,230 +32179,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.memory_ingest_outbox": {
-      "name": "memory_ingest_outbox",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "op": {
-          "name": "op",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload_hash": {
-          "name": "payload_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "lease_until": {
-          "name": "lease_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claim_token": {
-          "name": "claim_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_kind": {
-          "name": "last_error_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "input_tokens": {
-          "name": "input_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "output_tokens": {
-          "name": "output_tokens",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "synced_at": {
-          "name": "synced_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "memory_ingest_outbox_dedupe_idx": {
-          "name": "memory_ingest_outbox_dedupe_idx",
-          "columns": [
-            {
-              "expression": "record_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "op",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "payload_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "memory_ingest_outbox_due_idx": {
-          "name": "memory_ingest_outbox_due_idx",
-          "columns": [
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "next_attempt_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "memory_ingest_outbox_company_synced_idx": {
-          "name": "memory_ingest_outbox_company_synced_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "synced_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "memory_ingest_outbox_company_id_companies_id_fk": {
-          "name": "memory_ingest_outbox_company_id_companies_id_fk",
-          "tableFrom": "memory_ingest_outbox",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_ingest_outbox_record_id_memory_records_id_fk": {
-          "name": "memory_ingest_outbox_record_id_memory_records_id_fk",
-          "tableFrom": "memory_ingest_outbox",
-          "tableTo": "memory_records",
-          "columnsFrom": [
-            "record_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.memory_operations": {
       "name": "memory_operations",
       "schema": "",
@@ -50167,6 +49943,430 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.support_queues": {
+      "name": "support_queues",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_code": {
+          "name": "client_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_endpoint_id": {
+          "name": "email_endpoint_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "triage_agent_id": {
+          "name": "triage_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "install_agent_id": {
+          "name": "install_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reliability_agent_id": {
+          "name": "reliability_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cover_agent_id": {
+          "name": "cover_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "p1_user_id": {
+          "name": "p1_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "holidays": {
+          "name": "holidays",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "support_queues_company_code_uq": {
+          "name": "support_queues_company_code_uq",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "client_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_queues_email_endpoint_uq": {
+          "name": "support_queues_email_endpoint_uq",
+          "columns": [
+            {
+              "expression": "email_endpoint_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"support_queues\".\"email_endpoint_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "support_queues_company_id_companies_id_fk": {
+          "name": "support_queues_company_id_companies_id_fk",
+          "tableFrom": "support_queues",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "support_queues_project_id_projects_id_fk": {
+          "name": "support_queues_project_id_projects_id_fk",
+          "tableFrom": "support_queues",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "support_queues_email_endpoint_id_chat_endpoints_id_fk": {
+          "name": "support_queues_email_endpoint_id_chat_endpoints_id_fk",
+          "tableFrom": "support_queues",
+          "tableTo": "chat_endpoints",
+          "columnsFrom": [
+            "email_endpoint_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "support_queues_triage_agent_id_agents_id_fk": {
+          "name": "support_queues_triage_agent_id_agents_id_fk",
+          "tableFrom": "support_queues",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "triage_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "support_queues_install_agent_id_agents_id_fk": {
+          "name": "support_queues_install_agent_id_agents_id_fk",
+          "tableFrom": "support_queues",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "install_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "support_queues_reliability_agent_id_agents_id_fk": {
+          "name": "support_queues_reliability_agent_id_agents_id_fk",
+          "tableFrom": "support_queues",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "reliability_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "support_queues_cover_agent_id_agents_id_fk": {
+          "name": "support_queues_cover_agent_id_agents_id_fk",
+          "tableFrom": "support_queues",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "cover_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "support_queues_client_code_check": {
+          "name": "support_queues_client_code_check",
+          "value": "\"support_queues\".\"client_code\" ~ '^[A-Z0-9]{2,12}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.support_tickets": {
+      "name": "support_tickets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "queue_id": {
+          "name": "queue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_id": {
+          "name": "issue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'general'"
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "warn_at": {
+          "name": "warn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "due_at": {
+          "name": "due_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_response_at": {
+          "name": "first_response_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warned_at": {
+          "name": "warned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "breached_at": {
+          "name": "breached_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "p1_alerted_at": {
+          "name": "p1_alerted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "support_tickets_issue_uq": {
+          "name": "support_tickets_issue_uq",
+          "columns": [
+            {
+              "expression": "issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_tickets_open_idx": {
+          "name": "support_tickets_open_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "due_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"support_tickets\".\"first_response_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "support_tickets_company_id_companies_id_fk": {
+          "name": "support_tickets_company_id_companies_id_fk",
+          "tableFrom": "support_tickets",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "support_tickets_queue_id_support_queues_id_fk": {
+          "name": "support_tickets_queue_id_support_queues_id_fk",
+          "tableFrom": "support_tickets",
+          "tableTo": "support_queues",
+          "columnsFrom": [
+            "queue_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "support_tickets_issue_id_issues_id_fk": {
+          "name": "support_tickets_issue_id_issues_id_fk",
+          "tableFrom": "support_tickets",
+          "tableTo": "issues",
+          "columnsFrom": [
+            "issue_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "support_tickets_priority_check": {
+          "name": "support_tickets_priority_check",
+          "value": "\"support_tickets\".\"priority\" in ('P1', 'P2', 'P3')"
+        },
+        "support_tickets_category_check": {
+          "name": "support_tickets_category_check",
+          "value": "\"support_tickets\".\"category\" in ('general', 'install', 'reliability')"
+        }
+      },
       "isRLSEnabled": false
     }
   },

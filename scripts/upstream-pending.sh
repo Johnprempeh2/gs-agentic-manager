@@ -22,6 +22,10 @@
 # --clash adds "clean" or "conflict: <files>" to each listed commit: the result of
 # cherry-picking it alone onto <main>, by `git merge-tree` (git 2.40+). No worktree,
 # index or ref change.
+# A commit that adds a migration (packages/db/src/migrations/NNNN_*.sql) gets
+# "[migration: NNNN clash]" when <main> has its own NNNN_*.sql, else "NNNN free".
+# Different file names merge without a conflict, so --clash does not see it.
+# Renumber steps: doc/DATABASE.md, "Taking upstream migrations".
 set -euo pipefail
 
 BASE="01d9a1218"
@@ -36,7 +40,7 @@ while [ "$#" -gt 0 ]; do
     --base) BASE="$2"; shift 2 ;;
     --count) COUNT_ONLY=1; shift ;;
     --clash) CLASH=1; shift ;;
-    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -125,13 +129,30 @@ clash() {
   esac
 }
 
+MIGRATIONS_DIR="packages/db/src/migrations"
+# Our migration numbers on $MAIN, one per line.
+OUR_MIGRATIONS="$NL$(git ls-tree --name-only "$MAIN" "$MIGRATIONS_DIR/" \
+  | sed -nE 's#^.*/([0-9]{4})_[^/]*\.sql$#\1#p' | sort -u)$NL"
+
+# "  [migration: NNNN clash|free, ...]" when $1 adds a migration, else nothing.
+migration() {
+  local nums n tags=""
+  nums="$(git diff-tree --no-commit-id -r --name-only --diff-filter=A "$1" -- "$MIGRATIONS_DIR/" \
+    | sed -nE "s#^$MIGRATIONS_DIR/([0-9]{4})_[^/]*\.sql\$#\1#p" | sort -u)"
+  [ -n "$nums" ] || return 0
+  for n in $nums; do
+    if has "$OUR_MIGRATIONS" "$n"; then tags="$tags, $n clash"; else tags="$tags, $n free"; fi
+  done
+  printf '  [migration: %s]' "${tags#, }"
+}
+
 security=() other=() partial=()
 while read -r sha; do
   if has "$TAKEN" "$sha" || has "$SKIPPED" "$sha"; then continue; fi
   if [ "$COUNT_ONLY" -eq 0 ] && [ "$CLASH" -eq 1 ]; then
-    line="$(git log -1 --format='%h %cs %s' "$sha")  [$(clash "$sha")]"
+    line="$(git log -1 --format='%h %cs %s' "$sha")$(migration "$sha")  [$(clash "$sha")]"
   else
-    line="$(git log -1 --format='%h %cs %s' "$sha")"
+    line="$(git log -1 --format='%h %cs %s' "$sha")$(migration "$sha")"
   fi
   if has "$PARTIAL" "$sha"; then partial+=("$line"); continue; fi
   if git log -1 --format=%s "$sha" | grep -qiE "$SECURITY_SUBJECT_RE" \

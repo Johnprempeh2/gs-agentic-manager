@@ -283,7 +283,7 @@ export function SecretBindingPicker({
       ) : null}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent aria-describedby={undefined} className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create new secret</DialogTitle>
           </DialogHeader>

@@ -234,6 +234,101 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
 }
 
 /**
+ * R1 detail — parked wakes on issues with no live run (register row 51, GRE-685).
+ *
+ * A parked wake (`deferred_issue_execution`) whose issue has no
+ * `executionRunId` waits for a drain that will not come. The server's
+ * stranded-queue sweep promotes it only when it carries comment ids or an
+ * interaction answer, so review hand-offs, "blockers resolved" and assignment
+ * wakes stay parked. Counts such wakes requested at least `minAgeMinutes` ago,
+ * split by wake reason. Read-only measurement before the sweep change (row 50).
+ */
+export function computeParkedWakes(snapshot, { now, parkedWakeMinAgeMinutes = 10 } = {}) {
+  const nowMs = ms(now ?? snapshot.now);
+  const cutoff = nowMs - parkedWakeMinAgeMinutes * 60_000;
+  const byId = new Map((snapshot.issues ?? []).map((issue) => [issue.id, issue]));
+  const counts = new Map();
+  let total = 0;
+  for (const wake of snapshot.wakeRequests ?? []) {
+    if (wake.status !== "deferred_issue_execution") continue;
+    const requested = ms(wake.requestedAt);
+    if (requested == null || requested > cutoff) continue;
+    // The sweep matches the issue on payload.issueId; older wakes name it elsewhere.
+    const issue = [wake.issueId, wake.taskId, wake.contextIssueId, wake.contextTaskId].map((id) => id && byId.get(id)).find(Boolean);
+    if (!issue || issue.executionRunId) continue;
+    const reason = wake.reason ?? "unknown";
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    total += 1;
+  }
+  return {
+    minAgeMinutes: parkedWakeMinAgeMinutes,
+    total,
+    byReason: [...counts].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
+  };
+}
+
+/**
+ * R1 detail — disposition repair escalated to the board (register row 76, GRE-725).
+ *
+ * When bounded disposition repair runs out of attempts on an unchanged source
+ * state, recovery escalates with `unchanged_source_state_exhausted` and names
+ * the board as owner. Counts those escalations (`issue.disposition_repair_escalated`
+ * activity) in the window, split by whether the task is agent-only (agent
+ * assignee, no user assignee, no chat user, every execution stage participant
+ * an agent) and whether any repair run for that escalation posted a comment.
+ * A repair run belongs to the escalation when it is on the same issue, carries
+ * the same source-state fingerprint and started no later than the escalation.
+ * The recovery action id is not used: each attempt resolves its action and the
+ * escalation opens a new one (GRE-712). Report only: it sizes row 75.
+ */
+export const REPAIR_EXHAUSTED_REASON = "unchanged_source_state_exhausted";
+
+function isAgentOnlyTask(issue, assigneeBefore) {
+  const agentId = assigneeBefore ? assigneeBefore.agentId : issue?.assigneeAgentId;
+  const userId = assigneeBefore ? assigneeBefore.userId : issue?.assigneeUserId;
+  if (!agentId || userId || issue?.conversationUserId) return false;
+  const stages = Array.isArray(issue?.executionPolicy?.stages) ? issue.executionPolicy.stages : [];
+  return stages.every((stage) => (stage.participants ?? []).every((participant) => participant.type === "agent"));
+}
+
+export function computeRepairEscalations(snapshot, { now, windowDays = 7 } = {}) {
+  const nowMs = ms(now ?? snapshot.now);
+  const windowStart = nowMs - windowDays * 86_400_000;
+  const byId = new Map((snapshot.issues ?? []).map((issue) => [issue.id, issue]));
+  const cells = {
+    agentOnlyCommented: [], agentOnlyNoComment: [], otherCommented: [], otherNoComment: [],
+  };
+  for (const escalation of snapshot.repairEscalations ?? []) {
+    const at = ms(escalation.createdAt);
+    if (escalation.terminalReason !== REPAIR_EXHAUSTED_REASON || at == null || at < windowStart || at > nowMs) continue;
+    const issue = byId.get(escalation.issueId);
+    const repairRuns = (snapshot.repairRuns ?? []).filter((run) => run.issueId === escalation.issueId
+      && (!escalation.fingerprint || run.fingerprint === escalation.fingerprint)
+      && (ms(run.createdAt) ?? 0) <= at);
+    const commented = repairRuns.some((run) => (run.commentCount ?? 0) > 0);
+    const agentOnly = isAgentOnlyTask(issue, escalation.sourceAssigneeBefore);
+    const key = `${agentOnly ? "agentOnly" : "other"}${commented ? "Commented" : "NoComment"}`;
+    cells[key].push({
+      issueId: escalation.issueId,
+      identifier: issue?.identifier ?? escalation.identifier ?? escalation.issueId,
+      at: new Date(at).toISOString(),
+      repairRuns: repairRuns.length,
+      repairComments: repairRuns.reduce((sum, run) => sum + (run.commentCount ?? 0), 0),
+    });
+  }
+  const list = (entries) => entries.sort((a, b) => a.at.localeCompare(b.at));
+  return {
+    windowDays,
+    terminalReason: REPAIR_EXHAUSTED_REASON,
+    total: Object.values(cells).reduce((sum, entries) => sum + entries.length, 0),
+    agentOnlyCommented: list(cells.agentOnlyCommented),
+    agentOnlyNoComment: list(cells.agentOnlyNoComment),
+    otherCommented: list(cells.otherCommented),
+    otherNoComment: list(cells.otherNoComment),
+  };
+}
+
+/**
  * R2 — run failure rate and unattended recovery share.
  *
  * Denominator: runs that finished inside the window as succeeded or failed
@@ -245,7 +340,9 @@ export function computeStrandedTrees(snapshot, { now, windowDays = 7, graceMinut
  *
  * Platform failure rate leaves out rejected logins (`isAuthFailure`) from both
  * sides: a refused login is an account problem for the board, not a platform
- * fault (GRE-590). They are counted on their own as `loginRefusals`.
+ * fault (GRE-590). They are counted on their own as `loginRefusals`. Account
+ * and setup refusals (`accountRefusalReason`) are left out the same way and
+ * counted as `accountRefusals` (GRE-745).
  */
 export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   const nowMs = ms(now ?? snapshot.now);
@@ -258,7 +355,11 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   const failed = finished.filter((run) => FAILED_RUN_STATUSES.has(run.status));
   const cancelled = finished.filter((run) => run.status === "cancelled");
   const loginRefusals = failed.filter(isAuthFailure).length;
-  const platformFailed = failed.length - loginRefusals;
+  const accountRefused = failed.map(accountRefusalReason).filter(Boolean);
+  const accountRefusalsByReason = Object.fromEntries(
+    ACCOUNT_REFUSAL_REASONS.map(({ reason }) => [reason, accountRefused.filter((entry) => entry === reason).length]),
+  );
+  const platformFailed = failed.length - loginRefusals - accountRefused.length;
 
   const humanByIssue = new Map();
   for (const row of snapshot.activity ?? []) {
@@ -272,7 +373,7 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   for (const run of failed) {
     if (!run.issueId) {
       outcomes.noIssue += 1;
-      failures.push({ runId: run.id, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), outcome: "no_issue" });
+      failures.push({ runId: run.id, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), accountRefusal: accountRefusalReason(run), outcome: "no_issue" });
       continue;
     }
     const failedAt = ms(run.finishedAt);
@@ -288,7 +389,7 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
       outcome = touched ? "human" : "auto";
     }
     outcomes[outcome] += 1;
-    failures.push({ runId: run.id, issueId: run.issueId, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), outcome });
+    failures.push({ runId: run.id, issueId: run.issueId, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), accountRefusal: accountRefusalReason(run), outcome });
   }
   const attributable = failed.length - outcomes.noIssue;
   const denominator = succeeded.length + failed.length;
@@ -304,6 +405,8 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
     platformFinished: platformDenominator,
     platformFailureRate: platformDenominator ? platformFailed / platformDenominator : null,
     loginRefusals,
+    accountRefusals: accountRefused.length,
+    accountRefusalsByReason,
     recoveredWithoutHuman: outcomes.auto,
     recoveredWithHuman: outcomes.human,
     unresolved: outcomes.unresolved,
@@ -407,6 +510,30 @@ export function isAuthFailure(run) {
 }
 
 /**
+ * Account and setup refusals left out of the R2 platform rate (GRE-745). Each
+ * is matched on its error code and the fixed server message for that one
+ * reason, never on a whole code: `configuration_incomplete` also carried the
+ * GRE-236 platform bug ("Reconnect or validate the selected AI account"),
+ * which must stay counted. `acpx_turn_failed` stays counted too.
+ */
+export const ACCOUNT_REFUSAL_REASONS = [
+  { reason: "expired_credential", errorCode: "configuration_incomplete", text: / token expired at / },
+  { reason: "no_personal_default", errorCode: "configuration_incomplete", text: /^Connect an account and choose your personal default/ },
+  { reason: "connection_not_permitted", errorCode: "configuration_incomplete", text: /^This connection is not permitted for this agent/ },
+  { reason: "low_trust_no_sandbox", errorCode: "low_trust_requires_sandbox_environment", text: null },
+  { reason: "no_project_workspace", errorCode: "workspace_validation_failed", text: /This task needs a project \/ project workspace or a reusable execution workspace/ },
+];
+
+/** The account or setup refusal reason of a failed run, or null. Login refusals are not included. */
+export function accountRefusalReason(run) {
+  if (!FAILED_RUN_STATUSES.has(run.status) || isAuthFailure(run)) return null;
+  const match = ACCOUNT_REFUSAL_REASONS.find(
+    (entry) => entry.errorCode === run.errorCode && (entry.text == null || entry.text.test(run.errorText ?? "")),
+  );
+  return match?.reason ?? null;
+}
+
+/**
  * R2 detail — rejected logins. A dead credential should hand the task to the
  * board at once: no automatic retries and no `Bounded retry exhausted` event.
  * Counts auth-failed runs that finished in the window, retry runs scheduled
@@ -449,6 +576,8 @@ export function computeAuthFailures(snapshot, { now, windowDays = 7 } = {}) {
 export function computeAll(snapshot, options = {}) {
   return {
     r1: computeStrandedTrees(snapshot, options),
+    parkedWakes: computeParkedWakes(snapshot, options),
+    repairEscalations: computeRepairEscalations(snapshot, options),
     r2: computeRunFailures(snapshot, options),
     auth: computeAuthFailures(snapshot, options),
     s1: computeWakeLatency(snapshot, options),

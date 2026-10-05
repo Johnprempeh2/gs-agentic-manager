@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -2502,6 +2503,37 @@ describe("shared ACPX engine runtime behavior", () => {
       entry.includes("GS Agentic Manager-managed Claude settings"),
     );
     expect(note).toBeTruthy();
+  });
+
+  it("adds the pattern-kill hook to .claude/settings.local.json once, keeping user hooks (GRE-746)", async () => {
+    const root = await makeTempRoot();
+    const stateDir = path.join(root, "state");
+    const cwd = path.join(root, "worktree");
+    const userHook = { matcher: "Edit", hooks: [{ type: "command", command: "lint" }] };
+    await fs.mkdir(path.join(cwd, ".claude"), { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, ".claude", "settings.local.json"),
+      JSON.stringify({ hooks: { PreToolUse: [userHook] } }),
+      "utf8",
+    );
+
+    await runExecutor({ agent: "claude", stateDir, cwd }, { context: { paperclipWorkspace: { cwd } } });
+    await runExecutor({ agent: "claude", stateDir, cwd }, { context: { paperclipWorkspace: { cwd } } });
+
+    const written = JSON.parse(await fs.readFile(path.join(cwd, ".claude", "settings.local.json"), "utf8")) as {
+      hooks: { PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string }> }> };
+    };
+    const [kept, killHook, ...rest] = written.hooks.PreToolUse;
+    expect(kept).toEqual(userHook);
+    expect(rest).toEqual([]);
+    expect(killHook?.matcher).toBe("Bash");
+    const hookCommand = killHook!.hooks[0]!.command;
+    expect(hookCommand).toContain(path.join(stateDir, "hooks", "gsam-kill-command-hook.cjs"));
+    const refused = spawnSync("sh", ["-c", hookCommand], {
+      input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "pgrep -f dev-runner | xargs kill" } }),
+      encoding: "utf8",
+    });
+    expect(refused.status).toBe(2);
   });
 
   it("merges GS Agentic Manager allowlist into an existing .claude/settings.local.json without losing user entries", async () => {

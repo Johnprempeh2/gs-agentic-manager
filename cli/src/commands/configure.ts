@@ -86,7 +86,7 @@ export async function configure(opts: {
   section?: string;
 }): Promise<void> {
   printPaperclipCliBanner();
-  p.intro(pc.bgCyan(pc.black(" paperclip configure ")));
+  p.intro(pc.bgCyan(pc.black(" gsam configure ")));
   const configPath = resolveConfigPath(opts.config);
 
   if (!configExists(opts.config)) {

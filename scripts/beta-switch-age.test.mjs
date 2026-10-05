@@ -4,8 +4,20 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import test from "node:test";
-import { readFileSync } from "node:fs";
-import { formatTable, isTestFile, parseRetiredKeys, switchAges, testFileCounts } from "./beta-switch-age.mjs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  formatScorecardGaps,
+  formatTable,
+  isTestFile,
+  parseCatalogKeys,
+  parseRetiredKeys,
+  parseScorecardKeys,
+  scorecardGaps,
+  switchAges,
+  testFileCounts,
+} from "./beta-switch-age.mjs";
 
 const SCRIPT = new URL("./beta-switch-age.sh", import.meta.url).pathname;
 const DAY = 24 * 60 * 60 * 1000;
@@ -58,7 +70,8 @@ test("non-switch values and managedKeys", () => {
   assert.deepEqual(rows, [{ key: "maxThing", state: "3", onSince: "unknown", days: null, ruleMet: "n/a" }]);
 });
 
-test("shell script sends only GET requests and prints one row per switch", async () => {
+// Runs the shell script against a stub API; returns { code, stdout, stderr, requests }.
+async function runScript(args = []) {
   const requests = [];
   const server = createServer((req, res) => {
     requests.push({ method: req.method, url: req.url, auth: req.headers.authorization });
@@ -78,27 +91,55 @@ test("shell script sends only GET requests and prints one row per switch", async
     const { port } = server.address();
     const env = { ...process.env, GSAM_API_URL: `http://127.0.0.1:${port}/api`, GSAM_API_KEY: "test-key" };
     delete env.GSAM_COMPANY_ID;
-    const child = spawn("bash", [SCRIPT], { env });
+    const child = spawn("bash", [SCRIPT, ...args], { env });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => { stdout += d; });
     child.stderr.on("data", (d) => { stderr += d; });
     const code = await new Promise((resolve) => child.on("close", resolve));
-    assert.equal(code, 0, stderr);
-
-    assert.deepEqual(requests.map((r) => r.method), ["GET", "GET", "GET"]);
-    assert.ok(requests.every((r) => r.auth === "Bearer test-key"));
-    const activityUrl = new URL(requests[2].url, "http://x");
-    assert.equal(activityUrl.searchParams.get("action"), "instance.settings.experimental_updated");
-
-    const lines = stdout.trim().split("\n");
-    assert.equal(lines.length, 1 + Object.keys(SETTINGS).length);
-    assert.match(stdout, /^neverChanged\s+on\s+unknown\s+-\s+unknown$/m);
-    assert.match(stdout, /^onLong\s+on\s+\d{4}-\d\d-\d\d\s+20\s+yes$/m);
-    assert.match(stdout, /^onShort\s+on\s+\d{4}-\d\d-\d\d\s+5\s+no$/m);
-    assert.match(stdout, /^onThenOff\s+off\s+-\s+-\s+no$/m);
+    return { code, stdout, stderr, requests };
   } finally {
     server.close();
+  }
+}
+
+test("shell script sends only GET requests and prints one row per switch", async () => {
+  const { code, stdout, stderr, requests } = await runScript();
+  assert.equal(code, 0, stderr);
+
+  assert.deepEqual(requests.map((r) => r.method), ["GET", "GET", "GET"]);
+  assert.ok(requests.every((r) => r.auth === "Bearer test-key"));
+  const activityUrl = new URL(requests[2].url, "http://x");
+  assert.equal(activityUrl.searchParams.get("action"), "instance.settings.experimental_updated");
+
+  const lines = stdout.trim().split("\n");
+  assert.equal(lines.length, 1 + Object.keys(SETTINGS).length);
+  assert.doesNotMatch(stdout, /scorecard/);
+  assert.match(stdout, /^neverChanged\s+on\s+unknown\s+-\s+unknown$/m);
+  assert.match(stdout, /^onLong\s+on\s+\d{4}-\d\d-\d\d\s+20\s+yes$/m);
+  assert.match(stdout, /^onShort\s+on\s+\d{4}-\d\d-\d\d\s+5\s+no$/m);
+  assert.match(stdout, /^onThenOff\s+off\s+-\s+-\s+no$/m);
+});
+
+test("shell script --scorecard adds the no row and gone lists after the same table; exit 0", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "beta-switch-age-"));
+  try {
+    const file = join(dir, "scorecard.md");
+    // Every real catalog key but the first, plus one key that is not in the catalog.
+    const catalog = parseCatalogKeys(readFileSync(new URL("../packages/shared/src/feature-catalog.ts", import.meta.url), "utf8"));
+    const rows = [...catalog.slice(1), "enableGoneSwitch"].map((key, i) => `| ${i + 1} | X (\`${key}\`) | x |`);
+    writeFileSync(file, ["| # | Switch (key) | What |", "|---|---|---|", ...rows].join("\n"));
+    const plain = await runScript();
+    const { code, stdout, stderr } = await runScript(["--scorecard", file]);
+    assert.equal(plain.code, 0, plain.stderr);
+    assert.equal(code, 0, stderr);
+    // Same output as without the flag, then the two lists.
+    assert.equal(stdout, `${plain.stdout}\nscorecard: no row: ${catalog[0]}\nscorecard: gone: enableGoneSwitch\n`);
+
+    const bad = await runScript(["--scorecard", join(dir, "missing.md")]);
+    assert.equal(bad.code, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -148,4 +189,35 @@ test("isTestFile matches test, spec and __tests__ files only", () => {
 test("formatTable adds the test files column only when counted", () => {
   const out = formatTable([{ key: "a", state: "retired", onSince: "-", days: null, ruleMet: "n/a", testFiles: 2 }]);
   assert.equal(out, "switch  state    on since  days on  2-week rule met  test files\na       retired  -         -        n/a              2");
+});
+
+test("parseCatalogKeys reads every key of the real feature catalog", () => {
+  const source = readFileSync(new URL("../packages/shared/src/feature-catalog.ts", import.meta.url), "utf8");
+  const keys = parseCatalogKeys(source);
+  assert.ok(keys.includes("enableEnvironments"));
+  assert.ok(keys.includes("enableDeepDive"));
+  for (const key of parseRetiredKeys(source)) assert.ok(keys.includes(key), key);
+  // Field names inside an entry are not keys.
+  assert.ok(!keys.includes("title") && !keys.includes("tier"));
+  assert.equal(new Set(keys).size, keys.length);
+  assert.throws(() => parseCatalogKeys("export const X = 1;"), /not found/);
+});
+
+test("scorecard: one missing row and one gone row", () => {
+  const text = [
+    "| # | Switch (key) | Live | Verdict |",
+    "|---|---|---|---|",
+    "| 1 | Environments (`enableEnvironments`) | off | **keep in beta** |",
+    "| 2 | Old thing (`enableOldThing`) | off | **removed** |",
+    "",
+    "| Issue | Owner | Switch |",
+    "| GRE-89 | Ridge | Branch (`enableNotARow`) |",
+    "Text naming `enableAlsoNotARow` is not a row.",
+  ].join("\n");
+  const keys = parseScorecardKeys(text);
+  assert.deepEqual(keys, ["enableEnvironments", "enableOldThing"]);
+  const gaps = scorecardGaps(["enableEnvironments", "enableDeepDive"], keys);
+  assert.deepEqual(gaps, { noRow: ["enableDeepDive"], gone: ["enableOldThing"] });
+  assert.equal(formatScorecardGaps(gaps), "scorecard: no row: enableDeepDive\nscorecard: gone: enableOldThing");
+  assert.equal(formatScorecardGaps({ noRow: [], gone: [] }), "scorecard: no row: none\nscorecard: gone: none");
 });
