@@ -239,6 +239,37 @@ describeEmbeddedPostgres("memory steward review (database)", () => {
     expect(changed).toBe(0);
   }, 60_000);
 
+  it("sandbox kill keeps the lease; a later pass takes over and sees each entry once (GRE-897)", async () => {
+    const s = await setup();
+    const day = await kestrelDay(s, "2026-10-04T09:00:00Z");
+    const c = clock("2026-10-05T02:00:00Z");
+
+    // Entry 7 is on page 2: the kill lands after that page commits.
+    const killed = await review(s, c, { killAfterEntries: 7 });
+    expect(killed).toMatchObject({ outcome: "killed", entriesSeen: 10 });
+    const [row] = await runs(s);
+    expect(row).toMatchObject({ state: "running", entriesSeen: 10 });
+    expect(row!.leaseUntil.toISOString()).toBe(killed.leaseUntil);
+
+    // The lease guard still holds: same clock is busy.
+    expect((await review(s, c)).outcome).toBe("busy");
+
+    c.advance(11 * MIN);
+    const resumed = await review(s, c);
+    expect(resumed).toMatchObject({ outcome: "completed", interruptedRunId: killed.runId });
+    expect(resumed.entriesSeen).toBe(day.granted - 10);
+
+    const all = await runs(s);
+    expect(all.map((r) => r.state).sort()).toEqual(["completed", "interrupted"]);
+    expect(all.reduce((sum, r) => sum + r.entriesSeen, 0)).toBe(day.granted);
+    const escalations = await s.db
+      .select()
+      .from(memoryStewardEscalations)
+      .where(eq(memoryStewardEscalations.companyId, s.companyId));
+    expect(new Set(escalations.map((e) => e.dedupeKey)).size).toBe(escalations.length);
+    expect(escalations.length).toBe(killed.escalationsCreated + resumed.escalationsCreated);
+  }, 60_000);
+
   it("two passes started together: one runs, the others are busy", async () => {
     const s = await setup();
     const store = createDbStewardStore(s.db);

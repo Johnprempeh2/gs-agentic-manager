@@ -40,6 +40,21 @@ const createStewardGrantSchema = z
   })
   .strict();
 
+/**
+ * Sandbox controls for the review pass (GRE-897, exit test MT-19). Only where
+ * sandbox grants are on. `now` is the pass clock (settle window, lease, run
+ * day); `killAfterEntries` stops the pass after the page holding entry N, as
+ * a crash would.
+ */
+const stewardReviewSandboxSchema = z
+  .object({
+    now: z.string().datetime({ offset: true }).optional(),
+    killAfterEntries: z.number().int().min(1).max(1_000_000).optional(),
+  })
+  .strict();
+
+const stewardReviewBodySchema = z.object({ sandbox: stewardReviewSandboxSchema.optional() });
+
 // Memory steward daily review (GRE-887). The daily GSAM routine wakes the
 // steward agent, which calls POST .../steward/review once. The steward reads
 // records through its grant and writes only the decision queue.
@@ -90,7 +105,21 @@ export function memoryStewardRoutes(db: Db) {
     const companyId = await requireEnabled(req);
     const actor = getActorInfo(req);
     if (actor.actorType !== "agent" || !actor.agentId) throw forbidden("Only the steward agent runs the review");
+    const sandbox = stewardReviewBodySchema.parse(req.body ?? {}).sandbox;
+    if (sandbox && process.env[STEWARD_SANDBOX_GRANTS_ENV] !== "true") {
+      await db.insert(memoryOperations).values({
+        companyId,
+        operation: "steward_review",
+        outcome: "denied",
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        detail: { reason: "sandbox controls are off on this instance", sandbox },
+      });
+      throw forbidden("Steward sandbox controls are off on this instance");
+    }
     const grant = await getStewardGrant(db, { companyId, agentId: actor.agentId });
+    const sandboxNow = sandbox?.now ? new Date(sandbox.now) : null;
     try {
       const result = await runStewardReview({
         store,
@@ -98,6 +127,14 @@ export function memoryStewardRoutes(db: Db) {
         agentId: actor.agentId,
         grant,
         resolveOwner: createDbStewardOwnerResolver(db),
+        ...(sandbox
+          ? {
+              now: sandboxNow ? () => sandboxNow : undefined,
+              grantNow: () => new Date(),
+              killAfterEntries: sandbox.killAfterEntries,
+              auditDetail: { sandbox: { ...sandbox, wallClock: new Date().toISOString() } },
+            }
+          : {}),
       });
       res.status(result.outcome === "busy" ? 409 : 200).json(result);
     } catch (error) {

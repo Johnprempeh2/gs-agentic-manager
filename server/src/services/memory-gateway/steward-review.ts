@@ -473,10 +473,21 @@ export interface StewardReviewOptions {
   newToken?: () => string;
   /** Test hook: runs after each committed page. Throwing here simulates a kill between pages. */
   afterPage?: (page: number) => void | Promise<void>;
+  /**
+   * Sandbox control (GRE-897): stop after committing the page that holds
+   * entry N, as a crash would. The run stays `running` with its lease, so the
+   * next pass must wait for the lease to expire and then takes over.
+   */
+  killAfterEntries?: number;
+  /** Clock for the grant check. Defaults to `now`; a sandbox clock must not revive an expired grant. */
+  grantNow?: () => Date;
+  /** Extra detail for the pass's audit rows (the sandbox controls in use). */
+  auditDetail?: Record<string, unknown>;
 }
 
 export interface StewardReviewResult {
-  outcome: "completed" | "busy" | "failed" | "lost_lease";
+  /** `killed`: stopped by the sandbox `killAfterEntries` control; the run still holds its lease. */
+  outcome: "completed" | "busy" | "failed" | "lost_lease" | "killed";
   runId: string | null;
   interruptedRunId: string | null;
   entriesSeen: number;
@@ -484,6 +495,8 @@ export interface StewardReviewResult {
   escalationsDeduped: number;
   durationMs: number;
   error: string | null;
+  /** Set when `killed`: the next pass can take over after this time. */
+  leaseUntil?: string;
 }
 
 /**
@@ -500,7 +513,7 @@ export async function runStewardReview(options: StewardReviewOptions): Promise<S
   const { store, companyId, agentId } = options;
 
   try {
-    assertStewardGrant(options.grant, { companyId, agentId, now: started });
+    assertStewardGrant(options.grant, { companyId, agentId, now: options.grantNow?.() ?? started });
   } catch (error) {
     await store.audit({
       companyId,
@@ -509,7 +522,7 @@ export async function runStewardReview(options: StewardReviewOptions): Promise<S
       operation: "steward_review",
       outcome: "denied",
       scopeIds: options.grant?.scopeIds ?? [],
-      detail: { reason: (error as Error).message },
+      detail: { reason: (error as Error).message, ...options.auditDetail },
       now: started,
     });
     throw error;
@@ -550,7 +563,12 @@ export async function runStewardReview(options: StewardReviewOptions): Promise<S
     operation: "steward_review",
     outcome: "started",
     scopeIds: grant.scopeIds,
-    detail: { grantId: grant.id, resumedFromRunId: result.interruptedRunId, cursorFrom: run.cursorFrom },
+    detail: {
+      grantId: grant.id,
+      resumedFromRunId: result.interruptedRunId,
+      cursorFrom: run.cursorFrom,
+      ...options.auditDetail,
+    },
     now: started,
   });
 
@@ -609,6 +627,9 @@ export async function runStewardReview(options: StewardReviewOptions): Promise<S
       cursor = next;
       page += 1;
       await options.afterPage?.(page);
+      if (options.killAfterEntries !== undefined && result.entriesSeen >= options.killAfterEntries) {
+        return await finishKilled();
+      }
       if (entries.length < pageSize) break;
     }
 
@@ -652,10 +673,36 @@ export async function runStewardReview(options: StewardReviewOptions): Promise<S
       escalationsDeduped: result.escalationsDeduped,
       durationMs: result.durationMs,
       error: result.error,
+      ...options.auditDetail,
     },
     now: ended,
   });
   return result;
+
+  // No finishRun: the run is left `running` with its lease, as after a crash.
+  async function finishKilled(): Promise<StewardReviewResult> {
+    const at = now();
+    result.outcome = "killed";
+    result.durationMs = at.getTime() - started.getTime();
+    result.leaseUntil = new Date(at.getTime() + leaseMs).toISOString();
+    await store.audit({
+      companyId,
+      agentId,
+      runId: run.id,
+      operation: "steward_review",
+      outcome: "killed",
+      scopeIds: grant.scopeIds,
+      detail: {
+        entriesSeen: result.entriesSeen,
+        escalationsCreated: result.escalationsCreated,
+        escalationsDeduped: result.escalationsDeduped,
+        leaseUntil: result.leaseUntil,
+        ...options.auditDetail,
+      },
+      now: at,
+    });
+    return result;
+  }
 
   function finishLost(): StewardReviewResult {
     result.outcome = "lost_lease";

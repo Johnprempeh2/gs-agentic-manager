@@ -163,4 +163,48 @@ describeEmbeddedPostgres("memory steward API", () => {
     expect(report.body.report.days).toHaveLength(2);
     expect(report.body.report.queue).toHaveProperty("oldestAgeHours");
   });
+
+  it("sandbox controls: refused unless sandbox grants are on; kill keeps the lease; audited (GRE-897)", async () => {
+    const s = await setup();
+    await enable(s.companyId);
+    process.env[STEWARD_SANDBOX_GRANTS_ENV] = "true";
+    const grant = await request(s.board)
+      .post(`${s.base}/grants`)
+      .send({ agentId: s.steward.id, scopeIds: [s.org.id], expiresInDays: 7, reason: "sandbox review" });
+    expect(grant.status).toBe(201);
+    const review = (body?: object) => request(s.asAgent(s.steward.id)).post(`${s.base}/review`).send(body);
+
+    // Off: refused before any run starts, and audited.
+    delete process.env[STEWARD_SANDBOX_GRANTS_ENV];
+    expect((await review({ sandbox: { killAfterEntries: 1 } })).status).toBe(403);
+    expect((await review({ sandbox: { now: "2026-10-05T23:00:00.000Z" } })).status).toBe(403);
+    expect(await denied(s.companyId, "steward_review")).toHaveLength(2);
+    expect(await ctx.db.select().from(memoryStewardRuns)).toHaveLength(0);
+
+    process.env[STEWARD_SANDBOX_GRANTS_ENV] = "true";
+    expect((await review({ sandbox: { killAfterEntries: 0 } })).status).toBe(400);
+    expect((await review({ sandbox: { now: "yesterday" } })).status).toBe(400);
+    expect((await review({ sandbox: { pageSize: 1 } })).status).toBe(400);
+
+    const now = "2026-10-05T23:00:00.000Z";
+    const killed = await review({ sandbox: { now, killAfterEntries: 1 } });
+    expect(killed.status).toBe(200);
+    expect(killed.body).toMatchObject({ outcome: "killed", entriesSeen: 2, leaseUntil: "2026-10-05T23:10:00.000Z" });
+    const [run] = await ctx.db.select().from(memoryStewardRuns);
+    expect(run).toMatchObject({ state: "running", startedAt: new Date(now) });
+
+    // Same clock: the lease still holds.
+    expect((await review({ sandbox: { now } })).status).toBe(409);
+
+    const later = await review({ sandbox: { now: "2026-10-05T23:11:00.000Z" } });
+    expect(later.body).toMatchObject({ outcome: "completed", interruptedRunId: killed.body.runId, entriesSeen: 0 });
+
+    const audit = await ctx.db
+      .select()
+      .from(memoryOperations)
+      .where(and(eq(memoryOperations.companyId, s.companyId), eq(memoryOperations.operation, "steward_review")));
+    const passes = audit.filter((row) => row.outcome !== "denied");
+    expect(passes.map((row) => row.outcome).sort()).toEqual(["completed", "killed", "started", "started"]);
+    for (const row of passes) expect((row.detail as { sandbox?: unknown }).sandbox).toMatchObject({ now: expect.any(String) });
+  });
 });

@@ -5274,13 +5274,30 @@ const memoryStewardGrantBody = z
   })
   .strict();
 
+const stewardReviewSchema = z.object({
+  sandbox: z
+    .object({
+      now: z.string().datetime({ offset: true }).optional().describe("Pass clock: settle window, lease expiry and run day"),
+      killAfterEntries: z
+        .number()
+        .int()
+        .min(1)
+        .max(1_000_000)
+        .optional()
+        .describe("Stop after committing the page that holds entry N, as a crash would; outcome `killed`, run keeps its lease"),
+    })
+    .strict()
+    .optional()
+    .describe("Sandbox only (GSAM_MEMORY_STEWARD_SANDBOX_GRANTS=true); 403 otherwise"),
+});
+
 registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/memory/steward/review",
   tags: ["memory"],
   summary: "Run one steward review pass from the durable cursor; steward agent with a live grant only; 409 while another pass holds the lease",
-  request: { params: memoryCompanyParams },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+  request: { params: memoryCompanyParams, body: { ...jsonBody(stewardReviewSchema), required: false } },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({
