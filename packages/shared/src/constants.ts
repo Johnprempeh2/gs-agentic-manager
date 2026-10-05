@@ -1038,6 +1038,13 @@ export const PERMISSION_KEYS = [
   "tasks:manage_active_checkouts",
   "pipelines:write",
   "joins:approve",
+  // Organization memory (GRE-672). Grant scope: { memoryScopeIds: string[] }; null = org and project scopes, never client or restricted.
+  "memory:read",
+  "memory:contribute",
+  "memory:approve",
+  "memory:correct",
+  "memory:delete",
+  "memory:admin",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 

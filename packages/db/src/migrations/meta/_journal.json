@@ -2052,6 +2052,20 @@
       "when": 1791149266120,
       "tag": "0294_support_queues",
       "breakpoints": true
+    },
+    {
+      "idx": 295,
+      "version": "7",
+      "when": 1791186922245,
+      "tag": "0295_memory_gateway",
+      "breakpoints": true
+    },
+    {
+      "idx": 296,
+      "version": "7",
+      "when": 1791186929345,
+      "tag": "0296_memory_ingest_outbox",
+      "breakpoints": true
     }
   ]
 }

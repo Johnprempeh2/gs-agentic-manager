@@ -89,6 +89,7 @@ import {
   sql,
 } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
+import { companyMemoryEnabled } from "./memory-gateway/service.js";
 import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   CHAT_PROVIDERS,
@@ -27285,6 +27286,11 @@ export function heartbeatService(
             if (authToken && configuredPaperclipApiBaseUrl() && issueRef) {
               runtimeMcpServers.unshift({ name: "GS Agentic Manager projects", url: `${paperclipApiBaseUrl()}/api/mcp/project-tools`,
                 token: authToken, connectionId: "paperclip-project-tools" });
+            }
+            // Memory tools only reach runs while the company's memory setting is on (GRE-672).
+            if (authToken && configuredPaperclipApiBaseUrl() && issueRef && await companyMemoryEnabled(db, agent.companyId)) {
+              runtimeMcpServers.unshift({ name: "GS Agentic Manager memory", url: `${paperclipApiBaseUrl()}/api/mcp/memory-tools`,
+                token: authToken, connectionId: "paperclip-memory-tools" });
             }
             const runtimeMcp = createAdapterRuntimeMcpAccess(runtimeMcpServers);
             if (runtimeTools && runtimeToolDelivery === "invocation_context") {

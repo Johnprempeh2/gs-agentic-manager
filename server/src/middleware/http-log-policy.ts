@@ -87,6 +87,7 @@ const MCP_ENDPOINT_PATHS = [
   /^\/mcp\/gateways\/[^/]+\/?$/,
   /^\/mcp\/runtime-tools\/?$/,
   /^\/api\/mcp\/project-tools\/?$/,
+  /^\/api\/mcp\/memory-tools\/?$/,
   /^\/api\/tool-gateway\/gateways\/[^/]+\/mcp\/?$/,
 ];
 
