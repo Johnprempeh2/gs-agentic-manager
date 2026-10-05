@@ -10,7 +10,9 @@ import { d7Items, record } from "./fixtures.mjs";
 export const PHASE1_SEED = ["R-301", "R-302", "R-303"];
 
 function client(target, identityId, extraHeaders = {}) {
-  const headers = { Authorization: `Bearer ${target.tokenFor(identityId)}`, ...extraHeaders };
+  // A null token means the caller authenticates without one (the local board on the gsam target).
+  const token = target.tokenFor(identityId);
+  const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders };
   return {
     recall: (body, h = {}) => target.recall({ ...headers, ...h }, body),
     contribute: (body, h = {}) => target.contribute({ ...headers, ...h }, body),
@@ -27,6 +29,12 @@ function verdict(checks) {
 
 function resultIds(res) {
   return (res.body?.results ?? []).map((r) => r.id);
+}
+
+// Zero results only proves isolation when the recall really searched. A
+// gateway that answers "memory unavailable" returns nothing for everyone.
+function searched(res) {
+  return res.status === 200 && res.body?.available !== false;
 }
 
 function denied(res) {
@@ -58,7 +66,7 @@ export const TESTS = [
       const lintel = client(target, "ag-lintel-syn");
       const { out: res, audit } = await withAudit(target, () => lintel.recall({ query: "contract renewal date" }));
       const checks = [];
-      check(checks, res.status === 200, `recall answered 200 (got ${res.status})`);
+      check(checks, searched(res), `recall answered 200 and searched (got ${res.status}${res.body?.available === false ? ", memory unavailable" : ""})`);
       check(checks, JSON.stringify(resultIds(res)) === JSON.stringify(["R-302"]), `only R-302 returned (got ${JSON.stringify(resultIds(res))})`);
       check(checks, noneOf(res.body, ["R-301", record(scenariosRef, "R-301").text, "31 March", "cl-alder"]), "no R-301 id, text, scope or count in the response");
       check(
@@ -108,6 +116,7 @@ export const TESTS = [
         acquisition: await mason.recall({ query: "acquisition" }),
       }));
       const checks = [];
+      check(checks, searched(out.heron) && searched(out.acquisition), "both recalls searched (not 'memory unavailable')");
       check(checks, out.heron.status === 200 && resultIds(out.heron).length === 0, `'HERON' returns zero results (got ${JSON.stringify(resultIds(out.heron))})`);
       check(checks, out.acquisition.status === 200 && resultIds(out.acquisition).length === 0, `'acquisition' returns zero results (got ${JSON.stringify(resultIds(out.acquisition))})`);
       check(checks, noneOf(out, ["HERON", "R-303", "pj-kestrel-acq"]), "no hint that pj-kestrel-acq exists");
@@ -127,6 +136,7 @@ export const TESTS = [
       const everest = client(target, "ag-everest-syn");
       const { out: res, audit } = await withAudit(target, () => everest.recall({ query: "acquisition target" }));
       const checks = [];
+      check(checks, searched(res), "recall searched (not 'memory unavailable')");
       check(checks, res.status === 200 && resultIds(res).length === 0, `zero results (got ${res.status} ${JSON.stringify(resultIds(res))})`);
       check(checks, noneOf(res.body, ["HERON", "R-303", "pj-kestrel-acq"]), "no sensitive-project data or name");
       check(
@@ -172,8 +182,10 @@ export const TESTS = [
         expiredRun: await rogue.recall({ query: "care plan" }, { "X-Paperclip-Run-Id": "run-rogue-expired" }),
       }));
       const checks = [];
-      check(checks, out.othersRun.status === 401 || out.othersRun.status === 403, `another agent's run id rejected (got ${out.othersRun.status})`);
-      check(checks, out.expiredRun.status === 401 || out.expiredRun.status === 403, `expired run rejected (got ${out.expiredRun.status})`);
+      // GRE-651 says "Rejected"; GSAM answers a run id mismatch with 422.
+      const rejectedRun = (s) => s === 401 || s === 403 || s === 422;
+      check(checks, rejectedRun(out.othersRun.status), `another agent's run id rejected (got ${out.othersRun.status})`);
+      check(checks, rejectedRun(out.expiredRun.status), `expired run rejected (got ${out.expiredRun.status})`);
       check(checks, !out.othersRun.body?.results && !out.expiredRun.body?.results, "no results returned");
       check(
         checks,

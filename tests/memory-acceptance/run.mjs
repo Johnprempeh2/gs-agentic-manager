@@ -12,6 +12,7 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { createDoubleTarget, FAULTS } from "./lib/double.mjs";
 import { loadFixtures } from "./lib/fixtures.mjs";
+import { createGsamTarget, loadGsamConfig } from "./lib/gsam.mjs";
 import { createLiveTarget, loadLiveConfig } from "./lib/live.mjs";
 import { formatReport } from "./lib/report.mjs";
 import { runAll } from "./lib/tests.mjs";
@@ -24,6 +25,7 @@ const { values } = parseArgs({
     json: { type: "string" },
     verbose: { type: "boolean", short: "v", default: false },
     "list-faults": { type: "boolean", default: false },
+    "prime-org": { type: "boolean", default: false },
   },
 });
 
@@ -39,8 +41,11 @@ if (values.target === "double") {
 } else if (values.target === "live") {
   if (values.break.length) throw new Error("--break applies to the test double only");
   target = createLiveTarget(loadLiveConfig(process.env.MEMORY_ACCEPTANCE_LIVE_CONFIG));
+} else if (values.target === "gsam") {
+  if (values.break.length) throw new Error("--break applies to the test double only");
+  target = createGsamTarget(loadGsamConfig(process.env.MEMORY_ACCEPTANCE_GSAM_CONFIG), { world, primeOrg: values["prime-org"] });
 } else {
-  throw new Error(`Unknown --target ${values.target} (double | live)`);
+  throw new Error(`Unknown --target ${values.target} (double | live | gsam)`);
 }
 
 const report = await runAll(target, { scenarios, only: values.only?.split(",") });

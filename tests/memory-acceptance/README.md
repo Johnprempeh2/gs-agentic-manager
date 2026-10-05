@@ -39,6 +39,61 @@ MEMORY_ACCEPTANCE_LIVE_CONFIG=tmp/memory-live.json \
 
 Never point the live target at the live app. The runner refuses port 3100.
 
+### Against the real gateway (`--target gsam`)
+
+`--target gsam` runs the 11 tests through the gateway that shipped in GRE-672
+(`server/src/routes/memory.ts`), in a sandbox GSAM server, with a sandbox
+engine. Each run provisions a fresh synthetic Kestrel Works company: scopes,
+projects and agents through the board API, memory grants and heartbeat runs in
+the sandbox database (no API exists for them yet). Audit evidence is the
+gateway's `memory_operations` table. Fixture names map to UUIDs both ways, and
+every UUID in a response is renamed to its fixture name, so a leaked id shows
+up as a leaked name.
+
+1. Sandbox engine: follow "Sandbox test" in `doc/GS-MEMORY-ENGINE.md` (own
+   folder, ports 25432/28888, `link-gateway` into the scratch folder).
+2. Sandbox GSAM in `local_trusted` mode with its own config (port, embedded
+   database port, telemetry off) and
+   `GSAM_MEMORY_GATEWAY_CONFIG=<scratch>/gsam/gs-memory/secrets/gateway.env`.
+3. Optional egress evidence for MT-31:
+   `node server/scripts/memory-egress-check.mjs sample --root-pid <hindsight-api pid> --out <scratch>/egress.jsonl`.
+4. Run:
+
+```sh
+MEMORY_ACCEPTANCE_GSAM_CONFIG=<scratch>/gsam-target.json \
+  node tests/memory-acceptance/run.mjs --target gsam -v --json <scratch>/memory-acceptance-gsam.json
+```
+
+```json
+{
+  "gatewayUrl": "http://127.0.0.1:<sandbox port>",
+  "databaseUrl": "postgres://paperclip:paperclip@127.0.0.1:<sandbox db port>/paperclip",
+  "retainMode": "chunks",
+  "engine": { "host": "127.0.0.1", "restPort": 28888, "controlPlanePort": 9999, "postgresPort": 25432 },
+  "engineAdmin": { "psql": "<pg bin>/psql", "socketDir": "<engine root>/pg/run", "port": 25432, "database": "hindsight", "env": { "LD_LIBRARY_PATH": "<pg lib dir>" } },
+  "egressLogPath": "<scratch>/egress.jsonl"
+}
+```
+
+The runner refuses gateway port 3100 and database port 54329 (the live app).
+`engineAdmin` is the sandbox engine's superuser socket; it reads bank config
+(MT-09) and every engine table (MT-07, MT-12). It is never the shared engine.
+
+How fixture calls become gateway calls:
+
+| Fixture | Gateway |
+|---|---|
+| `hu-john-syn` | the local board (no credential) |
+| `ag-*` identities | sandbox agents with their own API keys |
+| grant `read` / `contribute` on scopes | `memory:read` / `memory:contribute` with `memoryScopeIds` |
+| grant `approve`, scoped `administer` | not mapped: phase 2, and `memory:admin` is company-wide (listed in the preflight line) |
+| recall with `client` / `scope` | `scopeIds: [that scope]`, or an id that does not exist |
+| recall with no scope | `scopeIds` = every scope the caller lists from `GET …/memory/scopes` (bare recall skips client scopes by design) |
+| `X-Bank-Id` header | sent as is |
+
+`--prime-org` adds one neutral synthetic org record before the tests so the
+company bank exists. It is a diagnostic, not an acceptance run.
+
 ## Results
 
 Each test ends as **pass**, **fail** or **inconclusive**. Inconclusive means
@@ -47,8 +102,12 @@ admin inspection route, engine not confirmed running). It is never counted as
 a pass, and the exit code is 1.
 
 MT-07, MT-08 and MT-09 need the engine to be running. A refused connection
-to an engine that is not running proves nothing, so on the live target they
-are inconclusive unless the gateway health route reports the engine as up.
+to an engine that is not running proves nothing, so they are inconclusive
+unless the engine is confirmed up (gateway health route on `live`, the
+engine's own `/health` plus a successful seed on `gsam`).
+
+Zero results only prove isolation if the recall really searched. A recall the
+gateway answers with "memory unavailable" fails MT-01, MT-03 and MT-04.
 
 Gateway tests (MT-01 to MT-06, MT-12) also check the gateway audit rows. Direct
 engine tests (MT-07 to MT-09) bypass the gateway, so their evidence is the
@@ -105,6 +164,7 @@ ADR-0001 section 6 and will be matched to the gateway routes when GRE-672 lands.
 - `fixtures/scenarios.json` — scenario fixtures D1–D7 (GRE-651 §5.2); phase 1 uses D3 and D7
 - `lib/tests.mjs` — the 11 tests
 - `lib/double.mjs` — gateway and engine test double, with fault switches
-- `lib/live.mjs` — sandbox gateway and engine target
+- `lib/live.mjs` — generic HTTP target and the direct engine probes
+- `lib/gsam.mjs` — the real GSAM gateway in a sandbox server, with a sandbox engine
 - `run.mjs` — the command line runner
 - `runner.test.mjs` — self-test for the runner
