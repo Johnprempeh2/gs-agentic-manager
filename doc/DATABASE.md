@@ -13,11 +13,12 @@ pnpm dev
 That's it. On first start the server:
 
 1. Creates a `~/.gsam/instances/default/db/` directory for storage
-2. Ensures the `paperclip` database exists
-3. Runs migrations automatically for empty databases
-4. Starts serving requests
+2. Creates a random password for the `paperclip` database role and keeps it in `~/.gsam/instances/default/secrets/embedded-postgres.password` (mode 600). The database accepts only that password. An instance created before this change is moved onto a random password on its next start; its data is not touched.
+3. Ensures the `paperclip` database exists
+4. Runs migrations automatically for empty databases
+5. Starts serving requests
 
-Data persists across restarts in `~/.gsam/instances/default/db/`. To reset local dev data, delete that directory.
+Data persists across restarts in `~/.gsam/instances/default/db/`. To reset local dev data, delete that directory. Keep the `secrets/` folder with the `db/` folder: a database without its password file cannot be opened. Scripts and CLI commands that connect to a local instance read the password from that file.
 
 If you need to apply pending migrations manually, run:
 

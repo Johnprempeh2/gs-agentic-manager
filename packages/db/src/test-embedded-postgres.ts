@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -8,6 +9,7 @@ import {
   formatEmbeddedPostgresError,
 } from "./embedded-postgres-error.js";
 import { prepareEmbeddedPostgresNativeRuntime } from "./embedded-postgres-native.js";
+import { EMBEDDED_POSTGRES_USER, embeddedPostgresConnectionString } from "./embedded-postgres-password.js";
 
 // Time budget (ms) for a vitest test in the embedded-Postgres cost class: a
 // test that starts an embedded Postgres cluster and runs migrations. Measured
@@ -122,10 +124,12 @@ async function createEmbeddedPostgresTestInstance(tempDirPrefix: string) {
   // The `start()` rejection carries an empty message, so we capture the output
   // in a bounded buffer and surface it in the thrown error.
   const logBuffer = createEmbeddedPostgresLogBuffer();
+  // Throwaway clusters get their own random password too (GRE-930).
+  const password = randomBytes(24).toString("base64url");
   const instance = new EmbeddedPostgres({
     databaseDir: dataDir,
-    user: "paperclip",
-    password: "paperclip",
+    user: EMBEDDED_POSTGRES_USER,
+    password,
     port,
     persistent: true,
     initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -133,7 +137,7 @@ async function createEmbeddedPostgresTestInstance(tempDirPrefix: string) {
     onError: (message) => logBuffer.append(message),
   });
 
-  return { dataDir, port, instance, getRecentLogs: () => logBuffer.getRecentLogs() };
+  return { dataDir, port, password, instance, getRecentLogs: () => logBuffer.getRecentLogs() };
 }
 
 function cleanupEmbeddedPostgresTestDirs(dataDir: string) {
@@ -209,6 +213,7 @@ const EMBEDDED_POSTGRES_START_MAX_ATTEMPTS = 5;
 async function startEmbeddedPostgresWithRetry(tempDirPrefix: string): Promise<{
   port: number;
   dataDir: string;
+  password: string;
   instance: EmbeddedPostgresInstance;
 }> {
   let lastError = new Error("embedded Postgres startup failed");
@@ -218,7 +223,7 @@ async function startEmbeddedPostgresWithRetry(tempDirPrefix: string): Promise<{
     try {
       await created.instance.initialise();
       await created.instance.start();
-      return { port: created.port, dataDir: created.dataDir, instance: created.instance };
+      return { port: created.port, dataDir: created.dataDir, password: created.password, instance: created.instance };
     } catch (error) {
       lastError = formatEmbeddedPostgresError(error, {
         fallbackMessage: "embedded Postgres startup failed",
@@ -276,12 +281,12 @@ export async function startEmbeddedPostgresTestDatabase(
 ): Promise<EmbeddedPostgresTestDatabase> {
   // The bounded retry hardens the cluster start against the port race. It throws
   // with the real Postgres output if every attempt fails.
-  const { port, dataDir, instance } = await startEmbeddedPostgresWithRetry(tempDirPrefix);
+  const { port, dataDir, password, instance } = await startEmbeddedPostgresWithRetry(tempDirPrefix);
 
   try {
-    const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
+    const adminConnectionString = embeddedPostgresConnectionString({ password, port, database: "postgres" });
     await ensurePostgresDatabase(adminConnectionString, "paperclip");
-    const connectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
+    const connectionString = embeddedPostgresConnectionString({ password, port });
     await applyPendingMigrations(connectionString);
 
     return {

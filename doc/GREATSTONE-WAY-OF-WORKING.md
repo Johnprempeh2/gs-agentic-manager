@@ -496,10 +496,10 @@ cp -a "$DB_DIR" ~/GSAM/backups/db-before-restore-$(date +%Y%m%dT%H%M%S)
 node cli/node_modules/tsx/dist/cli.mjs --eval '
 (async () => {
   const { ensureEmbeddedPostgres } = await import("./cli/src/commands/worktree.ts");
-  const { resetPostgresDatabase, runDatabaseRestore } = await import("./packages/db/src/index.ts");
+  const { embeddedPostgresConnectionString, resetPostgresDatabase, runDatabaseRestore } = await import("./packages/db/src/index.ts");
   const pg = await ensureEmbeddedPostgres(process.env.DB_DIR, 54339, { allowExisting: false });
   try {
-    const url = (db) => `postgres://paperclip:paperclip@127.0.0.1:${pg.port}/${db}`;
+    const url = (database) => embeddedPostgresConnectionString({ ...pg, database });
     await resetPostgresDatabase(url("postgres"), "paperclip");
     await runDatabaseRestore({ connectionString: url("paperclip"), backupFile: process.env.BACKUP });
     console.log(`Restored ${process.env.BACKUP} into ${process.env.DB_DIR}`);

@@ -151,7 +151,7 @@ cmd_start() {
     --exclude "/instances/*/.env" \
     "$LIVE_DATA_DIR/" "$PREVIEW_DATA_DIR/"
   say "Files: copied to $PREVIEW_DATA_DIR (without the database, secrets, locks and backups)"
-  gs_db seed-preview \
+  PGPASSWORD="$(live_database_password)" gs_db seed-preview \
     --source-url "$source_url" \
     --target-db-dir "$PREVIEW_DATA_DIR/instances/$INSTANCE_ID/db" \
     --work-dir "$PREVIEW_ROOT/seed" \

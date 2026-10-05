@@ -32,6 +32,11 @@ import {
   ensurePostgresDatabase,
   formatEmbeddedPostgresError,
   getPostgresDataDirectory,
+  EMBEDDED_POSTGRES_USER,
+  embeddedPostgresConnectionString,
+  ensureEmbeddedPostgresPasswordFile,
+  ensureEmbeddedPostgresRolePassword,
+  resolveEmbeddedPostgresPasswordFile,
   inspectMigrations,
   applyPendingMigrations,
   createEmbeddedPostgresLogBuffer,
@@ -471,6 +476,24 @@ async function startServerWithDatabaseTeardown(
   
     const dataDir = resolve(config.embeddedPostgresDataDir);
     const configuredPort = config.embeddedPostgresPort;
+    // Random per-instance password (GRE-930). Written before any role change
+    // so an interrupted move off the old fixed password resumes next start.
+    const embeddedPostgresPasswordFile = ensureEmbeddedPostgresPasswordFile(dataDir);
+    const embeddedPostgresPassword = embeddedPostgresPasswordFile.password;
+    if (embeddedPostgresPasswordFile.created) {
+      logger.info(
+        { passwordFile: resolveEmbeddedPostgresPasswordFile(dataDir) },
+        "Created embedded PostgreSQL password file",
+      );
+    }
+    const ensureEmbeddedRolePassword = async (rolePort: number) => {
+      const status = await ensureEmbeddedPostgresRolePassword({ dataDir, port: rolePort, password: embeddedPostgresPassword });
+      if (status === "migrated") {
+        logger.info("Embedded PostgreSQL role moved from the old fixed password to the stored random password");
+      }
+    };
+    const embeddedUrl = (urlPort: number, database: string) =>
+      embeddedPostgresConnectionString({ password: embeddedPostgresPassword, port: urlPort, database });
     let port = configuredPort;
     const logBuffer = createEmbeddedPostgresLogBuffer(120);
     const verboseEmbeddedPostgresLogs = process.env.GSAM_EMBEDDED_POSTGRES_VERBOSE === "true";
@@ -539,14 +562,16 @@ async function startServerWithDatabaseTeardown(
     const runningPid = getRunningPid();
     if (runningPid) {
       port = embeddedPostgresOwnerPort(readFileSync(postmasterPidFile, "utf8"), dataDir, runningPid);
-      const actualDataDir = await getPostgresDataDirectory(`postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`);
+      await ensureEmbeddedRolePassword(port);
+      const actualDataDir = await getPostgresDataDirectory(embeddedUrl(port, "postgres"));
       if (typeof actualDataDir !== "string" || resolve(actualDataDir) !== resolve(dataDir)) {
         throw new Error("Refusing to reuse PostgreSQL: its data directory belongs to another instance.");
       }
       logger.warn(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
     } else {
-      const configuredAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${configuredPort}/postgres`;
+      const configuredAdminConnectionString = embeddedUrl(configuredPort, "postgres");
       try {
+        await ensureEmbeddedRolePassword(configuredPort);
         const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
         if (
           typeof actualDataDir !== "string" ||
@@ -562,8 +587,8 @@ async function startServerWithDatabaseTeardown(
         logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, requestedPort=${configuredPort})`);
         const createEmbeddedPostgres = () => new EmbeddedPostgres({
           databaseDir: dataDir,
-          user: "paperclip",
-          password: "paperclip",
+          user: EMBEDDED_POSTGRES_USER,
+          password: embeddedPostgresPassword,
           port,
           persistent: true,
           initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -654,13 +679,14 @@ async function startServerWithDatabaseTeardown(
       }
     }
   
-    const embeddedAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
+    await ensureEmbeddedRolePassword(port);
+    const embeddedAdminConnectionString = embeddedUrl(port, "postgres");
     const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "paperclip");
     if (dbStatus === "created") {
       logger.info("Created embedded PostgreSQL database: paperclip");
     }
   
-    const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
+    const embeddedConnectionString = embeddedUrl(port, "paperclip");
     const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
     if (shouldAutoApplyFirstRunMigrations) {
       logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");

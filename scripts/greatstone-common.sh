@@ -102,8 +102,10 @@ gs_db() {
   (cd "$GS_TOOLS_ROOT" && node cli/node_modules/tsx/dist/cli.mjs scripts/greatstone-db.ts "$@")
 }
 
-# Prints the connection string of the running live database. The port comes
-# from the postmaster.pid file that PostgreSQL writes; nothing is written.
+# Prints the connection string of the running live database, without the
+# password (pass that as PGPASSWORD, see live_database_password, so it never
+# shows in a process list). The port comes from the postmaster.pid file that
+# PostgreSQL writes; nothing is written.
 live_database_url() {
   local pidfile="$LIVE_DATA_DIR/instances/$INSTANCE_ID/db/postmaster.pid"
   [ -f "$pidfile" ] || return 1
@@ -111,7 +113,19 @@ live_database_url() {
   pid="$(sed -n 1p "$pidfile")"
   port="$(sed -n 4p "$pidfile")"
   kill -0 "$pid" 2>/dev/null || return 1
-  printf 'postgres://paperclip:paperclip@127.0.0.1:%s/paperclip\n' "$port"
+  printf 'postgres://paperclip@127.0.0.1:%s/paperclip\n' "$port"
+}
+
+# Prints the live database password. The server keeps a random one in
+# secrets/embedded-postgres.password (GRE-930); a live server that has not
+# started on that version yet still uses the old fixed password.
+live_database_password() {
+  local file="$LIVE_DATA_DIR/instances/$INSTANCE_ID/secrets/embedded-postgres.password"
+  if [ -f "$file" ]; then
+    head -n 1 "$file"
+  else
+    printf 'paperclip\n'
+  fi
 }
 
 # Prints one field of <url>/api/health (a dotted path such as

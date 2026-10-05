@@ -133,7 +133,8 @@ await db.insert(heartbeatRuns).values({ companyId: company!.id, agentId: agent!.
 process.exit(0);
 EOF
 DB_PORT="$(node -e 'console.log(require(process.argv[1]).dbPort)' "$ROOT/client-instance.json")"
-(cd "$CODE_DIR" && clean node "$TSX" "$S/tmp/refused-run.mts" "postgres://paperclip:paperclip@127.0.0.1:$DB_PORT/paperclip") || fail "could not add the refused run"
+DB_PASSWORD="$(head -n 1 "$ROOT/instances/default/secrets/embedded-postgres.password")"
+(cd "$CODE_DIR" && clean node "$TSX" "$S/tmp/refused-run.mts" "postgres://paperclip:$DB_PASSWORD@127.0.0.1:$DB_PORT/paperclip") || fail "could not add the refused run"
 if OUT="$(clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env")"; then fail "watch passed with a refused run"; fi
 echo "$OUT" | grep -q '^client-instance: FAIL ai-failed-auth:.* claude_auth_required' && pass "FAIL ai-failed-auth" || { echo "$OUT"; fail "no ai-failed-auth FAIL"; }
 tail -n 1 "$S/pings.log" | grep -q '^POST /ping/sandbox/fail 1$' && pass "fail ping sent with the report" || fail "no fail ping: $(tail -n 1 "$S/pings.log")"
@@ -166,7 +167,7 @@ const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
 await db.update(heartbeatRuns).set({ finishedAt: old, startedAt: old, createdAt: old });
 process.exit(0);
 EOF
-(cd "$CODE_DIR" && clean node "$TSX" "$S/tmp/age-run.mts" "postgres://paperclip:paperclip@127.0.0.1:$DB_PORT/paperclip") || fail "could not age the run"
+(cd "$CODE_DIR" && clean node "$TSX" "$S/tmp/age-run.mts" "postgres://paperclip:$DB_PASSWORD@127.0.0.1:$DB_PORT/paperclip") || fail "could not age the run"
 OUT="$(clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env")" || { echo "$OUT"; fail "watch after recovery"; }
 [ "$(mails)" = 4 ] && grep -q '^Subject: \[GSAM c917\] all checks pass again' "$S/mail.log" && pass "one recovery mail" || fail "no recovery mail"
 clean "$CI" watch --root "$ROOT" --watch-config "$S/etc/c917-watch.env" >/dev/null || fail "watch"
