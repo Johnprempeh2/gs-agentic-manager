@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeParkedWakes, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { EXECUTION_HOLD_CAUSES, computeAuthFailures, computeParkedWakes, computeRepairEscalations, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -362,4 +362,51 @@ test("R1 parked wakes: counts old deferred wakes on issues with no live run, by 
   assert.deepEqual(result.byReason, [{ reason: "execution_review_requested", count: 1 }]);
   // Zero is reported as zero, not missing.
   assert.deepEqual(computeParkedWakes(base()), { minAgeMinutes: 10, total: 0, byReason: [] });
+});
+
+test("R1 repair escalations: 2x2 split by agent-only task and repair comments, with issue ids (GRE-725)", () => {
+  const escalation = (issueId, fields = {}) => ({
+    issueId, createdAt: hoursAgo(2), terminalReason: "unchanged_source_state_exhausted",
+    recoveryActionId: `ra-${issueId}`, fingerprint: `fp-${issueId}`, sourceAssigneeBefore: { agentId: "a1", userId: null }, ...fields,
+  });
+  // Each attempt has its own recovery action, unlike the escalation's (as on GRE-712).
+  const repairRun = (issueId, commentCount, fields = {}) => ({ id: `run-${issueId}-${commentCount}`, issueId, recoveryActionId: `ra-attempt-${commentCount}`, fingerprint: `fp-${issueId}`, createdAt: hoursAgo(3), commentCount, ...fields });
+  const reviewByUser = { stages: [{ id: "s1", type: "review", participants: [{ id: "p", type: "user", userId: "u1" }] }] };
+  const reviewByAgent = { stages: [{ id: "s1", type: "review", participants: [{ id: "p", type: "agent", agentId: "a2" }] }] };
+  const snapshot = base({
+    issues: [
+      issue("ac", { executionPolicy: reviewByAgent }), issue("an"),
+      issue("hc", { executionPolicy: reviewByUser }), issue("hn"), issue("chat", { conversationUserId: "u1" }),
+      issue("old"), issue("other"),
+    ],
+    repairEscalations: [
+      escalation("ac"), // agent-only, repair run commented
+      escalation("an"), // agent-only, repair runs silent
+      escalation("hc"), // a user reviews: has a human, commented
+      escalation("hn", { sourceAssigneeBefore: { agentId: null, userId: "u1" } }), // user assignee before escalation
+      escalation("chat"), // agent chat with a user: has a human
+      escalation("old", { createdAt: hoursAgo(24 * 8) }), // before the window
+      escalation("other", { terminalReason: "owner_not_invokable" }), // another terminal reason
+    ],
+    repairRuns: [
+      repairRun("ac", 0), repairRun("ac", 2),
+      repairRun("an", 0), repairRun("an", 1, { fingerprint: "fp-stale" }), // a different source state does not count
+      repairRun("an", 3, { createdAt: hoursAgo(1) }), // started after the escalation: does not count
+      repairRun("hc", 1),
+      repairRun("chat", 0),
+    ],
+  });
+  const result = computeRepairEscalations(snapshot);
+  assert.equal(result.total, 5);
+  assert.deepEqual(result.agentOnlyCommented.map((entry) => entry.identifier), ["AC"]);
+  assert.equal(result.agentOnlyCommented[0].repairComments, 2);
+  assert.equal(result.agentOnlyCommented[0].repairRuns, 2);
+  assert.deepEqual(result.agentOnlyNoComment.map((entry) => entry.identifier), ["AN"]);
+  assert.deepEqual(result.otherCommented.map((entry) => entry.identifier), ["HC"]);
+  assert.deepEqual(result.otherNoComment.map((entry) => entry.identifier).sort(), ["CHAT", "HN"]);
+  // Empty window: zero in every cell, not missing.
+  assert.deepEqual(computeRepairEscalations(base()), {
+    windowDays: 7, terminalReason: "unchanged_source_state_exhausted", total: 0,
+    agentOnlyCommented: [], agentOnlyNoComment: [], otherCommented: [], otherNoComment: [],
+  });
 });
