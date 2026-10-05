@@ -296,6 +296,8 @@ Merging does not change the live app. A version goes live in these steps.
    knows which page to open. For the 2-week beta graduation rule,
    `GSAM_API_URL=<base> GSAM_API_KEY=<key> scripts/beta-switch-age.sh` (GET
    only) prints each switch's on/off, on since, days on and "2-week rule met".
+   `--scorecard <file>` (a saved copy of the GRE-81 scorecard) also lists
+   switches with no scorecard row and rows whose switch left the catalog.
 5. **Release task (Keystone).** Releases happen outside the app (John,
    GRE-489, 4 Oct). There is no "Update live?" card. When Flint reports "All
    pass", Keystone creates a task assigned to John, a child of the release
