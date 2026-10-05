@@ -156,9 +156,11 @@ test("status shows the origin, and old state files without run or issue still wo
 function withFakeNode(fn) {
   const bin = mkdtempSync(join(tmpdir(), "gs-preview-bin-"));
   const log = join(bin, "calls.log");
-  writeFileSync(join(bin, "node"), `#!/usr/bin/env bash\nprintf '%s\\n' "$@" >>${JSON.stringify(log)}\ntouch "$3" "$4"\n`, { mode: 0o755 });
+  const envLog = join(bin, "env.log");
+  writeFileSync(join(bin, "node"), `#!/usr/bin/env bash\nprintf '%s\\n' "$@" >>${JSON.stringify(log)}\nprintf '%s\\n' "\${PLAYWRIGHT_BROWSERS_PATH-<unset>}" >>${JSON.stringify(envLog)}\ntouch "$3" "$4"\n`, { mode: 0o755 });
   try {
-    return fn({ PATH: `${bin}:${process.env.PATH}` }, () => (existsSync(log) ? readFileSync(log, "utf8") : ""));
+    return fn({ PATH: `${bin}:${process.env.PATH}` }, () => (existsSync(log) ? readFileSync(log, "utf8") : ""),
+      () => (existsSync(envLog) ? readFileSync(envLog, "utf8") : ""));
   } finally {
     rmSync(bin, { recursive: true, force: true });
   }
@@ -217,6 +219,44 @@ test("shot checks its arguments before anything else (GRE-606)", () => {
     assert.match(run("/", "../x").out, /the name may use only letters/);
     assert.equal(calls(), "");
   }));
+});
+
+test("shot looks for the browser in the account home, not the agent's temp HOME (GRE-732)", () => {
+  const shared = join(userInfo().homedir, process.platform === "darwin" ? "Library/Caches/ms-playwright" : ".cache/ms-playwright");
+  withFakePreview({ port: 3200 }, (root) => withFakeNode((env, calls, browsersPath) => {
+    // runPreview sets HOME to a temp folder, as an agent run does.
+    assert.equal(runPreview(["shot", "/", "home"], root, { ...env, GSAM_PREVIEW_PORT: "3200" }).code, 0);
+    assert.equal(runPreview(["shot", "/", "home"], root, { ...env, GSAM_PREVIEW_PORT: "3200", PLAYWRIGHT_BROWSERS_PATH: "/opt/pw" }).code, 0);
+    assert.deepEqual(browsersPath().trim().split("\n"), [shared, "/opt/pw"]);
+  }));
+});
+
+test("start in a checkout with no dependencies says to run pnpm install, before copying anything (GRE-732)", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  const clone = mkdtempSync(join(tmpdir(), "gs-preview-clone-"));
+  try {
+    mkdirSync(join(clone, "scripts"));
+    for (const f of ["greatstone-preview.sh", "greatstone-common.sh"]) {
+      writeFileSync(join(clone, "scripts", f), readFileSync(join(scriptsDir, f)));
+    }
+    mkdirSync(join(root, "data", "instances", "default"), { recursive: true });
+    const result = (() => {
+      try {
+        return execFileSync("bash", [join(clone, "scripts", "greatstone-preview.sh"), "start", "rc-1"], {
+          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+          env: { PATH: process.env.PATH, HOME: root, GSAM_ROOT: root, GSAM_PREVIEW_PORT: "1" },
+        });
+      } catch (error) {
+        return { code: error.status, out: `${error.stdout}${error.stderr}` };
+      }
+    })();
+    assert.equal(result.code, 1);
+    assert.match(result.out, /no dependencies installed; run first: \(cd .*gs-preview-clone-.* && pnpm install --frozen-lockfile\)/);
+    assert.ok(!existsSync(join(root, "preview")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(clone, { recursive: true, force: true });
+  }
 });
 
 // Shot files as `shot` leaves them: <tag>-<name>-{laptop,phone}.png and a

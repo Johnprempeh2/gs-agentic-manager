@@ -105,17 +105,31 @@ trap cleanup EXIT
 json_field() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{let v=JSON.parse(s);for(const k of process.argv[1].split("."))v=v?.[k];console.log(v??"")})' "$1"; }
 status_of() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
-# The restart request as greatstone-release.sh sends it. The sandbox has no
-# pending change, so an accepted caller gets 409 restart_not_required (or 404
-# when no supervisor runs); a refused caller gets 401/403.
+# The restart request as greatstone-release.sh sends it. An accepted caller
+# gets 409 restart_not_required when the checkout is clean, 202
+# restart_requested when the runner saw a watched file change since start
+# (GRE-731), or 404 when no supervisor runs; a refused caller gets 401/403.
+# After a 202 the runner hot-restarts the server, so wait for the new process
+# before the next check talks to it.
 restart_status() { live_curl -s -o /dev/null -w '%{http_code}' -m 10 -X POST "$BASE/api/health/dev-server/restart"; }
+wait_restarted() {
+  local before="$1" now
+  for _ in $(seq 1 60); do
+    sleep 2
+    now="$(health_field "$BASE" serverInfo.processStartedAt)"
+    [ -n "$now" ] && [ "$now" != "$before" ] && return 0
+  done
+  fail "sandbox did not come back after the 202 restart"
+}
 expect_restart() {
-  local label="$1" want="$2" got
+  local label="$1" want="$2" got before
+  before="$(health_field "$BASE" serverInfo.processStartedAt)"
   got="$(restart_status)"
   case " $want " in
     *" $got "*) pass "$label ($got)" ;;
     *) fail "$label: wanted $want, got $got" ;;
   esac
+  if [ "$got" = 202 ]; then wait_restarted "$before"; fi
 }
 expect_started_at() {
   local got
@@ -146,7 +160,7 @@ start_server
 curl -fsS -X POST -H 'content-type: application/json' -H "origin: $BASE" -d '{"name":"Sandbox Co"}' "$BASE/api/companies" >/dev/null
 live_board_key_check >/dev/null && pass "no key file is fine" || fail "no key file refused"
 expect_started_at shown "serverInfo shown with no key"
-expect_restart "restart accepted with no key" "200 404 409"
+expect_restart "restart accepted with no key" "200 202 404 409"
 expect_active_runs ok "active_runs with no key"
 stop_server
 
@@ -199,7 +213,7 @@ say "5. authenticated, key file with mode 0600: every call works"
 chmod 600 "$GSAM_LIVE_BOARD_KEY_FILE"
 live_board_key_check >/dev/null && pass "0600 key file accepted" || fail "0600 key file refused"
 expect_started_at shown "serverInfo shown with the key"
-expect_restart "restart accepted with the key" "200 404 409"
+expect_restart "restart accepted with the key" "200 202 404 409"
 expect_active_runs ok "active_runs with the key"
 
 say "6. authenticated, wrong key: every call refused"

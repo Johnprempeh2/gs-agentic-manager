@@ -587,6 +587,28 @@ on a throwaway sandbox, in both modes.
   the preview.
 - `stop` stops only the preview process group and its database. The code and
   data folders stay until the next `start` replaces them.
+- **Run from a fresh checkout:** the script uses the dependencies of the
+  checkout it runs from. In a fresh clone of a tag, run
+  `pnpm install --frozen-lockfile` there first; `start` says so if you forget.
+
+### Screenshots (`shot`): one-time host setup
+
+`shot` uses Playwright's Chromium headless shell. Agent runs have a temp
+`HOME`, so `shot` looks for the browser in the account's own folder
+(`~/.cache/ms-playwright` on Linux, `~/Library/Caches/ms-playwright` on macOS),
+not in `$HOME`. Set `PLAYWRIGHT_BROWSERS_PATH` to use another folder.
+
+The host needs this once. John runs it in the dev checkout, as his own user:
+
+```sh
+npx playwright install chromium-headless-shell   # the browser, in ~/.cache/ms-playwright
+sudo npx playwright install-deps chromium        # system libraries (libnss3, libnspr4, libasound2, ...)
+```
+
+The second line needs `sudo`, so only John can run it. Until both are done,
+`shot` stops and names the missing step: "The browser is not installed" (any
+agent may run the first line) or "The host is missing system libraries" (John
+must run the second). After a Playwright upgrade, run the first line again.
 
 ### Sandbox test of the scripts
 
