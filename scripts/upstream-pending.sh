@@ -7,6 +7,8 @@
 #
 # Upstream commits in <base>..<upstream> (default 01d9a1218..refs/upstream/master),
 # minus:
+#   - commits already in <main> (a sync merge brought them in); the header
+#     names the newest of them as "Synced to",
 #   - commits named in an `Upstream-Commit: <sha> taken|partial` line in any
 #     commit message in <base>..<main> (default origin/main, else main),
 #   - commits listed in doc/upstream-taken.txt (taken before the trailer rule),
@@ -48,7 +50,7 @@ while [ "$#" -gt 0 ]; do
     --count) COUNT_ONLY=1; shift ;;
     --clash) CLASH=1; shift ;;
     --advisories) ADVISORIES=1; shift ;;
-    -h|--help) sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -250,7 +252,7 @@ while read -r sha; do
   else
     other+=("$line")
   fi
-done < <(git rev-list --reverse --no-merges "$BASE..$UPSTREAM")
+done < <(git rev-list --reverse --no-merges "$BASE..$UPSTREAM" ^"$MAIN")
 
 pending=$(( ${#security[@]} + ${#other[@]} ))
 if [ "$COUNT_ONLY" -eq 1 ]; then
@@ -260,6 +262,8 @@ fi
 
 total="$(git rev-list --count --no-merges "$BASE..$UPSTREAM")"
 echo "Upstream $(git rev-parse --short "$UPSTREAM") vs $MAIN $(git rev-parse --short "$MAIN"), since $BASE"
+# The newest upstream commit in main: the last sync merge, or the fork point.
+echo "Synced to: $(git rev-parse --short "$(git merge-base "$MAIN" "$UPSTREAM")")"
 echo "Upstream commits: $total. Pending: $pending. Partial: ${#partial[@]}."
 section() {
   local title="$1"; shift
