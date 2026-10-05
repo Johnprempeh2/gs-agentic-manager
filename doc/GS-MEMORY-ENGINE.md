@@ -35,12 +35,26 @@ sudo /home/gsmemory/gs-memory/app/setup/gs-memory.sh link-gateway
 ```
 
 `system-setup` makes the user and folders, installs `postgresql-16`, `postgresql-16-pgvector` and `python3-venv`,
-drops the package's default `16/main` cluster, copies the setup files to `app/setup/`, installs the four units
-and enables only the backup timer. `install` makes the cluster, builds the venv from `requirements.lock`
+copies the setup files to `app/setup/`, installs the four units and enables only the backup timer. It lists the
+PostgreSQL clusters that exist before it runs and never stops, disables or drops them; `postgresql.service` is not
+changed. Only a default `16/main` cluster that this run's package install created is stopped and set to `manual`
+start (not dropped). It also proves `gsmemory` can write the Windows copy folder (see below) and warns if not.
+`install` makes the cluster, builds the venv from `requirements.lock`
 (hashes required, wheels only, CPU-only torch), downloads the two local models (about 215 MB), copies the
 two extension modules to `app/extension/` and writes the secrets. An older `engine.env` gets the assertion secret
 added; its key does not change. `link-gateway` writes the GSAM server's `gateway.env` (next section). All three are
-safe to run again.
+safe to run again. `install` also prints the Claude CLI the engine will use (the one bundled in
+`claude-agent-sdk`); if it prints a `WARNING`, extraction will not work after `link-claude` (`chunks` still works).
+
+Before the first run on a PC, look at `pg_lsclusters` and `systemctl status postgresql` so you know what is
+already there. The script leaves it alone, but you should know.
+
+### Windows copy folder
+
+`system-setup` makes `/mnt/c/GreatstoneBackups/gs-memory` owned by `gsmemory` and writes a test file as `gsmemory`.
+On a `/mnt/c` mount without the WSL `metadata` option, owner changes are ignored and the test can fail. Then the
+nightly dump stays local only (the `backup` log says so). After the first `backup`, prove the copy with
+`ls -l /mnt/c/GreatstoneBackups/gs-memory/` (a `.dump` and its `.sha256`).
 
 ## Link the Claude plan (one time, John)
 

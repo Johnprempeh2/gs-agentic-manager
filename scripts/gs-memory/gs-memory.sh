@@ -83,17 +83,29 @@ cmd_system_setup() {
   fi
   chmod 0700 "$GS_MEMORY_HOME"
 
+  # Clusters that exist before this run are someone else's. Never stop, disable or drop them.
+  local clusters_before=""
+  if command -v pg_lsclusters >/dev/null; then
+    clusters_before="$(pg_lsclusters -h 2>/dev/null | awk '{print $1" "$2" port="$3" "$4}')"
+  fi
+  if [[ -n "$clusters_before" ]]; then
+    log "existing PostgreSQL clusters (left as they are):"
+    printf '    %s\n' "$clusters_before"
+  fi
+
   if [[ ! -x "$GS_MEMORY_PG_BIN/postgres" ]] || ! dpkg -s postgresql-16-pgvector >/dev/null 2>&1; then
     log "install postgresql-16 and postgresql-16-pgvector"
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-16 postgresql-16-pgvector python3-venv
   fi
-  # The package creates a default cluster on 5432. Only our cluster may run.
-  if command -v pg_lsclusters >/dev/null && pg_lsclusters -h 2>/dev/null | awk '{print $1" "$2}' | grep -qx '16 main'; then
-    log "drop the default postgresql@16-main cluster"
-    pg_dropcluster --stop 16 main
+  # The package can create a default 16/main cluster on 5432. If this run created it, stop it and set it to
+  # manual start. Nothing is dropped, and postgresql.service is not changed (other clusters may need it).
+  if ! grep -qx '16 main .*' <<<"$clusters_before" \
+    && pg_lsclusters -h 2>/dev/null | awk '{print $1" "$2}' | grep -qx '16 main'; then
+    log "stop the new default 16/main cluster and set it to manual start (not dropped)"
+    pg_ctlcluster 16 main stop >/dev/null 2>&1 || true
+    echo manual > /etc/postgresql/16/main/start.conf
   fi
-  systemctl disable --now postgresql.service >/dev/null 2>&1 || true
 
   install -d -o "$GS_MEMORY_USER" -g "$GS_MEMORY_USER" -m 0700 \
     "$GS_MEMORY_ROOT" "$APP" "$GS_MEMORY_ROOT/pg" "$PGRUN" "$MODELS" "$SECRETS" "$BACKUPS" "$LOGS"
@@ -105,7 +117,18 @@ cmd_system_setup() {
   cp -r "$SCRIPT_DIR/." "$APP/setup/"
   chown -R "$GS_MEMORY_USER:$GS_MEMORY_USER" "$APP/setup"
 
-  install -d -m 0755 "$GS_MEMORY_WINDOWS_BACKUPS"
+  # The nightly dump runs as the engine user, so it must be able to write here. On a /mnt/c (drvfs) mount
+  # chown can be ignored, so prove it with a real write as that user.
+  install -d -m 0700 -o "$GS_MEMORY_USER" -g "$GS_MEMORY_USER" "$GS_MEMORY_WINDOWS_BACKUPS" 2>/dev/null \
+    || install -d -m 0755 "$GS_MEMORY_WINDOWS_BACKUPS"
+  local probe="$GS_MEMORY_WINDOWS_BACKUPS/.gs-memory-write-test"
+  if runuser -u "$GS_MEMORY_USER" -- sh -c "echo ok > '$probe' && rm -f '$probe'" 2>/dev/null; then
+    log "Windows copy folder is writable by $GS_MEMORY_USER: $GS_MEMORY_WINDOWS_BACKUPS"
+  else
+    rm -f "$probe"
+    log "WARNING: $GS_MEMORY_USER cannot write $GS_MEMORY_WINDOWS_BACKUPS. Nightly dumps stay local only."
+    log "         See doc/GS-MEMORY-ENGINE.md, \"Windows copy folder\"."
+  fi
 
   log "install systemd units (not enabled; the engine is started by hand)"
   local unit
@@ -152,6 +175,7 @@ cmd_install() {
   install_models
   install_extension
   write_hindsight_env
+  report_claude_cli
   log "install done. Next: sudo $APP/setup/gs-memory.sh link-gateway, then sudo systemctl start gs-memory-hindsight"
 }
 
@@ -168,6 +192,19 @@ GSAM_MEMORY_ENGINE_API_KEY=$key
 GSAM_MEMORY_ASSERTION_SECRET=$assertion
 EOF
   )
+}
+
+# The claude-code provider needs a Claude CLI the engine user can run: the one bundled in the
+# claude-agent-sdk wheel, or one on its PATH. Without it only `chunks` retain works (no extraction).
+report_claude_cli() {
+  local cli
+  cli="$("$VENV/bin/python" -c 'import claude_agent_sdk, pathlib; p = pathlib.Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"; print(p if p.is_file() else "")' 2>/dev/null || true)"
+  [[ -n "$cli" ]] || cli="$(command -v claude || true)"
+  if [[ -n "$cli" && -x "$cli" ]]; then
+    log "Claude CLI for the engine: $cli ($("$cli" --version 2>/dev/null | head -1 || echo 'version unknown'))"
+  else
+    log "WARNING: no Claude CLI that $(id -un) can run. link-claude will not enable extraction until one is found."
+  fi
 }
 
 install_extension() {
