@@ -130,7 +130,19 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
 
   router.post("/companies/:companyId/memory/records", requireEnabled, validateContribute, async (req, res) => {
     const companyId = req.params.companyId as string;
-    res.status(201).json(await svc.contribute(await callerFor(req, companyId, "contribute"), req.body));
+    const caller = await callerFor(req, companyId, "contribute");
+    try {
+      res.status(201).json(await svc.contribute(caller, req.body));
+    } catch (error) {
+      if (!(error instanceof MemorySensitiveContentError)) throw error;
+      // Answered here so `detection` sits at the top level, where callers look for it (GRE-868).
+      res.status(422).json({
+        error: error.message,
+        code: MEMORY_SENSITIVE_CONTENT_CODE,
+        matchedTypes: error.matchedTypes,
+        detection: MEMORY_DETECTION_NOTE,
+      });
+    }
   });
 
   router.get("/companies/:companyId/memory/records/:recordId", requireEnabled, async (req, res) => {

@@ -71,6 +71,16 @@ const BANK_NOT_FOUND_RE = /Bank '[^']*' not found/;
 
 type HindsightRecallResult ={ document_id?: string | null; text?: string; scores?: Record<string, number> | null };
 
+/**
+ * Memory Defense for every gateway bank (GRE-868): the engine's regex screen
+ * refuses an item that holds a secret or personal-data pattern. The gateway
+ * refuses these first (sensitive-content.ts); this is the second layer.
+ */
+export const HINDSIGHT_MEMORY_DEFENSE = {
+  enabled: true,
+  rules: [{ on: "sensitive_data", action: "block" }],
+} as const;
+
 export function createHindsightMemoryEngine(options: {
   baseUrl: string;
   apiKey: string;
@@ -129,6 +139,10 @@ export function createHindsightMemoryEngine(options: {
     await call("PUT", bankPath(bankId), { op: "configure", bank: bankId, read: [], write: [], doc: null }, {
       retain_extraction_mode: HINDSIGHT_MODE[mode],
       enable_observations: false,
+    });
+    // The bank PUT drops `memory_defense`; only the config route stores it.
+    await call("PATCH", `${bankPath(bankId)}/config`, { op: "configure", bank: bankId, read: [], write: [], doc: null }, {
+      updates: { memory_defense: HINDSIGHT_MEMORY_DEFENSE },
     });
     bankModes.set(bankId, mode);
   }

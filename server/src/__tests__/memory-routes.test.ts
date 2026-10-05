@@ -218,6 +218,49 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(got.body.content).toBe("Kestrel Works prefers invoices in GBP.");
   });
 
+  it("refuses secrets and personal data before storing anything and says detection is pattern-based (GRE-868)", async () => {
+    const { board, asAgent, base, companyId, fake } = await setup("Sensitive");
+    const mason = await seedAgent(companyId, "Mason");
+    await enable(board, base);
+    const agent = asAgent(mason.id);
+    const working = await scopeOf(agent, base, "agent");
+    await ctx.db.delete(memoryOperations);
+
+    // Synthetic values, joined at runtime so no token-shaped string is committed.
+    const token = ["ghp", "_", "SYNTHETICkestrelWORKSfixture00000000"].join("");
+    const values = [token, "postgres://syn:syn@localhost/syn", "4111 1111 1111 1111", "07700 900123"];
+    for (const value of values) {
+      const res = await request(agent).post(`${base}/records`).send({ scopeId: working.id, content: `Synthetic note: ${value}` });
+      expect(res.status).toBe(422);
+      expect(res.body).toMatchObject({ code: "memory_sensitive_content", detection: expect.stringMatching(/pattern-based/) });
+      expect(res.body.error).toMatch(/pattern-based/);
+      expect(JSON.stringify(res.body)).not.toContain(value);
+    }
+    // A title or entity is checked too.
+    const viaTitle = await request(agent).post(`${base}/records`).send({ scopeId: working.id, title: token, content: "fine" });
+    expect(viaTitle.status).toBe(422);
+
+    expect(fake.state.docs).toEqual([]);
+    expect(await ctx.db.select().from(memoryRecords)).toEqual([]);
+    expect(await ctx.db.select().from(memoryIngestOutbox)).toEqual([]);
+    const ops = await ctx.db.select().from(memoryOperations);
+    expect(ops).toHaveLength(values.length + 1);
+    for (const op of ops) {
+      expect(op).toMatchObject({ operation: "contribute", outcome: "denied", agentId: mason.id, detail: { reason: "memory_sensitive_content" } });
+    }
+    expect(ops.map((op) => (op.detail as { matchedTypes: string[] }).matchedTypes[0]).slice(0, 4)).toEqual([
+      "github_token",
+      "database_url",
+      "card_number",
+      "uk_phone",
+    ]);
+    for (const value of values) expect(JSON.stringify(ops)).not.toContain(value);
+
+    // Ordinary text with numbers still goes through.
+    const ok = await request(agent).post(`${base}/records`).send({ scopeId: working.id, content: "Invoice 2026-10-05, 3 hours at 1200 GBP, ref 4111." });
+    expect(ok.status).toBe(201);
+  });
+
   it("rejects forged identity: a body cannot name the contributor, and another agent's notes stay hidden", async () => {
     const { board, asAgent, base, companyId } = await setup("Forged");
     const mason = await seedAgent(companyId, "Mason");
