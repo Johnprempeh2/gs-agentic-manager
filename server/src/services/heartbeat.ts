@@ -957,6 +957,9 @@ const MAX_TURN_CONTINUATION_DEFAULT_MAX_ATTEMPTS = 2;
 const MAX_TURN_CONTINUATION_MAX_ATTEMPTS_CAP = 10;
 const MAX_TURN_CONTINUATION_DEFAULT_DELAY_MS = 1_000;
 const MAX_TURN_CONTINUATION_MAX_DELAY_MS = 5 * 60 * 1000;
+// GRE-750: how long a parked hand-off wake waits on a task with no live run
+// before the sweep restarts it.
+const PARKED_HANDOFF_RESTART_AFTER_MS = 2 * 60 * 1000;
 const MAX_TURN_CONTINUATION_LIVE_RUN_STATUSES = [
   "scheduled_retry",
   "queued",
@@ -20472,6 +20475,7 @@ export function heartbeatService(
         logger.warn({ err, queueId: wake.id }, "failed to promote stranded legacy comments");
       });
     }
+    await restartParkedHandoffWakes(cutoff);
 
     // The cancellation marker is durable intent. Retry while its exact queue
     // is still deferred, including after a failed cleanup promotion or restart.
@@ -20499,6 +20503,74 @@ export function heartbeatService(
     }
 
     await drainQueuedRunsFairly();
+  }
+
+  // GRE-750: a parked review hand-off, "blockers resolved" or assignment wake
+  // carries no comment ids, so the stranded-queue sweep above skips it. When
+  // the release that should have sent it is lost, nothing else ever does.
+  // After two quiet minutes with no live run on the task, replay the release
+  // through the task's latest run so the normal admission gates (operator
+  // Stop, recovery hold, scope) decide. A paused agent or a held task tree
+  // leaves the wake parked, so it can still start after resume.
+  async function restartParkedHandoffWakes(cutoff: Date | null) {
+    const parked = await db.select({ wake: agentWakeupRequests, issueId: issues.id })
+      .from(agentWakeupRequests)
+      .innerJoin(issues, and(eq(issues.companyId, agentWakeupRequests.companyId),
+        sql`${issues.id}::text = ${agentWakeupRequests.payload}->>'issueId'`))
+      .innerJoin(companies, and(eq(companies.id, issues.companyId), eq(companies.status, "active")))
+      .where(and(eq(agentWakeupRequests.status, "deferred_issue_execution"),
+        isNull(issues.executionRunId),
+        notInArray(issues.status, ["done", "cancelled"]),
+        lte(agentWakeupRequests.updatedAt, new Date(Date.now() - PARKED_HANDOFF_RESTART_AFTER_MS)),
+        sql`${agentWakeupRequests.payload}->'queuedCommentInterrupt' is null`,
+        sql`coalesce(jsonb_array_length(case when jsonb_typeof(${agentWakeupRequests.payload} #> '{_paperclipWakeContext,wakeCommentIds}') = 'array'
+          then ${agentWakeupRequests.payload} #> '{_paperclipWakeContext,wakeCommentIds}' end), 0) = 0`,
+        sql`${agentWakeupRequests.payload}->>'mutation' is distinct from 'interaction'`,
+        sql`not exists (select 1 from ${heartbeatRuns} where ${heartbeatRuns.companyId} = ${issues.companyId}
+          and coalesce(${heartbeatRuns.nativeIssueId}::text, ${heartbeatRuns.contextSnapshot}->>'issueId') = ${issues.id}::text
+          and ${heartbeatRuns.status} in ('queued', 'running', 'scheduled_retry'))`,
+        sql`not exists (select 1 from ${agentWakeupRequests} parked_wake join ${agents} on ${agents.id} = parked_wake.agent_id
+          where parked_wake.company_id = ${issues.companyId} and parked_wake.status = 'deferred_issue_execution'
+          and parked_wake.payload->>'issueId' = ${issues.id}::text and ${agents.status} = 'paused')`,
+        // GRE-755: a task that still waits on an open blocker gets no run; the
+        // blockers-resolved wake (or this sweep, once it is done) sends it.
+        sql`not exists (select 1 from ${issueRelations} join ${issues} blocker on blocker.id = ${issueRelations.issueId}
+          where ${issueRelations.companyId} = ${issues.companyId} and ${issueRelations.relatedIssueId} = ${issues.id}
+          and ${issueRelations.type} = 'blocks' and blocker.company_id = ${issues.companyId}
+          and blocker.status not in ('done', 'cancelled') and blocker.hidden_at is null)`,
+        cutoff ? gte(agentWakeupRequests.requestedAt, cutoff) : undefined))
+      .orderBy(asc(agentWakeupRequests.updatedAt)).limit(50);
+    const seenIssueIds = new Set<string>();
+    for (const { wake, issueId } of parked) {
+      if (seenIssueIds.has(issueId)) continue;
+      seenIssueIds.add(issueId);
+      // Back off this wake before any check, so a held task is revisited
+      // every two minutes rather than on every tick.
+      await db.update(agentWakeupRequests).set({ updatedAt: new Date() }).where(and(
+        eq(agentWakeupRequests.id, wake.id), eq(agentWakeupRequests.status, "deferred_issue_execution"),
+      ));
+      if (await treeControlSvc.getActivePauseHoldGate(wake.companyId, issueId)) continue;
+      if (await getExecutionBlocker(db, wake.companyId, issueId)) continue;
+      const [latest] = await db.select().from(heartbeatRuns).where(and(
+        eq(heartbeatRuns.companyId, wake.companyId),
+        or(eq(heartbeatRuns.nativeIssueId, issueId), sql`${heartbeatRuns.contextSnapshot}->>'issueId' = ${issueId}`),
+      )).orderBy(desc(heartbeatRuns.createdAt), desc(heartbeatRuns.id)).limit(1);
+      // With no run there is nothing to release through; stranded-issue
+      // recovery owns that case.
+      if (!latest || !isHeartbeatRunTerminalStatus(latest.status)) continue;
+      const restarted = await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true }).then(() => true, err => {
+        logger.warn({ err, queueId: wake.id }, "failed to restart parked hand-off wake");
+        return false;
+      });
+      if (!restarted) continue;
+      // Log only when the release moved the wake on; a refused release
+      // leaves it parked and is revisited quietly two minutes later.
+      const [after] = await db.select({ status: agentWakeupRequests.status }).from(agentWakeupRequests)
+        .where(eq(agentWakeupRequests.id, wake.id)).limit(1);
+      if (after && after.status !== "deferred_issue_execution") {
+        logger.warn({ queueId: wake.id, issueId, latestRunId: latest.id }, "restarted parked hand-off wake");
+      }
+    }
   }
 
   async function recoverActiveSessionGoals() {
