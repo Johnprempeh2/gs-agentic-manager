@@ -2756,16 +2756,19 @@ export * from "./validators/skill-policy.js";
 export * from "./validators/provider-trace.js";
 export {
   FEATURE_TIERS,
+  GRADUATED_INSTANCE_FEATURE_KEYS,
   INSTANCE_FEATURE_CATALOG,
   INSTANCE_FEATURE_KEYS,
   RETIRED_INSTANCE_FEATURE_KEYS,
   buildFeatureCatalogArtifact,
   featureCatalogArtifactSchema,
+  isGraduatedInstanceFeatureKey,
   isRetiredInstanceFeatureKey,
   renderFeatureCatalogArtifact,
   type FeatureCatalogArtifact,
   type FeatureCatalogEntry,
   type FeatureTier,
+  type GraduatedInstanceFeatureKey,
   type InstanceFeatureKey,
   type RetiredInstanceFeatureKey,
 } from "./feature-catalog.js";

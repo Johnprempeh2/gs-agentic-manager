@@ -365,6 +365,23 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
 }
 
 /**
+ * Greatstone: flags graduated out of Settings > Experimental (GRE-848).
+ * The feature is always on, so the switch is hidden; each entry names the
+ * issue that graduated it. Beta tools report these as `graduated`.
+ */
+export const GRADUATED_INSTANCE_FEATURE_KEYS = [
+  { key: "enableApps", issue: "upstream #12728" },
+  { key: "enableGoalsSidebarLink", issue: "GRE-191" },
+  { key: "enableMcpAggregators", issue: "upstream #12728" },
+] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];
+
+export type GraduatedInstanceFeatureKey = (typeof GRADUATED_INSTANCE_FEATURE_KEYS)[number]["key"];
+
+export function isGraduatedInstanceFeatureKey(key: string): key is GraduatedInstanceFeatureKey {
+  return GRADUATED_INSTANCE_FEATURE_KEYS.some((entry) => entry.key === key);
+}
+
+/**
  * Shape of the `feature-catalog.json` release artifact the cloud harness
  * imports per app release and validates feature writes against.
  */

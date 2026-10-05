@@ -6,8 +6,8 @@
 //   node scripts/beta-switch-age.mjs <settings.json> <activity.json> [--limit <n>] --earliest-on-since
 //
 // Reads the two files the shell script fetched and prints a table. Retired
-// switches come from RETIRED_INSTANCE_FEATURE_KEYS in the shared feature
-// catalog. `--tests` also reads the repo's tracked test files (read-only).
+// and graduated switches come from RETIRED_INSTANCE_FEATURE_KEYS and
+// GRADUATED_INSTANCE_FEATURE_KEYS in the shared feature catalog. `--tests` also reads the repo's tracked test files (read-only).
 // `--scorecard` reads a saved copy of the beta scorecard (GRE-81) and lists
 // catalog switches with no row and rows whose key left the catalog.
 // `--failed-runs <runs.json>` lists the failed, interrupted and cancelled runs
@@ -26,7 +26,7 @@ const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
  * `activity` is the activity list as the API returns it (any order).
  * `truncated` means the API hit its row limit, so older changes may be missing.
  */
-export function switchAges(settings, activity, { now = Date.now(), truncated = false, retired = [] } = {}) {
+export function switchAges(settings, activity, { now = Date.now(), truncated = false, retired = [], graduated = [] } = {}) {
   const events = activity
     .filter((row) => row?.action === "instance.settings.experimental_updated")
     .map((row) => ({
@@ -47,6 +47,8 @@ export function switchAges(settings, activity, { now = Date.now(), truncated = f
       const row = { key, state, onSince: "unknown", days: null, ruleMet: "unknown", sinceAt: null };
       // A retired switch always reads off and cannot graduate.
       if (retired.includes(key)) return { ...row, state: "retired", onSince: "-", ruleMet: "n/a" };
+      // A graduated switch is always on and is no longer beta.
+      if (graduated.includes(key)) return { ...row, state: "graduated", onSince: "-", ruleMet: "n/a" };
       if (typeof value !== "boolean") return { ...row, ruleMet: "n/a" };
       // The last logged value must match the current one; if not, the change
       // happened without a log row and we do not guess.
@@ -80,6 +82,13 @@ export function parseRetiredKeys(catalogSource) {
   const match = catalogSource.match(/RETIRED_INSTANCE_FEATURE_KEYS\s*=\s*\[([^\]]*)\]/);
   if (!match) throw new Error("RETIRED_INSTANCE_FEATURE_KEYS not found in the feature catalog");
   return [...match[1].matchAll(/["'](\w+)["']/g)].map((m) => m[1]);
+}
+
+/** `key` values listed in `export const GRADUATED_INSTANCE_FEATURE_KEYS = [...]` of the catalog source. */
+export function parseGraduatedKeys(catalogSource) {
+  const match = catalogSource.match(/GRADUATED_INSTANCE_FEATURE_KEYS\s*=\s*\[([^\]]*)\]/);
+  if (!match) throw new Error("GRADUATED_INSTANCE_FEATURE_KEYS not found in the feature catalog");
+  return [...match[1].matchAll(/\bkey:\s*["'](\w+)["']/g)].map((m) => m[1]);
 }
 
 /** Top-level keys of `export const INSTANCE_FEATURE_CATALOG ... = { ... };` in the catalog source. */
@@ -242,7 +251,8 @@ function main(argv) {
   const repoRoot = fileURLToPath(new URL("..", import.meta.url));
   const catalogSource = readFileSync(`${repoRoot}/packages/shared/src/feature-catalog.ts`, "utf8");
   const retired = parseRetiredKeys(catalogSource);
-  let rows = switchAges(settings, activity, { truncated, retired });
+  const graduated = parseGraduatedKeys(catalogSource);
+  let rows = switchAges(settings, activity, { truncated, retired, graduated });
   if (rest.includes("--earliest-on-since")) {
     // Used by the shell script to pick the `since` of the run list fetch.
     process.stdout.write(earliestOnSince(rows) ?? "");
