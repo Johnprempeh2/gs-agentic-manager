@@ -1,4 +1,5 @@
 import { instanceSettingsService } from "../../../services/instance-settings.js";
+import { issueService } from "../../../services/issues.js";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -348,6 +349,54 @@ describeEmbeddedPostgres("wake-queue postgres adapter", () => {
       }
     } finally {
       await settings.updateExperimental({ enableAgentChat: original });
+    }
+  });
+
+  // GRE-792: a board comment queued during a run must not reopen the task
+  // when the board closes it afterwards. A comment after the close still does.
+  it.each(["comment_then_board_done", "board_done_then_comment"])("respects a board close against a queued comment wake (%s)", async (scenario) => {
+    const companyId = await seedCompany();
+    const agentId = await seedAgent({ companyId });
+    const issueId = await seedIssue({ companyId, assigneeAgentId: agentId });
+    const runId = await seedRun({ companyId, agentId, status: "running", contextSnapshot: { issueId } });
+    await db.update(issues).set({ executionRunId: runId, checkoutRunId: runId }).where(eq(issues.id, issueId));
+    const queueBoardComment = async () => {
+      const [comment] = await db.insert(issueComments).values({
+        companyId, issueId, authorUserId: "responsible-user", body: "One more thing",
+      }).returning();
+      return seedDeferredWake({ companyId, agentId, issueId, requestedByActorId: "responsible-user",
+        payload: { commentId: comment.id, _paperclipWakeContext: { issueId, wakeReason: "issue_commented", wakeCommentIds: [comment.id] } },
+      });
+    };
+    const boardDone = () => issueService(db).update(issueId, { status: "done", actorUserId: "responsible-user" });
+
+    let wakeId: string;
+    if (scenario === "comment_then_board_done") {
+      wakeId = await queueBoardComment();
+      await boardDone();
+    } else {
+      await boardDone();
+      wakeId = await queueBoardComment();
+    }
+    await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, runId));
+
+    const release = createReleaseIssueExecution({
+      issueLock: createPostgresWakeQueueAdapter(db, stubDeps),
+      recovery: { escalateStrandedAssignedIssue: async () => {}, escalateStrandedRecoveryIssueInPlace: async () => {}, scheduleReviewWaitMonitor: async () => {} },
+    });
+    const result = await release({ companyId, runId, now: new Date() });
+
+    const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
+    const [wake] = await db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.id, wakeId));
+    if (scenario === "comment_then_board_done") {
+      expect(result.outcome.kind).toBe("released");
+      expect(result.postCommitEffects.some((effect) => effect.kind === "issue_reopened")).toBe(false);
+      expect(issue.status).toBe("done");
+      expect(wake.status).toBe("cancelled");
+    } else {
+      expect(result.outcome.kind).toBe("promoted");
+      expect(result.postCommitEffects).toContainEqual(expect.objectContaining({ kind: "issue_reopened", reopenedFrom: "done" }));
+      expect(issue.status).toBe("todo");
     }
   });
 
