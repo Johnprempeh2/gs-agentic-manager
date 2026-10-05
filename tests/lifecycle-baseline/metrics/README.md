@@ -104,6 +104,17 @@ checks the platform rate and the report shows login refusals as a separate
 count (GRE-590). The all-in `failureRate` is still saved. The unattended
 share still includes rejected logins.
 
+Account and setup refusals are left out the same way and counted as
+`r2.accountRefusals`, split by reason in `r2.accountRefusalsByReason`
+(GRE-745): an expired credential, no personal default account, a connection
+not permitted for the agent, low trust with no sandbox environment
+(`low_trust_requires_sandbox_environment`), and a task with no project
+workspace. Each is matched on its error code plus the fixed server message for
+that one reason, never on a whole code: `configuration_incomplete` also carried
+the GRE-236 platform bug, which stays counted, and so does `acpx_turn_failed`.
+The collector reads a failed run's error text in memory for this match; the
+text is not saved in the report.
+
 **R2 detail — rejected logins.** A failed run whose login the provider
 refused: its error code is `<provider>_auth_required`, or (servers before
 GRE-15) its error text says "terminal access failure". Only that boolean is

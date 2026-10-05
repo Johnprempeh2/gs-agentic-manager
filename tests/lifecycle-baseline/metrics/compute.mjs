@@ -340,7 +340,9 @@ export function computeRepairEscalations(snapshot, { now, windowDays = 7 } = {})
  *
  * Platform failure rate leaves out rejected logins (`isAuthFailure`) from both
  * sides: a refused login is an account problem for the board, not a platform
- * fault (GRE-590). They are counted on their own as `loginRefusals`.
+ * fault (GRE-590). They are counted on their own as `loginRefusals`. Account
+ * and setup refusals (`accountRefusalReason`) are left out the same way and
+ * counted as `accountRefusals` (GRE-745).
  */
 export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   const nowMs = ms(now ?? snapshot.now);
@@ -353,7 +355,11 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   const failed = finished.filter((run) => FAILED_RUN_STATUSES.has(run.status));
   const cancelled = finished.filter((run) => run.status === "cancelled");
   const loginRefusals = failed.filter(isAuthFailure).length;
-  const platformFailed = failed.length - loginRefusals;
+  const accountRefused = failed.map(accountRefusalReason).filter(Boolean);
+  const accountRefusalsByReason = Object.fromEntries(
+    ACCOUNT_REFUSAL_REASONS.map(({ reason }) => [reason, accountRefused.filter((entry) => entry === reason).length]),
+  );
+  const platformFailed = failed.length - loginRefusals - accountRefused.length;
 
   const humanByIssue = new Map();
   for (const row of snapshot.activity ?? []) {
@@ -367,7 +373,7 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
   for (const run of failed) {
     if (!run.issueId) {
       outcomes.noIssue += 1;
-      failures.push({ runId: run.id, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), outcome: "no_issue" });
+      failures.push({ runId: run.id, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), accountRefusal: accountRefusalReason(run), outcome: "no_issue" });
       continue;
     }
     const failedAt = ms(run.finishedAt);
@@ -383,7 +389,7 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
       outcome = touched ? "human" : "auto";
     }
     outcomes[outcome] += 1;
-    failures.push({ runId: run.id, issueId: run.issueId, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), outcome });
+    failures.push({ runId: run.id, issueId: run.issueId, status: run.status, errorCode: run.errorCode ?? null, loginRefusal: isAuthFailure(run), accountRefusal: accountRefusalReason(run), outcome });
   }
   const attributable = failed.length - outcomes.noIssue;
   const denominator = succeeded.length + failed.length;
@@ -399,6 +405,8 @@ export function computeRunFailures(snapshot, { now, windowDays = 7 } = {}) {
     platformFinished: platformDenominator,
     platformFailureRate: platformDenominator ? platformFailed / platformDenominator : null,
     loginRefusals,
+    accountRefusals: accountRefused.length,
+    accountRefusalsByReason,
     recoveredWithoutHuman: outcomes.auto,
     recoveredWithHuman: outcomes.human,
     unresolved: outcomes.unresolved,
@@ -499,6 +507,30 @@ export function computeWakeLatency(snapshot, { now, windowDays = 7 } = {}) {
 export function isAuthFailure(run) {
   if (!FAILED_RUN_STATUSES.has(run.status)) return false;
   return /^[a-z]+_auth_required$/.test(run.errorCode ?? "") || run.errorMentionsAccessFailure === true;
+}
+
+/**
+ * Account and setup refusals left out of the R2 platform rate (GRE-745). Each
+ * is matched on its error code and the fixed server message for that one
+ * reason, never on a whole code: `configuration_incomplete` also carried the
+ * GRE-236 platform bug ("Reconnect or validate the selected AI account"),
+ * which must stay counted. `acpx_turn_failed` stays counted too.
+ */
+export const ACCOUNT_REFUSAL_REASONS = [
+  { reason: "expired_credential", errorCode: "configuration_incomplete", text: / token expired at / },
+  { reason: "no_personal_default", errorCode: "configuration_incomplete", text: /^Connect an account and choose your personal default/ },
+  { reason: "connection_not_permitted", errorCode: "configuration_incomplete", text: /^This connection is not permitted for this agent/ },
+  { reason: "low_trust_no_sandbox", errorCode: "low_trust_requires_sandbox_environment", text: null },
+  { reason: "no_project_workspace", errorCode: "workspace_validation_failed", text: /This task needs a project \/ project workspace or a reusable execution workspace/ },
+];
+
+/** The account or setup refusal reason of a failed run, or null. Login refusals are not included. */
+export function accountRefusalReason(run) {
+  if (!FAILED_RUN_STATUSES.has(run.status) || isAuthFailure(run)) return null;
+  const match = ACCOUNT_REFUSAL_REASONS.find(
+    (entry) => entry.errorCode === run.errorCode && (entry.text == null || entry.text.test(run.errorText ?? "")),
+  );
+  return match?.reason ?? null;
 }
 
 /**
