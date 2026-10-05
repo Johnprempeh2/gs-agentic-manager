@@ -49,6 +49,7 @@ import {
   stageCodexHomeForSync,
 } from "./codex-home.js";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./auth-check.js";
+import { withCodexManagedLinkedAppsConfig } from "./linked-apps-policy.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(moduleDir, "../..");
@@ -150,7 +151,14 @@ export function buildCodexAcpConfig(config: Record<string, unknown>): Record<str
 
   return {
     ...config,
-    env: { ...env, GSAM_CODEX_ACP_NETWORK_ACCESS: String(networkAccess) },
+    env: {
+      ...env,
+      GSAM_CODEX_ACP_NETWORK_ACCESS: String(networkAccess),
+      // Linked ChatGPT apps keep read tools; send/write tools are off (GRE-798).
+      CODEX_CONFIG: withCodexManagedLinkedAppsConfig(
+        typeof env.CODEX_CONFIG === "string" ? env.CODEX_CONFIG : undefined,
+      ),
+    },
     agent: "codex",
     mode,
     permissionMode,
