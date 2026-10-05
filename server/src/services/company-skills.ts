@@ -1676,8 +1676,15 @@ async function readUrlSkillImports(
       const repoSkillPath = basePrefix ? `${basePrefix}${relativeSkillPath}` : relativeSkillPath;
       const markdown = await fetchText(resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, repoSkillPath));
       const parsedMarkdown = parseFrontmatterMarkdown(markdown);
-      const skillDir = path.posix.dirname(relativeSkillPath);
-      const slug = deriveImportedSkillSlug(parsedMarkdown.frontmatter, path.posix.basename(skillDir));
+      // A URL that points straight at the skill folder puts SKILL.md at the
+      // scoped root, where dirname() is "." and no entry starts with "./".
+      const dir = path.posix.dirname(relativeSkillPath);
+      const skillDir = dir === "." ? "" : dir;
+      const repoDir = basePrefix ? `${basePrefix}${skillDir}`.replace(/\/+$/, "") : skillDir;
+      const slug = deriveImportedSkillSlug(
+        parsedMarkdown.frontmatter,
+        path.posix.basename(repoDir || parsed.repo),
+      );
       const skillKey = readCanonicalSkillKey(
         parsedMarkdown.frontmatter,
         isPlainRecord(parsedMarkdown.frontmatter.metadata) ? parsedMarkdown.frontmatter.metadata : null,
@@ -1693,17 +1700,14 @@ async function readUrlSkillImports(
         repo: parsed.repo,
         ref,
         trackingRef,
-        repoSkillDir: normalizeGitHubSkillDirectory(
-          basePrefix ? `${basePrefix}${skillDir}` : skillDir,
-          slug,
-        ),
+        repoSkillDir: normalizeGitHubSkillDirectory(repoDir, slug),
       };
       const inventory = filteredPaths
-        .filter((entry) => entry === relativeSkillPath || entry.startsWith(`${skillDir}/`))
-        .map((entry) => ({
-          path: entry === relativeSkillPath ? "SKILL.md" : entry.slice(skillDir.length + 1),
-          kind: classifyInventoryKind(entry === relativeSkillPath ? "SKILL.md" : entry.slice(skillDir.length + 1)),
-        }))
+        .filter((entry) => entry === relativeSkillPath || !skillDir || entry.startsWith(`${skillDir}/`))
+        .map((entry) => {
+          const relative = entry === relativeSkillPath ? "SKILL.md" : skillDir ? entry.slice(skillDir.length + 1) : entry;
+          return { path: relative, kind: classifyInventoryKind(relative) };
+        })
         .sort((left, right) => left.path.localeCompare(right.path));
       skills.push({
         key: deriveCanonicalSkillKey(companyId, {
