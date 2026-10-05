@@ -78,6 +78,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -2811,9 +2812,8 @@ export function Secrets() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-medium" htmlFor="new-secret-provider">Provider</label>
-                  <select
+                  <NativeSelect
                     id="new-secret-provider"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
                     value={createForm.provider}
                     onChange={(event) =>
                       setCreateForm((current) => {
@@ -2848,7 +2848,7 @@ export function Secrets() {
                             : ""}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                   {createProviderBlockReason ? (
                     <p className="mt-1 flex items-center gap-1 text-(length:--text-micro) text-destructive">
                       <AlertCircle className="h-3 w-3" />
@@ -2860,9 +2860,8 @@ export function Secrets() {
                 </div>
                 <div>
                   <label className="text-xs font-medium" htmlFor="new-secret-vault">Provider vault</label>
-                  <select
+                  <NativeSelect
                     id="new-secret-vault"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
                     value={createForm.providerConfigId}
                     onChange={(event) =>
                       setCreateForm((current) => ({ ...current, providerConfigId: event.target.value }))
@@ -2879,7 +2878,7 @@ export function Secrets() {
                         </option>
                       );
                     })}
-                  </select>
+                  </NativeSelect>
                   {selectedCreateProviderConfig ? (
                     <ProviderVaultInlineWarning config={selectedCreateProviderConfig} />
                   ) : null}
@@ -2952,9 +2951,8 @@ export function Secrets() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-provider">Provider</label>
-                <select
+                <NativeSelect
                   id="vault-provider"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none disabled:opacity-60"
                   value={vaultForm.provider}
                   disabled={Boolean(editingVault)}
                   onChange={(event) => {
@@ -2969,7 +2967,7 @@ export function Secrets() {
                       {providerLabel(providers, provider)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-name">Display name</label>
@@ -2984,9 +2982,8 @@ export function Secrets() {
               </div>
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-status">Status</label>
-                <select
+                <NativeSelect
                   id="vault-status"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
                   value={vaultForm.status}
                   onChange={(event) => {
                     const status = event.target.value as SecretProviderConfigStatus;
@@ -3006,7 +3003,7 @@ export function Secrets() {
                   </option>
                   <option value="coming_soon">Coming soon</option>
                   <option value="disabled">Disabled</option>
-                </select>
+                </NativeSelect>
               </div>
               <label className="flex items-center gap-2 pt-6 text-sm">
                 <input
@@ -3095,9 +3092,8 @@ export function Secrets() {
           ) : null}
           <div>
             <label className="text-xs font-medium" htmlFor="rotate-secret-vault">Provider vault</label>
-            <select
+            <NativeSelect
               id="rotate-secret-vault"
-              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
               value={rotateProviderConfigId}
               onChange={(event) => setRotateProviderConfigId(event.target.value)}
             >
@@ -3112,7 +3108,7 @@ export function Secrets() {
                   </option>
                 );
               })}
-            </select>
+            </NativeSelect>
             {selectedRotateProviderConfig ? (
               <ProviderVaultInlineWarning config={selectedRotateProviderConfig} />
             ) : (
