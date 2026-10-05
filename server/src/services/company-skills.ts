@@ -293,6 +293,8 @@ function assertImportedSkillSourceAllowed(skill: ImportedSkill) {
         sourceType: skill.sourceType,
         trustLevel: skill.trustLevel,
         reason: "scripts_executables_blocked",
+        scriptPaths: skill.fileInventory.filter((entry) => entry.kind === "script").map((entry) => entry.path),
+        remediation: "Re-import with stripScripts: true to import the skill without its script files.",
       },
     );
   }
@@ -306,6 +308,19 @@ function assertImportedSkillSourceAllowed(skill: ImportedSkill) {
       },
     );
   }
+}
+
+// Drops script files from an external skill so it can be stored without them.
+// Runtime materialization and file reads only touch inventory paths, so the
+// stripped files never reach the library or an agent's runtime skill dir.
+function stripImportedSkillScripts(skill: ImportedSkill): string[] {
+  if (!EXTERNAL_SKILL_SOURCE_TYPES.has(skill.sourceType)) return [];
+  const stripped = skill.fileInventory.filter((entry) => entry.kind === "script").map((entry) => entry.path);
+  if (stripped.length === 0) return [];
+  skill.fileInventory = skill.fileInventory.filter((entry) => entry.kind !== "script");
+  skill.trustLevel = deriveTrustLevel(skill.fileInventory);
+  skill.metadata = { ...(skill.metadata ?? {}), scriptsStripped: true, strippedScriptPaths: stripped };
+  return stripped;
 }
 
 function assertImportedSkillKeyAllowed(skill: ImportedSkill) {
@@ -4876,6 +4891,9 @@ export function companySkillService(db: Db) {
     if (!matching) {
       throw unprocessable(`Skill ${skill.key} could not be re-imported from its source.`);
     }
+    if (isPlainRecord(skill.metadata) && skill.metadata.scriptsStripped === true) {
+      stripImportedSkillScripts(matching);
+    }
     const imported = await upsertImportedSkills(companyId, [matching]);
     return imported[0] ?? null;
   }
@@ -6300,7 +6318,11 @@ export function companySkillService(db: Db) {
     return out;
   }
 
-  async function importFromSource(companyId: string, source: string): Promise<CompanySkillImportResult> {
+  async function importFromSource(
+    companyId: string,
+    source: string,
+    options: { stripScripts?: boolean } = {},
+  ): Promise<CompanySkillImportResult> {
     await ensureSkillInventoryCurrent(companyId);
     const parsed = parseSkillImportSourceInput(source);
     const local = !/^https?:\/\//i.test(parsed.resolvedSource);
@@ -6339,8 +6361,17 @@ export function companySkillService(db: Db) {
         skill.key = deriveCanonicalSkillKey(companyId, skill);
       }
     }
+    const strippedFiles: NonNullable<CompanySkillImportResult["strippedFiles"]> = [];
+    if (options.stripScripts) {
+      for (const skill of filteredSkills) {
+        const paths = stripImportedSkillScripts(skill);
+        if (paths.length === 0) continue;
+        strippedFiles.push({ skillKey: skill.key, slug: skill.slug, paths });
+        warnings.push(`Stripped ${paths.length} script file(s) from "${skill.slug}": ${paths.join(", ")}`);
+      }
+    }
     const imported = await upsertImportedSkills(companyId, filteredSkills);
-    return { imported, warnings };
+    return { imported, warnings, ...(options.stripScripts ? { strippedFiles } : {}) };
   }
 
   async function listTestInputs(companyId: string, skillId: string): Promise<CompanySkillTestInput[]> {

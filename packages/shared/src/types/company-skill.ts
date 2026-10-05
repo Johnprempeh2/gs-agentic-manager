@@ -325,11 +325,24 @@ export interface CompanySkillResetRequest {
 
 export interface CompanySkillImportRequest {
   source: string;
+  /**
+   * External (GitHub / URL) sources only: drop script files from the imported
+   * skill instead of refusing it. The skill is stored without them and the
+   * dropped paths are listed in `strippedFiles`.
+   */
+  stripScripts?: boolean;
+}
+
+export interface CompanySkillImportStrippedFiles {
+  skillKey: string;
+  slug: string;
+  paths: string[];
 }
 
 export interface CompanySkillImportResult {
   imported: CompanySkill[];
   warnings: string[];
+  strippedFiles?: CompanySkillImportStrippedFiles[];
 }
 
 export interface CompanySkillProjectScanRequest {

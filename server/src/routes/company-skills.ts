@@ -1169,7 +1169,9 @@ export function companySkillRoutes(db: Db) {
       const companyId = req.params.companyId as string;
       const source = String(req.body.source ?? "");
       await assertCanMutateCompanySkills(req, companyId, "skills.import", () => skillImportPolicyResource(source));
-      const result = await svc.importFromSource(companyId, source);
+      const result = await svc.importFromSource(companyId, source, {
+        stripScripts: req.body.stripScripts === true,
+      });
 
       const actor = getActorInfo(req);
       await logActivity(db, {
@@ -1187,6 +1189,7 @@ export function companySkillRoutes(db: Db) {
           importedCount: result.imported.length,
           importedSlugs: result.imported.map((skill) => skill.slug),
           warningCount: result.warnings.length,
+          ...(result.strippedFiles ? { strippedFiles: result.strippedFiles } : {}),
         },
       });
       const telemetryClient = getTelemetryClient();
