@@ -100,9 +100,19 @@ export function InteractionGuideSheet({
       >
         <SheetHeader className="border-b border-border pr-12">
           <SheetTitle className="text-base">{title}</SheetTitle>
-          <SheetDescription>
-            {lead ?? (numbered ? `${steps.length} steps. Answer at the end.` : "Read the guide, then answer at the end.")}
-          </SheetDescription>
+          {lead ? (
+            <SheetDescription asChild>
+              <div>
+                <MarkdownBody className="text-sm text-muted-foreground" externalReferences={externalReferences}>
+                  {lead}
+                </MarkdownBody>
+              </div>
+            </SheetDescription>
+          ) : (
+            <SheetDescription>
+              {numbered ? `${steps.length} steps. Answer at the end.` : "Read the guide, then answer at the end."}
+            </SheetDescription>
+          )}
         </SheetHeader>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {intro ? (

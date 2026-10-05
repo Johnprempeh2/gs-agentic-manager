@@ -1692,6 +1692,10 @@ describe("IssueThreadInteractionCard step-by-step guide (GRE-916)", () => {
 
     const sheet = guide();
     expect(sheet?.querySelectorAll('[data-testid="interaction-guide-step"]')).toHaveLength(3);
+    // The prompt under the guide title is markdown too, not raw `**`.
+    const lead = sheet!.querySelector('[data-slot="sheet-description"]');
+    expect(lead?.querySelector("strong")?.textContent).toBe("setup script");
+    expect(lead?.textContent).not.toContain("**");
     await act(async () => clickButton(sheet!, "Yes, it finished"));
     expect(onAcceptInteraction).toHaveBeenCalledWith(
       expect.objectContaining({ id: "interaction-confirmation-step-guide" }),
