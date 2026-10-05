@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
+import { LEGACY_CLI_PACKAGE_NAME } from "@greatstone/shared/legacy-env";
 import { assertManagedShimWritable, writeManagedShim, buildNextManifest, flipCurrentAtomic, isManagedExecutable, pruneInstallPayloads, readInstallManifest, resolveInstallStorePaths, withInstallStoreLock, writeInstallManifestAtomic, type InstallChannel, type InstallManifest, type InstallRecord, type InstallStorePaths } from "../install-store.js";
 import { dbBackupCommand } from "./db-backup.js";
 import { assertSupportedNodeVersion, installGitPayload, installNpmPayload, PUBLIC_NPM_REGISTRY, resolveGitHubRef, resolvePublishedVersion, type CommandRunner } from "./install.js";
@@ -81,7 +82,8 @@ export function detectInstallMode(executablePath = process.argv[1] ?? "", paths 
   if (manifest && isManagedExecutable(resolved, manifest, paths)) return "managed";
   const normalized = resolved.split(path.sep).join("/");
   if (normalized.includes("/.npm/_npx/") || normalized.includes("/node_modules/.cache/npx/")) return "npx";
-  if (normalized.includes("/node_modules/paperclipai/")) return "global-npm";
+  // Older global installs still live under the pre-rebrand package name.
+  if (normalized.includes("/node_modules/gsam/") || normalized.includes(`/node_modules/${LEGACY_CLI_PACKAGE_NAME}/`)) return "global-npm";
   let cursor = path.dirname(resolved);
   while (cursor !== path.dirname(cursor)) {
     if (fs.existsSync(path.join(cursor, ".git"))) return "source";

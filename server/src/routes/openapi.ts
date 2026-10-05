@@ -3194,6 +3194,54 @@ registry.registerPath({
   responses: { 200: r.ok(), 404: r.notFound, ...releaseResponses },
 });
 
+const supportCompanyParams = z.object({ companyId: z.string() });
+const supportResponses = { 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden };
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/support-queues",
+  tags: ["support"],
+  summary: "List the client support queues",
+  request: { params: supportCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/support-queues",
+  tags: ["support"],
+  summary: "Create or update a client support queue (owner or admin)",
+  request: { params: supportCompanyParams, body: jsonBody(z.object({}).passthrough()) },
+  responses: { 200: r.ok(), ...supportResponses },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/support-tickets",
+  tags: ["support"],
+  summary: "List support tickets",
+  request: { params: supportCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/support-tickets",
+  tags: ["support"],
+  summary: "Log a client support ticket by hand (board)",
+  request: { params: supportCompanyParams, body: jsonBody(z.object({}).passthrough()) },
+  responses: { 201: r.ok(), ...supportResponses },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{issueId}/support-ticket",
+  tags: ["support"],
+  summary: "Triage a support ticket or record its first response",
+  request: { params: z.object({ issueId: z.string() }), body: jsonBody(z.object({}).passthrough()) },
+  responses: { 200: r.ok(), 404: r.notFound, ...supportResponses },
+});
+
 const summarySlotParams = z.object({
   companyId: z.string(),
   scopeKind: z.string(),

@@ -11,6 +11,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useOptionalToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
+import { copyTextToClipboard } from "../lib/clipboard";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -287,7 +288,7 @@ export function Deliverables() {
 
   const copyLink = useCallback(async (id: string) => {
     try {
-      await navigator.clipboard.writeText(deliverableShareUrl(id));
+      await copyTextToClipboard(deliverableShareUrl(id));
       pushToast({ title: "Link copied", tone: "success", ttlMs: 2500 });
     } catch {
       pushToast({ title: "Could not copy the link", tone: "error" });

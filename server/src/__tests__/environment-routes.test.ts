@@ -2725,7 +2725,8 @@ describe("environment routes", () => {
 
     const res = await request(app).get("/api/environment-leases/lease-1");
 
-    expect(res.status).toBe(403);
+    // 404, not 403: a cross-company lease must look the same as a missing one.
+    expect(res.status).toBe(404);
     expect(res.body.providerLeaseId).toBeUndefined();
   });
 

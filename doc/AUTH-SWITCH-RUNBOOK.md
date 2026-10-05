@@ -47,7 +47,7 @@ Four changes must all be on live before the switch. If one is missing, stop.
 | PR #56 (GRE-136) | Release scripts send a board key in login mode | Every release fails at restart |
 | GRE-122 | The Releases page asks for the password when the server answers `reauth_required` | Release buttons fail with no prompt |
 
-Check the commands are there: `cd ~/GSAM/live && pnpm gsam auth mode --help`.
+Check the commands are there: `cd ~/GSAM/live && node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth mode --help`.
 
 Also:
 
@@ -59,7 +59,10 @@ Also:
 
 ## Steps (about 10 minutes, two restarts)
 
-All commands run in Terminal on the Mac.
+All commands run in Terminal on the Mac. The `gsam` commands use the
+direct form `node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts …` and run
+from `~/GSAM/live`. Do not use `pnpm gsam`: it passes the arguments through a
+shell (see `doc/CLI.md`).
 
 **1. Back up the database** (reads only; about a minute).
 
@@ -76,7 +79,7 @@ the examples. The command prints what it set and hides the two secrets.
 
 ```sh
 cd ~/GSAM/live
-pnpm gsam auth mode authenticated --data-dir ~/GSAM/data \
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth mode authenticated --data-dir ~/GSAM/data \
   --allowed-hostname my-mac.tailnet-name.ts.net --allowed-hostname 100.x.y.z
 ```
 
@@ -119,7 +122,7 @@ Your account now owns every company and is the instance admin. The link lasts
 
 ```sh
 cd ~/GSAM/live
-pnpm gsam auth mode authenticated --data-dir ~/GSAM/data --sign-up closed
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth mode authenticated --data-dir ~/GSAM/data --sign-up closed
 pkill -TERM -f "dev-runner.ts dev --data-dir $HOME/GSAM/data"
 while curl -fsS -m 2 http://localhost:3100/api/health >/dev/null 2>&1; do sleep 1; done
 ~/GSAM/start-live.sh
@@ -135,8 +138,8 @@ Signed in as the board owner:
 
 ```sh
 cd ~/GSAM/live
-pnpm gsam auth login --api-base http://localhost:3100
-pnpm gsam token board create --name live-release --never-expires --api-base http://localhost:3100 --json
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth login --api-base http://localhost:3100
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts token board create --name live-release --never-expires --api-base http://localhost:3100 --json
 # copy the "token" value (pcp_board_...), then:
 ( umask 077; pbpaste > ~/GSAM/release-board-key )
 chmod 600 ~/GSAM/release-board-key
@@ -144,7 +147,7 @@ chmod 600 ~/GSAM/release-board-key
 
 The file must be mode 0600 and never go into a repository or an issue.
 Without it, a release in login mode stops before anything moves and says so.
-To replace the key: `pnpm gsam token board revoke <keyId>`, then write the new
+To replace the key, from `~/GSAM/live`: `node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts token board revoke <keyId>`, then write the new
 one to the same file. Full notes: `doc/GREATSTONE-WAY-OF-WORKING.md`,
 "Live in login mode: the release key (John, once)".
 
@@ -181,7 +184,7 @@ password twice. Every device is signed out and signs in again.
 
 ```sh
 cd ~/GSAM/live
-pnpm gsam auth reset-password --data-dir ~/GSAM/data --email you@example.com
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth reset-password --data-dir ~/GSAM/data --email you@example.com
 ```
 
 `--generate` makes and prints a password instead. `--password-stdin` reads it
@@ -199,7 +202,7 @@ claim.
 
 ```sh
 cd ~/GSAM/live
-pnpm gsam auth mode local_trusted --data-dir ~/GSAM/data
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth mode local_trusted --data-dir ~/GSAM/data
 pkill -TERM -f "dev-runner.ts dev --data-dir $HOME/GSAM/data"
 while curl -fsS -m 2 http://localhost:3100/api/health >/dev/null 2>&1; do sleep 1; done
 ~/GSAM/start-live.sh

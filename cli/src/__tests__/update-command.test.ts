@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LEGACY_CLI_PACKAGE_NAME } from "@greatstone/shared/legacy-env";
 import { writeManagedShim, flipCurrentAtomic, initializeInstallStore, payloadPathFor, readInstallManifest, resolveInstallStorePaths, writeInstallManifestAtomic, type InstallManifest, type InstallRecord } from "../install-store.js";
 import type { CommandRunner } from "../commands/install.js";
 import { compareVersions, detectInstallMode, resolveUpdateRequest, rollbackManagedInstall, updateCommand } from "../commands/update.js";
@@ -99,6 +100,7 @@ describe("update command", () => {
     writeInstallManifestAtomic({ schemaVersion: 1, ...record(payload, "1.0.0"), previous: [] }, paths);
     expect(detectInstallMode(entrypoint, paths)).toBe("managed");
     expect(detectInstallMode(path.join(root, "lib", "node_modules", "gsam", "dist", "index.js"), paths)).toBe("global-npm");
+    expect(detectInstallMode(path.join(root, "lib", "node_modules", LEGACY_CLI_PACKAGE_NAME, "dist", "index.js"), paths)).toBe("global-npm");
     expect(detectInstallMode(path.join(root, ".npm", "_npx", "abc", "node_modules", "gsam", "dist", "index.js"), paths)).toBe("npx");
     const source = path.join(root, "source"); fs.mkdirSync(path.join(source, ".git"), { recursive: true });
     expect(detectInstallMode(path.join(source, "cli", "src", "index.ts"), paths)).toBe("source");

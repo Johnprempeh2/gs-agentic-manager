@@ -521,6 +521,7 @@ describe("agent issue mutation checkout ownership", () => {
     mockIssueService.getDependencyReadiness.mockResolvedValue({
       blockerIssueIds: [],
       isDependencyReady: false,
+      unresolvedBlockerIssueIds: [],
       unresolvedBlockerCount: 0,
     });
     mockIssueService.getRelationSummaries.mockReset();
@@ -2526,7 +2527,7 @@ describe("agent issue mutation checkout ownership", () => {
       if (gate === "approval") mockIssueApprovalService.listApprovalsForIssue.mockResolvedValue([{ status: "pending" }]);
       if (gate === "pause") mockIssueTreeControlService.getActivePauseHoldGate.mockResolvedValue({ holdId: "hold", mode: "pause" });
       if (gate === "run") mockIssueService.getById.mockResolvedValue(makeIssue({ status: "blocked", assigneeAgentId: ownerAgentId, executionRunId: ownerRunId }));
-      if (gate === "blocker") mockIssueService.getDependencyReadiness.mockResolvedValue({ unresolvedBlockerCount: 1 });
+      if (gate === "blocker") mockIssueService.getDependencyReadiness.mockResolvedValue({ unresolvedBlockerCount: 1, unresolvedBlockerIssueIds: ["blocker-1"] });
       if (gate === "pausedAgent" || gate === "terminatedAgent") mockAgentService.getById.mockResolvedValue({ ...makeAgent(ownerAgentId), status: gate === "pausedAgent" ? "paused" : "terminated" });
       const res = await request(await createApp(boardActor())).post(`/api/issues/${issueId}/recovery-actions/resolve`)
         .send({ actionId: recoveryActionId, outcome: "restored", sourceIssueStatus: "todo" });

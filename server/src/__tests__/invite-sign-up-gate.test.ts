@@ -23,7 +23,9 @@ import { logger } from "../middleware/logger.js";
 const ORIGIN = "http://127.0.0.1:42019";
 const TOKEN = "pcp_invite_unit-test-token-0123456789abcdefghijklmnopq";
 const NOW = Date.parse("2026-10-03T12:00:00.000Z");
-const FUTURE = new Date(NOW + 60 * 60 * 1000);
+// The mount tests check expiry against the real clock, so the default invite
+// must stay unexpired after NOW has passed.
+const FUTURE = new Date(Math.max(NOW, Date.now()) + 60 * 60 * 1000);
 
 function pendingInvite(overrides: Partial<Parameters<typeof inviteAdmitsHumanSignUp>[0]> = {}) {
   return {
