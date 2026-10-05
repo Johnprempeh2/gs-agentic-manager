@@ -8,7 +8,7 @@ import type {
   ManagedSettingMetadata,
   PatchInstanceExperimentalSettings,
 } from "@greatstone/shared";
-import { experimentalSettingKey, isRetiredInstanceFeatureKey } from "@greatstone/shared";
+import { experimentalSettingKey, isGraduatedInstanceFeatureKey, isRetiredInstanceFeatureKey } from "@greatstone/shared";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { getWorktreeInstanceId, isWorktreeRuntime } from "../lib/worktree-branding";
@@ -65,9 +65,6 @@ function ManagedByCloudBadge() {
   );
 }
 
-/** Greatstone (GRE-191): switches whose feature is now always on. */
-const GRADUATED_SETTING_KEYS: ReadonlySet<InstanceFeatureKey> = new Set(["enableGoalsSidebarLink"]);
-
 function ExperimentalToggleCard({
   title,
   description,
@@ -96,7 +93,7 @@ function ExperimentalToggleCard({
   // Greatstone (GRE-196): retired switches are hidden; their code stays in place.
   if (isRetiredInstanceFeatureKey(settingKey)) return null;
   // Greatstone (GRE-191): graduated switches are hidden; the feature is always on.
-  if (GRADUATED_SETTING_KEYS.has(settingKey)) return null;
+  if (isGraduatedInstanceFeatureKey(settingKey)) return null;
   return (
     <Card className="block bg-transparent p-5">
       <div className="flex items-start justify-between gap-4">
@@ -247,7 +244,7 @@ export function InstanceExperimentalSettings() {
   const enableSmokeLab = experimentalQuery.data?.enableSmokeLab === true;
   const autoRestartDevServerWhenIdle = experimentalQuery.data?.autoRestartDevServerWhenIdle === true;
   const isVisible = (key: InstanceFeatureKey) =>
-    !isRetiredInstanceFeatureKey(key) && !GRADUATED_SETTING_KEYS.has(key) && !hiddenSettings.has(experimentalSettingKey(key));
+    !isRetiredInstanceFeatureKey(key) && !isGraduatedInstanceFeatureKey(key) && !hiddenSettings.has(experimentalSettingKey(key));
   const showWorktreeRunExecution = inWorktree && isVisible("enableWorktreeRunExecution");
   const showDeveloperSection = showWorktreeRunExecution || ([
     "autoRestartDevServerWhenIdle",

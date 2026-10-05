@@ -66,7 +66,7 @@ export const CLIENT_DEFAULT_OK = {
   enableRunnerPreviewIngress: "Deprecated compatibility key; runner ingress follows the Runner setting.",
   enableDecisions: "Off in client installs (Cloud default). Turning it on needs a code change, not an edition value.",
   enableClassicTaskInterface: "Off by default; clients use the chat task page.",
-  enableGoalsSidebarLink: "Off by default; Goals is still being evaluated.",
+  enableGoalsSidebarLink: "Compatibility key; Goals graduated (GRE-191), is always in the sidebar and the app ignores the value.",
   enableExperimentalFileViewer: "Off by default; experimental and its settings are hidden.",
   enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",
   enableSimplifiedEnglishInteractions: "Off by default; a Greatstone house style, not a client setting.",

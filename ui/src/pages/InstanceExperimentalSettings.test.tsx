@@ -3,7 +3,7 @@
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { INSTANCE_FEATURE_KEYS } from "@greatstone/shared";
+import { GRADUATED_INSTANCE_FEATURE_KEYS, INSTANCE_FEATURE_CATALOG, INSTANCE_FEATURE_KEYS } from "@greatstone/shared";
 import type {
   InstanceExperimentalSettings as InstanceExperimentalSettingsPayload,
   InstanceExperimentalSettingsWithManaged,
@@ -389,6 +389,16 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
 
     expect(container.querySelector(GOALS_SIDEBAR_LINK_TOGGLE_SELECTOR)).toBeNull();
     expect(container.textContent).not.toContain("Goals Sidebar Link");
+  });
+
+  it("shows no card for any graduated switch in the shared list (GRE-848)", async () => {
+    await renderPage();
+
+    expect(GRADUATED_INSTANCE_FEATURE_KEYS.length).toBeGreaterThan(0);
+    for (const { key } of GRADUATED_INSTANCE_FEATURE_KEYS) {
+      expect(container.textContent, key).not.toContain(INSTANCE_FEATURE_CATALOG[key].title);
+      expect(container.textContent, key).not.toContain(INSTANCE_FEATURE_CATALOG[key].description);
+    }
   });
 
   it("hides the isolated-workspaces-by-default toggle while isolated workspaces are off", async () => {
