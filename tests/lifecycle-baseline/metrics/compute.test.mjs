@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ACCOUNT_REFUSAL_REASONS, EXECUTION_HOLD_CAUSES, accountRefusalReason, computeAuthFailures, computeParkedWakes, computeRepairEscalations, computeRunFailures, computeStrandedTrees, computeWakeLatency, percentile } from "./compute.mjs";
+import { ACCOUNT_REFUSAL_REASONS, EXECUTION_HOLD_CAUSES, accountRefusalReason, computeAuthFailures, computeParkedWakes, computeRepairEscalations, computeRunFailures, computeStrandedTrees, computeThrottledRewakes, computeWakeLatency, percentile } from "./compute.mjs";
 
 const now = "2026-09-27T12:00:00.000Z";
 const hoursAgo = (hours) => new Date(Date.parse(now) - hours * 3_600_000).toISOString();
@@ -446,5 +446,36 @@ test("R1 repair escalations: 2x2 split by agent-only task and repair comments, w
   assert.deepEqual(computeRepairEscalations(base()), {
     windowDays: 7, terminalReason: "unchanged_source_state_exhausted", total: 0,
     agentOnlyCommented: [], agentOnlyNoComment: [], otherCommented: [], otherNoComment: [],
+  });
+});
+
+test("R1 throttled rewakes: counts skipped issue_rewake_throttled wakes per agent and issue, with the highest streak (GRE-893)", () => {
+  const skip = (issueId, agentId, hours, noProgressStreak, fields = {}) => ({
+    agentId, issueId, reason: "issue_rewake_throttled", requestedAt: hoursAgo(hours), noProgressStreak, requestedReason: "issue_assignment_recovery", ...fields,
+  });
+  const snapshot = base({
+    issues: [issue("loop"), issue("calm")],
+    agents: [{ id: "a1", name: "Ridge", status: "idle", timerHeartbeat: false }, { id: "a2", name: "Summit", status: "idle", timerHeartbeat: false }],
+    throttledWakes: [
+      skip("loop", "a1", 3, 2), skip("loop", "a1", 2, 3), skip("loop", "a1", 1, 5, { requestedReason: null }),
+      skip("calm", "a2", 4, 2),
+      skip("loop", "a1", 24 * 8, 9), // before the window: not counted
+      skip("calm", "a2", 1, 7, { reason: "issue_assigned" }), // another reason: not counted
+    ],
+  });
+  const result = computeThrottledRewakes(snapshot);
+  assert.equal(result.total, 4);
+  assert.equal(result.issues, 2);
+  assert.equal(result.maxStreak, 5);
+  assert.deepEqual(result.byAgent, [{ agentId: "a1", name: "Ridge", count: 3, issues: 1 }, { agentId: "a2", name: "Summit", count: 1, issues: 1 }]);
+  assert.deepEqual(result.topIssues.map(({ identifier, issueId, agentId, count, maxStreak }) => ({ identifier, issueId, agentId, count, maxStreak })), [
+    { identifier: "LOOP", issueId: "loop", agentId: "a1", count: 3, maxStreak: 5 },
+    { identifier: "CALM", issueId: "calm", agentId: "a2", count: 1, maxStreak: 2 },
+  ]);
+  assert.equal(result.topIssues[0].lastAt, hoursAgo(1));
+  assert.deepEqual(result.topIssues[0].requestedReasons, ["issue_assignment_recovery"]);
+  // No skip records: zero, not missing.
+  assert.deepEqual(computeThrottledRewakes(base()), {
+    windowDays: 7, reason: "issue_rewake_throttled", total: 0, issues: 0, maxStreak: 0, byAgent: [], topIssues: [],
   });
 });

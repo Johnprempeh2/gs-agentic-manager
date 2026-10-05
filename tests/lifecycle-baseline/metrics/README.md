@@ -87,6 +87,16 @@ source-state fingerprint, started no later than the escalation; recovery action
 ids differ per attempt, so they are not matched). Each cell lists its issue identifiers. Report only:
 it sizes row 75 (who owns the escalation). Zero is printed as zero.
 
+**R1 detail — throttled rewakes** (`throttledRewakes` in `metrics.json`,
+register row 126, GRE-893). Count of `agent_wakeup_requests` with status
+`skipped` and reason `issue_rewake_throttled` requested in the window: wakes
+the rewake throttle refused because the agent had a streak of no-progress runs
+on the issue. Split per agent and per (issue, agent), each with the highest
+`heartbeatSkip.noProgressStreak` seen, the last skip time and the original wake
+reasons; the report lists the top 10 pairs with issue ids. The throttle slows
+such a loop but never stops it, and the run API does not show skipped wakes.
+Report only: it sizes row 125 (cut-off to the manager). Zero is printed as zero.
+
 **R2 — run failure rate and unattended recovery.** Among runs that finished in
 the window, failure rate is `failed + timed_out + interrupted` divided by those
 plus `succeeded`. Cancelled runs are reported but excluded, because
