@@ -1221,6 +1221,7 @@ A catalog connection is ready only when every applicable item is true:
 - [ ] Health and catalog discovery succeed.
 - [ ] One safe read succeeds in the Test page and, where relevant, an agent run.
 - [ ] Writes/destructive tools are correctly classified and use current tier defaults.
+- [ ] Every tool on an MCP server we ship declares `readOnlyHint`, plus `destructiveHint` for writes (and `idempotentHint` where clear); use `mcpToolHints` from `@greatstone/shared`.
 - [ ] Refresh, reconnect, revoke/remove, and post-removal reconnect are verified.
 - [ ] Company isolation, SSRF, OAuth binding, redaction, and cleanup tests pass.
 - [ ] API responses, logs, activity, and evidence contain no credential values.
