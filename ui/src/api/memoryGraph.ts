@@ -6,6 +6,7 @@ import type {
   MemoryGraphNodeDetail,
   MemoryGraphStatus,
   MemoryRecordStatus,
+  MemorySettings,
 } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -45,6 +46,8 @@ function toQuery(params: object) {
 }
 
 export const memoryGraphApi = {
+  /** Whether organisation memory is switched on for the company (the sidebar's Memory link). */
+  settings: (companyId: string) => api.get<MemorySettings>(`/companies/${companyId}/memory/settings`),
   graph: (companyId: string, filters: MemoryGraphFilters = {}) =>
     api.get<MemoryGraph>(`/companies/${companyId}/memory/graph${toQuery(filters)}`),
   node: (companyId: string, recordId: string) =>

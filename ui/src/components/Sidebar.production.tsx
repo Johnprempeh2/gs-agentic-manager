@@ -23,6 +23,7 @@ import {
   LayoutGrid,
   UserCheck,
   FileCheck2,
+  Brain,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -39,6 +40,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { useDecisionsCount, useMyTasksCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useLiveAgents } from "../hooks/useLiveAgents";
+import { useMemoryEnabled } from "../hooks/useMemoryEnabled";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
@@ -56,6 +58,8 @@ export function Sidebar() {
   const { collapsed, peeking } = useSidebar();
   const rail = collapsed && !peeking;
   const inboxBadge = useInboxBadge(selectedCompanyId);
+  // Organisation memory is per company: the link shows only once it is switched on.
+  const { enabled: memoryEnabled } = useMemoryEnabled(selectedCompanyId);
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -131,6 +135,7 @@ export function Sidebar() {
           <SidebarNavItem to="/search" label="Search" icon={Search} />
           {/* GRE-585: finished documents sit in the top group, under Search. */}
           <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
+          {memoryEnabled ? <SidebarNavItem to="/memory" label="Memory" icon={Brain} /> : null}
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
           <SidebarNavItem
             to="/inbox"
