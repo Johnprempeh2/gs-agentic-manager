@@ -7,10 +7,10 @@ import request from "supertest";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
-  companyMemberships, companySecretProviderConfigs, companySecrets, environmentLeases, environments,
-  executionWorkspaces, goals, heartbeatRuns, issueAttachments, issues, issueWorkProducts, labels, pipelines,
-  plugins, projects, routines, routineTriggers, statusCards, toolApplications, toolConnections, toolProfiles,
-  workspaceOperations,
+  companyMemberships, companySecretProviderConfigs, companySecrets, decisionTrainingExamples, environmentLeases,
+  environments, executionWorkspaces, feedbackExports, feedbackVotes, goals, heartbeatRuns, issueAttachments, issues,
+  issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
+  statusCards, toolApplications, toolConnections, toolProfileEntries, toolProfiles, workspaceOperations,
 } from "@greatstone/db";
 import { createApp } from "../app.js";
 import { environmentService } from "../services/environments.js";
@@ -103,11 +103,7 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/routine-triggers/public/:publicId": "Public routine webhook; authenticated by the trigger secret, not a session.",
   "/api/companies/import/": "Import jobs and transfers belong to the user who started them, before a company exists.",
   "/api/agents/me/": "Acts on the calling agent's own company; there is no other company's id to pass.",
-  "/api/connection-intents/:interactionId": "Not seeded yet: needs an issue thread interaction of the connection-intent kind.",
-  "/api/feedback-traces/:traceId": "Not seeded yet: needs a feedback vote and export.",
   "/api/environment-custom-image-setup-sessions/:sessionId": "Not seeded yet: needs a custom image template and provider.",
-  "/api/tool-profile-entries/:entryId": "Not seeded yet: needs a tool profile entry row.",
-  "/api/decision-training/:id": "Not seeded yet: needs a decision training example with a snapshot.",
   "/api/decisions/:id": "Not seeded yet: needs a signed decision spec and target snapshots.",
   "/api/tool-gateway/": "Not seeded yet: gateways, tokens, sessions and runtime slots need a gateway setup.",
   "/api/plugins/:pluginId": "Plugins are instance-wide (no company column). Company data sits under "
@@ -319,6 +315,8 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const statusCardId = id(), teamId = id(), workspaceId = id(), secretId = id();
     const providerConfigId = id(), labelId = id(), assetId = id(), attachmentId = id(), workProductId = id();
     const operationId = id(), leaseId = id();
+    const profileEntryId = id(), intentId = id(), voteId = id(), traceId = id(), trainingId = id();
+    const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
       ...A, id: agentId, name: "Company A agent", role: "engineer", adapterType: "process",
@@ -369,6 +367,29 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     });
     await ctx.db.insert(workspaceOperations).values({ ...A, id: operationId, phase: "worktree_prepare" });
     await ctx.db.insert(environmentLeases).values({ ...A, id: leaseId });
+    // GRE-822: the first four "Not seeded yet" groups.
+    await ctx.db.insert(toolProfileEntries).values({
+      ...A, id: profileEntryId, profileId, selectorType: "application", applicationId,
+    });
+    await ctx.db.insert(issueThreadInteractions).values({
+      ...A, id: intentId, issueId, kind: "connection_intent", addresseeUserId: ownerAId,
+      payload: {
+        version: 1, serviceSlug: "github", serviceName: "GitHub", requestingAgentId: agentId,
+        requestingAgentName: "Company A agent", phase: "requested",
+      },
+    });
+    await ctx.db.insert(feedbackVotes).values({
+      ...A, id: voteId, issueId, targetType: "issue_comment", targetId: id(), authorUserId: ownerAId, vote: "up",
+    });
+    await ctx.db.insert(feedbackExports).values({
+      ...A, id: traceId, feedbackVoteId: voteId, issueId, projectId, authorUserId: ownerAId,
+      targetType: "issue_comment", targetId: id(), vote: "up", targetSummary: {},
+    });
+    await ctx.db.insert(decisionTrainingExamples).values({
+      ...A, id: trainingId, sourceKind: "approval", sourceId: approvalId, issueId, cutoffAt: new Date(),
+      // The id routes check the company before they read the snapshot.
+      snapshot: {} as never, createdByUserId: ownerAId,
+    });
 
     const byPrefix: Record<string, string> = {
       "/api/issues/:id": issueId, "/api/issues/:issueId": issueId,
@@ -389,6 +410,8 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/labels/:labelId": labelId, "/api/assets/:assetId": assetId,
       "/api/attachments/:attachmentId": attachmentId, "/api/work-products/:id": workProductId,
       "/api/workspace-operations/:operationId": operationId, "/api/environment-leases/:leaseId": leaseId,
+      "/api/tool-profile-entries/:entryId": profileEntryId, "/api/connection-intents/:interactionId": intentId,
+      "/api/feedback-traces/:traceId": traceId, "/api/decision-training/:id": trainingId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),
