@@ -1367,6 +1367,78 @@ describe("agent issue mutation checkout ownership", () => {
     );
   });
 
+  describe("run workspace inheritance by assignee (GRE-838)", () => {
+    const runWorkspaceDb = () =>
+      createRunContextDb({
+        issueId,
+        executionWorkspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      });
+    const resolveAssignee = (agentId: string) =>
+      mockAgentService.resolveByReference.mockResolvedValue({
+        ambiguous: false,
+        agent: makeAgent(agentId),
+      });
+
+    it("does not bind a task for another agent to the creator's run workspace", async () => {
+      resolveAssignee(peerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({
+          title: "Work for a peer",
+          projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          assigneeAgentId: peerAgentId,
+        });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.create).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({ title: "Work for a peer", assigneeAgentId: peerAgentId }),
+      );
+      expect(mockIssueService.create.mock.calls[0]?.[1]).not.toHaveProperty(
+        "inheritExecutionWorkspaceFromIssueId",
+      );
+    });
+
+    it("keeps an explicit inherit request for a task for another agent", async () => {
+      resolveAssignee(peerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({
+          title: "Peer works in my worktree",
+          assigneeAgentId: peerAgentId,
+          inheritExecutionWorkspaceFromIssueId: issueId,
+        });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.create).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({
+          assigneeAgentId: peerAgentId,
+          inheritExecutionWorkspaceFromIssueId: issueId,
+        }),
+      );
+    });
+
+    it("still inherits the run workspace for a task the creator assigns to itself", async () => {
+      resolveAssignee(ownerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({
+          title: "Self follow-up",
+          assigneeAgentId: ownerAgentId,
+        });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.create).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({
+          assigneeAgentId: ownerAgentId,
+          inheritExecutionWorkspaceFromIssueId: issueId,
+        }),
+      );
+    });
+  });
+
   it("authorizes child creation through the shared visible-issue write path", async () => {
     mockIssueService.getById.mockResolvedValue(makeIssue({ status: "todo", assigneeAgentId: ownerAgentId }));
 

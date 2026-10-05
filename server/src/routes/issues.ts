@@ -11995,8 +11995,16 @@ export function issueRoutes(
         assigneeAgentId: normalizedAssigneeAgentId ?? null,
       });
       const actor = getActorInfo(req);
+      // A task the run hands to another agent gets its own worktree, like a
+      // task made in the app (GRE-838). Only self-assigned or unassigned tasks
+      // fall back to the run's workspace; an explicit selection always wins.
+      const assignedToAnotherAgent =
+        typeof normalizedAssigneeAgentId === "string" &&
+        normalizedAssigneeAgentId.length > 0 &&
+        normalizedAssigneeAgentId !== actor.agentId;
       const runWorkspaceInheritanceSourceIssueId =
-        hasExplicitIssueWorkspaceCreateSelection(rawCreateBody)
+        hasExplicitIssueWorkspaceCreateSelection(rawCreateBody) ||
+        assignedToAnotherAgent
           ? null
           : await resolveRunIssueWorkspaceInheritanceSource(companyId, actor);
       // When this is genuinely the onboarding first task, the server owns the task
