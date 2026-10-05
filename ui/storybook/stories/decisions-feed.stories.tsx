@@ -16,6 +16,7 @@ import {
   failedRunCard,
   fixtureAgents,
   fixtureFeed,
+  humanReviewCard,
   mergedCard,
   questionCard,
   reviewCard,
@@ -190,6 +191,19 @@ export const ApprovalCard: Story = { render: () => <CardFrame card={approvalCard
 export const FailedRunCard: Story = { render: () => <CardFrame card={failedRunCard()} /> };
 export const ReviewCard: Story = { render: () => <CardFrame card={reviewCard()} /> };
 export const ConnectionCard: Story = { render: () => <CardFrame card={connectionAlertCard()} /> };
+
+/** GRE-870 before: a task on your own review had no Approve and said no agent owns it. */
+function humanReviewCardBefore(): DecisionCard {
+  const base = humanReviewCard();
+  return {
+    ...base,
+    waiting: null,
+    reviewer: null,
+    actions: base.actions.filter((action) => action.id !== "approve" && action.id !== "request_changes"),
+  };
+}
+export const HumanReviewCardBefore: Story = { render: () => <CardFrame card={humanReviewCardBefore()} /> };
+export const HumanReviewCardAfter: Story = { render: () => <CardFrame card={humanReviewCard()} /> };
 
 /** GRE-504 before: one stopped card per task, for the same setup gap of the same agent. */
 function setupTaskCard(issueId: string, identifier: string, title: string): DecisionCard {
