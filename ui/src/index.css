@@ -1058,6 +1058,22 @@
   }
 }
 
+/* Looping Tailwind utilities stop under reduced motion (GRE-821). Pulse and
+   bounce rest at full opacity in place; every `animate-ping` is an overlay ring
+   on a solid dot, so the ring hides and the dot stays. `animate-spin` keeps
+   spinning: it is the loading signal. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-bounce {
+    animation: none;
+  }
+
+  .animate-ping {
+    animation: none;
+    visibility: hidden;
+  }
+}
+
 /* Task Chat Redesign motion tokens collapse to instant under reduced motion.
    Zeroing the primitives cascades to every scoped token that references them;
    the literal-valued scoped tokens (staggers, loops) are zeroed explicitly. */

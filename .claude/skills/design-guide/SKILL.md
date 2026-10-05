@@ -286,6 +286,10 @@ Standard `<table>` with `text-xs`, header row with `bg-accent/20`, `font-mono` f
 Never fade text with opacity: it destroys contrast by construction, worst in
 light mode. The same rule applies to any de-emphasised text.
 
+### Reduced Motion
+
+Under `prefers-reduced-motion: reduce`, one global block in `index.css` stops `animate-pulse` and `animate-bounce` and hides the `animate-ping` ring (so always pair a ping ring with a solid dot); `animate-spin` keeps spinning. Any new looping animation needs its own reduced-motion rule.
+
 ### Inline Editing
 
 Use `InlineEditor` component — click text to edit, Enter saves, Escape cancels.
