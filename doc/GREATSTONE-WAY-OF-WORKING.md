@@ -162,6 +162,13 @@ any `check` lines (GPL, AGPL, LGPL, SSPL, BUSL, unknown, none) on the
   finish. The scratch folder is deleted when the run ends.
 - Commit secrets, tokens, `.env` files, client names or personal data.
 - Widen a task on your own. Propose follow-up work as a new issue instead.
+- Open a dev server you start to the network. Storybook, the Vite dev and
+  preview servers and `scripts/serve-storybook-static.mjs` listen on
+  `127.0.0.1` only, which is all a screenshot needs; do not pass
+  `--host 0.0.0.0` or set `GSAM_DEV_HOST` in a run. On 5 Oct 2026 two agent
+  Storybook servers listened on every interface, so every device on the
+  tailnet could open them (see "Dev servers listen on 127.0.0.1" in
+  `doc/DEVELOPING.md`).
 
 A `pre-push` hook in the dev checkout (shared by every worktree) checks pushes
 only. On this machine it refuses a push to `main`, a tag push that does not come
