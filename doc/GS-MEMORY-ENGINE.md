@@ -147,6 +147,33 @@ signing helper that agents cannot read.
   with `{"dryRun": true, "withinDays": 14}` lists what falls due soon; `{"dryRun": false}` deletes what is due. Owner or
   `memory:admin` only. Backups follow the 90-day rule below.
 
+## Steward daily review (GRE-887)
+
+- One pass a day reads records changed since a durable cursor (`memory_steward_cursors`) and writes findings to the
+  decision queue (`memory_steward_queue_items`): failed ingestion, duplicates (same content hash in one scope),
+  stale material (unreviewed past 90/180 days, superseded past 1 year, unsynced past 24 hours) and possible
+  contradictions (open `memory_conflicts`). Related findings share one open item with their sources, scope, the
+  current approved position and a proposed resolution. The steward sees a content hash, never the content, and never
+  approves, edits or deletes a record.
+- **Routing:** pricing, policy, legal and client-commitment items, and client or restricted scopes, go to John.
+  Agent scopes go to that agent, project scopes to the project lead; anything else goes to John.
+- **Reliability:** each page of records commits with its queue writes and the cursor in one transaction, under the
+  run's lease token. A killed pass loses only its uncommitted page; the next pass marks it `interrupted` once the
+  lease (10 minutes) lapses and resumes from the cursor. Every escalation has a unique key (finding, record,
+  version), so a rerun never escalates the same entry twice. A missed day needs nothing: the next pass catches up
+  from the cursor. Two passes at once: the second gets `409 busy`.
+- **Access:** a scoped, expiring grant (`memory_steward_grants`), sandbox only until G4. Grants can be made only on an
+  instance with `GSAM_MEMORY_STEWARD_SANDBOX_GRANTS=true`, by a company owner or admin, for at most 30 days.
+  Every pass, refusal, grant and revoke is written to `memory_operations`.
+- **API** (memory must be on): `POST .../memory/steward/review` (the granted agent), `GET .../memory/steward/queue`,
+  `GET .../memory/steward/report?days=7` (owner, admin or the granted steward; review time, plan tokens, missed days
+  and queue age per Europe/London day), `POST .../memory/steward/grants` and `.../grants/:grantId/revoke` (owner or
+  admin).
+- **Routine** (created at G4 on the steward's own task, not before): a GSAM routine assigned to the steward agent,
+  `concurrencyPolicy: coalesce_if_active`, `catchUpPolicy: skip_missed` (the cursor catches up), one schedule
+  trigger `30 3 * * *` in `Europe/London` (after the 02:30 engine backup). The routine's task tells the agent to call
+  `POST .../memory/steward/review` once and post the result and `GET .../steward/report?days=1` on the task.
+
 ## Back up and restore
 
 - Nightly at 02:30 the timer runs `backup`: `pg_dump -Fc` to `backups/` plus a `.sha256`, and a copy to
