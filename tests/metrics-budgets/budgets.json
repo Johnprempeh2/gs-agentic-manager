@@ -169,6 +169,34 @@
       "baselineWindow": "week to 2026-09-28 (GRE-69)",
       "margin": "+50% (498 916 -> 750 000 ms), unchanged limit accepted by John on GRE-69. Now measured on n=190, so the p95 is a real tail rather than the single slowest run.",
       "max": 750000
+    },
+    {
+      "id": "s1-work-median",
+      "number": "S1",
+      "group": "weekly",
+      "input": "lifecycle",
+      "path": "s1.work.medianMs",
+      "samplesPath": "s1.work.sampleSize",
+      "minSamples": 20,
+      "baseline": 128765,
+      "baselineSamples": 1541,
+      "baselineWindow": "week to 2026-10-05, first full week after the GRE-4 release (GRE-75). The GRE-74 week to 2026-09-28 was 48 373 ms on n=179 (50 360 ms on n=134 when recomputed now); this week is 2.7x that on 8.6x the runs, reported on GRE-75.",
+      "margin": "+55% (128 765 -> 200 000 ms). Only one post-release week exists: daily medians ranged 51-258 s and the overlapping week to 2026-10-01 was 112 694 ms (0.88x). The limit guards against a further slowdown from today's level; recheck it after a second week.",
+      "max": 200000
+    },
+    {
+      "id": "s1-work-p95",
+      "number": "S1",
+      "group": "weekly",
+      "input": "lifecycle",
+      "path": "s1.work.p95Ms",
+      "samplesPath": "s1.work.sampleSize",
+      "minSamples": 20,
+      "baseline": 1399105,
+      "baselineSamples": 1541,
+      "baselineWindow": "week to 2026-10-05, first full week after the GRE-4 release (GRE-75). The GRE-74 week to 2026-09-28 was 553 872 ms on n=179; this week is 2.5x that.",
+      "margin": "+50% (1 399 105 -> 2 100 000 ms). Daily p95s ranged 715-2 095 s, so no single day of the baseline week breaks the limit; the overlapping week to 2026-10-01 was 1 576 131 ms (1.13x).",
+      "max": 2100000
     }
   ]
 }

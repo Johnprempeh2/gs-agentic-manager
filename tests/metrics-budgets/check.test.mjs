@@ -80,6 +80,19 @@ test("the committed R2 budgets judge the platform rate, not login refusals, and 
   assert.deepEqual(failing({ unattendedRecoveryShare: 0.3 }), ["r2-unattended-recovery-share"]);
 });
 
+test("the committed S1-work budgets fail on a regressed weekly report and pass at baseline (GRE-75)", () => {
+  const failing = (regress) => {
+    const report = fixtureFor(config.inputs.lifecycle);
+    regress(report);
+    return checkBudgets(config, { group: "weekly", readReport: () => report })
+      .results.filter((entry) => entry.status === "fail").map((entry) => entry.id);
+  };
+  assert.deepEqual(failing(() => {}), []);
+  assert.deepEqual(failing((report) => { report.s1.work.medianMs *= 2; }), ["s1-work-median"]);
+  assert.deepEqual(failing((report) => { report.s1.work.p95Ms *= 2; }), ["s1-work-p95"]);
+  assert.deepEqual(failing((report) => { report.s1.work.sampleSize = 19; }), ["s1-work-median", "s1-work-p95"]);
+});
+
 test("a passing max budget at 2x baseline or more is marked PASS (watch)", () => {
   // R2 platform failure rate, week to 2026-10-04: 4.9% against a 1.88% baseline, under the 8% limit.
   const budget = { id: "r2", number: "R2", path: "r2.rate", baseline: 0.0188, max: 0.08 };
