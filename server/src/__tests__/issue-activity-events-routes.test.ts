@@ -183,6 +183,8 @@ function makeIssue() {
 function issueUpdateWithReceipt(issue: ReturnType<typeof makeIssue>, patch: Record<string, unknown>) {
   const {
     actorAgentId: _actorAgentId,
+    actorRunId: _actorRunId,
+    actorRunStopId: _actorRunStopId,
     actorUserId: _actorUserId,
     blockedByIssueIds: _blockedByIssueIds,
     ...issuePatch
