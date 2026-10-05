@@ -10,8 +10,10 @@ function readJson(name) {
 export function loadFixtures() {
   const world = readJson("kestrel-works.json");
   const { scenarios } = readJson("scenarios.json");
+  const graph = readJson("graph.json");
   if (world.synthetic !== true) throw new Error("kestrel-works.json must be marked synthetic");
-  return { world, scenarios };
+  if (graph.synthetic !== true) throw new Error("graph.json must be marked synthetic");
+  return { world, scenarios, graph };
 }
 
 export function identity(world, id) {
@@ -25,9 +27,11 @@ export function scope(world, id) {
 }
 
 export function grantedScopes(world, identityId, right) {
-  return identity(world, identityId)
+  const granted = identity(world, identityId)
     .grants.filter((g) => g.rights.includes(right))
     .map((g) => g.scope);
+  // Every member reads organization memory by default (gateway service.ts canRead).
+  return right === "read" ? [...new Set([...granted, ...(world.defaultRead ?? [])])] : granted;
 }
 
 // D7 values are stored in parts so the committed file never holds a token-shaped string.

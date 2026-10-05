@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
+import type { ZodType } from "zod";
 import type { Db } from "@greatstone/db";
 import {
   contributeMemorySchema,
@@ -6,6 +7,9 @@ import {
   createMemoryScopeSchema,
   deleteMemoryRecordSchema,
   MEMORY_DETECTION_NOTE,
+  memoryActivityCountsQuerySchema,
+  memoryActivityQuerySchema,
+  memoryGraphQuerySchema,
   recallMemorySchema,
   resolveMemoryConflictSchema,
   reviewMemoryRecordSchema,
@@ -22,6 +26,7 @@ import {
   MEMORY_SENSITIVE_CONTENT_CODE,
   MemorySensitiveContentError,
 } from "../services/memory-gateway/sensitive-content.js";
+import { memoryGraphService } from "../services/memory-gateway/graph.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
@@ -53,6 +58,7 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
   const router = Router();
   const svc = memoryGatewayService(db, options);
   const reviews = memoryReviewService(db, svc);
+  const graphs = memoryGraphService(db, svc);
 
   // Runs before body validation so a company with memory off learns nothing
   // from any memory route, not even which bodies are valid.
@@ -241,6 +247,44 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
   router.post("/companies/:companyId/memory/retention", requireEnabled, validate(runMemoryRetentionSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     res.json(await reviews.runRetention(await callerFor(req, companyId, "retention"), req.body));
+  });
+
+  // Graph and contribution activity (GRE-864, plan section 8). Read only;
+  // every node, edge, label and count is checked on the server.
+  function parseQuery<T>(schema: ZodType<T>, req: Request) {
+    const parsed = schema.safeParse(req.query);
+    if (!parsed.success) throw parsed.error;
+    return parsed.data;
+  }
+
+  router.get("/companies/:companyId/memory/graph", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "graph");
+    res.json(await graphs.graph(caller, parseQuery(memoryGraphQuerySchema, req)));
+  });
+
+  router.get("/companies/:companyId/memory/graph/nodes/:recordId", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "graph_node");
+    res.json(await graphs.nodeDetail(caller, req.params.recordId as string));
+  });
+
+  router.get("/companies/:companyId/memory/graph/edges/:edgeId", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "graph_edge");
+    res.json(await graphs.edgeDetail(caller, req.params.edgeId as string));
+  });
+
+  router.get("/companies/:companyId/memory/activity", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "activity");
+    res.json(await graphs.activity(caller, parseQuery(memoryActivityQuerySchema, req)));
+  });
+
+  router.get("/companies/:companyId/memory/activity/counts", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "activity_counts");
+    res.json(await graphs.activityCounts(caller, parseQuery(memoryActivityCountsQuerySchema, req)));
   });
 
   // Daily Claude plan use by memory extraction (GRE-673): engine deliveries and

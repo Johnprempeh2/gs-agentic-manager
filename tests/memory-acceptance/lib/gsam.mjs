@@ -48,7 +48,7 @@ export function loadGsamConfig(path) {
     timeoutMs: 10_000,
     approvePermissionKey: "memory:approve",
     ...cfg,
-    routes: { ...PHASE2_ROUTES, ...(cfg.routes ?? {}) },
+    routes: { ...PHASE2_ROUTES, ...PHASE3_ROUTES, ...(cfg.routes ?? {}) },
     engine: { host: "127.0.0.1", restPort: 28888, controlPlanePort: 9999, postgresPort: 25432, ...(cfg.engine ?? {}) },
   };
 }
@@ -72,6 +72,23 @@ export const PHASE2_ROUTES = {
   stewardQueue: "GET /steward/queue",
   stewardReport: "GET /steward/report?days=7",
 };
+
+/**
+ * Phase 3 routes (GRE-864 `routes/memory.ts`, types in `packages/shared/src/memory.ts`).
+ * There is no separate list route: the list view is built from the graph.
+ * Activity and counts take `to` as exclusive; the runner's ranges are inclusive dates.
+ */
+export const PHASE3_ROUTES = {
+  relationshipCreate: "POST /relationships", // GRE-886 { fromRecordId, toRecordId, type, note, sourceKind, sourceId }
+  graph: "GET /graph",
+  node: "GET /graph/nodes/:id",
+  edge: "GET /graph/edges/:id",
+  activity: "GET /activity",
+  counts: "GET /activity/counts",
+};
+
+/** Phase 2 review-event actions, by the double's event names the runner backdates. */
+const EVENT_ACTIONS = { approved: "approve", disputed: "dispute", superseded_by: "superseded_by", supersede: "supersede", contributed: "contribute" };
 
 /** Diagnostic only (--prime-org): makes the company bank exist before the tests. */
 const PRIME_ORG_TEXT = "Kestrel Works office hours are 09:00 to 17:30 on weekdays (synthetic prime record).";
@@ -153,6 +170,56 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
   async function route(key, { id, headers = {}, body } = {}) {
     const [method, path] = cfg.routes[key].split(" ");
     return http(`/api/companies/${state.companyId}/memory${path.replace(":id", id ?? "")}`, { method, headers, body });
+  }
+
+  /** A phase 3 read with filters as query parameters (fixture names mapped to ids, inclusive dates to the gateway's exclusive `to`). */
+  async function phase3View(key, headers, f = {}) {
+    const q = new URLSearchParams();
+    if (f.agent === "hu-john-syn") q.set("userId", "local-board");
+    else if (f.agent) q.set("agentId", state.agentIds[f.agent] ?? MISSING_RECORD_ID);
+    if (f.scope) q.set("scopeId", state.scopeIds[f.scope] ?? MISSING_SCOPE_ID);
+    if (f.from) q.set("from", `${f.from}T00:00:00.000Z`);
+    if (f.to) q.set("to", new Date(Date.parse(`${f.to}T00:00:00.000Z`) + 86_400_000).toISOString());
+    for (const k of ["status", "q", "limit", "cursor"]) if (f[k]) q.set(k, String(f[k]));
+    const [method, path] = cfg.routes[key].split(" ");
+    return translateResult(await http(`/api/companies/${state.companyId}/memory${path}?${q}`, { method, headers: mapHeaders(headers) }));
+  }
+
+  /** Fixture name of a person, agent or check (`MemoryActorRef`, after the uuid rename). */
+  function p3Actor(ref) {
+    if (!ref || typeof ref === "string") return ref ?? null;
+    if (ref.actorType === "system") return "system";
+    return ref.agentId ?? ref.userId ?? ref.actorId ?? null;
+  }
+
+  function p3Node(n) {
+    return { id: n.id, label: n.title ?? n.excerpt, scope: n.scopeId, status: n.status, contributor: p3Actor(n.contributor), source: n.source, createdAt: n.createdAt };
+  }
+
+  function p3Edge(e) {
+    return { id: e.id, from: e.from, to: e.to, kind: e.kind, type: e.type, origin: e.origin, author: p3Actor(e.author), source: e.source };
+  }
+
+  function p3Activity(it) {
+    const r = it.record ?? {};
+    return {
+      recordId: r.id,
+      nodeId: r.id,
+      contributor: p3Actor(it.contributor),
+      at: r.createdAt,
+      scope: r.scopeId,
+      title: r.title,
+      origin: it.source,
+      source: it.source,
+      status: r.status,
+      history: (it.history ?? []).map((e) => ({ action: e.action, actor: e.agentId ?? e.userId ?? e.actorId, at: e.createdAt, related: e.relatedRecordId })),
+    };
+  }
+
+  /** `rel:E-901` back to `rel:<uuid>`; an unknown name to an id that cannot exist. */
+  function edgeIdFor(edgeId) {
+    const back = String(edgeId).replace(/\b[ERX]-\d{3}\b/g, (n) => [...state.names].find(([, v]) => v === n)?.[0] ?? n);
+    return back.includes(":") ? back : `rel:${MISSING_RECORD_ID}`;
   }
 
   function isRouteMissing(res) {
@@ -359,7 +426,8 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
           },
         });
         if (res.status >= 300) throw new Error(`Seeding ${r.id} failed: ${res.status} ${JSON.stringify(res.body)}`);
-        if (res.body?.engineAvailable !== true) throw new Error(`Seeding ${r.id}: gateway could not reach the engine (${res.body?.message})`);
+        // `requireEngine: false` is for phase 3 runs only: the graph reads GSAM's stores, never the engine.
+        if (res.body?.engineAvailable !== true && cfg.requireEngine !== false) throw new Error(`Seeding ${r.id}: gateway could not reach the engine (${res.body?.message})`);
         remember(res.body.record.id, r.id);
       }
     },
@@ -380,14 +448,14 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
       return translateResult(res);
     },
     async contribute(headers, body) {
-      const { scope, text, id, supersedes, ...rest } = body;
+      const { scope, text, id, supersedes, source, ...rest } = body;
       const res = await http(`/api/companies/${state.companyId}/memory/records`, {
         method: "POST",
         headers: mapHeaders(headers),
         body: {
           scopeId: scopeIdFor(scope),
           content: text,
-          ...(id ? { sourceKind: "external_object", sourceId: id } : {}),
+          ...(source ? { sourceKind: source.kind, sourceId: source.id } : id ? { sourceKind: "external_object", sourceId: id } : {}),
           ...(supersedes ? { supersedesId: recordIdFor(supersedes) } : {}),
           ...rest,
         },
@@ -419,6 +487,106 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
       if (isRouteMissing(h) || isRouteMissing(rel)) return { routeMissing: true };
       const record = h.body?.record ?? null;
       return toFixtureNames({ events: h.body?.events ?? [], chain: h.body?.chain ?? [], conflicts: record?.conflicts ?? [], relationships: listOf(rel.body), record });
+    },
+    // ---- phase 3 (GRE-866) --------------------------------------------------
+    async createRelationship(headers, { id, from, to, type, note, source }) {
+      const res = await route("relationshipCreate", {
+        headers: mapHeaders(headers),
+        body: { fromRecordId: recordIdFor(from), toRecordId: recordIdFor(to), type, note, ...(source ? { sourceKind: source.kind, sourceId: source.id } : {}) },
+      });
+      if (id && res.status < 300 && res.body?.id) name(res.body.id, id);
+      return translateResult(res);
+    },
+    /** Sandbox database only: moves D9 times into the fixture's past. */
+    async backdate({ records = {}, events = [], relationships = {} }) {
+      for (const [fixtureId, at] of Object.entries(records)) {
+        const id = lit(recordIdFor(fixtureId));
+        await sql(`update memory_records set created_at = ${lit(at)} where id = ${id}`);
+        await sql(`update memory_review_events set created_at = ${lit(at)} where record_id = ${id} and action = 'contribute'`);
+      }
+      for (const { record, type, at } of events) {
+        await sql(`update memory_review_events set created_at = ${lit(at)} where record_id = ${lit(recordIdFor(record))} and action = ${lit(EVENT_ACTIONS[type] ?? type)}`);
+      }
+      for (const [fixtureId, at] of Object.entries(relationships)) {
+        const uuid = [...state.names].find(([, n]) => n === fixtureId)?.[0];
+        if (uuid) await sql(`update memory_relationships set created_at = ${lit(at)} where id = ${lit(uuid)}`);
+      }
+      return { ok: true };
+    },
+    /** Ground truth: stated relationships plus supersession links, by fixture name. */
+    async relationshipRows() {
+      const c = lit(state.companyId);
+      const out = await sql(`select coalesce(json_agg(x)::text, '[]') from (
+        select id, from_record_id as "from", to_record_id as "to", type, coalesce(author_agent_id::text, author_user_id) as author from memory_relationships where company_id = ${c}
+        union all
+        select null, r.id, r.supersedes_id, 'supersedes', coalesce(e.agent_id::text, e.user_id)
+          from memory_records r left join memory_review_events e on e.record_id = r.id and e.action = 'supersede'
+          where r.company_id = ${c} and r.supersedes_id is not null) x`);
+      return toFixtureNames(JSON.parse(out || "[]"));
+    },
+    async extractedFacts() {
+      const out = await sql(`select coalesce(json_agg(x)::text, '[]') from (
+        select id as "factId", record_id as "recordId", coalesce(contributor_agent_id::text, contributor_user_id) as contributor
+        from memory_extracted_facts where company_id = ${lit(state.companyId)}) x`);
+      return { available: true, facts: toFixtureNames(JSON.parse(out || "[]")) };
+    },
+    /** Ground truth for inferred edges: open conflict-check rows (GRE-864 draws only these). */
+    async inferredRows() {
+      const out = await sql(`select coalesce(json_agg(x)::text, '[]') from (
+        select record_id as a, approved_record_id as b from memory_conflicts where company_id = ${lit(state.companyId)} and state = 'open') x`);
+      return { available: true, pairs: toFixtureNames(JSON.parse(out || "[]")) };
+    },
+    async graph(headers, f) {
+      const res = await phase3View("graph", headers, { ...f, limit: 500 });
+      return res.status === 200 ? { status: 200, body: { nodes: (res.body.nodes ?? []).map(p3Node), edges: (res.body.edges ?? []).map(p3Edge), raw: res.body } } : res;
+    },
+    async memoryList(headers, f) {
+      const res = await phase3View("graph", headers, { ...f, limit: 500 });
+      return res.status === 200 ? { status: 200, body: { items: (res.body.nodes ?? []).map(p3Node), raw: res.body } } : res;
+    },
+    async node(headers, fixtureId) {
+      const res = translateResult(await route("node", { id: recordIdFor(fixtureId), headers: mapHeaders(headers) }));
+      if (res.status !== 200) return res;
+      const b = res.body;
+      const pv = b.provenance ?? {};
+      return {
+        status: 200,
+        body: {
+          record: { id: b.record?.id, scope: b.record?.scopeId, status: b.record?.status, title: b.record?.title, content: b.record?.content },
+          status: b.node?.status,
+          source: b.node?.source,
+          contributor: p3Actor(b.node?.contributor),
+          provenance: {
+            contributor: { actor: p3Actor(pv.contributor), at: pv.contributor?.at },
+            reviewers: (pv.reviewers ?? []).map((r) => ({ action: r.action, actor: p3Actor(r.actor), at: r.at, related: r.relatedRecordId })),
+            extraction: (pv.extraction?.facts ?? []).map((x) => ({ factId: x.id, recordId: x.recordId, contributor: x.contributorAgentId ?? x.contributorUserId, actor: "engine" })),
+          },
+          edges: (b.edges ?? []).map((e) => e.id),
+          raw: b,
+        },
+      };
+    },
+    async edge(headers, edgeId) {
+      const res = translateResult(await route("edge", { id: encodeURIComponent(edgeIdFor(edgeId)), headers: mapHeaders(headers) }));
+      return res.status === 200 ? { status: 200, body: { ...p3Edge(res.body.edge), meaning: res.body.meaning, raw: res.body } } : res;
+    },
+    async activity(headers, f) {
+      const items = [];
+      let cursor;
+      for (let page = 0; page < 20; page++) {
+        const res = await phase3View("activity", headers, { ...f, limit: 200, cursor });
+        if (res.status !== 200) return res;
+        items.push(...(res.body.items ?? []));
+        cursor = res.body.nextCursor;
+        if (!cursor) break;
+      }
+      return { status: 200, body: { items: items.map(p3Activity), raw: items } };
+    },
+    async counts(headers, f) {
+      const res = await phase3View("counts", headers, { from: f.from, to: f.to });
+      return res.status === 200
+        ? { status: 200, body: { agents: (res.body.contributors ?? []).map((c) => ({ agent: p3Actor(c.contributor), contributions: c.contributionCount })), raw: res.body } }
+        : res;
     },
     async reviewQueue() {
       const res = await route("conflicts", {});

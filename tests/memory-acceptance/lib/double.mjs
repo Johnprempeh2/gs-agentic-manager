@@ -6,6 +6,7 @@
 // Each FAULT switches one control off. The runner's self-test shows every
 // fault turns at least one acceptance test red, so a green run means something.
 
+import { PHASE3_FAULTS, phase3Views } from "./double-graph.mjs";
 import { grantedScopes, identity as findIdentity, scope as findScope } from "./fixtures.mjs";
 
 export const FAULTS = {
@@ -35,6 +36,7 @@ export const FAULTS = {
   "steward-skip-missed-day": "Steward starts from today after a missed day and drops the missed entries",
   "delete-leaves-engine": "Delete tombstones the gateway record but leaves engine documents and memory units",
   "delete-no-tombstone": "Delete removes the gateway record entirely (no tombstone)",
+  ...PHASE3_FAULTS,
 };
 
 // Scope kinds a bare recall never crosses (GRE-869, gateway service.ts isHardBoundary).
@@ -127,6 +129,8 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
     documents: [],
     llm_requests: [],
     traces: [],
+    // Extracted facts, linked to the record and contributor (plan 8.5, `memory_extracted_facts`).
+    facts: [],
     bankConfig: Object.fromEntries(
       world.scopes.map((s) => [s.bank, { memoryDefense: "block" }]).concat([["company", { memoryDefense: "block" }]]),
     ),
@@ -167,7 +171,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
   }
 
   function addRecord(fields) {
-    const rec = { key: `MR-${nextId++}`, seq: ++recSeq, version: 1, flags: [], createdAt: Date.now(), ...fields };
+    const rec = { key: `MR-${nextId++}`, seq: ++recSeq, version: 1, flags: [], createdAt: Date.now(), at: new Date().toISOString(), ...fields };
     records.push(rec);
     byName.set(rec.id, rec);
     storeInEngine(rec);
@@ -177,6 +181,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
   function storeInEngine(rec) {
     engine.documents.push({ key: rec.key, bank: findScope(world, rec.scope)?.bank, text: rec.text });
     engine.memory_units.push({ key: rec.key, text: rec.text });
+    engine.facts.push({ factId: `F-${rec.key}`, engineUnitId: rec.key, recordKey: rec.key, recordId: rec.id, contributor: rec.contributor });
     if (on.has("redaction-off")) engine.llm_requests.push({ key: rec.key, input: rec.text });
     if (on.has("extra-egress")) egress.push({ host: "telemetry.example.invalid" });
   }
@@ -323,6 +328,10 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
       effectiveFrom: body.effectiveFrom ?? null,
       evidence: body.evidence ?? null,
       flags,
+      title: body.title ?? null,
+      entities: body.entities ?? [],
+      topics: body.topics ?? [],
+      source: body.source ?? null,
     });
     event(rec, "contributed", contributor);
     for (const c of conflicts) {
@@ -347,6 +356,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
       writeAudit({ actor, op: "approve", scopes: [], decision: "denied", reason: "not_found", recordId: name });
       return NOT_FOUND;
     }
+    if (body.action === "dispute") return dispute(actor, rec, body);
     if (body.action !== "approve") return { status: 400, body: { error: "unsupported_action" } };
     let reason = null;
     if (!on.has("self-approval-allowed") && rec.contributor === actor) reason = "self_approval: the approver is the record's contributor";
@@ -389,7 +399,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
     next.approval = { id: `APR-${next.seq}`, approver: actor, reason: body.reason ?? null };
     event(old, "superseded_by", actor, { by: next.id, reason: body.reason ?? null });
     event(next, "supersede", actor, { replaces: old.id, reason: body.reason ?? null });
-    relationships.push({ type: "supersedes", fromKey: next.key, from: next.id, to: old.id, author: actor, scope: old.scope });
+    relationships.push({ id: `SUP-${next.id}`, type: "supersedes", fromKey: next.key, from: next.id, to: old.id, author: actor, scope: old.scope, at: new Date().toISOString() });
     if (!on.has("supersede-as-conflict")) {
       // The supersession settles the conflict between the two decisions.
       for (const item of queue.filter((q) => q.kind === "conflict" && q.approvedKey === old.key)) item.records = item.records.filter((n) => n !== next.id);
@@ -414,7 +424,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
       return { status: 403, body: { error: "forbidden" } };
     }
     if (!on.has("delete-leaves-engine")) {
-      for (const store of [engine.documents, engine.memory_units, engine.llm_requests]) {
+      for (const store of [engine.documents, engine.memory_units, engine.llm_requests, engine.facts]) {
         for (let i = store.length - 1; i >= 0; i--) if (store[i].key === rec.key) store.splice(i, 1);
       }
     }
@@ -429,6 +439,35 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
     event(rec, "deleted", actor);
     writeAudit({ actor, op: "delete", scopes: [rec.scope], decision: "allowed", recordId: rec.id });
     return { status: 200, body: { id: name, status: "deleted" } };
+  }
+
+  // Phase 2 dispute: anyone with the right to review may dispute, the contributor included (G1 decision 6).
+  function dispute(actor, rec, body) {
+    if (!canApprove(actor, rec.scope)) {
+      writeAudit({ actor, op: "dispute", scopes: [rec.scope], decision: "denied", reason: "no_review_right", recordId: rec.id });
+      return { status: 403, body: { error: "forbidden", reason: "no_review_right" } };
+    }
+    if (["superseded", "deleted", "disputed"].includes(rec.status)) return { status: 409, body: { error: "conflict" } };
+    rec.status = "disputed";
+    event(rec, "disputed", actor, { reason: body.reason ?? null });
+    writeAudit({ actor, op: "dispute", scopes: [rec.scope], decision: "allowed", recordId: rec.id });
+    return { status: 200, body: { record: publicRecord(rec) } };
+  }
+
+  // Stated relationships (GRE-886): both ends in one scope, author needs contribute there.
+  function createRelationship(headers, body = {}) {
+    const auth = authenticate(headers);
+    if (auth.error) return auth.error;
+    const { actor } = auth;
+    const from = live(body.from);
+    const to = live(body.to);
+    if (!from || !to || !readable(actor).includes(from.scope) || !readable(actor).includes(to.scope)) return NOT_FOUND;
+    if (from.scope !== to.scope) return { status: 400, body: { error: "cross_scope" } };
+    if (!grantedScopes(world, actor, "contribute").includes(from.scope)) return { status: 403, body: { error: "forbidden", reason: "no_contribute_right" } };
+    const rel = { id: body.id ?? `REL-${relationships.length + 1}`, type: body.type, fromKey: from.key, from: from.id, to: to.id, author: actor, scope: from.scope, source: body.source ?? null, note: body.note ?? null, at: new Date().toISOString() };
+    relationships.push(rel);
+    writeAudit({ actor, op: "relationship_create", scopes: [from.scope], decision: "allowed", recordId: from.id });
+    return { status: 201, body: { id: rel.id, type: rel.type, from: rel.from, to: rel.to } };
   }
 
   function getRecord(headers, name) {
@@ -517,8 +556,36 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
     },
     async seed(items) {
       // Like the gsam target: ag-scribe-syn writes the phase 1 records as observations.
-      for (const r of items) addRecord({ id: r.id, scope: r.scope, status: "observation", contributor: "ag-scribe-syn", text: r.text });
+      for (const r of items) addRecord({ id: r.id, scope: r.scope, status: "observation", contributor: "ag-scribe-syn", text: r.text, entities: r.entities ?? [], topics: r.topics ?? [] });
     },
+    async createRelationship(headers, body) {
+      return createRelationship(lower(headers), body);
+    },
+    /** Sandbox only: move contribution, review and relationship times into the fixture's past. */
+    async backdate({ records: recs = {}, events: evs = [], relationships: rels = {} }) {
+      for (const [name, at] of Object.entries(recs)) {
+        const rec = byName.get(name);
+        if (rec) rec.at = at;
+        for (const e of events) if (rec && e.key === rec.key && e.type === "contributed") e.at = at;
+      }
+      for (const { record: name, type, at } of evs) {
+        const rec = byName.get(name);
+        for (const e of events) if (rec && e.key === rec.key && e.type === type) e.at = at;
+      }
+      for (const [id, at] of Object.entries(rels)) for (const r of relationships) if (r.id === id) r.at = at;
+      return { ok: true };
+    },
+    ...phase3Views({
+      on,
+      records,
+      byName,
+      events,
+      relationships,
+      engine,
+      readable,
+      authenticate,
+      lower,
+    }),
     tokenFor(id) {
       return `tok-${id}`;
     },

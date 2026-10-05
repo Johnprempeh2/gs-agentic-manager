@@ -580,6 +580,16 @@ export const queryKeys = {
     overview: (companyId: string) =>
       ["budgets", "overview", companyId] as const,
   },
+  memoryGraph: {
+    graph: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-graph", companyId, "graph", filters] as const,
+    node: (companyId: string, recordId: string) => ["memory-graph", companyId, "node", recordId] as const,
+    edge: (companyId: string, edgeId: string) => ["memory-graph", companyId, "edge", edgeId] as const,
+    activity: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-graph", companyId, "activity", filters] as const,
+    activityCounts: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-graph", companyId, "activity-counts", filters] as const,
+  },
   approvals: {
     list: (companyId: string, status?: string) =>
       ["approvals", companyId, status] as const,

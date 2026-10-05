@@ -147,6 +147,22 @@ signing helper that agents cannot read.
   with `{"dryRun": true, "withinDays": 14}` lists what falls due soon; `{"dryRun": false}` deletes what is due. Owner or
   `memory:admin` only. Backups follow the 90-day rule below.
 
+## Graph and contribution activity (GRE-864)
+
+Read-only routes under `/api/companies/:id/memory`; types in `packages/shared/src/memory.ts`.
+
+- `GET .../graph` lists records the caller may read (never deleted ones) and the edges between them. Edges come only
+  from stored rows: stated relationships and supersession (`explicit`), and open conflicts from the contribution check
+  (`inferred`). An edge is returned only when both ends are in the result. Engine entity links are not stored in GSAM,
+  so they are not edges.
+- `GET .../graph/nodes/:recordId` and `GET .../graph/edges/:edgeId` give detail and provenance. Contributor, reviewers
+  and the conflict check or engine extraction are kept as separate roles.
+- `GET .../activity` lists contributions newest first, with review history; `GET .../activity/counts` counts them per
+  contributor with the same filters, so a drill-down returns the same records. Counts are activity, not quality.
+- Filters: `agentId`, `userId`, `scopeId`, `projectId`, `status`, `q`, and for activity `from` / `to` (`to` exclusive).
+- Every query starts from the scopes the caller may read. Hidden records add no node, edge, label, count or feed row;
+  a hidden or missing record or edge is the same 404.
+
 ## Steward daily review (GRE-887)
 
 - One pass a day reads records changed since a durable cursor (`memory_steward_cursors`) and writes findings to the
