@@ -158,7 +158,8 @@ export function createLiveTarget(cfg) {
       return cfg.identities?.[id]?.token ?? `missing-token-${id}`;
     },
     async recall(headers, body) {
-      return http(route("recall"), { method: "POST", headers: mapRunHeader(headers), body });
+      const { bare, ...rest } = body; // a bare recall is simply one with no scope named
+      return http(route("recall"), { method: "POST", headers: mapRunHeader(headers), body: rest });
     },
     async contribute(headers, body) {
       return http(route("contribute"), { method: "POST", headers: mapRunHeader(headers), body });

@@ -49,6 +49,8 @@ const EXPECTED_RED = {
   "audit-off": ["MT-01", "MT-02", "MT-03", "MT-04", "MT-05", "MT-06", "MT-12"],
   // Zero results from a recall that never searched must not count as isolation.
   "recall-unavailable": ["MT-01", "MT-03", "MT-04", "MT-05"],
+  // A recall with no scope named must not reach any client scope.
+  "bare-recall-crosses-clients": ["MT-01"],
 };
 
 test("every fault is covered by an expectation", () => {

@@ -5,7 +5,7 @@
 // "Inconclusive" means the target could not produce the evidence the test
 // needs (for example no egress log). It is never counted as a pass.
 
-import { d7Items, record } from "./fixtures.mjs";
+import { d7Items, grantedScopes, loadFixtures, record } from "./fixtures.mjs";
 
 export const PHASE1_SEED = ["R-301", "R-302", "R-303"];
 
@@ -41,11 +41,6 @@ function denied(res) {
   return res.status === 401 || res.status === 403 || res.status === 404;
 }
 
-function noneOf(haystack, needles) {
-  const s = JSON.stringify(haystack);
-  return needles.every((n) => !s.includes(n));
-}
-
 async function withAudit(target, fn) {
   const cursor = await target.auditCursor();
   const out = await fn();
@@ -57,30 +52,88 @@ function auditHas(audit, match) {
   return audit.some((row) => Object.entries(match).every(([k, v]) => (typeof v === "function" ? v(row[k], row) : row[k] === v)));
 }
 
+// Pass rule for MT-01, MT-03 and MT-04 (Everest, GRE-869): the response holds
+// no record, record id, client name or code name from a scope the caller may
+// not read. Semantic recall also returns weak hits from the caller's own
+// scopes; those are allowed. Each test keeps its forbidden list explicit.
+const FORBIDDEN = {
+  // Lintel reads cl-brook and org.
+  "ag-lintel-syn": ["R-301", "31 March", "cl-alder", "Alder Bakery", "R-303", "HERON", "pj-kestrel-acq", "Internal acquisition review", "pj-alder-site", "Alder website rebuild"],
+  // Mason reads cl-alder and org.
+  "ag-mason-syn": ["R-302", "30 September", "cl-brook", "Brookfield Dental", "R-303", "HERON", "pj-kestrel-acq", "Internal acquisition review", "pj-alder-site", "Alder website rebuild"],
+  // Everest reads org and pj-alder-site, so "Alder website rebuild" is allowed.
+  "ag-everest-syn": ["R-301", "31 March", "cl-alder", "Alder Bakery", "R-302", "30 September", "cl-brook", "Brookfield Dental", "R-303", "HERON", "pj-kestrel-acq", "Internal acquisition review"],
+};
+
+// Alder data for MT-02: any record, id or name.
+const ALDER = ["R-301", "31 March", "cl-alder", "Alder Bakery"];
+
+function leaked(haystack, needles) {
+  const s = JSON.stringify(haystack);
+  return needles.filter((n) => s.includes(n));
+}
+
+function hitScopes(res) {
+  return (res.body?.results ?? []).map((r) => r.scope);
+}
+
+// No hit may come from a fixture scope the caller has no read grant on.
+function unreadableHits(res, identityId) {
+  const readable = grantedScopes(worldRef, identityId, "read");
+  const fixtureScopes = worldRef.scopes.map((s) => s.id);
+  return (res.body?.results ?? []).filter((r) => fixtureScopes.includes(r.scope) && !readable.includes(r.scope)).map((r) => `${r.id}@${r.scope}`);
+}
+
+function isolationChecks(checks, res, identityId, what) {
+  const found = leaked(res.body, FORBIDDEN[identityId]);
+  check(checks, found.length === 0, `${what}: no record, id or name from a scope ${identityId} may not read${found.length ? ` (found ${JSON.stringify(found)})` : ""}`);
+  const bad = unreadableHits(res, identityId);
+  check(checks, bad.length === 0, `${what}: every hit is from a scope ${identityId} may read (hits ${JSON.stringify(resultIds(res))}${bad.length ? `, unreadable ${JSON.stringify(bad)}` : ""})`);
+}
+
+function clientScopes() {
+  return worldRef.scopes.filter((s) => s.kind === "client");
+}
+
 export const TESTS = [
   {
     id: "MT-01",
     threat: "T1 cross-client read",
-    title: "Lintel recalls 'contract renewal date' and sees only Brookfield",
+    title: "Lintel recalls 'contract renewal date': Brookfield yes, Alder never; bare recall reaches no client",
     async run(target) {
       const lintel = client(target, "ag-lintel-syn");
-      const { out: res, audit } = await withAudit(target, () => lintel.recall({ query: "contract renewal date" }));
+      const { out, audit } = await withAudit(target, async () => ({
+        named: await lintel.recall({ query: "contract renewal date" }),
+        // Bare recall: no scope named at all. By design it never crosses a client boundary (GRE-869).
+        bare: await lintel.recall({ query: "contract renewal date", bare: true }),
+      }));
+      const res = out.named;
       const checks = [];
       check(checks, searched(res), `recall answered 200 and searched (got ${res.status}${res.body?.available === false ? ", memory unavailable" : ""})`);
-      check(checks, JSON.stringify(resultIds(res)) === JSON.stringify(["R-302"]), `only R-302 returned (got ${JSON.stringify(resultIds(res))})`);
-      check(checks, noneOf(res.body, ["R-301", record(scenariosRef, "R-301").text, "31 March", "cl-alder"]), "no R-301 id, text, scope or count in the response");
+      check(checks, resultIds(res).includes("R-302"), `R-302 (Lintel's own client) is among the results (got ${JSON.stringify(resultIds(res))})`);
+      isolationChecks(checks, res, "ag-lintel-syn", "recall naming every visible scope");
+      const clients = clientScopes();
+      const clientData = clients.flatMap((s) => [s.id, s.name]).concat(["R-301", "R-302", "31 March", "30 September"]);
+      const bareLeak = leaked(out.bare.body, clientData);
+      const bareClientHits = hitScopes(out.bare).filter((sc) => clients.some((c) => c.id === sc));
+      check(checks, searched(out.bare), `bare recall answered 200 and searched (got ${out.bare.status}${out.bare.body?.available === false ? ", memory unavailable" : ""})`);
+      check(
+        checks,
+        bareLeak.length === 0 && bareClientHits.length === 0,
+        `bare recall (no scope named) returns nothing from any client scope (hits ${JSON.stringify(resultIds(out.bare))}${bareLeak.length ? `, found ${JSON.stringify(bareLeak)}` : ""})`,
+      );
       check(
         checks,
         auditHas(audit, { actor: "ag-lintel-syn", op: "recall", decision: "allowed", scopes: (s) => s?.includes("cl-brook") && !s.includes("cl-alder") }),
         "audit row: ag-lintel-syn recall allowed, scope includes cl-brook and not cl-alder",
       );
-      return { checks, observed: res, audit };
+      return { checks, observed: out, audit };
     },
   },
   {
     id: "MT-02",
     threat: "T1 cross-client read",
-    title: "Lintel asks for cl-alder explicitly (body and X-Bank-Id) and is denied like 'not found'",
+    title: "Lintel names cl-alder (body: denied like 'not found'; X-Bank-Id: 200 or denial, never Alder data)",
     async run(target) {
       const lintel = client(target, "ag-lintel-syn");
       const { out, audit } = await withAudit(target, async () => ({
@@ -90,25 +143,35 @@ export const TESTS = [
       }));
       const checks = [];
       check(checks, denied(out.body), `body client=cl-alder denied (got ${out.body.status})`);
-      check(checks, denied(out.header), `header X-Bank-Id: cl-alder denied (got ${out.header.status})`);
       check(
         checks,
         out.body.status === out.missing.status && JSON.stringify(out.body.body) === JSON.stringify(out.missing.body),
         "denial is identical to the response for a scope that does not exist",
       );
-      check(checks, noneOf([out.body.body, out.header.body], ["R-301", "31 March"]), "no cl-alder data in either denial");
+      // GRE-869: the gateway takes scope from the caller's identity, never from a
+      // header. Ignoring the header (200) or refusing the request both pass.
+      const headerStatus = out.header.status;
+      const headerHow = headerStatus === 200 ? "header ignored" : denied(out.header) ? "denied" : "unexpected status";
+      check(checks, headerStatus === 200 || denied(out.header), `X-Bank-Id: cl-alder answered 200 or a denial (got ${headerStatus}, ${headerHow})`);
+      const found = leaked([out.body.body, out.header.body], ALDER);
+      check(checks, found.length === 0, `no Alder data (record, id or name) in the body or X-Bank-Id response${found.length ? ` (found ${JSON.stringify(found)})` : ""}`);
       check(
         checks,
         audit.filter((r) => r.actor === "ag-lintel-syn" && r.decision === "denied").length >= 2,
-        "audit rows: both ag-lintel-syn attempts recorded as denied",
+        "audit rows: the cl-alder and missing-scope attempts recorded as denied for ag-lintel-syn",
       );
-      return { checks, observed: out, audit };
+      check(
+        checks,
+        !auditHas(audit, { actor: "ag-lintel-syn", decision: "allowed", scopes: (s) => Array.isArray(s) && s.includes("cl-alder") }),
+        "audit: no allowed ag-lintel-syn row searched cl-alder",
+      );
+      return { checks, observed: out, audit, headerStatus };
     },
   },
   {
     id: "MT-03",
     threat: "T2 cross-project read",
-    title: "Mason (org read) recalls 'HERON' and 'acquisition' and gets nothing",
+    title: "Mason (org and cl-alder read) recalls 'HERON' and 'acquisition' and gets nothing of pj-kestrel-acq",
     async run(target) {
       const mason = client(target, "ag-mason-syn");
       const { out, audit } = await withAudit(target, async () => ({
@@ -117,9 +180,8 @@ export const TESTS = [
       }));
       const checks = [];
       check(checks, searched(out.heron) && searched(out.acquisition), "both recalls searched (not 'memory unavailable')");
-      check(checks, out.heron.status === 200 && resultIds(out.heron).length === 0, `'HERON' returns zero results (got ${JSON.stringify(resultIds(out.heron))})`);
-      check(checks, out.acquisition.status === 200 && resultIds(out.acquisition).length === 0, `'acquisition' returns zero results (got ${JSON.stringify(resultIds(out.acquisition))})`);
-      check(checks, noneOf(out, ["HERON", "R-303", "pj-kestrel-acq"]), "no hint that pj-kestrel-acq exists");
+      isolationChecks(checks, out.heron, "ag-mason-syn", "'HERON'");
+      isolationChecks(checks, out.acquisition, "ag-mason-syn", "'acquisition'");
       check(
         checks,
         audit.filter((r) => r.actor === "ag-mason-syn" && r.op === "recall" && !r.scopes?.includes("pj-kestrel-acq")).length >= 2,
@@ -131,14 +193,13 @@ export const TESTS = [
   {
     id: "MT-04",
     threat: "T2 cross-project read",
-    title: "Everest (org read, no grant on the sensitive project) recalls 'acquisition target' and gets nothing",
+    title: "Everest (org read, no grant on the sensitive project) recalls 'acquisition target' and gets nothing of it",
     async run(target) {
       const everest = client(target, "ag-everest-syn");
       const { out: res, audit } = await withAudit(target, () => everest.recall({ query: "acquisition target" }));
       const checks = [];
-      check(checks, searched(res), "recall searched (not 'memory unavailable')");
-      check(checks, res.status === 200 && resultIds(res).length === 0, `zero results (got ${res.status} ${JSON.stringify(resultIds(res))})`);
-      check(checks, noneOf(res.body, ["HERON", "R-303", "pj-kestrel-acq"]), "no sensitive-project data or name");
+      check(checks, searched(res), `recall searched (got ${res.status}${res.body?.available === false ? ", memory unavailable" : ""})`);
+      isolationChecks(checks, res, "ag-everest-syn", "'acquisition target'");
       check(
         checks,
         auditHas(audit, { actor: "ag-everest-syn", op: "recall", scopes: (s) => Array.isArray(s) && !s.includes("pj-kestrel-acq") }),
@@ -297,8 +358,9 @@ export const TESTS = [
   },
 ];
 
-// Set by runAll so tests can read fixture text without threading it through.
+// Set by runAll so tests can read fixture text and grants without threading them through.
 let scenariosRef = null;
+let worldRef = null;
 
 function refusedOr401(p) {
   return !p.reached || p.status === 401 || p.status === 403;
@@ -323,8 +385,9 @@ function redactAuditRow(items) {
   };
 }
 
-export async function runAll(target, { scenarios, only } = {}) {
+export async function runAll(target, { scenarios, world, only } = {}) {
   scenariosRef = scenarios;
+  worldRef = world ?? loadFixtures().world;
   const pre = await target.preflight();
   await target.seed(PHASE1_SEED.map((id) => record(scenarios, id)));
   const results = [];

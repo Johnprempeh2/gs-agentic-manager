@@ -88,8 +88,9 @@ How fixture calls become gateway calls:
 | grant `read` / `contribute` on scopes | `memory:read` / `memory:contribute` with `memoryScopeIds` |
 | grant `approve`, scoped `administer` | not mapped: phase 2, and `memory:admin` is company-wide (listed in the preflight line) |
 | recall with `client` / `scope` | `scopeIds: [that scope]`, or an id that does not exist |
-| recall with no scope | `scopeIds` = every scope the caller lists from `GET …/memory/scopes` (bare recall skips client scopes by design) |
-| `X-Bank-Id` header | sent as is |
+| recall with no scope | `scopeIds` = every scope the caller lists from `GET …/memory/scopes` |
+| bare recall (`bare: true`, MT-01) | no `scopeIds`; the gateway then skips client and restricted-project scopes by design (GRE-869) |
+| `X-Bank-Id` header | sent as is (the gateway ignores it) |
 
 `--prime-org` adds one neutral synthetic org record before the tests so the
 company bank exists. It is a diagnostic, not an acceptance run.
@@ -106,7 +107,12 @@ to an engine that is not running proves nothing, so they are inconclusive
 unless the engine is confirmed up (gateway health route on `live`, the
 engine's own `/health` plus a successful seed on `gsam`).
 
-Zero results only prove isolation if the recall really searched. A recall the
+MT-01, MT-03 and MT-04 pass when the response holds no record, record id,
+client name or code name from a scope the caller may not read (GRE-869).
+Semantic recall also returns weak hits from the caller's own scopes; those are
+allowed. Each test lists its forbidden strings explicitly in `lib/tests.mjs`.
+
+Isolation only counts if the recall really searched. A recall the
 gateway answers with "memory unavailable" fails MT-01, MT-03 and MT-04.
 
 Gateway tests (MT-01 to MT-06, MT-12) also check the gateway audit rows. Direct
@@ -115,10 +121,10 @@ probe result and the admin read-back. MT-31 uses the egress log.
 
 | Test | Threat | Fixture | What it checks |
 |---|---|---|---|
-| MT-01 | T1 cross-client | D3 | `ag-lintel-syn` recall sees only `R-302`, nothing of `cl-alder` |
-| MT-02 | T1 cross-client | D3 | explicit `cl-alder` (body and `X-Bank-Id`) denied, same as "not found" |
-| MT-03 | T2 cross-project | D3 | `ag-mason-syn` finds nothing of `pj-kestrel-acq` |
-| MT-04 | T2 cross-project | D3 | org-wide read (`ag-everest-syn`) does not include the sensitive project |
+| MT-01 | T1 cross-client | D3 | `ag-lintel-syn` recall returns `R-302` and nothing from a scope it may not read; a bare recall returns nothing from any client scope |
+| MT-02 | T1 cross-client | D3 | body `cl-alder` denied, same as "not found"; `X-Bank-Id: cl-alder` answers 200 or a denial, never Alder data |
+| MT-03 | T2 cross-project | D3 | `ag-mason-syn` gets nothing from `pj-kestrel-acq` or `cl-brook` (own `cl-alder` and org hits allowed) |
+| MT-04 | T2 cross-project | D3 | org-wide read (`ag-everest-syn`) gets nothing from the sensitive project or any client |
 | MT-05 | T3 forged identity | — | `actingAgentId: hu-john-syn` in the body is ignored or rejected |
 | MT-06 | T3 forged identity | — | another agent's run id and an expired run are rejected |
 | MT-07 | T4 engine bypass | — | engine REST recall and retain without the key are refused |
