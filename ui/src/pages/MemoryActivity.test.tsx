@@ -15,6 +15,7 @@ import {
 } from "@greatstone/shared";
 import { ApiError } from "../api/client";
 import { kestrelAgents, kestrelGraph, kestrelNodes } from "../fixtures/memoryKestrel";
+import { APPROVED_MEANING } from "../components/memory/memoryLabels";
 import { MemoryActivity, groupActivity, toActivityQuery } from "./MemoryActivity";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -147,13 +148,24 @@ afterEach(() => {
 });
 
 describe("Memory contributions view", () => {
-  it("labels counts as activity and keeps the server's name order, not a ranking", async () => {
+  it("labels counts as activity and lists them in name order whatever the server sends, not a ranking", async () => {
+    const boardMember = { actorType: "user" as const, agentId: null, userId: "user-1", name: null };
+    memoryApiMock.activityCounts.mockResolvedValue({
+      ...counts,
+      contributors: [
+        counts.contributors[1],
+        counts.contributors[2],
+        { ...counts.contributors[0], contributor: boardMember },
+        counts.contributors[0],
+      ],
+    });
     await renderAt("/memory/activity");
 
     expect(text()).toContain("Activity by contributor");
     expect(text()).toContain(MEMORY_ACTIVITY_NOTE);
+    expect(text()).toContain(APPROVED_MEANING);
     const names = Array.from(container.querySelectorAll("tbody th")).map((cell) => cell.textContent);
-    expect(names).toEqual(["Everest (synthetic)", "Mason (synthetic)", "Scribe (synthetic)"]);
+    expect(names).toEqual(["A board member", "Everest (synthetic)", "Mason (synthetic)", "Scribe (synthetic)"]);
     expect(text().replace(MEMORY_ACTIVITY_NOTE, "")).not.toMatch(/\b(rank|score|top contributor|best|leader)/i);
   });
 

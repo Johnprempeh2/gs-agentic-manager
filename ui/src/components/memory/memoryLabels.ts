@@ -11,7 +11,7 @@ import { AlertTriangle, CheckCircle2, CircleDashed, History, Trash2, type Lucide
 /** Plain words for each review state. Icon + text, so state never rests on colour alone. */
 export const memoryStatusMeta: Record<MemoryRecordStatus, { label: string; icon: LucideIcon; hint: string }> = {
   unreviewed: { label: "Unreviewed", icon: CircleDashed, hint: "Not yet checked by a reviewer." },
-  approved: { label: "Approved", icon: CheckCircle2, hint: "A reviewer approved it." },
+  approved: { label: "Approved", icon: CheckCircle2, hint: "A reviewer accepted it into shared memory. This is not independent verification." },
   disputed: { label: "Disputed", icon: AlertTriangle, hint: "A reviewer disputed it." },
   superseded: { label: "Superseded", icon: History, hint: "A newer entry replaces it." },
   deleted: { label: "Deleted", icon: Trash2, hint: "Removed; only the history is kept." },
@@ -35,6 +35,9 @@ export const scopeKindLabel: Record<MemoryScopeKind, string> = {
   client: "Client",
   agent: "Agent",
 };
+
+/** "Approved" is a workflow state; say so wherever the word sits beside facts (GRE-911). */
+export const APPROVED_MEANING = "Approved means accepted into shared memory; it is not independent verification.";
 
 export const EDGE_KIND_LABEL = {
   explicit: "Stated link",

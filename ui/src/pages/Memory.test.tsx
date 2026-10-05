@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryGraphEdgeDetail, MemoryGraphNodeDetail } from "@greatstone/shared";
 import { ApiError } from "../api/client";
 import { kestrelAgents, kestrelEdges, kestrelGraph, kestrelNodes } from "../fixtures/memoryKestrel";
-import { edgeTypeLabel } from "../components/memory/memoryLabels";
+import { APPROVED_MEANING, edgeTypeLabel } from "../components/memory/memoryLabels";
 import { Memory } from "./Memory";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -164,6 +164,7 @@ describe("Memory page", () => {
     expect(inferred.getAttribute("marker-end")).toBeNull();
     expect(explicit.getAttribute("stroke-dasharray")).toBeNull();
     expect(explicit.getAttribute("marker-end")).toMatch(/^url\(#memory-arrow-/);
+    expect(container.querySelector("figcaption")?.textContent).toContain(APPROVED_MEANING);
   });
 
   it("passes filters from the URL to the server and does not filter on the client", async () => {

@@ -1,8 +1,9 @@
-import { useId, useMemo, type KeyboardEvent } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Move } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { layoutMemoryGraph } from "@/lib/memory-graph-layout";
 import type { MemoryGraphEdge, MemoryGraphNode, MemoryRecordStatus } from "@greatstone/shared";
-import { EDGE_KIND_LABEL, edgeLabel, memoryStatusMeta } from "./memoryLabels";
+import { APPROVED_MEANING, EDGE_KIND_LABEL, edgeLabel, memoryStatusMeta } from "./memoryLabels";
 import { nodeHeading } from "./MemoryRecordList";
 
 const NODE_RADIUS = 11;
@@ -66,16 +67,37 @@ export function MemoryGraphCanvas({ nodes, edges, selectedNodeId, selectedEdgeId
   const height = Math.max(layout.height + 24, MIN_HEIGHT);
   const offsetX = (width - layout.width) / 2;
   const offsetY = (height - layout.height) / 2;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+
+  // On a narrow screen the graph scrolls sideways: start at its centre, not its left edge, and say it can move.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setOverflows(el.scrollWidth > el.clientWidth + 1);
+    el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [width, height]);
 
   return (
     <figure className="space-y-2 rounded-lg border border-border bg-card p-2">
-      <div className="overflow-x-auto">
+      {overflows ? (
+        <p className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+          <Move className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          Drag sideways to explore · tap an entry for details
+        </p>
+      ) : null}
+      <div ref={scrollRef} className="overflow-x-auto">
       <svg
         role="group"
         aria-label="Memory graph. Use Tab to move between records and connections; Enter selects."
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="xMidYMid meet"
-        className="h-(--sz-memory-graph-height) w-full min-w-(--sz-memory-graph-min-width)"
+        className="h-(--sz-memory-graph-height-phone) w-full min-w-(--sz-memory-graph-min-width) md:h-(--sz-memory-graph-height)"
       >
         <g transform={`translate(${offsetX} ${offsetY})`}>
         <defs>
@@ -199,6 +221,7 @@ export function MemoryGraphLegend() {
         <span aria-hidden="true" className="inline-block w-5 border-t-2 border-dashed border-muted-foreground" />
         {EDGE_KIND_LABEL.inferred} (a lead, not proof)
       </span>
+      <span className="basis-full">{APPROVED_MEANING}</span>
     </figcaption>
   );
 }

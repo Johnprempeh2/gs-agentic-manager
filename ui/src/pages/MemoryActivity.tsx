@@ -25,7 +25,7 @@ import { MemoryFilterBar, type MemoryCommonFilters } from "../components/memory/
 import { MemoryPageHeader } from "../components/memory/MemoryPageHeader";
 import { MemoryStatusBadge } from "../components/memory/MemoryStatusBadge";
 import { MemorySourceLink } from "../components/memory/MemoryDetailPanel";
-import { actorLabel, memoryStatusMeta } from "../components/memory/memoryLabels";
+import { APPROVED_MEANING, actorLabel, memoryStatusMeta } from "../components/memory/memoryLabels";
 import { isMemoryDisabled } from "./Memory";
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -88,6 +88,13 @@ export function groupActivity(items: MemoryActivityItem[], groupBy: GroupBy) {
     : list.sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** Rows in name order whatever order the gateway returns, so counts never read as a ranking. */
+export function sortContributorsByName(contributors: MemoryContributorActivity[]) {
+  return [...contributors].sort((a, b) =>
+    actorLabel(a.contributor).localeCompare(actorLabel(b.contributor), undefined, { sensitivity: "base" }),
+  );
+}
+
 function ActivityCounts({
   contributors,
   note,
@@ -104,6 +111,7 @@ function ActivityCounts({
       <div className="space-y-0.5 border-b border-border px-3 py-2">
         <h2 id="memory-activity-counts" className="text-sm font-semibold">Activity by contributor</h2>
         <p className="text-xs text-muted-foreground">{note} Select a name to see the entries.</p>
+        <p className="text-xs text-muted-foreground">{APPROVED_MEANING}</p>
       </div>
       {contributors.length === 0 ? (
         <p className="px-3 py-3 text-sm text-muted-foreground">No activity in this period.</p>
@@ -122,7 +130,7 @@ function ActivityCounts({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {contributors.map((row) => {
+              {sortContributorsByName(contributors).map((row) => {
                 const key = contributorKey(row.contributor);
                 const drillable = row.contributor.actorType !== "system";
                 return (
