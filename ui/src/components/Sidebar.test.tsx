@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { instanceExperimentalSettingsSchema } from "@greatstone/shared";
 import { Sidebar } from "./Sidebar";
+import { Sidebar as ProductionSidebar } from "./Sidebar.production";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const mockHeartbeatsApi = vi.hoisted(() => ({
@@ -19,6 +20,10 @@ const mockDecisionsFeedApi = vi.hoisted(() => ({
 
 const mockInstanceSettingsApi = vi.hoisted(() => ({
   getExperimental: vi.fn(),
+}));
+
+const mockMemoryGraphApi = vi.hoisted(() => ({
+  settings: vi.fn(),
 }));
 
 vi.mock("@/lib/router", () => ({
@@ -79,6 +84,10 @@ vi.mock("../api/instanceSettings", () => ({
   instanceSettingsApi: mockInstanceSettingsApi,
 }));
 
+vi.mock("../api/memoryGraph", () => ({
+  memoryGraphApi: mockMemoryGraphApi,
+}));
+
 vi.mock("../hooks/useInboxBadge", () => ({
   useInboxBadge: () => ({ inbox: 0, failedRuns: 0 }),
 }));
@@ -99,12 +108,24 @@ vi.mock("./SidebarCompanyMenu", () => ({
   SidebarCompanyMenu: () => <div>Company menu</div>,
 }));
 
+vi.mock("./SidebarCompanyMenu.production", () => ({
+  SidebarCompanyMenu: () => <div>Company menu</div>,
+}));
+
 vi.mock("./SidebarAgents", () => ({
   SidebarAgents: ({ streamlined }: { streamlined?: boolean }) => (
     <div data-testid="sidebar-agents" data-streamlined={String(streamlined)}>
       Active agents
     </div>
   ),
+}));
+
+vi.mock("./SidebarAgents.production", () => ({
+  SidebarAgents: () => <div data-testid="sidebar-agents">Active agents</div>,
+}));
+
+vi.mock("./SidebarStarredProjects.production", () => ({
+  SidebarStarredProjects: () => <div data-testid="sidebar-starred-projects" />,
 }));
 
 vi.mock("./SidebarProjects", () => ({
@@ -148,7 +169,7 @@ async function flushReact() {
 describe("Sidebar", () => {
   let container: HTMLDivElement;
 
-  async function renderSidebar() {
+  async function renderSidebar(SidebarComponent: typeof Sidebar = Sidebar) {
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -158,7 +179,7 @@ describe("Sidebar", () => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
-            <Sidebar />
+            <SidebarComponent />
           </TooltipProvider>
         </QueryClientProvider>,
       );
@@ -174,9 +195,18 @@ describe("Sidebar", () => {
     return [...(section?.querySelectorAll("a") ?? [])].map((anchor) => anchor.textContent?.trim());
   }
 
+  function memorySettings(enabled: boolean) {
+    return { companyId: "company-1", enabled, retainMode: "extract", updatedAt: null };
+  }
+
+  function memoryLinks() {
+    return [...container.querySelectorAll('nav a[href="/memory"]')];
+  }
+
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
+    mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(false));
     mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
     mockDecisionsFeedApi.needsMe.mockResolvedValue({
       companyId: "company-1",
@@ -534,6 +564,105 @@ describe("Sidebar", () => {
 
     flushSync(() => {
       root.unmount();
+    });
+  });
+
+  describe("Memory link", () => {
+    it("shows Memory directly below Deliverables when memory is on for the company", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
+      mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(true));
+      const root = await renderSidebar();
+
+      expect(mockMemoryGraphApi.settings).toHaveBeenCalledWith("company-1");
+      expect(memoryLinks()).toHaveLength(1);
+      const link = memoryLinks()[0];
+      expect(link.getAttribute("href")).toBe("/memory");
+      expect(link.textContent?.trim()).toBe("Memory");
+      expect(link.querySelector("svg")?.classList).toContain("lucide-brain");
+      expect(container.querySelector("nav > div:first-child")?.textContent).toBe(
+        "New TaskSearchDeliverablesMemoryEverest",
+      );
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("shows Memory below Deliverables in the legacy layout too", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStreamlinedUi: false });
+      mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(true));
+      const root = await renderSidebar();
+
+      expect(memoryLinks()).toHaveLength(1);
+      expect(container.querySelector("nav > div:first-child")?.textContent).toMatch(
+        /^New TaskSearchDeliverablesMemoryDashboard/,
+      );
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("hides Memory when memory is off for the company", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
+      mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(false));
+      const root = await renderSidebar();
+
+      expect(mockMemoryGraphApi.settings).toHaveBeenCalledWith("company-1");
+      expect(memoryLinks()).toHaveLength(0);
+      expect(container.querySelector("nav > div:first-child")?.textContent).toBe(
+        "New TaskSearchDeliverablesEverest",
+      );
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("hides Memory while the memory settings are loading", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+      mockMemoryGraphApi.settings.mockImplementation(() => new Promise(() => {}));
+      const root = await renderSidebar();
+
+      expect(memoryLinks()).toHaveLength(0);
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("hides Memory when the memory settings cannot be read", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+      mockMemoryGraphApi.settings.mockRejectedValue(new Error("Forbidden"));
+      const root = await renderSidebar();
+
+      expect(memoryLinks()).toHaveLength(0);
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("shows Memory below Deliverables in the production sidebar only while memory is on", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+      mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(true));
+      let root = await renderSidebar(ProductionSidebar);
+
+      expect(memoryLinks()).toHaveLength(1);
+      expect(memoryLinks()[0].getAttribute("href")).toBe("/memory");
+      expect(container.querySelector("nav > div:first-child")?.textContent).toMatch(
+        /^New TaskSearchDeliverablesMemoryDashboard/,
+      );
+      flushSync(() => {
+        root.unmount();
+      });
+
+      mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(false));
+      root = await renderSidebar(ProductionSidebar);
+      expect(memoryLinks()).toHaveLength(0);
+      flushSync(() => {
+        root.unmount();
+      });
     });
   });
 

@@ -580,6 +580,9 @@ export const queryKeys = {
     overview: (companyId: string) =>
       ["budgets", "overview", companyId] as const,
   },
+  memory: {
+    settings: (companyId: string) => ["memory", companyId, "settings"] as const,
+  },
   memoryGraph: {
     graph: (companyId: string, filters: Record<string, string | undefined>) =>
       ["memory-graph", companyId, "graph", filters] as const,
