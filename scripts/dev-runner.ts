@@ -27,7 +27,7 @@ import {
 } from "./dev-runner-process.ts";
 import { collectWatchedSnapshot as collectDevServerWatchedSnapshot, diffSnapshots } from "./dev-runner-snapshot.mjs";
 import { createDevServiceIdentity, repoRoot } from "./dev-service-profile.ts";
-import { scrubAgentRunEnvForServer } from "../packages/shared/src/agent-run-env.ts";
+import { describeAgentRunEnvScrub, scrubAgentRunEnvForServer } from "../packages/shared/src/agent-run-env.ts";
 import { bootstrapDevRunnerWorktreeEnv, shouldBlockDevRunnerForPendingSeed } from "../server/src/dev-runner-worktree.ts";
 import { applySharedRunnerBuildDir } from "../server/src/runner-build-dir.ts";
 import {
@@ -52,13 +52,10 @@ const mode = process.argv[2] === "watch" ? "watch" : "dev";
 // credentials and context before anything reads them or a child inherits them,
 // so neither this server nor what it starts can act on the parent server as
 // that agent. First, so --data-dir and the worktree .env apply on top. The run
-// id stays, so the parent's leftover cleanup still stops this sandbox.
-const agentRunScrub = scrubAgentRunEnvForServer(process.env);
-if (agentRunScrub && agentRunScrub.removed.length > 0) {
-  console.log(
-    `[gsam] started from agent run ${agentRunScrub.runId}: removed ${agentRunScrub.removed.length} of the run's variables (API key, agent, task, workspace, GitHub) from this server's environment; GSAM_RUN_ID stays so the run's cleanup can stop it`,
-  );
-}
+// id stays, so the parent's leftover cleanup still stops this sandbox, and a
+// GSAM_SANDBOX_<NAME> override sets a removed name on purpose.
+const agentRunScrubLine = describeAgentRunEnvScrub(scrubAgentRunEnvForServer(process.env));
+if (agentRunScrubLine) console.log(`[gsam] ${agentRunScrubLine}`);
 
 let cliArgs: string[];
 let dataDir: string | null;

@@ -87,6 +87,19 @@ and records the parent's URL as `GSAM_PARENT_RUN_API_URL`, so the leftover
 cleanup (see "Leftover Run Processes") still stops it. A server started without
 `GSAM_RUN_ID` (live, the preview, client instances) is unchanged.
 
+An inherited value and a deliberate one look the same, so to give the sandbox
+one of the removed names on purpose, set it with a `GSAM_SANDBOX_` prefix:
+
+```sh
+GSAM_SANDBOX_RUNNER_NETWORK_ACCESS=disabled pnpm dev:once --data-dir ./tmp/sandbox
+```
+
+The server then gets `GSAM_RUNNER_NETWORK_ACCESS=disabled`, and no
+`GSAM_SANDBOX_*` name reaches anything the sandbox starts. Credentials and
+tokens (`SANDBOX_OVERRIDE_REFUSED_KEYS`) and the run marker are refused; a name
+the scrub does not remove is ignored (set it directly). The start line lists
+what was applied, refused and ignored.
+
 Issue execution may also use project execution workspace policies and workspace runtime services for per-project worktrees, preview servers, and managed dev commands. Configure those through the project workspace/runtime surfaces rather than starting long-running unmanaged processes when a task needs a reusable service.
 
 ### Mobile-friendly preview (`pnpm dev:mobile`)

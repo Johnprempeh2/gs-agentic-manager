@@ -107,6 +107,20 @@ describe("gsam run inside an agent run", () => {
     expect(seen.atDoctor?.GSAM_COMPANY_ID).toBe("fake-company");
   });
 
+  it("applies a GSAM_SANDBOX_<NAME> override, refuses a credential, and passes neither name on", async () => {
+    enterFakeAgentRun();
+    process.env.GSAM_SANDBOX_TASK_ID = "deliberate-task";
+    process.env.GSAM_SANDBOX_API_KEY = "fake-deliberate-key";
+    await runCommand({ yes: true, skipServiceManagerCheck: true });
+
+    const env = seen.atServerStart!;
+    expect(env.GSAM_TASK_ID).toBe("deliberate-task");
+    expect(env.GSAM_API_KEY).toBeUndefined();
+    expect(env.GSAM_SANDBOX_TASK_ID).toBeUndefined();
+    expect(env.GSAM_SANDBOX_API_KEY).toBeUndefined();
+    expect(env.GSAM_RUN_ID).toBe(RUN);
+  });
+
   it("changes nothing outside an agent run", async () => {
     for (const key of ["GSAM_RUN_ID", toLegacyEnvKey("GSAM_RUN_ID")]) delete process.env[key];
     process.env.GSAM_API_URL = "https://gsam.example.ts.net";

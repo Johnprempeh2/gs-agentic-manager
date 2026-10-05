@@ -25,7 +25,7 @@ import { stdin, stdout } from "node:process";
 import { pathToFileURL } from "node:url";
 import type { Request as ExpressRequest, RequestHandler } from "express";
 import { warnIfUnsupportedNodeVersion } from "@greatstone/shared/node-version";
-import { scrubAgentRunEnvForServer } from "@greatstone/shared/agent-run-env";
+import { describeAgentRunEnvScrub, scrubAgentRunEnvForServer } from "@greatstone/shared/agent-run-env";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
@@ -2294,14 +2294,11 @@ function isMainModule(metaUrl: string): boolean {
 if (isMainModule(import.meta.url)) {
   // Run directly from an agent's shell (`pnpm dev:server`), not through the dev
   // runner or `gsam run`, which already did this: drop the run's identity,
-  // credentials and context, keep its run id (packages/shared/src/agent-run-env.ts).
-  const agentRunScrub = scrubAgentRunEnvForServer(process.env);
-  if (agentRunScrub && agentRunScrub.removed.length > 0) {
-    logger.info(
-      { runId: agentRunScrub.runId, removed: agentRunScrub.removed.length },
-      "started from an agent run: removed the run's variables from the server environment",
-    );
-  }
+  // credentials and context, keep its run id, apply GSAM_SANDBOX_* overrides
+  // (packages/shared/src/agent-run-env.ts). After the dev runner it only keeps
+  // what the runner set on purpose, and logs nothing.
+  const agentRunScrubLine = describeAgentRunEnvScrub(scrubAgentRunEnvForServer(process.env));
+  if (agentRunScrubLine) logger.info(agentRunScrubLine);
   void startServer().catch(async (err) => {
     logger.error({ err }, "GS Agentic Manager server failed to start");
     // Supervised-transient refusals in managed-cloud deployments are an

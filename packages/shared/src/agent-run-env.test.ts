@@ -3,8 +3,13 @@ import {
   AGENT_RUN_ENV_KEYS,
   PARENT_RUN_API_URL_ENV_KEY,
   RUN_OWNER_API_URL_ENV_KEYS,
+  SANDBOX_KEPT_ENV_KEY,
+  SANDBOX_OVERRIDE_HINT,
+  SANDBOX_OVERRIDE_REFUSED_KEYS,
   agentRunEnvKeyNames,
   agentRunIdFromEnv,
+  describeAgentRunEnvScrub,
+  keptAgentRunEnvNames,
   scrubAgentRunEnvForServer,
 } from "./agent-run-env.js";
 import { toLegacyEnvKey, withLegacyEnvAliases } from "./legacy-env.js";
@@ -104,6 +109,10 @@ describe("scrubAgentRunEnvForServer", () => {
       runId: RUN,
       parentApiUrl: PARENT_API,
       removed: expect.any(Array),
+      applied: [],
+      kept: [],
+      refused: [],
+      ignored: [],
     });
     for (const key of agentRunEnvKeyNames()) expect(env[key], key).toBeUndefined();
     // What is left of GS Agentic Manager's names: the marker, the parent's
@@ -161,7 +170,15 @@ describe("scrubAgentRunEnvForServer", () => {
     const env = agentShellEnv();
     scrubAgentRunEnvForServer(env);
     const once = { ...env };
-    expect(scrubAgentRunEnvForServer(env)).toEqual({ runId: RUN, parentApiUrl: PARENT_API, removed: [] });
+    expect(scrubAgentRunEnvForServer(env)).toEqual({
+      runId: RUN,
+      parentApiUrl: PARENT_API,
+      removed: [],
+      applied: [],
+      kept: [],
+      refused: [],
+      ignored: [],
+    });
     expect(env).toEqual(once);
 
     // A sandbox server sets GSAM_API_URL to its own URL once it listens. A
@@ -175,7 +192,15 @@ describe("scrubAgentRunEnvForServer", () => {
 
   it("records no parent URL when the run had none", () => {
     const env: Env = { GSAM_RUN_ID: RUN, GSAM_API_KEY: "fake-key" };
-    expect(scrubAgentRunEnvForServer(env)).toEqual({ runId: RUN, parentApiUrl: null, removed: ["GSAM_API_KEY"] });
+    expect(scrubAgentRunEnvForServer(env)).toEqual({
+      runId: RUN,
+      parentApiUrl: null,
+      removed: ["GSAM_API_KEY"],
+      applied: [],
+      kept: [],
+      refused: [],
+      ignored: [],
+    });
     expect(env).toEqual({ GSAM_RUN_ID: RUN });
   });
 
@@ -193,6 +218,108 @@ describe("scrubAgentRunEnvForServer", () => {
       for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
       Object.assign(process.env, saved);
     }
+  });
+});
+
+describe("GSAM_SANDBOX_* overrides", () => {
+  const sandboxNames = (env: Env) =>
+    Object.keys(env).filter((key) => key.startsWith("GSAM_SANDBOX_") || key.startsWith(toLegacyEnvKey("GSAM_SANDBOX_")));
+
+  it("applies a deliberate value under its GSAM_* name only, and removes every GSAM_SANDBOX_* name", () => {
+    const env = agentShellEnv(
+      withLegacyEnvAliases({ GSAM_SANDBOX_LISTEN_PORT: "3400", GSAM_SANDBOX_RUNNER_NETWORK_ACCESS: "disabled" }),
+    );
+    const result = scrubAgentRunEnvForServer(env)!;
+    expect(env.GSAM_LISTEN_PORT).toBe("3400");
+    expect(env.GSAM_RUNNER_NETWORK_ACCESS).toBe("disabled");
+    expect(env[toLegacyEnvKey("GSAM_LISTEN_PORT")]).toBeUndefined();
+    expect(sandboxNames(env)).toEqual([]);
+    expect(result.applied).toEqual(["GSAM_LISTEN_PORT", "GSAM_RUNNER_NETWORK_ACCESS"]);
+    // The inherited values were still removed first.
+    expect(result.removed).toContain("GSAM_LISTEN_PORT");
+    expect(env[SANDBOX_KEPT_ENV_KEY]).toBe("GSAM_LISTEN_PORT,GSAM_RUNNER_NETWORK_ACCESS");
+  });
+
+  it("refuses every credential and token, which stay removed", () => {
+    const overrides: Env = {};
+    for (const key of SANDBOX_OVERRIDE_REFUSED_KEYS) overrides[key.replace(/^GSAM_/, "GSAM_SANDBOX_")] = "fake-deliberate-secret";
+    const env = agentShellEnv(overrides);
+    const result = scrubAgentRunEnvForServer(env)!;
+    for (const key of SANDBOX_OVERRIDE_REFUSED_KEYS) expect(env[key], key).toBeUndefined();
+    expect(result.refused).toEqual(Object.keys(overrides).sort());
+    expect(result.applied).toEqual([]);
+    expect(sandboxNames(env)).toEqual([]);
+    expect(JSON.stringify(env)).not.toContain("fake-deliberate-secret");
+  });
+
+  it("covers every credential-like name the scrub removes", () => {
+    const credentialLike = AGENT_RUN_ENV_KEYS.filter((key) => /KEY|TOKEN|TICKET|SECRET/.test(key));
+    for (const key of credentialLike) expect(SANDBOX_OVERRIDE_REFUSED_KEYS, key).toContain(key);
+    for (const key of SANDBOX_OVERRIDE_REFUSED_KEYS) expect(AGENT_RUN_ENV_KEYS, key).toContain(key);
+  });
+
+  it("refuses to move the run marker or the parent URL", () => {
+    const env = agentShellEnv({
+      GSAM_SANDBOX_RUN_ID: "22222222-2222-4222-8222-222222222222",
+      GSAM_SANDBOX_PARENT_RUN_API_URL: "http://127.0.0.1:9",
+      GSAM_SANDBOX_AGENT_RUN_KEPT_ENV: "GSAM_API_KEY",
+    });
+    const result = scrubAgentRunEnvForServer(env)!;
+    expect(env.GSAM_RUN_ID).toBe(RUN);
+    expect(env[PARENT_RUN_API_URL_ENV_KEY]).toBe(PARENT_API);
+    expect(env[SANDBOX_KEPT_ENV_KEY]).toBeUndefined();
+    expect(result.refused).toEqual([
+      "GSAM_SANDBOX_AGENT_RUN_KEPT_ENV",
+      "GSAM_SANDBOX_PARENT_RUN_API_URL",
+      "GSAM_SANDBOX_RUN_ID",
+    ]);
+  });
+
+  it("ignores a name the scrub does not remove, and an empty value", () => {
+    const env = agentShellEnv({ GSAM_SANDBOX_DB_BACKUP_ENABLED: "true", GSAM_SANDBOX_TASK_ID: "" });
+    const result = scrubAgentRunEnvForServer(env)!;
+    // The plain variable passes through as it was.
+    expect(env.GSAM_DB_BACKUP_ENABLED).toBe("false");
+    expect(env.GSAM_TASK_ID).toBeUndefined();
+    expect(result.ignored).toEqual(["GSAM_SANDBOX_DB_BACKUP_ENABLED", "GSAM_SANDBOX_TASK_ID"]);
+    expect(sandboxNames(env)).toEqual([]);
+  });
+
+  it("leaves GSAM_SANDBOX_* alone outside an agent run", () => {
+    const env: Env = { GSAM_SANDBOX_LISTEN_PORT: "3400", GSAM_LISTEN_PORT: "3100" };
+    expect(scrubAgentRunEnvForServer(env)).toBeNull();
+    expect(env).toEqual({ GSAM_SANDBOX_LISTEN_PORT: "3400", GSAM_LISTEN_PORT: "3100" });
+  });
+
+  it("keeps a deliberate value through the second scrub (the server the dev runner starts)", () => {
+    const env = agentShellEnv({ GSAM_SANDBOX_LISTEN_PORT: "3400" });
+    scrubAgentRunEnvForServer(env);
+    const second = scrubAgentRunEnvForServer(env)!;
+    expect(env.GSAM_LISTEN_PORT).toBe("3400");
+    expect(second).toMatchObject({ removed: [], applied: [], kept: ["GSAM_LISTEN_PORT"] });
+    expect(describeAgentRunEnvScrub(second)).toBeNull();
+    // A kept-names list never keeps a credential, even one written by hand.
+    const forged: Env = { GSAM_RUN_ID: RUN, GSAM_API_KEY: "fake-key", [SANDBOX_KEPT_ENV_KEY]: "GSAM_API_KEY,GSAM_TASK_ID" };
+    expect([...keptAgentRunEnvNames(forged)]).toEqual([]);
+    scrubAgentRunEnvForServer(forged);
+    expect(forged.GSAM_API_KEY).toBeUndefined();
+  });
+
+  it("describes what it did in one line, names only, with the hint", () => {
+    const env = agentShellEnv({
+      GSAM_SANDBOX_LISTEN_PORT: "3400",
+      GSAM_SANDBOX_API_KEY: "fake-deliberate-secret",
+      GSAM_SANDBOX_DB_BACKUP_ENABLED: "true",
+    });
+    const line = describeAgentRunEnvScrub(scrubAgentRunEnvForServer(env))!;
+    expect(line).toContain(`started from agent run ${RUN}: removed `);
+    expect(line).toContain("applied on purpose: GSAM_LISTEN_PORT");
+    expect(line).toContain("refused (credentials and the run marker are never passed on): GSAM_SANDBOX_API_KEY");
+    expect(line).toContain("ignored (empty, or not a removed name; set it directly): GSAM_SANDBOX_DB_BACKUP_ENABLED");
+    expect(line.endsWith(SANDBOX_OVERRIDE_HINT)).toBe(true);
+    expect(line).not.toContain("fake-deliberate-secret");
+    expect(line).not.toContain("3400");
+    expect(describeAgentRunEnvScrub(null)).toBeNull();
   });
 });
 

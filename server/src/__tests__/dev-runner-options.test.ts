@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyDevRunnerOptions } from "../../../scripts/dev-runner-options.ts";
 import { toLegacyEnvKey } from "../../../packages/shared/src/legacy-env.ts";
+import { SANDBOX_KEPT_ENV_KEY } from "../../../packages/shared/src/agent-run-env.ts";
 
 describe("applyDevRunnerOptions", () => {
   it("turns --data-dir into isolated GS Agentic Manager paths and consumes the option", () => {
@@ -87,6 +88,22 @@ describe("applyDevRunnerOptions", () => {
     expect(env.GSAM_API_KEY).toBeUndefined();
     expect(env[toLegacyEnvKey("GSAM_API_URL")]).toBeUndefined();
     expect(env[toLegacyEnvKey("GSAM_API_KEY")]).toBeUndefined();
+  });
+
+  it("keeps an API URL the agent set on purpose for the sandbox, but never the API key", () => {
+    const env: NodeJS.ProcessEnv = {
+      GSAM_RUN_ID: "11111111-1111-4111-8111-111111111111",
+      GSAM_API_URL: "http://127.0.0.1:3400",
+      GSAM_API_KEY: "fake-key",
+      // Written by the agent-run scrub after it applied GSAM_SANDBOX_API_URL;
+      // a forged GSAM_API_KEY entry is not honoured.
+      [SANDBOX_KEPT_ENV_KEY]: "GSAM_API_URL,GSAM_API_KEY",
+    };
+
+    applyDevRunnerOptions(["--data-dir", "/isolated/home"], env, "/unused");
+
+    expect(env.GSAM_API_URL).toBe("http://127.0.0.1:3400");
+    expect(env.GSAM_API_KEY).toBeUndefined();
   });
 
   it("keeps the API URL when no --data-dir is given", () => {

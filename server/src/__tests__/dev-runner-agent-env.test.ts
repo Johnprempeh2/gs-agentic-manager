@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { PARENT_RUN_API_URL_ENV_KEY, agentRunEnvKeyNames } from "@greatstone/shared/agent-run-env";
+import { PARENT_RUN_API_URL_ENV_KEY, SANDBOX_OVERRIDE_HINT, agentRunEnvKeyNames } from "@greatstone/shared/agent-run-env";
 import { toLegacyEnvKey, withLegacyEnvAliases } from "@greatstone/shared/legacy-env";
 import { isLinkedGitWorktreeCheckout, resolveWorktreeEnvFilePath } from "../dev-runner-worktree.js";
 import { parseRunMarker, selectRunEndLeftovers, selectSweepLeftovers } from "../services/run-process-cleanup.js";
@@ -165,10 +165,49 @@ describe.skipIf(runnerCannotStart)("dev runner started from an agent run", () =>
     ).toHaveLength(1);
   }, 120_000);
 
+  it("hands the server a value the agent set on purpose with GSAM_SANDBOX_<NAME>, but never a credential", async () => {
+    const runId = randomUUID();
+    const parentApiUrl = "http://127.0.0.1:45991";
+    const ownApiUrl = "http://127.0.0.1:45994";
+    const agentRun = withLegacyEnvAliases({
+      GSAM_RUN_ID: runId,
+      GSAM_API_URL: parentApiUrl,
+      GSAM_API_KEY: "fake-agent-key",
+      GSAM_LISTEN_PORT: "3100",
+      GSAM_SANDBOX_LISTEN_PORT: "3400",
+      // Survives --data-dir, which otherwise drops GSAM_API_URL.
+      GSAM_SANDBOX_API_URL: ownApiUrl,
+      GSAM_SANDBOX_API_KEY: "fake-deliberate-key",
+      GSAM_SANDBOX_DB_BACKUP_ENABLED: "true",
+    });
+
+    const { raw, environ, output } = await runDevRunner(agentRun);
+
+    expect(environ.get("GSAM_LISTEN_PORT")).toBe("3400");
+    expect(environ.get("GSAM_API_URL")).toBe(ownApiUrl);
+    expect(environ.has(toLegacyEnvKey("GSAM_LISTEN_PORT"))).toBe(false);
+    expect(environ.has("GSAM_API_KEY")).toBe(false);
+    expect(environ.get("GSAM_DB_BACKUP_ENABLED")).toBe("false");
+    expect([...environ.keys()].filter((key) => key.includes("SANDBOX_"))).toEqual([]);
+    expect(raw.toString("utf8")).not.toContain("fake-deliberate-key");
+    // The marker still names the run and the parent server, not the sandbox's own URL.
+    expect(parseRunMarker(raw)).toEqual({ runId, conflicting: false, apiUrl: parentApiUrl });
+    expect(output).toContain("applied on purpose: GSAM_API_URL, GSAM_LISTEN_PORT");
+    expect(output).toContain("refused (credentials and the run marker are never passed on): GSAM_SANDBOX_API_KEY");
+    expect(output).toContain("ignored (empty, or not a removed name; set it directly): GSAM_SANDBOX_DB_BACKUP_ENABLED");
+    expect(output).toContain(SANDBOX_OVERRIDE_HINT);
+  }, 120_000);
+
   it("changes nothing for a server started outside an agent run (live, the preview, client instances)", async () => {
-    const { environ, output } = await runDevRunner({ GSAM_COMPANY_ID: "operator-company", GSAM_TASK_ID: "operator-task" });
+    const { environ, output } = await runDevRunner({
+      GSAM_COMPANY_ID: "operator-company",
+      GSAM_TASK_ID: "operator-task",
+      GSAM_SANDBOX_LISTEN_PORT: "3400",
+    });
     expect(environ.get("GSAM_COMPANY_ID")).toBe("operator-company");
     expect(environ.get("GSAM_TASK_ID")).toBe("operator-task");
+    expect(environ.get("GSAM_SANDBOX_LISTEN_PORT")).toBe("3400");
+    expect(environ.has("GSAM_LISTEN_PORT")).toBe(false);
     expect(environ.has("GSAM_RUN_ID")).toBe(false);
     expect(environ.has(PARENT_RUN_API_URL_ENV_KEY)).toBe(false);
     expect(output).not.toContain("started from agent run");

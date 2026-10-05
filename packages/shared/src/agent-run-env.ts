@@ -16,7 +16,9 @@
  * and keeps the marker, so the parent server's leftover cleanup
  * (server/src/services/run-process-cleanup.ts) still finds the sandbox: the run
  * id stays in GSAM_RUN_ID, and the parent server's API URL moves to
- * GSAM_PARENT_RUN_API_URL, which only that cleanup reads.
+ * GSAM_PARENT_RUN_API_URL, which only that cleanup reads. An agent that wants
+ * one of the removed names in its sandbox on purpose sets GSAM_SANDBOX_<NAME>
+ * (credentials excepted; see SANDBOX_OVERRIDE_PREFIX).
  *
  * Every name is listed exactly, never by prefix: operator settings share
  * prefixes with run variables (GSAM_WORKSPACE_REAPER_COOLDOWN_DAYS,
@@ -129,6 +131,59 @@ export function agentRunIdFromEnv(env: EnvRecord = process.env): string | null {
   return firstNonEmpty(env, AGENT_RUN_ID_ENV_KEYS);
 }
 
+/**
+ * A deliberate value for the sandbox: inside a run, `GSAM_SANDBOX_<NAME>=value`
+ * sets `GSAM_<NAME>=value` after the scrub, when `GSAM_<NAME>` is a name the
+ * scrub removes. The agent cannot otherwise tell the scrub a value is meant
+ * for the sandbox, because an inherited value and a deliberate one look the
+ * same. Every GSAM_SANDBOX_* name is then removed, so nothing the sandbox
+ * starts inherits it.
+ */
+export const SANDBOX_OVERRIDE_PREFIX = "GSAM_SANDBOX_";
+
+/**
+ * Never set from a GSAM_SANDBOX_* override: the run's credentials and tokens.
+ * Deliberately passing the parent's credentials into a sandbox would undo the
+ * isolation: the sandbox, and every agent it runs, could act on the parent
+ * server as the parent agent again.
+ */
+export const SANDBOX_OVERRIDE_REFUSED_KEYS: readonly string[] = [
+  "GSAM_API_KEY",
+  "GSAM_GIT_TOKEN",
+  "GSAM_GITHUB_BROKER_TOKEN",
+  "GSAM_GITHUB_BRIDGE_TOKEN",
+  "GSAM_RUNTIME_TOOLS_TOKEN",
+  "GSAM_NATIVE_MCP_TOKEN",
+  "GSAM_BRIDGE_TOKEN",
+  "GSAM_BRIDGE_API_KEY",
+  "GSAM_RUNNER_BOOTSTRAP_TICKET",
+];
+
+/**
+ * The GSAM_* names an earlier scrub in this process tree set on purpose
+ * (comma separated, names only). The dev runner scrubs, then the server it
+ * starts scrubs again: this keeps the deliberate values through the second
+ * scrub. Only the scrub reads it.
+ */
+export const SANDBOX_KEPT_ENV_KEY = "GSAM_AGENT_RUN_KEPT_ENV";
+
+/** The start log's hint, printed whenever the scrub did something. */
+export const SANDBOX_OVERRIDE_HINT =
+  "to keep one of these on purpose for this sandbox, set GSAM_SANDBOX_<NAME> (credentials excepted)";
+
+// An override may never move the ownership marker the parent's cleanup reads.
+const MARKER_ENV_KEYS = new Set<string>([...AGENT_RUN_ID_ENV_KEYS, PARENT_RUN_API_URL_ENV_KEY, SANDBOX_KEPT_ENV_KEY]);
+
+function overridable(name: string): boolean {
+  return AGENT_RUN_ENV_KEYS.includes(name) && !SANDBOX_OVERRIDE_REFUSED_KEYS.includes(name);
+}
+
+/** The names an earlier scrub in this process tree set on purpose and that may stay. */
+export function keptAgentRunEnvNames(env: EnvRecord = process.env): Set<string> {
+  const names = (env[SANDBOX_KEPT_ENV_KEY] ?? "").split(",").map((name) => name.trim());
+  return new Set(names.filter((name) => overridable(name) && env[name] !== undefined));
+}
+
 export interface AgentRunEnvScrub {
   /** The run that started this server. */
   runId: string;
@@ -136,24 +191,89 @@ export interface AgentRunEnvScrub {
   parentApiUrl: string | null;
   /** The names removed (never their values), sorted. */
   removed: string[];
+  /** GSAM_* names set on purpose from a GSAM_SANDBOX_* override in this call, sorted. */
+  applied: string[];
+  /** GSAM_* names an earlier scrub in this process tree set on purpose, left as they are. */
+  kept: string[];
+  /** GSAM_SANDBOX_* names refused: a credential or the run marker. */
+  refused: string[];
+  /** GSAM_SANDBOX_* names ignored: empty, or not a name the scrub removes (set that one directly). */
+  ignored: string[];
 }
 
 /**
  * Call before a GS Agentic Manager server starts. Outside an agent run it does
- * nothing and returns null. Inside one it removes the run's variables from
- * `env` (mutating it), keeps the run id marker and records the parent's API
- * URL under GSAM_PARENT_RUN_API_URL. Running it twice changes nothing more.
+ * nothing and returns null (GSAM_SANDBOX_* names are left alone too). Inside
+ * one it removes the run's variables from `env` (mutating it), applies the
+ * GSAM_SANDBOX_* overrides, removes the GSAM_SANDBOX_* names, keeps the run id
+ * marker and records the parent's API URL under GSAM_PARENT_RUN_API_URL.
+ * Running it twice changes nothing more.
  */
 export function scrubAgentRunEnvForServer(env: EnvRecord = process.env): AgentRunEnvScrub | null {
   const runId = agentRunIdFromEnv(env);
   if (!runId) return null;
   const parentApiUrl = firstNonEmpty(env, RUN_OWNER_API_URL_ENV_KEYS);
+
+  const kept = keptAgentRunEnvNames(env);
   const removed: string[] = [];
   for (const key of agentRunEnvKeyNames()) {
-    if (env[key] === undefined) continue;
+    if (env[key] === undefined || kept.has(key)) continue;
     delete env[key];
     removed.push(key);
   }
+
+  const applied: string[] = [];
+  const refused: string[] = [];
+  const ignored: string[] = [];
+  const legacyOverridePrefix = toLegacyEnvKey(SANDBOX_OVERRIDE_PREFIX);
+  for (const key of Object.keys(env)) {
+    if (key.startsWith(SANDBOX_OVERRIDE_PREFIX)) {
+      const value = env[key];
+      const target = `GSAM_${key.slice(SANDBOX_OVERRIDE_PREFIX.length)}`;
+      if (MARKER_ENV_KEYS.has(target) || SANDBOX_OVERRIDE_REFUSED_KEYS.includes(target)) {
+        refused.push(key);
+      } else if (!AGENT_RUN_ENV_KEYS.includes(target) || !value?.trim()) {
+        ignored.push(key);
+      } else {
+        env[target] = value;
+        applied.push(target);
+      }
+      delete env[key];
+    } else if (key.startsWith(legacyOverridePrefix)) {
+      // Its legacy alias: the entry points already adopted it as GSAM_SANDBOX_*.
+      delete env[key];
+    }
+  }
+
+  const deliberate = [...new Set([...kept, ...applied])].sort();
+  if (deliberate.length > 0) env[SANDBOX_KEPT_ENV_KEY] = deliberate.join(",");
+  else delete env[SANDBOX_KEPT_ENV_KEY];
   if (parentApiUrl) env[PARENT_RUN_API_URL_ENV_KEY] = parentApiUrl;
-  return { runId, parentApiUrl, removed: removed.sort() };
+  return {
+    runId,
+    parentApiUrl,
+    removed: removed.sort(),
+    applied: applied.sort(),
+    kept: [...kept].filter((name) => !applied.includes(name)).sort(),
+    refused: refused.sort(),
+    ignored: ignored.sort(),
+  };
+}
+
+/**
+ * The one start-log line for a scrub (names only, never values), or null when
+ * there is nothing to say: outside a run, or a second scrub that only kept
+ * what the first one set.
+ */
+export function describeAgentRunEnvScrub(scrub: AgentRunEnvScrub | null): string | null {
+  if (!scrub) return null;
+  if (!scrub.removed.length && !scrub.applied.length && !scrub.refused.length && !scrub.ignored.length) return null;
+  const parts = [
+    `started from agent run ${scrub.runId}: removed ${scrub.removed.length} of the run's variables (API key, agent, task, workspace, GitHub) from this server's environment; GSAM_RUN_ID stays so the run's cleanup can stop it`,
+  ];
+  if (scrub.applied.length) parts.push(`applied on purpose: ${scrub.applied.join(", ")}`);
+  if (scrub.refused.length) parts.push(`refused (credentials and the run marker are never passed on): ${scrub.refused.join(", ")}`);
+  if (scrub.ignored.length) parts.push(`ignored (empty, or not a removed name; set it directly): ${scrub.ignored.join(", ")}`);
+  parts.push(SANDBOX_OVERRIDE_HINT);
+  return parts.join("; ");
 }

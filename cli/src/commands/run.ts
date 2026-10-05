@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { scrubAgentRunEnvForServer } from "@greatstone/shared/agent-run-env";
+import { describeAgentRunEnvScrub, scrubAgentRunEnvForServer } from "@greatstone/shared/agent-run-env";
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
 import { onboard } from "./onboard.js";
 import { doctor } from "./doctor.js";
@@ -151,13 +151,8 @@ export async function runCommand(opts: RunOptions): Promise<void> {
  * (see packages/shared/src/agent-run-env.ts).
  */
 export function isolateServerFromAgentRun(env: NodeJS.ProcessEnv = process.env): void {
-  const scrub = scrubAgentRunEnvForServer(env);
-  if (!scrub || scrub.removed.length === 0) return;
-  p.log.message(
-    pc.dim(
-      `Started from agent run ${scrub.runId}: removed ${scrub.removed.length} of the run's variables (API key, agent, task, workspace, GitHub) from the server environment.`,
-    ),
-  );
+  const line = describeAgentRunEnvScrub(scrubAgentRunEnvForServer(env));
+  if (line) p.log.message(pc.dim(line));
 }
 
 function resolveBootstrapInviteBaseUrl(

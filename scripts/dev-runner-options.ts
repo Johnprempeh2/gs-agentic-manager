@@ -6,6 +6,7 @@ import {
   resolvePaperclipInstanceId,
 } from "../packages/shared/src/home-paths.ts";
 import { toLegacyEnvKey } from "../packages/shared/src/legacy-env.ts";
+import { keptAgentRunEnvNames } from "../packages/shared/src/agent-run-env.ts";
 
 // Legacy names are listed too: the server re-adopts them as GSAM_*.
 const PARENT_SERVER_ENV_KEYS = ["GSAM_API_URL", "GSAM_API_KEY"];
@@ -82,7 +83,11 @@ export function applyDevRunnerOptions(
   // parent server's API URL and agent key. The server prefers an inherited
   // GSAM_API_URL over its own listen port, so without this every agent the
   // sandbox runs would call the parent (live) server instead. (GRE-219)
+  // A value the agent set on purpose (GSAM_SANDBOX_API_URL, applied by the
+  // agent-run scrub before this) stays; the API key never can.
+  const keep = keptAgentRunEnvNames(env);
   for (const key of INHERITED_PARENT_SERVER_ENV_KEYS) {
+    if (keep.has(key)) continue;
     delete env[key];
   }
 
