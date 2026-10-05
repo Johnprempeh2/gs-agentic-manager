@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { backupStatusLines, releaseStatusLines, restoreCheckStatusLines } from "./status.js";
+import { backupStatusLines, releaseStatusLines, restoreCheckStatusLines, verifyStatusLines } from "./status.js";
 
 const base = mkdtempSync(path.join(process.env.GSAM_RUN_SCRATCH_DIR ?? tmpdir(), "status-test-"));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -93,4 +93,27 @@ test("restore-check lines: none, recent, older than 7 days, failed", () => {
   assert.match(oldLines[1] ?? "", /^WARNING: no restore-check in the last 7 days/);
   const failed = { ...recent, ok: false, line: "restore-check FAILED: bad.sql.gz: no companies" };
   assert.match(restoreCheckStatusLines(failed, NOW)[1] ?? "", /^WARNING: the last restore-check failed/);
+});
+
+test("edition check lines: passed, missing, failed, older than the upgrade", () => {
+  const from = { tag: "stable-2026-10-01.1", dir: "/r/stable-2026-10-01.1" };
+  const to = { tag: "stable-2026-10-04.1", dir: "/r/stable-2026-10-04.1" };
+  const lastUpgrade = { from, to, at: new Date(NOW - 3 * 60 * MIN).toISOString() };
+  const passed = { ok: true, tag: to.tag, failed: [], at: new Date(NOW - 2 * 60 * MIN).toISOString() };
+  assert.deepEqual(verifyStatusLines({ release: to, lastUpgrade, lastVerify: passed }, NOW), [
+    "edition check: passed on stable-2026-10-04.1, 2 h 0 min ago",
+  ]);
+  assert.deepEqual(verifyStatusLines({ release: to, lastUpgrade }, NOW), [
+    "WARNING: NOT VERIFIED since upgrade to stable-2026-10-04.1: no verify recorded; run verify",
+  ]);
+  const failed = { ...passed, ok: false, failed: ["feature enablePipelines is off"] };
+  assert.deepEqual(verifyStatusLines({ release: to, lastUpgrade, lastVerify: failed }, NOW), [
+    `WARNING: NOT VERIFIED since upgrade to stable-2026-10-04.1: last verify failed at ${failed.at}: feature enablePipelines is off; run verify`,
+  ]);
+  const before = { ...passed, tag: from.tag, at: new Date(NOW - 4 * 60 * MIN).toISOString() };
+  assert.deepEqual(verifyStatusLines({ release: to, lastUpgrade, lastVerify: before }, NOW), [
+    `WARNING: NOT VERIFIED since upgrade to stable-2026-10-04.1: last verify passed before the upgrade (${before.at}); run verify`,
+  ]);
+  const lastRestore = { to: from, at: new Date(NOW - 60 * MIN).toISOString() };
+  assert.match(verifyStatusLines({ release: from, lastUpgrade, lastRestore, lastVerify: passed }, NOW)[0] ?? "", /^WARNING: NOT VERIFIED since restore to stable-2026-10-01\.1/);
 });

@@ -400,7 +400,10 @@ clear error at the first failure:
    process runs from the new release folder.
 
 When a step after the backup fails, it prints the `restore` command to move
-back. After it passes, run `verify`. Keep the old release folder until you
+back. After it passes, run `verify`. `verify` writes `lastVerify` to
+`client-instance.json`; `status` shows `edition check: passed on <tag>` or
+warns `NOT VERIFIED since upgrade/restore to <tag>` until a `verify` after the
+move passes (GRE-783). Keep the old release folder until you
 no longer need to move back, then remove it if no other instance runs from it.
 
 ## Restore (move back after an upgrade; Greatstone only)

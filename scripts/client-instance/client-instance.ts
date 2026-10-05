@@ -58,7 +58,7 @@ import {
   type OffsiteBackup,
   type OffsiteConfig,
 } from "./offsite.js";
-import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, type RestoreCheck } from "./status.js";
+import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, verifyStatusLines, type RestoreCheck, type VerifyRecord } from "./status.js";
 import {
   aiSignals,
   alertMessage,
@@ -166,6 +166,8 @@ interface InstanceState {
   lastRestore?: { to: ReleaseRef; backupFile: string; safetyBackupFile: string | null; at: string };
   /** Written by restore-check (GRE-616); `status` warns when it is missing, failed or older than 7 days. */
   lastRestoreCheck?: RestoreCheck;
+  /** Written by verify (GRE-783); `status` warns when it is missing, failed or older than the last upgrade or restore. */
+  lastVerify?: VerifyRecord;
   /** Written by offsite-backup (GRE-666); `status` and `watch` warn when it is missing, failed or older than 26 h. */
   lastOffsiteBackup?: OffsiteBackup;
   /** Absent on instances made before GRE-141: no limits until `limits` sets them. */
@@ -684,6 +686,10 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   const failed = results.filter((r) => !r.ok);
   for (const r of results) say(`${r.ok ? "PASS" : "FAIL"} ${r.line}`);
   say(`${results.length - failed.length}/${results.length} checks passed`);
+  // GRE-783: `status` shows this, and warns when it is older than the last upgrade or restore.
+  const fresh = readState(root);
+  fresh.lastVerify = { ok: failed.length === 0, tag: fresh.release?.tag ?? null, failed: failed.map((r) => r.line), at: new Date().toISOString() };
+  writeState(root, fresh);
   return failed.length === 0;
 }
 
@@ -1358,7 +1364,7 @@ async function cmdUpgrade(root: string, state: InstanceState, tag: string, opts:
   } catch (err) {
     die(`upgrade to ${tag} failed: ${err instanceof Error ? err.message : String(err)}\n${rollback}`);
   }
-  say(`upgraded ${root} from ${from.tag ?? from.dir} to ${tag}. Run verify next. ${rollback}`);
+  say(`upgraded ${root} from ${from.tag ?? from.dir} to ${tag}. Run verify next; status warns until it passes. ${rollback}`);
 }
 
 /**
@@ -1397,7 +1403,7 @@ async function cmdRestore(root: string, state: InstanceState, rawBackup: string)
   } catch (err) {
     die(`restore failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  say(`restored ${root} to ${last.from.tag ?? last.from.dir} with ${backupFile}. Run verify next.`);
+  say(`restored ${root} to ${last.from.tag ?? last.from.dir} with ${backupFile}. Run verify next; status warns until it passes.`);
 }
 
 async function main() {
@@ -1450,6 +1456,7 @@ async function main() {
         ...restoreCheckStatusLines(state.lastRestoreCheck),
         ...offsiteStatusLines(state.lastOffsiteBackup),
         ...releaseStatusLines(state),
+        ...verifyStatusLines(state),
       ]) {
         say(line);
       }
