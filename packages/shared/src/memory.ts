@@ -393,3 +393,210 @@ export const runMemoryRetentionSchema = z
   })
   .strict();
 export type RunMemoryRetention = z.infer<typeof runMemoryRetentionSchema>;
+
+// Memory graph and contribution activity read API (GRE-864, plan section 8).
+// Read only. Every node, edge, label and count comes from records the caller
+// may read; nothing is filtered on the client.
+
+/** Shown with every graph and edge: a link is a lead, never proof of cause. */
+export const MEMORY_GRAPH_NOTE =
+  "Connections show what a person or agent stated, or what a pattern check matched. A connection does not prove that one entry caused or confirms another.";
+
+/** Shown with every count: activity, not quality. */
+export const MEMORY_ACTIVITY_NOTE = "Counts show activity only. They do not measure quality and are not a ranking.";
+
+/** Review states shown in the graph. Deleted records are tombstones and never appear as nodes. */
+export const MEMORY_GRAPH_STATUSES = ["unreviewed", "approved", "disputed", "superseded"] as const;
+export type MemoryGraphStatus = (typeof MEMORY_GRAPH_STATUSES)[number];
+
+/** `explicit`: stated by a contributor or reviewer. `inferred`: produced by a check or the engine. */
+export const MEMORY_GRAPH_EDGE_KINDS = ["explicit", "inferred"] as const;
+export type MemoryGraphEdgeKind = (typeof MEMORY_GRAPH_EDGE_KINDS)[number];
+
+/** Relationship types plus `supersedes` (a reviewer replaced a record) and `possible_conflict` (the conflict check). */
+export const MEMORY_GRAPH_EDGE_TYPES = [...MEMORY_RELATIONSHIP_TYPES, "supersedes", "possible_conflict"] as const;
+export type MemoryGraphEdgeType = (typeof MEMORY_GRAPH_EDGE_TYPES)[number];
+
+/** Where an edge is stored: `relationship` row, `supersession` link on the record, or open `conflict_check` row. */
+export type MemoryGraphEdgeOrigin = "relationship" | "supersession" | "conflict_check";
+
+/** A person or agent, never both. `system` is a check or the engine. */
+export interface MemoryActorRef {
+  actorType: "agent" | "user" | "system";
+  agentId: string | null;
+  userId: string | null;
+  /** Agent name or `null`; only for agents in this company. */
+  name: string | null;
+}
+
+/** Where a record or edge came from. Ids only; the UI opens them through their own permission-checked APIs. */
+export interface MemorySourceRef {
+  /** `issue`, `comment`, `document_revision`, `run`, `external_object`, or null. */
+  kind: string | null;
+  id: string | null;
+  runId: string | null;
+}
+
+export interface MemoryGraphNode {
+  /** The memory record id. */
+  id: string;
+  scopeId: string;
+  scopeKind: MemoryScopeKind;
+  scopeName: string;
+  title: string | null;
+  /** First 280 characters of the content. */
+  excerpt: string;
+  /** Graph lists never include `deleted`; node detail can show a tombstone reached from the activity feed. */
+  status: MemoryRecordStatus;
+  entryType: MemoryEntryType;
+  decisionClass: MemoryDecisionClass;
+  contributor: MemoryActorRef;
+  source: MemorySourceRef;
+  openConflictCount: number;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface MemoryGraphEdge {
+  /** `rel:<relationshipId>`, `sup:<recordId>` (the replacement) or `cfl:<conflictId>`. */
+  id: string;
+  from: string;
+  to: string;
+  type: MemoryGraphEdgeType;
+  kind: MemoryGraphEdgeKind;
+  origin: MemoryGraphEdgeOrigin;
+  /** Who stated it (explicit), or the check that produced it (inferred, `actorType: "system"`). */
+  author: MemoryActorRef;
+  source: MemorySourceRef;
+  createdAt: Date | string;
+}
+
+export interface MemoryGraph {
+  note: string;
+  nodes: MemoryGraphNode[];
+  /** Only edges whose two ends are both in `nodes`. */
+  edges: MemoryGraphEdge[];
+  /** Scopes the caller may read, for the scope filter. */
+  scopes: MemoryScope[];
+  /** True when more records matched than `limit`. */
+  truncated: boolean;
+}
+
+/** The three provenance roles, kept apart (plan 8.3). */
+export interface MemoryProvenance {
+  contributor: MemoryActorRef & { runId: string | null; at: Date | string };
+  /** Review and edit steps by people or agents, oldest first. */
+  reviewers: Array<{
+    action: MemoryReviewEventAction;
+    actor: MemoryActorRef;
+    runId: string | null;
+    fromStatus: MemoryRecordStatus | null;
+    toStatus: MemoryRecordStatus | null;
+    reason: string | null;
+    relatedRecordId: string | null;
+    at: Date | string;
+  }>;
+  /** Checks that ran on the record (conflict check), oldest first. */
+  checks: Array<{ action: MemoryReviewEventAction; relatedRecordId: string | null; reason: string | null; at: Date | string }>;
+  /** Facts the engine extracted from this record. Each links back to the contributor. */
+  extraction: { facts: MemoryExtractedFact[] };
+}
+
+export interface MemoryGraphNodeDetail {
+  node: MemoryGraphNode;
+  record: MemoryRecord;
+  provenance: MemoryProvenance;
+  /** Supersession chain, oldest first; records the caller cannot read are left out. */
+  chain: MemoryGraphNode[];
+  edges: MemoryGraphEdge[];
+  /** The other end of every edge in `edges`. */
+  neighbours: MemoryGraphNode[];
+}
+
+export interface MemoryGraphEdgeDetail {
+  note: string;
+  edge: MemoryGraphEdge;
+  /** Plain words for what the link means. */
+  meaning: string;
+  from: MemoryGraphNode;
+  to: MemoryGraphNode;
+  /** What the author wrote on the relationship (explicit edges); null once an end is deleted. */
+  statedNote: string | null;
+  /** Names and topics both records share (conflict check edges). */
+  sharedTerms: string[];
+  /** Conflict edges only. */
+  conflictState: MemoryConflictState | null;
+}
+
+export interface MemoryActivityItem {
+  record: MemoryRecord;
+  scopeName: string;
+  contributor: MemoryActorRef;
+  source: MemorySourceRef;
+  /** Review, edit and supersession events, oldest first. */
+  history: MemoryReviewEvent[];
+  extractedFactCount: number;
+}
+
+export interface MemoryActivityFeed {
+  items: MemoryActivityItem[];
+  /** Pass as `cursor` for the next page; null on the last page. */
+  nextCursor: string | null;
+}
+
+export interface MemoryContributorActivity {
+  contributor: MemoryActorRef;
+  /** Records contributed in the window (same filters as the feed). */
+  contributionCount: number;
+  contributionCountByStatus: Record<MemoryRecordStatus, number>;
+  /** Relationships this contributor stated in the window, on records the caller may read. */
+  relationshipsStatedCount: number;
+  /** Review steps (approve, dispute, supersede, delete, conflict resolved) taken in the window. */
+  reviewActionCount: number;
+}
+
+export interface MemoryActivityCounts {
+  note: string;
+  /** Sorted by name, never by count. */
+  contributors: MemoryContributorActivity[];
+}
+
+const memoryCsv = <T extends readonly [string, ...string[]]>(values: T) =>
+  z
+    .union([z.string(), z.array(z.string())])
+    .transform((raw) => (Array.isArray(raw) ? raw : raw.split(",")).map((value) => value.trim()).filter(Boolean))
+    .pipe(z.array(z.enum(values)).max(values.length));
+
+const memoryReadFilters = {
+  /** Contributor agent. */
+  agentId: z.string().guid().optional(),
+  /** Contributor person. */
+  userId: z.string().trim().min(1).max(200).optional(),
+  scopeId: z.string().guid().optional(),
+  projectId: z.string().guid().optional(),
+  q: z.string().trim().min(1).max(200).optional(),
+};
+
+export const memoryGraphQuerySchema = z
+  .object({
+    ...memoryReadFilters,
+    status: memoryCsv(MEMORY_GRAPH_STATUSES).optional(),
+    limit: z.coerce.number().int().min(1).max(500).default(200),
+  })
+  .strict();
+export type MemoryGraphQuery = z.infer<typeof memoryGraphQuerySchema>;
+
+export const memoryActivityQuerySchema = z
+  .object({
+    ...memoryReadFilters,
+    status: memoryCsv(MEMORY_RECORD_STATUSES).optional(),
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    cursor: z.string().max(200).optional(),
+  })
+  .strict();
+export type MemoryActivityQuery = z.infer<typeof memoryActivityQuerySchema>;
+
+export const memoryActivityCountsQuerySchema = memoryActivityQuerySchema.omit({ limit: true, cursor: true, agentId: true, userId: true });
+export type MemoryActivityCountsQuery = z.infer<typeof memoryActivityCountsQuerySchema>;
