@@ -16,6 +16,7 @@ export const FAULTS = {
   "redaction-off": "Secret detection off; contributions stored raw and copied to llm_requests",
   "extra-egress": "Engine sends telemetry to an undeclared outside host",
   "audit-off": "Gateway writes no audit rows",
+  "recall-unavailable": "Gateway answers every recall with 'memory unavailable' and no results",
 };
 
 const NOT_FOUND = { status: 404, body: { error: "not_found", message: "Not found." } };
@@ -125,6 +126,10 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
       }
     }
     const searchScopes = requested ? [requested] : allowed;
+    if (on.has("recall-unavailable")) {
+      writeAudit({ actor, op: "recall", scopes: searchScopes, decision: "unavailable" });
+      return { status: 200, body: { available: false, message: "Memory unavailable.", results: [] } };
+    }
     const terms = queryTerms(body.query);
     const results = records
       .filter((r) => searchScopes.includes(r.scope))

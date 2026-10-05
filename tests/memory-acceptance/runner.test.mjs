@@ -6,6 +6,7 @@ import test from "node:test";
 import { createDoubleTarget, FAULTS } from "./lib/double.mjs";
 import { d7Items, loadFixtures } from "./lib/fixtures.mjs";
 import { createLiveTarget, loadLiveConfig } from "./lib/live.mjs";
+import { loadGsamConfig } from "./lib/gsam.mjs";
 import { runAll, TESTS } from "./lib/tests.mjs";
 
 const { world, scenarios } = loadFixtures();
@@ -46,6 +47,8 @@ const EXPECTED_RED = {
   "redaction-off": ["MT-12"],
   "extra-egress": ["MT-31"],
   "audit-off": ["MT-01", "MT-02", "MT-03", "MT-04", "MT-05", "MT-06", "MT-12"],
+  // Zero results from a recall that never searched must not count as isolation.
+  "recall-unavailable": ["MT-01", "MT-03", "MT-04", "MT-05"],
 };
 
 test("every fault is covered by an expectation", () => {
@@ -69,6 +72,16 @@ test("live target refuses the live app port", () => {
   const path = join(dir, "live.json");
   writeFileSync(path, JSON.stringify({ gatewayUrl: "http://127.0.0.1:3100", companyId: "x" }));
   assert.throws(() => loadLiveConfig(path), /3100/);
+});
+
+test("gsam target refuses the live app port and the live database", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mem-acc-"));
+  const path = join(dir, "gsam.json");
+  const sandboxDb = "postgres://u:p@127.0.0.1:54391/db";
+  writeFileSync(path, JSON.stringify({ gatewayUrl: "http://127.0.0.1:3100", databaseUrl: sandboxDb }));
+  assert.throws(() => loadGsamConfig(path), /3100/);
+  writeFileSync(path, JSON.stringify({ gatewayUrl: "http://127.0.0.1:3291", databaseUrl: "postgres://u:p@127.0.0.1:54329/db" }));
+  assert.throws(() => loadGsamConfig(path), /54329/);
 });
 
 test("live target with no engine reports engine tests inconclusive, never pass", async () => {
