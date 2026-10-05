@@ -151,6 +151,36 @@ test("status shows the origin, and old state files without run or issue still wo
   });
 });
 
+test("status names the migrations the preview applied on start: none, some, or unknown with no log (GRE-827)", () => {
+  const status = (log) => withFakePreview({ started_at: hoursAgo(0.1) }, (root) => {
+    if (log !== undefined) writeFileSync(join(root, "preview", "preview.log"), log);
+    return runPreview(["status"], root);
+  });
+  const none = status("[10:00:00] INFO: Server listening on 127.0.0.1:3200\n");
+  assert.equal(none.code, 0);
+  assert.match(none.out, /^  migrations applied on start: none$/m);
+  // pino-pretty in dev (with colour codes), and pino JSON in production.
+  const pretty = status(
+    '[10:00:00] \u001b[32mINFO\u001b[39m: \u001b[36mApplying 2 pending migrations for Embedded PostgreSQL\u001b[39m ' +
+      '{"pendingMigrations":["0101_add_widgets.sql","0102_widget_index.sql"]}\n');
+  assert.equal(pretty.code, 0);
+  assert.match(pretty.out, /^  migrations applied on start: 0101_add_widgets\.sql, 0102_widget_index\.sql$/m);
+  const json = status(`${JSON.stringify({ level: 30, pendingMigrations: ["0103_x.sql"], msg: "Applying 1 pending migrations for PostgreSQL" })}\n`);
+  assert.match(json.out, /^  migrations applied on start: 0103_x\.sql$/m);
+  const noLog = status(undefined);
+  assert.equal(noLog.code, 0);
+  assert.match(noLog.out, /^  migrations applied on start: unknown \(no log\)$/m);
+});
+
+test("start prints the migrations line under 'Preview is up' (GRE-827)", () => {
+  withFakePreview({}, (root) => {
+    writeFileSync(join(root, "preview", "preview.log"), '{"pendingMigrations":["0104_y.sql"],"msg":"Applying 1 pending migrations for PostgreSQL"}\n');
+    assert.equal(runSetup("preview_migrations", { GSAM_ROOT: root }), "migrations applied on start: 0104_y.sql");
+  });
+  const source = readFileSync(join(scriptsDir, "greatstone-preview.sh"), "utf8");
+  assert.match(source, /say "Preview is up: [^\n]*"\n\s+say "\$\(preview_migrations\)"/);
+});
+
 // A fake `node` first on PATH for `shot`: it records its arguments and writes
 // the two PNG paths it is given, so no browser starts and no port is opened.
 function withFakeNode(fn) {

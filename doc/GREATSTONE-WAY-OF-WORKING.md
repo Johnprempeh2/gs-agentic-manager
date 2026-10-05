@@ -303,12 +303,15 @@ Merging does not change the live app. A version goes live in these steps.
 
    ```sh
    scripts/greatstone-preview.sh start rc-YYYY-MM-DD.N   # http://localhost:3200
-   scripts/greatstone-preview.sh status                  # tag, commit, agent runs since start
+   scripts/greatstone-preview.sh status                  # tag, commit, migrations applied, agent runs since start
    scripts/greatstone-preview.sh switch-tests            # tests of every Experimental switch on in live
    ```
 
    Go through each "what to check" line and record pass or fail with evidence on
-   the release issue. `status` must show 0 agent runs. `switch-tests` must pass:
+   the release issue. `status` must show 0 agent runs. Its "migrations applied
+   on start" line (from the preview log, GRE-827) goes in the preview report as
+   its own pass or fail line: it must match the "Migrations:" line Keystone gives
+   (release note or release task), and Keystone copies it to the release task. `switch-tests` must pass:
    it runs the test files of each switch that is on in the preview (a copy of
    live, so live's switches), from `tests/release-switch-tests/switch-tests.json`.
    A failure names the switch, the test file and the test, and fails the
