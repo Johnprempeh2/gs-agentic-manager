@@ -36,7 +36,7 @@ if [ -f "$sandbox_auth" ]; then
       keep_sandbox=0
     fi
   else
-    echo "[paperclip] node not found in PATH; cannot evaluate auth-merge decision - aborting sandbox restore" >&2
+    echo "[gsam] node not found in PATH; cannot evaluate auth-merge decision - aborting sandbox restore" >&2
     exit 1
   fi
 fi

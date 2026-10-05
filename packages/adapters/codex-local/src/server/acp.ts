@@ -246,8 +246,8 @@ async function prepareCodexRemoteManagedHome(
     teardown: createWorkspaceRestoreTeardown({
       stagedRuntime,
       onLog,
-      startMessage: "[paperclip] Restoring workspace changes and Codex auth from the sandbox.\n",
-      failurePrefix: "[paperclip] Codex ACP teardown restore/copy-back failed",
+      startMessage: "[gsam] Restoring workspace changes and Codex auth from the sandbox.\n",
+      failurePrefix: "[gsam] Codex ACP teardown restore/copy-back failed",
     }),
     // One-time cleanup of the HOST staged home temp dir. Fired ONLY when the
     // staged runtime is dropped (failed/cancelled/timed-out turn, incompatible
@@ -258,7 +258,7 @@ async function prepareCodexRemoteManagedHome(
       await fs.rm(stagedCodexHomeDir, { recursive: true, force: true }).catch(async (error) => {
         await onLog(
           "stderr",
-          `[paperclip] Failed to remove staged Codex home "${stagedCodexHomeDir}": ${
+          `[gsam] Failed to remove staged Codex home "${stagedCodexHomeDir}": ${
             error instanceof Error ? error.message : String(error)
           }\n`,
         );

@@ -965,7 +965,7 @@ export async function resetLocalGitIndexToHead(input: {
   });
   if (workingTreeDiff.stdout.trim().length > 0) {
     console.warn(
-      "[paperclip] Workspace restore preserved local working tree changes after clean sandbox restore.",
+      "[gsam] Workspace restore preserved local working tree changes after clean sandbox restore.",
     );
   }
 }

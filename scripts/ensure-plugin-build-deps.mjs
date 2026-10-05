@@ -148,7 +148,7 @@ function recoverAbandonedLock() {
     } else {
       return;
     }
-    console.log("[paperclip] Recovered abandoned workspace build lock.");
+    console.log("[gsam] Recovered abandoned workspace build lock.");
   } catch (error) {
     if (["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code) || error instanceof SyntaxError) return;
     throw error;
@@ -175,7 +175,7 @@ async function acquireLock() {
         }
       }
       if (!reportedWait) {
-        console.log(`[paperclip] Waiting for another workspace build (${lockDir})...`);
+        console.log(`[gsam] Waiting for another workspace build (${lockDir})...`);
         reportedWait = true;
       }
       if (Date.now() - startedAt >= lockTimeoutMs) {
@@ -189,7 +189,7 @@ async function acquireLock() {
 }
 
 async function build(target) {
-  console.log(`[paperclip] Building ${target.name}...`);
+  console.log(`[gsam] Building ${target.name}...`);
   // A hard kill bypasses cleanup. Only a completed compile may restore this
   // marker, so recovery never trusts index.js emitted partway through a build.
   fs.rmSync(target.completion, { force: true });

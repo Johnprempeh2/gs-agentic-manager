@@ -7,7 +7,7 @@ export {
   syncExternalAdapters,
   onAdapterChange,
 } from "./registry";
-export { buildTranscript } from "./transcript";
+export { buildTranscript, rebrandRunLogText } from "./transcript";
 export type {
   TranscriptEntry,
   StdoutLineParser,

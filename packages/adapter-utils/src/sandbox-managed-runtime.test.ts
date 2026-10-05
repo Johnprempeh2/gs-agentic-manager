@@ -1092,7 +1092,7 @@ describe("sandbox managed runtime", () => {
         checkWorkingTreeClean: true,
       });
       expect(warnSpy).toHaveBeenCalledWith(
-        "[paperclip] Workspace restore preserved local working tree changes after clean sandbox restore.",
+        "[gsam] Workspace restore preserved local working tree changes after clean sandbox restore.",
       );
     } finally {
       warnSpy.mockRestore();
@@ -3992,9 +3992,9 @@ describe("sandbox managed runtime outbound coordinator", () => {
     const diagnostics = lines.filter((line) => line.includes("Workspace restore diagnostic:"));
     expect(diagnostics).toHaveLength(3);
     expect(diagnostics).toEqual(expect.arrayContaining([
-      '[paperclip] Workspace restore diagnostic: {"phase":"workspace","errorCode":"EACCES"}\n',
-      '[paperclip] Workspace restore diagnostic: {"phase":"asset","errorCode":"unknown","httpStatus":404}\n',
-      '[paperclip] Workspace restore diagnostic: {"phase":"asset","errorCode":"unknown"}\n',
+      '[gsam] Workspace restore diagnostic: {"phase":"workspace","errorCode":"EACCES"}\n',
+      '[gsam] Workspace restore diagnostic: {"phase":"asset","errorCode":"unknown","httpStatus":404}\n',
+      '[gsam] Workspace restore diagnostic: {"phase":"asset","errorCode":"unknown"}\n',
     ]));
     expect(diagnostics.join("")).not.toContain("private");
     expect(control.settled).toEqual(expect.arrayContaining(["workspace", "home", "private-asset"]));

@@ -74,7 +74,7 @@ export async function copyBackGrokAuth(input: CopyBackGrokAuthInput): Promise<Co
   } catch (error) {
     if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") {
       await log(
-        "[paperclip] Grok auth copy-out: no sandbox credential to copy back (absent auth.json); host credential kept.",
+        "[gsam] Grok auth copy-out: no sandbox credential to copy back (absent auth.json); host credential kept.",
       );
       return "kept-host";
     }
@@ -109,13 +109,13 @@ export async function copyBackGrokAuth(input: CopyBackGrokAuthInput): Promise<Co
             // Atomic same-directory swap; rename preserves the temp's 0600 mode.
             await rename(stagedTempPath, hostAuthPath);
             await log(
-              "[paperclip] Grok auth copy-out: sandbox credential is strictly newer for the same identity; installed to the host at mode 0600.",
+              "[gsam] Grok auth copy-out: sandbox credential is strictly newer for the same identity; installed to the host at mode 0600.",
             );
             return "copied";
           }
 
           await log(
-            "[paperclip] Grok auth copy-out: host credential kept (sandbox copy is not a strictly-newer same-identity credential).",
+            "[gsam] Grok auth copy-out: host credential kept (sandbox copy is not a strictly-newer same-identity credential).",
           );
           return "kept-host";
         } finally {
@@ -131,7 +131,7 @@ export async function copyBackGrokAuth(input: CopyBackGrokAuthInput): Promise<Co
   } catch (error) {
     const code = (error as NodeJS.ErrnoException | null)?.code ?? "unknown";
     await Promise.resolve(
-      log(`[paperclip] Grok auth copy-out failed (${code}); host credential kept.`),
+      log(`[gsam] Grok auth copy-out failed (${code}); host credential kept.`),
     ).catch(() => undefined);
     throw error;
   }

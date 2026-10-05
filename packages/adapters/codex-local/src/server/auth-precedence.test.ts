@@ -109,7 +109,7 @@ describe("resolveCodexAuthPrecedence", () => {
         CODEX_SANDBOX_AUTH_PRECEDENCE_WARNING,
       );
       expect(CODEX_SANDBOX_AUTH_PRECEDENCE_WARNING_LOG_LINE).toMatch(
-        /^\[paperclip\] Warning:/,
+        /^\[gsam\] Warning:/,
       );
     });
 

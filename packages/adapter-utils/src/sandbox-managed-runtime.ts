@@ -1077,7 +1077,7 @@ function makeTransferProgress(
         await emitRuntimeStatus(
           runtimeStatus.sink,
           runtimeStatus.phase,
-          line.replace(/^\[paperclip\]\s*/, "").trim(),
+          line.replace(/^\[gsam\]\s*/, "").trim(),
         );
       }
     },
