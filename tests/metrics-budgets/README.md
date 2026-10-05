@@ -68,7 +68,8 @@ values get the widest margin, because the tail is the noisiest part. Each
 budget's `margin` field states the reasoning, and `baseline` records what was
 measured on the recorded date (see `baselineRecorded`). A budget whose
 baseline came from a later window records it in `baselineWindow` and
-`baselineSamples` (R2 and S1 use the week to 2026-09-28). Change a budget only
+`baselineSamples` (S1 uses the week to 2026-09-28; S1-work uses the week to
+2026-10-05). Change a budget only
 with a new measurement from the same command, and record the new baseline on
 the tracking task.
 
