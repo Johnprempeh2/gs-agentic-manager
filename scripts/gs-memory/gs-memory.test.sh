@@ -31,6 +31,7 @@ case "$1" in
 esac'
 for cmd in pg_dropcluster pg_ctlcluster apt-get useradd; do stub "$cmd" "echo \"$cmd \$*\" >> \"\$CALLS\""; done
 stub dpkg 'exit 0'
+stub mountpoint '[[ "${STUB_MOUNTED:-0}" == 1 ]]'
 stub ss 'exit 0'
 stub runuser 'echo "runuser $*" >> "$CALLS"; [[ "${STUB_RUNUSER_DENIED:-0}" == 1 ]] && exit 1; while [[ "$1" != -- ]]; do shift; done; shift; exec "$@"'
 stub id "if [[ \"\$*\" == -un ]]; then echo \"\${STUB_USER:-$ME}\"; elif [[ \"\$*\" == -u ]]; then [[ \"\${STUB_USER:-}\" == root ]] && echo 0 || $REAL_ID -u; else exec $REAL_ID \"\$@\"; fi"
@@ -49,8 +50,11 @@ fresh() {
   export GS_MEMORY_USER="$ME" GS_MEMORY_HOME="$case_dir/home" GS_MEMORY_ROOT="$case_dir/home/gs-memory" \
     GS_MEMORY_PG_BIN="$PGBIN" GS_MEMORY_PG_PORT=25432 GS_MEMORY_API_PORT=28888 \
     GS_MEMORY_WINDOWS_BACKUPS="$case_dir/win/gs-memory" GS_MEMORY_SYSTEMD_DIR="$case_dir/systemd" \
-    GS_MEMORY_GATEWAY_ENV="$case_dir/gsam/gs-memory/secrets/gateway.env" GS_MEMORY_MIN_FREE_GB=0
-  unset STUB_CLUSTERS STUB_PG_ACTIVE STUB_USER STUB_RUNUSER_DENIED
+    GS_MEMORY_GATEWAY_ENV="$case_dir/gsam/gs-memory/secrets/gateway.env" GS_MEMORY_MIN_FREE_GB=0 \
+    GS_MEMORY_EXTERNAL_MOUNT="$case_dir/drive"
+  mkdir -p "$case_dir/drive"
+  unset STUB_CLUSTERS STUB_PG_ACTIVE STUB_USER STUB_RUNUSER_DENIED STUB_MOUNTED \
+    GS_MEMORY_EXTERNAL_BACKUPS GS_MEMORY_EXTERNAL_STATE GS_MEMORY_EXTERNAL_KEEP
   CASE="$case_dir"
 }
 called() { grep -q -- "$1" "$CALLS"; }
@@ -233,6 +237,69 @@ out="$(GS_MEMORY_CHECK_KEY= timeout 60 "$SCRIPT" check 2>&1)"
 rm "$GS_MEMORY_WINDOWS_BACKUPS"/*.dump
 out="$(GS_MEMORY_CHECK_KEY= timeout 60 "$SCRIPT" check 2>&1)"
 [[ "$out" == *"PASS  no unencrypted dump in"* ]] && pass "check: no plain dump -> PASS line" || fail "check no plain dump: $out"
+
+# --- 12. external drive copy (GRE-935): copy when mounted, warn when not, keep N, restore, check age ---
+fresh ext-ok
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"
+DRIVE="$CASE/drive/gs-memory-backup"
+out="$(STUB_MOUNTED=1 "$SCRIPT" backup 2>&1)"; rc=$?
+ext=("$DRIVE"/hindsight-*.dump.enc)
+if [[ "$rc" == 0 && -f "${ext[0]}" && -f "${ext[0]}.sha256" ]] && (cd "$DRIVE" && sha256sum -c --quiet --ignore-missing "$(basename "${ext[0]}").sha256" >/dev/null 2>&1); then
+  pass "external: encrypted dump and checksum on the drive, checksum verifies"
+else fail "external ok: rc=$rc out=$out"; fi
+grep -rqa synthetic-dump "$CASE/drive" && fail "external: plain dump text on the drive" || pass "external: drive copy does not hold the dump text"
+grep -rqaF "$(cat "$GS_MEMORY_ROOT/secrets/backup.key")" "$CASE/drive" && fail "external: key on the drive" || pass "external: key is not on the drive"
+state="$GS_MEMORY_WINDOWS_BACKUPS/last-external-copy"
+[[ "$(cut -d' ' -f1 "$state" 2>/dev/null)" == "$(date -u +%F)"T* ]] && pass "external: last copy date recorded" || fail "external: no date in $state"
+out="$(STUB_MOUNTED=1 "$SCRIPT" restore-test --external 2>&1)"; rc=$?
+[[ "$rc" == 0 && "$out" == *"restore test passed: hindsight-"*".dump.enc"* ]] && called "pg_restore synthetic-dump" \
+  && pass "restore-test --external: decrypts the drive copy and restores it" || fail "restore-test --external: rc=$rc out=$out"
+out="$("$SCRIPT" restore-test --external 2>&1)"; rc=$?
+[[ "$rc" != 0 && "$out" == *"not mounted"* ]] && pass "restore-test --external: refused when the drive is not mounted" || fail "restore-test --external unmounted: rc=$rc out=$out"
+printf x >> "${ext[0]}"
+out="$(STUB_MOUNTED=1 "$SCRIPT" restore-test --external 2>&1)"; rc=$?
+[[ "$rc" != 0 && "$out" == *"checksum mismatch"* ]] && pass "restore-test --external: a changed drive copy is refused" || fail "restore-test --external tampered: rc=$rc out=$out"
+
+fresh ext-absent
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"
+mkdir -p "$CASE/drive/gs-memory-backup"
+echo "2026-10-01T02:30:00Z hindsight-x.dump.enc" > "$GS_MEMORY_WINDOWS_BACKUPS/last-external-copy"
+out="$("$SCRIPT" backup 2>&1)"; rc=$?
+[[ "$rc" == 0 && "$out" == *"WARNING: external drive not mounted"*"Last external copy: 2026-10-01T02:30:00Z"* ]] \
+  && pass "external: drive absent -> warning with last copy date, backup exit 0" || fail "external absent: rc=$rc out=$out"
+[[ -z "$(ls -A "$CASE/drive/gs-memory-backup")" ]] && pass "external: nothing written to an unmounted drive folder" || fail "external absent: files written to the empty mount folder"
+compgen -G "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-*.dump.enc" >/dev/null && pass "external: Windows copy still made" || fail "external absent: no Windows copy"
+
+if [[ "$IS_ROOT" == 0 ]]; then
+  fresh ext-readonly
+  mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS"; chmod 0555 "$CASE/drive"
+  out="$(STUB_MOUNTED=1 "$SCRIPT" backup 2>&1)"; rc=$?
+  [[ "$rc" == 0 && "$out" == *"WARNING: cannot write the encrypted copy"*"Last external copy: never"* ]] \
+    && pass "external: read-only drive -> warning, backup exit 0" || fail "external read-only: rc=$rc out=$out"
+  chmod 0755 "$CASE/drive"
+fi
+
+fresh ext-keep
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_ROOT/secrets" "$GS_MEMORY_WINDOWS_BACKUPS" "$CASE/drive/gs-memory-backup"
+for n in 3 2 1; do
+  f="$CASE/drive/gs-memory-backup/hindsight-$(date -u -d "-$n days" +%Y%m%dT%H%M%SZ).dump.enc"
+  echo old > "$f"; echo x > "$f.sha256"; touch -d "-$n days" "$f" "$f.sha256"
+done
+out="$(STUB_MOUNTED=1 GS_MEMORY_EXTERNAL_KEEP=2 "$SCRIPT" backup 2>&1)"; rc=$?
+left=("$CASE/drive/gs-memory-backup"/hindsight-*.dump.enc)
+[[ "$rc" == 0 && "${#left[@]}" == 2 && "$(ls "$CASE/drive/gs-memory-backup"/*.sha256 | wc -l)" == 2 ]] \
+  && pass "external: GS_MEMORY_EXTERNAL_KEEP=2 keeps the 2 newest copies and their checksums" || fail "external keep: rc=$rc left=${left[*]} out=$out"
+
+fresh ext-check
+mkdir -p "$GS_MEMORY_WINDOWS_BACKUPS"
+out="$(GS_MEMORY_CHECK_KEY= timeout 60 "$SCRIPT" check 2>&1)"
+[[ "$out" == *"WARN  no external drive copy recorded"* ]] && pass "check: no drive copy recorded -> WARN" || fail "check ext none: $out"
+echo "$(date -u -d '-2 days' +%FT%TZ) hindsight-x.dump.enc" > "$GS_MEMORY_WINDOWS_BACKUPS/last-external-copy"
+out="$(GS_MEMORY_CHECK_KEY= timeout 60 "$SCRIPT" check 2>&1)"
+[[ "$out" == *"PASS  last external drive copy"*"(2 days old)"* ]] && pass "check: 2-day-old drive copy -> PASS with its age" || fail "check ext 2 days: $out"
+echo "$(date -u -d '-8 days' +%FT%TZ) hindsight-x.dump.enc" > "$GS_MEMORY_WINDOWS_BACKUPS/last-external-copy"
+out="$(GS_MEMORY_CHECK_KEY= timeout 60 "$SCRIPT" check 2>&1)"
+[[ "$out" == *"WARN  last external drive copy"*"is 8 days old (more than 7)"* ]] && pass "check: 8-day-old drive copy -> WARN" || fail "check ext 8 days: $out"
 
 echo
 if [[ "$failures" == 0 ]]; then echo "ALL PASS"; else echo "$failures FAILED"; exit 1; fi

@@ -16,6 +16,7 @@ The change list is GRE-649 section 5.3, approved by John on 4 Oct 2026.
 | Engine | `127.0.0.1:18888`, every API call needs the gateway key **and** a signed 60-second assertion from the GSAM gateway that names one bank, one operation and the allowed tags (Greatstone extension, GRE-672). MCP off. Prompt log off. Claude CLI telemetry, error reports and update checks off (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`). Main PID for the egress check: `systemctl show -p MainPID --value gs-memory-hindsight`. |
 | Database | `127.0.0.1:15432`, role `hindsight` with a password only the engine holds. Socket folder is `0700`. Any other login is rejected. |
 | Windows copy | `C:\GreatstoneBackups\gs-memory\` (`/mnt/c/GreatstoneBackups/gs-memory/`) |
+| Drive copy | External drive mounted at `/mnt/gs-backup-drive`, copies in `gs-memory-backup/` (GRE-935) |
 | Units | `gs-memory-postgres.service`, `gs-memory-hindsight.service` (not enabled at boot), `gs-memory-backup.timer` (enabled, 02:30 nightly) |
 | Limits | engine `MemoryHigh=5G`, `MemoryMax=6G`, `CPUQuota=600%`; database `MemoryMax=4G`, `CPUQuota=400%`; `Nice=10` |
 | Never | `~/GSAM/`, ports 3100, 3200, 54329, the live database, `.wslconfig`, Tailscale. The script refuses these ports and paths. |
@@ -208,17 +209,51 @@ Read-only routes under `/api/companies/:id/memory`; types in `packages/shared/sr
   14-dump rule removes them after about 14 days; 90 days is the hard ceiling.
 - GSAM's own database backups also hold memory records until a delete clears them. They expire after
   `GSAM_DB_BACKUP_RETENTION_DAYS` (default 7). While memory is on, this must stay at 90 or less.
-- Any other copy (the future off-disk copy, a manual export) must follow the same 90-day rule before G4.
+- Any other copy (a manual export) must follow the same 90-day rule. The drive copy does (see below).
 - By hand: `sudo -u gsmemory .../gs-memory.sh backup`
 - Restore test (throwaway cluster on a free port, removed after): `sudo -u gsmemory .../gs-memory.sh restore-test
-  [dump | dump.enc | --windows]`. No argument: the newest local dump. `--windows`: the newest encrypted Windows copy,
-  decrypted into the throwaway folder and checked against its plain checksum first.
+  [dump | dump.enc | --windows | --external]`. No argument: the newest local dump. `--windows` / `--external`: the
+  newest encrypted Windows or drive copy, decrypted into the throwaway folder and checked against its plain checksum
+  first. `--external` stops if the drive is not mounted.
 - Real restore: stop the engine, `dropdb`/`createdb hindsight -O hindsight` over the socket, `pg_restore --no-owner --role=hindsight`, start.
   From a Windows copy, first decrypt it into `backups/` (never onto `/mnt/c`):
   `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:secrets/backup.key -in <copy>.dump.enc -out backups/<copy>.dump`
   and check it against the plain line of `<copy>.dump.enc.sha256`.
-- **Open:** the off-disk copy (external drive or OneDrive) waits for John's choice. The Windows copy is on the same
-  physical disk. It is encrypted, so an off-disk copy of that folder needs no other encryption.
+
+### External drive copy (GRE-935)
+
+John chose an external drive for the off-disk copy (5 Oct 2026). The Windows copy is on the same physical disk.
+
+- After the local dump, `backup` writes the same encrypted copy (`.dump.enc` and its two-line `.sha256`) to
+  `GS_MEMORY_EXTERNAL_BACKUPS` (default `/mnt/gs-backup-drive/gs-memory-backup`) and checks it the same way: encrypted
+  checksum, then a decrypt that gives the plain checksum back. No plain dump and no key go to the drive.
+- It copies only when `GS_MEMORY_EXTERNAL_MOUNT` (default `/mnt/gs-backup-drive`) is a real mount point, so an empty
+  folder left when the drive is unplugged never counts as a copy.
+- **The drive never fails the backup.** Drive not mounted, or the copy fails: one `WARNING` line with the date of the
+  last good drive copy, and the backup goes on (local dump and Windows copy as before).
+- The date of the last good drive copy is written to `last-external-copy` in the Windows copy folder (a date and a
+  file name, no data). `check` shows its age: `PASS` up to 7 days (`GS_MEMORY_EXTERNAL_MAX_AGE_DAYS`), `WARN` after
+  that or when no copy is recorded. A `WARN` does not fail `check`. Run `check` as `gsmemory` (or with `sudo`) to see
+  it; other users cannot read that folder when it is owned by `gsmemory`.
+- **30 copies kept on the drive** (`GS_MEMORY_EXTERNAL_KEEP`). With the drive always plugged in that is a month of
+  nights; with the drive plugged in once a week the 90-day rule removes them first. The 90-day rule applies to the
+  drive too, on each night the drive is mounted.
+- To restore on another PC you need the drive **and** the backup key from the password manager. Do not keep the key
+  on the drive.
+
+**John's setup (one time, in John's own terminal).** Agents do not change the PC.
+
+1. Plug in the drive. In Windows, note its letter (below, `E:`). Format NTFS or exFAT; any size above 2 GB is enough.
+2. Make the mount point, add it to `/etc/fstab` so WSL mounts it at start, and mount it now:
+   ```sh
+   sudo sh -c 'mkdir -p /mnt/gs-backup-drive && echo "E: /mnt/gs-backup-drive drvfs rw,noatime,nofail,uid=$(id -u gsmemory),gid=$(id -g gsmemory),umask=077 0 0" >> /etc/fstab && mount /mnt/gs-backup-drive'
+   ```
+   `uid`/`gid`/`umask=077` make the drive readable only by `gsmemory` inside WSL.
+3. Prove it: `sudo -u gsmemory /home/gsmemory/gs-memory/app/setup/gs-memory.sh backup`, then
+   `sudo ls -l /mnt/gs-backup-drive/gs-memory-backup/` shows a `.dump.enc` and its `.sha256`, and
+   `sudo -u gsmemory .../gs-memory.sh restore-test --external` ends with `restore test passed`.
+- Plugged in after WSL started: `sudo mount /mnt/gs-backup-drive`. Before unplugging: `sudo umount /mnt/gs-backup-drive`,
+  then eject in Windows. A drive with a new letter: change `E:` in `/etc/fstab`.
 
 ### Backup key
 
@@ -249,7 +284,9 @@ The safety guards have a shell test with stubbed system commands (no PostgreSQL,
 stops `system-setup`; a failed backup copy exits non-zero; `preflight` output; `link-claude` never prints the token;
 the Windows copy is encrypted (no plain dump, no key there, an old plain copy is replaced); a lost key stops `backup`;
 `restore-test --windows` restores the decrypted copy and refuses a wrong key or a changed copy; `check` fails on a plain
-dump in the Windows folder.
+dump in the Windows folder; the drive copy is encrypted and verified when the drive is mounted, a missing or read-only
+drive only warns and the backup exits 0, the drive keeps `GS_MEMORY_EXTERNAL_KEEP` copies, `restore-test --external`
+restores the drive copy and refuses a changed one, and `check` warns when the last drive copy is older than 7 days.
 
 For the full engine:
 
@@ -260,11 +297,14 @@ S=$(mktemp -d); (cd "$S" && apt-get download postgresql-16 postgresql-16-pgvecto
 export GS_MEMORY_USER=$(id -un) GS_MEMORY_ROOT=$S/root GS_MEMORY_PG_BIN=$S/pgroot/usr/lib/postgresql/16/bin \
   GS_MEMORY_PG_PORT=25432 GS_MEMORY_API_PORT=28888 GS_MEMORY_WINDOWS_BACKUPS=$S/win \
   LD_LIBRARY_PATH=$S/pgroot/usr/lib/x86_64-linux-gnu TMPDIR=$S GS_MEMORY_GATEWAY_ENV=$S/gsam/gs-memory/secrets/gateway.env
+# Drive copy in a sandbox: '/' is a real mount point, so the copy runs into a scratch folder.
+export GS_MEMORY_EXTERNAL_MOUNT=/ GS_MEMORY_EXTERNAL_BACKUPS=$S/drive/gs-memory-backup
 mkdir -p $S/win && scripts/gs-memory/gs-memory.sh install && scripts/gs-memory/gs-memory.sh link-gateway
 scripts/gs-memory/gs-memory.sh serve-postgres & sleep 3; scripts/gs-memory/gs-memory.sh serve-hindsight &
 scripts/gs-memory/gs-memory.sh check
 scripts/gs-memory/gs-memory.sh backup && scripts/gs-memory/gs-memory.sh restore-test
 scripts/gs-memory/gs-memory.sh restore-test --windows
+scripts/gs-memory/gs-memory.sh restore-test --external
 ```
 
 Stop both processes and remove `$S` after.

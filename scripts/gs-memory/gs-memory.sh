@@ -12,6 +12,7 @@
 #   link-gateway   (root)      copy the key and assertion secret to the GSAM user's ~/gs-memory/secrets/gateway.env.
 #   link-claude    (gsmemory)  read a `claude setup-token` token on stdin; engine uses John's Claude plan.
 #   backup         (gsmemory)  pg_dump to ~/gs-memory/backups, encrypted copy to the Windows folder. Exit 1 if the copy fails.
+#                              Encrypted copy to the external drive too when it is mounted; a missing drive only warns.
 #   check          (any user)  bind, key and reachability checks. Exit 1 on any failure.
 #   serve-postgres / serve-hindsight  (gsmemory) foreground processes used by the systemd units.
 #
@@ -37,6 +38,14 @@ GS_MEMORY_BACKUP_KEEP="${GS_MEMORY_BACKUP_KEEP:-14}"
 # this is removed whatever GS_MEMORY_BACKUP_KEEP says. It can be set lower, never higher.
 GS_MEMORY_BACKUP_MAX_AGE_DAYS="${GS_MEMORY_BACKUP_MAX_AGE_DAYS:-90}"
 (( GS_MEMORY_BACKUP_MAX_AGE_DAYS > 0 && GS_MEMORY_BACKUP_MAX_AGE_DAYS <= 90 )) 2>/dev/null || GS_MEMORY_BACKUP_MAX_AGE_DAYS=90
+# Second copy on an external drive (John, 5 Oct 2026, GRE-935). Optional each night: the drive may be unplugged.
+# A copy is made only when GS_MEMORY_EXTERNAL_MOUNT is a real mount point, so an empty folder on the Linux disk
+# never counts as the drive. The date of the last good copy is kept next to the Windows copies (a date, no data).
+GS_MEMORY_EXTERNAL_MOUNT="${GS_MEMORY_EXTERNAL_MOUNT:-/mnt/gs-backup-drive}"
+GS_MEMORY_EXTERNAL_BACKUPS="${GS_MEMORY_EXTERNAL_BACKUPS:-$GS_MEMORY_EXTERNAL_MOUNT/gs-memory-backup}"
+GS_MEMORY_EXTERNAL_KEEP="${GS_MEMORY_EXTERNAL_KEEP:-30}"
+GS_MEMORY_EXTERNAL_MAX_AGE_DAYS="${GS_MEMORY_EXTERNAL_MAX_AGE_DAYS:-7}"
+GS_MEMORY_EXTERNAL_STATE="${GS_MEMORY_EXTERNAL_STATE:-$GS_MEMORY_WINDOWS_BACKUPS/last-external-copy}"
 GS_MEMORY_PYTHON="${GS_MEMORY_PYTHON:-python3}"
 GS_MEMORY_TORCH_INDEX="${GS_MEMORY_TORCH_INDEX:-https://download.pytorch.org/whl/cpu}"
 GS_MEMORY_CLAUDE_MODEL="${GS_MEMORY_CLAUDE_MODEL:-claude-sonnet-5}"
@@ -72,6 +81,9 @@ guard_paths_and_ports() {
   esac
   case "$GS_MEMORY_GATEWAY_ENV" in
     */GSAM/*) die "GS_MEMORY_GATEWAY_ENV must not be under ~/GSAM/ ($GS_MEMORY_GATEWAY_ENV)";;
+  esac
+  case "$GS_MEMORY_EXTERNAL_BACKUPS" in
+    */GSAM|*/GSAM/*) die "GS_MEMORY_EXTERNAL_BACKUPS must not be under ~/GSAM/ ($GS_MEMORY_EXTERNAL_BACKUPS)";;
   esac
   local p
   for p in "${FORBIDDEN_PORTS[@]}"; do
@@ -535,7 +547,7 @@ cmd_serve_hindsight() {
 
 # --------------------------------------------------------------------------------------------
 # backup (gsmemory). Nightly local dump. The Windows copy is encrypted (GRE-777 D2): /mnt/c is readable by
-# every Linux user and by Windows. The off-disk copy waits for John's choice (GRE-674).
+# every Linux user and by Windows. The off-disk copy goes to an external drive when it is mounted (GRE-935).
 cmd_backup() {
   umask 077
   if ! pg pg_isready -q -h "$PGRUN" -p "$GS_MEMORY_PG_PORT"; then
@@ -543,6 +555,7 @@ cmd_backup() {
     # Old dumps still expire on a night with no new dump.
     prune "$BACKUPS"
     [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]] && prune "$GS_MEMORY_WINDOWS_BACKUPS" .dump.enc && prune "$GS_MEMORY_WINDOWS_BACKUPS"
+    external_mounted && [[ -d "$GS_MEMORY_EXTERNAL_BACKUPS" ]] && prune "$GS_MEMORY_EXTERNAL_BACKUPS" .dump.enc "$GS_MEMORY_EXTERNAL_KEEP"
     return 0
   fi
   ensure_backup_key
@@ -554,18 +567,20 @@ cmd_backup() {
   sha256sum "$file" | sed "s#$BACKUPS/##" > "$file.sha256"
   log "dump written: $file ($(du -h "$file" | cut -f1))"
   prune "$BACKUPS"
+  # Before the Windows copy, so a Windows failure does not also cost the drive copy. Never fails the backup.
+  copy_external "$file"
   # A missing or failed copy is an error, not a warning: the unit fails and `systemctl --failed` shows it.
   local name
   name="$(basename "$file")"
   [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]] || die "Windows copy folder missing: $GS_MEMORY_WINDOWS_BACKUPS (local dump kept: $file)"
-  copy_encrypted "$file" || die "cannot write the encrypted copy of $name to $GS_MEMORY_WINDOWS_BACKUPS (local dump kept)"
+  copy_encrypted "$file" "$GS_MEMORY_WINDOWS_BACKUPS" || die "cannot write the encrypted copy of $name to $GS_MEMORY_WINDOWS_BACKUPS (local dump kept)"
   log "encrypted copy written to $GS_MEMORY_WINDOWS_BACKUPS (checksum and decrypt verified)"
   # Copies made before D2 are plain dumps. Encrypt each one, then remove the plain file.
   local plain
   for plain in "$GS_MEMORY_WINDOWS_BACKUPS"/hindsight-*.dump; do
     [[ -e "$plain" ]] || continue
     if [[ ! -e "$plain.enc" ]]; then
-      copy_encrypted "$plain" || die "cannot encrypt the old plain copy $plain (it is kept)"
+      copy_encrypted "$plain" "$GS_MEMORY_WINDOWS_BACKUPS" || die "cannot encrypt the old plain copy $plain (it is kept)"
     fi
     rm -f "$plain" "$plain.sha256"
     log "old plain copy replaced by its encrypted copy: $plain"
@@ -573,11 +588,11 @@ cmd_backup() {
   prune "$GS_MEMORY_WINDOWS_BACKUPS" .dump.enc
 }
 
-# Writes <dump>.enc and <dump>.enc.sha256 (plain and encrypted checksums) to the Windows folder. The file is
-# encrypted on the Linux side, so no plain byte reaches /mnt/c. The copy counts only after a decrypt gives the
-# plain checksum back.
+# copy_encrypted <dump> <dir>. Writes <dump>.enc and <dump>.enc.sha256 (plain and encrypted checksums) to <dir>
+# (the Windows folder or the external drive). The file is encrypted on the Linux side, so no plain byte leaves
+# the engine user's disk. The copy counts only after a decrypt gives the plain checksum back.
 copy_encrypted() {
-  local src="$1" name sums part check win="$GS_MEMORY_WINDOWS_BACKUPS"
+  local src="$1" win="$2" name sums part check
   name="$(basename "$src")"
   if [[ -s "$src.sha256" ]]; then
     sums="$(grep "  $name\$" "$src.sha256")" || return 1
@@ -599,11 +614,38 @@ copy_encrypted() {
   return 1
 }
 
-# prune <dir> [ext]. ext is .dump (local dumps, and plain copies made before D2) or .dump.enc (Windows copies).
+# The drive counts only when it is mounted: an unplugged drive leaves an empty folder on the Linux disk.
+external_mounted() { mountpoint -q "$GS_MEMORY_EXTERNAL_MOUNT" 2>/dev/null; }
+
+# Encrypted copy of one dump to the external drive (GRE-935). Any problem is a warning, never a failed backup:
+# the local dump and the Windows copy are the nightly guarantee, the drive is the extra copy.
+copy_external() {
+  local file="$1" name last="never"
+  name="$(basename "$file")"
+  [[ -s "$GS_MEMORY_EXTERNAL_STATE" ]] && last="$(head -1 "$GS_MEMORY_EXTERNAL_STATE" | cut -d' ' -f1)"
+  if ! external_mounted; then
+    log "WARNING: external drive not mounted at $GS_MEMORY_EXTERNAL_MOUNT; no external copy tonight. Last external copy: $last"
+    return 0
+  fi
+  if ! mkdir -p "$GS_MEMORY_EXTERNAL_BACKUPS" 2>/dev/null || ! copy_encrypted "$file" "$GS_MEMORY_EXTERNAL_BACKUPS"; then
+    log "WARNING: cannot write the encrypted copy of $name to $GS_MEMORY_EXTERNAL_BACKUPS. Last external copy: $last"
+    return 0
+  fi
+  prune "$GS_MEMORY_EXTERNAL_BACKUPS" .dump.enc "$GS_MEMORY_EXTERNAL_KEEP"
+  if [[ -d "$(dirname "$GS_MEMORY_EXTERNAL_STATE")" ]]; then
+    printf '%s %s.enc\n' "$(date -u +%FT%TZ)" "$name" > "$GS_MEMORY_EXTERNAL_STATE.part" \
+      && chmod 0644 "$GS_MEMORY_EXTERNAL_STATE.part" && mv "$GS_MEMORY_EXTERNAL_STATE.part" "$GS_MEMORY_EXTERNAL_STATE" \
+      || log "WARNING: cannot record the external copy date in $GS_MEMORY_EXTERNAL_STATE"
+  fi
+  log "encrypted copy written to the external drive $GS_MEMORY_EXTERNAL_BACKUPS (checksum and decrypt verified)"
+}
+
+# prune <dir> [ext] [keep]. ext is .dump (local dumps, and plain copies made before D2) or .dump.enc (Windows and
+# drive copies). keep defaults to GS_MEMORY_BACKUP_KEEP.
 prune() {
-  local dir="$1" ext="${2:-.dump}" old cutoff f stamp
-  # Newest first; keep the first GS_MEMORY_BACKUP_KEEP dumps.
-  mapfile -t old < <(ls -1t "$dir"/hindsight-*"$ext" 2>/dev/null | tail -n +"$((GS_MEMORY_BACKUP_KEEP + 1))")
+  local dir="$1" ext="${2:-.dump}" keep="${3:-$GS_MEMORY_BACKUP_KEEP}" old cutoff f stamp
+  # Newest first; keep the first <keep> dumps.
+  mapfile -t old < <(ls -1t "$dir"/hindsight-*"$ext" 2>/dev/null | tail -n +"$((keep + 1))")
   for f in "${old[@]}"; do rm -f "$f" "$f.sha256"; done
   # Age cap by the UTC stamp in the name, not mtime: a copy to Windows gets a new mtime.
   cutoff="$(date -u -d "-$GS_MEMORY_BACKUP_MAX_AGE_DAYS days" +%Y%m%dT%H%M%SZ)"
@@ -618,13 +660,17 @@ prune() {
 }
 
 # --------------------------------------------------------------------------------------------
-# restore-test [dump | dump.enc | --windows] (gsmemory). Restores the newest local dump (or the given one, or the
-# newest encrypted Windows copy) into a throwaway cluster on a free port, then removes it.
+# restore-test [dump | dump.enc | --windows | --external] (gsmemory). Restores the newest local dump (or the given
+# one, or the newest encrypted Windows or drive copy) into a throwaway cluster on a free port, then removes it.
 cmd_restore_test() {
-  local dump="${1:-}"
-  if [[ "$dump" == --windows ]]; then
-    dump="$(ls -1t "$GS_MEMORY_WINDOWS_BACKUPS"/hindsight-*.dump.enc 2>/dev/null | head -1)"
-    [[ -n "$dump" ]] || die "no encrypted copy found in $GS_MEMORY_WINDOWS_BACKUPS"
+  local dump="${1:-}" dir=""
+  case "$dump" in
+    --windows) dir="$GS_MEMORY_WINDOWS_BACKUPS";;
+    --external) external_mounted || die "external drive not mounted at $GS_MEMORY_EXTERNAL_MOUNT"; dir="$GS_MEMORY_EXTERNAL_BACKUPS";;
+  esac
+  if [[ -n "$dir" ]]; then
+    dump="$(ls -1t "$dir"/hindsight-*.dump.enc 2>/dev/null | head -1)"
+    [[ -n "$dump" ]] || die "no encrypted copy found in $dir"
   fi
   [[ -n "$dump" ]] || dump="$(ls -1t "$BACKUPS"/hindsight-*.dump 2>/dev/null | head -1)"
   [[ -n "$dump" && -f "$dump" ]] || die "no dump found in $BACKUPS"
@@ -771,6 +817,8 @@ PY
     fi
   fi
 
+  check_external_copy
+
   if [[ "$(id -un)" != "$GS_MEMORY_USER" ]]; then
     if ls "$SECRETS" >/dev/null 2>&1 || ls "$GS_MEMORY_ROOT" >/dev/null 2>&1; then
       bad "$(id -un) can list $GS_MEMORY_ROOT"
@@ -788,7 +836,24 @@ PY
   return "$fail"
 }
 
-usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# Age of the last good drive copy (GRE-935). A warning, not a failure: the drive is the extra copy.
+check_external_copy() {
+  local last="" ts="" age
+  [[ -r "$GS_MEMORY_EXTERNAL_STATE" ]] && last="$(head -1 "$GS_MEMORY_EXTERNAL_STATE" | cut -d' ' -f1)"
+  [[ -n "$last" ]] && ts="$(date -u -d "$last" +%s 2>/dev/null || true)"
+  if [[ -z "$ts" ]]; then
+    printf '  WARN  no external drive copy recorded in %s (or %s cannot read it)\n' "$GS_MEMORY_EXTERNAL_STATE" "$(id -un)"
+    return 0
+  fi
+  age="$(( ($(date -u +%s) - ts) / 86400 ))"
+  if (( age > GS_MEMORY_EXTERNAL_MAX_AGE_DAYS )); then
+    printf '  WARN  last external drive copy %s is %s days old (more than %s); plug in and mount the drive\n' "$last" "$age" "$GS_MEMORY_EXTERNAL_MAX_AGE_DAYS"
+  else
+    printf '  PASS  last external drive copy %s (%s days old)\n' "$last" "$age"
+  fi
+}
+
+usage() { sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   case "${1:-}" in
