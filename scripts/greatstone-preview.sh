@@ -2,7 +2,8 @@
 # Try a version before it goes live (see doc/GREATSTONE-WAY-OF-WORKING.md).
 #
 #   scripts/greatstone-preview.sh start <tag>   run <tag> at http://localhost:3200 on a copy of the live data
-#   scripts/greatstone-preview.sh status        say what the preview runs and whether any agent run started
+#   scripts/greatstone-preview.sh status        say what the preview runs, which migrations it applied on
+#                                               start, and whether any agent run started
 #   scripts/greatstone-preview.sh switch-tests  run the tests of every Experimental switch that is on
 #                                               (the preview has live's values); fails when one fails
 #   scripts/greatstone-preview.sh shot <path> <name>
@@ -71,6 +72,26 @@ preview_origin() {
   ' "$(preview_state started_at)" 2>/dev/null || true)"
   printf 'started %s by run %s for issue %s' "${age:-at an unknown time}" \
     "$(preview_state run_id | grep . || echo unknown)" "$(preview_state issue_id | grep . || echo unknown)"
+}
+
+# Says which migrations the preview server applied to its data copy when it
+# started, from its "Applying N pending migrations" log line(s), so the
+# release task's "Migrations:" line can be checked (GRE-827). Reads only the
+# preview log; a missing or unreadable log gives "unknown (no log)".
+preview_migrations() {
+  local names
+  if [ ! -r "$PREVIEW_LOG" ] || ! names="$(perl -ne '
+    s/\e\[[0-9;]*m//g;
+    next unless /Applying (\d+) pending migrations/;
+    my $n = $1;
+    my @found = /"pendingMigrations":\[([^\]]*)\]/ ? ($1 =~ /"([^"]+)"/g) : ();
+    @found = ("$n migrations (names not in the log)") unless @found;
+    for (@found) { print "$_\n" unless $seen{$_}++ }
+  ' "$PREVIEW_LOG" 2>/dev/null)"; then
+    printf 'migrations applied on start: unknown (no log)'
+    return 0
+  fi
+  printf 'migrations applied on start: %s' "$(printf '%s' "${names:-none}" | paste -sd ',' - | sed 's/,/, /g')"
 }
 
 cmd_start() {
@@ -147,6 +168,7 @@ cmd_start() {
     kill -0 "$pid" 2>/dev/null || die "the preview server exited; see $PREVIEW_LOG"
     if [ "$(health_commit "$PREVIEW_URL")" = "$commit" ]; then
       say "Preview is up: $PREVIEW_URL runs $tag ($commit). Agents are off."
+      say "$(preview_migrations)"
       return 0
     fi
   done
@@ -168,6 +190,7 @@ cmd_status() {
   say "  origin:     $(preview_origin)"
   say "  data:       $PREVIEW_DATA_DIR"
   say "  agents off: HEARTBEAT_SCHEDULER_ENABLED=false GSAM_RESTORE_IN_PROGRESS=true"
+  say "  $(preview_migrations)"
   node --input-type=module -e '
     const [base, since] = process.argv.slice(1);
     const get = async (p) => (await fetch(base + p)).json();
