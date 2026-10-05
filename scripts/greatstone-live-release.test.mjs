@@ -465,7 +465,10 @@ function releaseSandbox(t, pnpmScript, { base = {}, rc = {} } = {}) {
   mkdirSync(join(dev, "cli", "node_modules", "tsx", "dist"), { recursive: true });
   writeFileSync(
     join(dev, "cli", "node_modules", "tsx", "dist", "cli.mjs"),
-    `import fs from "node:fs"; const a = process.argv; const dir = a[a.indexOf("--dir") + 1];
+    `import fs from "node:fs"; const a = process.argv;
+fs.appendFileSync(${JSON.stringify(join(root, "gs-db.log"))}, JSON.stringify({ args: a.slice(3), pgpassword: process.env.PGPASSWORD ?? null }) + "\\n");
+if (a.includes("restore-legacy-password")) process.exit(0);
+const dir = a[a.indexOf("--dir") + 1];
 fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--prefix") + 1] + ".sql.gz"; fs.writeFileSync(f, "x"); console.log(f);\n`,
   );
   const live = join(root, "live");
@@ -537,6 +540,42 @@ test("a release refuses a candidate older than live; a newer candidate and a rol
   const rollback = release("live-2026-09-01.1");
   assert.doesNotMatch(rollback.stderr, /older than live/, rollback.stderr);
   assert.match(rollback.stdout, /^Live checkout is on live-2026-09-01\.1 /m, rollback.stderr);
+});
+
+// GRE-930: the live database has a random password. The backup gets it as
+// PGPASSWORD (never in a process list), and a rollback to a release from
+// before GRE-930 first puts the role back on the old password it uses.
+test("a rollback to a release before the random database password restores the old password first", (t) => {
+  const { root, dev, live, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n", {
+    rc: { "packages/db/src/embedded-postgres-password.ts": "// GRE-930\n" },
+  });
+  git(dev, "tag", "-a", "live-2026-09-29.1", "-m", "Current release", "rc-2026-09-29.1^{commit}");
+  git(dev, "push", "--quiet", "origin", "live-2026-09-29.1");
+  git(live, "fetch", "--quiet", "--tags", "origin");
+  git(live, "checkout", "--quiet", "--detach", "live-2026-09-29.1");
+  const secrets = join(root, "data", "instances", "default", "secrets");
+  mkdirSync(secrets, { recursive: true });
+  writeFileSync(join(secrets, "embedded-postgres.password"), "random-live-password\n", { mode: 0o600 });
+  const calls = () => readFileSync(join(root, "gs-db.log"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+
+  const rollback = spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), "live-2026-09-01.1"], { encoding: "utf8", env: env("http://127.0.0.1:9") });
+  assert.match(rollback.stdout, /^Live checkout is on live-2026-09-01\.1 /m, rollback.stderr);
+  const [backup, restore] = calls();
+  assert.equal(backup.args[0], "backup");
+  assert.equal(backup.pgpassword, "random-live-password");
+  assert.doesNotMatch(backup.args.join(" "), /random-live-password/);
+  assert.deepEqual(restore.args, ["restore-legacy-password", "--data-dir", join(root, "data", "instances", "default", "db")]);
+
+  // A rollback to a release that has the random password leaves it alone.
+  rmSync(join(root, "gs-db.log"));
+  git(live, "clean", "--quiet", "-fdx");
+  git(live, "checkout", "--quiet", "--detach", "live-2026-09-29.1");
+  git(dev, "tag", "-a", "live-2026-09-29.2", "-m", "Same code", "rc-2026-09-29.1^{commit}");
+  git(dev, "push", "--quiet", "origin", "live-2026-09-29.2");
+  git(live, "checkout", "--quiet", "--detach", "live-2026-09-01.1");
+  const forward = spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), "live-2026-09-29.2"], { encoding: "utf8", env: env("http://127.0.0.1:9") });
+  assert.match(forward.stdout, /^Live checkout is on live-2026-09-29\.2 /m, forward.stderr);
+  assert.deepEqual(calls().map((call) => call.args[0]), ["backup"]);
 });
 
 // GRE-243: a release of only doc/ (or ui/) changes no file dev-runner watches,

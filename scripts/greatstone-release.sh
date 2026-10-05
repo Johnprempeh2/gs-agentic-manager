@@ -93,7 +93,7 @@ ROLLBACK="scripts/greatstone-release.sh $PREVIOUS"
 # Back up the live database before anything moves. The backup only reads.
 if LIVE_DB_URL="$(live_database_url)"; then
   BACKUP_DIR="$BACKUP_ROOT/release-$(date +%Y-%m-%dT%H%M%S)-$TAG"
-  BACKUP_FILE="$(gs_db backup --source-url "$LIVE_DB_URL" --dir "$BACKUP_DIR" --prefix "before-$TAG" | tail -n 1)"
+  BACKUP_FILE="$(PGPASSWORD="$(live_database_password)" gs_db backup --source-url "$LIVE_DB_URL" --dir "$BACKUP_DIR" --prefix "before-$TAG" | tail -n 1)"
   [ -s "$BACKUP_FILE" ] || die "the database backup failed; nothing was changed."
   say "Backed up the live database (on $PREVIOUS) to $BACKUP_FILE"
 elif [ "$MODE" = rollback ] && [ -s "${GSAM_RELEASE_EXISTING_BACKUP:-}" ]; then
@@ -103,6 +103,15 @@ elif [ "$MODE" = rollback ] && [ -s "${GSAM_RELEASE_EXISTING_BACKUP:-}" ]; then
   say "The live database is not running; keeping the backup from before the failed release: $BACKUP_FILE"
 else
   die "the live database is not running; cannot back it up. Nothing was changed."
+fi
+
+# GRE-930: a release from before the random database password logs in with the
+# old fixed one. Put the role back on it before live moves to such a release.
+if [ "$MODE" = rollback ] \
+  && [ -f "$LIVE_DATA_DIR/instances/$INSTANCE_ID/secrets/embedded-postgres.password" ] \
+  && ! git -C "$RELEASE_REPO" cat-file -e "$TARGET:packages/db/src/embedded-postgres-password.ts" 2>/dev/null; then
+  gs_db restore-legacy-password --data-dir "$LIVE_DATA_DIR/instances/$INSTANCE_ID/db" \
+    || die "could not put the database back on the password $TAG uses; nothing else was changed. Database backup: $BACKUP_FILE"
 fi
 
 if [ "$MODE" = release ]; then
