@@ -998,6 +998,8 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       reviewer: { type: "user"; userId: string } | { type: "agent" };
       responsibleUserId?: string;
       changesRequestedCount?: number;
+      /** The agent stage escalated to this user after its last round. */
+      escalatedTo?: string;
     }) {
       const companyId = randomUUID();
       const masonId = randomUUID();
@@ -1016,9 +1018,12 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       await db.insert(companyMemberships).values([USER_ID, OTHER_USER_ID].map((principalId) => ({
         companyId, principalType: "user", principalId, status: "active", membershipRole: "owner",
       })));
-      const participant = input.reviewer.type === "user"
+      const stageParticipant = input.reviewer.type === "user"
         ? { type: "user" as const, userId: input.reviewer.userId, agentId: null }
         : { type: "agent" as const, userId: null, agentId: keystoneId };
+      const participant = input.escalatedTo
+        ? { type: "user" as const, userId: input.escalatedTo, agentId: null }
+        : stageParticipant;
       await db.insert(issues).values({
         id: issueId,
         companyId,
@@ -1033,7 +1038,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
         executionPolicy: {
           mode: "normal",
           commentRequired: true,
-          stages: [{ id: stageId, type: "review", approvalsNeeded: 1, participants: [{ id: randomUUID(), ...participant }] }],
+          stages: [{ id: stageId, type: "review", approvalsNeeded: 1, participants: [{ id: randomUUID(), ...stageParticipant }] }],
         },
         executionState: {
           status: "pending",
@@ -1161,6 +1166,24 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       await run(app(seeded.companyId), action(card, "approve"));
       const [approved] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
       expect(approved?.status).toBe("done");
+    });
+
+    it("says a comment sent with a refused reassignment was not saved, and a plain comment still posts", async () => {
+      const seeded = await seedReview({ reviewer: { type: "agent" }, escalatedTo: USER_ID, changesRequestedCount: 3 });
+      const otherApp = otherUserApp(seeded.companyId);
+
+      const refused = await request(otherApp).patch(`/api/issues/${seeded.issueId}`)
+        .send({ comment: "looks like we are good to go", assigneeAgentId: seeded.masonId });
+      expect(refused.status).toBe(422);
+      expect(refused.body.error).toMatch(/^Comment not saved\./);
+      expect(await db.select().from(issueComments).where(eq(issueComments.issueId, seeded.issueId))).toEqual([]);
+
+      const posted = await request(otherApp).post(`/api/issues/${seeded.issueId}/comments`)
+        .send({ body: "looks like we are good to go" });
+      expect(posted.status).toBe(201);
+      const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+      expect(task?.status).toBe("in_review");
+      expect((task?.executionState as { currentParticipant?: { userId: string | null } } | null)?.currentParticipant?.userId).toBe(USER_ID);
     });
 
     it("keeps local-board as the escalation when the owner is not clear", async () => {
