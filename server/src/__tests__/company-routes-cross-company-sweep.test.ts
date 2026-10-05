@@ -7,12 +7,13 @@ import request from "supertest";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
-  companyMemberships, companySecretProviderConfigs, companySecrets, environmentLeases,
+  companyMemberships, companySecretProviderConfigs, companySecrets, environmentLeases, environments,
   executionWorkspaces, goals, heartbeatRuns, issueAttachments, issues, issueWorkProducts, labels, pipelines,
   plugins, projects, routines, routineTriggers, statusCards, toolApplications, toolConnections, toolProfiles,
   workspaceOperations,
 } from "@greatstone/db";
 import { createApp } from "../app.js";
+import { environmentService } from "../services/environments.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { ensureHumanRoleDefaultGrants } from "../services/principal-access-compatibility.js";
 import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
@@ -448,6 +449,29 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     for (const prefix of Object.keys(seeded)) {
       expect(idRoutes.some((route) => matchesPrefix(route.path, prefix)), `stale seeded prefix: ${prefix}`).toBe(true);
     }
+  });
+
+  // GRE-772: `/api/environments/:id/leases` takes an instance-wide environment
+  // id, so the id sweep allow-lists it, and the list answers 200 with the
+  // caller's own leases rather than refusing. This checks that answer instead.
+  it("lists only company B's leases on a shared environment for company B's board session", async () => {
+    const environmentId = randomUUID(), leaseAId = randomUUID(), leaseBId = randomUUID();
+    await ctx.db.insert(environments).values({ id: environmentId, name: "Shared sandbox", driver: "ssh" });
+    await ctx.db.insert(environmentLeases).values([
+      { id: leaseAId, companyId: companyAId, environmentId },
+      { id: leaseBId, companyId: companyBId, environmentId },
+    ]);
+
+    const res = await call(boardOwnerB, "GET", `/api/environments/${environmentId}/leases`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect((res.body as { id: string }[]).map((lease) => lease.id)).toEqual([leaseBId]);
+
+    const asA = await call(boardOwnerB, "GET", `/api/environments/${environmentId}/leases?companyId=${companyAId}`);
+    expect(REFUSED.has(asA.status), `company A leases by companyId -> ${asA.status}`).toBe(true);
+
+    // Company A still gets its own lease from the same filter.
+    const forA = await environmentService(ctx.db).listLeases(environmentId, { companyIds: [companyAId] });
+    expect(forA.map((lease) => lease.id)).toEqual([leaseAId]);
   });
 
   it("keeps every allow-list entry pointed at a live route with a reason", () => {
