@@ -16,6 +16,7 @@ import {
   heartbeatRuns,
   issueComments,
   issueRecoveryActions,
+  issueRelations,
   issues,
   workspaceOperations,
 } from "@greatstone/db";
@@ -95,6 +96,7 @@ describeEmbeddedPostgres("sweep restarts parked hand-off wakes", () => {
     await db.delete(issueRecoveryActions);
     await db.delete(issueComments);
     await db.delete(activityLog);
+    await db.delete(issueRelations);
     await db.delete(issues);
     await db.delete(heartbeatRunEvents);
     await db.delete(heartbeatRuns);
@@ -317,5 +319,30 @@ describeEmbeddedPostgres("sweep restarts parked hand-off wakes", () => {
     const [hold] = await db.select({ status: issueRecoveryActions.status }).from(issueRecoveryActions)
       .where(and(eq(issueRecoveryActions.companyId, companyId), eq(issueRecoveryActions.sourceIssueId, issueId)));
     expect(hold?.status).toBe("active");
+  });
+
+  // GRE-755: a task that still waits on an open blocker gets no run; the
+  // wake is sent once the blocker is done.
+  it("leaves the wake parked while the task has an open blocker, then restarts it", async () => {
+    const { companyId, reviewerId, issueId, reviewerKey } = await parkReviewHandoffAndLoseRelease();
+    const blockerId = randomUUID();
+    await db.insert(issues).values({
+      id: blockerId,
+      companyId,
+      title: "Open blocker",
+      status: "todo",
+      priority: "medium",
+    });
+    await db.insert(issueRelations).values({ companyId, issueId: blockerId, relatedIssueId: issueId, type: "blocks" });
+    await ageWake(reviewerKey);
+
+    await heartbeat.resumeQueuedRuns();
+    expect(await readWakeStatus(reviewerKey)).toBe("deferred_issue_execution");
+    expect(await countRuns(reviewerId, issueId)).toBe(0);
+
+    await db.update(issues).set({ status: "done" }).where(eq(issues.id, blockerId));
+    await heartbeat.resumeQueuedRuns();
+    expect(await waitForCondition(async () => (await countRuns(reviewerId, issueId)) === 1)).toBe(true);
+    await settleRuns(reviewerId);
   });
 });

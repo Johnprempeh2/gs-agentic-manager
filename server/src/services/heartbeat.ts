@@ -20532,6 +20532,12 @@ export function heartbeatService(
         sql`not exists (select 1 from ${agentWakeupRequests} parked_wake join ${agents} on ${agents.id} = parked_wake.agent_id
           where parked_wake.company_id = ${issues.companyId} and parked_wake.status = 'deferred_issue_execution'
           and parked_wake.payload->>'issueId' = ${issues.id}::text and ${agents.status} = 'paused')`,
+        // GRE-755: a task that still waits on an open blocker gets no run; the
+        // blockers-resolved wake (or this sweep, once it is done) sends it.
+        sql`not exists (select 1 from ${issueRelations} join ${issues} blocker on blocker.id = ${issueRelations.issueId}
+          where ${issueRelations.companyId} = ${issues.companyId} and ${issueRelations.relatedIssueId} = ${issues.id}
+          and ${issueRelations.type} = 'blocks' and blocker.company_id = ${issues.companyId}
+          and blocker.status not in ('done', 'cancelled') and blocker.hidden_at is null)`,
         cutoff ? gte(agentWakeupRequests.requestedAt, cutoff) : undefined))
       .orderBy(asc(agentWakeupRequests.updatedAt)).limit(50);
     const seenIssueIds = new Set<string>();
@@ -20552,10 +20558,18 @@ export function heartbeatService(
       // With no run there is nothing to release through; stranded-issue
       // recovery owns that case.
       if (!latest || !isHeartbeatRunTerminalStatus(latest.status)) continue;
-      logger.warn({ queueId: wake.id, issueId, latestRunId: latest.id }, "restarting parked hand-off wake");
-      await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true }).catch(err => {
+      const restarted = await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true }).then(() => true, err => {
         logger.warn({ err, queueId: wake.id }, "failed to restart parked hand-off wake");
+        return false;
       });
+      if (!restarted) continue;
+      // Log only when the release moved the wake on; a refused release
+      // leaves it parked and is revisited quietly two minutes later.
+      const [after] = await db.select({ status: agentWakeupRequests.status }).from(agentWakeupRequests)
+        .where(eq(agentWakeupRequests.id, wake.id)).limit(1);
+      if (after && after.status !== "deferred_issue_execution") {
+        logger.warn({ queueId: wake.id, issueId, latestRunId: latest.id }, "restarted parked hand-off wake");
+      }
     }
   }
 
