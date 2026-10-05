@@ -24,46 +24,69 @@ Secrets (all `0600` in `secrets/`, never printed, never in the repo):
 `db.env` (database password), `engine.env` (gateway key and assertion secret), `gateway.env` (the GSAM server's copy
 of both, see below), `claude.env` (Claude plan token, after `link-claude`).
 
-## Install (one time, needs sudo)
+## Install (one time, John, needs sudo)
 
-From an up-to-date checkout of `main`:
+From a fresh checkout of `main` (not `~/GSAM/live`). Live GSAM keeps running; nothing here restarts it.
+Steps 2 onward use the engine's own copy of the script, made by step 1.
 
 ```sh
+# 0. Preflight, no sudo, changes nothing. Every line must be PASS (NOTE lines are information).
+scripts/gs-memory/gs-memory.sh preflight
+
+# 1-4. Install.
 sudo scripts/gs-memory/gs-memory.sh system-setup
 sudo -u gsmemory /home/gsmemory/gs-memory/app/setup/gs-memory.sh install
 sudo /home/gsmemory/gs-memory/app/setup/gs-memory.sh link-gateway
+sudo systemctl start gs-memory-hindsight      # also starts gs-memory-postgres
+
+# 5. Link the Claude plan, in private (next section). Then restart the engine only.
+sudo systemctl restart gs-memory-hindsight
+
+# 6. Prove it. RESULT: PASS.
+scripts/gs-memory/gs-memory.sh check
 ```
 
+If any step shows a FAIL or an ERROR, stop and comment on the install issue with its output (no secrets).
+`install` ends with `Claude CLI for the engine: ... (<version>)`; that line proves `gsmemory` can run the Claude CLI.
+
+**Existing PostgreSQL.** `system-setup` checks first, before it changes anything. If `pg_lsclusters` lists any
+cluster, or `postgresql.service` is active, it prints what it found and stops with an error. It never drops a
+cluster. Only if that PostgreSQL is not needed while the engine runs, run it again with
+`--allow-disable-default-postgres`: that stops and disables `postgresql.service` (every cluster and its data stay
+on disk; `sudo systemctl enable --now postgresql` brings them back). Re-runs of `system-setup` need the same flag
+while such a cluster exists. On a PC with no PostgreSQL the package install is told not to make the default
+`16/main` cluster, so a re-run passes the check.
+
 `system-setup` makes the user and folders, installs `postgresql-16`, `postgresql-16-pgvector` and `python3-venv`,
-copies the setup files to `app/setup/`, installs the four units and enables only the backup timer. It lists the
-PostgreSQL clusters that exist before it runs and never stops, disables or drops them; `postgresql.service` is not
-changed. Only a default `16/main` cluster that this run's package install created is stopped and set to `manual`
-start (not dropped). It also proves `gsmemory` can write the Windows copy folder (see below) and warns if not.
+copies the setup files to `app/setup/`, installs the four units and enables only the backup timer. It also proves
+`gsmemory` can write the Windows copy folder (see below) and stops with an error if not.
 `install` makes the cluster, builds the venv from `requirements.lock`
 (hashes required, wheels only, CPU-only torch), downloads the two local models (about 215 MB), copies the
 two extension modules to `app/extension/` and writes the secrets. An older `engine.env` gets the assertion secret
-added; its key does not change. `link-gateway` writes the GSAM server's `gateway.env` (next section). All three are
-safe to run again. `install` also prints the Claude CLI the engine will use (the one bundled in
-`claude-agent-sdk`); if it prints a `WARNING`, extraction will not work after `link-claude` (`chunks` still works).
-
-Before the first run on a PC, look at `pg_lsclusters` and `systemctl status postgresql` so you know what is
-already there. The script leaves it alone, but you should know.
+added; its key does not change. Last, it runs the Claude CLI the engine will use (the one bundled in
+`claude-agent-sdk`) as `gsmemory`, and fails if it cannot. `link-gateway` writes the GSAM server's `gateway.env`
+(next section but one). All three are safe to run again.
 
 ### Windows copy folder
 
-`system-setup` makes `/mnt/c/GreatstoneBackups/gs-memory` owned by `gsmemory` and writes a test file as `gsmemory`.
-On a `/mnt/c` mount without the WSL `metadata` option, owner changes are ignored and the test can fail. Then the
-nightly dump stays local only (the `backup` log says so). After the first `backup`, prove the copy with
-`ls -l /mnt/c/GreatstoneBackups/gs-memory/` (a `.dump` and its `.sha256`).
+`system-setup` makes `/mnt/c/GreatstoneBackups/gs-memory` owned by `gsmemory` and writes and removes a test file as
+`gsmemory`. With the WSL `metadata` mount option the owner change works. Without it (the WSL default) `/mnt/c`
+ignores the owner and shows every folder as `rwxrwxrwx`, so `gsmemory` can write too. If the test fails,
+`system-setup` stops with an error. The nightly `backup` fails (non-zero exit, `systemctl --failed` shows
+`gs-memory-backup.service`) if the folder is missing, the copy fails or the copy's checksum does not match; the
+local dump is kept. After the first `backup`, prove the copy with `ls -l /mnt/c/GreatstoneBackups/gs-memory/`
+(a `.dump` and its `.sha256`).
 
-## Link the Claude plan (one time, John)
+## Link the Claude plan (one time, John, in private)
 
 Extraction uses John's Claude Max plan through Hindsight's `claude-code` provider. Internal use only; never for a client
 instance. There is no API key and no paid fallback.
 
 1. In John's own terminal: `claude setup-token` (browser sign-in; prints a long-lived token).
-2. `sudo -u gsmemory /home/gsmemory/gs-memory/app/setup/gs-memory.sh link-claude` and paste the token. It is not echoed.
-3. `sudo systemctl restart gs-memory-hindsight`
+2. `sudo -u gsmemory /home/gsmemory/gs-memory/app/setup/gs-memory.sh link-claude` and paste the token at the
+   prompt. It is not echoed, printed or logged; it goes only to `secrets/claude.env` (mode `600`). Do not pass it
+   with `echo` (shell history), and never paste it into GSAM, an issue or a chat.
+3. `sudo systemctl restart gs-memory-hindsight` (the engine only; not `gs-memory-postgres`, not live GSAM)
 
 Undo: `... gs-memory.sh unlink-claude`, then restart. Without the link the engine uses provider `none`:
 `chunks` retain and recall still work (no model call), extraction and reflect do not.
@@ -127,6 +150,13 @@ signing helper that agents cannot read.
    (rebuilds the venv because the lock hash changed), restart, run `check`.
 
 ## Sandbox test (no sudo)
+
+The safety guards have a shell test with stubbed system commands (no PostgreSQL, no sudo, no PC change):
+`bash scripts/gs-memory/gs-memory.test.sh`. It covers: an existing cluster or active `postgresql.service` stops
+`system-setup`; the opt-in disables only the service and drops no cluster; a copy folder `gsmemory` cannot write
+stops `system-setup`; a failed backup copy exits non-zero; `preflight` output; `link-claude` never prints the token.
+
+For the full engine:
 
 Every path and port is an environment variable, so the whole script runs as a normal user in a scratch folder:
 

@@ -3,11 +3,15 @@
 # See doc/GS-MEMORY-ENGINE.md. G2 change list: GRE-649 section 5.3, approved by John on 4 Oct 2026 (GRE-674).
 #
 # Commands:
+#   preflight      (any user)  read-only checks before system-setup. PASS/FAIL per line, exit 1 on any FAIL.
 #   system-setup   (root)      user, packages, folders, systemd units. Never enables the engine at boot.
+#                              Stops with an error if a PostgreSQL cluster exists or postgresql.service is active.
+#                              --allow-disable-default-postgres: stop and disable postgresql.service, then go on.
+#                              No cluster is ever dropped.
 #   install        (gsmemory)  database cluster, pinned venv, models, extension, secrets. Safe to run again.
 #   link-gateway   (root)      copy the key and assertion secret to the GSAM user's ~/gs-memory/secrets/gateway.env.
 #   link-claude    (gsmemory)  read a `claude setup-token` token on stdin; engine uses John's Claude plan.
-#   backup         (gsmemory)  pg_dump to ~/gs-memory/backups and the Windows copy folder.
+#   backup         (gsmemory)  pg_dump to ~/gs-memory/backups and the Windows copy folder. Exit 1 if the copy fails.
 #   check          (any user)  bind, key and reachability checks. Exit 1 on any failure.
 #   serve-postgres / serve-hindsight  (gsmemory) foreground processes used by the systemd units.
 #
@@ -27,6 +31,7 @@ GS_MEMORY_BACKUP_KEEP="${GS_MEMORY_BACKUP_KEEP:-14}"
 GS_MEMORY_PYTHON="${GS_MEMORY_PYTHON:-python3}"
 GS_MEMORY_TORCH_INDEX="${GS_MEMORY_TORCH_INDEX:-https://download.pytorch.org/whl/cpu}"
 GS_MEMORY_CLAUDE_MODEL="${GS_MEMORY_CLAUDE_MODEL:-claude-sonnet-5}"
+GS_MEMORY_SYSTEMD_DIR="${GS_MEMORY_SYSTEMD_DIR:-/etc/systemd/system}"
 # The user the GSAM server runs as, and where it reads the engine secrets (server/src/services/memory-gateway/hindsight.ts).
 GS_MEMORY_GSAM_USER="${GS_MEMORY_GSAM_USER:-${SUDO_USER:-$(id -un)}}"
 GS_MEMORY_GATEWAY_ENV="${GS_MEMORY_GATEWAY_ENV:-$(getent passwd "$GS_MEMORY_GSAM_USER" | cut -d: -f6)/gs-memory/secrets/gateway.env}"
@@ -74,8 +79,17 @@ pg() { "$GS_MEMORY_PG_BIN/$1" "${@:2}"; }
 # --------------------------------------------------------------------------------------------
 # system-setup (root). Items 1, 2, 3 and 6 of the G2 change list.
 cmd_system_setup() {
+  local allow_disable=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --allow-disable-default-postgres) allow_disable=1;;
+      *) die "unknown option for system-setup: $arg";;
+    esac
+  done
   require_user root
   guard_paths_and_ports
+  # Before any change: an existing PostgreSQL on this PC stops the run unless John opts in.
+  guard_existing_postgres "$allow_disable"
 
   if ! id "$GS_MEMORY_USER" >/dev/null 2>&1; then
     log "create system user $GS_MEMORY_USER (home $GS_MEMORY_HOME, no login shell)"
@@ -83,29 +97,12 @@ cmd_system_setup() {
   fi
   chmod 0700 "$GS_MEMORY_HOME"
 
-  # Clusters that exist before this run are someone else's. Never stop, disable or drop them.
-  local clusters_before=""
-  if command -v pg_lsclusters >/dev/null; then
-    clusters_before="$(pg_lsclusters -h 2>/dev/null | awk '{print $1" "$2" port="$3" "$4}')"
-  fi
-  if [[ -n "$clusters_before" ]]; then
-    log "existing PostgreSQL clusters (left as they are):"
-    printf '    %s\n' "$clusters_before"
-  fi
-
   if [[ ! -x "$GS_MEMORY_PG_BIN/postgres" ]] || ! dpkg -s postgresql-16-pgvector >/dev/null 2>&1; then
-    log "install postgresql-16 and postgresql-16-pgvector"
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-16 postgresql-16-pgvector python3-venv
+    install_postgres_packages
   fi
-  # The package can create a default 16/main cluster on 5432. If this run created it, stop it and set it to
-  # manual start. Nothing is dropped, and postgresql.service is not changed (other clusters may need it).
-  if ! grep -qx '16 main .*' <<<"$clusters_before" \
-    && pg_lsclusters -h 2>/dev/null | awk '{print $1" "$2}' | grep -qx '16 main'; then
-    log "stop the new default 16/main cluster and set it to manual start (not dropped)"
-    pg_ctlcluster 16 main stop >/dev/null 2>&1 || true
-    echo manual > /etc/postgresql/16/main/start.conf
-  fi
+  # The package enables the postgresql.service umbrella. The guard above proved it runs no cluster of ours
+  # to keep (none exist, or John opted in), so turn it off again. Clusters are never dropped.
+  systemctl disable --now postgresql.service >/dev/null 2>&1 || true
 
   install -d -o "$GS_MEMORY_USER" -g "$GS_MEMORY_USER" -m 0700 \
     "$GS_MEMORY_ROOT" "$APP" "$GS_MEMORY_ROOT/pg" "$PGRUN" "$MODELS" "$SECRETS" "$BACKUPS" "$LOGS"
@@ -117,30 +114,190 @@ cmd_system_setup() {
   cp -r "$SCRIPT_DIR/." "$APP/setup/"
   chown -R "$GS_MEMORY_USER:$GS_MEMORY_USER" "$APP/setup"
 
-  # The nightly dump runs as the engine user, so it must be able to write here. On a /mnt/c (drvfs) mount
-  # chown can be ignored, so prove it with a real write as that user.
+  # The nightly dump runs as the engine user, so it must be able to write here. With the WSL `metadata`
+  # mount option the owner change works; without it /mnt/c ignores it and shows every folder as 0777.
+  # Either way, prove it with a real write as that user.
   install -d -m 0700 -o "$GS_MEMORY_USER" -g "$GS_MEMORY_USER" "$GS_MEMORY_WINDOWS_BACKUPS" 2>/dev/null \
     || install -d -m 0755 "$GS_MEMORY_WINDOWS_BACKUPS"
-  local probe="$GS_MEMORY_WINDOWS_BACKUPS/.gs-memory-write-test"
-  if runuser -u "$GS_MEMORY_USER" -- sh -c "echo ok > '$probe' && rm -f '$probe'" 2>/dev/null; then
-    log "Windows copy folder is writable by $GS_MEMORY_USER: $GS_MEMORY_WINDOWS_BACKUPS"
-  else
-    rm -f "$probe"
-    log "WARNING: $GS_MEMORY_USER cannot write $GS_MEMORY_WINDOWS_BACKUPS. Nightly dumps stay local only."
-    log "         See doc/GS-MEMORY-ENGINE.md, \"Windows copy folder\"."
-  fi
+  can_write_as "$GS_MEMORY_USER" "$GS_MEMORY_WINDOWS_BACKUPS" \
+    || die "$GS_MEMORY_USER cannot write $GS_MEMORY_WINDOWS_BACKUPS, so nightly backups would fail. See doc/GS-MEMORY-ENGINE.md, \"Windows copy folder\"."
+  log "Windows copy folder is writable by $GS_MEMORY_USER: $GS_MEMORY_WINDOWS_BACKUPS"
 
   log "install systemd units (not enabled; the engine is started by hand)"
   local unit
   for unit in gs-memory-postgres.service gs-memory-hindsight.service gs-memory-backup.service gs-memory-backup.timer; do
     sed -e "s#@USER@#$GS_MEMORY_USER#g" -e "s#@ROOT@#$GS_MEMORY_ROOT#g" \
-      "$SCRIPT_DIR/units/$unit" > "/etc/systemd/system/$unit"
-    chmod 0644 "/etc/systemd/system/$unit"
+      "$SCRIPT_DIR/units/$unit" > "$GS_MEMORY_SYSTEMD_DIR/$unit"
+    chmod 0644 "$GS_MEMORY_SYSTEMD_DIR/$unit"
   done
   systemctl daemon-reload
   # Only the backup timer is enabled. It skips quietly when the database is not running.
   systemctl enable --now gs-memory-backup.timer
   log "system setup done. Next: sudo -u $GS_MEMORY_USER $APP/setup/gs-memory.sh install"
+}
+
+# Any Debian-managed PostgreSQL cluster, or an active postgresql.service, belongs to someone else.
+# Without the opt-in: print it and stop before any change. With it: stop and disable postgresql.service only.
+# No cluster is ever dropped, and pg_ctlcluster is never called.
+guard_existing_postgres() {
+  local allow="$1" clusters="" active=0 line
+  if command -v pg_lsclusters >/dev/null; then
+    clusters="$(pg_lsclusters -h 2>/dev/null | awk '{print $1"/"$2", port "$3", "$4", data "$6}')"
+  fi
+  if systemctl is-active --quiet postgresql.service 2>/dev/null; then active=1; fi
+  if [[ -z "$clusters" && "$active" == 0 ]]; then
+    log "no existing PostgreSQL cluster and postgresql.service is not active"
+    return 0
+  fi
+  log "existing PostgreSQL found on this PC:"
+  while read -r line; do [[ -z "$line" ]] || log "    cluster $line"; done <<<"$clusters"
+  if [[ "$active" == 1 ]]; then log "    postgresql.service is active"; fi
+  if [[ "$allow" != 1 ]]; then
+    die "system-setup stopped and changed nothing. It never drops a cluster. If postgresql.service may be stopped and disabled (every cluster and its data stay on disk), run again with --allow-disable-default-postgres. If not sure, stop and comment on the install issue."
+  fi
+  log "--allow-disable-default-postgres: stop and disable postgresql.service. No cluster is dropped."
+  systemctl disable --now postgresql.service
+}
+
+# Debian makes a default 16/main cluster on 5432 unless createcluster.conf says no. Say no for this
+# install only, then put the file back as it was.
+install_postgres_packages() {
+  log "install postgresql-16 and postgresql-16-pgvector (no default cluster)"
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-common
+  local conf=/etc/postgresql-common/createcluster.conf saved rc=0
+  saved="$(mktemp)"
+  cp -p "$conf" "$saved"
+  echo 'create_main_cluster = false' >> "$conf"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-16 postgresql-16-pgvector python3-venv || rc=$?
+  cp -p "$saved" "$conf"
+  rm -f "$saved"
+  [[ "$rc" == 0 ]] || die "apt-get install failed (exit $rc)"
+}
+
+# Writes and removes one test file in $2 as user $1.
+can_write_as() {
+  local probe=(sh -c 'p="$1/.gs-memory-write-test.$$" && echo ok > "$p" && rm -f "$p"' sh "$2")
+  if [[ "$(id -un)" == "$1" ]]; then
+    "${probe[@]}" 2>/dev/null
+  else
+    runuser -u "$1" -- "${probe[@]}" 2>/dev/null
+  fi
+}
+
+# --------------------------------------------------------------------------------------------
+# preflight (any user, no sudo). Read-only apart from one test file in the Windows copy folder.
+cmd_preflight() {
+  local fail=0
+  pass() { printf '  PASS  %s\n' "$*"; }
+  bad() { printf '  FAIL  %s\n' "$*"; fail=1; }
+  note() { printf '  NOTE  %s\n' "$*"; }
+  echo "gs-memory preflight as $(id -un) on $(hostname) at $(date -u +%FT%TZ)"
+
+  if (guard_paths_and_ports) >/dev/null 2>&1; then
+    pass "ports $GS_MEMORY_PG_PORT/$GS_MEMORY_API_PORT and root $GS_MEMORY_ROOT are not live GSAM's"
+  else
+    bad "$( (guard_paths_and_ports) 2>&1 | sed 's/^\[gs-memory\] ERROR: //')"
+  fi
+
+  local clusters=""
+  if command -v pg_lsclusters >/dev/null; then
+    clusters="$(pg_lsclusters -h 2>/dev/null | awk '{print $1"/"$2" (port "$3", "$4")"}' | paste -sd' ' -)"
+  fi
+  if [[ -z "$clusters" ]]; then
+    pass "no existing PostgreSQL cluster (pg_lsclusters)"
+  else
+    bad "existing PostgreSQL cluster: $clusters. system-setup will stop; see --allow-disable-default-postgres"
+  fi
+  if systemctl is-active --quiet postgresql.service 2>/dev/null; then
+    bad "postgresql.service is active. system-setup will stop; see --allow-disable-default-postgres"
+  else
+    pass "postgresql.service is not active"
+  fi
+  case "$(systemctl is-system-running 2>/dev/null || true)" in
+    running|degraded|starting) pass "systemd runs (needed for the units)";;
+    *) bad "systemd is not running (set systemd=true in /etc/wsl.conf)";;
+  esac
+
+  local port
+  for port in "$GS_MEMORY_PG_PORT" "$GS_MEMORY_API_PORT"; do
+    if [[ -z "$(ss -Hltn "( sport = :$port )" 2>/dev/null)" ]]; then
+      pass "port $port is free"
+    else
+      bad "port $port is in use (expected only if gs-memory already runs)"
+    fi
+  done
+
+  # The nearest folder that exists: the copy folder itself, or the drive above it before system-setup.
+  local win="$GS_MEMORY_WINDOWS_BACKUPS"
+  while [[ ! -d "$win" && "$win" != / ]]; do win="$(dirname "$win")"; done
+  if can_write_as "$(id -un)" "$win"; then
+    pass "$win is writable by $(id -un)"
+  else
+    bad "$win is not writable by $(id -un)"
+  fi
+  if [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]] && id "$GS_MEMORY_USER" >/dev/null 2>&1 && [[ "$(id -u)" == 0 || "$(id -un)" == "$GS_MEMORY_USER" ]]; then
+    if can_write_as "$GS_MEMORY_USER" "$GS_MEMORY_WINDOWS_BACKUPS"; then
+      pass "$GS_MEMORY_WINDOWS_BACKUPS is writable by $GS_MEMORY_USER"
+    else
+      bad "$GS_MEMORY_WINDOWS_BACKUPS is not writable by $GS_MEMORY_USER (nightly backup will fail)"
+    fi
+  else
+    note "write test as $GS_MEMORY_USER runs in system-setup (and here when run with sudo after it)"
+  fi
+
+  local need_gb="${GS_MEMORY_MIN_FREE_GB:-5}" at="$GS_MEMORY_ROOT" free_gb
+  while [[ ! -d "$at" && "$at" != / ]]; do at="$(dirname "$at")"; done
+  free_gb="$(df -Pk "$at" | awk 'NR==2 {print int($4/1048576)}')"
+  if (( free_gb >= need_gb )); then
+    pass "$free_gb GB free at $at (need $need_gb GB for venv, models and database)"
+  else
+    bad "$free_gb GB free at $at (need $need_gb GB)"
+  fi
+  free_gb="$(df -Pk "$win" | awk 'NR==2 {print int($4/1048576)}')"
+  if (( free_gb >= 1 )); then pass "$free_gb GB free at $win"; else bad "$free_gb GB free at $win (need 1 GB)"; fi
+
+  preflight_claude_cli
+  [[ "$fail" == 0 ]] && echo "RESULT: PASS" || echo "RESULT: FAIL"
+  return "$fail"
+}
+
+# The claude-code provider runs the Claude CLI bundled in the claude-agent-sdk wheel, as the engine user.
+# Before install the venv does not exist, so only the pin is checked. After install, run preflight as
+# the engine user (or root) and it runs the CLI as that user.
+preflight_claude_cli() {
+  if ! grep -q '^claude-agent-sdk==' "$SCRIPT_DIR/requirements.lock"; then
+    bad "requirements.lock has no claude-agent-sdk pin (it brings the Claude CLI)"
+    return
+  fi
+  if [[ ! -x "$VENV/bin/python" ]]; then
+    if [[ "$(id -u)" == 0 || "$(id -un)" == "$GS_MEMORY_USER" ]]; then
+      note "no venv yet; install brings the Claude CLI (claude-agent-sdk pin). Run preflight again after install"
+    else
+      note "Claude CLI is checked by install, or by: sudo -u $GS_MEMORY_USER $APP/setup/gs-memory.sh preflight"
+    fi
+    pass "requirements.lock pins claude-agent-sdk (bundles the Claude CLI)"
+    return
+  fi
+  local version
+  if version="$(claude_cli_version)"; then
+    pass "$GS_MEMORY_USER can run the Claude CLI: $version"
+  else
+    bad "$GS_MEMORY_USER cannot run the Claude CLI; extraction will not work after link-claude"
+  fi
+}
+
+# Prints the version of the Claude CLI the engine will use, run as the engine user. Fails if there is none.
+claude_cli_version() {
+  local run=()
+  [[ "$(id -un)" == "$GS_MEMORY_USER" ]] || run=(runuser -u "$GS_MEMORY_USER" --)
+  local cli
+  cli="$("${run[@]}" "$VENV/bin/python" -c 'import claude_agent_sdk, pathlib; p = pathlib.Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"; print(p if p.is_file() else "")' 2>/dev/null || true)"
+  [[ -n "$cli" ]] || cli="$("${run[@]}" sh -c 'command -v claude' 2>/dev/null || true)"
+  [[ -n "$cli" ]] || return 1
+  local version
+  version="$("${run[@]}" "$cli" --version 2>/dev/null | head -1)" && [[ -n "$version" ]] || return 1
+  printf '%s (%s)\n' "$cli" "$version"
 }
 
 # --------------------------------------------------------------------------------------------
@@ -195,16 +352,12 @@ EOF
 }
 
 # The claude-code provider needs a Claude CLI the engine user can run: the one bundled in the
-# claude-agent-sdk wheel, or one on its PATH. Without it only `chunks` retain works (no extraction).
+# claude-agent-sdk wheel, or one on its PATH. Without it extraction cannot work, so install fails here.
 report_claude_cli() {
-  local cli
-  cli="$("$VENV/bin/python" -c 'import claude_agent_sdk, pathlib; p = pathlib.Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"; print(p if p.is_file() else "")' 2>/dev/null || true)"
-  [[ -n "$cli" ]] || cli="$(command -v claude || true)"
-  if [[ -n "$cli" && -x "$cli" ]]; then
-    log "Claude CLI for the engine: $cli ($("$cli" --version 2>/dev/null | head -1 || echo 'version unknown'))"
-  else
-    log "WARNING: no Claude CLI that $(id -un) can run. link-claude will not enable extraction until one is found."
-  fi
+  local found
+  found="$(claude_cli_version)" \
+    || die "no Claude CLI that $(id -un) can run (claude-agent-sdk bundle or PATH). Extraction would not work after link-claude."
+  log "Claude CLI for the engine: $found"
 }
 
 install_extension() {
@@ -363,14 +516,17 @@ cmd_backup() {
   mv "$file.part" "$file"
   sha256sum "$file" | sed "s#$BACKUPS/##" > "$file.sha256"
   log "dump written: $file ($(du -h "$file" | cut -f1))"
-  if [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" && -w "$GS_MEMORY_WINDOWS_BACKUPS" ]]; then
-    cp "$file" "$file.sha256" "$GS_MEMORY_WINDOWS_BACKUPS/"
-    log "copied to $GS_MEMORY_WINDOWS_BACKUPS"
-    prune "$GS_MEMORY_WINDOWS_BACKUPS"
-  else
-    log "WARNING: $GS_MEMORY_WINDOWS_BACKUPS missing or not writable; local copy only"
-  fi
   prune "$BACKUPS"
+  # A missing or failed copy is an error, not a warning: the unit fails and `systemctl --failed` shows it.
+  local name
+  name="$(basename "$file")"
+  [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]] || die "Windows copy folder missing: $GS_MEMORY_WINDOWS_BACKUPS (local dump kept: $file)"
+  cp "$file" "$file.sha256" "$GS_MEMORY_WINDOWS_BACKUPS/" \
+    || die "cannot copy $name and its .sha256 to $GS_MEMORY_WINDOWS_BACKUPS (local dump kept)"
+  (cd "$GS_MEMORY_WINDOWS_BACKUPS" && sha256sum -c --quiet "$name.sha256" >/dev/null 2>&1) \
+    || die "checksum of the copy in $GS_MEMORY_WINDOWS_BACKUPS does not match (local dump kept)"
+  log "copied to $GS_MEMORY_WINDOWS_BACKUPS (checksum verified)"
+  prune "$GS_MEMORY_WINDOWS_BACKUPS"
 }
 
 prune() {
@@ -522,18 +678,26 @@ PY
   return "$fail"
 }
 
-usage() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
-case "${1:-}" in
-  system-setup) cmd_system_setup;;
-  install) cmd_install;;
-  link-claude) cmd_link_claude;;
-  unlink-claude) cmd_unlink_claude;;
-  serve-postgres) cmd_serve_postgres;;
-  serve-hindsight) cmd_serve_hindsight;;
-  backup) cmd_backup;;
-  restore-test) shift; cmd_restore_test "$@";;
-  link-gateway) cmd_link_gateway;;
-  check) cmd_check;;
-  *) usage; exit 2;;
-esac
+main() {
+  case "${1:-}" in
+    preflight) cmd_preflight;;
+    system-setup) shift; cmd_system_setup "$@";;
+    install) cmd_install;;
+    link-claude) cmd_link_claude;;
+    unlink-claude) cmd_unlink_claude;;
+    serve-postgres) cmd_serve_postgres;;
+    serve-hindsight) cmd_serve_hindsight;;
+    backup) cmd_backup;;
+    restore-test) shift; cmd_restore_test "$@";;
+    link-gateway) cmd_link_gateway;;
+    check) cmd_check;;
+    *) usage; exit 2;;
+  esac
+}
+
+# Sourcing the script (the shell test does) defines the functions without running a command.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
