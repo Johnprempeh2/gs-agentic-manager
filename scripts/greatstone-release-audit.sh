@@ -5,8 +5,10 @@
 #   scripts/greatstone-release-audit.sh [days]   (default 7)
 #
 # Keystone runs it at the start of each daily candidate step; Flint runs it at
-# the start of each live check. For each NOT CHECKED row, Keystone gives Flint
-# one live check (doc/GREATSTONE-WAY-OF-WORKING.md).
+# the start of each live check. Only the tag live now can get a live check, so
+# a past tag with no live check shows "missed (no longer live)". The last line
+# is the one action: "action: one live check of <tag>" or "action: none"
+# (doc/GREATSTONE-WAY-OF-WORKING.md, GRE-919).
 #
 # Read-only. It reads $LIVE_URL/api/health, searches issues on the same server
 # and reads tags in the release repo. It makes no tag, issue or comment and
@@ -98,6 +100,7 @@ git -C "$RELEASE_REPO" fetch --quiet --tags origin 2>/dev/null \
   || say "(could not fetch origin; using the local tags and origin/main)"
 
 # --- Now -------------------------------------------------------------------
+LIVE_TAGS=""
 LIVE_COMMIT="$(health_commit "$LIVE_URL")"
 [ -n "$LIVE_COMMIT" ] || die "the live server at $LIVE_URL does not answer /api/health with a commit."
 say "Now"
@@ -134,23 +137,34 @@ say "Last $DAYS days"
 printf '  %-20s %-11s %-20s %-20s %s\n' "live tag" "date" "rc tag" "preview check" "live check"
 SINCE=$(( $(date +%s) - DAYS * 86400 ))
 ROWS=0
+ACTION="none"
 while read -r tag when day; do
   [ "$when" -ge "$SINCE" ] || continue
   ROWS=$((ROWS + 1))
   commit="$(git -C "$RELEASE_REPO" rev-parse "refs/tags/$tag^{commit}")"
   # Two rc tags can share a commit (a candidate cut again with no new merge); a check of either counts.
   rc="$(tags_at "$commit" 'rc-*')"
-  if [ -z "$rc" ]; then
-    printf '  %-20s %-11s %-20s %-20s %s\n' "$tag" "$day" "-" "NOT CHECKED" "NOT CHECKED"
-    continue
+  preview="NOT CHECKED"
+  live="NOT CHECKED"
+  if [ -n "$rc" ]; then
+    lines=""
+    for one in $rc; do
+      lines+="$(issues "$one")"$'\n' || die "the issue search on $LIVE_URL failed (see above)."
+    done
+    preview="$(check_state "$lines" "$rc" preview)"
+    live="$(check_state "$lines" "$rc" live)"
   fi
-  lines=""
-  for one in $rc; do
-    lines+="$(issues "$one")"$'\n' || die "the issue search on $LIVE_URL failed (see above)."
-  done
-  printf '  %-20s %-11s %-20s %-20s %s\n' "$tag" "$day" "$rc" \
-    "$(check_state "$lines" "$rc" preview)" "$(check_state "$lines" "$rc" live)"
+  # Only the tag live now can still get a live check; for a past tag it was missed.
+  if [ "$live" = "NOT CHECKED" ]; then
+    case " $LIVE_TAGS " in
+      *" $tag "*) ACTION="one live check of $tag" ;;
+      *) live="missed (no longer live)" ;;
+    esac
+  fi
+  printf '  %-20s %-11s %-20s %-20s %s\n' "$tag" "$day" "${rc:--}" "$preview" "$live"
 done < <(git -C "$RELEASE_REPO" for-each-ref --sort=creatordate \
   --format='%(refname:short) %(creatordate:unix) %(creatordate:short)' 'refs/tags/live-*')
 [ "$ROWS" -gt 0 ] || say "  no live-* tags in the last $DAYS days"
+say ""
+say "action: $ACTION"
 exit 0

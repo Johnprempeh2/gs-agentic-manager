@@ -118,3 +118,51 @@ test("each live tag shows its rc and whether Flint checked it", async () => {
     rmSync(box.root, { recursive: true, force: true });
   }
 });
+
+// GRE-919: only the tag live now can get a live check. A past tag with no live
+// check is "missed (no longer live)", and the output ends with one action line.
+const actionLines = (stdout) => stdout.split("\n").filter((l) => l.startsWith("action:"));
+const lastLine = (stdout) => stdout.trimEnd().split("\n").at(-1);
+
+test("a past tag with no live check shows missed; the live tag not checked is the action", async () => {
+  const box = repo();
+  try {
+    const { stdout } = await audit(box, box.commits[1], []);
+    assert.match(stdout, /live-2026-10-04\.1\s+\S+\s+rc-2026-10-04\.1\s+NOT CHECKED\s+missed \(no longer live\)/);
+    assert.match(stdout, /live-2026-10-04\.2\s+\S+\s+rc-2026-10-04\.2\s+NOT CHECKED\s+NOT CHECKED/);
+    assert.deepEqual(actionLines(stdout), ["action: one live check of live-2026-10-04.2"]);
+    assert.equal(lastLine(stdout), "action: one live check of live-2026-10-04.2");
+  } finally {
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test("the live tag checked: action none, and a past check still shows checked", async () => {
+  const box = repo();
+  try {
+    const { stdout } = await audit(box, box.commits[1], [
+      { identifier: "GRE-2", status: "done", title: "Flint: check live after rc-2026-10-04.1" },
+      { identifier: "GRE-5", status: "done", title: "Flint: live check of rc-2026-10-04.2" },
+    ]);
+    assert.match(stdout, /live-2026-10-04\.1\s+\S+\s+rc-2026-10-04\.1\s+NOT CHECKED\s+checked \(GRE-2\)/);
+    assert.match(stdout, /live-2026-10-04\.2\s+\S+\s+rc-2026-10-04\.2\s+NOT CHECKED\s+checked \(GRE-5\)/);
+    assert.doesNotMatch(stdout, /missed/);
+    assert.deepEqual(actionLines(stdout), ["action: none"]);
+    assert.equal(lastLine(stdout), "action: none");
+  } finally {
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
+
+test("live on a commit with no live-* tag: every tag is past, action none", async () => {
+  const box = repo();
+  try {
+    const { stdout } = await audit(box, box.commits[2], []);
+    assert.match(stdout, /live-2026-10-04\.1\s+.*missed \(no longer live\)/);
+    assert.match(stdout, /live-2026-10-04\.2\s+.*missed \(no longer live\)/);
+    assert.doesNotMatch(stdout.split("Last")[1], /NOT CHECKED\s*$/m);
+    assert.equal(lastLine(stdout), "action: none");
+  } finally {
+    rmSync(box.root, { recursive: true, force: true });
+  }
+});
