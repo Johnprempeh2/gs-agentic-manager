@@ -120,6 +120,34 @@ if [[ "$IS_ROOT" == 0 ]]; then
   chmod 0755 "$GS_MEMORY_WINDOWS_BACKUPS"
 fi
 
+# --- 6b. backup expiry: no dump older than 90 days survives, even with a high KEEP (GRE-887) ---
+make_dump() { (cd "$1" && echo synthetic-dump > "hindsight-$2.dump" && sha256sum "hindsight-$2.dump" > "hindsight-$2.dump.sha256"); }
+old="$(date -u -d '-91 days' +%Y%m%dT%H%M%SZ)"; recent="$(date -u -d '-89 days' +%Y%m%dT%H%M%SZ)"
+fresh backup-expiry
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"
+for d in "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"; do make_dump "$d" "$old"; make_dump "$d" "$recent"; done
+out="$(GS_MEMORY_BACKUP_KEEP=500 "$SCRIPT" backup 2>&1)"; rc=$?
+if [[ "$rc" == 0 && ! -e "$GS_MEMORY_ROOT/backups/hindsight-$old.dump" && ! -e "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-$old.dump" \
+  && ! -e "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-$old.dump.sha256" ]]; then
+  pass "backup expiry: 91-day-old dump and checksum removed in both places with KEEP=500"
+else fail "backup expiry: old dump kept: rc=$rc out=$out"; fi
+[[ -e "$GS_MEMORY_ROOT/backups/hindsight-$recent.dump" && -e "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-$recent.dump" ]] \
+  && pass "backup expiry: 89-day-old dump kept" || fail "backup expiry: recent dump removed"
+
+fresh backup-expiry-cap
+mkdir -p "$GS_MEMORY_ROOT/backups"; make_dump "$GS_MEMORY_ROOT/backups" "$old"
+GS_MEMORY_BACKUP_MAX_AGE_DAYS=365 GS_MEMORY_WINDOWS_BACKUPS="$CASE/win" "$SCRIPT" backup >/dev/null 2>&1
+[[ ! -e "$GS_MEMORY_ROOT/backups/hindsight-$old.dump" ]] && pass "backup expiry: MAX_AGE_DAYS above 90 is capped at 90" || fail "backup expiry: MAX_AGE_DAYS=365 kept a 91-day dump"
+
+fresh backup-expiry-down
+mkdir -p "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"
+for d in "$GS_MEMORY_ROOT/backups" "$GS_MEMORY_WINDOWS_BACKUPS"; do make_dump "$d" "$old"; done
+printf '#!/usr/bin/env bash\nexit 1\n' > "$PGBIN/pg_isready"
+out="$("$SCRIPT" backup 2>&1)"; rc=$?
+printf '#!/usr/bin/env bash\nexit 0\n' > "$PGBIN/pg_isready"
+[[ "$rc" == 0 && ! -e "$GS_MEMORY_ROOT/backups/hindsight-$old.dump" && ! -e "$GS_MEMORY_WINDOWS_BACKUPS/hindsight-$old.dump" ]] \
+  && pass "backup expiry: old dumps expire on a night the database is down" || fail "backup expiry when down: rc=$rc out=$out"
+
 # --- 7. preflight: PASS/FAIL per line, exit 1 on an existing cluster ------------------------
 fresh preflight-clean
 out="$("$SCRIPT" preflight 2>&1)"; rc=$?

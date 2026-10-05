@@ -3,11 +3,11 @@ const MARK = { pass: "PASS", fail: "FAIL", inconclusive: "INCONCLUSIVE" };
 export function formatReport(report, { verbose = false } = {}) {
   const lines = [];
   const faults = report.faults.length ? ` (faults: ${report.faults.join(", ")})` : "";
-  lines.push(`Memory phase 1 acceptance — target: ${report.target}${faults}`);
+  lines.push(`Memory acceptance (phase ${(report.phases ?? [1]).join("+")}) — target: ${report.target}${faults}`);
   lines.push(`Preflight: ${report.preflight.ok ? "ok" : "NOT OK"}; engine up: ${report.preflight.engineUp}; ${report.preflight.notes.join("; ")}`);
   lines.push("");
   for (const r of report.results) {
-    lines.push(`${MARK[r.status].padEnd(12)} ${r.id}  ${r.title}`);
+    lines.push(`${MARK[r.status].padEnd(12)} ${r.id}  P${r.phase ?? 1}  ${r.title}`);
     const show = verbose || r.status !== "pass";
     for (const c of r.checks ?? []) if (show || !c.ok) lines.push(`             ${c.ok ? "ok  " : "FAIL"} ${c.label}`);
     if (r.inconclusive) lines.push(`             why: ${r.inconclusive}`);

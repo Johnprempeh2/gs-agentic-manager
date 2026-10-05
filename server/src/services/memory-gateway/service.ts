@@ -1,22 +1,31 @@
-import { and, eq, inArray, like, ne } from "drizzle-orm";
+import { and, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
   heartbeatRuns,
+  memoryConflicts,
+  memoryExtractedFacts,
   memoryOperations,
   memoryRecords,
+  memoryReviewEvents,
   memoryScopes,
   memorySettings,
   principalPermissionGrants,
   projects,
 } from "@greatstone/db";
 import {
+  MEMORY_CONFLICT_NOTE,
   MEMORY_EVIDENCE_NOTE,
+  MEMORY_FLAG_NOTE,
   MEMORY_HARD_BOUNDARY_KINDS,
   MEMORY_UNAVAILABLE_MESSAGE,
   type ContributeMemory,
   type CreateMemoryScope,
+  type MemoryConflictLink,
   type MemoryContributeResult,
+  type MemoryContributionFlag,
+  type MemoryDecisionClass,
+  type MemoryEntryType,
   type MemoryRecallHit,
   type MemoryRecallResult,
   type MemoryRecord,
@@ -40,17 +49,22 @@ import {
   withEngineTimeout,
   type MemoryEngine,
   type MemoryEngineDocument,
+  type MemoryEngineHit,
 } from "./engine.js";
+import { detectContributionFlags } from "./contribution-flags.js";
 import { classifyEngineError, nextAttemptAt } from "./ingest-outbox.js";
 import { enqueueMemoryIngest, settleDirectMemoryIngest } from "./ingest-outbox-db.js";
+import { flagPossibleConflicts, insertReviewEvent, openConflictLinks } from "./review-store.js";
 import {
   detectSensitiveContent,
   MEMORY_SENSITIVE_CONTENT_CODE,
   MemorySensitiveContentError,
 } from "./sensitive-content.js";
 
+export const MEMORY_TOPICS_REQUIRED_CODE = "memory_topics_required";
+
 /** Slack after the direct call's timeout before the drain may take the entry. */
-const DIRECT_RETAIN_GRACE_MS = 5_000;
+export const DIRECT_RETAIN_GRACE_MS = 5_000;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -69,14 +83,14 @@ export type MemoryCaller = {
   isBoardAdmin: boolean;
 };
 
-type ScopeRow = typeof memoryScopes.$inferSelect;
-type RecordRow = typeof memoryRecords.$inferSelect;
-type MemoryPermission = "memory:read" | "memory:contribute" | "memory:admin";
-type GrantScopes = Map<string, Record<string, unknown> | null>;
+export type ScopeRow = typeof memoryScopes.$inferSelect;
+export type RecordRow = typeof memoryRecords.$inferSelect;
+export type MemoryPermission = "memory:read" | "memory:contribute" | "memory:approve" | "memory:delete" | "memory:admin";
+export type GrantScopes = Map<string, Record<string, unknown> | null>;
 
 export const MEMORY_DISABLED_MESSAGE = "Memory is not enabled for this company";
 
-function bankForCompany(companyId: string) {
+export function bankForCompany(companyId: string) {
   return `gs-${companyId}-main`;
 }
 
@@ -94,11 +108,11 @@ function scopeTag(kind: MemoryScopeKind, ids: { scopeId: string; projectId?: str
   }
 }
 
-function isHardBoundary(kind: string) {
+export function isHardBoundary(kind: string) {
   return (MEMORY_HARD_BOUNDARY_KINDS as readonly string[]).includes(kind);
 }
 
-function grantedScopeIds(scope: Record<string, unknown> | null | undefined): string[] | null {
+export function grantedScopeIds(scope: Record<string, unknown> | null | undefined): string[] | null {
   const ids = scope?.memoryScopeIds;
   if (!Array.isArray(ids)) return null;
   return ids.filter((id): id is string => typeof id === "string");
@@ -109,7 +123,7 @@ function grantedScopeIds(scope: Record<string, unknown> | null | undefined): str
  * organization and ordinary project scopes only. Client and restricted-project
  * scopes must be named. Agent working scopes are never granted.
  */
-function grantCovers(grants: GrantScopes, key: MemoryPermission, scope: ScopeRow) {
+export function grantCovers(grants: GrantScopes, key: MemoryPermission, scope: ScopeRow) {
   if (!grants.has(key)) return false;
   if (scope.kind === "agent") return false;
   const ids = grantedScopeIds(grants.get(key));
@@ -117,7 +131,7 @@ function grantCovers(grants: GrantScopes, key: MemoryPermission, scope: ScopeRow
   return scope.kind === "organization" || scope.kind === "project";
 }
 
-function toScope(row: ScopeRow): MemoryScope {
+export function toScope(row: ScopeRow): MemoryScope {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -129,7 +143,7 @@ function toScope(row: ScopeRow): MemoryScope {
   };
 }
 
-function toRecord(row: RecordRow, scope: ScopeRow): MemoryRecord {
+export function toRecord(row: RecordRow, scope: ScopeRow): MemoryRecord {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -137,6 +151,8 @@ function toRecord(row: RecordRow, scope: ScopeRow): MemoryRecord {
     scopeKind: scope.kind as MemoryScopeKind,
     kind: row.kind as MemoryRecordKind,
     status: row.status as MemoryRecordStatus,
+    entryType: row.entryType as MemoryEntryType,
+    decisionClass: row.decisionClass as MemoryDecisionClass,
     sensitivity: row.sensitivity as MemorySensitivity,
     title: row.title,
     content: row.content,
@@ -149,11 +165,16 @@ function toRecord(row: RecordRow, scope: ScopeRow): MemoryRecord {
     sourceId: row.sourceId,
     effectiveFrom: row.effectiveFrom,
     effectiveTo: row.effectiveTo,
+    supersedesId: row.supersedesId,
+    supersededById: row.supersededById,
+    supersededAt: row.supersededAt,
+    reviewedAt: row.reviewedAt,
     version: row.version,
     retainMode: row.retainMode as MemoryRetainMode,
     syncState: row.syncState as MemorySyncState,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
   };
 }
 
@@ -297,6 +318,10 @@ export function memoryGatewayService(
     const ownsAgentScope = (scope: ScopeRow) =>
       scope.kind === "agent" && caller.agentId !== null && scope.agentId === caller.agentId;
     return {
+      /** John: a person who owns or administers the company. Never an agent, whatever its grants. */
+      isOwner: caller.actorType === "user" && caller.isBoardAdmin,
+      grants,
+      ownsAgentScope,
       canRead(scope: ScopeRow) {
         if (scope.companyId !== caller.companyId) return false;
         if (isAdmin || ownsAgentScope(scope)) return true;
@@ -432,6 +457,22 @@ export function memoryGatewayService(
     if (input.effectiveFrom && input.effectiveTo && input.effectiveTo < input.effectiveFrom) {
       throw badRequest("effectiveTo must not be before effectiveFrom");
     }
+    if (input.entryType && input.status && input.entryType !== input.status) {
+      throw badRequest("entryType and status must match; send entryType only");
+    }
+    const entryType = input.entryType ?? input.status ?? "proposal";
+    // The conflict check matches topics, not text, so an untagged client
+    // proposal would skip it. Refused before anything is written (GRE-886).
+    if (scope.kind === "client" && entryType === "proposal" && input.topics.length === 0) {
+      await logOperation(caller, "contribute", "denied", {
+        scopeIds: [scope.id],
+        detail: { reason: MEMORY_TOPICS_REQUIRED_CODE },
+      });
+      throw badRequest(
+        "A proposal in a client scope needs at least one topic, so it can be checked for conflicts with approved decisions",
+        { code: MEMORY_TOPICS_REQUIRED_CODE },
+      );
+    }
     // Checked before anything is written, so a refused value is in no table
     // here or in the engine (GRE-868). The audit row names pattern types only.
     const matchedTypes = detectSensitiveContent(
@@ -449,14 +490,17 @@ export function memoryGatewayService(
 
     // The record and its outbox entry are written together, so a record never
     // exists without a way to reach the engine (GRE-673).
-    const { row, document, entry } = await db.transaction(async (tx) => {
+    const { row, document, entry, possibleConflicts } = await db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(memoryRecords)
         .values({
           companyId: caller.companyId,
           scopeId: scope.id,
           kind: "source_statement",
-          status: input.status,
+          // Every contribution starts unreviewed; only review can approve it (GRE-886).
+          status: "unreviewed",
+          entryType,
+          decisionClass: input.decisionClass,
           sensitivity: input.sensitivity,
           title: input.title ?? null,
           content: input.content,
@@ -481,7 +525,8 @@ export function memoryGatewayService(
         context: inserted.sourceKind ? `${inserted.sourceKind}:${inserted.sourceId ?? ""}` : null,
         tags: [
           scope.tag,
-          `status:${inserted.status}`,
+          // Review state lives in GSAM only; the engine tag never changes, so it is not a status.
+          `type:${inserted.entryType}`,
           `sens:${inserted.sensitivity}`,
           caller.agentId ? `by:agent:${caller.agentId}` : `by:user:${caller.userId}`,
         ],
@@ -498,7 +543,11 @@ export function memoryGatewayService(
         // Keep the drain off the entry while the call below is in flight.
         notBefore: new Date(Date.now() + engineTimeoutMs + DIRECT_RETAIN_GRACE_MS),
       });
-      return { row: inserted, document: doc, entry: queued };
+      const now = inserted.createdAt;
+      await insertReviewEvent(tx, caller, inserted, { action: "contribute", toStatus: "unreviewed", now });
+      // A new entry never overwrites an approved one: it only opens a conflict for review.
+      const conflicts = scope.kind === "agent" ? [] : await flagPossibleConflicts(tx, caller, inserted, now);
+      return { row: inserted, document: doc, entry: queued, possibleConflicts: conflicts };
     });
 
     // One direct call so the caller hears "ok" when the engine is up. On any
@@ -541,15 +590,22 @@ export function memoryGatewayService(
         .returning();
     }
 
+    // Marks for the reviewer only; nothing here changes the record's status.
+    const flags: MemoryContributionFlag[] = detectContributionFlags([input.title, input.content].filter(Boolean).join("\n"));
+    if (possibleConflicts.length > 0) flags.push("possible_conflict");
     await logOperation(caller, "contribute", engineAvailable ? "ok" : "unavailable", {
       scopeIds: [scope.id],
       recordId: row.id,
-      detail: { retainMode: settings.retainMode, status: row.status },
+      detail: { retainMode: settings.retainMode, entryType: row.entryType, possibleConflicts: possibleConflicts.length, flags },
     });
     return {
       record: toRecord(synced, scope),
       engineAvailable,
       message: engineAvailable ? null : MEMORY_UNAVAILABLE_MESSAGE,
+      possibleConflicts,
+      conflictNote: possibleConflicts.length > 0 ? MEMORY_CONFLICT_NOTE : null,
+      flags,
+      flagNote: flags.length > 0 ? MEMORY_FLAG_NOTE : null,
     };
   }
 
@@ -567,7 +623,87 @@ export function memoryGatewayService(
       throw notFound("Memory record not found");
     }
     await logOperation(caller, "get", "ok", { scopeIds: [scope.id], recordId: row.id });
+    if (row.status !== "deleted") {
+      await db.update(memoryRecords).set({ lastUsedAt: new Date() }).where(eq(memoryRecords.id, row.id));
+    }
     return toRecord(row, scope);
+  }
+
+  /**
+   * Links every engine fact the gateway sees to the record and contributor it
+   * came from (plan 8.5). Ids only; the fact text stays in the engine. A
+   * failure here never fails the recall.
+   */
+  async function recordExtractedFacts(
+    companyId: string,
+    hits: MemoryEngineHit[],
+    rowsById: Map<string, RecordRow>,
+    scopesById: Map<string, ScopeRow>,
+    now: Date,
+  ) {
+    const values = hits.flatMap((hit) => {
+      const row = rowsById.get(hit.documentId);
+      if (!row || !hit.unitId) return [];
+      return [{
+        companyId,
+        recordId: row.id,
+        bankId: scopesById.get(row.scopeId)!.bankId,
+        engineUnitId: hit.unitId.slice(0, 200),
+        factType: hit.factType?.slice(0, 50) ?? null,
+        contributorAgentId: row.contributorAgentId,
+        contributorUserId: row.contributorUserId,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      }];
+    });
+    if (values.length === 0) return;
+    const unique = [...new Map(values.map((value) => [`${value.bankId}:${value.engineUnitId}`, value])).values()];
+    try {
+      await db
+        .insert(memoryExtractedFacts)
+        .values(unique)
+        .onConflictDoUpdate({
+          target: [memoryExtractedFacts.companyId, memoryExtractedFacts.bankId, memoryExtractedFacts.engineUnitId],
+          set: { lastSeenAt: now },
+        });
+    } catch (error) {
+      logger.warn({ err: error, companyId }, "memory extracted-fact provenance write failed; recall goes on");
+    }
+  }
+
+  /**
+   * Records that held approval and were in their effective window on `asOf`.
+   * A superseded record counts when it was ever approved; supersession sets
+   * its `effectiveTo` to the replacement's start. The window is the dates the
+   * contributor gave (or the creation time), not when the review happened.
+   */
+  async function inForceAsOf(companyId: string, records: MemoryRecord[], asOf: Date) {
+    const inWindow = records.filter((record) => {
+      const from = new Date(record.effectiveFrom ?? record.createdAt);
+      const to = record.effectiveTo ? new Date(record.effectiveTo) : null;
+      return from <= asOf && (!to || to > asOf);
+    });
+    const superseded = inWindow.filter((record) => record.status === "superseded").map((record) => record.id);
+    const wasApproved = new Set(
+      superseded.length === 0
+        ? []
+        : await db
+            .selectDistinct({ recordId: memoryReviewEvents.recordId })
+            .from(memoryReviewEvents)
+            .where(
+              and(
+                eq(memoryReviewEvents.companyId, companyId),
+                inArray(memoryReviewEvents.recordId, superseded),
+                eq(memoryReviewEvents.toStatus, "approved"),
+              ),
+            )
+            .then((rows) => rows.map((row) => row.recordId)),
+    );
+    return new Set(
+      inWindow
+        .filter((record) => record.status === "approved" || wasApproved.has(record.id))
+        .map((record) => record.id),
+    );
   }
 
   async function recall(caller: MemoryCaller, input: RecallMemory): Promise<MemoryRecallResult> {
@@ -600,7 +736,7 @@ export function memoryGatewayService(
       tagsByBank.set(scope.bankId, [...(tagsByBank.get(scope.bankId) ?? []), scope.tag]);
     }
 
-    const hits: Array<{ documentId: string; text: string; score: number | null }> = [];
+    const hits: MemoryEngineHit[] = [];
     try {
       for (const [bankId, tags] of tagsByBank) {
         hits.push(...(await callEngine(() => engine.recall({ bankId, query: input.query, tags, limit: input.limit }))));
@@ -639,24 +775,91 @@ export function memoryGatewayService(
       if (!row) continue;
       const existing = best.get(row.id);
       if (existing && (existing.score ?? 0) >= (hit.score ?? 0)) continue;
-      best.set(row.id, { record: toRecord(row, scopesById.get(row.scopeId)!), excerpt: hit.text, score: hit.score });
+      best.set(row.id, { record: toRecord(row, scopesById.get(row.scopeId)!), excerpt: hit.text, score: hit.score, conflicts: [] });
     }
-    // Approved knowledge first; newest is never treated as correct.
-    const results = [...best.values()]
-      .sort((a, b) => {
-        const approved = Number(b.record.status === "approved") - Number(a.record.status === "approved");
-        return approved !== 0 ? approved : (b.score ?? 0) - (a.score ?? 0);
-      })
-      .slice(0, input.limit);
+    const matched = [...best.values()].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, input.limit);
+
+    // Material disputes travel with the result: open conflicts on each record,
+    // plus the approved record a match conflicts with and the record that
+    // replaced a superseded match, even when the engine did not return them.
+    const matchedIds = matched.map((hit) => hit.record.id);
+    const { links } = await openConflictLinks(db, caller.companyId, matchedIds);
+    const relatedIds = new Set<string>();
+    for (const hit of matched) {
+      for (const link of links.get(hit.record.id) ?? []) if (!link.isApprovedSide) relatedIds.add(link.otherRecordId);
+      if (hit.record.supersededById) relatedIds.add(hit.record.supersededById);
+      // As of a past date the answer may be the record a match replaced.
+      if (input.asOf && hit.record.supersedesId) relatedIds.add(hit.record.supersedesId);
+    }
+    matchedIds.forEach((id) => relatedIds.delete(id));
+    const relatedRows = relatedIds.size === 0
+      ? []
+      : await db
+          .select()
+          .from(memoryRecords)
+          .where(
+            and(
+              eq(memoryRecords.companyId, caller.companyId),
+              inArray(memoryRecords.id, [...relatedIds]),
+              inArray(memoryRecords.scopeId, scopeIds),
+              ne(memoryRecords.status, "deleted"),
+            ),
+          );
+    const added: MemoryRecallHit[] = relatedRows.map((row) => ({
+      record: toRecord(row, scopesById.get(row.scopeId)!),
+      excerpt: [row.title, row.content].filter(Boolean).join("\n\n").slice(0, 2_000),
+      score: null,
+      conflicts: [],
+      addedBecause: matched.some((hit) => hit.record.supersededById === row.id || hit.record.supersedesId === row.id)
+        ? "supersession"
+        : "conflict",
+    }));
+    // Both sides of a conflict always sit in one scope, so every link here is
+    // to a record this caller may read.
+    const addedLinks = (await openConflictLinks(db, caller.companyId, added.map((hit) => hit.record.id))).links;
+    for (const hit of matched) hit.conflicts = links.get(hit.record.id) ?? [];
+    for (const hit of added) hit.conflicts = addedLinks.get(hit.record.id) ?? [];
+
+    // Approved knowledge first, then disputes, then unreviewed, then history.
+    // Newest is never treated as correct. With `asOf`, what was in force on
+    // that date goes before everything else.
+    const rank: Record<string, number> = { approved: 0, disputed: 1, unreviewed: 2, superseded: 3 };
+    const candidates = [...matched, ...added];
+    if (input.asOf) {
+      const inForce = await inForceAsOf(caller.companyId, candidates.map((hit) => hit.record), input.asOf);
+      for (const hit of candidates) hit.inForceAsOf = inForce.has(hit.record.id);
+    }
+    const order = (hit: MemoryRecallHit) => (hit.inForceAsOf === false ? 10 : 0) + (rank[hit.record.status] ?? 9);
+    const results = candidates.sort((a, b) => {
+      const byStatus = order(a) - order(b);
+      return byStatus !== 0 ? byStatus : (b.score ?? -1) - (a.score ?? -1);
+    });
+
+    const now = new Date();
+    if (matchedIds.length > 0) {
+      await db
+        .update(memoryRecords)
+        .set({ lastUsedAt: now })
+        .where(and(eq(memoryRecords.companyId, caller.companyId), inArray(memoryRecords.id, matchedIds)));
+    }
+    await recordExtractedFacts(caller.companyId, hits, rowsById, scopesById, now);
 
     await logOperation(caller, "recall", "ok", {
       scopeIds,
       detail: { returned: results.length, engineHits: hits.length },
     });
-    return { available: true, note: MEMORY_EVIDENCE_NOTE, results };
+    return {
+      available: true,
+      note: MEMORY_EVIDENCE_NOTE,
+      conflictNote: MEMORY_CONFLICT_NOTE,
+      ...(input.asOf ? { asOf: input.asOf.toISOString() } : {}),
+      results,
+    };
   }
 
   return {
+    /** For the review service (review.ts) only; routes use the methods below. */
+    internals: { accessFor, logOperation, loadScope, callEngine, engine, engineTimeoutMs },
     getSettings,
     updateSettings,
     assertEnabled,

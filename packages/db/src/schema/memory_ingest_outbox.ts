@@ -17,7 +17,7 @@ export const memoryIngestOutbox = pgTable(
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     /** sha256 of the canonical payload; makes a repeat enqueue a no-op. */
     payloadHash: text("payload_hash").notNull(),
-    /** `pending` | `in_flight` | `synced` | `needs_attention` */
+    /** `pending` | `in_flight` | `synced` | `needs_attention` | `cancelled` (a retain whose record was deleted first) */
     state: text("state").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),

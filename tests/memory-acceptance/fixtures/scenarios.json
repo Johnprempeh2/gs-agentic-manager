@@ -1,5 +1,5 @@
 {
-  "$comment": "Synthetic only. Kestrel Works scenario fixtures D1-D7 from the GRE-651 threat model, section 5.2. Phase 1 uses D3 and D7; the rest are committed now for phase 2 and 3.",
+  "$comment": "Synthetic only. Kestrel Works scenario fixtures D1-D7 from the GRE-651 threat model, section 5.2, plus D8 (GRE-888). entities/topics are what a contributor would tag; the gateway conflict check matches on them (GRE-886).",
   "synthetic": true,
   "scenarios": {
     "D1": {
@@ -7,6 +7,7 @@
       "records": [
         {
           "id": "R-101",
+          "entities": ["Alder Bakery"], "topics": ["care plan price"],
           "scope": "cl-alder",
           "status": "approved",
           "kind": "decision",
@@ -20,6 +21,7 @@
         },
         {
           "id": "R-102",
+          "entities": ["Alder Bakery"], "topics": ["care plan price"],
           "scope": "cl-alder",
           "status": "observation",
           "kind": "observation",
@@ -37,6 +39,7 @@
       "records": [
         {
           "id": "R-201",
+          "entities": ["Kestrel Works"], "topics": ["P1 response target"],
           "scope": "org",
           "status": "approved",
           "kind": "decision",
@@ -46,6 +49,7 @@
         },
         {
           "id": "R-202",
+          "entities": ["Kestrel Works"], "topics": ["P1 response target"],
           "scope": "org",
           "status": "approved",
           "kind": "decision",
@@ -65,6 +69,7 @@
       "records": [
         {
           "id": "R-301",
+          "entities": ["Alder Bakery"], "topics": ["contract renewal date"],
           "scope": "cl-alder",
           "status": "approved",
           "kind": "decision",
@@ -73,6 +78,7 @@
         },
         {
           "id": "R-302",
+          "entities": ["Brookfield Dental"], "topics": ["contract renewal date"],
           "scope": "cl-brook",
           "status": "approved",
           "kind": "decision",
@@ -174,7 +180,7 @@
         },
         {
           "seq": 3,
-          "recordId": "R-501",
+          "recordId": "R-501", "entities": ["Alder Bakery"], "topics": ["care plan price"],
           "scope": "cl-alder",
           "change": "new",
           "nearDuplicateOf": "R-102",
@@ -182,7 +188,7 @@
         },
         {
           "seq": 4,
-          "recordId": "R-502",
+          "recordId": "R-502", "entities": ["Alder Bakery"], "topics": ["care plan price"],
           "scope": "cl-alder",
           "change": "new",
           "nearDuplicateOf": "R-102",
@@ -190,7 +196,7 @@
         },
         {
           "seq": 5,
-          "recordId": "R-503",
+          "recordId": "R-503", "entities": ["Alder Bakery"], "topics": ["care plan price"],
           "scope": "cl-alder",
           "change": "new",
           "nearDuplicateOf": "R-102",
@@ -201,6 +207,7 @@
           "recordId": "R-506",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["office opening hours"],
           "text": "Synthetic note 6: office opening hours updated."
         },
         {
@@ -215,6 +222,7 @@
           "recordId": "R-508",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["staging deploy checklist"],
           "text": "Synthetic note 8: staging deploy checklist updated."
         },
         {
@@ -229,6 +237,7 @@
           "recordId": "R-510",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["support rota"],
           "text": "Synthetic note 10: support rota updated."
         },
         {
@@ -243,6 +252,7 @@
           "recordId": "R-512",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["backup check cadence"],
           "text": "Synthetic note 12: backup check cadence updated."
         },
         {
@@ -257,6 +267,7 @@
           "recordId": "R-514",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["meeting notes format"],
           "text": "Synthetic note 14: meeting notes format updated."
         },
         {
@@ -271,6 +282,7 @@
           "recordId": "R-516",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["office opening hours"],
           "text": "Synthetic note 16: office opening hours updated."
         },
         {
@@ -285,6 +297,7 @@
           "recordId": "R-518",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["staging deploy checklist"],
           "text": "Synthetic note 18: staging deploy checklist updated."
         },
         {
@@ -299,6 +312,7 @@
           "recordId": "R-520",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["support rota"],
           "text": "Synthetic note 20: support rota updated."
         },
         {
@@ -313,6 +327,7 @@
           "recordId": "R-522",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["backup check cadence"],
           "text": "Synthetic note 22: backup check cadence updated."
         },
         {
@@ -327,6 +342,7 @@
           "recordId": "R-524",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["meeting notes format"],
           "text": "Synthetic note 24: meeting notes format updated."
         },
         {
@@ -341,6 +357,7 @@
           "recordId": "R-526",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["office opening hours"],
           "text": "Synthetic note 26: office opening hours updated."
         },
         {
@@ -355,6 +372,7 @@
           "recordId": "R-528",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["staging deploy checklist"],
           "text": "Synthetic note 28: staging deploy checklist updated."
         },
         {
@@ -369,6 +387,7 @@
           "recordId": "R-530",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["support rota"],
           "text": "Synthetic note 30: support rota updated."
         },
         {
@@ -383,6 +402,7 @@
           "recordId": "R-532",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["backup check cadence"],
           "text": "Synthetic note 32: backup check cadence updated."
         },
         {
@@ -397,6 +417,7 @@
           "recordId": "R-534",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["meeting notes format"],
           "text": "Synthetic note 34: meeting notes format updated."
         },
         {
@@ -411,6 +432,7 @@
           "recordId": "R-536",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["office opening hours"],
           "text": "Synthetic note 36: office opening hours updated."
         },
         {
@@ -425,6 +447,7 @@
           "recordId": "R-538",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["staging deploy checklist"],
           "text": "Synthetic note 38: staging deploy checklist updated."
         },
         {
@@ -439,8 +462,19 @@
           "recordId": "R-540",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["support rota"],
           "text": "Synthetic note 40: support rota updated."
         }
+      ],
+      "$missedDayComment": "Added for GRE-888: entries written on the skipped day (2026-10-06). The 2026-10-07 run must review them.",
+      "missedDayEntries": [
+        { "seq": 41, "recordId": "R-541", "scope": "org", "change": "new", "text": "Synthetic note 41: printer toner order updated." },
+        { "seq": 42, "recordId": "R-542", "scope": "cl-alder", "change": "new", "topics": ["Alder newsletter schedule"], "text": "Synthetic note 42: Alder newsletter schedule updated." },
+        { "seq": 43, "recordId": "R-543", "scope": "org", "change": "new", "text": "Synthetic note 43: password manager rollout updated." }
+      ],
+      "$outOfScopeComment": "Added for GRE-888: a cl-brook entry written during the audit window. The steward has no cl-brook grant and must never review it.",
+      "outOfScopeEntries": [
+        { "recordId": "R-545", "scope": "cl-brook", "change": "new", "topics": ["Brookfield reception rota"], "text": "Synthetic note 45: Brookfield reception rota updated." }
       ]
     },
     "D6": {
@@ -448,6 +482,7 @@
       "records": [
         {
           "id": "R-601",
+          "entities": ["Alder Bakery"], "topics": ["care plan price"],
           "scope": "cl-alder",
           "status": "proposal",
           "kind": "proposal",
@@ -536,6 +571,27 @@
           "scope": "org",
           "$comment": "Ofcom drama range"
         }
+      ]
+    },
+    "D8": {
+      "title": "Phase 2 probes: deletion and same-question-two-clients (GRE-888)",
+      "$comment": "MT-13 in GRE-651 deletes a record holding a phone number, but phone numbers are now blocked on contribute (GRE-868). This record carries a unique marker instead, so any copy left in any table is found by a plain text search.",
+      "records": [
+        {
+          "id": "R-801",
+          "scope": "cl-alder",
+          "status": "observation",
+          "kind": "observation",
+          "contributor": "ag-mason-syn",
+          "marker": "ZEBRA-7731-PLUM",
+          "topics": ["delivery van parking"],
+          "text": "Alder delivery van parks at loading bay ZEBRA-7731-PLUM on Tuesdays."
+        }
+      ],
+      "$conflictProbesComment": "Same question as D3 in each client. R-304 (cl-alder) gives cl-brook's answer: a conflict may be flagged against R-301 only, never R-302. R-305 (cl-brook) repeats cl-brook's own answer: it conflicts with nothing in its client, so any flag against R-301 would be a cross-client flag.",
+      "conflictProbes": [
+        { "id": "R-304", "entities": ["Alder Bakery"], "topics": ["contract renewal date"], "scope": "cl-alder", "status": "observation", "contributor": "ag-mason-syn", "text": "Contract renewal date is 30 September." },
+        { "id": "R-305", "entities": ["Brookfield Dental"], "topics": ["contract renewal date"], "scope": "cl-brook", "status": "observation", "contributor": "ag-scribe-syn", "text": "Contract renewal date is 30 September (reconfirmed)." }
       ]
     }
   }

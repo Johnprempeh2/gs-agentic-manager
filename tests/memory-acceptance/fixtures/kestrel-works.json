@@ -59,6 +59,19 @@
       "runs": []
     },
     {
+      "id": "ag-scribe-syn",
+      "role": "contributor",
+      "$comment": "Added for GRE-888. Writes the seed records and fixture decisions that John then approves, so no seeded record is approved by its own contributor.",
+      "grants": [
+        { "scope": "org", "rights": ["contribute"] },
+        { "scope": "pj-kestrel-acq", "rights": ["contribute"] },
+        { "scope": "pj-alder-site", "rights": ["contribute"] },
+        { "scope": "cl-alder", "rights": ["contribute"] },
+        { "scope": "cl-brook", "rights": ["contribute"] }
+      ],
+      "runs": []
+    },
+    {
       "id": "ag-rogue-syn",
       "role": "contributor",
       "grants": [{ "scope": "org", "rights": ["read", "contribute"] }],

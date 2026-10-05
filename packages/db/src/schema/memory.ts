@@ -16,6 +16,8 @@ import { projects } from "./projects.js";
 // Organization memory (GRE-672, ADR-0001). GSAM owns the governance record;
 // the engine (Hindsight) owns content and retrieval. Every engine document id
 // is a `memory_records.id`. Rollback: drop these four tables.
+// Phase 2 (GRE-886) adds the review, relationship, conflict and extracted-fact
+// stores below; see migration 0297 for its rollback.
 
 /** One row per company. Memory is off until an admin turns it on. */
 export const memorySettings = pgTable("memory_settings", {
@@ -61,7 +63,12 @@ export const memoryRecords = pgTable(
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     scopeId: uuid("scope_id").notNull().references(() => memoryScopes.id, { onDelete: "cascade" }),
     kind: text("kind").notNull().default("source_statement"),
+    /** Review state: `unreviewed`, `approved`, `disputed`, `superseded`, `deleted` (GRE-886). */
     status: text("status").notNull(),
+    /** What the contributor offered: `proposal` or `observation`. */
+    entryType: text("entry_type").notNull().default("proposal"),
+    /** Decides who may approve: `operational`, or `pricing`/`policy`/`legal`/`client_commitment` (John only). */
+    decisionClass: text("decision_class").notNull().default("operational"),
     sensitivity: text("sensitivity").notNull().default("internal"),
     title: text("title"),
     /** Null once the record is deleted (tombstone). */
@@ -78,6 +85,10 @@ export const memoryRecords = pgTable(
     effectiveTo: timestamp("effective_to", { withTimezone: true }),
     supersedesId: uuid("supersedes_id"),
     supersededById: uuid("superseded_by_id"),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /** Last recall or read; working notes expire 90 days after it (G1 decision 7). */
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     version: integer("version").notNull().default(1),
     retainMode: text("retain_mode").notNull(),
     /** `pending` until the engine has the document; Ridge's outbox (GRE-673) retries these. */
@@ -91,6 +102,8 @@ export const memoryRecords = pgTable(
   (table) => ({
     companyScopeIdx: index("memory_records_company_scope_idx").on(table.companyId, table.scopeId),
     companySyncIdx: index("memory_records_company_sync_idx").on(table.companyId, table.syncState),
+    companyStatusIdx: index("memory_records_company_status_idx").on(table.companyId, table.status),
+    companyUpdatedIdx: index("memory_records_company_updated_idx").on(table.companyId, table.updatedAt),
   }),
 );
 
@@ -113,5 +126,118 @@ export const memoryOperations = pgTable(
   },
   (table) => ({
     companyCreatedIdx: index("memory_operations_company_created_idx").on(table.companyId, table.createdAt),
+  }),
+);
+
+/**
+ * Who reviewed a record, how and why (GRE-886, plan 8.5). Append-only, kept
+ * apart from the record so the history survives supersession and deletion.
+ */
+export const memoryReviewEvents = pgTable(
+  "memory_review_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    recordId: uuid("record_id").notNull().references(() => memoryRecords.id, { onDelete: "cascade" }),
+    scopeId: uuid("scope_id").notNull(),
+    /** `contribute`, `approve`, `dispute`, `supersede`, `superseded_by`, `conflict_flagged`, `conflict_resolved`, `delete` */
+    action: text("action").notNull(),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status"),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id").notNull(),
+    agentId: uuid("agent_id"),
+    userId: text("user_id"),
+    runId: uuid("run_id"),
+    reason: text("reason"),
+    relatedRecordId: uuid("related_record_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    companyRecordIdx: index("memory_review_events_company_record_idx").on(table.companyId, table.recordId, table.createdAt),
+    companyCreatedIdx: index("memory_review_events_company_created_idx").on(table.companyId, table.createdAt),
+  }),
+);
+
+/** Relationships a contributor or reviewer stated. Never inferred; both ends sit in one scope. */
+export const memoryRelationships = pgTable(
+  "memory_relationships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    scopeId: uuid("scope_id").notNull().references(() => memoryScopes.id, { onDelete: "cascade" }),
+    fromRecordId: uuid("from_record_id").notNull().references(() => memoryRecords.id, { onDelete: "cascade" }),
+    toRecordId: uuid("to_record_id").notNull().references(() => memoryRecords.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    authorAgentId: uuid("author_agent_id"),
+    authorUserId: text("author_user_id"),
+    runId: uuid("run_id"),
+    sourceKind: text("source_kind"),
+    sourceId: text("source_id"),
+    /** Cleared when either end is deleted. */
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    edgeUq: uniqueIndex("memory_relationships_edge_uq").on(table.fromRecordId, table.toRecordId, table.type),
+    companyFromIdx: index("memory_relationships_company_from_idx").on(table.companyId, table.fromRecordId),
+    companyToIdx: index("memory_relationships_company_to_idx").on(table.companyId, table.toRecordId),
+  }),
+);
+
+/**
+ * A possible conflict between a record and the approved record it may
+ * contradict. Detection is fallible; a row is a lead for a reviewer, not proof.
+ */
+export const memoryConflicts = pgTable(
+  "memory_conflicts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    scopeId: uuid("scope_id").notNull().references(() => memoryScopes.id, { onDelete: "cascade" }),
+    recordId: uuid("record_id").notNull().references(() => memoryRecords.id, { onDelete: "cascade" }),
+    /** The current approved position the record may contradict. */
+    approvedRecordId: uuid("approved_record_id").notNull().references(() => memoryRecords.id, { onDelete: "cascade" }),
+    /** `contribution_check` | `relationship` */
+    origin: text("origin").notNull(),
+    /** The entity or topic names both records share. Cleared on delete. */
+    sharedTerms: jsonb("shared_terms").$type<string[]>().notNull().default([]),
+    /** `open` | `resolved` */
+    state: text("state").notNull().default("open"),
+    resolution: text("resolution"),
+    resolutionNote: text("resolution_note"),
+    resolvedByActorType: text("resolved_by_actor_type"),
+    resolvedByActorId: text("resolved_by_actor_id"),
+    detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => ({
+    pairUq: uniqueIndex("memory_conflicts_pair_uq").on(table.recordId, table.approvedRecordId),
+    companyStateIdx: index("memory_conflicts_company_state_idx").on(table.companyId, table.state),
+    companyApprovedIdx: index("memory_conflicts_company_approved_idx").on(table.companyId, table.approvedRecordId),
+  }),
+);
+
+/**
+ * Engine-extracted facts seen by the gateway, linked to the record and the
+ * contributor they came from (plan 8.5). Ids only, never fact text.
+ */
+export const memoryExtractedFacts = pgTable(
+  "memory_extracted_facts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    recordId: uuid("record_id").notNull().references(() => memoryRecords.id, { onDelete: "cascade" }),
+    bankId: text("bank_id").notNull(),
+    engineUnitId: text("engine_unit_id").notNull(),
+    factType: text("fact_type"),
+    contributorAgentId: uuid("contributor_agent_id"),
+    contributorUserId: text("contributor_user_id"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    unitUq: uniqueIndex("memory_extracted_facts_unit_uq").on(table.companyId, table.bankId, table.engineUnitId),
+    companyRecordIdx: index("memory_extracted_facts_company_record_idx").on(table.companyId, table.recordId),
   }),
 );

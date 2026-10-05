@@ -203,14 +203,15 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(created.body.record).toMatchObject({
       contributorAgentId: mason.id,
       contributorUserId: null,
-      status: "observation",
+      status: "unreviewed",
+      entryType: "observation",
       syncState: "synced",
       scopeKind: "agent",
     });
     expect(fake.state.docs[0]).toMatchObject({
       documentId: created.body.record.id,
       bankId: `gs-${companyId}-main`,
-      tags: expect.arrayContaining([`scope:agent:${mason.id}`, "status:observation", `by:agent:${mason.id}`]),
+      tags: expect.arrayContaining([`scope:agent:${mason.id}`, "type:observation", `by:agent:${mason.id}`]),
     });
 
     const recalled = await request(agent).post(`${base}/recall`).send({ query: "invoices" });
@@ -431,8 +432,8 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(kestrel.status).toBe(201);
     expect(heron.status).toBe(201);
 
-    const kestrelNote = await request(board).post(`${base}/records`).send({ scopeId: kestrel.body.id, content: "Kestrel price list v3 is 120 per seat" });
-    const heronNote = await request(board).post(`${base}/records`).send({ scopeId: heron.body.id, content: "Heron price list is 90 per seat" });
+    const kestrelNote = await request(board).post(`${base}/records`).send({ scopeId: kestrel.body.id, content: "Kestrel price list v3 is 120 per seat", topics: ["price list"] });
+    const heronNote = await request(board).post(`${base}/records`).send({ scopeId: heron.body.id, content: "Heron price list is 90 per seat", topics: ["price list"] });
     expect(kestrelNote.status).toBe(201);
     expect(heronNote.status).toBe(201);
     expect(new Set(fake.state.docs.map((doc) => doc.bankId)).size).toBe(2);

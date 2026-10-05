@@ -130,10 +130,63 @@ as a `NOTE`. This is accepted while memory holds only synthetic data. It **must 
 it is an open item on the G4 gate in GRE-646. Possible fixes: run agents as a different user, or give the server a
 signing helper that agents cannot read.
 
+## Delete, supersede and retention (GRE-886)
+
+- **Delete** (`POST /api/companies/:id/memory/records/:recordId/delete`, owner, the agent for its own working notes,
+  or a `memory:delete` grant) leaves a tombstone: id, scope, contributor, source reference, dates and links. In one
+  transaction it clears the record's title, content, entities, topics and evidence; scrubs every queued or sent
+  `retain` payload in `memory_ingest_outbox` (an unsent one becomes `cancelled`); clears relationship notes and
+  conflict terms; and drops the record's `memory_extracted_facts` rows. It then deletes the engine document, which
+  removes its chunks, memory units and their search entries. If the engine is down, the delete waits in the outbox
+  and is retried. Recall never returns a deleted record, even before the engine delete lands.
+- The Hindsight entity table can keep an entity **name** that other documents share. Summit's phase 2 deletion test
+  (GRE-888) checks the real engine tables for any raw text left.
+- **Supersede** keeps the old record readable as history (`GET .../records/:recordId/history`) and links both ways.
+- **Retention** (G1 decision 7): agent working notes 90 days after last use, unreviewed entries 180 days unless
+  approved, cited by an approved record or in an open conflict, superseded entries 1 year. `POST .../memory/retention`
+  with `{"dryRun": true, "withinDays": 14}` lists what falls due soon; `{"dryRun": false}` deletes what is due. Owner or
+  `memory:admin` only. Backups follow the 90-day rule below.
+
+## Steward daily review (GRE-887)
+
+- One pass a day reads records changed since a durable cursor (`memory_steward_cursors`) and writes findings to the
+  decision queue (`memory_steward_queue_items`): failed ingestion, duplicates (same content hash in one scope),
+  stale material (unreviewed past 90/180 days, superseded past 1 year, unsynced past 24 hours) and possible
+  contradictions (open `memory_conflicts`). Related findings share one open item with their sources, scope, the
+  current approved position and a proposed resolution. The steward sees a content hash, never the content, and never
+  approves, edits or deletes a record.
+- **Routing:** pricing, policy, legal and client-commitment items, and client or restricted scopes, go to John.
+  Agent scopes go to that agent, project scopes to the project lead; anything else goes to John.
+- **Reliability:** each page of records commits with its queue writes and the cursor in one transaction, under the
+  run's lease token. A killed pass loses only its uncommitted page; the next pass marks it `interrupted` once the
+  lease (10 minutes) lapses and resumes from the cursor. Every escalation has a unique key (finding, record,
+  version), so a rerun never escalates the same entry twice. A missed day needs nothing: the next pass catches up
+  from the cursor. Two passes at once: the second gets `409 busy`.
+- **Access:** a scoped, expiring grant (`memory_steward_grants`), sandbox only until G4. Grants can be made only on an
+  instance with `GSAM_MEMORY_STEWARD_SANDBOX_GRANTS=true`, by a company owner or admin, for at most 30 days.
+  Every pass, refusal, grant and revoke is written to `memory_operations`.
+- **API** (memory must be on): `POST .../memory/steward/review` (the granted agent), `GET .../memory/steward/queue`,
+  `GET .../memory/steward/report?days=7` (owner, admin or the granted steward; review time, plan tokens, missed days
+  and queue age per Europe/London day), `POST .../memory/steward/grants` and `.../grants/:grantId/revoke` (owner or
+  admin).
+- **Routine** (created at G4 on the steward's own task, not before): a GSAM routine assigned to the steward agent,
+  `concurrencyPolicy: coalesce_if_active`, `catchUpPolicy: skip_missed` (the cursor catches up), one schedule
+  trigger `30 3 * * *` in `Europe/London` (after the 02:30 engine backup). The routine's task tells the agent to call
+  `POST .../memory/steward/review` once and post the result and `GET .../steward/report?days=1` on the task.
+
 ## Back up and restore
 
 - Nightly at 02:30 the timer runs `backup`: `pg_dump -Fc` to `backups/` plus a `.sha256`, and a copy to
   `C:\GreatstoneBackups\gs-memory\`. 14 dumps kept in each place. If the database is not running it skips.
+- **Deleted content leaves every backup within 90 days** (G1 decision 7, GRE-887). A delete removes the content from
+  the engine and leaves a tombstone in GSAM, but older dumps still hold it until they expire. `backup` therefore
+  removes any dump (and its `.sha256`) whose name stamp is older than `GS_MEMORY_BACKUP_MAX_AGE_DAYS` (default 90,
+  values above 90 are capped at 90), in both places, whatever `GS_MEMORY_BACKUP_KEEP` says. It also does this on a
+  night the database is down, so old dumps cannot outlive the limit because no new dump was made. In practice the
+  14-dump rule removes them after about 14 days; 90 days is the hard ceiling.
+- GSAM's own database backups also hold memory records until a delete clears them. They expire after
+  `GSAM_DB_BACKUP_RETENTION_DAYS` (default 7). While memory is on, this must stay at 90 or less.
+- Any other copy (the future off-disk copy, a manual export) must follow the same 90-day rule before G4.
 - By hand: `sudo -u gsmemory .../gs-memory.sh backup`
 - Restore test (throwaway cluster on a free port, removed after): `sudo -u gsmemory .../gs-memory.sh restore-test [dump]`
 - Real restore: stop the engine, `dropdb`/`createdb hindsight -O hindsight` over the socket, `pg_restore --no-owner --role=hindsight`, start.

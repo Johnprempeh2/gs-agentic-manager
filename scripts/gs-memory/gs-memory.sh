@@ -33,6 +33,10 @@ GS_MEMORY_PG_PORT="${GS_MEMORY_PG_PORT:-15432}"
 GS_MEMORY_API_PORT="${GS_MEMORY_API_PORT:-18888}"
 GS_MEMORY_WINDOWS_BACKUPS="${GS_MEMORY_WINDOWS_BACKUPS:-/mnt/c/GreatstoneBackups/gs-memory}"
 GS_MEMORY_BACKUP_KEEP="${GS_MEMORY_BACKUP_KEEP:-14}"
+# Deleted memory must leave every backup within 90 days (G1 decision 7, GRE-887). A dump older than
+# this is removed whatever GS_MEMORY_BACKUP_KEEP says. It can be set lower, never higher.
+GS_MEMORY_BACKUP_MAX_AGE_DAYS="${GS_MEMORY_BACKUP_MAX_AGE_DAYS:-90}"
+(( GS_MEMORY_BACKUP_MAX_AGE_DAYS > 0 && GS_MEMORY_BACKUP_MAX_AGE_DAYS <= 90 )) 2>/dev/null || GS_MEMORY_BACKUP_MAX_AGE_DAYS=90
 GS_MEMORY_PYTHON="${GS_MEMORY_PYTHON:-python3}"
 GS_MEMORY_TORCH_INDEX="${GS_MEMORY_TORCH_INDEX:-https://download.pytorch.org/whl/cpu}"
 GS_MEMORY_CLAUDE_MODEL="${GS_MEMORY_CLAUDE_MODEL:-claude-sonnet-5}"
@@ -512,6 +516,9 @@ cmd_backup() {
   umask 077
   if ! pg pg_isready -q -h "$PGRUN" -p "$GS_MEMORY_PG_PORT"; then
     log "database not running; no backup tonight"
+    # Old dumps still expire on a night with no new dump.
+    prune "$BACKUPS"
+    [[ -d "$GS_MEMORY_WINDOWS_BACKUPS" ]] && prune "$GS_MEMORY_WINDOWS_BACKUPS"
     return 0
   fi
   local stamp file
@@ -535,11 +542,20 @@ cmd_backup() {
 }
 
 prune() {
-  local dir="$1" old
+  local dir="$1" old cutoff f stamp
   # Newest first; keep the first GS_MEMORY_BACKUP_KEEP dumps.
   mapfile -t old < <(ls -1t "$dir"/hindsight-*.dump 2>/dev/null | tail -n +"$((GS_MEMORY_BACKUP_KEEP + 1))")
-  local f
   for f in "${old[@]}"; do rm -f "$f" "$f.sha256"; done
+  # Age cap by the UTC stamp in the name, not mtime: a copy to Windows gets a new mtime.
+  cutoff="$(date -u -d "-$GS_MEMORY_BACKUP_MAX_AGE_DAYS days" +%Y%m%dT%H%M%SZ)"
+  for f in "$dir"/hindsight-*.dump; do
+    [[ -e "$f" ]] || continue
+    stamp="$(basename "$f" .dump)"; stamp="${stamp#hindsight-}"
+    if [[ "$stamp" < "$cutoff" ]]; then
+      rm -f "$f" "$f.sha256"
+      log "expired backup removed (older than $GS_MEMORY_BACKUP_MAX_AGE_DAYS days): $f"
+    fi
+  done
 }
 
 # --------------------------------------------------------------------------------------------

@@ -2,9 +2,15 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import type { Db } from "@greatstone/db";
 import {
   contributeMemorySchema,
+  createMemoryRelationshipSchema,
   createMemoryScopeSchema,
+  deleteMemoryRecordSchema,
   MEMORY_DETECTION_NOTE,
   recallMemorySchema,
+  resolveMemoryConflictSchema,
+  reviewMemoryRecordSchema,
+  runMemoryRetentionSchema,
+  supersedeMemoryRecordSchema,
   updateMemorySettingsSchema,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
@@ -16,6 +22,7 @@ import {
   MEMORY_SENSITIVE_CONTENT_CODE,
   MemorySensitiveContentError,
 } from "../services/memory-gateway/sensitive-content.js";
+import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
 
@@ -45,6 +52,7 @@ export function memoryCallerFromRequest(req: Request, companyId: string): Memory
 export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTimeoutMs?: number } = {}) {
   const router = Router();
   const svc = memoryGatewayService(db, options);
+  const reviews = memoryReviewService(db, svc);
 
   // Runs before body validation so a company with memory off learns nothing
   // from any memory route, not even which bodies are valid.
@@ -159,6 +167,80 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
   router.post("/companies/:companyId/memory/recall", requireEnabled, validate(recallMemorySchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     res.json(await svc.recall(await callerFor(req, companyId, "recall"), req.body));
+  });
+
+  // Review workflow (GRE-886). The reviewer is always the authenticated
+  // caller; ids that are not uuids get the same 404 as a record you cannot read.
+  function recordIdOr404(req: Request, res: Response) {
+    const recordId = req.params.recordId as string;
+    if (UUID_RE.test(recordId)) return recordId;
+    res.status(404).json({ error: "Memory record not found" });
+    return null;
+  }
+
+  router.post("/companies/:companyId/memory/records/:recordId/review", requireEnabled, validate(reviewMemoryRecordSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, `review_${req.body.action}`);
+    const recordId = recordIdOr404(req, res);
+    if (recordId) res.json(await reviews.review(caller, recordId, req.body));
+  });
+
+  router.post("/companies/:companyId/memory/records/:recordId/supersede", requireEnabled, validate(supersedeMemoryRecordSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "supersede");
+    const recordId = recordIdOr404(req, res);
+    if (recordId) res.json(await reviews.supersede(caller, recordId, req.body));
+  });
+
+  router.post("/companies/:companyId/memory/records/:recordId/delete", requireEnabled, validate(deleteMemoryRecordSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "delete");
+    const recordId = recordIdOr404(req, res);
+    if (recordId) res.json(await reviews.deleteRecord(caller, recordId, req.body));
+  });
+
+  router.get("/companies/:companyId/memory/records/:recordId/history", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "history");
+    const recordId = recordIdOr404(req, res);
+    if (recordId) res.json(await reviews.history(caller, recordId));
+  });
+
+  router.get("/companies/:companyId/memory/records/:recordId/relationships", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "relationships_list");
+    const recordId = recordIdOr404(req, res);
+    if (recordId) res.json(await reviews.listRelationships(caller, recordId));
+  });
+
+  router.post("/companies/:companyId/memory/relationships", requireEnabled, validate(createMemoryRelationshipSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    res.status(201).json(await reviews.createRelationship(await callerFor(req, companyId, "relationship_create"), req.body));
+  });
+
+  // Conflict queue data, grouped by the approved position (GRE-886); the steward reads it (GRE-887).
+  router.get("/companies/:companyId/memory/conflicts", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const requested = String(req.query.state ?? "open");
+    const state = requested === "resolved" || requested === "all" ? requested : "open";
+    res.json(await reviews.listConflicts(await callerFor(req, companyId, "conflicts_list"), state));
+  });
+
+  router.post("/companies/:companyId/memory/conflicts/:conflictId/resolve", requireEnabled, validate(resolveMemoryConflictSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "conflict_resolve");
+    const conflictId = req.params.conflictId as string;
+    if (!UUID_RE.test(conflictId)) {
+      res.status(404).json({ error: "Memory conflict not found" });
+      return;
+    }
+    res.json(await reviews.resolveConflict(caller, conflictId, req.body));
+  });
+
+  // Retention (G1 decision 7). Dry run by default; `withinDays` lists what falls due soon.
+  router.post("/companies/:companyId/memory/retention", requireEnabled, validate(runMemoryRetentionSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    res.json(await reviews.runRetention(await callerFor(req, companyId, "retention"), req.body));
   });
 
   // Daily Claude plan use by memory extraction (GRE-673): engine deliveries and

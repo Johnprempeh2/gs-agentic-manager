@@ -49,7 +49,7 @@ describe("Hindsight memory engine adapter", () => {
   it("signs every call with the key and a 60-second assertion scoped to one bank and its tags", async () => {
     const { fetchImpl, calls } = recordingFetch((url) =>
       url.endsWith("/memories/recall")
-        ? json({ results: [{ document_id: doc.documentId, text: "hit", scores: { rerank: 0.7 } }, { text: "no doc id" }] })
+        ? json({ results: [{ id: "unit-1", type: "world", document_id: doc.documentId, text: "hit", scores: { rerank: 0.7 } }, { text: "no doc id" }] })
         : json({ success: true, usage: { input_tokens: 0, output_tokens: 0 } }),
     );
     const engine = createHindsightMemoryEngine({ baseUrl: "http://127.0.0.1:18888/", apiKey: "k", assertionSecret: SECRET, fetchImpl });
@@ -86,7 +86,7 @@ describe("Hindsight memory engine adapter", () => {
     });
     expect(calls[4].claims).toMatchObject({ op: "recall", read: ["scope:org", "scope:agent:a1"], write: [] });
     expect(JSON.parse(calls[4].init.body as string)).toMatchObject({ tags_match: "any_strict" });
-    expect(hits).toEqual([{ documentId: doc.documentId, text: "hit", score: 0.7 }]);
+    expect(hits).toEqual([{ documentId: doc.documentId, text: "hit", score: 0.7, unitId: "unit-1", factType: "world" }]);
   });
 
   it("switching to extract reconfigures the bank before the next retain", async () => {

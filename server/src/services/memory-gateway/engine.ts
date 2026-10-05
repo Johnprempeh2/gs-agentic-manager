@@ -32,6 +32,10 @@ export interface MemoryEngineHit {
   documentId: string;
   text: string;
   score: number | null;
+  /** The engine's id for the extracted fact (Hindsight memory unit), when it sends one. */
+  unitId?: string | null;
+  /** The engine's fact type (for Hindsight: `world` or `experience`). */
+  factType?: string | null;
 }
 
 /** Model tokens the engine reported for one retain (Claude plan use). */

@@ -2066,6 +2066,13 @@
       "when": 1791186929345,
       "tag": "0296_memory_ingest_outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 297,
+      "version": "7",
+      "when": 1791221991675,
+      "tag": "0297_memory_review",
+      "breakpoints": true
     }
   ]
 }

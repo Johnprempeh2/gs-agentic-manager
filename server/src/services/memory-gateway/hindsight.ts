@@ -69,7 +69,13 @@ const HINDSIGHT_MODE: Record<MemoryRetainMode, string> = {
 /** Hindsight's answer for a bank that has no documents yet: `404 {"detail": "Bank '…' not found"}`. */
 const BANK_NOT_FOUND_RE = /Bank '[^']*' not found/;
 
-type HindsightRecallResult = { document_id?: string | null; text?: string; scores?: Record<string, number> | null };
+type HindsightRecallResult = {
+  id?: string | null;
+  type?: string | null;
+  document_id?: string | null;
+  text?: string;
+  scores?: Record<string, number> | null;
+};
 
 /**
  * Memory Defense for every gateway bank (GRE-868): the engine's regex screen
@@ -201,7 +207,13 @@ export function createHindsightMemoryEngine(options: {
         .slice(0, request.limit * 3)
         .map((hit) => {
           const scores = hit.scores ? Object.values(hit.scores).filter((value) => typeof value === "number") : [];
-          return { documentId: hit.document_id, text: hit.text ?? "", score: scores.length ? Math.max(...scores) : null };
+          return {
+            documentId: hit.document_id,
+            text: hit.text ?? "",
+            score: scores.length ? Math.max(...scores) : null,
+            unitId: typeof hit.id === "string" ? hit.id : null,
+            factType: typeof hit.type === "string" ? hit.type : null,
+          };
         });
     },
 

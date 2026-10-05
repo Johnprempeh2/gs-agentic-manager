@@ -82,6 +82,7 @@ import { goalRoutes } from "./routes/goals.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
+import { memoryStewardRoutes } from "./routes/memory-steward.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
 import { boardChatRoutes } from "./routes/board-chat.js";
@@ -795,6 +796,7 @@ export async function createApp(
   const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));
   api.use(memoryToolRoutes(db, { engine: memoryEngine }));
+  api.use(memoryStewardRoutes(db));
   api.use(onboardingSeedRoutes(db));
   api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
   api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));

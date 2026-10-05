@@ -1,6 +1,7 @@
 # Organization memory acceptance tests
 
-Phase 1 acceptance runner for the organization memory gateway (GRE-675). The
+Acceptance runner for the organization memory gateway: phase 1 (GRE-675) and
+the phase 2 exit tests (GRE-888, see "Phase 2" below). The
 tests and the threat model behind them are in the GRE-651 document "Threat
 model and acceptance-test dataset". Design: `doc/adr/0001-organization-memory-gateway-on-hindsight.md`.
 
@@ -9,10 +10,11 @@ Kestrel Works fixtures in `fixtures/`. Load them into sandbox instances only.
 
 ## Commands
 
-Run the 11 phase 1 tests against the in-process test double:
+Run the phase 1 and phase 2 tests against the in-process test double:
 
 ```sh
 pnpm test:memory-acceptance            # one line per test, exit 0 only if all pass
+pnpm test:memory-acceptance -- --phase 2   # phase 2 only (1 | 2 | all)
 pnpm test:memory-acceptance -- -v      # every check plus the audit rows used as evidence
 pnpm test:memory-acceptance -- --json tmp/memory-acceptance.json
 ```
@@ -133,6 +135,47 @@ probe result and the admin read-back. MT-31 uses the egress log.
 | MT-12 | T9 sensitive data | D7 | fake secrets blocked or redacted, absent from every engine store |
 | MT-31 | T9 outbound | D1–D7 | only declared provider hosts in the egress log |
 
+## Phase 2 (GRE-888)
+
+Phase 2 exits only when every phase 1 and phase 2 test passes on `main`
+(`--phase all`, the default). Test ids follow GRE-651 section 6; MT-33 is new.
+
+| Issue item | Test | What it checks |
+|---|---|---|
+| 1 price conflict | MT-10 | Mason asks the Alder price: R-101 £180 approved leads, approver visible; R-102 £150 returned, not approved, names R-101 |
+| 1 | MT-10b | Mason proposes £120 in `cl-alder` with no `topics`: refused with 400 naming topics; the text is in no gateway or engine table; R-101 still the approved answer; audit row shows the refusal (Everest's B-lite decision on GRE-888) |
+| 1 | MT-11 | R-101 same version and text after R-102 and proposal R-601; R-102 history links R-101; one conflict-queue item for R-101 |
+| 2 dated change | MT-32 | John supersedes R-201 (8h) with R-202 (4h): recall leads with R-202, R-201 `superseded`; recall `asOf: 2026-07-01` answers R-201; history links both; nothing left in the conflict queue |
+| 3 different clients | MT-33 | Same question in cl-alder and cl-brook: each answers for its own client; R-304 is flagged against R-301 only, R-305 against nothing; no queue item mixes clients |
+| 4 malicious text | MT-14, MT-15, MT-16, MT-17 | D4a–d: stored unreviewed, flagged (instruction-like / claims approval), recalled with the evidence note, no grant change, price stays £180, no directive |
+| 5 self-approval, wrong role | MT-18, MT-26, MT-30 | Mason approves own R-601, John approves own R-918, Rogue approves R-602/R-926, steward approves R-102: all refused, audit rows denied |
+| 6 interrupted audit | MT-19 | Steward pass killed after 18 entries, resumed, 2026-10-06 skipped and caught up: each entry once, no repeat escalation, price items grouped and routed to John, no cl-brook entry, duration and queue age reported |
+| 7 deletion | MT-13 | John deletes R-801: its marker is gone from every engine table and every `memory_*` gateway table; tombstone row kept; Rogue's delete refused; backup expiry written down |
+
+Seeding rule: nobody approves their own entry (GRE-886), John included. The
+seed agent `ag-scribe-syn` writes the phase 1 records and the fixture
+decisions; John approves them (or supersedes, for D2). Fixture records carry
+the `entities` and `topics` a contributor would tag, because the gateway's
+conflict check matches on those.
+
+On `--target gsam` the phase 2 calls use the routes in `PHASE2_ROUTES`
+(`lib/gsam.mjs`); override any with `routes` in the config file. A route that
+answers "API route not found" makes its test inconclusive, never a pass.
+
+| Runner call | Gateway |
+|---|---|
+| approve | `POST …/memory/records/:id/review` `{ action: "approve", reason }` |
+| supersede | `POST …/memory/records/:id/supersede` `{ replacementRecordId, reason }` |
+| delete | `POST …/memory/records/:id/delete` `{ reason }` |
+| history | `GET …/records/:id/history` and `GET …/records/:id/relationships` |
+| conflict queue | `GET …/memory/conflicts` (open groups) |
+| steward grant | `POST …/memory/steward/grants` (needs `GSAM_MEMORY_STEWARD_SANDBOX_GRANTS=true` on the sandbox) |
+| steward pass | `POST …/memory/steward/review` with `{ sandbox: { now, killAfterEntries } }` (asked of GRE-887; ignored today, so MT-19 is inconclusive) |
+| steward queue, report | `GET …/memory/steward/queue`, `GET …/memory/steward/report` |
+| steward evidence | `memory_steward_runs.entries_seen` summed against the records in the steward grant's scopes (no per-entry ledger) |
+
+The sandbox server for phase 2 also needs `GSAM_MEMORY_STEWARD_SANDBOX_GRANTS=true`.
+
 ## Live config
 
 `MEMORY_ACCEPTANCE_LIVE_CONFIG` points at a JSON file (keep it out of git; it
@@ -167,8 +210,10 @@ ADR-0001 section 6 and will be matched to the gateway routes when GRE-672 lands.
 ## Files
 
 - `fixtures/kestrel-works.json` — company, scopes, six identities and their grants (GRE-651 §5.1)
-- `fixtures/scenarios.json` — scenario fixtures D1–D7 (GRE-651 §5.2); phase 1 uses D3 and D7
-- `lib/tests.mjs` — the 11 tests
+- `fixtures/scenarios.json` — scenario fixtures D1–D7 (GRE-651 §5.2) and D8 (GRE-888 probes)
+- `lib/tests.mjs` — the 11 phase 1 tests and `runAll`
+- `lib/phase2.mjs` — the 14 phase 2 exit tests
+- `lib/checks.mjs` — helpers both phases share
 - `lib/double.mjs` — gateway and engine test double, with fault switches
 - `lib/live.mjs` — generic HTTP target and the direct engine probes
 - `lib/gsam.mjs` — the real GSAM gateway in a sandbox server, with a sandbox engine

@@ -100,6 +100,12 @@ import {
   createAgentTeamSchema,
   // Organization memory
   contributeMemorySchema,
+  createMemoryRelationshipSchema,
+  deleteMemoryRecordSchema,
+  resolveMemoryConflictSchema,
+  reviewMemoryRecordSchema,
+  runMemoryRetentionSchema,
+  supersedeMemoryRecordSchema,
   createMemoryScopeSchema,
   recallMemorySchema,
   updateMemorySettingsSchema,
@@ -1602,6 +1608,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/agent-teams",
   "POST /api/companies/{companyId}/memory/scopes",
   "POST /api/companies/{companyId}/memory/records",
+  "POST /api/companies/{companyId}/memory/steward/grants",
   "POST /api/companies/{companyId}/labels",
   "POST /api/issues/{id}/documents/{key}/annotations",
   "POST /api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
@@ -5158,6 +5165,92 @@ registry.registerPath({
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
+const memoryRecordParams = z.object({ companyId: z.string(), recordId: z.string() });
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/review",
+  tags: ["memory"],
+  summary: "Approve or dispute a memory record; the reviewer is the caller, never the contributor, and needs the right for the record's scope and decision class",
+  request: { params: memoryRecordParams, body: jsonBody(reviewMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/supersede",
+  tags: ["memory"],
+  summary: "Supersede a record with a newer one in the same scope; the replacement becomes approved and the old record stays as history",
+  request: { params: memoryRecordParams, body: jsonBody(supersedeMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/delete",
+  tags: ["memory"],
+  summary: "Delete a record's content everywhere and leave a tombstone; the engine document delete is queued and retried",
+  request: { params: memoryRecordParams, body: jsonBody(deleteMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/history",
+  tags: ["memory"],
+  summary: "Supersession chain, review events and extracted-fact provenance for a record the caller may read",
+  request: { params: memoryRecordParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/relationships",
+  tags: ["memory"],
+  summary: "Explicit relationships of a record the caller may read",
+  request: { params: memoryRecordParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/relationships",
+  tags: ["memory"],
+  summary: "State a relationship between two records in one scope; `contradicts` against an approved record opens a conflict",
+  request: { params: memoryCompanyParams, body: jsonBody(createMemoryRelationshipSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/conflicts",
+  tags: ["memory"],
+  summary: "Possible conflicts in scopes the caller may read, grouped by the approved position they challenge",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({ state: z.enum(["open", "resolved", "all"]).optional() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/conflicts/{conflictId}/resolve",
+  tags: ["memory"],
+  summary: "Resolve a conflict; needs the review right for the approved record and no part in either entry",
+  request: { params: z.object({ companyId: z.string(), conflictId: z.string() }), body: jsonBody(resolveMemoryConflictSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/retention",
+  tags: ["memory"],
+  summary: "List (dry run) or apply memory retention: working notes 90 days after last use, unreviewed 180 days, superseded 1 year",
+  request: { params: memoryCompanyParams, body: jsonBody(runMemoryRetentionSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
 registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/memory/plan-usage",
@@ -5167,6 +5260,82 @@ registry.registerPath({
     params: memoryCompanyParams,
     query: z.object({ days: z.coerce.number().int().min(1).max(90).optional() }),
   },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+// Memory steward daily review (GRE-887)
+
+const memoryStewardGrantBody = z
+  .object({
+    agentId: z.string().uuid(),
+    scopeIds: z.array(z.string().uuid()).min(1).max(50),
+    expiresInDays: z.number().int().min(1).max(30),
+    reason: z.string().min(1).max(500),
+  })
+  .strict();
+
+const stewardReviewSchema = z.object({
+  sandbox: z
+    .object({
+      now: z.string().datetime({ offset: true }).optional().describe("Pass clock: settle window, lease expiry and run day"),
+      killAfterEntries: z
+        .number()
+        .int()
+        .min(1)
+        .max(1_000_000)
+        .optional()
+        .describe("Stop after committing the page that holds entry N, as a crash would; outcome `killed`, run keeps its lease"),
+    })
+    .strict()
+    .optional()
+    .describe("Sandbox only (GSAM_MEMORY_STEWARD_SANDBOX_GRANTS=true); 403 otherwise"),
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/steward/review",
+  tags: ["memory"],
+  summary: "Run one steward review pass from the durable cursor; steward agent with a live grant only; 409 while another pass holds the lease",
+  request: { params: memoryCompanyParams, body: { ...jsonBody(stewardReviewSchema), required: false } },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/steward/queue",
+  tags: ["memory"],
+  summary: "Open steward decision-queue items, grouped with sources, scope, approved position and proposed resolution; owner, admin or granted steward",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/steward/report",
+  tags: ["memory"],
+  summary: "Daily steward report: review time, plan use, missed days and queue age per Europe/London day",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({ days: z.coerce.number().int().min(1).max(90).optional() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/steward/grants",
+  tags: ["memory"],
+  summary: "Create a scoped, expiring sandbox steward grant (at most 30 days); owner or admin; 404 unless sandbox grants are enabled",
+  request: { params: memoryCompanyParams, body: jsonBody(memoryStewardGrantBody) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/steward/grants/{grantId}/revoke",
+  tags: ["memory"],
+  summary: "Revoke a live steward grant; owner or admin",
+  request: { params: z.object({ companyId: z.string(), grantId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
