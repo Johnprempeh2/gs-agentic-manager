@@ -2,6 +2,7 @@ import { and, eq, inArray, ne, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { memoryConflicts, memoryRecords, memoryReviewEvents } from "@greatstone/db";
 import type { MemoryConflictLink, MemoryRecordStatus, MemoryReviewEventAction } from "@greatstone/shared";
+import { textConflictTerms } from "./text-conflict.js";
 
 // Review events and conflict detection (GRE-886, plan 8.5). Shared by the
 // contribute path and the review service so both write the same rows.
@@ -90,8 +91,10 @@ export function possibleConflictTerms(
 
 /**
  * Opens a conflict between a new record and every approved record in the same
- * scope it may contradict. Records in other scopes (another client, another
- * project) are never compared. Returns the conflicts opened.
+ * scope it may contradict: by shared tags first, then by a text check for a
+ * different price, date or amount on the same subject (GRE-934), so a wrong or
+ * missing tag does not hide it. Records in other scopes (another client,
+ * another project) are never compared. Returns the conflicts opened.
  */
 export async function flagPossibleConflicts(
   database: DbOrTransaction,
@@ -112,7 +115,8 @@ export async function flagPossibleConflicts(
     );
   const links: MemoryConflictLink[] = [];
   for (const other of approved) {
-    const sharedTerms = possibleConflictTerms(record, other);
+    const tagTerms = possibleConflictTerms(record, other);
+    const sharedTerms = tagTerms.length > 0 ? tagTerms : textConflictTerms(record, other);
     if (sharedTerms.length === 0) continue;
     const [conflict] = await database
       .insert(memoryConflicts)
@@ -130,7 +134,10 @@ export async function flagPossibleConflicts(
     if (!conflict) continue;
     await insertReviewEvent(database, actor, record, {
       action: "conflict_flagged",
-      reason: "Possible conflict found by the contribution check",
+      reason:
+        tagTerms.length > 0
+          ? "Possible conflict found by the contribution check"
+          : "Possible conflict found by the contribution check: the text states a different value",
       relatedRecordId: other.id,
       now,
     });

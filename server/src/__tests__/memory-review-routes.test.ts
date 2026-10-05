@@ -276,6 +276,45 @@ describeEmbeddedPostgres("organization memory review workflow (GRE-886)", () => 
     await contribute(board, base, { scopeId: org.id, content: "Stand-up is at 09:30." });
   });
 
+  it("the text check opens a conflict for an untagged or wrongly tagged price, in the same scope only (GRE-934)", async () => {
+    const { board, asAgent, base, org, companyId } = await setup("TextCheck");
+    const mason = await seedAgent(companyId, "Mason");
+    await grant(companyId, mason.id, "memory:contribute");
+    const agent = asAgent(mason.id);
+    const approved = await contribute(agent, base, {
+      scopeId: org.id,
+      content: "Alder care plan is £180/month.",
+      entities: ["Alder"],
+      topics: ["care plan price"],
+      decisionClass: "pricing",
+    });
+    expect((await request(board).post(`${base}/records/${approved.record.id}/review`).send({ action: "approve", reason: "Contract" })).status).toBe(200);
+
+    const untagged = await contribute(agent, base, { scopeId: org.id, content: "Alder care plan is £150/month." });
+    expect(untagged.possibleConflicts).toEqual([
+      expect.objectContaining({ otherRecordId: approved.record.id, sharedTerms: expect.arrayContaining(["£150/month vs £180/month"]) }),
+    ]);
+    expect(untagged.flags).toContain("possible_conflict");
+    const wrongTags = await contribute(agent, base, { scopeId: org.id, content: "Alder care plan is £150/month.", entities: ["Birch"], topics: ["onboarding"] });
+    expect(wrongTags.possibleConflicts).toHaveLength(1);
+
+    expect((await contribute(agent, base, { scopeId: org.id, content: "Alder care plan is £180/month." })).possibleConflicts).toEqual([]);
+    expect((await contribute(agent, base, { scopeId: org.id, content: "Birch care plan is £150/month." })).possibleConflicts).toEqual([]);
+
+    // An approved record in a client scope is never read for an org entry, nor the reverse.
+    const client = await request(board).post(`${base}/scopes`).send({ kind: "client", name: "Heron" });
+    const clientApproved = await contribute(board, base, { scopeId: client.body.id, content: "Heron support is £90/month.", topics: ["support price"] });
+    await ctx.db.update(memoryRecords).set({ status: "approved" }).where(eq(memoryRecords.id, clientApproved.record.id));
+    expect((await contribute(agent, base, { scopeId: org.id, content: "Heron support is £60/month." })).possibleConflicts).toEqual([]);
+    expect((await contribute(board, base, { scopeId: client.body.id, content: "Alder care plan is £150/month.", topics: ["misc"] })).possibleConflicts).toEqual([]);
+
+    const queue = await request(board).get(`${base}/conflicts`);
+    expect(queue.body.groups).toEqual([
+      expect.objectContaining({ approvedPosition: expect.objectContaining({ id: approved.record.id }), conflicts: expect.any(Array) }),
+    ]);
+    expect(queue.body.groups[0].conflicts).toHaveLength(2);
+  });
+
   it("shows a dispute on recall, ranked after approved knowledge", async () => {
     const { board, asAgent, base, org, companyId } = await setup("Dispute");
     const mason = await seedAgent(companyId, "Mason");
