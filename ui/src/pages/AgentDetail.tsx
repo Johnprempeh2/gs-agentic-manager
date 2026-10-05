@@ -2082,6 +2082,16 @@ export function ConfigurationTab({
     (agent.access?.grants ?? []).some((grant) => grant.permissionKey === permissionKey && !grant.scope);
   const canConfigureAgents = hasUnscopedGrant("agents:configure");
   const canChangeSkills = hasUnscopedGrant("skills:create");
+  // Organisation memory grants. An unscoped grant covers organisation and
+  // ordinary project memory (approve: organisation only, operational class),
+  // never client or restricted scopes. A grant with its own scope settings is
+  // left alone: the server refuses to replace it from these toggles.
+  const hasScopedGrant = (permissionKey: string) =>
+    (agent.access?.grants ?? []).some((grant) => grant.permissionKey === permissionKey && Boolean(grant.scope));
+  const canContributeMemory = hasUnscopedGrant("memory:contribute");
+  const canApproveMemory = hasUnscopedGrant("memory:approve");
+  const contributeMemoryScoped = hasScopedGrant("memory:contribute");
+  const approveMemoryScoped = hasScopedGrant("memory:approve");
   const canAssignTasks = Boolean(agent.access?.canAssignTasks);
   const taskAssignSource = agent.access?.taskAssignSource ?? "none";
   const taskAssignLocked = agent.role === "ceo" || canCreateAgents;
@@ -2203,6 +2213,52 @@ export function ConfigurationTab({
                 })
               }
               disabled={updatePermissions.isPending}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 text-sm">
+            <div className="space-y-1">
+              <div>Can contribute to organisation memory</div>
+              <p className="text-xs text-muted-foreground">
+                {contributeMemoryScoped
+                  ? "This agent has a contribute grant with its own scope settings, so this toggle is locked."
+                  : "Lets this agent propose facts to organisation and project memory. Never covers client or restricted memory."}
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={canContributeMemory}
+              aria-label="Can contribute to organisation memory"
+              onCheckedChange={() =>
+                updatePermissions.mutate({
+                  canCreateAgents,
+                  canCreateSkills,
+                  canAssignTasks,
+                  canContributeMemory: !canContributeMemory,
+                })
+              }
+              disabled={updatePermissions.isPending || contributeMemoryScoped}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 text-sm">
+            <div className="space-y-1">
+              <div>Can approve organisation memory (operational)</div>
+              <p className="text-xs text-muted-foreground">
+                {approveMemoryScoped
+                  ? "This agent has an approve grant with its own scope settings, so this toggle is locked."
+                  : "Lets this agent approve operational facts in organisation memory. Pricing, policy, legal and client commitments stay with the owner."}
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={canApproveMemory}
+              aria-label="Can approve organisation memory (operational)"
+              onCheckedChange={() =>
+                updatePermissions.mutate({
+                  canCreateAgents,
+                  canCreateSkills,
+                  canAssignTasks,
+                  canApproveMemory: !canApproveMemory,
+                })
+              }
+              disabled={updatePermissions.isPending || approveMemoryScoped}
             />
           </div>
           <div className="flex items-center justify-between gap-4 text-sm">

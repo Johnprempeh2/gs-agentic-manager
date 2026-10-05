@@ -19,6 +19,7 @@ import { errorHandler } from "../middleware/error-handler.js";
 import { HTTP_LOG_REDACT_PATHS } from "../middleware/http-log-redaction.js";
 import { createHttpLogger } from "../middleware/logger.js";
 import { memoryRoutes } from "../routes/memory.js";
+import { accessService } from "../services/access.js";
 import {
   MemoryEngineUnavailableError,
   type MemoryEngine,
@@ -580,5 +581,41 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
 
     const recalled = await request(micaApp).post(`${base}/recall`).send({ query: "releases" });
     expect(recalled.body.results.map((hit: { record: { id: string } }) => hit.record.id)).toEqual([added.body.record.id]);
+  });
+
+  it("honours the unscoped memory:contribute grant the agent Permissions toggle writes", async () => {
+    const { board, asAgent, base, companyId } = await setup("Toggle");
+    const granted = await seedAgent(companyId, "Granted");
+    const ungranted = await seedAgent(companyId, "Ungranted");
+    await enable(board, base);
+    const org = await scopeOf(board, base, "organization");
+    const client = await request(board).post(`${base}/scopes`).send({ kind: "client", name: "Kestrel" });
+    expect(client.status).toBe(201);
+
+    // Same call PATCH /api/agents/:id/permissions makes for canContributeMemory: true.
+    await accessService(ctx.db).setPrincipalPermission(companyId, "agent", granted.id, "memory:contribute", true, null);
+
+    const added = await request(asAgent(granted.id))
+      .post(`${base}/records`)
+      .send({ scopeId: org.id, content: "Invoices go out on the first working day", status: "proposal" });
+    expect(added.status).toBe(201);
+
+    // An unscoped grant never reaches a client scope.
+    const toClient = await request(asAgent(granted.id))
+      .post(`${base}/records`)
+      .send({ scopeId: client.body.id, content: "Kestrel pays late", status: "proposal" });
+    expect(toClient.status).toBe(404);
+
+    const refused = await request(asAgent(ungranted.id))
+      .post(`${base}/records`)
+      .send({ scopeId: org.id, content: "Invoices go out on the 15th", status: "proposal" });
+    expect(refused.status).toBe(404);
+
+    // Turning the toggle off removes the right again.
+    await accessService(ctx.db).setPrincipalPermission(companyId, "agent", granted.id, "memory:contribute", false, null);
+    const afterRevoke = await request(asAgent(granted.id))
+      .post(`${base}/records`)
+      .send({ scopeId: org.id, content: "Another fact", status: "proposal" });
+    expect(afterRevoke.status).toBe(404);
   });
 });
