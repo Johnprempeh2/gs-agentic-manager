@@ -78,6 +78,15 @@ pnpm dev:list --data-dir ./tmp/paperclip-dev
 pnpm dev:stop --data-dir ./tmp/paperclip-dev
 ```
 
+A server started from an agent's shell (the dev runner, `gsam run` or
+`pnpm dev:server` with `GSAM_RUN_ID` set) first removes that run's variables:
+its API key, agent, company and task ids, wake context, workspace and scratch
+folders, GitHub access and the parent server's URL, each with its legacy alias
+(the list is in `packages/shared/src/agent-run-env.ts`). It keeps `GSAM_RUN_ID`
+and records the parent's URL as `GSAM_PARENT_RUN_API_URL`, so the leftover
+cleanup (see "Leftover Run Processes") still stops it. A server started without
+`GSAM_RUN_ID` (live, the preview, client instances) is unchanged.
+
 Issue execution may also use project execution workspace policies and workspace runtime services for per-project worktrees, preview servers, and managed dev commands. Configure those through the project workspace/runtime surfaces rather than starting long-running unmanaged processes when a task needs a reusable service.
 
 ### Mobile-friendly preview (`pnpm dev:mobile`)
@@ -715,7 +724,8 @@ them (`server/src/services/run-process-cleanup.ts`):
   during a hot restart are left to the sweep, so the restart stays quick.
 - **A sweep at server start and then every five minutes** stops processes
   whose marker names a run of this instance that ended at least 10 minutes ago
-  (and whose `GSAM_API_URL` points at this server's port), but only while that
+  (and whose `GSAM_PARENT_RUN_API_URL`, set by a sandbox started from the run,
+  else `GSAM_API_URL`, points at this server's port), but only while that
   run's agent has no queued, running or scheduled-retry run: a warm ACP session
   keeps the id of the run that started it, so what it starts during a later run
   carries the earlier run's id. It also stops orphans with no

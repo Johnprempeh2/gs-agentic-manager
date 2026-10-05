@@ -32,7 +32,10 @@ to it.
    root (`npx vitest run <files>`, `npx tsc --noEmit -p <package>`). When you
    need the running app, start a sandbox from the worktree:
    `pnpm dev:once --data-dir ./tmp/sandbox`. It picks the next free port (never
-   3100) and has its own empty data. Stop it when you are done, from the
+   3100) and has its own empty data. It does not get your run's identity or
+   credentials (`GSAM_API_KEY`, the agent, company and task ids, the GitHub
+   tokens, live's URL), so it cannot act on live as you; it keeps `GSAM_RUN_ID`,
+   so it is still stopped when your run ends. Stop it when you are done, from the
    worktree root, with `pnpm dev:stop --data-dir ./tmp/sandbox` (the same
    `--data-dir` you started it with; it stops only the services registered for
    this worktree), or with `kill <pid>` using the runner PID you recorded
