@@ -7,7 +7,8 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { agents, companies, createDb, heartbeatRuns } from "@greatstone/db";
-import { toLegacyEnvKey } from "@greatstone/shared/legacy-env";
+import { PARENT_RUN_API_URL_ENV_KEY, scrubAgentRunEnvForServer } from "@greatstone/shared/agent-run-env";
+import { toLegacyEnvKey, withLegacyEnvAliases } from "@greatstone/shared/legacy-env";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -31,6 +32,8 @@ const OTHER_RUN = "22222222-2222-4222-8222-222222222222";
 const UID = 1000;
 const SERVER = 500;
 const API = "http://127.0.0.1:3100";
+// A sandbox an agent started from its worktree, on the next free port.
+const SANDBOX_API = "http://127.0.0.1:3101";
 const WORKTREE = "/home/agent/code/gs-clip/.gsam/worktrees/GRE-504-storybook";
 // The legacy aliases every agent environment also carries.
 const LEGACY_RUN_ID = toLegacyEnvKey("GSAM_RUN_ID");
@@ -98,7 +101,43 @@ describe("parseRunMarker", () => {
     expect(parseRunMarker(`GSAM_RUN_ID=${RUN}\0${LEGACY_RUN_ID}=${OTHER_RUN}`).conflicting).toBe(true);
     expect(parseRunMarker("PATH=/usr/bin\0HOME=/home/agent")).toEqual({ runId: null, conflicting: false, apiUrl: null });
   });
+
+  it("reads a sandbox's marker: the run id it kept and the parent URL it recorded, over its own URL", () => {
+    const marker = parseRunMarker(
+      `GSAM_RUN_ID=${RUN}\0${LEGACY_RUN_ID}=${RUN}\0GSAM_API_URL=${SANDBOX_API}\0${PARENT_RUN_API_URL_ENV_KEY}=${API}\0`,
+    );
+    expect(marker).toEqual({ runId: RUN, conflicting: false, apiUrl: API });
+  });
 });
+
+/** The environment an agent's shell has: its run marker, URL, key and context (fake values). */
+function agentShellEnv(runId: string, apiUrl: string): Record<string, string> {
+  return withLegacyEnvAliases({
+    PATH: "/usr/bin:/bin",
+    GSAM_RUN_ID: runId,
+    GSAM_API_URL: apiUrl,
+    GSAM_API_KEY: "fake-agent-key",
+    GSAM_AGENT_ID: "fake-agent",
+    GSAM_COMPANY_ID: "fake-company",
+    GSAM_TASK_ID: "fake-task",
+    GSAM_GIT_TOKEN: "fake-git-token",
+  });
+}
+
+/** The same environment after a sandbox server scrubbed it (packages/shared/src/agent-run-env.ts). */
+function scrubbedSandboxEnv(runId: string, apiUrl: string, ownApiUrl?: string): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = agentShellEnv(runId, apiUrl);
+  scrubAgentRunEnvForServer(env);
+  // Once it listens, the sandbox server sets GSAM_API_URL to its own URL, and
+  // what it starts afterwards (its database, plugin workers) inherits that.
+  if (ownApiUrl) env.GSAM_API_URL = ownApiUrl;
+  return env;
+}
+
+const environOf = (env: Record<string, string | undefined>) =>
+  Object.entries(env)
+    .flatMap(([key, value]) => (value === undefined ? [] : [`${key}=${value}`]))
+    .join("\0");
 
 describe("helpers", () => {
   it("reads the port of an API URL", () => {
@@ -273,6 +312,44 @@ describe("selectSweepLeftovers", () => {
   });
 });
 
+// A sandbox an agent started (`pnpm dev:once --data-dir ./tmp/sandbox`) and
+// left running. The dev runner keeps the agent's environment as it was started
+// with (a process's /proc environ never changes); the server, its pnpm wrapper
+// and its database get the scrubbed environment.
+describe("a sandbox started from an agent run", () => {
+  const sandboxTree = () => [
+    proc({ pid: 5001, ppid: 1, marker: parseRunMarker(environOf(agentShellEnv(RUN, API))), args: ["node", "tsx", "../scripts/dev-runner.ts", "dev", "--data-dir", "./tmp/sandbox"] }),
+    proc({ pid: 5002, ppid: 5001, marker: parseRunMarker(environOf(scrubbedSandboxEnv(RUN, API))), args: ["pnpm", "--filter", "@greatstone/server", "dev"] }),
+    proc({ pid: 5003, ppid: 5002, marker: parseRunMarker(environOf(scrubbedSandboxEnv(RUN, API))), args: ["node", "tsx", "src/index.ts"] }),
+    proc({ pid: 5004, ppid: 5003, marker: parseRunMarker(environOf(scrubbedSandboxEnv(RUN, API, SANDBOX_API))), args: ["postgres", "-D", "./tmp/sandbox/db"] }),
+  ];
+
+  it("is still stopped at the end of the run that started it", () => {
+    const selection = selectRunEndLeftovers([...serverTree(), ...sandboxTree()], { runId: RUN, protection });
+    expect(pids(selection)).toEqual([5001, 5002, 5003, 5004]);
+  });
+
+  it("is still stopped by the parent server's sweep once that run has ended", () => {
+    const selection = selectSweepLeftovers([...serverTree(), ...sandboxTree()], {
+      endedRunIds: new Set([RUN]),
+      apiPort: 3100,
+      protection,
+    });
+    expect(pids(selection)).toEqual([5001, 5002, 5003, 5004]);
+  });
+
+  it("is never claimed by another server's sweep, the sandbox's own included", () => {
+    for (const apiPort of [3101, 3200]) {
+      const selection = selectSweepLeftovers([...serverTree(), ...sandboxTree()], {
+        endedRunIds: new Set([RUN]),
+        apiPort,
+        protection,
+      });
+      expect(pids(selection)).toEqual([]);
+    }
+  });
+});
+
 // Real processes: detached, setsid'd children carrying fake run markers, and
 // controls that must survive. Each marker is a fresh random run id, so the
 // cleanup can only ever match processes these tests started, and every PID a
@@ -317,7 +394,7 @@ async function makeTempDir() {
 
 function markedEnv(runId: string | null, apiUrl?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const key of ["GSAM_RUN_ID", LEGACY_RUN_ID, "GSAM_API_URL", LEGACY_API_URL]) delete env[key];
+  for (const key of ["GSAM_RUN_ID", LEGACY_RUN_ID, "GSAM_API_URL", LEGACY_API_URL, PARENT_RUN_API_URL_ENV_KEY]) delete env[key];
   if (runId) {
     env.GSAM_RUN_ID = runId;
     env[LEGACY_RUN_ID] = runId;
@@ -326,6 +403,21 @@ function markedEnv(runId: string | null, apiUrl?: string): NodeJS.ProcessEnv {
     env.GSAM_API_URL = apiUrl;
     env[LEGACY_API_URL] = apiUrl;
   }
+  return env;
+}
+
+/**
+ * A sandbox server's environment: an agent shell's (fake key and context
+ * added) scrubbed as the dev runner and `gsam run` do, optionally with the
+ * sandbox's own GSAM_API_URL set afterwards.
+ */
+function sandboxEnv(runId: string, apiUrl: string, ownApiUrl?: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...markedEnv(runId, apiUrl),
+    ...withLegacyEnvAliases({ GSAM_API_KEY: "fake-agent-key", GSAM_AGENT_ID: randomUUID(), GSAM_TASK_ID: randomUUID() }),
+  };
+  scrubAgentRunEnvForServer(env);
+  if (ownApiUrl) env.GSAM_API_URL = ownApiUrl;
   return env;
 }
 
@@ -401,6 +493,34 @@ describe.skipIf(!onLinux)("cleanupRunLeftoverProcesses on Linux", () => {
     expect(alive(stubborn)).toBe(false);
     expect(alive(unmarked)).toBe(true);
     expect(alive(otherRun)).toBe(true);
+  });
+
+  it("stops a sandbox started from the ended run, after it dropped the run's variables", async () => {
+    vi.stubEnv("GSAM_RUN_PROCESS_CLEANUP", "");
+    const dir = await makeTempDir();
+    const runId = randomUUID();
+    // Fake ports, never live's: these are real processes.
+    const parentApi = "http://127.0.0.1:45677";
+    const server = await startOrphan(dir, "sandbox-server", sandboxEnv(runId, parentApi), "sleep 600");
+    const database = await startOrphan(dir, "sandbox-db", sandboxEnv(runId, parentApi, "http://127.0.0.1:45678"), "sleep 600");
+
+    const keys = readFileSync(`/proc/${server}/environ`, "utf8")
+      .split("\0")
+      .map((entry) => entry.slice(0, entry.indexOf("=")));
+    expect(keys).toContain("GSAM_RUN_ID");
+    expect(keys).toContain(PARENT_RUN_API_URL_ENV_KEY);
+    for (const gone of ["GSAM_API_KEY", "GSAM_API_URL", "GSAM_AGENT_ID", "GSAM_TASK_ID"]) {
+      expect(keys).not.toContain(gone);
+      expect(keys).not.toContain(toLegacyEnvKey(gone));
+    }
+
+    const result = await cleanupRunLeftoverProcesses({ runId, graceMs: 1_500 });
+    expect(result.status).toBe("done");
+    if (result.status !== "done") return;
+    expect(result.stopped.map((entry) => entry.pid).sort((a, b) => a - b)).toEqual([server, database].sort((a, b) => a - b));
+    for (let i = 0; i < 50 && (alive(server) || alive(database)); i += 1) await new Promise((r) => setTimeout(r, 20));
+    expect(alive(server)).toBe(false);
+    expect(alive(database)).toBe(false);
   });
 
   it("does nothing when GSAM_RUN_PROCESS_CLEANUP=false", async () => {
@@ -485,6 +605,32 @@ describe.skipIf(!onLinux || !embeddedPostgresSupport.supported)("sweepLeftoverRu
     for (let i = 0; i < 50 && alive(leftover); i += 1) await new Promise((r) => setTimeout(r, 20));
     expect(alive(leftover)).toBe(false);
     for (const pid of [recent, running, otherServer, unknownRun]) expect(alive(pid)).toBe(true);
+  });
+
+  it("stops a sandbox of a run that ended by the parent URL it recorded, not by its own URL", async () => {
+    vi.stubEnv("GSAM_RUN_PROCESS_CLEANUP", "");
+    const dir = await makeTempDir();
+    const ended = (await seedRun("succeeded", 30)).runId;
+    const server = await startOrphan(dir, "sandbox-server", sandboxEnv(ended, apiUrl), "sleep 600");
+    // Started after the sandbox server set GSAM_API_URL to its own port.
+    const database = await startOrphan(dir, "sandbox-db", sandboxEnv(ended, apiUrl, "http://127.0.0.1:45680"), "sleep 600");
+    // The same run id recorded for another server is that server's to stop.
+    const elsewhere = await startOrphan(dir, "elsewhere", sandboxEnv(ended, "http://127.0.0.1:45679"), "sleep 600");
+
+    const result = await sweepLeftoverRunProcesses({
+      db,
+      apiPort,
+      graceMs: 1_500,
+      deletedWorktreeMinAgeMs: Number.POSITIVE_INFINITY,
+    });
+    expect(result.status).toBe("done");
+    if (result.status !== "done") return;
+    expect(result.stopped.map((entry) => entry.pid).sort((a, b) => a - b)).toEqual([server, database].sort((a, b) => a - b));
+    expect(result.stopped.every((entry) => entry.reason === "ended_run_marker" && entry.runId === ended)).toBe(true);
+    for (let i = 0; i < 50 && (alive(server) || alive(database)); i += 1) await new Promise((r) => setTimeout(r, 20));
+    expect(alive(server)).toBe(false);
+    expect(alive(database)).toBe(false);
+    expect(alive(elsewhere)).toBe(true);
   });
 
   // A warm ACP session keeps the environment of the run that started it, so a
