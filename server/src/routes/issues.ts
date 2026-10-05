@@ -204,6 +204,10 @@ import {
   isReviewPathRecoveryIdempotencyConflict,
   REVIEW_PATH_RECOVERY_INSTRUCTION,
 } from "../services/recovery/review-path-recovery.js";
+import {
+  BLOCKED_PATH_RECOVERY_INSTRUCTION,
+  isBlockedPathLostAfterResolution,
+} from "../services/recovery/blocked-path-recovery.js";
 import { hydrateSuccessfulRunHandoffLiveness } from "../services/successful-run-handoff-state.js";
 import {
   TASK_WATCHDOG_ORIGIN_KIND,
@@ -2618,6 +2622,29 @@ function buildRequestItemVerdictsWakeIdempotencyKey(args: {
   return `request_item_verdicts:${args.issueId}:${args.interactionId}:${bucket}`;
 }
 
+async function readBlockedPathLostAfterResolution(
+  db: Db,
+  issue: { id: string; companyId: string },
+  interactionId: string,
+) {
+  const issueSvc = issueService(db);
+  const [current, readiness, interactions] = await Promise.all([
+    issueSvc.getById(issue.id),
+    issueSvc.listDependencyReadiness(issue.companyId, [issue.id]),
+    issueThreadInteractionService(db).listForIssue(issue.id),
+  ]);
+  if (!current) return false;
+  return isBlockedPathLostAfterResolution({
+    issue: current,
+    resolvedInteractionId: interactionId,
+    pendingInteractionIds: interactions
+      .filter((interaction) => interaction.status === "pending")
+      .map((interaction) => interaction.id),
+    unresolvedBlockerCount:
+      readiness.get(issue.id)?.unresolvedBlockerCount ?? 0,
+  });
+}
+
 async function queueResolvedInteractionContinuationWakeup(input: {
   db: Db;
   heartbeat: ReturnType<typeof heartbeatService>;
@@ -2679,13 +2706,33 @@ async function queueResolvedInteractionContinuationWakeup(input: {
   // even when an adapter/model selected the accept-only continuation policy.
   // Keep this as a resolution-time invariant so existing pending interactions
   // and future providers receive the same behavior.
+  // GRE-780: the same holds for a `blocked` issue whose only way forward was
+  // this card. Without a wake it strands with no owner of the next step.
+  const blockedPathLost =
+    input.issue.status === "blocked" &&
+    !continuationPolicyAllowsWake &&
+    !rejectedPlanNeedsRevision &&
+    (await readBlockedPathLostAfterResolution(input.db, input.issue, input.interaction.id)
+      .catch((err) => {
+        logger.warn(
+          { err, issueId: input.issue.id, interactionId: input.interaction.id },
+          "failed to classify blocked path after issue interaction resolution",
+        );
+        return false;
+      }));
   if (
     !continuationPolicyAllowsWake &&
     !rejectedPlanNeedsRevision &&
-    !reviewPathLost
+    !reviewPathLost &&
+    !blockedPathLost
   )
     return;
-  if (input.interaction.status === "expired" && !reviewPathLost) return;
+  if (
+    input.interaction.status === "expired" &&
+    !reviewPathLost &&
+    !blockedPathLost
+  )
+    return;
   // A normal interaction continuation is itself the durable recovery path.
   // Do not contaminate that wake with the fallback "review path lost"
   // instruction merely because the just-consumed interaction now appears
@@ -2699,7 +2746,13 @@ async function queueResolvedInteractionContinuationWakeup(input: {
           reviewPathConsumedRef: input.interaction.id,
           reviewPathInstruction: REVIEW_PATH_RECOVERY_INSTRUCTION,
         }
-      : null;
+      : blockedPathLost
+        ? {
+            blockedPathLost: true,
+            blockedPathConsumedRef: input.interaction.id,
+            blockedPathInstruction: BLOCKED_PATH_RECOVERY_INSTRUCTION,
+          }
+        : null;
 
   const forceFreshSession = input.forceFreshSession === true;
   const workspaceRefreshReason = readNonEmptyString(
