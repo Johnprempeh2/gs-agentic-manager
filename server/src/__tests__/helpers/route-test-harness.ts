@@ -18,10 +18,34 @@ import {
 
 type Db = ReturnType<typeof createDb>;
 
+/** Set to `1` to fail, rather than skip, when embedded Postgres cannot start. */
+export const REQUIRE_EMBEDDED_PG_ENV = "GSAM_REQUIRE_EMBEDDED_PG";
+
+/**
+ * Picks `describe` or `describe.skip` from the embedded Postgres probe. A skip
+ * always prints its reason, so a "skipped" run cannot pass for a clean one.
+ * With `GSAM_REQUIRE_EMBEDDED_PG=1` it throws the reason instead, which fails
+ * the importing test file.
+ */
+export function resolveDescribeEmbeddedPostgres(
+  support: { supported: boolean; reason?: string },
+  opts: { env?: NodeJS.ProcessEnv; log?: (line: string) => void } = {},
+): typeof describe {
+  if (support.supported) return describe;
+  const env = opts.env ?? process.env;
+  const log = opts.log ?? ((line: string) => console.warn(line));
+  const reason = support.reason ?? "no reason reported";
+  if (env[REQUIRE_EMBEDDED_PG_ENV] === "1") {
+    throw new Error(`embedded Postgres unavailable and ${REQUIRE_EMBEDDED_PG_ENV}=1: ${reason}`);
+  }
+  log(`embedded Postgres unavailable, suites skipped: ${reason}`);
+  return describe.skip;
+}
+
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 
 /** `describe` on hosts that can run embedded Postgres, `describe.skip` elsewhere. */
-export const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+export const describeEmbeddedPostgres = resolveDescribeEmbeddedPostgres(embeddedPostgresSupport);
 
 export type EmbeddedPostgresContext = { readonly db: Db };
 
