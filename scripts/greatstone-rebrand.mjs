@@ -146,6 +146,7 @@ const RUN_LOG_TAG_LEGACY_FILES = [
   /^packages\/adapters\/hermes\/src\/ui\/parse-stdout\.ts$/,
   /^packages\/adapters\/hermes\/ui-parser\.cjs$/,
   /^server\/src\/__tests__\/heartbeat-run-log\.test\.ts$/,
+  /^ui\/src\/pages\/AgentDetail\.log-visibility\.test\.tsx$/,
 ];
 
 // R5 never renames these phrases: they name upstream's company and hosted service.
