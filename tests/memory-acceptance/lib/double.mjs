@@ -17,7 +17,11 @@ export const FAULTS = {
   "extra-egress": "Engine sends telemetry to an undeclared outside host",
   "audit-off": "Gateway writes no audit rows",
   "recall-unavailable": "Gateway answers every recall with 'memory unavailable' and no results",
+  "bare-recall-crosses-clients": "A recall that names no scope also searches client and restricted-project scopes",
 };
+
+// Scope kinds a bare recall never crosses (GRE-869, gateway service.ts isHardBoundary).
+const HARD_BOUNDARY_KINDS = ["client", "restricted_project"];
 
 const NOT_FOUND = { status: 404, body: { error: "not_found", message: "Not found." } };
 const IDENTITY_FIELDS = ["actingAgentId", "onBehalfOf", "contributor", "contributorAgentId", "agentId"];
@@ -118,14 +122,18 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
     if (auth.error) return auth.error;
     const { actor } = auth;
     const allowed = readable(actor);
-    const requested = body.scope ?? body.client ?? headers["x-bank-id"];
+    // Scope comes from the body only. X-Bank-Id is ignored, as in the shipped gateway (GRE-869).
+    const requested = body.scope ?? body.client;
     if (requested) {
       if (!findScope(world, requested) || !allowed.includes(requested)) {
         writeAudit({ actor, op: "recall", scopes: [], requestedScope: requested, decision: "denied", reason: "scope_not_granted" });
         return NOT_FOUND;
       }
     }
-    const searchScopes = requested ? [requested] : allowed;
+    const bareScopes = on.has("bare-recall-crosses-clients")
+      ? allowed
+      : allowed.filter((id) => !HARD_BOUNDARY_KINDS.includes(findScope(world, id)?.kind));
+    const searchScopes = requested ? [requested] : body.bare ? bareScopes : allowed;
     if (on.has("recall-unavailable")) {
       writeAudit({ actor, op: "recall", scopes: searchScopes, decision: "unavailable" });
       return { status: 200, body: { available: false, message: "Memory unavailable.", results: [] } };
