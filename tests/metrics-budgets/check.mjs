@@ -6,15 +6,16 @@
 // Each budget is baseline plus a written margin; see budgets.json and README.md.
 // A passing value at WATCH_MAX_RATIO x baseline or more (WATCH_MIN_RATIO x or
 // less for a `min` floor) is marked PASS (watch). The exit code does not change.
-// The Measured column shows each report's `measuredAt` age; a report older than
-// STALE_MAX_MS for its group is marked STALE. The exit code does not change.
+// The Measured column shows each report's `measuredAt` age. A row fails when its
+// report is older than `reportMaxAgeHours[group]` in the budget file, or has no
+// readable `measuredAt` (GRE-837), so a skipped collect step cannot pass on an
+// old file.
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 export const WATCH_MAX_RATIO = 2;
 export const WATCH_MIN_RATIO = 0.7;
 const HOUR_MS = 3600_000;
-export const STALE_MAX_MS = { weekly: 48 * HOUR_MS, ci: 6 * HOUR_MS };
 
 export function readPath(object, dotted) {
   return dotted.split(".").reduce((value, key) => (value == null ? undefined : value[key]), object);
@@ -53,19 +54,32 @@ export function formatAge(ms) {
   return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 }
 
-// Age of a report's `measuredAt` at `now`, and whether it is past the group's limit.
-export function measuredInfo(measuredAt, group, now = Date.now()) {
+// Age of a report's `measuredAt` at `now`, and why it is too old to judge, if it is.
+export function measuredInfo(measuredAt, maxAgeHours, now = Date.now()) {
   const at = typeof measuredAt === "string" ? Date.parse(measuredAt) : NaN;
-  if (Number.isNaN(at)) return { measuredAt: null, ageMs: null, stale: false };
+  if (Number.isNaN(at)) {
+    const reason = measuredAt === undefined || measuredAt === null ? "report has no measuredAt" : `report measuredAt ${JSON.stringify(measuredAt)} is not a date`;
+    return { measuredAt: null, ageMs: null, stale: true, staleReason: reason };
+  }
   const ageMs = now - at;
-  const maxMs = STALE_MAX_MS[group];
-  return { measuredAt, ageMs, stale: maxMs !== undefined && ageMs > maxMs, staleMaxMs: maxMs };
+  if (typeof maxAgeHours !== "number") return { measuredAt, ageMs, stale: true, staleReason: "no reportMaxAgeHours for this group in the budget file" };
+  const staleMaxMs = maxAgeHours * HOUR_MS;
+  const stale = ageMs > staleMaxMs;
+  return { measuredAt, ageMs, stale, staleMaxMs, ...(stale && { staleReason: `report is ${Math.floor(ageMs / HOUR_MS)} h old (limit ${maxAgeHours} h)` }) };
+}
+
+// A row whose report is too old (or undated) fails, whatever its value.
+function withAge(result, measured) {
+  if (!measured.stale) return { ...result, ...measured };
+  const reason = result.status === "pass" ? measured.staleReason : `${measured.staleReason}; ${result.reason}`;
+  return { ...result, ...measured, status: "fail", watch: undefined, reason };
 }
 
 export function formatMeasured(r) {
-  if (r.ageMs === null || r.ageMs === undefined) return "unknown";
+  if (r.ageMs === null || r.ageMs === undefined) return r.stale ? "unknown STALE" : "unknown";
   const age = `${formatAge(r.ageMs)} ago`;
-  return r.stale ? `${age} STALE (max ${formatAge(r.staleMaxMs)})` : age;
+  if (!r.stale) return age;
+  return r.staleMaxMs === undefined ? `${age} STALE` : `${age} STALE (max ${formatAge(r.staleMaxMs)})`;
 }
 
 export function formatRow(r) {
@@ -83,10 +97,9 @@ export function checkBudgets(config, { group, inputs = {}, root = process.cwd(),
       reports.set(file, readReport || existsSync(file) ? load(file) : null);
     }
     const report = reports.get(file);
-    const measured = measuredInfo(report?.measuredAt, budget.group, now);
     results.push(report
-      ? { ...evaluateBudget(budget, report), ...measured }
-      : { id: budget.id, number: budget.number, value: null, samples: null, limit: budget.max ?? budget.min, baseline: budget.baseline ?? null, ratio: null, status: "fail", reason: `missing input ${file}`, ...measured });
+      ? withAge(evaluateBudget(budget, report), measuredInfo(report.measuredAt, config.reportMaxAgeHours?.[budget.group], now))
+      : { id: budget.id, number: budget.number, value: null, samples: null, limit: budget.max ?? budget.min, baseline: budget.baseline ?? null, ratio: null, status: "fail", reason: `missing input ${file}`, measuredAt: null, ageMs: null, stale: false });
   }
   return { ok: results.length > 0 && results.every((result) => result.status === "pass"), results };
 }
@@ -101,7 +114,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log("| Budget | # | Value | Baseline | x baseline | Limit | Samples | Result | Measured |");
   console.log("|---|---|---:|---:|---:|---:|---:|---|---|");
   for (const r of results) console.log(formatRow(r));
-  if (results.some((r) => r.stale)) console.log("STALE: at least one report is older than its group limit; collect again before trusting this result.");
+  if (results.some((r) => r.stale)) console.log("STALE: at least one report is too old or undated; collect it again, then rerun this check.");
   if (!ok) console.error(results.length ? "Metric budget check FAILED." : "No budgets selected.");
   process.exitCode = ok ? 0 : 1;
 }

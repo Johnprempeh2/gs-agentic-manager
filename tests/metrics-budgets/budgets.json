@@ -5,6 +5,8 @@
     "machine": "Apple silicon Mac (darwin arm64), local; CI runners need their own calibration (see README)",
     "task": "GRE-2 baseline document"
   },
+  "reportMaxAgeHours": { "weekly": 48, "ci": 6 },
+  "reportMaxAgeNote": "A row fails when its report's measuredAt is older than this, or missing (GRE-837). Weekly: the routine collects then checks in one run, so 2 days only trips when a collect step was skipped. ci / S2: measured in the same job or merge check, so 6 hours.",
   "inputs": {
     "s2": "test-results/issue-detail-perf/metrics.json",
     "taskChatTail": "test-results/task-chat-perf/metrics-tail-only.json",

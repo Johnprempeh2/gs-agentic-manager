@@ -8,7 +8,8 @@
 //
 // Measures issue detail (warm and cold) and board cold open, 20 samples each,
 // unthrottled, on a fresh seeded instance whose data lives in ./tmp/s2-check-*
-// and is removed afterwards. Exits 1 with a one-line reason when over budget.
+// and is removed afterwards. Exits 1 with a one-line reason when over budget,
+// or when the report is over 6 hours old or undated (GRE-837).
 // Budgets default to budgets.keystone-host.json, calibrated on the machine
 // Keystone runs on; budgets.json is the Apple-silicon calibration.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -46,7 +47,7 @@ export function summarize({ ok, results }) {
     ? "S2 page-load check: PASS (within budget)"
     : `S2 page-load check: FAIL - over budget or not measured: ${failed.join(", ") || "no S2 budgets selected"}`;
   const measured = results[0] ? formatMeasured(results[0]) : "unknown";
-  const stale = results.some((r) => r.stale) ? "  STALE: this report is old; measure again before trusting it." : null;
+  const stale = results.some((r) => r.stale) ? "  STALE: this report is too old or undated; measure again." : null;
   return [verdict, ...rows, `  measured: ${results[0]?.measuredAt ?? "unknown"} (${measured})`, stale].filter(Boolean).join("\n");
 }
 
