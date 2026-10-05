@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { checkBudgets, evaluateBudget, formatRow } from "./check.mjs";
+import { summarize } from "./s2-check.mjs";
 
 const config = JSON.parse(readFileSync(resolve(import.meta.dirname, "budgets.json"), "utf8"));
 
@@ -103,7 +104,7 @@ test("a passing max budget at 2x baseline or more is marked PASS (watch)", () =>
   assert.equal(evaluateBudget(budget, { r2: { rate: 0.0376 } }).watch, true, "exactly 2x is watched");
   const quiet = evaluateBudget(budget, { r2: { rate: 0.037 } });
   assert.equal(quiet.watch, undefined);
-  assert.match(formatRow(quiet), /\| 1\.97x \| .* \| PASS: within budget \|$/);
+  assert.match(formatRow(quiet), /\| 1\.97x \| .* \| PASS: within budget \| unknown \|$/);
   assert.equal(evaluateBudget(budget, { r2: { rate: 0.09 } }).status, "fail", "over the limit still fails, not watch");
 });
 
@@ -120,7 +121,7 @@ test("a passing min floor at 0.7x baseline or less is marked PASS (watch)", () =
 test("a budget with no baseline (or a zero baseline) shows - and is never watched", () => {
   const none = evaluateBudget({ id: "n", number: "S1", path: "v", max: 10 }, { v: 9 });
   assert.equal(none.watch, undefined);
-  assert.match(formatRow(none), /^\| n \| S1 \| 9 \| - \| - \| 10 \| - \| PASS: within budget \|$/);
+  assert.match(formatRow(none), /^\| n \| S1 \| 9 \| - \| - \| 10 \| - \| PASS: within budget \| unknown \|$/);
   const zero = evaluateBudget({ id: "z", number: "R1", path: "v", baseline: 0, max: 2 }, { v: 1 });
   assert.equal(zero.watch, undefined);
   assert.match(formatRow(zero), /^\| z \| R1 \| 1 \| 0 \| - \| 2 \|/);
@@ -150,4 +151,55 @@ test("a watch row does not change the exit code", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the Measured column shows report age, marks reports past the group limit STALE, and keeps the exit code (GRE-820)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "metric-budgets-"));
+  const hoursAgo = (hours) => new Date(Date.now() - hours * 3600_000).toISOString();
+  try {
+    const run = (group, report) => {
+      writeFileSync(join(dir, "report.json"), JSON.stringify(report));
+      writeFileSync(join(dir, "budgets.json"), JSON.stringify({
+        inputs: { r: join(dir, "report.json") },
+        budgets: [{ id: "b", number: "R2", group, input: "r", path: "v", baseline: 1, max: 5 }],
+      }));
+      try {
+        return { code: 0, out: execFileSync(process.execPath, [resolve(import.meta.dirname, "check.mjs"), "--group", group, "--budgets", join(dir, "budgets.json")], { encoding: "utf8", stdio: "pipe" }) };
+      } catch (error) {
+        return { code: error.status, out: error.stdout };
+      }
+    };
+    const fresh = run("weekly", { measuredAt: hoursAgo(5), v: 1 });
+    assert.equal(fresh.code, 0);
+    assert.match(fresh.out, /\| Result \| Measured \|/);
+    assert.match(fresh.out, /\| PASS: within budget \| 5h ago \|/);
+    assert.doesNotMatch(fresh.out, /STALE/);
+    const stale = run("weekly", { measuredAt: hoursAgo(72), v: 1 });
+    assert.equal(stale.code, 0, "a stale passing report still exits 0");
+    assert.match(stale.out, /\| 3d ago STALE \(max 2d\) \|/);
+    assert.match(stale.out, /^STALE: /m);
+    assert.equal(run("weekly", { measuredAt: hoursAgo(72), v: 9 }).code, 1, "a stale failing report still exits 1");
+    assert.match(run("ci", { measuredAt: hoursAgo(7), v: 1 }).out, /7h ago STALE \(max 6h\)/);
+    const unknown = run("weekly", { v: 1 });
+    assert.equal(unknown.code, 0);
+    assert.match(unknown.out, /\| unknown \|/);
+    assert.match(run("weekly", { measuredAt: "not a date", v: 1 }).out, /\| unknown \|/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the S2 summary prints when the report was measured and marks an old one STALE (GRE-820)", () => {
+  const s2 = (measuredAt) => checkBudgets(
+    { inputs: { s2: "m.json" }, budgets: [{ id: "s2-board-cold-p95-unthrottled", number: "S2", group: "ci", input: "s2", path: "v", baseline: 1, max: 5 }] },
+    { group: "ci", readReport: () => ({ measuredAt, v: 1 }), now: Date.parse("2026-10-05T12:00:00Z") },
+  );
+  const fresh = summarize(s2("2026-10-05T10:00:00Z"));
+  assert.match(fresh, /^S2 page-load check: PASS/);
+  assert.match(fresh, /measured: 2026-10-05T10:00:00Z \(2h ago\)/);
+  assert.doesNotMatch(fresh, /STALE/);
+  const old = s2("2026-09-28T12:00:00Z");
+  assert.equal(old.ok, true, "staleness does not fail the check");
+  assert.match(summarize(old), /\(7d ago STALE \(max 6h\)\)\n  STALE: /);
+  assert.match(summarize(s2(undefined)), /measured: unknown \(unknown\)/);
 });

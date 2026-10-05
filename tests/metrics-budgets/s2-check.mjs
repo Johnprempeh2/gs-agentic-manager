@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { checkBudgets } from "./check.mjs";
+import { checkBudgets, formatMeasured } from "./check.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const DEFAULT_METRICS = "test-results/issue-detail-perf/metrics.json";
@@ -45,7 +45,9 @@ export function summarize({ ok, results }) {
   const verdict = ok
     ? "S2 page-load check: PASS (within budget)"
     : `S2 page-load check: FAIL - over budget or not measured: ${failed.join(", ") || "no S2 budgets selected"}`;
-  return [verdict, ...rows].join("\n");
+  const measured = results[0] ? formatMeasured(results[0]) : "unknown";
+  const stale = results.some((r) => r.stale) ? "  STALE: this report is old; measure again before trusting it." : null;
+  return [verdict, ...rows, `  measured: ${results[0]?.measuredAt ?? "unknown"} (${measured})`, stale].filter(Boolean).join("\n");
 }
 
 function freePort() {
