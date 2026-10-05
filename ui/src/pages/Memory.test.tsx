@@ -25,11 +25,13 @@ const memoryApiMock = vi.hoisted(() => ({
 vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: memoryApiMock }));
 vi.mock("../api/agents", () => ({ agentsApi: { list: vi.fn(async () => []) } }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "co-kestrel" }) }));
+vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/lib/router", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return {
     useSearchParams: actual.useSearchParams,
+    useNavigate: actual.useNavigate,
     Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
   };
 });

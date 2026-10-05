@@ -64,6 +64,12 @@ function EntryButton({ node, onSelect }: { node: Pick<MemoryGraphNode, "id" | "t
   );
 }
 
+function contributorActivityHref(node: MemoryGraphNode) {
+  if (node.contributor.agentId) return `/memory/activity?agent=${encodeURIComponent(node.contributor.agentId)}`;
+  if (node.contributor.userId) return `/memory/activity?user=${encodeURIComponent(node.contributor.userId)}`;
+  return null;
+}
+
 function PanelFrame({ heading, onClose, children }: { heading: string; onClose: () => void; children: ReactNode }) {
   return (
     <aside className="space-y-4 rounded-lg border border-border bg-card p-4 text-card-foreground" aria-label={heading}>
@@ -123,6 +129,11 @@ export function MemoryNodeDetail({ companyId, nodeId, initialNode, onSelectNode,
         <p className="text-sm">
           {actorLabel(node.contributor)} <span className="text-muted-foreground">· {formatDateTime(node.createdAt)}</span>
         </p>
+        {contributorActivityHref(node) ? (
+          <Link to={contributorActivityHref(node)!} className="text-xs underline underline-offset-2 hover:text-foreground">
+            See this contributor's activity
+          </Link>
+        ) : null}
       </Section>
 
       {detail.isLoading ? (

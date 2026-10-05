@@ -1,8 +1,8 @@
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MEMORY_GRAPH_STATUSES, type MemoryGraphStatus, type MemoryScope } from "@greatstone/shared";
-import type { MemoryGraphFilters } from "../../api/memoryGraph";
+import type { ReactNode } from "react";
+import type { MemoryRecordStatus, MemoryScope } from "@greatstone/shared";
 import { memoryStatusMeta, scopeKindLabel } from "./memoryLabels";
 
 const ALL = "all";
@@ -12,17 +12,37 @@ export interface MemoryFilterAgent {
   name: string;
 }
 
-interface MemoryFilterBarProps {
-  filters: MemoryGraphFilters;
+/** The filters both memory views share. */
+export interface MemoryCommonFilters<S extends MemoryRecordStatus = MemoryRecordStatus> {
+  q?: string;
+  agentId?: string;
+  scopeId?: string;
+  status?: S;
+}
+
+interface MemoryFilterBarProps<S extends MemoryRecordStatus> {
+  filters: MemoryCommonFilters<S>;
+  statuses: readonly S[];
   /** Raw text in the search box; the page debounces it into `filters.q`. */
   searchText: string;
   onSearchTextChange: (value: string) => void;
-  onChange: (next: MemoryGraphFilters) => void;
+  onChange: (next: MemoryCommonFilters<S>) => void;
   agents: MemoryFilterAgent[];
   scopes: MemoryScope[];
+  /** Extra controls after the status filter, e.g. a date range. */
+  children?: ReactNode;
 }
 
-export function MemoryFilterBar({ filters, searchText, onSearchTextChange, onChange, agents, scopes }: MemoryFilterBarProps) {
+export function MemoryFilterBar<S extends MemoryRecordStatus>({
+  filters,
+  statuses,
+  searchText,
+  onSearchTextChange,
+  onChange,
+  agents,
+  scopes,
+  children,
+}: MemoryFilterBarProps<S>) {
   return (
     <div className="flex flex-wrap items-center gap-2" role="search" aria-label="Filter memory">
       <div className="relative min-w-0 flex-1 basis-56">
@@ -62,18 +82,19 @@ export function MemoryFilterBar({ filters, searchText, onSearchTextChange, onCha
       </Select>
       <Select
         value={filters.status ?? ALL}
-        onValueChange={(value) => onChange({ ...filters, status: value === ALL ? undefined : (value as MemoryGraphStatus) })}
+        onValueChange={(value) => onChange({ ...filters, status: value === ALL ? undefined : (value as S) })}
       >
         <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Review status">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>All statuses</SelectItem>
-          {MEMORY_GRAPH_STATUSES.map((status) => (
+          {statuses.map((status) => (
             <SelectItem key={status} value={status}>{memoryStatusMeta[status].label}</SelectItem>
           ))}
         </SelectContent>
       </Select>
+      {children}
     </div>
   );
 }

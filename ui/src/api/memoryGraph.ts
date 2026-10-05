@@ -25,6 +25,8 @@ export interface MemoryGraphFilters {
 export interface MemoryActivityFilters {
   q?: string;
   agentId?: string;
+  /** Contributor person (counts drill-down for board members). */
+  userId?: string;
   scopeId?: string;
   status?: MemoryRecordStatus;
   /** ISO dates, inclusive. */
@@ -51,6 +53,6 @@ export const memoryGraphApi = {
     api.get<MemoryGraphEdgeDetail>(`/companies/${companyId}/memory/graph/edges/${encodeURIComponent(edgeId)}`),
   activity: (companyId: string, filters: MemoryActivityFilters = {}) =>
     api.get<MemoryActivityFeed>(`/companies/${companyId}/memory/activity${toQuery(filters)}`),
-  activityCounts: (companyId: string, filters: Omit<MemoryActivityFilters, "agentId" | "cursor"> = {}) =>
+  activityCounts: (companyId: string, filters: Omit<MemoryActivityFilters, "agentId" | "userId" | "cursor"> = {}) =>
     api.get<MemoryActivityCounts>(`/companies/${companyId}/memory/activity/counts${toQuery(filters)}`),
 };

@@ -16,6 +16,7 @@ import { MemoryFilterBar } from "../components/memory/MemoryFilterBar";
 import { MemoryRecordList } from "../components/memory/MemoryRecordList";
 import { MemoryEdgeDetail, MemoryNodeDetail } from "../components/memory/MemoryDetailPanel";
 import { MemoryGraphCanvas } from "../components/memory/MemoryGraphCanvas";
+import { MemoryPageHeader } from "../components/memory/MemoryPageHeader";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -31,7 +32,7 @@ export function readMemoryFilters(params: URLSearchParams): MemoryGraphFilters {
 }
 
 /** The gateway answers 404 "Memory is not enabled…" when memory is off; other 404s are real errors. */
-function isMemoryDisabled(error: unknown) {
+export function isMemoryDisabled(error: unknown) {
   return error instanceof ApiError && error.status === 404 && /not enabled/i.test(error.message);
 }
 
@@ -114,14 +115,7 @@ export function Memory() {
     return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
   }
 
-  const header = (
-    <div className="space-y-1">
-      <h1 className="text-xl font-bold">Memory</h1>
-      <p className="text-sm text-muted-foreground">
-        What agents and people have added to shared memory, and how records connect.
-      </p>
-    </div>
-  );
+  const header = <MemoryPageHeader tab="connections" />;
 
   if (graph.error instanceof ApiError && graph.error.status === 403) {
     return (
@@ -154,6 +148,7 @@ export function Memory() {
       {header}
       <MemoryFilterBar
         filters={filters}
+        statuses={MEMORY_GRAPH_STATUSES}
         searchText={searchText}
         onSearchTextChange={setSearchText}
         onChange={setFilters}
