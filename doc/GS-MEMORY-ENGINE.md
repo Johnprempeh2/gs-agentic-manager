@@ -130,6 +130,23 @@ as a `NOTE`. This is accepted while memory holds only synthetic data. It **must 
 it is an open item on the G4 gate in GRE-646. Possible fixes: run agents as a different user, or give the server a
 signing helper that agents cannot read.
 
+## Delete, supersede and retention (GRE-886)
+
+- **Delete** (`POST /api/companies/:id/memory/records/:recordId/delete`, owner, the agent for its own working notes,
+  or a `memory:delete` grant) leaves a tombstone: id, scope, contributor, source reference, dates and links. In one
+  transaction it clears the record's title, content, entities, topics and evidence; scrubs every queued or sent
+  `retain` payload in `memory_ingest_outbox` (an unsent one becomes `cancelled`); clears relationship notes and
+  conflict terms; and drops the record's `memory_extracted_facts` rows. It then deletes the engine document, which
+  removes its chunks, memory units and their search entries. If the engine is down, the delete waits in the outbox
+  and is retried. Recall never returns a deleted record, even before the engine delete lands.
+- The Hindsight entity table can keep an entity **name** that other documents share. Summit's phase 2 deletion test
+  (GRE-888) checks the real engine tables for any raw text left.
+- **Supersede** keeps the old record readable as history (`GET .../records/:recordId/history`) and links both ways.
+- **Retention** (G1 decision 7): agent working notes 90 days after last use, unreviewed entries 180 days unless
+  approved, cited by an approved record or in an open conflict, superseded entries 1 year. `POST .../memory/retention`
+  with `{"dryRun": true, "withinDays": 14}` lists what falls due soon; `{"dryRun": false}` deletes what is due. Owner or
+  `memory:admin` only. Backups follow the 90-day rule below.
+
 ## Back up and restore
 
 - Nightly at 02:30 the timer runs `backup`: `pg_dump -Fc` to `backups/` plus a `.sha256`, and a copy to
