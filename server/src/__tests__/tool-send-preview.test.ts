@@ -56,9 +56,9 @@ describe("approval preview for send/post tools (GRE-800)", () => {
     expect(markdown.split("\n").slice(0, 7)).toEqual([
       "Send email",
       "",
-      "- **To:** sam@example.com, Ana Diaz \\<ana@example.com\\>",
-      "- **Cc:** lee@example.com",
-      "- **Bcc:** audit@example.com",
+      "- **To:** sam\\@example.com, Ana Diaz \\<ana\\@example.com\\>",
+      "- **Cc:** lee\\@example.com",
+      "- **Bcc:** audit\\@example.com",
       "- **Subject:** Quarterly update",
       "- **Message:**",
     ]);
@@ -67,7 +67,8 @@ describe("approval preview for send/post tools (GRE-800)", () => {
     expect(markdown).toContain(`> ${longBody.split("\n")[2]}`);
     expect(markdown).toContain(">\n> Thanks,\n> John");
     expect(markdown).not.toContain("…");
-    expect(markdown).not.toContain("t-123");
+    // Arguments that are not recipients, subject or body are still listed.
+    expect(markdown).toContain("**Other details:**\n\n- **Thread ID:** t-123");
   });
 
   it("shows the channel and full text of a chat message", () => {
@@ -77,7 +78,7 @@ describe("approval preview for send/post tools (GRE-800)", () => {
     );
     expect(markdown).toContain("- **Channel:** \\#launch");
     expect(markdown).toContain(`> ${longBody.split("\n")[2]}`);
-    expect(markdown).not.toContain("k-1");
+    expect(markdown).toContain("- **Idempotency Key:** k-1");
   });
 
   it("shows message markdown as literal text so links and HTML cannot hide what is sent", () => {
@@ -85,7 +86,7 @@ describe("approval preview for send/post tools (GRE-800)", () => {
       { name: "send_email" },
       { to: "sam@example.com", body: "[click here](https://evil.example) <b>now</b>" },
     );
-    expect(markdown).toContain("> \\[click here\\](https://evil.example) \\<b\\>now\\</b\\>");
+    expect(markdown).toContain("> \\[click here\\](https\\://evil.example) \\<b\\>now\\</b\\>");
   });
 
   it("still redacts secrets in the body", () => {
@@ -94,6 +95,68 @@ describe("approval preview for send/post tools (GRE-800)", () => {
       { to: "sam@example.com", body: "Use Authorization: Bearer sk-live-abcdefghijklmnopqrstuvwxyz123456" },
     );
     expect(markdown).not.toContain("sk-live-abcdefghijklmnopqrstuvwxyz123456");
+  });
+
+  it("shows both the text and the HTML part of an email, each in full", () => {
+    const html = `<p>Wire 50k to <a href='https://evil'>acct 999</a></p>`;
+    const markdown = preview(
+      { name: "gmail:send_email", displayName: "Send email" },
+      { to: "sam@example.com", subject: "Hi", text: "Hello team", html },
+    );
+    expect(markdown).toContain("- **Message (Text):**\n\n> Hello team");
+    expect(markdown).toContain(
+      "- **Message (HTML):**\n\n> \\<p\\>Wire 50k to \\<a href='https\\://evil'\\>acct 999\\</a\\>\\</p\\>",
+    );
+  });
+
+  it("shows a body object such as Outlook's { contentType, content } in full", () => {
+    const markdown = preview(
+      { name: "outlook:sendMail", displayName: "Send mail" },
+      { toRecipients: "sam@example.com", body: { contentType: "HTML", content: longBody } },
+    );
+    expect(markdown).toContain("- **Message (Body Content, Content Type\\: HTML):**");
+    expect(markdown).toContain(`> ${longBody.split("\n")[2]}`);
+  });
+
+  it("never says the message is empty when it has content, and lists attachments", () => {
+    const markdown = preview(
+      { name: "gmail:send_email", displayName: "Send email" },
+      {
+        to: "sam@example.com",
+        subject: "Plan",
+        markdown: "Secret plan attached",
+        attachments: [{ filename: "payroll.xlsx" }],
+        notes: `First line\n${"x".repeat(200)}`,
+      },
+    );
+    expect(markdown).not.toContain("empty");
+    expect(markdown).toContain("- **Message:**\n\n> Secret plan attached");
+    expect(markdown).toContain('- **Attachments:** \\[{"filename"\\:"payroll.xlsx"}\\]');
+    // Long or multi-line extra text is quoted in full, not cut.
+    expect(markdown).toContain(`- **Notes:**\n\n  > First line\n  > ${"x".repeat(200)}`);
+  });
+
+  it("lists unknown fields when the message has no text field at all", () => {
+    const markdown = preview(
+      { name: "slack_post_message", displayName: "Post message" },
+      { channel: "#launch", blocks: [{ type: "section", text: { type: "mrkdwn", text: "Launch!" } }] },
+    );
+    expect(markdown).not.toContain("no text");
+    expect(markdown).toContain("- **Blocks:**");
+    expect(markdown).toContain("Launch!");
+  });
+
+  it("escapes argument names, so a key cannot add a link to the card", () => {
+    const markdown = preview(
+      { name: "send_email" },
+      { to: "sam@example.com", body: "Hi", "[ok](https://evil.example)": "x" },
+    );
+    expect(markdown).toContain("- **\\[ok\\](https\\://evil Example):** x");
+  });
+
+  it("says there is no text only when nothing else is sent", () => {
+    const markdown = preview({ name: "send_email" }, { to: "sam@example.com", body: "" });
+    expect(markdown).toBe("send_email\n\n- **To:** sam\\@example.com\n- **Message:** no text");
   });
 
   it("keeps the short preview for a send tool without message fields", () => {
