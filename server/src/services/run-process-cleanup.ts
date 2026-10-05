@@ -7,7 +7,7 @@ import type { Db } from "@greatstone/db";
 import { heartbeatRuns } from "@greatstone/db";
 import { processKillGuardPaths } from "@greatstone/adapter-utils/process-kill-guard";
 import { redactCommandTextForLogs } from "@greatstone/adapter-utils/server-utils";
-import { toLegacyEnvKey } from "@greatstone/shared/legacy-env";
+import { AGENT_RUN_ID_ENV_KEYS, RUN_OWNER_API_URL_ENV_KEYS } from "@greatstone/shared/agent-run-env";
 import { logger } from "../middleware/logger.js";
 import { liveProcessGuard } from "./live-process-guard.js";
 import { listLocalServiceRegistryRecords } from "./local-service-supervisor.js";
@@ -21,7 +21,9 @@ import { listLocalServiceRegistryRecords } from "./local-service-supervisor.js";
  * finished runs had run for 22 and 15 hours (2.5 and 2.2 GB) in worktrees that
  * were already deleted. Every process an agent starts inherits the run's
  * environment, so `GSAM_RUN_ID` (and its legacy alias, which agents also get)
- * names the run that owns it.
+ * names the run that owns it. A sandbox server started from a run drops the
+ * run's other variables but keeps that marker, with the parent server's URL in
+ * `GSAM_PARENT_RUN_API_URL` (packages/shared/src/agent-run-env.ts).
  *
  * Two entry points use the same pure selection over a process list:
  * - at the end of a local run, the processes that carry that run's marker;
@@ -56,8 +58,11 @@ const TERMINAL_RUN_STATUSES = ["succeeded", "interrupted", "failed", "cancelled"
 /** While an agent has a run in one of these, the sweep leaves all its markers alone. */
 const AGENT_BUSY_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
 // The GSAM_* name first, then the legacy alias every agent environment also carries.
-const RUN_ID_KEYS: readonly string[] = ["GSAM_RUN_ID", toLegacyEnvKey("GSAM_RUN_ID")];
-const API_URL_KEYS: readonly string[] = ["GSAM_API_URL", toLegacyEnvKey("GSAM_API_URL")];
+const RUN_ID_KEYS = AGENT_RUN_ID_ENV_KEYS;
+// A server started inside a run (a sandbox) keeps the run id but moves the
+// parent's URL to GSAM_PARENT_RUN_API_URL and later sets GSAM_API_URL to its
+// own, so the recorded parent URL comes first (packages/shared/src/agent-run-env.ts).
+const API_URL_KEYS = RUN_OWNER_API_URL_ENV_KEYS;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DELETED_SUFFIX = " (deleted)";
 const WORKTREE_DIR_RE = /(^|\/)\.gsam\/worktrees\/[^/]+/;
@@ -70,7 +75,10 @@ export interface RunMarker {
   runId: string | null;
   /** Both names are set and disagree: the process is left alone. */
   conflicting: boolean;
-  /** `GSAM_API_URL`, else its legacy alias: the server the agent talked to. */
+  /**
+   * The server that owns the run: `GSAM_PARENT_RUN_API_URL` (a sandbox started
+   * from the run), else `GSAM_API_URL`, else its legacy alias.
+   */
   apiUrl: string | null;
 }
 

@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
+import { scrubAgentRunEnvForServer } from "@greatstone/shared/agent-run-env";
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
 import { onboard } from "./onboard.js";
 import { doctor } from "./doctor.js";
@@ -109,6 +110,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     process.exit(1);
   }
 
+  isolateServerFromAgentRun();
   p.log.step("Starting GS Agentic Manager server...");
   const startedServer = await importServerEntry();
   writeRuntimeInfo({
@@ -139,6 +141,23 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       throw error;
     }
   }
+}
+
+/**
+ * The server runs in this process. Started from an agent's shell (a sandbox),
+ * it must not inherit the run's identity, credentials and context, or it and
+ * everything it starts could act on the parent server as that agent. The run
+ * id stays, so the parent's leftover cleanup still stops this process tree
+ * (see packages/shared/src/agent-run-env.ts).
+ */
+export function isolateServerFromAgentRun(env: NodeJS.ProcessEnv = process.env): void {
+  const scrub = scrubAgentRunEnvForServer(env);
+  if (!scrub || scrub.removed.length === 0) return;
+  p.log.message(
+    pc.dim(
+      `Started from agent run ${scrub.runId}: removed ${scrub.removed.length} of the run's variables (API key, agent, task, workspace, GitHub) from the server environment.`,
+    ),
+  );
 }
 
 function resolveBootstrapInviteBaseUrl(
