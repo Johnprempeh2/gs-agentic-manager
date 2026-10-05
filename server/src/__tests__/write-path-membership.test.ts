@@ -28,6 +28,7 @@ const baseGoal = {
 const mockGoalService = vi.hoisted(() => ({
   list: vi.fn(),
   getById: vi.fn(),
+  getDetail: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
@@ -109,6 +110,7 @@ function resetMocks() {
   for (const mock of Object.values(mockGoalService)) mock.mockReset();
   mockGoalService.list.mockImplementation(async () => []);
   mockGoalService.getById.mockImplementation(async () => ({ ...baseGoal }));
+  mockGoalService.getDetail.mockImplementation(async () => ({ ...baseGoal }));
   mockGoalService.create.mockImplementation(async () => ({ ...baseGoal }));
   mockGoalService.update.mockImplementation(async () => ({ ...baseGoal }));
   mockGoalService.remove.mockImplementation(async () => ({ ...baseGoal }));
@@ -176,7 +178,7 @@ describe.sequential("write-path membership checks (viewer / inactive)", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(goalId);
-      expect(mockGoalService.getById).toHaveBeenCalledWith(goalId);
+      expect(mockGoalService.getDetail).toHaveBeenCalledWith(goalId);
     });
   });
 

@@ -66,7 +66,7 @@ describe("cursor local skill sync", () => {
       },
     }, []);
 
-    expect(snapshot.desiredSkills).toEqual([paperclipKey]);
+    expect(snapshot.desiredSkills).toEqual([paperclipKey, "paperclipai/paperclip/ponytail"]);
     expect(snapshot.entries.find((entry) => entry.key === paperclipKey)?.state).toBe("installed");
     expect((await fs.lstat(path.join(home, ".cursor", "skills", "paperclip"))).isSymbolicLink()).toBe(true);
   });
