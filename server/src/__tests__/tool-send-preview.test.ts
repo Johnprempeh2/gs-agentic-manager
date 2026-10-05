@@ -146,6 +146,81 @@ describe("approval preview for send/post tools (GRE-800)", () => {
     expect(markdown).toContain("Launch!");
   });
 
+  it("shows Slack blocks in full, because the recipient sees the blocks, not the text", () => {
+    const tail = "End of the blocks, wire 50k to acct 999";
+    const blocks = [
+      ...Array.from({ length: 12 }, (_, index) => ({
+        type: "section",
+        text: { type: "mrkdwn", text: `Section ${index} ${"filler ".repeat(20)}` },
+      })),
+      { type: "section", text: { type: "mrkdwn", text: tail } },
+    ];
+    const markdown = preview(
+      { name: "slack_post_message", displayName: "Post message" },
+      { channel: "#launch", text: "ok", blocks },
+    );
+    expect(markdown).toContain("- **Message:**\n\n> ok");
+    expect(markdown).toContain("- **Blocks:**\n\n  > \\[");
+    expect(markdown).toContain(tail);
+    expect(markdown).not.toContain("…");
+  });
+
+  it("shows an MCP-style content list in full", () => {
+    const markdown = preview(
+      { name: "send_email" },
+      { to: "sam@example.com", content: [{ type: "text", text: longBody }] },
+    );
+    expect(markdown).toContain("- **Content:**");
+    expect(markdown).toContain("All of this text must stay visible. ".repeat(150).trim());
+    expect(markdown).toContain("Thanks,\\\\nJohn");
+    expect(markdown).not.toContain("…");
+  });
+
+  it("shortens only large file data inside an argument, and says how much was left out", () => {
+    const data = "QUJD".repeat(500);
+    const markdown = preview(
+      { name: "gmail:send_email", displayName: "Send email" },
+      {
+        to: "sam@example.com",
+        body: "See file",
+        attachments: [
+          { filename: "payroll.xlsx", data },
+          { filename: "logo.png", url: `data:image/png;base64,${data}` },
+        ],
+      },
+    );
+    expect(markdown).toContain("payroll.xlsx");
+    expect(markdown).toContain("\\[file data, 2,000 characters not shown\\]");
+    expect(markdown).toContain("\\[file data, 2,022 characters not shown\\]");
+    expect(markdown).not.toContain(data);
+  });
+
+  it("never hides long text that is not in a file-data field", () => {
+    // A long word with no spaces is valid base64, but it is readable.
+    const word = "WIRE50KTOACCT999".repeat(80);
+    const words = "wire the money now ".repeat(80).trim();
+    const markdown = preview(
+      { name: "send_email" },
+      { to: "sam@example.com", body: "Hi", note: words, ref: word, raw: word },
+    );
+    expect(markdown).toContain(words);
+    expect(markdown.split(word)).toHaveLength(3);
+    expect(markdown).not.toContain("file data");
+  });
+
+  it("shows a recipient item it cannot read as an address raw, instead of dropping it", () => {
+    const markdown = preview(
+      { name: "send_email" },
+      {
+        to: ["a@x.com", { foo: "evil@x.com" }, { name: "Bo", email: "bo@x.com", extra: "c@x.com" }],
+        body: "Hi",
+      },
+    );
+    expect(markdown).toContain(
+      '- **To:** a\\@x.com, {"foo"\\:"evil\\@x.com"}, {"name"\\:"Bo","email"\\:"bo\\@x.com","extra"\\:"c\\@x.com"}',
+    );
+  });
+
   it("escapes argument names, so a key cannot add a link to the card", () => {
     const markdown = preview(
       { name: "send_email" },

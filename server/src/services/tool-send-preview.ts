@@ -38,7 +38,10 @@ const BODY_OBJECT_TEXT_KEYS = [...BODY_KEYS, "value", "data"];
 const REDACTED_SENTINEL = "***REDACTED***";
 /** Other text up to this length stays on one line; longer text is quoted in full. */
 const SHORT_VALUE_MAX = 140;
-const OBJECT_VALUE_MAX = 500;
+/** Base64/`data:` text at least this long is treated as file content. */
+const FILE_DATA_MIN = 1000;
+/** Attachment fields that hold file bytes (Gmail/Slack `data`, Outlook `contentBytes`, ...). */
+const FILE_DATA_KEYS = new Set(["data", "contentbytes", "base64", "filedata", "filecontent", "bytes"]);
 
 /** `toRecipients`, `to_recipients`, `to-recipients` → `torecipients`. */
 function normalizeKey(key: string): string {
@@ -60,13 +63,21 @@ export function isSendMessageTool(tool: { name: string; displayName?: string | n
   );
 }
 
-/** One address as plain text: a string, or `{ name, email }` / `{ emailAddress: { address } }`. */
+const ADDRESS_OBJECT_KEYS = new Set(["name", "email", "address", "emailaddress"]);
+
+/**
+ * One address as plain text: a string, or `{ name, email }` /
+ * `{ emailAddress: { address } }`. Null when the item has any other shape.
+ */
 function renderAddress(value: unknown): string | null {
   if (typeof value === "string") return value.trim() || null;
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (record.emailAddress && typeof record.emailAddress === "object") {
-    return renderAddress(record.emailAddress);
+  // An unknown key may hold another address, so the item is not ours to read.
+  if (Object.keys(record).some((key) => !ADDRESS_OBJECT_KEYS.has(normalizeKey(key))))
+    return null;
+  if (record.emailAddress !== undefined) {
+    return Object.keys(record).length === 1 ? renderAddress(record.emailAddress) : null;
   }
   const address = [record.email, record.address].find(
     (candidate): candidate is string => typeof candidate === "string" && candidate.trim() !== "",
@@ -76,9 +87,14 @@ function renderAddress(value: unknown): string | null {
   return address?.trim() || name || null;
 }
 
+/** Empty items are skipped; any other item that does not read as an address is shown raw. */
 function renderAddressList(value: unknown): string | null {
   const items = Array.isArray(value) ? value : [value];
-  const rendered = items.map(renderAddress).filter((item): item is string => item !== null);
+  const rendered: string[] = [];
+  for (const item of items) {
+    if (item === null || item === undefined || (typeof item === "string" && !item.trim())) continue;
+    rendered.push(renderAddress(item) ?? JSON.stringify(item));
+  }
   return rendered.length > 0 ? rendered.join(", ") : null;
 }
 
@@ -180,24 +196,54 @@ function quoteBlock(text: string, clean: (line: string) => string): string[] {
 }
 
 /**
- * Any other argument as plain text. Text is kept whole; lists and objects
- * (attachments, blocks) are shown as compact JSON, cut at OBJECT_VALUE_MAX
- * so a large file does not fill the card.
+ * Long base64 file content is not words the approver can read; it is the only
+ * thing ever shortened, and the card says how much. Only a `data:` URL or a
+ * file-data field counts, because a long word with no spaces is base64 too.
+ * Gmail's `raw` (the whole mail) is not a file-data field, so it stays whole.
  */
-function renderOtherValue(value: unknown): string | null {
+function shortenFileData(text: string, key: string | null): string {
+  if (text.length < FILE_DATA_MIN) return text;
+  const isDataUrl = /^data:[^,\s]{0,200};base64,[A-Za-z0-9+/=_\r\n-]+$/i.test(text);
+  const isFileField =
+    key !== null &&
+    FILE_DATA_KEYS.has(normalizeKey(key)) &&
+    /^[A-Za-z0-9+/=_\r\n-]+$/.test(text);
+  if (!isDataUrl && !isFileField) return text;
+  return `[file data, ${text.length.toLocaleString("en-US")} characters not shown]`;
+}
+
+function shortenNestedFileData(value: unknown, key: string | null): unknown {
+  if (typeof value === "string") return shortenFileData(value, key);
+  if (Array.isArray(value)) return value.map((item) => shortenNestedFileData(item, key));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([innerKey, inner]) => [
+        innerKey,
+        shortenNestedFileData(inner, innerKey),
+      ]),
+    );
+  }
+  return value;
+}
+
+/**
+ * Any other argument as plain text, never cut: Slack `blocks` or an MCP
+ * `content` list can be the message the recipient sees. Lists and objects are
+ * JSON (indented when long); only file data inside them is shortened.
+ */
+function renderOtherValue(key: string, value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "string") {
     const text = normalizeText(value);
     if (!text) return null;
-    return text === REDACTED_SENTINEL ? "hidden for privacy" : text;
+    return text === REDACTED_SENTINEL ? "hidden for privacy" : shortenFileData(text, key);
   }
   if (typeof value === "number" || typeof value === "boolean")
     return String(value);
-  const json = JSON.stringify(value);
+  const shortened = shortenNestedFileData(value, key);
+  const json = JSON.stringify(shortened);
   if (!json || json === "[]" || json === "{}") return null;
-  return json.length > OBJECT_VALUE_MAX
-    ? `${json.slice(0, OBJECT_VALUE_MAX - 1)}…`
-    : json;
+  return json.length > SHORT_VALUE_MAX ? JSON.stringify(shortened, null, 2) : json;
 }
 
 /**
@@ -251,7 +297,7 @@ export function buildSendMessagePreviewLines(
   const otherLines: string[] = [];
   for (const [key, value] of Object.entries(redacted)) {
     if (used.has(key)) continue;
-    const rendered = renderOtherValue(value);
+    const rendered = renderOtherValue(key, value);
     if (rendered === null) continue;
     // Keys come from the agent too, so they are escaped like values.
     const label = `**${clean(humanizeKey(key))}:**`;
