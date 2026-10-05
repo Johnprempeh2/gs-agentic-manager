@@ -439,12 +439,18 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
      * inconclusive, never a pass.
      */
     async stewardRun(headers, body = {}) {
+      // 22:00Z is 22:00 or 23:00 in Europe/London, so the run day is the audit
+      // day all year. A killed pass keeps its lease, so the next pass runs at
+      // or after `leaseUntil`, as a real resume would.
+      let now = body.auditDay ? new Date(`${body.auditDay}T22:00:00.000Z`) : null;
+      if (now && state.stewardLeaseUntil && now < state.stewardLeaseUntil) now = state.stewardLeaseUntil;
       const sandbox = {
-        ...(body.auditDay ? { now: `${body.auditDay}T23:00:00.000Z` } : {}),
+        ...(now ? { now: now.toISOString() } : {}),
         ...(body.fault ? { killAfterEntries: body.fault.item } : {}),
       };
       const res = await route("stewardRun", { headers: mapHeaders(headers), body: Object.keys(sandbox).length ? { sandbox } : undefined });
       const out = translateResult(res);
+      state.stewardLeaseUntil = res.status < 300 && res.body?.outcome === "killed" && res.body.leaseUntil ? new Date(res.body.leaseUntil) : null;
       if (body.fault && res.status < 300 && res.body?.outcome === "completed") {
         out.body = { ...out.body, faultIgnored: "the steward review route ran to completion instead of stopping at the requested kill" };
       }

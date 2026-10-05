@@ -599,14 +599,17 @@ export const PHASE2_TESTS = [
       check(checks, repeated.length === 0, `no entry escalated twice for the same finding${repeated.length ? ` (${repeated.join(", ")})` : ""}`);
       const price = items.filter((i) => i.refs.includes("R-102"));
       check(checks, price.length >= 1 && price.some((i) => ["R-101", "R-501", "R-502", "R-503"].every((id) => i.refs.includes(id))), `near-duplicates R-501..R-503 grouped with R-101/R-102 in one item (got ${JSON.stringify(price.map((i) => i.refs))})`);
-      check(checks, price.length >= 1 && price.every((i) => JSON.stringify(i.raw.routeTo ?? i.raw.routedTo ?? i.raw).includes("hu-john-syn")), "price items are routed to John");
+      // The gateway routes by role (`routeTo: { kind: "john" }`); the double by identity.
+      const toJohn = (i) => { const r = i.raw.routeTo ?? i.raw.routedTo ?? i.raw; return r?.kind === "john" || JSON.stringify(r).includes("hu-john-syn"); };
+      check(checks, price.length >= 1 && price.every(toJohn), "price items are routed to John");
       check(checks, items.every((i) => !i.refs.some((id) => idx[id] === "cl-brook")), "no queue item holds a cl-brook entry");
       const r102 = recOf(must(await client(target, "hu-john-syn").get("R-102"), "read R-102"));
       check(checks, r102.status !== "approved", "the steward approved nothing (R-102 still unreviewed)");
       check(checks, !auditHas(audit, { actor: "ag-steward-syn", decision: "allowed", op: (o) => /approv/i.test(String(o)) }), "no allowed approval by the steward in the audit");
       // GRE-887 item 5: audit cost and queue age are measured (per run or in the daily report).
       const measures = JSON.stringify({ runs: ledger.runs ?? [], report: out.caughtUp.body?.report ?? null });
-      check(checks, /"[a-z_]*duration[a-z_]*":\d/i.test(measures) && /"[a-z_]*(queue_?age|oldest)[a-z_]*":\d/i.test(measures), "review duration and queue age are reported as numbers");
+      // Signed: with a sandbox clock ahead of the wall clock, queue age can be negative.
+      check(checks, /"[a-z_]*duration[a-z_]*":-?\d/i.test(measures) && /"[a-z_]*(queue_?age|oldest)[a-z_]*":-?\d/i.test(measures), "review duration and queue age are reported as numbers");
       return { checks, observed: { runs: out, ledger, queue: items.map((i) => i.raw) }, audit };
     },
   },
