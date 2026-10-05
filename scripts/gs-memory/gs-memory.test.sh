@@ -140,5 +140,19 @@ token="synthetic-token-$(date +%s)-abcdefghijklmnop"
 out="$(printf '%s\n' "$token" | "$SCRIPT" link-claude 2>&1)"; rc=$?
 [[ "$rc" == 0 && "$out" != *"$token"* ]] && pass "link-claude: token stored, not printed" || fail "link-claude: rc=$rc or token printed"
 
+# --- 9. restore-test: fixed C.UTF-8 locale, whatever the caller's locale is (GRE-674) ---------
+fresh restore-locale
+mkdir -p "$GS_MEMORY_ROOT/backups"
+(cd "$GS_MEMORY_ROOT/backups" && echo synthetic-dump > hindsight-20261005T000000Z.dump \
+  && sha256sum hindsight-20261005T000000Z.dump > hindsight-20261005T000000Z.dump.sha256)
+# initdb stub: fails like the real one when LC_CTYPE is not a valid locale; records its env and args.
+printf '#!/usr/bin/env bash\necho "initdb LC_ALL=${LC_ALL:-} LC_CTYPE=${LC_CTYPE:-} $*" >> "$CALLS"\n[[ "${LC_CTYPE:-}" == UTF-8 ]] && { echo "initdb: error: invalid locale settings" >&2; exit 1; }\nexit 0\n' > "$PGBIN/initdb"
+for c in pg_ctl createdb pg_restore; do printf '#!/usr/bin/env bash\nexit 0\n' > "$PGBIN/$c"; done
+printf '#!/usr/bin/env bash\necho 25\n' > "$PGBIN/psql"
+chmod +x "$PGBIN"/*
+out="$(LC_CTYPE=UTF-8 LANG=en_GB.UTF-8 "$SCRIPT" restore-test 2>&1)"; rc=$?
+[[ "$rc" == 0 && "$out" == *"restore test passed"* ]] && pass "restore-test: passes with a Mac ssh locale (LC_CTYPE=UTF-8)" || fail "restore-test locale: rc=$rc out=$out"
+called "initdb LC_ALL=C.UTF-8 LC_CTYPE= .*--locale=C.UTF-8" && pass "restore-test: initdb runs with C.UTF-8" || fail "restore-test: initdb locale not fixed: $(cat "$CALLS")"
+
 echo
 if [[ "$failures" == 0 ]]; then echo "ALL PASS"; else echo "$failures FAILED"; exit 1; fi
