@@ -53,14 +53,14 @@ try {
   cliArgs = appliedOptions.forwardedArgs;
   dataDir = appliedOptions.dataDir;
 } catch (error) {
-  console.error(`[paperclip] ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`[gsam] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
 
 const worktreeEnvBootstrap = bootstrapDevRunnerWorktreeEnv(repoRoot, process.env);
 if (worktreeEnvBootstrap.missingEnv) {
   console.error(
-    `[paperclip] linked git worktree at ${repoRoot} is missing ${path.relative(repoRoot, worktreeEnvBootstrap.envPath)}. Run \`gsam worktree init\` in this worktree before \`pnpm dev\`.`,
+    `[gsam] linked git worktree at ${repoRoot} is missing ${path.relative(repoRoot, worktreeEnvBootstrap.envPath)}. Run \`gsam worktree init\` in this worktree before \`pnpm dev\`.`,
   );
   process.exit(1);
 }
@@ -69,7 +69,7 @@ if (worktreeEnvBootstrap.missingEnv) {
 applySharedRunnerBuildDir(process.env);
 if (shouldBlockDevRunnerForPendingSeed(repoRoot, dataDir)) {
   console.error(
-    "[paperclip] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`, or start an isolated sandbox with `pnpm dev:once --data-dir ./tmp/sandbox`.",
+    "[gsam] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`, or start an isolated sandbox with `pnpm dev:once --data-dir ./tmp/sandbox`.",
   );
   process.exit(1);
 }
@@ -139,7 +139,7 @@ for (let index = 0; index < cliArgs.length; index += 1) {
   if (arg === "--bind") {
     const value = cliArgs[index + 1];
     if (!value || value.startsWith("--") || !BIND_MODES.includes(value as BindMode)) {
-      console.error(`[paperclip] invalid --bind value. Use one of: ${BIND_MODES.join(", ")}`);
+      console.error(`[gsam] invalid --bind value. Use one of: ${BIND_MODES.join(", ")}`);
       process.exit(1);
     }
     bindMode = value as BindMode;
@@ -149,7 +149,7 @@ for (let index = 0; index < cliArgs.length; index += 1) {
   if (arg === "--bind-host") {
     const value = cliArgs[index + 1];
     if (!value || value.startsWith("--")) {
-      console.error("[paperclip] --bind-host requires a value");
+      console.error("[gsam] --bind-host requires a value");
       process.exit(1);
     }
     bindHost = value;
@@ -176,7 +176,7 @@ if (managedRuntimeExposure) {
   bindHost = "127.0.0.1";
 }
 if (bindMode === "custom" && !bindHost) {
-  console.error("[paperclip] --bind custom requires --bind-host <host>");
+  console.error("[gsam] --bind custom requires --bind-host <host>");
   process.exit(1);
 }
 
@@ -205,7 +205,7 @@ if (mode === "watch") {
 if (tailscaleAuth || bindMode) {
   const effectiveBind = bindMode ?? "lan";
   if (tailscaleAuth) {
-    console.log("[paperclip] note: --tailscale-auth/--authenticated-private are legacy aliases for --bind lan");
+    console.log("[gsam] note: --tailscale-auth/--authenticated-private are legacy aliases for --bind lan");
   }
   env.GSAM_BIND = effectiveBind;
   if (bindHost) {
@@ -217,13 +217,13 @@ if (tailscaleAuth || bindMode) {
     delete env.GSAM_DEPLOYMENT_MODE;
     delete env.GSAM_DEPLOYMENT_EXPOSURE;
     delete env.GSAM_AUTH_BASE_URL_MODE;
-    console.log("[paperclip] dev mode: local_trusted (bind=loopback)");
+    console.log("[gsam] dev mode: local_trusted (bind=loopback)");
   } else {
     env.GSAM_DEPLOYMENT_MODE = "authenticated";
     env.GSAM_DEPLOYMENT_EXPOSURE = "private";
     env.GSAM_AUTH_BASE_URL_MODE = managedRuntimeExposure ? "explicit" : "auto";
     console.log(
-      `[paperclip] dev mode: authenticated/private (bind=${effectiveBind}${bindHost ? `:${bindHost}` : ""})`,
+      `[gsam] dev mode: authenticated/private (bind=${effectiveBind}${bindHost ? `:${bindHost}` : ""})`,
     );
   }
 } else {
@@ -232,7 +232,7 @@ if (tailscaleAuth || bindMode) {
   delete env.GSAM_DEPLOYMENT_MODE;
   delete env.GSAM_DEPLOYMENT_EXPOSURE;
   delete env.GSAM_AUTH_BASE_URL_MODE;
-  console.log("[paperclip] dev mode: local_trusted (default)");
+  console.log("[gsam] dev mode: local_trusted (default)");
 }
 
 const serverPort = Number.parseInt(env.PORT ?? process.env.PORT ?? "3100", 10) || 3100;
@@ -251,7 +251,7 @@ const existingRunner = await findAdoptableLocalService({
 });
 if (existingRunner) {
   console.log(
-    `[paperclip] ${devService.serviceName} already running (pid ${existingRunner.pid}${typeof existingRunner.metadata?.childPid === "number" ? `, child ${existingRunner.metadata.childPid}` : ""})`,
+    `[gsam] ${devService.serviceName} already running (pid ${existingRunner.pid}${typeof existingRunner.metadata?.childPid === "number" ? `, child ${existingRunner.metadata.childPid}` : ""})`,
   );
   process.exit(0);
 }
@@ -325,7 +325,7 @@ function exitForSignal(signal: NodeJS.Signals) {
 }
 
 function logServerTree(message: string) {
-  process.stderr.write(`[paperclip] ${message}\n`);
+  process.stderr.write(`[gsam] ${message}\n`);
 }
 
 function collectWatchedSnapshot() {
@@ -505,7 +505,7 @@ async function maybePreflightMigrations(
   if (!shouldApply) {
     if (exitOnDecline) {
       process.stderr.write(
-        `[paperclip] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). Refusing to start watch mode against a stale schema.\n`,
+        `[gsam] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). Refusing to start watch mode against a stale schema.\n`,
       );
       process.exit(1);
     }
@@ -529,7 +529,7 @@ async function maybePreflightMigrations(
 }
 
 async function buildPluginSdk() {
-  console.log("[paperclip] building plugin sdk...");
+  console.log("[gsam] building plugin sdk...");
   const result = await runPnpm(
     ["--filter", "@greatstone/plugin-sdk", "build"],
     { stdio: "inherit" },
@@ -539,7 +539,7 @@ async function buildPluginSdk() {
     return;
   }
   if (result.code !== 0) {
-    console.error("[paperclip] plugin sdk build failed");
+    console.error("[gsam] plugin sdk build failed");
     process.exit(result.code);
   }
 }
@@ -567,14 +567,14 @@ async function getNativeRunnerRequired(): Promise<boolean> {
   if (!requirement.valid) {
     const detail = status.stderr || status.stdout;
     process.stderr.write(
-      `[paperclip] unable to determine the native runner requirement; conservatively preparing the native runner${detail ? `\n${detail}` : "\n"}`,
+      `[gsam] unable to determine the native runner requirement; conservatively preparing the native runner${detail ? `\n${detail}` : "\n"}`,
     );
   }
   return requirement.nativeRunnerRequired;
 }
 
 async function buildPaperclipRunner() {
-  console.log("[paperclip] building paperclip runner...");
+  console.log("[gsam] building paperclip runner...");
   const typescriptResult = await runPnpm(
     ["--filter", "@greatstone/paperclip-runner", "build:typescript"],
     { stdio: "inherit" },
@@ -584,7 +584,7 @@ async function buildPaperclipRunner() {
     return;
   }
   if (typescriptResult.code !== 0) {
-    console.error("[paperclip] paperclip runner build failed");
+    console.error("[gsam] paperclip runner build failed");
     process.exit(typescriptResult.code);
   }
 
@@ -598,7 +598,7 @@ async function buildPaperclipRunner() {
     return;
   }
 
-  console.log("[paperclip] building paperclip runner native binary...");
+  console.log("[gsam] building paperclip runner native binary...");
   const binaryResult = await runPnpm(
     ["--filter", "@greatstone/paperclip-runner", "build:binary"],
     { stdio: "inherit" },
@@ -608,7 +608,7 @@ async function buildPaperclipRunner() {
     return;
   }
   if (binaryResult.code !== 0) {
-    console.error("[paperclip] paperclip runner native binary build failed");
+    console.error("[gsam] paperclip runner native binary build failed");
     process.exit(binaryResult.code);
   }
 }
@@ -642,7 +642,7 @@ function uiBundleIsFresh(): boolean {
 }
 
 async function buildUiBundleForManagedRuntime(): Promise<boolean> {
-  console.log("[paperclip] managed runtime: building the UI bundle for static serving...");
+  console.log("[gsam] managed runtime: building the UI bundle for static serving...");
   const result = await runPnpm(
     ["--filter", "@greatstone/ui", "build"],
     { stdio: "inherit" },
@@ -653,7 +653,7 @@ async function buildUiBundleForManagedRuntime(): Promise<boolean> {
   }
   if (result.code !== 0) {
     console.error(
-      "[paperclip] UI bundle build failed; falling back to the Vite dev middleware (the page may load slowly or stay blank over HTTPS)",
+      "[gsam] UI bundle build failed; falling back to the Vite dev middleware (the page may load slowly or stay blank over HTTPS)",
     );
     return false;
   }
@@ -734,7 +734,7 @@ async function stopChildForRestart(): Promise<ServerChildExit> {
   const result = await stopServerTree(tree);
   if (serverTree === tree) serverTree = null;
   console.log(
-    `[paperclip] old server stopped for restart (${result.outcome}, ${(result.elapsedMs / 1000).toFixed(1)}s)`,
+    `[gsam] old server stopped for restart (${result.outcome}, ${(result.elapsedMs / 1000).toFixed(1)}s)`,
   );
   return result.exit ?? { code: 0, signal: null };
 }
@@ -975,7 +975,7 @@ handleDevRunnerHangups({
 let uiBundleBuild: Promise<boolean> | null = null;
 if (serveBuiltUiForManagedRuntime) {
   if (uiBundleIsFresh()) {
-    console.log("[paperclip] managed runtime: reusing the up-to-date UI bundle in ui/dist");
+    console.log("[gsam] managed runtime: reusing the up-to-date UI bundle in ui/dist");
   } else {
     uiBundleBuild = buildUiBundleForManagedRuntime();
   }

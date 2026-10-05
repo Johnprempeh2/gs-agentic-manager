@@ -52,6 +52,10 @@
  *   R7  legibility (ui/ only) text-muted-foreground/NN -> text-subtle-foreground,
  *                            text-foreground/55|60     -> text-muted-foreground
  *       Greatstone rule: de-emphasise text with a colour token, never with alpha.
+ *   R8  run log tags         [paperclip] / [paperclip-runner] / ... -> [gsam...]
+ *       Adapters write these to run stderr, which clients read on run pages.
+ *       NOT: RUN_LOG_TAG_LEGACY_FILES, which read or test logs written before
+ *       the rename and so must keep naming the old tag.
  *
  * Out of scope on purpose: internal lowercase identifiers (paths, CSS classes,
  * storage keys, MCP/tool names, Rust crate names) and file names. They are never
@@ -107,7 +111,7 @@ function isText(buf) {
   return !probe.includes(0);
 }
 
-const counts = Object.fromEntries(["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7"].map((k) => [k, 0]));
+const counts = Object.fromEntries(["R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"].map((k) => [k, 0]));
 
 function sub(text, re, replacement, key) {
   if (typeof replacement === "string") {
@@ -131,6 +135,18 @@ const CODE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 // `paperclipai/bundled/...`), not the CLI: `owner === "paperclipai"` stays.
 const NAMESPACE_COMPARISON =
   /(owner|login|namespace|org|keyParts\[\d+\])\w*\s*[!=]==?\s*["'`]paperclipai["'`]/i;
+
+// R8: the platform's own run log tags. Same set as rebrandRunLogText in
+// packages/adapter-utils/src/run-log-transcript.ts, which rewrites old stored logs.
+const RUN_LOG_TAG = /\[paperclip(?=\]|-runner\]|-bridge\]|-acpx-sidecar\]| selection debug\]| truncated run log chunk)/g;
+
+// These read or test logs written before the rename, so the old tag stays.
+const RUN_LOG_TAG_LEGACY_FILES = [
+  /^packages\/adapter-utils\/src\/run-log-transcript\.test\.ts$/,
+  /^packages\/adapters\/hermes\/src\/ui\/parse-stdout\.ts$/,
+  /^packages\/adapters\/hermes\/ui-parser\.cjs$/,
+  /^server\/src\/__tests__\/heartbeat-run-log\.test\.ts$/,
+];
 
 // R5 never renames these phrases: they name upstream's company and hosted service.
 const UPSTREAM_NAMES = /^ (Cloud|Enterprise|Labs|AI)\b/;
@@ -221,6 +237,13 @@ function rebrand(file, text) {
   if (/^ui\//.test(file)) {
     next = sub(next, /text-muted-foreground\/\d{2}(?![\d\w])/g, "text-subtle-foreground", "R7");
     next = sub(next, /text-foreground\/(?:55|60)(?![\d\w])/g, "text-muted-foreground", "R7");
+  }
+
+  // R8: run log tags, shown to clients on run pages.
+  if (!RUN_LOG_TAG_LEGACY_FILES.some((re) => re.test(file))) {
+    next = sub(next, RUN_LOG_TAG, "[gsam", "R8");
+    // ...and regex literals that match those lines (/^\[paperclip\]/).
+    next = sub(next, /\\\[paperclip(?=\\\])/g, "\\[gsam", "R8");
   }
 
   return next;

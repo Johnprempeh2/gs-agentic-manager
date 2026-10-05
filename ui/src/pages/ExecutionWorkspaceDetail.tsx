@@ -49,6 +49,7 @@ import {
   sortWorkspaceRoutinesByName,
 } from "../lib/workspace-routines";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
+import { rebrandRunLogText } from "../adapters";
 
 type WorkspaceFormState = {
   name: string;
@@ -1545,9 +1546,9 @@ export function ExecutionWorkspaceDetail() {
                           {operation.finishedAt ? ` → ${formatDateTime(operation.finishedAt)}` : ""}
                         </div>
                         {operation.stderrExcerpt ? (
-                          <div className="whitespace-pre-wrap break-words text-xs text-destructive">{operation.stderrExcerpt}</div>
+                          <div className="whitespace-pre-wrap break-words text-xs text-destructive">{rebrandRunLogText(operation.stderrExcerpt)}</div>
                         ) : operation.stdoutExcerpt ? (
-                          <div className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{operation.stdoutExcerpt}</div>
+                          <div className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{rebrandRunLogText(operation.stdoutExcerpt)}</div>
                         ) : null}
                       </div>
                       <StatusPill className="self-start">{operation.status}</StatusPill>

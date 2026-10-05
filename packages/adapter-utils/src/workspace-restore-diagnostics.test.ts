@@ -17,7 +17,7 @@ describe("workspace restore diagnostics", () => {
     });
     await expect(withWorkspaceRestoreDiagnostics("asset", async () => { throw error; }, sink)).rejects.toBe(error);
     expect(sink).toHaveBeenCalledExactlyOnceWith(
-      '[paperclip] Workspace restore diagnostic: {"phase":"asset","errorCode":"ECONNRESET","httpStatus":503,"exitCode":7}\n',
+      '[gsam] Workspace restore diagnostic: {"phase":"asset","errorCode":"ECONNRESET","httpStatus":503,"exitCode":7}\n',
     );
   });
 
@@ -26,7 +26,7 @@ describe("workspace restore diagnostics", () => {
       const sink = vi.fn();
       await expect(withWorkspaceRestoreDiagnostics("asset", async () => { throw error; }, sink)).rejects.toBe(error);
       expect(sink).toHaveBeenCalledExactlyOnceWith(
-        '[paperclip] Workspace restore diagnostic: {"phase":"asset","errorCode":"unknown"}\n',
+        '[gsam] Workspace restore diagnostic: {"phase":"asset","errorCode":"unknown"}\n',
       );
     },
   );
@@ -54,7 +54,7 @@ describe("workspace restore diagnostics", () => {
     const sink = vi.fn();
     await expect(withWorkspaceRestoreDiagnostics("asset", async () => { throw error; }, sink)).rejects.toBe(error);
     expect(sink).toHaveBeenCalledExactlyOnceWith(
-      '[paperclip] Workspace restore diagnostic: {"phase":"asset","errorCode":"ECONNRESET","httpStatus":503}\n',
+      '[gsam] Workspace restore diagnostic: {"phase":"asset","errorCode":"ECONNRESET","httpStatus":503}\n',
     );
   });
 
@@ -63,7 +63,7 @@ describe("workspace restore diagnostics", () => {
     const sink = vi.fn();
     await expect(withWorkspaceRestoreDiagnostics("workspace", async () => { throw error; }, sink)).rejects.toBe(error);
     expect(sink).toHaveBeenCalledExactlyOnceWith(
-      '[paperclip] Workspace restore diagnostic: {"phase":"workspace","errorCode":"unknown","httpStatus":503,"exitCode":7}\n',
+      '[gsam] Workspace restore diagnostic: {"phase":"workspace","errorCode":"unknown","httpStatus":503,"exitCode":7}\n',
     );
   });
 

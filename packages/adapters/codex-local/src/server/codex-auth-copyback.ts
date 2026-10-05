@@ -91,7 +91,7 @@ export async function copyBackCodexAuth(input: CopyBackCodexAuthInput): Promise<
   } catch (error) {
     if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") {
       await log(
-        "[paperclip] Codex auth copy-back: no sandbox credential to copy back (absent auth.json); host credential kept.",
+        "[gsam] Codex auth copy-back: no sandbox credential to copy back (absent auth.json); host credential kept.",
       );
       return "kept-host";
     }
@@ -121,7 +121,7 @@ export async function copyBackCodexAuth(input: CopyBackCodexAuthInput): Promise<
           // Atomic same-directory swap; rename preserves the temp's 0600 mode.
           await rename(stagedTempPath, hostAuthPath);
           await log(
-            "[paperclip] Codex auth copy-back: sandbox credential is strictly newer for the same subscription identity; installed to the host at mode 0600.",
+            "[gsam] Codex auth copy-back: sandbox credential is strictly newer for the same subscription identity; installed to the host at mode 0600.",
           );
           return "copied";
         }
@@ -132,13 +132,13 @@ export async function copyBackCodexAuth(input: CopyBackCodexAuthInput): Promise<
         // file, and never credential bytes.
         if (decision === IMPLAUSIBLE_LAST_REFRESH_EXIT) {
           await log(
-            `[paperclip] Codex auth copy-back: WARNING host credential kept (decision exit ${IMPLAUSIBLE_LAST_REFRESH_EXIT}, codex auth copy-back) — the sandbox copy's last_refresh sat further ahead of the host clock than the plausible skew allowance. Check the host clock if this is unexpected.`,
+            `[gsam] Codex auth copy-back: WARNING host credential kept (decision exit ${IMPLAUSIBLE_LAST_REFRESH_EXIT}, codex auth copy-back) — the sandbox copy's last_refresh sat further ahead of the host clock than the plausible skew allowance. Check the host clock if this is unexpected.`,
           );
           return "kept-host";
         }
 
         await log(
-          "[paperclip] Codex auth copy-back: host credential kept (sandbox copy is not a strictly-newer same-identity subscription credential).",
+          "[gsam] Codex auth copy-back: host credential kept (sandbox copy is not a strictly-newer same-identity subscription credential).",
         );
         return "kept-host";
       } finally {
@@ -184,7 +184,7 @@ export async function copyBackCodexAuth(input: CopyBackCodexAuthInput): Promise<
       // `hostOutcome` below.
       await Promise.resolve(
         log(
-          `[paperclip] Codex auth cache: additive cache write failed (${code}); host copy-back result kept.`,
+          `[gsam] Codex auth cache: additive cache write failed (${code}); host copy-back result kept.`,
         ),
       ).catch(() => undefined);
     }

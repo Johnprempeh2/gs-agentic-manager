@@ -3322,7 +3322,7 @@ export function shapePaperclipWorkspaceEnvForExecution(input: {
   if (executionCwd === null) {
     // eslint-disable-next-line no-console
     console.warn(
-      "[paperclip] shapePaperclipWorkspaceEnvForExecution called with executionCwd=null on a remote target; " +
+      "[gsam] shapePaperclipWorkspaceEnvForExecution called with executionCwd=null on a remote target; " +
         "stripping workspaceCwd to avoid leaking local paths into the remote environment.",
     );
   }

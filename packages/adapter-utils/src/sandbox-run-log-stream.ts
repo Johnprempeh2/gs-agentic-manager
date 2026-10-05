@@ -264,7 +264,7 @@ export function createSandboxRunLogTailFactory(
         if (degraded) {
           await sink(
             "stderr",
-            "[paperclip] Run log streaming degraded during the run; remaining output was delivered at completion.\n",
+            "[gsam] Run log streaming degraded during the run; remaining output was delivered at completion.\n",
           );
         }
       },

@@ -58,7 +58,7 @@ export async function withWorkspaceRestoreDiagnostics<T>(
       return await operation();
     } catch (error) {
       try {
-        await onProgress?.(`[paperclip] Workspace restore diagnostic: ${JSON.stringify({ phase, ...diagnostic(error) })}\n`);
+        await onProgress?.(`[gsam] Workspace restore diagnostic: ${JSON.stringify({ phase, ...diagnostic(error) })}\n`);
       } catch {
         // A broken log sink must not replace a restore failure or relax its safety classification.
       }

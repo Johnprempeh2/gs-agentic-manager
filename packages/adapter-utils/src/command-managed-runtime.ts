@@ -635,7 +635,7 @@ export async function prepareCommandManagedRuntime(input: {
         text.split(/\r?\n/).filter((line) => line.trim().length > 0).slice(-3).join(" | ").slice(0, 480);
       const reason = result.timedOut ? "timed out" : `exited ${result.exitCode ?? "?"}`;
       console.warn(
-        `[paperclip] managed-runtime install command ${reason}: ${installCommand} :: ${tail(result.stderr || result.stdout)}`,
+        `[gsam] managed-runtime install command ${reason}: ${installCommand} :: ${tail(result.stderr || result.stdout)}`,
       );
     }
   }

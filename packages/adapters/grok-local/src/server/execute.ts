@@ -135,7 +135,7 @@ async function stageGrokProjectAssets(input: {
       rulesFilePath = input.instructionsFilePath;
       await input.onLog(
         "stdout",
-        `[paperclip] Grok workspace already contains ${instructionsTarget}; using --rules @${input.instructionsFilePath} instead of overwriting it.\n`,
+        `[gsam] Grok workspace already contains ${instructionsTarget}; using --rules @${input.instructionsFilePath} instead of overwriting it.\n`,
       );
     }
   } else {
@@ -166,7 +166,7 @@ async function stageGrokProjectAssets(input: {
       if (await pathExists(target)) {
         await input.onLog(
           "stdout",
-          `[paperclip] Grok skill target already exists at ${target}; leaving it unchanged.\n`,
+          `[gsam] Grok skill target already exists at ${target}; leaving it unchanged.\n`,
         );
         continue;
       }
@@ -405,7 +405,7 @@ async function executeTurn(ctx: AdapterExecutionContext): Promise<AdapterExecuti
     if (executionTargetIsRemote) {
       await onLog(
         "stdout",
-        `[paperclip] Syncing Grok workspace to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
+        `[gsam] Syncing Grok workspace to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
       );
       // Stage only the credential file the remote lane needs into a curated
       // temp dir and ship THAT as the `home` asset, the same curated-snapshot
@@ -507,12 +507,12 @@ async function executeTurn(ctx: AdapterExecutionContext): Promise<AdapterExecuti
     if (executionTargetIsRemote && runtimeSessionId && !canResumeSession) {
       await onLog(
         "stdout",
-        `[paperclip] Grok session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
+        `[gsam] Grok session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
       );
     } else if (runtimeSessionId && !canResumeSession) {
       await onLog(
         "stdout",
-        `[paperclip] Grok session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
+        `[gsam] Grok session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
       );
     }
 
@@ -715,7 +715,7 @@ async function executeTurn(ctx: AdapterExecutionContext): Promise<AdapterExecuti
     ) {
       await onLog(
         "stdout",
-        `[paperclip] Grok resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+        `[gsam] Grok resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
       );
       const retry = await runAttempt(null);
       return toResult(retry, true, true);
@@ -732,7 +732,7 @@ async function executeTurn(ctx: AdapterExecutionContext): Promise<AdapterExecuti
       await fs.rm(stagedGrokHomeDir, { recursive: true, force: true }).catch(async (error) => {
         await onLog(
           "stderr",
-          `[paperclip] Failed to remove staged Grok home "${stagedGrokHomeDir}": ${
+          `[gsam] Failed to remove staged Grok home "${stagedGrokHomeDir}": ${
             error instanceof Error ? error.message : String(error)
           }\n`,
         );

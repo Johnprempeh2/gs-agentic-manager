@@ -4932,7 +4932,7 @@ async function recoverQuiescentRunnerdState(input: {
   renameSync(temporary, statePath);
   await input.onLog?.(
     "stdout",
-    `[paperclip-runner] Automatically recovered settled session from run ${candidate.runId}; preserving the existing provider thread.\n`,
+    `[gsam-runner] Automatically recovered settled session from run ${candidate.runId}; preserving the existing provider thread.\n`,
   );
 }
 
@@ -8278,13 +8278,13 @@ async function executePaperclipNativeSessionWithinScope(
               ).slice(-4_096);
               await input.onLog?.(
                 "stderr",
-                `[paperclip-runner] post-completion ${stage} enrichment failed: ${detail}\n`,
+                `[gsam-runner] post-completion ${stage} enrichment failed: ${detail}\n`,
               );
             },
             onSessionQuarantined: async (reason) => {
               await input.onLog?.(
                 "stderr",
-                `[paperclip-runner] warm native session quarantined: ${redactSensitiveText(reason).slice(-1_000)}\n`,
+                `[gsam-runner] warm native session quarantined: ${redactSensitiveText(reason).slice(-1_000)}\n`,
               );
             },
             onContinuityBreak: async (continuity) => {
@@ -8308,7 +8308,7 @@ async function executePaperclipNativeSessionWithinScope(
               });
               await input.onLog?.(
                 "stderr",
-                `[paperclip-runner] provider session continuity break: exact resume failed (${continuity.reason}); old driver session=${continuity.previousDriverSessionId}, old provider session=${continuity.previousProviderSessionId ?? "unavailable"}, replacement driver session=${continuity.replacementDriverSessionId}, replacement provider session=${continuity.replacementProviderSessionId ?? "unavailable"}\n`,
+                `[gsam-runner] provider session continuity break: exact resume failed (${continuity.reason}); old driver session=${continuity.previousDriverSessionId}, old provider session=${continuity.previousProviderSessionId ?? "unavailable"}, replacement driver session=${continuity.replacementDriverSessionId}, replacement provider session=${continuity.replacementProviderSessionId ?? "unavailable"}\n`,
               );
             },
             onSession: async (session) => {
@@ -8447,7 +8447,7 @@ async function executePaperclipNativeSessionWithinScope(
       if (warmSessionId !== null && lifecyclePolicy.mode === "warm") {
         await releaseWarmNativeSession(warmSessionId, warmSessionOwnerToken, lifecyclePolicy.idleTimeoutMs, true);
       }
-      await input.onLog?.("stderr", "[paperclip-runner] managed credential refresh failed; provider session retired.\n");
+      await input.onLog?.("stderr", "[gsam-runner] managed credential refresh failed; provider session retired.\n");
     }
     if (native.terminal.runTerminalState === "succeeded") {
       // A truncated, verified external-chat wake cannot settle from the
@@ -8885,7 +8885,7 @@ async function executePaperclipNativeSessionWithinScope(
         await attemptFailureStep(() =>
           input.onLog?.(
             "stderr",
-            `[paperclip-runner] native session execution failed: ${executionFailureMessage}\n`,
+            `[gsam-runner] native session execution failed: ${executionFailureMessage}\n`,
           ),
         );
         if (runnerSessionStartupScope) {
@@ -10768,7 +10768,7 @@ async function createRunnerdBackendWithinSessionClaim(
       reportedCodexVersions.add(version);
       await input.onLog?.(
         "stderr",
-        `[paperclip-runner] using compatible Codex ${version} (supported ${REMOTE_CODEX_SUPPORTED_RANGE}; install pin ${REMOTE_PROVIDER_PACK_PINS.codex})\n`,
+        `[gsam-runner] using compatible Codex ${version} (supported ${REMOTE_CODEX_SUPPORTED_RANGE}; install pin ${REMOTE_PROVIDER_PACK_PINS.codex})\n`,
       );
     }
   };
@@ -10989,7 +10989,7 @@ async function createRunnerdBackendWithinSessionClaim(
           runnerArtifactPrepared = true;
           await input.onLog?.(
             "stderr",
-            "[paperclip-runner] using preinstalled runnerd from the sandbox image\n",
+            "[gsam-runner] using preinstalled runnerd from the sandbox image\n",
           );
         } catch {
           runnerArtifactPrepared = false;
@@ -11088,7 +11088,7 @@ async function createRunnerdBackendWithinSessionClaim(
           usedPreinstalledCodex = true;
           await input.onLog?.(
             "stderr",
-            "[paperclip-runner] using preinstalled Codex from the sandbox image\n",
+            "[gsam-runner] using preinstalled Codex from the sandbox image\n",
           );
         } catch {
           usedPreinstalledCodex = false;
@@ -11150,7 +11150,7 @@ async function createRunnerdBackendWithinSessionClaim(
       );
       await input.onLog?.(
         "stderr",
-        "[paperclip-runner] using preinstalled Codex from the sandbox image\n",
+        "[gsam-runner] using preinstalled Codex from the sandbox image\n",
       );
     }
     if (
@@ -11202,7 +11202,7 @@ async function createRunnerdBackendWithinSessionClaim(
               activeRemoteProviderPackRoot = stagedRemoteProviderPackRoot;
               await input.onLog?.(
                 "stderr",
-                "[paperclip-runner] using manifest-matched provider pack from the sandbox image\n",
+                "[gsam-runner] using manifest-matched provider pack from the sandbox image\n",
               );
             } catch {
               preinstalledProviderPack = null;
@@ -11249,7 +11249,7 @@ async function createRunnerdBackendWithinSessionClaim(
       if (packSource === "staged") {
         await input.onLog?.(
           "stderr",
-          "[paperclip-runner] reusing manifest-matched provider pack from the workspace\n",
+          "[gsam-runner] reusing manifest-matched provider pack from the workspace\n",
         );
       }
     }
@@ -11865,7 +11865,7 @@ async function createRunnerdBackendWithinSessionClaim(
       );
       await input.onLog?.(
         "stderr",
-        `[paperclip-runner] remote checkpoint ${incompleteFailure ? "failed" : "skipped"}: exact suspended harness state unavailable (process=${settlement} reason=${checkpointable.incompleteReason})\n`,
+        `[gsam-runner] remote checkpoint ${incompleteFailure ? "failed" : "skipped"}: exact suspended harness state unavailable (process=${settlement} reason=${checkpointable.incompleteReason})\n`,
       );
       if (incompleteFailure) throw incompleteFailure;
       return;
@@ -11999,7 +11999,7 @@ async function createRunnerdBackendWithinSessionClaim(
         .slice(0, 512);
       await input.onLog?.(
         "stderr",
-        `[paperclip-runner] remote checkpoint failed: ${detail || "unknown failure"}\n`,
+        `[gsam-runner] remote checkpoint failed: ${detail || "unknown failure"}\n`,
       );
       throw error;
     }
@@ -12345,7 +12345,7 @@ async function createRunnerdBackendWithinSessionClaim(
         onDiagnostic: (message) => {
           void input.onLog?.(
             "stderr",
-            `[paperclip-runner] runnerd diagnostic: ${redactSensitiveText(message).slice(-4_096)}\n`,
+            `[gsam-runner] runnerd diagnostic: ${redactSensitiveText(message).slice(-4_096)}\n`,
           );
         },
         lifecyclePolicy: input.execution.session.lifecyclePolicy,
@@ -12451,7 +12451,7 @@ async function createRunnerdBackendWithinSessionClaim(
                 });
                 await input.onLog?.(
                   "stderr",
-                  "[paperclip-runner] transport mode=local_loopback state=connecting\n",
+                  "[gsam-runner] transport mode=local_loopback state=connecting\n",
                 );
                 const registration = await measureNativeRunnerSpan(
                   input.trace,
@@ -12552,7 +12552,7 @@ async function createRunnerdBackendWithinSessionClaim(
 
               await input.onLog?.(
                 "stderr",
-                `[paperclip-runner] transport mode=${transport.mode} state=connecting\n`,
+                `[gsam-runner] transport mode=${transport.mode} state=connecting\n`,
               );
 
               if (transport.mode === "direct_outbound") {
@@ -12624,7 +12624,7 @@ async function createRunnerdBackendWithinSessionClaim(
                         onStateChange: (state, failureCode) => {
                           void input.onLog?.(
                             "stderr",
-                            `[paperclip-runner] transport mode=provider_ingress state=${state}${failureCode ? ` failure=${failureCode}` : ""}\n`,
+                            `[gsam-runner] transport mode=provider_ingress state=${state}${failureCode ? ` failure=${failureCode}` : ""}\n`,
                           );
                         },
                       });

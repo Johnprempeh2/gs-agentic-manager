@@ -527,7 +527,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const reason = err instanceof Error ? err.message : String(err);
       await onLog(
         "stderr",
-        `[paperclip] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
+        `[gsam] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
       );
     }
   }
@@ -555,7 +555,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (!isPaperclipSkillSourceMissing(entry)) continue;
     await onLog(
       "stderr",
-      `[paperclip] Warning: skill "${entry.key}" is enabled for this agent but its files are unavailable and it was not mounted${entry.missingDetail ? `: ${entry.missingDetail}` : "."}\n`,
+      `[gsam] Warning: skill "${entry.key}" is enabled for this agent but its files are unavailable and it was not mounted${entry.missingDetail ? `: ${entry.missingDetail}` : "."}\n`,
     );
   }
   const promptBundle = await prepareClaudePromptBundle({
@@ -621,7 +621,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       .join(" and ");
     await onLog(
       "stdout",
-      `[paperclip] Confining Claude with ${scopes} scope.\n`,
+      `[gsam] Confining Claude with ${scopes} scope.\n`,
     );
   }
   const useManagedRemoteClaudeConfig =
@@ -635,7 +635,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ? await (async () => {
         await onLog(
           "stdout",
-          `[paperclip] Syncing workspace and Claude runtime assets to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
+          `[gsam] Syncing workspace and Claude runtime assets to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
         );
         return await prepareAdapterExecutionTargetRuntime({
           runId,
@@ -724,7 +724,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     loggedEnv.CLAUDE_CONFIG_DIR = remoteClaudeConfigDir;
     await onLog(
       "stdout",
-      `[paperclip] Materializing Claude auth/config into ${remoteClaudeConfigDir}.\n`,
+      `[gsam] Materializing Claude auth/config into ${remoteClaudeConfigDir}.\n`,
     );
     await materializeRemoteClaudeConfig({
       runId,
@@ -781,7 +781,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       effectiveEffort = "";
       await onLog(
         "stderr",
-        `[paperclip] Claude CLI in the environment does not advertise --effort; omitting configured effort "${effort}". Upgrade the environment CLI/image to restore reasoning-effort control.\n`,
+        `[gsam] Claude CLI in the environment does not advertise --effort; omitting configured effort "${effort}". Upgrade the environment CLI/image to restore reasoning-effort control.\n`,
       );
     }
   }
@@ -814,7 +814,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (runtimeSessionId && !isValidUuid) {
     await onLog(
       "stdout",
-      `[paperclip] Claude session "${runtimeSessionId}" is not a valid UUID and will not be passed to --resume.\n`,
+      `[gsam] Claude session "${runtimeSessionId}" is not a valid UUID and will not be passed to --resume.\n`,
     );
   }
   if (
@@ -825,7 +825,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   ) {
     await onLog(
       "stdout",
-      `[paperclip] Claude session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
+      `[gsam] Claude session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
     );
   } else if (
     runtimeSessionId &&
@@ -835,24 +835,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   ) {
     await onLog(
       "stdout",
-      `[paperclip] Claude session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
+      `[gsam] Claude session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
     );
   } else if (runtimeSessionId && isValidUuid && !canResumeSession) {
     await onLog(
       "stdout",
-      `[paperclip] Claude session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
+      `[gsam] Claude session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
     );
   }
   if (runtimeSessionId && runtimePromptBundleKey.length > 0 && runtimePromptBundleKey !== promptBundle.bundleKey) {
     await onLog(
       "stdout",
-      `[paperclip] Claude session "${runtimeSessionId}" was saved for prompt bundle "${runtimePromptBundleKey}" and will not be resumed with "${promptBundle.bundleKey}".\n`,
+      `[gsam] Claude session "${runtimeSessionId}" was saved for prompt bundle "${runtimePromptBundleKey}" and will not be resumed with "${promptBundle.bundleKey}".\n`,
     );
   }
   if (runtimeSessionId && !hasMatchingMcpServers) {
     await onLog(
       "stdout",
-      `[paperclip] Claude session "${runtimeSessionId}" was saved with a different runtime MCP server set and will not be resumed.\n`,
+      `[gsam] Claude session "${runtimeSessionId}" was saved with a different runtime MCP server set and will not be resumed.\n`,
     );
   }
   const bootstrapPromptTemplate = asString(config.bootstrapPromptTemplate, "");
@@ -1058,7 +1058,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         // failing an agent over a Claude Code upgrade it never asked for.
         await onLog(
           "stderr",
-          `[paperclip] Default model ${model} needs Claude Code ${minimumCliVersion} or newer (${detectedCliVersion ? `detected ${detectedCliVersion}` : "version unknown"}); using ${FALLBACK_CLAUDE_LOCAL_MODEL} for this run. Upgrade Claude Code to use ${model}.\n`,
+          `[gsam] Default model ${model} needs Claude Code ${minimumCliVersion} or newer (${detectedCliVersion ? `detected ${detectedCliVersion}` : "version unknown"}); using ${FALLBACK_CLAUDE_LOCAL_MODEL} for this run. Upgrade Claude Code to use ${model}.\n`,
         );
         model = FALLBACK_CLAUDE_LOCAL_MODEL;
       } else if (cliTooOld) {
@@ -1068,7 +1068,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         const errorMessage =
           `${model} requires Claude Code ${minimumCliVersion} or newer on the CLI lane; ${detected}. ` +
           "Upgrade Claude Code or restore the default ACP lane before retrying.";
-        await onLog("stderr", `[paperclip] ${errorMessage}\n`);
+        await onLog("stderr", `[gsam] ${errorMessage}\n`);
         return {
           exitCode: 1,
           signal: null,
@@ -1113,7 +1113,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           : "is unavailable";
       await onLog(
         "stdout",
-        `[paperclip] Claude resume session "${sessionId}" ${reason}; retrying with a fresh session.\n`,
+        `[gsam] Claude resume session "${sessionId}" ${reason}; retrying with a fresh session.\n`,
       );
       if (sessionErrorKind === "poisoned" && !executionTargetIsRemote) {
         const claudeConfigDir = resolveSharedClaudeConfigDir(effectiveEnv);
@@ -1129,7 +1129,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         }
         if (unlinked) {
           try {
-            await onLog("stdout", `[paperclip] Removed poisoned session file: ${poisonedJsonlPath}\n`);
+            await onLog("stdout", `[gsam] Removed poisoned session file: ${poisonedJsonlPath}\n`);
           } catch {
             // log stream may be closed; the unlink already succeeded
           }
@@ -1148,7 +1148,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (restoreRemoteWorkspace) {
       await onLog(
         "stdout",
-        `[paperclip] Restoring workspace changes from ${describeAdapterExecutionTarget(executionTarget)}.\n`,
+        `[gsam] Restoring workspace changes from ${describeAdapterExecutionTarget(executionTarget)}.\n`,
       );
       await restoreRemoteWorkspace();
     }

@@ -235,7 +235,7 @@ export function readBuiltInTextWithFallback(
         if (!warnedBuiltInTextReadErrors.has(warningKey)) {
           warnedBuiltInTextReadErrors.add(warningKey);
           console.warn(
-            "[paperclip] Built-in agent asset " + label + " read error on " + candidatePath + ": " + codeLabel,
+            "[gsam] Built-in agent asset " + label + " read error on " + candidatePath + ": " + codeLabel,
           );
         }
       }
@@ -246,7 +246,7 @@ export function readBuiltInTextWithFallback(
   if (!warnedBuiltInTextFallbacks.has(label)) {
     warnedBuiltInTextFallbacks.add(label);
     console.warn(
-      `[paperclip] Built-in agent asset ${label} was not readable; using bundled fallback text. `
+      `[gsam] Built-in agent asset ${label} was not readable; using bundled fallback text. `
       + `Checked: ${attemptedPaths.join(", ")}`,
     );
   }

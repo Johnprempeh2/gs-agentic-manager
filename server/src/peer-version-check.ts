@@ -115,7 +115,7 @@ export function checkExactPeerVersions(
   return {
     ok: false,
     diagnostic:
-      `[paperclip] OTEL_EXPORTER_OTLP_ENDPOINT is set but ${parts.join("; and ")}. ` +
+      `[gsam] OTEL_EXPORTER_OTLP_ENDPOINT is set but ${parts.join("; and ")}. ` +
       "Continuing without tracing.",
     detail: { missing, mismatched },
   };

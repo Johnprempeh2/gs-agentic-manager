@@ -21,7 +21,7 @@ export function parseMigrationStatusResult(
         detail:
           result.stderr ||
           result.stdout ||
-          `[paperclip] Command failed with code ${result.code}: ${migrationStatusCommand}\n`,
+          `[gsam] Command failed with code ${result.code}: ${migrationStatusCommand}\n`,
       },
     };
   }
@@ -44,7 +44,7 @@ export function parseMigrationStatusResult(
     ok: false,
     failure: {
       code: 1,
-      detail: result.stderr || result.stdout || "[paperclip] migration-status returned invalid JSON payload\n",
+      detail: result.stderr || result.stdout || "[gsam] migration-status returned invalid JSON payload\n",
     },
   };
 }
@@ -75,14 +75,14 @@ export function createMigrationStatusTracker(deps: {
         result = await deps.runCheck();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        result = { code: 1, stdout: "", stderr: `[paperclip] migration status check could not run: ${message}\n` };
+        result = { code: 1, stdout: "", stderr: `[gsam] migration status check could not run: ${message}\n` };
       }
       const parsed = parseMigrationStatusResult(result);
       if (!parsed.ok) {
         if (options.fatal) deps.onFatal(parsed.failure);
         retryPending = true;
         deps.warn(
-          `[paperclip] migration status check failed (code ${parsed.failure.code}); keeping the server running and retrying on the next scan\n${parsed.failure.detail}`,
+          `[gsam] migration status check failed (code ${parsed.failure.code}); keeping the server running and retrying on the next scan\n${parsed.failure.detail}`,
         );
         return null;
       }

@@ -8,18 +8,18 @@ import { createWorkspaceRestoreTeardown } from "./workspace-restore-teardown.js"
 const ADAPTER_MESSAGE_PAIRS = [
   {
     adapter: "claude-local",
-    startMessage: "[paperclip] Restoring workspace changes from the sandbox.\n",
-    failurePrefix: "[paperclip] Claude ACP teardown workspace restore failed",
+    startMessage: "[gsam] Restoring workspace changes from the sandbox.\n",
+    failurePrefix: "[gsam] Claude ACP teardown workspace restore failed",
   },
   {
     adapter: "codex-local",
-    startMessage: "[paperclip] Restoring workspace changes and Codex auth from the sandbox.\n",
-    failurePrefix: "[paperclip] Codex ACP teardown restore/copy-back failed",
+    startMessage: "[gsam] Restoring workspace changes and Codex auth from the sandbox.\n",
+    failurePrefix: "[gsam] Codex ACP teardown restore/copy-back failed",
   },
   {
     adapter: "gemini-local",
-    startMessage: "[paperclip] Restoring workspace changes from the sandbox.\n",
-    failurePrefix: "[paperclip] Gemini ACP teardown workspace restore failed",
+    startMessage: "[gsam] Restoring workspace changes from the sandbox.\n",
+    failurePrefix: "[gsam] Gemini ACP teardown workspace restore failed",
   },
 ];
 

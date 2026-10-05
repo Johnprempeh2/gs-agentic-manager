@@ -79,7 +79,7 @@ export function initBrowserErrorMonitoring(dsn: string, environment?: string | n
       // single diagnostic. The gate fails open — the app keeps running
       // without error monitoring rather than crashing on an opt-in feature.
       // eslint-disable-next-line no-console
-      console.error("[paperclip] Sentry browser bootstrap failed", err);
+      console.error("[gsam] Sentry browser bootstrap failed", err);
     }
   });
 }
@@ -116,7 +116,7 @@ export function teardownBrowserErrorMonitoring(): Promise<void> {
       Sentry.getCurrentScope().setClient(undefined);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[paperclip] Sentry client detach failed", err);
+      console.error("[gsam] Sentry client detach failed", err);
     }
     // A second, separate guarded try, for the same reason as the one
     // above: this step must never reject the returned promise.
@@ -127,7 +127,7 @@ export function teardownBrowserErrorMonitoring(): Promise<void> {
       await client?.close(2_000);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[paperclip] Sentry teardownBrowserErrorMonitoring failed", err);
+      console.error("[gsam] Sentry teardownBrowserErrorMonitoring failed", err);
     }
   });
 }
@@ -150,7 +150,7 @@ export function captureBrowserException(error: unknown, details?: BrowserErrorDe
       else sentry?.captureException(error);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[paperclip] Sentry captureBrowserException failed", err);
+      console.error("[gsam] Sentry captureBrowserException failed", err);
     }
   });
 }
