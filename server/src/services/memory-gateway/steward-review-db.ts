@@ -139,7 +139,7 @@ function toGrant(row: GrantRow): StewardGrant {
     companyId: row.companyId,
     agentId: row.agentId,
     scopeIds: row.scopeIds,
-    environment: row.environment as "sandbox",
+    environment: row.environment as StewardGrant["environment"],
     grantedBy: row.grantedByUserId,
     expiresAt: row.expiresAt,
     revokedAt: row.revokedAt,
@@ -485,41 +485,83 @@ export async function getStewardGrant(db: Db, input: { companyId: string; agentI
   return row ? toGrant(row) : null;
 }
 
+/** Longest steward grant, sandbox or live. A live grant is then renewed (G3). */
+export const STEWARD_GRANT_MAX_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** A live grant reaches only Greatstone scopes: never a client or restricted project. */
+const LIVE_STEWARD_SCOPE_KINDS: readonly MemoryScopeKind[] = ["organization", "project", "agent"];
+
+export class StewardGrantRefusal extends Error {
+  constructor(
+    readonly reason: "unknown_scope" | "client_scope" | "too_long" | "unknown_agent",
+    message: string,
+  ) {
+    super(message);
+    this.name = "StewardGrantRefusal";
+  }
+}
+
 /**
- * Sandbox grant only. A real grant is a G4 decision; this function cannot make one.
- * The caller audits who granted it.
+ * Creates a steward grant. The caller checks who may grant (John only) and
+ * audits the result, including a refusal.
  */
-export async function createSandboxStewardGrant(
+export async function createStewardGrant(
   db: Db,
-  input: { companyId: string; agentId: string; scopeIds: string[]; grantedByUserId: string; expiresAt: Date; reason?: string | null },
+  input: {
+    companyId: string;
+    agentId: string;
+    scopeIds: string[];
+    environment: StewardGrant["environment"];
+    grantedByUserId: string;
+    expiresAt: Date;
+    reason?: string | null;
+    now?: Date;
+  },
 ): Promise<StewardGrant> {
+  const now = input.now ?? new Date();
+  const lifetimeMs = input.expiresAt.getTime() - now.getTime();
+  // The sandbox route bounds its own grants; a sandbox test may pin a far date.
+  if (input.environment === "live" && (lifetimeMs > STEWARD_GRANT_MAX_DAYS * DAY_MS || lifetimeMs <= 0)) {
+    throw new StewardGrantRefusal("too_long", `A live steward grant lasts at most ${STEWARD_GRANT_MAX_DAYS} days`);
+  }
   const scopes = input.scopeIds.length
     ? await db
-        .select({ id: memoryScopes.id })
+        .select({ id: memoryScopes.id, kind: memoryScopes.kind })
         .from(memoryScopes)
         .where(and(eq(memoryScopes.companyId, input.companyId), inArray(memoryScopes.id, input.scopeIds)))
     : [];
   if (scopes.length !== new Set(input.scopeIds).size || scopes.length === 0) {
-    throw new Error("Steward grant scopes must be existing scopes of this company");
+    throw new StewardGrantRefusal("unknown_scope", "Steward grant scopes must be existing scopes of this company");
+  }
+  if (input.environment === "live" && scopes.some((scope) => !LIVE_STEWARD_SCOPE_KINDS.includes(scope.kind as MemoryScopeKind))) {
+    throw new StewardGrantRefusal("client_scope", "A live steward grant covers Greatstone scopes only, never a client or restricted scope");
   }
   const [agent] = await db
     .select({ id: agents.id })
     .from(agents)
     .where(and(eq(agents.id, input.agentId), eq(agents.companyId, input.companyId)));
-  if (!agent) throw new Error("Steward grant agent must belong to this company");
+  if (!agent) throw new StewardGrantRefusal("unknown_agent", "Steward grant agent must belong to this company");
   const [row] = await db
     .insert(memoryStewardGrants)
     .values({
       companyId: input.companyId,
       agentId: input.agentId,
       scopeIds: [...new Set(input.scopeIds)],
-      environment: "sandbox",
+      environment: input.environment,
       grantedByUserId: input.grantedByUserId,
       reason: input.reason ?? null,
       expiresAt: input.expiresAt,
     })
     .returning();
   return toGrant(row!);
+}
+
+/** Sandbox grant. The route makes one only where sandbox grants are on. */
+export function createSandboxStewardGrant(
+  db: Db,
+  input: { companyId: string; agentId: string; scopeIds: string[]; grantedByUserId: string; expiresAt: Date; reason?: string | null },
+) {
+  return createStewardGrant(db, { ...input, environment: "sandbox" });
 }
 
 export async function revokeStewardGrant(db: Db, input: { companyId: string; grantId: string; now?: Date }) {

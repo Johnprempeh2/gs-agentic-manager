@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, notInArray, notLike, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   companyMemberships,
@@ -14,7 +14,7 @@ import {
   toolConnections,
   userSecretDeclarations,
 } from "@greatstone/db";
-import type { PermissionKey, PrincipalType } from "@greatstone/shared";
+import { isMemoryPermissionKey, type PermissionKey, type PrincipalType } from "@greatstone/shared";
 import { conflict } from "../errors.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import { authorizationService, type AuthorizationActor, type AuthorizationResource } from "./authorization.js";
@@ -25,6 +25,17 @@ type GrantInput = {
   permissionKey: PermissionKey;
   scope?: Record<string, unknown> | null;
 };
+
+/**
+ * Memory rights are set only by the owner-only memory grant route (GRE-933).
+ * Every other path drops `memory:*` keys from its input and leaves existing
+ * memory rows alone, so no member, plugin, invite or import can create, widen
+ * or remove them.
+ */
+const keepsMemoryGrants = notLike(principalPermissionGrants.permissionKey, "memory:%");
+function withoutMemoryGrants(grants: GrantInput[]) {
+  return grants.filter((grant) => !isMemoryPermissionKey(grant.permissionKey));
+}
 
 type MemberArchiveInput = {
   reassignment?: {
@@ -450,6 +461,7 @@ export function accessService(db: Db) {
   ) {
     const member = await getMemberById(companyId, memberId);
     if (!member) return null;
+    grants = withoutMemoryGrants(grants);
 
     await db.transaction(async (tx) => {
       await tx
@@ -459,6 +471,7 @@ export function accessService(db: Db) {
             eq(principalPermissionGrants.companyId, companyId),
             eq(principalPermissionGrants.principalType, member.principalType),
             eq(principalPermissionGrants.principalId, member.principalId),
+            keepsMemoryGrants,
           ),
         );
       if (grants.length > 0) {
@@ -558,11 +571,13 @@ export function accessService(db: Db) {
             eq(principalPermissionGrants.companyId, companyId),
             eq(principalPermissionGrants.principalType, existing.principalType),
             eq(principalPermissionGrants.principalId, existing.principalId),
+            keepsMemoryGrants,
           ),
         );
-      if (data.grants.length > 0) {
+      const grants = withoutMemoryGrants(data.grants);
+      if (grants.length > 0) {
         await tx.insert(principalPermissionGrants).values(
-          data.grants.map((grant) => ({
+          grants.map((grant) => ({
             companyId,
             principalType: existing.principalType,
             principalId: existing.principalId,
@@ -909,6 +924,7 @@ export function accessService(db: Db) {
     grants: GrantInput[],
     grantedByUserId: string | null,
   ) {
+    grants = withoutMemoryGrants(grants);
     await db.transaction(async (tx) => {
       await tx
         .delete(principalPermissionGrants)
@@ -917,6 +933,7 @@ export function accessService(db: Db) {
             eq(principalPermissionGrants.companyId, companyId),
             eq(principalPermissionGrants.principalType, principalType),
             eq(principalPermissionGrants.principalId, principalId),
+            keepsMemoryGrants,
           ),
         );
       if (grants.length === 0) return;
@@ -996,6 +1013,7 @@ export function accessService(db: Db) {
     grantedByUserId: string | null,
     scope: Record<string, unknown> | null = null,
   ) {
+    if (isMemoryPermissionKey(permissionKey)) return;
     if (!enabled) {
       await db
         .delete(principalPermissionGrants)

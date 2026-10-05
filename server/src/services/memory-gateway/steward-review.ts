@@ -142,21 +142,23 @@ export interface StewardRun {
 }
 
 /**
- * Scoped, audited steward grant. Only sandbox grants exist until G4; the real
- * grant is a G4 decision.
+ * Scoped, audited steward grant. `sandbox` exists only on a sandbox instance;
+ * `live` is John's G3 grant (GRE-933): Greatstone scopes only, at most 30
+ * days, then renewed.
  */
 export interface StewardGrant {
   id: string;
   companyId: string;
   agentId: string;
   scopeIds: string[];
-  environment: "sandbox";
+  environment: StewardGrantEnvironment;
   grantedBy: string;
   expiresAt: Date;
   revokedAt: Date | null;
 }
 
-export const MEMORY_STEWARD_REAL_GRANTS_ALLOWED = false;
+export const STEWARD_GRANT_ENVIRONMENTS = ["sandbox", "live"] as const;
+export type StewardGrantEnvironment = (typeof STEWARD_GRANT_ENVIRONMENTS)[number];
 
 export class StewardAccessError extends Error {
   constructor(message: string) {
@@ -176,8 +178,8 @@ export function assertStewardGrant(
   }
   if (grant.revokedAt) throw new StewardAccessError("Steward grant is revoked");
   if (grant.expiresAt.getTime() <= input.now.getTime()) throw new StewardAccessError("Steward grant has expired");
-  if (grant.environment !== "sandbox" && !MEMORY_STEWARD_REAL_GRANTS_ALLOWED) {
-    throw new StewardAccessError("Only sandbox steward grants are allowed before G4");
+  if (!(STEWARD_GRANT_ENVIRONMENTS as readonly string[]).includes(grant.environment)) {
+    throw new StewardAccessError("Unknown steward grant environment");
   }
   if (grant.scopeIds.length === 0) throw new StewardAccessError("Steward grant covers no scope");
 }
