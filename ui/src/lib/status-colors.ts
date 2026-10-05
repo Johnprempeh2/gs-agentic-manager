@@ -135,6 +135,12 @@ export const statusBadge: Record<string, string> = {
   healthy: "bg-status-success-soft text-status-success-foreground",
   degraded: "bg-status-warning-soft text-status-warning-foreground",
   unchecked: "bg-muted text-muted-foreground",
+
+  // Memory record review states (GRE-865, phase 2 values). `approved` maps above.
+  unreviewed: "bg-status-pending-soft text-status-pending-foreground",
+  disputed: "bg-status-alert-soft text-status-alert-foreground",
+  superseded: "bg-muted text-muted-foreground",
+  deleted: "bg-muted text-muted-foreground",
 };
 
 export const statusBadgeDefault = "bg-muted text-muted-foreground";
