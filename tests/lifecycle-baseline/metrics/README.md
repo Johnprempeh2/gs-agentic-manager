@@ -75,6 +75,18 @@ it only when it carries comment ids or an interaction answer, so review
 hand-offs, "blockers resolved" and assignment wakes stay parked. Report only:
 it sizes the problem before the sweep change. Zero is printed as zero.
 
+**R1 detail — repair escalations to the board** (`repairEscalations` in
+`metrics.json`, register row 76, GRE-725). Count of
+`issue.disposition_repair_escalated` activity in the window whose
+`terminalReason` is `unchanged_source_state_exhausted`, in a 2x2 split:
+agent-only task or not (agent assignee before escalation, no user assignee, no
+chat user, every execution stage participant an agent), and whether any repair
+run for that escalation posted a comment (agent `issue.comment_added` on a run
+woken with `issue_disposition_repair` on the same issue, with the same
+source-state fingerprint, started no later than the escalation; recovery action
+ids differ per attempt, so they are not matched). Each cell lists its issue identifiers. Report only:
+it sizes row 75 (who owns the escalation). Zero is printed as zero.
+
 **R2 — run failure rate and unattended recovery.** Among runs that finished in
 the window, failure rate is `failed + timed_out + interrupted` divided by those
 plus `succeeded`. Cancelled runs are reported but excluded, because

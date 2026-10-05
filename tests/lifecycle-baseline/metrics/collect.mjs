@@ -40,7 +40,7 @@ const snapshot = await sql.begin("read only", async (tx) => {
       assignee_agent_id as "assigneeAgentId", assignee_user_id as "assigneeUserId",
       conversation_user_id as "conversationUserId", conversation_state as "conversationState",
       monitor_next_check_at as "monitorNextCheckAt", monitor_wake_requested_at as "monitorWakeRequestedAt", hidden_at as "hiddenAt",
-      execution_run_id as "executionRunId", updated_at as "updatedAt", completed_at as "completedAt"
+      execution_run_id as "executionRunId", execution_policy as "executionPolicy", updated_at as "updatedAt", completed_at as "completedAt"
     from issues where true ${scope("company_id")}`;
   const runs = await tx`
     select r.id, r.company_id as "companyId", r.agent_id as "agentId", r.status,
@@ -85,7 +85,25 @@ const snapshot = await sql.begin("read only", async (tx) => {
   const retryExhaustions = await tx`
     select e.run_id as "runId", e.created_at as "createdAt" from heartbeat_run_events e
     where e.message like 'Bounded retry exhausted%' and e.created_at >= ${since} ${scope("e.company_id")}`;
-  return { now, issues, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents };
+  // Row 76 (GRE-725): disposition repair escalations and the repair runs behind them.
+  const repairEscalations = await tx`
+    select entity_id as "issueId", created_at as "createdAt", details->>'identifier' as identifier,
+      details->>'terminalReason' as "terminalReason", details->>'recoveryActionId' as "recoveryActionId",
+      details->>'sourceStateFingerprint' as fingerprint, details->'sourceAssigneeBefore' as "sourceAssigneeBefore"
+    from activity_log
+    where action = 'issue.disposition_repair_escalated' and created_at >= ${since} ${scope("company_id")}`;
+  const repairRuns = await tx`
+    select r.id, r.context_snapshot->>'issueId' as "issueId", r.created_at as "createdAt",
+      r.context_snapshot->>'dispositionRepairFingerprint' as fingerprint,
+      (select count(*)::int from activity_log a
+        where a.run_id = r.id and a.actor_type = 'agent' and a.action = 'issue.comment_added') as "commentCount"
+    from heartbeat_runs r
+    where r.context_snapshot->>'wakeReason' = 'issue_disposition_repair'
+      and r.context_snapshot->>'issueId' in (
+        select entity_id from activity_log
+        where action = 'issue.disposition_repair_escalated' and created_at >= ${since} ${scope("company_id")})
+      ${scope("r.company_id")}`;
+  return { now, issues, runs, activity, wakeRequests, retryExhaustions, interactions, approvals, recoveryActions, treeHolds, relations, agents, repairEscalations, repairRuns };
 });
 await sql.end();
 
@@ -124,6 +142,18 @@ const markdown = [
   "",
   "- **Platform failure rate**: runs that failed because of the platform. Rejected logins are left out of both sides; this is the number the R2 budget checks.",
   "- **Login refusals**: runs that failed because the provider refused the login. That is an account problem for John, not a platform bug.",
+  "",
+  "## Repair escalations to the board",
+  "",
+  `\`${metrics.repairEscalations.terminalReason}\` escalations in the last ${windowDays} days: **${metrics.repairEscalations.total}** (register row 76).`,
+  "",
+  "| Task | Repair runs posted a comment | No comment |",
+  "|---|---:|---:|",
+  `| Agent-only | ${metrics.repairEscalations.agentOnlyCommented.length} | ${metrics.repairEscalations.agentOnlyNoComment.length} |`,
+  `| Has a human | ${metrics.repairEscalations.otherCommented.length} | ${metrics.repairEscalations.otherNoComment.length} |`,
+  "",
+  ...[["Agent-only, commented", "agentOnlyCommented"], ["Agent-only, no comment", "agentOnlyNoComment"], ["Has a human, commented", "otherCommented"], ["Has a human, no comment", "otherNoComment"]]
+    .map(([label, key]) => `- ${label}: ${metrics.repairEscalations[key].length ? metrics.repairEscalations[key].map((entry) => entry.identifier).join(", ") : "none"}`),
   "",
   "## Stranded trees",
   "",

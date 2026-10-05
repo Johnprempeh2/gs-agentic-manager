@@ -268,6 +268,67 @@ export function computeParkedWakes(snapshot, { now, parkedWakeMinAgeMinutes = 10
 }
 
 /**
+ * R1 detail — disposition repair escalated to the board (register row 76, GRE-725).
+ *
+ * When bounded disposition repair runs out of attempts on an unchanged source
+ * state, recovery escalates with `unchanged_source_state_exhausted` and names
+ * the board as owner. Counts those escalations (`issue.disposition_repair_escalated`
+ * activity) in the window, split by whether the task is agent-only (agent
+ * assignee, no user assignee, no chat user, every execution stage participant
+ * an agent) and whether any repair run for that escalation posted a comment.
+ * A repair run belongs to the escalation when it is on the same issue, carries
+ * the same source-state fingerprint and started no later than the escalation.
+ * The recovery action id is not used: each attempt resolves its action and the
+ * escalation opens a new one (GRE-712). Report only: it sizes row 75.
+ */
+export const REPAIR_EXHAUSTED_REASON = "unchanged_source_state_exhausted";
+
+function isAgentOnlyTask(issue, assigneeBefore) {
+  const agentId = assigneeBefore ? assigneeBefore.agentId : issue?.assigneeAgentId;
+  const userId = assigneeBefore ? assigneeBefore.userId : issue?.assigneeUserId;
+  if (!agentId || userId || issue?.conversationUserId) return false;
+  const stages = Array.isArray(issue?.executionPolicy?.stages) ? issue.executionPolicy.stages : [];
+  return stages.every((stage) => (stage.participants ?? []).every((participant) => participant.type === "agent"));
+}
+
+export function computeRepairEscalations(snapshot, { now, windowDays = 7 } = {}) {
+  const nowMs = ms(now ?? snapshot.now);
+  const windowStart = nowMs - windowDays * 86_400_000;
+  const byId = new Map((snapshot.issues ?? []).map((issue) => [issue.id, issue]));
+  const cells = {
+    agentOnlyCommented: [], agentOnlyNoComment: [], otherCommented: [], otherNoComment: [],
+  };
+  for (const escalation of snapshot.repairEscalations ?? []) {
+    const at = ms(escalation.createdAt);
+    if (escalation.terminalReason !== REPAIR_EXHAUSTED_REASON || at == null || at < windowStart || at > nowMs) continue;
+    const issue = byId.get(escalation.issueId);
+    const repairRuns = (snapshot.repairRuns ?? []).filter((run) => run.issueId === escalation.issueId
+      && (!escalation.fingerprint || run.fingerprint === escalation.fingerprint)
+      && (ms(run.createdAt) ?? 0) <= at);
+    const commented = repairRuns.some((run) => (run.commentCount ?? 0) > 0);
+    const agentOnly = isAgentOnlyTask(issue, escalation.sourceAssigneeBefore);
+    const key = `${agentOnly ? "agentOnly" : "other"}${commented ? "Commented" : "NoComment"}`;
+    cells[key].push({
+      issueId: escalation.issueId,
+      identifier: issue?.identifier ?? escalation.identifier ?? escalation.issueId,
+      at: new Date(at).toISOString(),
+      repairRuns: repairRuns.length,
+      repairComments: repairRuns.reduce((sum, run) => sum + (run.commentCount ?? 0), 0),
+    });
+  }
+  const list = (entries) => entries.sort((a, b) => a.at.localeCompare(b.at));
+  return {
+    windowDays,
+    terminalReason: REPAIR_EXHAUSTED_REASON,
+    total: Object.values(cells).reduce((sum, entries) => sum + entries.length, 0),
+    agentOnlyCommented: list(cells.agentOnlyCommented),
+    agentOnlyNoComment: list(cells.agentOnlyNoComment),
+    otherCommented: list(cells.otherCommented),
+    otherNoComment: list(cells.otherNoComment),
+  };
+}
+
+/**
  * R2 — run failure rate and unattended recovery share.
  *
  * Denominator: runs that finished inside the window as succeeded or failed
@@ -484,6 +545,7 @@ export function computeAll(snapshot, options = {}) {
   return {
     r1: computeStrandedTrees(snapshot, options),
     parkedWakes: computeParkedWakes(snapshot, options),
+    repairEscalations: computeRepairEscalations(snapshot, options),
     r2: computeRunFailures(snapshot, options),
     auth: computeAuthFailures(snapshot, options),
     s1: computeWakeLatency(snapshot, options),
