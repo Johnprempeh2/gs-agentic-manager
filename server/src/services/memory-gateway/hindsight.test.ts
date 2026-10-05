@@ -110,6 +110,20 @@ describe("Hindsight memory engine adapter", () => {
     }
   });
 
+  it("treats a bank the engine has not made yet as empty on recall (GRE-867)", async () => {
+    // Banks are made on the first retain; until then the engine answers 404.
+    const { fetchImpl } = recordingFetch(() => json({ detail: "Bank 'gs-c1-main' not found" }, 404));
+    const engine = createHindsightMemoryEngine({ baseUrl: "http://e", apiKey: "k", assertionSecret: SECRET, fetchImpl });
+    await expect(engine.recall({ bankId: "gs-c1-main", query: "q", tags: ["scope:org"], limit: 1 })).resolves.toEqual([]);
+
+    // Any other 404 still means the engine is not answering as expected.
+    const other = recordingFetch(() => json({ detail: "Not Found" }, 404));
+    const broken = createHindsightMemoryEngine({ baseUrl: "http://e", apiKey: "k", assertionSecret: SECRET, fetchImpl: other.fetchImpl });
+    await expect(broken.recall({ bankId: "gs-c1-main", query: "q", tags: ["scope:org"], limit: 1 })).rejects.toBeInstanceOf(
+      MemoryEngineUnavailableError,
+    );
+  });
+
   it("keeps the raw engine status and detail so the outbox can classify the failure", async () => {
     const now = new Date("2026-10-04T10:00:00.000Z");
     const cases: Array<[Response, string]> = [

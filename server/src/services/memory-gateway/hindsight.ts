@@ -66,7 +66,10 @@ const HINDSIGHT_MODE: Record<MemoryRetainMode, string> = {
   chunks: "chunks",
 };
 
-type HindsightRecallResult = { document_id?: string | null; text?: string; scores?: Record<string, number> | null };
+/** Hindsight's answer for a bank that has no documents yet: `404 {"detail": "Bank '…' not found"}`. */
+const BANK_NOT_FOUND_RE = /Bank '[^']*' not found/;
+
+type HindsightRecallResult ={ document_id?: string | null; text?: string; scores?: Record<string, number> | null };
 
 export function createHindsightMemoryEngine(options: {
   baseUrl: string;
@@ -163,12 +166,22 @@ export function createHindsightMemoryEngine(options: {
 
     async recall(request) {
       if (request.tags.length === 0) return [];
-      const result = (await call(
-        "POST",
-        `${bankPath(request.bankId)}/memories/recall`,
-        { op: "recall", bank: request.bankId, read: request.tags, write: [], doc: null },
-        { query: request.query, tags: request.tags, tags_match: "any_strict", budget: "mid", max_tokens: 4096 },
-      )) as { results?: HindsightRecallResult[] } | null;
+      let result: { results?: HindsightRecallResult[] } | null;
+      try {
+        result = (await call(
+          "POST",
+          `${bankPath(request.bankId)}/memories/recall`,
+          { op: "recall", bank: request.bankId, read: request.tags, write: [], doc: null },
+          { query: request.query, tags: request.tags, tags_match: "any_strict", budget: "mid", max_tokens: 4096 },
+        )) as { results?: HindsightRecallResult[] } | null;
+      } catch (error) {
+        // A bank is made on its first retain (GRE-867). Until then it holds
+        // nothing, so it must not make the whole recall "unavailable".
+        if (error instanceof MemoryEngineUnavailableError && error.status === 404 && BANK_NOT_FOUND_RE.test(error.message)) {
+          return [];
+        }
+        throw error;
+      }
       return (result?.results ?? [])
         .filter((hit): hit is HindsightRecallResult & { document_id: string } => typeof hit.document_id === "string")
         .slice(0, request.limit * 3)
