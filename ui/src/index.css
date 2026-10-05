@@ -2207,8 +2207,14 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
 
 .paperclip-markdown-codeblock:hover .paperclip-markdown-codeblock-actions,
 .paperclip-markdown-codeblock-actions:focus-within,
-.paperclip-markdown-codeblock-actions[data-active] {
+.paperclip-markdown-codeblock-actions[data-active],
+.interaction-guide .paperclip-markdown-codeblock-actions {
   opacity: 1;
+}
+
+.paperclip-markdown-codeblock-action:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .paperclip-markdown-codeblock-action:hover {
