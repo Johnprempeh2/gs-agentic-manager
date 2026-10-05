@@ -2,7 +2,7 @@
 // folder: a fork point, an "upstream" branch and a "main" that took some of it.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -49,7 +49,11 @@ function fixture() {
 }
 
 function run(dir, ...args) {
-  const r = spawnSync("bash", [SCRIPT, ...args], { cwd: dir, encoding: "utf8" });
+  return runEnv(dir, process.env, ...args);
+}
+
+function runEnv(dir, env, ...args) {
+  const r = spawnSync("bash", [SCRIPT, ...args], { cwd: dir, encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
   return r.stdout;
 }
@@ -167,3 +171,96 @@ test("fails with the fetch command when the upstream ref is missing", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A fake `gh` on PATH that prints the given advisories for `gh api`.
+function stubGh(dir, advisories) {
+  const bin = join(dir, ".bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "advisories.json"), JSON.stringify(advisories));
+  writeFileSync(join(bin, "args.txt"), "");
+  writeFileSync(
+    join(bin, "gh"),
+    `#!/usr/bin/env bash\necho "$*" >> "${bin}/args.txt"\ncat "${bin}/advisories.json"\n`,
+  );
+  chmodSync(join(bin, "gh"), 0o755);
+  // BASH_ENV can put another gh first on PATH (the agent runtime does).
+  const { BASH_ENV: _, ...env } = process.env;
+  return { ...env, PATH: `${bin}:${process.env.PATH}` };
+}
+
+const advisory = (id, updatedAt, summary, description = "") => ({
+  ghsa_id: id,
+  severity: "high",
+  updated_at: updatedAt,
+  summary,
+  description,
+});
+
+test("--advisories prints NEW, CHANGED and OPEN and lists named commits as security", () => {
+  const { dir, base, up } = fixture();
+  try {
+    writeFileSync(
+      join(dir, "doc/upstream-advisories.txt"),
+      [
+        "# comment",
+        "GHSA-aaaa-aaaa-aaaa high 2026-04-16T00:00:00Z in-base patched in 2026.416.0",
+        "GHSA-bbbb-bbbb-bbbb high 2026-04-16T00:00:00Z n/a: we have no such route",
+        "GHSA-cccc-cccc-cccc high 2026-04-16T00:00:00Z check may be exposed",
+        "",
+      ].join("\n"),
+    );
+    git(dir, "add", "doc");
+    git(dir, "commit", "--quiet", "-m", "docs: advisories");
+    const env = stubGh(dir, [
+      advisory("GHSA-aaaa-aaaa-aaaa", "2026-04-16T00:00:00Z", "Same as before"),
+      advisory("GHSA-bbbb-bbbb-bbbb", "2026-07-01T00:00:00Z", "Moved", `Fixed in ${up.plain.slice(0, 10)}.`),
+      advisory("GHSA-cccc-cccc-cccc", "2026-04-16T00:00:00Z", "Still open"),
+      advisory("GHSA-dddd-dddd-dddd", "2026-10-01T00:00:00Z", "Brand new", "See github.com/paperclipai/paperclip/pull/5 and #3."),
+    ]);
+    const plainOut = runEnv(dir, env, "--base", base, "--main", "main");
+    assert.ok(!/Advisories/.test(plainOut), "no advisories without the flag");
+    const r = spawnSync("bash", [SCRIPT, "--base", base, "--main", "main", "--advisories"], {
+      cwd: dir,
+      encoding: "utf8",
+      env,
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const out = r.stdout;
+    assert.match(out, /^## Advisories \(4 upstream: 1 new, 1 changed, 1 open\)$/m);
+    assert.match(out, /^NEW GHSA-dddd-dddd-dddd high 2026-10-01T00:00:00Z Brand new$/m);
+    assert.match(out, /^CHANGED GHSA-bbbb-bbbb-bbbb high 2026-07-01T00:00:00Z \(was 2026-04-16T00:00:00Z\) Moved$/m);
+    assert.match(out, /^OPEN GHSA-cccc-cccc-cccc high 2026-04-16T00:00:00Z Still open$/m);
+    assert.ok(!/GHSA-aaaa/.test(out), out);
+    // up.plain is named by sha; it now leads the security list with its GHSA id.
+    const short = (sha) => sha.slice(0, 7);
+    assert.match(out, /## Security-looking \(2\)\n/);
+    assert.match(out, new RegExp(`^${short(up.plain)} .*\\(#7\\)  \\[GHSA-bbbb-bbbb-bbbb\\]$`, "m"));
+    // #3 is skipped and #5 cherry-picked, so the PR numbers match no pending commit.
+    assert.match(out, /Pending: 2\./);
+    assert.match(readArgs(dir), /^api repos\/paperclipai\/paperclip\/security-advisories/m);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--advisories matches a pending commit by its PR number and flags a bad verdict", () => {
+  const { dir, base, up } = fixture();
+  try {
+    writeFileSync(join(dir, "doc/upstream-advisories.txt"), "GHSA-eeee-eeee-eeee low 2026-04-16T00:00:00Z maybe\n");
+    git(dir, "add", "doc");
+    git(dir, "commit", "--quiet", "-m", "docs: advisories");
+    const env = stubGh(dir, [
+      advisory("GHSA-eeee-eeee-eeee", "2026-04-16T00:00:00Z", "Pickers", "Fixed by https://github.com/paperclipai/paperclip/pull/7"),
+    ]);
+    const out = runEnv(dir, env, "--base", base, "--main", "main", "--advisories");
+    assert.match(out, new RegExp(`^${up.plain.slice(0, 7)} .*\\(#7\\)  \\[GHSA-eeee-eeee-eeee\\]$`, "m"));
+    assert.match(out, /^BAD GHSA-eeee-eeee-eeee has verdict "maybe"$/m);
+    assert.equal(runEnv(dir, env, "--base", base, "--main", "main", "--advisories", "--count").trim(), "2");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function readArgs(dir) {
+  return execFileSync("cat", [join(dir, ".bin/args.txt")], { encoding: "utf8" });
+}

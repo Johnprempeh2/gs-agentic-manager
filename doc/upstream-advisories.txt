@@ -1,0 +1,20 @@
+# Upstream (`paperclipai/paperclip`) security advisories and our verdict (GRE-782).
+# Read by `scripts/upstream-pending.sh --advisories`, which prints NEW, CHANGED
+# and OPEN lines against this file. Update a line when the daily check reads it.
+# Format: <GHSA id> <severity> <updated_at> <verdict> [note]
+# Verdict: in-base (fixed before our fork point 01d9a1218), taken #<our PR>,
+# n/a: <reason>, or check (not decided; we may be exposed).
+# Fork point check: upstream tag v2026.416.0 is an ancestor of 01d9a1218.
+
+GHSA-68qg-g8mg-6pr7 critical 2026-04-22T15:53:59Z in-base patched in 2026.416.0
+GHSA-3pw3-v88x-xj24 medium 2026-04-16T12:17:30Z in-base patched in 2026.416.0
+GHSA-265w-rf2w-cjh4 high 2026-04-18T13:41:30Z in-base patched in 2026.416.0
+GHSA-w8hx-hqjv-vjcq high 2026-04-16T12:16:15Z in-base patched in 2026.416.0
+GHSA-xfqj-r5qw-8g4j high 2026-04-16T12:16:47Z in-base patched in 2026.416.0
+GHSA-gqqj-85qm-8qhf high 2026-04-16T12:19:12Z check no patched version; codex_local still defaults dangerouslyBypassApprovalsAndSandbox=true and does not turn off ChatGPT app connectors (GRE-782)
+GHSA-vr7g-88fq-vhq3 critical 2026-04-16T12:21:04Z in-base patched in 2026.416.0
+GHSA-47wq-cj9q-wpmp critical 2026-04-16T12:23:29Z in-base patched in 2026.416.0
+GHSA-p7mm-r948-4q3q medium 2026-04-16T12:24:03Z in-base patched in 2026.416.0
+GHSA-fpw4-p57j-hqmq medium 2026-04-16T12:24:23Z in-base patched in 2026.416.0
+GHSA-3xx2-mqjm-hg9x critical 2026-04-16T12:24:49Z in-base patched in 2026.416.0
+GHSA-x8hx-rhr2-9rf7 critical 2026-07-22T23:12:15Z in-base no patched version listed, but upstream turned the hostname guard on for local_trusted (server/src/app.ts shouldEnablePrivateHostnameGuard; local_trusted is always private)
