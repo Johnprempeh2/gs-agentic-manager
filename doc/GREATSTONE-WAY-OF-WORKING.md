@@ -391,7 +391,9 @@ Merging does not change the live app. A version goes live in these steps.
    It does the same checks and steps and prints the rollback command and the
    backup file. The new `live-*` tag gets the rc tag's title and changelog. The
    script refuses to run when its release scripts are older than origin/main;
-   pull first.
+   pull first. It also refuses an rc tag that does not contain the live commit
+   (an older candidate), so a release never goes backwards; to go back, roll
+   back with a `live-*` tag (GRE-839).
 
    **Full stop and start.** When the release task says so (a fix to the dev
    runner itself, such as #274), John runs
