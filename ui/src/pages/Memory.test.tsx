@@ -23,6 +23,45 @@ const memoryApiMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: memoryApiMock }));
+
+// jsdom has no WebGL: stand in for the lazy three.js graph with plain buttons
+// built from the same transformed data, and choose per test whether WebGL exists.
+const webglMock = vi.hoisted(() => ({ supported: true }));
+vi.mock("../lib/webgl", () => ({ supportsWebGL: () => webglMock.supported }));
+vi.mock("../components/memory/MemoryGraph3D", () => ({
+  default: ({
+    data,
+    onSelectNode,
+    onSelectEdge,
+  }: {
+    data: import("../components/memory/memoryGraph3dData").MemoryGraph3DData;
+    onSelectNode: (id: string) => void;
+    onSelectEdge: (id: string) => void;
+  }) => (
+    <div data-testid="memory-graph-3d">
+      {data.nodes.map((node) => (
+        <button
+          key={node.id}
+          type="button"
+          data-node-kind={node.kind}
+          data-node-status={node.status ?? undefined}
+          onClick={() => node.kind === "memory" && onSelectNode(node.id)}
+        >
+          {node.label}
+        </button>
+      ))}
+      {data.links.map((link) => (
+        <button
+          key={link.id}
+          type="button"
+          data-link-style={link.style}
+          data-edge-kind={link.edgeId ? (link.style === "stated" ? "explicit" : "inferred") : undefined}
+          onClick={() => link.edgeId && onSelectEdge(link.edgeId)}
+        />
+      ))}
+    </div>
+  ),
+}));
 vi.mock("../api/agents", () => ({ agentsApi: { list: vi.fn(async () => []) } }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "co-kestrel" }) }));
 vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
@@ -155,16 +194,52 @@ describe("Memory page", () => {
     expect(text()).toContain(kestrelGraph.note);
   });
 
-  it("draws stated links solid with an arrow and check findings dashed without one", async () => {
+  it("keeps stated links, check findings and contributor links apart, and says so in the legend", async () => {
     await renderAt("/memory");
 
-    const inferred = container.querySelector('[data-edge-kind="inferred"] line:last-of-type')!;
-    const explicit = container.querySelector('[data-edge-kind="explicit"] line:last-of-type')!;
-    expect(inferred.getAttribute("stroke-dasharray")).toBe("5 4");
-    expect(inferred.getAttribute("marker-end")).toBeNull();
-    expect(explicit.getAttribute("stroke-dasharray")).toBeNull();
-    expect(explicit.getAttribute("marker-end")).toMatch(/^url\(#memory-arrow-/);
-    expect(container.querySelector("figcaption")?.textContent).toContain(APPROVED_MEANING);
+    expect(container.querySelectorAll('[data-link-style="stated"]')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-link-style="inferred"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-link-style="provenance"]')).toHaveLength(kestrelNodes.length);
+    // Mason, Scribe and Everest each get one hub.
+    expect(container.querySelectorAll('[data-node-kind="hub"]')).toHaveLength(3);
+    const legend = container.querySelector("figcaption")?.textContent ?? "";
+    expect(legend).toContain("Stated link");
+    expect(legend).toContain("Found by a check");
+    expect(legend).toContain("Contributed by");
+    expect(legend).toContain(APPROVED_MEANING);
+  });
+
+  it("groups by scope when asked, without changing the server query", async () => {
+    await renderAt("/memory?group=scope");
+
+    const hubs = Array.from(container.querySelectorAll('[data-node-kind="hub"]')).map((hub) => hub.textContent);
+    expect(hubs.sort()).toEqual(["Alder Bakery", "Alder website rebuild"]);
+    expect(container.querySelector("figcaption")?.textContent).toContain("In scope");
+    expect(memoryApiMock.graph).toHaveBeenCalledWith("co-kestrel", { q: undefined, agentId: undefined, scopeId: undefined, status: undefined });
+  });
+
+  it("falls back to the list with a note when WebGL is not available", async () => {
+    webglMock.supported = false;
+    try {
+      await renderAt("/memory");
+      expect(container.querySelector('[data-testid="memory-graph-3d"]')).toBeNull();
+      expect(text()).toContain("The 3D graph needs WebGL");
+      expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(kestrelNodes.length);
+    } finally {
+      webglMock.supported = true;
+    }
+  });
+
+  it("switches to the list view and back", async () => {
+    await renderAt("/memory");
+    const listButton = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Memory view"] button')).find(
+      (button) => button.textContent === "List",
+    )!;
+    await act(async () => listButton.click());
+    await flush();
+    expect(currentSearch).toContain("view=list");
+    expect(container.querySelector('[data-testid="memory-graph-3d"]')).toBeNull();
+    expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(kestrelNodes.length);
   });
 
   it("passes filters from the URL to the server and does not filter on the client", async () => {
@@ -199,13 +274,11 @@ describe("Memory page", () => {
     expect(panel.textContent).toContain("1 fact extracted by the engine");
   });
 
-  it("opens a connection with the keyboard and explains it without implying cause", async () => {
+  it("opens a connection from the graph and explains it without implying cause", async () => {
     await renderAt("/memory");
 
-    const edge = container.querySelector<SVGGElement>('[data-edge-kind="inferred"]')!;
-    await act(async () => {
-      edge.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
+    const edge = container.querySelector<HTMLButtonElement>('[data-edge-kind="inferred"]')!;
+    await act(async () => edge.click());
     await flush();
 
     expect(currentSearch).toContain(`edge=${encodeURIComponent(conflictEdge.id)}`);
