@@ -81,3 +81,41 @@ export function releaseStatusLines(state: ReleaseState): string[] {
   lines.push(back ? `last restore: to ${tagOf(back.to)} at ${back.at}` : "last restore: none");
   return lines;
 }
+
+/** Written by `verify` (GRE-783), on pass and on fail. */
+export interface VerifyRecord {
+  ok: boolean;
+  /** The release tag the instance ran when verify ran; null for an untagged folder. */
+  tag: string | null;
+  /** The lines of the checks that failed; empty when ok. */
+  failed: string[];
+  at: string;
+}
+
+/**
+ * The edition check line: passed on the current release, or a NOT VERIFIED
+ * WARNING when verify is missing, failed, ran on another release, or is older
+ * than the last upgrade or restore.
+ */
+export function verifyStatusLines(state: ReleaseState & { lastVerify?: VerifyRecord }, now = Date.now()): string[] {
+  const moves = [
+    state.lastUpgrade && { kind: "upgrade", to: state.lastUpgrade.to, at: state.lastUpgrade.at },
+    state.lastRestore && { kind: "restore", to: state.lastRestore.to, at: state.lastRestore.at },
+  ].filter((m): m is { kind: string; to: ReleaseRef; at: string } => Boolean(m));
+  const move = moves.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
+  const current = state.release?.tag ?? move?.to.tag ?? null;
+  const v = state.lastVerify;
+  const stale = Boolean(v && move && Date.parse(v.at) < Date.parse(move.at));
+  if (v && v.ok && !stale && v.tag === current) {
+    return [`edition check: passed on ${v.tag ?? "untagged"}, ${describeAge(now - Date.parse(v.at))} ago`];
+  }
+  const since = move ? ` since ${move.kind} to ${tagOf(move.to)}` : ` on ${current ?? "untagged"}`;
+  const why = !v
+    ? "no verify recorded"
+    : stale
+      ? `last verify ${v.ok ? "passed" : "failed"} before the ${move?.kind} (${v.at})`
+      : !v.ok
+        ? `last verify failed at ${v.at}: ${v.failed.join("; ")}`
+        : `last verify ran on ${v.tag ?? "untagged"}, not on the current release`;
+  return [`WARNING: NOT VERIFIED${since}: ${why}; run verify`];
+}
