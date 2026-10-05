@@ -24,6 +24,15 @@ The table shows each budget's `baseline` and the value as a multiple of it
 The exit code does not change. Summit opens a look-into task for each watch
 row in the weekly report, and the owning engineer does the fix.
 
+## Measured column
+
+Each row shows how long ago its report was measured (the report's
+`measuredAt`), or `unknown` when the report has none. A report older than its
+group limit (weekly: 2 days; ci: 6 hours, `STALE_MAX_MS` in `check.mjs`) is
+marked `STALE`, and a `STALE:` line follows the table. `pnpm test:metrics:s2`
+prints the same on its `measured:` line. The exit code does not change; failing
+on a stale report is register row 102 and waits for John.
+
 ## Groups
 
 - **ci** — S2 (issue detail and board, p95 and median) and task-chat
