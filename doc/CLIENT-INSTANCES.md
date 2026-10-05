@@ -403,8 +403,21 @@ When a step after the backup fails, it prints the `restore` command to move
 back. After it passes, run `verify`. `verify` writes `lastVerify` to
 `client-instance.json`; `status` shows `edition check: passed on <tag>` or
 warns `NOT VERIFIED since upgrade/restore to <tag>` until a `verify` after the
-move passes (GRE-783). Keep the old release folder until you
-no longer need to move back, then remove it if no other instance runs from it.
+move passes (GRE-783).
+
+Release folders are never removed by a script. To see which ones are still in
+use (GRE-833), run:
+
+```sh
+scripts/client-instance.sh releases <instances dir> [--releases <dir>]
+```
+
+It reads every `client-instance.json` in the instances folder and lists each
+release folder with its size and the instances that use it: `runs` (the
+instance runs from it, `release.dir`) or `restore needs it` (`restore` moves
+back to it, `lastUpgrade.from.dir`). It writes and deletes nothing. Remove by
+hand only folders marked `not used`; this also frees disk for the 20 GB floor
+that `watch` checks.
 
 ## Restore (move back after an upgrade; Greatstone only)
 
@@ -444,7 +457,7 @@ Edit only when section 5 of the product brief changes:
 node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/editions.test.ts
 ```
 
-The tag rules for `upgrade` and `restore` have their own tests:
+The tag rules for `upgrade` and `restore`, and the `releases` listing, have their own tests:
 
 ```sh
 node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/releases.test.ts

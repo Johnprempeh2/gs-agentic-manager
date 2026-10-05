@@ -12,6 +12,8 @@
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
 //   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
 //   scripts/client-instance.sh restore <dir> <backup file>
+//   scripts/client-instance.sh releases <instances dir> [--releases <dir>]
+//                                     (read-only: which release folders an instance runs from or restore needs)
 //   scripts/client-instance.sh restore-check --root <dir> [backup file]
 //                                     (restores a backup into a throwaway database; the instance is not touched)
 //   scripts/client-instance.sh offsite-init|offsite-backup --root <dir> --offsite-config <file> [--restic <bin>]
@@ -45,7 +47,7 @@ import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visi
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
 import { choosePorts, siblingPortClaims } from "./ports.js";
-import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor } from "./releases.js";
+import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor, releaseFolderLines, releaseFolders } from "./releases.js";
 import {
   OFFSITE_PATHS,
   OFFSITE_RETENTION,
@@ -122,6 +124,9 @@ const USAGE = `usage:
   verify --root <dir>                      (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
   upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
   restore <dir> <backup file>
+  releases <instances dir> [--releases <dir>]
+                                           list each release folder with its size and the instances that use it
+                                           (runs, restore needs it, or not used); writes and deletes nothing
   restore-check --root <dir> [backup file] restore the newest (or named) backup into a throwaway
                                            database and count its rows; the instance is not touched
   offsite-init --root <dir> --offsite-config <file> [--restic <bin>]
@@ -1406,6 +1411,21 @@ async function cmdRestore(root: string, state: InstanceState, rawBackup: string)
   say(`restored ${root} to ${last.from.tag ?? last.from.dir} with ${backupFile}. Run verify next; status warns until it passes.`);
 }
 
+/**
+ * releases <instances dir>: which release folders the instances in that
+ * folder still use (GRE-833). Read-only; remove by hand only folders marked
+ * `not used`.
+ */
+function cmdReleases(instancesDir: string, opts: Record<string, string>) {
+  if (!existsSync(instancesDir)) die(`${instancesDir} does not exist`);
+  // Same default as upgrade: `releases/` next to the instance folders.
+  const releasesDir = resolveRoot(opts.releases ?? path.join(instancesDir, "releases"));
+  const folders = releaseFolders(instancesDir, releasesDir);
+  say(`release folders in ${releasesDir}, and any other folder an instance in ${instancesDir} names:`);
+  if (folders.length === 0) say("none");
+  for (const line of releaseFolderLines(folders)) say(line);
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === "help" || argv.includes("--help") || argv.includes("-h")) {
@@ -1429,6 +1449,10 @@ async function main() {
     }
     if (!value) die("usage: restore <root> <backup file>");
     return cmdRestore(root, state, value);
+  }
+  if (command === "releases") {
+    if (positional.length !== 1 || opts.root) die("usage: releases <instances dir> [--releases <dir>]");
+    return cmdReleases(resolveRoot(positional[0]), opts);
   }
   if (command === "restore-check") {
     if (positional.length > 1) die("usage: restore-check --root <dir> [backup file]");
