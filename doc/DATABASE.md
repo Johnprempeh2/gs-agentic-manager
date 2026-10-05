@@ -201,7 +201,7 @@ When authoring migrations or one-time backfills:
 
 ## Taking upstream migrations
 
-Since the split from Paperclip (`01d9a1218`), both sides number new migrations from `0285`, so the numbers clash. Two files with different names merge without a conflict, so a clash check by file does not see it. `scripts/upstream-pending.sh` tags each upstream commit that adds a migration with `[migration: NNNN clash]` (we have our own `NNNN`) or `NNNN free`.
+Since the split from upstream (`01d9a1218`), both sides number new migrations from `0285`, so the numbers clash. Two files with different names merge without a conflict, so a clash check by file does not see it. `scripts/upstream-pending.sh` tags each upstream commit that adds a migration with `[migration: NNNN clash]` (we have our own `NNNN`) or `NNNN free`.
 
 When a sync pull request takes such a commit:
 
