@@ -185,6 +185,14 @@ const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const EXECUTION_REVIEW_PARTICIPANT_RECOVERY_REASON =
   "execution_review_participant_recovery";
 const STRANDED_BOARD_ESCALATION_POLICY = "board_escalation_no_takeover_v1";
+// GRE-753: an exhausted disposition repair on an agent's task goes to the
+// agent's manager once before the board.
+const MANAGER_ESCALATION_POLICY = "manager_escalation_once_v1";
+const MANAGER_ESCALATION_WAKE_POLICY = "manager_escalation";
+// The run-dispatch policy lets the active recovery owner run on a task it is
+// not assigned to only under this wake reason.
+const SOURCE_SCOPED_RECOVERY_WAKE_REASON = "source_scoped_recovery_action";
+const HAND_BACK_EXCERPT_MAX_CHARS = 600;
 const DISPOSITION_REPAIR_IDEMPOTENCY_INDEX =
   "agent_wakeup_requests_disposition_repair_idempotency_uq";
 const RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT = 500;
@@ -333,6 +341,18 @@ function recoveryCauseTitle(cause: StrandedRecoveryCause) {
     default:
       return "execution path recovery failed";
   }
+}
+
+/**
+ * True when automatic recovery has handed the action to a decision owner: the
+ * board, or the assignee's manager after an exhausted disposition repair.
+ * Generic recovery must not start another turn on top of either.
+ */
+function isEscalatedRecoveryOwner(action: { ownerType: string; wakePolicy: unknown }) {
+  return (
+    action.ownerType === "board" ||
+    parseObject(action.wakePolicy).type === MANAGER_ESCALATION_WAKE_POLICY
+  );
 }
 
 function recoveryNoticeMetadata(input: {
@@ -3465,7 +3485,7 @@ export function recoveryService(
       if (
         wakePolicyType !== "bounded_recovery_owner" &&
         wakePolicyType !== "bounded_owner_disposition_repair" &&
-        action.ownerType !== "board"
+        !isEscalatedRecoveryOwner(action)
       ) {
         continue;
       }
@@ -3576,13 +3596,195 @@ export function recoveryService(
         continue;
       }
 
-      if (action.ownerType === "board") continue;
+      if (isEscalatedRecoveryOwner(action)) continue;
 
       // Legacy takeover actions remain readable and resolvable, but recovery no
       // longer schedules another agent-owned wake for them.
       result.skipped += 1;
     }
     return result;
+  }
+
+  function managerEscalationIdempotencyKey(issueId: string) {
+    // Shares the disposition-repair prefix so the partial unique index allows
+    // one live manager wake per task, across every later give-up.
+    return `issue_disposition_repair:${issueId}:manager_escalation`;
+  }
+
+  async function findManagerEscalationWake(companyId: string, issueId: string) {
+    return db
+      .select({ id: agentWakeupRequests.id })
+      .from(agentWakeupRequests)
+      .where(
+        and(
+          eq(agentWakeupRequests.companyId, companyId),
+          eq(
+            agentWakeupRequests.idempotencyKey,
+            managerEscalationIdempotencyKey(issueId),
+          ),
+          sql`${agentWakeupRequests.status} <> 'skipped'`,
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+  }
+
+  /**
+   * The assignee's manager, when it can take an exhausted disposition repair:
+   * an invokable agent in the same company with budget, that this task has
+   * not woken before. Anything else leaves the board as owner.
+   */
+  async function resolveDispositionRepairManager(
+    issue: typeof issues.$inferSelect,
+  ) {
+    if (!issue.assigneeAgentId || issue.assigneeUserId) return null;
+    const assignee = await getAgent(issue.assigneeAgentId);
+    const managerId = assignee?.reportsTo ?? null;
+    if (!managerId || managerId === issue.assigneeAgentId) return null;
+    const manager = await getAgent(managerId);
+    if (!manager || manager.companyId !== issue.companyId) return null;
+    if (
+      !(await isAgentInvokable(manager)) ||
+      !isHeartbeatWakeOnDemandEnabled(manager)
+    ) {
+      return null;
+    }
+    if (await isInvocationBudgetBlocked(issue, manager.id)) return null;
+    if (await findManagerEscalationWake(issue.companyId, issue.id)) return null;
+    return manager;
+  }
+
+  async function latestHandBackComment(issue: typeof issues.$inferSelect) {
+    if (!issue.assigneeAgentId) return null;
+    const [comment] = await db
+      .select({ id: issueComments.id, body: issueComments.body })
+      .from(issueComments)
+      .where(
+        and(
+          eq(issueComments.issueId, issue.id),
+          eq(issueComments.authorAgentId, issue.assigneeAgentId),
+        ),
+      )
+      .orderBy(desc(issueComments.createdAt))
+      .limit(1);
+    if (!comment) return null;
+    const body = redactSensitiveText(comment.body ?? "").trim();
+    return {
+      id: comment.id,
+      excerpt:
+        body.length > HAND_BACK_EXCERPT_MAX_CHARS
+          ? `${body.slice(0, HAND_BACK_EXCERPT_MAX_CHARS)}…`
+          : body,
+    };
+  }
+
+  /** Returns true when the manager has a live wake for this task. */
+  async function wakeDispositionRepairManager(input: {
+    issue: typeof issues.$inferSelect;
+    manager: typeof agents.$inferSelect;
+    actionId: string;
+    commentId: string | null;
+    attemptCount: number;
+    maxAttempts: number;
+    terminalReason: string;
+    handBack: Awaited<ReturnType<typeof latestHandBackComment>>;
+  }) {
+    const issueId = input.issue.id;
+    try {
+      await deps.enqueueWakeup(input.manager.id, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: SOURCE_SCOPED_RECOVERY_WAKE_REASON,
+        idempotencyKey: managerEscalationIdempotencyKey(issueId),
+        payload: {
+          issueId,
+          commentId: input.commentId,
+          recoveryActionId: input.actionId,
+        },
+        requestedByActorType: "system",
+        requestedByActorId: null,
+        contextSnapshot: {
+          issueId,
+          taskId: issueId,
+          commentId: input.commentId,
+          wakeCommentId: input.commentId,
+          wakeReason: SOURCE_SCOPED_RECOVERY_WAKE_REASON,
+          source: "issue.disposition_repair_manager_escalation",
+          recoveryActionId: input.actionId,
+          recoveryCause: "deliberate_wait_without_target",
+          dispositionRepairEscalation: {
+            assigneeAgentId: input.issue.assigneeAgentId,
+            attemptCount: input.attemptCount,
+            maxAttempts: input.maxAttempts,
+            terminalReason: input.terminalReason,
+            lastHandBackCommentId: input.handBack?.id ?? null,
+            lastHandBackExcerpt: input.handBack?.excerpt ?? null,
+          },
+        },
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error, DISPOSITION_REPAIR_IDEMPOTENCY_INDEX)) {
+        logger.warn(
+          { err: error, issueId, managerAgentId: input.manager.id },
+          "disposition repair manager wake failed; falling back to the board",
+        );
+        return false;
+      }
+    }
+    return Boolean(
+      await findManagerEscalationWake(input.issue.companyId, issueId),
+    );
+  }
+
+  async function setDispositionRepairEscalationOwner(input: {
+    issue: typeof issues.$inferSelect;
+    action: Awaited<ReturnType<typeof ensureDispositionRepairAction>>;
+    latestRun: LatestIssueRun;
+    attemptCount: number;
+    maxAttempts: number;
+    terminalReason: string;
+    manager: typeof agents.$inferSelect | null;
+  }) {
+    await db
+      .update(issueRecoveryActions)
+      .set({
+        status: "active",
+        ownerType: input.manager ? "agent" : "board",
+        ownerAgentId: input.manager?.id ?? null,
+        ownerUserId: null,
+        maxAttempts: null,
+        evidence: {
+          ...input.action.evidence,
+          latestRunId: input.latestRun?.id ?? null,
+          latestRunStatus: input.latestRun?.status ?? null,
+          latestRunErrorCode: input.latestRun?.errorCode ?? null,
+          terminalReason: input.terminalReason,
+          sourceAttemptCount: input.attemptCount,
+          sourceMaxAttempts: input.maxAttempts,
+          routingPolicy: input.manager
+            ? MANAGER_ESCALATION_POLICY
+            : STRANDED_BOARD_ESCALATION_POLICY,
+        },
+        nextAction: input.manager
+          ? "The assigned agent's manager must inspect the evidence and unblock and hand back, reassign, split, or resolve the source issue."
+          : "Inspect the evidence and choose whether to repair, retry the original owner, explicitly reassign, or resolve the source issue.",
+        wakePolicy: {
+          type: input.manager
+            ? MANAGER_ESCALATION_WAKE_POLICY
+            : "board_escalation",
+          reason: input.terminalReason,
+          preservesSourceAssignee: true,
+        },
+        timeoutAt: null,
+        resolutionNote: input.terminalReason,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(issueRecoveryActions.id, input.action.id),
+          eq(issueRecoveryActions.companyId, input.issue.companyId),
+        ),
+      );
   }
 
   async function escalateDispositionRepair(input: {
@@ -3600,42 +3802,19 @@ export function recoveryService(
       attemptCount: input.attemptCount,
       legacyEpisode: input.legacyEpisode,
     });
-    const now = new Date();
-    await db
-      .update(issueRecoveryActions)
-      .set({
-        status: "active",
-        ownerType: "board",
-        ownerAgentId: null,
-        ownerUserId: null,
-        maxAttempts: null,
-        evidence: {
-          ...action.evidence,
-          latestRunId: input.latestRun?.id ?? null,
-          latestRunStatus: input.latestRun?.status ?? null,
-          latestRunErrorCode: input.latestRun?.errorCode ?? null,
-          terminalReason: input.terminalReason,
-          sourceAttemptCount: input.attemptCount,
-          sourceMaxAttempts: input.legacyEpisode?.maxAttempts ?? DISPOSITION_REPAIR_MAX_ATTEMPTS,
-          routingPolicy: STRANDED_BOARD_ESCALATION_POLICY,
-        },
-        nextAction:
-          "Inspect the evidence and choose whether to repair, retry the original owner, explicitly reassign, or resolve the source issue.",
-        wakePolicy: {
-          type: "board_escalation",
-          reason: input.terminalReason,
-          preservesSourceAssignee: true,
-        },
-        timeoutAt: null,
-        resolutionNote: input.terminalReason,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(issueRecoveryActions.id, action.id),
-          eq(issueRecoveryActions.companyId, input.issue.companyId),
-        ),
-      );
+    const maxAttempts =
+      input.legacyEpisode?.maxAttempts ?? DISPOSITION_REPAIR_MAX_ATTEMPTS;
+    let manager = await resolveDispositionRepairManager(input.issue);
+    const handBack = manager ? await latestHandBackComment(input.issue) : null;
+    const ownerInput = {
+      issue: input.issue,
+      action,
+      latestRun: input.latestRun,
+      attemptCount: input.attemptCount,
+      maxAttempts,
+      terminalReason: input.terminalReason,
+    };
+    await setDispositionRepairEscalationOwner({ ...ownerInput, manager });
 
     const updated = await issuesSvc.update(input.issue.id, {
       status: "blocked",
@@ -3645,17 +3824,24 @@ export function recoveryService(
       updated.assigneeAgentId === input.issue.assigneeAgentId &&
       updated.assigneeUserId === input.issue.assigneeUserId;
 
-    await issuesSvc.addComment(
+    const escalationComment = await issuesSvc.addComment(
       input.issue.id,
       [
         "GS Agentic Manager exhausted the bounded original-owner disposition repair without a durable source-state change.",
         "",
-        `- Attempts: ${input.attemptCount}/${input.legacyEpisode?.maxAttempts ?? DISPOSITION_REPAIR_MAX_ATTEMPTS}`,
+        `- Attempts: ${input.attemptCount}/${maxAttempts}`,
         `- Terminal reason: \`${input.terminalReason}\``,
-        "- Recovery owner: board",
+        manager
+          ? `- Recovery owner: ${manager.name} (manager of the assigned agent)`
+          : "- Recovery owner: board",
         "- Source ownership: unchanged; reassignment requires an explicit decision or a policy-defined serious failure.",
+        ...(handBack
+          ? ["", "Last hand-back comment from the assigned agent:", "", ...handBack.excerpt.split("\n").map((line) => `> ${line}`)]
+          : []),
         "",
-        "Next action: repair the liveness disposition or request an explicit source-owner decision.",
+        manager
+          ? "Next action: the manager unblocks and hands back, reassigns, splits, or resolves this task. If repair gives up again, the board owns it."
+          : "Next action: repair the liveness disposition or request an explicit source-owner decision.",
       ].join("\n"),
       {},
       {
@@ -3669,7 +3855,7 @@ export function recoveryService(
             latestRun: input.latestRun,
             recoveryActionId: action.id,
             previousStatus: input.issue.status,
-            recoveryOwner: null,
+            recoveryOwner: manager,
           }),
           recovery: {
             kind: "disposition_repair_escalated",
@@ -3682,6 +3868,30 @@ export function recoveryService(
         },
       },
     );
+
+    if (manager) {
+      const woken = await wakeDispositionRepairManager({
+        issue: input.issue,
+        manager,
+        actionId: action.id,
+        commentId: escalationComment?.id ?? null,
+        attemptCount: input.attemptCount,
+        maxAttempts,
+        terminalReason: input.terminalReason,
+        handBack,
+      });
+      if (!woken) {
+        // An owner with no wake is a strand. Hand the action to the board.
+        manager = null;
+        await setDispositionRepairEscalationOwner({ ...ownerInput, manager });
+        await issuesSvc.addComment(
+          input.issue.id,
+          "The manager of the assigned agent could not be woken. Recovery owner: board.",
+          {},
+          { authorType: "system" },
+        );
+      }
+    }
 
     await logActivity(db, {
       companyId: input.issue.companyId,
@@ -3701,9 +3911,11 @@ export function recoveryService(
         maxAttempts: input.legacyEpisode?.maxAttempts ?? DISPOSITION_REPAIR_MAX_ATTEMPTS,
         terminalReason: input.terminalReason,
         recoveryActionId: action.id,
-        recoveryOwnerAgentId: null,
-        recoveryOwnerType: "board",
-        routingPolicy: STRANDED_BOARD_ESCALATION_POLICY,
+        recoveryOwnerAgentId: manager?.id ?? null,
+        recoveryOwnerType: manager ? "agent" : "board",
+        routingPolicy: manager
+          ? MANAGER_ESCALATION_POLICY
+          : STRANDED_BOARD_ESCALATION_POLICY,
         sourceAssigneeBefore: {
           agentId: input.issue.assigneeAgentId,
           userId: input.issue.assigneeUserId,
@@ -4711,7 +4923,7 @@ export function recoveryService(
         issue.companyId,
         issue.id,
       );
-      if (activeRecoveryAction?.ownerType === "board") {
+      if (activeRecoveryAction && isEscalatedRecoveryOwner(activeRecoveryAction)) {
         result.skipped += 1;
         continue;
       }
