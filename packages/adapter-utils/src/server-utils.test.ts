@@ -20,6 +20,7 @@ import {
   isPaperclipExternalChatQuestionResponseTurn,
   isPaperclipExternalChatTurn,
   materializePaperclipSkillCopy,
+  rebrandGsamSkillText,
   GSAM_OPERATIONAL_SKILL_KEY,
   refreshPaperclipWorkspaceEnvForExecution,
   renderPaperclipWakePrompt,
@@ -281,6 +282,18 @@ describe("sanitizeSshRemoteEnv", () => {
         },
       ),
     ).toEqual({ PATH: "/explicit/remote/bin" });
+  });
+});
+
+describe("rebrandGsamSkillText", () => {
+  it("gives agents a Greatstone commit co-author, never the upstream address", async () => {
+    const skill = await fs.readFile(new URL("../../../skills/paperclip/SKILL.md", import.meta.url), "utf8");
+    expect(skill).toContain("noreply@paperclip.ing");
+    const out = rebrandGsamSkillText(skill);
+    expect(out).toContain("`Co-Authored-By: GS Agentic Manager <noreply@greatstonesoftware.co.uk>`");
+    expect(out).not.toContain("noreply@paperclip.ing");
+    expect(rebrandGsamSkillText("put `Co-Authored-By: paperclip <noreply@paperclip.ing>`"))
+      .toBe("put `Co-Authored-By: GS Agentic Manager <noreply@greatstonesoftware.co.uk>`");
   });
 });
 

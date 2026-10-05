@@ -62,7 +62,7 @@ export async function bootstrapCeoInvite(opts: {
   loadPaperclipEnvFile(configPath);
   const config = readConfig(configPath);
   if (!config) {
-    p.log.error(`No config found at ${configPath}. Run ${pc.cyan("paperclip onboard")} first.`);
+    p.log.error(`No config found at ${configPath}. Run ${pc.cyan("gsam onboard")} first.`);
     return;
   }
 
