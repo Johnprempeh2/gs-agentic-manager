@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import {
   activityLog,
   agents,
+  heartbeatRuns,
   memoryIngestOutbox,
   memoryOperations,
   memoryRecords,
@@ -79,6 +80,7 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
       await db.delete(memoryScopes);
       await db.delete(memorySettings);
       await db.delete(principalPermissionGrants);
+      await db.delete(heartbeatRuns);
       await db.delete(agents);
       await resetCompanyIssueFixtures(db);
     },
@@ -101,8 +103,13 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     return agent;
   }
 
-  function agentActor(companyId: string, agentId: string) {
-    return { type: "agent", agentId, companyId, runId: null, source: "agent_key" } as never;
+  function agentActor(companyId: string, agentId: string, runId: string | null = null) {
+    return { type: "agent", agentId, companyId, runId, source: "agent_key" } as never;
+  }
+
+  async function seedRun(companyId: string, agentId: string, status: string) {
+    const [run] = await ctx.db.insert(heartbeatRuns).values({ companyId, agentId, status }).returning();
+    return run.id;
   }
 
   async function grant(companyId: string, agentId: string, permissionKey: string, scope: Record<string, unknown> | null) {
@@ -120,7 +127,8 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     const fake = fakeEngine();
     const factory = (db: typeof ctx.db) => memoryRoutes(db, { engine: fake.engine, ...options });
     const board = routeApp(ctx.db, seeded.actor, factory);
-    const asAgent = (agentId: string) => routeApp(ctx.db, agentActor(seeded.companyId, agentId), factory);
+    const asAgent = (agentId: string, runId: string | null = null) =>
+      routeApp(ctx.db, agentActor(seeded.companyId, agentId, runId), factory);
     const base = `/api/companies/${seeded.companyId}/memory`;
     return { ...seeded, fake, factory, board, asAgent, base };
   }
@@ -242,6 +250,59 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
 
     const denied = await ctx.db.select().from(memoryOperations);
     expect(denied.filter((op) => op.outcome === "denied" && op.actorId === ridge.id).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("writes a denied audit row for the real caller when a contribute body is rejected (GRE-867)", async () => {
+    const { board, asAgent, base, companyId } = await setup("RejectedBody");
+    const rogue = await seedAgent(companyId, "Rogue");
+    await enable(board, base);
+    const org = await scopeOf(board, base, "organization");
+    await ctx.db.delete(memoryOperations);
+
+    const res = await request(asAgent(rogue.id))
+      .post(`${base}/records`)
+      .send({ scopeId: org.id, content: "holiday cover note", actingAgentId: "someone-else", onBehalfOf: "someone-else" });
+    expect(res.status).toBe(400);
+
+    const ops = await ctx.db.select().from(memoryOperations);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({ operation: "contribute", outcome: "denied", actorType: "agent", actorId: rogue.id, agentId: rogue.id });
+    expect(ops[0].detail).toMatchObject({ reason: "invalid_body", unrecognizedFields: ["actingAgentId", "onBehalfOf"] });
+    expect(JSON.stringify(ops[0].detail)).not.toContain("someone-else");
+    expect(await ctx.db.select().from(memoryRecords)).toEqual([]);
+  });
+
+  it("accepts only the calling agent's own live run id and records the refusal (GRE-867)", async () => {
+    const { board, asAgent, base, companyId } = await setup("RunCheck");
+    const mason = await seedAgent(companyId, "Mason");
+    const rogue = await seedAgent(companyId, "Rogue");
+    await enable(board, base);
+    const masonLive = await seedRun(companyId, mason.id, "running");
+    const rogueFinished = await seedRun(companyId, rogue.id, "succeeded");
+    const rogueLive = await seedRun(companyId, rogue.id, "running");
+    await ctx.db.delete(memoryOperations);
+
+    for (const runId of [masonLive, rogueFinished, "not-a-run-id"]) {
+      const app = asAgent(rogue.id, runId);
+      const recall = await request(app).post(`${base}/recall`).send({ query: "care plan" });
+      expect(recall.status).toBe(403);
+      expect(recall.body.results).toBeUndefined();
+      expect((await request(app).get(`${base}/scopes`)).status).toBe(403);
+    }
+
+    const ops = await ctx.db.select().from(memoryOperations);
+    expect(ops).toHaveLength(6);
+    for (const op of ops) {
+      expect(op).toMatchObject({ outcome: "denied", actorId: rogue.id, runId: null });
+      expect(op.detail).toMatchObject({ reason: "run_not_live" });
+    }
+    expect(ops.map((op) => op.runId)).not.toContain(masonLive);
+
+    // Rogue's own running run is accepted and recorded.
+    await ctx.db.delete(memoryOperations);
+    const ok = await request(asAgent(rogue.id, rogueLive)).post(`${base}/recall`).send({ query: "care plan" });
+    expect(ok.status).toBe(200);
+    expect((await ctx.db.select().from(memoryOperations)).map((op) => op.runId)).toEqual([rogueLive]);
   });
 
   it("keeps companies apart", async () => {
