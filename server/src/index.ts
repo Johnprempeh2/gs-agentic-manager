@@ -116,6 +116,10 @@ import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
 import { supportQueueService } from "./services/support-queue.js";
 import { scrubAcpSessionEnvironments } from "./services/acp-session-env-scrub.js";
+import {
+  LEFTOVER_PROCESS_SWEEP_INTERVAL_MS,
+  sweepLeftoverRunProcesses,
+} from "./services/run-process-cleanup.js";
 import { resolvePaperclipInstanceRoot } from "./home-paths.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
@@ -1467,6 +1471,25 @@ async function startServerWithDatabaseTeardown(
           logger.error({ err }, "unrecorded worktree sweep failed");
         }));
     };
+    // Processes agent runs left behind (a dev server started in the background
+    // outlives the run): once at start, then at most every five minutes. The
+    // end of each run stops its own; this catches runs that ended before a
+    // restart. GSAM_RUN_PROCESS_CLEANUP=false turns both off.
+    let lastRunProcessSweepAt = 0;
+    let runProcessSweepInFlight = false;
+    const scheduleRunProcessSweep = () => {
+      if (heartbeatSchedulerStopped || runProcessSweepInFlight) return;
+      if (Date.now() - lastRunProcessSweepAt < LEFTOVER_PROCESS_SWEEP_INTERVAL_MS) return;
+      lastRunProcessSweepAt = Date.now();
+      runProcessSweepInFlight = true;
+      trackHeartbeatSchedulerWork(sweepLeftoverRunProcesses({ db: db as any, apiPort: listenPort })
+        .catch((err) => {
+          logger.error({ err }, "leftover run process sweep failed");
+        })
+        .finally(() => {
+          runProcessSweepInFlight = false;
+        }));
+    };
 
     // The restart-safe cleanup backstop for adapter login sessions. The
     // in-process five-minute timer stays the primary control. This reaper runs
@@ -1754,6 +1777,7 @@ async function startServerWithDatabaseTeardown(
       return { archived, ...notifications };
     };
     await runRetentionSweep();
+    scheduleRunProcessSweep();
 
     startHeartbeatSchedulerInterval(() => {
       // Track the outer async callback as well as the work it starts. Shutdown
@@ -1798,6 +1822,7 @@ async function startServerWithDatabaseTeardown(
         scheduleTerminalWorkspaceSweep();
         scheduleSupportClockSweep();
         scheduleUnrecordedWorktreeSweep();
+        scheduleRunProcessSweep();
         scheduleAdapterLoginReaperSweep();
         scheduleSetupTokenReaperSweep();
         scheduleEnvironmentLeaseCleanupSweep();

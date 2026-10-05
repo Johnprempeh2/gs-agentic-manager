@@ -1716,8 +1716,15 @@ async function readUrlSkillImports(
       const repoSkillPath = basePrefix ? `${basePrefix}${relativeSkillPath}` : relativeSkillPath;
       const markdown = await fetchText(resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, repoSkillPath));
       const parsedMarkdown = parseFrontmatterMarkdown(markdown);
-      const skillDir = path.posix.dirname(relativeSkillPath);
-      const slug = deriveImportedSkillSlug(parsedMarkdown.frontmatter, path.posix.basename(skillDir));
+      // A URL that points straight at the skill folder puts SKILL.md at the
+      // scoped root, where dirname() is "." and no entry starts with "./".
+      const dir = path.posix.dirname(relativeSkillPath);
+      const skillDir = dir === "." ? "" : dir;
+      const repoDir = basePrefix ? `${basePrefix}${skillDir}`.replace(/\/+$/, "") : skillDir;
+      const slug = deriveImportedSkillSlug(
+        parsedMarkdown.frontmatter,
+        path.posix.basename(repoDir || parsed.repo),
+      );
       const skillKey = readCanonicalSkillKey(
         parsedMarkdown.frontmatter,
         isPlainRecord(parsedMarkdown.frontmatter.metadata) ? parsedMarkdown.frontmatter.metadata : null,
@@ -1733,17 +1740,14 @@ async function readUrlSkillImports(
         repo: parsed.repo,
         ref,
         trackingRef,
-        repoSkillDir: normalizeGitHubSkillDirectory(
-          basePrefix ? `${basePrefix}${skillDir}` : skillDir,
-          slug,
-        ),
+        repoSkillDir: normalizeGitHubSkillDirectory(repoDir, slug),
       };
       // Files with no extension are judged by content: the executable bit in
       // the tree, else a "#!" at the start of the raw file.
       const inventory = (await Promise.all(filteredPaths
-        .filter((entry) => entry === relativeSkillPath || entry.startsWith(`${skillDir}/`))
+        .filter((entry) => entry === relativeSkillPath || !skillDir || entry.startsWith(`${skillDir}/`))
         .map(async (entry) => {
-          const relative = entry === relativeSkillPath ? "SKILL.md" : entry.slice(skillDir.length + 1);
+          const relative = entry === relativeSkillPath ? "SKILL.md" : skillDir ? entry.slice(skillDir.length + 1) : entry;
           let content: string | null = null;
           if (relative !== "SKILL.md" && isExtensionlessFile(relative)) {
             const repoPath = basePrefix ? `${basePrefix}${entry}` : entry;

@@ -2615,7 +2615,44 @@ describe("environment routes", () => {
     expect(res.status).toBe(200);
     expect(mockEnvironmentService.listLeases).toHaveBeenCalledWith(environment.id, {
       status: "active",
+      companyIds: undefined,
     });
+  });
+
+  it("lists only the caller's own company leases for a signed-in board user (GRE-772)", async () => {
+    const environment = createEnvironment();
+    mockEnvironmentService.getById.mockResolvedValue(environment);
+    mockEnvironmentService.listLeases.mockResolvedValue([]);
+    const app = createApp({
+      type: "board",
+      userId: "user-2",
+      source: "session",
+      companyIds: ["company-2"],
+    });
+
+    const res = await request(app).get(`/api/environments/${environment.id}/leases`);
+
+    expect(res.status).toBe(200);
+    expect(mockEnvironmentService.listLeases).toHaveBeenCalledWith(environment.id, {
+      status: undefined,
+      companyIds: ["company-2"],
+    });
+  });
+
+  it("refuses a board user asking for another company's leases by companyId (GRE-772)", async () => {
+    const environment = createEnvironment();
+    mockEnvironmentService.getById.mockResolvedValue(environment);
+    const app = createApp({
+      type: "board",
+      userId: "user-2",
+      source: "session",
+      companyIds: ["company-2"],
+    });
+
+    const res = await request(app).get(`/api/environments/${environment.id}/leases?companyId=company-1`);
+
+    expect(res.status).toBe(403);
+    expect(mockEnvironmentService.listLeases).not.toHaveBeenCalled();
   });
 
   it("returns a single lease after company access is confirmed", async () => {

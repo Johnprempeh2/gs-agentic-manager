@@ -227,6 +227,37 @@ describeEmbeddedPostgres("company skill import with stripScripts (GRE-757)", () 
     });
   });
 
+  // GRE-775: a URL that points straight at the skill folder must see the same
+  // files as the parent-folder URL, not just SKILL.md.
+  it("gives a skill-folder GitHub URL the same inventory as the parent-folder URL", async () => {
+    const companyId = await createCompany();
+    stubGitHub(() => "a".repeat(40));
+    const svc = companySkillService(db);
+    const folderUrl = "https://github.com/pbakaus/impeccable/tree/main/impeccable";
+
+    await expect(svc.importFromSource(companyId, folderUrl)).rejects.toMatchObject({
+      status: 422,
+      details: {
+        reason: "scripts_executables_blocked",
+        scriptPaths: expect.arrayContaining(["scripts/impeccable", "scripts/live-browser.js"]),
+      },
+    });
+
+    const fromFolder = await svc.importFromSource(companyId, folderUrl, { stripScripts: true });
+    const folderSkill = fromFolder.imported[0]!;
+    expect(folderSkill.slug).toBe("impeccable");
+    expect(folderSkill.trustLevel).toBe("markdown_only");
+    expect(folderSkill.metadata).toMatchObject({ repoSkillDir: "impeccable" });
+    expect(fromFolder.strippedFiles[0]?.paths).toHaveLength(4);
+    await expect(svc.readFile(companyId, folderSkill.id, "reference/audit.md")).resolves.toMatchObject({
+      content: "# Audit\n",
+    });
+
+    const fromParent = await svc.importFromSource(companyId, "https://github.com/pbakaus/impeccable", { stripScripts: true });
+    expect(fromParent.imported[0]!.fileInventory).toEqual(folderSkill.fileInventory);
+    expect(fromParent.strippedFiles[0]?.paths).toEqual(fromFolder.strippedFiles[0]?.paths);
+  });
+
   it("still refuses local paths outside approved roots, including traversal, even with stripScripts", async () => {
     const companyId = await createCompany();
     const projectId = randomUUID();
