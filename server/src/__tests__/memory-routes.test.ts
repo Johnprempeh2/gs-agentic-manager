@@ -1,3 +1,6 @@
+import { Writable } from "node:stream";
+import express from "express";
+import pino from "pino";
 import request from "supertest";
 import { expect, it } from "vitest";
 import {
@@ -12,6 +15,9 @@ import {
   principalPermissionGrants,
 } from "@greatstone/db";
 import type { MemoryScope } from "@greatstone/shared";
+import { errorHandler } from "../middleware/error-handler.js";
+import { HTTP_LOG_REDACT_PATHS } from "../middleware/http-log-redaction.js";
+import { createHttpLogger } from "../middleware/logger.js";
 import { memoryRoutes } from "../routes/memory.js";
 import {
   MemoryEngineUnavailableError,
@@ -259,6 +265,44 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     // Ordinary text with numbers still goes through.
     const ok = await request(agent).post(`${base}/records`).send({ scopeId: working.id, content: "Invoice 2026-10-05, 3 hours at 1200 GBP, ref 4111." });
     expect(ok.status).toBe(201);
+  });
+
+  it("keeps a refused secret out of the server's HTTP log line (GRE-879)", async () => {
+    const { board, base, companyId, factory } = await setup("SensitiveLog");
+    const mason = await seedAgent(companyId, "Mason");
+    await enable(board, base);
+    const working = await scopeOf(routeApp(ctx.db, agentActor(companyId, mason.id), factory), base, "agent");
+
+    const lines: string[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        lines.push(chunk.toString());
+        callback();
+      },
+    });
+    // The production order: HTTP logger first, then body parsing, routes, error handler.
+    const app = express();
+    app.use(createHttpLogger(pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, stream)));
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as any).actor = agentActor(companyId, mason.id);
+      next();
+    });
+    app.use("/api", factory(ctx.db));
+    app.use(errorHandler);
+
+    // Synthetic value, joined at runtime so no token-shaped string is committed.
+    const token = ["ghp", "_", "SYNTHETICkestrelLOGfixture0000000000"].join("");
+    const res = await request(app)
+      .post(`${base}/records`)
+      .send({ scopeId: working.id, title: "Deploy", content: `Deploy uses token ${token} for CI.` });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("memory_sensitive_content");
+
+    const log = lines.join("");
+    expect(log).toMatch(/memory\/records/);
+    expect(log).toContain("422");
+    expect(log).not.toContain(token);
   });
 
   it("rejects forged identity: a body cannot name the contributor, and another agent's notes stay hidden", async () => {

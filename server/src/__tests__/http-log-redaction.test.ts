@@ -307,6 +307,60 @@ describe("HTTP logger redaction", () => {
     });
   });
 
+  it.each([
+    { path: "/api/companies/company-1/memory/records", withContext: false },
+    { path: "/api/companies/company-1/memory/records", withContext: true },
+    { path: "/api/companies/company-1/memory/recall", withContext: true },
+    { path: "/api/mcp/memory-tools", withContext: false },
+  ])(
+    "keeps refused memory text out of $path failure logs (context: $withContext)",
+    async ({ path, withContext }) => {
+      // GRE-879: a 422 memory_sensitive_content refusal must not log the secret.
+      // Joined at runtime so no token-shaped string is committed.
+      const fakeToken = ["ghp", "_", "SYNTHETICmemoryLOGcanary000000000"].join("");
+      const chunks: string[] = [];
+      const stream = new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(chunk.toString());
+          callback();
+        },
+      });
+      const app = express();
+      app.use(express.json());
+      app.use(
+        createHttpLogger(pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, stream)),
+      );
+      const router = express.Router();
+      router.post(path.replace(/^\/api/, ""), (req, res) => {
+        if (withContext) {
+          (res as any).__errorContext = {
+            error: { name: "HttpError", message: "Not stored" },
+            reqBody: req.body,
+            reqParams: req.params,
+          };
+        }
+        res.status(422).json({ code: "memory_sensitive_content" });
+      });
+      app.use("/api", router);
+      await request(app)
+        .post(path)
+        .send({
+          title: `Deploy note ${fakeToken}`,
+          content: `Deploy uses token ${fakeToken} for CI.`,
+          evidence: [fakeToken],
+          entities: [fakeToken],
+          topics: [fakeToken],
+          sourceId: fakeToken,
+          query: fakeToken,
+        })
+        .expect(422);
+      const line = chunks.join("");
+      expect(line).toContain("422");
+      expect(line).not.toContain(fakeToken);
+      expect(JSON.parse(line.trim()).reqBody).toBe("[REDACTED]");
+    },
+  );
+
   it("defines the HTTP auth and cookie header paths that must be redacted", () => {
     expect(HTTP_LOG_REDACT_PATHS).toContain("req.headers.authorization");
     expect(HTTP_LOG_REDACT_PATHS).toContain("req.headers.cookie");
