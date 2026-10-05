@@ -279,6 +279,9 @@ describe("reassignment while a run is live (GRE-36)", () => {
         resultJson: expect.objectContaining({ handoffGraceExpired: true }),
       }),
     ));
+    // The grace-expiry cancel is not a stop receipt for any mutation (GRE-85).
+    const [, , options] = mockHeartbeatService.cancelRun.mock.calls[0] as unknown as [string, string, { resultJson: Record<string, unknown> }];
+    expect(options.resultJson).not.toHaveProperty("issueMutationStopId");
   });
 
   it("leaves a self-handoff run alone if it finished inside the grace period", async () => {
@@ -297,7 +300,10 @@ describe("reassignment while a run is live (GRE-36)", () => {
       OTHER_RUN_ID,
       expect.stringContaining("before its provider started"),
       expect.objectContaining({
-        resultJson: expect.objectContaining({ reassignmentStage: "before_provider_start" }),
+        resultJson: expect.objectContaining({
+          reassignmentStage: "before_provider_start",
+          issueMutationStopId: expect.any(String),
+        }),
       }),
     );
     expect(context.interruptedRunId).toBeUndefined();
