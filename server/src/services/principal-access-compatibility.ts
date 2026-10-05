@@ -1,7 +1,7 @@
 import { and, eq, notInArray } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { agents, companyMemberships, principalPermissionGrants } from "@greatstone/db";
-import type { PermissionKey, PrincipalType } from "@greatstone/shared";
+import { isMemoryPermissionKey, type PermissionKey, type PrincipalType } from "@greatstone/shared";
 import { grantsForHumanRole, normalizeHumanRole } from "./company-member-roles.js";
 
 type GrantInput = {
@@ -24,13 +24,15 @@ export async function insertMissingPrincipalGrants(
     grantedByUserId: string | null;
   },
 ): Promise<number> {
-  if (input.grants.length === 0) return 0;
+  // Memory rights come only from the owner's memory grant route (GRE-933).
+  const grants = input.grants.filter((grant) => !isMemoryPermissionKey(grant.permissionKey));
+  if (grants.length === 0) return 0;
 
   const now = new Date();
   const inserted = await db
     .insert(principalPermissionGrants)
     .values(
-      input.grants.map((grant) => ({
+      grants.map((grant) => ({
         companyId: input.companyId,
         principalType: input.principalType,
         principalId: input.principalId,

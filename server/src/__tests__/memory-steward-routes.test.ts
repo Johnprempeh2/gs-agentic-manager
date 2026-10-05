@@ -1,9 +1,10 @@
 import request from "supertest";
 import { afterEach, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import {
   activityLog,
   agents,
+  issues,
   memoryOperations,
   memoryRecords,
   memoryScopes,
@@ -15,6 +16,10 @@ import {
   memoryStewardRuns,
 } from "@greatstone/db";
 import { memoryStewardRoutes, STEWARD_SANDBOX_GRANTS_ENV } from "../routes/memory-steward.js";
+import {
+  remindStewardGrantRenewals,
+  STEWARD_GRANT_RENEWAL_ORIGIN_KIND,
+} from "../services/memory-gateway/steward-grant-renewal.js";
 import {
   describeEmbeddedPostgres,
   resetCompanyIssueFixtures,
@@ -32,6 +37,7 @@ afterEach(() => {
 describeEmbeddedPostgres("memory steward API", () => {
   const ctx = useEmbeddedPostgres("gsam-memory-steward-api-", {
     resetEach: async (db) => {
+      await db.delete(issues);
       await db.delete(activityLog);
       await db.delete(memoryStewardEscalations);
       await db.delete(memoryStewardQueueItems);
@@ -206,5 +212,96 @@ describeEmbeddedPostgres("memory steward API", () => {
     const passes = audit.filter((row) => row.outcome !== "denied");
     expect(passes.map((row) => row.outcome).sort()).toEqual(["completed", "killed", "started", "started"]);
     for (const row of passes) expect((row.detail as { sandbox?: unknown }).sandbox).toMatchObject({ now: expect.any(String) });
+  });
+
+  // G3 (GRE-933): John's live steward grant. No sandbox switch needed.
+  it("live grant: owner only, Greatstone scopes only, at most 30 days, audited", async () => {
+    const s = await setup();
+    await enable(s.companyId);
+    const [client, restricted] = await ctx.db
+      .insert(memoryScopes)
+      .values([
+        { companyId: s.companyId, kind: "client", name: "A client", bankId: "kw-c", tag: "scope:client:x" },
+        { companyId: s.companyId, kind: "restricted_project", name: "Restricted", bankId: "kw-r", tag: "scope:project:r" },
+      ])
+      .returning();
+    const body = { agentId: s.steward.id, scopeIds: [s.org.id], expiresInDays: 30, reason: "G3 live steward grant" };
+    const live = `${s.base}/grants/live`;
+
+    expect((await request(s.asAgent(s.steward.id)).post(live).send(body)).status).toBe(403);
+    expect((await request(s.asAgent(s.other.id)).post(live).send(body)).status).toBe(403);
+    expect((await request(s.board).post(live).send({ ...body, expiresInDays: 31 })).status).toBe(400);
+    expect((await request(s.board).post(live).send({ ...body, scopeIds: [s.org.id, client!.id] })).status).toBe(403);
+    expect((await request(s.board).post(live).send({ ...body, scopeIds: [restricted!.id] })).status).toBe(403);
+    expect(await ctx.db.select().from(memoryStewardGrants)).toHaveLength(0);
+    const refusals = await denied(s.companyId, "steward_grant_live");
+    expect(refusals.map((row) => (row.detail as { reason: string }).reason)).toEqual([
+      "not a company owner or admin",
+      "not a company owner or admin",
+      "invalid_body",
+      "client_scope",
+      "client_scope",
+    ]);
+
+    const created = await request(s.board).post(live).send(body);
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ environment: "live", scopeIds: [s.org.id] });
+    const days = (new Date(created.body.expiresAt).getTime() - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(29.9);
+    expect(days).toBeLessThanOrEqual(30);
+    const [allowed] = await ctx.db
+      .select()
+      .from(memoryOperations)
+      .where(and(eq(memoryOperations.operation, "steward_grant_live"), eq(memoryOperations.outcome, "allowed")));
+    expect(allowed).toMatchObject({ actorId: s.userId, agentId: s.steward.id, scopeIds: [s.org.id] });
+
+    // The steward reviews with it and reads the queue; it never approves anything.
+    const run = await request(s.asAgent(s.steward.id)).post(`${s.base}/review`);
+    expect(run.status).toBe(200);
+    expect(run.body).toMatchObject({ outcome: "completed", entriesSeen: 2 });
+    const statuses = await ctx.db.select({ status: memoryRecords.status }).from(memoryRecords);
+    expect(statuses.every((row) => row.status === "unreviewed")).toBe(true);
+
+    // Once it has expired, it is refused and the refusal is audited.
+    await ctx.db.update(memoryStewardGrants).set({ expiresAt: new Date(Date.now() - 1_000) });
+    const before = (await denied(s.companyId, "steward_review")).length;
+    expect((await request(s.asAgent(s.steward.id)).post(`${s.base}/review`)).status).toBe(403);
+    expect((await request(s.asAgent(s.steward.id)).get(`${s.base}/queue`)).status).toBe(403);
+    expect(await denied(s.companyId, "steward_review")).toHaveLength(before + 1);
+  });
+
+  it("reminds the top agent once, 3 days before a live grant ends, unless it was renewed", async () => {
+    const s = await setup();
+    // As on live: Everest has role `general` and is the only agent reporting to nobody.
+    const [everest] = await ctx.db.insert(agents).values({ companyId: s.companyId, name: "Everest", role: "general" }).returning();
+    await ctx.db.update(agents).set({ reportsTo: everest!.id }).where(ne(agents.id, everest!.id));
+    const now = new Date("2026-11-01T09:00:00Z");
+    const day = 86_400_000;
+    const grant = (expiresAt: Date, environment = "live") => ({
+      companyId: s.companyId,
+      agentId: s.steward.id,
+      scopeIds: [s.org.id],
+      environment,
+      grantedByUserId: s.userId,
+      expiresAt,
+    });
+    // Ends in 4 days: too early. A sandbox grant never gets a reminder.
+    await ctx.db.insert(memoryStewardGrants).values([grant(new Date(now.getTime() + 4 * day)), grant(new Date(now.getTime() + day), "sandbox")]);
+    expect(await remindStewardGrantRenewals(ctx.db, now)).toEqual({ created: 0 });
+
+    const later = new Date(now.getTime() + 1.5 * day);
+    expect(await remindStewardGrantRenewals(ctx.db, later)).toEqual({ created: 1 });
+    expect(await remindStewardGrantRenewals(ctx.db, later)).toEqual({ created: 0 });
+    const reminders = await ctx.db.select().from(issues).where(eq(issues.originKind, STEWARD_GRANT_RENEWAL_ORIGIN_KIND));
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0]).toMatchObject({ assigneeAgentId: everest!.id, status: "todo" });
+    expect(reminders[0]!.title).toMatch(/Renew Steward's memory steward grant/);
+    const [audited] = await ctx.db.select().from(memoryOperations).where(eq(memoryOperations.operation, "steward_grant_renew_reminder"));
+    expect(audited!.detail).toMatchObject({ issueId: reminders[0]!.id, assigneeAgentId: everest!.id });
+
+    // Renewed: a second live grant that ends later means no reminder for the first.
+    await ctx.db.delete(issues);
+    await ctx.db.insert(memoryStewardGrants).values(grant(new Date(later.getTime() + 30 * day)));
+    expect(await remindStewardGrantRenewals(ctx.db, later)).toEqual({ created: 0 });
   });
 });
