@@ -1154,10 +1154,10 @@ describe("Daytona sandbox provider plugin", () => {
       },
     });
 
-    expect(sandbox._experimental_createSnapshot).toHaveBeenCalledWith("paperclip-env-1", 120);
+    expect(sandbox._experimental_createSnapshot).toHaveBeenCalledWith("gs-agentic-manager-env-1", 120);
     expect(result).toMatchObject({
       templateKind: "snapshot",
-      templateRef: "paperclip-env-1",
+      templateRef: "gs-agentic-manager-env-1",
       metadata: {
         provider: "daytona",
         sandboxId: "sandbox-setup",
