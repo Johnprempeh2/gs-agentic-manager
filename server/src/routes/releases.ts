@@ -22,7 +22,7 @@ import { badRequest, forbidden, notFound } from "../errors.js";
 import { logActivity } from "../services/index.js";
 import { liveReleaseService } from "../services/live-release.js";
 import { assertReleaseReauth, releaseReauth, type ReleaseReauth } from "../services/release-reauth.js";
-import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo, hasCompanyAccess } from "./authz.js";
 
 type ActionResult =
   | { ok: true; progress: unknown }
@@ -158,7 +158,7 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
     const runId = req.params.runId as string;
     if (!isUuidLike(runId)) throw badRequest("runId must be a UUID");
     const run = await svc.findRun(runId);
-    if (!run) throw notFound("Run not found");
+    if (!run || !hasCompanyAccess(req, run.companyId)) throw notFound("Run not found");
     assertCompanyAccess(req, run.companyId);
     if (req.actor.type === "agent") {
       if (req.actor.agentId !== run.agentId || req.actor.runId !== runId) {
