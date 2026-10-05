@@ -18,6 +18,11 @@
 # Every path and port can be overridden for a sandbox run (see doc/GS-MEMORY-ENGINE.md, "Sandbox test").
 set -euo pipefail
 
+# Fixed locale. A sudo or ssh session passes the caller's locale (a Mac sends LC_CTYPE=UTF-8, which
+# does not exist on Ubuntu), and initdb then stops with "invalid locale settings". C.UTF-8 is always there.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
+unset LANGUAGE LC_CTYPE LC_MESSAGES LC_COLLATE LC_NUMERIC LC_TIME LC_MONETARY
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 GS_MEMORY_USER="${GS_MEMORY_USER:-gsmemory}"
@@ -546,8 +551,10 @@ cmd_restore_test() {
   local tmp port
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/gs-memory-restore.XXXXXX")"
   port="$("$GS_MEMORY_PYTHON" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
-  trap 'pg pg_ctl -D "$tmp/data" -m immediate stop >/dev/null 2>&1 || true; rm -rf "$tmp"' RETURN
-  pg initdb -D "$tmp/data" -U "$(id -un)" --auth-local=peer --auth-host=reject >/dev/null
+  # The trap clears itself: a RETURN trap stays set after this function and would run again with $tmp unset.
+  trap 'pg pg_ctl -D "$tmp/data" -m immediate stop >/dev/null 2>&1 || true; rm -rf "$tmp"; trap - RETURN' RETURN
+  pg initdb -D "$tmp/data" -U "$(id -un)" --auth-local=peer --auth-host=reject \
+    --encoding=UTF8 --locale=C.UTF-8 >/dev/null
   pg pg_ctl -D "$tmp/data" -o "-c listen_addresses='' -c port=$port -c unix_socket_directories=$tmp" -l "$tmp/log" -w start >/dev/null
   pg createdb -h "$tmp" -p "$port" "$DB_NAME"
   pg pg_restore -h "$tmp" -p "$port" -d "$DB_NAME" --no-owner "$dump"
