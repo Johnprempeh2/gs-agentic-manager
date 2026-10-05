@@ -81,7 +81,8 @@ export function detectInstallMode(executablePath = process.argv[1] ?? "", paths 
   if (manifest && isManagedExecutable(resolved, manifest, paths)) return "managed";
   const normalized = resolved.split(path.sep).join("/");
   if (normalized.includes("/.npm/_npx/") || normalized.includes("/node_modules/.cache/npx/")) return "npx";
-  if (normalized.includes("/node_modules/paperclipai/")) return "global-npm";
+  // `paperclipai` is the pre-rebrand package name; keep it so older global installs still update.
+  if (normalized.includes("/node_modules/gsam/") || normalized.includes("/node_modules/paperclipai/")) return "global-npm";
   let cursor = path.dirname(resolved);
   while (cursor !== path.dirname(cursor)) {
     if (fs.existsSync(path.join(cursor, ".git"))) return "source";

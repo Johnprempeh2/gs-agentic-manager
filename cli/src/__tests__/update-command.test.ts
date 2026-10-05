@@ -99,6 +99,7 @@ describe("update command", () => {
     writeInstallManifestAtomic({ schemaVersion: 1, ...record(payload, "1.0.0"), previous: [] }, paths);
     expect(detectInstallMode(entrypoint, paths)).toBe("managed");
     expect(detectInstallMode(path.join(root, "lib", "node_modules", "gsam", "dist", "index.js"), paths)).toBe("global-npm");
+    expect(detectInstallMode(path.join(root, "lib", "node_modules", "paperclipai", "dist", "index.js"), paths)).toBe("global-npm");
     expect(detectInstallMode(path.join(root, ".npm", "_npx", "abc", "node_modules", "gsam", "dist", "index.js"), paths)).toBe("npx");
     const source = path.join(root, "source"); fs.mkdirSync(path.join(source, ".git"), { recursive: true });
     expect(detectInstallMode(path.join(source, "cli", "src", "index.ts"), paths)).toBe("source");
