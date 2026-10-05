@@ -1608,6 +1608,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/agent-teams",
   "POST /api/companies/{companyId}/memory/scopes",
   "POST /api/companies/{companyId}/memory/records",
+  "POST /api/companies/{companyId}/memory/steward/grants",
   "POST /api/companies/{companyId}/labels",
   "POST /api/issues/{id}/documents/{key}/annotations",
   "POST /api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
@@ -5259,6 +5260,65 @@ registry.registerPath({
     params: memoryCompanyParams,
     query: z.object({ days: z.coerce.number().int().min(1).max(90).optional() }),
   },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+// Memory steward daily review (GRE-887)
+
+const memoryStewardGrantBody = z
+  .object({
+    agentId: z.string().uuid(),
+    scopeIds: z.array(z.string().uuid()).min(1).max(50),
+    expiresInDays: z.number().int().min(1).max(30),
+    reason: z.string().min(1).max(500),
+  })
+  .strict();
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/steward/review",
+  tags: ["memory"],
+  summary: "Run one steward review pass from the durable cursor; steward agent with a live grant only; 409 while another pass holds the lease",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/steward/queue",
+  tags: ["memory"],
+  summary: "Open steward decision-queue items, grouped with sources, scope, approved position and proposed resolution; owner, admin or granted steward",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/steward/report",
+  tags: ["memory"],
+  summary: "Daily steward report: review time, plan use, missed days and queue age per Europe/London day",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({ days: z.coerce.number().int().min(1).max(90).optional() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/steward/grants",
+  tags: ["memory"],
+  summary: "Create a scoped, expiring sandbox steward grant (at most 30 days); owner or admin; 404 unless sandbox grants are enabled",
+  request: { params: memoryCompanyParams, body: jsonBody(memoryStewardGrantBody) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/steward/grants/{grantId}/revoke",
+  tags: ["memory"],
+  summary: "Revoke a live steward grant; owner or admin",
+  request: { params: z.object({ companyId: z.string(), grantId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
