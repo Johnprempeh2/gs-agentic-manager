@@ -3,6 +3,7 @@
     "date": "2026-09-27",
     "commit": "3bf9b37fe",
     "machine": "Apple silicon Mac (darwin arm64), local; CI runners need their own calibration (see README)",
+    "host": { "platform": "darwin", "arch": "arm64", "label": "Apple silicon Mac" },
     "task": "GRE-2 baseline document"
   },
   "reportMaxAgeHours": { "weekly": 48, "ci": 6 },

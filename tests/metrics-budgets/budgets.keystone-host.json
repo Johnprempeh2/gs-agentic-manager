@@ -3,6 +3,7 @@
     "date": "2026-10-04",
     "commit": "0b7aec9c0 + GRE-501 board-filter fix to the harness",
     "machine": "Keystone host: Linux x86_64 (WSL2), 24 cores, 47 GB; other agents running (load average 3-15 during the runs)",
+    "host": { "platform": "linux", "arch": "x64", "label": "Linux x86_64 WSL2", "loadAvg1m": [3, 15] },
     "command": "pnpm test:metrics:s2 --skip-build (x5), then the median of each measure across runs",
     "task": "GRE-501"
   },

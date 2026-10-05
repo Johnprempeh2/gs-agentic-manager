@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { chromium, expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
@@ -422,6 +423,7 @@ test("issue-detail baseline", async ({ request, baseURL }) => {
   test.setTimeout(TEST_TIMEOUT_MS);
   expect(baseURL).toBeTruthy();
   await fs.mkdir(OUTPUT_DIR, { recursive: true });
+  const loadAtStart = os.loadavg()[0];
   const seedData = await seed(request);
   const results: RunMetrics[] = [];
   const boardResults: BoardMetrics[] = [];
@@ -449,6 +451,14 @@ test("issue-detail baseline", async ({ request, baseURL }) => {
     measuredAt: new Date().toISOString(),
     runsPerScenario: RUNS,
     boardIssueCount: seedData.boardIssueCount,
+    // Which machine took the numbers and how busy it was (GRE-894).
+    host: {
+      platform: process.platform,
+      arch: process.arch,
+      cpus: os.cpus().length,
+      loadAvg1mStart: Number(loadAtStart.toFixed(2)),
+      loadAvg1mEnd: Number(os.loadavg()[0].toFixed(2)),
+    },
     s2: summary,
   }, null, 2));
   await fs.writeFile(path.join(OUTPUT_DIR, "baseline.md"), report);

@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { checkBudgets, evaluateBudget, formatRow } from "./check.mjs";
-import { summarize } from "./s2-check.mjs";
+import { hostLines, summarize } from "./s2-check.mjs";
 
 const config = JSON.parse(readFileSync(resolve(import.meta.dirname, "budgets.json"), "utf8"));
 
@@ -236,4 +236,22 @@ test("the S2 summary fails an old S2 report and names its age (GRE-837)", () => 
   assert.match(summarize(old), /\(7d ago STALE \(max 6h\)\)\n  STALE: /);
   assert.equal(s2(undefined).ok, false);
   assert.match(summarize(s2(undefined)), /report has no measuredAt/);
+});
+
+test("the S2 report names the host and notes a mismatched or busy machine (GRE-894)", () => {
+  const keystone = JSON.parse(readFileSync(resolve(import.meta.dirname, "budgets.keystone-host.json"), "utf8")).baselineRecorded.host;
+  const apple = JSON.parse(readFileSync(resolve(import.meta.dirname, "budgets.json"), "utf8")).baselineRecorded.host;
+  const linux = { platform: "linux", arch: "x64", cpus: 24, loadAvg1mStart: 4.1, loadAvg1mEnd: 6.3 };
+
+  assert.deepEqual(hostLines(linux, keystone), ["  host: linux x64, 24 cpu, load 4.1→6.3 (budgets calibrated on: Linux x86_64 WSL2, load 3-15)"]);
+
+  const [line, note] = hostLines(linux, apple);
+  assert.match(line, /^  host: linux x64, 24 cpu, load 4\.1→6\.3 \(budgets calibrated on: Apple silicon Mac\)$/);
+  assert.match(note, /^  NOTE: measured on linux x64, but these budgets are for darwin arm64/);
+
+  const busy = hostLines({ ...linux, loadAvg1mEnd: 22.4 }, keystone);
+  assert.equal(busy.length, 2);
+  assert.match(busy[1], /^  NOTE: load 22\.4 is above the calibrated range \(3-15\)/);
+
+  assert.deepEqual(hostLines(undefined, keystone), ["  host: not recorded (budgets calibrated on: Linux x86_64 WSL2, load 3-15)"]);
 });
