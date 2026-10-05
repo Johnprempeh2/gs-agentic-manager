@@ -461,8 +461,9 @@ export function memoryGatewayService(
       throw badRequest("entryType and status must match; send entryType only");
     }
     const entryType = input.entryType ?? input.status ?? "proposal";
-    // The conflict check matches topics, not text, so an untagged client
-    // proposal would skip it. Refused before anything is written (GRE-886).
+    // The tag check needs topics; the text check (GRE-934) only catches
+    // differing values, so client proposals still carry topics (GRE-886).
+    // Refused before anything is written.
     if (scope.kind === "client" && entryType === "proposal" && input.topics.length === 0) {
       await logOperation(caller, "contribute", "denied", {
         scopeIds: [scope.id],
