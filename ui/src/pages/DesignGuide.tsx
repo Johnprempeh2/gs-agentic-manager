@@ -178,6 +178,8 @@ import {
   connectedConnectionIntentInteraction,
   issueThreadInteractionFixtureMeta,
   pendingConnectionIntentInteraction,
+  pendingStepGuideAskUserQuestionsInteraction,
+  pendingStepGuideRequestConfirmationInteraction,
   retryConnectionIntentInteraction,
 } from "@/fixtures/issueThreadInteractionFixtures";
 import type { CompanySecret, EnvBinding, Issue } from "@greatstone/shared";
@@ -2353,6 +2355,26 @@ export function DesignGuide() {
           />
           <IssueThreadInteractionCard
             interaction={connectedConnectionIntentInteraction}
+            currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          />
+        </div>
+      </Section>
+
+      <Section title="Step-by-step guide">
+        <p className="text-sm text-muted-foreground">
+          When a question or confirmation carries long help text, a code block or numbered steps,
+          the card shows a short summary and an "Open step-by-step guide" link. The guide shows
+          each step as a numbered block, every code block with a Copy button, and the same answer
+          controls, so answering there resolves the same interaction. Short help text stays inline
+          as markdown.
+        </p>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <IssueThreadInteractionCard
+            interaction={pendingStepGuideAskUserQuestionsInteraction}
+            currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
+          />
+          <IssueThreadInteractionCard
+            interaction={pendingStepGuideRequestConfirmationInteraction}
             currentUserId={issueThreadInteractionFixtureMeta.currentUserId}
           />
         </div>

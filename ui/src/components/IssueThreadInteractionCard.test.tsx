@@ -52,6 +52,8 @@ import {
   pendingConnectionIntentInteraction,
   retryConnectionIntentInteraction,
   connectedConnectionIntentInteraction,
+  pendingStepGuideAskUserQuestionsInteraction,
+  pendingStepGuideRequestConfirmationInteraction,
 } from "../fixtures/issueThreadInteractionFixtures";
 
 let root: Root | null = null;
@@ -1572,5 +1574,131 @@ describe("IssueThreadInteractionCard resolver audience", () => {
     expect(
       footer?.querySelector('[data-testid="interaction-resolved-by-agent-chip"]'),
     ).not.toBeNull();
+  });
+});
+
+describe("IssueThreadInteractionCard step-by-step guide (GRE-916)", () => {
+  function clickButton(scope: ParentNode, text: string) {
+    const button = Array.from(scope.querySelectorAll("button")).find((candidate) =>
+      candidate.textContent?.includes(text),
+    );
+    expect(button, `button "${text}"`).toBeTruthy();
+    button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  function guide() {
+    return document.body.querySelector('[data-testid="interaction-guide"]');
+  }
+
+  it("renders short help text and option descriptions as markdown", () => {
+    const interaction = {
+      ...pendingStepGuideAskUserQuestionsInteraction,
+      payload: {
+        ...pendingStepGuideAskUserQuestionsInteraction.payload,
+        questions: [
+          {
+            ...pendingStepGuideAskUserQuestionsInteraction.payload.questions[0],
+            helpText: "Check the **terminal** output.",
+            options: [{ id: "done", label: "Done", description: "It printed `ok`." }],
+          },
+        ],
+      },
+    };
+    const host = renderCard({ interaction });
+
+    expect(host.textContent).toContain("Check the terminal output.");
+    expect(host.textContent).not.toContain("**");
+    expect(host.querySelector("strong")?.textContent).toBe("terminal");
+    expect(host.querySelector('[role="radio"] code')?.textContent).toBe("ok");
+    expect(host.textContent).not.toContain("Open step-by-step guide");
+  });
+
+  it("shows a short summary and a guide link for step-by-step help text", () => {
+    const host = renderCard({ interaction: pendingStepGuideAskUserQuestionsInteraction });
+
+    const summary = host.querySelector('[data-testid="interaction-guide-summary"]');
+    expect(summary?.textContent).toContain(
+      "Run the setup script on your computer, then tell me when it is done.",
+    );
+    expect(host.textContent).toContain("Open step-by-step guide");
+    // The steps and the command stay off the card.
+    expect(host.textContent).not.toContain("pnpm gsam setup");
+    expect(host.textContent).not.toContain("Step 2 of 3");
+    // The answer options stay on the card.
+    expect(host.querySelectorAll('[role="radio"]')).toHaveLength(2);
+  });
+
+  it("opens the guide with numbered steps, copyable code and the answer options", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    // jsdom has no `innerText`, which is what the code block copies.
+    Object.defineProperty(HTMLElement.prototype, "innerText", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.textContent ?? "";
+      },
+    });
+    const onSubmitInteractionAnswers = vi.fn(async () => undefined);
+    const host = renderCard({
+      interaction: pendingStepGuideAskUserQuestionsInteraction,
+      onSubmitInteractionAnswers,
+    });
+
+    await act(async () => clickButton(host, "Open step-by-step guide"));
+
+    const sheet = guide();
+    expect(sheet).toBeTruthy();
+    const steps = sheet!.querySelectorAll('[data-testid="interaction-guide-step"]');
+    expect(steps).toHaveLength(3);
+    expect(steps[0].textContent).toContain("Open a terminal in the project folder.");
+    expect(steps[1].querySelector("pre")?.textContent).toContain("pnpm gsam setup --company demo");
+    expect(sheet!.textContent).not.toContain("**");
+
+    const copy = steps[1].querySelector('button[aria-label="Copy code"]') as HTMLButtonElement;
+    expect(copy).toBeTruthy();
+    expect(copy.tabIndex).not.toBe(-1);
+    await act(async () => {
+      copy.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("pnpm gsam setup --company demo"));
+    delete (HTMLElement.prototype as { innerText?: string }).innerText;
+
+    // While the guide is open the options live only in the guide.
+    expect(host.querySelectorAll('[role="radio"]')).toHaveLength(0);
+    const options = sheet!.querySelectorAll('[role="radio"]');
+    expect(options).toHaveLength(2);
+    await act(async () => {
+      options[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => clickButton(sheet!, "Send answer"));
+
+    expect(onSubmitInteractionAnswers).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "interaction-questions-step-guide" }),
+      [{ questionId: "setup-done", optionIds: ["done"] }],
+    );
+  });
+
+  it("renders the confirmation prompt as markdown and resolves it from the guide", async () => {
+    const onAcceptInteraction = vi.fn(async () => undefined);
+    const host = renderCard({
+      interaction: pendingStepGuideRequestConfirmationInteraction,
+      onAcceptInteraction,
+    });
+
+    expect(host.querySelector("strong")?.textContent).toBe("setup script");
+    expect(host.textContent).not.toContain("pnpm gsam setup");
+    await act(async () => clickButton(host, "Open step-by-step guide"));
+
+    const sheet = guide();
+    expect(sheet?.querySelectorAll('[data-testid="interaction-guide-step"]')).toHaveLength(3);
+    // The prompt under the guide title is markdown too, not raw `**`.
+    const lead = sheet!.querySelector('[data-slot="sheet-description"]');
+    expect(lead?.querySelector("strong")?.textContent).toBe("setup script");
+    expect(lead?.textContent).not.toContain("**");
+    await act(async () => clickButton(sheet!, "Yes, it finished"));
+    expect(onAcceptInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "interaction-confirmation-step-guide" }),
+    );
   });
 });
