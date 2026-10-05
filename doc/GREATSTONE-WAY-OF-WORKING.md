@@ -123,6 +123,15 @@ or partial ports, so git cannot tell what we already have. Three records do:
 and partial ones in their own list. It only reads git. Fetch first:
 `git fetch https://github.com/paperclipai/paperclip.git master:refs/upstream/master`.
 
+Upstream security advisories have a verdict each in `doc/upstream-advisories.txt`:
+`<GHSA id> <severity> <updated_at> <verdict> [note]`, where the verdict is
+`in-base`, `taken #<PR>`, `n/a: <reason>` or `check`. The daily check runs
+`scripts/upstream-pending.sh --advisories`, which reads the advisories with
+`gh api` and prints `NEW`, `CHANGED` and `OPEN` lines, and lists a pending
+commit as security when an advisory names its sha or PR number. Each `NEW` or
+`CHANGED` line gets a verdict the same day; a `check` that may expose us goes
+to GRE-483 as a bug row.
+
 For each upstream batch, Delta also runs
 `scripts/licence-diff.sh origin/main refs/upstream/master --fetch` and pastes
 any `check` lines (GPL, AGPL, LGPL, SSPL, BUSL, unknown, none) on the
