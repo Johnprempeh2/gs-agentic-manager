@@ -23,7 +23,7 @@ export const FAULTS = {
   "approve-rights-off": "Anyone who can read a record may approve it",
   "proposal-overwrites-approved": "A contribution that contradicts an approved decision overwrites it",
   "conflict-check-off": "No conflict check on contribute",
-  "client-topics-optional": "A client-scope contribution with no topics is stored (it escapes the topic-based conflict check)",
+  "client-topics-optional": "A client-scope proposal with no topics is stored (it escapes the topic-based conflict check)",
   "conflict-across-scopes": "Conflict check compares against approved records in every scope, not just the same one",
   "supersede-as-conflict": "A supersession leaves the conflict between old and new decision open",
   "newest-first": "Recall ranks newest first instead of approved first",
@@ -291,11 +291,11 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
         return { status: 422, body: { error: "sensitive_content_blocked", patterns: hits, detection: DETECTION_NOTE } };
       }
     }
-    // GRE-886 B-lite: in client scopes the conflict check needs topics, so a write without them is refused.
+    // GRE-886 B-lite: in client scopes the conflict check needs topics, so a proposal without them is refused.
     const untagged = !(Array.isArray(body.topics) && body.topics.length > 0);
-    if (!on.has("client-topics-optional") && findScope(world, target).kind === "client" && untagged) {
+    if (!on.has("client-topics-optional") && findScope(world, target).kind === "client" && body.status === "proposal" && untagged) {
       writeAudit({ actor, op: "contribute", scopes: [target], decision: "rejected", reason: "topics_required" });
-      return { status: 400, body: { error: "topics_required", message: "Contributions to a client scope need at least one topic, so they can be checked for conflicts." } };
+      return { status: 400, body: { error: "topics_required", message: "A proposal in a client scope needs at least one topic, so they can be checked for conflicts." } };
     }
     const status = body.status ?? "observation";
     if (!["proposal", "observation"].includes(status)) return { status: 422, body: { error: "invalid_status", message: "Contributors set proposal or observation only." } };
