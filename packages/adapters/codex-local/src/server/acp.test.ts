@@ -483,6 +483,37 @@ describe("codex_local ACP lane", () => {
     });
   });
 
+  it("turns off send/write tools of linked ChatGPT apps in the ACP session config (GRE-798)", () => {
+    const codexConfig = (config: Record<string, unknown>) =>
+      JSON.parse(String((buildCodexAcpConfig(config).env as Record<string, unknown>).CODEX_CONFIG));
+
+    expect(codexConfig({}).apps).toEqual({
+      _default: { destructive_enabled: false, open_world_enabled: false },
+    });
+    // Operator CODEX_CONFIG keys survive, but cannot re-enable sends by default.
+    expect(codexConfig({
+      env: {
+        CODEX_CONFIG: JSON.stringify({
+          model: "gpt-5.5",
+          apps: {
+            _default: { destructive_enabled: true, open_world_enabled: true, enabled: true },
+            gmail: { enabled: true },
+          },
+        }),
+      },
+    })).toEqual({
+      model: "gpt-5.5",
+      apps: {
+        _default: { destructive_enabled: false, open_world_enabled: false, enabled: true },
+        gmail: { enabled: true },
+      },
+    });
+    // An invalid operator CODEX_CONFIG still gets the policy.
+    expect(codexConfig({ env: { CODEX_CONFIG: "not json" } })).toEqual({
+      apps: { _default: { destructive_enabled: false, open_world_enabled: false } },
+    });
+  });
+
   it("maps Codex config to the ACPX Codex target", () => {
     expect(buildCodexAcpConfig({
       engine: "acp",
@@ -785,6 +816,7 @@ describe("codex_local ACP lane", () => {
       model_reasoning_effort: "high",
       service_tier: "fast",
       features: { fast_mode: true },
+      apps: { _default: { destructive_enabled: false, open_world_enabled: false } },
     });
   });
 
