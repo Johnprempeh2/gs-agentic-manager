@@ -572,8 +572,9 @@ it uses the same file. With no file the scripts send no login, as before.
 Make the key once, after you claim the board, signed in as the board owner:
 
 ```sh
-pnpm gsam auth login --api-base http://localhost:3100
-pnpm gsam token board create --name live-release --never-expires --api-base http://localhost:3100 --json
+cd ~/GSAM/live
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth login --api-base http://localhost:3100
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts token board create --name live-release --never-expires --api-base http://localhost:3100 --json
 # copy the "token" value (pcp_board_...), then:
 ( umask 077; pbpaste > ~/GSAM/release-board-key )
 chmod 600 ~/GSAM/release-board-key
@@ -582,7 +583,7 @@ chmod 600 ~/GSAM/release-board-key
 The file must be mode 0600 and must never go into a repository. A release
 stops before anything moves if the file is readable by others, if the key is
 wrong, or if live hides `serverInfo` (login mode and no key). To replace the key,
-revoke the old one (`pnpm gsam token board revoke <keyId>`) and write the new
+revoke the old one (from `~/GSAM/live`: `node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts token board revoke <keyId>`) and write the new
 one to the same file. `scripts/release-auth-sandbox-check.sh` tests all of this
 on a throwaway sandbox, in both modes.
 
