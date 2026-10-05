@@ -51,6 +51,27 @@ export function summarize({ ok, results }) {
   return [verdict, ...rows, `  measured: ${results[0]?.measuredAt ?? "unknown"} (${measured})`, stale].filter(Boolean).join("\n");
 }
 
+// One report line naming the machine that took the numbers and its load, plus a
+// NOTE when it is not the machine the budgets were calibrated on or is busier
+// than it was then (GRE-894). Text only; the exit code does not change.
+export function hostLines(host, recorded) {
+  const calibrated = recorded
+    ? `${recorded.label ?? `${recorded.platform} ${recorded.arch}`}${recorded.loadAvg1m ? `, load ${recorded.loadAvg1m.join("-")}` : ""}`
+    : "not recorded";
+  if (!host) return [`  host: not recorded (budgets calibrated on: ${calibrated})`];
+  const load = (n) => (typeof n === "number" ? n.toFixed(1) : "?");
+  const lines = [`  host: ${host.platform} ${host.arch}, ${host.cpus} cpu, load ${load(host.loadAvg1mStart)}→${load(host.loadAvg1mEnd)} (budgets calibrated on: ${calibrated})`];
+  if (recorded && (host.platform !== recorded.platform || host.arch !== recorded.arch)) {
+    lines.push(`  NOTE: measured on ${host.platform} ${host.arch}, but these budgets are for ${recorded.platform} ${recorded.arch}; a FAIL may be the machine, not a regression.`);
+  }
+  const peak = Math.max(...[host.loadAvg1mStart, host.loadAvg1mEnd].filter((n) => typeof n === "number"));
+  const ceiling = recorded?.loadAvg1m?.[1];
+  if (typeof ceiling === "number" && peak > ceiling) {
+    lines.push(`  NOTE: load ${peak.toFixed(1)} is above the calibrated range (${recorded.loadAvg1m.join("-")}); a FAIL may be a busy host, not a regression.`);
+  }
+  return lines;
+}
+
 function freePort() {
   return new Promise((done, fail) => {
     const server = createServer();
@@ -147,6 +168,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const config = JSON.parse(readFileSync(resolve(ROOT, budgets), "utf8"));
     const outcome = checkBudgets(s2Budgets(config), { group: "ci", inputs: { s2: metrics ?? DEFAULT_METRICS }, root: ROOT });
     console.log(summarize(outcome));
+    const report = (() => {
+      try { return JSON.parse(readFileSync(resolve(ROOT, metrics ?? DEFAULT_METRICS), "utf8")); } catch { return {}; }
+    })();
+    console.log(hostLines(report.host, config.baselineRecorded?.host).join("\n"));
     console.log(`  budgets: ${budgets}`);
     process.exitCode = outcome.ok ? 0 : 1;
   } catch (error) {

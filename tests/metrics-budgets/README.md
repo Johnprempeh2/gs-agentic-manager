@@ -69,6 +69,20 @@ S2 harness, and these budget files. `s2-check.mjs` measures with the instance
 data in `./tmp/s2-check-*` (deleted afterwards). It prints one PASS or FAIL
 line that names each broken budget, and exits 1 on FAIL.
 
+Under the verdict it prints the machine that took the numbers, from the
+`host` block the harness writes to `metrics.json` (platform, arch, CPU count,
+1-minute load average at start and end), next to the machine in the budget
+file's `baselineRecorded.host`:
+
+```
+  host: linux x64, 24 cpu, load 4.1→6.3 (budgets calibrated on: Linux x86_64 WSL2, load 3-15)
+```
+
+A `NOTE` follows when platform or arch differ from the calibration machine, or
+the load is above the calibrated range: a FAIL there may be the machine, not a
+regression. An older report without `host` prints `host: not recorded`. The
+host line never changes the exit code.
+
 It judges against `budgets.keystone-host.json`, the S2 budgets calibrated on
 the machine Keystone runs on (Linux, WSL2). It uses the same margins as
 `budgets.json`. Pass `--budgets tests/metrics-budgets/budgets.json` to use the
