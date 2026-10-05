@@ -24,6 +24,7 @@ const RUN_WATCHDOG = "d0000000-0000-4000-8000-000000000003";
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
   listReviewAttention: vi.fn(),
+  listDependencyReadiness: vi.fn(),
   addComment: vi.fn(),
   markRead: vi.fn(),
 }));
@@ -356,6 +357,7 @@ describe.sequential("issue thread interaction routes", () => {
     }));
     mockIssueService.getById.mockResolvedValue(createIssue());
     mockIssueService.listReviewAttention.mockResolvedValue(new Map());
+    mockIssueService.listDependencyReadiness.mockResolvedValue(new Map());
     mockIssueService.markRead.mockResolvedValue({ lastReadAt: new Date() });
     mockInteractionService.listForIssue.mockResolvedValue([]);
     mockInteractionService.expireRequestConfirmationsSupersededByHistoricalComments.mockResolvedValue([]);
@@ -2260,6 +2262,92 @@ describe.sequential("issue thread interaction routes", () => {
         }),
       }),
     );
+  });
+
+  describe("GRE-780: rejected card on a blocked issue", () => {
+    function rejectedOnAcceptConfirmation(issueId: string) {
+      return {
+        id: "interaction-blocked-only-path",
+        companyId: "company-1",
+        issueId,
+        kind: "request_confirmation",
+        status: "rejected",
+        continuationPolicy: "wake_assignee_on_accept",
+        idempotencyKey: null,
+        sourceCommentId: null,
+        sourceRunId: "run-blocked-only-path",
+        payload: { version: 1, prompt: "Apps added on dry01?" },
+        result: { version: 1, outcome: "rejected", reason: "lets pause this" },
+        createdAt: "2026-10-04T21:34:00.000Z",
+        updatedAt: "2026-10-04T21:37:00.000Z",
+        resolvedAt: "2026-10-04T21:37:00.000Z",
+      };
+    }
+
+    it("wakes the assignee with the reason when the card was the only path", async () => {
+      const issue = createIssue({ status: "blocked" });
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockInteractionService.rejectInteraction.mockResolvedValueOnce(
+        rejectedOnAcceptConfirmation(issue.id),
+      );
+
+      const res = await request(await createApp())
+        .post(`/api/issues/${issue.id}/interactions/interaction-blocked-only-path/reject`)
+        .send({ reason: "lets pause this" });
+
+      expect(res.status).toBe(200);
+      expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+        ASSIGNEE_AGENT_ID,
+        expect.objectContaining({
+          idempotencyKey: "interaction:interaction-blocked-only-path:rejected",
+          payload: expect.objectContaining({
+            blockedPathLost: true,
+            blockedPathConsumedRef: "interaction-blocked-only-path",
+            paperclipAgentMessage: expect.objectContaining({ text: "lets pause this" }),
+          }),
+          contextSnapshot: expect.objectContaining({
+            blockedPathInstruction: expect.stringContaining("move it to backlog"),
+          }),
+        }),
+      );
+    });
+
+    it("does not wake when an unresolved blocker still owns the wait", async () => {
+      const issue = createIssue({ status: "blocked" });
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockIssueService.listDependencyReadiness.mockResolvedValue(new Map([[
+        issue.id,
+        { issueId: issue.id, unresolvedBlockerCount: 1 },
+      ]]));
+      mockInteractionService.rejectInteraction.mockResolvedValueOnce(
+        rejectedOnAcceptConfirmation(issue.id),
+      );
+
+      const res = await request(await createApp())
+        .post(`/api/issues/${issue.id}/interactions/interaction-blocked-only-path/reject`)
+        .send({ reason: "lets pause this" });
+
+      expect(res.status).toBe(200);
+      expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+    });
+
+    it("does not wake when another card is still pending", async () => {
+      const issue = createIssue({ status: "blocked" });
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockInteractionService.listForIssue.mockResolvedValue([
+        { id: "interaction-other", status: "pending" },
+      ]);
+      mockInteractionService.rejectInteraction.mockResolvedValueOnce(
+        rejectedOnAcceptConfirmation(issue.id),
+      );
+
+      const res = await request(await createApp())
+        .post(`/api/issues/${issue.id}/interactions/interaction-blocked-only-path/reject`)
+        .send({ reason: "lets pause this" });
+
+      expect(res.status).toBe(200);
+      expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+    });
   });
 
   it("wakes with decline instructions when a tool-action confirmation is rejected", async () => {
