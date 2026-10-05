@@ -315,12 +315,19 @@ exists (GRE-665) that is John. The config file, mode 600, outside `<root>`:
 # /etc/gsam/watch/c001.env  (chmod 600)
 WATCH_OPERATOR_PASSWORD=<operator log-in password from create>
 WATCH_PING_URL=https://hc-ping.com/<check uuid>
-WATCH_ALERT_EMAIL=<on-call address>
-WATCH_MAIL_COMMAND=/usr/sbin/sendmail -t
+# Hosted only: probe /api/health through DNS, Caddy and TLS.
+WATCH_PUBLIC_URL=https://<hostname>
+# WATCH_ALERT_EMAIL=<on-call address>
+# WATCH_MAIL_COMMAND=/usr/sbin/sendmail -t
 ```
 
 It needs the ping URL, or the mail pair, or both: a watch that tells no one
-is refused.
+is refused. **On a hosted server, use the ping URL alone** and let
+healthchecks.io send the mail to the alert address. The host has no mail
+server, and Hetzner blocks outgoing port 25 on new accounts, so `sendmail`
+would fail at every pass. Set the mail pair only with a working SMTP relay.
+On the first server, prove that a person gets the alert: stop the app once
+and check that the mail arrives (readiness plan on GRE-664, gap G-e).
 
 **On a hosted server** (`doc/CLIENT-HOSTING.md`), timers run all three
 through `instance-ctl.sh`, from the release folder the instance last started
