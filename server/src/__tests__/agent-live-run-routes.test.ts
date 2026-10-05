@@ -17,6 +17,7 @@ const mockHeartbeatService = vi.hoisted(() => ({
   readLog: vi.fn(),
   wakeup: vi.fn(),
   getRun: vi.fn(),
+  list: vi.fn(),
 }));
 
 const mockIssueService = vi.hoisted(() => ({
@@ -692,6 +693,52 @@ describe("agent live run routes", () => {
       }));
     },
   );
+
+  describe("company run list filters (GRE-794)", () => {
+    const listPath = "/api/companies/company-1/heartbeat-runs";
+
+    beforeEach(() => {
+      mockHeartbeatService.list.mockResolvedValue([{ id: "run-1", status: "failed" }]);
+    });
+
+    it("passes no new filter when none is given, so the call is the same as before", async () => {
+      const res = await requestApp(await createApp(), (baseUrl) =>
+        request(baseUrl).get(`${listPath}?limit=5&summary=true`),
+      );
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockHeartbeatService.list).toHaveBeenCalledWith("company-1", undefined, 5, { summary: true });
+      expect(res.body).toEqual([{ id: "run-1", status: "failed" }]);
+    });
+
+    it("passes the status list and the createdAt bounds to the service", async () => {
+      const res = await requestApp(await createApp(), (baseUrl) =>
+        request(baseUrl).get(
+          `${listPath}?status=failed,%20interrupted,failed&since=2026-09-27&before=2026-10-02T08:41:00.000Z`,
+        ),
+      );
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockHeartbeatService.list).toHaveBeenCalledWith("company-1", undefined, undefined, {
+        summary: false,
+        statuses: ["failed", "interrupted"],
+        since: new Date("2026-09-27T00:00:00.000Z"),
+        before: new Date("2026-10-02T08:41:00.000Z"),
+      });
+    });
+
+    it.each([
+      ["status=done", /Unknown run status: done/],
+      ["status=", /Unknown run status/],
+      ["status=failed&status=cancelled", /one comma-separated list/],
+      ["since=yesterday", /since must be one ISO 8601 time/],
+      ["since=1696000000000", /since must be one ISO 8601 time/],
+      ["before=2026-13-45", /before must be one ISO 8601 time/],
+    ])("rejects %s with 400 and reads nothing", async (query, message) => {
+      const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl).get(`${listPath}?${query}`));
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+      expect(res.body.error).toMatch(message);
+      expect(mockHeartbeatService.list).not.toHaveBeenCalled();
+    });
+  });
 
   it("caps company live run polling by default", async () => {
     const rows = Array.from({ length: 75 }, (_, index) => ({
