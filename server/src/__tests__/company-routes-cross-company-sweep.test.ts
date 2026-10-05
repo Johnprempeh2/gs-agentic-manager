@@ -7,8 +7,9 @@ import request from "supertest";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
-  companyMemberships, companySecretProviderConfigs, companySecrets, decisionTrainingExamples, environmentLeases,
-  environments, executionWorkspaces, feedbackExports, feedbackVotes, goals, heartbeatRuns, issueAttachments, issues,
+  companyMemberships, companySecretProviderConfigs, companySecrets, decisions, decisionTrainingExamples,
+  environmentLeases, environments, executionWorkspaces, feedbackExports, feedbackVotes, goals, heartbeatRuns,
+  invites, issueAttachments, issues,
   issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
   statusCards, toolApplications, toolConnections, toolProfileEntries, toolProfiles, workspaceOperations,
 } from "@greatstone/db";
@@ -83,9 +84,9 @@ const ID_ROUTE = /^\/api\/(?!companies\/:companyId(?:\/|$))[^?]*\/:/;
 // does not create yet; the rest do not take a company record id.
 const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/invites/:token": "Public invite link, the token is the credential.",
-  "/api/invites/:inviteId": "Not seeded yet: invites need a hashed token and an inviter.",
   "/api/board-claim/:token": "Public board-claim link, the token is the credential.",
-  "/api/join-requests/:requestId": "Not seeded yet: join requests need an invite.",
+  "/api/join-requests/:requestId": "Only POST .../claim-api-key, which a joining agent calls before it has a key; "
+    + "the claim secret in the body is the credential, not a session. Company join-request routes are swept above.",
   "/api/board-api-keys/:keyId": "Board API keys belong to the signed-in user, not a company.",
   "/api/cli-auth/challenges/:id": "CLI login challenges belong to the signed-in user, not a company.",
   "/api/admin/users/:userId": "Instance-admin only; the id is a user, not a company record.",
@@ -103,8 +104,8 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/routine-triggers/public/:publicId": "Public routine webhook; authenticated by the trigger secret, not a session.",
   "/api/companies/import/": "Import jobs and transfers belong to the user who started them, before a company exists.",
   "/api/agents/me/": "Acts on the calling agent's own company; there is no other company's id to pass.",
-  "/api/environment-custom-image-setup-sessions/:sessionId": "Not seeded yet: needs a custom image template and provider.",
-  "/api/decisions/:id": "Not seeded yet: needs a signed decision spec and target snapshots.",
+  "/api/environment-custom-image-setup-sessions/:sessionId": "Instance-admin only: every handler calls "
+    + "assertCanAccessInstanceEnvironments before reading the session, so a company owner is refused before any company check.",
   "/api/tool-gateway/": "Not seeded yet: gateways, tokens, sessions and runtime slots need a gateway setup.",
   "/api/plugins/:pluginId": "Plugins are instance-wide (no company column). Company data sits under "
     + "/plugins/:pluginId/companies/:companyId, which is swept, or in the request body, which this sweep does not fill.",
@@ -316,6 +317,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const providerConfigId = id(), labelId = id(), assetId = id(), attachmentId = id(), workProductId = id();
     const operationId = id(), leaseId = id();
     const profileEntryId = id(), intentId = id(), voteId = id(), traceId = id(), trainingId = id();
+    const inviteId = id(), decisionId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -390,6 +392,17 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       // The id routes check the company before they read the snapshot.
       snapshot: {} as never, createdByUserId: ownerAId,
     });
+    // GRE-822 PR 2: invites by id and decisions.
+    await ctx.db.insert(invites).values({
+      ...A, id: inviteId, tokenHash: createHash("sha256").update(randomBytes(16)).digest("hex"),
+      expiresAt: new Date(Date.now() + 86_400_000), invitedByUserId: ownerAId,
+    });
+    await ctx.db.insert(decisions).values({
+      ...A, id: decisionId, originAgentId: agentId, originIssueId: issueId, originRunId: runId,
+      title: "Company A decision", body: "Company A decision", options: [],
+      // The id routes check the company before they read the spec or snapshots.
+      expiresAt: new Date(Date.now() + 86_400_000), signedSpec: "sweep", targetSnapshots: {},
+    });
 
     const byPrefix: Record<string, string> = {
       "/api/issues/:id": issueId, "/api/issues/:issueId": issueId,
@@ -412,6 +425,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/workspace-operations/:operationId": operationId, "/api/environment-leases/:leaseId": leaseId,
       "/api/tool-profile-entries/:entryId": profileEntryId, "/api/connection-intents/:interactionId": intentId,
       "/api/feedback-traces/:traceId": traceId, "/api/decision-training/:id": trainingId,
+      "/api/invites/:inviteId": inviteId, "/api/decisions/:id": decisionId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),
