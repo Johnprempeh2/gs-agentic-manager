@@ -69,7 +69,7 @@ const HINDSIGHT_MODE: Record<MemoryRetainMode, string> = {
 /** Hindsight's answer for a bank that has no documents yet: `404 {"detail": "Bank '…' not found"}`. */
 const BANK_NOT_FOUND_RE = /Bank '[^']*' not found/;
 
-type HindsightRecallResult ={ document_id?: string | null; text?: string; scores?: Record<string, number> | null };
+type HindsightRecallResult = { document_id?: string | null; text?: string; scores?: Record<string, number> | null };
 
 /**
  * Memory Defense for every gateway bank (GRE-868): the engine's regex screen
