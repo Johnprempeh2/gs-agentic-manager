@@ -231,6 +231,9 @@ vi.mock("@/components/ui/dialog", () => ({
     dialogContentState.onPointerDownOutside = onPointerDownOutside as typeof dialogContentState.onPointerDownOutside;
     return <div {...props}>{children}</div>;
   },
+  DialogTitle: ({ children, ...props }: ComponentProps<"h2">) => (
+    <h2 data-slot="dialog-title" {...props}>{children}</h2>
+  ),
 }));
 
 vi.mock("@/components/ui/button", () => ({
@@ -425,6 +428,18 @@ describe("NewIssueDialog", () => {
     expect(container.textContent).not.toContain("Sub-task of");
 
     act(() => rerendered.root.unmount());
+  });
+
+  it("names the dialog through its visible title", async () => {
+    const { root } = renderDialog(container);
+    await flush();
+
+    // Radix wires DialogTitle to the dialog's aria-labelledby, so the
+    // breadcrumb text must render inside DialogTitle (GRE-900).
+    const title = container.querySelector('[data-slot="dialog-title"]');
+    expect(title?.textContent?.trim()).toBe("New task");
+
+    act(() => root.unmount());
   });
 
   it("names the icon-only header buttons for screen readers", async () => {
