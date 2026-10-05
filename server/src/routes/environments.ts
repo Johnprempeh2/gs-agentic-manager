@@ -1130,6 +1130,8 @@ export function environmentRoutes(
       res.status(404).json({ error: "Environment lease not found" });
       return;
     }
+    // Leases are company-owned; environment read access alone is instance-wide.
+    assertCompanyAccess(req, lease.companyId);
     res.json(lease);
   });
 
