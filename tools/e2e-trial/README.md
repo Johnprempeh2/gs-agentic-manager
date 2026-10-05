@@ -8,11 +8,12 @@ Research only: not part of the release process and not in the pnpm workspace.
 cd tools/e2e-trial
 npm install
 npm run list                 # the checks, no model needed
-npm run check                # needs an approved model in model.ts
+npm run login                # once, John: signs in to his ChatGPT Plus/Pro plan
+npm run check                # runs the checks against the preview
 ```
 
 - Telemetry is off (`E2E_TELEMETRY_DISABLED=1`, `DO_NOT_TRACK=1`) in the npm scripts and the config.
 - Outbound: only the model provider. No TesterArmy Cloud, `testerarmy` CLI or hosted MCP.
-- `model.ts` returns no model until John approves a provider: `e2e` does not support Claude subscriptions.
+- Model: John's ChatGPT Plus/Pro plan (`chatgpt('gpt-6-luna')` in `model.ts`); `e2e` does not support Claude subscriptions. The login is in `~/.config/e2e/oauth.json`, not in the repo. Model traffic goes to `auth.openai.com` and `chatgpt.com/backend-api/codex`.
 - `E2E_USED_INVITE_PATH=/invite/<token>` names an already used invite for the invite check.
 - The replay cache is in `.e2e/` (not committed).
