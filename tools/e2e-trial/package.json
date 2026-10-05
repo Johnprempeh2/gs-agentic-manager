@@ -4,9 +4,9 @@
   "description": "GRE-905: two-week trial of the open-source e2e runner against the release preview (port 3200). Not part of the pnpm workspace.",
   "type": "module",
   "scripts": {
-    "list": "env -u OPENAI_BASE_URL -u OPENAI_API_KEY E2E_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 e2e list",
-    "login": "env -u OPENAI_BASE_URL -u OPENAI_API_KEY E2E_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 e2e login openai",
-    "check": "env -u OPENAI_BASE_URL -u OPENAI_API_KEY E2E_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 e2e run --reporter list --reporter json"
+    "list": "./e2e.sh list",
+    "login": "./login.sh",
+    "check": "./e2e.sh run --reporter list --reporter json"
   },
   "devDependencies": {
     "@ai-sdk/openai": "4.0.71",
