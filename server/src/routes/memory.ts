@@ -27,6 +27,7 @@ import {
   MemorySensitiveContentError,
 } from "../services/memory-gateway/sensitive-content.js";
 import { memoryGraphService } from "../services/memory-gateway/graph.js";
+import { memoryGrantService } from "../services/memory-gateway/grants.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
@@ -59,6 +60,7 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
   const svc = memoryGatewayService(db, options);
   const reviews = memoryReviewService(db, svc);
   const graphs = memoryGraphService(db, svc);
+  const grants = memoryGrantService(db, svc);
 
   // Runs before body validation so a company with memory off learns nothing
   // from any memory route, not even which bodies are valid.
@@ -130,6 +132,31 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
       details: req.body,
     });
     res.json(settings);
+  });
+
+  // Memory rights (G3, GRE-933): John only. The body is checked inside the
+  // service so a refused body still leaves an audit row for the real caller.
+  router.get("/companies/:companyId/memory/grants", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    res.json(await grants.list(await callerFor(req, companyId, "grants_list")));
+  });
+
+  router.put("/companies/:companyId/memory/grants", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const grant = await grants.set(await callerFor(req, companyId, "grant_set"), req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "memory.grants_set",
+      entityType: grant.principalType === "agent" ? "agent" : "user",
+      entityId: grant.principalId,
+      details: { permissions: grant.permissions },
+    });
+    res.json(grant);
   });
 
   router.get("/companies/:companyId/memory/scopes", requireEnabled, async (req, res) => {

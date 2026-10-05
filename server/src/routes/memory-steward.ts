@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { memoryOperations, type Db } from "@greatstone/db";
-import { forbidden, notFound } from "../errors.js";
+import { badRequest, forbidden, notFound } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/index.js";
 import { memoryGatewayService } from "../services/memory-gateway/service.js";
@@ -15,19 +15,21 @@ import {
   createDbStewardOwnerResolver,
   createDbStewardStore,
   createSandboxStewardGrant,
+  createStewardGrant,
   getStewardGrant,
   revokeStewardGrant,
+  STEWARD_GRANT_MAX_DAYS,
+  StewardGrantRefusal,
 } from "../services/memory-gateway/steward-review-db.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Longest sandbox grant. A standing grant is a G4 decision. */
-export const STEWARD_GRANT_MAX_DAYS = 30;
+export { STEWARD_GRANT_MAX_DAYS };
 
 /**
  * Sandbox grants exist only where this is set (a sandbox instance on
- * synthetic data). The real steward grant is decided at G4.
+ * synthetic data). The live grant has its own route (GRE-933).
  */
 export const STEWARD_SANDBOX_GRANTS_ENV = "GSAM_MEMORY_STEWARD_SANDBOX_GRANTS";
 
@@ -207,6 +209,69 @@ export function memoryStewardRoutes(db: Db) {
       res.status(201).json(grant);
     },
   );
+
+  // John's live steward grant (G3, GRE-933): owner only, Greatstone scopes
+  // only, at most 30 days, then renewed. Every refusal is audited.
+  router.post("/companies/:companyId/memory/steward/grants/live", async (req, res) => {
+    const companyId = await requireEnabled(req);
+    const operation = "steward_grant_live";
+    await assertGrantAdmin(req, companyId, operation);
+    const actor = getActorInfo(req);
+    const refuse = async (reason: string, detail: Record<string, unknown> = {}) =>
+      db.insert(memoryOperations).values({
+        companyId,
+        operation,
+        outcome: "denied",
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        detail: { reason, ...detail },
+      });
+    const parsed = createStewardGrantSchema.safeParse(req.body);
+    if (!parsed.success) {
+      await refuse("invalid_body", { invalidFields: parsed.error.issues.map((issue) => issue.path.join(".") || issue.code) });
+      throw badRequest("Invalid steward grant", parsed.error.issues);
+    }
+    const body = parsed.data;
+    let grant;
+    try {
+      grant = await createStewardGrant(db, {
+        companyId,
+        agentId: body.agentId,
+        scopeIds: body.scopeIds,
+        environment: "live",
+        grantedByUserId: actor.actorId,
+        expiresAt: new Date(Date.now() + body.expiresInDays * DAY_MS),
+        reason: body.reason,
+      });
+    } catch (error) {
+      if (!(error instanceof StewardGrantRefusal)) throw error;
+      await refuse(error.reason, { stewardAgentId: body.agentId, scopeIds: body.scopeIds });
+      throw forbidden(error.message);
+    }
+    await db.insert(memoryOperations).values({
+      companyId,
+      operation,
+      outcome: "allowed",
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: body.agentId,
+      scopeIds: grant.scopeIds,
+      detail: { grantId: grant.id, environment: grant.environment, expiresAt: grant.expiresAt.toISOString(), reason: body.reason },
+    });
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "memory.steward_grant_created",
+      entityType: "agent",
+      entityId: body.agentId,
+      details: { grantId: grant.id, environment: grant.environment, scopeIds: grant.scopeIds, expiresAt: grant.expiresAt.toISOString() },
+    });
+    res.status(201).json(grant);
+  });
 
   router.post("/companies/:companyId/memory/steward/grants/:grantId/revoke", async (req, res) => {
     const companyId = await requireEnabled(req);

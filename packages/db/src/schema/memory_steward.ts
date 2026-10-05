@@ -8,7 +8,7 @@ import { memoryScopes } from "./memory.js";
 // writes only these tables; it never changes a record. Rollback: drop these
 // five tables.
 
-/** Scoped, expiring steward access. Sandbox only until G4. Revoke by setting `revoked_at`. */
+/** Scoped, expiring steward access, `sandbox` or `live` (GRE-933). Revoke by setting `revoked_at`. */
 export const memoryStewardGrants = pgTable(
   "memory_steward_grants",
   {
@@ -16,7 +16,7 @@ export const memoryStewardGrants = pgTable(
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     agentId: uuid("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
     scopeIds: jsonb("scope_ids").$type<string[]>().notNull().default([]),
-    /** `sandbox`. A real grant is a G4 decision. */
+    /** `sandbox` (sandbox instance only) or `live` (John's grant, Greatstone scopes, max 30 days). */
     environment: text("environment").notNull().default("sandbox"),
     grantedByUserId: text("granted_by_user_id").notNull(),
     reason: text("reason"),

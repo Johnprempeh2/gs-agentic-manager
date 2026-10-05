@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { agents, approvals, heartbeatRuns, issueApprovals, issues, type Db } from "@greatstone/db";
-import { PERMISSION_KEYS, type PermissionKey } from "@greatstone/shared";
+import { isMemoryPermissionKey, PERMISSION_KEYS, type PermissionKey } from "@greatstone/shared";
 import { accessService } from "./access.js";
 import { logActivity } from "./activity-log.js";
 import { issueService } from "./issues.js";
@@ -72,6 +72,8 @@ export function permissionGrantRequestService(db: Db) {
     permissionKey: PermissionKey;
     runId?: string | null;
   }) {
+    // Memory rights come only from the owner's memory grant route (GRE-933).
+    if (isMemoryPermissionKey(input.permissionKey)) return null;
     const agent = await db
       .select({ id: agents.id, name: agents.name, companyId: agents.companyId })
       .from(agents)

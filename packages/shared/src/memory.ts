@@ -600,3 +600,26 @@ export type MemoryActivityQuery = z.infer<typeof memoryActivityQuerySchema>;
 
 export const memoryActivityCountsQuerySchema = memoryActivityQuerySchema.omit({ limit: true, cursor: true, agentId: true, userId: true });
 export type MemoryActivityCountsQuery = z.infer<typeof memoryActivityCountsQuerySchema>;
+
+/**
+ * Memory rights the owner may grant (G3, GRE-933). Always for organization
+ * and project scopes only: a grant made here never reaches a client or
+ * restricted-project scope. `memory:admin` is never granted; only John has it.
+ */
+export const MEMORY_GRANTABLE_PERMISSIONS = ["memory:read", "memory:contribute", "memory:approve"] as const;
+export type MemoryGrantablePermission = (typeof MEMORY_GRANTABLE_PERMISSIONS)[number];
+
+export function isMemoryPermissionKey(key: string) {
+  return key.startsWith("memory:");
+}
+
+/** Replaces every memory right of one principal. An empty list removes them all. */
+export const setMemoryGrantsSchema = z
+  .object({
+    principalType: z.enum(["agent", "user"]),
+    principalId: z.string().trim().min(1).max(200),
+    permissions: z.array(z.enum(MEMORY_GRANTABLE_PERMISSIONS)).max(MEMORY_GRANTABLE_PERMISSIONS.length),
+    reason: memoryReason,
+  })
+  .strict();
+export type SetMemoryGrants = z.infer<typeof setMemoryGrantsSchema>;

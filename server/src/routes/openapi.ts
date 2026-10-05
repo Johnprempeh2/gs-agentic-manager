@@ -108,6 +108,7 @@ import {
   supersedeMemoryRecordSchema,
   createMemoryScopeSchema,
   recallMemorySchema,
+  setMemoryGrantsSchema,
   updateMemorySettingsSchema,
   updateAgentTeamSchema,
   // Goal
@@ -1609,6 +1610,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/memory/scopes",
   "POST /api/companies/{companyId}/memory/records",
   "POST /api/companies/{companyId}/memory/steward/grants",
+  "POST /api/companies/{companyId}/memory/steward/grants/live",
   "POST /api/companies/{companyId}/labels",
   "POST /api/issues/{id}/documents/{key}/annotations",
   "POST /api/issues/{id}/documents/{key}/annotations/{threadId}/comments",
@@ -5122,6 +5124,24 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/memory/grants",
+  tags: ["memory"],
+  summary: "List memory rights by principal; owner or admin only",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/memory/grants",
+  tags: ["memory"],
+  summary: "Replace one agent's or member's memory rights (read, contribute, approve; organization and project scopes only, never client; never memory:admin); owner or admin only; audited, refusals too",
+  request: { params: memoryCompanyParams, body: jsonBody(setMemoryGrantsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/memory/scopes",
   tags: ["memory"],
   summary: "List the memory scopes the caller may read; 404 while memory is off",
@@ -5326,6 +5346,15 @@ registry.registerPath({
   path: "/api/companies/{companyId}/memory/steward/grants",
   tags: ["memory"],
   summary: "Create a scoped, expiring sandbox steward grant (at most 30 days); owner or admin; 404 unless sandbox grants are enabled",
+  request: { params: memoryCompanyParams, body: jsonBody(memoryStewardGrantBody) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/steward/grants/live",
+  tags: ["memory"],
+  summary: "Create John's live steward grant (G3): owner or admin only; organization, project and agent scopes only, never client or restricted; at most 30 days; every refusal audited",
   request: { params: memoryCompanyParams, body: jsonBody(memoryStewardGrantBody) },
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
