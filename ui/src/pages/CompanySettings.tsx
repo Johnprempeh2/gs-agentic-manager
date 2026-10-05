@@ -17,6 +17,7 @@ import { companiesApi } from "../api/companies";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { PageTabBar } from "../components/PageTabBar";
 import { useHiddenSettings } from "../hooks/useHiddenSettings";
@@ -290,8 +291,8 @@ export function CompanySettings() {
             </div>
             <div className="space-y-3">
               <Field label="Organization name" hint="The display name for your organization.">
-                <input
-                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                <Input
+                  className="h-auto px-2.5 py-1.5 text-sm"
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
@@ -307,8 +308,8 @@ export function CompanySettings() {
                 label="Description"
                 hint="Optional description shown in the organization profile."
               >
-                <input
-                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                <Input
+                  className="h-auto px-2.5 py-1.5 text-sm"
                   type="text"
                   value={description}
                   placeholder="Optional organization description"
@@ -338,11 +339,11 @@ export function CompanySettings() {
                     hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
                   >
                     <div className="space-y-2">
-                      <input
+                      <Input
                         type="file"
                         accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
                         onChange={handleLogoFileChange}
-                        className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-xs"
+                        className="h-auto px-2.5 py-1.5 text-sm file:mr-4 file:h-auto file:rounded-md file:bg-muted file:px-2.5 file:py-1 file:text-xs file:font-normal"
                       />
                       {logoUrl && (
                         <div className="flex items-center gap-2">
@@ -428,8 +429,8 @@ export function CompanySettings() {
               hint="The dashboard values agent hours at this rate per hour, for example a local minimum wage or an agency rate. Leave empty to show hours only."
             >
               <div className="flex flex-wrap items-center gap-2">
-                <input
-                  className="w-40 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                <Input
+                  className="h-auto w-40 px-2.5 py-1.5 text-sm"
                   type="text"
                   inputMode="decimal"
                   aria-label="Hourly wage"
