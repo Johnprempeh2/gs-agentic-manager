@@ -104,6 +104,7 @@
 - [ ] I have not referenced internal/instance-local GS Agentic Manager issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)
 - [ ] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal GS Agentic Manager ticket id or instance-derived details
 - [ ] I have run tests locally and they pass
+- [ ] Postgres-backed tests: ran / skipped (reason) <!-- a skip prints "embedded Postgres unavailable, suites skipped: <reason>"; set GSAM_REQUIRE_EMBEDDED_PG=1 to fail instead -->
 - [ ] I have added or updated tests where applicable
 - [ ] I have updated relevant documentation to reflect my changes
 - [ ] I have considered and documented any risks above
