@@ -5,7 +5,7 @@
  * An agent's shell carries its run's identity and credentials: the run API
  * key, the agent, company and task ids, the wake context, its workspace and
  * scratch folders, its GitHub access, and the address of the server it talks
- * to, each also under its legacy PAPERCLIP_* name (see legacy-env.ts). A
+ * to, each also under its legacy alias (see legacy-env.ts). A
  * sandbox started from that shell (`pnpm dev:once --data-dir ./tmp/sandbox`,
  * `gsam run`) used to inherit all of it: the server took the parent's
  * GSAM_API_URL as its own public URL, and the sandbox and anything it started
@@ -47,8 +47,8 @@ export const RUN_OWNER_API_URL_ENV_KEYS: readonly string[] = [
 ];
 
 /**
- * The run's own variables, by their GSAM_* names. Their legacy PAPERCLIP_*
- * aliases are removed too (`agentRunEnvKeyNames`).
+ * The run's own variables, by their GSAM_* names. Their legacy aliases are
+ * removed too (`agentRunEnvKeyNames`).
  */
 export const AGENT_RUN_ENV_KEYS: readonly string[] = [
   // Who the run is, its credential, and the server it talks to.
