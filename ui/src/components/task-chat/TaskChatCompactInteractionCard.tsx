@@ -29,6 +29,10 @@ import type {
 import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionCard";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
 import { MarkdownBody } from "@/components/MarkdownBody";
+import {
+  InteractionGuideSheet,
+  InteractionGuideText,
+} from "@/components/InteractionGuide";
 import type { MentionOption } from "@/components/MarkdownEditor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -56,6 +60,10 @@ import {
   type SuggestTasksInteraction,
   type SuggestedTaskTreeNode,
 } from "@/lib/issue-thread-interactions";
+import {
+  interactionGuideSummary,
+  needsInteractionGuide,
+} from "@/lib/interaction-guide";
 import { cn } from "@/lib/utils";
 import { QuestionForm } from "./QuestionForm";
 import {
@@ -385,9 +393,9 @@ function ReceiptDisclosure({
     request = (
       <div className="grid gap-3">
         {questionSet.description ? (
-          <p className="text-sm text-muted-foreground">
+          <MarkdownBody className="text-sm text-muted-foreground">
             {questionSet.description}
-          </p>
+          </MarkdownBody>
         ) : null}
         {questionSet.questions.map((question) => {
           const answer = response?.answers[question.id];
@@ -408,9 +416,9 @@ function ReceiptDisclosure({
               ) : null}
               <p className="text-sm text-foreground">{question.prompt}</p>
               {question.helpText ? (
-                <p className="mt-0.5 text-xs text-muted-foreground">
+                <MarkdownBody className="mt-0.5 text-xs text-muted-foreground">
                   {question.helpText}
-                </p>
+                </MarkdownBody>
               ) : null}
               <p className="mt-1 text-sm font-medium text-foreground">
                 Answer: {values.length > 0 ? values.join(", ") : "No answer"}
@@ -427,7 +435,9 @@ function ReceiptDisclosure({
       .map((option) => option.label);
     request = (
       <div>
-        <p className="text-sm text-foreground">{interaction.payload.prompt}</p>
+        <MarkdownBody className="text-sm text-foreground">
+          {interaction.payload.prompt}
+        </MarkdownBody>
         {interaction.status === "accepted" ? (
           <p className="mt-1 text-sm font-medium text-foreground">
             Answer:{" "}
@@ -454,7 +464,9 @@ function ReceiptDisclosure({
     );
     request = (
       <div>
-        <p className="text-sm text-foreground">{interaction.payload.prompt}</p>
+        <MarkdownBody className="text-sm text-foreground">
+          {interaction.payload.prompt}
+        </MarkdownBody>
         {decidedItems.length > 0 ? (
           <ul className="mt-2 grid gap-1 text-sm">
             {decidedItems.map((item) => {
@@ -516,7 +528,9 @@ function ReceiptDisclosure({
   } else {
     request = (
       <div className="grid gap-2">
-        <p className="text-sm text-foreground">{interaction.payload.prompt}</p>
+        <MarkdownBody className="text-sm text-foreground">
+          {interaction.payload.prompt}
+        </MarkdownBody>
         {interaction.payload.detailsMarkdown ? (
           <div className="text-sm">
             <MarkdownBody externalReferences={externalReferences}>
@@ -820,6 +834,7 @@ function ConfirmationCard({
   const [working, setWorking] = useState<"accept" | "reject" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [revisionUploading, setRevisionUploading] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const collectsRejectReason = Boolean(
     interaction.payload.rejectRequiresReason ||
     interaction.payload.allowDeclineReason ||
@@ -851,96 +866,24 @@ function ConfirmationCard({
     }
   }
 
-  return (
-    <div>
-      {isPlanConfirmation && showPlanPreview ? (
-        <PlanReviewPreview
-          interaction={interaction}
-          planDocument={planDocument}
-        />
-      ) : isPlanConfirmation && rejecting ? null : (
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <p className="min-w-0 flex-1 text-sm leading-5 text-foreground">
-            {isPlanConfirmation
-              ? "Do you accept this plan?"
-              : interaction.payload.prompt}
-          </p>
-          {!isPlanConfirmation ? (
-            <CompactTarget interaction={interaction} />
-          ) : null}
-        </div>
-      )}
-      {!isPlanConfirmation && interaction.payload.detailsMarkdown ? (
-        <Details>
-          <MarkdownBody externalReferences={externalReferences}>
-            {interaction.payload.detailsMarkdown}
-          </MarkdownBody>
-        </Details>
-      ) : null}
-      {interaction.payload.toolAction ? (
-        <div className="mt-3 space-y-2 rounded-sm bg-muted/45 px-3 py-2.5 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <strong>{interaction.payload.toolAction.toolDisplayName}</strong>
-            <span
-              className={cn(
-                "text-xs font-medium capitalize",
-                interaction.payload.toolAction.risk === "destructive"
-                  ? "text-destructive"
-                  : "text-muted-foreground",
-              )}
-            >
-              {interaction.payload.toolAction.risk} risk
-            </span>
-            <span className="ml-auto text-xs text-muted-foreground">
-              Expires{" "}
-              {new Date(
-                interaction.payload.toolAction.expiresAt,
-              ).toLocaleString()}
-            </span>
-          </div>
-          <MarkdownBody externalReferences={externalReferences}>
-            {interaction.payload.toolAction.previewMarkdown}
-          </MarkdownBody>
-          <details>
-            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-              Arguments and audit hash
-            </summary>
-            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-foreground">
-              {interaction.payload.toolAction.argumentsSummaryJson}
-            </pre>
-            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-              {interaction.payload.toolAction.argumentsHash}
-            </p>
-          </details>
-        </div>
-      ) : null}
-      {interaction.payload.secretProposal ? (
-        <dl className="mt-3 grid gap-2 rounded-sm bg-muted/45 px-3 py-2.5 text-sm">
-          <div>
-            <dt className="text-xs text-muted-foreground">Secret</dt>
-            <dd>{interaction.payload.secretProposal.sourceSecretLabel}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Binding</dt>
-            <dd className="font-mono text-xs">
-              {interaction.payload.secretProposal.configPath} →{" "}
-              {interaction.payload.secretProposal.targetAgentName}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Why</dt>
-            <dd>{interaction.payload.secretProposal.justification}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Expires</dt>
-            <dd>
-              {new Date(
-                interaction.payload.secretProposal.expiresAt,
-              ).toLocaleString()}
-            </dd>
-          </div>
-        </dl>
-      ) : null}
+  // Long or step-by-step text opens in the guide (GRE-916). A plan keeps its
+  // own preview, so only plain confirmations use the guide.
+  const prompt = interaction.payload.prompt;
+  const details = interaction.payload.detailsMarkdown?.trim() || null;
+  const promptNeedsGuide = !isPlanConfirmation && needsInteractionGuide(prompt);
+  const detailsNeedGuide =
+    !isPlanConfirmation && !promptNeedsGuide && needsInteractionGuide(details);
+  const guideMarkdown = promptNeedsGuide
+    ? [prompt, details].filter(Boolean).join("\n\n")
+    : detailsNeedGuide
+      ? details
+      : null;
+  const guideTitle =
+    interaction.title ??
+    (promptNeedsGuide ? interactionGuideSummary(prompt) : prompt);
+
+  const actionArea = (
+    <>
       {rejecting ? (
         <div className={cn("space-y-2", !isPlanConfirmation && "mt-3")}>
           <p
@@ -1048,6 +991,134 @@ function ConfirmationCard({
           </>
         )}
       </ActionRow>
+    </>
+  );
+
+  return (
+    <div>
+      {isPlanConfirmation && showPlanPreview ? (
+        <PlanReviewPreview
+          interaction={interaction}
+          planDocument={planDocument}
+        />
+      ) : isPlanConfirmation && rejecting ? null : (
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          {isPlanConfirmation ? (
+            <p className="min-w-0 flex-1 text-sm leading-5 text-foreground">
+              Do you accept this plan?
+            </p>
+          ) : promptNeedsGuide ? (
+            <InteractionGuideText
+              markdown={prompt}
+              onOpenGuide={() => setGuideOpen(true)}
+              externalReferences={externalReferences}
+              className="min-w-0 flex-1 text-sm leading-5 text-foreground"
+            />
+          ) : (
+            <MarkdownBody
+              className="min-w-0 flex-1 text-sm leading-5 text-foreground"
+              externalReferences={externalReferences}
+            >
+              {prompt}
+            </MarkdownBody>
+          )}
+          {!isPlanConfirmation ? (
+            <CompactTarget interaction={interaction} />
+          ) : null}
+        </div>
+      )}
+      {detailsNeedGuide ? (
+        <InteractionGuideText
+          markdown={details}
+          onOpenGuide={() => setGuideOpen(true)}
+          externalReferences={externalReferences}
+          className="mt-2 text-sm text-muted-foreground"
+        />
+      ) : !isPlanConfirmation && !promptNeedsGuide && details ? (
+        <Details>
+          <MarkdownBody externalReferences={externalReferences}>
+            {details}
+          </MarkdownBody>
+        </Details>
+      ) : null}
+      {interaction.payload.toolAction ? (
+        <div className="mt-3 space-y-2 rounded-sm bg-muted/45 px-3 py-2.5 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <strong>{interaction.payload.toolAction.toolDisplayName}</strong>
+            <span
+              className={cn(
+                "text-xs font-medium capitalize",
+                interaction.payload.toolAction.risk === "destructive"
+                  ? "text-destructive"
+                  : "text-muted-foreground",
+              )}
+            >
+              {interaction.payload.toolAction.risk} risk
+            </span>
+            <span className="ml-auto text-xs text-muted-foreground">
+              Expires{" "}
+              {new Date(
+                interaction.payload.toolAction.expiresAt,
+              ).toLocaleString()}
+            </span>
+          </div>
+          <MarkdownBody externalReferences={externalReferences}>
+            {interaction.payload.toolAction.previewMarkdown}
+          </MarkdownBody>
+          <details>
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+              Arguments and audit hash
+            </summary>
+            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-foreground">
+              {interaction.payload.toolAction.argumentsSummaryJson}
+            </pre>
+            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+              {interaction.payload.toolAction.argumentsHash}
+            </p>
+          </details>
+        </div>
+      ) : null}
+      {interaction.payload.secretProposal ? (
+        <dl className="mt-3 grid gap-2 rounded-sm bg-muted/45 px-3 py-2.5 text-sm">
+          <div>
+            <dt className="text-xs text-muted-foreground">Secret</dt>
+            <dd>{interaction.payload.secretProposal.sourceSecretLabel}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Binding</dt>
+            <dd className="font-mono text-xs">
+              {interaction.payload.secretProposal.configPath} →{" "}
+              {interaction.payload.secretProposal.targetAgentName}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Why</dt>
+            <dd>{interaction.payload.secretProposal.justification}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Expires</dt>
+            <dd>
+              {new Date(
+                interaction.payload.secretProposal.expiresAt,
+              ).toLocaleString()}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+      {/* While the guide is open the answer buttons live in the guide. */}
+      {guideOpen ? null : actionArea}
+      {guideMarkdown ? (
+        <InteractionGuideSheet
+          open={guideOpen}
+          onOpenChange={setGuideOpen}
+          title={guideTitle}
+          lead={!promptNeedsGuide && guideTitle !== prompt ? prompt : null}
+          markdown={guideMarkdown}
+          externalReferences={externalReferences}
+        >
+          {actionArea}
+        </InteractionGuideSheet>
+      ) : null}
     </div>
   );
 }
@@ -1148,9 +1219,12 @@ function CheckboxConfirmationCard({
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 text-sm leading-5 text-foreground">
+        <MarkdownBody
+          className="min-w-0 flex-1 text-sm leading-5 text-foreground"
+          externalReferences={externalReferences}
+        >
           {interaction.payload.prompt}
-        </p>
+        </MarkdownBody>
         <CompactTarget interaction={interaction} />
       </div>
       <div
@@ -1188,9 +1262,9 @@ function CheckboxConfirmationCard({
                 {option.label}
               </span>
               {option.description ? (
-                <span className="block text-xs leading-4 text-muted-foreground">
+                <MarkdownBody className="text-xs leading-4 text-muted-foreground">
                   {option.description}
-                </span>
+                </MarkdownBody>
               ) : null}
             </span>
           </label>

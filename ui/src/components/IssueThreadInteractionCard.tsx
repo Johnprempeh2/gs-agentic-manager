@@ -32,6 +32,8 @@ import {
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { InteractionAudienceLine } from "./InteractionAudienceLine";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
+import { InteractionGuideSheet, InteractionGuideText } from "./InteractionGuide";
+import { interactionGuideSummary, needsInteractionGuide } from "../lib/interaction-guide";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
@@ -1023,7 +1025,7 @@ function QuestionOptionButton({
         {label}
       </div>
       {description ? (
-        <div
+        <MarkdownBody
           className={cn(
             "mt-1 text-sm leading-6",
             selected
@@ -1032,7 +1034,7 @@ function QuestionOptionButton({
           )}
         >
           {description}
-        </div>
+        </MarkdownBody>
       ) : null}
     </button>
   );
@@ -1079,6 +1081,7 @@ function AskUserQuestionsCard({
   const [working, setWorking] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [guideQuestionId, setGuideQuestionId] = useState<string | null>(null);
   const resolutionErrorMessage = useResolutionErrorMessage();
 
   useEffect(() => {
@@ -1190,6 +1193,139 @@ function AskUserQuestionsCard({
     }
   }
 
+  const guideTitle = interaction.payload.title ?? interaction.title ?? null;
+
+  function renderQuestionOptions(question: (typeof questions)[number]) {
+    const hasFreeTextOption = question.options.some(
+      (option) => option.freeText === true,
+    );
+    return (
+      <div className="mt-3 space-y-3">
+        <div
+          className="grid gap-3"
+          role={question.selectionMode === "single" ? "radiogroup" : "group"}
+          aria-labelledby={`${interaction.id}-${question.id}-prompt`}
+        >
+          {question.options.map((option) => {
+            const isFreeText = option.freeText === true;
+            const optionSelected = isFreeText
+              ? otherActiveQuestions[question.id] === true
+              : (draftAnswers[question.id] ?? []).includes(option.id);
+            return (
+              <div key={option.id} className="space-y-2">
+                <QuestionOptionButton
+                  id={`${interaction.id}-${question.id}-${option.id}`}
+                  label={option.label}
+                  description={option.description}
+                  selected={optionSelected}
+                  selectionMode={question.selectionMode}
+                  onClick={() =>
+                    toggleOption(question.id, option.id, question.selectionMode, isFreeText)}
+                />
+                {isFreeText && optionSelected ? (
+                  <Textarea
+                    aria-label={`Describe your answer for ${question.prompt}`}
+                    value={draftOtherAnswers[question.id] ?? ""}
+                    onChange={(event) =>
+                      setDraftOtherAnswers((current) => ({
+                        ...current,
+                        [question.id]: event.target.value,
+                      }))}
+                    placeholder="Type your answer"
+                    className="min-h-24 bg-background text-sm"
+                    autoFocus
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+        {/*
+         * The built-in "Other" link is the fallback free-text affordance.
+         * Suppress it when the agent already authored a first-class
+         * free-text option so the card never shows two ways to type an
+         * answer (PAP-419).
+         */}
+        {hasFreeTextOption || question.allowOther === false ? null : (
+          <>
+            <button
+              type="button"
+              id={`${interaction.id}-${question.id}-other`}
+              aria-expanded={otherActiveQuestions[question.id] === true}
+              className={cn(
+                "text-sm font-medium underline underline-offset-4 transition-colors outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50",
+                otherActiveQuestions[question.id]
+                  ? "text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() =>
+                toggleOption(question.id, OTHER_ANSWER_ID, question.selectionMode)}
+            >
+              Other
+            </button>
+            {otherActiveQuestions[question.id] ? (
+              <Textarea
+                aria-label={`Other answer for ${question.prompt}`}
+                value={draftOtherAnswers[question.id] ?? ""}
+                onChange={(event) =>
+                  setDraftOtherAnswers((current) => ({
+                    ...current,
+                    [question.id]: event.target.value,
+                  }))}
+                placeholder="Type your answer"
+                className="min-h-24 bg-background text-sm"
+              />
+            ) : null}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const submitRow = (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/75 p-4">
+        <div className="text-sm text-muted-foreground">
+          Submit once after you finish the full form.
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {onCancelInteraction ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={working || cancelling}
+              onClick={() => void handleCancel()}
+            >
+              {cancelling ? (
+                <>
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  Cancelling...
+                </>
+              ) : (
+                "Cancel question"
+              )}
+              </Button>
+            ) : null}
+          <Button
+            size="sm"
+            disabled={!onSubmitInteractionAnswers || !canSubmit || working || cancelling}
+            onClick={() => void handleSubmit()}
+          >
+            {working ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              interaction.payload.submitLabel ?? "Submit answers"
+            )}
+          </Button>
+        </div>
+      </div>
+      <InteractionActionError message={actionError} />
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -1207,16 +1343,14 @@ function AskUserQuestionsCard({
       {interaction.status === "pending" ? (
         <div className="space-y-4">
           {questions.map((question, index) => {
-            const hasFreeTextOption = question.options.some(
-              (option) => option.freeText === true,
-            );
+            const guideOpen = guideQuestionId === question.id;
             return (
             <div
               key={question.id}
               className="rounded-2xl border border-border/70 bg-background/82 p-4 shadow-(--shadow-extract-9)"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
                     Question {index + 1}
                   </div>
@@ -1226,11 +1360,12 @@ function AskUserQuestionsCard({
                   >
                     {question.prompt}
                   </div>
-                  {question.helpText ? (
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      {question.helpText}
-                    </p>
-                  ) : null}
+                  <InteractionGuideText
+                    markdown={question.helpText}
+                    onOpenGuide={() => setGuideQuestionId(question.id)}
+                    externalReferences={externalReferences}
+                    className="mt-1 text-sm leading-6 text-muted-foreground"
+                  />
                 </div>
                 <TaskField
                   label={question.selectionMode === "single" ? "Pick" : "Pick many"}
@@ -1239,129 +1374,27 @@ function AskUserQuestionsCard({
                 />
               </div>
 
-              <div className="mt-3 space-y-3">
-                <div
-                  className="grid gap-3"
-                  role={question.selectionMode === "single" ? "radiogroup" : "group"}
-                  aria-labelledby={`${interaction.id}-${question.id}-prompt`}
+              {/* While the guide is open the options live in the guide, so the
+                  page never holds two copies of the same controls. */}
+              {guideOpen ? null : renderQuestionOptions(question)}
+              {needsInteractionGuide(question.helpText) ? (
+                <InteractionGuideSheet
+                  open={guideOpen}
+                  onOpenChange={(open) => setGuideQuestionId(open ? question.id : null)}
+                  title={guideTitle ?? question.prompt}
+                  lead={guideTitle && guideTitle !== question.prompt ? question.prompt : null}
+                  markdown={question.helpText ?? ""}
+                  externalReferences={externalReferences}
                 >
-                  {question.options.map((option) => {
-                    const isFreeText = option.freeText === true;
-                    const optionSelected = isFreeText
-                      ? otherActiveQuestions[question.id] === true
-                      : (draftAnswers[question.id] ?? []).includes(option.id);
-                    return (
-                      <div key={option.id} className="space-y-2">
-                        <QuestionOptionButton
-                          id={`${interaction.id}-${question.id}-${option.id}`}
-                          label={option.label}
-                          description={option.description}
-                          selected={optionSelected}
-                          selectionMode={question.selectionMode}
-                          onClick={() =>
-                            toggleOption(question.id, option.id, question.selectionMode, isFreeText)}
-                        />
-                        {isFreeText && optionSelected ? (
-                          <Textarea
-                            aria-label={`Describe your answer for ${question.prompt}`}
-                            value={draftOtherAnswers[question.id] ?? ""}
-                            onChange={(event) =>
-                              setDraftOtherAnswers((current) => ({
-                                ...current,
-                                [question.id]: event.target.value,
-                              }))}
-                            placeholder="Type your answer"
-                            className="min-h-24 bg-background text-sm"
-                            autoFocus
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-                {/*
-                 * The built-in "Other" link is the fallback free-text affordance.
-                 * Suppress it when the agent already authored a first-class
-                 * free-text option so the card never shows two ways to type an
-                 * answer (PAP-419).
-                 */}
-                {hasFreeTextOption || question.allowOther === false ? null : (
-                  <>
-                    <button
-                      type="button"
-                      id={`${interaction.id}-${question.id}-other`}
-                      aria-expanded={otherActiveQuestions[question.id] === true}
-                      className={cn(
-                        "text-sm font-medium underline underline-offset-4 transition-colors outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50",
-                        otherActiveQuestions[question.id]
-                          ? "text-sky-700 hover:text-sky-800 dark:text-sky-300 dark:hover:text-sky-200"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                      onClick={() =>
-                        toggleOption(question.id, OTHER_ANSWER_ID, question.selectionMode)}
-                    >
-                      Other
-                    </button>
-                    {otherActiveQuestions[question.id] ? (
-                      <Textarea
-                        aria-label={`Other answer for ${question.prompt}`}
-                        value={draftOtherAnswers[question.id] ?? ""}
-                        onChange={(event) =>
-                          setDraftOtherAnswers((current) => ({
-                            ...current,
-                            [question.id]: event.target.value,
-                          }))}
-                        placeholder="Type your answer"
-                        className="min-h-24 bg-background text-sm"
-                      />
-                    ) : null}
-                  </>
-                )}
-              </div>
+                  {renderQuestionOptions(question)}
+                  {submitRow}
+                </InteractionGuideSheet>
+              ) : null}
             </div>
             );
           })}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-background/75 p-4">
-            <div className="text-sm text-muted-foreground">
-              Submit once after you finish the full form.
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {onCancelInteraction ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={working || cancelling}
-                  onClick={() => void handleCancel()}
-                >
-                  {cancelling ? (
-                    <>
-                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                      Cancelling...
-                    </>
-                  ) : (
-                    "Cancel question"
-                  )}
-                  </Button>
-                ) : null}
-              <Button
-                size="sm"
-                disabled={!onSubmitInteractionAnswers || !canSubmit || working || cancelling}
-                onClick={() => void handleSubmit()}
-              >
-                {working ? (
-                  <>
-                    <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                    Submitting...
-                  </>
-                ) : (
-                  interaction.payload.submitLabel ?? "Submit answers"
-                )}
-              </Button>
-            </div>
-          </div>
-
-          <InteractionActionError message={actionError} />
+          {guideQuestionId ? null : submitRow}
         </div>
       ) : interaction.status === "cancelled" ? (
         <div className="rounded-2xl border border-rose-300/60 bg-rose-50/85 p-4 text-sm leading-6 text-rose-950 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-100">
@@ -2539,6 +2572,7 @@ function RequestConfirmationCard({
 }) {
   const [working, setWorking] = useState<"accept" | "reject" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
   const resolutionErrorMessage = useResolutionErrorMessage();
   const [shots, setShots] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -2616,16 +2650,130 @@ function RequestConfirmationCard({
     }
   }
 
+  // Long or step-by-step text opens in the guide (GRE-916). When the prompt
+  // itself carries the steps, the card shows its summary and the guide shows
+  // the prompt and the details together.
+  const prompt = interaction.payload.prompt;
+  const details = interaction.payload.detailsMarkdown?.trim() || null;
+  const promptNeedsGuide = needsInteractionGuide(prompt);
+  const guideMarkdown = promptNeedsGuide
+    ? [prompt, details].filter(Boolean).join("\n\n")
+    : needsInteractionGuide(details)
+      ? details
+      : null;
+  const guideTitle = interaction.title
+    ?? (promptNeedsGuide ? interactionGuideSummary(prompt) : prompt);
+  const openGuide = () => setGuideOpen(true);
+
+  const actionRow = (
+    <ConfirmationActionRow
+      resetKey={`${interaction.id}:${interaction.status}`}
+      approveLabel={interaction.payload.acceptLabel ?? CONFIRMATION_APPROVE_LABEL}
+      rejectLabel={CONFIRMATION_REJECT_LABEL}
+      approveVariant={isPlan ? "cta" : "default"}
+      primaryActionOnRight={primaryActionOnRight}
+      allowRevise={allowRevise}
+      rejectRequiresReason={rejectRequiresReason}
+      reasonPlaceholder={reasonPlaceholder}
+      working={working}
+      actionError={actionError}
+      canApprove={Boolean(onAcceptInteraction)}
+      canReject={Boolean(onRejectInteraction)}
+      onApprove={() => void handleAccept()}
+      onReject={(reason) => void handleReject(reason)}
+      composeReason={composeReason}
+      extraReasonSatisfied={shots.length > 0}
+      revisePanelChildren={
+        allowScreenshots ? (
+          <div className="space-y-2">
+            {shots.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {shots.map((shot, index) => (
+                  <div
+                    key={`${shot.url}-${index}`}
+                    className="group relative h-16 w-16 overflow-hidden rounded-sm border border-border/70"
+                  >
+                    <img
+                      src={shot.url}
+                      alt={shot.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove ${shot.name}`}
+                      className="absolute right-0.5 top-0.5 rounded-full bg-background/90 p-0.5 text-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={() =>
+                        setShots((current) => current.filter((_, i) => i !== index))
+                      }
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                void handleAddScreenshots(event.target.value ? event.target.files : null);
+                event.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={working !== null || uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <ImagePlus className="mr-2 h-3.5 w-3.5" />
+                  Attach screenshots
+                </>
+              )}
+            </Button>
+            {uploadError ? (
+              <p className="text-xs text-destructive">{uploadError}</p>
+            ) : null}
+          </div>
+        ) : null
+      }
+    />
+  );
+
   return (
     <div className="space-y-4">
       {interaction.status === "pending" ? (
         <div className="space-y-3 rounded-sm border border-border/70 bg-background/75 p-4">
-          <div className="text-sm leading-6 text-foreground">
-            {interaction.payload.prompt}
-          </div>
-          {interaction.payload.detailsMarkdown ? (
+          {promptNeedsGuide ? (
+            <InteractionGuideText
+              markdown={prompt}
+              onOpenGuide={openGuide}
+              externalReferences={externalReferences}
+              className="text-sm text-foreground"
+            />
+          ) : (
+            <MarkdownBody className="text-sm leading-6 text-foreground" externalReferences={externalReferences}>
+              {prompt}
+            </MarkdownBody>
+          )}
+          {details && !promptNeedsGuide ? (
             <div className="border-t border-border/60 pt-3 text-sm">
-              <MarkdownBody externalReferences={externalReferences}>{interaction.payload.detailsMarkdown}</MarkdownBody>
+              <InteractionGuideText
+                markdown={details}
+                onOpenGuide={openGuide}
+                externalReferences={externalReferences}
+              />
             </div>
           ) : null}
           <RequestConfirmationTargetChip
@@ -2636,89 +2784,22 @@ function RequestConfirmationCard({
       ) : null}
 
       {interaction.status === "pending" ? (
-        <ConfirmationActionRow
-          resetKey={`${interaction.id}:${interaction.status}`}
-          approveLabel={interaction.payload.acceptLabel ?? CONFIRMATION_APPROVE_LABEL}
-          rejectLabel={CONFIRMATION_REJECT_LABEL}
-          approveVariant={isPlan ? "cta" : "default"}
-          primaryActionOnRight={primaryActionOnRight}
-          allowRevise={allowRevise}
-          rejectRequiresReason={rejectRequiresReason}
-          reasonPlaceholder={reasonPlaceholder}
-          working={working}
-          actionError={actionError}
-          canApprove={Boolean(onAcceptInteraction)}
-          canReject={Boolean(onRejectInteraction)}
-          onApprove={() => void handleAccept()}
-          onReject={(reason) => void handleReject(reason)}
-          composeReason={composeReason}
-          extraReasonSatisfied={shots.length > 0}
-          revisePanelChildren={
-            allowScreenshots ? (
-              <div className="space-y-2">
-                {shots.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {shots.map((shot, index) => (
-                      <div
-                        key={`${shot.url}-${index}`}
-                        className="group relative h-16 w-16 overflow-hidden rounded-sm border border-border/70"
-                      >
-                        <img
-                          src={shot.url}
-                          alt={shot.name}
-                          className="h-full w-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          aria-label={`Remove ${shot.name}`}
-                          className="absolute right-0.5 top-0.5 rounded-full bg-background/90 p-0.5 text-foreground opacity-0 transition-opacity group-hover:opacity-100"
-                          onClick={() =>
-                            setShots((current) => current.filter((_, i) => i !== index))
-                          }
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(event) => {
-                    void handleAddScreenshots(event.target.value ? event.target.files : null);
-                    event.target.value = "";
-                  }}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={working !== null || uploading}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {uploading ? (
-                    <>
-                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <ImagePlus className="mr-2 h-3.5 w-3.5" />
-                      Attach screenshots
-                    </>
-                  )}
-                </Button>
-                {uploadError ? (
-                  <p className="text-xs text-destructive">{uploadError}</p>
-                ) : null}
-              </div>
-            ) : null
-          }
-        />
+        <>
+          {/* While the guide is open the answer buttons live in the guide. */}
+          {guideOpen ? null : actionRow}
+          {guideMarkdown ? (
+            <InteractionGuideSheet
+              open={guideOpen}
+              onOpenChange={setGuideOpen}
+              title={guideTitle}
+              lead={!promptNeedsGuide && guideTitle !== prompt ? prompt : null}
+              markdown={guideMarkdown}
+              externalReferences={externalReferences}
+            >
+              {actionRow}
+            </InteractionGuideSheet>
+          ) : null}
+        </>
       ) : (
         <RequestConfirmationResolution interaction={interaction} />
       )}
@@ -2839,7 +2920,7 @@ function CheckboxOptionRow({
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium leading-5 text-foreground">{label}</div>
         {description ? (
-          <p className="mt-0.5 text-sm leading-5 text-muted-foreground">{description}</p>
+          <MarkdownBody className="mt-0.5 text-sm leading-5 text-muted-foreground">{description}</MarkdownBody>
         ) : null}
       </div>
     </label>
@@ -2990,7 +3071,7 @@ function RequestCheckboxConfirmationCard({
         {/* Show each piece of state once: a connection-authorization prompt is
             the same sentence as the card title, so repeating it here is noise. */}
         {interaction.payload.prompt === interaction.title ? null : (
-          <div className="text-sm leading-6 text-foreground">{interaction.payload.prompt}</div>
+          <MarkdownBody className="text-sm leading-6 text-foreground" externalReferences={externalReferences}>{interaction.payload.prompt}</MarkdownBody>
         )}
         {interaction.payload.detailsMarkdown ? (
           <div className="border-t border-border/60 pt-3 text-sm">
@@ -3337,7 +3418,7 @@ function RequestItemVerdictsCard({
       {/* Prompt + details (S1) */}
       <div className="space-y-3 rounded-sm border border-border/70 bg-background/75 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm leading-6 text-foreground">{payload.prompt}</div>
+          <MarkdownBody className="text-sm leading-6 text-foreground" externalReferences={externalReferences}>{payload.prompt}</MarkdownBody>
           <VerdictProgressBadge progress={progress} pendingReason={invalidDraftIds.size > 0} />
         </div>
         {payload.detailsMarkdown ? (
