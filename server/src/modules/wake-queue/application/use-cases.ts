@@ -599,8 +599,11 @@ async function runReleaseRecoveryTail(
         })
       : false;
 
+  // GRE-755: the review lane reads the same open-blocker fact. A reviewer run
+  // queued behind an open blocker is cancelled at dispatch, so the review
+  // waits for the blockers-resolved wake instead.
   const hasExplicitBlockerPath =
-    immediateApplies && !reviewParticipantApplies
+    immediateApplies || reviewParticipantApplies
       ? await transaction.hasExplicitBlockerPath({
           companyId: issue.companyId,
           issueId: issue.id,
@@ -640,6 +643,7 @@ async function runReleaseRecoveryTail(
       isExecutionReviewParticipantRecoveryRun:
         isExecutionReviewParticipantRecoveryRun(run),
       reviewerWaitingOnCheck,
+      hasOpenBlocker: hasExplicitBlockerPath,
     },
     immediate: {
       applies: immediateApplies,
