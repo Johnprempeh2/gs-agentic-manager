@@ -56,7 +56,7 @@ test("the committed CI budgets fail on a regressed S2 report and pass at baselin
 
 // A report holding exactly the committed baseline for every budget read from `file`.
 function fixtureFor(file) {
-  const report = {};
+  const report = { measuredAt: new Date().toISOString() };
   for (const budget of config.budgets.filter((entry) => file.endsWith(config.inputs[entry.input]))) {
     const set = (dotted, value) => {
       const keys = dotted.split(".");
@@ -72,7 +72,7 @@ function fixtureFor(file) {
 test("the committed R2 budgets judge the platform rate, not login refusals, and floor the unattended share", () => {
   const r2 = config.budgets.filter((budget) => budget.number === "R2");
   assert.deepEqual(r2.map((budget) => budget.path).sort(), ["r2.platformFailureRate", "r2.unattendedRecoveryShare"]);
-  const report = (fields) => ({ r2: { platformFinished: 200, failuresWithIssue: 50, platformFailureRate: 0.03, unattendedRecoveryShare: 0.5, ...fields } });
+  const report = (fields) => ({ measuredAt: new Date().toISOString(), r2: { platformFinished: 200, failuresWithIssue: 50, platformFailureRate: 0.03, unattendedRecoveryShare: 0.5, ...fields } });
   const failing = (fields) => checkBudgets(config, { group: "weekly", readReport: () => report(fields) })
     .results.filter((entry) => entry.number === "R2" && entry.status === "fail").map((entry) => entry.id);
   assert.deepEqual(failing({}), []);
@@ -131,8 +131,9 @@ test("a watch row does not change the exit code", () => {
   const dir = mkdtempSync(join(tmpdir(), "metric-budgets-"));
   try {
     const run = (rate) => {
-      writeFileSync(join(dir, "report.json"), JSON.stringify({ r2: { rate } }));
+      writeFileSync(join(dir, "report.json"), JSON.stringify({ measuredAt: new Date().toISOString(), r2: { rate } }));
       writeFileSync(join(dir, "budgets.json"), JSON.stringify({
+        reportMaxAgeHours: { weekly: 48 },
         inputs: { r: join(dir, "report.json") },
         budgets: [{ id: "r2", number: "R2", group: "weekly", input: "r", path: "r2.rate", baseline: 0.0188, max: 0.08 }],
       }));
@@ -153,13 +154,46 @@ test("a watch row does not change the exit code", () => {
   }
 });
 
-test("the Measured column shows report age, marks reports past the group limit STALE, and keeps the exit code (GRE-820)", () => {
+test("both committed budget files fail weekly reports after 2 days and ci / S2 reports after 6 hours (GRE-837)", () => {
+  const host = JSON.parse(readFileSync(resolve(import.meta.dirname, "budgets.keystone-host.json"), "utf8"));
+  for (const file of [config, host]) assert.deepEqual(file.reportMaxAgeHours, { weekly: 48, ci: 6 });
+});
+
+test("a fresh report passes; an old or undated report fails with its age and limit (GRE-837)", () => {
+  const now = Date.parse("2026-10-05T12:00:00Z");
+  const hoursAgo = (hours) => new Date(now - hours * 3600_000).toISOString();
+  const check = (group, report, limits = { weekly: 48, ci: 6 }) => checkBudgets(
+    { reportMaxAgeHours: limits, inputs: { r: "r.json" }, budgets: [{ id: "b", number: "R2", group, input: "r", path: "v", baseline: 1, max: 5 }] },
+    { group, readReport: () => report, now },
+  ).results[0];
+  const fresh = check("weekly", { measuredAt: hoursAgo(47), v: 1 });
+  assert.equal(fresh.status, "pass");
+  assert.equal(fresh.reason, "within budget");
+  const old = check("weekly", { measuredAt: hoursAgo(72), v: 1 });
+  assert.equal(old.status, "fail");
+  assert.equal(old.reason, "report is 72 h old (limit 48 h)");
+  assert.match(formatRow(old), /\| FAIL: report is 72 h old \(limit 48 h\) \| 3d ago STALE \(max 2d\) \|$/);
+  assert.equal(check("ci", { measuredAt: hoursAgo(5.9), v: 1 }).status, "pass");
+  assert.equal(check("ci", { measuredAt: hoursAgo(7), v: 1 }).reason, "report is 7 h old (limit 6 h)");
+  assert.equal(check("weekly", { measuredAt: hoursAgo(72), v: 9 }).reason, "report is 72 h old (limit 48 h); 9 > max 5", "both reasons show");
+  const watched = check("weekly", { measuredAt: hoursAgo(72), v: 4 });
+  assert.equal(watched.watch, undefined, "an old row is FAIL, not PASS (watch)");
+  const undated = check("weekly", { v: 1 });
+  assert.equal(undated.status, "fail");
+  assert.equal(undated.reason, "report has no measuredAt");
+  assert.match(formatRow(undated), /\| FAIL: report has no measuredAt \| unknown STALE \|$/);
+  assert.equal(check("weekly", { measuredAt: "not a date", v: 1 }).reason, 'report measuredAt "not a date" is not a date');
+  assert.equal(check("weekly", { measuredAt: hoursAgo(1), v: 1 }, {}).reason, "no reportMaxAgeHours for this group in the budget file", "a budget file without a limit fails closed");
+});
+
+test("the CLI exits 1 on an old or undated report and 0 on a fresh one (GRE-837)", () => {
   const dir = mkdtempSync(join(tmpdir(), "metric-budgets-"));
   const hoursAgo = (hours) => new Date(Date.now() - hours * 3600_000).toISOString();
   try {
     const run = (group, report) => {
       writeFileSync(join(dir, "report.json"), JSON.stringify(report));
       writeFileSync(join(dir, "budgets.json"), JSON.stringify({
+        reportMaxAgeHours: { weekly: 48, ci: 6 },
         inputs: { r: join(dir, "report.json") },
         budgets: [{ id: "b", number: "R2", group, input: "r", path: "v", baseline: 1, max: 5 }],
       }));
@@ -171,27 +205,24 @@ test("the Measured column shows report age, marks reports past the group limit S
     };
     const fresh = run("weekly", { measuredAt: hoursAgo(5), v: 1 });
     assert.equal(fresh.code, 0);
-    assert.match(fresh.out, /\| Result \| Measured \|/);
     assert.match(fresh.out, /\| PASS: within budget \| 5h ago \|/);
     assert.doesNotMatch(fresh.out, /STALE/);
-    const stale = run("weekly", { measuredAt: hoursAgo(72), v: 1 });
-    assert.equal(stale.code, 0, "a stale passing report still exits 0");
-    assert.match(stale.out, /\| 3d ago STALE \(max 2d\) \|/);
-    assert.match(stale.out, /^STALE: /m);
-    assert.equal(run("weekly", { measuredAt: hoursAgo(72), v: 9 }).code, 1, "a stale failing report still exits 1");
-    assert.match(run("ci", { measuredAt: hoursAgo(7), v: 1 }).out, /7h ago STALE \(max 6h\)/);
-    const unknown = run("weekly", { v: 1 });
-    assert.equal(unknown.code, 0);
-    assert.match(unknown.out, /\| unknown \|/);
-    assert.match(run("weekly", { measuredAt: "not a date", v: 1 }).out, /\| unknown \|/);
+    const old = run("weekly", { measuredAt: hoursAgo(72), v: 1 });
+    assert.equal(old.code, 1);
+    assert.match(old.out, /\| FAIL: report is 72 h old \(limit 48 h\) \| 3d ago STALE \(max 2d\) \|/);
+    assert.match(old.out, /^STALE: /m);
+    assert.equal(run("ci", { measuredAt: hoursAgo(7), v: 1 }).code, 1);
+    const undated = run("weekly", { v: 1 });
+    assert.equal(undated.code, 1);
+    assert.match(undated.out, /FAIL: report has no measuredAt/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("the S2 summary prints when the report was measured and marks an old one STALE (GRE-820)", () => {
+test("the S2 summary fails an old S2 report and names its age (GRE-837)", () => {
   const s2 = (measuredAt) => checkBudgets(
-    { inputs: { s2: "m.json" }, budgets: [{ id: "s2-board-cold-p95-unthrottled", number: "S2", group: "ci", input: "s2", path: "v", baseline: 1, max: 5 }] },
+    { reportMaxAgeHours: { ci: 6 }, inputs: { s2: "m.json" }, budgets: [{ id: "s2-board-cold-p95-unthrottled", number: "S2", group: "ci", input: "s2", path: "v", baseline: 1, max: 5 }] },
     { group: "ci", readReport: () => ({ measuredAt, v: 1 }), now: Date.parse("2026-10-05T12:00:00Z") },
   );
   const fresh = summarize(s2("2026-10-05T10:00:00Z"));
@@ -199,7 +230,10 @@ test("the S2 summary prints when the report was measured and marks an old one ST
   assert.match(fresh, /measured: 2026-10-05T10:00:00Z \(2h ago\)/);
   assert.doesNotMatch(fresh, /STALE/);
   const old = s2("2026-09-28T12:00:00Z");
-  assert.equal(old.ok, true, "staleness does not fail the check");
+  assert.equal(old.ok, false);
+  assert.match(summarize(old), /^S2 page-load check: FAIL - over budget or not measured: board cold open p95/);
+  assert.match(summarize(old), /OVER board cold open p95: 1 ms \(limit 5 ms; report is 168 h old \(limit 6 h\)\)/);
   assert.match(summarize(old), /\(7d ago STALE \(max 6h\)\)\n  STALE: /);
-  assert.match(summarize(s2(undefined)), /measured: unknown \(unknown\)/);
+  assert.equal(s2(undefined).ok, false);
+  assert.match(summarize(s2(undefined)), /report has no measuredAt/);
 });

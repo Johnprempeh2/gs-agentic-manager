@@ -61,7 +61,7 @@ test("the S2 check judges only the S2 CI budgets and names what broke", () => {
   assert.ok(selected.every((budget) => budget.number === "S2" && budget.input === "s2"));
 
   const stats = (medianMs, p95Ms) => ({ n: 20, medianMs, p95Ms });
-  const report = (boardP95) => ({ s2: { unthrottled: {
+  const report = (boardP95) => ({ measuredAt: new Date().toISOString(), s2: { unthrottled: {
     issueDetailWarmContentPaint: stats(170, 210),
     issueDetailColdContentPaint: stats(490, 600),
     boardColdReady: stats(470, boardP95),

@@ -7,6 +7,8 @@
     "task": "GRE-501"
   },
   "note": "S2 merge-check budgets for the machine Keystone runs on. budgets.json stays the Apple-silicon calibration; see README.",
+  "reportMaxAgeHours": { "weekly": 48, "ci": 6 },
+  "reportMaxAgeNote": "A row fails when its report's measuredAt is older than this, or missing (GRE-837). Weekly: the routine collects then checks in one run, so 2 days only trips when a collect step was skipped. ci / S2: measured in the same job or merge check, so 6 hours.",
   "inputs": {
     "s2": "test-results/issue-detail-perf/metrics.json"
   },

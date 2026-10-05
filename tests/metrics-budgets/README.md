@@ -3,7 +3,8 @@
 `budgets.json` holds one budget per tracked number. Each budget records its
 baseline, the margin added to it and the limit that results. `check.mjs`
 compares saved reports against those limits. It exits nonzero when a value
-is over its limit, below its minimum sample size, or missing.
+is over its limit, below its minimum sample size, or missing, or when its
+report is too old or undated (see Measured column).
 
 ```sh
 pnpm test:metrics                                  # checker and definition tests
@@ -27,11 +28,16 @@ row in the weekly report, and the owning engineer does the fix.
 ## Measured column
 
 Each row shows how long ago its report was measured (the report's
-`measuredAt`), or `unknown` when the report has none. A report older than its
-group limit (weekly: 2 days; ci: 6 hours, `STALE_MAX_MS` in `check.mjs`) is
-marked `STALE`, and a `STALE:` line follows the table. `pnpm test:metrics:s2`
-prints the same on its `measured:` line. The exit code does not change; failing
-on a stale report is register row 102 and waits for John.
+`measuredAt`). Report paths are fixed and overwritten in place, so a skipped
+collect step would otherwise leave last week's file to be judged. A row
+FAILs when its report is older than `reportMaxAgeHours` for its group in the
+budget file (weekly: 48 h; ci: 6 h), with the reason `report is N h old
+(limit M h)`. A report with no readable `measuredAt` fails too (`report has
+no measuredAt`), and so does a group with no limit in the budget file. The
+Measured column marks those rows `STALE`, and a `STALE:` line follows the
+table. `pnpm test:metrics:s2` fails the same way and prints the age on its
+`measured:` line. Fix: collect or measure again, then rerun the check
+(register row 102, GRE-837).
 
 ## Groups
 
