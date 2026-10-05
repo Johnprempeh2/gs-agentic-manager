@@ -2,6 +2,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { INSTANCE_FEATURE_CATALOG, INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog.js";
+import {
+  applyCloudCatalogDefaults,
+  applyManagedExperimentalOverlay,
+  normalizeExperimentalSettings,
+} from "../../server/src/services/instance-settings.js";
 import { parseManagedConfigEnv } from "../../server/src/services/managed-config.js";
 import {
   CLIENT_DEFAULT_OK,
@@ -60,6 +65,35 @@ test("\"default is OK\" switches are not pinned", () => {
   assert.ok(parsed);
   for (const key of Object.keys(CLIENT_DEFAULT_OK)) {
     assert.equal(Object.hasOwn(parsed.features, key), false, key);
+  }
+});
+
+test("\"default is OK\" switches marked off stay off in a client install (GRE-847, row 116)", () => {
+  const values = buildEditionValues({ edition: "managed", catalogVersion });
+  const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
+  assert.ok(parsed);
+  // What a fresh client install reads when nothing is stored: schema default,
+  // then the Cloud catalog default rule, then the managed overlay.
+  const { experimental } = applyManagedExperimentalOverlay(
+    applyCloudCatalogDefaults(normalizeExperimentalSettings({}), {}, parsed),
+    parsed,
+  );
+  const effective = experimental as unknown as Record<string, unknown>;
+  for (const [key, reason] of Object.entries(CLIENT_DEFAULT_OK)) {
+    if (!/^Off\b/.test(reason)) {
+      assert.match(reason, /compatibility key/i, `${key}: reason must start "Off" or name a compatibility key`);
+      continue;
+    }
+    assert.equal(
+      INSTANCE_FEATURE_CATALOG[key as keyof typeof INSTANCE_FEATURE_CATALOG].cloudDefault,
+      false,
+      `${key} is "default is OK" because it is off, but its catalog cloudDefault is not false: pin it in MANAGED_FEATURES_OFF, or ask Harbor for a brief change`,
+    );
+    assert.equal(
+      effective[key],
+      false,
+      `${key} is "default is OK" because it is off, but a client install reads it as on: pin it in MANAGED_FEATURES_OFF, or ask Harbor for a brief change`,
+    );
   }
 });
 
