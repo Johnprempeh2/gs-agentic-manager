@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, gte, isNotNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, lte, ne, or, sql } from "drizzle-orm";
 import { memoryIngestOutbox, memoryRecords, type Db } from "@greatstone/db";
 import type { MemorySyncState } from "@greatstone/shared";
 import type {
@@ -146,11 +146,13 @@ export async function settleDirectMemoryIngest(
 /**
  * Mirrors the outcome onto the governance row. A plan limit or an outage keeps
  * the record `pending`; only a permanent engine rejection (a parked entry)
- * shows as `failed`, so a named owner can look at it.
+ * shows as `failed`, so a named owner can look at it. A delete entry speaks
+ * only for a tombstone, and a late retain never speaks for one (GRE-886).
  */
 async function setRecordSyncState(
   database: DbOrTransaction,
   recordId: string,
+  op: string,
   input: { state: MemorySyncState; error: string | null; now: Date },
 ) {
   await database
@@ -161,7 +163,12 @@ async function setRecordSyncState(
       ...(input.state === "synced" ? { syncedAt: input.now } : {}),
       updatedAt: input.now,
     })
-    .where(eq(memoryRecords.id, recordId));
+    .where(
+      and(
+        eq(memoryRecords.id, recordId),
+        op === "delete" ? eq(memoryRecords.status, "deleted") : ne(memoryRecords.status, "deleted"),
+      ),
+    );
 }
 
 export function createDbMemoryIngestStore(db: Db): MemoryIngestStore {
@@ -229,9 +236,7 @@ export function createDbMemoryIngestStore(db: Db): MemoryIngestStore {
           .where(held(id, token))
           .returning({ recordId: memoryIngestOutbox.recordId, op: memoryIngestOutbox.op });
         if (!row) return false;
-        if (row.op !== "delete") {
-          await setRecordSyncState(tx, row.recordId, { state: "synced", error: null, now });
-        }
+        await setRecordSyncState(tx, row.recordId, row.op, { state: "synced", error: null, now });
         return true;
       });
     },
@@ -251,9 +256,9 @@ export function createDbMemoryIngestStore(db: Db): MemoryIngestStore {
             updatedAt: now,
           })
           .where(held(id, token))
-          .returning({ recordId: memoryIngestOutbox.recordId });
+          .returning({ recordId: memoryIngestOutbox.recordId, op: memoryIngestOutbox.op });
         if (!row) return false;
-        await setRecordSyncState(tx, row.recordId, { state: "pending", error: `${kind}: ${error}`.slice(0, 500), now });
+        await setRecordSyncState(tx, row.recordId, row.op, { state: "pending", error: `${kind}: ${error}`.slice(0, 500), now });
         return true;
       });
     },
@@ -272,9 +277,9 @@ export function createDbMemoryIngestStore(db: Db): MemoryIngestStore {
             updatedAt: now,
           })
           .where(held(id, token))
-          .returning({ recordId: memoryIngestOutbox.recordId });
+          .returning({ recordId: memoryIngestOutbox.recordId, op: memoryIngestOutbox.op });
         if (!row) return false;
-        await setRecordSyncState(tx, row.recordId, {
+        await setRecordSyncState(tx, row.recordId, row.op, {
           state: "failed",
           error: `${kind}: ${error}`.slice(0, 500),
           now,

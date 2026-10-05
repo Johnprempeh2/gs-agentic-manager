@@ -203,14 +203,15 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(created.body.record).toMatchObject({
       contributorAgentId: mason.id,
       contributorUserId: null,
-      status: "observation",
+      status: "unreviewed",
+      entryType: "observation",
       syncState: "synced",
       scopeKind: "agent",
     });
     expect(fake.state.docs[0]).toMatchObject({
       documentId: created.body.record.id,
       bankId: `gs-${companyId}-main`,
-      tags: expect.arrayContaining([`scope:agent:${mason.id}`, "status:observation", `by:agent:${mason.id}`]),
+      tags: expect.arrayContaining([`scope:agent:${mason.id}`, "type:observation", `by:agent:${mason.id}`]),
     });
 
     const recalled = await request(agent).post(`${base}/recall`).send({ query: "invoices" });

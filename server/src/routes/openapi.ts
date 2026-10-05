@@ -100,6 +100,12 @@ import {
   createAgentTeamSchema,
   // Organization memory
   contributeMemorySchema,
+  createMemoryRelationshipSchema,
+  deleteMemoryRecordSchema,
+  resolveMemoryConflictSchema,
+  reviewMemoryRecordSchema,
+  runMemoryRetentionSchema,
+  supersedeMemoryRecordSchema,
   createMemoryScopeSchema,
   recallMemorySchema,
   updateMemorySettingsSchema,
@@ -5155,6 +5161,92 @@ registry.registerPath({
   tags: ["memory"],
   summary: "Recall memory across the caller's readable scopes; returns available=false when the engine is down",
   request: { params: memoryCompanyParams, body: jsonBody(recallMemorySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+const memoryRecordParams = z.object({ companyId: z.string(), recordId: z.string() });
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/review",
+  tags: ["memory"],
+  summary: "Approve or dispute a memory record; the reviewer is the caller, never the contributor, and needs the right for the record's scope and decision class",
+  request: { params: memoryRecordParams, body: jsonBody(reviewMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/supersede",
+  tags: ["memory"],
+  summary: "Supersede a record with a newer one in the same scope; the replacement becomes approved and the old record stays as history",
+  request: { params: memoryRecordParams, body: jsonBody(supersedeMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/delete",
+  tags: ["memory"],
+  summary: "Delete a record's content everywhere and leave a tombstone; the engine document delete is queued and retried",
+  request: { params: memoryRecordParams, body: jsonBody(deleteMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/history",
+  tags: ["memory"],
+  summary: "Supersession chain, review events and extracted-fact provenance for a record the caller may read",
+  request: { params: memoryRecordParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/relationships",
+  tags: ["memory"],
+  summary: "Explicit relationships of a record the caller may read",
+  request: { params: memoryRecordParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/relationships",
+  tags: ["memory"],
+  summary: "State a relationship between two records in one scope; `contradicts` against an approved record opens a conflict",
+  request: { params: memoryCompanyParams, body: jsonBody(createMemoryRelationshipSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/conflicts",
+  tags: ["memory"],
+  summary: "Possible conflicts in scopes the caller may read, grouped by the approved position they challenge",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({ state: z.enum(["open", "resolved", "all"]).optional() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/conflicts/{conflictId}/resolve",
+  tags: ["memory"],
+  summary: "Resolve a conflict; needs the review right for the approved record and no part in either entry",
+  request: { params: z.object({ companyId: z.string(), conflictId: z.string() }), body: jsonBody(resolveMemoryConflictSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/retention",
+  tags: ["memory"],
+  summary: "List (dry run) or apply memory retention: working notes 90 days after last use, unreviewed 180 days, superseded 1 year",
+  request: { params: memoryCompanyParams, body: jsonBody(runMemoryRetentionSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 

@@ -33,7 +33,9 @@ export type MemoryIngestState =
   | "in_flight"
   | "synced"
   /** A permanent engine rejection (bad request). Kept, never dropped; a named owner must look. */
-  | "needs_attention";
+  | "needs_attention"
+  /** A retain never sent because its record was deleted first (GRE-886). Payload scrubbed. */
+  | "cancelled";
 
 export type MemoryEngineErrorKind =
   | "plan_limit"
