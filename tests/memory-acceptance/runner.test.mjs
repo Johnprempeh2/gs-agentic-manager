@@ -12,7 +12,8 @@ import { PHASE1_TESTS, PHASE2_TESTS, PHASE3_TESTS, runAll } from "./lib/tests.mj
 const { world, scenarios, graph } = loadFixtures();
 const PHASE1 = ["MT-01", "MT-02", "MT-03", "MT-04", "MT-05", "MT-06", "MT-07", "MT-08", "MT-09", "MT-12", "MT-31"];
 // GRE-888. GRE-651 numbering; MT-33 (same question, two clients) is new.
-const PHASE2 = ["MT-10", "MT-10b", "MT-11", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-17", "MT-18", "MT-26", "MT-30", "MT-19", "MT-13"];
+// MT-10c and MT-10d (GRE-934 text check) run last so their org-scope price records stay out of MT-15 and MT-19.
+const PHASE2 = ["MT-10", "MT-10b", "MT-11", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-17", "MT-18", "MT-26", "MT-30", "MT-19", "MT-13", "MT-10c", "MT-10d"];
 // GRE-866: plan GRE-646 section 8, on fixture D9 (fixtures/graph.json).
 const PHASE3 = ["MT-40", "MT-41", "MT-42", "MT-43", "MT-44", "MT-45", "MT-46", "MT-47", "MT-48", "MT-49", "MT-50", "MT-51", "MT-52"];
 const ALL = [...PHASE1, ...PHASE2, ...PHASE3];
@@ -112,13 +113,16 @@ const EXPECTED_RED = {
   // everything earlier tests wrote, so a broken rule upstream shows there too.
   "grant-check-allow+": ["MT-30", "MT-19"],
   "extra-egress+": ["MT-16"],
-  "audit-off+": ["MT-10", "MT-10b", "MT-18", "MT-26", "MT-30", "MT-13"],
+  "audit-off+": ["MT-10", "MT-10b", "MT-18", "MT-26", "MT-30", "MT-13", "MT-10c", "MT-10d"],
   "recall-unavailable+": ["MT-10", "MT-10b", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-13"],
   "self-approval-allowed": ["MT-18"],
   "approve-rights-off": ["MT-26", "MT-30", "MT-19"],
-  "proposal-overwrites-approved": ["MT-10b", "MT-11", "MT-32", "MT-15", "MT-19"],
+  "proposal-overwrites-approved": ["MT-10b", "MT-11", "MT-32", "MT-15", "MT-19", "MT-10c", "MT-10d"],
   // No conflict check, no inferred edge (R-911 ~ R-907) in the phase 3 graph.
-  "conflict-check-off": ["MT-10", "MT-11", "MT-33", "MT-19", "MT-41"],
+  "conflict-check-off": ["MT-10", "MT-11", "MT-33", "MT-19", "MT-10c", "MT-10d", "MT-41"],
+  // Tags only (before GRE-934): the untagged and wrongly tagged price proposals slip through;
+  // the tag rule also groups a cl-brook entry in MT-19's queue.
+  "conflict-check-tags-only": ["MT-19", "MT-10c", "MT-10d"],
   "client-topics-optional": ["MT-10b"],
   "conflict-across-scopes": ["MT-33", "MT-19"],
   "supersede-as-conflict": ["MT-32"],

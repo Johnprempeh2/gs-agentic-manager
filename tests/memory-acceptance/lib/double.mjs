@@ -25,6 +25,7 @@ export const FAULTS = {
   "proposal-overwrites-approved": "A contribution that contradicts an approved decision overwrites it",
   "conflict-check-off": "No conflict check on contribute",
   "client-topics-optional": "A client-scope proposal with no topics is stored (it escapes the topic-based conflict check)",
+  "conflict-check-tags-only": "Conflict check matches shared entities and topics only, so an untagged or wrongly tagged contradiction is missed (before GRE-934)",
   "conflict-across-scopes": "Conflict check compares against approved records in every scope, not just the same one",
   "supersede-as-conflict": "A supersession leaves the conflict between old and new decision open",
   "newest-first": "Recall ranks newest first instead of approved first",
@@ -101,6 +102,28 @@ function contradicts(a, b) {
   const sa = subject(a);
   const shared = [...subject(b)].filter((w) => sa.has(w)).length;
   return shared >= 2 && values(a) !== values(b);
+}
+
+// Tag rule of the gateway (review-store.ts possibleConflictTerms): a shared
+// topic when the entities agree, or a shared entity when one side has no topics.
+function tagsMatch(approved, body) {
+  const norm = (v) => new Set((v ?? []).map((t) => String(t).trim().toLowerCase()).filter(Boolean));
+  const [ea, eb, ta, tb] = [norm(body.entities), norm(approved.entities), norm(body.topics), norm(approved.topics)];
+  const sharedEntities = [...ea].filter((t) => eb.has(t)).length;
+  const sharedTopics = [...ta].filter((t) => tb.has(t)).length;
+  const entitiesAgree = ea.size === 0 || eb.size === 0 || sharedEntities > 0;
+  return (sharedTopics > 0 && entitiesAgree) || ((ta.size === 0 || tb.size === 0) && sharedEntities > 0);
+}
+
+// What a reviewer sees on a conflict: shared subject words and each differing
+// price, as the gateway's text check writes them ("£150/month vs £180/month").
+function sharedTerms(approvedText, text) {
+  const sa = subject(approvedText);
+  const words = [...subject(text)].filter((w) => sa.has(w));
+  const prices = (t) => String(t).match(/£\d+(?:\.\d+)?(?:\/\w+)?/g) ?? [];
+  const theirs = prices(approvedText);
+  const differing = prices(text).filter((p) => !theirs.includes(p)).map((p) => `${p} vs ${theirs.join(" / ")}`);
+  return [...words, ...(theirs.length ? differing : [])];
 }
 
 function dayDiff(a, b) {
@@ -270,7 +293,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
   function queueFor(approved) {
     let item = queue.find((i) => i.kind === "conflict" && i.approvedKey === approved.key);
     if (!item) {
-      item = { id: `Q-${queue.length + 1}`, kind: "conflict", approvedKey: approved.key, approved: approved.id, scope: approved.scope, records: [approved.id], routedTo: "hu-john-syn", createdAt: Date.now() };
+      item = { id: `Q-${queue.length + 1}`, kind: "conflict", approvedKey: approved.key, approved: approved.id, scope: approved.scope, records: [approved.id], conflicts: [], routedTo: "hu-john-syn", createdAt: Date.now() };
       queue.push(item);
     }
     return item;
@@ -315,7 +338,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
           (r) =>
             r.status === "approved" &&
             (on.has("conflict-across-scopes") || r.scope === target) &&
-            contradicts(r.text, text),
+            (on.has("conflict-check-tags-only") ? tagsMatch(r, body) : contradicts(r.text, text)),
         );
     for (const c of conflicts) flags.push(`possible_conflict:${c.id}`);
 
@@ -338,6 +361,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
       relationships.push({ type: "conflicts_with", fromKey: rec.key, from: rec.id, to: c.id, author: "gateway", scope: target });
       const item = queueFor(c);
       if (!item.records.includes(rec.id)) item.records.push(rec.id);
+      item.conflicts.push({ record: rec.id, sharedTerms: sharedTerms(c.text, text) });
       if (on.has("proposal-overwrites-approved")) {
         c.text = text;
         c.version += 1;
@@ -624,7 +648,7 @@ export function createDoubleTarget({ world, faults = [], allowedEgressHosts = ["
       return { reviews: steward.ledger.slice(), runs: steward.runs.slice() };
     },
     async reviewQueue() {
-      return { available: true, items: queue.filter((q) => q.kind === "conflict").map(({ approvedKey, ...i }) => ({ ...i, records: i.records.slice() })) };
+      return { available: true, items: queue.filter((q) => q.kind === "conflict").map(({ approvedKey, ...i }) => ({ ...i, records: i.records.slice(), conflicts: i.conflicts.map((c) => ({ ...c })) })) };
     },
     async stewardQueue() {
       return { available: true, items: queue.map(({ approvedKey, ...i }) => ({ ...i, records: i.records.slice() })) };

@@ -5,6 +5,7 @@
 // | Issue item                    | Tests               |
 // |-------------------------------|---------------------|
 // | 1 price conflict              | MT-10, MT-10b, MT-11|
+// |   text check (GRE-934)        | MT-10c, MT-10d      |
 // | 2 legitimate dated change     | MT-32               |
 // | 3 different-client facts      | MT-33 (new)         |
 // | 4 malicious source text       | MT-14 to MT-17      |
@@ -30,6 +31,11 @@ const REF_RE = /\bR-\d{3}\b/g;
 const LOCAL = {
   // No topics on purpose (MT-10b): Everest's B-lite decision on GRE-888.
   "R-104": { scope: "cl-alder", entities: ["Alder Bakery"], text: "Alder care plan is now £120 per month (synthetic MT-10b untagged probe OTTER-4410-FIG).", marker: "OTTER-4410-FIG" },
+  // GRE-934 text check (MT-10c, MT-10d). Org scope: an untagged proposal is allowed there.
+  // The approved decision carries the right tags; the proposals carry none or the wrong ones.
+  "R-110": { scope: "org", entities: ["Alder Bakery"], topics: ["care plan pricing"], text: "Alder care plan is £180/month." },
+  "R-111": { scope: "org", text: "Alder care plan is £150/month." },
+  "R-112": { scope: "org", entities: ["Birch"], topics: ["onboarding"], text: "Alder care plan is £150/month." },
   "R-917": { scope: "org", text: "Synthetic rogue follow-up note: kitchen rota swapped (MT-17)." },
   "R-918": { scope: "org", text: "Office plant watering rota is Mondays (synthetic MT-18 self-approval probe)." },
   "R-926": { scope: "org", text: "Office printer lease renews in January (synthetic MT-26 approval target)." },
@@ -175,6 +181,46 @@ async function grantsSnapshot(target, ids) {
 
 function reviewDenied(audit, actor) {
   return auditHas(audit, { actor, decision: (d) => d !== "allowed", op: (o) => /approv|review/i.test(String(o)) });
+}
+
+/**
+ * GRE-934: a proposal that states a different price for the same subject opens
+ * a conflict even when its tags are missing or wrong. Scribe writes both sides
+ * (Mason's records are counted exactly in phase 3); John approves R-110.
+ */
+function textCheckTest(id, proposalId, title) {
+  return {
+    id,
+    phase: 2,
+    threat: "T11 price conflict missed by tags (GRE-934 text check)",
+    title,
+    needs: ["review", "getRecord", "reviewQueue"],
+    async run(target, ctx) {
+      await seedApproved(target, ctx, "R-110");
+      const scribe = client(target, "ag-scribe-syn");
+      const { out: write, audit } = await withAudit(target, () => scribe.contribute(contributeBody(rec(ctx, proposalId), "proposal")));
+      if (routeMissing(write)) throw new RouteMissing("contribute route not built");
+      const checks = [];
+      check(checks, write.status >= 200 && write.status < 300, `proposal ${proposalId} stored (got ${write.status} ${JSON.stringify(write.body).slice(0, 200)})`);
+      check(checks, flagsOf(write).includes("R-110") || JSON.stringify(write.body).includes("R-110"), `contribution answer flags a possible conflict with R-110 (got ${flagsOf(write)})`);
+      // The item for approved R-110: `approved` on the double, `approvedPosition` on the gateway.
+      const items = (await queueItems(target)).filter((i) => (i.raw.approved ?? i.raw.approvedPosition?.id) === "R-110");
+      const mine = items.filter((i) => i.refs.includes(proposalId));
+      check(checks, mine.length === 1, `R-110's conflict-queue item holds ${proposalId} (got ${mine.length}; R-110 items ${JSON.stringify(items.map((i) => i.refs))})`);
+      // This proposal's own conflict: `record` is the id on the double, the record on the gateway.
+      const own = (mine[0]?.raw.conflicts ?? []).find((c) => (c.record?.id ?? c.record) === proposalId);
+      const terms = own?.sharedTerms ?? [];
+      check(checks, terms.includes("£150/month vs £180/month"), `${proposalId}'s shared terms name the price difference "£150/month vs £180/month" (got ${JSON.stringify(terms)})`);
+      const john = client(target, "hu-john-syn");
+      const r110 = recOf(must(await john.get("R-110"), "read R-110"));
+      check(checks, r110.status === "approved" && /£180/.test(r110.content ?? r110.text ?? ""), `R-110 still approved at £180 (got ${r110.status})`);
+      const p = recOf(must(await john.get(proposalId), `read ${proposalId}`));
+      check(checks, p.status !== "approved", `${proposalId} not approved (got ${p.status})`);
+      // Not refused: with no engine the gateway stores the record and audits `unavailable`.
+      check(checks, auditHas(audit, { actor: "ag-scribe-syn", op: "contribute", decision: (d) => !/denied|rejected/.test(String(d)) }), "audit row: ag-scribe-syn contribute, not refused");
+      return { checks, observed: { write: write.body, queue: mine.map((i) => i.raw) }, audit };
+    },
+  };
 }
 
 export const PHASE2_TESTS = [
@@ -654,4 +700,8 @@ export const PHASE2_TESTS = [
       return { checks, observed: { ...out, row, enginesBefore: seenBefore }, audit };
     },
   },
+  // Last in phase 2, so the org-scope Alder price records do not reach MT-15's
+  // recall or MT-19's steward pass.
+  textCheckTest("MT-10c", "R-111", "Untagged org proposal 'Alder care plan is £150/month.' opens a conflict with approved £180 (R-110)"),
+  textCheckTest("MT-10d", "R-112", "Proposal tagged Birch / onboarding 'Alder care plan is £150/month.' still opens a conflict with R-110"),
 ];
