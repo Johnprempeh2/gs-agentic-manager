@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import pc from "picocolors";
+import { LEGACY_CLI_PACKAGE_NAME } from "@greatstone/shared/legacy-env";
 import {
   assertManagedInstallStore,
   removeManagedPathBlock,
@@ -29,7 +30,7 @@ function otherServiceDefinitions(platform: NodeJS.Platform, userHomeDir: string,
     ? systemdServiceName(instanceId)
     : `${launchdServiceName(instanceId)}.plist`;
   const pattern = platform === "linux"
-    ? /^(?:gsam|paperclipai)(?:-.+)?\.service$/
+    ? new RegExp(`^(?:gsam|${LEGACY_CLI_PACKAGE_NAME})(?:-.+)?\\.service$`)
     : /^ing\.paperclip\.paperclipai(?:\..+)?\.plist$/;
   return fs.readdirSync(directory)
     .filter((name) => name !== currentName && pattern.test(name))
