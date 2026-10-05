@@ -258,6 +258,43 @@ describeEmbeddedPostgres("company skill import with stripScripts (GRE-757)", () 
     expect(fromParent.strippedFiles[0]?.paths).toEqual(fromFolder.strippedFiles[0]?.paths);
   });
 
+  // GRE-781: the local-folder twin of GRE-775. Importing the skill folder
+  // itself puts SKILL.md at the root, and must see the same files as the parent.
+  it("gives a root-level local skill folder the same inventory as its parent folder", async () => {
+    const companyId = await createCompany();
+    const projectId = randomUUID();
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-strip-root-"));
+    cleanupDirs.add(workspace);
+    const bodies: Record<string, string> = {
+      "SKILL.md": SKILL_MARKDOWN,
+      "reference/audit.md": "# Audit\n",
+      "scripts/data/font-index.json": "{}\n",
+    };
+    for (const entry of UPSTREAM_TREE) {
+      const relative = entry.slice("impeccable/".length);
+      const target = path.join(workspace, entry);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, bodies[relative] ?? "#!/bin/sh\necho launched\n", "utf8");
+    }
+    await db.insert(projects).values({ id: projectId, companyId, name: "Local project" });
+    await db.insert(projectWorkspaces).values({ companyId, projectId, name: "Primary", cwd: workspace, isPrimary: true });
+    const svc = companySkillService(db);
+    const skillFolder = path.join(workspace, "impeccable");
+
+    // Local workspace sources are neither refused nor stripped (only external
+    // ones are), but the scripts must be seen so the skill is flagged as
+    // scripts_executables rather than passed as markdown_only.
+    const folderSkill = (await svc.importFromSource(companyId, skillFolder)).imported[0]!;
+    expect(folderSkill.trustLevel).toBe("scripts_executables");
+    expect(folderSkill.fileInventory.map((entry) => entry.path)).toContain("reference/audit.md");
+    expect(folderSkill.fileInventory.filter((entry) => entry.kind === "script").map((entry) => entry.path))
+      .toEqual(expect.arrayContaining(["scripts/impeccable", "scripts/impeccable.cmd", "scripts/live-browser.js"]));
+
+    const parentSkill = (await svc.importFromSource(companyId, workspace)).imported[0]!;
+    expect(parentSkill.fileInventory).toEqual(folderSkill.fileInventory);
+    expect(parentSkill.trustLevel).toBe(folderSkill.trustLevel);
+  });
+
   it("still refuses local paths outside approved roots, including traversal, even with stripScripts", async () => {
     const companyId = await createCompany();
     const projectId = randomUUID();

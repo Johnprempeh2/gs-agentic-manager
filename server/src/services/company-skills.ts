@@ -1650,11 +1650,15 @@ async function readLocalSkillImports(companyId: string, sourcePath: string): Pro
 
   const imports: ImportedSkill[] = [];
   for (const skillPath of skillPaths) {
-    const skillDir = path.posix.dirname(skillPath);
+    // A path that points straight at the skill folder puts SKILL.md at the
+    // root, where dirname() is "." and no entry starts with "./" (GRE-781).
+    const dir = path.posix.dirname(skillPath);
+    const skillDir = dir === "." ? "" : dir;
+    const prefix = skillDir ? `${skillDir}/` : "";
     const inventory = (await Promise.all(allFiles
-      .filter((entry) => entry === skillPath || entry.startsWith(`${skillDir}/`))
+      .filter((entry) => entry === skillPath || entry.startsWith(prefix))
       .map(async (entry) => {
-        const relative = entry === skillPath ? "SKILL.md" : entry.slice(skillDir.length + 1);
+        const relative = entry === skillPath ? "SKILL.md" : entry.slice(prefix.length);
         return {
           path: normalizePortablePath(relative),
           kind: classifyInventoryKind(
