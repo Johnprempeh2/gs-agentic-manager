@@ -4,7 +4,8 @@
 #
 # Commands:
 #   system-setup   (root)      user, packages, folders, systemd units. Never enables the engine at boot.
-#   install        (gsmemory)  database cluster, pinned venv, models, secrets. Safe to run again.
+#   install        (gsmemory)  database cluster, pinned venv, models, extension, secrets. Safe to run again.
+#   link-gateway   (root)      copy the key and assertion secret to the GSAM user's ~/gs-memory/secrets/gateway.env.
 #   link-claude    (gsmemory)  read a `claude setup-token` token on stdin; engine uses John's Claude plan.
 #   backup         (gsmemory)  pg_dump to ~/gs-memory/backups and the Windows copy folder.
 #   check          (any user)  bind, key and reachability checks. Exit 1 on any failure.
@@ -26,12 +27,16 @@ GS_MEMORY_BACKUP_KEEP="${GS_MEMORY_BACKUP_KEEP:-14}"
 GS_MEMORY_PYTHON="${GS_MEMORY_PYTHON:-python3}"
 GS_MEMORY_TORCH_INDEX="${GS_MEMORY_TORCH_INDEX:-https://download.pytorch.org/whl/cpu}"
 GS_MEMORY_CLAUDE_MODEL="${GS_MEMORY_CLAUDE_MODEL:-claude-sonnet-5}"
+# The user the GSAM server runs as, and where it reads the engine secrets (server/src/services/memory-gateway/hindsight.ts).
+GS_MEMORY_GSAM_USER="${GS_MEMORY_GSAM_USER:-${SUDO_USER:-$(id -un)}}"
+GS_MEMORY_GATEWAY_ENV="${GS_MEMORY_GATEWAY_ENV:-$(getent passwd "$GS_MEMORY_GSAM_USER" | cut -d: -f6)/gs-memory/secrets/gateway.env}"
 
 # Ports that belong to live GSAM. The engine must never use them.
 FORBIDDEN_PORTS=(3100 3200 54329)
 
 APP="$GS_MEMORY_ROOT/app"
 VENV="$APP/venv"
+EXTENSION="$APP/extension"
 PGDATA="$GS_MEMORY_ROOT/pg/data"
 PGRUN="$GS_MEMORY_ROOT/pg/run"
 MODELS="$GS_MEMORY_ROOT/models"
@@ -48,6 +53,9 @@ die() { printf '[gs-memory] ERROR: %s\n' "$*" >&2; exit 1; }
 guard_paths_and_ports() {
   case "$GS_MEMORY_ROOT" in
     */GSAM|*/GSAM/*) die "GS_MEMORY_ROOT must not be under ~/GSAM/ ($GS_MEMORY_ROOT)";;
+  esac
+  case "$GS_MEMORY_GATEWAY_ENV" in
+    */GSAM/*) die "GS_MEMORY_GATEWAY_ENV must not be under ~/GSAM/ ($GS_MEMORY_GATEWAY_ENV)";;
   esac
   local p
   for p in "${FORBIDDEN_PORTS[@]}"; do
@@ -120,13 +128,21 @@ cmd_install() {
   mkdir -p "$APP" "$GS_MEMORY_ROOT/pg" "$PGRUN" "$MODELS" "$SECRETS" "$BACKUPS" "$LOGS" "$GS_MEMORY_ROOT/home"
   chmod 0700 "$GS_MEMORY_ROOT" "$PGRUN" "$SECRETS" "$BACKUPS"
 
-  # Secrets: generated once, never printed, never leave this folder except through `gateway-key`.
+  # Secrets: generated once, never printed, never leave this folder except through `link-gateway`.
   if [[ ! -s "$SECRETS/db.env" ]]; then
     printf 'GS_MEMORY_DB_PASSWORD=%s\n' "$(new_secret)" > "$SECRETS/db.env"
   fi
   if [[ ! -s "$SECRETS/engine.env" ]]; then
     printf 'HINDSIGHT_API_TENANT_API_KEY=%s\n' "$(new_secret)" > "$SECRETS/engine.env"
   fi
+  # The assertion secret (GRE-672) is added to an older engine.env without changing its key.
+  if ! grep -q '^HINDSIGHT_API_TENANT_ASSERTION_SECRET=' "$SECRETS/engine.env"; then
+    local assertion
+    assertion="$(new_secret)"
+    printf 'HINDSIGHT_API_TENANT_ASSERTION_SECRET=%s\nHINDSIGHT_API_OPERATION_VALIDATOR_ASSERTION_SECRET=%s\n' \
+      "$assertion" "$assertion" >> "$SECRETS/engine.env"
+  fi
+  write_gateway_env "$SECRETS/gateway.env"
   chmod 0600 "$SECRETS"/*.env
   # shellcheck disable=SC1091
   source "$SECRETS/db.env"
@@ -134,8 +150,30 @@ cmd_install() {
   install_cluster
   install_venv
   install_models
+  install_extension
   write_hindsight_env
-  log "install done. Start with: sudo systemctl start gs-memory-hindsight (it starts gs-memory-postgres)"
+  log "install done. Next: sudo $APP/setup/gs-memory.sh link-gateway, then sudo systemctl start gs-memory-hindsight"
+}
+
+# The GSAM server's copy of the engine secrets, in the format readMemoryGatewayConfig expects.
+write_gateway_env() {
+  local key assertion
+  key="$(sed -n 's/^HINDSIGHT_API_TENANT_API_KEY=//p' "$SECRETS/engine.env")"
+  assertion="$(sed -n 's/^HINDSIGHT_API_TENANT_ASSERTION_SECRET=//p' "$SECRETS/engine.env")"
+  [[ -n "$key" && -n "$assertion" ]] || die "engine.env has no key or assertion secret"
+  (umask 077; cat > "$1" <<EOF
+# Written by scripts/gs-memory/gs-memory.sh. Engine secrets for the GSAM memory gateway (GRE-672). Mode 600.
+GSAM_MEMORY_ENGINE_URL=http://127.0.0.1:$GS_MEMORY_API_PORT
+GSAM_MEMORY_ENGINE_API_KEY=$key
+GSAM_MEMORY_ASSERTION_SECRET=$assertion
+EOF
+  )
+}
+
+install_extension() {
+  # Only the two runtime modules; the engine never imports from the repo checkout.
+  install -d -m 0700 "$EXTENSION"
+  install -m 0600 "$SCRIPT_DIR/extension/gsam_memory_extension.py" "$SCRIPT_DIR/extension/gsam_memory_assertion.py" "$EXTENSION/"
 }
 
 install_cluster() {
@@ -326,12 +364,21 @@ cmd_restore_test() {
 }
 
 # --------------------------------------------------------------------------------------------
-# gateway-key (root or gsmemory). Prints the engine key once, for the GSAM server's secret store only.
-cmd_gateway_key() {
-  [[ -t 1 ]] && die "pipe this into the GSAM secret store; it will not print to a terminal"
-  # shellcheck disable=SC1091
-  source "$SECRETS/engine.env"
-  printf '%s' "$HINDSIGHT_API_TENANT_API_KEY"
+# link-gateway (root). Copies secrets/gateway.env to the GSAM user's ~/gs-memory/secrets/gateway.env, mode 600.
+# Residual risk (Everest, 5 Oct 2026): agents run as the same user as the GSAM server and can read this file.
+# Accepted for synthetic data only; must be closed before G4 (GRE-646).
+cmd_link_gateway() {
+  guard_paths_and_ports
+  [[ -s "$SECRETS/gateway.env" ]] || die "no $SECRETS/gateway.env; run install first"
+  [[ "$(id -u)" == 0 || "$(id -un)" == "$GS_MEMORY_GSAM_USER" ]] || die "run as root (sudo) or as $GS_MEMORY_GSAM_USER"
+  local dir
+  dir="$(dirname "$GS_MEMORY_GATEWAY_ENV")"
+  install -d -m 0700 "$(dirname "$dir")" "$dir"
+  install -m 0600 "$SECRETS/gateway.env" "$GS_MEMORY_GATEWAY_ENV"
+  if [[ "$(id -u)" == 0 ]]; then
+    chown "$GS_MEMORY_GSAM_USER:" "$(dirname "$dir")" "$dir" "$GS_MEMORY_GATEWAY_ENV"
+  fi
+  log "gateway secrets written to $GS_MEMORY_GATEWAY_ENV (owner $GS_MEMORY_GSAM_USER, mode 600)"
 }
 
 # --------------------------------------------------------------------------------------------
@@ -369,15 +416,56 @@ cmd_check() {
   done
 
   local base="http://127.0.0.1:$GS_MEMORY_API_PORT" code
+  local recall="$base/v1/default/banks/gs-memory-check/memories/recall" body='{"query":"check"}'
+  code="$(curl -s -o /dev/null -w '%{http_code}' "$base/health" || true)"
+  [[ "$code" == 200 ]] && ok "/health -> 200" || bad "/health -> $code"
   code="$(curl -s -o /dev/null -w '%{http_code}' "$base/v1/default/banks" || true)"
   [[ "$code" == 401 || "$code" == 403 ]] && ok "engine API without key -> $code" || bad "engine API without key -> $code"
   code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer wrong-key' "$base/v1/default/banks" || true)"
   [[ "$code" == 401 || "$code" == 403 ]] && ok "engine API with a wrong key -> $code" || bad "engine API with a wrong key -> $code"
   code="$(curl -s -o /dev/null -w '%{http_code}' "$base/mcp/" || true)"
   [[ "$code" == 404 || "$code" == 401 || "$code" == 403 || "$code" == 405 ]] && ok "MCP endpoint -> $code" || bad "MCP endpoint -> $code (expected off)"
+
+  # With the gateway secrets (the GSAM user's gateway.env, or GS_MEMORY_CHECK_KEY / _ASSERTION_SECRET):
+  # the key alone is refused; the key plus a signed assertion is accepted.
+  local secret="${GS_MEMORY_CHECK_ASSERTION_SECRET:-}"
+  if [[ -r "$GS_MEMORY_GATEWAY_ENV" ]]; then
+    printf '  NOTE  %s can read %s (accepted risk until G4, GRE-646)\n' "$(id -un)" "$GS_MEMORY_GATEWAY_ENV"
+    [[ -n "$key" ]] || key="$(sed -n 's/^GSAM_MEMORY_ENGINE_API_KEY=//p' "$GS_MEMORY_GATEWAY_ENV")"
+    [[ -n "$secret" ]] || secret="$(sed -n 's/^GSAM_MEMORY_ASSERTION_SECRET=//p' "$GS_MEMORY_GATEWAY_ENV")"
+  fi
   if [[ -n "$key" ]]; then
     code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "$base/v1/default/banks" || true)"
-    [[ "$code" == 200 ]] && ok "engine API with the gateway key -> 200" || bad "engine API with the gateway key -> $code"
+    [[ "$code" == 401 || "$code" == 403 ]] && ok "gateway key without assertion, list banks -> $code" || bad "gateway key without assertion, list banks -> $code"
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d "$body" "$recall" || true)"
+    [[ "$code" == 401 || "$code" == 403 ]] && ok "gateway key without assertion, recall -> $code" || bad "gateway key without assertion, recall -> $code"
+  fi
+  if [[ -n "$key" && -n "$secret" ]]; then
+    local assertion
+    assertion="$(GS_SECRET="$secret" "$GS_MEMORY_PYTHON" - <<'PY'
+import base64, hashlib, hmac, json, os, secrets, time
+now = int(time.time())
+claims = {"v": 1, "op": "recall", "bank": "gs-memory-check", "read": ["gs-memory-check"], "write": [],
+          "doc": None, "iat": now, "exp": now + 60, "nonce": secrets.token_urlsafe(12)}
+b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+payload = b64(json.dumps(claims, separators=(",", ":")).encode())
+sig = b64(hmac.new(os.environ["GS_SECRET"].encode(), payload.encode(), hashlib.sha256).digest())
+print(f"{payload}.{sig}")
+PY
+)"
+    # The check writes nothing, so its bank does not exist: "Bank ... not found" means the call got past both locks.
+    local reply
+    reply="$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer $key" -H "x-gsam-memory-assertion: $assertion" \
+      -H 'Content-Type: application/json' -d "$body" "$recall" || true)"
+    code="${reply##*$'\n'}"
+    if [[ "$code" == 200 ]] || [[ "$code" == 404 && "$reply" == *"Bank 'gs-memory-check' not found"* ]]; then
+      ok "gateway key + signed assertion, recall -> accepted ($code)"
+    else
+      bad "gateway key + signed assertion, recall -> $code"
+    fi
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" -H "x-gsam-memory-assertion: $assertion" \
+      -H 'Content-Type: application/json' -d "$body" "$base/v1/default/banks/other-bank/memories/recall" || true)"
+    [[ "$code" == 401 || "$code" == 403 ]] && ok "signed assertion for another bank -> $code" || bad "signed assertion for another bank -> $code"
   fi
 
   if [[ "$(id -un)" != "$GS_MEMORY_USER" ]]; then
@@ -408,7 +496,7 @@ case "${1:-}" in
   serve-hindsight) cmd_serve_hindsight;;
   backup) cmd_backup;;
   restore-test) shift; cmd_restore_test "$@";;
-  gateway-key) cmd_gateway_key;;
+  link-gateway) cmd_link_gateway;;
   check) cmd_check;;
   *) usage; exit 2;;
 esac
