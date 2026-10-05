@@ -11,11 +11,14 @@ import {
   environmentLeases, environments, executionWorkspaces, feedbackExports, feedbackVotes, goals, heartbeatRuns,
   invites, issueAttachments, issues,
   issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
-  statusCards, toolApplications, toolConnections, toolProfileEntries, toolProfiles, workspaceOperations,
+  statusCards, toolActionRequests, toolApplications, toolConnections, toolGatewaySessions, toolInvocations,
+  toolMcpGateways, toolMcpGatewayTokens, toolProfileEntries, toolProfiles, toolRuntimeSlots, workspaceOperations,
 } from "@greatstone/db";
+import { eq } from "drizzle-orm";
 import { createApp } from "../app.js";
 import { environmentService } from "../services/environments.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import type { ToolGatewayService } from "../services/tool-gateway.js";
 import { ensureHumanRoleDefaultGrants } from "../services/principal-access-compatibility.js";
 import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
 import { createStorageService } from "../storage/service.js";
@@ -80,8 +83,8 @@ const COMPANY_PREFIX = /^\/api\/companies\/:companyId(?:\/|$)/;
 const ID_ROUTE = /^\/api\/(?!companies\/:companyId(?:\/|$))[^?]*\/:/;
 
 // Id routes left out of the id sweep, by path prefix. Each prefix must still
-// match a live route. "Not seeded yet" entries are company records this sweep
-// does not create yet; the rest do not take a company record id.
+// match a live route. Most do not take a company record id; the rest say where
+// they are checked instead.
 const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/invites/:token": "Public invite link, the token is the credential.",
   "/api/board-claim/:token": "Public board-claim link, the token is the credential.",
@@ -106,7 +109,8 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/agents/me/": "Acts on the calling agent's own company; there is no other company's id to pass.",
   "/api/environment-custom-image-setup-sessions/:sessionId": "Instance-admin only: every handler calls "
     + "assertCanAccessInstanceEnvironments before reading the session, so a company owner is refused before any company check.",
-  "/api/tool-gateway/": "Not seeded yet: gateways, tokens, sessions and runtime slots need a gateway setup.",
+  "/api/tool-gateway/": "Takes the company from the body or query, so this sweep's empty body stops at 400. "
+    + "Swept by the tool-gateway test below: company B sends its own companyId with company A's ids.",
   "/api/plugins/:pluginId": "Plugins are instance-wide (no company column). Company data sits under "
     + "/plugins/:pluginId/companies/:companyId, which is swept, or in the request body, which this sweep does not fill.",
 };
@@ -510,6 +514,121 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const forA = await environmentService(ctx.db).listLeases(environmentId, { companyIds: [companyAId] });
     expect(forA.map((lease) => lease.id)).toEqual([leaseAId]);
   });
+
+  // GRE-822 part 3: `/api/tool-gateway/` routes read the company from the body
+  // or query and check the caller against it. So company B sends its own
+  // companyId, which it may use, with company A's record ids in the path. Every
+  // id route under the prefix is listed from the router, so a new one is covered.
+  it("refuses company B's callers on company A's tool-gateway records", async () => {
+    const id = () => randomUUID();
+    const agentId = id(), runId = id(), profileId = id(), gatewayId = id(), tokenId = id();
+    const sessionId = id(), invocationId = id(), actionRequestId = id(), slotId = id();
+    const profileBId = id(), gatewayBId = id(), tokenBId = id();
+    const gatewayTokenB = `pcgw_${tokenBId}.${randomBytes(32).toString("base64url")}`;
+    const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+    const A = { companyId: companyAId };
+
+    await ctx.db.insert(agents).values({
+      ...A, id: agentId, name: "Company A gateway agent", role: "engineer", adapterType: "process",
+      adapterConfig: {}, runtimeConfig: { heartbeat: { enabled: false } }, status: "active",
+    });
+    await ctx.db.insert(heartbeatRuns).values({ ...A, id: runId, agentId, status: "running" });
+    await ctx.db.insert(toolProfiles).values([
+      { ...A, id: profileId, profileKey: "a-gateway-profile", name: "Company A gateway profile" },
+      { companyId: companyBId, id: profileBId, profileKey: "b-gateway-profile", name: "Company B gateway profile" },
+    ]);
+    await ctx.db.insert(toolMcpGateways).values([
+      { ...A, id: gatewayId, name: "Company A gateway", slug: "a-gateway", profileId },
+      { companyId: companyBId, id: gatewayBId, name: "Company B gateway", slug: "b-gateway", profileId: profileBId },
+    ]);
+    await ctx.db.insert(toolMcpGatewayTokens).values([
+      { ...A, id: tokenId, gatewayId, name: "Company A token", tokenHash: hash(`a-${tokenId}`) },
+      {
+        companyId: companyBId, id: tokenBId, gatewayId: gatewayBId, name: "Company B token",
+        tokenHash: hash(gatewayTokenB), expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    ]);
+    await ctx.db.insert(toolGatewaySessions).values({
+      ...A, id: sessionId, agentId, runId, tokenHash: hash(`a-${sessionId}`),
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    await ctx.db.insert(toolInvocations).values({ ...A, id: invocationId, agentId, runId, toolName: "a_tool" });
+    await ctx.db.insert(toolActionRequests).values({
+      ...A, id: actionRequestId, invocationId, canonicalArgumentsHash: "0".repeat(64),
+      canonicalArgumentsSummary: {} as never,
+    });
+    await ctx.db.insert(toolRuntimeSlots).values({
+      ...A, id: slotId, runtimeKind: "local_stdio", slotKey: `a-${slotId}`, status: "running",
+    });
+
+    const recordIds: Record<string, string> = { gatewayId, tokenId, sessionId, id: actionRequestId, slotId };
+    const gatewayIdRoutes = idRoutes.filter((route) => route.path.startsWith("/api/tool-gateway/"));
+    const mcpRoutes = gatewayIdRoutes.filter((route) => route.path.endsWith("/mcp"));
+    const companyRoutes = gatewayIdRoutes.filter((route) => !route.path.endsWith("/mcp"));
+    expect(companyRoutes.length, "tool-gateway id route discovery broke").toBeGreaterThanOrEqual(8);
+    for (const route of companyRoutes) {
+      expect(route.path.match(/:([A-Za-z0-9_]+)/g)?.every((param) => recordIds[param.slice(1)]),
+        `seed a company A record for ${route.method} ${route.path}`).toBe(true);
+    }
+    const fill = (path: string) => path.replace(/:([A-Za-z0-9_]+)/g, (_match, name: string) => recordIds[name]!);
+
+    // These two parse their body before the lookup, so they need one that parses.
+    const bodies: Record<string, object> = {
+      "PATCH /api/tool-gateway/gateways/:gatewayId": { name: "Renamed by company B" },
+      "POST /api/tool-gateway/gateways/:gatewayId/tokens": { name: "Company B token", clientLabel: "Company B" },
+    };
+    const leaks: string[] = [];
+    const check = (key: string, status: number, refused: Set<number>) => {
+      if (!refused.has(status)) leaks.push(`${key} -> ${status}`);
+    };
+    for (const caller of [agentKeyB, boardOwnerB]) {
+      // Company B's own companyId, with company A's record id in the path.
+      for (const route of companyRoutes) {
+        const res = await call(caller, route.method, `${fill(route.path)}?companyId=${companyBId}`,
+          { ...bodies[`${route.method} ${route.path}`], companyId: companyBId });
+        check(`${caller.name} ${route.method} ${route.path}`, res.status, REFUSED);
+      }
+      // Company A's agent and run, under company B's companyId.
+      const session = await call(caller, "POST", "/api/tool-gateway/sessions", { companyId: companyBId, agentId, runId });
+      check(`${caller.name} POST /api/tool-gateway/sessions (A's agent and run)`, session.status, REFUSED);
+      // Company A's companyId on the routes that list by company.
+      const asA = await call(caller, "POST", "/api/tool-gateway/sessions", { companyId: companyAId, agentId, runId });
+      check(`${caller.name} POST /api/tool-gateway/sessions (A's companyId)`, asA.status, REFUSED);
+      for (const path of ["/api/tool-gateway/runtime-slots", "/api/tool-gateway/audit"]) {
+        const res = await call(caller, "GET", `${path}?companyId=${companyAId}`);
+        check(`${caller.name} GET ${path} (A's companyId)`, res.status, REFUSED);
+      }
+    }
+    // The MCP routes take a gateway token, not a session. The auth middleware
+    // only lets a gateway token through on the public /mcp/gateways/:publicId
+    // path, so here it refuses company B's token before the route runs.
+    const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: {} };
+    const bearerB: Caller = { name: "company B gateway token", headers: { Authorization: `Bearer ${gatewayTokenB}` } };
+    for (const route of mcpRoutes) {
+      const res = await call(bearerB, route.method, fill(route.path), initialize);
+      check(`${bearerB.name} ${route.method} ${route.path}`, res.status, new Set([401, 403, 404, 405]));
+    }
+    expect(leaks).toEqual([]);
+    // Behind the middleware, the gateway service binds a token to its gateway:
+    // company B's token does not open company A's gateway, and does open B's own.
+    const toolGateway = app!.locals.toolGateway as ToolGatewayService;
+    const open = (gateway: string) => toolGateway.initializeNamedGatewayProtocol({ gatewayId: gateway, bearerToken: gatewayTokenB });
+    await expect(open(gatewayId)).rejects.toMatchObject({ status: 401 });
+    await expect(open(gatewayBId)).resolves.toMatchObject({ companyId: companyBId });
+
+    // Nothing in company A changed under the refused calls.
+    const tokens = await ctx.db.select().from(toolMcpGatewayTokens).where(eq(toolMcpGatewayTokens.gatewayId, gatewayId));
+    const [session] = await ctx.db.select().from(toolGatewaySessions).where(eq(toolGatewaySessions.id, sessionId));
+    const [actionRequest] = await ctx.db.select().from(toolActionRequests).where(eq(toolActionRequests.id, actionRequestId));
+    const [slot] = await ctx.db.select().from(toolRuntimeSlots).where(eq(toolRuntimeSlots.id, slotId));
+    const [gateway] = await ctx.db.select().from(toolMcpGateways).where(eq(toolMcpGateways.id, gatewayId));
+    expect({
+      tokens: tokens.map((token) => [token.id, token.revokedAt]), sessionRevoked: session!.revokedAt, actionRequest: actionRequest!.status,
+      slot: slot!.status, gateway: gateway!.name,
+    }).toEqual({
+      tokens: [[tokenId, null]], sessionRevoked: null, actionRequest: "pending", slot: "running", gateway: "Company A gateway",
+    });
+  }, 60_000);
 
   it("keeps every allow-list entry pointed at a live route with a reason", () => {
     const live = new Set(routes.map((route) => `${route.method} ${route.path}`));
