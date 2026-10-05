@@ -723,6 +723,31 @@ describe("CompanyEnvironments — test provider button", () => {
     });
   });
 
+  it("draws the shared focus ring on every field of the add-environment form (GRE-921)", async () => {
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root!.render(renderCompanyEnvironments(queryClient));
+    });
+    await flushReact();
+
+    await act(async () => {
+      click(container.querySelector('[aria-label="Add environment"]'));
+    });
+    await waitForAssertion(() => {
+      expect(getEnvironmentFormPage()?.textContent).toContain("Add environment");
+    });
+
+    const fields = Array.from(
+      getEnvironmentFormPage()!.querySelectorAll<HTMLElement>("input:not([type=checkbox]), select, textarea"),
+    );
+    expect(fields.length).toBeGreaterThanOrEqual(3);
+    for (const field of fields) {
+      expect(field.className).toContain("focus-visible:ring-field-halo");
+    }
+  });
+
   it("opens the edit form on a standalone page with existing values and closes after save", async () => {
     root = createRoot(container);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
