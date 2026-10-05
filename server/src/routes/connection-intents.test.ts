@@ -18,6 +18,7 @@ describe("runtime connection MCP contract", () => {
       {
         name: "connections_search",
         description: CONNECTIONS_SEARCH_TOOL_DESCRIPTION,
+        annotations: { readOnlyHint: true, openWorldHint: false },
         inputSchema: {
           type: "object",
           properties: {
@@ -33,6 +34,7 @@ describe("runtime connection MCP contract", () => {
       {
         name: "connection_request",
         description: CONNECTION_REQUEST_TOOL_DESCRIPTION,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         inputSchema: {
           type: "object",
           properties: {

@@ -7185,7 +7185,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     });
   });
 
-  it("escalates exhausted source-owner repair to the board without a substitute wake", async () => {
+  it("escalates exhausted source-owner repair to the manager without reassigning the source (GRE-753)", async () => {
     const { companyId, agentId, runId, issueId } =
       await seedStrandedIssueFixture({
         status: "in_progress",
@@ -7283,19 +7283,19 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(action).toMatchObject({
       kind: "deliberate_wait_without_target",
       status: "active",
-      ownerType: "board",
-      ownerAgentId: null,
+      ownerType: "agent",
+      ownerAgentId: managerId,
       previousOwnerAgentId: agentId,
       returnOwnerAgentId: agentId,
       maxAttempts: null,
       resolutionNote: "unchanged_source_state_exhausted",
       wakePolicy: expect.objectContaining({
-        type: "board_escalation",
+        type: "manager_escalation",
         reason: "unchanged_source_state_exhausted",
         preservesSourceAssignee: true,
       }),
       evidence: expect.objectContaining({
-        routingPolicy: "board_escalation_no_takeover_v1",
+        routingPolicy: "manager_escalation_once_v1",
         sourceAttemptCount: 5,
         sourceMaxAttempts: 5,
       }),
@@ -7304,7 +7304,8 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(notices.some(comment => comment.metadata?.recovery?.kind === "disposition_repair_escalated")).toBe(true);
     const snapshot = notices.find(comment => comment.metadata?.recovery?.kind === "disposition_repair_escalated")!.metadata!.recovery;
     expect(snapshot).toEqual({ kind: "disposition_repair_escalated", actionId: action!.id, assigneeAgentId: agentId, attemptCount: 5, maxAttempts: 5, reason: "unchanged_source_state_exhausted" });
-    expect(substituteWakes).toHaveLength(0);
+    expect(substituteWakes).toHaveLength(1);
+    expect(substituteWakes[0]).toMatchObject({ reason: "source_scoped_recovery_action" });
     expect(sourceAttemptSix).toHaveLength(0);
   });
 

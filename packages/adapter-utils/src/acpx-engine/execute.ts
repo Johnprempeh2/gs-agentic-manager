@@ -138,6 +138,7 @@ import {
   type RuntimeCacheEntry,
 } from "./run-site-host.js";
 import { createSandboxRunSite, type SandboxRunSite } from "./run-site-sandbox.js";
+import { killCommandHookEntry, withKillCommandHook, writeKillCommandHook } from "../kill-command-hook.js";
 import {
   createRuntimeSpanRunner,
   emitRunPhaseTiming,
@@ -1559,6 +1560,7 @@ async function writePaperclipClaudeSettings(input: {
   stateDir: string;
   agentHome: string;
   companyId: string;
+  killCommandHookPath: string | null;
 }): Promise<PaperclipClaudeSettingsResult> {
   const filePath = path.join(input.cwd, ".claude", "settings.local.json");
   const instanceRoot = defaultPaperclipInstanceDir();
@@ -1614,6 +1616,9 @@ async function writePaperclipClaudeSettings(input: {
     defaultMode,
   };
   const next: Record<string, unknown> = { ...existing, permissions: nextPermissions };
+  if (input.killCommandHookPath) {
+    next.hooks = withKillCommandHook(existing.hooks, killCommandHookEntry(input.killCommandHookPath));
+  }
   await writeFileAtomically({
     target: filePath,
     contents: `${JSON.stringify(next, null, 2)}\n`,
@@ -2044,6 +2049,11 @@ async function buildRuntime(input: {
       stateDir,
       agentHome,
       companyId: agent.companyId,
+      // Refuse pkill, killall and kill by name or pattern: they can match the
+      // live server, which runs as the same user (GRE-746). A remote target
+      // cannot reach the host's processes.
+      killCommandHookPath:
+        executionTarget?.kind === "remote" ? null : await writeKillCommandHook(path.join(stateDir, "hooks")),
     });
     skillCommandNotes.push(
       `Wrote GS Agentic Manager-managed Claude settings to ${paperclipClaudeSettings.filePath} (defaultMode=${paperclipClaudeSettings.defaultMode}${

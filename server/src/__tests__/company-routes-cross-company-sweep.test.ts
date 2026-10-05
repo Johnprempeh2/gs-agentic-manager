@@ -123,9 +123,7 @@ const ID_ROUTES_EMPTY_ANSWER: Record<string, string> = {
 // Id routes that answer another company's caller today. Listed so the sweep
 // passes while the fix is decided (GRE-694, register row 55); delete an entry
 // once its route refuses, the sweep fails until you do.
-const KNOWN_ID_ROUTE_LEAKS: Record<string, string> = {
-  "GET /api/environment-leases/:leaseId": "Only checks board org access, then returns any company's lease by id.",
-};
+const KNOWN_ID_ROUTE_LEAKS: Record<string, string> = {};
 
 type RouteLayer = {
   route?: { path: unknown; methods: Record<string, boolean> };

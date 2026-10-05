@@ -467,8 +467,23 @@ describe("Runs marked finish before update", () => {
     await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
     expect(buttonByText("Release without waiting")).toBeUndefined();
     expect(document.querySelector('[data-testid="release-progress"] [role="status"]')?.textContent).toContain(
-      "not waiting for flagged runs",
+      "not waiting for running runs",
     );
+  });
+
+  it("shows the ACP run wait and lets the board release without it (GRE-746)", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("holding", { waitingForFlaggedRuns: 0, waitingForAcpRuns: 2 }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    expect(document.querySelector('[data-testid="release-progress"] [role="status"]')?.textContent).toContain(
+      "waiting up to 5 min for 2 ACP runs to finish",
+    );
+    await click(buttonByText("Release without waiting"));
+    const dialog = confirmDialog();
+    expect(dialog?.textContent).toContain("2 ACP runs are still running.");
+    await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Release without waiting"));
+    expect(mockReleasesApi.override).toHaveBeenCalledWith("company-1");
   });
 
   it("lets the board mark a running run and clear a flagged one", async () => {

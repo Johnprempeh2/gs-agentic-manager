@@ -1439,6 +1439,40 @@ export function computeTaskDrain(opts: { ttlMs?: number | null } = {}): {
   return { startedAt, expiresAt };
 }
 
+/**
+ * A run whose agent process is tied to this server's stdio (ACP). A hot
+ * restart cannot adopt it: it is drained, checkpointed and retried.
+ */
+export function isServerStdioBoundHotRestartRun(input: {
+  run: Pick<typeof heartbeatRuns.$inferSelect, "contextSnapshot">;
+  adapterType: string;
+  adapterConfig: unknown;
+}) {
+  const context = parseObject(input.run.contextSnapshot);
+  if (
+    context.processTopology === "server_stdio" ||
+    context.executionEngine === "acp"
+  ) {
+    return true;
+  }
+  if (
+    context.processTopology === "detached" ||
+    context.executionEngine === "cli"
+  ) {
+    return false;
+  }
+  if (
+    !["claude_local", "codex_local", "gemini_local"].includes(
+      input.adapterType,
+    )
+  ) {
+    return false;
+  }
+  return (
+    readNonEmptyString(parseObject(input.adapterConfig).engine) !== "cli"
+  );
+}
+
 /** Assign the given drain as the current task-drain state. */
 export function applyTaskDrain(drain: {
   startedAt: Date;
@@ -14913,36 +14947,6 @@ export function heartbeatService(
       runnerInstanceId: input.run.runnerInstanceId,
       processStartedAt: input.run.processStartedAt?.toISOString() ?? null,
     };
-  }
-
-  function isServerStdioBoundHotRestartRun(input: {
-    run: typeof heartbeatRuns.$inferSelect;
-    adapterType: string;
-    adapterConfig: unknown;
-  }) {
-    const context = parseObject(input.run.contextSnapshot);
-    if (
-      context.processTopology === "server_stdio" ||
-      context.executionEngine === "acp"
-    ) {
-      return true;
-    }
-    if (
-      context.processTopology === "detached" ||
-      context.executionEngine === "cli"
-    ) {
-      return false;
-    }
-    if (
-      !["claude_local", "codex_local", "gemini_local"].includes(
-        input.adapterType,
-      )
-    ) {
-      return false;
-    }
-    return (
-      readNonEmptyString(parseObject(input.adapterConfig).engine) !== "cli"
-    );
   }
 
   async function prepareHotRestartShutdown(

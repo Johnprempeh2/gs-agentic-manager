@@ -7,8 +7,10 @@
 //      cuts an rc-* tag from origin/main (title and changelog) once Fork CI on
 //      that commit is green.
 //   1. holding: new agent runs are held (the task drain) and the release waits
-//      only for running runs flagged "finish before update" (run-update-flags.ts),
-//      unless the board overrides. John can cancel here; live is unchanged.
+//      for running runs flagged "finish before update" (run-update-flags.ts),
+//      and up to 5 min for running ACP runs, which a hot restart cannot keep
+//      (GRE-746), unless the board overrides. John can cancel here; live is
+//      unchanged.
 //      The hold is also written to a file, so the server that starts after the
 //      restart keeps holding until the release is reported.
 //   2. switching / restarting: scripts/greatstone-live-release.sh runs from the
@@ -45,7 +47,7 @@ import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { getServerInfoSnapshot } from "../server-info.js";
 import { accessService } from "./access.js";
 import { isCompanyOwnerOrAdminRole } from "./company-member-roles.js";
-import { applyTaskDrain, getTaskDrainStatus, stopTaskDrain } from "./heartbeat.js";
+import { applyTaskDrain, getTaskDrainStatus, isServerStdioBoundHotRestartRun, stopTaskDrain } from "./heartbeat.js";
 import { issueService } from "./issues.js";
 import { announceLiveRelease } from "./live-release-announce.js";
 import { readHotRestartReportSync, type HotRestartReport } from "./hot-restart.js";
@@ -94,6 +96,11 @@ export interface LiveReleaseEvent {
 }
 
 export const LIVE_RELEASE_WAIT_FOR_RUNS_MS = 60 * 60 * 1000;
+/**
+ * How long a release waits for running ACP runs before the restart. A hot
+ * restart cannot keep them, so they would be cut off and retried (GRE-746).
+ */
+export const LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS = 5 * 60 * 1000;
 export const LIVE_RELEASE_SWITCH_MS = 30 * 60 * 1000;
 export const LIVE_RELEASE_TICK_MS = 10 * 1000;
 export const LIVE_RELEASE_RECORD_ATTEMPTS = 3;
@@ -156,6 +163,8 @@ export interface LiveReleaseJob {
   previousTag: string | null;
   liveTag: string | null;
   waitingForFlaggedRuns: number | null;
+  /** Running ACP runs the switch waits for, at most LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS after the hold starts. */
+  waitingForAcpRuns: number | null;
   overridden: boolean;
   restartReport: RestartReportSummary | null;
   createdAt: string;
@@ -176,6 +185,7 @@ export interface ReleaseProgress {
   targetTitle: string | null;
   state: ReleaseState;
   waitingForFlaggedRuns: number | null;
+  waitingForAcpRuns: number | null;
   overridden: boolean;
   reason: string | null;
   previousTag: string | null;
@@ -283,6 +293,8 @@ export interface LiveReleaseDeps {
   now(): Date;
   /** Running runs among `runIds` (the flagged ones). */
   runningRunIds(runIds: string[]): Promise<string[]>;
+  /** Running runs tied to this server's process (ACP), which a hot restart cannot keep. */
+  runningAcpRunIds(): Promise<string[]>;
   postComment(issueId: string, body: string): Promise<void>;
   /**
    * Whether this person may release from an "Update live?" card on this
@@ -376,6 +388,7 @@ function normalizeJob(raw: Record<string, unknown>, result: LiveReleaseResult | 
   job.previousTag ??= null;
   job.liveTag ??= null;
   job.waitingForFlaggedRuns ??= null;
+  job.waitingForAcpRuns ??= null;
   job.overridden ??= false;
   job.restartReport ??= null;
   job.cutTag ??= false;
@@ -512,6 +525,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     targetTitle: job.title,
     state: job.state,
     waitingForFlaggedRuns: job.state === "holding" ? job.waitingForFlaggedRuns : null,
+    waitingForAcpRuns: job.state === "holding" ? job.waitingForAcpRuns : null,
     overridden: job.overridden,
     reason: job.reason,
     previousTag: job.previousTag,
@@ -621,6 +635,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         targetTitle: null,
         state: "checking",
         waitingForFlaggedRuns: null,
+        waitingForAcpRuns: null,
         overridden: false,
         reason: null,
         previousTag: null,
@@ -676,6 +691,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
           previousTag: live?.tag ?? null,
           liveTag: null,
           waitingForFlaggedRuns: null,
+          waitingForAcpRuns: null,
           overridden: false,
           restartReport: null,
           createdAt: now.toISOString(),
@@ -696,7 +712,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         deps.applyHold(hold);
         await step(job);
         const what = job.kind === "rollback" ? `Rollback to ${tag}` : `Update live to ${tag}`;
-        await comment(job, `${what} started. New agent runs are on hold. Running runs continue through a hot restart; the switch waits only for runs flagged "finish before update" (${job.waitingForFlaggedRuns ?? 0} now, at most ${LIVE_RELEASE_WAIT_FOR_RUNS_MS / 60000} min).`);
+        await comment(job, `${what} started. New agent runs are on hold. The switch waits for runs flagged "finish before update" (${job.waitingForFlaggedRuns ?? 0} now, at most ${LIVE_RELEASE_WAIT_FOR_RUNS_MS / 60000} min) and for running ACP runs, which a hot restart cannot keep (${job.waitingForAcpRuns ?? 0} now, at most ${LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS / 60000} min). Other running runs continue through the hot restart.`);
         return { ok: true, job, progress: toProgress(job) };
       } finally {
         checking = null;
@@ -717,6 +733,18 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         }
         saveJob(job);
         return;
+      }
+      // ACP runs end with the server, so wait a short, fixed time for them to
+      // finish. Past it they are checkpointed and retried, as before (GRE-746).
+      const acpRunning = job.overridden ? 0 : (await deps.runningAcpRunIds()).length;
+      job.waitingForAcpRuns = acpRunning;
+      const acpWaitOver = now.getTime() >= Date.parse(job.createdAt) + LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS;
+      if (acpRunning > 0 && !acpWaitOver) {
+        saveJob(job);
+        return;
+      }
+      if (acpRunning > 0) {
+        await comment(job, `${acpRunning} ACP run(s) still running after ${LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS / 60000} min. The restart stops them and they are retried.`);
       }
       job.state = "switching";
       job.launcherStartedAt = now.toISOString();
@@ -785,7 +813,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       return { ok: true, job, progress: toProgress(job) };
     });
 
-  /** The board releases without waiting for flagged runs. */
+  /** The board releases without waiting for flagged runs or ACP runs. */
   const override = (actor: { actorType: string; actorId: string }) =>
     serial(async (): Promise<StartReleaseResult> => {
       const job = activeJob();
@@ -794,7 +822,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       }
       job.overridden = true;
       saveJob(job);
-      await comment(job, `${actor.actorId} chose not to wait for flagged runs.`);
+      await comment(job, `${actor.actorId} chose not to wait for flagged runs or ACP runs.`);
       await step(job);
       return { ok: true, job, progress: toProgress(job) };
     });
@@ -1179,6 +1207,18 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
         .from(heartbeatRuns)
         .where(and(inArray(heartbeatRuns.id, runIds), eq(heartbeatRuns.status, "running")));
       return rows.map((row) => row.id);
+    },
+    runningAcpRunIds: async () => {
+      const rows = await db
+        .select({
+          run: { id: heartbeatRuns.id, contextSnapshot: heartbeatRuns.contextSnapshot },
+          adapterType: agents.adapterType,
+          adapterConfig: agents.adapterConfig,
+        })
+        .from(heartbeatRuns)
+        .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
+        .where(eq(heartbeatRuns.status, "running"));
+      return rows.filter(isServerStdioBoundHotRestartRun).map((row) => row.run.id);
     },
     postComment: async (issueId, body) => {
       await issues.addComment(issueId, body, {}, { authorType: "system" });

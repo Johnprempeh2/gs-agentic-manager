@@ -149,9 +149,11 @@ function progressHeadline(progress: ReleaseProgress): string {
       return `${verb} ${target}: checking`;
     case "holding": {
       const n = progress.waitingForFlaggedRuns ?? 0;
-      if (progress.overridden) return `${verb} ${target}: holding new runs, not waiting for flagged runs`;
-      if (n === 0) return `${verb} ${target}: holding new runs`;
-      return `${verb} ${target}: holding new runs, waiting for ${plural(n, "run")} marked finish before update`;
+      const acp = progress.waitingForAcpRuns ?? 0;
+      if (progress.overridden) return `${verb} ${target}: holding new runs, not waiting for running runs`;
+      if (n > 0) return `${verb} ${target}: holding new runs, waiting for ${plural(n, "run")} marked finish before update`;
+      if (acp > 0) return `${verb} ${target}: holding new runs, waiting up to 5 min for ${plural(acp, "ACP run")} to finish`;
+      return `${verb} ${target}: holding new runs`;
     }
     case "switching":
       return `${verb} ${target}: switching live`;
@@ -212,7 +214,8 @@ export function ReleaseProgressPanel({
   const bad = progress.state === "rolled_back" || progress.state === "failed";
   const currentIndex = STEPS.findIndex((step) => step.state === progress.state);
   const holding = progress.state === "holding";
-  const waiting = holding && !progress.overridden && (progress.waitingForFlaggedRuns ?? 0) > 0;
+  const waiting =
+    holding && !progress.overridden && (progress.waitingForFlaggedRuns ?? 0) + (progress.waitingForAcpRuns ?? 0) > 0;
 
   return (
     <Card className={cn("gap-4 py-5", bad && "border-destructive")} data-testid="release-progress" data-state={progress.state}>
@@ -586,9 +589,12 @@ export function ReleasesView({
 
   async function onOverride() {
     const n = progress?.waitingForFlaggedRuns ?? 0;
+    const acp = progress?.waitingForAcpRuns ?? 0;
     const ok = await confirm({
       title: "Release without waiting?",
-      description: `${plural(n, "run")} marked finish before update ${n === 1 ? "is" : "are"} still running. They are checkpointed like the others and resume after the update, but may repeat or lose their last step.`,
+      description: n > 0
+        ? `${plural(n, "run")} marked finish before update ${n === 1 ? "is" : "are"} still running. They are checkpointed like the others and resume after the update, but may repeat or lose their last step.`
+        : `${plural(acp, "ACP run")} ${acp === 1 ? "is" : "are"} still running. The restart stops ${acp === 1 ? "it" : "them"} and ${acp === 1 ? "it is" : "they are"} retried, which may repeat the last step.`,
       confirmLabel: "Release without waiting",
       tone: "destructive",
     });

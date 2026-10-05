@@ -227,7 +227,11 @@ Merging does not change the live app. A version goes live in these steps.
    since live, tag the merged `main` as a candidate and write the release note
    (big changes first, then each change, its issue, what to check) on a release
    issue. The candidate is checked and John's release task is ready for his
-   08:00 digest. One candidate per day; a newer merge waits for the next day. Tag it:
+   08:00 digest. One candidate per day; a newer merge waits for the next day.
+   First run `scripts/greatstone-release-audit.sh` (read-only; Flint also runs
+   it at the start of each live check): it shows what live runs against John's
+   open release task, and for each `live-*` tag of the last 7 days marked
+   `NOT CHECKED`, Keystone gives Flint one live check (GRE-767). Tag it:
 
    ```sh
    git fetch origin

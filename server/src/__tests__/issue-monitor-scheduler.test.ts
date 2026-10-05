@@ -27,6 +27,8 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { heartbeatService } from "../services/heartbeat.ts";
+import { createPostgresWakeQueueAdapter } from "../modules/wake-queue/adapters/postgres.ts";
+import { createReleaseIssueExecution } from "../modules/wake-queue/application/use-cases.ts";
 import { normalizeIssueExecutionPolicy, parseIssueExecutionState } from "../services/issue-execution-policy.ts";
 import { REVIEW_WAIT_MONITOR_SERVICE_NAME, REVIEW_WAIT_RECHECK_MS } from "../services/recovery/review-wait.ts";
 import { registerServerAdapter, unregisterServerAdapter } from "../adapters/index.ts";
@@ -852,6 +854,204 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
         .then((rows) => rows.map((row) => row.action));
       expect(actions).toContain("issue.monitor_triggered");
       expect(actions).not.toContain("issue.monitor_deferred");
+    });
+  });
+
+  // GRE-755 (follow-up to GRE-589): a reviewer run on an in_review issue ended
+  // without a decision while the issue had an open blocker. Review recovery
+  // queued execution_review_participant_recovery and dispatch cancelled it at
+  // once (issue_dependencies_blocked): 13 such cancels since 4 Oct.
+  describe("GRE-755: review participant recovery on an issue with an open blocker", () => {
+    /** An in_review issue whose reviewer run ended without a decision, optionally behind an open blocker. */
+    async function seedEndedReview(input: { blocked: boolean; reviewRunStatus?: "succeeded" | "failed" }) {
+      const companyId = randomUUID();
+      const authorAgentId = randomUUID();
+      const reviewerAgentId = randomUUID();
+      const issueId = randomUUID();
+      const reviewRunId = randomUUID();
+      const reviewWakeId = randomUUID();
+      const finishedAt = new Date("2026-04-11T12:00:00.000Z");
+      const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+
+      await db.insert(companies).values({
+        id: companyId,
+        name: "GS Agentic Manager",
+        issuePrefix,
+        requireBoardApprovalForNewAgents: false,
+        defaultResponsibleUserId: "responsible-user",
+      });
+      for (const [id, name] of [[authorAgentId, "Author"], [reviewerAgentId, "Reviewer"]] as const) {
+        await db.insert(agents).values({
+          id,
+          companyId,
+          name,
+          role: "engineer",
+          status: "active",
+          adapterType: "process",
+          adapterConfig: { command: process.execPath, args: ["-e", ""], cwd: process.cwd() },
+          runtimeConfig: { heartbeat: { enabled: false, wakeOnDemand: true } },
+          permissions: {},
+        });
+        seededAgentIds.add(id);
+      }
+      await db.insert(issues).values({
+        id: issueId,
+        companyId,
+        title: "Review behind a blocker",
+        status: "in_review",
+        priority: "medium",
+        assigneeAgentId: authorAgentId,
+        responsibleUserId: "responsible-user",
+        issueNumber: 1,
+        identifier: `${issuePrefix}-1`,
+        executionState: {
+          status: "pending",
+          currentStageId: randomUUID(),
+          currentStageIndex: 0,
+          currentStageType: "review",
+          currentParticipant: { type: "agent", agentId: reviewerAgentId, userId: null },
+          returnAssignee: { type: "agent", agentId: authorAgentId, userId: null },
+          reviewRequest: null,
+          completedStageIds: [],
+          lastDecisionId: null,
+          lastDecisionOutcome: null,
+        },
+      });
+      await db.insert(agentWakeupRequests).values({
+        id: reviewWakeId,
+        companyId,
+        agentId: reviewerAgentId,
+        source: "assignment",
+        triggerDetail: "system",
+        reason: "execution_review_requested",
+        payload: { issueId },
+        status: "completed",
+        runId: reviewRunId,
+        requestedAt: new Date(finishedAt.getTime() - 60_000),
+        finishedAt,
+        updatedAt: finishedAt,
+      });
+      await db.insert(heartbeatRuns).values({
+        id: reviewRunId,
+        companyId,
+        agentId: reviewerAgentId,
+        invocationSource: "assignment",
+        triggerDetail: "system",
+        status: input.reviewRunStatus ?? "succeeded",
+        // A failed run that keeps its conversation goes to the sweep's
+        // bounded retry, not to legacy reconciliation.
+        ...(input.reviewRunStatus === "failed"
+          ? { errorCode: "adapter_failed", resultJson: { conversationContinuation: "continue_conversation_v1" } }
+          : {}),
+        wakeupRequestId: reviewWakeId,
+        contextSnapshot: { issueId, taskId: issueId, wakeReason: "execution_review_requested" },
+        startedAt: new Date(finishedAt.getTime() - 60_000),
+        finishedAt,
+        updatedAt: finishedAt,
+      });
+
+      let blockerIssueId: string | null = null;
+      if (input.blocked) {
+        blockerIssueId = randomUUID();
+        await db.insert(issues).values({
+          id: blockerIssueId,
+          companyId,
+          title: "Blocker",
+          status: "in_progress",
+          priority: "medium",
+          issueNumber: 2,
+          identifier: `${issuePrefix}-2`,
+        });
+        await db.insert(issueRelations).values({
+          companyId,
+          issueId: blockerIssueId,
+          relatedIssueId: issueId,
+          type: "blocks",
+        });
+      }
+      return { companyId, issueId, reviewerAgentId, reviewRunId, blockerIssueId };
+    }
+
+    async function reviewRecoveryWakeups(reviewerAgentId: string) {
+      return db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.agentId, reviewerAgentId))
+        .then((rows) => rows.filter((row) => row.reason === "execution_review_participant_recovery"));
+    }
+
+    async function reviewerRunIds(reviewerAgentId: string) {
+      return db.select({ id: heartbeatRuns.id }).from(heartbeatRuns)
+        .where(eq(heartbeatRuns.agentId, reviewerAgentId))
+        .then((rows) => rows.map((row) => row.id));
+    }
+
+    /** Releases the issue lock held by the ended review run: the path that queued the cancelled runs. */
+    async function releaseReviewRun(companyId: string, issueId: string, runId: string) {
+      await db.update(issues).set({ executionRunId: runId }).where(eq(issues.id, issueId));
+      const release = createReleaseIssueExecution({
+        issueLock: createPostgresWakeQueueAdapter(db, {
+          resolveResponsibleUserId: async () => "responsible-user",
+          getRoutineEnv: async () => ({ routineId: null, env: null, responsibleUserId: null }),
+          resolveSessionBeforeForWakeup: async () => null,
+        }),
+        recovery: {
+          escalateStrandedAssignedIssue: async () => {},
+          escalateStrandedRecoveryIssueInPlace: async () => {},
+          scheduleReviewWaitMonitor: async () => {},
+        },
+      });
+      return release({ companyId, runId, now: new Date() });
+    }
+
+    it("queues no reviewer run when the review run ends while the blocker is open", async () => {
+      const { companyId, issueId, reviewerAgentId, reviewRunId } = await seedEndedReview({ blocked: true });
+
+      const result = await releaseReviewRun(companyId, issueId, reviewRunId);
+
+      expect(result.outcome.kind).toBe("released");
+      expect(await reviewRecoveryWakeups(reviewerAgentId)).toHaveLength(0);
+      expect(await reviewerRunIds(reviewerAgentId)).toEqual([reviewRunId]);
+      const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+      expect(issue).toMatchObject({ status: "in_review", executionRunId: null });
+    });
+
+    it("still queues the reviewer when the review run ends with no blocker", async () => {
+      const { companyId, issueId, reviewerAgentId, reviewRunId } = await seedEndedReview({ blocked: false });
+
+      const result = await releaseReviewRun(companyId, issueId, reviewRunId);
+
+      expect(result.outcome.kind).toBe("queued_review_participant_recovery");
+      expect(await reviewRecoveryWakeups(reviewerAgentId)).toHaveLength(1);
+    });
+
+    it.each(["succeeded", "failed"] as const)(
+      "the stranded-issue sweep creates no reviewer run while the blocker is open (review run %s)",
+      async (reviewRunStatus) => {
+        const { issueId, reviewerAgentId, reviewRunId } = await seedEndedReview({ blocked: true, reviewRunStatus });
+
+        const result = await heartbeatService(db).reconcileStrandedAssignedIssues();
+
+        expect(result.reviewParticipantRequeued).toBe(0);
+        expect(result.escalated).toBe(0);
+        expect(await reviewRecoveryWakeups(reviewerAgentId)).toHaveLength(0);
+        expect(await reviewerRunIds(reviewerAgentId)).toEqual([reviewRunId]);
+        const issue = await db.select().from(issues).where(eq(issues.id, issueId)).then((rows) => rows[0]!);
+        expect(issue.status).toBe("in_review");
+      },
+    );
+
+    it("wakes the reviewer once after the blocker is done", async () => {
+      const { companyId, issueId, reviewerAgentId, reviewRunId, blockerIssueId } =
+        await seedEndedReview({ blocked: true });
+      const heartbeat = heartbeatService(db);
+      expect((await releaseReviewRun(companyId, issueId, reviewRunId)).outcome.kind).toBe("released");
+      await heartbeat.reconcileStrandedAssignedIssues();
+      expect(await reviewRecoveryWakeups(reviewerAgentId)).toHaveLength(0);
+
+      await db.update(issues).set({ status: "done", completedAt: new Date() }).where(eq(issues.id, blockerIssueId!));
+      const first = await heartbeat.reconcileStrandedAssignedIssues();
+      await heartbeat.reconcileStrandedAssignedIssues();
+
+      expect(first.reviewParticipantRequeued).toBe(1);
+      expect(await reviewRecoveryWakeups(reviewerAgentId)).toHaveLength(1);
     });
   });
 });
