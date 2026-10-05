@@ -6,7 +6,7 @@ import { toolConnections } from "@greatstone/db";
 import { aiConnectionService } from "../services/ai-connections.js";
 import { defaultAiConnectionForHire } from "../services/agent-ai-connection-default.js";
 import { assertAiConnectionCreateAccess, canInstallSharedAiConnectionForNewAgent, responsibleUserForAiRequest, validateAiApiKey } from "./ai-connections.js";
-import { isAiConnectionCompatible } from "@greatstone/shared";
+import { isAiConnectionCompatible, normalizeAgentApiKeyScope } from "@greatstone/shared";
 import type { PermissionKey } from "@greatstone/shared";
 import { applyConnectorSkills, resolveConnectorAssignments, annotateConnectorSkills, isConnectorSkill } from "../services/connector-runtime.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
@@ -86,7 +86,7 @@ import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } f
 import { ONBOARDING_FIRST_TASK_SKILL_KEY, GSAM_CORE_SKILL_KEYS } from "../services/company-skills.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
 import { runTranscriptDigestService } from "../services/run-transcript-digests.js";
-import { assertAuthenticated, assertBoard, assertCompanyAccess, assertInstanceAdmin, buildActorSecretContext, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
+import { assertAuthenticated, assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, assertInstanceAdmin, buildActorSecretContext, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
 import { runAdapterLoginStartSpine } from "./adapter-login-route-spine.js";
 import { isLoginCommandSupportedAdapterType } from "../services/login-command.js";
 import {
@@ -5785,6 +5785,14 @@ export function agentRoutes(
     if (!agent) {
       return;
     }
+    if (req.body.scope.kind === "memory_only") {
+      // John's Claude and Codex (GRE-958): only an owner or admin mints one,
+      // and only for a paused agent, so the key never stands in for a worker.
+      assertCompanyOwnerOrAdmin(req, agent.companyId);
+      if (agent.status !== "paused") {
+        throw conflict("Pause the agent before creating a memory-only key");
+      }
+    }
     const key = await svc.createApiKey(id, req.body.name, req.body.scope, {
       responsibleUserId: req.actor.userId ?? null,
     });
@@ -5820,6 +5828,9 @@ export function agentRoutes(
     if (!key || key.agentId !== agent.id) {
       res.status(404).json({ error: "Key not found" });
       return;
+    }
+    if (normalizeAgentApiKeyScope(key.scopeConfig).kind === "memory_only") {
+      assertCompanyOwnerOrAdmin(req, agent.companyId);
     }
 
     const revoked = await svc.revokeKey(agent.id, keyId);

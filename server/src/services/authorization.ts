@@ -1872,6 +1872,16 @@ export function authorizationService(db: Db | DbTransaction) {
       });
     }
 
+    // The route guard already refuses these keys outside memory (GRE-958);
+    // this keeps any action check that is reached from allowing one.
+    if (input.actor.keyScope?.kind === "memory_only") {
+      return deny({
+        action: input.action,
+        reason: "deny_scope",
+        explanation: "Memory-only keys may only use organization memory.",
+      });
+    }
+
     if (input.actor.keyScope?.kind === "skill_test") {
       const skillTestDecision = decideSkillTestAccess({
         action: input.action,

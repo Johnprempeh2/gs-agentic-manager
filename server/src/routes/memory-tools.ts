@@ -1,7 +1,8 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import type { Db } from "@greatstone/db";
 import { HttpError, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
+import { isMemoryOnlyActor } from "../middleware/memory-only-key-guard.js";
 import type { MemoryEngine } from "../services/memory-gateway/engine.js";
 import { MEMORY_DISABLED_MESSAGE, memoryGatewayService } from "../services/memory-gateway/service.js";
 import { callMemoryTool, memoryToolDefinitions } from "../services/memory-tools.js";
@@ -17,21 +18,33 @@ import {
 
 /**
  * Agent memory tools over MCP (GRE-672): memory_recall, memory_contribute and
- * memory_get. Only an authenticated, task-bound agent run may call them, and
- * the run's identity is the caller. While the company setting is off the
- * endpoint answers 404 to everything.
+ * memory_get. Only an authenticated, task-bound agent run or a memory_only key
+ * (GRE-958) may call them, and that identity is the caller. While the company
+ * setting is off the endpoint answers 404 to everything.
  */
 export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engineTimeoutMs?: number } = {}) {
   const router = Router();
   const gateway = memoryGatewayService(db, options);
+
+  /**
+   * The caller is the authenticated run, or the agent behind a memory_only key
+   * (GRE-958: John's Claude and Codex, which have no run). Never the body.
+   */
+  async function memoryToolIdentity(req: Request) {
+    const actor = req.actor;
+    if (isMemoryOnlyActor(actor) && actor.source === "agent_key" && actor.agentId && actor.companyId) {
+      return { companyId: actor.companyId, agentId: actor.agentId, runId: null };
+    }
+    const context = await projectToolContext(db, actor, false, "Memory");
+    return { companyId: context.run.companyId, agentId: context.run.agentId, runId: context.run.id };
+  }
 
   router.get("/mcp/memory-tools", (_req, res) => {
     sendMcpGetNotAllowed(res);
   });
 
   router.post("/mcp/memory-tools", async (req, res) => {
-    const context = await projectToolContext(db, req.actor, false, "Memory");
-    const companyId = context.run.companyId;
+    const { companyId, agentId, runId } = await memoryToolIdentity(req);
     assertCompanyAccess(req, companyId);
     if (!(await gateway.getSettings(companyId)).enabled) throw notFound(MEMORY_DISABLED_MESSAGE);
 
@@ -63,16 +76,16 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
         caller: {
           companyId,
           actorType: "agent",
-          actorId: context.run.agentId,
-          agentId: context.run.agentId,
+          actorId: agentId,
+          agentId,
           userId: null,
-          runId: context.run.id,
+          runId,
           isBoardAdmin: false,
         },
       });
       return send({ content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result });
     } catch (error) {
-      if (!(error instanceof HttpError)) logger.error({ err: error, runId: context.run.id }, "memory tool failed");
+      if (!(error instanceof HttpError)) logger.error({ err: error, agentId, runId }, "memory tool failed");
       const text = error instanceof HttpError ? error.message : "Memory tool failed";
       return send({ isError: true, content: [{ type: "text", text }] });
     }
