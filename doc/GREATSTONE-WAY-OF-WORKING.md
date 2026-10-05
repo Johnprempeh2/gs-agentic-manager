@@ -422,8 +422,64 @@ This moves live back to that tag the same way (backup first, then restart). If
 the live server is down it starts it with `~/GSAM/start-live.sh`. If the live
 database is down too, a rollback after a one-click release keeps the backup
 taken before that release. It does not undo database migrations. If the older
-code cannot run on the newer database, restore the backup the release printed;
-ask Keystone for the steps.
+code cannot run on the newer database, restore the backup the release printed
+(below). Each release task says "Migrations: none" or names the migrations
+the candidate adds, so you know before you release if this can happen.
+
+#### Restore the live database from a release backup (John)
+
+Only when the older code fails on the newer database (live does not come up
+after the rollback, or `~/GSAM/logs/live.log` shows a database error). The
+restore puts back the database as it was just before the release. **Work done
+in live after that release is lost**; step 2 keeps a copy of it. No agent may
+be running. Run from the dev checkout, in this order:
+
+```sh
+cd ~/Desktop/Code/gs-clip
+# The file the release printed ("Database backup from before this release: ..."),
+# from the release that added the migration. To find it: ls -t ~/GSAM/backups/release-*/before-*.sql.gz
+BACKUP=~/GSAM/backups/release-<time>-<rc-tag>/before-<rc-tag>-<stamp>.sql.gz
+PREVIOUS=live-YYYY-MM-DD.N        # the live tag before that release
+export BACKUP DB_DIR=~/GSAM/data/instances/default/db
+
+# 1. Stop live (runner, server and database).
+bash -c 'source scripts/greatstone-common.sh && stop_live_server'
+
+# 2. Keep the current database folder, in case you must go back to it.
+cp -a "$DB_DIR" ~/GSAM/backups/db-before-restore-$(date +%Y%m%dT%H%M%S)
+
+# 3. Restore the backup into the live database (it starts and stops it again).
+node cli/node_modules/tsx/dist/cli.mjs --eval '
+(async () => {
+  const { ensureEmbeddedPostgres } = await import("./cli/src/commands/worktree.ts");
+  const { resetPostgresDatabase, runDatabaseRestore } = await import("./packages/db/src/index.ts");
+  const pg = await ensureEmbeddedPostgres(process.env.DB_DIR, 54339, { allowExisting: false });
+  try {
+    const url = (db) => `postgres://paperclip:paperclip@127.0.0.1:${pg.port}/${db}`;
+    await resetPostgresDatabase(url("postgres"), "paperclip");
+    await runDatabaseRestore({ connectionString: url("paperclip"), backupFile: process.env.BACKUP });
+    console.log(`Restored ${process.env.BACKUP} into ${process.env.DB_DIR}`);
+  } finally { await pg.stop(); }
+})().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
+'
+
+# 4. Move the code back and start live. The database is down, so tell the
+#    script which backup to keep instead of taking a new one.
+GSAM_RELEASE_EXISTING_BACKUP="$BACKUP" scripts/greatstone-release.sh "$PREVIOUS"
+#    If it says "live is already on $PREVIOUS" (the automatic rollback moved
+#    the code already), start live instead: ~/GSAM/start-live.sh
+
+# 5. Check: status "ok" and the commit of $PREVIOUS.
+curl -s http://localhost:3100/api/health
+git rev-parse "$PREVIOUS^{commit}"
+```
+
+Step 3 prints `Restored ...`. If it fails, live is still stopped, the code has
+not moved and the copy from step 2 is untouched: put it back with
+`rm -rf "$DB_DIR" && cp -a ~/GSAM/backups/db-before-restore-<stamp> "$DB_DIR"`,
+start live with `~/GSAM/start-live.sh` and tell Keystone. After a restore, tell
+Keystone too, so Flint checks live and the migration is fixed before the next
+candidate.
 
 ### Promote to Stable (John)
 
