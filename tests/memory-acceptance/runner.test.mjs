@@ -7,10 +7,13 @@ import { createDoubleTarget, FAULTS } from "./lib/double.mjs";
 import { d7Items, loadFixtures } from "./lib/fixtures.mjs";
 import { createLiveTarget, loadLiveConfig } from "./lib/live.mjs";
 import { loadGsamConfig } from "./lib/gsam.mjs";
-import { runAll, TESTS } from "./lib/tests.mjs";
+import { PHASE1_TESTS, PHASE2_TESTS, runAll } from "./lib/tests.mjs";
 
 const { world, scenarios } = loadFixtures();
 const PHASE1 = ["MT-01", "MT-02", "MT-03", "MT-04", "MT-05", "MT-06", "MT-07", "MT-08", "MT-09", "MT-12", "MT-31"];
+// GRE-888. GRE-651 numbering; MT-33 (same question, two clients) is new.
+const PHASE2 = ["MT-10", "MT-11", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-17", "MT-18", "MT-26", "MT-30", "MT-19", "MT-13"];
+const ALL = [...PHASE1, ...PHASE2];
 
 async function statuses(faults = []) {
   const report = await runAll(createDoubleTarget({ world, faults }), { scenarios });
@@ -18,7 +21,11 @@ async function statuses(faults = []) {
 }
 
 test("the runner covers exactly the 11 phase 1 tests from GRE-651", () => {
-  assert.deepEqual(TESTS.map((t) => t.id), PHASE1);
+  assert.deepEqual(PHASE1_TESTS.map((t) => t.id), PHASE1);
+});
+
+test("the runner covers the phase 2 exit tests (GRE-888)", () => {
+  assert.deepEqual(PHASE2_TESTS.map((t) => t.id), PHASE2);
 });
 
 test("fixtures are synthetic and internally consistent", () => {
@@ -31,11 +38,29 @@ test("fixtures are synthetic and internally consistent", () => {
   const token = d7Items(scenarios).find((i) => i.id === "D7-token").value;
   assert.match(token, /^ghp_[A-Za-z0-9]{36}$/);
   assert.match(token, /SYNTHETIC/);
+  assert.ok(scenarios.D5.missedDayEntries.every((e) => e.scope !== "cl-brook"), "missed-day entries never touch cl-brook");
+  assert.ok(scenarios.D5.outOfScopeEntries.every((e) => e.scope === "cl-brook"), "out-of-scope entries are cl-brook");
+  const scribe = world.identities.find((i) => i.id === "ag-scribe-syn");
+  assert.ok(scribe.grants.every((g) => !g.rights.includes("approve") && !g.rights.includes("read")), "the seeding agent can only contribute");
 });
 
-test("all 11 tests pass against the correct test double", async () => {
+test("all phase 1 and phase 2 tests pass against the correct test double", async () => {
   const s = await statuses();
-  assert.deepEqual(s, Object.fromEntries(PHASE1.map((id) => [id, "pass"])));
+  assert.deepEqual(s, Object.fromEntries(ALL.map((id) => [id, "pass"])));
+});
+
+test("phase 2 tests pass when run one at a time (each seeds what it needs)", async () => {
+  for (const id of PHASE2) {
+    const report = await runAll(createDoubleTarget({ world }), { scenarios, only: [id], phases: [2] });
+    assert.equal(report.results[0].status, "pass", id);
+  }
+});
+
+test("a target without the phase 2 calls reports phase 2 inconclusive, never pass", async () => {
+  const t = createDoubleTarget({ world });
+  for (const m of ["review", "supersede", "stewardQueue", "remove", "getRecord", "createDirective", "stewardRun", "stewardLedger", "reviewQueue", "recordHistory", "grantsOf", "adminRecordRow", "adminFindText"]) delete t[m];
+  const report = await runAll(t, { scenarios, phases: [2] });
+  for (const r of report.results) assert.equal(r.status, "inconclusive", r.id);
 });
 
 // Output bar: show each test can fail. Every fault must turn its tests red.
@@ -51,7 +76,34 @@ const EXPECTED_RED = {
   "recall-unavailable": ["MT-01", "MT-03", "MT-04", "MT-05"],
   // A recall with no scope named must not reach any client scope.
   "bare-recall-crosses-clients": ["MT-01"],
+  // Phase 2. The extra ids are knock-on effects: MT-19 runs last over
+  // everything earlier tests wrote, so a broken rule upstream shows there too.
+  "grant-check-allow+": ["MT-30", "MT-19"],
+  "extra-egress+": ["MT-16"],
+  "audit-off+": ["MT-10", "MT-18", "MT-26", "MT-30", "MT-13"],
+  "recall-unavailable+": ["MT-10", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-13"],
+  "self-approval-allowed": ["MT-18"],
+  "approve-rights-off": ["MT-26", "MT-30", "MT-19"],
+  "proposal-overwrites-approved": ["MT-11", "MT-32", "MT-15", "MT-19"],
+  "conflict-check-off": ["MT-10", "MT-11", "MT-33", "MT-19"],
+  "conflict-across-scopes": ["MT-33", "MT-19"],
+  "supersede-as-conflict": ["MT-32"],
+  "newest-first": ["MT-10", "MT-32", "MT-15"],
+  "as-of-ignored": ["MT-32"],
+  "trust-content-approval": ["MT-15", "MT-17", "MT-26"],
+  "instruction-flag-off": ["MT-14", "MT-16"],
+  "directives-open": ["MT-17"],
+  "steward-not-idempotent": ["MT-19"],
+  "steward-skip-missed-day": ["MT-19"],
+  "delete-leaves-engine": ["MT-13"],
+  "delete-no-tombstone": ["MT-13"],
 };
+
+// "fault+" entries add phase 2 ids to a phase 1 fault's list.
+for (const key of Object.keys(EXPECTED_RED).filter((k) => k.endsWith("+"))) {
+  EXPECTED_RED[key.slice(0, -1)].push(...EXPECTED_RED[key]);
+  delete EXPECTED_RED[key];
+}
 
 test("every fault is covered by an expectation", () => {
   assert.deepEqual(Object.keys(EXPECTED_RED).sort(), Object.keys(FAULTS).sort());
@@ -60,13 +112,13 @@ test("every fault is covered by an expectation", () => {
 for (const [fault, red] of Object.entries(EXPECTED_RED)) {
   test(`fault ${fault} turns ${red.join(", ")} red and nothing else`, async () => {
     const s = await statuses([fault]);
-    for (const id of PHASE1) assert.equal(s[id], red.includes(id) ? "fail" : "pass", `${id} under ${fault}`);
+    for (const id of ALL) assert.equal(s[id], red.includes(id) ? "fail" : "pass", `${id} under ${fault}`);
   });
 }
 
-test("every phase 1 test is turned red by at least one fault", () => {
+test("every phase 1 and phase 2 test is turned red by at least one fault", () => {
   const covered = new Set(Object.values(EXPECTED_RED).flat());
-  assert.deepEqual(PHASE1.filter((id) => !covered.has(id)), []);
+  assert.deepEqual(ALL.filter((id) => !covered.has(id)), []);
 });
 
 test("live target refuses the live app port", () => {
@@ -93,7 +145,7 @@ test("live target with no engine reports engine tests inconclusive, never pass",
   writeFileSync(path, JSON.stringify({ gatewayUrl: "http://127.0.0.1:9", companyId: "x", engine: { host: "127.0.0.1", restPort: 9, controlPlanePort: 9, postgresPort: 9 }, timeoutMs: 500 }));
   const target = createLiveTarget(loadLiveConfig(path));
   target.seed = async () => {};
-  const report = await runAll(target, { scenarios });
+  const report = await runAll(target, { scenarios, phases: [1] });
   const byId = Object.fromEntries(report.results.map((r) => [r.id, r.status]));
   assert.equal(report.preflight.engineUp, false);
   for (const id of ["MT-07", "MT-08", "MT-09"]) assert.equal(byId[id], "inconclusive");

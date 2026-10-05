@@ -1,56 +1,15 @@
 // The 11 phase 1 acceptance tests from the GRE-651 threat model, section 6:
-// MT-01 to MT-09, MT-12 and MT-31. Each test returns pass, fail or
+// MT-01 to MT-09, MT-12 and MT-31. Phase 2 tests are in phase2.mjs. Each test returns pass, fail or
 // inconclusive, with the observed evidence and the gateway audit rows.
 //
 // "Inconclusive" means the target could not produce the evidence the test
 // needs (for example no egress log). It is never counted as a pass.
 
+import { auditHas, check, client, denied, leaked, resultIds, searched, verdict, withAudit } from "./checks.mjs";
 import { d7Items, grantedScopes, loadFixtures, record } from "./fixtures.mjs";
+import { PHASE2_TESTS, RouteMissing } from "./phase2.mjs";
 
 export const PHASE1_SEED = ["R-301", "R-302", "R-303"];
-
-function client(target, identityId, extraHeaders = {}) {
-  // A null token means the caller authenticates without one (the local board on the gsam target).
-  const token = target.tokenFor(identityId);
-  const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders };
-  return {
-    recall: (body, h = {}) => target.recall({ ...headers, ...h }, body),
-    contribute: (body, h = {}) => target.contribute({ ...headers, ...h }, body),
-  };
-}
-
-function check(checks, ok, label) {
-  checks.push({ ok: Boolean(ok), label });
-}
-
-function verdict(checks) {
-  return checks.every((c) => c.ok) ? "pass" : "fail";
-}
-
-function resultIds(res) {
-  return (res.body?.results ?? []).map((r) => r.id);
-}
-
-// Zero results only proves isolation when the recall really searched. A
-// gateway that answers "memory unavailable" returns nothing for everyone.
-function searched(res) {
-  return res.status === 200 && res.body?.available !== false;
-}
-
-function denied(res) {
-  return res.status === 401 || res.status === 403 || res.status === 404;
-}
-
-async function withAudit(target, fn) {
-  const cursor = await target.auditCursor();
-  const out = await fn();
-  const audit = await target.auditSince(cursor);
-  return { out, audit };
-}
-
-function auditHas(audit, match) {
-  return audit.some((row) => Object.entries(match).every(([k, v]) => (typeof v === "function" ? v(row[k], row) : row[k] === v)));
-}
 
 // Pass rule for MT-01, MT-03 and MT-04 (Everest, GRE-869): the response holds
 // no record, record id, client name or code name from a scope the caller may
@@ -67,11 +26,6 @@ const FORBIDDEN = {
 
 // Alder data for MT-02: any record, id or name.
 const ALDER = ["R-301", "31 March", "cl-alder", "Alder Bakery"];
-
-function leaked(haystack, needles) {
-  const s = JSON.stringify(haystack);
-  return needles.filter((n) => s.includes(n));
-}
 
 function hitScopes(res) {
   return (res.body?.results ?? []).map((r) => r.scope);
@@ -95,7 +49,7 @@ function clientScopes() {
   return worldRef.scopes.filter((s) => s.kind === "client");
 }
 
-export const TESTS = [
+export const PHASE1_TESTS = [
   {
     id: "MT-01",
     threat: "T1 cross-client read",
@@ -385,30 +339,44 @@ function redactAuditRow(items) {
   };
 }
 
-export async function runAll(target, { scenarios, world, only } = {}) {
+export { PHASE2_TESTS };
+export const TESTS = [...PHASE1_TESTS, ...PHASE2_TESTS];
+
+/** `phases`: which phases to run (default both). `only`: test ids. */
+export async function runAll(target, { scenarios, world, only, phases = [1, 2] } = {}) {
   scenariosRef = scenarios;
   worldRef = world ?? loadFixtures().world;
   const pre = await target.preflight();
   await target.seed(PHASE1_SEED.map((id) => record(scenarios, id)));
+  const selected = [...(phases.includes(1) ? PHASE1_TESTS : []), ...(phases.includes(2) ? PHASE2_TESTS : [])];
+  const ctx = { scenarios, world: worldRef, cache: new Map() };
   const results = [];
-  for (const t of TESTS) {
+  for (const t of selected) {
     if (only && !only.includes(t.id)) continue;
     const started = Date.now();
     let status;
     let detail;
     try {
+      const missing = (t.needs ?? []).filter((m) => typeof target[m] !== "function");
       if (t.needsEngine && !pre.engineUp) {
         detail = { checks: [], inconclusive: "engine not confirmed running; a refused connection would prove nothing" };
+      } else if (missing.length) {
+        detail = { checks: [], inconclusive: `target ${target.name} has no ${missing.join(", ")}` };
       } else {
-        detail = await t.run(target);
+        detail = await t.run(target, ctx);
       }
       // A failed check beats missing evidence: fail, then inconclusive, then pass.
       status = verdict(detail.checks) === "fail" ? "fail" : detail.inconclusive ? "inconclusive" : "pass";
     } catch (err) {
-      status = "fail";
-      detail = { checks: [{ ok: false, label: `threw: ${err?.message ?? err}` }] };
+      if (err instanceof RouteMissing) {
+        status = "inconclusive";
+        detail = { checks: [], inconclusive: err.message };
+      } else {
+        status = "fail";
+        detail = { checks: [{ ok: false, label: `threw: ${err?.message ?? err}` }] };
+      }
     }
-    results.push({ id: t.id, threat: t.threat, title: t.title, status, ms: Date.now() - started, ...detail });
+    results.push({ id: t.id, phase: t.phase ?? 1, threat: t.threat, title: t.title, status, ms: Date.now() - started, ...detail });
   }
-  return { target: target.name, faults: target.faults ?? [], preflight: pre, results };
+  return { target: target.name, faults: target.faults ?? [], phases, preflight: pre, results };
 }

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Organization memory phase 1 acceptance runner (GRE-675).
+// Organization memory acceptance runner: phase 1 (GRE-675) and phase 2 (GRE-888).
 //
-//   node tests/memory-acceptance/run.mjs                      # test double, all 11 tests
+//   node tests/memory-acceptance/run.mjs                      # test double, phase 1 and 2
+//   node tests/memory-acceptance/run.mjs --phase 2            # phase 2 exit tests only
 //   node tests/memory-acceptance/run.mjs --break engine-open  # prove the tests can fail
 //   MEMORY_ACCEPTANCE_LIVE_CONFIG=path node tests/memory-acceptance/run.mjs --target live
 //
@@ -22,6 +23,7 @@ const { values } = parseArgs({
     target: { type: "string", default: "double" },
     break: { type: "string", multiple: true, default: [] },
     only: { type: "string" },
+    phase: { type: "string", default: "all" },
     json: { type: "string" },
     verbose: { type: "boolean", short: "v", default: false },
     "list-faults": { type: "boolean", default: false },
@@ -48,7 +50,9 @@ if (values.target === "double") {
   throw new Error(`Unknown --target ${values.target} (double | live | gsam)`);
 }
 
-const report = await runAll(target, { scenarios, only: values.only?.split(",") });
+const phases = { all: [1, 2], 1: [1], 2: [2] }[values.phase];
+if (!phases) throw new Error(`Unknown --phase ${values.phase} (1 | 2 | all)`);
+const report = await runAll(target, { scenarios, only: values.only?.split(","), phases });
 report.generatedAt = new Date().toISOString();
 console.log(formatReport(report, { verbose: values.verbose }));
 

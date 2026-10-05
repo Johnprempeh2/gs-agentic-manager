@@ -30,6 +30,8 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 
 /** Stands in for a scope id that does not exist (MT-02 "not found" twin). */
 export const MISSING_SCOPE_ID = "00000000-0000-4000-8000-00000000d0e5";
+/** Stands in for a fixture record this run never created. */
+export const MISSING_RECORD_ID = "00000000-0000-4000-8000-00000000ec0d";
 
 const LIVE_APP_PORTS = new Set(["3100"]);
 const LIVE_DB_PORTS = new Set(["54329"]);
@@ -44,10 +46,32 @@ export function loadGsamConfig(path) {
   return {
     retainMode: "chunks",
     timeoutMs: 10_000,
+    approvePermissionKey: "memory:approve",
     ...cfg,
+    routes: { ...PHASE2_ROUTES, ...(cfg.routes ?? {}) },
     engine: { host: "127.0.0.1", restPort: 28888, controlPlanePort: 9999, postgresPort: 25432, ...(cfg.engine ?? {}) },
   };
 }
+
+/**
+ * Phase 2 gateway routes (GRE-886 `routes/memory.ts`, GRE-887
+ * `routes/memory-steward.ts`), relative to /api/companies/:companyId/memory.
+ * Override any of them with `routes` in the config file. A route that answers
+ * "API route not found" makes its test inconclusive.
+ */
+export const PHASE2_ROUTES = {
+  review: "POST /records/:id/review", // { action: "approve" | "dispute", reason }
+  supersede: "POST /records/:id/supersede", // { replacementRecordId, reason }
+  remove: "POST /records/:id/delete", // { reason }
+  history: "GET /records/:id/history", // { record, chain, events, extractedFacts }
+  relationships: "GET /records/:id/relationships",
+  conflicts: "GET /conflicts", // { note, groups: [{ scope, approvedPosition, conflicts }] }
+  directive: "POST /directives", // no such route: directives do not exist in the gateway
+  stewardGrant: "POST /steward/grants", // sandbox only (GSAM_MEMORY_STEWARD_SANDBOX_GRANTS=true)
+  stewardRun: "POST /steward/review",
+  stewardQueue: "GET /steward/queue",
+  stewardReport: "GET /steward/report?days=7",
+};
 
 /** Diagnostic only (--prime-org): makes the company bank exist before the tests. */
 const PRIME_ORG_TEXT = "Kestrel Works office hours are 09:00 to 17:30 on weekdays (synthetic prime record).";
@@ -63,6 +87,7 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
     runIds: {}, // fixture run -> uuid
     names: new Map(), // uuid -> fixture name
     records: new Map(), // record uuid -> fixture record id
+    byFixture: new Map(), // fixture record id -> latest record uuid
   };
 
   // ---- plumbing ----------------------------------------------------------
@@ -103,12 +128,40 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
 
   /** Every uuid the target created becomes its fixture name, so a leaked id reads as a leaked name. */
   function toFixtureNames(value) {
-    const s = JSON.stringify(value ?? null).replace(UUID_RE, (id) => state.names.get(id.toLowerCase()) ?? id);
+    // The local board acts as "local-board"; it is hu-john-syn in the fixtures.
+    const s = JSON.stringify(value ?? null)
+      .replace(UUID_RE, (id) => state.names.get(id.toLowerCase()) ?? id)
+      .replace(/"local-board"/g, '"hu-john-syn"');
     return JSON.parse(s);
   }
 
   function name(id, kind) {
     state.names.set(id.toLowerCase(), kind);
+  }
+
+  function remember(recordId, fixtureId) {
+    state.records.set(recordId, fixtureId);
+    state.byFixture.set(fixtureId, recordId);
+    name(recordId, fixtureId);
+  }
+
+  function recordIdFor(fixtureId) {
+    return state.byFixture.get(fixtureId) ?? MISSING_RECORD_ID;
+  }
+
+  /** Calls a phase 2 route from cfg.routes ("METHOD /path/:id"). */
+  async function route(key, { id, headers = {}, body } = {}) {
+    const [method, path] = cfg.routes[key].split(" ");
+    return http(`/api/companies/${state.companyId}/memory${path.replace(":id", id ?? "")}`, { method, headers, body });
+  }
+
+  function isRouteMissing(res) {
+    return res.status === 404 && res.body?.error === "API route not found";
+  }
+
+  function listOf(body) {
+    if (Array.isArray(body)) return body;
+    return body?.items ?? body?.events ?? body?.relationships ?? body?.reviews ?? body?.runs ?? [];
   }
 
   // ---- provisioning ------------------------------------------------------
@@ -167,9 +220,9 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
       state.tokens[ident.id] = key.token;
 
       // Grants: one row per permission, listing exactly the fixture scopes.
-      // `approve` is phase 2 and scoped `administer` has no gateway equivalent
-      // (memory:admin is company-wide), so neither is granted; see grantNotes.
-      for (const [right, key] of [["read", "memory:read"], ["contribute", "memory:contribute"]]) {
+      // Scoped `administer` has no gateway equivalent (memory:admin is
+      // company-wide), so it is not granted; see grantNotes.
+      for (const [right, key] of [["read", "memory:read"], ["contribute", "memory:contribute"], ["approve", cfg.approvePermissionKey]]) {
         const scopes = ident.grants.filter((g) => g.rights.includes(right)).map((g) => state.scopeIds[g.scope]);
         if (scopes.length === 0) continue;
         await sql(
@@ -190,11 +243,19 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
         state.runIds[run.id] = id;
         name(id, run.id);
       }
+
+      // The steward's review grant is the sandbox grant API (GRE-887 item 4), on the scopes it may read.
+      if (ident.role === "steward") {
+        const scopeIds = ident.grants.filter((g) => g.rights.includes("read")).map((g) => state.scopeIds[g.scope]);
+        const res = await route("stewardGrant", { body: { agentId: agent.id, scopeIds, expiresInDays: 1, reason: "GRE-888 acceptance run (synthetic)" } });
+        state.stewardGrant = res.status < 300 ? "granted" : `not granted: ${res.status} ${JSON.stringify(res.body).slice(0, 160)}`;
+      }
     }
   }
 
   const grantNotes = world.identities
-    .flatMap((i) => i.grants.filter((g) => g.rights.some((r) => r === "approve" || r === "administer")).map((g) => `${i.id} ${g.scope}`))
+    .filter((i) => i.id.startsWith("ag-"))
+    .flatMap((i) => i.grants.filter((g) => g.rights.includes("administer")).map((g) => `${i.id} administer ${g.scope}`))
     .join(", ");
 
   // ---- request translation ----------------------------------------------
@@ -217,6 +278,7 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
       // Seeded record ids are already fixture ids (R-302) after the rename.
       body.results = body.results.map((hit) => ({
         id: hit.record?.id,
+        status: hit.record?.status,
         text: hit.record?.content,
         scope: hit.record?.scopeId,
         contributor: hit.record?.contributorAgentId ?? hit.record?.contributorUserId,
@@ -273,15 +335,18 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
           engineNote,
           `scopes: ${Object.entries(state.scopeIds).map(([k, v]) => `${k}=${v}`).join(", ")}`,
           `grants not mapped (no gateway equivalent): ${grantNotes || "none"}`,
+          `steward review grant: ${state.stewardGrant ?? "no steward identity"}`,
           ...(primeOrg ? ["DIAGNOSTIC: --prime-org seeded one extra synthetic org record (PRIME-ORG); not an acceptance run"] : []),
         ],
       };
     },
     async seed(fixtureItems) {
       const items = primeOrg ? [{ id: "PRIME-ORG", scope: "org", text: PRIME_ORG_TEXT }, ...fixtureItems] : fixtureItems;
+      // ag-scribe-syn writes the seed, so John can approve it later without approving his own entry.
       for (const r of items) {
         const res = await http(`/api/companies/${state.companyId}/memory/records`, {
           method: "POST",
+          headers: { Authorization: `Bearer ${state.tokens["ag-scribe-syn"]}` },
           body: {
             scopeId: scopeIdFor(r.scope),
             content: r.text,
@@ -289,12 +354,13 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
             sensitivity: r.sensitivity ?? "internal",
             sourceKind: "external_object",
             sourceId: r.id,
+            ...(r.entities ? { entities: r.entities } : {}),
+            ...(r.topics ? { topics: r.topics } : {}),
           },
         });
         if (res.status >= 300) throw new Error(`Seeding ${r.id} failed: ${res.status} ${JSON.stringify(res.body)}`);
         if (res.body?.engineAvailable !== true) throw new Error(`Seeding ${r.id}: gateway could not reach the engine (${res.body?.message})`);
-        state.records.set(res.body.record.id, r.id);
-        name(res.body.record.id, r.id);
+        remember(res.body.record.id, r.id);
       }
     },
     tokenFor(id) {
@@ -314,13 +380,127 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
       return translateResult(res);
     },
     async contribute(headers, body) {
-      const { scope, text, ...rest } = body;
+      const { scope, text, id, supersedes, ...rest } = body;
       const res = await http(`/api/companies/${state.companyId}/memory/records`, {
         method: "POST",
         headers: mapHeaders(headers),
-        body: { scopeId: scopeIdFor(scope), content: text, ...rest },
+        body: {
+          scopeId: scopeIdFor(scope),
+          content: text,
+          ...(id ? { sourceKind: "external_object", sourceId: id } : {}),
+          ...(supersedes ? { supersedesId: recordIdFor(supersedes) } : {}),
+          ...rest,
+        },
       });
+      if (id && res.status < 300 && res.body?.record?.id) remember(res.body.record.id, id);
       return translateResult(res);
+    },
+    async review(headers, fixtureId, body) {
+      return translateResult(await route("review", { id: recordIdFor(fixtureId), headers: mapHeaders(headers), body }));
+    },
+    async supersede(headers, fixtureId, body) {
+      const { replacement, ...rest } = body;
+      return translateResult(await route("supersede", { id: recordIdFor(fixtureId), headers: mapHeaders(headers), body: { replacementRecordId: recordIdFor(replacement), ...rest } }));
+    },
+    async remove(headers, fixtureId) {
+      return translateResult(await route("remove", { id: recordIdFor(fixtureId), headers: mapHeaders(headers), body: { reason: "GRE-888 deletion test (synthetic)" } }));
+    },
+    async getRecord(headers, fixtureId) {
+      const res = await http(`/api/companies/${state.companyId}/memory/records/${recordIdFor(fixtureId)}`, { headers: mapHeaders(headers) });
+      return translateResult(res);
+    },
+    async createDirective(headers, body) {
+      return translateResult(await route("directive", { headers: mapHeaders(headers), body: { scopeId: scopeIdFor(body.scope), content: body.text } }));
+    },
+    async recordHistory(fixtureId) {
+      const id = recordIdFor(fixtureId);
+      const h = await route("history", { id });
+      const rel = await route("relationships", { id });
+      if (isRouteMissing(h) || isRouteMissing(rel)) return { routeMissing: true };
+      const record = h.body?.record ?? null;
+      return toFixtureNames({ events: h.body?.events ?? [], chain: h.body?.chain ?? [], conflicts: record?.conflicts ?? [], relationships: listOf(rel.body), record });
+    },
+    async reviewQueue() {
+      const res = await route("conflicts", {});
+      if (isRouteMissing(res)) return res;
+      if (res.status >= 300) return { available: false, reason: `${res.status} ${JSON.stringify(res.body).slice(0, 200)}` };
+      return { available: true, items: toFixtureNames(res.body?.groups ?? listOf(res.body)) };
+    },
+    async stewardQueue() {
+      const res = await route("stewardQueue", {});
+      if (isRouteMissing(res)) return res;
+      if (res.status >= 300) return { available: false, reason: `${res.status} ${JSON.stringify(res.body).slice(0, 200)}` };
+      return { available: true, items: toFixtureNames(listOf(res.body)) };
+    },
+    /**
+     * One steward pass. The sandbox controls (`sandbox`: a clock for the audit
+     * day, and a kill after N entries) are asked of GRE-887; a pass that
+     * ignores a requested kill is reported as `faultIgnored`, so MT-19 is
+     * inconclusive, never a pass.
+     */
+    async stewardRun(headers, body = {}) {
+      const sandbox = {
+        ...(body.auditDay ? { now: `${body.auditDay}T23:00:00.000Z` } : {}),
+        ...(body.fault ? { killAfterEntries: body.fault.item } : {}),
+      };
+      const res = await route("stewardRun", { headers: mapHeaders(headers), body: Object.keys(sandbox).length ? { sandbox } : undefined });
+      const out = translateResult(res);
+      if (body.fault && res.status < 300 && res.body?.outcome === "completed") {
+        out.body = { ...out.body, faultIgnored: "the steward review route ran to completion instead of stopping at the requested kill" };
+      }
+      if (res.status < 300) {
+        const report = await route("stewardReport", {});
+        if (report.status < 300) out.body = { ...out.body, report: toFixtureNames(report.body?.report ?? report.body) };
+      }
+      return out;
+    },
+    async stewardLedger() {
+      // No per-entry ledger in GRE-887: each page commits its counters with the cursor.
+      const runs = await sql(
+        `select coalesce(json_agg(r order by r.started_at), '[]') from memory_steward_runs r where r.company_id = ${lit(state.companyId)}`,
+      ).catch(() => null);
+      if (runs == null) return { routeMissing: true };
+      const rows = JSON.parse(runs || "[]");
+      const grant = await sql(`select scope_ids::text from memory_steward_grants where company_id = ${lit(state.companyId)} order by created_at desc limit 1`).catch(() => "");
+      const scopeIds = grant ? JSON.parse(grant) : [];
+      const ids = scopeIds.length
+        ? (await sql(`select id from memory_records where company_id = ${lit(state.companyId)} and scope_id in (${scopeIds.map(lit).join(",")}) order by created_at`)).split("\n").filter(Boolean)
+        : [];
+      return toFixtureNames({
+        seen: rows.reduce((n, r) => n + (r.entries_seen ?? 0), 0),
+        expected: ids.length,
+        expectedIds: ids,
+        runs: rows.map((r) => ({ ...r, durationMs: r.duration_ms, queueAgeMs: null })),
+      });
+    },
+    async grantsOf(fixtureId) {
+      const agentId = state.agentIds[fixtureId];
+      if (!agentId) return ["board"];
+      const out = await sql(
+        `select permission_key || ' ' || coalesce(scope::text, '') from principal_permission_grants
+         where company_id = ${lit(state.companyId)} and principal_type = 'agent' and principal_id = ${lit(agentId)} order by 1`,
+      );
+      return toFixtureNames(out.split("\n").filter(Boolean));
+    },
+    async adminRecordRow(fixtureId) {
+      const out = await sql(`select coalesce(row_to_json(x)::text, '') from (select status, content, deleted_at as "deletedAt" from memory_records where id = ${lit(recordIdFor(fixtureId))}) x`);
+      return out ? JSON.parse(out) : null;
+    },
+    async adminFindText(text) {
+      // Every gateway table (memory_*), including the phase 2 stores, searched as text.
+      const tables = (await sql(`select table_name from information_schema.tables where table_schema = 'public' and table_name like 'memory%' and table_type = 'BASE TABLE' order by 1`)).split("\n").filter(Boolean);
+      const found = [];
+      for (const t of tables) {
+        const n = await sql(`select count(*) from ${t.replace(/[^a-z0-9_]/gi, "")} x where x::text like ${lit(`%${text}%`)}`);
+        if (Number(n) > 0) found.push(t);
+      }
+      return { tables: found, searched: tables };
+    },
+    async retentionPolicy() {
+      // GRE-887 item 6: backup expiry for deleted content is written in the engine runbook.
+      const doc = resolve(REPO_ROOT, "doc/GS-MEMORY-ENGINE.md");
+      if (!existsSync(doc)) return "";
+      return readFileSync(doc, "utf8").split(/\n\s*\n/).filter((p) => /backup/i.test(p) && /delet/i.test(p)).join("\n\n");
     },
     async auditCursor() {
       return sql("select now()");
