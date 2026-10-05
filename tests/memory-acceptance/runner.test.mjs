@@ -12,7 +12,7 @@ import { PHASE1_TESTS, PHASE2_TESTS, runAll } from "./lib/tests.mjs";
 const { world, scenarios } = loadFixtures();
 const PHASE1 = ["MT-01", "MT-02", "MT-03", "MT-04", "MT-05", "MT-06", "MT-07", "MT-08", "MT-09", "MT-12", "MT-31"];
 // GRE-888. GRE-651 numbering; MT-33 (same question, two clients) is new.
-const PHASE2 = ["MT-10", "MT-11", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-17", "MT-18", "MT-26", "MT-30", "MT-19", "MT-13"];
+const PHASE2 = ["MT-10", "MT-10b", "MT-11", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-17", "MT-18", "MT-26", "MT-30", "MT-19", "MT-13"];
 const ALL = [...PHASE1, ...PHASE2];
 
 async function statuses(faults = []) {
@@ -80,12 +80,13 @@ const EXPECTED_RED = {
   // everything earlier tests wrote, so a broken rule upstream shows there too.
   "grant-check-allow+": ["MT-30", "MT-19"],
   "extra-egress+": ["MT-16"],
-  "audit-off+": ["MT-10", "MT-18", "MT-26", "MT-30", "MT-13"],
-  "recall-unavailable+": ["MT-10", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-13"],
+  "audit-off+": ["MT-10", "MT-10b", "MT-18", "MT-26", "MT-30", "MT-13"],
+  "recall-unavailable+": ["MT-10", "MT-10b", "MT-32", "MT-33", "MT-14", "MT-15", "MT-16", "MT-13"],
   "self-approval-allowed": ["MT-18"],
   "approve-rights-off": ["MT-26", "MT-30", "MT-19"],
-  "proposal-overwrites-approved": ["MT-11", "MT-32", "MT-15", "MT-19"],
+  "proposal-overwrites-approved": ["MT-10b", "MT-11", "MT-32", "MT-15", "MT-19"],
   "conflict-check-off": ["MT-10", "MT-11", "MT-33", "MT-19"],
+  "client-topics-optional": ["MT-10b"],
   "conflict-across-scopes": ["MT-33", "MT-19"],
   "supersede-as-conflict": ["MT-32"],
   "newest-first": ["MT-10", "MT-32", "MT-15"],

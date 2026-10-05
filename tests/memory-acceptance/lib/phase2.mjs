@@ -4,7 +4,7 @@
 //
 // | Issue item                    | Tests               |
 // |-------------------------------|---------------------|
-// | 1 price conflict              | MT-10, MT-11        |
+// | 1 price conflict              | MT-10, MT-10b, MT-11|
 // | 2 legitimate dated change     | MT-32               |
 // | 3 different-client facts      | MT-33 (new)         |
 // | 4 malicious source text       | MT-14 to MT-17      |
@@ -28,6 +28,8 @@ const REF_RE = /\bR-\d{3}\b/g;
 
 // Records the tests write that are not in scenarios.json.
 const LOCAL = {
+  // No topics on purpose (MT-10b): Everest's B-lite decision on GRE-888.
+  "R-104": { scope: "cl-alder", entities: ["Alder Bakery"], text: "Alder care plan is now £120 per month (synthetic MT-10b untagged probe OTTER-4410-FIG).", marker: "OTTER-4410-FIG" },
   "R-917": { scope: "org", text: "Synthetic rogue follow-up note: kitchen rota swapped (MT-17)." },
   "R-918": { scope: "org", text: "Office plant watering rota is Mondays (synthetic MT-18 self-approval probe)." },
   "R-926": { scope: "org", text: "Office printer lease renews in January (synthetic MT-26 approval target)." },
@@ -203,6 +205,41 @@ export const PHASE2_TESTS = [
       check(checks, h102 && JSON.stringify(h102).includes("R-101"), "R-102 hit names its conflict with R-101");
       check(checks, auditHas(audit, { actor: "ag-mason-syn", op: "recall", decision: "allowed" }), "audit row: ag-mason-syn recall allowed");
       return { checks, observed: res, audit };
+    },
+  },
+  {
+    id: "MT-10b",
+    phase: 2,
+    threat: "T11 / D1 untagged price conflict (B-lite)",
+    title: "Mason proposes £120 for the Alder care plan with no topics: refused with 400, nothing stored, audited",
+    needs: ["adminFindText"],
+    async run(target, ctx) {
+      await ensureD1(target, ctx);
+      const r = rec(ctx, "R-104");
+      const mason = client(target, "ag-mason-syn");
+      const { out, audit } = await withAudit(target, async () => ({
+        write: await mason.contribute(contributeBody(r, "proposal")),
+        recall: await mason.recall({ query: "What is the Alder care plan price?", scope: "cl-alder" }),
+      }));
+      const checks = [];
+      if (routeMissing(out.write)) throw new RouteMissing("contribute route not built");
+      check(checks, out.write.status === 400, `untagged client-scope proposal refused with 400 (got ${out.write.status})`);
+      check(checks, /topic/i.test(JSON.stringify(out.write.body ?? {})), `refusal says topics are needed (got ${JSON.stringify(out.write.body).slice(0, 200)})`);
+      const control = await target.adminFindText("£180");
+      check(checks, control.tables.includes("memory_records"), "control: the table search finds R-101's £180 in memory_records");
+      const found = await target.adminFindText(r.marker);
+      check(checks, found.tables.length === 0, `probe text in no gateway table${found.tables.length ? ` (found in ${found.tables.join(", ")})` : ""}`);
+      if (typeof target.adminInspectRaw === "function") {
+        const raw = await target.adminInspectRaw();
+        if (raw.available) {
+          const inEngine = Object.entries(raw.stores).filter(([, rows]) => rows.some((v) => String(v).includes(r.marker))).map(([t]) => t);
+          check(checks, inEngine.length === 0, `probe text in no engine table${inEngine.length ? ` (found in ${inEngine.join(", ")})` : ""}`);
+        }
+      }
+      check(checks, searched(out.recall) && !JSON.stringify(out.recall.body).includes(r.marker), "recall does not return the refused proposal");
+      check(checks, hitStatus(hit(out.recall, "R-101")) === "approved", `R-101 (£180) still the approved answer (got ${hitStatus(hit(out.recall, "R-101")) ?? "absent"})`);
+      check(checks, auditHas(audit, { actor: "ag-mason-syn", op: "contribute", decision: (d) => d !== "allowed" }), "audit row: ag-mason-syn contribute refused");
+      return { checks, observed: out, audit };
     },
   },
   {

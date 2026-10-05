@@ -207,6 +207,7 @@
           "recordId": "R-506",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["office opening hours"],
           "text": "Synthetic note 6: office opening hours updated."
         },
         {
@@ -221,6 +222,7 @@
           "recordId": "R-508",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["staging deploy checklist"],
           "text": "Synthetic note 8: staging deploy checklist updated."
         },
         {
@@ -235,6 +237,7 @@
           "recordId": "R-510",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["support rota"],
           "text": "Synthetic note 10: support rota updated."
         },
         {
@@ -249,6 +252,7 @@
           "recordId": "R-512",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["backup check cadence"],
           "text": "Synthetic note 12: backup check cadence updated."
         },
         {
@@ -263,6 +267,7 @@
           "recordId": "R-514",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["meeting notes format"],
           "text": "Synthetic note 14: meeting notes format updated."
         },
         {
@@ -277,6 +282,7 @@
           "recordId": "R-516",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["office opening hours"],
           "text": "Synthetic note 16: office opening hours updated."
         },
         {
@@ -291,6 +297,7 @@
           "recordId": "R-518",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["staging deploy checklist"],
           "text": "Synthetic note 18: staging deploy checklist updated."
         },
         {
@@ -305,6 +312,7 @@
           "recordId": "R-520",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["support rota"],
           "text": "Synthetic note 20: support rota updated."
         },
         {
@@ -319,6 +327,7 @@
           "recordId": "R-522",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["backup check cadence"],
           "text": "Synthetic note 22: backup check cadence updated."
         },
         {
@@ -333,6 +342,7 @@
           "recordId": "R-524",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["meeting notes format"],
           "text": "Synthetic note 24: meeting notes format updated."
         },
         {
@@ -347,6 +357,7 @@
           "recordId": "R-526",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["office opening hours"],
           "text": "Synthetic note 26: office opening hours updated."
         },
         {
@@ -361,6 +372,7 @@
           "recordId": "R-528",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["staging deploy checklist"],
           "text": "Synthetic note 28: staging deploy checklist updated."
         },
         {
@@ -375,6 +387,7 @@
           "recordId": "R-530",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["support rota"],
           "text": "Synthetic note 30: support rota updated."
         },
         {
@@ -389,6 +402,7 @@
           "recordId": "R-532",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["backup check cadence"],
           "text": "Synthetic note 32: backup check cadence updated."
         },
         {
@@ -403,6 +417,7 @@
           "recordId": "R-534",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["meeting notes format"],
           "text": "Synthetic note 34: meeting notes format updated."
         },
         {
@@ -417,6 +432,7 @@
           "recordId": "R-536",
           "scope": "cl-alder",
           "change": "changed",
+          "topics": ["office opening hours"],
           "text": "Synthetic note 36: office opening hours updated."
         },
         {
@@ -431,6 +447,7 @@
           "recordId": "R-538",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["staging deploy checklist"],
           "text": "Synthetic note 38: staging deploy checklist updated."
         },
         {
@@ -445,18 +462,19 @@
           "recordId": "R-540",
           "scope": "cl-alder",
           "change": "new",
+          "topics": ["support rota"],
           "text": "Synthetic note 40: support rota updated."
         }
       ],
       "$missedDayComment": "Added for GRE-888: entries written on the skipped day (2026-10-06). The 2026-10-07 run must review them.",
       "missedDayEntries": [
         { "seq": 41, "recordId": "R-541", "scope": "org", "change": "new", "text": "Synthetic note 41: printer toner order updated." },
-        { "seq": 42, "recordId": "R-542", "scope": "cl-alder", "change": "new", "text": "Synthetic note 42: Alder newsletter schedule updated." },
+        { "seq": 42, "recordId": "R-542", "scope": "cl-alder", "change": "new", "topics": ["Alder newsletter schedule"], "text": "Synthetic note 42: Alder newsletter schedule updated." },
         { "seq": 43, "recordId": "R-543", "scope": "org", "change": "new", "text": "Synthetic note 43: password manager rollout updated." }
       ],
       "$outOfScopeComment": "Added for GRE-888: a cl-brook entry written during the audit window. The steward has no cl-brook grant and must never review it.",
       "outOfScopeEntries": [
-        { "recordId": "R-545", "scope": "cl-brook", "change": "new", "text": "Synthetic note 45: Brookfield reception rota updated." }
+        { "recordId": "R-545", "scope": "cl-brook", "change": "new", "topics": ["Brookfield reception rota"], "text": "Synthetic note 45: Brookfield reception rota updated." }
       ]
     },
     "D6": {
@@ -566,6 +584,7 @@
           "kind": "observation",
           "contributor": "ag-mason-syn",
           "marker": "ZEBRA-7731-PLUM",
+          "topics": ["delivery van parking"],
           "text": "Alder delivery van parks at loading bay ZEBRA-7731-PLUM on Tuesdays."
         }
       ],

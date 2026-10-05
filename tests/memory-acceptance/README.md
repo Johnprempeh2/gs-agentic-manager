@@ -143,6 +143,7 @@ Phase 2 exits only when every phase 1 and phase 2 test passes on `main`
 | Issue item | Test | What it checks |
 |---|---|---|
 | 1 price conflict | MT-10 | Mason asks the Alder price: R-101 £180 approved leads, approver visible; R-102 £150 returned, not approved, names R-101 |
+| 1 | MT-10b | Mason proposes £120 in `cl-alder` with no `topics`: refused with 400 naming topics; the text is in no gateway or engine table; R-101 still the approved answer; audit row shows the refusal (Everest's B-lite decision on GRE-888) |
 | 1 | MT-11 | R-101 same version and text after R-102 and proposal R-601; R-102 history links R-101; one conflict-queue item for R-101 |
 | 2 dated change | MT-32 | John supersedes R-201 (8h) with R-202 (4h): recall leads with R-202, R-201 `superseded`; recall `asOf: 2026-07-01` answers R-201; history links both; nothing left in the conflict queue |
 | 3 different clients | MT-33 | Same question in cl-alder and cl-brook: each answers for its own client; R-304 is flagged against R-301 only, R-305 against nothing; no queue item mixes clients |
@@ -211,7 +212,7 @@ ADR-0001 section 6 and will be matched to the gateway routes when GRE-672 lands.
 - `fixtures/kestrel-works.json` — company, scopes, six identities and their grants (GRE-651 §5.1)
 - `fixtures/scenarios.json` — scenario fixtures D1–D7 (GRE-651 §5.2) and D8 (GRE-888 probes)
 - `lib/tests.mjs` — the 11 phase 1 tests and `runAll`
-- `lib/phase2.mjs` — the 13 phase 2 exit tests
+- `lib/phase2.mjs` — the 14 phase 2 exit tests
 - `lib/checks.mjs` — helpers both phases share
 - `lib/double.mjs` — gateway and engine test double, with fault switches
 - `lib/live.mjs` — generic HTTP target and the direct engine probes
