@@ -112,8 +112,9 @@ export function phase3Views({ on, records, byName, events, relationships, engine
     if (f.scope && rec.scope !== f.scope) return false;
     if (!ignoreStatus && f.status && STATUS[rec.status] !== f.status) return false;
     if (f.q) {
-      const hay = [rec.title, rec.text, ...(rec.entities ?? []), rec.source?.id].map(norm).join(" ");
-      if (!hay.includes(norm(f.q))) return false;
+      // Same fields as the gateway search (graph.ts recordFilters): title, content, source id.
+      const needle = norm(f.q);
+      if (![rec.title, rec.text, rec.source?.id].some((field) => norm(field).includes(needle))) return false;
     }
     return true;
   }

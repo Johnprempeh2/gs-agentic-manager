@@ -252,6 +252,9 @@ describeEmbeddedPostgres("memory graph and contribution activity (GRE-864)", () 
     expect(approved.edges).toEqual([]);
     const search = await ok<MemoryGraph>(f.board, `${f.base}/graph?q=tuesdays`);
     expect(search.nodes.map((node) => node.id)).toEqual([f.newRelease.id]);
+    // Searching the source issue id finds the memory (plan 8.3.3, GRE-914).
+    const bySource = await ok<MemoryGraph>(f.board, `${f.base}/graph?q=kw-1`);
+    expect(bySource.nodes.map((node) => node.id)).toContain(f.price.id);
     expect((await ok<MemoryGraph>(f.board, `${f.base}/graph?q=%25`)).nodes).toEqual([]);
     expect((await ok<MemoryGraph>(f.board, `${f.base}/graph?scopeId=${f.org.id}`)).nodes).toHaveLength(5);
     const limited = await ok<MemoryGraph>(f.board, `${f.base}/graph?limit=2`);

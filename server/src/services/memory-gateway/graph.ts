@@ -168,9 +168,14 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
     if (query.userId) conditions.push(eq(memoryRecords.contributorUserId, query.userId));
     if (query.status && query.status.length > 0) conditions.push(inArray(memoryRecords.status, query.status));
     if (query.q) {
+      // Title, content and source id, so a search for the source issue finds the memory (plan 8.3.3).
       const pattern = `%${escapeLike(query.q)}%`;
       conditions.push(
-        sql`(coalesce(${memoryRecords.title}, '') || ' ' || coalesce(${memoryRecords.content}, '')) ilike ${pattern}`,
+        or(
+          sql`coalesce(${memoryRecords.title}, '') ilike ${pattern}`,
+          sql`coalesce(${memoryRecords.content}, '') ilike ${pattern}`,
+          sql`coalesce(${memoryRecords.sourceId}, '') ilike ${pattern}`,
+        )!,
       );
     }
     return conditions;
