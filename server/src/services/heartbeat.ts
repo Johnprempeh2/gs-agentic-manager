@@ -461,6 +461,10 @@ import {
   type HeartbeatRunScratch,
 } from "./run-scratch.js";
 import {
+  cleanupRunLeftoverProcesses,
+  summarizeStopped,
+} from "./run-process-cleanup.js";
+import {
   applyDefaultIsolatedExecutionWorkspacePolicy,
   buildExecutionWorkspaceAdapterConfig,
   gateProjectExecutionWorkspacePolicy,
@@ -28373,6 +28377,42 @@ export function heartbeatService(
             nativeLifecycleTelemetry: nativeLifecycleTelemetryForRun,
           });
           await releaseRuntimeServicesForRun(run.id).catch(() => undefined);
+        }
+        // Stop what the agent started and left running (a dev server started in
+        // the background, a sandbox). Before the scratch cleanup, which skips
+        // while the run's process group is alive. Not during a hot restart:
+        // that shutdown must stay quick, and the sweep covers it later.
+        if (
+          latestRun &&
+          isHeartbeatRunTerminalStatus(latestRun.status) &&
+          !nativeSessionResumeScheduled &&
+          !nativeWorkspaceFinalizeScheduled &&
+          !nativeOwnershipHeld &&
+          !shutdownInProgress
+        ) {
+          const runForLeftovers = latestRun;
+          const leftovers = await cleanupRunLeftoverProcesses({ runId: run.id }).catch((err) => {
+            logger.warn({ err, runId: run.id }, "failed to stop leftover processes of the run");
+            return null;
+          });
+          if (leftovers?.status === "done" && leftovers.stopped.some((entry) => entry.outcome !== "gone")) {
+            const stopped = leftovers.stopped.filter((entry) => entry.outcome !== "gone");
+            const counts = summarizeStopped(stopped);
+            await appendRunEvent(runForLeftovers, {
+              eventType: "lifecycle",
+              stream: "system",
+              level: counts.failed > 0 ? "warn" : "info",
+              message: `stopped ${stopped.length} leftover process${stopped.length === 1 ? "" : "es"} the run started`,
+              payload: {
+                kind: "run_leftover_processes",
+                ...counts,
+                leftAlone: leftovers.protectedMatches,
+                processes: stopped.slice(0, 20).map(({ pid, command, outcome }) => ({ pid, command, outcome })),
+              },
+            }).catch((eventErr) => {
+              logger.warn({ err: eventErr, runId: run.id }, "failed to record leftover process cleanup event");
+            });
+          }
         }
         if (
           runScratch &&

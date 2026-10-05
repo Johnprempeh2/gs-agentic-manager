@@ -701,6 +701,37 @@ If the `codex` CLI is not installed or not on `PATH`, `codex_local` agent runs f
 
 Local adapters require their corresponding CLI/session setup on the machine running GS Agentic Manager. External adapters are installed through the adapter/plugin flow and should not require hardcoded imports in `server/` or `ui/`.
 
+## Leftover Run Processes
+
+A process an agent starts in the background (a dev server, a Storybook, a
+sandbox with its database) can outlive the run: when the agent exits it is
+reparented to init and nothing stops it. Every process an agent starts inherits
+the run's `GSAM_RUN_ID` (and its legacy alias), so on Linux the server stops
+them (`server/src/services/run-process-cleanup.ts`):
+
+- **At the end of a local run**, every process that still carries that run's
+  marker gets SIGTERM, and SIGKILL 5 seconds later if it is still there. The
+  run log gets one `lifecycle` event listing what was stopped. Runs that end
+  during a hot restart are left to the sweep, so the restart stays quick.
+- **A sweep at server start and then every five minutes** stops processes
+  whose marker names a run of this instance that ended at least 10 minutes ago
+  (and whose `GSAM_API_URL` points at this server's port), and orphans with no
+  run marker and no terminal whose working directory is a deleted
+  `.gsam/worktrees/` folder and that have run for at least 10 minutes.
+
+It never stops the server, the processes that started it or any process it
+still parents (running agents, warm ACP sessions, plugin workers); anything
+whose command, executable or working directory lies in the live install, its
+data (`GSAM_HOME`), `~/GSAM` (live, data and the preview) or
+`~/gsam-client-instances`; or a workspace runtime service in the registry. Only
+the server user's processes are considered, and each PID is checked against its
+start time before each signal. Every stopped process is logged with its PID,
+a short redacted command and the run id.
+
+Where `/proc` or a process environment cannot be read (macOS, other users'
+processes) it does nothing and says so once in the log. Turn it off with
+`GSAM_RUN_PROCESS_CLEANUP=false` in the server environment.
+
 ## Project Repository Checkouts
 
 Tasks use every distinct repository attached to their project, including repository-only sources with no local folder. GS Agentic Manager creates a managed checkout when no local folder is configured. The selected repository remains at the task workspace root. Other project repositories have editable, independent Git checkouts under `.paperclip-repositories/<name>-<key>`. Workspace hints expose each checkout path to the agent.

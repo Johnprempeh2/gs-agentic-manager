@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   agents,
   companies,
   createDb,
   environmentLeases,
   environments,
+  heartbeatRunEvents,
 } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
@@ -24,6 +26,47 @@ if (!embeddedPostgresSupport.supported) {
   console.warn(
     `Skipping embedded Postgres heartbeat environment tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
   );
+}
+
+function statFields(pid: number): string[] | null {
+  try {
+    const text = readFileSync(`/proc/${pid}/stat`, "utf8");
+    return text.slice(text.lastIndexOf(")") + 2).split(" ");
+  } catch {
+    return null;
+  }
+}
+
+/** Alive and not a zombie. */
+function processAlive(pid: number): boolean {
+  const fields = statFields(pid);
+  return !!fields && fields[0] !== "Z";
+}
+
+// A process a test started that may still run; stopped afterwards by its
+// exact PID, and only while it still has the same start time.
+let leftover: { pid: number; startTicks: string } | null = null;
+
+/** Remembers `pid` only when it carries this run's marker, so it is ours. */
+function rememberIfOurs(pid: number, runId: string) {
+  try {
+    if (!readFileSync(`/proc/${pid}/environ`, "utf8").includes(`GSAM_RUN_ID=${runId}\0`)) return;
+  } catch {
+    return;
+  }
+  const startTicks = statFields(pid)?.[19];
+  if (startTicks) leftover = { pid, startTicks };
+}
+
+function stopLeftoverFromTest() {
+  if (leftover && statFields(leftover.pid)?.[19] === leftover.startTicks) {
+    try {
+      process.kill(leftover.pid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  }
+  leftover = null;
 }
 
 async function waitForRunToFinish(
@@ -75,6 +118,8 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
   }, 20_000);
 
   afterEach(async () => {
+    stopLeftoverFromTest();
+    vi.unstubAllEnvs();
     // A run reaches its terminal status before finalizeRun finishes writing
     // its trailing lifecycle events and side effects (see the comment on
     // drainActiveRunExecutions in heartbeat.ts). Drain those in-flight writes
@@ -224,4 +269,77 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
     });
     expect(captured.apiUrl).toEqual(expect.stringMatching(/^https?:\/\//));
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "stops a process the agent left running in the background when the run ends",
+    async () => {
+      vi.stubEnv("GSAM_RUN_PROCESS_CLEANUP", "");
+      const companyId = randomUUID();
+      const agentId = randomUUID();
+      const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+      const tempDir = await mkdtemp(join(tmpdir(), "gsam-leftover-run-"));
+      const pidPath = join(tempDir, "leftover.pid");
+
+      await db.insert(companies).values({
+        id: companyId,
+        name: "GS Agentic Manager",
+        issuePrefix,
+        requireBoardApprovalForNewAgents: false,
+        defaultResponsibleUserId: "responsible-user",
+      });
+      // The agent starts a server in a new session and exits, as an agent's
+      // shell tool does with `setsid ... &`. The server inherits the run env.
+      await db.insert(agents).values({
+        id: agentId,
+        companyId,
+        name: "ProcessAgent",
+        role: "engineer",
+        status: "idle",
+        adapterType: "process",
+        adapterConfig: {
+          command: "sh",
+          args: [
+            "-c",
+            `setsid sh -c 'echo $$ > "$1"; exec sleep 600' sh "${pidPath}" </dev/null >/dev/null 2>&1 & ` +
+              `while [ ! -s "${pidPath}" ]; do sleep 0.05; done; sleep 0.2`,
+          ],
+          cwd: tempDir,
+        },
+        runtimeConfig: {},
+        permissions: {},
+      });
+
+      try {
+        const queued = await heartbeat.invoke(agentId, "on_demand", {}, "manual");
+        expect(queued).not.toBeNull();
+        const finished = await waitForRunToFinish(heartbeat, queued!.id);
+        expect(finished?.status).toBe("succeeded");
+        await heartbeat.drainActiveRunExecutions();
+
+        const leftoverPid = Number((await readFile(pidPath, "utf8")).trim());
+        rememberIfOurs(leftoverPid, queued!.id);
+        for (let i = 0; i < 100 && processAlive(leftoverPid); i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(processAlive(leftoverPid)).toBe(false);
+
+        const events = await db
+          .select()
+          .from(heartbeatRunEvents)
+          .where(eq(heartbeatRunEvents.runId, queued!.id));
+        const cleanup = events.find(
+          (event) => (event.payload as Record<string, unknown> | null)?.kind === "run_leftover_processes",
+        );
+        expect(cleanup?.eventType).toBe("lifecycle");
+        expect(cleanup?.payload).toMatchObject({
+          terminated: 1,
+          killed: 0,
+          failed: 0,
+          processes: [{ pid: leftoverPid, command: "sleep 600", outcome: "terminated" }],
+        });
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    },
+  );
 });
