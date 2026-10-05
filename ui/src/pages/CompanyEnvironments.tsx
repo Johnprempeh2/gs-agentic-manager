@@ -43,6 +43,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   EnvironmentVariablesEditor,
   type EnvironmentVariablesEditorHandle,
@@ -1979,9 +1982,9 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
           <label className="flex flex-wrap items-center gap-3 text-sm font-medium">
             <span>Default</span>
             <span>
-              <select
+              <NativeSelect
                 aria-label="Default environment"
-                className="min-w-(--sz-12rem) max-w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm font-normal outline-none"
+                className="h-auto w-auto min-w-(--sz-12rem) max-w-full bg-transparent px-2.5 py-1.5 font-normal"
                 value={instanceDefaultEnvironmentId}
                 onChange={(event) =>
                   defaultEnvironmentMutation.mutate(event.target.value || null)}
@@ -2004,7 +2007,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                     {environmentDisplayLabel(environment)}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </span>
           </label>
           <Button size="icon-sm" variant="ghost" asChild>
@@ -2234,24 +2237,24 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
           <div className="py-4">
             <div className="space-y-4">
               <Field label="Name" hint="Operator-facing name for this execution target.">
-                <input
-                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                <Input
+                  className="h-auto px-2.5 py-1.5 text-sm"
                   type="text"
                   value={environmentForm.name}
                   onChange={(e) => setEnvironmentForm((current) => ({ ...current, name: e.target.value }))}
                 />
               </Field>
               <Field label="Description" hint="Optional note about what this machine is for.">
-                <input
-                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                <Input
+                  className="h-auto px-2.5 py-1.5 text-sm"
                   type="text"
                   value={environmentForm.description}
                   onChange={(e) => setEnvironmentForm((current) => ({ ...current, description: e.target.value }))}
                 />
               </Field>
               <Field label="Driver" hint="Sandbox stores plugin-backed provider config on the shared environment seam. SSH stores a remote machine target.">
-                <select
-                  className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                <NativeSelect
+                  className="h-auto bg-transparent px-2.5 py-1.5"
                   value={environmentForm.driver}
                   onChange={(e) =>
                     setEnvironmentForm((current) => ({
@@ -2280,22 +2283,22 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                   {environmentForm.driver === "local" ? (
                     <option value="local">Local</option>
                   ) : null}
-                </select>
+                </NativeSelect>
               </Field>
 
               {environmentForm.driver === "ssh" ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field label="Host" hint="DNS name or IP address for the remote machine.">
-                    <input
-                      className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    <Input
+                      className="h-auto px-2.5 py-1.5 text-sm"
                       type="text"
                       value={environmentForm.sshHost}
                       onChange={(e) => setEnvironmentForm((current) => ({ ...current, sshHost: e.target.value }))}
                     />
                   </Field>
                   <Field label="Port" hint="Defaults to 22.">
-                    <input
-                      className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    <Input
+                      className="h-auto px-2.5 py-1.5 text-sm"
                       type="number"
                       min={1}
                       max={65535}
@@ -2304,8 +2307,8 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                     />
                   </Field>
                   <Field label="Username" hint="SSH username.">
-                    <input
-                      className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    <Input
+                      className="h-auto px-2.5 py-1.5 text-sm"
                       type="text"
                       value={environmentForm.sshUsername}
                       onChange={(e) => setEnvironmentForm((current) => ({ ...current, sshUsername: e.target.value }))}
@@ -2319,8 +2322,8 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                     user configured is outside that contract.
                   */}
                   <Field label="Remote workspace path" hint="Absolute path that GS Agentic Manager will verify during SSH connection tests.">
-                    <input
-                      className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    <Input
+                      className="h-auto px-2.5 py-1.5 text-sm"
                       type="text"
                       placeholder="/Users/gsam/workspace"
                       value={environmentForm.sshRemoteWorkspacePath}
@@ -2330,8 +2333,8 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                   </Field>
                   <Field label="Private key" hint="Optional PEM private key. Leave blank to rely on the server's SSH agent or default keychain.">
                     <div className="space-y-2">
-                      <select
-                        className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                      <NativeSelect
+                        className="h-auto bg-transparent px-2.5 py-1.5"
                         value={environmentForm.sshPrivateKeySecretId}
                         onChange={(e) =>
                           setEnvironmentForm((current) => ({
@@ -2344,9 +2347,9 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                         {(secrets ?? []).map((secret) => (
                           <option key={secret.id} value={secret.id}>{secret.name}</option>
                         ))}
-                      </select>
-                      <textarea
-                        className="h-32 w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-xs font-mono outline-none"
+                      </NativeSelect>
+                      <Textarea
+                        className="h-32 px-2.5 py-1.5 font-mono text-xs md:text-xs"
                         value={environmentForm.sshPrivateKey}
                         disabled={!!environmentForm.sshPrivateKeySecretId}
                         onChange={(e) => setEnvironmentForm((current) => ({ ...current, sshPrivateKey: e.target.value }))}
@@ -2354,8 +2357,8 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                     </div>
                   </Field>
                   <Field label="Known hosts" hint="Optional known_hosts block used when strict host key checking is enabled.">
-                    <textarea
-                      className="h-32 w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-xs font-mono outline-none"
+                    <Textarea
+                      className="h-32 px-2.5 py-1.5 font-mono text-xs md:text-xs"
                       value={environmentForm.sshKnownHosts}
                       onChange={(e) => setEnvironmentForm((current) => ({ ...current, sshKnownHosts: e.target.value }))}
                     />
@@ -2375,8 +2378,8 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
               {environmentForm.driver === "sandbox" ? (
                 <div className="space-y-3">
                   <Field label="Provider" hint="Installed run-capable sandbox provider plugins appear here.">
-                    <select
-                      className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    <NativeSelect
+                      className="h-auto bg-transparent px-2.5 py-1.5"
                       value={environmentForm.sandboxProvider}
                       onChange={(e) => {
                         const nextProviderKey = e.target.value;
@@ -2398,7 +2401,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                           {provider.displayName}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </Field>
                   {selectedSandboxProvider?.description ? (
                     <div className="text-xs text-muted-foreground">
@@ -2579,10 +2582,10 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                         <span className="font-medium">
                           Reassign {agentsUsingEnvironment.length === 1 ? "agent" : "agents"} to
                         </span>
-                        <select
+                        <NativeSelect
                           aria-label="Reassign agents to environment"
                           data-testid="environment-delete-reassign-select"
-                          className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm font-normal outline-none"
+                          className="h-auto bg-transparent px-2.5 py-1.5 font-normal"
                           value={reassignEnvironmentTargetId}
                           onChange={(event) => setReassignEnvironmentTargetId(event.target.value)}
                         >
@@ -2596,7 +2599,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                               {environment.name} · {environment.driver}
                             </option>
                           ))}
-                        </select>
+                        </NativeSelect>
                         <span className="block text-xs text-muted-foreground">
                           Affected: {agentsUsingEnvironment.map((agent) => agent.name).join(", ")}
                         </span>
