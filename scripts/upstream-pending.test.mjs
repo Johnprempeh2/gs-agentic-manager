@@ -96,6 +96,35 @@ test("a later taken line closes a partial", () => {
   }
 });
 
+test("drops upstream commits that a sync merge brought into main and names the sync point", () => {
+  const { dir, base, up } = fixture();
+  try {
+    const short = (sha) => sha.slice(0, 7);
+    assert.match(run(dir, "--base", base, "--main", "main"), new RegExp(`^Synced to: ${short(base)}$`, "m"));
+    // A sync merge takes upstream up to the security fix; only up.plain is left.
+    git(dir, "merge", "--quiet", "--no-edit", up.security);
+    const out = run(dir, "--base", base, "--main", "main");
+    assert.match(out, new RegExp(`^Synced to: ${short(up.security)}$`, "m"));
+    assert.match(out, /Upstream commits: 7\. Pending: 1\. Partial: 0\./);
+    const lists = out.slice(out.indexOf("## "));
+    for (const key of ["taken", "partial", "skipped", "backfilled", "picked", "security"]) {
+      assert.ok(!lists.includes(short(up[key])), `${key} is in main and should not be listed:\n${out}`);
+    }
+    assert.match(out, new RegExp(`## Other \\(1\\)\\n${short(up.plain)} `));
+    assert.equal(run(dir, "--base", base, "--main", "main", "--count").trim(), "1");
+    const clashOut = run(dir, "--base", base, "--main", "main", "--clash");
+    assert.match(clashOut, /Pending: 1\./);
+    assert.ok(!clashOut.includes(short(up.security) + " "), clashOut);
+    // An advisory naming the merged fix does not bring it back.
+    const env = stubGh(dir, [advisory("GHSA-ffff-ffff-ffff", "2026-04-16T00:00:00Z", "Grants", "Fixed by #6")]);
+    const advOut = runEnv(dir, env, "--base", base, "--main", "main", "--advisories");
+    assert.match(advOut, /## Security-looking \(0\)\n/);
+    assert.ok(!advOut.includes(short(up.security) + " "), advOut);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("--clash marks each pending commit clean or conflict and writes nothing", () => {
   const { dir, base, up } = fixture();
   try {
