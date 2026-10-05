@@ -56,11 +56,19 @@ git -C "$RELEASE_REPO" fetch --quiet --tags origin
 git -C "$RELEASE_REPO" fetch --quiet origin main
 STALE="$(release_scripts_current "$RELEASE_REPO")" || die "$STALE"
 TARGET="$(git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$TAG^{commit}")" || die "unknown tag $TAG"
-[ "$(git -C "$LIVE_DIR" rev-parse HEAD)" != "$TARGET" ] || die "live is already on $TAG ($TARGET); nothing to do."
+LIVE_HEAD="$(git -C "$LIVE_DIR" rev-parse HEAD)"
+[ "$LIVE_HEAD" != "$TARGET" ] || die "live is already on $TAG ($TARGET); nothing to do."
+PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || git -C "$LIVE_DIR" rev-parse --short HEAD)"
 
 if [ "$MODE" = release ]; then
   git -C "$RELEASE_REPO" merge-base --is-ancestor "$TARGET" origin/main \
     || die "$TAG ($TARGET) is not on origin/main; only merged code is released."
+  # GRE-839: a candidate cut before the live commit would silently take live
+  # back. Going back is a rollback, with a live-* tag.
+  git -C "$RELEASE_REPO" cat-file -e "$LIVE_HEAD^{commit}" 2>/dev/null \
+    || die "live runs $PREVIOUS ($LIVE_HEAD), which $RELEASE_REPO does not have, so it cannot tell whether $TAG is newer. Fetch it, then release again. Nothing was changed."
+  git -C "$RELEASE_REPO" merge-base --is-ancestor "$LIVE_HEAD" "$TARGET" \
+    || die "$TAG is older than live ($PREVIOUS); to go back, use the rollback form with a live-* tag. Nothing was changed."
   if [ "$FROM_APP" != 1 ] && preview_running && [ "$(preview_state commit)" != "$TARGET" ]; then
     die "the preview runs $(preview_state tag) ($(preview_state commit)), not $TAG. Release the tag you checked, or check $TAG in the preview first."
   fi
@@ -79,7 +87,6 @@ if curl -fsS -m 5 -o /dev/null "$LIVE_URL/api/health" 2>/dev/null && [ -z "$(hea
   die "the live server at $LIVE_URL runs but does not show serverInfo: it runs in login mode and $LIVE_BOARD_KEY_FILE holds no valid board API key (see the runbook). Nothing was changed."
 fi
 
-PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || git -C "$LIVE_DIR" rev-parse --short HEAD)"
 ROLLBACK="scripts/greatstone-release.sh $PREVIOUS"
 [ "$FULL_RESTART" = 0 ] || ROLLBACK="scripts/greatstone-release.sh --full-restart $PREVIOUS"
 

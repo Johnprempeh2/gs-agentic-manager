@@ -507,6 +507,38 @@ test("a release that fails after tagging pushes no live tag and deletes the loca
   assert.equal(git(origin, "tag", "--list", "rc-*"), "");
 });
 
+// GRE-839: with several candidates open, releasing one cut before live would
+// silently take live back. Live here is on the rc-2026-09-29.1 commit. A check
+// that passes stops later, at the failing `pnpm install`.
+test("a release refuses a candidate older than live; a newer candidate and a rollback pass", (t) => {
+  const { dev, live, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  git(dev, "tag", "-a", "live-2026-09-29.1", "-m", "Current release", "rc-2026-09-29.1^{commit}");
+  git(dev, "tag", "-a", "rc-2026-09-28.1", "-m", "Older candidate", "live-2026-09-01.1^{commit}");
+  git(dev, "commit", "--quiet", "--allow-empty", "-m", "newer");
+  git(dev, "tag", "-a", "rc-2026-09-30.1", "-m", "Newer candidate");
+  git(dev, "push", "--quiet", "origin", "HEAD:main", "live-2026-09-29.1");
+  git(live, "fetch", "--quiet", "--tags", "origin");
+  git(live, "checkout", "--quiet", "--detach", "live-2026-09-29.1");
+  const release = (tag) => spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), tag], { encoding: "utf8", env: env("http://127.0.0.1:9") });
+
+  const older = release("rc-2026-09-28.1");
+  assert.equal(older.status, 1);
+  assert.match(older.stderr, /^release: rc-2026-09-28\.1 is older than live \(live-2026-09-29\.1\); to go back, use the rollback form with a live-\* tag\./m);
+  assert.doesNotMatch(older.stdout, /Backed up|Tagged/);
+  assert.equal(git(live, "describe", "--tags", "--exact-match", "HEAD"), "live-2026-09-29.1");
+
+  const newer = release("rc-2026-09-30.1");
+  assert.doesNotMatch(newer.stderr, /older than live/);
+  assert.match(newer.stdout, /^Tagged rc-2026-09-30\.1 as /m);
+
+  // The failed install left files in the sandbox live checkout.
+  git(live, "clean", "--quiet", "-fdx");
+  git(live, "checkout", "--quiet", "--detach", "live-2026-09-29.1");
+  const rollback = release("live-2026-09-01.1");
+  assert.doesNotMatch(rollback.stderr, /older than live/, rollback.stderr);
+  assert.match(rollback.stdout, /^Live checkout is on live-2026-09-01\.1 /m, rollback.stderr);
+});
+
 // GRE-243: a release of only doc/ (or ui/) changes no file dev-runner watches,
 // so the live server answers every restart with restart_not_required. Its
 // "commit" follows the live checkout, like the real one.
