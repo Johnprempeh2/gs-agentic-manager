@@ -58,6 +58,11 @@ type TransitionInput = {
   commentBody?: string | null;
   reviewRequest?: IssueExecutionState["reviewRequest"] | null;
   monitorExplicitlyUpdated?: boolean;
+  /**
+   * The escalation human, already bound to a real user by the caller (see
+   * `resolveReviewEscalationUserId`). Omitted: read from the issue.
+   */
+  reviewEscalationUserId?: string | null;
 };
 
 type TransitionResult = {
@@ -470,7 +475,7 @@ function resolveMaxReviewRounds(policy: IssueExecutionPolicy | null): number {
  * changes-requested rounds. Without one the loop keeps handing back to the
  * return assignee (pre-existing behavior) rather than stalling the stage.
  */
-function reviewEscalationUserId(issue: IssueLike): string | null {
+export function reviewEscalationUserId(issue: Pick<IssueLike, "responsibleUserId" | "createdByUserId">): string | null {
   const responsible = issue.responsibleUserId?.trim();
   if (responsible) return responsible;
   const creator = issue.createdByUserId?.trim();
@@ -883,7 +888,9 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         const actorIsHuman = actor?.type === "user";
         const nextRounds = actorIsHuman ? 0 : (existingState.changesRequestedCount ?? 0) + 1;
         if (!actorIsHuman && nextRounds >= resolveMaxReviewRounds(input.policy)) {
-          const escalationUserId = reviewEscalationUserId(input.issue);
+          const escalationUserId = input.reviewEscalationUserId !== undefined
+            ? input.reviewEscalationUserId
+            : reviewEscalationUserId(input.issue);
           if (escalationUserId) {
             // Rounds exhausted: keep the stage pending but hand it to the
             // responsible human instead of bouncing back to the implementer.

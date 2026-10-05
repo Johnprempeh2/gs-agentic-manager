@@ -316,6 +316,7 @@ import {
   redactIssueMonitorExternalRef,
   setIssueExecutionPolicyMonitorScheduledBy,
 } from "../services/issue-execution-policy.js";
+import { resolveReviewEscalationUserId } from "../services/review-escalation-user.js";
 import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
@@ -13575,6 +13576,13 @@ export function issueRoutes(
         req.body.executionPolicy !== undefined && monitorChanged,
       );
 
+      // Only an agent's changes-requested escalates; bind a legacy board id to the real owner (GRE-870).
+      const reviewEscalationUserId =
+        existing.status === "in_review" &&
+        actor.actorType === "agent" &&
+        parseIssueExecutionState(existing.executionState)?.status === "pending"
+          ? await resolveReviewEscalationUserId(db, existing)
+          : undefined;
       const transition = applyIssueExecutionPolicyTransition({
         issue: existing,
         policy: nextExecutionPolicy,
@@ -13596,6 +13604,7 @@ export function issueRoutes(
         },
         allowBoardOverride: req.actor.type === "board",
         commentBody,
+        reviewEscalationUserId,
         reviewRequest: reviewRequest === undefined ? undefined : reviewRequest,
         monitorExplicitlyUpdated:
           req.body.executionPolicy !== undefined && monitorChanged,
