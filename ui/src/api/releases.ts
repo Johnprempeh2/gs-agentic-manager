@@ -103,6 +103,8 @@ export interface ReleaseProgress {
   state: ReleaseProgressState;
   /** Runs marked "finish before update" still running while new runs are held. */
   waitingForFlaggedRuns: number | null;
+  /** Running ACP runs the release waits for (at most 5 min); a hot restart cannot keep them. */
+  waitingForAcpRuns: number | null;
   /** The board chose "Release without waiting". */
   overridden: boolean;
   /** Plain-words reason for rolled_back / failed. */

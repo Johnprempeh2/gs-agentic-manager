@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   LIVE_RELEASE_SWITCH_MS,
+  LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS,
   LIVE_RELEASE_WAIT_FOR_RUNS_MS,
   RELEASE_CARD_OWNER_OR_ADMIN_COMMENT,
   createLiveReleaseService,
@@ -23,6 +24,7 @@ import type { CandidateCut, ReleaseTagInfo } from "../services/release-repo.ts";
 let root: string;
 let clock: Date;
 let runningRuns: Set<string>;
+let acpRuns: Set<string>;
 let comments: string[];
 let holds: Array<{ startedAt: Date; expiresAt: Date }>;
 let lifted: Date[];
@@ -62,6 +64,7 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
     resolveReleaseRepo: () => path.join(root, "dev"),
     now: () => clock,
     runningRunIds: async (ids) => ids.filter((id) => runningRuns.has(id)),
+    runningAcpRunIds: async () => [...acpRuns],
     postComment: async (_issueId, body) => {
       comments.push(body);
     },
@@ -160,6 +163,7 @@ beforeEach(() => {
   for (const dir of ["live", "dev/scripts"]) fs.mkdirSync(path.join(root, dir), { recursive: true });
   clock = new Date("2026-09-27T12:00:00Z");
   runningRuns = new Set(["run-unflagged"]);
+  acpRuns = new Set();
   comments = [];
   holds = [];
   lifted = [];
@@ -345,6 +349,75 @@ describe("holding: hot restart, flagged runs, cancel, override", () => {
     expect(svc.listJobs()[0].state).toBe("switching");
     // The finished run's flag is gone.
     expect((await svc.overview("co-1")).flaggedRuns).toEqual([]);
+  });
+
+  it("waits up to 5 min for running ACP runs, which a hot restart cannot keep (GRE-746)", async () => {
+    acpRuns.add("run-acp");
+    const svc = createLiveReleaseService(deps());
+    const job = await svc.onConfirmationAccepted(accepted());
+    expect(job).toMatchObject({ state: "holding", waitingForAcpRuns: 1 });
+    expect(svc.listJobs()[0]).toMatchObject({ waitingForAcpRuns: 1 });
+    expect(comments.at(-1)).toMatch(/running ACP runs.*\(1 now, at most 5 min\)/);
+    expect(holds).toHaveLength(1);
+
+    advance(60 * 1000);
+    await svc.tick();
+    expect(launches).toEqual([]);
+
+    acpRuns.delete("run-acp");
+    await svc.tick();
+    expect(launches).toHaveLength(1);
+    expect(svc.listJobs()[0]).toMatchObject({ state: "switching", waitingForAcpRuns: 0 });
+  });
+
+  it("restarts after 5 min with ACP runs still running: they are checkpointed and retried (GRE-746)", async () => {
+    acpRuns.add("run-acp");
+    const svc = createLiveReleaseService(deps());
+    await svc.onConfirmationAccepted(accepted());
+    advance(LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS - 1);
+    await svc.tick();
+    expect(launches).toEqual([]);
+
+    advance(1);
+    await svc.tick();
+    expect(launches).toHaveLength(1);
+    expect(svc.listJobs()[0].state).toBe("switching");
+    expect(comments.at(-1)).toBe("1 ACP run(s) still running after 5 min. The restart stops them and they are retried.");
+    // The release goes on; the hold stays until the outcome is recorded.
+    expect(lifted).toEqual([]);
+  });
+
+  it("waits for flagged runs first, then gives ACP runs only what is left of the 5 min (GRE-746)", async () => {
+    acpRuns.add("run-acp");
+    const svc = createLiveReleaseService(deps());
+    await flagRun(svc, "run-flagged");
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    advance(10 * 60 * 1000);
+    runningRuns.delete("run-flagged");
+    await svc.tick();
+    expect(launches).toHaveLength(1);
+  });
+
+  it("the board override skips the ACP wait too (GRE-746)", async () => {
+    acpRuns.add("run-acp");
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    expect(launches).toEqual([]);
+    const result = await svc.override(JOHN);
+    expect(result.ok && result.progress).toMatchObject({ state: "switching", overridden: true });
+    expect(launches).toHaveLength(1);
+  });
+
+  it("cancel during the ACP wait lifts the hold and leaves live unchanged (GRE-746)", async () => {
+    acpRuns.add("run-acp");
+    const svc = createLiveReleaseService(deps());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN });
+    await svc.cancel(JOHN);
+    expect(lifted).toHaveLength(1);
+    expect(fs.existsSync(svc.holdFile)).toBe(false);
+    acpRuns.delete("run-acp");
+    await svc.tick();
+    expect(launches).toEqual([]);
   });
 
   it("lets the board release without waiting (override)", async () => {
