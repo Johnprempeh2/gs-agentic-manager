@@ -233,6 +233,18 @@ Phase 3 never reads from the engine, so `--phase 3` can run without one: set
 `"requireEngine": false` in the config (contributions then wait in the outbox).
 Phases 1 and 2 still need the engine.
 
+The screens get the same 8.3.3 check in a headless browser. After a phase 3
+`gsam` run, on the same sandbox server:
+
+```sh
+MEMORY_UI_BASE=http://127.0.0.1:<sandbox port> \
+  node tests/memory-acceptance/ui-clickpath.mjs --shots <scratch>/shots
+```
+
+It adds one synthetic task and one memory linked to it, then walks: activity
+item -> "Show in graph" -> source link -> the task -> Back to the same node ->
+contributor's activity -> search by the task id finds the memory.
+
 ## Live config
 
 `MEMORY_ACCEPTANCE_LIVE_CONFIG` points at a JSON file (keep it out of git; it
