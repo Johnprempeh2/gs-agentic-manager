@@ -302,13 +302,14 @@ export function createGsamTarget(cfg, { world, primeOrg = false }) {
       return state.tokens[id] ?? `missing-token-${id}`;
     },
     async recall(headers, body) {
-      const { client, scope, ...rest } = body;
+      const { client, scope, bare, ...rest } = body;
       const named = client ?? scope;
-      const scopeIds = named ? [scopeIdFor(named)] : await visibleScopeIds(headers);
+      // A bare recall sends no scopeIds; the gateway then skips client scopes by design.
+      const scopeIds = named ? [scopeIdFor(named)] : bare ? undefined : await visibleScopeIds(headers);
       const res = await http(`/api/companies/${state.companyId}/memory/recall`, {
         method: "POST",
         headers: mapHeaders(headers),
-        body: { ...rest, scopeIds },
+        body: scopeIds ? { ...rest, scopeIds } : rest,
       });
       return translateResult(res);
     },
