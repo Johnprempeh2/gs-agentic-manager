@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { agents, companies, createDb, heartbeatRuns } from "@greatstone/db";
 import { toLegacyEnvKey } from "@greatstone/shared/legacy-env";
@@ -435,27 +436,34 @@ describe.skipIf(!onLinux || !embeddedPostgresSupport.supported)("sweepLeftoverRu
     await stopStartedProcesses();
   });
 
-  async function seedRun(status: string, finishedMinutesAgo: number | null) {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
+  /** A run for a new agent, or for `agent` when given. */
+  async function seedRun(
+    status: string,
+    finishedMinutesAgo: number | null,
+    agent?: { companyId: string; agentId: string },
+  ) {
+    const companyId = agent?.companyId ?? randomUUID();
+    const agentId = agent?.agentId ?? randomUUID();
     const runId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Leftover sweep",
-      issuePrefix: `L${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-    });
-    await db.insert(agents).values({ id: agentId, companyId, name: "Worker", adapterType: "claude_local" });
+    if (!agent) {
+      await db.insert(companies).values({
+        id: companyId,
+        name: "Leftover sweep",
+        issuePrefix: `L${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      });
+      await db.insert(agents).values({ id: agentId, companyId, name: "Worker", adapterType: "claude_local" });
+    }
     const finishedAt = finishedMinutesAgo === null ? null : new Date(Date.now() - finishedMinutesAgo * 60_000);
     await db.insert(heartbeatRuns).values({ id: runId, companyId, agentId, status, finishedAt });
-    return runId;
+    return { runId, companyId, agentId };
   }
 
   it("stops processes of runs that ended a while ago, and only those", async () => {
     vi.stubEnv("GSAM_RUN_PROCESS_CLEANUP", "");
     const dir = await makeTempDir();
-    const endedLongAgo = await seedRun("succeeded", 30);
-    const endedJustNow = await seedRun("failed", 1);
-    const stillRunning = await seedRun("running", null);
+    const endedLongAgo = (await seedRun("succeeded", 30)).runId;
+    const endedJustNow = (await seedRun("failed", 1)).runId;
+    const stillRunning = (await seedRun("running", null)).runId;
 
     const leftover = await startOrphan(dir, "leftover", markedEnv(endedLongAgo, apiUrl), "sleep 600");
     const recent = await startOrphan(dir, "recent", markedEnv(endedJustNow, apiUrl), "sleep 600");
@@ -477,6 +485,42 @@ describe.skipIf(!onLinux || !embeddedPostgresSupport.supported)("sweepLeftoverRu
     for (let i = 0; i < 50 && alive(leftover); i += 1) await new Promise((r) => setTimeout(r, 20));
     expect(alive(leftover)).toBe(false);
     for (const pid of [recent, running, otherServer, unknownRun]) expect(alive(pid)).toBe(true);
+  });
+
+  // A warm ACP session keeps the environment of the run that started it, so a
+  // process it starts during a later run carries the earlier, ended run's id.
+  it("leaves an ended run's processes alone while its agent has a live run", async () => {
+    vi.stubEnv("GSAM_RUN_PROCESS_CLEANUP", "");
+    const dir = await makeTempDir();
+    const first = await seedRun("succeeded", 30);
+    const second = await seedRun("running", null, first);
+    const devServer = await startOrphan(dir, "dev-server", markedEnv(first.runId, apiUrl), "sleep 600");
+    const sweep = () =>
+      sweepLeftoverRunProcesses({
+        db,
+        apiPort,
+        graceMs: 1_500,
+        deletedWorktreeMinAgeMs: Number.POSITIVE_INFINITY,
+      });
+
+    for (const status of ["running", "queued", "scheduled_retry"]) {
+      await db.update(heartbeatRuns).set({ status }).where(eq(heartbeatRuns.id, second.runId));
+      expect(await sweep()).toMatchObject({ status: "done", stopped: [] });
+      expect(alive(devServer)).toBe(true);
+    }
+
+    await db
+      .update(heartbeatRuns)
+      .set({ status: "succeeded", finishedAt: new Date() })
+      .where(eq(heartbeatRuns.id, second.runId));
+    const result = await sweep();
+    expect(result.status).toBe("done");
+    if (result.status !== "done") return;
+    expect(result.stopped.map((entry) => [entry.pid, entry.runId, entry.outcome])).toEqual([
+      [devServer, first.runId, "terminated"],
+    ]);
+    for (let i = 0; i < 50 && alive(devServer); i += 1) await new Promise((r) => setTimeout(r, 20));
+    expect(alive(devServer)).toBe(false);
   });
 });
 

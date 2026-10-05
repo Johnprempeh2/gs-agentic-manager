@@ -53,6 +53,8 @@ export const LEFTOVER_PROCESS_SWEEP_RUN_ENDED_MIN_AGE_MS = 10 * 60_000;
 export const LEFTOVER_PROCESS_DELETED_WORKTREE_MIN_AGE_MS = 10 * 60_000;
 
 const TERMINAL_RUN_STATUSES = ["succeeded", "interrupted", "failed", "cancelled", "timed_out"] as const;
+/** While an agent has a run in one of these, the sweep leaves all its markers alone. */
+const AGENT_BUSY_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
 // The GSAM_* name first, then the legacy alias every agent environment also carries.
 const RUN_ID_KEYS: readonly string[] = ["GSAM_RUN_ID", toLegacyEnvKey("GSAM_RUN_ID")];
 const API_URL_KEYS: readonly string[] = ["GSAM_API_URL", toLegacyEnvKey("GSAM_API_URL")];
@@ -627,7 +629,15 @@ export async function cleanupRunLeftoverProcesses(input: {
   return { status: "done", stopped, protectedMatches: selection.protectedMatches };
 }
 
-/** Runs of this instance that ended at least `minAgeMs` ago, among `runIds`. */
+/**
+ * Runs of this instance, among `runIds`, that ended at least `minAgeMs` ago
+ * and whose agent has no queued, running or scheduled-retry run.
+ *
+ * The agent check is for warm ACP sessions (`warmHandleIdleMs` above 0): a
+ * warm session keeps the environment of the run that started it, so a
+ * process the session starts during a later run still carries the first
+ * run's id. While the agent has a live run, that marker may belong to it.
+ */
 async function endedRunIds(db: Db, runIds: readonly string[], now: Date, minAgeMs: number): Promise<Set<string>> {
   const ids = runIds.filter((id) => UUID_RE.test(id));
   if (ids.length === 0) return new Set();
@@ -639,6 +649,11 @@ async function endedRunIds(db: Db, runIds: readonly string[], now: Date, minAgeM
       inArray(heartbeatRuns.id, ids),
       inArray(heartbeatRuns.status, [...TERMINAL_RUN_STATUSES]),
       sql`coalesce(${heartbeatRuns.finishedAt}, ${heartbeatRuns.updatedAt}) <= ${cutoff.toISOString()}::timestamptz`,
+      sql`not exists (
+        select 1 from heartbeat_runs agent_run
+        where agent_run.agent_id = "heartbeat_runs"."agent_id"
+          and agent_run.status in (${sql.join(AGENT_BUSY_RUN_STATUSES.map((status) => sql`${status}`), sql`, `)})
+      )`,
     ));
   return new Set(rows.map((row) => row.id));
 }

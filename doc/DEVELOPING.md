@@ -715,7 +715,10 @@ them (`server/src/services/run-process-cleanup.ts`):
   during a hot restart are left to the sweep, so the restart stays quick.
 - **A sweep at server start and then every five minutes** stops processes
   whose marker names a run of this instance that ended at least 10 minutes ago
-  (and whose `GSAM_API_URL` points at this server's port), and orphans with no
+  (and whose `GSAM_API_URL` points at this server's port), but only while that
+  run's agent has no queued, running or scheduled-retry run: a warm ACP session
+  keeps the id of the run that started it, so what it starts during a later run
+  carries the earlier run's id. It also stops orphans with no
   run marker and no terminal whose working directory is a deleted
   `.gsam/worktrees/` folder and that have run for at least 10 minutes.
 
