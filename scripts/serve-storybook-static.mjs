@@ -8,6 +8,7 @@ import { createServer } from "node:http";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveDevServerHost } from "../ui/src/lib/dev-server-host.mjs";
 
 const root = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
@@ -24,6 +25,9 @@ const explicitPort =
     : null;
 const portSource = explicitPort ?? process.env.PORT ?? 6106;
 const port = Number(portSource);
+// Loopback unless GSAM_DEV_HOST says otherwise; the visual tests only need it
+// on this machine.
+const host = resolveDevServerHost(process.env.GSAM_DEV_HOST);
 
 if (!Number.isInteger(port) || port <= 0 || port > 65535) {
   console.error(`Invalid Storybook static server port: ${portSource}`);
@@ -89,8 +93,8 @@ const server = createServer((req, res) => {
   createReadStream(filePath).pipe(res);
 });
 
-server.listen(port, () => {
-  console.log(`storybook-static served at http://localhost:${port}`);
+server.listen(port, host, () => {
+  console.log(`storybook-static served at http://localhost:${port} (listening on ${host})`);
 });
 
 async function shutdown() {

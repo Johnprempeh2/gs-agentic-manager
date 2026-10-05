@@ -4,8 +4,21 @@ import type { StorybookConfig } from "@storybook/react-vite";
 import tailwindcss from "@tailwindcss/vite";
 import { mergeConfig } from "vite";
 import { storybookAgentAvatarAssets } from "../../../scripts/storybook-agent-avatar-assets.mjs";
+import { defaultListenHost, isLoopbackHost, resolveDevServerHost } from "../../src/lib/dev-server-host.mjs";
 
 const storybookConfigDir = path.dirname(fileURLToPath(import.meta.url));
+// Storybook listens on every interface unless it is given --host, and main.ts
+// has no host setting. Keep `storybook dev` on loopback; GSAM_DEV_HOST opts in
+// to another address. An explicit --host or SBCONFIG_HOSTNAME still wins.
+const devServerHost = resolveDevServerHost(process.env.GSAM_DEV_HOST);
+const announceDevServerHost = (host: string) => {
+  console.log(
+    isLoopbackHost(host)
+      ? `Storybook listens on ${host} only, so the "On your network" address will not answer. ` +
+          "To open it from another device, set GSAM_DEV_HOST=0.0.0.0 (see doc/DEVELOPING.md)."
+      : `Storybook listens on ${host} (GSAM_DEV_HOST), so other devices on the network can open it.`,
+  );
+};
 const paperclipInstanceOrigin = (() => {
   try {
     const url = new URL(process.env.GSAM_STORYBOOK_API_URL ?? "");
@@ -25,6 +38,11 @@ const config: StorybookConfig = {
   },
   docs: {
     autodocs: true,
+  },
+  // Runs before the dev server listens; its Vite HMR socket shares this server.
+  experimental_devServer: (app) => {
+    defaultListenHost(app.server ?? app, devServerHost, announceDevServerHost);
+    return app;
   },
   viteFinal: async (baseConfig, { configType }) =>
     mergeConfig(baseConfig, {

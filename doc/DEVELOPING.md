@@ -87,7 +87,7 @@ The vite dev server serves an unbundled module graph. This is fast to reload on 
 - `pnpm dev:mobile` — build the UI and start the preview server on `:3101`. Rebuild manually to pick up UI source changes.
 - `pnpm dev:both` — run `pnpm dev` and `pnpm dev:mobile` together with prefixed output and shared signal handling.
 
-The preview server binds `0.0.0.0` and accepts any Host, so a tailnet or LAN address (e.g. `http://<host>.ts.net:3101/`) works out of the box. The `/api` proxy sets `x-forwarded-host` and `x-forwarded-proto`, which the server's board mutation guard uses to trust the browser's Origin — mutations from `:3101` succeed against the API on `:3100` without further configuration. An HTTPS tunnel in front of the preview server (ngrok, tailscale funnel) is also supported: the tunnel's `x-forwarded-proto` header is preserved when set.
+The preview server listens on `127.0.0.1` only and accepts only `localhost` and IP addresses as Host (see "Dev servers listen on 127.0.0.1" below). To open it from a phone or another device, opt in for that run with `GSAM_DEV_HOST=0.0.0.0 pnpm dev:mobile` (or `GSAM_DEV_HOST=0.0.0.0 pnpm dev:both`): it then listens on every interface and accepts any Host, so a tailnet or LAN address (e.g. `http://<host>.ts.net:3101/`) works. The `/api` proxy sets `x-forwarded-host` and `x-forwarded-proto`, which the server's board mutation guard uses to trust the browser's Origin, so mutations from `:3101` succeed against the API on `:3100` without further configuration. An HTTPS tunnel in front of the preview server (ngrok, tailscale funnel) is also supported with the same opt-in, so the preview accepts the tunnel's Host: the tunnel's `x-forwarded-proto` header is preserved when set.
 
 ## Storybook
 
@@ -99,6 +99,37 @@ pnpm build-storybook
 ```
 
 These run the `@greatstone/ui` Storybook on port `6006` and build the static output to `ui/storybook-static/`.
+
+### Dev servers listen on 127.0.0.1
+
+Storybook (`pnpm storybook`, or `storybook dev` run directly), the Vite dev and
+preview servers (`pnpm dev:ui`, `pnpm dev:mobile`) and
+`scripts/serve-storybook-static.mjs` listen on `127.0.0.1` only. That is all a
+screenshot or a Playwright check needs. On 5 Oct 2026 two Storybook servers
+started by agent runs listened on every interface, so every device on the
+tailnet could open them.
+
+To open one from another device, for example your phone over Tailscale, opt in
+for that command only:
+
+```sh
+GSAM_DEV_HOST=0.0.0.0 pnpm storybook
+GSAM_DEV_HOST=0.0.0.0 pnpm dev:mobile
+```
+
+- An explicit `--host` (Storybook or Vite) still wins over `GSAM_DEV_HOST`.
+- Storybook's start-up box still prints an "On your network" address. It does
+  not answer unless you opted in.
+- Storybook and `pnpm dev:ui` check the Host header, so with `GSAM_DEV_HOST`
+  open them by the machine's IP address. `pnpm dev:mobile` then accepts any
+  name, such as `<host>.ts.net`.
+- Agent runs do not opt in. The main server is not affected: it has its own
+  bind setting (see "Tailscale/private-auth dev mode" below).
+
+The setting lives in `ui/src/lib/dev-server-host.mjs`. Storybook has no
+`main.ts` option for its host, so `ui/storybook/.storybook/main.ts` sets it
+through Storybook's `experimental_devServer` hook. After a Storybook upgrade,
+check that `ss -ltnp` still shows `127.0.0.1:<port>` for `pnpm storybook`.
 
 Use **Chat & Comments → Issue Thread Interactions → Composer Questions Auto Advance**
 to try the paged composer form. A single selection shows a brief checked-state animation before advancing to the
