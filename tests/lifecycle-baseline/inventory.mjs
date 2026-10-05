@@ -49,6 +49,8 @@ export const lanes = {
       `${server}issue-thread-interactions-service.test.ts`,
       // GRE-36: the new assignee's wake carries the old run's progress.
       "server/src/services/reassignment-handover-payload.test.ts",
+      // GRE-750: a parked hand-off wake on a task with no live run is restarted.
+      `${server}parked-handoff-wake-restart.test.ts`,
     ],
   },
   grading: {
