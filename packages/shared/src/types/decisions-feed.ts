@@ -32,6 +32,7 @@ export type DecisionCardActionId =
   | "ask_clarity"
   | "approve"
   | "reject"
+  | "request_changes"
   | "reconnect"
   | "dismiss"
   | "done"
@@ -70,6 +71,15 @@ export interface DecisionCardAction {
 export interface DecisionCardAgentRef {
   id: string;
   name: string;
+}
+
+/** Who must give the verdict on a task in review (GRE-870). */
+export interface DecisionCardReviewer {
+  type: "user" | "agent";
+  id: string;
+  name: string;
+  /** The reviewer is the user who asked for the feed: only they may approve. */
+  isYou: boolean;
 }
 
 export interface DecisionCardClarity {
@@ -129,6 +139,8 @@ export interface DecisionCard {
   reason: string;
   /** The agent whose work waits on the board. */
   waiting: DecisionCardAgentRef | null;
+  /** The pending reviewer when the task waits on a review stage. */
+  reviewer?: DecisionCardReviewer | null;
   /** What happens next if nobody acts, or once the board acts. */
   nextStep: string;
   severity: AttentionSeverity;

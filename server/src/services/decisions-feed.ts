@@ -4,6 +4,7 @@ import type { Db } from "@greatstone/db";
 import {
   activityLog,
   agents,
+  authUsers,
   connectionGrants,
   heartbeatRuns,
   issueComments,
@@ -27,12 +28,14 @@ import type {
   DecisionCardAgentRef,
   DecisionCardClarity,
   DecisionCardKind,
+  DecisionCardReviewer,
   DecisionCardSetup,
   DecisionsFeed,
 } from "@greatstone/shared";
 import { attentionService, type AttentionServiceOptions } from "./attention.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 import { isExplicitResumeCapableStatus } from "./issue-comment-wakeup.js";
+import { parseIssueExecutionState } from "./issue-execution-policy.js";
 
 /** activity_log.details.source on the comment a clarity question writes. */
 export const DECISIONS_CLARITY_SOURCE = "decisions_clarity";
@@ -52,6 +55,14 @@ type TaskRow = {
   status: string;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
+  executionState: unknown;
+};
+
+/** A task's pending review stage: who reviews it and who gets it back (GRE-870). */
+type PendingReview = {
+  reviewer: DecisionCardReviewer;
+  returnAgentId: string | null;
+  canReturn: boolean;
 };
 
 /** An interaction that needs the board user at the computer (GRE-450). */
@@ -236,6 +247,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
             status: issues.status,
             assigneeAgentId: issues.assigneeAgentId,
             assigneeUserId: issues.assigneeUserId,
+            executionState: issues.executionState,
           })
           .from(issues)
           .where(and(eq(issues.companyId, companyId), inArray(issues.id, taskIds))),
@@ -572,6 +584,36 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
       const clarityByTask = await loadClarity(companyId, [...groups.values()]
         .map((group) => group.taskId).filter((id): id is string => Boolean(id)));
 
+      // Pending review stages: the reviewer by name, and whether it is the viewer (GRE-870).
+      const reviewStates = new Map(taskRows.flatMap((row) => {
+        const state = parseIssueExecutionState(row.executionState);
+        return state?.status === "pending" && state.currentParticipant ? [[row.id, state] as const] : [];
+      }));
+      const reviewerUserIds = [...new Set([...reviewStates.values()]
+        .map((state) => (state.currentParticipant?.type === "user" ? state.currentParticipant.userId : null))
+        .filter((id): id is string => Boolean(id)))];
+      const userRows = reviewerUserIds.length === 0 ? [] : await db
+        .select({ id: authUsers.id, name: authUsers.name, email: authUsers.email })
+        .from(authUsers)
+        .where(inArray(authUsers.id, reviewerUserIds));
+      const userNameById = new Map(userRows.map((row) => [row.id, row.name.trim() || row.email]));
+      const pendingReviewOf = (taskId: string): PendingReview | null => {
+        const state = reviewStates.get(taskId);
+        const participant = state?.currentParticipant;
+        if (!state || !participant) return null;
+        const id = participant.type === "user" ? participant.userId : participant.agentId;
+        if (!id) return null;
+        const name = participant.type === "user"
+          ? userNameById.get(id) ?? (id === "local-board" ? "Board" : "A board user")
+          : agentById.get(id)?.name ?? "An agent";
+        const returnAssignee = state.returnAssignee;
+        return {
+          reviewer: { type: participant.type, id, name, isYou: participant.type === "user" && id === options.userId },
+          returnAgentId: returnAssignee?.type === "agent" ? returnAssignee.agentId ?? null : null,
+          canReturn: Boolean(returnAssignee && (returnAssignee.agentId || returnAssignee.userId)),
+        };
+      };
+
       const assignableAgents = agentRows
         .filter((agent) => evaluateAgentInvokability(agent as AgentOrgRow, agentRows as AgentOrgRow[]).invokable)
         .map((agent) => ({ id: agent.id, name: agent.name }));
@@ -594,6 +636,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           readyToRetry,
           taskSubject: task ? findTaskSubject(rawItems, task.id) : null,
           clarity: group.taskId ? clarityByTask.get(group.taskId) ?? null : null,
+          review: task && task.status === "in_review" ? pendingReviewOf(task.id) : null,
           agentRef,
           recoveryById,
           deskById,
@@ -708,11 +751,12 @@ function buildCard(input: {
   readyToRetry: boolean;
   taskSubject: AttentionSubject | null;
   clarity: DecisionCardClarity | null;
+  review: PendingReview | null;
   agentRef: (agentId: string | null | undefined) => DecisionCardAgentRef | null;
   recoveryById: Map<string, { id: string; evidence: unknown; nextAction: string }>;
   deskById: Map<string, DeskAsk>;
 }): DecisionCard {
-  const { companyId, group, task, readyToRetry, clarity, agentRef } = input;
+  const { companyId, group, task, readyToRetry, clarity, review, agentRef } = input;
   const items = [...group.items].sort((left, right) =>
     (KIND_RANK.get(cardKind(left)) ?? 99) - (KIND_RANK.get(cardKind(right)) ?? 99)
     || timeOf(right.activityAt) - timeOf(left.activityAt));
@@ -755,7 +799,9 @@ function buildCard(input: {
     ?? agentRef(blockedTaskAgentId)
     ?? agentRef(readString(main?.subject.metadata, "createdByAgentId"))
     ?? agentRef(readString(main?.subject.metadata, "agentId"))
-    ?? agentRef(readString(main?.subject.metadata, "requestedByAgentId"));
+    ?? agentRef(readString(main?.subject.metadata, "requestedByAgentId"))
+    // A task in review waits on its reviewer; the agent who gets it back waits too.
+    ?? agentRef(review?.returnAgentId);
 
   // A ready-to-retry card retries through the recovery the fixed connection left open.
   // A task the fixed connection left blocked keeps Retry even when other rows
@@ -812,7 +858,9 @@ function buildCard(input: {
     blocked: typeof blockedCount === "number"
       ? `${blockedCount} blocked ${blockedCount === 1 ? "task waits" : "tasks wait"} until this task has a live owner. Reassign it, give an instruction, or cancel it.`
       : "The task stays blocked until you act.",
-    review: "The task stays in review until you approve it or ask for changes.",
+    review: !review || review.reviewer.isYou
+      ? "The task stays in review until you approve it or ask for changes."
+      : `The task stays in review until ${review.reviewer.name} approves it or asks for changes.`,
     decision: "The agent waits for your decision.",
     budget: "Paused work stays paused until the budget is raised.",
     agent_error: "The agent takes no work until the error is fixed.",
@@ -878,6 +926,25 @@ function buildCard(input: {
       actions.push(shared
         ? linkAction("reconnect", "Connect", `Open the request and connect ${shared.serviceName}. Every waiting task continues.`, item.subject.href)
         : linkAction("reconnect", "Reconnect", "Open the AI connection and reconnect it.", item.subject.href));
+    }
+  }
+
+  // The review verdict, only for the user the stage waits on (GRE-870). The
+  // PATCH is the issue's own stage decision; the server checks the reviewer again.
+  // A linked approval on the card already gives its own Approve.
+  if (task && taskOpen && review?.reviewer.isYou && !actions.some((action) => action.id === "approve")) {
+    const issuePath = `/api/issues/${task.id}`;
+    actions.push(requestAction("approve", "Approve", "Approve the review. The task moves to its next stage or is done.", [
+      request("PATCH", issuePath, { status: "done", comment: "Approved from Decisions." }),
+    ]));
+    if (review.canReturn) {
+      actions.push(requestAction(
+        "request_changes",
+        "Request changes",
+        "Send the task back to its owner with what must change. The owner is woken.",
+        [request("PATCH", issuePath, { status: "in_progress" })],
+        { field: "comment", type: "text", label: "What must change", required: true },
+      ));
     }
   }
 
@@ -1019,6 +1086,7 @@ function buildCard(input: {
     title,
     reason: clip(reason),
     waiting,
+    reviewer: review?.reviewer ?? null,
     nextStep,
     severity,
     activityAt,

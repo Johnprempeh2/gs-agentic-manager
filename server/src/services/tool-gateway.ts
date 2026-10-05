@@ -160,6 +160,7 @@ import {
   verifyToolArgumentsSignature,
 } from "./tool-content-guards.js";
 import { extendApprovedExecutionWaitDeadline } from "./approved-execution-wait.js";
+import { buildSendMessagePreviewLines, isSendMessageTool } from "./tool-send-preview.js";
 
 const DEFAULT_SESSION_TTL_MS = 15 * 60 * 1000;
 const MAX_SESSION_TTL_MS = 60 * 60 * 1000;
@@ -851,15 +852,23 @@ function humanizeArgumentValue(value: unknown): string | null {
  * words tool/risk/transport/arguments and of raw JSON — those only belong on the
  * Advanced surfaces (M8a/M8b) and the board-only formal-approval interaction.
  */
-function buildHumanizedActionPreview(input: {
+export function buildHumanizedActionPreview(input: {
   tool: ToolGatewayDescriptor;
   argumentsSummary: ReturnType<typeof summarizeToolValue>;
+  /** The exact arguments that will run; a send shows them in full (GRE-800). */
+  parameters?: unknown;
 }): string {
   const actionName = input.tool.displayName?.trim() || input.tool.name;
   const trustLine =
     input.tool.risk === "destructive"
       ? `${actionName}. This can permanently change or remove data.`
       : actionName;
+
+  // Sends show recipients, subject and the full body; the summary below is cut.
+  if (isSendMessageTool(input.tool)) {
+    const sendLines = buildSendMessagePreviewLines(input.parameters);
+    if (sendLines) return [trustLine, "", ...sendLines].join("\n");
+  }
 
   let parsed: unknown;
   try {
@@ -2353,6 +2362,7 @@ export function createToolGatewayService(
       buildHumanizedActionPreview({
         tool: input.tool,
         argumentsSummary: input.argumentsSummary,
+        parameters: input.parameters,
       });
 
     let formalApprovalId: string | null = null;
@@ -9263,6 +9273,7 @@ export function createToolGatewayService(
         const previewMarkdown = buildHumanizedActionPreview({
           tool,
           argumentsSummary: argumentValidation.summary,
+          parameters: requestedParameters,
         });
         await db
           .update(toolActionRequests)

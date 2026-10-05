@@ -316,6 +316,7 @@ import {
   redactIssueMonitorExternalRef,
   setIssueExecutionPolicyMonitorScheduledBy,
 } from "../services/issue-execution-policy.js";
+import { resolveReviewEscalationUserId } from "../services/review-escalation-user.js";
 import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
@@ -2985,6 +2986,31 @@ function diffExecutionParticipants(
         !nextByKey.has(activityExecutionParticipantKey(participant)),
     ),
   };
+}
+
+const STAGE_PARTICIPANT_REFUSALS = [
+  "Only the escalated reviewer can advance the current execution stage",
+  "Only the active reviewer or approver can advance the current execution stage",
+];
+
+/**
+ * A comment sent with a status or assignee change is saved only if the change
+ * is allowed. When a pending review refuses the change, say that the comment
+ * was not saved and how to send it (GRE-870): "Only the active reviewer can
+ * advance" read as if the comment had failed for another reason.
+ */
+function withStageRefusalCommentNote<T>(hasComment: boolean, transition: () => T): T {
+  try {
+    return transition();
+  } catch (err) {
+    if (!hasComment || !(err instanceof HttpError) || err.status !== 422
+      || !STAGE_PARTICIPANT_REFUSALS.includes(err.message)) throw err;
+    throw unprocessable(
+      "Comment not saved. This task waits on its current reviewer, and only they can change its status or assignee. "
+        + "Send the comment again without changing the assignee or status.",
+      { code: "review_stage_change_refused", reason: err.message },
+    );
+  }
 }
 
 function buildExecutionStageWakeup(input: {
@@ -13600,7 +13626,14 @@ export function issueRoutes(
         req.body.executionPolicy !== undefined && monitorChanged,
       );
 
-      const transition = applyIssueExecutionPolicyTransition({
+      // Only an agent's changes-requested escalates; bind a legacy board id to the real owner (GRE-870).
+      const reviewEscalationUserId =
+        existing.status === "in_review" &&
+        actor.actorType === "agent" &&
+        parseIssueExecutionState(existing.executionState)?.status === "pending"
+          ? await resolveReviewEscalationUserId(db, existing)
+          : undefined;
+      const transition = withStageRefusalCommentNote(Boolean(commentBody), () => applyIssueExecutionPolicyTransition({
         issue: existing,
         policy: nextExecutionPolicy,
         previousPolicy: previousExecutionPolicy,
@@ -13621,10 +13654,11 @@ export function issueRoutes(
         },
         allowBoardOverride: req.actor.type === "board",
         commentBody,
+        reviewEscalationUserId,
         reviewRequest: reviewRequest === undefined ? undefined : reviewRequest,
         monitorExplicitlyUpdated:
           req.body.executionPolicy !== undefined && monitorChanged,
-      });
+      }));
       const decisionId = transition.decision ? randomUUID() : null;
       if (decisionId) {
         const nextExecutionState = transition.patch.executionState;

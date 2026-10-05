@@ -12,6 +12,7 @@ import {
   connectionAlertCard,
   failedRunCard,
   fixtureAgents,
+  humanReviewCard,
   mergedCard,
   noOwnerCard,
   questionCard,
@@ -486,5 +487,47 @@ describe("DecisionFeedCard on a phone", () => {
     const actionRow = button("More actions").parentElement!;
     const labels = [...actionRow.querySelectorAll("button")].map((entry) => entry.textContent?.trim());
     expect(labels).toEqual(["Not now", "More"]);
+  });
+});
+
+describe("review card (GRE-870)", () => {
+  it("names the reviewer and shows Approve and Request changes", () => {
+    render(humanReviewCard());
+    expect(container.textContent).toContain("You (John Prempeh)");
+    expect(container.textContent).toContain("Mason");
+    expect(container.textContent).not.toContain("No agent owns this yet.");
+    expect(hasButton("Approve")).toBe(true);
+    expect(hasButton("Request changes")).toBe(true);
+  });
+
+  it("approves with one click through the issue's own review decision", async () => {
+    render(humanReviewCard());
+    await click(button("Approve"));
+    expect(api.patch).toHaveBeenCalledWith("/issues/issue-800", { status: "done", comment: "Approved from Decisions." });
+    expect(onActed).toHaveBeenCalled();
+  });
+
+  it("asks what must change before it sends the task back", async () => {
+    render(humanReviewCard());
+    await click(button("Request changes"));
+    expect(api.patch).not.toHaveBeenCalled();
+    const field = container.querySelector("textarea, input[aria-label='What must change']") as HTMLTextAreaElement;
+    expect(field).not.toBeNull();
+    const submits = buttons().filter((entry) => entry.textContent?.trim() === "Request changes");
+    expect(submits.at(-1)!.disabled).toBe(true);
+    typeInto(field, "Render the HTML part as a page.");
+    await click(buttons().filter((entry) => entry.textContent?.trim() === "Request changes").at(-1)!);
+    expect(api.patch).toHaveBeenCalledWith("/issues/issue-800", { status: "in_progress", comment: "Render the HTML part as a page." });
+  });
+
+  it("shows another user's review without verdict buttons", () => {
+    const card = humanReviewCard();
+    card.reviewer = { type: "user", id: "user-john", name: "John Prempeh", isYou: false };
+    card.actions = card.actions.filter((action) => action.id !== "approve" && action.id !== "request_changes");
+    render(card);
+    expect(container.textContent).toContain("John Prempeh");
+    expect(container.textContent).not.toContain("You (John Prempeh)");
+    expect(hasButton("Approve")).toBe(false);
+    expect(hasButton("Request changes")).toBe(false);
   });
 });
