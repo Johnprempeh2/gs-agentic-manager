@@ -44,6 +44,7 @@ import { AI_ACCESS_ROUTES, type AiAccessRoute } from "../../packages/shared/src/
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
+import { choosePorts, siblingPortClaims } from "./ports.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor } from "./releases.js";
 import {
   OFFSITE_PATHS,
@@ -1210,8 +1211,12 @@ async function cmdCreate(opts: Record<string, string>) {
   }
   if (existsSync(root) && readdirSync(root).length > 0) die(`${root} is not empty; pick a new folder for a new instance`);
 
-  const port = opts.port ? Number(opts.port) : await firstFreePort(3300, 3399, new Set());
-  const dbPort = opts["db-port"] ? Number(opts["db-port"]) : await firstFreePort(55400, 55499, new Set([port]));
+  const { port, dbPort } = await choosePorts({
+    port: opts.port ? Number(opts.port) : undefined,
+    dbPort: opts["db-port"] ? Number(opts["db-port"]) : undefined,
+    claims: siblingPortClaims(root),
+    firstFree: firstFreePort,
+  }).catch((err: Error) => die(err.message));
   checkPort(port, "--port");
   checkPort(dbPort, "--db-port");
   if (port === dbPort) die("--port and --db-port must differ");

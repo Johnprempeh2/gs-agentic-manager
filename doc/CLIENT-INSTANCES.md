@@ -84,6 +84,8 @@ the one company, the client log-in and closed sign-up.
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
 free from 55400), `--company-name`, `--client-email`, the install limits
 and the AI access settings below.
+`create` also skips the ports in each sibling folder's `client-instance.json`
+(stopped instances too), and refuses a `--port` or `--db-port` that a sibling claims.
 
 ### Install limits (GRE-141)
 
