@@ -5,6 +5,7 @@ import { documentService } from "./documents.js";
 import { parseTaskSearch, taskSearchCtes, taskSearchScore } from "./task-search.js";
 import { createdFromIssueCondition } from "./issue-creation-origin.js";
 import { executionProjectionsForRuns } from "./execution-projection.js";
+import { SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY } from "../modules/wake-queue/domain/values.js";
 import type { ExecutionProjection } from "@greatstone/shared";
 import { Buffer } from "node:buffer";
 import { createHash, randomUUID } from "node:crypto";
@@ -11169,6 +11170,25 @@ export function issueService(db: Db) {
           }
           if (updated.status === "done" || updated.status === "cancelled") {
             await finalizeSummarySlotsForTerminalIssue(tx, updated);
+            if (actorUserId && !actorAgentId) {
+              // A board close is newer than every wake already parked behind
+              // the active run. Stamp them in this transaction so the run's
+              // release cannot reopen the task from an older comment. Wakes
+              // queued after this close stay unstamped and reopen as before.
+              await tx
+                .update(agentWakeupRequests)
+                .set({
+                  payload: sql`coalesce(${agentWakeupRequests.payload}, '{}'::jsonb) || jsonb_build_object(${SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY}::text, ${updated.status}::text)`,
+                  updatedAt: new Date(),
+                })
+                .where(
+                  and(
+                    eq(agentWakeupRequests.companyId, updated.companyId),
+                    eq(agentWakeupRequests.status, "deferred_issue_execution"),
+                    wakeRequestTargetsIssue(updated.id),
+                  ),
+                );
+            }
             // Every terminal transition funnels through here, including direct
             // service callers (tree control, recovery, pipelines, status cards)
             // that never touch the HTTP routes, so pending interaction cards

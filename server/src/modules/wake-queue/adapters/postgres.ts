@@ -49,6 +49,7 @@ import {
   isWorkspaceValidationFailedRun,
   parseObject,
   readNonEmptyString,
+  SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY,
 } from "../domain/values.js";
 import { requireTransactionScopeTx, TransactionScope } from "../application/ports.js";
 import type {
@@ -166,6 +167,7 @@ function toDeferredWakeCandidate(row: typeof agentWakeupRequests.$inferSelect): 
     deferredContextSeed,
     deferredCommentIds,
     wakeReason,
+    supersededByBoardClose: payload[SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY] != null,
   };
 }
 

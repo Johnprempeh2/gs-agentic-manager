@@ -82,6 +82,8 @@ export type DeferredWakeCandidate = {
   /** The comment ids the wake's context snapshot carries (a separate set from queuedCommentIds), used for the reopen check. */
   deferredCommentIds: string[];
   wakeReason: string | null;
+  /** True when a board user closed the issue after this wake was queued; the wake must not reopen it. */
+  supersededByBoardClose?: boolean;
   /** Exact failed-chat retry authority revalidated by the transaction-bound adapter. */
   authorizedFailedChatRetry?: boolean;
 };
