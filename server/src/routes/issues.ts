@@ -3,7 +3,7 @@ import { deliverConversationComments, isConversation } from "../services/agent-c
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_SANDBOX_TOKENS, requiresExecutionReconciliation } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, requiresExecutionReconciliation } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -635,20 +635,6 @@ const DELIVERABLE_WORK_PRODUCT_ROUTE_ERROR =
   "Deliverables are registered with POST /api/issues/{id}/deliverables, not the work-products routes.";
 
 const HTML_CONTENT_TYPES = new Set(["text/html", "application/xhtml+xml"]);
-// No remote hosts: thumbnails render live, so a remote image or script would
-// tell a third party who opened the page, when and from where (GRE-405).
-const HTML_ATTACHMENT_CSP = [
-  `sandbox ${HTML_ATTACHMENT_SANDBOX_TOKENS.join(" ")}`,
-  "default-src 'none'",
-  "script-src 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  "font-src data:",
-  "img-src data: blob:",
-  "media-src data: blob:",
-  "connect-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'",
-].join("; ");
 
 /** A malformed id filter is the caller's mistake: a 422 naming it, not a database 500. */
 function uuidQuery(req: Request, ...names: string[]): string | undefined {

@@ -54,6 +54,8 @@ import {
   createDeliverableSchema,
   markDeliverableSchema,
   deliverablesQuerySchema,
+  createDeliverableCommentSchema,
+  updateDeliverableCommentSchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
   upsertIssueFeedbackVoteSchema,
@@ -1623,6 +1625,8 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/issues/{id}/work-products",
   "POST /api/issues/{id}/deliverables",
   "POST /api/companies/{companyId}/deliverables/mark",
+  "POST /api/companies/{companyId}/deliverables/{id}/comments",
+  "POST /api/companies/{companyId}/deliverables/{id}/comments/send",
   "POST /api/issues/{id}/low-trust/promotions",
   "POST /api/issues/{id}/approvals",
   "POST /api/companies/{companyId}/issues",
@@ -4354,6 +4358,66 @@ registry.registerPath({
     body: jsonBody(markDeliverableSchema),
   },
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/deliverables/{id}/review-content",
+  tags: ["issues"],
+  summary: "Get an HTML deliverable version with the review script that reports selections and draws comment markers",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/deliverables/{id}/comments",
+  tags: ["issues"],
+  summary: "List the sent comments on a deliverable version, plus the caller's own drafts",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/{id}/comments",
+  tags: ["issues"],
+  summary: "Add a draft comment on a passage of a deliverable version (board only)",
+  request: {
+    params: z.object({ companyId: z.string(), id: z.string() }),
+    body: jsonBody(createDeliverableCommentSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/deliverables/{id}/comments/{commentId}",
+  tags: ["issues"],
+  summary: "Edit your draft comment on a deliverable (board only)",
+  request: {
+    params: z.object({ companyId: z.string(), id: z.string(), commentId: z.string() }),
+    body: jsonBody(updateDeliverableCommentSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/deliverables/{id}/comments/{commentId}",
+  tags: ["issues"],
+  summary: "Delete your draft comment on a deliverable (board only)",
+  request: { params: z.object({ companyId: z.string(), id: z.string(), commentId: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/{id}/comments/send",
+  tags: ["issues"],
+  summary: "Send all your draft comments on a deliverable version as one task comment and wake the assignee (board only)",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({

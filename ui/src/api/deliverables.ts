@@ -1,13 +1,20 @@
 import { api } from "./client";
 import type {
+  CreateDeliverableComment,
+  DeliverableComment,
+  DeliverableCommentsResponse,
   DeliverableDetail,
   DeliverableKind,
   DeliverableSort,
   DeliverablesResponse,
   DeliverableStatus,
+  SendDeliverableCommentsResponse,
 } from "@greatstone/shared";
 
 export type {
+  CreateDeliverableComment,
+  DeliverableComment,
+  SendDeliverableCommentsResponse,
   Deliverable,
   DeliverableDetail,
   DeliverableFacets,
@@ -59,4 +66,18 @@ export const deliverablesApi = {
     api.post<{ ok: true }>(`/companies/${companyId}/deliverables/${id}/opened`, {}),
   mark: (companyId: string, input: MarkDeliverableInput) =>
     api.post<DeliverableDetail>(`/companies/${companyId}/deliverables/mark`, input),
+
+  /** The HTML deliverable with the review script that reports selections (GRE-982). */
+  reviewContentPath: (companyId: string, id: string) =>
+    `/api/companies/${companyId}/deliverables/${id}/review-content`,
+  listComments: (companyId: string, id: string) =>
+    api.get<DeliverableCommentsResponse>(`/companies/${companyId}/deliverables/${id}/comments`),
+  createComment: (companyId: string, id: string, input: CreateDeliverableComment) =>
+    api.post<DeliverableComment>(`/companies/${companyId}/deliverables/${id}/comments`, input),
+  updateComment: (companyId: string, id: string, commentId: string, body: string) =>
+    api.patch<DeliverableComment>(`/companies/${companyId}/deliverables/${id}/comments/${commentId}`, { body }),
+  deleteComment: (companyId: string, id: string, commentId: string) =>
+    api.delete<void>(`/companies/${companyId}/deliverables/${id}/comments/${commentId}`),
+  sendComments: (companyId: string, id: string) =>
+    api.post<SendDeliverableCommentsResponse>(`/companies/${companyId}/deliverables/${id}/comments/send`, {}),
 };

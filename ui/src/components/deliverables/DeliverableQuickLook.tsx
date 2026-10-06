@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, X } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, MessageSquarePlus, X } from "lucide-react";
 import { deliverablesApi, type Deliverable } from "@/api/deliverables";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,8 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
-import { DeliverableDocumentView } from "./DeliverableDocument";
+import { DeliverableCommentsPanel, DeliverableReviewFrame, useDeliverableReview } from "./DeliverableComments";
+import { DeliverableDocumentView, isHtmlDeliverable } from "./DeliverableDocument";
 import { DELIVERABLE_KIND_LABELS } from "./DeliverableCard";
 
 function isTypingTarget(target: EventTarget | null) {
@@ -51,6 +52,8 @@ export function DeliverableQuickLook({
 }) {
   const current = items[index] ?? null;
   const [versionId, setVersionId] = useState<string | null>(null);
+  // Comment mode (GRE-982): mark up the shown version and send the notes.
+  const [commenting, setCommenting] = useState(false);
 
   useEffect(() => {
     setVersionId(null);
@@ -68,12 +71,16 @@ export function DeliverableQuickLook({
     void deliverablesApi.markOpened(companyId, current.id).catch(() => undefined);
   }, [companyId, current?.id]);
 
+  const review = useDeliverableReview(companyId, shownId ?? "", commenting && !!shownId);
+
   const hasPrevious = index > 0;
   const hasNext = index < items.length - 1;
 
   if (!current) return null;
   const shown = detail && detail.id === shownId ? detail : current;
   const versions = detail?.versions ?? [];
+  const canComment = isHtmlDeliverable(shown);
+  const reviewing = commenting && canComment;
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -90,7 +97,10 @@ export function DeliverableQuickLook({
             onIndexChange(index + 1);
           }
         }}
-        className="inset-0 top-0 left-0 flex h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 p-0 sm:max-w-none md:top-0 md:translate-y-0"
+        className={cn(
+          "inset-0 top-0 left-0 flex h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 p-0 sm:max-w-none md:top-0 md:translate-y-0",
+          reviewing && "flex-col md:flex-row",
+        )}
       >
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background px-3">
@@ -124,6 +134,17 @@ export function DeliverableQuickLook({
             <span className="hidden text-xs text-muted-foreground sm:inline">
               {index + 1} of {items.length}
             </span>
+            {canComment ? (
+              <Button
+                variant={reviewing ? "secondary" : "ghost"}
+                size="sm"
+                aria-pressed={reviewing}
+                onClick={() => setCommenting((value) => !value)}
+                data-testid="deliverable-comment-mode"
+              >
+                <MessageSquarePlus /> <span className="hidden sm:inline">{reviewing ? "Done commenting" : "Comment"}</span>
+              </Button>
+            ) : null}
             <DialogClose asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Close preview">
                 <X />
@@ -131,10 +152,15 @@ export function DeliverableQuickLook({
             </DialogClose>
           </div>
           <div className="min-h-0 flex-1 bg-muted/40">
-            <DeliverableDocumentView source={shown} />
+            {reviewing ? <DeliverableReviewFrame review={review} title={shown.title} /> : <DeliverableDocumentView source={shown} />}
           </div>
         </div>
 
+        {reviewing ? (
+          <aside className="flex max-h-(--sz-50vh) w-full shrink-0 flex-col overflow-y-auto border-t border-border bg-background p-4 md:max-h-none md:w-80 md:border-t-0 md:border-l md:p-5">
+            <DeliverableCommentsPanel review={review} />
+          </aside>
+        ) : (
         <aside className="hidden w-80 shrink-0 flex-col gap-5 overflow-y-auto border-l border-border bg-background p-5 md:flex">
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -218,6 +244,7 @@ export function DeliverableQuickLook({
             )}
           </section>
         </aside>
+        )}
       </DialogContent>
     </Dialog>
   );

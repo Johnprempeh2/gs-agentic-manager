@@ -3,14 +3,25 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { heartbeatRuns, issueWorkProducts } from "@greatstone/db";
 import {
+  createDeliverableCommentSchema,
   createDeliverableSchema,
   deliverablesQuerySchema,
+  HTML_ATTACHMENT_CSP,
   markDeliverableSchema,
+  updateDeliverableCommentSchema,
+  type CreateDeliverableComment,
+  type DeliverableCommentsResponse,
   type MarkDeliverable,
+  type SendDeliverableCommentsResponse,
+  type UpdateDeliverableComment,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
+import { logger } from "../middleware/logger.js";
 import { forbidden, notFound, unprocessable } from "../errors.js";
 import { accessService, issueService, logActivity } from "../services/index.js";
+import { heartbeatService } from "../services/heartbeat.js";
+import { buildDeliverableCommentsBody, deliverableCommentService } from "../services/deliverable-comments.js";
+import { injectDeliverableReviewScript } from "../services/deliverable-review-script.js";
 import { deliverableService } from "../services/deliverables.js";
 import type { StorageService } from "../storage/types.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
@@ -23,9 +34,18 @@ function titleFromFilename(filename: string | null) {
   return base || "Deliverable";
 }
 
-export function deliverableRoutes(db: Db, storage?: StorageService) {
+type Heartbeat = ReturnType<typeof heartbeatService>;
+
+export function deliverableRoutes(
+  db: Db,
+  storage?: StorageService,
+  opts: { heartbeat?: Pick<Heartbeat, "wakeup"> } = {},
+) {
   const router = Router();
   const svc = deliverableService(db, storage);
+  const comments = deliverableCommentService(db);
+  let heartbeat = opts.heartbeat ?? null;
+  const wakeup: Heartbeat["wakeup"] = (...args) => (heartbeat ??= heartbeatService(db)).wakeup(...args);
   const issuesSvc = issueService(db);
   const access = accessService(db);
 
@@ -190,6 +210,166 @@ export function deliverableRoutes(db: Db, storage?: StorageService) {
     });
     await logRegistered(req, deliverable, "issue.deliverable_marked");
     res.status(201).json(deliverable);
+  });
+
+  // Deliverable comments (GRE-982). Anyone who may read the deliverable sees
+  // its sent comments; only board users write, and each sees only their own
+  // drafts. Comments belong to one version, so a new version starts clean.
+
+  async function getDeliverableOr404(req: Request) {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const detail = await svc.getDetail(companyId, req.params.id as string);
+    if (!detail) throw notFound("Deliverable not found");
+    return detail;
+  }
+
+  function boardUserId(req: Request) {
+    assertBoard(req);
+    return getActorInfo(req).actorId;
+  }
+
+  router.get("/companies/:companyId/deliverables/:id/review-content", async (req, res) => {
+    const detail = await getDeliverableOr404(req);
+    const html = await svc.readDeliverableHtml(detail.companyId, detail.attachmentId);
+    if (html === null) throw unprocessable("Only HTML deliverables up to 5 MB can take comments on the page");
+    // The same sandbox as the file opened on its own (issues.ts attachment
+    // content), so review mode gives the document no more power.
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Security-Policy", HTML_ATTACHMENT_CSP);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(200).send(injectDeliverableReviewScript(html));
+  });
+
+  router.get("/companies/:companyId/deliverables/:id/comments", async (req, res) => {
+    const detail = await getDeliverableOr404(req);
+    const viewerUserId = req.actor.type === "board" ? getActorInfo(req).actorId : null;
+    const body: DeliverableCommentsResponse = {
+      comments: await comments.list(detail.companyId, detail.id, viewerUserId),
+    };
+    res.json(body);
+  });
+
+  router.post(
+    "/companies/:companyId/deliverables/:id/comments",
+    validate(createDeliverableCommentSchema),
+    async (req, res) => {
+      const detail = await getDeliverableOr404(req);
+      const userId = boardUserId(req);
+      const created = await comments.create({
+        companyId: detail.companyId,
+        deliverable: { id: detail.id, issueId: detail.issue.id },
+        userId,
+        fields: req.body as CreateDeliverableComment,
+      });
+      res.status(201).json(created);
+    },
+  );
+
+  router.patch(
+    "/companies/:companyId/deliverables/:id/comments/:commentId",
+    validate(updateDeliverableCommentSchema),
+    async (req, res) => {
+      const detail = await getDeliverableOr404(req);
+      const userId = boardUserId(req);
+      const { body } = req.body as UpdateDeliverableComment;
+      res.json(await comments.update(detail.companyId, detail.id, req.params.commentId as string, userId, body));
+    },
+  );
+
+  router.delete("/companies/:companyId/deliverables/:id/comments/:commentId", async (req, res) => {
+    const detail = await getDeliverableOr404(req);
+    const userId = boardUserId(req);
+    await comments.remove(detail.companyId, detail.id, req.params.commentId as string, userId);
+    res.status(204).end();
+  });
+
+  router.post("/companies/:companyId/deliverables/:id/comments/send", async (req, res) => {
+    const detail = await getDeliverableOr404(req);
+    const userId = boardUserId(req);
+    const issue = await issuesSvc.getById(detail.issue.id);
+    if (!issue || issue.companyId !== detail.companyId) throw notFound("Issue not found");
+
+    const claimed = await comments.claimDrafts(detail.companyId, detail.id, userId);
+    const claimedIds = claimed.map((comment) => comment.id);
+    let taskComment: Awaited<ReturnType<typeof issuesSvc.addComment>>;
+    try {
+      taskComment = await issuesSvc.addComment(
+        issue.id,
+        buildDeliverableCommentsBody({ deliverable: detail, comments: claimed }),
+        { userId },
+        { authorType: "user" },
+      );
+    } catch (error) {
+      await comments.releaseClaim(claimedIds);
+      throw error;
+    }
+    const sent = await comments.recordSentComment(claimedIds, taskComment.id);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: "user",
+      actorId: userId,
+      action: "issue.comment_added",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        commentId: taskComment.id,
+        identifier: issue.identifier,
+        source: "deliverable_comments",
+        workProductId: detail.id,
+        version: detail.version,
+        noteCount: sent.length,
+      },
+    });
+
+    const agentId = issue.assigneeAgentId ?? null;
+    let woken = false;
+    if (agentId) {
+      // Like any board comment, notes on finished work reopen it so the agent
+      // can revise (issues.ts implicit reopen).
+      if (issue.status === "done" || issue.status === "cancelled") {
+        const reopened = await issuesSvc.update(issue.id, { status: "todo" });
+        if (reopened) {
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: "user",
+            actorId: userId,
+            action: "issue.updated",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { status: "todo", reopened: true, reopenedFrom: issue.status, source: "deliverable_comments" },
+          });
+        }
+      }
+      try {
+        await wakeup(agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "issue_commented",
+          payload: { issueId: issue.id, commentId: taskComment.id, mutation: "comment" },
+          idempotencyKey: `deliverable-comments:${taskComment.id}`,
+          requestedByActorType: "user",
+          requestedByActorId: userId,
+          contextSnapshot: {
+            issueId: issue.id,
+            taskId: issue.id,
+            commentId: taskComment.id,
+            wakeCommentId: taskComment.id,
+            source: "deliverables.comments",
+            wakeReason: "issue_commented",
+          },
+        });
+        woken = true;
+      } catch (error) {
+        // The notes are posted on the task; the response says the agent was
+        // not woken, so the board can nudge it from the task.
+        logger.warn({ err: error, issueId: issue.id, agentId }, "deliverable comments wake failed");
+      }
+    }
+
+    const body: SendDeliverableCommentsResponse = { sent, commentId: taskComment.id, agentId, woken };
+    res.status(201).json(body);
   });
 
   return router;
