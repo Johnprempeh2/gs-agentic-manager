@@ -159,7 +159,12 @@ export const memoryReviewEvents = pgTable(
   }),
 );
 
-/** Relationships a contributor or reviewer stated. Never inferred; both ends sit in one scope. */
+/**
+ * Relationships a contributor or reviewer stated. Never inferred. `scope_id` is
+ * the scope of the `from` record. Both ends sit in one scope, except that two
+ * scopes that are not client or restricted scopes may be linked (memory
+ * linking, 6 Oct 2026); every read checks both ends against the reader.
+ */
 export const memoryRelationships = pgTable(
   "memory_relationships",
   {
@@ -215,6 +220,51 @@ export const memoryConflicts = pgTable(
     pairUq: uniqueIndex("memory_conflicts_pair_uq").on(table.recordId, table.approvedRecordId),
     companyStateIdx: index("memory_conflicts_company_state_idx").on(table.companyId, table.state),
     companyApprovedIdx: index("memory_conflicts_company_approved_idx").on(table.companyId, table.approvedRecordId),
+  }),
+);
+
+/** What two records share, as found by the link check. Cleared when either end is deleted. */
+export type MemoryLinkBasisRow = {
+  entities: string[];
+  topics: string[];
+  values: string[];
+  sameSource: boolean;
+};
+
+/**
+ * Possible links found by the link check (memory linking, 6 Oct 2026). A lead
+ * for a reviewer, never a stated relationship: confirming one writes a
+ * `memory_relationships` row with the reviewer as author. One row per pair of
+ * records, stored in id order, so a dismissed pair is never proposed again.
+ * Rollback: drop this table (migration 0298).
+ */
+export const memoryLinkLeads = pgTable(
+  "memory_link_leads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    fromRecordId: uuid("from_record_id").notNull().references(() => memoryRecords.id, { onDelete: "cascade" }),
+    toRecordId: uuid("to_record_id").notNull().references(() => memoryRecords.id, { onDelete: "cascade" }),
+    fromScopeId: uuid("from_scope_id").notNull().references(() => memoryScopes.id, { onDelete: "cascade" }),
+    toScopeId: uuid("to_scope_id").notNull().references(() => memoryScopes.id, { onDelete: "cascade" }),
+    basis: jsonb("basis").$type<MemoryLinkBasisRow>().notNull(),
+    /** How much the pair shares; orders leads for a reviewer. Not a measure of truth. */
+    score: integer("score").notNull().default(0),
+    /** `open` | `confirmed` | `dismissed` */
+    state: text("state").notNull().default("open"),
+    resolution: text("resolution"),
+    resolutionNote: text("resolution_note"),
+    resolvedByActorType: text("resolved_by_actor_type"),
+    resolvedByActorId: text("resolved_by_actor_id"),
+    /** The stated relationship written when the lead was confirmed. */
+    relationshipId: uuid("relationship_id").references(() => memoryRelationships.id, { onDelete: "set null" }),
+    detectedAt: timestamp("detected_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => ({
+    pairUq: uniqueIndex("memory_link_leads_pair_uq").on(table.fromRecordId, table.toRecordId),
+    companyStateIdx: index("memory_link_leads_company_state_idx").on(table.companyId, table.state),
+    companyToIdx: index("memory_link_leads_company_to_idx").on(table.companyId, table.toRecordId),
   }),
 );
 

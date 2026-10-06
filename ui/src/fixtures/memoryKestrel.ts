@@ -102,6 +102,7 @@ function edge(id: string, overrides: Partial<MemoryGraphEdge> & Pick<MemoryGraph
     origin: "relationship",
     author: kestrelAgents.mason,
     source: { kind: "issue", id: `issue-${id}`, runId: null },
+    basis: null,
     createdAt: "2026-10-04T10:00:00.000Z",
     ...overrides,
   };

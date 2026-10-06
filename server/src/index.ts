@@ -108,6 +108,7 @@ import {
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
+import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
 import { resolveWorktreeRunExecutionActivationState } from "./services/instance-settings.js";
 import {
   parseAdapterRegistryEnv,
@@ -1267,6 +1268,8 @@ async function startServerWithDatabaseTeardown(
     ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
     // GRE-933: Everest's renew reminder 3 days before a live steward grant ends.
     ["memory_steward_grant_renewal", () => remindStewardGrantRenewals(db)],
+    // Memory linking: the link check, at most every 6 hours per company with memory on.
+    ["memory_link_check", () => runScheduledMemoryLinkChecks(db)],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;

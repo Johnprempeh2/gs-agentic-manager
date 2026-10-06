@@ -20,6 +20,8 @@ const memoryApiMock = vi.hoisted(() => ({
   edge: vi.fn(),
   activity: vi.fn(),
   activityCounts: vi.fn(),
+  confirmLead: vi.fn(),
+  dismissLead: vi.fn(),
 }));
 
 vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: memoryApiMock }));
@@ -125,6 +127,7 @@ const conflictDetail: MemoryGraphEdgeDetail = {
   statedNote: null,
   sharedTerms: ["opening", "6am"],
   conflictState: "open",
+  leadId: null,
 };
 
 let container: HTMLDivElement;
@@ -286,6 +289,54 @@ describe("Memory page", () => {
     expect(panel.textContent).toContain("Found by a check");
     expect(panel.textContent).toContain("Matched on: opening, 6am");
     expect(panel.textContent).toContain(kestrelGraph.note);
+  });
+
+  it("shows what the link check matched on a lead and lets a reviewer confirm it", async () => {
+    const basis = { entities: ["alder bakery"], topics: [], values: ["7am"], sameSource: true };
+    const leadEdge = {
+      ...kestrelEdges[1],
+      id: "lnk:lead-1",
+      from: kestrelNodes[0].id,
+      to: kestrelNodes[1].id,
+      type: "same_subject" as const,
+      kind: "inferred" as const,
+      origin: "link_check" as const,
+      author: kestrelAgents.check,
+      source: { kind: "memory_link_lead", id: "lead-1", runId: null },
+      basis,
+    };
+    memoryApiMock.graph.mockResolvedValue({ ...kestrelGraph, edges: [leadEdge] });
+    memoryApiMock.edge.mockResolvedValue({
+      ...conflictDetail,
+      edge: leadEdge,
+      meaning: "Both entries may be about the same subject.",
+      from: kestrelNodes[0],
+      to: kestrelNodes[1],
+      sharedTerms: [],
+      conflictState: null,
+      leadId: "lead-1",
+    } satisfies MemoryGraphEdgeDetail);
+    memoryApiMock.confirmLead.mockResolvedValue({});
+    await renderAt("/memory?edge=lnk%3Alead-1");
+    await flush();
+
+    const panel = container.querySelector('aside[aria-label="Connection details"]')!;
+    expect(panel.textContent).toContain("Matched on:");
+    expect(panel.textContent).toContain("Names: alder bakery");
+    expect(panel.textContent).toContain("Stated values: 7am");
+    expect(panel.textContent).toContain("Both came from the same source");
+    expect(panel.textContent).toContain("Review this lead");
+
+    const textarea = panel.querySelector("textarea")!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+      setter.call(textarea, "Same bakery");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const confirm = Array.from(panel.querySelectorAll("button")).find((button) => button.textContent === "Confirm link")!;
+    await act(async () => confirm.click());
+    await flush();
+    expect(memoryApiMock.confirmLead).toHaveBeenCalledWith("co-kestrel", "lead-1", { type: "same_subject", reason: "Same bakery" });
   });
 
   it("opens an entry linked from elsewhere even when the current filters hide it", async () => {

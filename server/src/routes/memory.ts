@@ -2,8 +2,11 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import type { ZodType } from "zod";
 import type { Db } from "@greatstone/db";
 import {
+  confirmMemoryLinkLeadSchema,
   contributeMemorySchema,
   createMemoryRelationshipSchema,
+  dismissMemoryLinkLeadSchema,
+  MEMORY_LINK_LEAD_STATES,
   createMemoryScopeSchema,
   deleteMemoryRecordSchema,
   MEMORY_DETECTION_NOTE,
@@ -28,6 +31,7 @@ import {
 } from "../services/memory-gateway/sensitive-content.js";
 import { memoryGraphService } from "../services/memory-gateway/graph.js";
 import { memoryGrantService } from "../services/memory-gateway/grants.js";
+import { memoryLinkService } from "../services/memory-gateway/link-check.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
@@ -61,6 +65,7 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
   const reviews = memoryReviewService(db, svc);
   const graphs = memoryGraphService(db, svc);
   const grants = memoryGrantService(db, svc);
+  const links = memoryLinkService(db, svc);
 
   // Runs before body validation so a company with memory off learns nothing
   // from any memory route, not even which bodies are valid.
@@ -268,6 +273,45 @@ export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTim
       return;
     }
     res.json(await reviews.resolveConflict(caller, conflictId, req.body));
+  });
+
+  // Link check (memory linking, 6 Oct 2026). The scheduler runs it every few
+  // hours; the owner can run it now. Its leads are reviewed here: the owner or
+  // a memory reviewer for both entries confirms one (a stated link, with the
+  // reviewer as author) or dismisses it.
+  router.post("/companies/:companyId/memory/link-check", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    res.json(await links.runNow(await callerFor(req, companyId, "link_check")));
+  });
+
+  router.get("/companies/:companyId/memory/link-leads", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const requested = String(req.query.state ?? "open");
+    const state = requested === "all" || (MEMORY_LINK_LEAD_STATES as readonly string[]).includes(requested)
+      ? (requested as (typeof MEMORY_LINK_LEAD_STATES)[number] | "all")
+      : "open";
+    res.json(await links.list(await callerFor(req, companyId, "link_leads_list"), state));
+  });
+
+  function leadIdOr404(req: Request, res: Response) {
+    const leadId = req.params.leadId as string;
+    if (UUID_RE.test(leadId)) return leadId;
+    res.status(404).json({ error: "Memory link lead not found" });
+    return null;
+  }
+
+  router.post("/companies/:companyId/memory/link-leads/:leadId/confirm", requireEnabled, validate(confirmMemoryLinkLeadSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "link_lead_confirm");
+    const leadId = leadIdOr404(req, res);
+    if (leadId) res.json(await links.confirm(caller, leadId, req.body));
+  });
+
+  router.post("/companies/:companyId/memory/link-leads/:leadId/dismiss", requireEnabled, validate(dismissMemoryLinkLeadSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "link_lead_dismiss");
+    const leadId = leadIdOr404(req, res);
+    if (leadId) res.json(await links.dismiss(caller, leadId, req.body));
   });
 
   // Retention (G1 decision 7). Dry run by default; `withinDays` lists what falls due soon.
