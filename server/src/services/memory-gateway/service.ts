@@ -43,10 +43,12 @@ import {
 import { badRequest, conflict, forbidden, notFound } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import {
+  directRetainSlots,
   MemoryEngineUnavailableError,
   unconfiguredMemoryEngine,
   MEMORY_ENGINE_TIMEOUT_MS,
   withEngineTimeout,
+  type EngineCallSlots,
   type MemoryEngine,
   type MemoryEngineDocument,
   type MemoryEngineHit,
@@ -198,9 +200,10 @@ export async function companyMemoryEnabled(db: Db, companyId: string) {
 
 export function memoryGatewayService(
   db: Db,
-  options: { engine?: MemoryEngine; engineTimeoutMs?: number } = {},
+  options: { engine?: MemoryEngine; engineTimeoutMs?: number; directRetainSlots?: EngineCallSlots } = {},
 ) {
   const engine = options.engine ?? unconfiguredMemoryEngine();
+  const retainSlots = options.directRetainSlots ?? directRetainSlots;
   const engineTimeoutMs = options.engineTimeoutMs ?? MEMORY_ENGINE_TIMEOUT_MS;
   const callEngine = <T>(work: () => Promise<T>) =>
     withEngineTimeout(Promise.resolve().then(work), engineTimeoutMs);
@@ -553,42 +556,47 @@ export function memoryGatewayService(
 
     // One direct call so the caller hears "ok" when the engine is up. On any
     // failure the entry stays queued and the drain retries it; a plan limit
-    // or an outage never fails the record.
+    // or an outage never fails the record. When the direct slots are full the
+    // engine is busy, not down: the entry stays queued for the serial drain
+    // and recall keeps its headroom (GRE-984).
     let engineAvailable = true;
     let synced = row;
-    try {
-      const result = await callEngine(() => engine.retain(document));
-      const now = new Date();
-      await settleDirectMemoryIngest(db, entry.id, { now, outcome: "synced", usage: result?.usage ?? null });
-      [synced] = await db
-        .update(memoryRecords)
-        .set({ syncState: "synced", syncedAt: now, syncError: null, updatedAt: now })
-        .where(eq(memoryRecords.id, row.id))
-        .returning();
-    } catch (error) {
-      engineAvailable = false;
-      const now = new Date();
-      const classified = classifyEngineError(error, now);
-      logger.warn(
-        { err: error, recordId: row.id, kind: classified.kind },
-        "memory engine retain failed; record kept as pending and queued for retry",
-      );
-      await settleDirectMemoryIngest(db, entry.id, {
-        now,
-        outcome: "deferred",
-        // A rejection is retried once by the drain, which parks it for a named owner.
-        nextAttemptAt:
-          classified.kind === "rejected"
-            ? now
-            : nextAttemptAt({ now, attempts: entry.attempts + 1, classified }),
-        kind: classified.kind,
-        error: classified.message,
-      });
-      [synced] = await db
-        .update(memoryRecords)
-        .set({ syncError: `${classified.kind}: ${classified.message}`.slice(0, 500), updatedAt: now })
-        .where(eq(memoryRecords.id, row.id))
-        .returning();
+    const direct = retainSlots.tryRun(() => engine.retain(document));
+    if (direct) {
+      try {
+        const result = await callEngine(() => direct);
+        const now = new Date();
+        await settleDirectMemoryIngest(db, entry.id, { now, outcome: "synced", usage: result?.usage ?? null });
+        [synced] = await db
+          .update(memoryRecords)
+          .set({ syncState: "synced", syncedAt: now, syncError: null, updatedAt: now })
+          .where(eq(memoryRecords.id, row.id))
+          .returning();
+      } catch (error) {
+        engineAvailable = false;
+        const now = new Date();
+        const classified = classifyEngineError(error, now);
+        logger.warn(
+          { err: error, recordId: row.id, kind: classified.kind },
+          "memory engine retain failed; record kept as pending and queued for retry",
+        );
+        await settleDirectMemoryIngest(db, entry.id, {
+          now,
+          outcome: "deferred",
+          // A rejection is retried once by the drain, which parks it for a named owner.
+          nextAttemptAt:
+            classified.kind === "rejected"
+              ? now
+              : nextAttemptAt({ now, attempts: entry.attempts + 1, classified }),
+          kind: classified.kind,
+          error: classified.message,
+        });
+        [synced] = await db
+          .update(memoryRecords)
+          .set({ syncError: `${classified.kind}: ${classified.message}`.slice(0, 500), updatedAt: now })
+          .where(eq(memoryRecords.id, row.id))
+          .returning();
+      }
     }
 
     // Marks for the reviewer only; nothing here changes the record's status.
@@ -597,7 +605,13 @@ export function memoryGatewayService(
     await logOperation(caller, "contribute", engineAvailable ? "ok" : "unavailable", {
       scopeIds: [scope.id],
       recordId: row.id,
-      detail: { retainMode: settings.retainMode, entryType: row.entryType, possibleConflicts: possibleConflicts.length, flags },
+      detail: {
+        retainMode: settings.retainMode,
+        entryType: row.entryType,
+        possibleConflicts: possibleConflicts.length,
+        flags,
+        ...(direct ? {} : { queued: "engine_busy" }),
+      },
     });
     return {
       record: toRecord(synced, scope),

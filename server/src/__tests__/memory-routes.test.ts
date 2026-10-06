@@ -20,6 +20,8 @@ import { HTTP_LOG_REDACT_PATHS } from "../middleware/http-log-redaction.js";
 import { createHttpLogger } from "../middleware/logger.js";
 import { memoryRoutes } from "../routes/memory.js";
 import {
+  createEngineCallSlots,
+  MEMORY_DIRECT_RETAIN_CONCURRENCY,
   MemoryEngineUnavailableError,
   type MemoryEngine,
   type MemoryEngineDocument,
@@ -131,7 +133,8 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
   async function setup(name: string, options: { engineTimeoutMs?: number } = {}) {
     const seeded = await seedCompanyWithBoardAccess(ctx.db, name);
     const fake = fakeEngine();
-    const factory = (db: typeof ctx.db) => memoryRoutes(db, { engine: fake.engine, ...options });
+    const directRetainSlots = createEngineCallSlots(MEMORY_DIRECT_RETAIN_CONCURRENCY);
+    const factory = (db: typeof ctx.db) => memoryRoutes(db, { engine: fake.engine, directRetainSlots, ...options });
     const board = routeApp(ctx.db, seeded.actor, factory);
     const asAgent = (agentId: string, runId: string | null = null) =>
       routeApp(ctx.db, agentActor(seeded.companyId, agentId, runId), factory);
@@ -488,6 +491,50 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     const res = await request(one.asAgent(mason.id)).post(`${one.base}/recall`).send({ query: "anything" });
     expect(res.status).toBe(200);
     expect(res.body.results).toEqual([]);
+  });
+
+  it("keeps recall answering during a contribute burst (GRE-984)", async () => {
+    const seeded = await seedCompanyWithBoardAccess(ctx.db, "Burst");
+    // Like Hindsight: each retain runs an extraction that outlives the
+    // gateway's timeout, and recall stalls once too many are running.
+    const capacity = 3;
+    let running = 0;
+    let retainsStarted = 0;
+    const engine: MemoryEngine = {
+      async retain() {
+        retainsStarted += 1;
+        running += 1;
+        await new Promise(() => {});
+      },
+      async recall() {
+        if (running >= capacity) await new Promise(() => {});
+        return [];
+      },
+      async deleteDocument() {},
+    };
+    const factory = (db: typeof ctx.db) =>
+      memoryRoutes(db, { engine, engineTimeoutMs: 100, directRetainSlots: createEngineCallSlots(2) });
+    const board = routeApp(ctx.db, seeded.actor, factory);
+    const base = `/api/companies/${seeded.companyId}/memory`;
+    await enable(board, base);
+    const mason = await seedAgent(seeded.companyId, "Mason");
+    const agent = routeApp(ctx.db, agentActor(seeded.companyId, mason.id), factory);
+    const scope = await scopeOf(agent, base, "agent");
+
+    const writes = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        request(agent).post(`${base}/records`).send({ scopeId: scope.id, content: `burst fact ${i}` }),
+      ),
+    );
+    expect(writes.map((res) => res.status)).toEqual(Array(6).fill(201));
+    expect(writes.every((res) => res.body.record.syncState === "pending")).toBe(true);
+    // Entries the gateway did not send stay queued for the serial drain.
+    expect(await ctx.db.select().from(memoryIngestOutbox)).toHaveLength(6);
+    expect(retainsStarted).toBe(2);
+
+    const recall = await request(agent).post(`${base}/recall`).send({ query: "burst" });
+    expect(recall.status).toBe(200);
+    expect(recall.body.available).toBe(true);
   });
 
   it("answers 'memory unavailable' when the engine is down or hangs, and keeps the contribution", async () => {

@@ -19,7 +19,7 @@ import {
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/index.js";
-import type { MemoryEngine } from "../services/memory-gateway/engine.js";
+import type { EngineCallSlots, MemoryEngine } from "../services/memory-gateway/engine.js";
 import { getDailyPlanUsage } from "../services/memory-gateway/ingest-outbox.js";
 import { createDbMemoryIngestStore } from "../services/memory-gateway/ingest-outbox-db.js";
 import {
@@ -55,7 +55,10 @@ export function memoryCallerFromRequest(req: Request, companyId: string): Memory
 // Organization memory gateway (GRE-672, ADR-0001). Every route is scoped to
 // the company in the path; all but the settings routes answer 404 while the
 // company setting is off.
-export function memoryRoutes(db: Db, options: { engine?: MemoryEngine; engineTimeoutMs?: number } = {}) {
+export function memoryRoutes(
+  db: Db,
+  options: { engine?: MemoryEngine; engineTimeoutMs?: number; directRetainSlots?: EngineCallSlots } = {},
+) {
   const router = Router();
   const svc = memoryGatewayService(db, options);
   const reviews = memoryReviewService(db, svc);

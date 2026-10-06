@@ -79,6 +79,43 @@ export const MEMORY_ENGINE_TIMEOUT_MS = 8_000;
 /** Upper bound for one retain at the adapter; the request path still caps it with `withEngineTimeout`. */
 export const MEMORY_ENGINE_RETAIN_TIMEOUT_MS = 120_000;
 
+/**
+ * Most direct retains the gateway keeps running on the engine at once. Each
+ * retain with extraction runs a Claude process inside the engine; a burst of
+ * contributions without a bound filled the engine and recall timed out
+ * (GRE-984). Contributions over the bound go to the serial outbox drain.
+ */
+export const MEMORY_DIRECT_RETAIN_CONCURRENCY = 2;
+
+export interface EngineCallSlots {
+  /** Runs `work` if a slot is free, else returns null without calling it. */
+  tryRun<T>(work: () => Promise<T>): Promise<T> | null;
+}
+
+/**
+ * A slot is held until the engine call itself settles, not until the
+ * gateway's timeout, because the engine keeps working after the gateway stops
+ * waiting.
+ */
+export function createEngineCallSlots(max: number): EngineCallSlots {
+  let inFlight = 0;
+  return {
+    tryRun(work) {
+      if (inFlight >= max) return null;
+      inFlight += 1;
+      const call = Promise.resolve().then(work);
+      const release = () => {
+        inFlight -= 1;
+      };
+      call.then(release, release);
+      return call;
+    },
+  };
+}
+
+/** Shared by every gateway instance in the process: they all use one engine. */
+export const directRetainSlots = createEngineCallSlots(MEMORY_DIRECT_RETAIN_CONCURRENCY);
+
 /** Bounds every engine call so a stuck engine never hangs an agent run. */
 export async function withEngineTimeout<T>(work: Promise<T>, timeoutMs = MEMORY_ENGINE_TIMEOUT_MS): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
