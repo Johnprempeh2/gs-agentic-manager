@@ -18,6 +18,8 @@ const deliverablesApiMock = vi.hoisted(() => ({
   get: vi.fn(),
   markOpened: vi.fn(),
   mark: vi.fn(),
+  reviewContentPath: (companyId: string, id: string) => `/api/companies/${companyId}/deliverables/${id}/review-content`,
+  listComments: vi.fn(async () => ({ comments: [] })),
 }));
 
 vi.mock("../api/deliverables", () => ({ deliverablesApi: deliverablesApiMock }));
@@ -229,6 +231,29 @@ describe("Deliverables page", () => {
     });
     await flush();
     expect(quickLook()).toBeNull();
+  });
+
+  it("switches an HTML deliverable to comment mode with the comments panel (GRE-982)", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([sample({ id: "d-1", title: "First" })]));
+    render();
+    await flush();
+    act(() => {
+      container.querySelector<HTMLButtonElement>("[data-testid='deliverable-card-preview']")!.click();
+    });
+    await flush();
+    expect(deliverablesApiMock.listComments).not.toHaveBeenCalled();
+
+    act(() => {
+      document.querySelector<HTMLButtonElement>("[data-testid='deliverable-comment-mode']")!.click();
+    });
+    await flush();
+    const reviewFrame = document.querySelector("[data-testid='deliverable-review-frame']");
+    expect(reviewFrame?.getAttribute("src")).toBe("/api/companies/company-1/deliverables/d-1/review-content");
+    expect(reviewFrame?.getAttribute("sandbox")).toBe(DELIVERABLE_IFRAME_SANDBOX);
+    expect(document.querySelector("[data-testid='deliverable-preview-frame']")).toBeNull();
+    expect(document.querySelector("[data-testid='deliverable-comments-panel']")?.textContent)
+      .toContain("No comments on this version yet.");
+    expect(deliverablesApiMock.listComments).toHaveBeenCalledWith("company-1", "d-1");
   });
 
   it("returns to the chat it was opened from on Back and on Escape (GRE-611)", async () => {

@@ -575,6 +575,7 @@ export const queryKeys = {
     list: (companyId: string, params: Record<string, string | undefined>) =>
       ["deliverables", companyId, "list", params] as const,
     detail: (companyId: string, id: string) => ["deliverables", companyId, "detail", id] as const,
+    comments: (companyId: string, id: string) => ["deliverables", companyId, "comments", id] as const,
   },
   budgets: {
     overview: (companyId: string) =>
