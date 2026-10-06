@@ -551,7 +551,7 @@ function ReceiptDisclosure({
               ).toLocaleString()}
             </p>
             <div className="mt-2">
-              <MarkdownBody externalReferences={externalReferences}>
+              <MarkdownBody externalReferences={externalReferences} renderEmailHtml>
                 {interaction.payload.toolAction.previewMarkdown}
               </MarkdownBody>
             </div>
@@ -1062,7 +1062,7 @@ function ConfirmationCard({
               ).toLocaleString()}
             </span>
           </div>
-          <MarkdownBody externalReferences={externalReferences}>
+          <MarkdownBody externalReferences={externalReferences} renderEmailHtml>
             {interaction.payload.toolAction.previewMarkdown}
           </MarkdownBody>
           <details>

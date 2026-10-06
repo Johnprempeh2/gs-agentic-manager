@@ -31,6 +31,7 @@ import {
 } from "../lib/remark-workspace-file-refs";
 import { remarkSoftBreaks } from "../lib/remark-soft-breaks";
 import { StatusIcon } from "./StatusIcon";
+import { EMAIL_HTML_FENCE_LANGUAGE, EmailHtmlPreview } from "./EmailHtmlPreview";
 import { WorkspaceFileLink } from "./WorkspaceFileLink";
 import { ExternalObjectStatusIcon } from "./ExternalObjectStatusIcon";
 import {
@@ -102,6 +103,12 @@ interface MarkdownBodyProps {
    * openable, so the markdown re-parses with the new answers.
    */
   resolveWorkspaceFileRef?: WorkspaceFileRefResolver;
+  /**
+   * Draw `email-html` fenced blocks as the email the recipient will see, in a
+   * sandboxed frame (GRE-965). Only send approval previews turn this on; other
+   * markdown shows the block as plain code.
+   */
+  renderEmailHtml?: boolean;
 }
 
 let mermaidLoaderPromise: Promise<typeof import("mermaid").default> | null = null;
@@ -351,6 +358,14 @@ function flattenText(value: ReactNode): string {
   if (typeof value === "string" || typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.map((item) => flattenText(item)).join("");
   return "";
+}
+
+function extractFencedSource(children: ReactNode, language: string): string | null {
+  if (!isValidElement(children)) return null;
+  const childProps = children.props as { className?: unknown; children?: ReactNode };
+  if (typeof childProps.className !== "string") return null;
+  if (!childProps.className.split(/\s+/).some((name) => name.toLowerCase() === `language-${language}`)) return null;
+  return flattenText(childProps.children).replace(/\n$/, "");
 }
 
 function extractMermaidSource(children: ReactNode): string | null {
@@ -760,6 +775,7 @@ function MarkdownBodyImpl({
   resolveImageSrc,
   onImageClick,
   resolveWorkspaceFileRef,
+  renderEmailHtml = false,
 }: MarkdownBodyProps) {
   const { theme } = useTheme();
   // Read company prefixes non-throwingly: MarkdownBody renders in surfaces that
@@ -845,6 +861,10 @@ function MarkdownBodyImpl({
       const mermaidSource = extractMermaidSource(preChildren);
       if (mermaidSource) {
         return <MermaidDiagramBlock source={mermaidSource} darkMode={theme === "dark"} />;
+      }
+      const emailHtml = renderEmailHtml ? extractFencedSource(preChildren, EMAIL_HTML_FENCE_LANGUAGE) : null;
+      if (emailHtml !== null) {
+        return <EmailHtmlPreview html={emailHtml} />;
       }
       return <CodeBlock preProps={preProps}>{preChildren}</CodeBlock>;
     },
@@ -983,7 +1003,7 @@ function MarkdownBodyImpl({
       };
     }
     return map;
-  }, [theme, linkIssueReferences, linkCaseReferences, externalReferenceLookup, resolveImageSrc, onImageClick]);
+  }, [theme, linkIssueReferences, linkCaseReferences, externalReferenceLookup, resolveImageSrc, onImageClick, renderEmailHtml]);
 
   return (
     <div
