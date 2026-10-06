@@ -143,12 +143,53 @@ export type CompanyMembersResponse = {
     canManageMembers: boolean;
     canInviteUsers: boolean;
     canApproveJoinRequests: boolean;
+    /** Present in authenticated mode when the company still has the legacy local-board member. */
+    legacyBoard?: LegacyBoardControls | null;
   };
+};
+
+export type LegacyBoardControls = {
+  status: CompanyMember["status"];
+  canRetire: boolean;
+  canRestore: boolean;
+};
+
+export type LegacyBoardIssueRole =
+  | "assignee"
+  | "responsible"
+  | "current_reviewer"
+  | "return_assignee"
+  | "review_participant";
+
+export type LegacyBoardRetirementReport = {
+  dryRun: boolean;
+  companyId: string;
+  legacyUserId: "local-board";
+  membershipId: string;
+  moveToUserId: string;
+  issueCount: number;
+  issues: Array<{ id: string; identifier: string | null; title: string; roles: LegacyBoardIssueRole[] }>;
+  pendingRequestCount: number;
+  switchOff: {
+    membershipStatus: { from: string; to: "suspended" };
+    boardKeysRevoked: number;
+    sessionsEnded: number;
+    instanceAdmin: "not_held" | "kept" | "removed";
+  };
+};
+
+export type LegacyBoardRestoreReport = {
+  companyId: string;
+  legacyUserId: "local-board";
+  membershipId: string;
+  membershipStatus: { from: string; to: "active" };
+  instanceAdminRestored: boolean;
 };
 
 export type CompanyUserDirectoryEntry = {
   principalId: string;
-  status: "active";
+  /** Only a retired legacy local-board is listed as `suspended`, for names in history. */
+  status: "active" | "suspended";
   user: { id: string; email: string | null; name: string | null; image: string | null } | null;
 };
 
@@ -320,6 +361,12 @@ export const accessApi = {
 
   listUserDirectory: (companyId: string) =>
     api.get<CompanyUserDirectoryResponse>(`/companies/${companyId}/user-directory`),
+
+  retireLegacyBoard: (companyId: string, input: { dryRun: boolean }) =>
+    api.post<LegacyBoardRetirementReport>(`/companies/${companyId}/legacy-board/retire`, input),
+
+  restoreLegacyBoard: (companyId: string) =>
+    api.post<LegacyBoardRestoreReport>(`/companies/${companyId}/legacy-board/restore`, {}),
 
   updateMember: (
     companyId: string,

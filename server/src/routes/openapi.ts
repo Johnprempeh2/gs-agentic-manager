@@ -1387,6 +1387,8 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PATCH /api/companies/{companyId}/members/{memberId}",
   "PATCH /api/companies/{companyId}/members/{memberId}/role-and-grants",
   "POST /api/companies/{companyId}/members/{memberId}/archive",
+  "POST /api/companies/{companyId}/legacy-board/retire",
+  "POST /api/companies/{companyId}/legacy-board/restore",
   "PATCH /api/companies/{companyId}/members/{memberId}/permissions",
   "GET /api/companies/{companyId}/user-directory",
   "GET /api/companies/{companyId}/managed-agent-profiles",
@@ -7425,6 +7427,48 @@ registry.registerPath({
     400: r.badRequest,
     401: r.unauthorized,
     404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/legacy-board/retire",
+  tags: ["access"],
+  summary: "Retire the legacy local-board account",
+  description:
+    "Authenticated mode only, active company owner only (never local-board itself). With `dryRun: true` it lists the open work that would move to the caller and what would be switched off, and writes nothing. Otherwise, in one transaction, it moves that work to the caller, suspends local-board's membership, revokes its board API keys, ends its sessions and logs the change. History it authored is untouched. Refused when it would leave no active owner.",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(z.object({ dryRun: z.boolean() }).strict()),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/legacy-board/restore",
+  tags: ["access"],
+  summary: "Restore the retired legacy local-board account",
+  description:
+    "Authenticated mode only, active company owner only. Makes local-board's membership active again (and gives back the instance admin role if retire removed it). Moved work, revoked keys and ended sessions stay as they are.",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(z.object({}).strict()),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
   },
 });
 

@@ -13,7 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { Request } from "express";
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   assets,
@@ -100,6 +100,8 @@ import {
   resolveHumanInviteRole,
 } from "../services/company-member-roles.js";
 import { humanJoinGrantsFromDefaults } from "../services/invite-grants.js";
+import { LEGACY_BOARD_USER_ID } from "../services/board-identity.js";
+import { describeLegacyBoardControls } from "../services/legacy-board-retirement.js";
 import {
   collapseDuplicatePendingHumanJoinRequests,
   findReusableHumanJoinRequest,
@@ -1394,7 +1396,15 @@ async function loadCompanyUserDirectory(db: Db, companyId: string) {
       and(
         eq(companyMemberships.companyId, companyId),
         eq(companyMemberships.principalType, "user"),
-        eq(companyMemberships.status, "active"),
+        or(
+          eq(companyMemberships.status, "active"),
+          // A retired legacy local-board stays listed as `suspended` so the
+          // work it authored keeps its name. Pickers only offer `active`.
+          and(
+            eq(companyMemberships.principalId, LEGACY_BOARD_USER_ID),
+            eq(companyMemberships.status, "suspended"),
+          ),
+        ),
       ),
     )
     .orderBy(desc(companyMemberships.updatedAt));
@@ -1404,7 +1414,7 @@ async function loadCompanyUserDirectory(db: Db, companyId: string) {
 
   return members.map((member) => ({
     principalId: member.principalId,
-    status: "active" as const,
+    status: member.status === "suspended" ? ("suspended" as const) : ("active" as const),
     user: userMap.get(member.principalId) ?? null,
   }));
 }
@@ -4497,9 +4507,16 @@ export function accessRoutes(
       loadCompanyMemberRecords(db, companyId),
       loadCompanyAccessSummary(req, access, companyId),
     ]);
+    const legacyBoard = await describeLegacyBoardControls(db, {
+      companyId,
+      deploymentMode: opts.deploymentMode,
+      actor: req.actor,
+      legacyMembershipStatus:
+        members.find((member) => member.principalId === LEGACY_BOARD_USER_ID)?.status ?? null,
+    });
     res.json({
       members: await addCompanyMemberRemovalAccess(req, db, access, companyId, members),
-      access: currentAccess,
+      access: { ...currentAccess, legacyBoard },
     });
   });
 

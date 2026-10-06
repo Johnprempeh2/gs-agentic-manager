@@ -34,7 +34,9 @@ import { PageTabBar } from "@/components/PageTabBar";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { InvitesSection } from "@/components/access/InvitesSection";
+import { LegacyBoardRetirementActions } from "@/components/access/LegacyBoardRetirement";
 
+const LEGACY_BOARD_USER_ID = "local-board";
 const reassignmentIssueStatuses = "backlog,todo,in_progress,in_review,blocked,failed,timed_out";
 type EditableMemberStatus = "pending" | "active" | "suspended";
 
@@ -405,6 +407,12 @@ export function CompanyAccess() {
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex justify-end gap-2">
+                        {member.principalId === LEGACY_BOARD_USER_ID ? (
+                          <LegacyBoardRetirementActions
+                            companyId={selectedCompanyId}
+                            controls={access?.legacyBoard}
+                          />
+                        ) : null}
                         <Button size="sm" variant="outline" onClick={() => setEditingMemberId(member.id)}>
                           Edit
                         </Button>
