@@ -348,6 +348,12 @@ export function deliverableService(db: Db, storage?: StorageService) {
     getAttachment,
     getDetail,
 
+    /** The HTML of an HTML deliverable version, or null for other files or when it cannot be read. */
+    readDeliverableHtml: async (companyId: string, attachmentId: string): Promise<string | null> => {
+      const attachment = await getAttachment(companyId, attachmentId);
+      return attachment ? readHtml(attachment) : null;
+    },
+
     /** The <title> of an HTML attachment, or null for other files or no title. */
     readHtmlTitle: async (attachment: DeliverableAttachment): Promise<string | null> => {
       const html = await readHtml(attachment);

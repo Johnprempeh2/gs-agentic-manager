@@ -17,6 +17,21 @@ export const HTML_ATTACHMENT_SANDBOX_TOKENS = [
   "allow-popups-to-escape-sandbox",
 ] as const;
 
+// No remote hosts: thumbnails render live, so a remote image or script would
+// tell a third party who opened the page, when and from where (GRE-405).
+export const HTML_ATTACHMENT_CSP = [
+  `sandbox ${HTML_ATTACHMENT_SANDBOX_TOKENS.join(" ")}`,
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "font-src data:",
+  "img-src data: blob:",
+  "media-src data: blob:",
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+].join("; ");
+
 export const deliverableKindSchema = z.enum(["report", "brief", "plan", "deck", "other"]);
 export const deliverableStatusSchema = z.enum(["draft", "final"]);
 export const deliverableSortSchema = z.enum(["newest", "recently_opened", "title"]);
@@ -90,3 +105,24 @@ export const deliverablesQuerySchema = z.object({
 export type CreateDeliverable = z.infer<typeof createDeliverableSchema>;
 export type MarkDeliverable = z.infer<typeof markDeliverableSchema>;
 export type DeliverablesQuery = z.infer<typeof deliverablesQuerySchema>;
+
+export const DELIVERABLE_COMMENT_QUOTE_MAX = 1_000;
+export const DELIVERABLE_COMMENT_CONTEXT_MAX = 64;
+export const DELIVERABLE_COMMENT_BODY_MAX = 4_000;
+
+/** POST /api/companies/:companyId/deliverables/:id/comments — a draft note on a passage. */
+export const createDeliverableCommentSchema = z.object({
+  quote: z.string().trim().min(1).max(DELIVERABLE_COMMENT_QUOTE_MAX),
+  prefix: z.string().max(DELIVERABLE_COMMENT_CONTEXT_MAX).optional().nullable(),
+  suffix: z.string().max(DELIVERABLE_COMMENT_CONTEXT_MAX).optional().nullable(),
+  textStart: z.number().int().min(0).optional().nullable(),
+  body: z.string().trim().min(1).max(DELIVERABLE_COMMENT_BODY_MAX),
+});
+
+/** PATCH /api/companies/:companyId/deliverables/:id/comments/:commentId — edit a draft's note. */
+export const updateDeliverableCommentSchema = z.object({
+  body: z.string().trim().min(1).max(DELIVERABLE_COMMENT_BODY_MAX),
+});
+
+export type CreateDeliverableComment = z.infer<typeof createDeliverableCommentSchema>;
+export type UpdateDeliverableComment = z.infer<typeof updateDeliverableCommentSchema>;

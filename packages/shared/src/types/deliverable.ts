@@ -79,3 +79,40 @@ export interface DeliverablesResponse {
   nextOffset: number | null;
   facets: DeliverableFacets;
 }
+
+export type DeliverableCommentStatus = "draft" | "sent";
+
+/**
+ * A note pinned to a passage of one deliverable version (GRE-982). The anchor
+ * is the quoted text plus a little context on each side, so the viewer can
+ * find the passage again; `textStart` breaks ties when the quote repeats.
+ */
+export interface DeliverableComment {
+  id: string;
+  companyId: string;
+  deliverableId: string;
+  issueId: string;
+  quote: string;
+  prefix: string | null;
+  suffix: string | null;
+  textStart: number | null;
+  body: string;
+  status: DeliverableCommentStatus;
+  authorUserId: string;
+  sentCommentId: string | null;
+  sentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeliverableCommentsResponse {
+  comments: DeliverableComment[];
+}
+
+export interface SendDeliverableCommentsResponse {
+  sent: DeliverableComment[];
+  commentId: string;
+  /** The task's assignee agent woken to revise, or null when no agent owns the task. */
+  agentId: string | null;
+  woken: boolean;
+}
