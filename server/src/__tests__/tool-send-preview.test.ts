@@ -104,9 +104,43 @@ describe("approval preview for send/post tools (GRE-800)", () => {
       { to: "sam@example.com", subject: "Hi", text: "Hello team", html },
     );
     expect(markdown).toContain("- **Message (Text):**\n\n> Hello team");
-    expect(markdown).toContain(
-      "- **Message (HTML):**\n\n> \\<p\\>Wire 50k to \\<a href='https\\://evil'\\>acct 999\\</a\\>\\</p\\>",
+    // The HTML part is a fenced block the card draws as the recipient sees it (GRE-965).
+    expect(markdown).toContain(`- **Message (HTML):**\n\n\`\`\`email-html\n${html}\n\`\`\``);
+  });
+
+  it("puts an HTML body in a fence no backticks inside it can close", () => {
+    const html = "<p>Run <code>```rm```</code> and <code>````x````</code></p>";
+    const markdown = preview({ name: "send_email" }, { to: "sam@example.com", html });
+    expect(markdown).toContain(`\`\`\`\`\`email-html\n${html}\n\`\`\`\`\``);
+  });
+
+  it("treats a plain body as HTML only when the call says so", () => {
+    const html = "<p>Hi <b>Sam</b></p>";
+    for (const flags of [{ isHtml: true }, { contentType: "text/html" }, { mimeType: "text/html; charset=utf-8" }]) {
+      const markdown = preview({ name: "send_email" }, { to: "sam@example.com", body: html, ...flags });
+      expect(markdown).toContain(`\`\`\`email-html\n${html}\n\`\`\``);
+    }
+    // Without a flag, or with a plain-text type, the body stays escaped text.
+    for (const flags of [{}, { contentType: "text/plain" }, { isHtml: false }]) {
+      const markdown = preview({ name: "send_email" }, { to: "sam@example.com", body: html, ...flags });
+      expect(markdown).not.toContain("email-html");
+      expect(markdown).toContain("> \\<p\\>Hi \\<b\\>Sam\\</b\\>\\</p\\>");
+    }
+    // A flag never turns a `text` or `markdown` field into HTML.
+    const both = preview(
+      { name: "send_email" },
+      { to: "sam@example.com", text: "<b>raw</b>", contentType: "html" },
     );
+    expect(both).not.toContain("email-html");
+  });
+
+  it("still redacts secrets inside an HTML body", () => {
+    const markdown = preview(
+      { name: "send_email" },
+      { to: "sam@example.com", html: "<p>Authorization: Bearer sk-live-abcdefghijklmnopqrstuvwxyz123456</p>" },
+    );
+    expect(markdown).toContain("email-html");
+    expect(markdown).not.toContain("sk-live-abcdefghijklmnopqrstuvwxyz123456");
   });
 
   it("shows a body object such as Outlook's { contentType, content } in full", () => {
@@ -115,7 +149,16 @@ describe("approval preview for send/post tools (GRE-800)", () => {
       { toRecipients: "sam@example.com", body: { contentType: "HTML", content: longBody } },
     );
     expect(markdown).toContain("- **Message (Body Content, Content Type\\: HTML):**");
-    expect(markdown).toContain(`> ${longBody.split("\n")[2]}`);
+    expect(markdown).toContain(`\`\`\`email-html\n${longBody}\n\`\`\``);
+  });
+
+  it("keeps a text body object as quoted text", () => {
+    const markdown = preview(
+      { name: "outlook:sendMail", displayName: "Send mail" },
+      { toRecipients: "sam@example.com", body: { contentType: "Text", content: "<b>Hi</b>" } },
+    );
+    expect(markdown).not.toContain("email-html");
+    expect(markdown).toContain("> \\<b\\>Hi\\</b\\>");
   });
 
   it("never says the message is empty when it has content, and lists attachments", () => {
