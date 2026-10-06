@@ -17,6 +17,8 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 const listInvitesMock = vi.hoisted(() => vi.fn());
 const listCloudStacksMock = vi.hoisted(() => vi.fn());
 const mockSearchParamsState = vi.hoisted(() => ({ current: new URLSearchParams() }));
+const retireLegacyBoardMock = vi.hoisted(() => vi.fn());
+const restoreLegacyBoardMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/cloud", () => ({
   cloudApi: { listStacks: listCloudStacksMock },
@@ -34,6 +36,8 @@ vi.mock("@/api/access", () => ({
       archiveMemberMock(companyId, memberId, input),
     approveJoinRequest: vi.fn(),
     rejectJoinRequest: vi.fn(),
+    retireLegacyBoard: (companyId: string, input: unknown) => retireLegacyBoardMock(companyId, input),
+    restoreLegacyBoard: (companyId: string) => restoreLegacyBoardMock(companyId),
     listInvites: (companyId: string, options: unknown) => listInvitesMock(companyId, options),
     createCompanyInvite: vi.fn(),
     revokeInvite: vi.fn(),
@@ -271,6 +275,129 @@ describe("CompanyAccess", () => {
     expect(document.body.textContent).not.toContain("Implicit grants from role");
     expect(document.body.textContent).not.toContain("permissionKey");
 
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  function legacyBoardMembers(status: "active" | "suspended", controls: Record<string, unknown> | null) {
+    return {
+      members: [
+        {
+          id: "member-legacy",
+          companyId: "company-1",
+          principalType: "user",
+          principalId: "local-board",
+          status,
+          membershipRole: "owner",
+          createdAt: "2026-04-10T00:00:00.000Z",
+          updatedAt: "2026-04-10T00:00:00.000Z",
+          user: { id: "local-board", email: "local@paperclip.local", name: "John Prempeh (legacy)", image: null },
+          grants: [],
+        },
+      ],
+      access: {
+        currentUserRole: "owner",
+        canManageMembers: true,
+        canInviteUsers: true,
+        canApproveJoinRequests: false,
+        legacyBoard: controls,
+      },
+    };
+  }
+
+  async function renderAccess() {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CompanyAccess />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+    return root;
+  }
+
+  function findButton(label: string) {
+    return Array.from(document.body.querySelectorAll("button")).find((button) => button.textContent === label);
+  }
+
+  it("retires the legacy local-board account after showing the dry run", async () => {
+    listMembersMock.mockResolvedValue(legacyBoardMembers("active", { status: "active", canRetire: true, canRestore: false }));
+    const dryRun = {
+      dryRun: true,
+      companyId: "company-1",
+      legacyUserId: "local-board",
+      membershipId: "member-legacy",
+      moveToUserId: "user-1",
+      issueCount: 1,
+      issues: [{ id: "issue-800", identifier: "GRE-800", title: "Waits on the board", roles: ["assignee", "current_reviewer"] }],
+      pendingRequestCount: 2,
+      switchOff: {
+        membershipStatus: { from: "active", to: "suspended" },
+        boardKeysRevoked: 2,
+        sessionsEnded: 0,
+        instanceAdmin: "kept",
+      },
+    };
+    retireLegacyBoardMock.mockImplementation(async (_companyId: string, input: { dryRun: boolean }) => ({ ...dryRun, dryRun: input.dryRun }));
+    const root = await renderAccess();
+
+    const retireButton = findButton("Retire legacy account");
+    expect(retireButton).toBeTruthy();
+    await act(async () => {
+      retireButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(retireLegacyBoardMock).toHaveBeenCalledWith("company-1", { dryRun: true });
+    expect(document.body.textContent).toContain("GRE-800");
+    expect(document.body.textContent).toContain("assignee, reviewer");
+    expect(document.body.textContent).toContain("2 pending questions or requests");
+    expect(document.body.textContent).toContain("2 board API keys revoked");
+
+    const confirm = Array.from(document.body.querySelectorAll('[role="dialog"] button')).find(
+      (button) => button.textContent === "Retire legacy account",
+    );
+    expect(confirm).toBeTruthy();
+    await act(async () => {
+      confirm!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    expect(retireLegacyBoardMock).toHaveBeenCalledWith("company-1", { dryRun: false });
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("offers Restore for a retired legacy account and nothing without server controls", async () => {
+    listMembersMock.mockResolvedValue(legacyBoardMembers("suspended", { status: "suspended", canRetire: false, canRestore: true }));
+    restoreLegacyBoardMock.mockResolvedValue({});
+    let root = await renderAccess();
+
+    expect(findButton("Retire legacy account")).toBeUndefined();
+    const restore = findButton("Restore");
+    expect(restore).toBeTruthy();
+    await act(async () => {
+      restore!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    expect(restoreLegacyBoardMock).toHaveBeenCalledWith("company-1");
+    await act(async () => {
+      root.unmount();
+    });
+
+    // local_trusted mode, or a non-owner: the server sends no controls.
+    listMembersMock.mockResolvedValue(legacyBoardMembers("active", null));
+    root = await renderAccess();
+    expect(findButton("Retire legacy account")).toBeUndefined();
+    expect(findButton("Restore")).toBeUndefined();
     await act(async () => {
       root.unmount();
     });
