@@ -1,4 +1,11 @@
-import type { MemoryActorRef, MemoryGraphEdge, MemoryGraphEdgeType, MemoryGraphNode, MemoryRecordStatus } from "@greatstone/shared";
+import type {
+  MemoryActorRef,
+  MemoryGraphEdge,
+  MemoryGraphEdgeType,
+  MemoryGraphNode,
+  MemoryLinkBasis,
+  MemoryRecordStatus,
+} from "@greatstone/shared";
 import { actorLabel } from "./memoryLabels";
 import { nodeHeading } from "./MemoryRecordList";
 
@@ -38,6 +45,8 @@ export interface MemoryGraph3DLink {
   /** The server edge id for stated and inferred links; null for provenance links. */
   edgeId: string | null;
   edgeType: MemoryGraphEdgeType | null;
+  /** What the link check matched, for its leads and links confirmed from them; null otherwise. */
+  basis: MemoryLinkBasis | null;
 }
 
 export interface MemoryGraph3DData {
@@ -96,6 +105,7 @@ export function buildMemoryGraph3D(
       style: edge.kind === "explicit" ? "stated" : "inferred",
       edgeId: edge.id,
       edgeType: edge.type,
+      basis: edge.basis ?? null,
     });
     degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1);
     if (edge.to !== edge.from) degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1);
@@ -111,7 +121,7 @@ export function buildMemoryGraph3D(
     else hubs.set(hubId, { label: hub.label, members: 1 });
     const count = degree.get(node.id) ?? 0;
     nodes.push({ id: node.id, kind: "memory", label: nodeHeading(node), status: node.status, degree: count, val: memoryVal(count) });
-    links.push({ id: `prov:${node.id}`, source: node.id, target: hubId, style: "provenance", edgeId: null, edgeType: null });
+    links.push({ id: `prov:${node.id}`, source: node.id, target: hubId, style: "provenance", edgeId: null, edgeType: null, basis: null });
   }
   for (const [id, hub] of hubs) {
     nodes.push({ id, kind: "hub", label: hub.label, status: null, degree: hub.members, val: hubVal(hub.members) });

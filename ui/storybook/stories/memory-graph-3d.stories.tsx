@@ -54,6 +54,7 @@ function syntheticMemory(unreviewed: number, reviewed: Array<[MemoryRecordStatus
     origin: kind === "explicit" ? "relationship" : "conflict_check",
     author: kind === "explicit" ? nodes[from].contributor : { actorType: "system", agentId: null, userId: null, name: "Conflict check" },
     source: { kind: null, id: null, runId: null },
+    basis: null,
     createdAt: "2026-10-05T10:00:00.000Z",
   });
   const edges: MemoryGraphEdge[] = [

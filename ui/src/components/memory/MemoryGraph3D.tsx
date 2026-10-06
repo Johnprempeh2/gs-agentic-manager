@@ -6,7 +6,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { neighbourhood, type MemoryGraph3DData, type MemoryGraph3DLink, type MemoryGraph3DNode } from "./memoryGraph3dData";
 import { readMemoryGraphPalette, rgba, type MemoryGraphPalette, type Rgb } from "./memoryGraphPalette";
-import { EDGE_KIND_LABEL, edgeTypeLabel, memoryStatusMeta } from "./memoryLabels";
+import { basisLines, EDGE_KIND_LABEL, edgeTypeLabel, memoryStatusMeta } from "./memoryLabels";
 
 /**
  * The 3D Memory graph (three.js via react-force-graph-3d). Loaded with React.lazy
@@ -308,7 +308,8 @@ export default function MemoryGraph3D({ data, selectedNodeId, selectedEdgeId, on
 
   const linkLabel = useCallback((link: GraphLink) => {
     if (link.style === "provenance" || !link.edgeType) return "";
-    return `${escapeHtml(edgeTypeLabel[link.edgeType])}<br/>${link.style === "stated" ? EDGE_KIND_LABEL.explicit : EDGE_KIND_LABEL.inferred}`;
+    const basis = basisLines(link.basis).map((line) => `<br/>${escapeHtml(clip(line))}`).join("");
+    return `${escapeHtml(edgeTypeLabel[link.edgeType])}<br/>${link.style === "stated" ? EDGE_KIND_LABEL.explicit : EDGE_KIND_LABEL.inferred}${basis}`;
   }, []);
 
   const focusCamera = useCallback(

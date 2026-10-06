@@ -1,6 +1,12 @@
-import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { MemoryGraphEdge, MemoryGraphNode, MemoryReviewEventAction, MemorySourceRef } from "@greatstone/shared";
+import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  MemoryGraphEdge,
+  MemoryGraphNode,
+  MemoryRelationshipType,
+  MemoryReviewEventAction,
+  MemorySourceRef,
+} from "@greatstone/shared";
 import { X } from "lucide-react";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
@@ -8,7 +14,7 @@ import { formatDateTime } from "@/lib/utils";
 import { queryKeys } from "@/lib/queryKeys";
 import { memoryGraphApi } from "../../api/memoryGraph";
 import { MemoryEdgeKindTag, MemoryStatusBadge } from "./MemoryStatusBadge";
-import { actorLabel, edgeLabel, scopeKindLabel, sourceRef } from "./memoryLabels";
+import { actorLabel, basisLines, edgeLabel, edgeTypeLabel, scopeKindLabel, sourceRef } from "./memoryLabels";
 import { nodeHeading } from "./MemoryRecordList";
 
 const ACTION_LABEL: Record<MemoryReviewEventAction, string> = {
@@ -259,7 +265,18 @@ export function MemoryEdgeDetail({ companyId, edgeId, initialEdge, onSelectNode,
 
           <Section title="What this means">
             <p className="text-sm">{data.meaning}</p>
-            {data.sharedTerms.length > 0 ? <p className="text-sm">Matched on: {data.sharedTerms.join(", ")}</p> : null}
+            {basisLines(edge.basis).length > 0 ? (
+              <div className="space-y-0.5">
+                <p className="text-sm">{edge.kind === "explicit" ? "The link check had matched:" : "Matched on:"}</p>
+                <ul className="list-disc space-y-0.5 pl-5 text-sm">
+                  {basisLines(edge.basis).map((line) => (
+                    <li key={line} className="break-words">{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : data.sharedTerms.length > 0 ? (
+              <p className="text-sm">Matched on: {data.sharedTerms.join(", ")}</p>
+            ) : null}
             {data.conflictState ? <Muted>Conflict is {data.conflictState}.</Muted> : null}
             <Muted>{data.note}</Muted>
           </Section>
@@ -274,8 +291,74 @@ export function MemoryEdgeDetail({ companyId, edgeId, initialEdge, onSelectNode,
           <div>
             <PropertyRow label="Source"><MemorySourceLink source={edge.source} /></PropertyRow>
           </div>
+
+          {data.leadId ? <LeadReview companyId={companyId} leadId={data.leadId} onDone={onClose} /> : null}
         </>
       )}
     </PanelFrame>
+  );
+}
+
+const LINK_TYPES: MemoryRelationshipType[] = ["same_subject", "supports", "refines", "depends_on", "contradicts"];
+
+/**
+ * Confirm or dismiss a link check lead. Shown to everyone who can see the
+ * lead; the server decides who may act (the owner or a memory reviewer for
+ * both entries) and its refusal is shown as is.
+ */
+function LeadReview({ companyId, leadId, onDone }: { companyId: string; leadId: string; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [type, setType] = useState<MemoryRelationshipType>("same_subject");
+  const [reason, setReason] = useState("");
+  const finish = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["memory-graph", companyId] });
+    onDone();
+  };
+  const confirm = useMutation({
+    mutationFn: () => memoryGraphApi.confirmLead(companyId, leadId, { type, reason: reason.trim() }),
+    onSuccess: finish,
+  });
+  const dismiss = useMutation({
+    mutationFn: () => memoryGraphApi.dismissLead(companyId, leadId, { reason: reason.trim() }),
+    onSuccess: finish,
+  });
+  const busy = confirm.isPending || dismiss.isPending;
+  const error = confirm.error ?? dismiss.error;
+  return (
+    <Section title="Review this lead">
+      <Muted>Confirming makes it a stated link with you as its author. Dismissing means the check never proposes this pair again.</Muted>
+      <label className="block space-y-1 text-xs text-muted-foreground">
+        <span>Link type</span>
+        <select
+          value={type}
+          onChange={(event) => setType(event.target.value as MemoryRelationshipType)}
+          className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
+        >
+          {LINK_TYPES.map((value) => (
+            <option key={value} value={value}>
+              {edgeTypeLabel[value]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block space-y-1 text-xs text-muted-foreground">
+        <span>Reason</span>
+        <textarea
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          rows={2}
+          className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
+        />
+      </label>
+      <div className="flex gap-2">
+        <Button size="sm" disabled={busy || reason.trim().length === 0} onClick={() => confirm.mutate()}>
+          Confirm link
+        </Button>
+        <Button size="sm" variant="outline" disabled={busy || reason.trim().length === 0} onClick={() => dismiss.mutate()}>
+          Dismiss
+        </Button>
+      </div>
+      {error ? <p className="text-xs text-destructive">{error instanceof Error ? error.message : "The lead could not be updated."}</p> : null}
+    </Section>
   );
 }

@@ -1,6 +1,6 @@
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { memoryConflicts, memoryRecords, memoryReviewEvents } from "@greatstone/db";
+import { memoryConflicts, memoryRecords, memoryRelationships, memoryReviewEvents } from "@greatstone/db";
 import type { MemoryConflictLink, MemoryRecordStatus, MemoryReviewEventAction } from "@greatstone/shared";
 import { textConflictTerms } from "./text-conflict.js";
 
@@ -150,6 +150,74 @@ export async function flagPossibleConflicts(
     });
   }
   return links;
+}
+
+/**
+ * Writes one stated relationship, with the caller as author. Returns null when
+ * the same link already exists. A stated contradiction of an approved record
+ * in the same scope opens a conflict for review; conflicts never span scopes.
+ * The caller has already checked that the author may link both records.
+ */
+export async function insertRelationship(
+  database: DbOrTransaction,
+  actor: MemoryReviewActor,
+  from: RecordRow,
+  to: RecordRow,
+  input: { type: string; note: string | null; sourceKind: string | null; sourceId: string | null; now: Date },
+) {
+  const [relationship] = await database
+    .insert(memoryRelationships)
+    .values({
+      companyId: actor.companyId,
+      scopeId: from.scopeId,
+      fromRecordId: from.id,
+      toRecordId: to.id,
+      type: input.type,
+      authorAgentId: actor.agentId,
+      authorUserId: actor.userId,
+      runId: actor.runId,
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
+      note: input.note,
+      createdAt: input.now,
+    })
+    .onConflictDoNothing({
+      target: [memoryRelationships.fromRecordId, memoryRelationships.toRecordId, memoryRelationships.type],
+    })
+    .returning();
+  if (!relationship) return null;
+  if (input.type === "contradicts" && from.scopeId === to.scopeId) {
+    const pair =
+      from.status === "approved" && ["unreviewed", "disputed"].includes(to.status)
+        ? { challenger: to, approved: from }
+        : to.status === "approved" && ["unreviewed", "disputed"].includes(from.status)
+          ? { challenger: from, approved: to }
+          : null;
+    if (pair) {
+      const [opened] = await database
+        .insert(memoryConflicts)
+        .values({
+          companyId: actor.companyId,
+          scopeId: from.scopeId,
+          recordId: pair.challenger.id,
+          approvedRecordId: pair.approved.id,
+          origin: "relationship",
+          sharedTerms: possibleConflictTerms(pair.challenger, pair.approved),
+          detectedAt: input.now,
+        })
+        .onConflictDoNothing({ target: [memoryConflicts.recordId, memoryConflicts.approvedRecordId] })
+        .returning();
+      if (opened) {
+        await insertReviewEvent(database, actor, pair.challenger, {
+          action: "conflict_flagged",
+          reason: "Stated as contradicting an approved record",
+          relatedRecordId: pair.approved.id,
+          now: input.now,
+        });
+      }
+    }
+  }
+  return relationship;
 }
 
 /** Open conflicts touching any of these records, as links from each record's side. */

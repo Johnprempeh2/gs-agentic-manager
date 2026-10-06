@@ -2,6 +2,7 @@ import type {
   MemoryActorRef,
   MemoryGraphEdge,
   MemoryGraphEdgeType,
+  MemoryLinkBasis,
   MemoryRecordStatus,
   MemoryScopeKind,
   MemorySourceRef,
@@ -63,7 +64,22 @@ const SOURCE_KIND_LABEL: Record<string, string> = {
   run: "Run",
   external_object: "External item",
   memory_conflict: "Conflict check",
+  memory_link_lead: "Link check",
 };
+
+/**
+ * Plain lines for what the link check matched, one per kind. Empty when there
+ * is no basis (a link someone stated without a check behind it).
+ */
+export function basisLines(basis: MemoryLinkBasis | null | undefined): string[] {
+  if (!basis) return [];
+  const lines: string[] = [];
+  if (basis.entities.length > 0) lines.push(`Names: ${basis.entities.join(", ")}`);
+  if (basis.topics.length > 0) lines.push(`Topics: ${basis.topics.join(", ")}`);
+  if (basis.values.length > 0) lines.push(`Stated values: ${basis.values.join(", ")}`);
+  if (basis.sameSource) lines.push("Both came from the same source");
+  return lines;
+}
 
 /** Label and, where the app has a page for it, a link. Sources are ids only (GRE-864). */
 export function sourceRef(source: MemorySourceRef | null | undefined): { label: string; href: string | null } | null {
