@@ -8,6 +8,7 @@ import "@greatstone/shared/legacy-env-bootstrap";
 import { instrumentationReady, shutdownInstrumentation } from "./instrumentation.js";
 import { sentryReady, shutdownSentry, captureException } from "./sentry.js";
 import { waitForPendingRunFailureReports } from "./services/run-failure-report.js";
+import { setBoardIdentityDeploymentMode } from "./services/board-identity.js";
 import { verifyStoppedNativeSessionForReplacement } from "./services/native-runtime/native-session-executor.js";
 import { embeddedPostgresOwnerPort } from "./embedded-postgres-owner.js";
 import { isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
@@ -719,6 +720,8 @@ async function startServerWithDatabaseTeardown(
   // Auth, routes, or child-runtime configuration capture any public URL.
   const restoredCloudRuntimeIdentity = await initializeCloudRuntimeIdentity(db as any);
   if (restoredCloudRuntimeIdentity) config = loadConfig();
+  // New default "board" work goes to a real owner once sign-in is on.
+  setBoardIdentityDeploymentMode(config.deploymentMode);
 
   if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
     throw new Error(

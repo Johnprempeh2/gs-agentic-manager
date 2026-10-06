@@ -317,6 +317,7 @@ import {
   setIssueExecutionPolicyMonitorScheduledBy,
 } from "../services/issue-execution-policy.js";
 import { resolveReviewEscalationUserId } from "../services/review-escalation-user.js";
+import { userMatchesPrincipal, viewerPrincipalUserIds } from "../services/board-identity.js";
 import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
@@ -2129,15 +2130,37 @@ function executionPrincipalsEqual(
 function actorMatchesExecutionParticipant(
   actor: { actorType: "user" | "agent"; actorId: string },
   participant: ParsedExecutionState["currentParticipant"] | null,
+  actorUserIdAliases?: readonly string[],
 ) {
   if (!participant) return false;
   // Require the actor kind to match the participant kind before comparing ids. Without this
   // an agent and a user that happen to share an id value would falsely satisfy participant
   // gating on the auto-approval path.
   if (participant.type !== actor.actorType) return false;
-  return participant.type === "agent"
-    ? participant.agentId === actor.actorId
-    : participant.userId === actor.actorId;
+  if (participant.type === "agent") return participant.agentId === actor.actorId;
+  return participant.userId === actor.actorId ||
+    Boolean(participant.userId && actorUserIdAliases?.includes(participant.userId));
+}
+
+/**
+ * The stage participant a signed-in user also answers for: an active owner
+ * of the company stands in for the legacy `local-board` user (one rule, in
+ * `board-identity.ts`). Undefined when the actor is not a user or is the
+ * participant itself.
+ */
+async function stageParticipantAliasesForActor(
+  db: Db,
+  companyId: string,
+  actor: { actorType: "user" | "agent"; actorId: string },
+  executionState: unknown,
+): Promise<string[] | undefined> {
+  if (actor.actorType !== "user") return undefined;
+  const participant = parseIssueExecutionState(executionState)?.currentParticipant;
+  const participantUserId = participant?.type === "user" ? participant.userId : null;
+  if (!participantUserId || participantUserId === actor.actorId) return undefined;
+  return (await userMatchesPrincipal(db, companyId, actor.actorId, participantUserId))
+    ? [participantUserId]
+    : undefined;
 }
 
 // Negation/rejection markers that invalidate an otherwise approval-looking heading.
@@ -5868,6 +5891,19 @@ export function issueRoutes(
           })
         : null;
     const actor = getActorInfo(req);
+    // An owner resolves an ask addressed to the legacy `local-board` user.
+    const addresseeAlias =
+      actor.actorType === "user" &&
+      interaction.addresseeUserId &&
+      interaction.addresseeUserId !== actor.actorId &&
+      (await userMatchesPrincipal(
+        db,
+        issue.companyId,
+        actor.actorId,
+        interaction.addresseeUserId,
+      ))
+        ? [interaction.addresseeUserId]
+        : undefined;
     const decision: IssueThreadInteractionResolverAudienceDecision =
       evaluateIssueThreadInteractionResolverAudience({
         actor:
@@ -5877,7 +5913,7 @@ export function issueRoutes(
                 agentId: actor.agentId,
                 runId: runId || actor.runId,
               }
-            : { type: "user", userId: actor.actorId },
+            : { type: "user", userId: actor.actorId, userIdAliases: addresseeAlias },
         interaction,
         additionalRestriction: resolverPolicyRestriction,
         governedAction:
@@ -8327,6 +8363,13 @@ export function issueRoutes(
       return;
     }
     const offset = parsedOffset ?? 0;
+    // "Assigned to me" includes the legacy `local-board` work an owner answers for.
+    const assigneeUserIdAliases =
+      assigneeUserFilterRaw === "me" && assigneeUserId
+        ? (await viewerPrincipalUserIds(db, companyId, assigneeUserId)).filter(
+            (id) => id !== assigneeUserId,
+          )
+        : undefined;
 
     const listFilters: IssueFilters = {
       attention: attention === "blocked" ? "blocked" : undefined,
@@ -8334,6 +8377,7 @@ export function issueRoutes(
       assigneeAgentId,
       participantAgentId: uuidQuery(req, "participantAgentId"),
       assigneeUserId,
+      assigneeUserIdAliases,
       touchedByUserId,
       inboxArchivedByUserId,
       unreadForUserId,
@@ -9738,6 +9782,12 @@ export function issueRoutes(
                 agentId: actor.agentId ?? null,
                 userId: actor.actorType === "user" ? actor.actorId : null,
               },
+              actorUserIdAliases: await stageParticipantAliasesForActor(
+                tx as unknown as Db,
+                lockedIssue.companyId,
+                actor,
+                lockedIssue.executionState,
+              ),
               allowBoardOverride: req.actor.type === "board",
               commentBody: resolutionNote ?? null,
             });
@@ -13633,6 +13683,13 @@ export function issueRoutes(
         parseIssueExecutionState(existing.executionState)?.status === "pending"
           ? await resolveReviewEscalationUserId(db, existing)
           : undefined;
+      // An owner decides a stage that waits on the legacy `local-board` user.
+      const actorUserIdAliases = await stageParticipantAliasesForActor(
+        db,
+        existing.companyId,
+        actor,
+        existing.executionState,
+      );
       const transition = withStageRefusalCommentNote(Boolean(commentBody), () => applyIssueExecutionPolicyTransition({
         issue: existing,
         policy: nextExecutionPolicy,
@@ -13655,6 +13712,7 @@ export function issueRoutes(
         allowBoardOverride: req.actor.type === "board",
         commentBody,
         reviewEscalationUserId,
+        actorUserIdAliases,
         reviewRequest: reviewRequest === undefined ? undefined : reviewRequest,
         monitorExplicitlyUpdated:
           req.body.executionPolicy !== undefined && monitorChanged,
@@ -18207,12 +18265,23 @@ export function issueRoutes(
       const currentExecutionPolicy = normalizeIssueExecutionPolicy(
         currentIssue.executionPolicy ?? null,
       );
+      const reviewActorUserIdAliases =
+        currentIssue.status === "in_review" &&
+        currentExecutionState?.status === "pending"
+          ? await stageParticipantAliasesForActor(
+              db,
+              currentIssue.companyId,
+              actor,
+              currentIssue.executionState,
+            )
+          : undefined;
       const shouldAutoApproveReviewComment =
         currentIssue.status === "in_review" &&
         currentExecutionState?.status === "pending" &&
         actorMatchesExecutionParticipant(
           actor,
           currentExecutionState.currentParticipant ?? null,
+          reviewActorUserIdAliases,
         ) &&
         isApprovalReviewComment(req.body.body);
 
@@ -18231,6 +18300,7 @@ export function issueRoutes(
             agentId: actor.agentId ?? null,
             userId: actor.actorType === "user" ? actor.actorId : null,
           },
+          actorUserIdAliases: reviewActorUserIdAliases,
           commentBody: req.body.body,
         });
         const decisionId = transition.decision ? randomUUID() : null;

@@ -2095,3 +2095,54 @@ describe("review round circuit breaker", () => {
     });
   });
 });
+
+describe("a stage that waits on the legacy local-board user", () => {
+  const policy = makePolicy([{ type: "review", participants: [{ type: "user", userId: "local-board" }] }]);
+  const issue = {
+    status: "in_review",
+    assigneeAgentId: null,
+    assigneeUserId: "local-board",
+    executionPolicy: policy,
+    executionState: {
+      status: "pending" as const,
+      currentStageId: policy.stages[0].id,
+      currentStageIndex: 0,
+      currentStageType: "review" as const,
+      currentParticipant: { type: "user" as const, userId: "local-board", agentId: null },
+      returnAssignee: { type: "agent" as const, agentId: coderAgentId, userId: null },
+      completedStageIds: [],
+      lastDecisionId: null,
+      lastDecisionOutcome: null,
+    },
+  };
+
+  it("records the approval when the caller vouches the user stands for local-board", () => {
+    const result = applyIssueExecutionPolicyTransition({
+      issue,
+      policy,
+      requestedStatus: "done",
+      requestedAssigneePatch: {},
+      actor: { userId: "john-real-login" },
+      actorUserIdAliases: ["local-board"],
+      commentBody: "Approved.",
+    });
+    expect(result.decision).toMatchObject({ outcome: "approved" });
+    expect(result.patch.executionState).toMatchObject({ status: "completed" });
+  });
+
+  it("refuses the same user without the alias, and an alias for a different user", () => {
+    for (const actorUserIdAliases of [undefined, ["someone-else"]]) {
+      expect(() =>
+        applyIssueExecutionPolicyTransition({
+          issue,
+          policy,
+          requestedStatus: "done",
+          requestedAssigneePatch: {},
+          actor: { userId: "john-real-login" },
+          actorUserIdAliases,
+          commentBody: "Approved.",
+        }),
+      ).toThrow("Only the active reviewer or approver can advance the current execution stage");
+    }
+  });
+});

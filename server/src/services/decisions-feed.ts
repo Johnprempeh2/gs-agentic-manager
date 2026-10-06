@@ -33,6 +33,7 @@ import type {
   DecisionsFeed,
 } from "@greatstone/shared";
 import { attentionService, type AttentionServiceOptions } from "./attention.js";
+import { principalIdsInclude, viewerPrincipalUserIds } from "./board-identity.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 import { isExplicitResumeCapableStatus } from "./issue-comment-wakeup.js";
 import { parseIssueExecutionState } from "./issue-execution-policy.js";
@@ -224,8 +225,11 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
   return {
     build: async (companyId: string, options: { userId: string }): Promise<DecisionsFeed> => {
       const now = serviceOptions.now?.() ?? Date.now();
+      // An owner also answers for the legacy `local-board` user (one rule, board-identity.ts).
+      const viewerUserIds = await viewerPrincipalUserIds(db, companyId, options.userId);
       const feed = await attention.list(companyId, {
         userId: options.userId,
+        userIdAliases: viewerUserIds.filter((id) => id !== options.userId),
         all: true,
         allowUnscopedAll: true,
       });
@@ -608,7 +612,7 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
           : agentById.get(id)?.name ?? "An agent";
         const returnAssignee = state.returnAssignee;
         return {
-          reviewer: { type: participant.type, id, name, isYou: participant.type === "user" && id === options.userId },
+          reviewer: { type: participant.type, id, name, isYou: participant.type === "user" && principalIdsInclude(viewerUserIds, id) },
           returnAgentId: returnAssignee?.type === "agent" ? returnAssignee.agentId ?? null : null,
           canReturn: Boolean(returnAssignee && (returnAssignee.agentId || returnAssignee.userId)),
         };

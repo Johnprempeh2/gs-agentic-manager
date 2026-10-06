@@ -63,6 +63,12 @@ type TransitionInput = {
    * `resolveReviewEscalationUserId`). Omitted: read from the issue.
    */
   reviewEscalationUserId?: string | null;
+  /**
+   * Other user ids a user actor answers for, already checked by the caller
+   * (an owner standing in for `local-board`, see `board-identity.ts`).
+   * Omitted: the actor matches only its own id.
+   */
+  actorUserIdAliases?: readonly string[];
 };
 
 type TransitionResult = {
@@ -465,6 +471,21 @@ function principalsEqual(a: IssueExecutionStagePrincipal | null, b: IssueExecuti
   return a.type === "agent" ? a.agentId === b.agentId : a.userId === b.userId;
 }
 
+/** The actor is the stage's current participant, by id or by a checked alias. */
+function actorIsParticipant(
+  participant: IssueExecutionStagePrincipal | null,
+  actor: IssueExecutionStagePrincipal | null,
+  actorUserIdAliases: readonly string[] | undefined,
+): boolean {
+  if (principalsEqual(participant, actor)) return true;
+  return Boolean(
+    participant?.type === "user" &&
+      actor?.type === "user" &&
+      participant.userId &&
+      actorUserIdAliases?.includes(participant.userId),
+  );
+}
+
 function resolveMaxReviewRounds(policy: IssueExecutionPolicy | null): number {
   const configured = policy?.maxReviewRounds;
   return typeof configured === "number" && configured > 0 ? configured : DEFAULT_MAX_REVIEW_ROUNDS;
@@ -746,7 +767,8 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       currentParticipant.type === "user" &&
       !stageHasParticipant(activeStage, currentParticipant) &&
       (existingState?.changesRequestedCount ?? 0) >= resolveMaxReviewRounds(input.policy);
-    if (escalatedHold && !principalsEqual(currentParticipant, actor)) {
+    const actorIsCurrentParticipant = actorIsParticipant(currentParticipant, actor, input.actorUserIdAliases);
+    if (escalatedHold && !actorIsCurrentParticipant) {
       // An empty patch would not override the caller's own requested fields,
       // so a status or assignee change from a non-escalated actor must be
       // rejected outright — mirroring the "only the active participant can
@@ -805,7 +827,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       };
     }
 
-    if (principalsEqual(currentParticipant, actor)) {
+    if (actorIsCurrentParticipant) {
       if (requestedStatus === "done") {
         if (!input.commentBody?.trim()) {
           throw unprocessable(`Approving a review or approval stage requires a comment. ${STAGE_DECISION_COMMENT_HINT}`);
