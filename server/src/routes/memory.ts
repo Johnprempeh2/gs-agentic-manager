@@ -167,6 +167,25 @@ export function memoryRoutes(
     res.json(grant);
   });
 
+  // One right on or off (the agent Permissions toggles, GRE-988).
+  router.patch("/companies/:companyId/memory/grants", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const grant = await grants.change(await callerFor(req, companyId, "grant_change"), req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "memory.grants_set",
+      entityType: grant.principalType === "agent" ? "agent" : "user",
+      entityId: grant.principalId,
+      details: { permissions: grant.permissions },
+    });
+    res.json(grant);
+  });
+
   router.get("/companies/:companyId/memory/scopes", requireEnabled, async (req, res) => {
     const companyId = req.params.companyId as string;
     res.json(await svc.listScopes(await callerFor(req, companyId, "scopes_list")));

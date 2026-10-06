@@ -113,6 +113,7 @@ import {
   createMemoryScopeSchema,
   recallMemorySchema,
   setMemoryGrantsSchema,
+  changeMemoryGrantSchema,
   updateMemorySettingsSchema,
   updateAgentTeamSchema,
   // Goal
@@ -5206,6 +5207,15 @@ registry.registerPath({
   summary: "Replace one agent's or member's memory rights (read, contribute, approve; organization and project scopes only, never client; never memory:admin); owner or admin only; audited, refusals too",
   request: { params: memoryCompanyParams, body: jsonBody(setMemoryGrantsSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/memory/grants",
+  tags: ["memory"],
+  summary: "Turn one memory right of one agent or member on or off, leaving its other memory rights alone; refused with 409 when that right has its own scope settings; owner or admin only; audited, refusals too",
+  request: { params: memoryCompanyParams, body: jsonBody(changeMemoryGrantSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({

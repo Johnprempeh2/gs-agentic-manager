@@ -5006,24 +5006,14 @@ export function agentRoutes(
     }
 
     const { canConfigureAgents, canChangeSkills, canContributeMemory, canApproveMemory, ...permissionFlags } = req.body;
-    // A memory grant is one row per key, so the toggle would overwrite (on) or
-    // delete (off) a grant with its own scope settings (named memory scopes,
-    // such as a client scope, or approval decision classes). Refuse instead of
-    // silently widening or dropping that access.
-    const memoryToggles = ([
-      ["memory:contribute", canContributeMemory],
-      ["memory:approve", canApproveMemory],
-    ] as const).filter(([, enabled]) => typeof enabled === "boolean");
-    if (memoryToggles.length > 0) {
-      const currentGrants = await access.listPrincipalGrants(existing.companyId, "agent", existing.id);
-      const scopedKey = memoryToggles.find(([key]) =>
-        currentGrants.some((grant) => grant.permissionKey === key && grant.scope != null),
-      )?.[0];
-      if (scopedKey) {
-        throw conflict(
-          `This agent has a ${scopedKey} grant with its own scope settings; this toggle would replace it, so change that grant directly`,
-        );
-      }
+    // Memory rights have one writer: the owner-only grant service (G3,
+    // GRE-933). This route cannot write them, so it must not answer 200 for
+    // them either (GRE-988).
+    if (typeof canContributeMemory === "boolean" || typeof canApproveMemory === "boolean") {
+      res.status(422).json({
+        error: "Memory rights are set by a company owner via PATCH /api/companies/:companyId/memory/grants",
+      });
+      return;
     }
     const agent = await svc.updatePermissions(id, permissionFlags);
     if (!agent) {
@@ -5038,8 +5028,6 @@ export function agentRoutes(
     const changeGrants: Array<[PermissionKey, boolean | undefined]> = [
       ["agents:configure", canConfigureAgents],
       ["skills:create", canChangeSkills],
-      ["memory:contribute", canContributeMemory],
-      ["memory:approve", canApproveMemory],
     ];
     for (const [permissionKey, enabled] of changeGrants) {
       if (typeof enabled !== "boolean") continue;
@@ -5071,8 +5059,6 @@ export function agentRoutes(
         canAssignTasks: effectiveCanAssignTasks,
         ...(typeof canConfigureAgents === "boolean" ? { canConfigureAgents } : {}),
         ...(typeof canChangeSkills === "boolean" ? { canChangeSkills } : {}),
-        ...(typeof canContributeMemory === "boolean" ? { canContributeMemory } : {}),
-        ...(typeof canApproveMemory === "boolean" ? { canApproveMemory } : {}),
         trustPreset: agent.permissions?.trustPreset ?? "standard",
       },
     });

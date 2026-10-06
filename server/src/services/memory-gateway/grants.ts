@@ -1,8 +1,13 @@
 import { and, eq, like, ne } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { agents, companyMemberships, principalPermissionGrants } from "@greatstone/db";
-import { setMemoryGrantsSchema, type MemoryGrantablePermission, type SetMemoryGrants } from "@greatstone/shared";
-import { badRequest, forbidden, notFound } from "../../errors.js";
+import {
+  changeMemoryGrantSchema,
+  setMemoryGrantsSchema,
+  type MemoryGrantablePermission,
+  type SetMemoryGrants,
+} from "@greatstone/shared";
+import { badRequest, conflict, forbidden, notFound } from "../../errors.js";
 import type { MemoryCaller, MemoryGatewayService } from "./service.js";
 
 export type MemoryGrant = {
@@ -150,5 +155,85 @@ export function memoryGrantService(db: Db, gateway: MemoryGatewayService) {
     };
   }
 
-  return { list, set };
+  /**
+   * Turns one memory right on or off. A row for that key with its own scope
+   * settings (named memory scopes, approval classes) is never replaced here:
+   * the change is refused so that access is not silently widened or dropped.
+   */
+  async function change(caller: MemoryCaller, body: unknown): Promise<MemoryGrant> {
+    const parsed = changeMemoryGrantSchema.safeParse(body);
+    const target = parsed.success
+      ? { principalType: parsed.data.principalType, principalId: parsed.data.principalId }
+      : {};
+    await assertOwner(caller, "grant_change", target);
+    if (!parsed.success) {
+      await logOperation(caller, "grant_change", "denied", {
+        detail: {
+          reason: "invalid_body",
+          invalidFields: parsed.error.issues.map((issue) => issue.path.join(".") || issue.code),
+        },
+      });
+      throw badRequest("Invalid memory grant", parsed.error.issues);
+    }
+    const input = parsed.data;
+    if (!(await principalExists(caller.companyId, input))) {
+      await logOperation(caller, "grant_change", "denied", { detail: { reason: "unknown_principal", ...target } });
+      throw notFound(input.principalType === "agent" ? "Agent not found" : "Member not found");
+    }
+    const now = new Date();
+    const principal = and(
+      eq(principalPermissionGrants.companyId, caller.companyId),
+      eq(principalPermissionGrants.principalType, input.principalType),
+      eq(principalPermissionGrants.principalId, input.principalId),
+    );
+    const outcome = await db.transaction(async (tx) => {
+      const current = await tx
+        .select({ key: principalPermissionGrants.permissionKey, scope: principalPermissionGrants.scope })
+        .from(principalPermissionGrants)
+        .where(and(principal, like(principalPermissionGrants.permissionKey, "memory:%")));
+      if (current.some((row) => row.key === input.permission && row.scope != null)) return { scoped: true as const };
+      const had = current.some((row) => row.key === input.permission);
+      if (input.enabled && !had) {
+        await tx.insert(principalPermissionGrants).values({
+          companyId: caller.companyId,
+          principalType: input.principalType,
+          principalId: input.principalId,
+          permissionKey: input.permission,
+          scope: null,
+          grantedByUserId: caller.userId,
+          createdAt: now,
+          updatedAt: now,
+        }).onConflictDoNothing();
+      } else if (!input.enabled && had) {
+        await tx
+          .delete(principalPermissionGrants)
+          .where(and(principal, eq(principalPermissionGrants.permissionKey, input.permission)));
+      }
+      const before = current.map((row) => row.key);
+      const after = input.enabled
+        ? [...new Set([...before, input.permission])]
+        : before.filter((key) => key !== input.permission);
+      return { scoped: false as const, before, after };
+    });
+    if (outcome.scoped) {
+      await logOperation(caller, "grant_change", "denied", {
+        detail: { reason: "scoped_grant", ...target, permission: input.permission },
+      });
+      throw conflict(
+        `This ${input.principalType} has a ${input.permission} grant with its own scope settings; change that grant directly`,
+      );
+    }
+    await logOperation(caller, "grant_change", "ok", {
+      detail: { ...target, before: outcome.before, after: outcome.after, reason: input.reason },
+    });
+    return {
+      principalType: input.principalType,
+      principalId: input.principalId,
+      permissions: outcome.after,
+      grantedByUserId: caller.userId,
+      updatedAt: now,
+    };
+  }
+
+  return { list, set, change };
 }
