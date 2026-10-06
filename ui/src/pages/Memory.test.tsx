@@ -33,19 +33,25 @@ vi.mock("../lib/webgl", () => ({ supportsWebGL: () => webglMock.supported }));
 vi.mock("../components/memory/MemoryGraph3D", () => ({
   default: ({
     data,
+    focusIds,
+    focusMode,
     onSelectNode,
     onSelectEdge,
   }: {
     data: import("../components/memory/memoryGraph3dData").MemoryGraph3DData;
+    focusIds?: Set<string> | null;
+    focusMode?: string;
     onSelectNode: (id: string) => void;
     onSelectEdge: (id: string) => void;
   }) => (
-    <div data-testid="memory-graph-3d">
+    <div data-testid="memory-graph-3d" data-focus-mode={focusIds ? focusMode : undefined}>
       {data.nodes.map((node) => (
         <button
           key={node.id}
           type="button"
           data-node-kind={node.kind}
+          data-node-ceo={node.ceo ? "true" : undefined}
+          data-in-focus={focusIds ? String(focusIds.has(node.id)) : undefined}
           data-node-status={node.status ?? undefined}
           onClick={() => node.kind === "memory" && onSelectNode(node.id)}
         >
@@ -64,7 +70,8 @@ vi.mock("../components/memory/MemoryGraph3D", () => ({
     </div>
   ),
 }));
-vi.mock("../api/agents", () => ({ agentsApi: { list: vi.fn(async () => []) } }));
+const agentsMock = vi.hoisted(() => ({ list: vi.fn(async () => [] as unknown[]) }));
+vi.mock("../api/agents", () => ({ agentsApi: agentsMock }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "co-kestrel" }) }));
 vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
@@ -190,26 +197,95 @@ describe("Memory page", () => {
     const rows = container.querySelectorAll("button[data-memory-row]");
     expect(rows).toHaveLength(kestrelNodes.length);
     expect(container.querySelectorAll("[data-node-status]")).toHaveLength(kestrelNodes.length);
-    expect(container.querySelectorAll("[data-edge-kind]")).toHaveLength(kestrelEdges.length);
+    // Stated links by default; the check finding waits behind "Show suggested links".
+    expect(container.querySelectorAll("[data-edge-kind]")).toHaveLength(kestrelEdges.filter((edge) => edge.kind === "explicit").length);
     for (const label of ["Unreviewed", "Approved", "Disputed", "Superseded"]) {
       expect(text()).toContain(label);
     }
     expect(text()).toContain(kestrelGraph.note);
   });
 
-  it("keeps stated links, check findings and contributor links apart, and says so in the legend", async () => {
+  it("shows stated links by default and check findings only behind the suggested links toggle", async () => {
     await renderAt("/memory");
 
     expect(container.querySelectorAll('[data-link-style="stated"]')).toHaveLength(3);
-    expect(container.querySelectorAll('[data-link-style="inferred"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-link-style="inferred"]')).toHaveLength(0);
     expect(container.querySelectorAll('[data-link-style="provenance"]')).toHaveLength(kestrelNodes.length);
     // Mason, Scribe and Everest each get one hub.
     expect(container.querySelectorAll('[data-node-kind="hub"]')).toHaveLength(3);
-    const legend = container.querySelector("figcaption")?.textContent ?? "";
+    let legend = container.querySelector("figcaption")?.textContent ?? "";
     expect(legend).toContain("Stated link");
-    expect(legend).toContain("Found by a check");
+    expect(legend).not.toContain("Found by a check");
     expect(legend).toContain("Contributed by");
     expect(legend).toContain(APPROVED_MEANING);
+
+    const toggle = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent === "Show suggested links (1)")!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    await act(async () => toggle.click());
+    await flush();
+
+    expect(currentSearch).toContain("suggested=1");
+    expect(container.querySelectorAll('[data-link-style="inferred"]')).toHaveLength(1);
+    legend = container.querySelector("figcaption")?.textContent ?? "";
+    expect(legend).toContain("Found by a check");
+  });
+
+  it("makes the CEO's hub the main agent by role and lists it first among contributors", async () => {
+    agentsMock.list.mockResolvedValueOnce([
+      { id: "ag-mason-syn", name: "Mason", role: "ceo", appearance: null },
+      { id: "ag-scribe-syn", name: "Scribe", role: "general", appearance: null },
+      { id: "ag-everest-syn", name: "Everest", role: "general", appearance: null },
+    ]);
+    await renderAt("/memory");
+
+    const ceo = container.querySelectorAll('[data-node-ceo="true"]');
+    expect(ceo).toHaveLength(1);
+    expect(ceo[0].textContent).toBe("Mason");
+    const rows = Array.from(container.querySelectorAll("[data-contributor]")).map((row) => row.getAttribute("data-contributor"));
+    expect(rows[0]).toBe("ag-mason-syn");
+    expect(container.querySelector('[data-contributor="ag-mason-syn"]')?.textContent).toContain("(main agent)");
+    expect(container.querySelector("figcaption")?.textContent).toContain("Main agent");
+  });
+
+  it("focuses an agent from the contributor list, keeps it in the URL, and resets with All agents", async () => {
+    await renderAt("/memory");
+
+    const everest = container.querySelector<HTMLButtonElement>('[data-contributor="ag-everest-syn"]')!;
+    expect(everest.textContent).toContain("Everest (synthetic)");
+    await act(async () => everest.click());
+    await flush();
+
+    expect(currentSearch).toContain("agent=ag-everest-syn");
+    // The server query does not change: focus narrows on the client.
+    expect(memoryApiMock.graph).toHaveBeenCalledTimes(1);
+    const inFocus = Array.from(container.querySelectorAll('[data-in-focus="true"][data-node-kind="memory"]')).map((node) => node.textContent);
+    expect(inFocus.sort()).toEqual(["Alder Bakery opens at 6am on weekdays", "Alder site launches after menu photos"]);
+    expect(container.querySelector('[data-testid="memory-graph-3d"]')?.getAttribute("data-focus-mode")).toBe("hide");
+    expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(2);
+    expect(text()).toContain("2 of 5 entries: Everest (synthetic) and their direct connections");
+
+    const dim = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Everything else"] button')).find((button) => button.textContent === "Dim")!;
+    await act(async () => dim.click());
+    await flush();
+    expect(currentSearch).toContain("others=dim");
+    expect(container.querySelector('[data-testid="memory-graph-3d"]')?.getAttribute("data-focus-mode")).toBe("dim");
+
+    const all = Array.from(container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Contributors"] button')).find((button) => button.textContent?.startsWith("All agents"))!;
+    await act(async () => all.click());
+    await flush();
+    expect(currentSearch).not.toContain("agent=");
+    expect(container.querySelector("[data-in-focus]")).toBeNull();
+    expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(kestrelNodes.length);
+  });
+
+  it("adds a second agent to the focus with Ctrl click", async () => {
+    await renderAt("/memory?agent=ag-everest-syn");
+
+    const mason = container.querySelector<HTMLButtonElement>('[data-contributor="ag-mason-syn"]')!;
+    await act(async () => mason.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })));
+    await flush();
+    expect(decodeURIComponent(currentSearch)).toContain("agent=ag-everest-syn,ag-mason-syn");
+    expect(container.querySelectorAll('[data-contributor][aria-pressed="true"]')).toHaveLength(2);
   });
 
   it("groups by scope when asked, without changing the server query", async () => {
@@ -218,7 +294,7 @@ describe("Memory page", () => {
     const hubs = Array.from(container.querySelectorAll('[data-node-kind="hub"]')).map((hub) => hub.textContent);
     expect(hubs.sort()).toEqual(["Alder Bakery", "Alder website rebuild"]);
     expect(container.querySelector("figcaption")?.textContent).toContain("In scope");
-    expect(memoryApiMock.graph).toHaveBeenCalledWith("co-kestrel", { q: undefined, agentId: undefined, scopeId: undefined, status: undefined });
+    expect(memoryApiMock.graph).toHaveBeenCalledWith("co-kestrel", { q: undefined, scopeId: undefined, status: undefined });
   });
 
   it("falls back to the list with a note when WebGL is not available", async () => {
@@ -245,16 +321,16 @@ describe("Memory page", () => {
     expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(kestrelNodes.length);
   });
 
-  it("passes filters from the URL to the server and does not filter on the client", async () => {
+  it("passes search, scope and status from the URL to the server, and keeps agent focus on the client", async () => {
     memoryApiMock.graph.mockResolvedValue({ ...kestrelGraph, nodes: [kestrelNodes[3]], edges: [] });
     await renderAt("/memory?status=disputed&scope=pj-alder-site&agent=ag-everest-syn&q=launch");
 
     expect(memoryApiMock.graph).toHaveBeenCalledWith("co-kestrel", {
       q: "launch",
-      agentId: "ag-everest-syn",
       scopeId: "pj-alder-site",
       status: "disputed",
     });
+    expect(memoryApiMock.graph.mock.calls[0][1]).not.toHaveProperty("agentId");
     expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(1);
   });
 
@@ -278,7 +354,7 @@ describe("Memory page", () => {
   });
 
   it("opens a connection from the graph and explains it without implying cause", async () => {
-    await renderAt("/memory");
+    await renderAt("/memory?suggested=1");
 
     const edge = container.querySelector<HTMLButtonElement>('[data-edge-kind="inferred"]')!;
     await act(async () => edge.click());

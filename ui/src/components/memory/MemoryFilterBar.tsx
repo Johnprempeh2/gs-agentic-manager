@@ -27,7 +27,8 @@ interface MemoryFilterBarProps<S extends MemoryRecordStatus> {
   searchText: string;
   onSearchTextChange: (value: string) => void;
   onChange: (next: MemoryCommonFilters<S>) => void;
-  agents: MemoryFilterAgent[];
+  /** Omitted: no agent filter here (the Memory graph page focuses agents from its contributor list). */
+  agents?: MemoryFilterAgent[];
   scopes: MemoryScope[];
   /** Extra controls after the status filter, e.g. a date range. */
   children?: ReactNode;
@@ -56,17 +57,19 @@ export function MemoryFilterBar<S extends MemoryRecordStatus>({
           className="h-9 pl-8"
         />
       </div>
-      <Select value={filters.agentId ?? ALL} onValueChange={(value) => onChange({ ...filters, agentId: value === ALL ? undefined : value })}>
-        <SelectTrigger className="h-9 w-full sm:w-44" aria-label="Agent">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All agents</SelectItem>
-          {agents.map((agent) => (
-            <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {agents ? (
+        <Select value={filters.agentId ?? ALL} onValueChange={(value) => onChange({ ...filters, agentId: value === ALL ? undefined : value })}>
+          <SelectTrigger className="h-9 w-full sm:w-44" aria-label="Agent">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All agents</SelectItem>
+            {agents.map((agent) => (
+              <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
       <Select value={filters.scopeId ?? ALL} onValueChange={(value) => onChange({ ...filters, scopeId: value === ALL ? undefined : value })}>
         <SelectTrigger className="h-9 w-full sm:w-52" aria-label="Project or client scope">
           <SelectValue />
