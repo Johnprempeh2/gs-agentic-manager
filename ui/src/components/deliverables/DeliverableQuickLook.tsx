@@ -157,7 +157,7 @@ export function DeliverableQuickLook({
         </div>
 
         {reviewing ? (
-          <aside className="flex max-h-[45dvh] w-full shrink-0 flex-col overflow-y-auto border-t border-border bg-background p-4 md:max-h-none md:w-80 md:border-t-0 md:border-l md:p-5">
+          <aside className="flex max-h-(--sz-50vh) w-full shrink-0 flex-col overflow-y-auto border-t border-border bg-background p-4 md:max-h-none md:w-80 md:border-t-0 md:border-l md:p-5">
             <DeliverableCommentsPanel review={review} />
           </aside>
         ) : (

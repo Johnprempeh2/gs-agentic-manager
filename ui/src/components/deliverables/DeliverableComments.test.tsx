@@ -138,6 +138,7 @@ describe("DeliverableCommentsPanel", () => {
 
     expect(frame().getAttribute("src")).toBe("/api/companies/company-1/deliverables/d-1/review-content");
     expect(container.textContent).toContain("Select text in the document to comment on it.");
+    expect(container.querySelector("[data-testid='deliverable-comments-send']")).toBeNull();
     const postMessage = vi.spyOn(frame().contentWindow!, "postMessage");
     await fromFrame({ type: "ready" });
 
@@ -151,6 +152,7 @@ describe("DeliverableCommentsPanel", () => {
     await comment("Costs fell in Kumasi.", 37, "Why?");
     await comment("Q3 board pack", 0, "Drop me");
     expect(items()).toHaveLength(3);
+    expect(container.querySelector("[data-testid='deliverable-comments-send']")).not.toBeNull();
     expect(deliverablesApiMock.createComment).toHaveBeenCalledWith("company-1", "d-1", {
       quote: "Revenue grew in Accra.",
       prefix: "",
@@ -186,7 +188,8 @@ describe("DeliverableCommentsPanel", () => {
     expect(items().map((item) => item.dataset.status)).toEqual(["sent", "sent"]);
     expect(button("Edit comment 1")).toBeUndefined();
     expect(button("Delete comment 2")).toBeUndefined();
-    expect(container.querySelector<HTMLButtonElement>("[data-testid='deliverable-comments-send']")!.disabled).toBe(true);
+    // With no drafts left there is nothing to send, so the action is replaced by a confirmation.
+    expect(container.querySelector("[data-testid='deliverable-comments-send']")).toBeNull();
     expect(container.textContent).toContain("Sent. The task's agent will revise the deliverable.");
   });
 });

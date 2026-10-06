@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquareText, Pencil, Send, Trash2, X } from "lucide-react";
+import { CheckCircle2, MessageSquareText, Pencil, Send, Trash2, X } from "lucide-react";
 import { deliverablesApi, type DeliverableComment } from "@/api/deliverables";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -216,7 +216,7 @@ function CommentItem({
         className="flex items-start gap-2 text-left"
         aria-label={`Show comment ${number} in the document`}
       >
-        <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground">
+        <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-micro font-semibold text-primary-foreground">
           {number}
         </span>
         <span className="line-clamp-3 border-l-2 border-border pl-2 text-xs italic text-muted-foreground">
@@ -354,27 +354,28 @@ export function DeliverableCommentsPanel({ review }: { review: DeliverableReview
         </ol>
       )}
 
-      <div className="mt-auto flex flex-col gap-1.5 border-t border-border pt-3">
-        <Button
-          size="sm"
-          onClick={() => review.send.mutate()}
-          disabled={drafts.length === 0 || review.send.isPending}
-          data-testid="deliverable-comments-send"
-        >
-          <Send /> {drafts.length > 1 ? `Send ${drafts.length} comments` : "Send comments"}
-        </Button>
-        {sentResult && !review.send.isPending ? (
-          <p className="text-xs text-muted-foreground" role="status">
-            {sentResult.woken
-              ? "Sent. The task's agent will revise the deliverable."
-              : "Posted on the task. No agent was woken; assign one on the task."}
-          </p>
-        ) : (
+      {drafts.length > 0 || review.send.isPending ? (
+        <div className="mt-auto flex flex-col gap-1.5 border-t border-border pt-3">
+          <Button
+            size="sm"
+            onClick={() => review.send.mutate()}
+            disabled={review.send.isPending}
+            data-testid="deliverable-comments-send"
+          >
+            <Send /> {drafts.length > 1 ? `Send ${drafts.length} comments` : "Send comments"}
+          </Button>
           <p className="text-xs text-muted-foreground">
             Posts all drafts as one comment on the task and asks its agent to revise.
           </p>
-        )}
-      </div>
+        </div>
+      ) : sentResult ? (
+        <p className="mt-auto flex items-center gap-1.5 border-t border-border pt-3 text-xs text-muted-foreground" role="status">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+          {sentResult.woken
+            ? "Sent. The task's agent will revise the deliverable."
+            : "Posted on the task. No agent was woken; assign one on the task."}
+        </p>
+      ) : null}
     </section>
   );
 }
