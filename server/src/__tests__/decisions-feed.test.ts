@@ -1197,6 +1197,125 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       expect(await resolveReviewEscalationUserId(db, { companyId: seeded.companyId, responsibleUserId: OTHER_USER_ID })).toBeUndefined();
     });
 
+    describe("a review left on the legacy local-board user", () => {
+      const BEN_ID = "ben-admin";
+
+      afterEach(async () => {
+        await db.delete(authUsers).where(eq(authUsers.id, BEN_ID));
+      });
+
+      /**
+       * Live on 6 Oct: GRE-800, GRE-656 and GRE-822 wait on `local-board`,
+       * which nobody can sign in as. John (owner) must get the verdict; Ben
+       * (admin) and an owner of another company must not.
+       */
+      async function seedLocalBoardReview() {
+        const seeded = await seedReview({ reviewer: { type: "user", userId: "local-board" } });
+        const now = new Date();
+        await db.insert(authUsers).values({ id: BEN_ID, name: "Ben", email: "ben@example.com", createdAt: now, updatedAt: now });
+        // John stays owner; the second user becomes Ben's kind of member: an admin.
+        await db.update(companyMemberships).set({ membershipRole: "admin" })
+          .where(eq(companyMemberships.principalId, OTHER_USER_ID));
+        await db.insert(companyMemberships).values([
+          { companyId: seeded.companyId, principalType: "user", principalId: "local-board", status: "active", membershipRole: "owner" },
+          { companyId: seeded.companyId, principalType: "user", principalId: BEN_ID, status: "active", membershipRole: "admin" },
+        ]);
+        return seeded;
+      }
+
+      function boardApp(companyId: string, userId: string, membershipRole: string) {
+        return app(companyId, {
+          type: "board",
+          source: "session",
+          userId,
+          companyIds: [companyId],
+          memberships: [{ companyId, status: "active", membershipRole }],
+          isInstanceAdmin: false,
+        });
+      }
+
+      it("gives the owner Approve and Request changes, and the approval is recorded as theirs", async () => {
+        const seeded = await seedLocalBoardReview();
+        const card = cardFor(await build(seeded.companyId), seeded.issueId);
+
+        expect(card?.reviewer).toEqual({ type: "user", id: "local-board", name: "Board", isYou: true });
+        expect(card?.nextStep).toBe("The task stays in review until you approve it or ask for changes.");
+        expect(card!.actions.map((candidate) => candidate.id).slice(0, 2)).toEqual(["approve", "request_changes"]);
+
+        await run(app(seeded.companyId), action(card, "approve"));
+
+        const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+        expect(task?.status).toBe("done");
+        expect((task?.executionState as { status?: string } | null)?.status).toBe("completed");
+        const [decision] = await db.select().from(issueExecutionDecisions).where(eq(issueExecutionDecisions.issueId, seeded.issueId));
+        expect(decision).toEqual(expect.objectContaining({ outcome: "approved", actorUserId: USER_ID }));
+      });
+
+      it("lets the owner request changes on a local-board review", async () => {
+        const seeded = await seedLocalBoardReview();
+        const requestChanges = action(cardFor(await build(seeded.companyId), seeded.issueId), "request_changes");
+
+        await run(app(seeded.companyId), requestChanges, "Render the HTML part as a page.");
+
+        const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+        expect(task?.status).toBe("in_progress");
+        expect(task?.assigneeAgentId).toBe(seeded.masonId);
+        expect((task?.executionState as { status?: string } | null)?.status).toBe("changes_requested");
+      });
+
+      it("gives an admin no verdict, and never records the admin's approval", async () => {
+        const seeded = await seedLocalBoardReview();
+        const card = cardFor(await decisionsFeedService(db).build(seeded.companyId, { userId: BEN_ID }), seeded.issueId);
+
+        expect(card?.reviewer).toEqual(expect.objectContaining({ id: "local-board", isYou: false }));
+        expect(card!.actions.map((candidate) => candidate.id)).not.toContain("approve");
+        expect(card!.actions.map((candidate) => candidate.id)).not.toContain("request_changes");
+
+        // A comment that reads as an approval does not finish the review for Ben.
+        const comment = await request(boardApp(seeded.companyId, BEN_ID, "admin"))
+          .post(`/api/issues/${seeded.issueId}/comments`)
+          .send({ body: "## Review: APPROVED\n\nLooks good." });
+        expect(comment.status).toBe(201);
+        const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+        expect(task?.status).toBe("in_review");
+        expect(await db.select().from(issueExecutionDecisions).where(eq(issueExecutionDecisions.issueId, seeded.issueId))).toEqual([]);
+      });
+
+      it("gives an owner of another company nothing for this company's local-board review", async () => {
+        const seeded = await seedLocalBoardReview();
+        const elsewhereId = randomUUID();
+        const strangerId = "other-company-owner";
+        await db.insert(companies).values({ id: elsewhereId, name: "Else Co", issuePrefix: "ELS", requireBoardApprovalForNewAgents: false });
+        await db.insert(companyMemberships).values({
+          companyId: elsewhereId, principalType: "user", principalId: strangerId, status: "active", membershipRole: "owner",
+        });
+
+        const card = cardFor(await decisionsFeedService(db).build(seeded.companyId, { userId: strangerId }), seeded.issueId);
+        expect(card?.reviewer).toEqual(expect.objectContaining({ id: "local-board", isYou: false }));
+        expect(card!.actions.map((candidate) => candidate.id)).not.toContain("approve");
+      });
+
+      it("counts the owner's local-board tasks as theirs in Needs me and the my-tasks list", async () => {
+        const seeded = await seedLocalBoardReview();
+        const assignedId = randomUUID();
+        await db.insert(issues).values({
+          id: assignedId, companyId: seeded.companyId, identifier: "GRE-656", issueNumber: 656,
+          title: "Old board task", status: "todo", priority: "medium", assigneeUserId: "local-board",
+        });
+
+        const mine = await request(app(seeded.companyId)).get(`/api/companies/${seeded.companyId}/issues?assigneeUserId=me`);
+        expect(mine.status).toBe(200);
+        expect((mine.body as Array<{ id: string }>).map((row) => row.id)).toEqual(expect.arrayContaining([assignedId, seeded.issueId]));
+        const bens = await request(boardApp(seeded.companyId, BEN_ID, "admin")).get(`/api/companies/${seeded.companyId}/issues?assigneeUserId=me`);
+        expect(bens.status).toBe(200);
+        expect(bens.body).toEqual([]);
+
+        const needsMe = await request(app(seeded.companyId)).get(`/api/companies/${seeded.companyId}/needs-me`);
+        expect(needsMe.status).toBe(200);
+        expect((needsMe.body.assignedTasks as Array<{ id: string }>).map((row) => row.id)).toContain(assignedId);
+      });
+    });
+
     it("leaves an agent review alone: no card and no verdict buttons for the board", async () => {
       const seeded = await seedReview({ reviewer: { type: "agent" } });
       const card = cardFor(await build(seeded.companyId), seeded.issueId);

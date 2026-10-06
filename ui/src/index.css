@@ -416,10 +416,11 @@
   --sz-folder-sheet-max: 80dvh;
   --sz-tweak-panel-max: 70vh; /* Task Chat Redesign dev tweak panel scroll cap. */
   --gtc-memory-layout: minmax(0, 1fr) 22rem; /* Memory page: graph beside the list (GRE-865). */
-  --sz-memory-graph-height: min(28rem, 60vh);
-  --sz-memory-graph-height-phone: min(18rem, 45svh); /* Graph and its legend fit above the phone bottom nav. */
-  --sz-memory-graph-min-width: 40rem; /* Below this the graph scrolls inside its card so labels stay readable. */
+  --sz-memory-graph-height: min(36rem, 65vh); /* 3D graph: tall enough to turn and zoom comfortably. */
+  --sz-memory-graph-height-phone: min(22rem, 50svh); /* Graph and its legend fit above the phone bottom nav. */
   --sz-memory-list-max: calc(100vh - 8rem);
+  --gtc-memory-explorer: 14rem minmax(0, 1fr); /* Memory page: contributors beside the graph or list. */
+  --sz-memory-contributors-phone: 11rem; /* Contributor list height on phones, above the graph. */
 
   /* New-task dialog geometry inputs and gap tokens. The derived top/height
      calculations live on the dialog element so runtime Visual Viewport

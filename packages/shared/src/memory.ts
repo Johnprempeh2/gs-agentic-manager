@@ -213,6 +213,7 @@ export interface MemoryReviewEvent {
 
 export interface MemoryRelationship {
   id: string;
+  /** Scope of the `from` record. */
   scopeId: string;
   fromRecordId: string;
   toRecordId: string;
@@ -377,6 +378,101 @@ export const createMemoryRelationshipSchema = z
   .strict();
 export type CreateMemoryRelationship = z.infer<typeof createMemoryRelationshipSchema>;
 
+// Memory linking (6 Oct 2026). Links between records come from what an agent
+// or person stated (`memory_link`, `relatedTo`, the relationships route) or
+// from the link check, whose findings are leads for a reviewer until confirmed.
+
+/** Why an agent links two records. Short, and data only: it never grants anything. */
+export const memoryLinkReason = z.string().trim().min(1).max(500);
+
+/** The agent `memory_link` tool. The author and run come from the caller. */
+export const memoryLinkSchema = z
+  .object({
+    fromRecordId: z.string().guid(),
+    toRecordId: z.string().guid(),
+    type: z.enum(MEMORY_RELATIONSHIP_TYPES),
+    reason: memoryLinkReason,
+  })
+  .strict();
+export type MemoryLink = z.infer<typeof memoryLinkSchema>;
+
+/** `relatedTo` on `memory_contribute`: a record id, or an id with a type and reason. */
+export const memoryRelatedToSchema = z
+  .array(
+    z.union([
+      z.string().guid(),
+      z
+        .object({
+          recordId: z.string().guid(),
+          type: z.enum(MEMORY_RELATIONSHIP_TYPES).default("same_subject"),
+          reason: memoryLinkReason.optional(),
+        })
+        .strict(),
+    ]),
+  )
+  .max(10);
+
+export const MEMORY_LINK_LEAD_STATES = ["open", "confirmed", "dismissed"] as const;
+export type MemoryLinkLeadState = (typeof MEMORY_LINK_LEAD_STATES)[number];
+
+/** Shown with every lead: the check matches stored names, topics, values and sources only. */
+export const MEMORY_LINK_LEAD_NOTE =
+  "Found by a check that matches the names, topics, stated values and source two entries share. A lead for a reviewer, not proof that they are connected.";
+
+/** What two records share, as the link check found it. Names and topics come from the contributors' tags. */
+export interface MemoryLinkBasis {
+  entities: string[];
+  topics: string[];
+  /** Prices, dates, amounts and the like that both texts state. */
+  values: string[];
+  /** Both came from the same task, document or other source. */
+  sameSource: boolean;
+}
+
+export interface MemoryLinkLead {
+  id: string;
+  fromRecordId: string;
+  toRecordId: string;
+  basis: MemoryLinkBasis;
+  state: MemoryLinkLeadState;
+  resolution: string | null;
+  resolutionNote: string | null;
+  /** The stated relationship written when the lead was confirmed. */
+  relationshipId: string | null;
+  detectedAt: Date | string;
+  resolvedAt: Date | string | null;
+  from: MemoryRecord;
+  to: MemoryRecord;
+}
+
+export interface MemoryLinkLeadList {
+  note: string;
+  leads: MemoryLinkLead[];
+}
+
+export interface MemoryLinkCheckResult {
+  note: string;
+  recordsChecked: number;
+  /** New leads written by this pass. */
+  proposed: number;
+  /** Pairs already stated, superseded, in a conflict or already a lead (any state). */
+  alreadyKnown: number;
+  ranAt: Date | string;
+}
+
+export const confirmMemoryLinkLeadSchema = z
+  .object({
+    type: z.enum(MEMORY_RELATIONSHIP_TYPES).default("same_subject"),
+    reason: memoryReason,
+    /** The lead's ends are in id order; true states the link from `to` to `from`. */
+    reverse: z.boolean().default(false),
+  })
+  .strict();
+export type ConfirmMemoryLinkLead = z.infer<typeof confirmMemoryLinkLeadSchema>;
+
+export const dismissMemoryLinkLeadSchema = z.object({ reason: memoryReason }).strict();
+export type DismissMemoryLinkLead = z.infer<typeof dismissMemoryLinkLeadSchema>;
+
 export const resolveMemoryConflictSchema = z
   .object({
     resolution: z.enum(MEMORY_CONFLICT_RESOLUTIONS),
@@ -417,8 +513,11 @@ export type MemoryGraphEdgeKind = (typeof MEMORY_GRAPH_EDGE_KINDS)[number];
 export const MEMORY_GRAPH_EDGE_TYPES = [...MEMORY_RELATIONSHIP_TYPES, "supersedes", "possible_conflict"] as const;
 export type MemoryGraphEdgeType = (typeof MEMORY_GRAPH_EDGE_TYPES)[number];
 
-/** Where an edge is stored: `relationship` row, `supersession` link on the record, or open `conflict_check` row. */
-export type MemoryGraphEdgeOrigin = "relationship" | "supersession" | "conflict_check";
+/**
+ * Where an edge is stored: `relationship` row, `supersession` link on the
+ * record, open `conflict_check` row, or open `link_check` lead.
+ */
+export type MemoryGraphEdgeOrigin = "relationship" | "supersession" | "conflict_check" | "link_check";
 
 /** A person or agent, never both. `system` is a check or the engine. */
 export interface MemoryActorRef {
@@ -458,16 +557,19 @@ export interface MemoryGraphNode {
 }
 
 export interface MemoryGraphEdge {
-  /** `rel:<relationshipId>`, `sup:<recordId>` (the replacement) or `cfl:<conflictId>`. */
+  /** `rel:<relationshipId>`, `sup:<recordId>` (the replacement), `cfl:<conflictId>` or `lnk:<leadId>`. */
   id: string;
   from: string;
   to: string;
   type: MemoryGraphEdgeType;
+  /** `explicit` is a stated link; `inferred` was found by a check. */
   kind: MemoryGraphEdgeKind;
   origin: MemoryGraphEdgeOrigin;
   /** Who stated it (explicit), or the check that produced it (inferred, `actorType: "system"`). */
   author: MemoryActorRef;
   source: MemorySourceRef;
+  /** What the link check matched: on its leads, and on a stated link a reviewer confirmed from one. */
+  basis: MemoryLinkBasis | null;
   createdAt: Date | string;
 }
 
@@ -526,6 +628,8 @@ export interface MemoryGraphEdgeDetail {
   sharedTerms: string[];
   /** Conflict edges only. */
   conflictState: MemoryConflictState | null;
+  /** Link check edges only: the lead id, to confirm or dismiss it. */
+  leadId: string | null;
 }
 
 export interface MemoryActivityItem {

@@ -153,9 +153,10 @@ signing helper that agents cannot read.
 Read-only routes under `/api/companies/:id/memory`; types in `packages/shared/src/memory.ts`.
 
 - `GET .../graph` lists records the caller may read (never deleted ones) and the edges between them. Edges come only
-  from stored rows: stated relationships and supersession (`explicit`), and open conflicts from the contribution check
-  (`inferred`). An edge is returned only when both ends are in the result. Engine entity links are not stored in GSAM,
-  so they are not edges.
+  from stored rows: stated relationships and supersession (`explicit`, a stated link), and open conflicts from the
+  contribution check and open link check leads (`inferred`, found by a check). Each edge has its type, kind, author and
+  `basis` (what the link check matched, or null). An edge is returned only when both ends are in the result. Engine
+  entity links are not stored in GSAM, so they are not edges.
 - `GET .../graph/nodes/:recordId` and `GET .../graph/edges/:edgeId` give detail and provenance. Contributor, reviewers
   and the conflict check or engine extraction are kept as separate roles.
 - `GET .../activity` lists contributions newest first, with review history; `GET .../activity/counts` counts them per
@@ -163,6 +164,27 @@ Read-only routes under `/api/companies/:id/memory`; types in `packages/shared/sr
 - Filters: `agentId`, `userId`, `scopeId`, `projectId`, `status`, `q`, and for activity `from` / `to` (`to` exclusive).
 - Every query starts from the scopes the caller may read. Hidden records add no node, edge, label, count or feed row;
   a hidden or missing record or edge is the same 404.
+
+## Linking memories (6 Oct 2026)
+
+- **Stated links.** Agents have a fourth tool, `memory_link` (from, to, type, short reason), and `memory_contribute`
+  takes `relatedTo` ids so a new entry is linked as it is saved; a refused `relatedTo` link saves nothing. Types are
+  the relationship types (`supports`, `contradicts`, `refines`, `depends_on`, `same_subject`). The agent is the
+  author and the run is the source. The rule is the contribute rule: `memory:contribute` on both scopes (an agent's
+  own working notes count). Two records in different scopes may be linked, except that a client or restricted-project
+  record links only inside its own scope. A hidden record is the same 404 as a missing one. Every attempt is in
+  `memory_operations` (`memory_link`), ids and type only.
+- **Link check.** Every 6 hours per company with memory on (the server scheduler; the steward routine is not live
+  before G4), and on demand by the owner or a memory admin (`POST .../memory/link-check`), a pass compares the 2,000
+  most recently changed live records. It proposes a lead when two records share a contributor-tagged name, a source,
+  or a topic plus another match (a second topic or a stated price, date or amount). Terms on more than a quarter of
+  records are ignored, each record has at most 5 open leads, and a client or restricted record pairs only inside its
+  scope. It uses only what GSAM stores; nothing goes to the engine. A pair already stated, superseded, in a conflict
+  or already a lead in any state is never proposed again, so reruns are safe.
+- **Review.** `GET .../memory/link-leads` lists leads whose two ends the caller may both read. The owner, or a
+  reviewer with `memory:approve` on both scopes (Everest), confirms one (`.../link-leads/:id/confirm`, a type and
+  reason), which writes a stated relationship with the reviewer as author and keeps the basis, or dismisses it. A
+  delete closes the record's open leads and clears their terms. Table `memory_link_leads` (migration 0298).
 
 ## Steward daily review (GRE-887)
 

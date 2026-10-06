@@ -5,7 +5,9 @@ import type {
   MemoryGraphEdgeDetail,
   MemoryGraphNodeDetail,
   MemoryGraphStatus,
+  MemoryLinkLead,
   MemoryRecordStatus,
+  MemoryRelationshipType,
   MemorySettings,
 } from "@greatstone/shared";
 import { api } from "./client";
@@ -60,4 +62,9 @@ export const memoryGraphApi = {
     api.get<MemoryActivityFeed>(`/companies/${companyId}/memory/activity${toQuery(filters)}`),
   activityCounts: (companyId: string, filters: Omit<MemoryActivityFilters, "agentId" | "userId" | "cursor"> = {}) =>
     api.get<MemoryActivityCounts>(`/companies/${companyId}/memory/activity/counts${toQuery(filters)}`),
+  /** Confirm a link check lead as a stated link. The server checks the reviewer's right. */
+  confirmLead: (companyId: string, leadId: string, body: { type: MemoryRelationshipType; reason: string; reverse?: boolean }) =>
+    api.post<MemoryLinkLead>(`/companies/${companyId}/memory/link-leads/${encodeURIComponent(leadId)}/confirm`, body),
+  dismissLead: (companyId: string, leadId: string, body: { reason: string }) =>
+    api.post<MemoryLinkLead>(`/companies/${companyId}/memory/link-leads/${encodeURIComponent(leadId)}/dismiss`, body),
 };

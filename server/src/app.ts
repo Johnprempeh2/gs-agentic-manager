@@ -127,6 +127,7 @@ import { authRoutes } from "./routes/auth.js";
 import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
+import { legacyBoardRoutes } from "./routes/legacy-board.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import {
   mcpGatewayProtocolRoutes,
@@ -991,6 +992,7 @@ export async function createApp(
       authPublicBaseUrl: opts.authPublicBaseUrl,
     }),
   );
+  api.use(legacyBoardRoutes(db, { deploymentMode: opts.deploymentMode }));
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });

@@ -5,6 +5,7 @@ import {
   issues,
   memoryConflicts,
   memoryExtractedFacts,
+  memoryLinkLeads,
   memoryRecords,
   memoryRelationships,
   memoryReviewEvents,
@@ -14,6 +15,8 @@ import {
   MEMORY_ACTIVITY_NOTE,
   MEMORY_CONFLICT_NOTE,
   MEMORY_GRAPH_NOTE,
+  MEMORY_LINK_LEAD_NOTE,
+  type MemoryLinkBasis,
   MEMORY_RECORD_STATUSES,
   type MemoryActivityCounts,
   type MemoryActivityCountsQuery,
@@ -39,6 +42,7 @@ import {
   type MemoryDecisionClass,
 } from "@greatstone/shared";
 import { notFound } from "../../errors.js";
+import { LINK_CHECK_NAME, LINK_LEAD_SOURCE_KIND } from "./link-check.js";
 import { toRecord, toScope, type MemoryCaller, type MemoryGatewayService, type RecordRow, type ScopeRow } from "./service.js";
 
 // Memory graph and contribution activity read API (GRE-864, plan section 8).
@@ -46,8 +50,9 @@ import { toRecord, toScope, type MemoryCaller, type MemoryGatewayService, type R
 // Read only. Every query starts from the scopes the caller may read, so a
 // hidden record never adds a node, an edge, a label, a count or a feed row.
 // Edges come only from stored rows: a stated relationship, a supersession
-// link, or an open conflict found by the contribution check. An edge is
-// returned only when both of its ends are readable records in the result.
+// link, an open conflict found by the contribution check, or an open lead
+// found by the link check. An edge is returned only when both of its ends are
+// readable records in the result.
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A task key such as `GRE-646`. */
@@ -77,6 +82,12 @@ const EDGE_MEANINGS: Record<MemoryGraphEdgeType, string> = {
 };
 
 const CONFLICT_CHECK_NAME = "Conflict check";
+const LINK_LEAD_MEANING = `Both entries may be about the same subject. ${MEMORY_LINK_LEAD_NOTE} The owner or a memory reviewer can confirm it as a stated link or dismiss it.`;
+
+function basisTerms(basis: MemoryLinkBasis | null) {
+  if (!basis) return [];
+  return [...basis.entities, ...basis.topics, ...basis.values, ...(basis.sameSource ? ["same source"] : [])];
+}
 
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
@@ -255,6 +266,19 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
         ),
       )
       .orderBy(asc(memoryRelationships.createdAt));
+    // A stated link confirmed from a link check lead keeps what the check matched.
+    const confirmedLeadIds = relationships
+      .filter((row) => row.sourceKind === LINK_LEAD_SOURCE_KIND && row.sourceId && UUID_RE.test(row.sourceId))
+      .map((row) => row.sourceId!);
+    const confirmedBasis = new Map(
+      (confirmedLeadIds.length === 0
+        ? []
+        : await db
+            .select({ id: memoryLinkLeads.id, basis: memoryLinkLeads.basis })
+            .from(memoryLinkLeads)
+            .where(and(eq(memoryLinkLeads.companyId, companyId), inArray(memoryLinkLeads.id, confirmedLeadIds)))
+      ).map((row) => [row.id, row.basis]),
+    );
     for (const row of relationships) {
       edges.push({
         id: `rel:${row.id}`,
@@ -265,6 +289,7 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
         origin: "relationship",
         author: actorRef(row.authorAgentId, row.authorUserId),
         source: { kind: row.sourceKind, id: row.sourceId, runId: row.runId },
+        basis: (row.sourceKind === LINK_LEAD_SOURCE_KIND && row.sourceId ? confirmedBasis.get(row.sourceId) : null) ?? null,
         createdAt: row.createdAt,
       });
     }
@@ -295,6 +320,7 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
           origin: "supersession",
           author: event ? eventActor(event) : systemRef("Unknown reviewer"),
           source: { kind: null, id: null, runId: event?.runId ?? null },
+          basis: null,
           createdAt: event?.createdAt ?? row.supersededAt ?? row.updatedAt,
         });
       }
@@ -325,6 +351,35 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
         origin: "conflict_check",
         author: systemRef(CONFLICT_CHECK_NAME),
         source: { kind: "memory_conflict", id: row.id, runId: null },
+        basis: null,
+        createdAt: row.detectedAt,
+      });
+    }
+
+    // Inferred: open leads from the link check. Confirmed ones are the stated edge above.
+    const leads = await db
+      .select()
+      .from(memoryLinkLeads)
+      .where(
+        and(
+          eq(memoryLinkLeads.companyId, companyId),
+          eq(memoryLinkLeads.state, "open"),
+          inArray(memoryLinkLeads.fromRecordId, ids),
+          inArray(memoryLinkLeads.toRecordId, ids),
+        ),
+      )
+      .orderBy(asc(memoryLinkLeads.detectedAt));
+    for (const row of leads) {
+      edges.push({
+        id: `lnk:${row.id}`,
+        from: row.fromRecordId,
+        to: row.toRecordId,
+        type: "same_subject",
+        kind: "inferred",
+        origin: "link_check",
+        author: systemRef(LINK_CHECK_NAME),
+        source: { kind: LINK_LEAD_SOURCE_KIND, id: row.id, runId: null },
+        basis: row.basis,
         createdAt: row.detectedAt,
       });
     }
@@ -424,6 +479,17 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
           ),
         );
       conflicts.forEach((c) => neighbourIds.add(c.recordId === row.id ? c.approvedRecordId : c.recordId));
+      const leads = await db
+        .select({ fromRecordId: memoryLinkLeads.fromRecordId, toRecordId: memoryLinkLeads.toRecordId })
+        .from(memoryLinkLeads)
+        .where(
+          and(
+            eq(memoryLinkLeads.companyId, caller.companyId),
+            eq(memoryLinkLeads.state, "open"),
+            or(eq(memoryLinkLeads.fromRecordId, row.id), eq(memoryLinkLeads.toRecordId, row.id)),
+          ),
+        );
+      leads.forEach((lead) => neighbourIds.add(lead.fromRecordId === row.id ? lead.toRecordId : lead.fromRecordId));
       const replacedBy = await db
         .select({ id: memoryRecords.id })
         .from(memoryRecords)
@@ -543,7 +609,19 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
     let statedNote: string | null = null;
     let sharedTerms: string[] = [];
     let conflictState: MemoryGraphEdgeDetail["conflictState"] = null;
-    if (prefix === "rel") {
+    let leadId: string | null = null;
+    if (prefix === "lnk") {
+      const lead = await db
+        .select()
+        .from(memoryLinkLeads)
+        .where(and(eq(memoryLinkLeads.id, id), eq(memoryLinkLeads.companyId, caller.companyId), eq(memoryLinkLeads.state, "open")))
+        .then((rows) => rows[0] ?? null);
+      if (lead) {
+        ends = [lead.fromRecordId, lead.toRecordId];
+        sharedTerms = basisTerms(lead.basis);
+        leadId = lead.id;
+      }
+    } else if (prefix === "rel") {
       const rel = await db
         .select()
         .from(memoryRelationships)
@@ -593,12 +671,13 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
     return {
       note: MEMORY_GRAPH_NOTE,
       edge,
-      meaning: EDGE_MEANINGS[edge.type],
+      meaning: edge.origin === "link_check" ? LINK_LEAD_MEANING : EDGE_MEANINGS[edge.type],
       from,
       to,
       statedNote,
-      sharedTerms,
+      sharedTerms: sharedTerms.length > 0 ? sharedTerms : basisTerms(edge.basis),
       conflictState,
+      leadId,
     };
   }
 
@@ -717,7 +796,8 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
         if (status in entry.contributionCountByStatus) entry.contributionCountByStatus[status] += Number(row.n);
       }
 
-      // Both ends of a relationship share its scope, so the scope check covers both.
+      // `scope_id` is the from end; a link may cross scopes, so the to end is checked too.
+      const readableIds = scopes.all.map((scope) => scope.id);
       const stated = await db
         .select({ agentId: memoryRelationships.authorAgentId, userId: memoryRelationships.authorUserId, n: count() })
         .from(memoryRelationships)
@@ -725,6 +805,13 @@ export function memoryGraphService(db: Db, gateway: MemoryGatewayService) {
           and(
             eq(memoryRelationships.companyId, caller.companyId),
             inArray(memoryRelationships.scopeId, scopeIds),
+            inArray(
+              memoryRelationships.toRecordId,
+              db
+                .select({ id: memoryRecords.id })
+                .from(memoryRecords)
+                .where(and(eq(memoryRecords.companyId, caller.companyId), inArray(memoryRecords.scopeId, readableIds))),
+            ),
             ...windowFilters(query, memoryRelationships.createdAt),
           ),
         )

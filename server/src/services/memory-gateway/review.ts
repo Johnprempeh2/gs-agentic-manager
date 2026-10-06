@@ -4,6 +4,7 @@ import {
   memoryConflicts,
   memoryExtractedFacts,
   memoryIngestOutbox,
+  memoryLinkLeads,
   memoryRecords,
   memoryRelationships,
   memoryReviewEvents,
@@ -39,7 +40,7 @@ import { badRequest, conflict, forbidden, notFound } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import { classifyEngineError, nextAttemptAt } from "./ingest-outbox.js";
 import { enqueueMemoryIngest, settleDirectMemoryIngest } from "./ingest-outbox-db.js";
-import { insertReviewEvent, possibleConflictTerms } from "./review-store.js";
+import { insertRelationship, insertReviewEvent } from "./review-store.js";
 import {
   DIRECT_RETAIN_GRACE_MS,
   grantedScopeIds,
@@ -435,6 +436,16 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
       .set({ state: "resolved", resolution: "record_deleted", resolvedByActorType: caller.actorType, resolvedByActorId: caller.actorId, resolvedAt: now })
       .where(and(touches, eq(memoryConflicts.state, "open")));
     await tx.update(memoryConflicts).set({ sharedTerms: [] }).where(touches);
+    // Link check leads: an open one closes, and every one drops the terms it matched on.
+    const leadTouches = or(eq(memoryLinkLeads.fromRecordId, row.id), eq(memoryLinkLeads.toRecordId, row.id));
+    await tx
+      .update(memoryLinkLeads)
+      .set({ state: "dismissed", resolution: "record_deleted", resolvedByActorType: caller.actorType, resolvedByActorId: caller.actorId, resolvedAt: now })
+      .where(and(leadTouches, eq(memoryLinkLeads.state, "open")));
+    await tx
+      .update(memoryLinkLeads)
+      .set({ basis: { entities: [], topics: [], values: [], sameSource: false }, resolutionNote: null })
+      .where(leadTouches);
     await tx.delete(memoryExtractedFacts).where(eq(memoryExtractedFacts.recordId, row.id));
     await insertReviewEvent(tx, caller, row, { action: "delete", fromStatus: row.status, toStatus: "deleted", reason, now });
     return { deleted, entry, direct };
@@ -538,97 +549,112 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     };
   }
 
-  async function createRelationship(caller: MemoryCaller, input: CreateMemoryRelationship): Promise<MemoryRelationship> {
-    const operation = "relationship_create";
+  /**
+   * Whether the caller may link a record in `fromScope` to one in `toScope`
+   * (memory linking, 6 Oct 2026). The same rule as contributing: the right to
+   * contribute to both scopes. A client or restricted-project record links
+   * only to records in its own scope, so a link never joins a hard boundary
+   * to anything outside it.
+   */
+  function linkRefusal(access: Access, fromScope: ScopeRow, toScope: ScopeRow): "cross_boundary" | "no_contribute_right" | null {
+    if (fromScope.id !== toScope.id && (isHardBoundary(fromScope.kind) || isHardBoundary(toScope.kind))) return "cross_boundary";
+    if (!access.canContribute(fromScope) || !access.canContribute(toScope)) return "no_contribute_right";
+    return null;
+  }
+
+  async function refuseLink(
+    caller: MemoryCaller,
+    operation: string,
+    reason: "cross_boundary" | "no_contribute_right",
+    audit: { scopeIds: string[]; recordId: string | null },
+  ): Promise<never> {
+    if (reason === "no_contribute_right") return refuse(caller, operation, reason, audit);
+    await logOperation(caller, operation, "denied", { ...audit, detail: { reason } });
+    throw badRequest("A client or restricted entry can only be linked to entries in its own scope");
+  }
+
+  /**
+   * Checks, before anything is written, that a new record in `scopeId` may be
+   * linked to each of `targetIds` (`relatedTo` on contribute). Throws the same
+   * 404 for a hidden record as for a missing one.
+   */
+  async function assertCanLink(caller: MemoryCaller, scopeId: string, targetIds: string[], operation: string) {
+    await gateway.assertEnabled(caller.companyId);
+    const scope = await loadScope(caller.companyId, scopeId);
+    // An unknown or closed scope is refused by contribute itself, with its own audit row.
+    if (!scope) return;
+    for (const targetId of new Set(targetIds)) {
+      const target = await loadReadable(caller, targetId, operation);
+      if (target.row.status === "deleted") throw conflict("A deleted record cannot be related");
+      const reason = linkRefusal(target.access, scope, target.scope);
+      if (reason) await refuseLink(caller, operation, reason, { scopeIds: [...new Set([scope.id, target.scope.id])], recordId: target.row.id });
+    }
+  }
+
+  async function createRelationship(
+    caller: MemoryCaller,
+    input: CreateMemoryRelationship,
+    options: { operation?: string; via?: string } = {},
+  ): Promise<MemoryRelationship> {
+    const operation = options.operation ?? "relationship_create";
     if (input.fromRecordId === input.toRecordId) throw badRequest("A record cannot relate to itself");
     const from = await loadReadable(caller, input.fromRecordId, operation);
     const to = await loadReadable(caller, input.toRecordId, operation);
-    const audit = { scopeIds: [from.scope.id], recordId: from.row.id };
-    if (from.scope.id !== to.scope.id) {
-      await logOperation(caller, operation, "denied", { ...audit, detail: { reason: "cross_scope" } });
-      throw badRequest("Both records must be in the same scope");
-    }
-    if (!from.access.canContribute(from.scope)) await refuse(caller, operation, "no_contribute_right", audit);
+    const audit = { scopeIds: [...new Set([from.scope.id, to.scope.id])], recordId: from.row.id };
+    const reason = linkRefusal(from.access, from.scope, to.scope);
+    if (reason) await refuseLink(caller, operation, reason, audit);
     if (from.row.status === "deleted" || to.row.status === "deleted") throw conflict("A deleted record cannot be related");
 
     const now = new Date();
-    const created = await db.transaction(async (tx) => {
-      const [relationship] = await tx
-        .insert(memoryRelationships)
-        .values({
-          companyId: caller.companyId,
-          scopeId: from.scope.id,
-          fromRecordId: from.row.id,
-          toRecordId: to.row.id,
-          type: input.type,
-          authorAgentId: caller.agentId,
-          authorUserId: caller.userId,
-          runId: caller.runId,
-          sourceKind: input.sourceKind ?? null,
-          sourceId: input.sourceId ?? null,
-          note: input.note ?? null,
-          createdAt: now,
-        })
-        .onConflictDoNothing({
-          target: [memoryRelationships.fromRecordId, memoryRelationships.toRecordId, memoryRelationships.type],
-        })
-        .returning();
-      if (!relationship) return null;
-      // A stated contradiction of an approved record opens a conflict for review.
-      if (input.type === "contradicts") {
-        const pair =
-          from.row.status === "approved" && ["unreviewed", "disputed"].includes(to.row.status)
-            ? { challenger: to.row, approved: from.row }
-            : to.row.status === "approved" && ["unreviewed", "disputed"].includes(from.row.status)
-              ? { challenger: from.row, approved: to.row }
-              : null;
-        if (pair) {
-          const [opened] = await tx
-            .insert(memoryConflicts)
-            .values({
-              companyId: caller.companyId,
-              scopeId: from.scope.id,
-              recordId: pair.challenger.id,
-              approvedRecordId: pair.approved.id,
-              origin: "relationship",
-              sharedTerms: possibleConflictTerms(pair.challenger, pair.approved),
-              detectedAt: now,
-            })
-            .onConflictDoNothing({ target: [memoryConflicts.recordId, memoryConflicts.approvedRecordId] })
-            .returning();
-          if (opened) {
-            await insertReviewEvent(tx, caller, pair.challenger, {
-              action: "conflict_flagged",
-              reason: "Stated as contradicting an approved record",
-              relatedRecordId: pair.approved.id,
-              now,
-            });
-          }
-        }
-      }
-      return relationship;
-    });
+    const created = await db.transaction((tx) =>
+      insertRelationship(tx, caller, from.row, to.row, {
+        type: input.type,
+        note: input.note ?? null,
+        sourceKind: input.sourceKind ?? null,
+        sourceId: input.sourceId ?? null,
+        now,
+      }),
+    );
     if (!created) throw conflict("This relationship already exists");
-    await logOperation(caller, operation, "ok", { ...audit, detail: { type: input.type, toRecordId: to.row.id } });
+    // Ids and the type only; the note stays on the relationship row.
+    await logOperation(caller, operation, "ok", {
+      ...audit,
+      detail: { type: input.type, toRecordId: to.row.id, relationshipId: created.id, ...(options.via ? { via: options.via } : {}) },
+    });
     return toRelationship(created);
   }
 
   async function listRelationships(caller: MemoryCaller, recordId: string): Promise<MemoryRelationship[]> {
-    const { row, scope } = await loadReadable(caller, recordId, "relationships_list");
-    // Both ends share the record's scope, so the caller may read every edge returned.
+    const { row, scope, access } = await loadReadable(caller, recordId, "relationships_list");
     const rows = await db
       .select()
       .from(memoryRelationships)
       .where(
         and(
           eq(memoryRelationships.companyId, caller.companyId),
-          eq(memoryRelationships.scopeId, scope.id),
           or(eq(memoryRelationships.fromRecordId, row.id), eq(memoryRelationships.toRecordId, row.id)),
         ),
       )
       .orderBy(asc(memoryRelationships.createdAt));
+    // A link may cross into another scope; keep only those whose other end the caller may read.
+    const otherIds = [...new Set(rows.map((rel) => (rel.fromRecordId === row.id ? rel.toRecordId : rel.fromRecordId)))];
+    const readable = new Set<string>();
+    if (otherIds.length > 0) {
+      const scopes = new Map(
+        (await db.select().from(memoryScopes).where(eq(memoryScopes.companyId, caller.companyId))).map((s) => [s.id, s]),
+      );
+      const others = await db
+        .select({ id: memoryRecords.id, scopeId: memoryRecords.scopeId })
+        .from(memoryRecords)
+        .where(and(eq(memoryRecords.companyId, caller.companyId), inArray(memoryRecords.id, otherIds)));
+      for (const other of others) {
+        const otherScope = scopes.get(other.scopeId);
+        if (otherScope && access.canRead(otherScope)) readable.add(other.id);
+      }
+    }
+    const visible = rows.filter((rel) => readable.has(rel.fromRecordId === row.id ? rel.toRecordId : rel.fromRecordId));
     await logOperation(caller, "relationships_list", "ok", { scopeIds: [scope.id], recordId: row.id });
-    return rows.map(toRelationship);
+    return visible.map(toRelationship);
   }
 
   /** Conflict queue data for reviewers and the steward (GRE-887), grouped by the approved position. */
@@ -851,6 +877,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     supersede,
     deleteRecord,
     history,
+    assertCanLink,
     createRelationship,
     listRelationships,
     listConflicts,

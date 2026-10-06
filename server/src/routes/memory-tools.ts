@@ -4,6 +4,7 @@ import { HttpError, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { isMemoryOnlyActor } from "../middleware/memory-only-key-guard.js";
 import type { MemoryEngine } from "../services/memory-gateway/engine.js";
+import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { MEMORY_DISABLED_MESSAGE, memoryGatewayService } from "../services/memory-gateway/service.js";
 import { callMemoryTool, memoryToolDefinitions } from "../services/memory-tools.js";
 import { projectToolContext } from "../services/project-tool-context.js";
@@ -17,14 +18,15 @@ import {
 } from "./mcp-streamable-http.js";
 
 /**
- * Agent memory tools over MCP (GRE-672): memory_recall, memory_contribute and
- * memory_get. Only an authenticated, task-bound agent run or a memory_only key
+ * Agent memory tools over MCP (GRE-672): memory_recall, memory_contribute,
+ * memory_get and memory_link. Only an authenticated, task-bound agent run or a memory_only key
  * (GRE-958) may call them, and that identity is the caller. While the company
  * setting is off the endpoint answers 404 to everything.
  */
 export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engineTimeoutMs?: number } = {}) {
   const router = Router();
   const gateway = memoryGatewayService(db, options);
+  const reviews = memoryReviewService(db, gateway);
 
   /**
    * The caller is the authenticated run, or the agent behind a memory_only key
@@ -73,6 +75,7 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
         name,
         arguments: (params?.arguments ?? {}) as Record<string, unknown>,
         gateway,
+        reviews,
         caller: {
           companyId,
           actorType: "agent",

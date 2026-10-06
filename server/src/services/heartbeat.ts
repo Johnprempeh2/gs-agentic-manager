@@ -3,6 +3,7 @@ import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { externalConversationStateSql, nonIdleSlackIssueCondition } from "./slack-conversation-state.js";
 import { settleSlackConversation } from "./slack-conversation-lifecycle.js";
 import { publicChatTaskUrl } from "./chat-task-url.js";
+import { bindLegacyBoardUserId } from "./board-identity.js";
 import { toolActionDeliveryService } from "./tool-action-delivery.js";
 import { githubBotConnectionIdsForRun } from "./chat-github-tools.js";
 import { readQueuedInteractionResponse } from "./queued-interaction-response.js";
@@ -11248,7 +11249,8 @@ export function heartbeatService(
     const explicitDefault = readNonEmptyString(
       company?.defaultResponsibleUserId,
     );
-    if (explicitDefault) return explicitDefault;
+    // A legacy `local-board` default becomes the primary owner once sign-in is on.
+    if (explicitDefault) return bindLegacyBoardUserId(executor, companyId, explicitDefault);
 
     const owner = await executor
       .select({ userId: companyMemberships.principalId })
@@ -11264,7 +11266,7 @@ export function heartbeatService(
       .orderBy(asc(companyMemberships.createdAt), asc(companyMemberships.id))
       .limit(1)
       .then((rows) => rows[0] ?? null);
-    if (owner?.userId) return owner.userId;
+    if (owner?.userId) return bindLegacyBoardUserId(executor, companyId, owner.userId);
 
     const firstUser = await executor
       .select({ userId: companyMemberships.principalId })

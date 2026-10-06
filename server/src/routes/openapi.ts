@@ -99,9 +99,11 @@ import {
   addAgentTeamMemberSchema,
   createAgentTeamSchema,
   // Organization memory
+  confirmMemoryLinkLeadSchema,
   contributeMemorySchema,
   createMemoryRelationshipSchema,
   deleteMemoryRecordSchema,
+  dismissMemoryLinkLeadSchema,
   resolveMemoryConflictSchema,
   reviewMemoryRecordSchema,
   runMemoryRetentionSchema,
@@ -1385,6 +1387,8 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PATCH /api/companies/{companyId}/members/{memberId}",
   "PATCH /api/companies/{companyId}/members/{memberId}/role-and-grants",
   "POST /api/companies/{companyId}/members/{memberId}/archive",
+  "POST /api/companies/{companyId}/legacy-board/retire",
+  "POST /api/companies/{companyId}/legacy-board/restore",
   "PATCH /api/companies/{companyId}/members/{memberId}/permissions",
   "GET /api/companies/{companyId}/user-directory",
   "GET /api/companies/{companyId}/managed-agent-profiles",
@@ -5236,8 +5240,50 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/memory/relationships",
   tags: ["memory"],
-  summary: "State a relationship between two records in one scope; `contradicts` against an approved record opens a conflict",
+  summary:
+    "State a relationship between two records; needs the right to contribute to both scopes, and a client or restricted record links only inside its own scope. `contradicts` against an approved record in the same scope opens a conflict",
   request: { params: memoryCompanyParams, body: jsonBody(createMemoryRelationshipSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/link-check",
+  tags: ["memory"],
+  summary: "Run the link check now (owner or memory admin): propose leads between records that share names, topics, stated values or a source",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/link-leads",
+  tags: ["memory"],
+  summary: "Link check leads whose two records the caller may both read, with what they share",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({ state: z.enum(["open", "confirmed", "dismissed", "all"]).optional() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+const memoryLeadParams = z.object({ companyId: z.string(), leadId: z.string() });
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/link-leads/{leadId}/confirm",
+  tags: ["memory"],
+  summary: "Confirm a link check lead as a stated relationship with the caller as author; owner or a memory reviewer for both records",
+  request: { params: memoryLeadParams, body: jsonBody(confirmMemoryLinkLeadSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/link-leads/{leadId}/dismiss",
+  tags: ["memory"],
+  summary: "Dismiss a link check lead; the pair is never proposed again",
+  request: { params: memoryLeadParams, body: jsonBody(dismissMemoryLinkLeadSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
@@ -5281,6 +5327,82 @@ registry.registerPath({
     query: z.object({ days: z.coerce.number().int().min(1).max(90).optional() }),
   },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+// Memory graph and contribution activity (GRE-864); read only, filtered on the server.
+
+const memoryReadQuery = {
+  agentId: z.string().optional(),
+  userId: z.string().optional(),
+  scopeId: z.string().optional(),
+  projectId: z.string().optional(),
+  q: z.string().optional(),
+  status: z.string().optional(),
+};
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/graph",
+  tags: ["memory"],
+  summary:
+    "Records the caller may read and the edges between them: stated links, supersession, open conflicts and open link check leads, each with type, kind, author and basis",
+  request: { params: memoryCompanyParams, query: z.object({ ...memoryReadQuery, limit: z.coerce.number().int().min(1).max(500).optional() }) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/graph/nodes/{recordId}",
+  tags: ["memory"],
+  summary: "One record with its provenance, supersession chain and the edges to records the caller may read",
+  request: { params: memoryRecordParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/graph/edges/{edgeId}",
+  tags: ["memory"],
+  summary: "One edge (`rel:`, `sup:`, `cfl:` or `lnk:`) with what it means, its basis and both ends; 404 when either end is hidden",
+  request: { params: z.object({ companyId: z.string(), edgeId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/activity",
+  tags: ["memory"],
+  summary: "Contributions newest first with review history, from scopes the caller may read",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({
+      ...memoryReadQuery,
+      from: z.string().optional(),
+      to: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+      cursor: z.string().optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/activity/counts",
+  tags: ["memory"],
+  summary: "Activity per contributor with the feed's filters; counts are activity, not quality",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({
+      scopeId: z.string().optional(),
+      projectId: z.string().optional(),
+      q: z.string().optional(),
+      status: z.string().optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 // Memory steward daily review (GRE-887)
@@ -7305,6 +7427,48 @@ registry.registerPath({
     400: r.badRequest,
     401: r.unauthorized,
     404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/legacy-board/retire",
+  tags: ["access"],
+  summary: "Retire the legacy local-board account",
+  description:
+    "Authenticated mode only, active company owner only (never local-board itself). With `dryRun: true` it lists the open work that would move to the caller and what would be switched off, and writes nothing. Otherwise, in one transaction, it moves that work to the caller, suspends local-board's membership, revokes its board API keys, ends its sessions and logs the change. History it authored is untouched. Refused when it would leave no active owner.",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(z.object({ dryRun: z.boolean() }).strict()),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/legacy-board/restore",
+  tags: ["access"],
+  summary: "Restore the retired legacy local-board account",
+  description:
+    "Authenticated mode only, active company owner only. Makes local-board's membership active again (and gives back the instance admin role if retire removed it). Moved work, revoked keys and ended sessions stay as they are.",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(z.object({}).strict()),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
   },
 });
 
@@ -11104,7 +11268,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/mcp/memory-tools",
   tags: ["memory"],
-  summary: "Call memory_recall, memory_contribute and memory_get through the active task run's MCP transport; 404 while memory is off",
+  summary: "Call memory_recall, memory_contribute, memory_get and memory_link through the active task run's MCP transport; 404 while memory is off",
   body: z.object({
     jsonrpc: z.literal("2.0"),
     id: z.union([z.string(), z.number()]).nullable().optional(),

@@ -137,7 +137,40 @@ function normalizeText(text: string): string {
   return text.replace(/\r\n?/g, "\n").trim();
 }
 
-type BodyPart = { label: string; text: string; hasNotes?: boolean };
+type BodyPart = { label: string; text: string; hasNotes?: boolean; isHtml?: boolean };
+
+/** Body keys that always hold HTML. */
+const HTML_BODY_KEYS = new Set(["html", "bodyhtml", "htmlbody"]);
+/** Fields that say which format a body is in (`contentType: "HTML"`, `mimeType: "text/html"`). */
+const FORMAT_KEYS = new Set(["contenttype", "type", "mimetype", "format", "bodytype", "bodyformat"]);
+/** Flags that say a body is HTML (`isHtml: true`). */
+const HTML_FLAG_KEYS = new Set(["ishtml", "html", "bodyishtml"]);
+/** Body keys whose format a flag can set; `text` and `markdown` say their own format. */
+const FLAGGABLE_BODY_KEYS = new Set(["body", "message", "content"]);
+/** Keys that hold plain text or markdown even inside an HTML body object. */
+const TEXT_FORMAT_KEYS = new Set(["text", "plaintext", "markdown", "mrkdwn"]);
+
+/** True when the flat fields next to a body say it is HTML. */
+function declaresHtml(record: Record<string, unknown>): boolean {
+  return Object.entries(record).some(([key, value]) => {
+    const normalized = normalizeKey(key);
+    if (FORMAT_KEYS.has(normalized)) return typeof value === "string" && /\bhtml\b/i.test(value);
+    return HTML_FLAG_KEYS.has(normalized) && value === true;
+  });
+}
+
+/**
+ * The language of the fenced block that carries an HTML body (GRE-965). The
+ * approval card draws it in a sandboxed frame; anywhere else it is plain code.
+ */
+export const EMAIL_HTML_FENCE_LANGUAGE = "email-html";
+
+/** A fence longer than any backtick run in the text, so the HTML cannot close it. */
+function fencedBlock(text: string, language: string): string[] {
+  const longestRun = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(Math.max(3, longestRun + 1));
+  return [`${fence}${language}`, ...text.split("\n"), fence];
+}
 
 /**
  * Every body field with text, each kept whole: a mail with both a text and an
@@ -150,11 +183,20 @@ function collectBodyParts(
   used: Set<string>,
 ): BodyPart[] {
   const parts: BodyPart[] = [];
+  // A format flag next to the body (`isHtml: true`) is about a plain `body`
+  // field, and only when no field is named as HTML already.
+  const flaggedHtml =
+    declaresHtml(record) &&
+    !pickFields(record, [...HTML_BODY_KEYS]).some((field) => typeof field.value === "string");
   for (const { key, value } of pickFields(record, BODY_KEYS)) {
     if (typeof value === "string") {
       used.add(key);
       const text = normalizeText(value);
-      if (text) parts.push({ label: humanizeKey(key), text });
+      const normalized = normalizeKey(key);
+      const isHtml =
+        HTML_BODY_KEYS.has(normalized) ||
+        (flaggedHtml && FLAGGABLE_BODY_KEYS.has(normalized));
+      if (text) parts.push({ label: humanizeKey(key), text, isHtml });
       continue;
     }
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
@@ -175,13 +217,18 @@ function collectBodyParts(
     const notes = entries
       .filter((entry) => !isText(entry) && entry[1] !== null && entry[1] !== "")
       .map(([innerKey, inner]) => `${humanizeKey(innerKey)}: ${String(inner)}`);
+    const objectIsHtml = declaresHtml(value as Record<string, unknown>);
     for (const [innerKey, inner] of textEntries) {
       const text = normalizeText(inner as string);
+      const innerNormalized = normalizeKey(innerKey);
       if (text)
         parts.push({
           label: [humanizeKey(`${key} ${innerKey}`), ...notes].join(", "),
           text,
           hasNotes: notes.length > 0,
+          isHtml:
+            HTML_BODY_KEYS.has(innerNormalized) ||
+            (objectIsHtml && !TEXT_FORMAT_KEYS.has(innerNormalized)),
         });
     }
   }
@@ -291,7 +338,12 @@ export function buildSendMessagePreviewLines(
   for (const part of bodyParts) {
     const label =
       bodyParts.length === 1 && !part.hasNotes ? "Message" : `Message (${clean(part.label)})`;
-    lines.push(`- **${label}:**`, "", ...quoteBlock(part.text, clean), "");
+    // HTML goes in a fenced block, unescaped, so the card can show it as the
+    // recipient sees it; the fence keeps it literal everywhere else.
+    const block = part.isHtml
+      ? fencedBlock(redactSensitiveText(part.text), EMAIL_HTML_FENCE_LANGUAGE)
+      : quoteBlock(part.text, clean);
+    lines.push(`- **${label}:**`, "", ...block, "");
   }
 
   const otherLines: string[] = [];

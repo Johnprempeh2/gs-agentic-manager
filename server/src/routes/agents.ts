@@ -5005,7 +5005,26 @@ export function agentRoutes(
       await assertBoardCanManageAgentsForCompany(req, existing.companyId);
     }
 
-    const { canConfigureAgents, canChangeSkills, ...permissionFlags } = req.body;
+    const { canConfigureAgents, canChangeSkills, canContributeMemory, canApproveMemory, ...permissionFlags } = req.body;
+    // A memory grant is one row per key, so the toggle would overwrite (on) or
+    // delete (off) a grant with its own scope settings (named memory scopes,
+    // such as a client scope, or approval decision classes). Refuse instead of
+    // silently widening or dropping that access.
+    const memoryToggles = ([
+      ["memory:contribute", canContributeMemory],
+      ["memory:approve", canApproveMemory],
+    ] as const).filter(([, enabled]) => typeof enabled === "boolean");
+    if (memoryToggles.length > 0) {
+      const currentGrants = await access.listPrincipalGrants(existing.companyId, "agent", existing.id);
+      const scopedKey = memoryToggles.find(([key]) =>
+        currentGrants.some((grant) => grant.permissionKey === key && grant.scope != null),
+      )?.[0];
+      if (scopedKey) {
+        throw conflict(
+          `This agent has a ${scopedKey} grant with its own scope settings; this toggle would replace it, so change that grant directly`,
+        );
+      }
+    }
     const agent = await svc.updatePermissions(id, permissionFlags);
     if (!agent) {
       res.status(404).json({ error: "Agent not found" });
@@ -5019,6 +5038,8 @@ export function agentRoutes(
     const changeGrants: Array<[PermissionKey, boolean | undefined]> = [
       ["agents:configure", canConfigureAgents],
       ["skills:create", canChangeSkills],
+      ["memory:contribute", canContributeMemory],
+      ["memory:approve", canApproveMemory],
     ];
     for (const [permissionKey, enabled] of changeGrants) {
       if (typeof enabled !== "boolean") continue;
@@ -5050,6 +5071,8 @@ export function agentRoutes(
         canAssignTasks: effectiveCanAssignTasks,
         ...(typeof canConfigureAgents === "boolean" ? { canConfigureAgents } : {}),
         ...(typeof canChangeSkills === "boolean" ? { canChangeSkills } : {}),
+        ...(typeof canContributeMemory === "boolean" ? { canContributeMemory } : {}),
+        ...(typeof canApproveMemory === "boolean" ? { canApproveMemory } : {}),
         trustPreset: agent.permissions?.trustPreset ?? "standard",
       },
     });

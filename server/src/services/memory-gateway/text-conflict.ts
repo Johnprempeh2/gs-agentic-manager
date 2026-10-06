@@ -137,6 +137,20 @@ function extractValues(text: string): { values: StatedValue[]; rest: string } {
   return { values, rest };
 }
 
+/**
+ * Prices, amounts, percentages, dates, times and quantities a record's text
+ * states, keyed `kind=value` so equal values match. Value is how the text put it.
+ */
+export function statedValues(input: Pick<TextConflictInput, "title" | "content">): Map<string, string> {
+  const text = [input.title, input.content].filter(Boolean).join(". ");
+  const found = new Map<string, string>();
+  for (const value of extractValues(text).values) {
+    const key = `${value.key}=${value.value}`;
+    if (!found.has(key)) found.set(key, value.display);
+  }
+  return found;
+}
+
 function words(text: string) {
   return (text.toLowerCase().match(/[a-z][a-z'-]+/g) ?? []).filter((word) => word.length >= 3 && !STOPWORDS.has(word));
 }
