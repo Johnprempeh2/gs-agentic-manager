@@ -727,3 +727,18 @@ export const setMemoryGrantsSchema = z
   })
   .strict();
 export type SetMemoryGrants = z.infer<typeof setMemoryGrantsSchema>;
+
+/**
+ * Turns one memory right of one principal on or off and leaves its other
+ * memory rights alone (the agent Permissions toggles, GRE-988).
+ */
+export const changeMemoryGrantSchema = z
+  .object({
+    principalType: z.enum(["agent", "user"]),
+    principalId: z.string().trim().min(1).max(200),
+    permission: z.enum(MEMORY_GRANTABLE_PERMISSIONS),
+    enabled: z.boolean(),
+    reason: memoryReason,
+  })
+  .strict();
+export type ChangeMemoryGrant = z.infer<typeof changeMemoryGrantSchema>;

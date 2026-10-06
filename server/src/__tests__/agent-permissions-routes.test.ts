@@ -1882,12 +1882,7 @@ describe.sequential("agent permission routes", () => {
     expect(touchedKeys).not.toContain("skills:create");
   });
 
-  it("sets and clears the organisation memory grants without touching other grants", async () => {
-    mockAgentService.updatePermissions.mockResolvedValue({
-      ...baseAgent,
-      permissions: { canCreateAgents: false },
-    });
-
+  it("refuses memory toggles with 422 instead of answering 200 for a change it cannot make (GRE-988)", async () => {
     const app = await createApp({
       type: "board",
       userId: "board-user",
@@ -1896,81 +1891,19 @@ describe.sequential("agent permission routes", () => {
       companyIds: [companyId],
     });
 
-    const grantRes = await requestApp(app, (baseUrl) => request(baseUrl)
-      .patch(`/api/agents/${agentId}/permissions`)
-      .send({ canCreateAgents: false, canAssignTasks: true, canContributeMemory: true, canApproveMemory: true }));
-
-    expect(grantRes.status).toBe(200);
-    expect(mockAgentService.updatePermissions).toHaveBeenCalledWith(agentId, {
-      canCreateAgents: false,
-      canAssignTasks: true,
-    });
-    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
-      companyId, "agent", agentId, "memory:contribute", true, "board-user",
-    );
-    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
-      companyId, "agent", agentId, "memory:approve", true, "board-user",
-    );
-    let touchedKeys = mockAccessService.setPrincipalPermission.mock.calls.map((call) => call[3]);
-    expect(touchedKeys).not.toContain("agents:configure");
-    expect(touchedKeys).not.toContain("skills:create");
-    // tasks:assign is always re-derived from canAssignTasks, never from the memory toggles.
-    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
-      companyId, "agent", agentId, "tasks:assign", true, "board-user",
-    );
-
-    mockAccessService.setPrincipalPermission.mockClear();
-    const clearRes = await requestApp(app, (baseUrl) => request(baseUrl)
-      .patch(`/api/agents/${agentId}/permissions`)
-      .send({ canCreateAgents: false, canAssignTasks: true, canContributeMemory: false, canApproveMemory: false }));
-    expect(clearRes.status).toBe(200);
-    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
-      companyId, "agent", agentId, "memory:contribute", false, "board-user",
-    );
-    expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(
-      companyId, "agent", agentId, "memory:approve", false, "board-user",
-    );
-    touchedKeys = mockAccessService.setPrincipalPermission.mock.calls.map((call) => call[3]);
-    expect(touchedKeys).not.toContain("agents:configure");
-
-    mockAccessService.setPrincipalPermission.mockClear();
-    await requestApp(app, (baseUrl) => request(baseUrl)
-      .patch(`/api/agents/${agentId}/permissions`)
-      .send({ canCreateAgents: false, canAssignTasks: true, canConfigureAgents: true }));
-    touchedKeys = mockAccessService.setPrincipalPermission.mock.calls.map((call) => call[3]);
-    expect(touchedKeys).not.toContain("memory:contribute");
-    expect(touchedKeys).not.toContain("memory:approve");
-  });
-
-  it("refuses a memory toggle that would replace a grant limited to named memory scopes", async () => {
-    mockAccessService.listPrincipalGrants.mockResolvedValue([
-      {
-        id: "grant-client",
-        companyId,
-        principalType: "agent",
-        principalId: agentId,
-        permissionKey: "memory:contribute",
-        scope: { memoryScopeIds: ["client-scope-1"] },
-        grantedByUserId: "board-user",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ]);
-
-    const app = await createApp({
-      type: "board",
-      userId: "board-user",
-      source: "local_implicit",
-      isInstanceAdmin: true,
-      companyIds: [companyId],
-    });
-
-    for (const canContributeMemory of [true, false]) {
+    for (const body of [
+      { canContributeMemory: true },
+      { canContributeMemory: false },
+      { canApproveMemory: true },
+      { canApproveMemory: false, canConfigureAgents: true },
+    ]) {
       const res = await requestApp(app, (baseUrl) => request(baseUrl)
         .patch(`/api/agents/${agentId}/permissions`)
-        .send({ canCreateAgents: false, canAssignTasks: true, canContributeMemory }));
-      expect(res.status).toBe(409);
+        .send({ canCreateAgents: false, canAssignTasks: true, ...body }));
+      expect(res.status).toBe(422);
+      expect(res.body.error).toContain("/memory/grants");
     }
+    // Refused whole: nothing else in the request is written either.
     expect(mockAgentService.updatePermissions).not.toHaveBeenCalled();
     expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
   });

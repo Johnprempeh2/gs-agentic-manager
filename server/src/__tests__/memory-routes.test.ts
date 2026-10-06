@@ -675,4 +675,78 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
       .send({ scopeId: org.id, content: "Another fact", status: "proposal" });
     expect(afterRevoke.status).toBe(404);
   });
+  it("turns one memory right on and off for the owner and leaves other rights alone (GRE-988)", async () => {
+    const { board, base, companyId } = await setup("Change");
+    const agent = await seedAgent(companyId, "Toggled");
+    const change = (app: ReturnType<typeof routeApp>, permission: string, enabled: boolean) =>
+      request(app)
+        .patch(`${base}/grants`)
+        .send({ principalType: "agent", principalId: agent.id, permission, enabled, reason: "Permissions tab" });
+    const rightsOf = async () => {
+      const res = await request(board).get(`${base}/grants`);
+      expect(res.status).toBe(200);
+      return (res.body as Array<{ principalId: string; permissions: string[] }>)
+        .find((grant) => grant.principalId === agent.id)?.permissions ?? [];
+    };
+
+    // Memory off: no toggle path at all.
+    expect((await change(board, "memory:contribute", true)).status).toBe(404);
+    await enable(board, base);
+
+    expect((await change(board, "memory:contribute", true)).status).toBe(200);
+    expect((await change(board, "memory:approve", true)).status).toBe(200);
+    // Repeating a change is a no-op, not an error.
+    expect((await change(board, "memory:approve", true)).status).toBe(200);
+    expect((await rightsOf()).sort()).toEqual(["memory:approve", "memory:contribute"]);
+
+    expect((await change(board, "memory:contribute", false)).status).toBe(200);
+    expect(await rightsOf()).toEqual(["memory:approve"]);
+    expect((await change(board, "memory:approve", false)).status).toBe(200);
+    expect(await rightsOf()).toEqual([]);
+
+    const audited = await ctx.db.select().from(memoryOperations);
+    expect(audited.filter((row) => row.operation === "grant_change" && row.outcome === "ok")).toHaveLength(5);
+    const rows = await ctx.db.select().from(principalPermissionGrants);
+    expect(rows.filter((row) => row.permissionKey.startsWith("memory:"))).toHaveLength(0);
+  });
+
+  it("refuses a memory right change from anyone but the owner and writes nothing (GRE-988)", async () => {
+    const { board, asAgent, base, companyId, factory } = await setup("NotOwner");
+    const agent = await seedAgent(companyId, "Target");
+    await enable(board, base);
+    const operator = routeApp(ctx.db, {
+      type: "board",
+      source: "session",
+      userId: "operator-user",
+      companyIds: [companyId],
+      memberships: [{ companyId, membershipRole: "operator", status: "active" }],
+      isInstanceAdmin: false,
+    }, factory);
+    const body = { principalType: "agent", principalId: agent.id, permission: "memory:contribute", enabled: true, reason: "x" };
+    for (const app of [operator, asAgent(agent.id)]) {
+      const res = await request(app).patch(`${base}/grants`).send(body);
+      expect(res.status).toBe(403);
+    }
+    const rows = await ctx.db.select().from(principalPermissionGrants);
+    expect(rows.filter((row) => row.permissionKey.startsWith("memory:"))).toHaveLength(0);
+    const denied = await ctx.db.select().from(memoryOperations);
+    expect(denied.filter((row) => row.operation === "grant_change" && row.outcome === "denied")).toHaveLength(2);
+  });
+
+  it("refuses to replace a memory right that has its own scope settings (GRE-988)", async () => {
+    const { board, base, companyId } = await setup("Scoped");
+    const agent = await seedAgent(companyId, "Scoped");
+    await enable(board, base);
+    await grant(companyId, agent.id, "memory:contribute", { memoryScopeIds: ["client-scope-1"] });
+    for (const enabled of [true, false]) {
+      const res = await request(board)
+        .patch(`${base}/grants`)
+        .send({ principalType: "agent", principalId: agent.id, permission: "memory:contribute", enabled, reason: "x" });
+      expect(res.status).toBe(409);
+    }
+    const rows = await ctx.db.select().from(principalPermissionGrants);
+    const memoryRows = rows.filter((row) => row.permissionKey.startsWith("memory:"));
+    expect(memoryRows).toHaveLength(1);
+    expect(memoryRows[0].scope).toEqual({ memoryScopeIds: ["client-scope-1"] });
+  });
 });

@@ -298,8 +298,8 @@ export const updateAgentPermissionsSchema = z.object({
   // skills:create grants that agent_config:update / skill_config:update check.
   canConfigureAgents: z.boolean().optional(),
   canChangeSkills: z.boolean().optional(),
-  // Grant-backed organisation memory toggles: set or clear the unscoped
-  // memory:contribute and memory:approve grants the memory gateway checks.
+  // Accepted only so the route can refuse them with 422 instead of silently
+  // dropping them: memory rights go through PATCH /memory/grants (GRE-988).
   canContributeMemory: z.boolean().optional(),
   canApproveMemory: z.boolean().optional(),
   trustPreset: trustPresetSchema.optional(),
