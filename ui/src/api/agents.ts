@@ -80,8 +80,6 @@ export interface AgentPermissionUpdate {
   canAssignTasks: boolean;
   canConfigureAgents?: boolean;
   canChangeSkills?: boolean;
-  canContributeMemory?: boolean;
-  canApproveMemory?: boolean;
   trustPreset?: AgentPermissions["trustPreset"];
   authorizationPolicy?: AgentPermissions["authorizationPolicy"];
 }

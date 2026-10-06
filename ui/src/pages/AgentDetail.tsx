@@ -33,6 +33,7 @@ import { AgentPermissionGrantsList } from "../components/AgentPermissionGrantsLi
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { AgentMemoryRightsToggles } from "@/components/AgentMemoryRightsToggles";
 import { useAdapterCapabilities } from "@/adapters/use-adapter-capabilities";
 import { redactCommandText as redactCommandSecretText } from "@greatstone/adapter-utils";
 import { MarkdownEditor } from "../components/MarkdownEditor";
@@ -2082,16 +2083,6 @@ export function ConfigurationTab({
     (agent.access?.grants ?? []).some((grant) => grant.permissionKey === permissionKey && !grant.scope);
   const canConfigureAgents = hasUnscopedGrant("agents:configure");
   const canChangeSkills = hasUnscopedGrant("skills:create");
-  // Organisation memory grants. An unscoped grant covers organisation and
-  // ordinary project memory (approve: organisation only, operational class),
-  // never client or restricted scopes. A grant with its own scope settings is
-  // left alone: the server refuses to replace it from these toggles.
-  const hasScopedGrant = (permissionKey: string) =>
-    (agent.access?.grants ?? []).some((grant) => grant.permissionKey === permissionKey && Boolean(grant.scope));
-  const canContributeMemory = hasUnscopedGrant("memory:contribute");
-  const canApproveMemory = hasUnscopedGrant("memory:approve");
-  const contributeMemoryScoped = hasScopedGrant("memory:contribute");
-  const approveMemoryScoped = hasScopedGrant("memory:approve");
   const canAssignTasks = Boolean(agent.access?.canAssignTasks);
   const taskAssignSource = agent.access?.taskAssignSource ?? "none";
   const taskAssignLocked = agent.role === "ceo" || canCreateAgents;
@@ -2215,52 +2206,16 @@ export function ConfigurationTab({
               disabled={updatePermissions.isPending}
             />
           </div>
-          <div className="flex items-center justify-between gap-4 text-sm">
-            <div className="space-y-1">
-              <div>Can contribute to organisation memory</div>
-              <p className="text-xs text-muted-foreground">
-                {contributeMemoryScoped
-                  ? "This agent has a contribute grant with its own scope settings, so this toggle is locked."
-                  : "Lets this agent propose facts to organisation and project memory. Never covers client or restricted memory."}
-              </p>
-            </div>
-            <ToggleSwitch
-              checked={canContributeMemory}
-              aria-label="Can contribute to organisation memory"
-              onCheckedChange={() =>
-                updatePermissions.mutate({
-                  canCreateAgents,
-                  canCreateSkills,
-                  canAssignTasks,
-                  canContributeMemory: !canContributeMemory,
-                })
-              }
-              disabled={updatePermissions.isPending || contributeMemoryScoped}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 text-sm">
-            <div className="space-y-1">
-              <div>Can approve organisation memory (operational)</div>
-              <p className="text-xs text-muted-foreground">
-                {approveMemoryScoped
-                  ? "This agent has an approve grant with its own scope settings, so this toggle is locked."
-                  : "Lets this agent approve operational facts in organisation memory. Pricing, policy, legal and client commitments stay with the owner."}
-              </p>
-            </div>
-            <ToggleSwitch
-              checked={canApproveMemory}
-              aria-label="Can approve organisation memory (operational)"
-              onCheckedChange={() =>
-                updatePermissions.mutate({
-                  canCreateAgents,
-                  canCreateSkills,
-                  canAssignTasks,
-                  canApproveMemory: !canApproveMemory,
-                })
-              }
-              disabled={updatePermissions.isPending || approveMemoryScoped}
-            />
-          </div>
+          <AgentMemoryRightsToggles
+            companyId={companyId}
+            agentId={agent.id}
+            grants={agent.access?.grants ?? []}
+            onChanged={() => {
+              queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
+              queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) });
+            }}
+            onError={(message) => pushToast({ title: "Memory rights not changed", body: message, tone: "error" })}
+          />
           <div className="flex items-center justify-between gap-4 text-sm">
             <div className="space-y-1">
               <div>Can assign tasks</div>

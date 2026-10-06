@@ -1,4 +1,5 @@
 import type {
+  ChangeMemoryGrant,
   MemoryActivityCounts,
   MemoryActivityFeed,
   MemoryGraph,
@@ -51,6 +52,12 @@ function toQuery(params: object) {
 export const memoryGraphApi = {
   /** Whether organisation memory is switched on for the company (the sidebar's Memory link). */
   settings: (companyId: string) => api.get<MemorySettings>(`/companies/${companyId}/memory/settings`),
+  /** Turns one memory right of one principal on or off. Owner only (G3); others get 403. */
+  changeGrant: (companyId: string, body: ChangeMemoryGrant) =>
+    api.patch<{ principalType: string; principalId: string; permissions: string[] }>(
+      `/companies/${companyId}/memory/grants`,
+      body,
+    ),
   /** `limit` caps the nodes returned (server default 200). */
   graph: (companyId: string, filters: MemoryGraphFilters & { limit?: number } = {}) =>
     api.get<MemoryGraph>(`/companies/${companyId}/memory/graph${toQuery(filters)}`),
