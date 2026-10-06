@@ -169,6 +169,11 @@ type BlockingIssueSummary = {
 
 type AttentionListOptions = AttentionFeedQuery & {
   userId?: string | null;
+  /**
+   * Other user ids the viewer answers for, already checked by the caller (an
+   * owner standing in for `local-board`, see `board-identity.ts`).
+   */
+  userIdAliases?: readonly string[];
   /** Internal-only escape hatch for callers that need one stable, unpaginated feed snapshot. */
   allowUnscopedAll?: boolean;
 };
@@ -1300,7 +1305,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       const boardInteractionRows = interactionRows.filter((row) =>
         (row.addresseeAgentId === null ||
           !evaluateAgentInvokability(companyAgentMap.get(row.addresseeAgentId), companyAgentRows).invokable)
-        && (row.addresseeUserId === null || row.addresseeUserId === options.userId)
+        && (row.addresseeUserId === null || row.addresseeUserId === options.userId
+          || Boolean(options.userIdAliases?.includes(row.addresseeUserId)))
       );
       const visibleInteractionRows = collapsePendingConfirmationsToNewest(boardInteractionRows);
       const [interactionIssueMap, interactionImageMap, interactionPlanDocumentMap, interactionDeliverableMap] = await Promise.all([
@@ -1581,7 +1587,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       for (const issue of typedBlockedIssues) {
         const descriptor = issue.unblockDescriptor;
         const humanOwnerMatches = descriptor?.owner === "board"
-          || (descriptor?.owner && "userId" in descriptor.owner && descriptor.owner.userId === options.userId);
+          || (descriptor?.owner && "userId" in descriptor.owner && (descriptor.owner.userId === options.userId
+            || Boolean(options.userIdAliases?.includes(descriptor.owner.userId))));
         if (descriptor && humanOwnerMatches && isProspectiveBlockedTransition(issue)) {
           const issueSummary = blockedIssueSummaries.get(issue.id) ?? null;
           add(createItem({

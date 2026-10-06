@@ -1,4 +1,5 @@
 import { verifyAppWebhook } from "./app-webhook.js";
+import { bindLegacyBoardUserId } from "./board-identity.js";
 import crypto from "node:crypto";
 import { verifyFirefliesWebhook } from "./fireflies-webhook.js";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, not, or, sql } from "drizzle-orm";
@@ -168,7 +169,17 @@ async function resolveCompanyDefaultResponsibleUserId(db: Db, companyId: string)
   return owner?.userId ?? null;
 }
 
+// An inherited or default legacy `local-board` id becomes the company's
+// primary owner in authenticated mode (`board-identity.ts`).
 async function resolveRoutineResponsibleUserId(db: Db, companyId: string, actorUserId: string | null | undefined, parentIssueId?: string | null) {
+  return bindLegacyBoardUserId(
+    db,
+    companyId,
+    await resolveInheritedRoutineResponsibleUserId(db, companyId, actorUserId, parentIssueId),
+  );
+}
+
+async function resolveInheritedRoutineResponsibleUserId(db: Db, companyId: string, actorUserId: string | null | undefined, parentIssueId?: string | null) {
   if (actorUserId) return actorUserId;
   if (parentIssueId) {
     const parent = await db

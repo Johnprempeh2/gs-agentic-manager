@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { issues } from "@greatstone/db";
 import type { NeedsMe, NeedsMeOverdueWait } from "@greatstone/shared";
 import type { AttentionServiceOptions } from "./attention.js";
+import { viewerPrincipalUserIds } from "./board-identity.js";
 import { decisionsFeedService } from "./decisions-feed.js";
 import { executionIssueCondition } from "./issue-visibility.js";
 import {
@@ -27,6 +28,8 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
   return {
     build: async (companyId: string, options: { userId: string; now?: Date }): Promise<NeedsMe> => {
       const now = options.now ?? new Date();
+      // An owner also answers for the legacy `local-board` user (board-identity.ts).
+      const viewerUserIds = await viewerPrincipalUserIds(db, companyId, options.userId);
       const [feed, assigned, waits] = await Promise.all([
         feeds.build(companyId, options),
         db
@@ -41,7 +44,7 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
           .from(issues)
           .where(and(
             eq(issues.companyId, companyId),
-            eq(issues.assigneeUserId, options.userId),
+            inArray(issues.assigneeUserId, viewerUserIds),
             notInArray(issues.status, CLOSED_ISSUE_STATUSES),
             executionIssueCondition(),
           ))
@@ -71,7 +74,7 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
       ]);
 
       const overdueWaits: NeedsMeOverdueWait[] = waits
-        .filter((wait) => isHumanWaitOwnedBy(wait.unblockDescriptor, options.userId) && isOverdueHumanWait(wait, now))
+        .filter((wait) => viewerUserIds.some((id) => isHumanWaitOwnedBy(wait.unblockDescriptor, id)) && isOverdueHumanWait(wait, now))
         .map((wait) => ({
           id: wait.id,
           identifier: wait.identifier,

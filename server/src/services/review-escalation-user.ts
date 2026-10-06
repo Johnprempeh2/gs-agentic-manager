@@ -2,9 +2,9 @@ import { and, eq, ne } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { companyMemberships } from "@greatstone/db";
 import { reviewEscalationUserId } from "./issue-execution-policy.js";
+import { LEGACY_BOARD_USER_ID } from "./board-identity.js";
 
-/** The implicit board actor of `local_trusted` mode, kept on issues from before sign-in. */
-export const LEGACY_BOARD_USER_ID = "local-board";
+export { LEGACY_BOARD_USER_ID };
 
 /**
  * The real user a review escalates to (GRE-870). Issues created before the

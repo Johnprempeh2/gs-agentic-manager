@@ -107,6 +107,7 @@ import {
 } from "@greatstone/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
+import { bindLegacyBoardUserId } from "./board-identity.js";
 import { REFERENCED_ROW_LOCK } from "../row-locks.js";
 import { logger } from "../middleware/logger.js";
 import { parseObject } from "../adapters/utils.js";
@@ -382,19 +383,35 @@ function readStringFromRecord(record: unknown, key: string) {
     : null;
 }
 
+type ResponsibleUserIdForIssueCreateInput = {
+  explicitResponsibleUserId?: string | null;
+  createdByUserId?: string | null;
+  parentId?: string | null;
+  originKind?: string | null;
+  originRunId?: string | null;
+  actorRunId?: string | null;
+  actorResponsibleUserId?: string | null;
+  trustExplicitResponsibleUserId?: boolean;
+};
+
+/**
+ * The responsible user of a new issue. An inherited legacy `local-board` id
+ * becomes the company's primary owner in authenticated mode, so new work goes
+ * to a user who can sign in (`board-identity.ts`).
+ */
 async function resolveResponsibleUserIdForIssueCreate(
   reader: DbReader,
   companyId: string,
-  input: {
-    explicitResponsibleUserId?: string | null;
-    createdByUserId?: string | null;
-    parentId?: string | null;
-    originKind?: string | null;
-    originRunId?: string | null;
-    actorRunId?: string | null;
-    actorResponsibleUserId?: string | null;
-    trustExplicitResponsibleUserId?: boolean;
-  },
+  input: ResponsibleUserIdForIssueCreateInput,
+) {
+  const resolved = await resolveInheritedResponsibleUserIdForIssueCreate(reader, companyId, input);
+  return bindLegacyBoardUserId(reader, companyId, resolved);
+}
+
+async function resolveInheritedResponsibleUserIdForIssueCreate(
+  reader: DbReader,
+  companyId: string,
+  input: ResponsibleUserIdForIssueCreateInput,
 ) {
   const explicitResponsibleUserId = readStringFromRecord(
     input,
@@ -1809,6 +1826,11 @@ export interface IssueFilters {
   assigneeAgentId?: string | null;
   participantAgentId?: string;
   assigneeUserId?: string;
+  /**
+   * Other user ids that count as `assigneeUserId` (an owner's legacy
+   * `local-board` work, see `board-identity.ts`). Ignored without it.
+   */
+  assigneeUserIdAliases?: readonly string[];
   touchedByUserId?: string;
   inboxArchivedByUserId?: string;
   unreadForUserId?: string;
@@ -1926,6 +1948,13 @@ type IssueUserContextInput = {
 };
 type ProjectGoalReader = Pick<Db, "select">;
 type DbReader = Pick<Db, "select">;
+
+function assigneeUserFilterCondition(assigneeUserId: string, aliases: readonly string[] | undefined) {
+  const ids = [...new Set([assigneeUserId, ...(aliases ?? [])])];
+  return ids.length === 1
+    ? eq(issues.assigneeUserId, assigneeUserId)
+    : inArray(issues.assigneeUserId, ids);
+}
 /** Conversation containers cannot acquire new child edges, even with the experiment disabled. */
 async function assertExecutionTaskParent(db: Db, companyId: string, parentId?: string | null) {
   if (!parentId) return;
@@ -6376,7 +6405,7 @@ async function blockedInboxIssueConditions(
       participatedByAgentCondition(companyId, filters.participantAgentId),
     );
   if (filters?.assigneeUserId)
-    conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+    conditions.push(assigneeUserFilterCondition(filters.assigneeUserId, filters.assigneeUserIdAliases));
   if (touchedByUserId)
     conditions.push(touchedByUserCondition(companyId, touchedByUserId));
   if (inboxArchivedByUserId)
@@ -8063,7 +8092,7 @@ export function issueService(db: Db) {
         );
       }
       if (filters?.assigneeUserId) {
-        conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+        conditions.push(assigneeUserFilterCondition(filters.assigneeUserId, filters.assigneeUserIdAliases));
       }
       if (touchedByUserId) {
         conditions.push(touchedByUserCondition(companyId, touchedByUserId));
@@ -8363,7 +8392,7 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.assigneeAgentId, assigneeAgentFilter));
       }
       if (filters?.assigneeUserId)
-        conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+        conditions.push(assigneeUserFilterCondition(filters.assigneeUserId, filters.assigneeUserIdAliases));
       if (filters?.projectId)
         conditions.push(eq(issues.projectId, filters.projectId));
       if (filters?.teamId)
