@@ -4,6 +4,7 @@ import {
   BufferAttribute,
   CanvasTexture,
   Color,
+  type Curve,
   Group,
   Line,
   LineDashedMaterial,
@@ -11,6 +12,7 @@ import {
   Sprite,
   SpriteMaterial,
   Vector2,
+  type Vector3,
   type Object3D,
   type PerspectiveCamera,
 } from "three";
@@ -57,30 +59,72 @@ const CEO_HALO_SCALE = 3.4;
 
 /**
  * Motion tuning, kept in one place. The graph used to bounce about too much, so these
- * favour a calm scene: heavy damping, a quick settle, a faint slow drift and a slow spin.
+ * favour a calm scene: firm damping, a quick settle, a faint slow drift and a slow spin.
+ * On top of that the links behave like soft springs (in the spirit of Obsidian's graph):
+ * the layout never quite goes cold, links bend gently and sway, dragged nodes pull their
+ * neighbours along, and hover or focus fades rather than snaps. Reduced motion turns off
+ * everything continuous (warmth, drift, sway, particles, fades).
  *
- * - VELOCITY_DECAY: share of speed lost each tick (d3 default 0.4). Higher is calmer.
+ * - VELOCITY_DECAY: share of speed lost each tick (d3 default 0.4). Higher is calmer;
+ *   0.5 (was 0.6) lets neighbours follow through a little without bouncing.
  * - ALPHA_DECAY: how fast the layout cools; the first 100 ticks run off screen as warmup.
+ * - WARM_ALPHA: the floor the link and charge forces never cool below, the equivalent of
+ *   a d3 alphaTarget (which the renderer does not expose). Small enough that a settled
+ *   layout stays put, large enough that links keep acting as springs.
  * - DRIFT_STRENGTH / DRIFT_SPEED: the settled "breathing" wobble.
+ * - FOLLOW_STRENGTH / FOLLOW_REST: while a node is dragged, its direct neighbours are
+ *   pulled towards it whenever they are further than FOLLOW_REST away, whatever the alpha.
+ * - DRAG_FAR_DAMPING: while dragging, nodes outside the dragged node's neighbourhood keep
+ *   only this share of their speed each tick, so the reheat stays local.
+ * - CURVATURE: base bend per link style (share of the link's length). Provenance links are
+ *   short and the most numerous, so they stay straight (no visible bend, saves work at 500 nodes).
+ * - CURVATURE_SPREAD: each link's bend varies by up to this share either side of the base,
+ *   and its bend plane is turned by a per link angle, so links do not all bow alike.
+ * - SWAY_AMPLITUDE / SWAY_SPEED: the bend breathes by this share of itself, in radians per
+ *   tick (0.01 at 60 fps is a full sway roughly every ten seconds).
+ * - PARTICLES / PARTICLE_SPEED / PARTICLE_WIDTH: faint dots travelling along stated links,
+ *   only on the links lit by hover or selection.
+ * - FADE_MS / FADE_STEPS / FADE_QUANTUM: hover and focus opacity changes ease over FADE_MS
+ *   in FADE_STEPS steps; in between values are rounded to FADE_QUANTUM so the renderer's
+ *   material cache (one material per colour string) stays small.
  * - AUTO_ROTATE_SPEED: OrbitControls units (2.0 is one turn a minute).
  * - FIT_TICKS: visible engine ticks after new data at which the camera reframes.
  * - FOCUS_MS: how long the camera takes to ease to a focused agent.
  */
 const MOTION = {
-  VELOCITY_DECAY: 0.6,
+  VELOCITY_DECAY: 0.5,
   ALPHA_DECAY: 0.045,
+  WARM_ALPHA: 0.012,
   DRIFT_STRENGTH: 0.004,
   DRIFT_SPEED: 0.004,
+  FOLLOW_STRENGTH: 0.035,
+  FOLLOW_REST: 36,
+  DRAG_FAR_DAMPING: 0.55,
+  CURVATURE: { stated: 0.16, inferred: 0.12, orbit: 0.07, provenance: 0 },
+  CURVATURE_SPREAD: 0.35,
+  SWAY_AMPLITUDE: 0.3,
+  SWAY_SPEED: 0.01,
+  PARTICLES: 2,
+  PARTICLE_SPEED: 0.006,
+  PARTICLE_WIDTH: 1.4,
+  FADE_MS: 220,
+  FADE_STEPS: 6,
+  FADE_QUANTUM: 0.02,
   AUTO_ROTATE_SPEED: 0.15,
   FIT_TICKS: [25, 60] as const,
   FOCUS_MS: 1200,
 } as const;
 
+/** Segments for a curved dashed (suggested) link; plain links use the renderer's own 30. */
+const DASHED_CURVE_SEGMENTS = 16;
+
 /**
  * Layout tuning. Agent hubs are held around the main agent's hub (pinned at the
  * centre) by their display only orbit links and push each other apart; entries sit
  * near their hub, closer still when nothing links them. Suggested links do not pull
- * at all (strength 0), so turning them on does not reshape the picture.
+ * at all (strength 0), so turning them on does not reshape the picture. Strengths are
+ * a little softer than they were (orbit 0.7, provenance 0.6, stated 0.25) so links give
+ * and recover like springs rather than rods; distances are unchanged.
  */
 const LAYOUT = {
   ORBIT_DISTANCE: 150,
@@ -88,7 +132,7 @@ const LAYOUT = {
   LONE_PROVENANCE_DISTANCE: 16,
   STATED_DISTANCE: 45,
   SUGGESTED_DISTANCE: 60,
-  STRENGTH: { orbit: 0.7, provenance: 0.6, stated: 0.25, inferred: 0 },
+  STRENGTH: { orbit: 0.55, provenance: 0.45, stated: 0.18, inferred: 0 },
   CHARGE: { ceo: -500, hub: -320, memory: -22 },
 } as const;
 
@@ -227,11 +271,14 @@ function haloSprite(palette: MemoryGraphPalette, radius: number): Sprite {
   return sprite;
 }
 
-/** Pulls every node gently towards the centre, so loose clusters stay in one view. Scales with alpha, so it settles. */
-function gravityForce(strength = 0.04) {
+/**
+ * Pulls every node gently towards the centre, so loose clusters stay in one view. Scales
+ * with alpha (never below `floor`, see MOTION.WARM_ALPHA), so it settles.
+ */
+function gravityForce(strength = 0.04, floor = 0) {
   let nodes: GraphNode[] = [];
   const force = (alpha: number) => {
-    const k = strength * alpha;
+    const k = strength * Math.max(alpha, floor);
     for (const node of nodes) {
       node.vx = (node.vx ?? 0) - (node.x ?? 0) * k;
       node.vy = (node.vy ?? 0) - (node.y ?? 0) * k;
@@ -266,6 +313,100 @@ function driftForce(strength: number = MOTION.DRIFT_STRENGTH, speed: number = MO
     nodes = next;
   };
   return force;
+}
+
+type TickForce = (alpha: number) => void;
+
+/**
+ * Keeps the layout lightly warm: once alpha has cooled below `floor`, runs the given
+ * forces again with the difference. d3 forces are linear in alpha, so this is the same as
+ * running them at `floor`, the effect of a small alphaTarget. The layout sits at rest
+ * there, but links keep acting as springs, so a nudge is answered softly.
+ */
+function warmthForce(forces: TickForce[], floor: number = MOTION.WARM_ALPHA) {
+  const force = (alpha: number) => {
+    const extra = floor - alpha;
+    if (extra <= 0) return;
+    for (const run of forces) run(extra);
+  };
+  force.initialize = () => {};
+  return force;
+}
+
+/**
+ * While a node is dragged: its direct neighbours follow it like springs (whatever the
+ * alpha), and everything outside its neighbourhood is held back, so the reheat the
+ * renderer applies during a drag stays local. Does nothing when no node is dragged.
+ * `adjacency` holds only the links that pull (stated and provenance) and only entries
+ * follow, so dragging an entry never drags its agent's hub out of place.
+ */
+function followForce(
+  dragged: { readonly current: GraphNode | null },
+  adjacency: { readonly current: Map<string, Set<string>> },
+  nodesById: { readonly current: Map<string, GraphNode> },
+) {
+  let nodes: GraphNode[] = [];
+  const force = () => {
+    const anchor = dragged.current;
+    if (!anchor) return;
+    const near = adjacency.current.get(String(anchor.id)) ?? new Set<string>();
+    for (const id of near) {
+      const node = nodesById.current.get(id);
+      if (!node || node.kind !== "memory" || node.fx != null) continue;
+      const dx = (anchor.x ?? 0) - (node.x ?? 0);
+      const dy = (anchor.y ?? 0) - (node.y ?? 0);
+      const dz = (anchor.z ?? 0) - (node.z ?? 0);
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance <= MOTION.FOLLOW_REST) continue;
+      const pull = ((distance - MOTION.FOLLOW_REST) / distance) * MOTION.FOLLOW_STRENGTH;
+      node.vx = (node.vx ?? 0) + dx * pull;
+      node.vy = (node.vy ?? 0) + dy * pull;
+      node.vz = (node.vz ?? 0) + dz * pull;
+    }
+    for (const node of nodes) {
+      const id = String(node.id);
+      if (node === anchor || (node.kind === "memory" && near.has(id))) continue;
+      node.vx = (node.vx ?? 0) * MOTION.DRAG_FAR_DAMPING;
+      node.vy = (node.vy ?? 0) * MOTION.DRAG_FAR_DAMPING;
+      node.vz = (node.vz ?? 0) * MOTION.DRAG_FAR_DAMPING;
+    }
+  };
+  force.initialize = (next: GraphNode[]) => {
+    nodes = next;
+  };
+  return force;
+}
+
+/** A stable number in [0, 1) from a link id, so each link keeps its own bend. */
+function hash01(text: string, salt: number) {
+  let h = (2166136261 ^ salt) >>> 0;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+interface LinkShape {
+  /** Multiplier on the style's base curvature. */
+  spread: number;
+  /** Angle of the bend plane around the link's axis. */
+  rotation: number;
+  /** Phase of the slow sway. */
+  phase: number;
+}
+
+function linkShape(id: string): LinkShape {
+  return {
+    spread: 1 + (hash01(id, 1) * 2 - 1) * MOTION.CURVATURE_SPREAD,
+    rotation: hash01(id, 2) * Math.PI * 2,
+    phase: hash01(id, 3) * Math.PI * 2,
+  };
+}
+
+/** Ease out (cubic): quick at first, soft at the end. */
+function easeOut(t: number) {
+  return 1 - (1 - t) ** 3;
 }
 
 type LinkState = "lit" | "normal" | "dim";
@@ -330,6 +471,23 @@ export default function MemoryGraph3D({
     return { nodes, links: links.map((link) => ({ ...link })) };
   }, [data, settled]);
 
+  // Who follows a dragged node: only along links that pull (see followForce).
+  const followAdjacency = useRef(new Map<string, Set<string>>());
+  useEffect(() => {
+    const next = new Map<string, Set<string>>();
+    const join = (a: string, b: string) => {
+      if (!next.has(a)) next.set(a, new Set());
+      next.get(a)!.add(b);
+    };
+    for (const link of data.links) {
+      if (link.style !== "stated" && link.style !== "provenance") continue;
+      join(link.source, link.target);
+      join(link.target, link.source);
+    }
+    followAdjacency.current = next;
+  }, [data]);
+  const dragged = useRef<GraphNode | null>(null);
+
   const hiding = focusIds !== null && focusMode === "hide";
   const isVisible = useCallback(
     (node: Pick<MemoryGraph3DNode, "id" | "ceo">) => !hiding || node.ceo || focusIds!.has(node.id),
@@ -347,22 +505,13 @@ export default function MemoryGraph3D({
   const ready = size.width > 0 && size.height > 0;
 
   /** 1 in front, CONTEXT for the main agent behind a focus, DIMMED for the rest. */
-  const nodeAlpha = useCallback(
+  const targetNodeAlpha = useCallback(
     (node: Pick<MemoryGraph3DNode, "id" | "ceo">) => {
       if (highlight) return highlight.has(node.id) ? 1 : DIMMED;
       if (focusIds && !focusIds.has(node.id)) return node.ceo ? CONTEXT : DIMMED;
       return 1;
     },
     [highlight, focusIds],
-  );
-
-  const nodeColor = useCallback(
-    (node: GraphNode) => {
-      const base = node.kind === "hub" ? palette.hub : palette.status[node.status ?? "unreviewed"];
-      const alpha = nodeAlpha(node);
-      return rgba(base, alpha === 1 && node.kind === "memory" && node.status === "superseded" ? 0.7 : alpha);
-    },
-    [palette, nodeAlpha],
   );
 
   const linkState = useCallback(
@@ -378,15 +527,66 @@ export default function MemoryGraph3D({
     },
     [highlight, selectedEdge, hoverId, selectedNodeId, pointId, focusIds],
   );
+  const targetLinkAlpha = useCallback((link: GraphLink) => LINK_ALPHA[link.style][linkState(link)], [linkState]);
+
+  // Hover, selection and focus ease opacity in a few steps instead of snapping. The shown
+  // values live here by id; each step hands the renderer fresh colour accessors. Reduced
+  // motion jumps straight to the end.
+  const shownAlpha = useRef({ nodes: new Map<string, number>(), links: new Map<string, number>() });
+  const [fadeFrame, setFadeFrame] = useState(0);
+  useEffect(() => {
+    const from = shownAlpha.current;
+    const write = (progress: number) => {
+      const mix = (previous: number | undefined, target: number) => {
+        if (progress >= 1 || previous === undefined || previous === target) return target;
+        const value = previous + (target - previous) * progress;
+        return Number((Math.round(value / MOTION.FADE_QUANTUM) * MOTION.FADE_QUANTUM).toFixed(2));
+      };
+      const nodes = new Map<string, number>();
+      for (const node of graphData.nodes) nodes.set(String(node.id), mix(from.nodes.get(String(node.id)), targetNodeAlpha(node)));
+      const links = new Map<string, number>();
+      for (const link of graphData.links) links.set(link.id, mix(from.links.get(link.id), targetLinkAlpha(link)));
+      shownAlpha.current = { nodes, links };
+      setFadeFrame((frame) => frame + 1);
+    };
+    if (reducedMotion) {
+      write(1);
+      return;
+    }
+    let step = 0;
+    let timer: number | undefined;
+    const next = () => {
+      step += 1;
+      write(step >= MOTION.FADE_STEPS ? 1 : easeOut(step / MOTION.FADE_STEPS));
+      if (step < MOTION.FADE_STEPS) timer = window.setTimeout(next, MOTION.FADE_MS / MOTION.FADE_STEPS);
+    };
+    timer = window.setTimeout(next, MOTION.FADE_MS / MOTION.FADE_STEPS);
+    return () => window.clearTimeout(timer);
+  }, [graphData, targetNodeAlpha, targetLinkAlpha, reducedMotion]);
+
+  const nodeAlpha = useCallback(
+    (node: Pick<MemoryGraph3DNode, "id" | "ceo">) => shownAlpha.current.nodes.get(node.id) ?? targetNodeAlpha(node),
+    // `fadeFrame` gives each fade step a new accessor, which is what makes the renderer repaint.
+    [targetNodeAlpha, fadeFrame],
+  );
+
+  const nodeColor = useCallback(
+    (node: GraphNode) => {
+      const base = node.kind === "hub" ? palette.hub : palette.status[node.status ?? "unreviewed"];
+      const alpha = nodeAlpha(node);
+      return rgba(base, alpha === 1 && node.kind === "memory" && node.status === "superseded" ? 0.7 : alpha);
+    },
+    [palette, nodeAlpha],
+  );
 
   const linkPaint = useCallback(
     (link: GraphLink): { rgb: Rgb; alpha: number } => {
-      const alpha = LINK_ALPHA[link.style][linkState(link)];
+      const alpha = shownAlpha.current.links.get(link.id) ?? targetLinkAlpha(link);
       if (link.style === "stated") return { rgb: palette.foreground, alpha };
       if (link.style === "orbit") return { rgb: palette.hub, alpha };
       return { rgb: palette.muted, alpha };
     },
-    [palette, linkState],
+    [palette, targetLinkAlpha, fadeFrame],
   );
   const linkColor = useCallback((link: GraphLink) => {
     const { rgb, alpha } = linkPaint(link);
@@ -432,18 +632,56 @@ export default function MemoryGraph3D({
   const linkPositionUpdate = useCallback((obj: Object3D, { start, end }: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }, link: object) => {
     if ((link as GraphLink).style !== "inferred" || !(obj as Line).isLine) return false;
     const line = obj as Line;
+    // The renderer has already worked out this link's bend (see linkCurvature) before asking.
+    const curve = (link as { __curve?: Curve<Vector3> | null }).__curve;
+    const points = curve ? curve.getPoints(DASHED_CURVE_SEGMENTS) : null;
+    const length = (points ? points.length : 2) * 3;
     let position = line.geometry.getAttribute("position") as BufferAttribute | undefined;
-    if (!position || position.array.length !== 6) {
-      position = new BufferAttribute(new Float32Array(6), 3);
+    if (!position || position.array.length !== length) {
+      position = new BufferAttribute(new Float32Array(length), 3);
       line.geometry.setAttribute("position", position);
     }
-    position.setXYZ(0, start.x, start.y || 0, start.z || 0);
-    position.setXYZ(1, end.x, end.y || 0, end.z || 0);
+    if (points) {
+      for (let index = 0; index < points.length; index += 1) position.setXYZ(index, points[index].x, points[index].y, points[index].z);
+    } else {
+      position.setXYZ(0, start.x, start.y || 0, start.z || 0);
+      position.setXYZ(1, end.x, end.y || 0, end.z || 0);
+    }
     position.needsUpdate = true;
     line.geometry.computeBoundingSphere();
     line.computeLineDistances();
     return true;
   }, []);
+
+  // Links bend gently, each its own way, and the bend sways slowly while the engine runs
+  // (the renderer asks for the curvature every tick). Reduced motion keeps the bends still.
+  const linkShapes = useRef(new Map<string, LinkShape>());
+  const shapeOf = useCallback((link: GraphLink) => {
+    let shape = linkShapes.current.get(link.id);
+    if (!shape) {
+      shape = linkShape(link.id);
+      linkShapes.current.set(link.id, shape);
+    }
+    return shape;
+  }, []);
+  const swayClock = useRef(0);
+  const linkCurvature = useCallback(
+    (link: GraphLink) => {
+      const base = MOTION.CURVATURE[link.style];
+      if (!base) return 0;
+      const shape = shapeOf(link);
+      const sway = reducedMotion ? 0 : Math.sin(swayClock.current + shape.phase) * MOTION.SWAY_AMPLITUDE;
+      return base * shape.spread * (1 + sway);
+    },
+    [reducedMotion, shapeOf],
+  );
+  const linkCurveRotation = useCallback((link: GraphLink) => shapeOf(link).rotation, [shapeOf]);
+
+  // Faint dots along the stated links in front of a hover or selection; none otherwise.
+  const linkParticles = useCallback(
+    (link: GraphLink) => (!reducedMotion && link.style === "stated" && linkState(link) === "lit" && linkVisible(link) ? MOTION.PARTICLES : 0),
+    [reducedMotion, linkState, linkVisible],
+  );
 
   // Labels: every hub (the main agent's larger, with its halo) and the selected entry.
   // Kept by node id so focus and hover can fade them without rebuilding them.
@@ -580,7 +818,7 @@ export default function MemoryGraph3D({
       distance: (fn: (link: GraphLink) => number) => LinkForce;
       strength: (fn: (link: GraphLink) => number) => LinkForce;
     };
-    const linkForce = fg.d3Force("link") as unknown as LinkForce | undefined;
+    const linkForce = fg.d3Force("link") as unknown as (LinkForce & TickForce) | undefined;
     linkForce
       ?.distance((link) => {
         if (link.style === "orbit") return LAYOUT.ORBIT_DISTANCE;
@@ -588,10 +826,14 @@ export default function MemoryGraph3D({
         return link.style === "stated" ? LAYOUT.STATED_DISTANCE : LAYOUT.SUGGESTED_DISTANCE;
       })
       .strength((link) => LAYOUT.STRENGTH[link.style]);
-    const charge = fg.d3Force("charge") as unknown as { strength: (fn: (node: GraphNode) => number) => void } | undefined;
+    const charge = fg.d3Force("charge") as unknown as ({ strength: (fn: (node: GraphNode) => number) => void } & TickForce) | undefined;
     charge?.strength((node) => (node.kind === "hub" ? (node.ceo ? LAYOUT.CHARGE.ceo : LAYOUT.CHARGE.hub) : LAYOUT.CHARGE.memory));
-    fg.d3Force("gravity", gravityForce());
+    const warm = reducedMotion ? 0 : MOTION.WARM_ALPHA;
+    fg.d3Force("gravity", gravityForce(0.04, warm));
     fg.d3Force("drift", reducedMotion ? null : driftForce());
+    fg.d3Force("warmth", reducedMotion ? null : warmthForce([linkForce, charge].filter((force): force is NonNullable<typeof force> => Boolean(force)), warm));
+    // Registered last, so it sees the speeds every other force has handed out this tick.
+    fg.d3Force("follow", followForce(dragged, followAdjacency, nodeObjects));
 
     const controls = fg.controls() as OrbitControls;
     controls.autoRotateSpeed = MOTION.AUTO_ROTATE_SPEED;
@@ -599,7 +841,8 @@ export default function MemoryGraph3D({
     controls.autoRotate = !reducedMotion;
     const onStart = () => pauseRotation();
     controls.addEventListener("start", onStart);
-    setForcesReady(true);    return () => controls.removeEventListener("start", onStart);
+    setForcesReady(true);
+    return () => controls.removeEventListener("start", onStart);
   }, [reducedMotion, pauseRotation, ready]);
 
   useEffect(() => {
@@ -672,9 +915,19 @@ export default function MemoryGraph3D({
   }, [data, ready, forcesReady, fitCamera]);
   const onEngineTick = useCallback(() => {
     ticks.current += 1;
+    if (!reducedMotion) swayClock.current += MOTION.SWAY_SPEED;
     if (!settled && ticks.current === MOTION.FIT_TICKS[1]) setSettled(true);
     if (ticks.current === MOTION.FIT_TICKS[0] || ticks.current === MOTION.FIT_TICKS[1]) fitCamera();
-  }, [fitCamera, settled]);
+  }, [fitCamera, settled, reducedMotion]);
+
+  // The dragged node's neighbours follow it (see followForce) until it is let go.
+  const onNodeDrag = useCallback((node: GraphNode) => {
+    dragged.current = node;
+  }, []);
+  const onNodeDragEnd = useCallback(() => {
+    dragged.current = null;
+    pauseRotation();
+  }, [pauseRotation]);
 
   // Ease to the focused cluster (or back to the whole graph) when the focus changes.
   const firstFocus = useRef(true);
@@ -734,10 +987,18 @@ export default function MemoryGraph3D({
           linkDirectionalArrowLength={(link: GraphLink) => (link.style === "stated" ? 3.5 : 0)}
           linkDirectionalArrowRelPos={1}
           linkDirectionalArrowColor={linkColor}
+          linkCurvature={linkCurvature}
+          linkCurveRotation={linkCurveRotation}
+          linkDirectionalParticles={linkParticles}
+          linkDirectionalParticleSpeed={MOTION.PARTICLE_SPEED}
+          linkDirectionalParticleWidth={MOTION.PARTICLE_WIDTH}
+          linkDirectionalParticleColor={linkColor}
+          linkDirectionalParticleResolution={6}
           linkHoverPrecision={2}
           onNodeClick={onNodeClick}
           onNodeHover={onNodeHover}
-          onNodeDragEnd={pauseRotation}
+          onNodeDrag={onNodeDrag}
+          onNodeDragEnd={onNodeDragEnd}
           onLinkClick={onLinkClick}
           onEngineTick={onEngineTick}
           enableNodeDrag
