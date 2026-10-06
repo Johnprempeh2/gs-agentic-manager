@@ -185,7 +185,7 @@ function ReviewRow({
 
       {preview ? (
         <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
-          <MarkdownBody>{preview}</MarkdownBody>
+          <MarkdownBody renderEmailHtml>{preview}</MarkdownBody>
         </div>
       ) : (
         <p className="mt-1 text-sm text-muted-foreground">

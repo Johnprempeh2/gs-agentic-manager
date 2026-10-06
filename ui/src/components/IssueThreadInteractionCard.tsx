@@ -1772,7 +1772,7 @@ function RequestToolActionCard({
           <AppLogo name={payload.appDisplayName || payload.toolDisplayName} size={36} />
         </span>
         <div className="min-w-0 flex-1 space-y-1 text-sm">
-          <MarkdownBody externalReferences={externalReferences}>{payload.previewMarkdown || payload.toolDisplayName}</MarkdownBody>
+          <MarkdownBody externalReferences={externalReferences} renderEmailHtml>{payload.previewMarkdown || payload.toolDisplayName}</MarkdownBody>
           {!isPending ? <ToolActionResolution state={state} interaction={interaction} /> : null}
         </div>
       </div>
