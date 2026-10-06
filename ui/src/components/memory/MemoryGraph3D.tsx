@@ -25,8 +25,32 @@ const FOCUS_DISTANCE = 90;
 const DIMMED = 0.12;
 /** Sprite scale without size attenuation (about 17px on a 470px tall canvas at the default field of view). */
 const HUB_LABEL_SCREEN_HEIGHT = 0.026;
-/** Engine ticks after new data at which the camera reframes (about 0.7s and 3s at 60fps). */
-const FIT_TICKS = [40, 180] as const;
+/**
+ * Motion tuning, kept in one place. The graph used to bounce about too much, so these
+ * favour a calm scene: heavy damping, a quick settle, a faint slow drift and a slow spin.
+ * Previous values are noted alongside each one.
+ *
+ * - VELOCITY_DECAY: share of speed lost each tick (d3 default 0.4). Higher is calmer.
+ *   Dragging stays direct because the dragged node is pinned to the pointer.
+ * - ALPHA_DECAY: how fast the layout cools. At 0.045 alpha drops to 0.001 in about
+ *   150 ticks, against about 275 before. The first 100 run off screen as warmup, so the
+ *   visible settle is now about 50 ticks (under a second at 60fps) instead of about 175.
+ * - DRIFT_STRENGTH / DRIFT_SPEED: the settled "breathing" wobble. Per tick velocity nudge
+ *   and phase step; with the heavier damping the sway is under a unit over
+ *   roughly 25 seconds, instead of a few units every 10 seconds.
+ * - AUTO_ROTATE_SPEED: OrbitControls units (2.0 is one turn a minute), so 0.15 is one
+ *   turn in about 13 minutes.
+ * - FIT_TICKS: visible engine ticks after new data at which the camera reframes (about
+ *   0.4s, then about 1s, once the faster settle has finished).
+ */
+const MOTION = {
+  VELOCITY_DECAY: 0.6, // was 0.35
+  ALPHA_DECAY: 0.045, // was 0.025
+  DRIFT_STRENGTH: 0.004, // was 0.02
+  DRIFT_SPEED: 0.004, // was 0.01
+  AUTO_ROTATE_SPEED: 0.15, // was 0.35
+  FIT_TICKS: [25, 60] as const, // was [40, 180]
+} as const;
 
 export interface MemoryGraph3DProps {
   data: MemoryGraph3DData;
@@ -142,22 +166,22 @@ function gravityForce(strength = 0.04) {
   return force;
 }
 
-/** Gentle zero-mean wobble so the settled graph keeps breathing. Ignores alpha on purpose. */
-function driftForce() {
+/** Faint, slow zero-mean wobble so the settled graph keeps breathing. Ignores alpha on purpose. */
+function driftForce(strength: number = MOTION.DRIFT_STRENGTH, speed: number = MOTION.DRIFT_SPEED) {
   let nodes: GraphNode[] = [];
   let t = 0;
   const phases = new WeakMap<object, number>();
   const force = () => {
-    t += 0.01;
+    t += speed;
     for (const node of nodes) {
       let phase = phases.get(node);
       if (phase === undefined) {
         phase = Math.random() * Math.PI * 2;
         phases.set(node, phase);
       }
-      node.vx = (node.vx ?? 0) + Math.sin(t + phase) * 0.02;
-      node.vy = (node.vy ?? 0) + Math.cos(t * 0.8 + phase) * 0.02;
-      node.vz = (node.vz ?? 0) + Math.sin(t * 0.6 + phase * 1.3) * 0.02;
+      node.vx = (node.vx ?? 0) + Math.sin(t + phase) * strength;
+      node.vy = (node.vy ?? 0) + Math.cos(t * 0.8 + phase) * strength;
+      node.vz = (node.vz ?? 0) + Math.sin(t * 0.6 + phase * 1.3) * strength;
     }
   };
   force.initialize = (next: GraphNode[]) => {
@@ -361,7 +385,7 @@ export default function MemoryGraph3D({ data, selectedNodeId, selectedEdgeId, on
     fg.d3Force("drift", reducedMotion ? null : driftForce());
 
     const controls = fg.controls() as OrbitControls;
-    controls.autoRotateSpeed = 0.35;
+    controls.autoRotateSpeed = MOTION.AUTO_ROTATE_SPEED;
     controls.enableDamping = true;
     controls.autoRotate = !reducedMotion;
     const onStart = () => pauseRotation();
@@ -431,7 +455,7 @@ export default function MemoryGraph3D({ data, selectedNodeId, selectedEdgeId, on
   }, [graphData, ready, fitCamera]);
   const onEngineTick = useCallback(() => {
     ticks.current += 1;
-    if (ticks.current === FIT_TICKS[0] || ticks.current === FIT_TICKS[1]) fitCamera();
+    if (ticks.current === MOTION.FIT_TICKS[0] || ticks.current === MOTION.FIT_TICKS[1]) fitCamera();
   }, [fitCamera]);
 
   // Stop rendering while scrolled out of view.
@@ -489,8 +513,8 @@ export default function MemoryGraph3D({ data, selectedNodeId, selectedEdgeId, on
           cooldownTicks={Infinity}
           cooldownTime={reducedMotion ? 6000 : Infinity}
           d3AlphaMin={reducedMotion ? 0.001 : 0}
-          d3AlphaDecay={0.025}
-          d3VelocityDecay={0.35}
+          d3AlphaDecay={MOTION.ALPHA_DECAY}
+          d3VelocityDecay={MOTION.VELOCITY_DECAY}
         />
       ) : null}
     </div>
