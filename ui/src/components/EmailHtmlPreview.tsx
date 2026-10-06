@@ -66,8 +66,12 @@ export function EmailHtmlPreview({ html }: { html: string }) {
         </Button>
       </div>
       {showSource ? (
-        <pre className="m-0 max-h-96 overflow-auto whitespace-pre-wrap break-words bg-background p-2 font-mono text-xs">
-          <code>{html}</code>
+        // Inline wrap style: the markdown `pre` rules would otherwise cut long lines.
+        <pre
+          className="m-0 max-h-96 overflow-auto bg-background p-2 font-mono text-xs"
+          style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+        >
+          <code style={{ whiteSpace: "inherit" }}>{html}</code>
         </pre>
       ) : (
         <iframe
