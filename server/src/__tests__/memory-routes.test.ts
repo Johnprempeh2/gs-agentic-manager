@@ -630,7 +630,7 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(recalled.body.results.map((hit: { record: { id: string } }) => hit.record.id)).toEqual([added.body.record.id]);
   });
 
-  it("honours the unscoped memory:contribute grant the agent Permissions toggle writes", async () => {
+  it("honours the unscoped memory:contribute grant the owner sets", async () => {
     const { board, asAgent, base, companyId } = await setup("Toggle");
     const granted = await seedAgent(companyId, "Granted");
     const ungranted = await seedAgent(companyId, "Ungranted");
@@ -639,8 +639,18 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     const client = await request(board).post(`${base}/scopes`).send({ kind: "client", name: "Kestrel" });
     expect(client.status).toBe(201);
 
-    // Same call PATCH /api/agents/:id/permissions makes for canContributeMemory: true.
+    // Generic grant paths leave memory:* alone (GRE-933), so this grants nothing.
     await accessService(ctx.db).setPrincipalPermission(companyId, "agent", granted.id, "memory:contribute", true, null);
+    const viaGenericPath = await request(asAgent(granted.id))
+      .post(`${base}/records`)
+      .send({ scopeId: org.id, content: "Invoices go out on the 1st", status: "proposal" });
+    expect(viaGenericPath.status).toBe(404);
+
+    const setGrant = (permissions: string[]) =>
+      request(board)
+        .put(`${base}/grants`)
+        .send({ principalType: "agent", principalId: granted.id, permissions, reason: "Owner decision" });
+    expect((await setGrant(["memory:contribute"])).status).toBe(200);
 
     const added = await request(asAgent(granted.id))
       .post(`${base}/records`)
@@ -658,8 +668,8 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
       .send({ scopeId: org.id, content: "Invoices go out on the 15th", status: "proposal" });
     expect(refused.status).toBe(404);
 
-    // Turning the toggle off removes the right again.
-    await accessService(ctx.db).setPrincipalPermission(companyId, "agent", granted.id, "memory:contribute", false, null);
+    // Clearing the grant removes the right again.
+    expect((await setGrant([])).status).toBe(200);
     const afterRevoke = await request(asAgent(granted.id))
       .post(`${base}/records`)
       .send({ scopeId: org.id, content: "Another fact", status: "proposal" });
