@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { Webhook } from "svix";
+import type { HttpError } from "../errors.js";
 import {
   agentmailApi,
+  AgentmailApiError,
+  agentmailPathTemplate,
+  agentmailStep,
   agentmailMessageSchema,
   emailText,
   emailReplyRecipients,
@@ -134,9 +138,80 @@ describe("AgentMail protocol boundary", () => {
       .mockResolvedValue(
         new Response("private email and credentials", { status: 403 }),
       );
-    await expect(agentmailApi("private-key", fetcher).whoami()).rejects.toThrow(
-      "AgentMail request failed (403)",
+    const error = await agentmailApi("private-key", fetcher)
+      .whoami()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AgentmailApiError);
+    expect((error as Error).message).toBe(
+      "AgentMail request failed (403) on GET /auth/me",
     );
+    expect(error).toMatchObject({ providerCode: undefined, providerMessage: undefined });
+  });
+  it("keeps the method, an id-free path template and the sanitised provider code and message", async () => {
+    const apiKey = "am_live_secret_value_123456";
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          name: "AuthorizationError",
+          code: "missing_permission",
+          message: `Key ${apiKey} lacks api_key_create\u0000 ${"more detail ".repeat(40)}`,
+          fix: "ignored",
+        }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const error = (await agentmailApi(apiKey, fetcher)
+      .createInboxKey("agent@agentmail.to")
+      .catch((e: unknown) => e)) as AgentmailApiError;
+    expect(error).toBeInstanceOf(AgentmailApiError);
+    expect(error.status).toBe(403);
+    expect(error.method).toBe("POST");
+    expect(error.path).toBe("/inboxes/{id}/api-keys");
+    expect(error.providerCode).toBe("missing_permission");
+    expect(error.providerMessage).toMatch(/^Key \[redacted\] lacks api_key_create /);
+    expect(error.providerMessage!.length).toBeLessThanOrEqual(240);
+    expect(error.message).not.toContain(apiKey);
+    expect(error.message).not.toContain("agent@agentmail.to");
+    expect(error.message).toContain("on POST /inboxes/{id}/api-keys: missing_permission: Key [redacted]");
+  });
+  it("builds path templates without identifiers", () => {
+    expect(agentmailPathTemplate("/inboxes/a%40b.to/messages/%3Cm%3E/reply")).toBe(
+      "/inboxes/{id}/messages/{id}/reply",
+    );
+    expect(agentmailPathTemplate("/inboxes/a%40b.to/messages/send")).toBe(
+      "/inboxes/{id}/messages/send",
+    );
+    expect(agentmailPathTemplate("/inboxes?limit=100")).toBe("/inboxes");
+    expect(agentmailPathTemplate("/auth/me")).toBe("/auth/me");
+    expect(agentmailPathTemplate("/domains/d1")).toBe("/domains/{id}");
+  });
+  it("maps setup refusals to step-named 4xx errors and outages to 502", async () => {
+    const refuse = (status: number, body: unknown = {}) =>
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
+      );
+    const run = (status: number, step: Parameters<typeof agentmailStep>[0], body?: unknown) =>
+      agentmailStep(step, () =>
+        agentmailApi("am_key", refuse(status, body)).createInbox({}),
+      ).catch((e: unknown) => e as HttpError);
+    expect(await run(401, "checkKey")).toMatchObject({ status: 400 });
+    expect(await run(402, "createInbox")).toMatchObject({ status: 402 });
+    const conflictError = await run(409, "createInbox", { code: "already_exists", message: "Inbox already exists" });
+    expect(conflictError).toMatchObject({ status: 409 });
+    expect(conflictError.message).toBe(
+      "AgentMail refused to create an inbox (409: already_exists: Inbox already exists). That email address is already taken. Choose a different username.",
+    );
+    expect(await run(404, "readInbox")).toMatchObject({ status: 404 });
+    expect(await run(422, "createInbox")).toMatchObject({ status: 422 });
+    expect(await run(429, "createInbox")).toMatchObject({ status: 429 });
+    expect(await run(418, "createInbox")).toMatchObject({ status: 400 });
+    const outage = await run(503, "createInbox");
+    expect(outage).toMatchObject({ status: 502 });
+    expect(outage.message).toMatch(/^AgentMail could not create an inbox \(503\)/);
+    const timeout = await agentmailStep("createInbox", () =>
+      agentmailApi("am_key", vi.fn().mockRejectedValue(Object.assign(new Error("t"), { name: "TimeoutError" }))).createInbox({}),
+    ).catch((e: unknown) => e as HttpError);
+    expect(timeout).toMatchObject({ status: 502, message: "Could not create an inbox with AgentMail: the request timed out. Check the network connection and try again." });
   });
   it("constructs deliberate reply-all from visible recipients, excluding self and Bcc", () => {
     const envelope = {

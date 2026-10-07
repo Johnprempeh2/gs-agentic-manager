@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
+import { adoptLegacyEnv } from "@greatstone/shared/legacy-env";
 import { resolvePaperclipEnvPath } from "./paths.js";
 import { maybeRepairLegacyWorktreeConfigAndEnvFiles } from "./worktree-config.js";
 import { shouldLoadWorkingDirectoryEnv } from "./env-file-policy.js";
@@ -50,6 +51,13 @@ if (shouldLoadWorkingDirectoryEnv({
 }
 
 maybeRepairLegacyWorktreeConfigAndEnvFiles();
+
+// The bootstrap adopted legacy (pre-rename) variable names from the process
+// environment before the .env files above were read. Adopt again so a legacy
+// key written in an existing .env (for example the public URL that OAuth
+// callbacks and AgentMail webhooks depend on) still reaches its GSAM_* name.
+// GSAM_* values that are already set always win.
+adoptLegacyEnv();
 
 const TAILSCALE_DETECT_TIMEOUT_MS = 3000;
 

@@ -216,7 +216,7 @@ import {
   splitRemoteUrlCredential,
 } from "./remote-url-credentials.js";
 import { secretService } from "./secrets.js";
-import { agentmailApi } from "./agentmail-api.js";
+import { agentmailApi, agentmailStep } from "./agentmail-api.js";
 import type { ConfigureRailwaySsh, RailwaySshSetup } from "@greatstone/shared";
 import { generateRailwaySshKey, RAILWAY_SSH_SECRET_PATH, validateRailwayKnownHosts } from "./railway-ssh.js";
 import { createRailwayClient, discoverRailwayWorkspace, isRailwayConnection, isRailwayEndpoint, isRailwayToolBlocked, normalizeRailwayToolName, RAILWAY_TOOLS, RAILWAY_TOOL_PREFIX, railwayRisk, RailwayError } from "./railway.js";
@@ -7092,7 +7092,7 @@ export function toolAccessService(
         actorId: null,
       },
     );
-    await agentmailApi(key).whoami();
+    await agentmailStep("checkKey", () => agentmailApi(key).whoami());
   }
 
   function assertSupportedConnection(connection: typeof toolConnections.$inferSelect) {

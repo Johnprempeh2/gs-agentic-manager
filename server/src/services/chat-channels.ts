@@ -217,6 +217,7 @@ import {
   unprocessable,
 } from "../errors.js";
 import { logger } from "../middleware/logger.js";
+import { providerSetupJson } from "./provider-setup-errors.js";
 import { redactSensitiveText } from "../redaction.js";
 import type { StorageService } from "../storage/types.js";
 import {
@@ -6224,23 +6225,24 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       return { providerAccountId: inspection.projectId, providerAccountLabel: inspection.projectName, botExternalId: line.phoneNumber, botUsername: line.phoneNumber, botLabel: line.phoneNumber };
     }
     if (provider === "slack") {
-      const response = await fetchImpl("https://slack.com/api/auth.test", {
-        method: "POST",
-        signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
-        headers: {
-          authorization: `Bearer ${credentials.botToken}`,
-          "content-type": "application/x-www-form-urlencoded",
-        },
-        body: "",
-      });
-      const result = (await response.json()) as {
+      const { response, body: result } = await providerSetupJson<{
         ok?: boolean;
         error?: string;
         team_id?: string;
         team?: string;
         user_id?: string;
         user?: string;
-      };
+      }>("Slack", "verify the bot token", () =>
+        fetchImpl("https://slack.com/api/auth.test", {
+          method: "POST",
+          signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
+          headers: {
+            authorization: `Bearer ${credentials.botToken}`,
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: "",
+        }),
+      );
       if (!response.ok || !result.ok)
         throw unprocessable(
           `Slack rejected the bot token: ${result.error ?? response.status}`,
@@ -6287,15 +6289,16 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       return identity;
     }
     if (provider === "telegram") {
-      const response = await fetchImpl(
-        `https://api.telegram.org/bot${encodeURIComponent(credentials.botToken)}/getMe`,
-        { signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS) },
-      );
-      const result = (await response.json()) as {
+      const { response, body: result } = await providerSetupJson<{
         ok?: boolean;
         description?: string;
         result?: { id?: number; username?: string; first_name?: string };
-      };
+      }>("Telegram", "verify the bot token", () =>
+        fetchImpl(
+          `https://api.telegram.org/bot${encodeURIComponent(credentials.botToken)}/getMe`,
+          { signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS) },
+        ),
+      );
       if (!response.ok || !result.ok)
         throw unprocessable(
           `Telegram rejected the bot token: ${result.description ?? response.status}`,
@@ -6309,15 +6312,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     }
     if (provider === "github") {
       const token = githubAppJwt(credentials.appId, credentials.privateKey);
-      const response = await fetchImpl("https://api.github.com/app", {
-        signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
-        headers: {
-          accept: "application/vnd.github+json",
-          authorization: `Bearer ${token}`,
-          "x-github-api-version": "2022-11-28",
-        },
-      });
-      const result = (await response.json()) as {
+      const { response, body: result } = await providerSetupJson<{
         id?: number;
         login?: string;
         slug?: string;
@@ -6326,7 +6321,16 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
         owner?: { login?: string };
         permissions?: Record<string, string>;
         events?: string[];
-      };
+      }>("GitHub", "verify the app credentials", () =>
+        fetchImpl("https://api.github.com/app", {
+          signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
+          headers: {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${token}`,
+            "x-github-api-version": "2022-11-28",
+          },
+        }),
+      );
       if (!response.ok)
         throw unprocessable(
           `GitHub rejected the app credentials: ${result.message ?? response.status}`,
@@ -6404,19 +6408,20 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       grant_type: "client_credentials",
       scope: "https://api.botframework.com/.default",
     });
-    const response = await fetchImpl(
-      `https://login.microsoftonline.com/${encodeURIComponent(teamsCredentials.tenantId)}/oauth2/v2.0/token`,
-      {
-        method: "POST",
-        signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body,
-      },
-    );
-    const result = (await response.json()) as {
+    const { response, body: result } = await providerSetupJson<{
       access_token?: string;
       error_description?: string;
-    };
+    }>("Microsoft", "verify the app credentials", () =>
+      fetchImpl(
+        `https://login.microsoftonline.com/${encodeURIComponent(teamsCredentials.tenantId)}/oauth2/v2.0/token`,
+        {
+          method: "POST",
+          signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body,
+        },
+      ),
+    );
     if (!response.ok || !result.access_token)
       throw unprocessable(
         `Microsoft rejected the app credentials: ${result.error_description ?? response.status}`,
