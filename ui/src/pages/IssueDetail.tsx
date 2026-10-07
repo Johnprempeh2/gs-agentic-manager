@@ -52,6 +52,7 @@ import { type TaskSidePanelProps } from "../components/task-side-panel";
 import { TaskTreeControlDialog } from "../components/TaskTreeControls";
 import { IssueGalleryContext } from "../context/IssueGalleryContext";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
+import { TaskPreviewLink } from "../components/LivePreviewCard";
 import { ImageGalleryModal } from "../components/ImageGalleryModal";
 import { FileViewerProvider } from "../context/FileViewerContext";
 import { ArtifactFileChip } from "../components/ArtifactFileChip";
@@ -1147,6 +1148,11 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
             )}
 
           {taskChatShellEnabled ? null : issueHeaderBlock}
+
+          <TaskPreviewLink
+            workspace={issue.currentExecutionWorkspace}
+            className={shellSectionClass}
+          />
 
           {taskChatShellEnabled ? null : pluginOutletsBlock}
 

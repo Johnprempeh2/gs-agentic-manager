@@ -25,6 +25,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { ProjectWorkspacesContent } from "../components/ProjectWorkspacesContent";
 import { SummarySlotCard } from "../components/SummarySlotCard";
+import { LivePreviewCard } from "../components/LivePreviewCard";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { buildProjectWorkspaceSummaries } from "../lib/project-workspaces-tab";
@@ -795,6 +796,8 @@ export function ProjectDetail() {
           />
         </div>
       </div>
+
+      <LivePreviewCard project={project} companyId={resolvedCompanyId} />
 
       <SummarySlotCard
         companyId={resolvedCompanyId}
