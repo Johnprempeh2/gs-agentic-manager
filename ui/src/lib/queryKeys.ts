@@ -517,6 +517,8 @@ export const queryKeys = {
         { includeArchived: opts.includeArchived === true },
       ] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
+    checkoutHead: (projectId: string, workspaceId: string) =>
+      ["projects", "checkout-head", projectId, workspaceId] as const,
   },
   cases: {
     list: (companyId: string) => ["cases", companyId] as const,
