@@ -12,7 +12,7 @@ import type { EmailConnectionInput } from "@greatstone/shared";
 import { badRequest, forbidden, notFound } from "../errors.js";
 import { secretService } from "./secrets.js";
 import { toolAccessService } from "./tool-access.js";
-import { agentmailApi } from "./agentmail-api.js";
+import { agentmailApi, agentmailStep } from "./agentmail-api.js";
 import { logActivity } from "./activity-log.js";
 import type { EmailActor } from "./email-channels.js";
 
@@ -126,7 +126,9 @@ export function emailConnectionService(
     input: EmailConnectionInput,
     actor: EmailActor,
   ) {
-    await agentmailApi(input.apiKey, fetchImpl).whoami();
+    await agentmailStep("checkKey", () =>
+      agentmailApi(input.apiKey, fetchImpl).whoami(),
+    );
     return db.transaction(async (tx) => {
       const db = tx as unknown as Db;
       await db.execute(

@@ -975,10 +975,96 @@ describe("AgentMail durable email pipeline", () => {
     const f = await fixture("websocket");
     f.setWebhookError(403);
     await expect(f.service.reconnect(f.endpointId, "replacement-test-key", "webhook", { userId: "email-board" }))
-      .rejects.toThrow("Enable webhook create/read/delete permissions");
+      .rejects.toMatchObject({
+        status: 403,
+        message: expect.stringContaining(
+          "AgentMail refused to register the webhook (403). This AgentMail key cannot create webhooks. Enable webhook_create, webhook_read and webhook_delete",
+        ),
+      });
     expect(await f.service.getEndpoint(f.endpointId)).toMatchObject({ status: "active" });
     await f.receive(f.message());
     expect(f.wakeup).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["createInbox", "create an inbox", "Create the inbox in the AgentMail dashboard"],
+    ["createInboxKey", "create an inbox-scoped API key", "create an inbox and an inbox-scoped key in the AgentMail dashboard, choose that inbox here, and use WebSocket receiving"],
+    ["createWebhook", "register the webhook", "Enable webhook_create, webhook_read and webhook_delete"],
+  ] as const)("returns a step-named 403, not a 500, when AgentMail refuses %s", async (failAt, step, advice) => {
+    const f = await fixture();
+    const controlKey = `am_control_${randomUUID()}`;
+    const address = `${randomUUID()}@agentmail.to`;
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    const refusal = () =>
+      json({
+        name: "AuthorizationError",
+        code: "missing_permission",
+        message: `Key ${controlKey} is missing a permission`,
+      }, 403);
+    const calls: string[] = [];
+    const fetcher = vi.fn(async (url: any, init: any) => {
+      const pathname = decodeURIComponent(new URL(String(url)).pathname);
+      calls.push(`${init.method} ${pathname}`);
+      if (pathname === "/v0/auth/me")
+        return init.headers.Authorization === "Bearer runtime-test-key"
+          ? json({ scope_type: "inbox", organization_id: "org", inbox_id: address })
+          : json({ scope_type: "organization", organization_id: "org" });
+      if (pathname === "/v0/inboxes" && init.method === "POST")
+        return failAt === "createInbox" ? refusal() : json({ inbox_id: address });
+      if (pathname === `/v0/inboxes/${address}/api-keys` && init.method === "POST")
+        return failAt === "createInboxKey"
+          ? refusal()
+          : json({ api_key: "runtime-test-key", api_key_id: "owned-key" });
+      if (pathname === `/v0/inboxes/${address}/webhooks`)
+        return failAt === "createWebhook"
+          ? refusal()
+          : json({ webhook_id: "w", secret: `whsec_${Buffer.from("test-webhook-secret").toString("base64")}` });
+      if (init.method === "DELETE") return new Response(null, { status: 204 });
+      throw new Error(`Unexpected test request: ${pathname}`);
+    }) as unknown as typeof fetch;
+    const service = emailChannelService(db, {
+      heartbeat: { wakeup: vi.fn().mockResolvedValue(null) },
+      fetch: fetcher,
+      publicBaseUrl: "https://gsam.example.test",
+    });
+    services.push(service);
+    const error = await service
+      .setup(f.companyId, {
+        assignedAgentId: f.agentId,
+        apiKey: controlKey,
+        username: address.split("@")[0],
+        domain: "agentmail.to",
+        receiveMode: "webhook",
+        idempotencyKey: randomUUID(),
+      }, { userId: "email-board" })
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({
+      status: 403,
+      details: { code: "provider_setup_refused", provider: "AgentMail", step, providerStatus: 403, providerCode: "missing_permission" },
+    });
+    const message = (error as Error).message;
+    expect(message).toContain(`AgentMail refused to ${step} (403: missing_permission: Key [redacted] is missing a permission).`);
+    expect(message).toContain(advice);
+    expect(message).not.toContain(controlKey);
+    expect(calls.some((call) => call.startsWith("POST /v0/inboxes"))).toBe(true);
+  });
+
+  it("names the key check when AgentMail refuses a credential being saved", async () => {
+    const f = await fixture();
+    const apiKey = `am_${randomUUID()}`;
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ name: "AuthorizationError", code: "forbidden", message: "Forbidden" }), {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      }),
+    ) as unknown as typeof fetch;
+    const error = await emailConnectionService(db, fetcher)
+      .connect(f.companyId, { apiKey, grantKind: "organization", allAgents: true, agentIds: [], idempotencyKey: randomUUID() }, { userId: "email-board" })
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 403, details: { step: "accept the API key", providerStatus: 403 } });
+    expect((error as Error).message).toMatch(/^AgentMail refused to accept the API key \(403: forbidden: Forbidden\)\. AgentMail did not accept this key\./);
+    expect((error as Error).message).not.toContain(apiKey);
   });
 
   it("saves a scoped credential before inbox setup, preserves personal ownership, and adds the chosen agent", async () => {
@@ -1079,7 +1165,7 @@ describe("AgentMail durable email pipeline", () => {
     }
     expect(fetcher.mock.calls.every(([url]) => String(url).endsWith("/auth/me"))).toBe(true);
     fetcher.mockResolvedValue(new Response("unauthorized", { status: 401 }));
-    await expect(tools.checkHealth(connection.id)).rejects.toThrow(/AgentMail request failed \(401\)/);
+    await expect(tools.checkHealth(connection.id)).rejects.toThrow(/AgentMail refused to accept the API key \(401\)/);
     expect((await tools.getConnection(connection.id, f.companyId))?.healthStatus).not.toBe("ok");
   });
 
