@@ -45,6 +45,19 @@ export function buildScenario(id: TaskChatStateId): TaskChatScenario {
       };
     case "human-message":
       return { surface: "thread", items: exchangePrefix() };
+    case "team-messages":
+      // Two people typing into one task (GRE-1012): the viewer stays right,
+      // another member sits left under their name.
+      return {
+        surface: "thread",
+        items: [
+          ...exchangePrefix(),
+          { id: "m-ben-1", kind: "message", author: "human", authorName: "Ben Kafui Mensah", fromOtherUser: true, showAuthorName: true, text: "Can we also cap it per IP, not just per account?", timestamp: "2:32 PM" },
+          { id: "m-ben-2", kind: "message", author: "human", authorName: "Ben Kafui Mensah", fromOtherUser: true, showAuthorName: false, text: "Five tries a minute feels right.", timestamp: "2:32 PM" },
+          { id: "m-user-2", kind: "message", author: "human", text: "Agreed — per IP and per account.", timestamp: "2:33 PM" },
+          { id: "m-agent-team", kind: "message", author: "agent", authorName: AGENT, agentIcon: "bot", text: "Got it. I'll limit both, five attempts a minute.", timestamp: "2:33 PM" },
+        ],
+      };
     case "agent-message":
       return {
         surface: "thread",
