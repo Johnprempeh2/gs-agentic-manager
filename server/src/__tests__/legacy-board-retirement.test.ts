@@ -18,7 +18,10 @@ import {
   issueThreadInteractions,
   issues,
   principalPermissionGrants,
+  routineRevisions,
+  routines,
 } from "@greatstone/db";
+import { reassignLegacyBoardWork } from "../services/legacy-board-reassignment.js";
 import { errorHandler } from "../middleware/index.js";
 import { accessRoutes } from "../routes/access.js";
 import { legacyBoardRoutes } from "../routes/legacy-board.js";
@@ -66,6 +69,9 @@ describeEmbeddedPostgres("retiring the legacy local-board account", () => {
     await db.delete(principalPermissionGrants);
     await db.delete(issueComments);
     await db.delete(issueThreadInteractions);
+    await db.update(routines).set({ latestRevisionId: null });
+    await db.delete(routineRevisions);
+    await db.delete(routines);
     await db.delete(issues);
     await db.delete(companyMemberships);
     await db.delete(companies);
@@ -155,6 +161,51 @@ describeEmbeddedPostgres("retiring the legacy local-board account", () => {
     return { companyId, openId, closedId, legacyMembershipId: legacyMembership!.id };
   }
 
+  /**
+   * Routines as live: an active one on local-board (column and revision), a
+   * paused one whose latest revision names local-board only in its snapshot,
+   * and one on Ben that must not move.
+   */
+  async function seedRoutines(companyId: string) {
+    const make = async (title: string, status: string, responsibleUserId: string, revision: {
+      column: string | null;
+      snapshot: string | null;
+    }) => {
+      const [routine] = await db.insert(routines).values({
+        companyId, title, status, responsibleUserId, createdByUserId: responsibleUserId,
+      }).returning();
+      const [rev] = await db.insert(routineRevisions).values({
+        companyId, routineId: routine!.id, revisionNumber: 1, title,
+        responsibleUserId: revision.column,
+        snapshot: {
+          version: 1,
+          routine: { id: routine!.id, companyId, title, status, responsibleUserId: revision.snapshot },
+          triggers: [],
+        } as never,
+      }).returning();
+      await db.update(routines).set({ latestRevisionId: rev!.id }).where(eq(routines.id, routine!.id));
+      return { routineId: routine!.id, revisionId: rev!.id };
+    };
+    const digest = await make("Daily digest", "active", LEGACY_BOARD_USER_ID, {
+      column: LEGACY_BOARD_USER_ID, snapshot: LEGACY_BOARD_USER_ID,
+    });
+    const audit = await make("Monthly audit", "paused", LEGACY_BOARD_USER_ID, {
+      column: null, snapshot: LEGACY_BOARD_USER_ID,
+    });
+    const bens = await make("Ben's check", "active", BEN, { column: BEN, snapshot: BEN });
+    return { digest, audit, bens };
+  }
+
+  async function routineOwners(ids: { routineId: string; revisionId: string }) {
+    const [routine] = await db.select().from(routines).where(eq(routines.id, ids.routineId));
+    const [revision] = await db.select().from(routineRevisions).where(eq(routineRevisions.id, ids.revisionId));
+    return {
+      routine: routine?.responsibleUserId,
+      revision: revision?.responsibleUserId ?? null,
+      snapshot: (revision?.snapshot as { routine?: { responsibleUserId?: string | null } } | undefined)?.routine?.responsibleUserId ?? null,
+    };
+  }
+
   async function legacyMembershipStatus(companyId: string) {
     const [row] = await db.select({ status: companyMemberships.status, role: companyMemberships.membershipRole })
       .from(companyMemberships)
@@ -240,6 +291,56 @@ describeEmbeddedPostgres("retiring the legacy local-board account", () => {
     // A second retire is refused.
     const again = await request(app).post(`/api/companies/${companyId}/legacy-board/retire`).send({ dryRun: false });
     expect(again.status).toBe(409);
+  });
+
+  it("moves routines of any status, and their latest revision, to the owner", async () => {
+    const { companyId } = await seed();
+    const { digest, audit, bens } = await seedRoutines(companyId);
+    const app = createApp(sessionActor(JOHN, companyId, "owner"));
+
+    const dry = await request(app).post(`/api/companies/${companyId}/legacy-board/retire`).send({ dryRun: true });
+    expect(dry.status).toBe(200);
+    expect(dry.body.routineCount).toBe(2);
+    expect(dry.body.routines).toEqual([
+      { id: digest.routineId, title: "Daily digest", status: "active" },
+      { id: audit.routineId, title: "Monthly audit", status: "paused" },
+    ]);
+    // The dry run writes nothing.
+    expect(await routineOwners(digest)).toEqual({
+      routine: LEGACY_BOARD_USER_ID, revision: LEGACY_BOARD_USER_ID, snapshot: LEGACY_BOARD_USER_ID,
+    });
+
+    const res = await request(app).post(`/api/companies/${companyId}/legacy-board/retire`).send({ dryRun: false });
+    expect(res.status).toBe(200);
+    expect(res.body.routineCount).toBe(2);
+    expect(await routineOwners(digest)).toEqual({ routine: JOHN, revision: JOHN, snapshot: JOHN });
+    // The column stays empty; the snapshot it falls back to now names John.
+    expect(await routineOwners(audit)).toEqual({ routine: JOHN, revision: null, snapshot: JOHN });
+    expect(await routineOwners(bens)).toEqual({ routine: BEN, revision: BEN, snapshot: BEN });
+
+    const [logged] = await db.select().from(activityLog).where(eq(activityLog.action, LEGACY_BOARD_RETIRED_ACTION));
+    expect(logged?.details).toMatchObject({
+      routineCount: 2,
+      routineIds: [digest.routineId, audit.routineId],
+      routineTitles: ["Daily digest", "Monthly audit"],
+    });
+
+    // Running the move again finds nothing left.
+    const [again] = await reassignLegacyBoardWork(db, { apply: true, companyId });
+    expect(again?.routines).toEqual([]);
+  });
+
+  it("the one-off reassignment moves routines too, and a second run finds none", async () => {
+    const { companyId } = await seed();
+    const { digest } = await seedRoutines(companyId);
+    const [dry] = await reassignLegacyBoardWork(db, { apply: false, companyId });
+    expect(dry?.routines.map((routine) => routine.title)).toEqual(["Daily digest", "Monthly audit"]);
+    expect((await routineOwners(digest)).routine).toBe(LEGACY_BOARD_USER_ID);
+
+    await reassignLegacyBoardWork(db, { apply: true, companyId });
+    expect(await routineOwners(digest)).toEqual({ routine: JOHN, revision: JOHN, snapshot: JOHN });
+    const [second] = await reassignLegacyBoardWork(db, { apply: true, companyId });
+    expect(second).toMatchObject({ issues: [], interactionCount: 0, routines: [] });
   });
 
   it("keeps local-board out of pickers after retire but keeps its name for history", async () => {

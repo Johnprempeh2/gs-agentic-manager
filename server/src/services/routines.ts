@@ -1,5 +1,5 @@
 import { verifyAppWebhook } from "./app-webhook.js";
-import { bindLegacyBoardUserId } from "./board-identity.js";
+import { LEGACY_BOARD_USER_ID, bindLegacyBoardUserId, boardIdentityDeploymentMode } from "./board-identity.js";
 import crypto from "node:crypto";
 import { verifyFirefliesWebhook } from "./fireflies-webhook.js";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, not, or, sql } from "drizzle-orm";
@@ -177,6 +177,26 @@ async function resolveRoutineResponsibleUserId(db: Db, companyId: string, actorU
     companyId,
     await resolveInheritedRoutineResponsibleUserId(db, companyId, actorUserId, parentIssueId),
   );
+}
+
+/** A routine's responsible user must be an active human member of the company. */
+async function assertRoutineResponsibleMember(db: Db, companyId: string, userId: string) {
+  if (userId === LEGACY_BOARD_USER_ID && boardIdentityDeploymentMode() === "authenticated") {
+    throw unprocessable("The legacy local-board account cannot be a routine's responsible user. Choose a signed-in member.");
+  }
+  const [membership] = await db
+    .select({ id: companyMemberships.id })
+    .from(companyMemberships)
+    .where(and(
+      eq(companyMemberships.companyId, companyId),
+      eq(companyMemberships.principalType, "user"),
+      eq(companyMemberships.principalId, userId),
+      eq(companyMemberships.status, "active"),
+    ))
+    .limit(1);
+  if (!membership) {
+    throw unprocessable("The responsible user must be an active member of this company");
+  }
 }
 
 async function resolveInheritedRoutineResponsibleUserId(db: Db, companyId: string, actorUserId: string | null | undefined, parentIssueId?: string | null) {
@@ -1856,8 +1876,14 @@ export function routineService(
               return row?.responsibleUserId ?? snapshot?.routine.responsibleUserId ?? null;
             })
         : null;
-      const responsibleUserId =
-        manualRunnerUserId ?? latestRevisionResponsibleUserId ?? input.routine.responsibleUserId ?? null;
+      // A routine still on the legacy `local-board` user fires as the
+      // company's primary owner once sign-in is on, so the run and the issue
+      // it creates never carry an account nobody can sign in as.
+      const responsibleUserId = await bindLegacyBoardUserId(
+        txDb,
+        input.routine.companyId,
+        manualRunnerUserId ?? latestRevisionResponsibleUserId ?? input.routine.responsibleUserId ?? null,
+      );
       const [createdRun] = await txDb
         .insert(routineRuns)
         .values({
@@ -2333,6 +2359,13 @@ export function routineService(
       if (!responsibleUserId) {
         throw unprocessable("Routine requires a responsible user");
       }
+      // An explicit change of responsible user. The route allows it only for
+      // a company owner or admin; here the new user must be an active human
+      // member, and never the legacy `local-board` account once sign-in is on.
+      const requestedResponsibleUserId = patch.responsibleUserId ?? null;
+      if (requestedResponsibleUserId) {
+        await assertRoutineResponsibleMember(db, existing.companyId, requestedResponsibleUserId);
+      }
       const updatedRoutine = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
         await tx.execute(sql`select id from ${routines} where ${routines.id} = ${id} for update`);
@@ -2366,7 +2399,7 @@ export function routineService(
           activityGateScope: patch.activityGateScope ?? locked.activityGateScope,
           variables: nextVariables,
           env: nextEnv,
-          responsibleUserId: locked.responsibleUserId ?? responsibleUserId,
+          responsibleUserId: requestedResponsibleUserId ?? locked.responsibleUserId ?? responsibleUserId,
           updatedByAgentId: actor.agentId ?? null,
           updatedByUserId: actor.userId ?? null,
         };

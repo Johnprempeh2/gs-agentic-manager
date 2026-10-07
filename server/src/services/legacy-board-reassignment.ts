@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, issueThreadInteractions, issues } from "@greatstone/db";
+import { companies, issueThreadInteractions, issues, routineRevisions, routines } from "@greatstone/db";
 import { LEGACY_BOARD_USER_ID, primaryOwnerUserId } from "./board-identity.js";
 
 /**
@@ -9,6 +9,10 @@ import { LEGACY_BOARD_USER_ID, primaryOwnerUserId } from "./board-identity.js";
  * owner, dry run unless `apply` is set) and by the retire route in
  * `legacy-board-retirement.ts` (the calling owner, in its own transaction).
  * Running it again finds nothing left to move.
+ *
+ * Routines are moved too, whatever their status: `routines.responsibleUserId`
+ * and the latest revision's responsible user (column and snapshot), because a
+ * routine fires new work as that user.
  */
 
 const CLOSED_STATUSES = ["done", "cancelled"];
@@ -21,6 +25,7 @@ export type LegacyBoardReassignmentCompany = {
   ownerUserId: string | null;
   issues: Array<{ id: string; identifier: string | null }>;
   interactionCount: number;
+  routines: LegacyBoardRoutine[];
 };
 
 function isLegacyBoardPrincipal(value: unknown): value is Principal {
@@ -87,6 +92,13 @@ export type LegacyBoardOpenIssue = {
   roles: LegacyBoardIssueRole[];
 };
 
+/** A routine (any status) whose responsible user, or latest revision's, is `local-board`. */
+export type LegacyBoardRoutine = {
+  id: string;
+  title: string;
+  status: string;
+};
+
 /** The open work in one company that still names `local-board`. */
 export type LegacyBoardWork = {
   issues: Array<LegacyBoardOpenIssue & {
@@ -96,10 +108,14 @@ export type LegacyBoardWork = {
     executionPolicy: unknown;
   }>;
   interactionIds: string[];
+  routines: Array<LegacyBoardRoutine & {
+    responsibleUserId: string | null;
+    latestRevisionId: string | null;
+  }>;
 };
 
 type DbReader = Pick<Db, "select">;
-type DbWriter = Pick<Db, "update">;
+type DbWriter = Pick<Db, "select" | "update">;
 
 function legacyBoardIssueRoles(row: {
   assigneeUserId: string | null;
@@ -160,6 +176,34 @@ export async function findLegacyBoardWork(db: DbReader, companyId: string): Prom
       eq(issueThreadInteractions.status, "pending"),
       eq(issueThreadInteractions.addresseeUserId, LEGACY_BOARD_USER_ID),
     ));
+  // Routines fire new work as their responsible user, so every routine counts
+  // whatever its status: a paused routine resumed later must not bring
+  // local-board back. A routine fires as its latest revision's responsible
+  // user first (column, then snapshot), so that revision is checked too.
+  const routineRows = await db
+    .select({
+      id: routines.id,
+      title: routines.title,
+      status: routines.status,
+      responsibleUserId: routines.responsibleUserId,
+      latestRevisionId: routines.latestRevisionId,
+      revisionResponsibleUserId: routineRevisions.responsibleUserId,
+      revisionSnapshotResponsibleUserId: sql<string | null>`${routineRevisions.snapshot} -> 'routine' ->> 'responsibleUserId'`,
+    })
+    .from(routines)
+    .leftJoin(routineRevisions, and(
+      eq(routineRevisions.id, routines.latestRevisionId),
+      eq(routineRevisions.companyId, routines.companyId),
+    ))
+    .where(and(
+      eq(routines.companyId, companyId),
+      or(
+        eq(routines.responsibleUserId, LEGACY_BOARD_USER_ID),
+        eq(routineRevisions.responsibleUserId, LEGACY_BOARD_USER_ID),
+        sql`${routineRevisions.snapshot} -> 'routine' ->> 'responsibleUserId' = ${LEGACY_BOARD_USER_ID}`,
+      ),
+    ))
+    .orderBy(asc(routines.title), asc(routines.id));
   return {
     // The text match can hit a mention that is not a principal; keep only
     // issues where local-board really holds a role.
@@ -167,7 +211,24 @@ export async function findLegacyBoardWork(db: DbReader, companyId: string): Prom
       .map((row) => ({ ...row, roles: legacyBoardIssueRoles(row) }))
       .filter((row) => row.roles.length > 0),
     interactionIds: interactionRows.map((row) => row.id),
+    routines: routineRows.map(({ id, title, status, responsibleUserId, latestRevisionId }) => ({
+      id,
+      title,
+      status,
+      responsibleUserId,
+      latestRevisionId,
+    })),
   };
+}
+
+/** Point a revision snapshot's responsible user at `ownerId` when it names `local-board`. */
+export function rebindRoutineSnapshot<T>(snapshot: T, ownerId: string): T {
+  if (!snapshot || typeof snapshot !== "object") return snapshot;
+  const record = snapshot as Record<string, unknown>;
+  const routine = record.routine;
+  if (!routine || typeof routine !== "object") return snapshot;
+  if ((routine as Record<string, unknown>).responsibleUserId !== LEGACY_BOARD_USER_ID) return snapshot;
+  return { ...record, routine: { ...(routine as Record<string, unknown>), responsibleUserId: ownerId } } as T;
 }
 
 /** Write half of the move: rebind the found work to `ownerId`. Run it inside a transaction. */
@@ -195,6 +256,34 @@ export async function moveLegacyBoardWork(
       inArray(issueThreadInteractions.id, work.interactionIds),
     ));
   }
+  for (const routine of work.routines) {
+    // Only local-board is replaced; a routine already on a real user keeps it.
+    await tx.update(routines).set({ responsibleUserId: ownerId, updatedAt: now }).where(and(
+      eq(routines.companyId, companyId),
+      eq(routines.id, routine.id),
+      eq(routines.responsibleUserId, LEGACY_BOARD_USER_ID),
+    ));
+    if (!routine.latestRevisionId) continue;
+    const [revision] = await tx
+      .select({ responsibleUserId: routineRevisions.responsibleUserId, snapshot: routineRevisions.snapshot })
+      .from(routineRevisions)
+      .where(and(
+        eq(routineRevisions.companyId, companyId),
+        eq(routineRevisions.routineId, routine.id),
+        eq(routineRevisions.id, routine.latestRevisionId),
+      ));
+    if (!revision) continue;
+    const snapshot = rebindRoutineSnapshot(revision.snapshot, ownerId);
+    const columnIsLegacy = revision.responsibleUserId === LEGACY_BOARD_USER_ID;
+    if (!columnIsLegacy && snapshot === revision.snapshot) continue;
+    await tx.update(routineRevisions).set({
+      responsibleUserId: columnIsLegacy ? ownerId : revision.responsibleUserId,
+      snapshot,
+    }).where(and(
+      eq(routineRevisions.companyId, companyId),
+      eq(routineRevisions.id, routine.latestRevisionId),
+    ));
+  }
 }
 
 export async function reassignLegacyBoardWork(
@@ -210,7 +299,7 @@ export async function reassignLegacyBoardWork(
   for (const company of companyRows) {
     const ownerId = await primaryOwnerUserId(db, company.id);
     if (!ownerId) {
-      report.push({ companyId: company.id, companyName: company.name, ownerUserId: null, issues: [], interactionCount: 0 });
+      report.push({ companyId: company.id, companyName: company.name, ownerUserId: null, issues: [], interactionCount: 0, routines: [] });
       continue;
     }
     const work = await findLegacyBoardWork(db, company.id);
@@ -220,8 +309,12 @@ export async function reassignLegacyBoardWork(
       ownerUserId: ownerId,
       issues: work.issues.map((row) => ({ id: row.id, identifier: row.identifier })),
       interactionCount: work.interactionIds.length,
+      routines: work.routines.map(({ id, title, status }) => ({ id, title, status })),
     });
-    if (!options.apply || (work.issues.length === 0 && work.interactionIds.length === 0)) continue;
+    if (
+      !options.apply
+      || (work.issues.length === 0 && work.interactionIds.length === 0 && work.routines.length === 0)
+    ) continue;
 
     await db.transaction(async (tx) => {
       await moveLegacyBoardWork(tx, company.id, ownerId, work);

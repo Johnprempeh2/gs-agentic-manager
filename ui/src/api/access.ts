@@ -170,6 +170,8 @@ export type LegacyBoardRetirementReport = {
   issueCount: number;
   issues: Array<{ id: string; identifier: string | null; title: string; roles: LegacyBoardIssueRole[] }>;
   pendingRequestCount: number;
+  routineCount: number;
+  routines: Array<{ id: string; title: string; status: string }>;
   switchOff: {
     membershipStatus: { from: string; to: "suspended" };
     boardKeysRevoked: number;

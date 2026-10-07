@@ -16,14 +16,15 @@ import {
   findLegacyBoardWork,
   moveLegacyBoardWork,
   type LegacyBoardOpenIssue,
+  type LegacyBoardRoutine,
 } from "./legacy-board-reassignment.js";
 
 /**
  * Retire (and restore) the legacy `local-board` account in one company, for
  * an instance that switched from `local_trusted` to `authenticated` mode.
  *
- * Retire moves local-board's open work to the calling owner (reusing
- * `legacy-board-reassignment.ts`), suspends its company membership (the role
+ * Retire moves local-board's open work and its routines (any status) to the
+ * calling owner (reusing `legacy-board-reassignment.ts`), suspends its company membership (the role
  * stays `owner`: suspension needs no role change, and `isActiveCompanyOwner`
  * already ignores a suspended owner), revokes its board API keys and ends its
  * sign-in sessions. Comments, approvals and activity it authored are not
@@ -61,6 +62,8 @@ export type LegacyBoardRetirementReport = {
   issueCount: number;
   issues: LegacyBoardOpenIssue[];
   pendingRequestCount: number;
+  routineCount: number;
+  routines: LegacyBoardRoutine[];
   switchOff: {
     membershipStatus: { from: string; to: "suspended" };
     boardKeysRevoked: number;
@@ -178,6 +181,8 @@ async function buildReport(
     issueCount: work.issues.length,
     issues: work.issues.map(({ id, identifier, title, roles }) => ({ id, identifier, title, roles })),
     pendingRequestCount: work.interactionIds.length,
+    routineCount: work.routines.length,
+    routines: work.routines.map(({ id, title, status }) => ({ id, title, status })),
     switchOff: {
       membershipStatus: { from: membership.status, to: "suspended" },
       boardKeysRevoked: credentials.boardKeyCount,
@@ -236,6 +241,9 @@ export async function retireLegacyBoard(
         issueCount: report.issueCount,
         issueIdentifiers: report.issues.map((issue) => issue.identifier ?? issue.id),
         pendingRequestCount: report.pendingRequestCount,
+        routineCount: report.routineCount,
+        routineIds: report.routines.map((routine) => routine.id),
+        routineTitles: report.routines.map((routine) => routine.title),
         boardKeysRevoked: report.switchOff.boardKeysRevoked,
         sessionsEnded: report.switchOff.sessionsEnded,
         instanceAdmin: report.switchOff.instanceAdmin,

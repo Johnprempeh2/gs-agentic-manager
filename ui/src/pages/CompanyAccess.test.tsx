@@ -336,6 +336,8 @@ describe("CompanyAccess", () => {
       issueCount: 1,
       issues: [{ id: "issue-800", identifier: "GRE-800", title: "Waits on the board", roles: ["assignee", "current_reviewer"] }],
       pendingRequestCount: 2,
+      routineCount: 1,
+      routines: [{ id: "routine-1", title: "Weekly digest", status: "paused" }],
       switchOff: {
         membershipStatus: { from: "active", to: "suspended" },
         boardKeysRevoked: 2,
@@ -358,6 +360,8 @@ describe("CompanyAccess", () => {
     expect(document.body.textContent).toContain("GRE-800");
     expect(document.body.textContent).toContain("assignee, reviewer");
     expect(document.body.textContent).toContain("2 pending questions or requests");
+    expect(document.body.textContent).toContain("1 routine (you become the responsible user)");
+    expect(document.body.textContent).toContain("Weekly digest");
     expect(document.body.textContent).toContain("2 board API keys revoked");
 
     const confirm = Array.from(document.body.querySelectorAll('[role="dialog"] button')).find(

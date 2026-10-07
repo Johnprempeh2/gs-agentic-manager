@@ -67,7 +67,7 @@ export function LegacyBoardRetirementActions({
       await refresh();
       pushToast({
         title: "Legacy account retired",
-        body: `${plural(report.issueCount, "open task")} and ${plural(report.pendingRequestCount, "pending request")} moved to you.`,
+        body: `${plural(report.issueCount, "open task")}, ${plural(report.pendingRequestCount, "pending request")} and ${plural(report.routineCount ?? 0, "routine")} moved to you.`,
         tone: "success",
       });
     },
@@ -140,6 +140,7 @@ export function LegacyBoardRetirementActions({
                 <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
                   <li>{plural(report.issueCount, "open task")}</li>
                   <li>{plural(report.pendingRequestCount, "pending question or request", "pending questions or requests")}</li>
+                  <li>{plural(report.routineCount ?? 0, "routine")} (you become the responsible user)</li>
                 </ul>
                 {report.issues.length > 0 ? (
                   <div className="max-h-40 overflow-auto rounded-lg border border-border">
@@ -149,6 +150,16 @@ export function LegacyBoardRetirementActions({
                         <div className="truncate text-muted-foreground">
                           {issue.title} ({issue.roles.map((role) => ROLE_LABELS[role]).join(", ")})
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {(report.routines ?? []).length > 0 ? (
+                  <div className="max-h-40 overflow-auto rounded-lg border border-border">
+                    {(report.routines ?? []).map((routine) => (
+                      <div key={routine.id} className="border-b border-border px-3 py-2 last:border-b-0">
+                        <div className="font-medium">{routine.title}</div>
+                        <div className="truncate text-muted-foreground">Routine ({routine.status})</div>
                       </div>
                     ))}
                   </div>

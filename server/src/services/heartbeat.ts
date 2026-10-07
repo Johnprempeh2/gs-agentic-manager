@@ -11314,7 +11314,23 @@ export function heartbeatService(
     return input.source === "on_demand" || input.triggerDetail === "manual";
   }
 
-  async function resolveResponsibleUserIdForRunSeed(input: {
+  /**
+   * The responsible user a run starts with. A legacy `local-board` (from the
+   * issue, its routine, its parent, a retried run or an old comment) becomes
+   * the company's primary owner once sign-in is on, so the active-member
+   * check at run start never fails on an account nobody can sign in as.
+   */
+  async function resolveResponsibleUserIdForRunSeed(
+    input: Parameters<typeof resolveRawResponsibleUserIdForRunSeed>[0],
+  ) {
+    return bindLegacyBoardUserId(
+      input.executor ?? db,
+      input.companyId,
+      await resolveRawResponsibleUserIdForRunSeed(input),
+    );
+  }
+
+  async function resolveRawResponsibleUserIdForRunSeed(input: {
     companyId: string;
     contextSnapshot: Record<string, unknown>;
     issueContext: { id: string; responsibleUserId: string | null; parentId: string | null } | null;
@@ -11412,7 +11428,9 @@ export function heartbeatService(
     >;
   }) {
     const operatorIdentity = await explicitOperatorRunIdentity(db, input.run);
-    const responsibleUserId = operatorIdentity?.actorId ?? await resolveResponsibleUserIdForRunSeed({
+    const responsibleUserId = operatorIdentity?.actorId
+      ? await bindLegacyBoardUserId(db, input.run.companyId, operatorIdentity.actorId)
+      : await resolveResponsibleUserIdForRunSeed({
       companyId: input.run.companyId,
       contextSnapshot: input.contextSnapshot,
       issueContext: input.issueContext,
@@ -23455,7 +23473,9 @@ export function heartbeatService(
       });
       // Initialization has persisted the active context, including an explicit
       // absence of identity inherited from an automatic continuation.
-      responsibleUserId = identityContext.responsibleUserId;
+      // A context persisted before the legacy mapping (a run queued earlier)
+      // can still name `local-board`; map it here too.
+      responsibleUserId = await bindLegacyBoardUserId(db, agent.companyId, identityContext.responsibleUserId);
       run = {
         ...run,
         activeIdentityContextId: identityContext.id,
