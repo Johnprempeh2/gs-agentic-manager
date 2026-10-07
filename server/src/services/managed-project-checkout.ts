@@ -8,9 +8,7 @@ import type { Project, ProjectWorkspace } from "@greatstone/shared";
 const execFile = promisify(execFileCallback);
 
 async function readOriginUrl(cwd: string): Promise<string | null> {
-  return execFile("git", ["-C", cwd, "remote", "get-url", "origin"], { timeout: 10_000 })
-    .then((result) => result.stdout.trim() || null)
-    .catch(() => null);
+  return git(cwd, ["remote", "get-url", "origin"]);
 }
 
 async function hasGitDir(cwd: string): Promise<boolean> {
@@ -41,4 +39,33 @@ export async function findExistingManagedProjectCheckout(
   const suffixed = `${base}-${createHash("sha256").update(repoUrl).digest("hex").slice(0, 12)}`;
   if (await hasGitDir(suffixed) && (await readOriginUrl(suffixed)) === repoUrl) return suffixed;
   return null;
+}
+
+async function git(cwd: string, args: string[]): Promise<string | null> {
+  return execFile("git", ["-C", cwd, ...args], { timeout: 10_000 })
+    .then((result) => result.stdout.trim() || null)
+    .catch(() => null);
+}
+
+/** Reads the branch and commit a checkout is on. Every field is null when git cannot answer. */
+export async function readCheckoutHead(cwd: string | null): Promise<{
+  branch: string | null;
+  commit: string | null;
+  commitSubject: string | null;
+  committedAt: string | null;
+}> {
+  if (!cwd || !(await hasGitDir(cwd))) {
+    return { branch: null, commit: null, commitSubject: null, committedAt: null };
+  }
+  const [branch, log] = await Promise.all([
+    git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    git(cwd, ["log", "-1", "--format=%h%x00%cI%x00%s"]),
+  ]);
+  const [commit = null, committedAt = null, commitSubject = null] = log ? log.split("\0") : [];
+  return {
+    branch: branch && branch !== "HEAD" ? branch : null,
+    commit: commit || null,
+    commitSubject: commitSubject || null,
+    committedAt: committedAt || null,
+  };
 }

@@ -4929,6 +4929,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/projects/{id}/workspaces/{workspaceId}/checkout-head",
+  tags: ["projects"],
+  summary: "Get the branch and commit a project workspace checkout is on",
+  request: { params: z.object({ id: z.string(), workspaceId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/projects/{id}/workspaces",
   tags: ["projects"],

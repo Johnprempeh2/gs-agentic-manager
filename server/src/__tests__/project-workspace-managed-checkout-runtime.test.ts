@@ -179,4 +179,36 @@ describe.sequential("project workspace commands on a managed checkout", () => {
     expect(res.status).toBe(422);
     expect(mockStartRuntimeServices).not.toHaveBeenCalled();
   }, 15000);
+
+  it("reports the branch and commit of the managed checkout", async () => {
+    fs.mkdirSync(managedFolder, { recursive: true });
+    const gitIn = (...args: string[]) => execFileSync("git", ["-C", managedFolder, ...args]);
+    execFileSync("git", ["init", "-q", "-b", "main", managedFolder]);
+    gitIn("remote", "add", "origin", repoUrl);
+    gitIn("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "--allow-empty", "-m", "Hero copy");
+    const expectedCommit = gitIn("rev-parse", "--short", "HEAD").toString().trim();
+    mockProjectService.getById.mockResolvedValue(buildProject(managedFolder));
+
+    const res = await request(await createApp())
+      .get(`/api/projects/${projectId}/workspaces/${workspaceId}/checkout-head`);
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({
+      workspaceId,
+      branch: "main",
+      commit: expectedCommit,
+      commitSubject: "Hero copy",
+    });
+    expect(typeof res.body.committedAt).toBe("string");
+  }, 15000);
+
+  it("reports an empty head when there is no checkout", async () => {
+    mockProjectService.getById.mockResolvedValue(buildProject(managedFolder));
+
+    const res = await request(await createApp())
+      .get(`/api/projects/${projectId}/workspaces/${workspaceId}/checkout-head`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ workspaceId, branch: null, commit: null, commitSubject: null, committedAt: null });
+  }, 15000);
 });
