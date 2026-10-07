@@ -65,6 +65,7 @@ import {
   createProjectSchema,
   updateProjectSchema,
   createProjectWorkspaceSchema,
+  setProjectWorkspacePreviewAutoUpdateSchema,
   updateProjectWorkspaceSchema,
   // Company
   createCompanySchema,
@@ -4935,6 +4936,29 @@ registry.registerPath({
   summary: "Get the branch and commit a project workspace checkout is on",
   request: { params: z.object({ id: z.string(), workspaceId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/projects/{id}/workspaces/{workspaceId}/preview-update",
+  tags: ["projects"],
+  summary: "Pull the latest default branch into a live preview checkout and restart it",
+  request: { params: z.object({ id: z.string(), workspaceId: z.string() }) },
+  responses: {
+    200: r.ok(), 202: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/projects/{id}/workspaces/{workspaceId}/preview-auto-update",
+  tags: ["projects"],
+  summary: "Turn live preview auto-update on new commits on or off",
+  request: {
+    params: z.object({ id: z.string(), workspaceId: z.string() }),
+    body: jsonBody(setProjectWorkspacePreviewAutoUpdateSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

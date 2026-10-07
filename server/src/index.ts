@@ -149,6 +149,7 @@ import { initializeCloudRuntimeIdentity } from "./services/cloud-runtime-identit
 import { systemdNotify } from "./services/systemd-notify.js";
 import { flushInFlightRunLogMirrors } from "./services/run-log-store.js";
 import { startLiveReleaseTicker } from "./services/live-release.js";
+import { startPreviewAutoUpdateTicker } from "./services/preview-update.js";
 import { hostBlindTime } from "./services/host-blind-time.js";
 import {
   createEmbeddedPostgresSupervisor,
@@ -1296,6 +1297,8 @@ async function startServerWithDatabaseTeardown(
   // Before queued runs resume: a one-click release that restarted this server
   // keeps holding new runs until its outcome is reported.
   startLiveReleaseTicker(db);
+  // GRE-1004: pull new commits into running live previews whose auto-update switch is on.
+  startPreviewAutoUpdateTicker(db, Number(process.env.GSAM_PREVIEW_AUTO_UPDATE_INTERVAL_MS) || undefined);
   // GRE-181: sleep and event-loop stalls are not run silence.
   hostBlindTime.start();
   let silentRunStopInFlight = false;
