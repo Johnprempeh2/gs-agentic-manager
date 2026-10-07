@@ -85,7 +85,7 @@ export function describePreviewUpdate(state: ProjectWorkspacePreviewUpdateState,
   tone: "muted" | "warning" | "error";
 } | null {
   if (updating || state.status === "updating") {
-    return { text: "Updating: pulling the latest code and restarting the preview…", tone: "muted" };
+    return { text: "Pulling the latest code and restarting the preview…", tone: "muted" };
   }
   if (state.status === "failed") return { text: state.message ?? "The last update failed.", tone: "error" };
   if (state.status === "skipped") return { text: state.message ?? "The last update was skipped.", tone: "warning" };
@@ -144,8 +144,8 @@ export function LivePreviewCardView({
       aria-label="Live preview"
       className={cn("space-y-3 rounded-lg border border-border bg-background p-3 sm:p-4", className)}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-56 space-y-1">
           <div className="text-xs font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
             Live preview
             {projectName ? (
@@ -194,41 +194,43 @@ export function LivePreviewCardView({
         {lastActivity ? <span>{lastActivity}</span> : null}
       </div>
       {update ? (
-        <div className="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-2">
-            <Button
-              variant="outline"
-              size="xs"
-              disabled={updating}
-              onClick={update.onUpdate}
-              className="shrink-0"
-            >
+        <div className="space-y-2 border-t border-border pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button variant="outline" size="xs" disabled={updating} onClick={update.onUpdate}>
               {updating ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
               {updating ? "Updating…" : "Update now"}
             </Button>
-            {updateLine ? (
-              <p
-                aria-live="polite"
-                className={cn(
-                  "min-w-0 pt-0.5 text-xs",
-                  updateLine.tone === "error" && "text-destructive",
-                  updateLine.tone === "warning" && "text-amber-700 dark:text-amber-300",
-                  updateLine.tone === "muted" && "text-muted-foreground",
-                )}
-              >
-                {updateLine.tone === "warning" ? <TriangleAlert className="mr-1 inline size-3 align-[-2px]" aria-hidden /> : null}
-                {updateLine.text}
-              </p>
-            ) : null}
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <ToggleSwitch
+                checked={update.state.autoUpdate}
+                onCheckedChange={update.onAutoUpdateChange}
+                aria-label="Auto-update on new commits"
+              />
+              Auto-update on new commits
+            </label>
           </div>
-          <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-            <ToggleSwitch
-              checked={update.state.autoUpdate}
-              onCheckedChange={update.onAutoUpdateChange}
-              aria-label="Auto-update on new commits"
-            />
-            Auto-update on new commits
-          </label>
+          {updateLine ? (
+            <p
+              aria-live="polite"
+              className={cn(
+                "text-xs",
+                updateLine.tone === "error" && "text-destructive",
+                updateLine.tone === "warning" && "text-amber-700 dark:text-amber-300",
+                updateLine.tone === "muted" && "text-muted-foreground",
+              )}
+            >
+              {updateLine.tone === "warning" ? <TriangleAlert className="mr-1 inline size-3 align-[-2px]" aria-hidden /> : null}
+              {updateLine.text}
+              {updateLine.tone === "error" && logsHref ? (
+                <>
+                  {" "}
+                  <Link to={logsHref} className="font-medium text-foreground underline underline-offset-2">
+                    View workspace logs
+                  </Link>
+                </>
+              ) : null}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {errorMessage ? (

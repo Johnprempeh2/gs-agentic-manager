@@ -271,7 +271,7 @@ describe("LivePreviewCard", () => {
     }));
     const update = Array.from(container.querySelectorAll("button")).find((entry) => entry.textContent?.includes("Updating"));
     expect(update?.disabled).toBe(true);
-    expect(container.textContent).toContain("pulling the latest code");
+    expect(container.textContent).toContain("Pulling the latest code");
   });
 
   it("shows the commit the last update moved to", async () => {
@@ -298,6 +298,8 @@ describe("LivePreviewCard", () => {
       metadata: { previewUpdate: { status: "failed", message: "Update failed: npm install exited with code 1" } },
     }));
     expect(container.textContent).toContain("Update failed: npm install exited with code 1");
+    const logs = Array.from(container.querySelectorAll("a")).find((entry) => entry.textContent === "View workspace logs");
+    expect(logs?.getAttribute("href")).toContain("/workspaces/workspace-1");
   });
 
   it("names the project when asked to", async () => {

@@ -479,7 +479,7 @@ export function Deliverables() {
       </div>
 
       {previewProjects.length > 0 ? (
-        <section aria-label="Live previews" className="grid grid-cols-1 gap-3 lg:grid-cols-2" data-testid="deliverables-live-previews">
+        <section aria-label="Live previews" className="grid grid-cols-1 gap-3 xl:grid-cols-2" data-testid="deliverables-live-previews">
           {previewProjects.map((project) => (
             <LivePreviewCard key={project.id} project={project} companyId={selectedCompanyId} showProjectName />
           ))}
