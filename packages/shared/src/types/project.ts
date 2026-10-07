@@ -74,6 +74,26 @@ export interface ProjectWorkspaceCheckoutHead {
   committedAt: string | null;
 }
 
+export type ProjectWorkspacePreviewUpdateStatus = "updating" | "updated" | "up_to_date" | "skipped" | "failed";
+export type ProjectWorkspacePreviewUpdateTrigger = "manual" | "auto";
+
+/** Live preview "Update now" and auto-update state, kept in project workspace metadata. */
+export interface ProjectWorkspacePreviewUpdateState {
+  /** Pull new commits on the default branch and restart the preview by itself. Default on. */
+  autoUpdate: boolean;
+  /** Result of the last update attempt; null when none has run. */
+  status: ProjectWorkspacePreviewUpdateStatus | null;
+  trigger: ProjectWorkspacePreviewUpdateTrigger | null;
+  /** Why an update was skipped or failed, in words a person can act on. */
+  message: string | null;
+  /** Short commit the checkout moved to on the last successful update. */
+  commit: string | null;
+  /** When the last successful update finished. */
+  updatedAt: string | null;
+  /** When an update was last tried or checked. */
+  checkedAt: string | null;
+}
+
 export interface ProjectManagedByPlugin {
   id: string;
   pluginId: string;
