@@ -275,6 +275,10 @@ export function taskChatItemSpacingClass(
   previousItem: TaskChatItem | null,
 ): string | undefined {
   if (!previousItem) return undefined;
+  // A teammate's follow-up under the same name sits close to their last
+  // bubble so the run reads as one speaker; a new speaker keeps mt-6 (GRE-1012).
+  if (item.kind === "message" && item.fromOtherUser && item.showAuthorName === false)
+    return "mt-2";
   const currentIsSystemLike = isSystemLikeItem(item);
   const previousIsSystemLike = isSystemLikeItem(previousItem);
   if (currentIsSystemLike && previousIsSystemLike) return "mt-2";

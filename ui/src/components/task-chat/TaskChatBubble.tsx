@@ -235,7 +235,11 @@ function TaskChatBubbleContent({
             {item.authorAvatarUrl ? (
               <AvatarImage src={item.authorAvatarUrl} alt={item.authorName} />
             ) : null}
-            <AvatarFallback>{initialsForName(item.authorName)}</AvatarFallback>
+            {/* The thread sits on a tinted backdrop, so the default muted
+                fallback disappears; a solid neutral disc reads as an avatar. */}
+            <AvatarFallback className="bg-muted-foreground font-semibold text-background">
+              {initialsForName(item.authorName)}
+            </AvatarFallback>
           </Avatar>
           <span className="text-sm font-semibold text-foreground">
             {item.authorName}
