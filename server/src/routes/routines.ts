@@ -96,6 +96,24 @@ export function routineRoutes(
     }
   }
 
+  /**
+   * Changing who a routine runs as is a permission change: only the implicit
+   * local board, or a signed-in active owner or admin of the company.
+   */
+  async function assertCanChangeRoutineResponsibleUser(req: Request, companyId: string) {
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type !== "board") throw forbidden("Only a company owner or admin can change a routine's responsible user");
+    if (req.actor.source === "local_implicit") return;
+    const userId = req.actor.userId;
+    const membership = userId ? await access.getMembership(companyId, "user", userId) : null;
+    if (
+      membership?.status !== "active" ||
+      (membership.membershipRole !== "owner" && membership.membershipRole !== "admin")
+    ) {
+      throw forbidden("Only a company owner or admin can change a routine's responsible user");
+    }
+  }
+
   function assertCanManageCompanyRoutine(req: Request, companyId: string, assigneeAgentId?: string | null) {
     assertCompanyAccess(req, companyId);
     if (req.actor.type === "board") return;
@@ -386,6 +404,15 @@ export function routineRoutes(
     ) {
       throw forbidden("Agents can only assign routines to themselves");
     }
+    const responsibleWillChange =
+      req.body.responsibleUserId !== undefined &&
+      req.body.responsibleUserId !== routine.responsibleUserId;
+    if (req.body.responsibleUserId !== undefined) {
+      if (req.actor.type !== "board") {
+        throw forbidden("Agents cannot change a routine's responsible user");
+      }
+      await assertCanChangeRoutineResponsibleUser(req, routine.companyId);
+    }
     const updated = await svc.update(routine.id, req.body, {
       agentId: req.actor.type === "agent" ? req.actor.agentId : null,
       userId: req.actor.type === "board" ? req.actor.userId ?? "board" : null,
@@ -402,7 +429,12 @@ export function routineRoutes(
       action: "routine.updated",
       entityType: "routine",
       entityId: routine.id,
-      details: { title: updated?.title ?? routine.title },
+      details: {
+        title: updated?.title ?? routine.title,
+        ...(responsibleWillChange
+          ? { responsibleUserId: { from: routine.responsibleUserId ?? null, to: updated?.responsibleUserId ?? null } }
+          : {}),
+      },
     });
     if (updated && updated.latestRevisionId !== routine.latestRevisionId) {
       await remapRoutineDescriptionAnnotations(req, routine.id);

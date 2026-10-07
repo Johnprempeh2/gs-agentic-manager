@@ -22,6 +22,7 @@ import {
 import { heartbeatService } from "../services/heartbeat.ts";
 import { runningProcesses } from "../adapters/index.ts";
 import { drainHeartbeatRunsToQuiescence } from "./helpers/drain-heartbeat-runs.js";
+import { LEGACY_BOARD_USER_ID, setBoardIdentityDeploymentMode } from "../services/board-identity.ts";
 
 const mockAdapterExecute = vi.hoisted(() =>
   vi.fn(async () => ({
@@ -118,6 +119,7 @@ describeEmbeddedPostgres("heartbeat responsible-user invariant", () => {
     await db.delete(companySkills);
     await db.delete(companyMemberships);
     await db.delete(companies);
+    setBoardIdentityDeploymentMode("local_trusted");
   });
 
   afterAll(async () => {
@@ -394,6 +396,65 @@ describeEmbeddedPostgres("heartbeat responsible-user invariant", () => {
       expect(mockAdapterExecute).toHaveBeenCalledTimes(runs.length);
     },
   );
+
+  it("starts a run for a local-board issue as the primary owner once sign-in is on", async () => {
+    const { companyId, agentId, ownerUserId } = await seedCompany();
+    // local-board retired: still an owner row, but suspended.
+    await db.insert(companyMemberships).values({
+      companyId, principalType: "user", principalId: LEGACY_BOARD_USER_ID, membershipRole: "owner", status: "suspended",
+    });
+    const issueId = randomUUID();
+    await db.insert(issues).values({
+      id: issueId, companyId, title: "Routine work still on the board", status: "todo",
+      assigneeAgentId: agentId, responsibleUserId: LEGACY_BOARD_USER_ID,
+    });
+
+    setBoardIdentityDeploymentMode("authenticated");
+    const wakeReason = "issue_blockers_resolved";
+    const run = await heartbeat.wakeup(agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: wakeReason,
+      payload: { issueId },
+      requestedByActorType: "system",
+      requestedByActorId: null,
+      contextSnapshot: { issueId, taskId: issueId, wakeReason },
+    });
+
+    expect(run).not.toBeNull();
+    expect(run?.responsibleUserId).toBe(ownerUserId);
+    const completed = await waitForRun(db, run!.id);
+    expect(completed?.status).toBe("succeeded");
+    expect(completed?.responsibleUserId).toBe(ownerUserId);
+    await drainHeartbeatRunsToQuiescence(db, heartbeat);
+    const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.companyId, companyId));
+    expect(runs.every((row) => row.responsibleUserId === ownerUserId)).toBe(true);
+  });
+
+  it("keeps local-board as the responsible user in local_trusted mode", async () => {
+    const { companyId, agentId } = await seedCompany();
+    await db.insert(companyMemberships).values({
+      companyId, principalType: "user", principalId: LEGACY_BOARD_USER_ID, membershipRole: "owner", status: "active",
+    });
+    const issueId = randomUUID();
+    await db.insert(issues).values({
+      id: issueId, companyId, title: "Board work", status: "todo",
+      assigneeAgentId: agentId, responsibleUserId: LEGACY_BOARD_USER_ID,
+    });
+    const wakeReason = "issue_blockers_resolved";
+    const run = await heartbeat.wakeup(agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: wakeReason,
+      payload: { issueId },
+      requestedByActorType: "system",
+      requestedByActorId: null,
+      contextSnapshot: { issueId, taskId: issueId, wakeReason },
+    });
+    expect(run).not.toBeNull();
+    const completed = await waitForRun(db, run!.id);
+    expect(completed?.responsibleUserId).toBe(LEGACY_BOARD_USER_ID);
+  });
 
   it("uses the triggering user for manual UI/API runs", async () => {
     const { agentId } = await seedCompany();

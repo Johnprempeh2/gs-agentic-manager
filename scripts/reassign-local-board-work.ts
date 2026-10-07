@@ -7,7 +7,8 @@
  * For open issues only (not done or cancelled) it moves assigneeUserId,
  * responsibleUserId, executionState.currentParticipant / returnAssignee and
  * executionPolicy stage participants; and pending asks addressed to
- * `local-board`. Companies with no real owner are skipped.
+ * `local-board`. Routines (any status) whose responsible user is
+ * `local-board` move too. Companies with no real owner are skipped.
  *
  * Dry run by default; nothing is written without --apply. Running it again
  * finds nothing left to move. Take a database backup first.
@@ -47,9 +48,10 @@ async function main() {
       console.log(`- ${company.companyName}: no real owner yet, skipped.`);
       continue;
     }
-    console.log(`- ${company.companyName}: ${company.issues.length} open issue(s) and ${company.interactionCount} pending ask(s) to ${company.ownerUserId}.`);
+    console.log(`- ${company.companyName}: ${company.issues.length} open issue(s), ${company.interactionCount} pending ask(s) and ${company.routines.length} routine(s) to ${company.ownerUserId}.`);
     for (const issue of company.issues) console.log(`    ${issue.identifier ?? issue.id}`);
-    total += company.issues.length + company.interactionCount;
+    for (const routine of company.routines) console.log(`    routine: ${routine.title}`);
+    total += company.issues.length + company.interactionCount + company.routines.length;
   }
   console.log(apply ? `Done: ${total} item(s) moved.` : `Dry run: ${total} item(s) would move.`);
   process.exit(0);

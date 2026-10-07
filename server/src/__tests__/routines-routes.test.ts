@@ -127,6 +127,7 @@ const mockAnnotationService = vi.hoisted(() => ({
 
 const mockAccessService = vi.hoisted(() => ({
   canUser: vi.fn(),
+  getMembership: vi.fn(),
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
@@ -469,6 +470,76 @@ describe("routine routes", () => {
     expect(missing.status).toBe(404);
     expect(crossTenant.body).toEqual(missing.body);
     expect(mockRoutineService.updateTrigger).not.toHaveBeenCalled();
+  });
+
+  describe("changing a routine's responsible user", () => {
+    const sessionActor = {
+      type: "board",
+      userId: "owner-user",
+      source: "session",
+      isInstanceAdmin: false,
+      companyIds: [companyId],
+    };
+
+    it("lets an active owner change it and logs the change", async () => {
+      mockRoutineService.get.mockResolvedValue({ ...routine, responsibleUserId: "local-board" });
+      mockAccessService.getMembership.mockResolvedValue({ status: "active", membershipRole: "owner" });
+      mockRoutineService.update.mockResolvedValue({ ...routine, responsibleUserId: "ben-user" });
+      const app = await createApp(sessionActor);
+
+      const res = await request(app).patch(`/api/routines/${routineId}`).send({ responsibleUserId: "ben-user" });
+
+      expect(res.status).toBe(200);
+      expect(mockAccessService.getMembership).toHaveBeenCalledWith(companyId, "user", "owner-user");
+      expect(mockRoutineService.update).toHaveBeenCalledWith(
+        routineId,
+        expect.objectContaining({ responsibleUserId: "ben-user" }),
+        expect.objectContaining({ userId: "owner-user" }),
+      );
+      expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        action: "routine.updated",
+        details: expect.objectContaining({ responsibleUserId: { from: "local-board", to: "ben-user" } }),
+      }));
+    });
+
+    it("lets an active admin change it", async () => {
+      mockAccessService.getMembership.mockResolvedValue({ status: "active", membershipRole: "admin" });
+      const app = await createApp(sessionActor);
+      const res = await request(app).patch(`/api/routines/${routineId}`).send({ responsibleUserId: "ben-user" });
+      expect(res.status).toBe(200);
+      expect(mockRoutineService.update).toHaveBeenCalled();
+    });
+
+    it("refuses a member who is not an owner or admin", async () => {
+      mockAccessService.getMembership.mockResolvedValue({ status: "active", membershipRole: "member" });
+      const app = await createApp(sessionActor);
+      const res = await request(app).patch(`/api/routines/${routineId}`).send({ responsibleUserId: "ben-user" });
+      expect(res.status).toBe(403);
+      expect(mockRoutineService.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses a suspended owner", async () => {
+      mockAccessService.getMembership.mockResolvedValue({ status: "suspended", membershipRole: "owner" });
+      const app = await createApp(sessionActor);
+      const res = await request(app).patch(`/api/routines/${routineId}`).send({ responsibleUserId: "ben-user" });
+      expect(res.status).toBe(403);
+      expect(mockRoutineService.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses an agent, even on its own routine", async () => {
+      const app = await createApp({ type: "agent", agentId, companyId });
+      const res = await request(app).patch(`/api/routines/${routineId}`).send({ responsibleUserId: "ben-user" });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain("responsible user");
+      expect(mockRoutineService.update).not.toHaveBeenCalled();
+    });
+
+    it("leaves the permission check out when the body does not name a responsible user", async () => {
+      const app = await createApp(sessionActor);
+      const res = await request(app).patch(`/api/routines/${routineId}`).send({ title: "Renamed" });
+      expect(res.status).toBe(200);
+      expect(mockAccessService.getMembership).not.toHaveBeenCalled();
+    });
   });
 
   it("requires an assigned agent for routine revision history access", async () => {

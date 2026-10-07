@@ -13,6 +13,7 @@ import { conflict, forbidden } from "../errors.js";
 import { isDeadlockDetected } from "../db-errors.js";
 import { isUuidLike } from "@greatstone/shared";
 import { queuedCommentIdsFromRunContext, queuedCommentIdsFromWakePayload } from "./issue-queued-comment-queue.js";
+import { bindLegacyBoardUserId } from "./board-identity.js";
 
 export const QUEUED_INTERRUPT_SPENT = "queued_interrupt_spent";
 /** Error code for a credential or tool request from a run that is no longer running. */
@@ -143,10 +144,14 @@ async function append(
     .where(eq(runIdentityContexts.runId, input.runId))
     .orderBy(desc(runIdentityContexts.revision))
     .limit(1);
+  // An inherited or comment-authored `local-board` becomes the primary owner
+  // once sign-in is on, so a run never acts as an account nobody can sign in as.
+  const responsibleUserId = await bindLegacyBoardUserId(executor, input.companyId, input.responsibleUserId);
   const [created] = await executor
     .insert(runIdentityContexts)
     .values({
       ...input,
+      responsibleUserId,
       revision: (last?.revision ?? 0) + 1,
       acceptedAt: input.status === "pending" ? null : new Date(),
     })
