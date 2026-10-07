@@ -159,6 +159,7 @@ import {
   validateToolContent,
   verifyToolArgumentsSignature,
 } from "./tool-content-guards.js";
+import { sealToolResultProxyPaths } from "./tool-result-sealed-values.js";
 import { extendApprovedExecutionWaitDeadline } from "./approved-execution-wait.js";
 import { buildSendMessagePreviewLines, isSendMessageTool } from "./tool-send-preview.js";
 
@@ -10620,7 +10621,9 @@ export function createToolGatewayService(
               );
 
         const resultValidation = validateToolContent({
-          value: result,
+          value: connectedMcpExecution
+            ? await sealToolResultProxyPaths(result, { runId: session.runId })
+            : result,
           direction: "result",
           sensitiveMode: "redact",
           promptInjectionMode: "block",

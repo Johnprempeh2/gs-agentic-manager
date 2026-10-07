@@ -77,6 +77,16 @@ async function readMarker(markerPath: string): Promise<HeartbeatRunScratchMetada
   }
 }
 
+// Live run id -> scratch dir, so in-process services (the tool gateway) can
+// hand a run a private file without the run passing its env back. Entries
+// leave on cleanup; a run that never reaches cleanup leaves one short string.
+const activeRunScratchDirs = new Map<string, string>();
+
+export function activeHeartbeatRunScratchDir(runId: string | null | undefined): string | null {
+  if (!runId) return null;
+  return activeRunScratchDirs.get(runId) ?? null;
+}
+
 export async function prepareHeartbeatRunScratch(input: {
   companyId: string;
   agentId: string;
@@ -99,6 +109,7 @@ export async function prepareHeartbeatRunScratch(input: {
     createdAt: (input.now ?? new Date()).toISOString(),
   };
   await fs.writeFile(markerPath, `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o600 });
+  activeRunScratchDirs.set(input.runId, dir);
   return { dir, markerPath, metadata };
 }
 
@@ -127,6 +138,9 @@ export async function cleanupHeartbeatRunScratch(input: {
   processGroupId?: number | null;
   isProcessGroupAlive?: (processGroupId: number | null | undefined) => boolean;
 }): Promise<HeartbeatRunScratchCleanupResult> {
+  if (activeRunScratchDirs.get(input.scratch.metadata.runId) === input.scratch.dir) {
+    activeRunScratchDirs.delete(input.scratch.metadata.runId);
+  }
   const tmpRoot = path.resolve(os.tmpdir());
   const dir = path.resolve(input.scratch.dir);
   if (!isPathInside(tmpRoot, dir) || !path.basename(dir).startsWith("paperclip-run-")) {
