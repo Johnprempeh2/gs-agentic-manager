@@ -2,6 +2,7 @@ import type {
   Project,
   ProjectRepositoryOptions,
   ProjectWorkspace,
+  ProjectWorkspaceCheckoutHead,
   WorkspaceOperation,
   WorkspaceRuntimeControlTarget,
 } from "@greatstone/shared";
@@ -40,6 +41,10 @@ export const projectsApi = {
     api.patch<ProjectWorkspace>(
       projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`),
       data,
+    ),
+  checkoutHead: (projectId: string, workspaceId: string, companyId?: string) =>
+    api.get<ProjectWorkspaceCheckoutHead>(
+      projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}/checkout-head`),
     ),
   controlWorkspaceRuntimeServices: (
     projectId: string,

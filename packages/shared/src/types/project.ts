@@ -63,6 +63,17 @@ export interface ProjectCodebase {
   origin: ProjectCodebaseOrigin;
 }
 
+/** What a project workspace checkout is on right now, for the Live preview card. */
+export interface ProjectWorkspaceCheckoutHead {
+  workspaceId: string;
+  /** Null when the workspace has no local path or managed checkout yet. */
+  branch: string | null;
+  /** Short commit hash. */
+  commit: string | null;
+  commitSubject: string | null;
+  committedAt: string | null;
+}
+
 export interface ProjectManagedByPlugin {
   id: string;
   pluginId: string;

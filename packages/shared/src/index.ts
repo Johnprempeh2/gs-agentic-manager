@@ -1001,6 +1001,7 @@ export type {
   ProjectRepositoryOptions,
   ProjectCodebase,
   ProjectCodebaseOrigin,
+  ProjectWorkspaceCheckoutHead,
   ProjectGoalRef,
   ProjectManagedByPlugin,
   ProjectWorkspace,

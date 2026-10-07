@@ -18,7 +18,11 @@ import {
   updateProjectWorkspaceSchema,
   workspaceRuntimeControlTargetSchema,
 } from "@greatstone/shared";
-import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@greatstone/shared";
+import type {
+  ProjectWorkspaceCheckoutHead,
+  WorkspaceRuntimeDesiredState,
+  WorkspaceRuntimeServiceStateMap,
+} from "@greatstone/shared";
 import { trackProjectCreated } from "@greatstone/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
@@ -39,6 +43,7 @@ import {
   collectProjectWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
 import { assertCanManageProjectWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
+import { findExistingManagedProjectCheckout, readCheckoutHead } from "../services/managed-project-checkout.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
@@ -385,6 +390,21 @@ export function projectRoutes(db: Db) {
     res.json(workspaces);
   });
 
+  router.get("/projects/:id/workspaces/:workspaceId/checkout-head", async (req, res) => {
+    const id = req.params.id as string;
+    const workspaceId = req.params.workspaceId as string;
+    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!project) return;
+    const workspace = project.workspaces.find((entry) => entry.id === workspaceId) ?? null;
+    if (!workspace) {
+      res.status(404).json({ error: "Project workspace not found" });
+      return;
+    }
+    const cwd = workspace.cwd ?? await findExistingManagedProjectCheckout(project, workspace);
+    const head: ProjectWorkspaceCheckoutHead = { workspaceId: workspace.id, ...(await readCheckoutHead(cwd)) };
+    res.json(head);
+  });
+
   router.post("/projects/:id/workspaces", validate(createProjectWorkspaceSchema), async (req, res) => {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
@@ -496,7 +516,8 @@ export function projectRoutes(db: Db) {
       projectWorkspaceId: workspace.id,
     });
 
-    const workspaceCwd = workspace.cwd;
+    // A repo-only workspace has no cwd, but runs may already have cloned its managed checkout.
+    const workspaceCwd = workspace.cwd ?? await findExistingManagedProjectCheckout(project, workspace);
     if (!workspaceCwd) {
       res.status(422).json({ error: "Project workspace needs a local path before GS Agentic Manager can run workspace commands" });
       return;
@@ -559,7 +580,7 @@ export function projectRoutes(db: Db) {
     const operation = await recorder.recordOperation({
       phase: action === "stop" ? "workspace_teardown" : "workspace_provision",
       command: workspaceCommand?.command ?? `workspace command ${action}`,
-      cwd: workspace.cwd,
+      cwd: workspaceCwd,
       metadata: {
         action,
         projectId: project.id,
