@@ -10,6 +10,8 @@ import { LivePreviewCard, TaskPreviewLink } from "./LivePreviewCard";
 const api = vi.hoisted(() => ({
   checkoutHead: vi.fn(),
   controlWorkspaceRuntimeServices: vi.fn(),
+  updatePreview: vi.fn(),
+  setPreviewAutoUpdate: vi.fn(),
 }));
 vi.mock("@/api/projects", () => ({ projectsApi: api }));
 vi.mock("@/lib/router", () => ({
@@ -29,6 +31,17 @@ async function flushReact() {
 const previewConfig = {
   workspaceRuntime: { services: [{ name: "preview", command: "pnpm vite", port: 4100 }] },
 };
+
+const previewWithUpdateJob = {
+  workspaceRuntime: {
+    commands: [
+      { id: "preview", kind: "service", name: "preview", command: "pnpm vite", port: 4100 },
+      { id: "update", kind: "job", name: "update to latest main", command: "git pull --ff-only origin main" },
+    ],
+  },
+  desiredState: "running",
+  serviceStates: null,
+} as ProjectWorkspace["runtimeConfig"];
 
 function runtimeService(overrides: Partial<WorkspaceRuntimeService> = {}): WorkspaceRuntimeService {
   const now = new Date();
@@ -118,6 +131,8 @@ describe("LivePreviewCard", () => {
       committedAt: new Date().toISOString(),
     });
     api.controlWorkspaceRuntimeServices.mockResolvedValue({ workspace: {}, operation: {} });
+    api.updatePreview.mockResolvedValue({ workspace: {} });
+    api.setPreviewAutoUpdate.mockResolvedValue({ workspace: {} });
   });
 
   afterEach(() => {
@@ -223,6 +238,79 @@ describe("LivePreviewCard", () => {
       } as ProjectWorkspace["runtimeConfig"],
     }));
     expect(container.innerHTML).toBe("");
+  });
+
+  it("hides Update now when the workspace has no update job", async () => {
+    await render(buildProject({ runtimeServices: [runtimeService()] }));
+    expect(container.textContent).not.toContain("Update now");
+    expect(container.querySelector('[role="switch"]')).toBeNull();
+  });
+
+  it("runs Update now and shows the auto-update switch on by default", async () => {
+    await render(buildProject({ runtimeConfig: previewWithUpdateJob, runtimeServices: [runtimeService()] }));
+
+    const update = Array.from(container.querySelectorAll("button")).find((entry) => entry.textContent?.includes("Update now"));
+    expect(update).toBeDefined();
+    const toggle = container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Auto-update on new commits"]');
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+
+    flushSync(() => update!.click());
+    await flushReact();
+    expect(api.updatePreview).toHaveBeenCalledWith("project-1", "workspace-1", "company-1");
+
+    flushSync(() => toggle!.click());
+    await flushReact();
+    expect(api.setPreviewAutoUpdate).toHaveBeenCalledWith("project-1", "workspace-1", false, "company-1");
+  });
+
+  it("shows an update in progress", async () => {
+    await render(buildProject({
+      runtimeConfig: previewWithUpdateJob,
+      runtimeServices: [runtimeService()],
+      metadata: { previewUpdate: { status: "updating", trigger: "auto" } },
+    }));
+    const update = Array.from(container.querySelectorAll("button")).find((entry) => entry.textContent?.includes("Updating"));
+    expect(update?.disabled).toBe(true);
+    expect(container.textContent).toContain("pulling the latest code");
+  });
+
+  it("shows the commit the last update moved to", async () => {
+    await render(buildProject({
+      runtimeConfig: previewWithUpdateJob,
+      runtimeServices: [runtimeService()],
+      metadata: { previewUpdate: { status: "updated", commit: "9f8e7d6", updatedAt: "2026-10-07T14:05:00.000Z", autoUpdate: false } },
+    }));
+    expect(container.textContent).toContain("Updated to 9f8e7d6 at");
+    expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("shows why an update was skipped or failed", async () => {
+    await render(buildProject({
+      runtimeConfig: previewWithUpdateJob,
+      runtimeServices: [runtimeService()],
+      metadata: { previewUpdate: { status: "skipped", message: "Not updated: the checkout has uncommitted changes in 2 files." } },
+    }));
+    expect(container.textContent).toContain("uncommitted changes in 2 files");
+
+    await render(buildProject({
+      runtimeConfig: previewWithUpdateJob,
+      runtimeServices: [runtimeService()],
+      metadata: { previewUpdate: { status: "failed", message: "Update failed: npm install exited with code 1" } },
+    }));
+    expect(container.textContent).toContain("Update failed: npm install exited with code 1");
+  });
+
+  it("names the project when asked to", async () => {
+    flushSync(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <LivePreviewCard project={buildProject({ runtimeServices: [runtimeService()] })} companyId="company-1" showProjectName />
+        </QueryClientProvider>,
+      ),
+    );
+    await flushReact();
+    const name = container.querySelector<HTMLAnchorElement>('section[aria-label="Live preview"] a[href*="/projects/"]');
+    expect(name?.textContent).toBe("Site");
   });
 });
 

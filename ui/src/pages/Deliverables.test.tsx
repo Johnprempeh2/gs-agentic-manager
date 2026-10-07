@@ -9,7 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HTML_ATTACHMENT_SANDBOX_TOKENS } from "@greatstone/shared";
 import type { Deliverable, DeliverablesResponse } from "../api/deliverables";
 import { DELIVERABLE_IFRAME_SANDBOX } from "../components/deliverables/DeliverableDocument";
-import { Deliverables, EXAMPLE_DELIVERABLE_PROMPT, dateRangeStart, groupDeliverables } from "./Deliverables";
+import { Deliverables, EXAMPLE_DELIVERABLE_PROMPT, dateRangeStart, groupDeliverables, projectsWithPreview } from "./Deliverables";
+import type { Project } from "@greatstone/shared";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -23,6 +24,52 @@ const deliverablesApiMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/deliverables", () => ({ deliverablesApi: deliverablesApiMock }));
+
+const projectsApiMock = vi.hoisted(() => ({
+  list: vi.fn(),
+  checkoutHead: vi.fn(),
+  controlWorkspaceRuntimeServices: vi.fn(),
+  updatePreview: vi.fn(),
+  setPreviewAutoUpdate: vi.fn(),
+}));
+vi.mock("../api/projects", () => ({ projectsApi: projectsApiMock }));
+
+function previewProject(id: string, name: string, withPreview: boolean): Project {
+  const workspace = {
+    id: `${id}-ws`,
+    projectId: id,
+    runtimeConfig: withPreview
+      ? {
+          workspaceRuntime: {
+            commands: [
+              { id: "preview", kind: "service", name: "preview", command: "npx vite", port: 4100 },
+              { id: "update", kind: "job", name: "update to latest main", command: "git pull" },
+            ],
+          },
+          desiredState: "running",
+          serviceStates: null,
+        }
+      : null,
+    runtimeServices: withPreview
+      ? [{
+          id: `${id}-svc`,
+          serviceName: "preview",
+          status: "running",
+          url: "https://preview.example:4100",
+          scopeType: "project_workspace",
+          configIndex: 0,
+          startedAt: new Date(),
+          updatedAt: new Date(),
+          stoppedAt: null,
+          healthStatus: "healthy",
+        }]
+      : [],
+    metadata: null,
+    defaultRef: "main",
+    repoRef: null,
+  };
+  return { id, companyId: "company-1", urlKey: id, name, workspaces: [workspace], primaryWorkspace: workspace } as unknown as Project;
+}
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/components/AgentAvatar", () => ({ AgentAvatar: () => <span data-testid="agent-avatar" /> }));
@@ -128,6 +175,8 @@ describe("Deliverables page", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     window.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    projectsApiMock.list.mockReset().mockResolvedValue([]);
+    projectsApiMock.checkoutHead.mockReset().mockResolvedValue({ workspaceId: "w", branch: "main", commit: "abc1234", commitSubject: "Hero", committedAt: null });
     deliverablesApiMock.list.mockReset();
     deliverablesApiMock.get.mockReset();
     deliverablesApiMock.markOpened.mockReset().mockResolvedValue({ ok: true });
@@ -322,6 +371,44 @@ describe("Deliverables page", () => {
     expect(container.querySelector("[data-testid='deliverables-empty']")).toBeNull();
     expect(container.textContent).toContain("No deliverables match.");
     expect(deliverablesApiMock.list).toHaveBeenCalledWith("company-1", expect.objectContaining({ kind: "deck" }));
+  });
+
+  it("shows a live preview card for each project with a preview, with Update now", async () => {
+    projectsApiMock.list.mockResolvedValue([
+      previewProject("site", "Greatstone Website", true),
+      previewProject("ops", "Operations", false),
+    ]);
+    deliverablesApiMock.list.mockResolvedValue(response([sample()]));
+    render();
+    await flush();
+
+    const previews = container.querySelector("[data-testid='deliverables-live-previews']");
+    expect(previews).not.toBeNull();
+    const cards = previews!.querySelectorAll("section[aria-label='Live preview']");
+    expect(cards).toHaveLength(1);
+    expect(cards[0].textContent).toContain("Greatstone Website");
+    expect(cards[0].textContent).toContain("Open preview");
+    expect(cards[0].textContent).toContain("Update now");
+    expect(cards[0].querySelector("button[aria-label='Stop']")).not.toBeNull();
+  });
+
+  it("looks the same as before when no project has a preview", async () => {
+    projectsApiMock.list.mockResolvedValue([previewProject("ops", "Operations", false)]);
+    deliverablesApiMock.list.mockResolvedValue(response([sample()]));
+    render();
+    await flush();
+    expect(container.querySelector("[data-testid='deliverables-live-previews']")).toBeNull();
+    expect(container.querySelector("section[aria-label='Live preview']")).toBeNull();
+  });
+});
+
+describe("projectsWithPreview", () => {
+  it("keeps projects with a preview and follows the project filter", () => {
+    const projects = [previewProject("site", "Site", true), previewProject("blog", "Blog", true), previewProject("ops", "Ops", false)];
+    expect(projectsWithPreview(projects, null).map((project) => project.id)).toEqual(["site", "blog"]);
+    expect(projectsWithPreview(projects, "blog").map((project) => project.id)).toEqual(["blog"]);
+    expect(projectsWithPreview(projects, "ops")).toEqual([]);
+    expect(projectsWithPreview(undefined, null)).toEqual([]);
   });
 });
 
