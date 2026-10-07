@@ -50,6 +50,8 @@ export type WorkspaceServiceControlBarProps = {
   onManageServices?: () => void;
   /** Initial open state for the multi-service popover (used by Storybook/static captures). */
   defaultServicesOpen?: boolean;
+  /** Hide the URL segment when the surrounding card already shows the address. */
+  hideUrl?: boolean;
   className?: string;
 };
 
@@ -312,11 +314,13 @@ function SingleServiceBar({
   entry,
   onAction,
   onViewLogs,
+  hideUrl = false,
   className,
 }: {
   entry: WorkspaceServiceControlEntry;
   onAction: (action: WorkspaceServiceControlAction, serviceKey: string | null) => void;
   onViewLogs?: () => void;
+  hideUrl?: boolean;
   className?: string;
 }) {
   const meta = statusMeta(entry);
@@ -328,10 +332,14 @@ function SingleServiceBar({
             <StatusIndicator entry={entry} />
             <span className="whitespace-nowrap text-xs font-medium text-foreground">{meta.label}</span>
           </div>
-          <div className="mx-3 hidden h-5 w-px bg-border sm:block" />
-          <div className="hidden w-56 min-w-0 shrink-0 items-center gap-0.5 sm:flex">
-            <UrlSegment entry={entry} />
-          </div>
+          {hideUrl ? null : (
+            <>
+              <div className="mx-3 hidden h-5 w-px bg-border sm:block" />
+              <div className="hidden w-56 min-w-0 shrink-0 items-center gap-0.5 sm:flex">
+                <UrlSegment entry={entry} />
+              </div>
+            </>
+          )}
           <div className="mx-3 hidden h-5 w-px bg-border sm:block" />
           <div className="ml-auto flex items-center gap-1 pl-3 sm:pl-0">
             <ActionSlots
@@ -340,9 +348,11 @@ function SingleServiceBar({
             />
           </div>
         </div>
-        <div className="flex h-8 items-center justify-between gap-0.5 border-t border-border px-3 sm:hidden">
-          <UrlSegment entry={entry} compact />
-        </div>
+        {hideUrl ? null : (
+          <div className="flex h-8 items-center justify-between gap-0.5 border-t border-border px-3 sm:hidden">
+            <UrlSegment entry={entry} compact />
+          </div>
+        )}
       </div>
       <ServiceDetail entry={entry} onViewLogs={onViewLogs} />
     </div>
@@ -415,12 +425,14 @@ function MultiServiceBar({
   onAction,
   onManageServices,
   defaultServicesOpen,
+  hideUrl = false,
   className,
 }: {
   services: WorkspaceServiceControlEntry[];
   onAction: (action: WorkspaceServiceControlAction, serviceKey: string | null) => void;
   onManageServices?: () => void;
   defaultServicesOpen?: boolean;
+  hideUrl?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(defaultServicesOpen ?? false);
@@ -487,17 +499,21 @@ function MultiServiceBar({
               </div>
             </PopoverContent>
           </Popover>
-          <div className="mx-3 hidden h-5 w-px bg-border sm:block" />
-          <div className="hidden min-w-0 items-center gap-0.5 sm:flex">
-            {primary ? (
-              <>
-                <span className="mr-1 shrink-0 text-xs text-muted-foreground">{primary.name}</span>
-                <UrlSegment entry={primary} />
-              </>
-            ) : (
-              <span className="font-mono text-xs text-subtle-foreground">no url</span>
-            )}
-          </div>
+          {hideUrl ? null : (
+            <>
+              <div className="mx-3 hidden h-5 w-px bg-border sm:block" />
+              <div className="hidden min-w-0 items-center gap-0.5 sm:flex">
+                {primary ? (
+                  <>
+                    <span className="mr-1 shrink-0 text-xs text-muted-foreground">{primary.name}</span>
+                    <UrlSegment entry={primary} />
+                  </>
+                ) : (
+                  <span className="font-mono text-xs text-subtle-foreground">no url</span>
+                )}
+              </div>
+            </>
+          )}
           <div className="mx-3 hidden h-5 w-px bg-border sm:block" />
           <div className="ml-auto flex items-center gap-1 pl-3 sm:pl-0">
             <ActionSlots
@@ -506,7 +522,7 @@ function MultiServiceBar({
             />
           </div>
         </div>
-        {primary ? (
+        {primary && !hideUrl ? (
           <div className="flex h-8 items-center justify-between gap-0.5 border-t border-border px-3 sm:hidden">
             <UrlSegment entry={primary} compact />
           </div>
@@ -527,6 +543,7 @@ export function WorkspaceServiceControlBar({
   onViewLogs,
   onManageServices,
   defaultServicesOpen,
+  hideUrl,
   className,
 }: WorkspaceServiceControlBarProps) {
   if (services.length === 0) return null;
@@ -536,6 +553,7 @@ export function WorkspaceServiceControlBar({
         entry={services[0]}
         onAction={onAction}
         onViewLogs={onViewLogs}
+        hideUrl={hideUrl}
         className={className}
       />
     );
@@ -546,6 +564,7 @@ export function WorkspaceServiceControlBar({
       onAction={onAction}
       onManageServices={onManageServices}
       defaultServicesOpen={defaultServicesOpen}
+      hideUrl={hideUrl}
       className={className}
     />
   );

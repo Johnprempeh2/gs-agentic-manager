@@ -46,6 +46,16 @@ export const projectsApi = {
     api.get<ProjectWorkspaceCheckoutHead>(
       projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}/checkout-head`),
     ),
+  updatePreview: (projectId: string, workspaceId: string, companyId?: string) =>
+    api.post<{ workspace: ProjectWorkspace }>(
+      projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}/preview-update`),
+      {},
+    ),
+  setPreviewAutoUpdate: (projectId: string, workspaceId: string, enabled: boolean, companyId?: string) =>
+    api.patch<{ workspace: ProjectWorkspace }>(
+      projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}/preview-auto-update`),
+      { enabled },
+    ),
   controlWorkspaceRuntimeServices: (
     projectId: string,
     workspaceId: string,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import type { Project } from "@greatstone/shared";
 import { ArrowUpDown, Check, ChevronDown, FileCheck2, Layers, Search, X } from "lucide-react";
 import {
   deliverablesApi,
@@ -21,6 +22,8 @@ import {
   deliverableShareUrl,
 } from "../components/deliverables/DeliverableCard";
 import { DeliverableQuickLook } from "../components/deliverables/DeliverableQuickLook";
+import { LivePreviewCard, workspaceHasPreview } from "../components/LivePreviewCard";
+import { projectsApi } from "../api/projects";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { goBackOr } from "@/lib/mobile-back";
 import { Button } from "@/components/ui/button";
@@ -43,6 +46,18 @@ export const DELIVERABLE_SORT_OPTIONS: { value: DeliverableSort; label: string }
 ];
 
 type GroupBy = "none" | "project" | "month";
+
+/** Projects whose primary workspace serves a preview, for the cards above the list. */
+export function projectsWithPreview(projects: Project[] | undefined, projectId: string | null) {
+  return (projects ?? []).filter((project) => {
+    if (projectId && project.id !== projectId) return false;
+    const workspace = project.primaryWorkspace;
+    return Boolean(workspace) && workspaceHasPreview({
+      runtimeConfig: workspace?.runtimeConfig?.workspaceRuntime ?? null,
+      runtimeServices: workspace?.runtimeServices ?? null,
+    });
+  });
+}
 type DateRange = "all" | "week" | "month";
 
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
@@ -308,6 +323,13 @@ export function Deliverables() {
     [updateParams],
   );
 
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId ?? ""),
+    queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const previewProjects = projectsWithPreview(projects, projectId);
+
   if (!selectedCompanyId) {
     return <EmptyState icon={FileCheck2} message="Select an organization to view deliverables." />;
   }
@@ -455,6 +477,14 @@ export function Deliverables() {
           </div>
         </div>
       </div>
+
+      {previewProjects.length > 0 ? (
+        <section aria-label="Live previews" className="grid grid-cols-1 gap-3 xl:grid-cols-2" data-testid="deliverables-live-previews">
+          {previewProjects.map((project) => (
+            <LivePreviewCard key={project.id} project={project} companyId={selectedCompanyId} showProjectName />
+          ))}
+        </section>
+      ) : null}
 
       {error && !isLoading ? <ErrorState error={error} onRetry={() => void refetch()} compact={!!data} /> : null}
 

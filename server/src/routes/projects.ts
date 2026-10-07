@@ -17,6 +17,7 @@ import {
   updateProjectSchema,
   updateProjectWorkspaceSchema,
   workspaceRuntimeControlTargetSchema,
+  setProjectWorkspacePreviewAutoUpdateSchema,
 } from "@greatstone/shared";
 import type {
   ProjectWorkspaceCheckoutHead,
@@ -44,6 +45,8 @@ import {
 } from "./workspace-command-authz.js";
 import { assertCanManageProjectWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
 import { findExistingManagedProjectCheckout, readCheckoutHead } from "../services/managed-project-checkout.js";
+import { previewUpdateService, type PreviewUpdateOutcome } from "../services/preview-update.js";
+import { logger } from "../middleware/logger.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
@@ -73,6 +76,7 @@ export function projectRoutes(db: Db) {
   const access = accessService(db);
   const secretsSvc = secretService(db);
   const workspaceOperations = workspaceOperationService(db);
+  const previewUpdates = previewUpdateService(db);
   const instanceSettings = instanceSettingsService(db);
   const externalObjectsSvc = externalObjectService(db, {
     enabled: async () => (await instanceSettings.getExperimental()).enableExternalObjects === true,
@@ -773,6 +777,90 @@ export function projectRoutes(db: Db) {
 
   router.post("/projects/:id/workspaces/:workspaceId/runtime-services/:action", validate(workspaceRuntimeControlTargetSchema), handleProjectWorkspaceRuntimeCommand);
   router.post("/projects/:id/workspaces/:workspaceId/runtime-commands/:action", validate(workspaceRuntimeControlTargetSchema), handleProjectWorkspaceRuntimeCommand);
+
+  /** Same checks as a workspace restart: updating pulls into the checkout and restarts the preview. */
+  async function loadPreviewWorkspaceForControl(req: Request, res: Response) {
+    const project = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Project not found");
+    if (!project) return null;
+    const workspace = project.workspaces.find((entry) => entry.id === req.params.workspaceId) ?? null;
+    if (!workspace) {
+      res.status(404).json({ error: "Project workspace not found" });
+      return null;
+    }
+    if (!(await assertRuntimeManageAllowed(req, res, project.companyId))) return null;
+    if (req.actor.type === "agent" && workspace.sharedWorkspaceKey) {
+      throw forbidden("Missing permission to manage workspace runtime services");
+    }
+    await assertCanManageProjectWorkspaceRuntimeServices(db, req, {
+      companyId: project.companyId,
+      projectWorkspaceId: workspace.id,
+    });
+    return { project, workspace };
+  }
+
+  router.post("/projects/:id/workspaces/:workspaceId/preview-update", async (req, res) => {
+    const loaded = await loadPreviewWorkspaceForControl(req, res);
+    if (!loaded) return;
+    const { project, workspace } = loaded;
+    const actor = getActorInfo(req);
+    // Answer once the update has started; pulling and installing can take minutes.
+    // The card follows progress through the workspace's previewUpdate state.
+    const outcome = await new Promise<PreviewUpdateOutcome | "started">((resolve) => {
+      previewUpdates
+        .update({
+          projectId: project.id,
+          workspaceId: workspace.id,
+          trigger: "manual",
+          actor: { actorType: actor.actorType === "agent" ? "agent" : "user", actorId: actor.actorId, agentId: actor.agentId ?? null },
+          onStarted: () => resolve("started"),
+        })
+        .then(resolve, (err) => {
+          logger.error({ err, workspaceId: workspace.id }, "preview update failed");
+          resolve({ kind: "finished", state: "failed" });
+        });
+    });
+    if (outcome !== "started") {
+      if (outcome.kind === "busy") {
+        res.status(409).json({ error: "The preview is already updating" });
+        return;
+      }
+      if (outcome.kind === "no_update_job") {
+        res.status(422).json({ error: "This workspace has no update job. Add a workspace job with id \"update\" that pulls the latest code." });
+        return;
+      }
+      if (outcome.kind === "no_checkout" || outcome.kind === "not_found") {
+        res.status(422).json({ error: "Project workspace needs a local path before GS Agentic Manager can update it" });
+        return;
+      }
+    }
+    const updatedWorkspace = (await svc.listWorkspaces(project.id)).find((entry) => entry.id === workspace.id) ?? workspace;
+    res.status(outcome === "started" ? 202 : 200).json({ workspace: updatedWorkspace });
+  });
+
+  router.patch(
+    "/projects/:id/workspaces/:workspaceId/preview-auto-update",
+    validate(setProjectWorkspacePreviewAutoUpdateSchema),
+    async (req, res) => {
+      const loaded = await loadPreviewWorkspaceForControl(req, res);
+      if (!loaded) return;
+      const { project, workspace } = loaded;
+      const { enabled } = req.body as { enabled: boolean };
+      await previewUpdates.setAutoUpdate(workspace.id, enabled);
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.workspace_preview_auto_update_set",
+        entityType: "project",
+        entityId: project.id,
+        details: { projectWorkspaceId: workspace.id, enabled },
+      });
+      const updatedWorkspace = (await svc.listWorkspaces(project.id)).find((entry) => entry.id === workspace.id) ?? workspace;
+      res.json({ workspace: updatedWorkspace });
+    },
+  );
 
   router.delete("/projects/:id/workspaces/:workspaceId", async (req, res) => {
     const id = req.params.id as string;

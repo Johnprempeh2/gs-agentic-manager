@@ -1002,6 +1002,9 @@ export type {
   ProjectCodebase,
   ProjectCodebaseOrigin,
   ProjectWorkspaceCheckoutHead,
+  ProjectWorkspacePreviewUpdateState,
+  ProjectWorkspacePreviewUpdateStatus,
+  ProjectWorkspacePreviewUpdateTrigger,
   ProjectGoalRef,
   ProjectManagedByPlugin,
   ProjectWorkspace,
@@ -1813,6 +1816,13 @@ export {
   matchWorkspaceRuntimeServiceToCommand,
   scoreWorkspaceRuntimeServiceMatch,
 } from "./workspace-commands.js";
+export {
+  PREVIEW_UPDATE_METADATA_KEY,
+  findPreviewUpdateJob,
+  readProjectWorkspacePreviewUpdate,
+  setProjectWorkspacePreviewAutoUpdateSchema,
+  type SetProjectWorkspacePreviewAutoUpdate,
+} from "./project-workspace-preview-update.js";
 
 export {
   DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
