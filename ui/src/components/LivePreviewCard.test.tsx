@@ -208,7 +208,11 @@ describe("LivePreviewCard", () => {
 
   it("renders nothing for a project with only background services", async () => {
     await render(buildProject({
-      runtimeConfig: { workspaceRuntime: { services: [{ name: "worker", command: "pnpm worker" }] } },
+      runtimeConfig: {
+        workspaceRuntime: { services: [{ name: "worker", command: "pnpm worker" }] },
+        desiredState: null,
+        serviceStates: null,
+      } as ProjectWorkspace["runtimeConfig"],
     }));
     expect(container.innerHTML).toBe("");
   });
