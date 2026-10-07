@@ -22,7 +22,7 @@ import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } fr
 import { trackProjectCreated } from "@greatstone/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
-import { conflict, forbidden, unprocessable } from "../errors.js";
+import { conflict, forbidden, HttpError, unprocessable } from "../errors.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
@@ -711,6 +711,16 @@ export function projectRoutes(db: Db) {
           },
         };
       },
+    }).catch((error: unknown) => {
+      // A service that will not start is a workspace config problem, not a server
+      // crash. Return its reason instead of a bare 500 (GRE-1002).
+      if (action === "stop" || error instanceof HttpError || !(error instanceof Error)) throw error;
+      throw unprocessable(error.message, {
+        code: "workspace_runtime_command_failed",
+        action,
+        runtimeServiceId: selectedRuntimeServiceId,
+        serviceIndex: selectedServiceIndex,
+      });
     });
 
     const updatedWorkspace = (await svc.listWorkspaces(project.id)).find((entry) => entry.id === workspace.id) ?? workspace;

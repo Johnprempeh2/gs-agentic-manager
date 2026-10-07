@@ -6664,6 +6664,75 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
     await db.delete(companies);
   });
 
+  it("saves a project workspace service that never becomes ready as failed, not stopped (GRE-1002)", async () => {
+    const workspaceRoot = await makeTempDir("paperclip-runtime-failed-start-");
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const projectWorkspaceId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(projects).values({ id: projectId, companyId, name: "Failed start", status: "in_progress" });
+    await db.insert(projectWorkspaces).values({
+      id: projectWorkspaceId,
+      companyId,
+      projectId,
+      name: "Primary",
+      sourceType: "local_path",
+      cwd: workspaceRoot,
+      isPrimary: true,
+    });
+
+    try {
+      await expect(startRuntimeServicesForWorkspaceControl({
+        db,
+        actor: { id: null, name: "Board", companyId },
+        issue: null,
+        workspace: {
+          baseCwd: workspaceRoot,
+          source: "project_primary",
+          projectId,
+          workspaceId: projectWorkspaceId,
+          repoUrl: null,
+          repoRef: null,
+          strategy: "project_primary",
+          cwd: workspaceRoot,
+          branchName: null,
+          worktreePath: null,
+          warnings: [],
+          created: false,
+        },
+        config: {
+          workspaceRuntime: {
+            services: [{
+              name: "web",
+              // Exits at once, so readiness can never pass.
+              command: `${JSON.stringify(process.execPath)} -e "process.exit(1)"`,
+              cwd: ".",
+              port: { type: "auto" },
+              readiness: { type: "http", urlTemplate: "http://127.0.0.1:{{port}}", timeoutSec: 5, intervalMs: 100 },
+              lifecycle: "shared",
+              stopPolicy: { type: "manual" },
+            }],
+          },
+        },
+        adapterEnv: {},
+      })).rejects.toThrow(/Failed to start runtime service "web"/);
+
+      const rows = await db
+        .select()
+        .from(workspaceRuntimeServices)
+        .where(eq(workspaceRuntimeServices.projectWorkspaceId, projectWorkspaceId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: "failed", healthStatus: "unhealthy" });
+    } finally {
+      await fs.rm(workspaceRoot, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("persists provisioning before starting and excludes provision time from readiness timeout", async () => {
     const workspaceRoot = await makeTempDir("paperclip-runtime-slow-control-");
     const paperclipHome = await makeTempDir("paperclip-runtime-control-home-");
