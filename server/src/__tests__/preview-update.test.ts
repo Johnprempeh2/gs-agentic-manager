@@ -8,6 +8,7 @@ import {
   createPreviewUpdateService,
   findPreviewUpdateJob,
   inspectPreviewCheckout,
+  summarizeUpdateFailure,
   type PreviewUpdateDeps,
   type PreviewUpdateTarget,
 } from "../services/preview-update.js";
@@ -104,6 +105,21 @@ describe("findPreviewUpdateJob", () => {
     expect(findPreviewUpdateJob({ jobs: [{ name: "Update site", command: "git pull" }] })?.name).toBe("Update site");
     expect(findPreviewUpdateJob({ commands: [PREVIEW_SERVICE, { kind: "job", name: "lint", command: "x" }] })).toBeNull();
     expect(findPreviewUpdateJob(null)).toBeNull();
+  });
+});
+
+describe("summarizeUpdateFailure", () => {
+  it("keeps git's own error and drops hints and notices", () => {
+    const raw = [
+      'Workspace job "update to latest main" failed: GS Agentic Manager: GitHub capability_missing; continuing without managed credentials.',
+      "Already on 'main'",
+      "hint: Diverging branches can't be fast-forwarded, you need to either:",
+      "fatal: Not possible to fast-forward, aborting.",
+      "From /tmp/origin",
+    ].join("\n");
+    expect(summarizeUpdateFailure(raw)).toBe("fatal: Not possible to fast-forward, aborting.");
+    expect(summarizeUpdateFailure('Workspace job "update" failed with exit code 1')).toBe('Workspace job "update" failed with exit code 1');
+    expect(summarizeUpdateFailure("npm ERR! code ERESOLVE\nnpm ERR! more")).toBe("npm ERR! code ERESOLVE");
   });
 });
 

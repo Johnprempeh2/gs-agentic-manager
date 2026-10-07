@@ -88,6 +88,19 @@ export async function inspectPreviewCheckout(cwd: string, branch: string): Promi
   return { kind: "behind", head, remote };
 }
 
+/**
+ * The one line of a failed update a person needs: git's or npm's own error, without the
+ * job label, hints and credential notices. The full output stays in the workspace logs.
+ */
+export function summarizeUpdateFailure(text: string) {
+  const lines = text
+    .replace(/^Workspace job "[^"]*" failed:\s*/, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !/^hint:/i.test(line) && !/^GS Agentic Manager:/.test(line));
+  return lines.find((line) => /^(fatal|error)\b|npm ERR!|^npm error/i.test(line)) ?? lines.at(-1) ?? text.trim();
+}
+
 function clip(message: string) {
   const trimmed = message.trim();
   return trimmed.length > MESSAGE_MAX_CHARS ? `${trimmed.slice(0, MESSAGE_MAX_CHARS - 1)}…` : trimmed;
@@ -196,7 +209,7 @@ export function createPreviewUpdateService(deps: PreviewUpdateDeps) {
         await deps.runJob(target, cwd, job, input.trigger);
         if (previewIsRunning(target)) await deps.restart(target, cwd);
       } catch (error) {
-        const message = clip(`Update failed: ${errorText(error)}`);
+        const message = clip(`Update failed: ${summarizeUpdateFailure(errorText(error))}`);
         await deps.saveState(target.workspace.id, { status: "failed", trigger: input.trigger, message, checkedAt: checkedAt() });
         await deps.recordActivity(target, { trigger: input.trigger, status: "failed", error: message }, input.actor ?? null);
         return { kind: "finished", state: "failed" };
