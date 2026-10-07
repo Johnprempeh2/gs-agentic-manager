@@ -1,5 +1,12 @@
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
+import {
+  defaultConnectivityStateFile,
+  OUTAGE_CARD_WINDOW_MS,
+  outageSummary,
+  outageTitle,
+  readConnectivityState,
+} from "./connectivity-watch.js";
 import {
   agents,
   approvals,
@@ -90,6 +97,7 @@ const ATTENTION_SOURCE_KINDS: AttentionSourceKind[] = [
   "budget_alert",
   "agent_error_alert",
   "ai_connection_alert",
+  "connectivity_outage",
 ];
 
 const SEVERITY_RANK: Record<AttentionSeverity, number> = {
@@ -106,6 +114,7 @@ const SOURCE_RANK: Record<AttentionSourceKind, number> = {
   budget_alert: 3,
   agent_error_alert: 4,
   ai_connection_alert: 4,
+  connectivity_outage: 4,
   approval: 5,
   decision: 6,
   issue_thread_interaction: 7,
@@ -181,6 +190,8 @@ type AttentionListOptions = AttentionFeedQuery & {
 export type AttentionServiceOptions = {
   openDecisionLimit?: number;
   now?: () => number;
+  /** Where the connectivity watcher records outages (GRE-999). */
+  connectivityStateFile?: string;
 };
 
 function emptyCounts(): Record<AttentionSourceKind, number> {
@@ -2049,6 +2060,61 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           relatedIssue: null,
           detail: { kind: "generic", summaryExcerpt: summary, images: [] },
         }));
+      }
+
+      // Internet outages of five minutes or more (GRE-999). The watcher writes
+      // one record per outage; each becomes one card for board users, and the
+      // decision push sends a new card to the phone once.
+      if (options.userId) {
+        const outages = readConnectivityState(serviceOptions.connectivityStateFile ?? defaultConnectivityStateFile())
+          .outages
+          .filter((outage) => now - Date.parse(outage.endedAt) < OUTAGE_CARD_WINDOW_MS);
+        for (const outage of outages) {
+          const from = outage.startedAt;
+          // Runs fail at the end of their own timeout, and retries start
+          // after the line is back: count a short tail past the end.
+          const until = new Date(Date.parse(outage.endedAt) + 15 * 60_000).toISOString();
+          const [counts] = await db
+            .select({
+              failed: sql<number>`count(*) filter (where ${heartbeatRuns.status} in ('failed', 'timed_out') and ${heartbeatRuns.finishedAt} >= ${from}::timestamptz and ${heartbeatRuns.finishedAt} <= ${until}::timestamptz)`,
+              retried: sql<number>`count(*) filter (where (${heartbeatRuns.retryOfRunId} is not null or ${heartbeatRuns.scheduledRetryAttempt} > 0) and ${heartbeatRuns.createdAt} >= ${from}::timestamptz and ${heartbeatRuns.createdAt} <= ${until}::timestamptz)`,
+            })
+            .from(heartbeatRuns)
+            .where(and(
+              eq(heartbeatRuns.companyId, companyId),
+              gte(heartbeatRuns.createdAt, new Date(Date.parse(from) - 24 * 60 * 60_000)),
+            ));
+          const runs = { failed: Number(counts?.failed ?? 0), retried: Number(counts?.retried ?? 0) };
+          const broken = outage.checks.some((check) => !check.ok);
+          add(createItem({
+            companyId,
+            sourceKind: "connectivity_outage",
+            subject: {
+              kind: "connectivity_outage",
+              id: outage.id,
+              companyId,
+              title: outageTitle(outage),
+              identifier: null,
+              status: broken ? "still_broken" : "recovered",
+              href: null,
+              metadata: { startedAt: outage.startedAt, endedAt: outage.endedAt, failedRuns: runs.failed, retriedRuns: runs.retried },
+            },
+            whyNow: "GSAM lost the internet for five minutes or more and is back.",
+            decisionVerbs: decisionVerbs(
+              { id: "dismiss", label: "Dismiss", description: "Dismiss this notice." },
+            ),
+            inlineResolvable: true,
+            entryRule: "Outside connectivity was lost for five minutes or more and came back.",
+            exitRule: "The row is dismissed, or seven days pass.",
+            dedupKey: `connectivity_outage:${outage.id}`,
+            severity: broken ? "high" : "medium",
+            activityAt: outage.endedAt,
+            createdAt: outage.endedAt,
+            updatedAt: outage.endedAt,
+            relatedIssue: null,
+            detail: { kind: "generic", summaryExcerpt: outageSummary(outage, runs), images: [] },
+          }));
+        }
       }
 
       const deduped = new Map<string, AttentionItem>();

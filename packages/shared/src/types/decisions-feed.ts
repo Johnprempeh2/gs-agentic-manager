@@ -17,6 +17,7 @@ export const DECISION_CARD_KINDS = [
   "budget",
   "agent_error",
   "join_request",
+  "outage",
 ] as const;
 
 export type DecisionCardKind = (typeof DECISION_CARD_KINDS)[number];

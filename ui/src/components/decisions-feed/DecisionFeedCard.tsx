@@ -44,6 +44,7 @@ export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   budget: "Budget",
   agent_error: "Agent error",
   join_request: "Join request",
+  outage: "Internet outage",
 };
 
 /**

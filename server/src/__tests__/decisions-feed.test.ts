@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import express from "express";
 import request from "supertest";
 import { eq, inArray } from "drizzle-orm";
@@ -262,6 +265,34 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
     }
     return responses;
   }
+
+  it("shows an internet outage as one dismissable notice card (GRE-999)", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: "GRE", requireBoardApprovalForNewAgents: false });
+    const dir = mkdtempSync(join(tmpdir(), "feed-outage-"));
+    const connectivityStateFile = join(dir, "outages.json");
+    writeFileSync(connectivityStateFile, JSON.stringify({
+      offlineSince: null,
+      lastCheckAt: null,
+      outages: [{ id: "outage-1", startedAt: "2026-10-07T13:02:00.000Z", endedAt: "2026-10-07T14:05:00.000Z", endIsApproximate: false, checks: [] }],
+    }));
+    try {
+      const feedNow = () => decisionsFeedService(db, { connectivityStateFile, now: () => Date.parse("2026-10-07T14:06:00.000Z") })
+        .build(companyId, { userId: USER_ID });
+      const feed = await feedNow();
+      expect(feed.cards).toHaveLength(1);
+      const [card] = feed.cards;
+      expect(card).toMatchObject({
+        kind: "outage",
+        title: "GSAM was offline from 14:02 to 15:05",
+        reason: "GSAM was offline from 14:02 to 15:05, 1 h 3 min, London time. Agent runs in that time: 0 failed, 0 retried.",
+      });
+      await run(app(companyId), action(card!, "dismiss"));
+      expect((await feedNow()).cards).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it("merges a task's question, connection request and recovery into one card, and counts cards once", async () => {
     const seeded = await seedLiveScenario({ withQuestion: true });

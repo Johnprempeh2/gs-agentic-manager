@@ -298,6 +298,9 @@ async function sourceIssueId(
         .then((rows) => rows[0] ?? null);
       return { exists: Boolean(row), issueId: null };
     }
+    // Outages are instance-wide and live in the watcher's file, not a table.
+    case "connectivity_outage":
+      return { exists: true, issueId: null };
     case "budget_alert": {
       const row = await db.select({ id: budgetIncidents.id })
         .from(budgetIncidents)

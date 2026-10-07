@@ -5898,6 +5898,45 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     };
   }
 
+  /**
+   * Read-only: what Telegram says about each active bot's webhook (GRE-999).
+   * Used after an internet outage to see if Telegram can reach us again.
+   * Transport errors are reduced to a plain line; they can carry the token.
+   */
+  async function telegramWebhookReports() {
+    const plainObject = (value: unknown): Record<string, unknown> =>
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const endpoints = await db
+      .select()
+      .from(chatEndpoints)
+      .where(and(eq(chatEndpoints.provider, "telegram"), eq(chatEndpoints.status, "active")));
+    const reports: Array<{ endpointName: string; pendingUpdates: number; lastErrorAt: string | null; lastErrorMessage: string | null }> = [];
+    for (const endpoint of endpoints) {
+      const endpointName = endpoint.botUsername ? `@${endpoint.botUsername}` : "the Telegram bot";
+      try {
+        const credentials = await resolveCredentials(endpoint);
+        if (!credentials.botToken) continue;
+        const response = await fetchImpl(
+          `https://api.telegram.org/bot${encodeURIComponent(credentials.botToken)}/getWebhookInfo`,
+          { redirect: "error", signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS) },
+        );
+        const info = plainObject(plainObject(await response.json()).result);
+        const lastErrorDate = typeof info.last_error_date === "number" ? info.last_error_date : null;
+        reports.push({
+          endpointName,
+          pendingUpdates: typeof info.pending_update_count === "number" ? info.pending_update_count : 0,
+          lastErrorAt: lastErrorDate ? new Date(lastErrorDate * 1000).toISOString() : null,
+          lastErrorMessage: typeof info.last_error_message === "string" ? info.last_error_message : null,
+        });
+      } catch {
+        reports.push({ endpointName, pendingUpdates: 1, lastErrorAt: new Date().toISOString(), lastErrorMessage: "Telegram did not answer the webhook check" });
+      }
+    }
+    return reports;
+  }
+
   async function list(companyId: string) {
     const rows = await db
       .select({
@@ -38379,6 +38418,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     refreshGitHubRepositories,
     runtime,
     list,
+    telegramWebhookReports,
     get,
     create,
     update,

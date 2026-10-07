@@ -72,6 +72,21 @@ describe("decision push notifications", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("sends one push per internet outage card, worded as a notice (GRE-999)", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    const outage = { ...card("outage:1", "GSAM was offline from 14:02 to 15:05"), kind: "outage", kinds: ["outage"], reason: "GSAM was offline from 14:02 to 15:05, 1 h 3 min." } as DecisionCard;
+    // The same user has a phone registered in a second company too.
+    const otherCompanyId = randomUUID();
+    await db.insert(companies).values({ id: otherCompanyId, name: "Push tests 2", issuePrefix: "PS2" });
+    await service().subscribe(otherCompanyId, "john", phone(2));
+    feedCards = [outage];
+    expect(await service().notifyNewDecisions()).toBe(1);
+    expect(await service().notifyNewDecisions()).toBe(0);
+    // One push in all, from whichever company's round came first.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.message).toMatchObject({ title: "GSAM lost the internet", body: "GSAM was offline from 14:02 to 15:05, 1 h 3 min.", tag: "outage:1", badge: 1 });
+  });
+
   it("never sends an 'at your desk' card to the phone (GRE-450)", async () => {
     await service().subscribe(companyId, "john", phone(1));
     feedCards = [{ ...card("task:wsl", "Restart WSL"), atDesk: { command: "wsl --shutdown" } }];

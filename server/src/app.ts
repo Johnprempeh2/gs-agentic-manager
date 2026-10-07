@@ -41,6 +41,12 @@ import {
 } from "./services/company-import-transfers.js";
 import { companyTransferRunService } from "./services/company-transfer-runs.js";
 import { healthRoutes } from "./routes/health.js";
+import {
+  connectivityProbeUrlsFromEnv,
+  connectivityWatcher,
+  probeOutsideConnectivity,
+  runAfterOutageChecks,
+} from "./services/connectivity-watch.js";
 import { cloudRuntimeIdentityMiddleware } from "./middleware/cloud-runtime-identity.js";
 import { cloudControlMiddleware } from "./middleware/cloud-control.js";
 import { memoryOnlyKeyGuard } from "./middleware/memory-only-key-guard.js";
@@ -497,6 +503,8 @@ export async function createApp(
     bindHost: string;
     authPublicBaseUrl?: string;
     chatWebhookPublicBaseUrl?: string;
+    /** Watch outside connectivity and record outages for the Inbox (GRE-999). */
+    connectivityWatch?: { stateFile: string };
     authReady: boolean;
     companyDeletionEnabled: boolean;
     announcements?: { enabled: boolean; feedUrl: string };
@@ -611,6 +619,18 @@ export async function createApp(
       deliverNativeQuestionResponse(db, interaction),
     storage: opts.storageService,
   });
+  if (opts.connectivityWatch) {
+    const webhookPublicBaseUrl = opts.chatWebhookPublicBaseUrl ?? null;
+    connectivityWatcher({
+      stateFile: opts.connectivityWatch.stateFile,
+      probe: () => probeOutsideConnectivity({ urls: connectivityProbeUrlsFromEnv() }),
+      afterChecks: (outageStartedAt) => runAfterOutageChecks({
+        webhookPublicBaseUrl,
+        telegramWebhooks: () => chatChannels.telegramWebhookReports(),
+        outageStartedAt,
+      }),
+    }).start();
+  }
   // Provider-authenticated ingress is intentionally outside the board
   // mutation guard. The Chat SDK adapter verifies the provider signature
   // before GS Agentic Manager persists or acts on any event.

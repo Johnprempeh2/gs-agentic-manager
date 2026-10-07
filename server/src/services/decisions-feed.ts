@@ -111,6 +111,7 @@ function cardKind(item: AttentionItem): DecisionCardKind {
     case "budget_alert": return "budget";
     case "agent_error_alert": return "agent_error";
     case "ai_connection_alert": return "connection";
+    case "connectivity_outage": return "outage";
     default: return "decision";
   }
 }
@@ -869,6 +870,7 @@ function buildCard(input: {
     budget: "Paused work stays paused until the budget is raised.",
     agent_error: "The agent takes no work until the error is fixed.",
     join_request: "The request waits for your approval.",
+    outage: "Nothing to decide. Retry the failed runs if their tasks still matter, then dismiss this card.",
   };
   if (setupCard && !readyToRetry) {
     nextStepByKind[kind] = `${setupAgentName} stops the same way on every run until the setup is fixed. Fix it, then retry.`;
@@ -1069,7 +1071,7 @@ function buildCard(input: {
     if (main.subject.href && !actions.some((action) => action.type === "link")) {
       actions.push(linkAction("open", "Open", "Open the details.", main.subject.href));
     }
-    if (["ai_connection_alert", "agent_error_alert", "failed_run"].includes(main.sourceKind)) {
+    if (["ai_connection_alert", "agent_error_alert", "failed_run", "connectivity_outage"].includes(main.sourceKind)) {
       actions.push(dismissAction(companyId, items, "Dismiss"));
     }
   }
