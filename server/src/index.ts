@@ -117,6 +117,7 @@ import {
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { pushNotificationService } from "./services/push-notifications.js";
+import { defaultConnectivityStateFile } from "./services/connectivity-watch.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
@@ -991,6 +992,9 @@ async function startServerWithDatabaseTeardown(
     bindHost: config.host,
     authPublicBaseUrl: config.authPublicBaseUrl,
     chatWebhookPublicBaseUrl: config.chatWebhookPublicBaseUrl,
+    connectivityWatch: process.env.GSAM_CONNECTIVITY_WATCH?.trim().toLowerCase() === "false"
+      ? undefined
+      : { stateFile: defaultConnectivityStateFile() },
     authReady,
     companyDeletionEnabled: config.companyDeletionEnabled,
     announcements: { enabled: config.announcementsEnabled, feedUrl: config.announcementsFeedUrl },

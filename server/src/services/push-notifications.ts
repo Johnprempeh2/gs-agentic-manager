@@ -33,6 +33,10 @@ type Sender = (target: PushTarget, message: DecisionPushMessage) => Promise<Push
 export function decisionPushMessage(fresh: DecisionCard[], count: number, prefix: string): DecisionPushMessage {
   const first = fresh[0]!;
   const url = `/${prefix}/decisions`;
+  if (fresh.length === 1 && first.kind === "outage") {
+    // An outage notice, not a decision (GRE-999): the card's text says it all.
+    return { title: "GSAM lost the internet", body: first.reason, url, tag: first.id, badge: count };
+  }
   if (fresh.length === 1) {
     return { title: "A decision needs you", body: first.title, url, tag: first.id, badge: count };
   }
@@ -175,7 +179,21 @@ export function pushNotificationService(
               inArray(pushNotifiedDecisions.cardId, gone),
             ));
           }
-          const fresh = feed.cards.filter((card) => !known.has(card.id));
+          let fresh = feed.cards.filter((card) => !known.has(card.id));
+          // An outage is instance-wide and shows in every company: the phone
+          // hears about it once per user, not once per company (GRE-999).
+          const outageIds = fresh.filter((card) => card.kind === "outage").map((card) => card.id);
+          if (outageIds.length > 0) {
+            const told = new Set((await db
+              .select({ cardId: pushNotifiedDecisions.cardId })
+              .from(pushNotifiedDecisions)
+              .where(and(eq(pushNotifiedDecisions.userId, userId), inArray(pushNotifiedDecisions.cardId, outageIds))))
+              .map((row) => row.cardId));
+            if (told.size > 0) {
+              await rememberCards(companyId, userId, [...told]);
+              fresh = fresh.filter((card) => !told.has(card.id));
+            }
+          }
           if (fresh.length === 0) continue;
           // Remember first: a slow or failing push service never repeats a card.
           await rememberCards(companyId, userId, fresh.map((card) => card.id));

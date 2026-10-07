@@ -62,6 +62,7 @@ const SOURCE_META: Record<AttentionSourceKind, SourceMeta> = {
   budget_alert: { label: "Budget" },
   agent_error_alert: { label: "Agent error" },
   ai_connection_alert: { label: "AI connection" },
+  connectivity_outage: { label: "Internet outage" },
 };
 
 export function sourceMeta(kind: AttentionSourceKind): SourceMeta {

@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import express from "express";
 import request from "supertest";
 import { eq } from "drizzle-orm";
@@ -2065,6 +2068,55 @@ describeEmbeddedPostgres("attention service", () => {
       decideBy: "2026-08-03",
       expiresAt: "2026-08-03T12:00:00.000Z",
     });
+  });
+
+  it("shows each recorded internet outage once, with its run counts, to board users only (GRE-999)", async () => {
+    const { companyId, workerId } = await seedCompany("OUT");
+    const dir = mkdtempSync(join(tmpdir(), "attention-outage-"));
+    const stateFile = join(dir, "outages.json");
+    const startedAt = "2026-10-07T13:02:00.000Z";
+    const endedAt = "2026-10-07T14:05:00.000Z";
+    writeFileSync(stateFile, JSON.stringify({
+      offlineSince: null,
+      lastCheckAt: endedAt,
+      outages: [
+        {
+          id: "outage-1", startedAt, endedAt, endIsApproximate: false,
+          checks: [{ name: "webhook_path", ok: false, message: "The public webhook path (Funnel) does not answer." }],
+        },
+        // Ended more than seven days ago: no card.
+        { id: "outage-old", startedAt: "2026-09-20T10:00:00.000Z", endedAt: "2026-09-20T11:00:00.000Z", endIsApproximate: false, checks: [] },
+      ],
+    }));
+    await db.insert(heartbeatRuns).values([
+      { companyId, agentId: workerId, status: "failed", createdAt: new Date("2026-10-07T13:00:00.000Z"), finishedAt: new Date("2026-10-07T13:10:00.000Z") },
+      { companyId, agentId: workerId, status: "timed_out", createdAt: new Date("2026-10-07T13:30:00.000Z"), finishedAt: new Date("2026-10-07T14:00:00.000Z") },
+      { companyId, agentId: workerId, status: "queued", scheduledRetryAttempt: 1, createdAt: new Date("2026-10-07T14:06:00.000Z") },
+      // Before the outage: not counted.
+      { companyId, agentId: workerId, status: "failed", createdAt: new Date("2026-10-07T11:00:00.000Z"), finishedAt: new Date("2026-10-07T11:05:00.000Z") },
+    ]);
+    try {
+      const service = attentionService(db, { now: () => Date.parse("2026-10-07T14:06:00.000Z"), connectivityStateFile: stateFile });
+      const outages = (await service.list(companyId, { userId: "board-user", limit: 100 }))
+        .items.filter((item) => item.sourceKind === "connectivity_outage");
+
+      expect(outages).toHaveLength(1);
+      expect(outages[0]).toMatchObject({
+        severity: "high",
+        dedupKey: "connectivity_outage:outage-1",
+        activityAt: endedAt,
+        subject: { kind: "connectivity_outage", id: "outage-1", title: "GSAM was offline from 14:02 to 15:05", status: "still_broken" },
+      });
+      expect((outages[0]!.detail as { summaryExcerpt: string }).summaryExcerpt).toBe(
+        "GSAM was offline from 14:02 to 15:05, 1 h 3 min, London time. Agent runs in that time: 2 failed, 1 retried. "
+          + "Still broken: The public webhook path (Funnel) does not answer.",
+      );
+
+      // Agents do not see it.
+      expect((await service.list(companyId, { limit: 100 })).items.some((item) => item.sourceKind === "connectivity_outage")).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("warns the board before a Claude token expires, again at expiry, and when a run's login is rejected (GRE-15)", async () => {
