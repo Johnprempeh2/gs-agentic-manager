@@ -5302,6 +5302,15 @@ export async function waitForRuntimeServiceReadiness(input: {
       // transport cause so a refused port is distinguishable from a timeout.
       if (err instanceof Error && err.cause instanceof Error) {
         lastError += `: ${err.cause.message}`;
+        // Node fetch refuses ports on the WHATWG "bad port" list (4190, 6000, ...).
+        // Every probe would fail the same way, so stop now and say why.
+        if (err.cause.message === "bad port") {
+          const blockedPort = new URL(readinessUrl).port;
+          throw new Error(
+            `Readiness check failed for ${readinessUrl}: port ${blockedPort} is blocked by Node fetch (WHATWG "bad port" list). Configure a different port for this service.`,
+            { cause: err },
+          );
+        }
       }
     }
     if (now() >= deadline) break;
@@ -6819,7 +6828,11 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
       });
     }
     await cleanupRecordExposure(record, { preserveFailure: true });
-    record.status = "stopped";
+    // A start that never became ready is a failure, not a stop. Only a retryable
+    // port collision is superseded by a fresh attempt, so that row stays "stopped"
+    // (GRE-1002: the Live preview card read "Stopped" for a broken service).
+    const retryableCollision = Boolean(port && (bindCollision || exposureHostCollision));
+    record.status = retryableCollision ? "stopped" : "failed";
     record.healthStatus = "unhealthy";
     record.lastUsedAt = new Date().toISOString();
     record.stoppedAt = new Date().toISOString();
