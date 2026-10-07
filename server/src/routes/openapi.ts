@@ -1392,6 +1392,8 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/members/{memberId}/archive",
   "POST /api/companies/{companyId}/legacy-board/retire",
   "POST /api/companies/{companyId}/legacy-board/restore",
+  "POST /api/companies/{companyId}/members/{memberId}/handover",
+  "POST /api/companies/{companyId}/members/{memberId}/restore",
   "PATCH /api/companies/{companyId}/members/{memberId}/permissions",
   "GET /api/companies/{companyId}/user-directory",
   "GET /api/companies/{companyId}/managed-agent-profiles",
@@ -7534,6 +7536,60 @@ registry.registerPath({
     "Authenticated mode only, active company owner only. Makes local-board's membership active again (and gives back the instance admin role if retire removed it). Moved work, revoked keys and ended sessions stay as they are.",
   request: {
     params: z.object({ companyId: z.string() }),
+    body: jsonBody(z.object({}).strict()),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/members/{memberId}/handover",
+  tags: ["access"],
+  summary: "Hand over and remove a person",
+  description:
+    "Owners and admins; only owners for an owner or admin; never yourself or the last active owner. Lists everything in the company that depends on the person (open work, pending asks, routines, the company default responsible person, queued runs, agents that would run on their AI account, their connections, memory and other grants, membership, instance admin role, board API keys and sessions) with a recommended action and the planned target after `overrides`. With `dryRun: true` it writes nothing. Otherwise, when there are no blockers, it applies every move in one transaction, archives the membership (suspends an owner or admin), revokes personal connections, keys and sessions, creates a handover task for the successor and logs the counts. Blocked plans answer 422 with `details.blockers`. In local_trusted mode the legacy local-board account is refused.",
+  request: {
+    params: z.object({ companyId: z.string(), memberId: z.string() }),
+    body: jsonBody(z.object({
+      successorUserId: z.string(),
+      overrides: z.array(z.object({
+        itemRef: z.string(),
+        toUserId: z.string().optional(),
+        toAgentId: z.string().optional(),
+        action: z.enum(["leave", "unassign", "close", "clear", "use_personal_default", "use_shared_connection"]).optional(),
+        sharedGrantId: z.string().optional(),
+      }).strict()).optional(),
+      dryRun: z.boolean(),
+      removeInstanceAdmin: z.boolean().optional(),
+    }).strict()),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/members/{memberId}/restore",
+  tags: ["access"],
+  summary: "Restore a handed-over person",
+  description:
+    "Owners and admins; only owners for an owner or admin. Makes an archived or suspended membership active again, gives back the permissions the handover removed (not memory rights) and an instance admin role it removed. Moved work, revoked connections, keys and sessions stay as they are.",
+  request: {
+    params: z.object({ companyId: z.string(), memberId: z.string() }),
     body: jsonBody(z.object({}).strict()),
   },
   responses: {

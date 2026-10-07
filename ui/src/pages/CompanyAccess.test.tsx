@@ -17,8 +17,8 @@ const mockNavigate = vi.hoisted(() => vi.fn());
 const listInvitesMock = vi.hoisted(() => vi.fn());
 const listCloudStacksMock = vi.hoisted(() => vi.fn());
 const mockSearchParamsState = vi.hoisted(() => ({ current: new URLSearchParams() }));
-const retireLegacyBoardMock = vi.hoisted(() => vi.fn());
-const restoreLegacyBoardMock = vi.hoisted(() => vi.fn());
+const handOverMemberMock = vi.hoisted(() => vi.fn());
+const restoreMemberMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/cloud", () => ({
   cloudApi: { listStacks: listCloudStacksMock },
@@ -27,6 +27,8 @@ vi.mock("@/api/cloud", () => ({
 vi.mock("@/api/access", () => ({
   accessApi: {
     listMembers: (companyId: string) => listMembersMock(companyId),
+    handOverMember: (companyId: string, memberId: string, input: unknown) => handOverMemberMock(companyId, memberId, input),
+    restoreMember: (companyId: string, memberId: string) => restoreMemberMock(companyId, memberId),
     listJoinRequests: (companyId: string, status: string) => listJoinRequestsMock(companyId, status),
     updateMember: (companyId: string, memberId: string, input: unknown) =>
       updateMemberMock(companyId, memberId, input),
@@ -36,8 +38,6 @@ vi.mock("@/api/access", () => ({
       archiveMemberMock(companyId, memberId, input),
     approveJoinRequest: vi.fn(),
     rejectJoinRequest: vi.fn(),
-    retireLegacyBoard: (companyId: string, input: unknown) => retireLegacyBoardMock(companyId, input),
-    restoreLegacyBoard: (companyId: string) => restoreLegacyBoardMock(companyId),
     listInvites: (companyId: string, options: unknown) => listInvitesMock(companyId, options),
     createCompanyInvite: vi.fn(),
     revokeInvite: vi.fn(),
@@ -280,29 +280,73 @@ describe("CompanyAccess", () => {
     });
   });
 
-  function legacyBoardMembers(status: "active" | "suspended", controls: Record<string, unknown> | null) {
+  const canHandOver = { canHandOver: true, handOverReason: null, canRestore: false, restoreReason: null };
+
+  function member(overrides: Record<string, unknown>) {
+    return {
+      companyId: "company-1",
+      principalType: "user",
+      status: "active",
+      createdAt: "2026-04-10T00:00:00.000Z",
+      updatedAt: "2026-04-10T00:00:00.000Z",
+      grants: [],
+      ...overrides,
+    };
+  }
+
+  function handoverMembers(extra: Array<Record<string, unknown>> = []) {
     return {
       members: [
-        {
-          id: "member-legacy",
-          companyId: "company-1",
-          principalType: "user",
-          principalId: "local-board",
-          status,
-          membershipRole: "owner",
-          createdAt: "2026-04-10T00:00:00.000Z",
-          updatedAt: "2026-04-10T00:00:00.000Z",
-          user: { id: "local-board", email: "local@paperclip.local", name: "John Prempeh (legacy)", image: null },
-          grants: [],
-        },
+        member({
+          id: "member-1", principalId: "user-1", membershipRole: "owner",
+          user: { id: "user-1", email: "owner@example.com", name: "Owner One", image: null },
+          handover: { canHandOver: false, handOverReason: "You cannot hand over yourself.", canRestore: false, restoreReason: null },
+        }),
+        member({
+          id: "member-2", principalId: "user-2", membershipRole: "operator",
+          user: { id: "user-2", email: "leaver@example.com", name: "Leaving Person", image: null },
+          handover: canHandOver,
+        }),
+        ...extra,
       ],
       access: {
         currentUserRole: "owner",
+        currentUserId: "user-1",
         canManageMembers: true,
         canInviteUsers: true,
         canApproveJoinRequests: false,
-        legacyBoard: controls,
       },
+    };
+  }
+
+  function plan(overrides: Record<string, unknown> = {}) {
+    return {
+      dryRun: true,
+      companyId: "company-1",
+      member: { membershipId: "member-2", userId: "user-2", name: "Leaving Person", email: null, role: "operator", status: "active", isInstanceAdmin: false },
+      successor: { userId: "user-1", name: "Owner One" },
+      items: [
+        {
+          ref: "issue:issue-7", group: "work", kind: "issue", title: "GRE-7 Ship the report", detail: "todo: assignee",
+          link: "/issues/GRE-7", roles: ["assignee"],
+          recommended: { type: "move_to_user", userId: "user-1" }, planned: { type: "move_to_user", userId: "user-1" },
+          choices: ["user", "agent", "unassign", "close", "leave"], blocker: null, warning: null,
+        },
+        {
+          ref: "grant:g-1", group: "connections", kind: "ai_connection", title: "Leaver Claude", detail: "Personal AI account",
+          link: null, recommended: { type: "revoke" }, planned: { type: "revoke" }, choices: [], blocker: null, warning: null,
+        },
+        {
+          ref: "membership", group: "access", kind: "membership", title: "Membership (operator)", detail: null,
+          link: null, recommended: { type: "archive" }, planned: { type: "archive" }, choices: [], blocker: null, warning: null,
+        },
+      ],
+      blockers: [],
+      warnings: [],
+      reconnect: [{ kind: "ai", name: "Leaver Claude", detail: "Connect your own Claude account in Apps." }],
+      counts: { issues: 1, interactions: 0, routines: 0, agentsRepointed: 0, connectionsRevoked: 1, memoryGrantsRemoved: 0, permissionGrantsRemoved: 0, boardKeysRevoked: 0, sessionsEnded: 0 },
+      handoverIssue: null,
+      ...overrides,
     };
   }
 
@@ -321,87 +365,121 @@ describe("CompanyAccess", () => {
     return root;
   }
 
-  function findButton(label: string) {
-    return Array.from(document.body.querySelectorAll("button")).find((button) => button.textContent === label);
+  function findButton(label: string, scope: ParentNode = document.body) {
+    return Array.from(scope.querySelectorAll("button")).find((button) => button.textContent === label);
   }
 
-  it("retires the legacy local-board account after showing the dry run", async () => {
-    listMembersMock.mockResolvedValue(legacyBoardMembers("active", { status: "active", canRetire: true, canRestore: false }));
-    const dryRun = {
-      dryRun: true,
-      companyId: "company-1",
-      legacyUserId: "local-board",
-      membershipId: "member-legacy",
-      moveToUserId: "user-1",
-      issueCount: 1,
-      issues: [{ id: "issue-800", identifier: "GRE-800", title: "Waits on the board", roles: ["assignee", "current_reviewer"] }],
-      pendingRequestCount: 2,
-      routineCount: 1,
-      routines: [{ id: "routine-1", title: "Weekly digest", status: "paused" }],
-      switchOff: {
-        membershipStatus: { from: "active", to: "suspended" },
-        boardKeysRevoked: 2,
-        sessionsEnded: 0,
-        instanceAdmin: "kept",
-      },
-    };
-    retireLegacyBoardMock.mockImplementation(async (_companyId: string, input: { dryRun: boolean }) => ({ ...dryRun, dryRun: input.dryRun }));
+  async function click(element: Element | undefined | null) {
+    expect(element).toBeTruthy();
+    await act(async () => {
+      element!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    await flushReact();
+  }
+
+  it("hands over and removes a person in three steps, with a per-item change", async () => {
+    listMembersMock.mockResolvedValue(handoverMembers());
+    handOverMemberMock.mockImplementation(async (_companyId: string, _memberId: string, input: { dryRun: boolean }) =>
+      input.dryRun ? plan() : plan({ dryRun: false, handoverIssue: { id: "issue-99", identifier: "GRE-99", title: "Handover from Leaving Person" } }));
     const root = await renderAccess();
 
-    const retireButton = findButton("Retire legacy account");
-    expect(retireButton).toBeTruthy();
+    const rowButtons = Array.from(container.querySelectorAll("button")).filter((button) => button.textContent === "Hand over and remove");
+    expect(rowButtons).toHaveLength(2);
+    expect(rowButtons[0]).toHaveProperty("disabled", true);
+    expect(rowButtons[0]?.getAttribute("title")).toBe("You cannot hand over yourself.");
+    await click(rowButtons[1]);
+
+    // Step 1: the successor defaults to the viewer.
+    const successor = document.body.querySelector('select[aria-label="Successor"]') as HTMLSelectElement;
+    expect(successor.value).toBe("user-1");
+    await click(findButton("Next"));
+
+    // Step 2: the grouped plan, with a change for the task.
+    expect(handOverMemberMock).toHaveBeenLastCalledWith("company-1", "member-2", {
+      successorUserId: "user-1", overrides: [], dryRun: true, removeInstanceAdmin: false,
+    });
+    expect(document.body.textContent).toContain("Open work");
+    expect(document.body.textContent).toContain("GRE-7 Ship the report");
+    expect(document.body.textContent).toContain("Connections");
+    const taskSelect = document.body.querySelector('select[aria-label="Where GRE-7 Ship the report goes"]') as HTMLSelectElement;
     await act(async () => {
-      retireButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      taskSelect.value = "close";
+      taskSelect.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await flushReact();
     await flushReact();
-
-    expect(retireLegacyBoardMock).toHaveBeenCalledWith("company-1", { dryRun: true });
-    expect(document.body.textContent).toContain("GRE-800");
-    expect(document.body.textContent).toContain("assignee, reviewer");
-    expect(document.body.textContent).toContain("2 pending questions or requests");
-    expect(document.body.textContent).toContain("1 routine (you become the responsible user)");
-    expect(document.body.textContent).toContain("Weekly digest");
-    expect(document.body.textContent).toContain("2 board API keys revoked");
-
-    const confirm = Array.from(document.body.querySelectorAll('[role="dialog"] button')).find(
-      (button) => button.textContent === "Retire legacy account",
-    );
-    expect(confirm).toBeTruthy();
-    await act(async () => {
-      confirm!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(handOverMemberMock).toHaveBeenLastCalledWith("company-1", "member-2", {
+      successorUserId: "user-1", overrides: [{ itemRef: "issue:issue-7", action: "close" }], dryRun: true, removeInstanceAdmin: false,
     });
-    await flushReact();
+    await click(findButton("Next"));
 
-    expect(retireLegacyBoardMock).toHaveBeenCalledWith("company-1", { dryRun: false });
+    // Step 3: the summary, then the real run.
+    expect(document.body.textContent).toContain("Owner One needs to reconnect");
+    const confirm = findButton("Hand over and remove", document.body.querySelector('[role="dialog"]')!);
+    await click(confirm);
+    expect(handOverMemberMock).toHaveBeenLastCalledWith("company-1", "member-2", {
+      successorUserId: "user-1", overrides: [{ itemRef: "issue:issue-7", action: "close" }], dryRun: false, removeInstanceAdmin: false,
+    });
+    const taskLink = Array.from(document.body.querySelectorAll("a")).find((link) => link.textContent?.includes("Handover from Leaving Person"));
+    expect(taskLink?.getAttribute("href")).toBe("/issues/GRE-99");
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  it("offers Restore for a retired legacy account and nothing without server controls", async () => {
-    listMembersMock.mockResolvedValue(legacyBoardMembers("suspended", { status: "suspended", canRetire: false, canRestore: true }));
-    restoreLegacyBoardMock.mockResolvedValue({});
-    let root = await renderAccess();
+  it("shows blockers in red and will not go past the review", async () => {
+    listMembersMock.mockResolvedValue(handoverMembers());
+    handOverMemberMock.mockResolvedValue(plan({ blockers: ["Nova: Nova would have no AI account"] }));
+    const root = await renderAccess();
+    await click(Array.from(container.querySelectorAll("button")).filter((button) => button.textContent === "Hand over and remove")[1]);
+    await click(findButton("Next"));
 
-    expect(findButton("Retire legacy account")).toBeUndefined();
-    const restore = findButton("Restore");
-    expect(restore).toBeTruthy();
-    await act(async () => {
-      restore!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-    expect(restoreLegacyBoardMock).toHaveBeenCalledWith("company-1");
+    const alert = document.body.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("Nova would have no AI account");
+    expect(alert?.className).toContain("text-destructive");
+    expect(findButton("Next")).toHaveProperty("disabled", true);
+    expect(handOverMemberMock).not.toHaveBeenCalledWith("company-1", "member-2", expect.objectContaining({ dryRun: false }));
+
     await act(async () => {
       root.unmount();
     });
+  });
 
-    // local_trusted mode, or a non-owner: the server sends no controls.
-    listMembersMock.mockResolvedValue(legacyBoardMembers("active", null));
-    root = await renderAccess();
-    expect(findButton("Retire legacy account")).toBeUndefined();
-    expect(findButton("Restore")).toBeUndefined();
+  it("uses the same flow for the legacy local-board account, with the primary owner as successor", async () => {
+    listMembersMock.mockResolvedValue(handoverMembers([
+      member({
+        id: "member-legacy", principalId: "local-board", membershipRole: "owner", createdAt: "2026-01-01T00:00:00.000Z",
+        user: { id: "local-board", email: "local@paperclip.local", name: "John Prempeh (legacy)", image: null },
+        handover: canHandOver,
+      }),
+    ]));
+    handOverMemberMock.mockResolvedValue(plan());
+    const root = await renderAccess();
+    expect(container.textContent).not.toContain("Retire legacy account");
+    const buttons = Array.from(container.querySelectorAll("button")).filter((button) => button.textContent === "Hand over and remove");
+    await click(buttons[2]);
+    const successor = document.body.querySelector('select[aria-label="Successor"]') as HTMLSelectElement;
+    expect(successor.value).toBe("user-1");
+    expect(Array.from(successor.options).map((option) => option.value)).not.toContain("local-board");
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("restores a removed person from their row", async () => {
+    listMembersMock.mockResolvedValue(handoverMembers([
+      member({
+        id: "member-gone", principalId: "user-gone", membershipRole: "admin", status: "suspended",
+        user: { id: "user-gone", email: "gone@example.com", name: "Gone Admin", image: null },
+        handover: { canHandOver: false, handOverReason: "This person is already removed.", canRestore: true, restoreReason: null },
+      }),
+    ]));
+    restoreMemberMock.mockResolvedValue({});
+    const root = await renderAccess();
+    await click(findButton("Restore"));
+    expect(restoreMemberMock).toHaveBeenCalledWith("company-1", "member-gone");
     await act(async () => {
       root.unmount();
     });
@@ -447,122 +525,6 @@ describe("CompanyAccess", () => {
       membershipRole: "owner",
       status: "active",
     });
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it("removes a member with an issue reassignment target", async () => {
-    const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CompanyAccess />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    const removeButtons = Array.from(container.querySelectorAll("button")).filter(
-      (button) => button.textContent?.includes("Remove"),
-    );
-    expect(removeButtons.length).toBeGreaterThan(0);
-
-    await act(async () => {
-      removeButtons[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(document.body.textContent).toContain("Remove member");
-    expect(document.body.textContent).toContain("Assigned to removed user");
-
-    const reassignmentSelect = document.body.querySelector("select");
-    expect(reassignmentSelect).toBeTruthy();
-    await act(async () => {
-      reassignmentSelect!.value = "user:user-2";
-      reassignmentSelect!.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-
-    const confirmButton = Array.from(document.body.querySelectorAll("button")).find(
-      (button) => button.textContent === "Remove member",
-    );
-    expect(confirmButton).toBeTruthy();
-
-    await act(async () => {
-      confirmButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flushReact();
-
-    expect(archiveMemberMock).toHaveBeenCalledWith("company-1", "member-1", {
-      reassignment: { assigneeAgentId: null, assigneeUserId: "user-2" },
-    });
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it("shows protected member removal reasons from the API", async () => {
-    listMembersMock.mockResolvedValueOnce({
-      members: [
-        {
-          id: "member-admin",
-          companyId: "company-1",
-          principalType: "user",
-          principalId: "admin-user",
-          status: "active",
-          membershipRole: "admin",
-          createdAt: "2026-04-10T00:00:00.000Z",
-          updatedAt: "2026-04-10T00:00:00.000Z",
-          user: {
-            id: "admin-user",
-            email: "admin@paperclip.local",
-            name: "Admin User",
-            image: null,
-          },
-          grants: [],
-          removal: {
-            canArchive: false,
-            reason: "Company admins cannot be removed from company access.",
-          },
-        },
-      ],
-      access: {
-        currentUserRole: "owner",
-        canManageMembers: true,
-        canInviteUsers: true,
-        canApproveJoinRequests: false,
-      },
-    });
-
-    const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <CompanyAccess />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(container.textContent).not.toContain("Company admins cannot be removed from company access.");
-    const removeButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Remove"),
-    );
-    expect(removeButton).toBeTruthy();
-    expect(removeButton).toHaveProperty("disabled", true);
-    expect(removeButton?.getAttribute("title")).toBe("Company admins cannot be removed from company access.");
 
     await act(async () => {
       root.unmount();

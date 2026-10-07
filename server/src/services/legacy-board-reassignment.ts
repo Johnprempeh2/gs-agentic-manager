@@ -10,6 +10,10 @@ import { LEGACY_BOARD_USER_ID, primaryOwnerUserId } from "./board-identity.js";
  * `legacy-board-retirement.ts` (the calling owner, in its own transaction).
  * Running it again finds nothing left to move.
  *
+ * The issue half is written for any user: the member handover
+ * (`member-handover.ts`) uses `findOpenWorkForUser` and the `fromUserId`
+ * argument of the rebind helpers to move a departing person's work.
+ *
  * Routines are moved too, whatever their status: `routines.responsibleUserId`
  * and the latest revision's responsible user (column and snapshot), because a
  * routine fires new work as that user.
@@ -28,31 +32,35 @@ export type LegacyBoardReassignmentCompany = {
   routines: LegacyBoardRoutine[];
 };
 
-function isLegacyBoardPrincipal(value: unknown): value is Principal {
+export function isUserPrincipal(value: unknown, userId: string): value is Principal {
   return Boolean(value && typeof value === "object"
     && (value as Principal).type === "user"
-    && (value as Principal).userId === LEGACY_BOARD_USER_ID);
+    && (value as Principal).userId === userId);
 }
 
-function rebindPrincipal<T>(value: T, ownerId: string): T {
-  return isLegacyBoardPrincipal(value) ? ({ ...value, userId: ownerId } as T) : value;
+function isLegacyBoardPrincipal(value: unknown): value is Principal {
+  return isUserPrincipal(value, LEGACY_BOARD_USER_ID);
+}
+
+function rebindPrincipal<T>(value: T, ownerId: string, fromUserId: string): T {
+  return isUserPrincipal(value, fromUserId) ? ({ ...value, userId: ownerId } as T) : value;
 }
 
 function principalKey(value: Principal) {
   return value.type === "agent" ? `agent:${String(value.agentId)}` : `user:${String(value.userId)}`;
 }
 
-export function rebindExecutionState(state: unknown, ownerId: string): unknown {
+export function rebindExecutionState(state: unknown, ownerId: string, fromUserId: string = LEGACY_BOARD_USER_ID): unknown {
   if (!state || typeof state !== "object") return state;
   const record = state as Record<string, unknown>;
   return {
     ...record,
-    currentParticipant: rebindPrincipal(record.currentParticipant, ownerId),
-    returnAssignee: rebindPrincipal(record.returnAssignee, ownerId),
+    currentParticipant: rebindPrincipal(record.currentParticipant, ownerId, fromUserId),
+    returnAssignee: rebindPrincipal(record.returnAssignee, ownerId, fromUserId),
   };
 }
 
-export function rebindExecutionPolicy(policy: unknown, ownerId: string): unknown {
+export function rebindExecutionPolicy(policy: unknown, ownerId: string, fromUserId: string = LEGACY_BOARD_USER_ID): unknown {
   if (!policy || typeof policy !== "object") return policy;
   const record = policy as Record<string, unknown>;
   if (!Array.isArray(record.stages)) return policy;
@@ -65,7 +73,7 @@ export function rebindExecutionPolicy(policy: unknown, ownerId: string): unknown
       // The owner may already be a participant: keep one entry per principal.
       const seen = new Set<string>();
       const participants = (stageRecord.participants as Principal[])
-        .map((participant) => rebindPrincipal(participant, ownerId))
+        .map((participant) => rebindPrincipal(participant, ownerId, fromUserId))
         .filter((participant) => {
           const key = principalKey(participant);
           if (seen.has(key)) return false;
@@ -116,6 +124,92 @@ export type LegacyBoardWork = {
 
 type DbReader = Pick<Db, "select">;
 type DbWriter = Pick<Db, "select" | "update">;
+
+/** The open issues and pending asks in one company that name a user. */
+export type OpenWorkForUser = {
+  issues: Array<LegacyBoardOpenIssue & {
+    status: string;
+    assigneeAgentId: string | null;
+    assigneeUserId: string | null;
+    responsibleUserId: string | null;
+    conversationUserId: string | null;
+    executionState: unknown;
+    executionPolicy: unknown;
+  }>;
+  interactionIds: string[];
+};
+
+function issueRolesForUser(row: {
+  assigneeUserId: string | null;
+  responsibleUserId: string | null;
+  executionState: unknown;
+  executionPolicy: unknown;
+}, userId: string): LegacyBoardIssueRole[] {
+  const roles: LegacyBoardIssueRole[] = [];
+  if (row.assigneeUserId === userId) roles.push("assignee");
+  if (row.responsibleUserId === userId) roles.push("responsible");
+  const state = row.executionState && typeof row.executionState === "object"
+    ? row.executionState as Record<string, unknown>
+    : null;
+  if (state && isUserPrincipal(state.currentParticipant, userId)) roles.push("current_reviewer");
+  if (state && isUserPrincipal(state.returnAssignee, userId)) roles.push("return_assignee");
+  const policy = row.executionPolicy && typeof row.executionPolicy === "object"
+    ? row.executionPolicy as Record<string, unknown>
+    : null;
+  const stages = Array.isArray(policy?.stages) ? policy.stages : [];
+  const inPolicy = stages.some((stage) => {
+    const participants = stage && typeof stage === "object" ? (stage as Record<string, unknown>).participants : null;
+    return Array.isArray(participants) && participants.some((participant) => isUserPrincipal(participant, userId));
+  });
+  if (inPolicy) roles.push("review_participant");
+  return roles;
+}
+
+/** Read-only: the open issues and pending asks in a company that name `userId`. */
+export async function findOpenWorkForUser(db: DbReader, companyId: string, userId: string): Promise<OpenWorkForUser> {
+  const userText = `%${JSON.stringify(userId)}%`;
+  const openRows = await db
+    .select({
+      id: issues.id,
+      identifier: issues.identifier,
+      title: issues.title,
+      status: issues.status,
+      assigneeAgentId: issues.assigneeAgentId,
+      assigneeUserId: issues.assigneeUserId,
+      responsibleUserId: issues.responsibleUserId,
+      conversationUserId: issues.conversationUserId,
+      executionState: issues.executionState,
+      executionPolicy: issues.executionPolicy,
+    })
+    .from(issues)
+    .where(and(
+      eq(issues.companyId, companyId),
+      notInArray(issues.status, CLOSED_STATUSES),
+      or(
+        eq(issues.assigneeUserId, userId),
+        eq(issues.responsibleUserId, userId),
+        sql`${issues.executionState}::text like ${userText}`,
+        sql`${issues.executionPolicy}::text like ${userText}`,
+      ),
+    ))
+    .orderBy(asc(issues.issueNumber), asc(issues.id));
+  const interactionRows = await db
+    .select({ id: issueThreadInteractions.id })
+    .from(issueThreadInteractions)
+    .where(and(
+      eq(issueThreadInteractions.companyId, companyId),
+      eq(issueThreadInteractions.status, "pending"),
+      eq(issueThreadInteractions.addresseeUserId, userId),
+    ));
+  return {
+    // The text match can hit a mention that is not a principal; keep only
+    // issues where the user really holds a role.
+    issues: openRows
+      .map((row) => ({ ...row, roles: issueRolesForUser(row, userId) }))
+      .filter((row) => row.roles.length > 0),
+    interactionIds: interactionRows.map((row) => row.id),
+  };
+}
 
 function legacyBoardIssueRoles(row: {
   assigneeUserId: string | null;
