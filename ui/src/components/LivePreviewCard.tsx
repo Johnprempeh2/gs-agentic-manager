@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ExecutionWorkspace,
@@ -12,7 +12,8 @@ import { ExternalLink, GitBranch, GitCommitHorizontal } from "lucide-react";
 import { projectsApi } from "@/api/projects";
 import { queryKeys } from "@/lib/queryKeys";
 import { timeAgo } from "@/lib/timeAgo";
-import { cn } from "@/lib/utils";
+import { Link } from "@/lib/router";
+import { cn, projectWorkspaceUrl } from "@/lib/utils";
 import {
   buildWorkspaceRuntimeControlSections,
   buildWorkspaceServiceControlEntries,
@@ -26,7 +27,8 @@ import {
 } from "@/components/WorkspaceServiceControlBar";
 
 function hasUrlConfig(rawConfig: Record<string, unknown>) {
-  return rawConfig.url != null || rawConfig.port != null || rawConfig.expose != null;
+  const readiness = rawConfig.readiness as { urlTemplate?: unknown } | null | undefined;
+  return rawConfig.port != null || rawConfig.expose != null || Boolean(readiness?.urlTemplate);
 }
 
 /**
@@ -77,6 +79,8 @@ export type LivePreviewCardViewProps = {
   fallbackBranch: string | null;
   lastActivity: string | null;
   errorMessage: string | null;
+  /** Where the workspace's service logs live; shown next to an error. */
+  logsHref?: string | null;
   onAction: (action: WorkspaceServiceControlAction, serviceKey: string | null) => void;
   className?: string;
 };
@@ -88,6 +92,7 @@ export function LivePreviewCardView({
   fallbackBranch,
   lastActivity,
   errorMessage,
+  logsHref,
   onAction,
   className,
 }: LivePreviewCardViewProps) {
@@ -134,7 +139,19 @@ export function LivePreviewCardView({
         ) : null}
         {lastActivity ? <span>{lastActivity}</span> : null}
       </div>
-      {errorMessage ? <p role="alert" className="text-xs text-destructive">{errorMessage}</p> : null}
+      {errorMessage ? (
+        <p role="alert" className="text-xs text-destructive">
+          {errorMessage}
+          {logsHref ? (
+            <>
+              {" "}
+              <Link to={logsHref} className="font-medium text-foreground underline underline-offset-2">
+                View workspace logs
+              </Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -166,8 +183,8 @@ export function LivePreviewCard({ project, companyId }: { project: Project; comp
         request,
       ),
     onSuccess: () => setErrorMessage(null),
-    onError: (error) =>
-      setErrorMessage(error instanceof Error ? error.message : "Could not change the preview. Try again."),
+    onError: (error, request) =>
+      setErrorMessage(`Could not ${request.action} the preview: ${error instanceof Error ? error.message : "unknown error"}.`),
     onSettled: (_result, _error, request) => {
       setPendingRequests((current) => current.filter((pending) => pending !== request));
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.id) });
@@ -175,6 +192,18 @@ export function LivePreviewCard({ project, companyId }: { project: Project; comp
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.checkoutHead(project.id, workspace?.id ?? "") });
     },
   });
+
+  // The server reports "starting" until the readiness check passes; refresh until it settles.
+  const settling = visible && runtimeServices.some((service) =>
+    service.status === "starting" || service.status === "provisioning");
+  useEffect(() => {
+    if (!settling) return;
+    const timer = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.urlKey) });
+    }, 3_000);
+    return () => clearInterval(timer);
+  }, [settling, queryClient, project.id, project.urlKey]);
 
   if (!workspace || !visible) return null;
 
@@ -196,6 +225,7 @@ export function LivePreviewCard({ project, companyId }: { project: Project; comp
       fallbackBranch={workspace.defaultRef ?? workspace.repoRef ?? null}
       lastActivity={describeLastActivity(runtimeServices)}
       errorMessage={errorMessage}
+      logsHref={projectWorkspaceUrl(project, workspace.id)}
       onAction={(action, serviceKey) => {
         const requests = resolveWorkspaceServiceControlRequests(sections, action, serviceKey);
         if (requests.length === 0) return;

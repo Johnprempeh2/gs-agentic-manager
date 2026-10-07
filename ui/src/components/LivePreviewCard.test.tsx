@@ -12,6 +12,11 @@ const api = vi.hoisted(() => ({
   controlWorkspaceRuntimeServices: vi.fn(),
 }));
 vi.mock("@/api/projects", () => ({ projectsApi: api }));
+vi.mock("@/lib/router", () => ({
+  Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
+    <a href={to} className={className}>{children}</a>
+  ),
+}));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -197,7 +202,10 @@ describe("LivePreviewCard", () => {
 
     flushSync(() => button("Restart")!.click());
     await flushReact();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("needs a local path");
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("Could not restart the preview");
+    expect(alert?.textContent).toContain("needs a local path");
+    expect(alert?.querySelector("a")?.getAttribute("href")).toContain("/workspaces/workspace-1");
   });
 
   it("renders nothing for a project without a preview service", async () => {
