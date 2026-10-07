@@ -6574,6 +6574,8 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
   const shell = resolveShell();
   const serviceLog = await openLocalServiceLogFile(serviceKey);
   let child: ChildProcess;
+  let spawnErrorPromise: Promise<never>;
+  let earlyExitPromise: Promise<never>;
   try {
     child = spawn(shell, ["-lc", command], {
       cwd: serviceCwd,
@@ -6584,27 +6586,43 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
       // on an orphaned socketpair during startup reconciliation.
       stdio: ["ignore", serviceLog.handle.fd, serviceLog.handle.fd],
     });
+    // Attach both listeners before any await. A failed spawn (for example a
+    // deleted working folder) emits `error` on the next tick, and an `error`
+    // with no listener takes down the whole server (GRE-1011).
+    const spawned = child;
+    spawnErrorPromise = new Promise<never>((_, reject) => {
+      spawned.once("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "ENOENT" && !existsSync(serviceCwd)) {
+          reject(new Error(
+            `Runtime service "${serviceName}" could not start because its working folder does not exist: ${serviceCwd}`,
+            { cause: err },
+          ));
+          return;
+        }
+        reject(err);
+      });
+    });
+    earlyExitPromise = new Promise<never>((_, reject) => {
+      // `close` follows `exit` after the child's inherited stdout/stderr file
+      // descriptors are closed. Waiting for it makes the startup log excerpt
+      // deterministic instead of racing the final validation line.
+      spawned.once("close", (code, signal) => {
+        reject(new Error(
+          `service process exited before readiness (code ${code ?? "unknown"}, signal ${signal ?? "none"})`,
+        ));
+      });
+    });
+    // These can reject before the readiness race below subscribes to them.
+    // Mark them handled so that gap is not an unhandled rejection; the race
+    // still receives the rejection.
+    spawnErrorPromise.catch(() => {});
+    earlyExitPromise.catch(() => {});
   } finally {
     await serviceLog.handle.close();
   }
   record.child = child;
   record.providerRef = child.pid ? String(child.pid) : null;
   record.processGroupId = child.pid ?? null;
-  const spawnErrorPromise = new Promise<never>((_, reject) => {
-    child.once("error", (err) => {
-      reject(err);
-    });
-  });
-  const earlyExitPromise = new Promise<never>((_, reject) => {
-    // `close` follows `exit` after the child's inherited stdout/stderr file
-    // descriptors are closed. Waiting for it makes the startup log excerpt
-    // deterministic instead of racing the final validation line.
-    child.once("close", (code, signal) => {
-      reject(new Error(
-        `service process exited before readiness (code ${code ?? "unknown"}, signal ${signal ?? "none"})`,
-      ));
-    });
-  });
   const readServiceOutputExcerpt = async () => {
     try {
       const contents = await fs.readFile(serviceLog.logPath);

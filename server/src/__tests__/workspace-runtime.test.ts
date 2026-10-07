@@ -4280,6 +4280,31 @@ describe("ensureRuntimeServicesForRun", () => {
     }
   });
 
+  it("fails a service start whose working folder is missing instead of crashing the server (GRE-1011)", async () => {
+    const workspaceRoot = await makeTempDir("paperclip-runtime-missing-cwd-");
+    const restorePaperclipEnv = configureRuntimeProvisionTestHome(workspaceRoot, "runtime-missing-cwd");
+    const missingCwd = path.join(workspaceRoot, "deleted-preview");
+    const base = runtimeProvisionTestConfig({});
+    const [service] = base.workspaceRuntime.services;
+    const config = { workspaceRuntime: { services: [{ ...service, cwd: missingCwd }] } };
+    const workspace = buildWorkspace(workspaceRoot);
+
+    try {
+      // Before the fix the spawn ENOENT fired while startup awaited the log
+      // handle close, with no `error` listener yet, and killed the process.
+      await expect(
+        startRuntimeServicesForWorkspaceControl(runtimeProvisionStartInput({ workspace, config })),
+      ).rejects.toThrow(`Runtime service "web" could not start because its working folder does not exist: ${missingCwd}`);
+    } finally {
+      await stopRuntimeServicesForExecutionWorkspace({
+        executionWorkspaceId: "execution-workspace-1",
+        workspaceCwd: workspaceRoot,
+      });
+      await fs.rm(workspaceRoot, { recursive: true, force: true });
+      restorePaperclipEnv();
+    }
+  });
+
   it("logs runtime provisioning failure and retries it on the next service start", async () => {
     const workspaceRoot = await makeTempDir("paperclip-runtime-provision-retry-");
     const restorePaperclipEnv = configureRuntimeProvisionTestHome(workspaceRoot, "runtime-provision-retry");
