@@ -39,6 +39,7 @@ import {
   collectProjectWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
 import { assertCanManageProjectWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
+import { findExistingManagedProjectCheckout } from "../services/managed-project-checkout.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
@@ -496,7 +497,8 @@ export function projectRoutes(db: Db) {
       projectWorkspaceId: workspace.id,
     });
 
-    const workspaceCwd = workspace.cwd;
+    // A repo-only workspace has no cwd, but runs may already have cloned its managed checkout.
+    const workspaceCwd = workspace.cwd ?? await findExistingManagedProjectCheckout(project, workspace);
     if (!workspaceCwd) {
       res.status(422).json({ error: "Project workspace needs a local path before GS Agentic Manager can run workspace commands" });
       return;
@@ -559,7 +561,7 @@ export function projectRoutes(db: Db) {
     const operation = await recorder.recordOperation({
       phase: action === "stop" ? "workspace_teardown" : "workspace_provision",
       command: workspaceCommand?.command ?? `workspace command ${action}`,
-      cwd: workspace.cwd,
+      cwd: workspaceCwd,
       metadata: {
         action,
         projectId: project.id,
