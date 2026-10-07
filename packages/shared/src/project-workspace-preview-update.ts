@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { listWorkspaceCommandDefinitions } from "./workspace-commands.js";
+import type { WorkspaceCommandDefinition } from "./types/workspace-runtime.js";
 import type {
   ProjectWorkspacePreviewUpdateState,
   ProjectWorkspacePreviewUpdateStatus,
@@ -35,6 +37,17 @@ export function readProjectWorkspacePreviewUpdate(
     updatedAt: readString(record.updatedAt),
     checkedAt: readString(record.checkedAt),
   };
+}
+
+/** The workspace job that updates the checkout: id "update", else the first job named "update…". */
+export function findPreviewUpdateJob(
+  runtimeConfig: Record<string, unknown> | null | undefined,
+): WorkspaceCommandDefinition | null {
+  const jobs = listWorkspaceCommandDefinitions(runtimeConfig).filter((command) =>
+    command.kind === "job" && command.command && !command.disabledReason);
+  return jobs.find((job) => job.id === "update" || job.id === "job:update")
+    ?? jobs.find((job) => /\bupdate\b/i.test(job.name))
+    ?? null;
 }
 
 export const setProjectWorkspacePreviewAutoUpdateSchema = z.object({

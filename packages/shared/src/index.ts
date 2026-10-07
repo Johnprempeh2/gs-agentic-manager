@@ -1818,6 +1818,7 @@ export {
 } from "./workspace-commands.js";
 export {
   PREVIEW_UPDATE_METADATA_KEY,
+  findPreviewUpdateJob,
   readProjectWorkspacePreviewUpdate,
   setProjectWorkspacePreviewAutoUpdateSchema,
   type SetProjectWorkspacePreviewAutoUpdate,

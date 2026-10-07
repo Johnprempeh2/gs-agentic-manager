@@ -14,7 +14,7 @@ import { promisify } from "node:util";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { projectWorkspaces, workspaceRuntimeServices, type Db } from "@greatstone/db";
 import {
-  listWorkspaceCommandDefinitions,
+  findPreviewUpdateJob,
   PREVIEW_UPDATE_METADATA_KEY,
   readProjectWorkspacePreviewUpdate,
   type Project,
@@ -36,20 +36,11 @@ import {
 
 const execFile = promisify(execFileCallback);
 
+export { findPreviewUpdateJob };
+
 export const PREVIEW_AUTO_UPDATE_TICK_MS = 3 * 60 * 1000;
 const GIT_TIMEOUT_MS = 30_000;
 const MESSAGE_MAX_CHARS = 500;
-
-/** The workspace job that updates the checkout: id "update", else the first job named "update…". */
-export function findPreviewUpdateJob(
-  runtimeConfig: Record<string, unknown> | null | undefined,
-): WorkspaceCommandDefinition | null {
-  const jobs = listWorkspaceCommandDefinitions(runtimeConfig).filter((command) =>
-    command.kind === "job" && command.command && !command.disabledReason);
-  return jobs.find((job) => job.id === "update" || job.id === "job:update")
-    ?? jobs.find((job) => /\bupdate\b/i.test(job.name))
-    ?? null;
-}
 
 async function git(cwd: string, args: string[]) {
   const result = await execFile("git", ["-C", cwd, ...args], {
