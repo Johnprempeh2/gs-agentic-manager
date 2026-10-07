@@ -54,6 +54,25 @@ describe("TaskChatBubble attachment chips", () => {
     expect(container.textContent).not.toContain("Sent from iMessage");
   });
 
+  it("shows another member's name on a left neutral bubble and keeps own messages right (GRE-1012)", () => {
+    const renderItem = (item: TaskChatMessageItem) =>
+      flushSync(() => root!.render(<ThemeProvider><TaskChatBubble item={item} /></ThemeProvider>));
+
+    renderItem({ id: "ben", kind: "message", author: "human", text: "From Ben", authorName: "Ben Kafui Mensah", fromOtherUser: true, showAuthorName: true });
+    expect(container.querySelector('[data-testid="task-chat-human-identity"]')?.textContent).toContain("Ben Kafui Mensah");
+    expect(container.firstElementChild?.className).toContain("items-start");
+    expect(container.querySelector('[data-testid="task-chat-human-bubble"]')?.className).toContain("bg-muted");
+
+    renderItem({ id: "ben2", kind: "message", author: "human", text: "Ben again", authorName: "Ben Kafui Mensah", fromOtherUser: true, showAuthorName: false });
+    expect(container.querySelector('[data-testid="task-chat-human-identity"]')).toBeNull();
+
+    renderItem({ id: "john", kind: "message", author: "human", text: "Mine", authorName: "John Prempeh", sourceChannel: "imessage-photon" });
+    expect(container.querySelector('[data-testid="task-chat-human-identity"]')).toBeNull();
+    expect(container.firstElementChild?.className).toContain("items-end");
+    expect(container.querySelector('[data-testid="task-chat-human-bubble"]')?.className).toContain("gs-human-bubble");
+    expect(container.textContent).toContain("Sent from iMessage");
+  });
+
   it("opens attachment images in the shared task gallery", () => {
     const openGallery = vi.fn(() => true);
     const contentPath = "/api/attachments/shared-image/content";

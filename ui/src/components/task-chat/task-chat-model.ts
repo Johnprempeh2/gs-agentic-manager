@@ -106,6 +106,15 @@ export interface TaskChatMessageItem {
   kind: "message";
   author: TaskChatAuthorKind;
   authorName?: string;
+  /**
+   * Human messages from another team member (not the viewer). They render
+   * left-aligned in a neutral bubble under the speaker's name (GRE-1012).
+   */
+  fromOtherUser?: boolean;
+  /** Profile image for another member's human message, when the directory has one. */
+  authorAvatarUrl?: string | null;
+  /** False when the previous message came from the same other member (grouped). */
+  showAuthorName?: boolean;
   text: string;
   /** Runner-authored output channel. Legacy adapters leave this unset. */
   channel?: "progress" | "final" | "unknown";
