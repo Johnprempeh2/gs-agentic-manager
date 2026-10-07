@@ -1,6 +1,7 @@
 import { ArtifactPreview } from "@/components/artifacts/ArtifactCard";
 import { isVideoLikeOutput } from "@/lib/issue-output";
 import { AgentAvatar, type AvatarAgent } from "../AgentAvatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useCallback, useContext, useState, type ReactNode } from "react";
 import { useEmailComment } from "@/components/EmailMessageCard";
 import type { IssueAttachment } from "@greatstone/shared";
@@ -169,6 +170,10 @@ function TaskChatBubbleContent({
   }
 
   const isHuman = item.author === "human";
+  // Another member's message sits left in a neutral bubble under their name;
+  // the viewer's own messages keep the right-aligned emerald bubble (GRE-1012).
+  const isOtherHuman = isHuman && Boolean(item.fromOtherUser);
+  const isOwnHuman = isHuman && !isOtherHuman;
   const sentFromIMessage = isHuman && item.sourceChannel === "imessage-photon";
   // Non-image file references ("[name](/api/attachments/…/content)") render as
   // attachment chips under the bubble; link-only lines leave the body text.
@@ -217,10 +222,26 @@ function TaskChatBubbleContent({
       className={cn(
         "flex w-full flex-col gap-1",
         animateEntry && "tc-enter-bubble",
-        isHuman ? "items-end" : "items-start",
+        isOwnHuman ? "items-end" : "items-start",
       )}
     >
       {beforeTurn ? <div className="w-full pb-1">{beforeTurn}</div> : null}
+      {isOtherHuman && item.authorName && item.showAuthorName !== false ? (
+        <span
+          className="flex items-center gap-2 px-1"
+          data-testid="task-chat-human-identity"
+        >
+          <Avatar size="sm" className="shrink-0">
+            {item.authorAvatarUrl ? (
+              <AvatarImage src={item.authorAvatarUrl} alt={item.authorName} />
+            ) : null}
+            <AvatarFallback>{initialsForName(item.authorName)}</AvatarFallback>
+          </Avatar>
+          <span className="text-sm font-semibold text-foreground">
+            {item.authorName}
+          </span>
+        </span>
+      ) : null}
       {!isHuman && item.authorName && !hideAgentIdentity ? (
         <TaskChatAgentIdentity
           agentName={item.authorName}
@@ -238,9 +259,11 @@ function TaskChatBubbleContent({
           }
           className={cn(
             "break-words py-2 text-sm",
-            isHuman
+            isOwnHuman
               ? "gs-human-bubble max-w-(--pct-85) rounded-2xl rounded-br-sm px-3.5"
-              : "w-full bg-transparent px-1 text-foreground",
+              : isOtherHuman
+                ? "max-w-(--pct-85) rounded-2xl rounded-bl-sm bg-muted px-3.5 text-foreground"
+                : "w-full bg-transparent px-1 text-foreground",
           )}
         >
           <MarkdownBody
@@ -250,7 +273,7 @@ function TaskChatBubbleContent({
             // `paperclip-markdown-on-accent` flips prose tokens to currentColor
             // (== inherited white) in both themes; dark mode was already correct
             // only because `prose-invert` happened to lighten the text.
-            className={isHuman ? "paperclip-markdown-on-accent" : undefined}
+            className={isOwnHuman ? "paperclip-markdown-on-accent" : undefined}
             softBreaks
             linkIssueReferences
             onImageClick={openImage}

@@ -10,11 +10,13 @@
 import type { Agent } from "@greatstone/shared";
 import type { IssueChatComment } from "@/lib/issue-chat-messages";
 import { resolveCommentAttribution } from "@/lib/comment-attribution";
+import type { CompanyUserProfile } from "@/lib/company-members";
 import type { TaskChatAuthorKind, TaskChatItem, TaskChatMessageItem } from "./task-chat-model";
 
 export interface TaskChatAdapterContext {
   agentMap?: Map<string, Agent>;
   userLabelMap?: ReadonlyMap<string, string> | null;
+  userProfileMap?: ReadonlyMap<string, CompanyUserProfile> | null;
   currentUserId?: string | null;
   /**
    * Task's current assignee. Agent comments from anyone else are cross-issue
@@ -67,9 +69,11 @@ export function commentsToTaskChatItems(
   ctx: TaskChatAdapterContext = {},
 ): TaskChatItem[] {
   const items: TaskChatItem[] = [];
+  let previousHumanUserId: string | null = null;
   for (const comment of comments) {
     if (comment.deletedAt) continue;
     if (comment.conversationSessionGeneration != null) {
+      previousHumanUserId = null;
       items.push({ id: comment.id, kind: "marker", variant: "session_start", label: "New session",
         detail: "Earlier messages and files are still available.", createdAtIso: new Date(comment.createdAt).toISOString() });
       continue;
@@ -90,8 +94,24 @@ export function commentsToTaskChatItems(
       })?.userName;
     } else if (kind === "human") {
       authorName =
-        (comment.authorUserId && ctx.userLabelMap?.get(comment.authorUserId)) || undefined;
+        ctx.userProfileMap?.get(comment.authorUserId ?? "")?.label?.trim() ||
+        (comment.authorUserId && ctx.userLabelMap?.get(comment.authorUserId)) ||
+        undefined;
     }
+    // Another team member's message: only when both ids are known and differ,
+    // so single-user and optimistic echoes keep the viewer's right-side bubble.
+    const fromOtherUser =
+      kind === "human" &&
+      Boolean(comment.authorUserId && ctx.currentUserId && comment.authorUserId !== ctx.currentUserId);
+    const previous = items[items.length - 1];
+    const showAuthorName = fromOtherUser
+      ? !(
+          previous?.kind === "message" &&
+          previous.fromOtherUser &&
+          previousHumanUserId === comment.authorUserId
+        )
+      : undefined;
+    previousHumanUserId = kind === "human" ? comment.authorUserId ?? null : null;
     const queued = comment.queueState === "queued" || comment.clientStatus === "queued";
     const optimistic =
       queued
@@ -119,8 +139,13 @@ export function commentsToTaskChatItems(
       renderKey: comment.clientId ?? comment.id,
       kind: "message",
       author: kind,
-      authorName,
-      agent: effectiveAgentId(comment) ? ctx.agentMap?.get(effectiveAgentId(comment)!) ?? { id: effectiveAgentId(comment)! } : undefined,
+      authorName: fromOtherUser ? authorName ?? "Team member" : authorName,
+      fromOtherUser: fromOtherUser || undefined,
+      authorAvatarUrl: fromOtherUser
+        ? ctx.userProfileMap?.get(comment.authorUserId!)?.image ?? null
+        : undefined,
+      showAuthorName,
+      agent:effectiveAgentId(comment) ? ctx.agentMap?.get(effectiveAgentId(comment)!) ?? { id: effectiveAgentId(comment)! } : undefined,
       text: comment.body,
       sourceChannel: kind === "human" ? comment.metadata?.sourceChannel : undefined,
       timestamp: formatTaskChatCommentTimestamp(comment, kind),
