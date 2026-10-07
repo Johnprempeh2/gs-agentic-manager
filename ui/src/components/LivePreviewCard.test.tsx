@@ -165,6 +165,9 @@ describe("LivePreviewCard", () => {
     const link = container.querySelector<HTMLAnchorElement>('a[href="http://127.0.0.1:4100"]');
     expect(link?.textContent).toContain("Open preview");
     expect(link?.target).toBe("_blank");
+    // The address shows once, in the header, not again in the service bar.
+    expect(container.querySelectorAll('a[href="http://127.0.0.1:4100"]')).toHaveLength(1);
+    expect(card?.textContent?.split("127.0.0.1:4100")).toHaveLength(2);
     expect(card?.textContent).toContain("Running");
     expect(card?.textContent).toContain("main");
     expect(card?.textContent).toContain("1a2b3c4");
@@ -251,7 +254,7 @@ describe("LivePreviewCard", () => {
 
     const update = Array.from(container.querySelectorAll("button")).find((entry) => entry.textContent?.includes("Update now"));
     expect(update).toBeDefined();
-    const toggle = container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Auto-update on new commits"]');
+    const toggle = container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Auto-update while running"]');
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
 
     flushSync(() => update!.click());

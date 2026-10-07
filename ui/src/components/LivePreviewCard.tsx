@@ -175,7 +175,7 @@ export function LivePreviewCardView({
             <p className="text-sm text-muted-foreground">Not running. Start it to open the latest version.</p>
           )}
         </div>
-        <WorkspaceServiceControlBar services={services} onAction={onAction} />
+        <WorkspaceServiceControlBar services={services} onAction={onAction} hideUrl />
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         {branch ? (
@@ -204,31 +204,33 @@ export function LivePreviewCardView({
               <ToggleSwitch
                 checked={update.state.autoUpdate}
                 onCheckedChange={update.onAutoUpdateChange}
-                aria-label="Auto-update on new commits"
+                aria-label="Auto-update while running"
               />
-              Auto-update on new commits
+              Auto-update while running
             </label>
           </div>
           {updateLine ? (
             <p
               aria-live="polite"
               className={cn(
-                "text-xs",
+                "flex items-start gap-1 text-xs",
                 updateLine.tone === "error" && "text-destructive",
-                updateLine.tone === "warning" && "text-amber-700 dark:text-amber-300",
+                updateLine.tone === "warning" && "text-status-warning",
                 updateLine.tone === "muted" && "text-muted-foreground",
               )}
             >
-              {updateLine.tone === "warning" ? <TriangleAlert className="mr-1 inline size-3 align-[-2px]" aria-hidden /> : null}
-              {updateLine.text}
-              {updateLine.tone === "error" && logsHref ? (
-                <>
-                  {" "}
-                  <Link to={logsHref} className="font-medium text-foreground underline underline-offset-2">
-                    View workspace logs
-                  </Link>
-                </>
-              ) : null}
+              {updateLine.tone === "warning" ? <TriangleAlert className="mt-0.5 size-3 shrink-0" aria-hidden /> : null}
+              <span>
+                {updateLine.text}
+                {updateLine.tone === "error" && logsHref ? (
+                  <>
+                    {" "}
+                    <Link to={logsHref} className="font-medium text-foreground underline underline-offset-2">
+                      View workspace logs
+                    </Link>
+                  </>
+                ) : null}
+              </span>
             </p>
           ) : null}
         </div>
@@ -393,7 +395,7 @@ export function TaskPreviewLink({
   if (!service?.url) return null;
   return (
     <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-sm", className)}>
-      <span className="size-2 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+      <span className="size-2 shrink-0 rounded-full bg-status-success" aria-hidden />
       <span className="text-muted-foreground">Preview</span>
       <a
         href={service.url}
