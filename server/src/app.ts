@@ -134,6 +134,7 @@ import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { legacyBoardRoutes } from "./routes/legacy-board.js";
+import { memberHandoverRoutes } from "./routes/member-handover.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import {
   mcpGatewayProtocolRoutes,
@@ -1013,6 +1014,7 @@ export async function createApp(
     }),
   );
   api.use(legacyBoardRoutes(db, { deploymentMode: opts.deploymentMode }));
+  api.use(memberHandoverRoutes(db, { deploymentMode: opts.deploymentMode }));
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });

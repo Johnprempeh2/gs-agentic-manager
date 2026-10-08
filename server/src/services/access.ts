@@ -1156,6 +1156,7 @@ export function accessService(db: Db) {
     copyActiveUserMemberships,
     ensureRoleDefaultGrants,
     archiveMember,
+    sweepMemberConnectionAccess,
     setMemberPermissions,
     updateMemberAndPermissions,
     promoteInstanceAdmin,

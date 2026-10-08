@@ -102,6 +102,7 @@ import {
 import { humanJoinGrantsFromDefaults } from "../services/invite-grants.js";
 import { LEGACY_BOARD_USER_ID } from "../services/board-identity.js";
 import { describeLegacyBoardControls } from "../services/legacy-board-retirement.js";
+import { describeMemberHandoverControls } from "../services/member-handover.js";
 import {
   collapseDuplicatePendingHumanJoinRequests,
   findReusableHumanJoinRequest,
@@ -4503,8 +4504,9 @@ export function accessRoutes(
   router.get("/companies/:companyId/members", async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCompanyPermission(req, companyId, "users:manage_permissions");
+    const includeArchived = req.query.includeArchived === "true" || req.query.includeArchived === "1";
     const [members, currentAccess] = await Promise.all([
-      loadCompanyMemberRecords(db, companyId),
+      loadCompanyMemberRecords(db, companyId, { includeArchived }),
       loadCompanyAccessSummary(req, access, companyId),
     ]);
     const legacyBoard = await describeLegacyBoardControls(db, {
@@ -4514,9 +4516,20 @@ export function accessRoutes(
       legacyMembershipStatus:
         members.find((member) => member.principalId === LEGACY_BOARD_USER_ID)?.status ?? null,
     });
+    const handover = await describeMemberHandoverControls(db, {
+      companyId,
+      deploymentMode: opts.deploymentMode,
+      actor: req.actor,
+      members,
+    });
+    const withRemoval = await addCompanyMemberRemovalAccess(req, db, access, companyId, members);
     res.json({
-      members: await addCompanyMemberRemovalAccess(req, db, access, companyId, members),
-      access: { ...currentAccess, legacyBoard },
+      members: withRemoval.map((member) => ({ ...member, handover: handover.get(member.id) ?? null })),
+      access: {
+        ...currentAccess,
+        currentUserId: req.actor.type === "board" ? req.actor.userId ?? null : null,
+        legacyBoard,
+      },
     });
   });
 

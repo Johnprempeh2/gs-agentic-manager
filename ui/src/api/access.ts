@@ -1,4 +1,12 @@
-import type { AgentAdapterType, JoinRequest, PermissionKey } from "@greatstone/shared";
+import type {
+  AgentAdapterType,
+  JoinRequest,
+  MemberHandoverControls,
+  MemberHandoverOverride,
+  MemberHandoverPlan,
+  MemberHandoverRestoreResult,
+  PermissionKey,
+} from "@greatstone/shared";
 import { api } from "./client";
 
 export type HumanCompanyRole = "owner" | "admin" | "operator" | "viewer";
@@ -129,6 +137,8 @@ export type CompanyMember = {
     canArchive: boolean;
     reason: string | null;
   };
+  /** Hand over and remove, and restore: what this viewer may do for this row. */
+  handover?: MemberHandoverControls | null;
 };
 
 export type ArchiveCompanyMemberResponse = {
@@ -143,6 +153,8 @@ export type CompanyMembersResponse = {
     canManageMembers: boolean;
     canInviteUsers: boolean;
     canApproveJoinRequests: boolean;
+    /** The signed-in viewer, when known. */
+    currentUserId?: string | null;
     /** Present in authenticated mode when the company still has the legacy local-board member. */
     legacyBoard?: LegacyBoardControls | null;
   };
@@ -358,8 +370,24 @@ export const accessApi = {
       `/companies/${companyId}/join-requests?status=${status}${requestType ? `&requestType=${requestType}` : ""}`,
     ),
 
-  listMembers: (companyId: string) =>
-    api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
+  listMembers: (companyId: string, options: { includeArchived?: boolean } = {}) =>
+    api.get<CompanyMembersResponse>(
+      `/companies/${companyId}/members${options.includeArchived ? "?includeArchived=true" : ""}`,
+    ),
+
+  handOverMember: (
+    companyId: string,
+    memberId: string,
+    input: {
+      successorUserId: string;
+      overrides?: MemberHandoverOverride[];
+      dryRun: boolean;
+      removeInstanceAdmin?: boolean;
+    },
+  ) => api.post<MemberHandoverPlan>(`/companies/${companyId}/members/${memberId}/handover`, input),
+
+  restoreMember: (companyId: string, memberId: string) =>
+    api.post<MemberHandoverRestoreResult>(`/companies/${companyId}/members/${memberId}/restore`, {}),
 
   listUserDirectory: (companyId: string) =>
     api.get<CompanyUserDirectoryResponse>(`/companies/${companyId}/user-directory`),

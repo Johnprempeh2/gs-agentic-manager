@@ -3,14 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
   hidesCompanyPage,
-  type Agent,
 } from "@greatstone/shared";
-import { Shield, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { Shield, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import { accessApi, type CompanyMember } from "@/api/access";
 import { agentsApi } from "@/api/agents";
 import { ApiError } from "@/api/client";
 import { cloudApi } from "@/api/cloud";
-import { issuesApi } from "@/api/issues";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,10 +32,9 @@ import { PageTabBar } from "@/components/PageTabBar";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { InvitesSection } from "@/components/access/InvitesSection";
-import { LegacyBoardRetirementActions } from "@/components/access/LegacyBoardRetirement";
+import { MemberHandoverDialog } from "@/components/access/MemberHandoverDialog";
 
 const LEGACY_BOARD_USER_ID = "local-board";
-const reassignmentIssueStatuses = "backlog,todo,in_progress,in_review,blocked,failed,timed_out";
 type EditableMemberStatus = "pending" | "active" | "suspended";
 
 export function CompanyAccess() {
@@ -82,8 +79,9 @@ export function CompanyAccess() {
     );
   };
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
-  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
-  const [reassignmentTarget, setReassignmentTarget] = useState<string>("__unassigned");
+  // Kept as a snapshot: once handed over, the person leaves the list but the
+  // dialog still shows the result.
+  const [handingOverMember, setHandingOverMember] = useState<CompanyMember | null>(null);
   const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>(null);
   const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
 
@@ -107,6 +105,14 @@ export function CompanyAccess() {
     enabled: !!selectedCompanyId,
   });
 
+  // Removed people are listed separately so the main list (and its cache,
+  // shared with other pages) keeps its current shape.
+  const archivedMembersQuery = useQuery({
+    queryKey: ["access", "company-members-archived", selectedCompanyId ?? ""],
+    queryFn: () => accessApi.listMembers(selectedCompanyId!, { includeArchived: true }),
+    enabled: !!selectedCompanyId,
+  });
+
   const joinRequestsQuery = useQuery({
     queryKey: queryKeys.access.joinRequests(selectedCompanyId ?? "", "pending_approval"),
     queryFn: () => accessApi.listJoinRequests(selectedCompanyId!, "pending_approval"),
@@ -118,6 +124,7 @@ export function CompanyAccess() {
     await queryClient.invalidateQueries({ queryKey: queryKeys.access.companyMembers(selectedCompanyId) });
     await queryClient.invalidateQueries({ queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId) });
     await queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId, "pending_approval") });
+    await queryClient.invalidateQueries({ queryKey: ["access", "company-members-archived", selectedCompanyId] });
   };
 
   const updateMemberMutation = useMutation({
@@ -184,52 +191,16 @@ export function CompanyAccess() {
     () => membersQuery.data?.members.find((member) => member.id === editingMemberId) ?? null,
     [editingMemberId, membersQuery.data?.members],
   );
-  const removingMember = useMemo(
-    () => membersQuery.data?.members.find((member) => member.id === removingMemberId) ?? null,
-    [removingMemberId, membersQuery.data?.members],
-  );
 
-  const assignedIssuesQuery = useQuery({
-    queryKey: ["access", "member-assigned-issues", selectedCompanyId ?? "", removingMember?.principalId ?? ""],
-    queryFn: () =>
-      issuesApi.list(selectedCompanyId!, {
-        assigneeUserId: removingMember!.principalId,
-        status: reassignmentIssueStatuses,
-      }),
-    enabled: !!selectedCompanyId && !!removingMember,
-  });
-
-  const archiveMemberMutation = useMutation({
-    mutationFn: async (input: { memberId: string; target: string }) => {
-      const reassignment =
-        input.target.startsWith("agent:")
-          ? { assigneeAgentId: input.target.slice("agent:".length), assigneeUserId: null }
-          : input.target.startsWith("user:")
-            ? { assigneeAgentId: null, assigneeUserId: input.target.slice("user:".length) }
-            : null;
-      return accessApi.archiveMember(selectedCompanyId!, input.memberId, { reassignment });
-    },
-    onSuccess: async (result) => {
-      setRemovingMemberId(null);
-      setReassignmentTarget("__unassigned");
+  const restoreMemberMutation = useMutation({
+    mutationFn: (memberId: string) => accessApi.restoreMember(selectedCompanyId!, memberId),
+    onSuccess: async () => {
       await refreshAccessData();
-      if (selectedCompanyId) {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.issues.listAssignedToMe(selectedCompanyId) });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.issues.listTouchedByMe(selectedCompanyId) });
-      }
-      pushToast({
-        title: "Member removed",
-        body:
-          result.reassignedIssueCount > 0
-            ? `${result.reassignedIssueCount} assigned task${result.reassignedIssueCount === 1 ? "" : "s"} cleaned up.`
-            : undefined,
-        tone: "success",
-      });
+      pushToast({ title: "Access restored", body: "Moved work stays where it is.", tone: "success" });
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to remove member",
+        title: "Could not restore access",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
@@ -241,11 +212,6 @@ export function CompanyAccess() {
     setDraftRole(editingMember.membershipRole);
     setDraftStatus(isEditableMemberStatus(editingMember.status) ? editingMember.status : "suspended");
   }, [editingMember]);
-
-  useEffect(() => {
-    if (!removingMember) return;
-    setReassignmentTarget("__unassigned");
-  }, [removingMember]);
 
   if (!selectedCompanyId) {
     return <div className="text-sm text-muted-foreground">Select an organization to manage access.</div>;
@@ -271,14 +237,14 @@ export function CompanyAccess() {
     joinRequestsQuery.data?.filter((request) => request.requestType === "human") ?? [];
   const joinRequestActionPending =
     approveJoinRequestMutation.isPending || rejectJoinRequestMutation.isPending;
-  const activeReassignmentUsers = members.filter(
-    (member) =>
-      member.status === "active" &&
-      member.principalType === "user" &&
-      member.id !== removingMemberId,
-  );
-  const activeReassignmentAgents = (agentsQuery.data ?? []).filter(isAssignableAgent);
-  const assignedIssues = assignedIssuesQuery.data ?? [];
+  const archivedMembers = (archivedMembersQuery.data?.members ?? []).filter((member) => member.status === "archived");
+  const primaryOwner = [...members]
+    .filter((member) => member.status === "active" && member.membershipRole === "owner" && member.principalId !== LEGACY_BOARD_USER_ID)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+  const currentUserPrincipalId = access?.currentUserId ?? null;
+  const defaultSuccessorUserId = handingOverMember?.principalId === LEGACY_BOARD_USER_ID
+    ? primaryOwner?.principalId ?? null
+    : currentUserPrincipalId;
 
   return (
     <div className="max-w-6xl space-y-8">
@@ -378,8 +344,7 @@ export function CompanyAccess() {
                   </td>
                 </tr>
               ) : members.map((member) => {
-                const removalReason = member.removal?.reason ?? null;
-                const canArchive = member.removal?.canArchive ?? true;
+                const handover = member.handover ?? null;
                 const displayName = memberDisplayName(member);
                 return (
                   <tr key={member.id} className="border-b border-border last:border-b-0">
@@ -407,30 +372,36 @@ export function CompanyAccess() {
                     </td>
                     <td className="px-3 py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        {member.principalId === LEGACY_BOARD_USER_ID ? (
-                          <LegacyBoardRetirementActions
-                            companyId={selectedCompanyId}
-                            controls={access?.legacyBoard}
-                          />
+                        {handover?.canRestore ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => restoreMemberMutation.mutate(member.id)}
+                            disabled={restoreMemberMutation.isPending}
+                          >
+                            Restore
+                          </Button>
                         ) : null}
                         <Button size="sm" variant="outline" onClick={() => setEditingMemberId(member.id)}>
                           Edit
                         </Button>
-                        <span
-                          className="inline-flex"
-                          title={!canArchive ? removalReason ?? undefined : undefined}
-                        >
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setRemovingMemberId(member.id)}
-                            disabled={!canArchive}
-                            title={!canArchive ? removalReason ?? undefined : undefined}
+                        {member.status === "active" || member.status === "pending" ? (
+                          <span
+                            className="inline-flex"
+                            title={handover && !handover.canHandOver ? handover.handOverReason ?? undefined : undefined}
                           >
-                            <Trash2 className="mr-1 h-3.5 w-3.5" />
-                            Remove
-                          </Button>
-                        </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setHandingOverMember(member)}
+                              disabled={!handover?.canHandOver}
+                              title={handover && !handover.canHandOver ? handover.handOverReason ?? undefined : undefined}
+                            >
+                              <UserMinus className="mr-1 h-3.5 w-3.5" />
+                              Hand over and remove
+                            </Button>
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -439,6 +410,33 @@ export function CompanyAccess() {
             </tbody>
           </table>
         </div>
+        {archivedMembers.length > 0 ? (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">Removed people</h3>
+            <div className="rounded-lg border border-border">
+              {archivedMembers.map((member) => (
+                <div key={member.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{memberDisplayName(member)}</div>
+                    <div className="truncate text-muted-foreground">{member.user?.email || member.principalId}</div>
+                  </div>
+                  {member.handover?.canRestore ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => restoreMemberMutation.mutate(member.id)}
+                      disabled={restoreMemberMutation.isPending}
+                    >
+                      Restore
+                    </Button>
+                  ) : (
+                    <span className="text-muted-foreground" title={member.handover?.restoreReason ?? undefined}>Archived</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <Dialog open={!!editingMember} onOpenChange={(open) => !open && setEditingMemberId(null)}>
@@ -507,91 +505,16 @@ export function CompanyAccess() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!removingMember} onOpenChange={(open) => !open && setRemovingMemberId(null)}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Remove member</DialogTitle>
-            <DialogDescription>
-              Archive {memberDisplayName(removingMember)} and move active assignments before hiding this user from assignment fields.
-            </DialogDescription>
-          </DialogHeader>
-          {removingMember && (
-            <div className="space-y-5">
-              <div className="rounded-lg border border-border px-3 py-3">
-                <div className="text-sm font-medium">{memberDisplayName(removingMember)}</div>
-                <div className="text-sm text-muted-foreground">{removingMember.user?.email || removingMember.principalId}</div>
-                <div className="mt-2 text-sm text-muted-foreground">
-                  {assignedIssuesQuery.isLoading
-                    ? "Checking assigned tasks..."
-                    : `${assignedIssues.length} open assigned task${assignedIssues.length === 1 ? "" : "s"}`}
-                </div>
-              </div>
-
-              {assignedIssues.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Task reassignment</div>
-                  <select
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                    value={reassignmentTarget}
-                    onChange={(event) => setReassignmentTarget(event.target.value)}
-                  >
-                    <option value="__unassigned">Leave unassigned</option>
-                    {activeReassignmentUsers.length > 0 ? (
-                      <optgroup label="Humans">
-                        {activeReassignmentUsers.map((member) => (
-                          <option key={member.id} value={`user:${member.principalId}`}>
-                            {memberDisplayName(member)}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                    {activeReassignmentAgents.length > 0 ? (
-                      <optgroup label="Agents">
-                        {activeReassignmentAgents.map((agent) => (
-                          <option key={agent.id} value={`agent:${agent.id}`}>
-                            {agent.name} ({agent.role})
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                  </select>
-                  <div className="max-h-36 overflow-auto rounded-lg border border-border">
-                    {assignedIssues.slice(0, 6).map((issue) => (
-                      <div key={issue.id} className="border-b border-border px-3 py-2 text-sm last:border-b-0">
-                        <div className="font-medium">{issue.identifier ?? issue.id.slice(0, 8)}</div>
-                        <div className="truncate text-muted-foreground">{issue.title}</div>
-                      </div>
-                    ))}
-                    {assignedIssues.length > 6 ? (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">
-                        {assignedIssues.length - 6} more task{assignedIssues.length - 6 === 1 ? "" : "s"}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRemovingMemberId(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (!removingMember) return;
-                archiveMemberMutation.mutate({
-                  memberId: removingMember.id,
-                  target: reassignmentTarget,
-                });
-              }}
-              disabled={archiveMemberMutation.isPending || assignedIssuesQuery.isLoading}
-            >
-              {archiveMemberMutation.isPending ? "Removing..." : "Remove member"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MemberHandoverDialog
+        companyId={selectedCompanyId}
+        member={handingOverMember}
+        members={members}
+        agents={agentsQuery.data ?? []}
+        defaultSuccessorUserId={defaultSuccessorUserId}
+        canRemoveInstanceAdmin={access?.currentUserRole === "owner"}
+        open={!!handingOverMember}
+        onOpenChange={(open) => !open && setHandingOverMember(null)}
+      />
         </TabsContent>
         {!hideInvitesTab && (
           <TabsContent value="invites">
@@ -675,10 +598,6 @@ function memberInitials(member: CompanyMember) {
     return `${parts[0]?.[0] ?? ""}${parts.at(-1)?.[0] ?? ""}`.toUpperCase();
   }
   return value.slice(0, 2).toUpperCase();
-}
-
-function isAssignableAgent(agent: Agent) {
-  return agent.status !== "terminated" && agent.status !== "pending_approval";
 }
 
 function isEditableMemberStatus(status: CompanyMember["status"]): status is EditableMemberStatus {

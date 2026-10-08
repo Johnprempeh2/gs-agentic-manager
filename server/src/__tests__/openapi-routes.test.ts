@@ -59,6 +59,7 @@ const apiPrefixes: Record<string, string> = {
   "inbox-agent-policy.ts": "/api",
   "inbox-dismissals.ts": "/api",
   "legacy-board.ts": "/api",
+  "member-handover.ts": "/api",
   "instance-database-backups.ts": "/api",
   "instance-settings.ts": "/api",
   "issues.ts": "/api",
