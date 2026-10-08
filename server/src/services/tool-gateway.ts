@@ -166,6 +166,9 @@ import { buildSendMessagePreviewLines, isSendMessageTool } from "./tool-send-pre
 const DEFAULT_SESSION_TTL_MS = 15 * 60 * 1000;
 const MAX_SESSION_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_TOOL_TIMEOUT_MS = 10_000;
+// Remote apps wait on their own jobs inside one call (Higgsfield `sync: true`
+// polls for about 25 s). The 10 s default cut those calls short (GRE-1039).
+const REMOTE_MCP_DEFAULT_TIMEOUT_MS = 60_000;
 
 export function resolveCredentialGrantKind(
   policy: "shared" | "per_user" | "per_user_with_fallback" | "per_agent",
@@ -5918,6 +5921,8 @@ export function createToolGatewayService(
     assertGoogleChatToolArgumentsSupported(connection, entry.toolName, parameters);
     if (useDefaultTimeout && isRailwayConnection(connection) && entry.toolName === `${RAILWAY_TOOL_PREFIX}run-command`) {
       ms = railwayCommandBudgetMs(parameters);
+    } else if (useDefaultTimeout) {
+      ms = REMOTE_MCP_DEFAULT_TIMEOUT_MS;
     }
     const grant = await resolveConnectionGrant(session, connection);
     const endpoint = await resolvedRemoteEndpoint(session, connection, grant);
@@ -5992,9 +5997,8 @@ export function createToolGatewayService(
           execution,
         };
       }
-      let requestHeaders = headers;
-      if (connection.config.mcpSessionRequired === true) {
-        requestHeaders = await getMcpHttpSession({
+      const openMcpSession = (baseHeaders: Record<string, string>) =>
+        getMcpHttpSession({
           scope: `${connection.id}:grant:${grant.id}:actor:${session.agentId}:${endpoint}`,
           send: (init) =>
             dispatchRemote(endpoint, {
@@ -6002,9 +6006,12 @@ export function createToolGatewayService(
               redirect: "manual",
               signal: controller.signal,
             }),
-          headers,
+          headers: baseHeaders,
           requestId,
         });
+      let requestHeaders = headers;
+      if (connection.config.mcpSessionRequired === true) {
+        requestHeaders = await openMcpSession(headers);
       }
       // The guard runs inside this call and the connection is pinned to the
       // address it approved, so an operator-supplied hostname cannot be rebound
@@ -6134,10 +6141,25 @@ export function createToolGatewayService(
           headers: mcpHttpRequestHeaders(headers),
         });
       }
+      if (
+        response.status === 404 &&
+        connection.config.mcpSessionRequired === true &&
+        new Headers(requestHeaders).has("mcp-session-id")
+      ) {
+        // An MCP server answers 404 to an unknown session id before it runs
+        // the request, so this call did not reach the tool. Open a new session
+        // and send it once more (GRE-1039).
+        forgetMcpHttpSessions(connection.id);
+        requestHeaders = await openMcpSession(headers);
+        response = await dispatchRemote(endpoint, {
+          ...requestInit,
+          headers: mcpHttpRequestHeaders(requestHeaders),
+        });
+      }
       const sessionExpired = response.status === 404 && new Headers(requestHeaders).has("mcp-session-id");
       if (sessionExpired) {
-        // The next explicit call initializes again. Never replay a tools/call
-        // automatically: the failed call may have changed app data.
+        // The new session was refused too. The next explicit call initializes
+        // again; do not loop here.
         forgetMcpHttpSessions(connection.id);
       }
       const body = response.ok
@@ -6175,15 +6197,21 @@ export function createToolGatewayService(
         // every agent until the next health sweep (GRE-335).
         const rateLimited = response.status === 429;
         const retryAfterSeconds = rateLimited ? remoteRetryAfterSeconds(response.headers.get("retry-after")) : null;
+        // Only a rejected sign-in needs the user. Every other status is ours
+        // or the provider's to retry, and must not ask anyone to reconnect.
+        const authRejected = response.status === 401;
         if (!sessionExpired && !rateLimited) {
-          await markRemoteConnectionHealth(connection, "error", "Remote MCP server returned an HTTP error.");
+          await markRemoteConnectionHealth(connection, "error", authRejected
+            ? "The app rejected this connection's sign-in."
+            : "Remote MCP server returned an HTTP error.");
         }
         throw new ToolGatewayHttpError(
           502,
-          sessionExpired ? "Remote MCP session expired. Retry the action explicitly to start a new session."
+          sessionExpired ? "Remote MCP session expired and a new session was refused. The sign-in is fine; retry the call."
             : rateLimited ? `The app is rate limiting requests. The connection still works; retry ${retryAfterSeconds ? `in ${retryAfterSeconds} seconds` : "later"}.`
-            : "Remote MCP server returned an HTTP error",
-          "mcp_remote_status",
+            : authRejected ? "The app rejected this connection's sign-in (HTTP 401). Ask the user to reconnect this connection."
+            : `Remote MCP server returned HTTP ${response.status}. The sign-in is fine; retry later.`,
+          authRejected ? "provider_auth_required" : "mcp_remote_status",
           {
             status: response.status,
             ...(sessionExpired ? { sessionExpired: true } : {}),
@@ -6305,14 +6333,11 @@ export function createToolGatewayService(
         );
       }
       if (error instanceof Error && error.name === "AbortError") {
-        await markRemoteConnectionHealth(
-          connection,
-          "error",
-          "Remote MCP tool call timed out.",
-        );
+        // A slow call is not a broken connection. Marking it unhealthy hid all
+        // of its tools, so every later call in the run failed (GRE-1039).
         throw new ToolGatewayHttpError(
           504,
-          "Remote MCP tool call timed out",
+          `Remote MCP tool call timed out after ${Math.round(ms / 1000)} seconds. The app may still finish the job: check its status before you retry. The connection and its sign-in are fine.`,
           "tool_timeout",
           {
             connectionId: connection.id,
