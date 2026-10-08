@@ -211,6 +211,51 @@ describe("MCP gateway protocol endpoint", () => {
       .send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "paperclip_list_resources" } }).expect(403);
   });
 
+  // GRE-1039: the client reads any HTTP 404 as "session expired" and refuses
+  // every later call on the server, so one failed call stranded the run.
+  it("returns a failed tool call as a tool result, so the next call on the session still works", async () => {
+    const failures = [
+      new ToolGatewayHttpError(504, "Remote MCP tool call timed out after 60 seconds. The app may still finish the job.", "tool_timeout"),
+      new ToolGatewayHttpError(404, "Tool \"higgsfield:job_status\" not found", "tool_not_found"),
+      new ToolGatewayHttpError(502, "The app is rate limiting requests.", "mcp_remote_status"),
+    ];
+    const service = {
+      async executeTool() {
+        const failure = failures.shift();
+        if (failure) throw failure;
+        return { result: { content: "job done" } };
+      },
+    } as unknown as ToolGatewayService;
+    const routes = app(mcpGatewayProtocolRoutes(service));
+    const call = (id: number) => request(routes).post(endpoint).set("authorization", "Bearer pcgw_run")
+      .send({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "higgsfield:job_status", arguments: {} } });
+
+    const timedOut = await call(1).expect(200);
+    expect(timedOut.body.result.isError).toBe(true);
+    expect(timedOut.body.result.content[0].text).toContain("may still finish");
+    expect(timedOut.body.result.content[0].text).toContain("tool_timeout");
+    const missing = await call(2).expect(200);
+    expect(missing.body.result).toMatchObject({ isError: true });
+    const limited = await call(3).expect(200);
+    expect(limited.body.result).toMatchObject({ isError: true });
+    const next = await call(4).expect(200);
+    expect(next.body.result).toEqual({ content: [{ type: "text", text: "job done" }], structuredContent: null, isError: false });
+  });
+
+  it("never answers a request with HTTP 404", async () => {
+    const service = {
+      async executeContextForNamedGateway() {
+        throw new ToolGatewayHttpError(404, "Assigned MCP resource was not found", "mcp_resource_not_found");
+      },
+    } as unknown as ToolGatewayService;
+    const res = await request(app(mcpGatewayProtocolRoutes(service))).post(endpoint).set("authorization", "Bearer pcgw_full")
+      .send({ jsonrpc: "2.0", id: 7, method: "resources/read", params: { uri: "x://gone" } }).expect(200);
+    expect(res.body).toEqual({
+      jsonrpc: "2.0", id: 7,
+      error: { code: -32602, message: "Assigned MCP resource was not found", data: { reasonCode: "mcp_resource_not_found" } },
+    });
+  });
+
   it("keeps resources, prompts and their helper tools for a token allowed to use them", async () => {
     const routes = app(mcpGatewayProtocolRoutes(fakeGateway([
       "tools/list", "tools/call", "resources/list", "resources/read", "prompts/list", "prompts/get",

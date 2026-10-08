@@ -1447,6 +1447,130 @@ describeEmbeddedPostgres("tool gateway service", () => {
     expect(afterFailure?.healthStatus).toBe("error");
   });
 
+  // GRE-1039: one slow call marked the connection failed, which hid all of its
+  // tools. Every later call in the run then got tool_not_found (HTTP 404), and
+  // the agent's MCP client read that as "session expired".
+  it("fails only the call that timed out and keeps the connection's tools usable", async () => {
+    const { company, agent, run } = await createRunFixture(db);
+    const { connection } = await createRemoteMcpToolFixture(db, company.id);
+    await db.insert(toolPolicies).values({
+      companyId: company.id, name: "Allow reads", policyType: "allow", selectors: { riskLevel: "read" },
+    });
+    let hang = true;
+    const provider = vi.fn(async (_url, init: RequestInit) => {
+      const payload = JSON.parse(String(init.body));
+      if (payload.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (payload.method === "initialize") {
+        return Response.json({ jsonrpc: "2.0", id: payload.id, result: {
+          protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" },
+        } });
+      }
+      if (hang) {
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+        });
+      }
+      return Response.json({ jsonrpc: "2.0", id: payload.id, result: { content: [{ type: "text", text: "done" }] } });
+    });
+    const gateway = createTestToolGatewayService(db, { remoteHttpRequest: provider });
+    const session = await gateway.createSession({ companyId: company.id, agentId: agent.id, runId: run.id });
+    const tool = (await gateway.listToolsForSession(session.token))
+      .find((candidate) => candidate.upstreamToolName === "needs_input")!;
+
+    const timedOut = await gateway.executeTool({ sessionToken: session.token, tool: tool.name, parameters: {}, timeoutMs: 20 })
+      .catch((error: unknown) => error as { reasonCode: string; message: string });
+    expect(timedOut).toMatchObject({ reasonCode: "tool_timeout" });
+    expect(timedOut.message).toContain("may still finish");
+    expect(timedOut.message).not.toMatch(/reconnect/i);
+    const [afterTimeout] = await db.select().from(toolConnections).where(eq(toolConnections.id, connection.id));
+    expect(afterTimeout?.healthStatus).toBe("ok");
+
+    hang = false;
+    await expect(gateway.executeTool({ sessionToken: session.token, tool: tool.name, parameters: {} }))
+      .resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("opens a new upstream MCP session once when the old one expired", async () => {
+    const { company, agent, run } = await createRunFixture(db);
+    const { connection } = await createRemoteMcpToolFixture(db, company.id);
+    await db.update(toolConnections).set({
+      config: { url: "https://8.8.8.8/mcp", mcpSessionRequired: true },
+    }).where(eq(toolConnections.id, connection.id));
+    await db.insert(toolPolicies).values({
+      companyId: company.id, name: "Allow reads", policyType: "allow", selectors: { riskLevel: "read" },
+    });
+    let sessions = 0;
+    const expired = new Set<string>();
+    const toolCallSessions: string[] = [];
+    const provider = vi.fn(async (_url, init: RequestInit) => {
+      const payload = JSON.parse(String(init.body));
+      if (payload.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (payload.method === "initialize") {
+        sessions += 1;
+        return Response.json({ jsonrpc: "2.0", id: payload.id, result: {
+          protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" },
+        } }, { headers: { "mcp-session-id": `session-${sessions}` } });
+      }
+      const sessionId = new Headers(init.headers).get("mcp-session-id") ?? "";
+      toolCallSessions.push(sessionId);
+      if (expired.has(sessionId)) return new Response("unknown session", { status: 404 });
+      return Response.json({ jsonrpc: "2.0", id: payload.id, result: { content: [{ type: "text", text: "ok" }] } });
+    });
+    const gateway = createTestToolGatewayService(db, { remoteHttpRequest: provider });
+    const session = await gateway.createSession({ companyId: company.id, agentId: agent.id, runId: run.id });
+    const tool = (await gateway.listToolsForSession(session.token))
+      .find((candidate) => candidate.upstreamToolName === "needs_input")!;
+
+    await expect(gateway.executeTool({ sessionToken: session.token, tool: tool.name, parameters: {} }))
+      .resolves.toMatchObject({ status: "completed" });
+    expired.add(toolCallSessions[0]!);
+    await expect(gateway.executeTool({ sessionToken: session.token, tool: tool.name, parameters: {} }))
+      .resolves.toMatchObject({ status: "completed" });
+    expect(toolCallSessions).toEqual([toolCallSessions[0], toolCallSessions[0], `session-${sessions}`]);
+    expect(toolCallSessions[2]).not.toBe(toolCallSessions[0]);
+    const [after] = await db.select().from(toolConnections).where(eq(toolConnections.id, connection.id));
+    expect(after?.healthStatus).toBe("ok");
+  });
+
+  it("asks the user to reconnect only when the app rejects the sign-in", async () => {
+    const { company, agent, run } = await createRunFixture(db);
+    const { connection } = await createRemoteMcpToolFixture(db, company.id);
+    await db.insert(toolPolicies).values({
+      companyId: company.id, name: "Allow reads", policyType: "allow", selectors: { riskLevel: "read" },
+    });
+    let callStatus = 429;
+    const provider = vi.fn(async (_url, init: RequestInit) => {
+      const payload = JSON.parse(String(init.body));
+      if (payload.method === "notifications/initialized") return new Response(null, { status: 202 });
+      if (payload.method === "initialize") {
+        return Response.json({ jsonrpc: "2.0", id: payload.id, result: {
+          protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" },
+        } });
+      }
+      return new Response("no", { status: callStatus });
+    });
+    const gateway = createTestToolGatewayService(db, { remoteHttpRequest: provider });
+    const session = await gateway.createSession({ companyId: company.id, agentId: agent.id, runId: run.id });
+    const tool = (await gateway.listToolsForSession(session.token))
+      .find((candidate) => candidate.upstreamToolName === "needs_input")!;
+    // A server error still flags the connection for the health sweep; reset it
+    // so each status reaches the provider.
+    const call = () => gateway.executeTool({ sessionToken: session.token, tool: tool.name, parameters: {} })
+      .catch((error: unknown) => error as { reasonCode: string; message: string })
+      .finally(() => db.update(toolConnections).set({ healthStatus: "ok" }).where(eq(toolConnections.id, connection.id)));
+
+    for (const status of [429, 500, 503]) {
+      callStatus = status;
+      const failure = await call();
+      expect(failure).toMatchObject({ reasonCode: "mcp_remote_status" });
+      expect(failure.message).not.toMatch(/reconnect/i);
+    }
+    callStatus = 401;
+    const authFailure = await call();
+    expect(authFailure).toMatchObject({ reasonCode: "provider_auth_required" });
+    expect(authFailure.message).toMatch(/reconnect/i);
+  });
+
   it("reads Retry-After as seconds or an HTTP date", () => {
     const now = Date.parse("2026-10-02T12:00:00Z");
     expect(remoteRetryAfterSeconds("30", now)).toBe(30);
@@ -1865,7 +1989,7 @@ describeEmbeddedPostgres("tool gateway service", () => {
       sessionToken: session.token,
       tool: tool!.name,
       parameters: {},
-    })).rejects.toMatchObject({ reasonCode: "mcp_remote_status" });
+    })).rejects.toMatchObject({ reasonCode: "provider_auth_required" });
 
     expect(authorizationHeaders).toEqual([
       "Bearer stale-managed-token",
