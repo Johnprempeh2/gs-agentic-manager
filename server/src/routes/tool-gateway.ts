@@ -119,6 +119,17 @@ function gatewayCapabilities(allowedActions: readonly string[] | null | undefine
   };
 }
 
+/**
+ * A failure of this one tool call: the tool is missing or hidden, the provider
+ * timed out, rate limited or failed. It is an MCP tool result with isError, so
+ * the agent's session on this gateway stays usable for the next call
+ * (GRE-1039). Gateway auth (401), policy refusals (403) and the gateway's own
+ * rate limit (429) keep their status.
+ */
+function isCallScopedFailure(err: ToolGatewayHttpError) {
+  return err.status === 404 || err.status >= 500;
+}
+
 async function handleMcpGatewayProtocol(
   req: Request,
   res: Response,
@@ -267,12 +278,22 @@ async function handleMcpGatewayProtocol(
       const id = (req.body as { id?: unknown } | undefined)?.id ?? null;
       // Provider tool failures are MCP tool results, not successful calls or
       // protocol errors. The service has already recorded the failed invocation.
-      if (req.body?.method === "tools/call" && err.reasonCode === "tool_error") {
+      if (req.body?.method === "tools/call" && (err.reasonCode === "tool_error" || isCallScopedFailure(err))) {
         res.json({
           jsonrpc: "2.0",
           id,
-          result: { content: [{ type: "text", text: err.message }], isError: true },
+          result: {
+            content: [{ type: "text", text: err.reasonCode === "tool_error" ? err.message : `${err.message} (${err.reasonCode})` }],
+            isError: true,
+          },
         });
+        return;
+      }
+      // Clients read an HTTP 404 as "session gone" and refuse every later call
+      // on this server (GRE-1039). A missing tool or resource is a JSON-RPC
+      // error, never an HTTP 404.
+      if (err.status === 404) {
+        res.json({ jsonrpc: "2.0", id, error: { code: -32602, message: err.message, data: { reasonCode: err.reasonCode } } });
         return;
       }
       res.status(err.status).json({
