@@ -441,6 +441,8 @@ export interface PipelineCaseChildRow {
   parentCase?: PipelineCaseParentSummary | null;
   activeWork?: PipelineCaseActiveWork | null;
   descendantActiveWorkCount?: number;
+  /** When the case entered its current stage. Set by GET /pipelines/:id/cases. */
+  stageEnteredAt?: Date | string | null;
 }
 
 export type PipelineCaseChildrenResponse = PipelineCaseChildRow[];

@@ -127,6 +127,7 @@ import { extractIssueTimelineEvents } from "../lib/issue-timeline-events";
 import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/optimistic-issue-comments";
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
+import { ClientCardFlags } from "@/components/ClientCardFlags";
 
 type PipelineConversationActionableInteraction =
   | SuggestTasksInteraction
@@ -1011,6 +1012,7 @@ type BoardCase = PipelineCase & {
   activeWork?: PipelineCaseActiveWork | null;
   descendantActiveWorkCount?: number | null;
   parentCase?: PipelineCaseParentSummary | null;
+  stageEnteredAt?: Date | string | null;
 };
 
 type PipelineTransitionEdge = { fromStageId: string; toStageId: string; label?: string | null };
@@ -1276,6 +1278,7 @@ function PipelineCaseCard({
               {formatLiveDownstream(liveDownstreamCount)}
             </Badge>
           ) : null}
+          <ClientCardFlags caseItem={caseItem} />
         </div>
         {childrenSummary != null ? (
           <p className="mt-1.5 text-xs text-muted-foreground">
@@ -1481,6 +1484,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
       parentCase: row.parentCase ?? null,
       activeWork: row.activeWork ?? null,
       descendantActiveWorkCount: row.descendantActiveWorkCount ?? 0,
+      stageEnteredAt: row.stageEnteredAt ?? null,
     })),
     [casesQuery.data],
   );
