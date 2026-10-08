@@ -14,6 +14,7 @@ import type {
 } from "./task-chat-model";
 import type { IssueWorkProduct } from "@greatstone/shared";
 import { IssueGalleryContext } from "@/context/IssueGalleryContext";
+import { AttachmentPreviewContext } from "@/context/AttachmentPreviewContext";
 import { RichWorkProductCard } from "./RichWorkProductCard";
 import { stateChipFor } from "./RichWorkProductCard";
 
@@ -318,6 +319,42 @@ describe("TaskChatProtocolCard", () => {
       label: "Review",
       tone: "review",
     });
+  });
+
+  it("opens an attachment resource card in the issue's preview panel on a plain click (GRE-1036)", () => {
+    const openPreview = vi.fn(() => true);
+    flushSync(() =>
+      root.render(
+        <MemoryRouter>
+          <ThemeProvider>
+            <AttachmentPreviewContext.Provider value={openPreview}>
+              <TaskChatProtocolCard
+                item={{
+                  id: "resource:attachment:att-1",
+                  kind: "protocol",
+                  surface: "resource",
+                  resourceKind: "attachment",
+                  title: "mock-up.html",
+                  subtitle: "text/html · 1.3 KB",
+                  href: "/api/attachments/att-1/content",
+                }}
+              />
+            </AttachmentPreviewContext.Provider>
+          </ThemeProvider>
+        </MemoryRouter>,
+      ),
+    );
+    const link = container.querySelector<HTMLAnchorElement>("a[href='/api/attachments/att-1/content']")!;
+
+    const ctrlClick = new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true });
+    flushSync(() => link.dispatchEvent(ctrlClick));
+    expect(ctrlClick.defaultPrevented).toBe(false);
+    expect(openPreview).not.toHaveBeenCalled();
+
+    const plain = new MouseEvent("click", { bubbles: true, cancelable: true });
+    flushSync(() => link.dispatchEvent(plain));
+    expect(plain.defaultPrevented).toBe(true);
+    expect(openPreview).toHaveBeenCalledWith({ href: "/api/attachments/att-1/content", name: "mock-up.html" });
   });
 
   it("shows an unhealthy active runtime as unhealthy", () => {

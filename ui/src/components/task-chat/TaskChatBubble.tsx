@@ -6,6 +6,8 @@ import { useCallback, useContext, useState, type ReactNode } from "react";
 import { useEmailComment } from "@/components/EmailMessageCard";
 import type { IssueAttachment } from "@greatstone/shared";
 import { IssueGalleryContext } from "@/context/IssueGalleryContext";
+import { AttachmentPreviewContext } from "@/context/AttachmentPreviewContext";
+import { isPlainPrimaryClick } from "@/lib/attachment-preview";
 import { cn } from "@/lib/utils";
 import { useStreamlinedTaskChatPresentation } from "./presentation-mode";
 import { MarkdownBody } from "@/components/MarkdownBody";
@@ -144,6 +146,7 @@ function TaskChatBubbleContent({
   const streamlined = useStreamlinedTaskChatPresentation();
   // Task attachments share the page gallery; standalone images retain the bubble viewer.
   const openIssueGallery = useContext(IssueGalleryContext);
+  const openAttachmentPreview = useContext(AttachmentPreviewContext);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   // Keep MarkdownBody's memo boundary intact when only the live tail changes.
   // A fresh callback here reparses every historical response on every update.
@@ -361,6 +364,15 @@ function TaskChatBubbleContent({
                         href={ref.openPath ?? ref.url}
                         target="_blank"
                         rel="noreferrer"
+                        onClick={openAttachmentPreview ? (event) => {
+                          if (!isPlainPrimaryClick(event)) return;
+                          const opened = openAttachmentPreview({
+                            href: ref.openPath ?? ref.url,
+                            name: ref.name,
+                            contentType: ref.contentType,
+                          });
+                          if (opened) event.preventDefault();
+                        } : undefined}
                       />
                     }
                   />

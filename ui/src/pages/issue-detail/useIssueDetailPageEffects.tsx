@@ -19,7 +19,8 @@ import { getIssueOutputs, isImageLikeOutput, isVideoLikeOutput } from "../../lib
 import { IssueProperties, type IssuePropertiesDocumentDeepLink } from "../../components/IssueProperties";
 import { TaskSidePanel } from "../../components/task-side-panel";
 import { SidePanelToggleButton } from "../../components/side-panel";
-import { IssueGalleryContext } from "../../context/IssueGalleryContext";
+import { IssuePanelContexts } from "./IssuePanelContexts";
+import { useAttachmentPreview } from "../../components/AttachmentPreviewPanel";
 import type { GalleryMediaItem } from "../../components/ImageGalleryModal";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -407,6 +408,9 @@ export function useIssueDetailPageEffects({
     [],
   );
 
+  const { open: openAttachmentPreview, panel: attachmentPreviewPanel } =
+    useAttachmentPreview(attachments);
+
   const handleChatImageClick = useCallback(
     (src: string) => {
       if (!openIssueGallery(src)) window.open(src, "_blank");
@@ -450,7 +454,7 @@ export function useIssueDetailPageEffects({
     };
     if (taskChatShellEnabled) {
       openPanel(
-        <IssueGalleryContext.Provider value={openIssueGallery}>
+        <IssuePanelContexts openGallery={openIssueGallery} openAttachmentPreview={openAttachmentPreview}>
           <TaskSidePanel
             key={panelIssue.id}
             {...sharedProps}
@@ -463,20 +467,21 @@ export function useIssueDetailPageEffects({
               ? artifactsOpenRequest.requestId : undefined}
             onArtifactsOpened={handleArtifactsOpened}
           />
-        </IssueGalleryContext.Provider>,
+        </IssuePanelContexts>,
         { contentMode: "full-bleed" },
       );
     } else {
       openPanel(
-        <IssueGalleryContext.Provider value={openIssueGallery}>
+        <IssuePanelContexts openGallery={openIssueGallery} openAttachmentPreview={openAttachmentPreview}>
           <IssueProperties {...sharedProps} />
-        </IssueGalleryContext.Provider>,
+        </IssuePanelContexts>,
       );
     }
     return () => closePanel();
   }, [
     closePanel,
     openIssueGallery,
+    openAttachmentPreview,
     handleIssuePropertiesUpdate,
     issuePanelKey,
     openNewSubIssue,
@@ -648,5 +653,7 @@ export function useIssueDetailPageEffects({
     mediaGalleryItems,
     openIssueGallery,
     handleChatImageClick,
+    openAttachmentPreview,
+    attachmentPreviewPanel,
   };
 }

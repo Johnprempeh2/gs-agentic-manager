@@ -51,6 +51,7 @@ import { type IssuePropertiesDocumentDeepLink } from "../components/IssuePropert
 import { type TaskSidePanelProps } from "../components/task-side-panel";
 import { TaskTreeControlDialog } from "../components/TaskTreeControls";
 import { IssueGalleryContext } from "../context/IssueGalleryContext";
+import { AttachmentPreviewContext } from "../context/AttachmentPreviewContext";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import { TaskPreviewLink } from "../components/LivePreviewCard";
 import { ImageGalleryModal } from "../components/ImageGalleryModal";
@@ -523,6 +524,8 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     mediaGalleryItems,
     openIssueGallery,
     handleChatImageClick,
+    openAttachmentPreview,
+    attachmentPreviewPanel,
   } = useIssueDetailPageEffects({
     conversation,
     agents,
@@ -1084,6 +1087,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
   return (
     <FileViewerProvider issueId={conversation && !conversation.issue ? "" : issue.id} enabled={fileViewerEnabled}>
       <IssueGalleryContext.Provider value={openIssueGallery}>
+      <AttachmentPreviewContext.Provider value={openAttachmentPreview}>
         <div
           data-task-chat-shell={taskChatShellEnabled ? "" : undefined}
           className={
@@ -1552,7 +1556,9 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           ) : null}
           <ScrollToBottom />
           {reauthDialog}
+          {attachmentPreviewPanel}
         </div>
+      </AttachmentPreviewContext.Provider>
       </IssueGalleryContext.Provider>
     </FileViewerProvider>
   );

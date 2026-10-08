@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Bot,
@@ -47,6 +47,8 @@ import type {
 import { QuestionForm, QuestionResponseSummary } from "./QuestionForm";
 import { TaskChatComposerTakeoverHeader } from "./TaskChatComposerTakeoverContext";
 import { RichWorkProductCard } from "./RichWorkProductCard";
+import { AttachmentPreviewContext } from "@/context/AttachmentPreviewContext";
+import { isPlainPrimaryClick } from "@/lib/attachment-preview";
 
 export interface TaskChatProtocolCardProps {
   item: TaskChatProtocolItem;
@@ -1018,6 +1020,7 @@ function ResourceCard({
 }: {
   item: Extract<TaskChatProtocolItem, { surface: "resource" }>;
 }) {
+  const openAttachmentPreview = useContext(AttachmentPreviewContext);
   if (item.resourceKind === "deliverable" && item.workProduct) {
     // Media renders as a gallery tile; every other kind falls back to the card.
     return <RichWorkProductCard workProduct={item.workProduct} href={item.href} variant="gallery" />;
@@ -1041,6 +1044,10 @@ function ResourceCard({
     <a
       className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       href={item.href}
+      onClick={openAttachmentPreview && item.resourceKind === "attachment" ? (event) => {
+        if (!isPlainPrimaryClick(event)) return;
+        if (openAttachmentPreview({ href: item.href!, name: item.title })) event.preventDefault();
+      } : undefined}
     >
       {body}
     </a>
