@@ -2178,8 +2178,8 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     res.json({ deleted: true });
   });
 
-  router.get("/projects/:projectId/pipeline-cases", async (req, res) => {
-    const projectId = req.params.projectId as string;
+  router.get("/projects/:id/pipeline-cases", async (req, res) => {
+    const projectId = req.params.id as string;
     const project = await db
       .select({ id: projects.id, companyId: projects.companyId })
       .from(projects)
