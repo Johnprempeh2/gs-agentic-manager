@@ -47,6 +47,7 @@ import {
   useResourceMemberships,
 } from "../hooks/useResourceMemberships";
 import { ErrorState } from "../components/ErrorState";
+import { ProjectClientChips } from "../components/ProjectClientChips";
 
 /* ── Top-level tab types ── */
 
@@ -780,6 +781,10 @@ export function ProjectDetail() {
               Managed by {project.managedByPlugin.pluginDisplayName}
             </div>
           ) : null}
+          <ProjectClientChips
+            projectId={project.id}
+            enabled={experimentalSettingsQuery.data?.enablePipelines === true}
+          />
         </div>
         <div className="ml-auto flex items-center gap-2">
           <StarToggle

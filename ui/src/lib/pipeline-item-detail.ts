@@ -365,6 +365,8 @@ export function formatPipelineItemEvent(event: PipelineCaseEvent, stages?: Stage
   if (kind === "conversation_opened") return "Conversation started.";
   if (kind === "issue_linked") return "Linked to work.";
   if (kind === "issue_unlinked") return "Work link removed.";
+  if (kind === "project_linked") return "Linked to a project.";
+  if (kind === "project_unlinked") return "Project link removed.";
   if (kind === "blockers_set") return "Waiting items updated.";
   if (kind === "blockers_resolved") return "Waiting items cleared.";
   if (kind === "children_terminal") return "Built-from items completed.";
