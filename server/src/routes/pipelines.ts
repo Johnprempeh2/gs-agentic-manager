@@ -73,6 +73,7 @@ import {
   getCaseChildrenTree,
   getDirectChildrenSummary,
   loadDescendantActiveWorkCountsForCases,
+  loadStageEnteredAtForCases,
   listCompanyCaseEvents,
   listPipelineAttention,
   loadActiveWorkForCases,
@@ -1425,9 +1426,10 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
       ))
       .orderBy(asc(pipelineCases.createdAt));
     const caseIds = rows.map((row) => row.case.id);
-    const [activeWork, descendantActiveWorkCounts] = await Promise.all([
+    const [activeWork, descendantActiveWorkCounts, stageEnteredAt] = await Promise.all([
       loadActiveWorkForCases(db, companyId, caseIds),
       loadDescendantActiveWorkCountsForCases(db, companyId, caseIds),
+      loadStageEnteredAtForCases(db, companyId, rows.map((row) => row.case)),
     ]);
     res.json(rows.map((row) => ({
       case: row.case,
@@ -1440,6 +1442,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         : null,
       activeWork: activeWork.get(row.case.id) ?? null,
       descendantActiveWorkCount: descendantActiveWorkCounts.get(row.case.id) ?? 0,
+      stageEnteredAt: stageEnteredAt.get(row.case.id) ?? row.case.createdAt,
     })));
   });
 

@@ -305,6 +305,57 @@ describeEmbeddedPostgres("pipeline routes", () => {
     await http.delete(`/api/pipelines/${pipelineId}/stages/${stageId}?moveCasesToStageId=${qaStage.body.id}`).expect(200);
   });
 
+  it("returns when each board case entered its current stage", async () => {
+    const company = await seedCompany();
+    const http = request(app(boardActor));
+    const pipeline = await http
+      .post(`/api/companies/${company.id}/pipelines`)
+      .send({
+        key: "clients",
+        name: "Client journey",
+        stages: [
+          { key: "lead", name: "Lead", kind: "open", position: 100 },
+          { key: "intro", name: "Introduction", kind: "working", position: 200 },
+          { key: "live", name: "Live", kind: "done", position: 900 },
+          { key: "lost", name: "Lost", kind: "cancelled", position: 1000 },
+        ],
+      })
+      .expect(201);
+    const pipelineId = pipeline.body.id;
+    await http
+      .post(`/api/pipelines/${pipelineId}/cases`)
+      .send({ caseKey: "stale", title: "Stale client", fields: { lastContact: "2026-01-01" } })
+      .expect(201);
+    const moved = await http
+      .post(`/api/pipelines/${pipelineId}/cases`)
+      .send({ caseKey: "moved", title: "Moved client", fields: { lastContact: "2026-01-01" } })
+      .expect(201);
+    const legacy = await http
+      .post(`/api/pipelines/${pipelineId}/cases`)
+      .send({ caseKey: "legacy", title: "Legacy client" })
+      .expect(201);
+
+    const longAgo = new Date("2026-01-15T00:00:00Z");
+    // Every case entered "lead" long ago; "moved" then moves to "intro" now.
+    await db.update(pipelineCaseEvents).set({ createdAt: longAgo });
+    await http
+      .post(`/api/cases/${moved.body.case.id}/transition`)
+      .send({ toStageKey: "intro", expectedVersion: 1 })
+      .expect(200);
+    // A case with no stage events (older data) falls back to when it was created.
+    const legacyCreatedAt = new Date("2026-02-01T00:00:00Z");
+    await db.delete(pipelineCaseEvents).where(eq(pipelineCaseEvents.caseId, legacy.body.case.id));
+    await db.update(pipelineCases).set({ createdAt: legacyCreatedAt }).where(eq(pipelineCases.id, legacy.body.case.id));
+
+    const board = await http.get(`/api/pipelines/${pipelineId}/cases`).expect(200);
+    const byKey = new Map<string, { stageEnteredAt: string }>(
+      board.body.map((row: { case: { caseKey: string }; stageEnteredAt: string }) => [row.case.caseKey, row]),
+    );
+    expect(new Date(byKey.get("stale")!.stageEnteredAt).toISOString()).toBe(longAgo.toISOString());
+    expect(Date.now() - new Date(byKey.get("moved")!.stageEnteredAt).getTime()).toBeLessThan(60_000);
+    expect(new Date(byKey.get("legacy")!.stageEnteredAt).toISOString()).toBe(legacyCreatedAt.toISOString());
+  });
+
   it("patches case content and workspaceRef in one service transaction", async () => {
     const company = await seedCompany();
     const http = request(app(boardActor));
