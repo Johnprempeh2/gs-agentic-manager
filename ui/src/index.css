@@ -500,6 +500,9 @@
   /* My tasks Discuss panel (GRE-620): docked beside the list, the height of
      the page area under the 60px bar less main's top and bottom padding. */
   --my-tasks-discuss-width: var(--sz-420px);
+  /* Attachment preview panel (GRE-1036): wide enough to read a mock-up,
+     narrow enough to keep the thread in view beside it. */
+  --sz-attachment-preview-panel: min(60rem, 62vw);
   --my-tasks-discuss-height: calc(100dvh - var(--sz-60px) - 3rem);
   --side-panel-bg: var(--gs-panel-bg); /* Greatstone: a translucent panel over the atmosphere */
   --side-panel-fg: var(--foreground);
