@@ -277,7 +277,7 @@ describe("AppDefinition catalog", () => {
         "google-workspace-search",
       ]),
     );
-    expect(SELF_SERVE_MCP_CANDIDATES).toHaveLength(48);
+    expect(SELF_SERVE_MCP_CANDIDATES).toHaveLength(49);
     expect(BLOCKED_MCP_PROVIDERS.map((entry) => entry.slug)).toEqual([
       "g2",
       "vercel",
@@ -430,15 +430,15 @@ describe("AppDefinition catalog", () => {
     expect(channel("slack")?.guidanceMd).toContain("reactions");
     expect(channel("slack")?.guidanceMd).toContain("direct messages");
   });
-  it("keeps a complete, unique, dated evidence ledger for all 51 researched MCP providers", () => {
+  it("keeps a complete, unique, dated evidence ledger for all 52 researched MCP providers", () => {
     // Ledger-wide date reflects the last full re-verification (2026-08-26);
     // later provider additions carry their own research evidence, but
     // bumping the shared date would overstate freshness for the other providers.
     expect(SELF_SERVE_MCP_RESEARCH.verifiedAt).toBe("2026-08-26");
-    expect(SELF_SERVE_MCP_RESEARCH.entries).toHaveLength(51);
+    expect(SELF_SERVE_MCP_RESEARCH.entries).toHaveLength(52);
     expect(
       new Set(SELF_SERVE_MCP_RESEARCH.entries.map((entry) => entry.slug)),
-    ).toHaveProperty("size", 51);
+    ).toHaveProperty("size", 52);
     for (const entry of SELF_SERVE_MCP_RESEARCH.entries) {
       expect(new URL(entry.docsUrl).protocol).toBe("https:");
       expect(new URL(entry.serverUrl).protocol).toBe("https:");
@@ -446,6 +446,22 @@ describe("AppDefinition catalog", () => {
       expect(entry.prerequisite.length).toBeGreaterThan(10);
       expect(["S1", "S2", "S3", "S4"]).toContain(entry.riskTier);
     }
+  });
+  it("offers Higgsfield as one-click direct sign-in, not through the managed connector broker", () => {
+    const app = APP_STORE_DEFINITIONS.find((entry) => entry.slug === "higgsfield")!;
+    expect(app).toMatchObject({ name: "Higgsfield", branding: { logoUrl: "/brands/apps/higgsfield.png" } });
+    expect(app.description).toContain("credits");
+    expect(getAppDefinitionForUrl("https://mcp.higgsfield.ai/mcp")?.slug).toBe("higgsfield");
+    expect(app.methods).toHaveLength(1);
+    const [method] = app.methods;
+    expect(method).toMatchObject({
+      key: "mcp-oauth", transport: "mcp_remote", auth: "oauth", ownershipModes: ["dcr"],
+      defaults: { serverUrl: "https://mcp.higgsfield.ai/mcp" },
+    });
+    // Broker-managed entries carry a connectorProfile, a cloud oauthStrategy or a credential source.
+    expect(method).not.toHaveProperty("connectorProfile");
+    expect(method).not.toHaveProperty("oauthStrategy");
+    expect(method).not.toHaveProperty("credentialSources");
   });
   it("offers Fireflies browser sign-in and a vaulted bearer key on the same official MCP endpoint", () => {
     const app = APP_STORE_DEFINITIONS.find((entry) => entry.slug === "fireflies")!;
@@ -722,7 +738,7 @@ describe("AppDefinition catalog", () => {
       "ticktick",
       "xero",
     ]);
-    expect(APP_STORE_DEFINITIONS).toHaveLength(56);
+    expect(APP_STORE_DEFINITIONS).toHaveLength(57);
     const connectableSlugs = new Set(
       CONNECTABLE_APP_DEFINITIONS.map((entry) => entry.slug),
     );
