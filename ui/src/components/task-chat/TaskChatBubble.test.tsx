@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { IssueGalleryContext } from "@/context/IssueGalleryContext";
+import { AttachmentPreviewContext } from "@/context/AttachmentPreviewContext";
 import { TaskChatBubble } from "./TaskChatBubble";
 import type { TaskChatMessageItem } from "./task-chat-model";
 
@@ -103,6 +104,31 @@ describe("TaskChatBubble attachment chips", () => {
     // The link-only line left the rendered body; the prose stayed.
     expect(container.textContent).toContain("Here you go.");
     expect(container.textContent).not.toContain("(/api/attachments/abc/content)");
+  });
+
+  it("opens a file chip in the issue's preview panel on a plain click only (GRE-1036)", () => {
+    const openPreview = vi.fn(() => true);
+    flushSync(() => root!.render(
+      <ThemeProvider>
+        <AttachmentPreviewContext.Provider value={openPreview}>
+          <TaskChatBubble item={{ id: "m1", kind: "message", author: "agent", text: "[mock-up.html](/api/attachments/abc/content)" }} />
+        </AttachmentPreviewContext.Provider>
+      </ThemeProvider>,
+    ));
+    const link = container.querySelector<HTMLAnchorElement>("a[href='/api/attachments/abc/content']")!;
+
+    const modified = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
+    flushSync(() => link.dispatchEvent(modified));
+    expect(modified.defaultPrevented).toBe(false);
+    expect(openPreview).not.toHaveBeenCalled();
+
+    const plain = new MouseEvent("click", { bubbles: true, cancelable: true });
+    flushSync(() => link.dispatchEvent(plain));
+    expect(plain.defaultPrevented).toBe(true);
+    expect(openPreview).toHaveBeenCalledWith(expect.objectContaining({
+      href: "/api/attachments/abc/content",
+      name: "mock-up.html",
+    }));
   });
 
   it("renders a chip-only row when the message body is just the file link", () => {

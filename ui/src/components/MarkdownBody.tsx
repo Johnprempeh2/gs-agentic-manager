@@ -1,4 +1,4 @@
-import { isValidElement, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { isValidElement, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, ExternalLink, WrapText } from "lucide-react";
 import Markdown, { defaultUrlTransform, type Components, type Options } from "react-markdown";
@@ -42,6 +42,8 @@ import {
 import { normalizeExternalObjectHref } from "../lib/external-object-href";
 import { inAppDeliverablePath } from "../lib/deliverable-links";
 import { copyTextToClipboard } from "../lib/clipboard";
+import { isPlainPrimaryClick, parseAttachmentContentHref } from "../lib/attachment-preview";
+import { AttachmentPreviewContext } from "../context/AttachmentPreviewContext";
 import type {
   ExternalObjectLivenessState,
   ExternalObjectStatusCategory,
@@ -778,6 +780,7 @@ function MarkdownBodyImpl({
   renderEmailHtml = false,
 }: MarkdownBodyProps) {
   const { theme } = useTheme();
+  const openAttachmentPreview = useContext(AttachmentPreviewContext);
   // Read company prefixes non-throwingly: MarkdownBody renders in surfaces that
   // may lack a CompanyProvider. A null context (or no companies yet) leaves
   // knownPrefixes undefined, which keeps issue auto-linking permissive.
@@ -968,6 +971,17 @@ function MarkdownBodyImpl({
 
       const isGitHubLink = isGitHubUrl(href);
       const isExternal = isExternalHttpUrl(href);
+      // Inside the issue view a plain click on an attachment opens the
+      // preview panel; modified and middle clicks keep the browser's
+      // behaviour (GRE-1036).
+      const previewHandler = openAttachmentPreview && href && parseAttachmentContentHref(href)
+        ? (event: React.MouseEvent<HTMLAnchorElement>) => {
+            if (!isPlainPrimaryClick(event)) return;
+            if (openAttachmentPreview({ href, name: flattenText(linkChildren) })) {
+              event.preventDefault();
+            }
+          }
+        : undefined;
       const leadingIcon = isGitHubLink ? (
         <GithubIcon aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 align-(--va-0_125em)" />
       ) : null;
@@ -980,6 +994,7 @@ function MarkdownBodyImpl({
           {...(isExternal
             ? { target: "_blank", rel: "noopener noreferrer" }
             : { rel: "noreferrer" })}
+          onClick={previewHandler}
           style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
         >
           {renderLinkBody(linkChildren, leadingIcon, trailingIcon)}
@@ -1003,7 +1018,7 @@ function MarkdownBodyImpl({
       };
     }
     return map;
-  }, [theme, linkIssueReferences, linkCaseReferences, externalReferenceLookup, resolveImageSrc, onImageClick, renderEmailHtml]);
+  }, [theme, linkIssueReferences, linkCaseReferences, externalReferenceLookup, resolveImageSrc, onImageClick, renderEmailHtml, openAttachmentPreview]);
 
   return (
     <div
