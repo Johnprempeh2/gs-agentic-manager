@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "slug": "higgsfield",
+  "name": "Higgsfield",
+  "description": "Generate images and videos with Higgsfield. Each generation uses your Higgsfield credits.",
+  "categories": [
+    "ai"
+  ],
+  "featured": false,
+  "branding": {
+    "logoUrl": "/brands/apps/higgsfield.png"
+  },
+  "urlPatterns": [
+    "https://mcp.higgsfield.ai/*"
+  ],
+  "docsUrl": "https://higgsfield.ai/mcp",
+  "redirectConstraints": "https-or-loopback-http",
+  "methods": [
+    {
+      "key": "mcp-oauth",
+      "transport": "mcp_remote",
+      "auth": "oauth",
+      "ownershipModes": [
+        "dcr"
+      ],
+      "whenToUse": "Use browser sign-in for the provider-hosted MCP server.",
+      "defaults": {
+        "serverUrl": "https://mcp.higgsfield.ai/mcp"
+      },
+      "guidanceMd": "Connect Higgsfield in the browser. A Higgsfield account. Each generation uses your Higgsfield credits, so grant this connection to agents deliberately.",
+      "riskTier": "S3",
+      "label": "Sign in with Higgsfield",
+      "consoleLinks": {
+        "docs": "https://higgsfield.ai/mcp"
+      },
+      "warnings": [
+        "A Higgsfield account. Each generation uses your Higgsfield credits, so grant this connection to agents deliberately."
+      ]
+    }
+  ]
+}
