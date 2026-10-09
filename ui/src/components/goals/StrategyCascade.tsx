@@ -9,7 +9,8 @@ import { GoalHealthPill } from "./GoalHealth";
 import { GoalOwner, type UsersById } from "./GoalOwner";
 import type { AgentsById } from "./GoalScoreboard";
 
-const DEPTH_INDENT = ["", "sm:pl-6", "sm:pl-12", "sm:pl-16"];
+/** Left padding per level: pillar, objective, KPI and initiative. */
+const DEPTH_INDENT = ["pl-4", "pl-8 sm:pl-10", "pl-12 sm:pl-16", "pl-14 sm:pl-20"];
 
 function KindBadge({ kind }: { kind: GoalKind }) {
   return (
@@ -88,22 +89,24 @@ export function StrategyCascadeView({
         ) : (
           <ul className="divide-y divide-border">
             {cascade.strategy.map(({ goal, depth }) => (
-              <li key={goal.id} className={cn("px-4 py-3", DEPTH_INDENT[Math.min(depth, DEPTH_INDENT.length - 1)])}>
+              <li key={goal.id} className={cn("py-3 pr-4", DEPTH_INDENT[Math.min(depth, DEPTH_INDENT.length - 1)])}>
                 <Link
                   to={`/goals/${goal.id}`}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-inherit no-underline hover:underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex flex-col gap-1.5 text-inherit no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center sm:gap-3"
                   data-testid="cascade-row"
                   data-kind={goal.kind ?? undefined}
                 >
-                  {goal.kind ? <KindBadge kind={goal.kind} /> : null}
-                  <span className={cn("min-w-0 flex-1 basis-48 text-sm", depth === 0 && "font-semibold")}>
-                    {goal.title}
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    {goal.kind ? <KindBadge kind={goal.kind} /> : null}
+                    <span className={cn("min-w-0 text-sm", depth === 0 && "font-semibold")}>{goal.title}</span>
                   </span>
-                  <GoalOwner goal={goal} agentsById={agentsById} usersById={usersById} />
-                  <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
-                    {goal.progress.percent == null ? "–" : `${goal.progress.percent}%`}
+                  <span className="flex items-center gap-3">
+                    <GoalOwner goal={goal} agentsById={agentsById} usersById={usersById} />
+                    <span className="ml-auto w-10 text-right text-xs tabular-nums text-muted-foreground sm:ml-0">
+                      {goal.progress.percent == null ? "–" : `${goal.progress.percent}%`}
+                    </span>
+                    <GoalHealthPill health={goalHealth(goal)} />
                   </span>
-                  <GoalHealthPill health={goalHealth(goal)} />
                 </Link>
               </li>
             ))}
