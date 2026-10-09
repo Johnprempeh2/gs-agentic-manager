@@ -113,11 +113,11 @@ function ReviewFilterBar({
         </SelectContent>
       </Select>
       <Select value={filters.conflict ?? ALL} onValueChange={pick("conflict")}>
-        <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Conflict">
+        <SelectTrigger className="h-9 w-full sm:w-44" aria-label="Conflict">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>With or without conflict</SelectItem>
+          <SelectItem value={ALL}>Any conflict state</SelectItem>
           <SelectItem value="true">Conflict only</SelectItem>
           <SelectItem value="false">No conflict</SelectItem>
         </SelectContent>

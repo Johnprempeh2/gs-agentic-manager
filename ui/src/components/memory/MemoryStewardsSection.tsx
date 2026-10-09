@@ -85,6 +85,11 @@ export function MemoryStewardsSection({ companyId }: { companyId: string }) {
         <p className="px-3 py-3 text-sm text-muted-foreground">No scopes yet.</p>
       ) : (
         <ul className="divide-y divide-border">
+          <li aria-hidden="true" className="hidden px-3 py-1.5 text-xs text-muted-foreground sm:grid sm:grid-cols-3">
+            <span>Scope</span>
+            <span>Steward</span>
+            <span>Backup</span>
+          </li>
           {rows.map((row) => (
             <li key={row.scopeId} className="grid gap-2 px-3 py-2.5 sm:grid-cols-3 sm:items-center">
               <div className="min-w-0">
