@@ -2,12 +2,12 @@
 // (GRE-1049). A card counts as a client card when its fields carry a
 // last-contact date; other pipelines never show these flags.
 
+import { daysInStage } from "./client-case";
+
 export const NO_CONTACT_FLAG_DAYS = 14;
 export const STUCK_STAGE_FLAG_DAYS = 30;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-// B0 sets the field up by hand in pipeline settings, so accept the usual spellings.
+// B2 reads `lastContact`; accept the usual spellings for fields set up by hand.
 const LAST_CONTACT_FIELD_KEYS = [
   "lastContact",
   "last_contact",
@@ -38,10 +38,6 @@ function toDate(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function wholeDaysSince(date: Date, now: Date) {
-  return Math.max(0, Math.floor((now.getTime() - date.getTime()) / DAY_MS));
-}
-
 export function isClientCard(fields: Record<string, unknown> | null | undefined) {
   if (!fields) return false;
   return LAST_CONTACT_FIELD_KEYS.some((key) => key in fields);
@@ -62,9 +58,9 @@ export function getClientCardFlags(input: ClientCardFlagInput, now: Date = new D
   if (input.terminalKind || !isClientCard(input.fields)) return none;
 
   const lastContact = readLastContactDate(input.fields);
-  const contactDays = lastContact ? wholeDaysSince(lastContact, now) : null;
+  const contactDays = lastContact ? daysInStage(lastContact, now) : null;
   const stageEnteredAt = toDate(input.stageEnteredAt);
-  const stageDays = stageEnteredAt ? wholeDaysSince(stageEnteredAt, now) : null;
+  const stageDays = stageEnteredAt ? daysInStage(stageEnteredAt, now) : null;
 
   return {
     noContactDays: contactDays != null && contactDays >= NO_CONTACT_FLAG_DAYS ? contactDays : null,

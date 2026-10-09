@@ -168,6 +168,8 @@ export interface PipelineCasePendingSuggestion {
 
 export interface PipelineCaseDetail {
   case: PipelineCase;
+  /** When the case entered its current stage. */
+  stageEnteredAt?: Date | string | null;
   /** Derived from the pipeline (invisible/internal): used for display + ingest checks. */
   caseType?: string;
   stage: PipelineStage;
@@ -235,6 +237,51 @@ export interface PipelineCaseIssueLink {
 export interface PipelineCaseIssueLinkWithIssue {
   link: PipelineCaseIssueLink;
   issue: Issue;
+}
+
+export interface PipelineCaseProjectLink {
+  id: string;
+  companyId: string;
+  caseId: string;
+  projectId: string;
+  createdByUserId?: string | null;
+  createdByAgentId?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface PipelineCaseProjectLinkWithProject {
+  link: PipelineCaseProjectLink;
+  project: { id: string; companyId: string; name: string; status: string; color: string | null };
+  goals: Array<{ id: string; title: string; status: string }>;
+}
+
+export interface ProjectPipelineCase {
+  case: { id: string; pipelineId: string; caseKey: string; title: string };
+  pipeline: { id: string; name: string };
+  stage: { id: string; key: string; name: string; kind: string };
+}
+
+export interface PipelineCaseContact {
+  id: string;
+  companyId: string;
+  caseId: string;
+  name: string;
+  role: string | null;
+  phone: string | null;
+  email: string | null;
+  position: number;
+  createdByUserId?: string | null;
+  createdByAgentId?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface PipelineCaseContactInput {
+  name: string;
+  role?: string | null;
+  phone?: string | null;
+  email?: string | null;
 }
 
 export interface PipelineCaseBlocker {
@@ -441,7 +488,7 @@ export interface PipelineCaseChildRow {
   parentCase?: PipelineCaseParentSummary | null;
   activeWork?: PipelineCaseActiveWork | null;
   descendantActiveWorkCount?: number;
-  /** When the case entered its current stage. Set by GET /pipelines/:id/cases. */
+  /** When the case entered its current stage (board list only). */
   stageEnteredAt?: Date | string | null;
 }
 
@@ -565,6 +612,22 @@ export const pipelinesApi = {
   },
   getCaseIssueLinks: (caseId: string) =>
     api.get<PipelineCaseIssueLinkWithIssue[]>(`/cases/${caseId}/issue-links`),
+  getCaseProjectLinks: (caseId: string) =>
+    api.get<PipelineCaseProjectLinkWithProject[]>(`/cases/${caseId}/project-links`),
+  linkCaseProject: (caseId: string, projectId: string) =>
+    api.post<PipelineCaseProjectLink>(`/cases/${caseId}/project-links`, { projectId }),
+  unlinkCaseProject: (caseId: string, projectId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/project-links/${projectId}`),
+  listCaseContacts: (caseId: string) =>
+    api.get<PipelineCaseContact[]>(`/cases/${caseId}/contacts`),
+  createCaseContact: (caseId: string, input: PipelineCaseContactInput) =>
+    api.post<PipelineCaseContact>(`/cases/${caseId}/contacts`, input),
+  updateCaseContact: (caseId: string, contactId: string, input: Partial<PipelineCaseContactInput>) =>
+    api.patch<PipelineCaseContact>(`/cases/${caseId}/contacts/${contactId}`, input),
+  deleteCaseContact: (caseId: string, contactId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/contacts/${contactId}`),
+  listProjectCases: (projectId: string) =>
+    api.get<ProjectPipelineCase[]>(`/projects/${projectId}/pipeline-cases`),
   getCaseOutputs: (caseId: string) =>
     api.get<PipelineCaseOutputsResponse>(`/cases/${caseId}/outputs`),
   createIssueLink: (

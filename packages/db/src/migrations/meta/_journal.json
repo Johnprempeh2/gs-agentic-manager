@@ -2087,6 +2087,20 @@
       "when": 1791302157864,
       "tag": "0299_deliverable_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 300,
+      "version": "7",
+      "when": 1791502333147,
+      "tag": "0300_pipeline_case_project_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 301,
+      "version": "7",
+      "when": 1791504865049,
+      "tag": "0301_pipeline_case_contacts",
+      "breakpoints": true
     }
   ]
 }

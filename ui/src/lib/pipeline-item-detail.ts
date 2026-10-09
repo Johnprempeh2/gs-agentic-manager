@@ -326,6 +326,9 @@ export function formatPipelineItemEvent(event: PipelineCaseEvent, stages?: Stage
   if (kind === "ingested") return "Item added.";
   if (kind === "updated") {
     if (payload.action === "stage_automation_rerun_requested") return "Stage automation re-run requested.";
+    if (payload.action === "contact_added") return "Contact added.";
+    if (payload.action === "contact_updated") return "Contact updated.";
+    if (payload.action === "contact_removed") return "Contact removed.";
     return "Item details updated.";
   }
   if (kind === "transitioned") {
@@ -365,6 +368,8 @@ export function formatPipelineItemEvent(event: PipelineCaseEvent, stages?: Stage
   if (kind === "conversation_opened") return "Conversation started.";
   if (kind === "issue_linked") return "Linked to work.";
   if (kind === "issue_unlinked") return "Work link removed.";
+  if (kind === "project_linked") return "Linked to a project.";
+  if (kind === "project_unlinked") return "Project link removed.";
   if (kind === "blockers_set") return "Waiting items updated.";
   if (kind === "blockers_resolved") return "Waiting items cleared.";
   if (kind === "children_terminal") return "Built-from items completed.";

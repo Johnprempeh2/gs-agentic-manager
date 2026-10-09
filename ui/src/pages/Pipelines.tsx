@@ -84,6 +84,15 @@ import { authApi } from "../api/auth";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
+import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
+import { ClientCaseOverview } from "../components/ClientCaseOverview";
+import {
+  CLIENT_CASE_TYPE,
+  CLIENT_RECORD_FIELD_KEYS,
+  daysInStage,
+  formatDaysInStage,
+  readCardSummary,
+} from "../lib/client-case";
 import { EmptyState } from "../components/EmptyState";
 import { IssueChatThread } from "../components/IssueChatThread";
 import { MarkdownBody } from "../components/MarkdownBody";
@@ -1010,9 +1019,9 @@ const UNASSIGNED_STAGE_NAME = "Unassigned";
 
 type BoardCase = PipelineCase & {
   activeWork?: PipelineCaseActiveWork | null;
+  stageEnteredAt?: Date | string | null;
   descendantActiveWorkCount?: number | null;
   parentCase?: PipelineCaseParentSummary | null;
-  stageEnteredAt?: Date | string | null;
 };
 
 type PipelineTransitionEdge = { fromStageId: string; toStageId: string; label?: string | null };
@@ -1223,6 +1232,8 @@ function PipelineCaseCard({
   const hasChangedNotice = hasThisChanged(caseItem);
   const childrenSummary = getChildrenSummaryCount(caseItem);
   const liveDownstreamCount = descendantActiveWorkCount(caseItem);
+  const { owner, nextAction } = readCardSummary(caseItem.fields);
+  const daysLabel = caseItem.terminalKind ? null : formatDaysInStage(daysInStage(caseItem.stageEnteredAt));
   const {
     attributes,
     listeners,
@@ -1284,6 +1295,28 @@ function PipelineCaseCard({
           <p className="mt-1.5 text-xs text-muted-foreground">
             Built from {formatNumber(childrenSummary)} {childrenSummary === 1 ? "item" : "items"}
           </p>
+        ) : null}
+        {owner || nextAction || daysLabel ? (
+          <dl className="mt-1.5 space-y-0.5 text-xs">
+            {owner ? (
+              <div className="flex gap-1">
+                <dt className="shrink-0 text-muted-foreground">Owner</dt>
+                <dd className="min-w-0 truncate text-foreground">{owner}</dd>
+              </div>
+            ) : null}
+            {nextAction ? (
+              <div className="flex gap-1">
+                <dt className="shrink-0 text-muted-foreground">Next</dt>
+                <dd className="line-clamp-2 min-w-0 text-foreground">{nextAction}</dd>
+              </div>
+            ) : null}
+            {daysLabel ? (
+              <div>
+                <dt className="sr-only">Time in stage</dt>
+                <dd className="text-muted-foreground">{daysLabel}</dd>
+              </div>
+            ) : null}
+          </dl>
         ) : null}
       </Link>
     </Card>
@@ -2737,8 +2770,14 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
   const workReferences = extractWorkReferences(detail.case);
   const referenceKeys = referenceFieldKeys(detail.case.fields);
+  const isClientCase = detail.caseType === CLIENT_CASE_TYPE;
+  const projectsPanel = (
+    <PipelineCaseProjects caseId={caseId} companyId={item.data?.case.companyId ?? selectedCompanyId ?? null} />
+  );
   const { shortFields: itemFields, longFields: mainPaneFields } = splitPipelineItemFields(
-    displayPipelineItemFields(detail.case.fields).filter((field) => !referenceKeys.has(field.key)),
+    displayPipelineItemFields(detail.case.fields).filter((field) =>
+      !referenceKeys.has(field.key) && !(isClientCase && CLIENT_RECORD_FIELD_KEYS.has(field.key))
+    ),
   );
   const banner = getPendingTransitionBannerState(detail.case, stageLookup);
   const statusLabel = humanizePipelineItemStatus(detail.case.terminalKind ?? detail.stage.kind);
@@ -3246,6 +3285,16 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
       <div className="grid gap-8 lg:grid-cols-(--gtc-45)">
         <main className="min-w-0 space-y-8">
+          {isClientCase ? (
+            <ClientCaseOverview
+              detail={detail}
+              stages={pipeline.data.stages}
+              events={eventRows}
+              issueLinks={issueLinks.data ?? []}
+              projects={projectsPanel}
+            />
+          ) : null}
+
           <PipelineItemBodyDocument
             caseId={caseId}
             legacySummary={detail.case.summary ?? null}
@@ -3359,6 +3408,11 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
         <aside className="min-w-0 space-y-8">
           {reviewPanel}
+
+          {/* Client cases show Projects inside the overview on narrow screens. */}
+          <div className={isClientCase ? "hidden lg:block" : undefined}>
+            <DetailSection title="Projects">{projectsPanel}</DetailSection>
+          </div>
 
           <DetailSection title="Linked work">
             <PipelineWorkReferences references={workReferences} />

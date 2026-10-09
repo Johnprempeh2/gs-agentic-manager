@@ -643,42 +643,6 @@ export async function loadDescendantActiveWorkCountsForCases(
   return map;
 }
 
-// When each case entered its current stage: the latest ingest or move into that
-// stage. Cases with no matching event (older data) fall back to their createdAt.
-// The board uses this for "days in stage" and the stuck-stage flag.
-export async function loadStageEnteredAtForCases(
-  db: Db,
-  companyId: string,
-  cases: Array<{ id: string; stageId: string; createdAt: Date }>,
-): Promise<Map<string, Date>> {
-  const map = new Map<string, Date>(cases.map((item) => [item.id, item.createdAt]));
-  if (cases.length === 0) return map;
-
-  const rows = await db
-    .select({
-      caseId: pipelineCaseEvents.caseId,
-      enteredAt: sql<Date | string>`max(${pipelineCaseEvents.createdAt})`,
-    })
-    .from(pipelineCaseEvents)
-    .innerJoin(pipelineCases, and(
-      eq(pipelineCases.id, pipelineCaseEvents.caseId),
-      eq(pipelineCases.stageId, pipelineCaseEvents.toStageId),
-    ))
-    .where(and(
-      eq(pipelineCaseEvents.companyId, companyId),
-      eq(pipelineCases.companyId, companyId),
-      inArray(pipelineCaseEvents.caseId, [...map.keys()]),
-      inArray(pipelineCaseEvents.type, ["ingested", "transitioned", "transition_forced"]),
-    ))
-    .groupBy(pipelineCaseEvents.caseId);
-
-  for (const row of rows) {
-    const enteredAt = row.enteredAt instanceof Date ? row.enteredAt : new Date(row.enteredAt);
-    if (!Number.isNaN(enteredAt.getTime())) map.set(row.caseId, enteredAt);
-  }
-  return map;
-}
-
 type PipelineDescendantActiveWorkCountRow = {
   pipeline_id: string;
   count: number;

@@ -16,6 +16,7 @@ import { companies } from "./companies.js";
 import { documents } from "./documents.js";
 import { issues } from "./issues.js";
 import { pipelineStages, pipelines } from "./pipelines.js";
+import { projects } from "./projects.js";
 import { routines } from "./routines.js";
 
 export type PipelineCasePendingSuggestion = {
@@ -108,6 +109,49 @@ export const pipelineCaseIssueLinks = pgTable(
     companyCaseIdx: index("pipeline_case_issue_links_company_case_idx").on(table.companyId, table.caseId),
     automationAttemptIdx: index("pipeline_case_issue_links_automation_attempt_idx").on(table.automationAttemptId),
     roleCheck: check("pipeline_case_issue_links_role_check", sql`${table.role} in ('origin', 'conversation', 'work', 'automation')`),
+  }),
+);
+
+// Links a pipeline case (for example a client on the "Client journey"
+// pipeline) to the projects that serve it. Goals come through the projects.
+export const pipelineCaseProjectLinks = pgTable(
+  "pipeline_case_project_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id").notNull().references(() => pipelineCases.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    caseProjectUq: uniqueIndex("pipeline_case_project_links_case_project_uq").on(table.caseId, table.projectId),
+    companyProjectIdx: index("pipeline_case_project_links_company_project_idx").on(table.companyId, table.projectId),
+  }),
+);
+
+// People at a client (or any other case): name, role, phone, email. The
+// client page lists them in position order (GRE-1048).
+export const pipelineCaseContacts = pgTable(
+  "pipeline_case_contacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id").notNull().references(() => pipelineCases.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    role: text("role"),
+    phone: text("phone"),
+    email: text("email"),
+    position: integer("position").notNull().default(0),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    companyCaseIdx: index("pipeline_case_contacts_company_case_idx").on(table.companyId, table.caseId),
   }),
 );
 

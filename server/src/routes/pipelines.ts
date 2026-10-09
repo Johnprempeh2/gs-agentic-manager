@@ -24,6 +24,9 @@ import {
   blockersSchema,
   issueLinkRoleSchema,
   createIssueLinkSchema,
+  createProjectLinkSchema,
+  createCaseContactSchema,
+  updateCaseContactSchema,
   bulkReviewSchema,
   upsertPipelineDocumentSchema,
   upsertPipelineCaseDocumentSchema,
@@ -37,6 +40,7 @@ import {
   agents,
   documents,
   documentRevisions,
+  goals,
   heartbeatRuns,
   issueDocuments,
   issues as issueRows,
@@ -45,12 +49,16 @@ import {
   pipelineCaseBlockers,
   pipelineCaseDocuments,
   pipelineCaseEvents,
+  pipelineCaseContacts,
   pipelineCaseIssueLinks,
+  pipelineCaseProjectLinks,
   pipelineCases,
   pipelineDocuments,
   pipelineStages,
   pipelineTransitions,
   pipelines,
+  projectGoals,
+  projects,
   routines,
 } from "@greatstone/db";
 import { validate } from "../middleware/validate.js";
@@ -73,7 +81,6 @@ import {
   getCaseChildrenTree,
   getDirectChildrenSummary,
   loadDescendantActiveWorkCountsForCases,
-  loadStageEnteredAtForCases,
   listCompanyCaseEvents,
   listPipelineAttention,
   loadActiveWorkForCases,
@@ -694,6 +701,48 @@ async function assertIssueLinkMutationAllowed(
   const runId = req.actor.runId?.trim();
   if (!runId) throw unauthorized("Agent run id required");
   await input.issuesSvc.assertCheckoutOwner(input.issue.id, actorAgentId, runId);
+}
+
+async function assertProjectReadable(
+  req: Request,
+  access: ReturnType<typeof accessService>,
+  project: { id: string; companyId: string },
+) {
+  const decision = await access.decide({
+    actor: req.actor,
+    action: "project:read",
+    resource: { type: "project", companyId: project.companyId, projectId: project.id },
+  });
+  if (!decision.allowed) throw forbidden("Project is outside this actor's authorization boundary");
+}
+
+// When each case entered its current stage: the latest event that moved it
+// there, or the case's creation time when no move is recorded (GRE-1048).
+async function loadStageEnteredAtForCases(
+  db: Db,
+  companyId: string,
+  cases: Array<{ id: string; stageId: string; createdAt: Date }>,
+) {
+  const result = new Map<string, Date>();
+  if (cases.length === 0) return result;
+  const rows = await db
+    .select({
+      caseId: pipelineCaseEvents.caseId,
+      toStageId: pipelineCaseEvents.toStageId,
+      enteredAt: sql<Date>`max(${pipelineCaseEvents.createdAt})`.mapWith((value) => new Date(value)),
+    })
+    .from(pipelineCaseEvents)
+    .where(and(
+      eq(pipelineCaseEvents.companyId, companyId),
+      inArray(pipelineCaseEvents.caseId, cases.map((row) => row.id)),
+      isNotNull(pipelineCaseEvents.toStageId),
+    ))
+    .groupBy(pipelineCaseEvents.caseId, pipelineCaseEvents.toStageId);
+  for (const row of cases) {
+    const entered = rows.find((event) => event.caseId === row.id && event.toStageId === row.stageId);
+    result.set(row.id, entered?.enteredAt ?? row.createdAt);
+  }
+  return result;
 }
 
 export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineService>[1] = {}) {
@@ -1434,6 +1483,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     res.json(rows.map((row) => ({
       case: row.case,
       stage: row.stage,
+      stageEnteredAt: stageEnteredAt.get(row.case.id) ?? null,
       parentCase: row.parentCase?.id && row.parentPipeline?.id
         ? {
             case: row.parentCase,
@@ -1442,7 +1492,6 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         : null,
       activeWork: activeWork.get(row.case.id) ?? null,
       descendantActiveWorkCount: descendantActiveWorkCounts.get(row.case.id) ?? 0,
-      stageEnteredAt: stageEnteredAt.get(row.case.id) ?? row.case.createdAt,
     })));
   });
 
@@ -1450,7 +1499,8 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const caseId = req.params.caseId as string;
     const companyId = await assertCaseAccess(db, req, caseId);
     const detail = await getCaseDetail(db, companyId, caseId);
-    res.json(detail);
+    const stageEnteredAt = await loadStageEnteredAtForCases(db, companyId, [detail.case]);
+    res.json({ ...detail, stageEnteredAt: stageEnteredAt.get(caseId) ?? null });
   });
 
   router.get("/cases/:caseId/documents/:key", async (req, res) => {
@@ -2046,6 +2096,271 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         });
       return removed;
     });
+    res.json({ deleted: true });
+  });
+
+  router.get("/cases/:caseId/project-links", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const rows = await db
+      .select({
+        link: pipelineCaseProjectLinks,
+        project: {
+          id: projects.id,
+          companyId: projects.companyId,
+          name: projects.name,
+          status: projects.status,
+          color: projects.color,
+        },
+      })
+      .from(pipelineCaseProjectLinks)
+      .innerJoin(projects, eq(pipelineCaseProjectLinks.projectId, projects.id))
+      .where(and(
+        eq(pipelineCaseProjectLinks.companyId, companyId),
+        eq(pipelineCaseProjectLinks.caseId, caseId),
+        eq(projects.companyId, companyId),
+      ))
+      .orderBy(asc(pipelineCaseProjectLinks.createdAt));
+    const decisions = await Promise.all(rows.map((row) =>
+      access.decide({
+        actor: req.actor,
+        action: "project:read",
+        resource: { type: "project", companyId, projectId: row.project.id },
+      })
+    ));
+    const visible = rows.filter((_, index) => decisions[index]?.allowed);
+    const goalRows = visible.length === 0
+      ? []
+      : await db
+          .select({ projectId: projectGoals.projectId, id: goals.id, title: goals.title, status: goals.status })
+          .from(projectGoals)
+          .innerJoin(goals, eq(projectGoals.goalId, goals.id))
+          .where(and(
+            eq(projectGoals.companyId, companyId),
+            eq(goals.companyId, companyId),
+            inArray(projectGoals.projectId, visible.map((row) => row.project.id)),
+          ))
+          .orderBy(asc(goals.title));
+    res.json(visible.map((row) => ({
+      ...row,
+      goals: goalRows
+        .filter((goal) => goal.projectId === row.project.id)
+        .map(({ id, title, status }) => ({ id, title, status })),
+    })));
+  });
+
+  router.post("/cases/:caseId/project-links", validate(createProjectLinkSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const actor = actorForMutation(req);
+    const projectId = req.body.projectId as string;
+    // Company separation: only a project in the case's own company can be linked.
+    const project = await db
+      .select({ id: projects.id, companyId: projects.companyId })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.companyId, companyId)))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!project) throw notFound("Project not found");
+    await assertProjectReadable(req, access, project);
+    const link = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(pipelineCaseProjectLinks).values({
+        companyId,
+        caseId,
+        projectId,
+        createdByUserId: actor.type === "user" ? actor.userId : null,
+        createdByAgentId: actor.type === "agent" ? actor.agentId : null,
+      }).onConflictDoNothing().returning();
+      if (!created) return null;
+      await writeRouteEvent(tx, {
+        companyId,
+        caseId,
+        type: "project_linked",
+        actor,
+        payload: { projectId },
+      });
+      return created;
+    });
+    if (!link) throw conflict("Project is already linked to this case", { code: "duplicate_key" });
+    res.status(201).json(link);
+  });
+
+  router.delete("/cases/:caseId/project-links/:projectId", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const projectId = req.params.projectId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const actor = actorForMutation(req);
+    const removed = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .delete(pipelineCaseProjectLinks)
+        .where(and(
+          eq(pipelineCaseProjectLinks.companyId, companyId),
+          eq(pipelineCaseProjectLinks.caseId, caseId),
+          eq(pipelineCaseProjectLinks.projectId, projectId),
+        ))
+        .returning();
+      if (!row) return null;
+      await writeRouteEvent(tx, {
+        companyId,
+        caseId,
+        type: "project_unlinked",
+        actor,
+        payload: { projectId, linkId: row.id },
+      });
+      return row;
+    });
+    if (!removed) throw notFound("Pipeline case project link not found");
+    res.json({ deleted: true });
+  });
+
+  router.get("/projects/:id/pipeline-cases", async (req, res) => {
+    const projectId = req.params.id as string;
+    const project = await db
+      .select({ id: projects.id, companyId: projects.companyId })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!project) throw notFound("Project not found");
+    assertPipelineCompanyAccess(req, project.companyId);
+    await assertProjectReadable(req, access, project);
+    const rows = await db
+      .select({
+        case: {
+          id: pipelineCases.id,
+          pipelineId: pipelineCases.pipelineId,
+          caseKey: pipelineCases.caseKey,
+          title: pipelineCases.title,
+        },
+        pipeline: { id: pipelines.id, name: pipelines.name },
+        stage: { id: pipelineStages.id, key: pipelineStages.key, name: pipelineStages.name, kind: pipelineStages.kind },
+      })
+      .from(pipelineCaseProjectLinks)
+      .innerJoin(pipelineCases, eq(pipelineCaseProjectLinks.caseId, pipelineCases.id))
+      .innerJoin(pipelines, eq(pipelineCases.pipelineId, pipelines.id))
+      .innerJoin(pipelineStages, eq(pipelineCases.stageId, pipelineStages.id))
+      .where(and(
+        eq(pipelineCaseProjectLinks.companyId, project.companyId),
+        eq(pipelineCaseProjectLinks.projectId, projectId),
+        eq(pipelineCases.companyId, project.companyId),
+        isNull(pipelineCases.retiredAt),
+      ))
+      .orderBy(asc(pipelineCases.title));
+    res.json(rows);
+  });
+
+  // Contacts on a case (GRE-1048): reads need case access; changes also need
+  // pipelines:write. Every query is scoped to the case's own company.
+  async function assertCaseContactWriteAccess(req: Request, caseId: string) {
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const pipelineId = await resolveCasePipelineId(db, { companyId, caseId });
+    await assertPipelineWriteAccess(req, { access, companyId, pipelineId });
+    return { companyId, actor: actorForMutation(req) };
+  }
+
+  function parseContactId(value: unknown) {
+    const parsed = z.string().guid().safeParse(value);
+    if (!parsed.success) throw notFound("Contact not found");
+    return parsed.data;
+  }
+
+  router.get("/cases/:caseId/contacts", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const rows = await db
+      .select()
+      .from(pipelineCaseContacts)
+      .where(and(eq(pipelineCaseContacts.companyId, companyId), eq(pipelineCaseContacts.caseId, caseId)))
+      .orderBy(asc(pipelineCaseContacts.position), asc(pipelineCaseContacts.createdAt));
+    res.json(rows);
+  });
+
+  router.post("/cases/:caseId/contacts", validate(createCaseContactSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as z.infer<typeof createCaseContactSchema>;
+    const contact = await db.transaction(async (tx) => {
+      const position = body.position ?? await tx
+        .select({ next: sql<number>`coalesce(max(${pipelineCaseContacts.position}) + 1, 0)::int` })
+        .from(pipelineCaseContacts)
+        .where(and(eq(pipelineCaseContacts.companyId, companyId), eq(pipelineCaseContacts.caseId, caseId)))
+        .then((rows) => rows[0]?.next ?? 0);
+      const [created] = await tx.insert(pipelineCaseContacts).values({
+        companyId,
+        caseId,
+        name: body.name,
+        role: body.role ?? null,
+        phone: body.phone ?? null,
+        email: body.email ?? null,
+        position,
+        createdByUserId: actor.type === "user" ? actor.userId : null,
+        createdByAgentId: actor.type === "agent" ? actor.agentId : null,
+      }).returning();
+      await writeRouteEvent(tx, {
+        companyId,
+        caseId,
+        type: "updated",
+        actor,
+        payload: { action: "contact_added", contactId: created!.id },
+      });
+      return created!;
+    });
+    res.status(201).json(contact);
+  });
+
+  router.patch("/cases/:caseId/contacts/:contactId", validate(updateCaseContactSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const contactId = parseContactId(req.params.contactId);
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as z.infer<typeof updateCaseContactSchema>;
+    const contact = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(pipelineCaseContacts)
+        .set({ ...body, updatedAt: new Date() })
+        .where(and(
+          eq(pipelineCaseContacts.companyId, companyId),
+          eq(pipelineCaseContacts.caseId, caseId),
+          eq(pipelineCaseContacts.id, contactId),
+        ))
+        .returning();
+      if (!updated) return null;
+      await writeRouteEvent(tx, {
+        companyId,
+        caseId,
+        type: "updated",
+        actor,
+        payload: { action: "contact_updated", contactId },
+      });
+      return updated;
+    });
+    if (!contact) throw notFound("Contact not found");
+    res.json(contact);
+  });
+
+  router.delete("/cases/:caseId/contacts/:contactId", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const contactId = parseContactId(req.params.contactId);
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const removed = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .delete(pipelineCaseContacts)
+        .where(and(
+          eq(pipelineCaseContacts.companyId, companyId),
+          eq(pipelineCaseContacts.caseId, caseId),
+          eq(pipelineCaseContacts.id, contactId),
+        ))
+        .returning();
+      if (!row) return null;
+      await writeRouteEvent(tx, {
+        companyId,
+        caseId,
+        type: "updated",
+        actor,
+        payload: { action: "contact_removed", contactId },
+      });
+      return row;
+    });
+    if (!removed) throw notFound("Contact not found");
     res.json({ deleted: true });
   });
 
