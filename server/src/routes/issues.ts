@@ -9,7 +9,7 @@ import {
   type EntitlementSettingsReader,
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, requiresExecutionReconciliation } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -3155,6 +3155,16 @@ class AutoApprovalIssueMissingError extends Error {
   }
 }
 
+const ISSUE_WORK_QUERY_ERROR = `work must be one of: ${ISSUE_WORK_FILTERS.join(", ")}`;
+
+/** `undefined` when absent, `null` when not a known work filter. */
+function parseIssueWorkQuery(value: unknown): IssueWorkFilter | null | undefined {
+  if (value === undefined || value === "") return undefined;
+  return typeof value === "string" && (ISSUE_WORK_FILTERS as readonly string[]).includes(value)
+    ? (value as IssueWorkFilter)
+    : null;
+}
+
 function toCompactIssue(issue: any): CompactIssue {
   return {
     externalConversationState: issue.externalConversationState ?? null,
@@ -3163,6 +3173,7 @@ function toCompactIssue(issue: any): CompactIssue {
     projectId: issue.projectId,
     projectWorkspaceId: issue.projectWorkspaceId,
     goalId: issue.goalId,
+    goalKind: issue.goalKind ?? null,
     parentId: issue.parentId,
     title: issue.title,
     description: issue.description,
@@ -8244,6 +8255,7 @@ export function issueRoutes(
     const hasPlanDocument = parseOptionalBooleanQuery(
       req.query.hasPlanDocument,
     );
+    const work = parseIssueWorkQuery(req.query.work);
     const includeLiveDescendantSummary = parseOptionalBooleanQuery(
       req.query.includeLiveDescendantSummary,
     );
@@ -8335,6 +8347,10 @@ export function issueRoutes(
         .json({ error: "hasPlanDocument must be true or false when provided" });
       return;
     }
+    if (work === null) {
+      res.status(400).json({ error: ISSUE_WORK_QUERY_ERROR });
+      return;
+    }
     if (includeLiveDescendantSummary === null) {
       res.status(400).json({
         error:
@@ -8422,6 +8438,7 @@ export function issueRoutes(
         req.query.includeBlockedInboxAttention === "1",
       includeLiveDescendantSummary: includeLiveDescendantSummary === true,
       hasPlanDocument,
+      work,
       q: req.query.q as string | undefined,
       limit,
       offset,
@@ -8593,6 +8610,7 @@ export function issueRoutes(
     const hasPlanDocument = parseOptionalBooleanQuery(
       req.query.hasPlanDocument,
     );
+    const work = parseIssueWorkQuery(req.query.work);
     if (attention !== "blocked") {
       res
         .status(400)
@@ -8609,6 +8627,10 @@ export function issueRoutes(
       res
         .status(400)
         .json({ error: "hasPlanDocument must be true or false when provided" });
+      return;
+    }
+    if (work === null) {
+      res.status(400).json({ error: ISSUE_WORK_QUERY_ERROR });
       return;
     }
 
@@ -8641,6 +8663,7 @@ export function issueRoutes(
       includeBlockedBy: true,
       includeBlockedInboxAttention: true,
       hasPlanDocument,
+      work,
       q: req.query.q as string | undefined,
     } as const;
 
