@@ -368,6 +368,7 @@ export {
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
   agentPipelineAccessSchema,
+  setAgentPipelineLevelSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
