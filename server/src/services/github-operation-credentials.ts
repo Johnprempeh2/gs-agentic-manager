@@ -145,7 +145,10 @@ export async function resolveGitHubOperationCredentials(
       {
         agentId: input.agentId,
         heartbeatRunId: input.runId,
-        allowStandingDelegation: false,
+        // A company-default run has no instructing person, so no one's personal
+        // GitHub is implied. The only personal identity it may use is one its
+        // owner explicitly shared with this agent (GRE-1103).
+        allowStandingDelegation: context?.cause === "company_default",
         responsibleUserId:
           context?.cause === "company_default"
             ? null

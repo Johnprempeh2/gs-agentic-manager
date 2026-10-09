@@ -10,7 +10,7 @@ import { githubChatReviewService } from "./chat-github-reviews.js";
 import { runIdentityContexts } from "@greatstone/db";
 import { captureRunIdentity } from "./run-identity.js";
 import { emitConnectionInvoked } from "./connector-telemetry.js";
-import { resolveManagedGitHubIdentitySelection } from "./git-credentials.js";
+import { isManagedGitHubIdentityConnection, resolveManagedGitHubIdentitySelection } from "./git-credentials.js";
 import { extractRemoteMcpPending } from "./remote-mcp-pending.js";
 import { logger } from "../middleware/logger.js";
 import { spawn } from "node:child_process";
@@ -2701,17 +2701,14 @@ export function createToolGatewayService(
             eq(toolConnections.companyId, session.companyId),
           ),
         );
-      if (
-        connection?.config.sourceTemplateKey === "github" ||
-        connection?.transportConfig?.sourceTemplateKey === "github"
-      ) {
+      if (connection && isManagedGitHubIdentityConnection(connection)) {
         let selected = await resolveManagedGitHubIdentitySelection(
           db,
           session.companyId,
           {
             agentId: session.agentId,
             responsibleUserId: session.responsibleUserId,
-            allowStandingDelegation: false,
+            allowStandingDelegation: !session.responsibleUserId,
           },
         );
         if (!selected.grant)
@@ -2770,7 +2767,7 @@ export function createToolGatewayService(
               {
                 agentId: session.agentId,
                 responsibleUserId: session.responsibleUserId,
-                allowStandingDelegation: false,
+                allowStandingDelegation: !session.responsibleUserId,
                 excludeGrantId: original.id,
               },
             );
@@ -3888,8 +3885,7 @@ export function createToolGatewayService(
   ): Promise<Record<string, string>> {
     const tracked =
       session.identityContextId &&
-      (connection.config.sourceTemplateKey === "github" ||
-        connection.transportConfig?.sourceTemplateKey === "github");
+      isManagedGitHubIdentityConnection(connection);
     try {
       const captured = githubOperationCredentials.get(session);
       const headers =
@@ -4402,8 +4398,7 @@ export function createToolGatewayService(
     if (
       session.identityContextId &&
       session.agentId &&
-      (connection.config.sourceTemplateKey === "github" ||
-        connection.transportConfig?.sourceTemplateKey === "github")
+      isManagedGitHubIdentityConnection(connection)
     ) {
       const captured = githubOperationCredentials.get(session);
       const selected = captured
@@ -4411,7 +4406,7 @@ export function createToolGatewayService(
         : await resolveManagedGitHubIdentitySelection(db, session.companyId, {
             agentId: session.agentId,
             responsibleUserId: session.responsibleUserId,
-            allowStandingDelegation: false,
+            allowStandingDelegation: !session.responsibleUserId,
           });
       if (!selected.grant || selected.grant.connectionId !== connection.id) {
         throw new ToolGatewayHttpError(

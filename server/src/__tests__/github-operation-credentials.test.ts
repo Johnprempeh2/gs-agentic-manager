@@ -36,6 +36,7 @@ import {
   acceptSteeredIdentity,
 } from "../services/run-identity.js";
 import { resolveGitHubOperationCredentials } from "../services/github-operation-credentials.js";
+import { toolAccessService } from "../services/tool-access.js";
 import {
   filterResolvedGitHubConnectionsForRun,
   resolveManagedGitHubIdentitySelection,
@@ -605,6 +606,99 @@ const support = await getEmbeddedPostgresTestSupport();
       expect((await resolveGitHubOperationCredentials(db, input)).env).toEqual(
         {},
       );
+    });
+    // GRE-1103: agent-started work inherits the company-default identity, so the
+    // only personal GitHub it may use is one its owner shared with the agent.
+    it("uses a personal grant its owner delegated to the agent for a company-default run", async () => {
+      const input = await seed();
+      const personal = await grant(input, "A");
+      await db
+        .update(runIdentityContexts)
+        .set({ cause: "company_default" })
+        .where(eq(runIdentityContexts.runId, input.runId));
+      const before = await resolveGitHubOperationCredentials(db, input);
+      expect(before).toMatchObject({ status: "unavailable", env: {} });
+      expect(before.reason).toContain("Share with agents");
+
+      await toolAccessService(db).createConnectionGrantDelegation(
+        personal.connectionId,
+        personal.id,
+        input.agentId,
+        "A",
+      );
+      const after = await resolveGitHubOperationCredentials(db, input);
+      expect(after).toMatchObject({
+        status: "available",
+        source: "personal",
+        login: "A",
+      });
+      expect(after.env.GH_TOKEN).toBe("test-token-A");
+    });
+    it("does not let a delegation override the instructing person's own identity", async () => {
+      const input = await seed();
+      const personalB = await grant(input, "B");
+      await toolAccessService(db).createConnectionGrantDelegation(
+        personalB.connectionId,
+        personalB.id,
+        input.agentId,
+        "B",
+      );
+      // The run is instructed by A, who has no GitHub. B's standing share must
+      // not be substituted for A's missing identity.
+      const result = await resolveGitHubOperationCredentials(db, input);
+      expect(result).toMatchObject({ status: "unavailable", env: {} });
+      expect(result.reason).toContain("Connect as me");
+    });
+    it("treats a token-only GitHub connection as no managed identity so git can fall back", async () => {
+      const input = await seed();
+      const applicationId = randomUUID(),
+        connectionId = randomUUID();
+      await db.insert(toolApplications).values({
+        id: applicationId,
+        companyId: input.companyId,
+        name: applicationId,
+        type: "mcp_http",
+      });
+      await db.insert(toolConnections).values({
+        id: connectionId,
+        companyId: input.companyId,
+        applicationId,
+        name: "GitHub PAT",
+        uid: connectionId,
+        transport: "mcp_remote",
+        status: "active",
+        enabled: true,
+        credentialPolicy: "shared",
+        config: { sourceTemplateKey: "github", connectionMethodKey: "mcp-key" },
+      });
+      await db.insert(toolConnectionInstalls).values({
+        companyId: input.companyId,
+        connectionId,
+        targetType: "company",
+        targetId: input.companyId,
+      });
+      await db.insert(connectionGrants).values({
+        companyId: input.companyId,
+        connectionId,
+        kind: "organization",
+        status: "active",
+        isDefault: true,
+        credentialSecretRefs: [
+          { secretId: randomUUID(), configPath: "credentials.authorization" },
+        ],
+      });
+      expect(
+        await resolveManagedGitHubIdentitySelection(db, input.companyId, {
+          agentId: input.agentId,
+          responsibleUserId: "A",
+        }),
+      ).toEqual({ configured: false });
+      // "absent" lets the git provider use the company secret / server env
+      // fallback instead of failing every run closed.
+      expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({
+        status: "absent",
+        env: {},
+      });
     });
     it.each([false, true])(
       "withholds sponsor and dedicated credentials from every low-trust policy source (dedicated=%s)",

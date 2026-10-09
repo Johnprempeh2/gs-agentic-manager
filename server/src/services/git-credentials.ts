@@ -293,6 +293,24 @@ export function createGitRemoteAuthProvider(
   };
 }
 
+/**
+ * True for a GitHub connection that can carry a managed (signed-in) identity.
+ * A token-only connection ("Personal access token (advanced)", method `mcp-key`)
+ * stores its token as a request header and never has an `oauth.access_token`
+ * grant, so it cannot supply git credentials. Counting it as configured made
+ * every run fail closed with no way forward (GRE-1103); it is treated like any
+ * other app instead, and git falls back to the legacy credential sources.
+ */
+export function isManagedGitHubIdentityConnection(connection: { config?: unknown; transportConfig?: unknown }): boolean {
+  const config = connection.config && typeof connection.config === "object" ? connection.config as Record<string, unknown> : {};
+  const transportConfig = connection.transportConfig && typeof connection.transportConfig === "object"
+    ? connection.transportConfig as Record<string, unknown>
+    : {};
+  if (config.sourceTemplateKey !== "github" && transportConfig.sourceTemplateKey !== "github") return false;
+  const methodKey = config.connectionMethodKey ?? transportConfig.connectionMethodKey;
+  return methodKey === undefined || methodKey === null || methodKey === "managed";
+}
+
 export async function resolveManagedGitHubIdentitySelection(
   db: Db,
   companyId: string,
@@ -311,13 +329,7 @@ export async function resolveManagedGitHubIdentitySelection(
   const connections = await db.select().from(toolConnections).where(and(
     eq(toolConnections.companyId, companyId),
   ));
-  const githubConnections = connections.filter((connection) => {
-    const config = connection.config && typeof connection.config === "object" ? connection.config as Record<string, unknown> : {};
-    const transportConfig = connection.transportConfig && typeof connection.transportConfig === "object"
-      ? connection.transportConfig as Record<string, unknown>
-      : {};
-    return config.sourceTemplateKey === "github" || transportConfig.sourceTemplateKey === "github";
-  });
+  const githubConnections = connections.filter(isManagedGitHubIdentityConnection);
   if (githubConnections.length === 0) return { configured: false };
 
   const connectionIds = githubConnections.map((connection) => connection.id);
@@ -373,7 +385,9 @@ export async function resolveManagedGitHubIdentitySelection(
     return {
       configured: true, identitySource,
       error: candidates.length === 0
-        ? "No managed GitHub identity is available for this run"
+        ? context.responsibleUserId
+          ? "No managed GitHub identity is available for this run. The person responsible for this work must connect their GitHub in AI connections → GitHub (Connect as me)."
+          : "No managed GitHub identity is available for this run. This run has no instructing person, so the owner of a signed-in GitHub identity must share it with this agent in AI connections → GitHub (Share with agents), or connect a dedicated GitHub account for the agent."
         : "More than one managed GitHub identity matches this run",
     };
   }
@@ -440,15 +454,7 @@ export async function filterResolvedGitHubConnectionsForRun<T extends {
   responsibleUserId?: string | null;
   connections: T[];
 }): Promise<T[]> {
-  const githubConnections = input.connections.filter((connection) => {
-    const config = connection.config && typeof connection.config === "object"
-      ? connection.config as Record<string, unknown>
-      : {};
-    const transportConfig = connection.transportConfig && typeof connection.transportConfig === "object"
-      ? connection.transportConfig as Record<string, unknown>
-      : {};
-    return config.sourceTemplateKey === "github" || transportConfig.sourceTemplateKey === "github";
-  });
+  const githubConnections = input.connections.filter(isManagedGitHubIdentityConnection);
   if (githubConnections.length === 0) return input.connections;
   const selection = await resolveManagedGitHubIdentitySelection(input.db, input.companyId, {
     agentId: input.agentId,
