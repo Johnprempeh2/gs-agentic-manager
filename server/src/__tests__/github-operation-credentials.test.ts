@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createGitRemoteAuthProvider } from "../services/git-credentials.js";
+import { resolveHeartbeatGitHubAccess } from "../services/heartbeat-github-access.js";
 import { createNativeGitHubAccess } from "../services/native-runtime/native-github-access.js";
 import express from "express";
 import request from "supertest";
@@ -150,7 +151,7 @@ const support = await getEmbeddedPostgresTestSupport();
         status: "active",
         enabled: true,
         credentialPolicy: dedicated ? "per_agent" : "per_user",
-        config: { sourceTemplateKey: "github" },
+        config: { sourceTemplateKey: "github", oauth: { connectorProfile: "github.code" } },
       });
       await db.insert(toolConnectionInstalls).values({
         companyId: input.companyId,
@@ -725,6 +726,45 @@ const support = await getEmbeddedPostgresTestSupport();
         expect(vault.resolveUserSecretValue).not.toHaveBeenCalled();
       });
     });
+    it("heartbeat permits host fallback for a grant with a token but no usable GitHub details", async () => {
+      const input = await seed();
+      const a = await grant(input, "A");
+      await db.update(toolConnections).set({
+        config: { sourceTemplateKey: "github", oauth: { connectorProfile: "github.other" } },
+      }).where(eq(toolConnections.id, a.connectionId));
+      await db.update(connectionGrants).set({ providerTenant: {} }).where(eq(connectionGrants.id, a.id));
+      for (const environmentDriver of ["local", "ssh", "daytona"]) {
+        for (const trustKind of ["standard", "low_trust_review"]) {
+          const result = await resolveHeartbeatGitHubAccess(db, {
+            ...input, cause: "instruction", responsibleUserId: "A", trustKind, environmentDriver,
+          });
+          expect(result.githubSelection).toEqual({ configured: false });
+          expect(result.useHostGitHub).toBe(trustKind === "standard" && environmentDriver !== "daytona");
+        }
+      }
+      // MCP still selects this OAuth token without needing git account metadata.
+      expect(await resolveManagedGitHubIdentitySelection(db, input.companyId, {
+        agentId: input.agentId, responsibleUserId: "A", allowStandingDelegation: false,
+      })).toMatchObject({ configured: true, grant: { id: a.id } });
+    });
+
+    it.each(["revoked", "disabled"])("heartbeat does not bypass a %s managed identity with missing details", async (state) => {
+      const input = await seed();
+      const a = await grant(input, "A");
+      await db.update(toolConnections).set({
+        config: { sourceTemplateKey: "github", oauth: { connectorProfile: "github.other" } },
+        enabled: state !== "disabled",
+      }).where(eq(toolConnections.id, a.connectionId));
+      await db.update(connectionGrants).set({
+        providerTenant: {}, status: state === "revoked" ? "revoked" : "active",
+      }).where(eq(connectionGrants.id, a.id));
+      const result = await resolveHeartbeatGitHubAccess(db, {
+        ...input, cause: "instruction", responsibleUserId: "A", trustKind: "standard", environmentDriver: "local",
+      });
+      expect(result.useHostGitHub).toBe(false);
+      expect(result.githubSelection).toMatchObject({ configured: true, error: expect.any(String) });
+    });
+
     it("treats a token-only GitHub connection as no managed identity so git can fall back", async () => {
       const input = await seed();
       const applicationId = randomUUID(),

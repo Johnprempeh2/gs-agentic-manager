@@ -17011,6 +17011,7 @@ export function toolAccessService(
 
     completeOAuthCallback,
     refreshOAuthGrantCredentials,
+    refreshManagedGitHubGrantAccess,
     finalizeOAuthAccess,
 
     listExamples: async (companyId: string): Promise<ToolExampleSummary[]> => {
