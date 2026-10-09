@@ -8,7 +8,6 @@ import { EmailConnectionInboxes } from "./chat/EmailEndpointSetup";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, Pencil } from "lucide-react";
 import type {
-  ConnectionGrant,
   ToolApplication,
   ToolConnection,
   ToolPolicy,
@@ -52,6 +51,7 @@ import { appTabHref, appTabLabel, isAppTabKey, type AppTabKey } from "./app-tabs
 import { ConnectionProvenanceChip } from "./ConnectionProvenanceChip";
 import { IdentitiesSection } from "./app-detail/IdentitiesSection";
 import { PermissionsPanel } from "./app-detail/PermissionsPanel";
+import { ShareWithAgentsSection } from "./app-detail/ShareWithAgentsSection";
 import { RailwayAccessPanel } from "./app-detail/RailwayAccessPanel";
 import { ReviewPanel } from "./app-detail/ReviewPanel";
 import {
@@ -383,35 +383,6 @@ export function AppDetail({ renderActions, onReconnect }: {
       }),
   });
 
-  // Standing delegation (GRE-1103): add and remove agent shares of the current
-  // user's personal grant so work no person instructed can use it.
-  const shareWithAgents = useMutation({
-    mutationFn: async ({ grant, agentIds }: { grant: ConnectionGrant; agentIds: Set<string> }) => {
-      const current = grant.delegations ?? [];
-      const currentIds = new Set(current.map((delegation) => delegation.agentId));
-      for (const agentId of agentIds) {
-        if (!currentIds.has(agentId)) await toolsApi.createConnectionGrantDelegation(connectionId, grant.id, agentId);
-      }
-      for (const delegation of current) {
-        if (!agentIds.has(delegation.agentId)) await toolsApi.revokeConnectionGrantDelegation(connectionId, grant.id, delegation.id);
-      }
-      return agentIds.size;
-    },
-    onSuccess: (count) => {
-      invalidateGrants();
-      pushToast({
-        title: "Sharing saved",
-        body: count === 0
-          ? "No agents use your identity for work without an instructing person."
-          : `${count} ${count === 1 ? "agent" : "agents"} can use your identity for work without an instructing person.`,
-        tone: "success",
-      });
-    },
-    onError: (error) => {
-      invalidateGrants();
-      pushToast({ title: "Couldn't save sharing", body: error instanceof Error ? error.message : "Please try again.", tone: "error" });
-    },
-  });
   // A denied or conflicting audience save keeps the dialog open with the
   // selection intact, so the error is surfaced inline rather than as a toast.
   const [audienceError, setAudienceError] = useState<string | null>(null);
@@ -679,11 +650,10 @@ export function AppDetail({ renderActions, onReconnect }: {
                 refreshAccessPending={refreshGitHubAccess.isPending}
                 onReplaceAudience={(grant, memberUserIds) =>
                   replaceAudience.mutate({ grantId: grant.id, memberUserIds })}
-                shareAgents={agents.filter((agent) => agent.status !== "terminated")}
-                onShareWithAgents={connection.connectionPurpose === "ai" ? undefined : (grant, agentIds) =>
-                  shareWithAgents.mutate({ grant, agentIds })}
-                sharePending={shareWithAgents.isPending}
               />
+              {currentUserPersonalGrant && (connection.config?.sourceTemplateKey === "github" || currentUserPersonalGrant.providerTenant?.github) && (
+                <ShareWithAgentsSection connectionId={connection.id} grant={currentUserPersonalGrant} agents={agents} />
+              )}
               {isRemoteMcpConnectorMethod(connection.config?.sourceTemplateKey, connection.config?.connectionMethodKey) && <p className="text-sm text-muted-foreground">{CLIENT_BRAND_NAME} controls access to the tools listed here. App and action permissions inside these tools are managed in {baseAppName}.</p>}
               <PermissionsPanel
                 actions={actionsContent}

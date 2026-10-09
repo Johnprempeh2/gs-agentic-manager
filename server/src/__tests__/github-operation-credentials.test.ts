@@ -13,6 +13,7 @@ import {
   companies,
   companyMemberships,
   companySecrets,
+  connectionGrantDelegations,
   connectionGrants,
   createDb,
   heartbeatRuns,
@@ -20,6 +21,7 @@ import {
   issues,
   projects,
   runIdentityContexts,
+  toolAccessAuditEvents,
   toolApplications,
   toolConnectionInstalls,
   toolConnections,
@@ -36,7 +38,6 @@ import {
   acceptSteeredIdentity,
 } from "../services/run-identity.js";
 import { resolveGitHubOperationCredentials } from "../services/github-operation-credentials.js";
-import { toolAccessService } from "../services/tool-access.js";
 import {
   filterResolvedGitHubConnectionsForRun,
   resolveManagedGitHubIdentitySelection,
@@ -607,47 +608,102 @@ const support = await getEmbeddedPostgresTestSupport();
         {},
       );
     });
-    // GRE-1103: agent-started work inherits the company-default identity, so the
-    // only personal GitHub it may use is one its owner shared with the agent.
-    it("uses a personal grant its owner delegated to the agent for a company-default run", async () => {
-      const input = await seed();
-      const personal = await grant(input, "A");
-      await db
-        .update(runIdentityContexts)
-        .set({ cause: "company_default" })
-        .where(eq(runIdentityContexts.runId, input.runId));
-      const before = await resolveGitHubOperationCredentials(db, input);
-      expect(before).toMatchObject({ status: "unavailable", env: {} });
-      expect(before.reason).toContain("Share with agents");
+    describe("Share with agents (standing delegation)", () => {
+      async function companyDefault(input: Awaited<ReturnType<typeof seed>>) {
+        await db
+          .update(runIdentityContexts)
+          .set({ cause: "company_default" })
+          .where(eq(runIdentityContexts.runId, input.runId));
+      }
+      const share = (input: Awaited<ReturnType<typeof seed>>, grantId: string, user: string) =>
+        db.insert(connectionGrantDelegations).values({
+          companyId: input.companyId, grantId, agentId: input.agentId, createdByUserId: user,
+        }).returning().then((rows) => rows[0]!);
 
-      await toolAccessService(db).createConnectionGrantDelegation(
-        personal.connectionId,
-        personal.id,
-        input.agentId,
-        "A",
-      );
-      const after = await resolveGitHubOperationCredentials(db, input);
-      expect(after).toMatchObject({
-        status: "available",
-        source: "personal",
-        login: "A",
+      it("gives company_default work the grant shared with this agent and audits the delegation", async () => {
+        const input = await seed();
+        await grant(input, "A");
+        const b = await grant(input, "B");
+        await companyDefault(input);
+        const delegation = await share(input, b.id, "B");
+        const result = await resolveGitHubOperationCredentials(db, input);
+        expect(result).toMatchObject({ status: "available", login: "B", source: "personal", grantId: b.id });
+        expect(result.env.GH_TOKEN).toBe("test-token-B");
+        const used = await db.select().from(toolAccessAuditEvents)
+          .where(eq(toolAccessAuditEvents.companyId, input.companyId));
+        expect(used).toEqual([expect.objectContaining({
+          action: "connection_grant.delegation_used", actorType: "agent", actorId: input.agentId,
+          connectionId: b.connectionId,
+          details: expect.objectContaining({
+            grantId: b.id, delegationId: delegation.id, grantOwnerUserId: "B",
+            heartbeatRunId: input.runId, consumer: "git_credential",
+          }),
+        })]);
       });
-      expect(after.env.GH_TOKEN).toBe("test-token-A");
-    });
-    it("does not let a delegation override the instructing person's own identity", async () => {
-      const input = await seed();
-      const personalB = await grant(input, "B");
-      await toolAccessService(db).createConnectionGrantDelegation(
-        personalB.connectionId,
-        personalB.id,
-        input.agentId,
-        "B",
-      );
-      // The run is instructed by A, who has no GitHub. B's standing share must
-      // not be substituted for A's missing identity.
-      const result = await resolveGitHubOperationCredentials(db, input);
-      expect(result).toMatchObject({ status: "unavailable", env: {} });
-      expect(result.reason).toContain("Connect as me");
+
+      it("never uses an undelegated personal grant for company_default work and says how to share", async () => {
+        const input = await seed();
+        await grant(input, "A");
+        const other = await seed();
+        const otherGrant = await grant(other, "A");
+        await companyDefault(input);
+        // A delegation to another agent is not a delegation to this one.
+        await share(other, otherGrant.id, "A");
+        vault.resolveUserSecretValue.mockClear();
+        expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({
+          status: "unavailable",
+          env: {},
+          reason: "No GitHub login is shared with this agent. In Apps, open GitHub and use Share with agents.",
+        });
+        expect(vault.resolveUserSecretValue).not.toHaveBeenCalled();
+      });
+
+      it("keeps human-caused runs on their responsible person's own grant", async () => {
+        const input = await seed();
+        const a = await grant(input, "A");
+        const b = await grant(input, "B");
+        await share(input, b.id, "B");
+        expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({ status: "available", login: "A", grantId: a.id });
+        await switchTo(input, "C");
+        expect((await resolveGitHubOperationCredentials(db, input)).env).toEqual({});
+        expect(await db.select().from(toolAccessAuditEvents)
+          .where(eq(toolAccessAuditEvents.companyId, input.companyId))).toEqual([]);
+      });
+
+      it("lets a dedicated agent grant win over a shared personal grant", async () => {
+        const input = await seed();
+        const a = await grant(input, "A");
+        await grant(input, "robot", true);
+        await companyDefault(input);
+        await share(input, a.id, "A");
+        expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({ status: "available", source: "dedicated", login: "robot" });
+      });
+
+      it("names the accounts when grants for different GitHub accounts are shared with one agent", async () => {
+        const input = await seed();
+        const a = await grant(input, "A");
+        const b = await grant(input, "B");
+        await companyDefault(input);
+        await share(input, a.id, "A");
+        await share(input, b.id, "B");
+        expect((await resolveGitHubOperationCredentials(db, input)).reason)
+          .toBe("More than one GitHub login is shared with this agent (A, B). In Apps, keep Share with agents on for one GitHub account only.");
+      });
+
+      it("still withholds a shared grant from low-trust work", async () => {
+        const input = await seed();
+        const a = await grant(input, "A");
+        await companyDefault(input);
+        await share(input, a.id, "A");
+        await db.update(issues).set({ sourceTrust: {
+          preset: LOW_TRUST_REVIEW_PRESET, disposition: "quarantined", sourceIssueId: input.issueId,
+        } }).where(eq(issues.id, input.issueId));
+        vault.resolveUserSecretValue.mockClear();
+        expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({
+          status: "unavailable", env: {}, reason: expect.stringContaining("low-trust"),
+        });
+        expect(vault.resolveUserSecretValue).not.toHaveBeenCalled();
+      });
     });
     it("treats a token-only GitHub connection as no managed identity so git can fall back", async () => {
       const input = await seed();
