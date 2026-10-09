@@ -464,9 +464,12 @@ describeEmbeddedPostgres("CRM sync routes", () => {
       caseId: caseRow!.id,
       name: "Ada",
     }).returning();
+    // Links sort by createdAt, then a random id. One insert gives both rows the same now(),
+    // so set distinct times or the order is a coin flip.
+    const base = Date.now();
     await db.insert(crmSyncRecordLinks).values([
-      { companyId: seed.companyId, entityKind: "case", entityId: caseRow!.id, connectionId: seed.connectionId, providerKey: "pipedrive", externalId: "500" },
-      { companyId: seed.companyId, entityKind: "contact", entityId: contact!.id, connectionId: seed.connectionId, providerKey: "pipedrive", externalId: "p-9" },
+      { companyId: seed.companyId, entityKind: "case", entityId: caseRow!.id, connectionId: seed.connectionId, providerKey: "pipedrive", externalId: "500", createdAt: new Date(base) },
+      { companyId: seed.companyId, entityKind: "contact", entityId: contact!.id, connectionId: seed.connectionId, providerKey: "pipedrive", externalId: "p-9", createdAt: new Date(base + 1000) },
     ]);
     const links = await request(app()).get(`/api/cases/${caseRow!.id}/crm-sync/links`).expect(200);
     expect(links.body.map((row: { entityKind: string; externalId: string }) => [row.entityKind, row.externalId])).toEqual([
