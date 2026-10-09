@@ -446,6 +446,7 @@ export const queryKeys = {
     list: (companyId: string, kind: string) =>
       ["folders", companyId, kind] as const,
   },
+  pipelineAccess: (companyId: string) => ["pipeline-access", companyId] as const,
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
     detail: (pipelineId: string) =>

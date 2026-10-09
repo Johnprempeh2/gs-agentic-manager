@@ -88,6 +88,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { useToastActions } from "../context/ToastContext";
+import { PipelineAgentAccessSection } from "../components/PipelineAgentAccessSection";
 import { buildCompanyUserInlineOptions, isAgentTaskTarget } from "../lib/company-members";
 import { useStandardMarkdownMentionOptions } from "../hooks/useStandardMarkdownMentionOptions";
 import { formatPipelineItemEvent, INTERNAL_FIELD_KEYS } from "../lib/pipeline-item-detail";
@@ -3311,6 +3312,14 @@ export function PipelineSettings() {
             </form>
           ) : null}
       </div>
+      {pipeline.companyId ? (
+        <PipelineAgentAccessSection
+          companyId={pipeline.companyId}
+          pipelineId={pipeline.id}
+          pipelineName={pipeline.name}
+        />
+      ) : null}
+
       <Dialog
         open={deleteStageDialogOpen}
         onOpenChange={setDeleteStageDialogOpen}

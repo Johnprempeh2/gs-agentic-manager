@@ -10,6 +10,7 @@ import {
   MonitorCog,
   Puzzle,
   Shield,
+  ShieldCheck,
   SlidersHorizontal,
   Upload,
   UserRoundPen,
@@ -23,6 +24,7 @@ import { Link, NavLink } from "@/lib/router";
 import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
 import { SIDEBAR_SCROLL_RESET_STATE } from "@/lib/navigation-scroll";
 import { queryKeys } from "@/lib/queryKeys";
+import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useCompany } from "@/context/CompanyContext";
 import { useSidebar } from "@/context/SidebarContext";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
@@ -82,6 +84,11 @@ export function CompanySettingsSidebar() {
     enabled: showPlugins,
   });
   const sidebarPlugins = (plugins ?? []).filter((plugin) => !isSandboxProviderOnly(plugin));
+  const { data: experimentalSettings } = useQuery({
+    queryKey: queryKeys.instance.experimentalSettings,
+    queryFn: () => instanceSettingsApi.getExperimental(),
+  });
+  const showPipelinesAccess = experimentalSettings?.enablePipelines === true;
 
   return (
     <aside className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col">
@@ -134,6 +141,9 @@ export function CompanySettingsSidebar() {
           )}
           {showPage("company.secrets") && (
             <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
+          )}
+          {showPipelinesAccess && (
+            <SidebarNavItem to="/company/settings/pipelines-access" label="Pipelines access" icon={ShieldCheck} end />
           )}
           {showPage("instance.environments") && (
             <SidebarNavItem
