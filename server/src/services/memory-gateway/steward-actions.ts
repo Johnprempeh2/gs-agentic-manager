@@ -25,7 +25,7 @@ import {
 } from "@greatstone/shared";
 import { badRequest, conflict, forbidden, notFound } from "../../errors.js";
 import { enqueueMemoryIngest } from "./ingest-outbox-db.js";
-import { flagPossibleConflicts, insertRelationship, insertReviewEvent } from "./review-store.js";
+import { authorRefusal, flagPossibleConflicts, insertRelationship, insertReviewEvent, loadEditChain } from "./review-store.js";
 import type { MemoryReviewService } from "./review.js";
 import { detectSensitiveContent, MEMORY_SENSITIVE_CONTENT_CODE, MemorySensitiveContentError } from "./sensitive-content.js";
 import {
@@ -54,7 +54,6 @@ type StewardRow = typeof memoryScopeStewards.$inferSelect;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const QUEUE_LIMIT = 1_000;
-const CHAIN_LIMIT = 50;
 
 /** Plain reasons for every refusal; the UI shows them as they are. */
 const STEWARD_REFUSALS = {
@@ -65,18 +64,12 @@ const STEWARD_REFUSALS = {
   working_notes: "Agent working notes are never reviewed.",
   not_owner_or_admin: "Only the company owner or an admin can set stewards.",
   owner_only_scope: "Client and restricted scopes always route to the company owner.",
+  incomplete_history: "This card's edit history cannot be fully checked, so it cannot be confirmed.",
 } as const;
 type StewardRefusal = keyof typeof STEWARD_REFUSALS;
 
 const STALE_VERSION_MESSAGE = "This card changed since you opened it. Reload it and try again.";
 const MULTIPLE_CONFLICTS_MESSAGE = "This card conflicts with more than one confirmed card. Settle the other conflicts first.";
-
-function isContributor(caller: MemoryCaller, row: Pick<RecordRow, "contributorAgentId" | "contributorUserId">) {
-  return (
-    (row.contributorAgentId !== null && row.contributorAgentId === caller.agentId) ||
-    (row.contributorUserId !== null && row.contributorUserId === caller.userId)
-  );
-}
 
 function isStewardOf(caller: MemoryCaller, steward: StewardRow | undefined) {
   if (!steward || caller.actorType !== "user" || !caller.userId) return false;
@@ -89,12 +82,9 @@ function actorKey(row: Pick<RecordRow, "contributorAgentId" | "contributorUserId
   return null;
 }
 
-/** Why the caller may not confirm: they wrote the first version, or any later edit. */
-function confirmRefusal(caller: MemoryCaller, chain: RecordRow[]): "own_proposal" | "own_edit" | null {
-  const [first, ...edits] = chain;
-  if (first && isContributor(caller, first)) return "own_proposal";
-  if (edits.some((version) => isContributor(caller, version))) return "own_edit";
-  return null;
+/** Why the caller may not confirm: they wrote some version, or the full history cannot be read. */
+function confirmRefusal(caller: MemoryCaller, chain: RecordRow[] | null): StewardRefusal | null {
+  return chain ? authorRefusal(caller, chain) : "incomplete_history";
 }
 
 export function memoryStewardService(db: Db, gateway: MemoryGatewayService, reviews: MemoryReviewService) {
@@ -151,24 +141,6 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
     if (refusal === null) return null;
     if (refusal === "working_notes" || refusal === "owner_only") return refusal;
     return isStewardOf(caller, stewards.get(scope.id)) ? null : "not_steward";
-  }
-
-  /** The record and the versions before it, oldest first (edit and confirm writes each as a new version). */
-  async function editChain(database: DbOrTransaction, companyId: string, row: RecordRow) {
-    const chain = [row];
-    const seen = new Set([row.id]);
-    for (let cursor = row.supersedesId; cursor && !seen.has(cursor) && chain.length < CHAIN_LIMIT; ) {
-      const previous = await database
-        .select()
-        .from(memoryRecords)
-        .where(and(eq(memoryRecords.id, cursor), eq(memoryRecords.companyId, companyId)))
-        .then((rows) => rows[0] ?? null);
-      if (!previous) break;
-      chain.unshift(previous);
-      seen.add(previous.id);
-      cursor = previous.supersedesId;
-    }
-    return chain;
   }
 
   async function labels(keys: Array<{ type: "user" | "agent"; id: string }>) {
@@ -230,8 +202,8 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
       if (rights.get(key) === null) reviewable.push(row);
     }
 
-    const chains = new Map<string, RecordRow[]>();
-    for (const row of reviewable) chains.set(row.id, row.supersedesId ? await editChain(db, caller.companyId, row) : [row]);
+    const chains = new Map<string, RecordRow[] | null>();
+    for (const row of reviewable) chains.set(row.id, await loadEditChain(db, caller.companyId, row));
 
     const ids = reviewable.map((row) => row.id);
     const conflictRows =
@@ -256,15 +228,15 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
     );
 
     const label = await labels(
-      [...chains.values()].flatMap((chain) => chain.map(actorKey)).filter((key): key is NonNullable<typeof key> => key !== null),
+      reviewable.flatMap((row) => (chains.get(row.id) ?? [row]).map(actorKey)).filter((key): key is NonNullable<typeof key> => key !== null),
     );
     const now = Date.now();
     const all: MemoryReviewQueueItem[] = reviewable.map((row) => {
       const scope = scopesById.get(row.scopeId)!;
-      const chain = chains.get(row.id)!;
-      const first = chain[0]!;
+      const chain = chains.get(row.id) ?? null;
+      const first = chain?.[0] ?? row;
       const proposerKey = actorKey(first);
-      const editorKey = chain.length > 1 ? actorKey(row) : null;
+      const editorKey = chain && chain.length > 1 ? actorKey(row) : null;
       const conflicts = conflictsByRecord.get(row.id) ?? [];
       // The confirmed card it changes: the approved side of its open conflict.
       const currentRow = conflicts.map((c) => approvedRows.get(c.approvedRecordId)).find(Boolean) ?? null;
@@ -374,8 +346,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
 
     switch (input.action) {
       case "confirm": {
-        const chain = await editChain(db, caller.companyId, row);
-        const own = confirmRefusal(caller, chain);
+        const own = confirmRefusal(caller, await loadEditChain(db, caller.companyId, row));
         if (own) await refuse(caller, operation, own, audit);
         const open = await db
           .select()

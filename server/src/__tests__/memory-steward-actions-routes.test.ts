@@ -230,6 +230,88 @@ describeEmbeddedPostgres("shared memory M1: stewards, review queue and card acti
     expect(outbox.map((entry) => entry.op)).toEqual(["retain"]);
   });
 
+  it("the older review, supersede and conflict routes refuse the original proposer and any earlier editor", async () => {
+    const { board, steward, backup, agent, base, org, userId } = await setup("ChainOnOldRoutes");
+    const edit = async (app: ReturnType<typeof routeApp>, record: { id: string; version: number }, content: string) => {
+      const res = await act(app, base, record.id, { action: "edit_and_confirm", expectedVersion: record.version, content, reason: "Clearer" });
+      expect(res.status).toBe(200);
+      return res.body.newRecord as { id: string; version: number };
+    };
+
+    // The owner proposes, a steward edits: the owner is not the current contributor but still wrote it.
+    const proposal = await contribute(board, base, { scopeId: org.id, content: "Expenses are filed by the 5th.", topics: ["expenses"] });
+    const edited = await edit(steward, proposal, "Expenses are filed by the 5th working day.");
+    const byProposer = await request(board).post(`${base}/records/${edited.id}/review`).send({ action: "approve", reason: "ok" });
+    expect(byProposer.status).toBe(403);
+    expect(byProposer.body.error).toMatch(/their own entry/);
+
+    // An agent proposes a challenge to a confirmed card; the owner edits it, then a steward edits it again.
+    const approved = await contribute(agent, base, { scopeId: org.id, content: "Stand-up is at 09:30.", topics: ["stand-up"] });
+    expect((await request(board).post(`${base}/records/${approved.id}/review`).send({ action: "approve", reason: "Yes" })).status).toBe(200);
+    const challenger = await contribute(agent, base, { scopeId: org.id, content: "Stand-up is at 10:00.", topics: ["stand-up"] });
+    const ownerEdit = await edit(board, challenger, "Stand-up is at 10:00 sharp.");
+    const latest = await edit(backup, ownerEdit, "Stand-up is at 10:00 on weekdays.");
+
+    const approve = await request(board).post(`${base}/records/${latest.id}/review`).send({ action: "approve", reason: "ok" });
+    expect(approve.status).toBe(403);
+    const supersede = await request(board).post(`${base}/records/${approved.id}/supersede`).send({ replacementRecordId: latest.id, reason: "Moved" });
+    expect(supersede.status).toBe(403);
+    const [open] = await ctx.db.select().from(memoryConflicts).where(eq(memoryConflicts.recordId, latest.id));
+    expect(open).toBeDefined();
+    const settle = await request(board).post(`${base}/conflicts/${open!.id}/resolve`).send({ resolution: "not_a_conflict", reason: "Fine" });
+    expect(settle.status).toBe(403);
+    expect((await deniedReasons(userId)).filter((reason) => reason === "own_entry")).toHaveLength(4);
+  });
+
+  it("checks the whole edit history, beyond 50 versions, and refuses when it cannot be read", async () => {
+    const { board, steward, base, org, companyId, userId } = await setup("LongChain");
+    // The owner wrote version 1; 59 edits by other people follow.
+    let previous = (await ctx.db
+      .insert(memoryRecords)
+      .values({ companyId, scopeId: org.id, kind: "fact", status: "superseded", content: "Version 1", contributorUserId: userId, version: 1, retainMode: "chunks" })
+      .returning())[0]!;
+    for (let version = 2; version <= 60; version += 1) {
+      const [next] = await ctx.db
+        .insert(memoryRecords)
+        .values({
+          companyId,
+          scopeId: org.id,
+          kind: "fact",
+          status: version === 60 ? "unreviewed" : "superseded",
+          content: `Version ${version}`,
+          contributorUserId: version % 2 === 0 ? "user-backup" : "user-outsider",
+          supersedesId: previous.id,
+          version,
+          retainMode: "chunks",
+        })
+        .returning();
+      await ctx.db.insert(memoryReviewEvents).values({
+        companyId, recordId: previous.id, scopeId: org.id, action: "edit", actorType: "user", actorId: "user-backup", userId: "user-backup", relatedRecordId: next!.id,
+      });
+      previous = next!;
+    }
+    const latest = previous;
+
+    const viaSteward = await act(board, base, latest.id, { action: "confirm", expectedVersion: latest.version, reason: "ok" });
+    expect(viaSteward.status).toBe(403);
+    expect(viaSteward.body.error).toMatch(/You proposed this card/);
+    expect((await request(board).post(`${base}/records/${latest.id}/review`).send({ action: "approve", reason: "ok" })).status).toBe(403);
+    const item = ((await request(board).get(`${base}/review-queue`)).body as MemoryReviewQueue).items.find((i) => i.proposal.id === latest.id)!;
+    expect(item.proposer.id).toBe(userId);
+    expect(item.allowed.confirm).toBe(false);
+
+    // A loop in the history cannot be fully checked: refuse rather than guess.
+    const [first] = await ctx.db.select().from(memoryRecords).where(eq(memoryRecords.content, "Version 1"));
+    await ctx.db.update(memoryRecords).set({ supersedesId: latest.id }).where(eq(memoryRecords.id, first!.id));
+    await ctx.db.insert(memoryReviewEvents).values({
+      companyId, recordId: latest.id, scopeId: org.id, action: "edit", actorType: "user", actorId: "user-backup", userId: "user-backup", relatedRecordId: first!.id,
+    });
+    const looped = await act(steward, base, latest.id, { action: "confirm", expectedVersion: latest.version, reason: "ok" });
+    expect(looped.status).toBe(403);
+    expect(looped.body.error).toMatch(/cannot be fully checked/);
+    expect(await deniedReasons("user-steward")).toContain("incomplete_history");
+  });
+
   it("refuses a stale version with 409 and logs it", async () => {
     const { steward, backup, agent, base, org } = await setup("Stale");
     const proposal = await contribute(agent, base, { scopeId: org.id, content: "Desk booking opens at 08:00.", topics: ["desks"] });

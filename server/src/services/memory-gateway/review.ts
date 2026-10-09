@@ -40,7 +40,7 @@ import { badRequest, conflict, forbidden, notFound } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import { classifyEngineError, nextAttemptAt } from "./ingest-outbox.js";
 import { enqueueMemoryIngest, settleDirectMemoryIngest } from "./ingest-outbox-db.js";
-import { insertRelationship, insertReviewEvent } from "./review-store.js";
+import { authorRefusal, insertRelationship, insertReviewEvent, loadEditChain } from "./review-store.js";
 import {
   DIRECT_RETAIN_GRACE_MS,
   grantedScopeIds,
@@ -68,6 +68,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const REFUSALS = {
   own_entry: "Nobody can approve or settle their own entry",
+  incomplete_history: "This record's edit history cannot be fully checked, so it cannot be approved",
   owner_only: "Only the company owner can review this kind of record",
   working_notes: "Agent working notes are never reviewed",
   no_review_right: "You do not have the right to review this record",
@@ -76,13 +77,6 @@ const REFUSALS = {
   no_retention_right: "Only the company owner or a memory admin can run retention",
 } as const;
 type Refusal = keyof typeof REFUSALS;
-
-function isContributor(caller: MemoryCaller, row: RecordRow) {
-  return (
-    (row.contributorAgentId !== null && row.contributorAgentId === caller.agentId) ||
-    (row.contributorUserId !== null && row.contributorUserId === caller.userId)
-  );
-}
 
 function toEvent(row: typeof memoryReviewEvents.$inferSelect): MemoryReviewEvent {
   return {
@@ -145,6 +139,24 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
   ): Promise<never> {
     await logOperation(caller, operation, "denied", { ...extra, detail: { reason: refusal } });
     throw forbidden(REFUSALS[refusal]);
+  }
+
+  /**
+   * Nobody approves or settles a record when they wrote any version of it:
+   * the first proposal or any edit since (GRE-1089). The whole edit history
+   * is checked; if it cannot be read in full, the step is refused.
+   */
+  async function refuseIfAuthor(
+    caller: MemoryCaller,
+    operation: string,
+    rows: RecordRow[],
+    audit: { scopeIds?: string[]; recordId?: string | null },
+  ) {
+    for (const row of rows) {
+      const chain = await loadEditChain(db, caller.companyId, row);
+      if (!chain) await refuse(caller, operation, "incomplete_history", audit);
+      if (authorRefusal(caller, chain!)) await refuse(caller, operation, "own_entry", audit);
+    }
   }
 
   /** A record the caller may read, or 404 with an audit row. Same answer for "missing" and "not yours". */
@@ -212,7 +224,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     if (row.status === target) throw conflict(`The record is already ${target}`);
     const refusal = await reviewRefusal(caller, access, scope, row.decisionClass);
     if (refusal) await refuse(caller, operation, refusal, audit);
-    if (input.action === "approve" && isContributor(caller, row)) await refuse(caller, operation, "own_entry", audit);
+    if (input.action === "approve") await refuseIfAuthor(caller, operation, [row], audit);
 
     if (input.action === "approve") {
       // An entry that may contradict an approved record never replaces it by approval.
@@ -365,7 +377,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
       const refusal = await reviewRefusal(caller, access, scope, decisionClass);
       if (refusal) await refuse(caller, operation, refusal, audit);
     }
-    if (isContributor(caller, replacement)) await refuse(caller, operation, "own_entry", audit);
+    await refuseIfAuthor(caller, operation, [replacement], audit);
 
     const now = new Date();
     const result = await db.transaction((tx) => applySupersede(tx, caller, old, replacement, input.reason, now));
@@ -762,7 +774,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     const decisionClass = approved.decisionClass as MemoryDecisionClass;
     const refusal = await reviewRefusal(caller, access, scope, decisionClass);
     if (refusal) await refuse(caller, operation, refusal, audit);
-    if (isContributor(caller, challenger) || isContributor(caller, approved)) await refuse(caller, operation, "own_entry", audit);
+    await refuseIfAuthor(caller, operation, [challenger, approved], audit);
 
     const now = new Date();
     const resolved = await db.transaction(async (tx) => {
