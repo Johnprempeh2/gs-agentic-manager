@@ -40,6 +40,7 @@ import {
   type MemorySourceRef,
   type MemoryEntryType,
   type MemoryDecisionClass,
+  type MemoryCallerApp,
 } from "@greatstone/shared";
 import { notFound } from "../../errors.js";
 import { LINK_CHECK_NAME, LINK_LEAD_SOURCE_KIND } from "./link-check.js";
@@ -116,6 +117,8 @@ function toEvent(row: typeof memoryReviewEvents.$inferSelect): MemoryReviewEvent
     agentId: row.agentId,
     userId: row.userId,
     runId: row.runId,
+    app: row.app as MemoryCallerApp | null,
+    sessionId: row.sessionId,
     reason: row.reason,
     relatedRecordId: row.relatedRecordId,
     createdAt: row.createdAt,

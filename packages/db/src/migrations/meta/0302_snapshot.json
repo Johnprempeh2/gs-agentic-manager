@@ -1,5 +1,5 @@
 {
-  "id": "62897223-44a2-4772-8814-328327e214cf",
+  "id": "cbeaca75-f7d7-459a-8312-1e844fb6443d",
   "prevId": "e2b01262-77fd-4b12-828c-688987b14477",
   "version": "7",
   "dialect": "postgresql",
@@ -33270,6 +33270,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "app": {
+          "name": "app",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "scope_ids": {
           "name": "scope_ids",
           "type": "jsonb",
@@ -33978,6 +33990,18 @@
         "run_id": {
           "name": "run_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "app": {
+          "name": "app",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -50772,324 +50796,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.website_properties": {
-      "name": "website_properties",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "site_url": {
-          "name": "site_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ga4_property_id": {
-          "name": "ga4_property_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connection_status": {
-          "name": "connection_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'not_connected'"
-        },
-        "google_token_secret_id": {
-          "name": "google_token_secret_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connected_at": {
-          "name": "connected_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "connected_by_user_id": {
-          "name": "connected_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_pull_at": {
-          "name": "last_pull_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_pull_status": {
-          "name": "last_pull_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_pull_errors": {
-          "name": "last_pull_errors",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "website_properties_company_idx": {
-          "name": "website_properties_company_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "website_properties_company_site_uq": {
-          "name": "website_properties_company_site_uq",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "site_url",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "website_properties_company_id_companies_id_fk": {
-          "name": "website_properties_company_id_companies_id_fk",
-          "tableFrom": "website_properties",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "website_properties_google_token_secret_id_company_secrets_id_fk": {
-          "name": "website_properties_google_token_secret_id_company_secrets_id_fk",
-          "tableFrom": "website_properties",
-          "tableTo": "company_secrets",
-          "columnsFrom": [
-            "google_token_secret_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.website_pulls": {
-      "name": "website_pulls",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "property_id": {
-          "name": "property_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trigger": {
-          "name": "trigger",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "range_start": {
-          "name": "range_start",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "range_end": {
-          "name": "range_end",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ga4_report": {
-          "name": "ga4_report",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "search_console_report": {
-          "name": "search_console_report",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "errors": {
-          "name": "errors",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "website_pulls_property_started_idx": {
-          "name": "website_pulls_property_started_idx",
-          "columns": [
-            {
-              "expression": "property_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "started_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "website_pulls_company_idx": {
-          "name": "website_pulls_company_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "website_pulls_company_id_companies_id_fk": {
-          "name": "website_pulls_company_id_companies_id_fk",
-          "tableFrom": "website_pulls",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "website_pulls_property_id_website_properties_id_fk": {
-          "name": "website_pulls_property_id_website_properties_id_fk",
-          "tableFrom": "website_pulls",
-          "tableTo": "website_properties",
-          "columnsFrom": [
-            "property_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

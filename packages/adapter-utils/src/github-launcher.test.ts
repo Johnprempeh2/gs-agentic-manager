@@ -6,6 +6,15 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { githubBrokerEnvironment, githubLauncherSource } from "./github-launcher.js";
+// Keep live run credentials and its launcher out of synthetic child processes.
+const fixtureEnv: NodeJS.ProcessEnv = {
+  PATH: (process.env.PATH ?? "").split(path.delimiter)
+    .filter((entry) => entry !== process.env.GSAM_GITHUB_LAUNCHER_DIR)
+    .join(path.delimiter),
+  SystemRoot: process.env.SystemRoot,
+  GIT_CONFIG_GLOBAL: os.devNull,
+  GIT_CONFIG_SYSTEM: os.devNull,
+};
 const exec = promisify(execFile);
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -16,11 +25,11 @@ describe("managed GitHub launchers", () => {
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     const bin = path.join(root, "managed");
     await mkdir(bin);
-    await exec("git", ["init", root]);
+    await exec("git", ["init", root], { env: fixtureEnv });
     await writeFile(path.join(bin, "git"), githubLauncherSource(), { mode: 0o700 });
-    const env = { ...process.env, ...githubBrokerEnvironment({
+    const env = { ...fixtureEnv, ...githubBrokerEnvironment({
       GH_TOKEN: "host-token", GIT_AUTHOR_NAME: "Host", GIT_COMMITTER_NAME: "Host",
-    }, { url: "", token: "" }), PATH: `${bin}:${process.env.PATH}` };
+    }, { url: "", token: "" }), PATH: `${bin}:${fixtureEnv.PATH}` };
     const git = async (...args: string[]) => (await exec(path.join(bin, "git"), args, { cwd: root, env })).stdout.trim();
     // No configured identity must fail, rather than guessing the host user's.
     await expect(git("var", "GIT_AUTHOR_IDENT")).rejects.toThrow();
@@ -40,9 +49,9 @@ describe("managed GitHub launchers", () => {
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     const bin = path.join(root, "managed");
     await mkdir(bin);
-    await exec("git", ["init", root]);
-    await exec("git", ["-C", root, "config", "user.name", "Local Author"]);
-    await exec("git", ["-C", root, "config", "user.email", "local@example.test"]);
+    await exec("git", ["init", root], { env: fixtureEnv });
+    await exec("git", ["-C", root, "config", "user.name", "Local Author"], { env: fixtureEnv });
+    await exec("git", ["-C", root, "config", "user.email", "local@example.test"], { env: fixtureEnv });
     await writeFile(path.join(bin, "git"), githubLauncherSource(), { mode: 0o700 });
     const server = createServer((_req, res) => { res.writeHead(403); res.end(); });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -52,14 +61,14 @@ describe("managed GitHub launchers", () => {
     const configRoot = path.join(root, "config");
     if (failure === "config-unwritable") await writeFile(configRoot, "not a directory");
     const result = await exec(path.join(bin, "git"), ["status", "--porcelain"], { cwd: root, env: {
-      ...process.env, ...githubBrokerEnvironment({ GH_TOKEN: "host-must-not-leak" }, { url: `http://127.0.0.1:${port}`, token: "private-capability" }),
-      GH_CONFIG_DIR: configRoot, PATH: `${bin}:${process.env.PATH}`,
+      ...fixtureEnv, ...githubBrokerEnvironment({ GH_TOKEN: "host-must-not-leak" }, { url: `http://127.0.0.1:${port}`, token: "private-capability" }),
+      GH_CONFIG_DIR: configRoot, PATH: `${bin}:${fixtureEnv.PATH}`,
     } });
     expect(result.stderr).toContain(failure === "broker-offline" ? "broker_transport_unavailable" : failure === "config-unwritable" ? "configuration_directory_unavailable" : "capability_rejected");
     expect(result.stderr).not.toMatch(/host-must-not-leak|private-capability/);
     await exec(path.join(bin, "git"), ["commit", "--allow-empty", "-m", "Offline work"], { cwd: root, env: {
-      ...process.env, ...githubBrokerEnvironment({}, { url: `http://127.0.0.1:${port}`, token: "private-capability" }),
-      GH_CONFIG_DIR: configRoot, PATH: `${bin}:${process.env.PATH}`,
+      ...fixtureEnv, ...githubBrokerEnvironment({}, { url: `http://127.0.0.1:${port}`, token: "private-capability" }),
+      GH_CONFIG_DIR: configRoot, PATH: `${bin}:${fixtureEnv.PATH}`,
     } });
   });
 
@@ -73,7 +82,7 @@ describe("managed GitHub launchers", () => {
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     const bin = path.join(root, "managed");
     await mkdir(bin);
-    await exec("git", ["init", root]);
+    await exec("git", ["init", root], { env: fixtureEnv });
     await writeFile(path.join(bin, "git"), githubLauncherSource(), { mode: 0o700 });
     const server = createServer((_req, res) => {
       res.writeHead(status, { "content-type": "application/json" });
@@ -83,8 +92,8 @@ describe("managed GitHub launchers", () => {
     cleanups.push(() => new Promise<void>(resolve => server.close(() => resolve())));
     const { port } = server.address() as { port: number };
     const result = await exec(path.join(bin, "git"), ["status", "--porcelain"], { cwd: root, env: {
-      ...process.env, ...githubBrokerEnvironment({}, { url: `http://127.0.0.1:${port}`, token: "private-capability" }),
-      GH_CONFIG_DIR: path.join(root, "config"), PATH: `${bin}:${process.env.PATH}`,
+      ...fixtureEnv, ...githubBrokerEnvironment({}, { url: `http://127.0.0.1:${port}`, token: "private-capability" }),
+      GH_CONFIG_DIR: path.join(root, "config"), PATH: `${bin}:${fixtureEnv.PATH}`,
     } });
     expect(result.stdout).toBe("?? managed/\n"); // the real git ran
     expect(result.stderr).toContain("GitHub capability_rejected (");
@@ -93,7 +102,7 @@ describe("managed GitHub launchers", () => {
     expect(result.stderr).not.toMatch(/private-capability|\u001b/);
   });
 
-  it("explains unavailable access while allowing local work without credentials", async () => {
+  it.each(["unavailable", "absent"])("explains %s access while allowing local work without credentials", async (status) => {
     const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-github-diagnostic-"));
     cleanups.push(() => rm(root, {recursive:true,force:true}));
     const bin = path.join(root,"managed"), realBin = path.join(root,"real");
@@ -102,14 +111,14 @@ describe("managed GitHub launchers", () => {
     await writeFile(path.join(realBin,"gh"), '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({token:process.env.GH_TOKEN ?? null}));', {mode:0o700});
     const server = createServer((_req,res) => {
       res.setHeader("content-type","application/json");
-      res.end(JSON.stringify({status:"unavailable",reason:"More than one managed GitHub identity matches this run",env:{GH_TOKEN:"must-not-be-used"}}));
+      res.end(JSON.stringify({status,reason:"In Apps, connect GitHub to supply git credentials",env:{GH_TOKEN:"must-not-be-used"}}));
     });
     await new Promise<void>(resolve => server.listen(0,"127.0.0.1",resolve));
     cleanups.push(() => new Promise<void>((resolve,reject) => server.close(error => error ? reject(error) : resolve())));
     const {port} = server.address() as {port:number};
-    const result = await exec(path.join(bin,"gh"), [], {env:{...process.env,...githubBrokerEnvironment({GH_TOKEN:"host-token"},{url:`http://127.0.0.1:${port}`,token:"run-capability"}),PATH:`${bin}:${realBin}:${process.env.PATH}`}});
+    const result = await exec(path.join(bin,"gh"), [], {env:{...fixtureEnv,...githubBrokerEnvironment({GH_TOKEN:"host-token"},{url:`http://127.0.0.1:${port}`,token:"run-capability"}),PATH:`${bin}:${realBin}:${fixtureEnv.PATH}`}});
     expect(JSON.parse(result.stdout)).toEqual({token:null});
-    expect(result.stderr).toContain("More than one managed GitHub identity matches this run");
+    expect(result.stderr).toContain("In Apps, connect GitHub to supply git credentials");
     expect(result.stderr).not.toMatch(/host-token|must-not-be-used|run-capability/);
   });
   it("captures each command's identity and clears host credentials when the next person has none", async () => {
@@ -142,9 +151,9 @@ process.stdout.write(JSON.stringify({identity, token:process.env.GH_TOKEN ?? nul
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     cleanups.push(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
     const address = server.address() as { port: number };
-    const env: NodeJS.ProcessEnv = { ...process.env, ...githubBrokerEnvironment({
+    const env: NodeJS.ProcessEnv = { ...fixtureEnv, ...githubBrokerEnvironment({
       GH_TOKEN: "ambient-host-token", GIT_AUTHOR_NAME: "Host", GIT_AUTHOR_EMAIL: "host@example.test",
-    }, { url: `http://127.0.0.1:${address.port}`, token: "run-capability" }), PATH: `${bin}:${realBin}:${process.env.PATH}` };
+    }, { url: `http://127.0.0.1:${address.port}`, token: "run-capability" }), PATH: `${bin}:${realBin}:${fixtureEnv.PATH}` };
     const git = async (...args: string[]) => (await exec(path.join(bin, "git"), args, { cwd: repo, env })).stdout.trim();
     await git("init");
     await git("config", "user.name", "Repository Author");

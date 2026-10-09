@@ -149,7 +149,7 @@ describe("built-in agent routes", () => {
     expect(mockBuiltInAgentService.list).not.toHaveBeenCalled();
   });
 
-  it("returns 404 and does not load built-in state when the experimental flag is disabled", async () => {
+  it("returns 403 not_entitled and does not load built-in state when the experimental flag is disabled", async () => {
     mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableBuiltInAgents: false });
     const app = await createApp({
       type: "board",
@@ -161,8 +161,8 @@ describe("built-in agent routes", () => {
 
     const res = await request(app).get(`/api/companies/${companyId}/built-in-agents`);
 
-    expect(res.status, JSON.stringify(res.body)).toBe(404);
-    expect(res.body.error).toContain("Built-in agents are not enabled");
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(res.body).toMatchObject({ code: "not_entitled", feature: "enableBuiltInAgents" });
     expect(mockBuiltInAgentService.list).not.toHaveBeenCalled();
   });
 

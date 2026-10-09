@@ -2922,3 +2922,7 @@ export {
   type UpdateAgentTeam,
 } from "./agent-teams.js";
 export * from "./memory.js";
+export * from "./crm-sync.js";
+export * from "./types/crm-sync.js";
+export * from "./validators/crm-sync.js";
+export * from "./entitlement-document.js";

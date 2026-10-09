@@ -64,6 +64,9 @@ import {
   getManagedInstanceConfig,
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
+import { readEntitlementConfig } from "./services/entitlement-document.js";
+import { createEntitlementRuntime, setEntitlementRuntime } from "./services/entitlement-runtime.js";
+import { entitlementActivityAuditSink } from "./services/entitlement-audit.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
 import { getInstallLimits } from "./services/install-limits.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
@@ -111,6 +114,8 @@ import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.
 import { localAiLoginService } from "./services/local-ai-login.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
 import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
+import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
+import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
 import { resolveWorktreeRunExecutionActivationState } from "./services/instance-settings.js";
 import {
   parseAdapterRegistryEnv,
@@ -876,6 +881,36 @@ async function startServerWithDatabaseTeardown(
     throw err;
   }
 
+  // Signed entitlement document (GRE-1078). Off unless GSAM_ENTITLEMENT_PUBLIC_KEY
+  // is set; a malformed key refuses startup (fail closed). The document is read
+  // before routes serve, then re-read every minute and on "sync now".
+  let entitlementRuntime: ReturnType<typeof createEntitlementRuntime> | null = null;
+  try {
+    const entitlementConfig = readEntitlementConfig();
+    if (entitlementConfig) {
+      entitlementRuntime = createEntitlementRuntime({
+        ...entitlementConfig,
+        onAudit: entitlementActivityAuditSink(db as any),
+        onError: (err, context) => logger.error({ err }, context),
+      });
+      const started = await entitlementRuntime.start();
+      setEntitlementRuntime(entitlementRuntime);
+      entitlementRuntime.startPolling();
+      logger.warn(
+        {
+          filePath: entitlementConfig.filePath,
+          state: started.entitlements.state,
+          version: started.entitlements.document?.version ?? null,
+          error: started.error,
+        },
+        "signed entitlements active",
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "invalid entitlement configuration; refusing to start (fail closed)");
+    throw err;
+  }
+
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
@@ -1268,6 +1303,8 @@ async function startServerWithDatabaseTeardown(
     }
   };
   const executionControlSweepsInFlight = new Set<string>();
+  // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
+  const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
     ["finalization", () => reconcileAbandonedExecutionControl(db)],
     ["replacement", () => heartbeat ? reconcileSafeNativeReplacements(db, new Date(), { verifyStoppedSession: run => verifyStoppedNativeSessionForReplacement(db, run) }) : undefined],
@@ -1279,6 +1316,10 @@ async function startServerWithDatabaseTeardown(
     ["memory_steward_grant_renewal", () => remindStewardGrantRenewals(db)],
     // Memory linking: the link check, at most every 6 hours per company with memory on.
     ["memory_link_check", () => runScheduledMemoryLinkChecks(db)],
+    // GRE-1079: the 90/180/365-day retention rules, once a day per company with memory on.
+    ["memory_retention", () => runScheduledMemoryRetention(db)],
+    // GRE-1079: deliver the memory ingest outbox (the retry queue) and report what fails.
+    ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;
@@ -2198,6 +2239,7 @@ async function startServerWithDatabaseTeardown(
     await systemdNotify(["--stopping", `--status=Stopping after ${signal}`]);
     heartbeatSchedulerStopped = true;
     clearInterval(executionControlInterval);
+    entitlementRuntime?.stop();
     decisionPushStopped = true;
     if (decisionPushTimer) clearTimeout(decisionPushTimer);
     if (heartbeatSchedulerInterval) {

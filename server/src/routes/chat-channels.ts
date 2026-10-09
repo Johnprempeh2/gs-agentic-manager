@@ -29,7 +29,7 @@ import {
   type ChatChannelServiceOptions,
 } from "../services/chat-channels.js";
 import { accessService } from "../services/access.js";
-import { instanceSettingsService } from "../services/instance-settings.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { recordChatWebhookStage } from "../services/chat-webhook-diagnostics.js";
 import {
   createInviteRateLimiter,
@@ -92,15 +92,14 @@ export function chatChannelRoutes(db: Db, options: ChatChannelRouteOptions) {
   const access = accessService(db);
   const github = githubChatManagementService(db, options.fetch);
 
+  // Enforce rollout here, before validation: invited nonmembers cannot read the
+  // board's experimental-settings API. A private token never bypasses this gate.
+  router.use("/chat-identity-links", requireEntitlement(db, "enableChatConnectors"));
+
   async function assertIdentityLinkAccess(req: ExpressRequest): Promise<string> {
     assertBoard(req);
     const userId = actorUserId(req);
     if (!userId) throw badRequest("A signed-in GS Agentic Manager user is required");
-    // Enforce rollout here: invited nonmembers cannot read the board's
-    // experimental-settings API. A private token never bypasses this gate.
-    if (!(await instanceSettingsService(db).getExperimental()).enableChatConnectors) {
-      throw forbidden("Chat connectors are not enabled on this instance");
-    }
     return userId;
   }
 

@@ -13,13 +13,18 @@ import {
   memoryActivityCountsQuerySchema,
   memoryActivityQuerySchema,
   memoryGraphQuerySchema,
+  memoryReviewQueueQuerySchema,
+  memoryStewardActionSchema,
   recallMemorySchema,
   resolveMemoryConflictSchema,
   reviewMemoryRecordSchema,
   runMemoryRetentionSchema,
+  setMemoryScopeStewardSchema,
   supersedeMemoryRecordSchema,
   updateMemorySettingsSchema,
+  type MemoryCallerApp,
 } from "@greatstone/shared";
+import { isMemoryOnlyActor } from "../middleware/memory-only-key-guard.js";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/index.js";
 import type { EngineCallSlots, MemoryEngine } from "../services/memory-gateway/engine.js";
@@ -33,6 +38,7 @@ import { memoryGraphService } from "../services/memory-gateway/graph.js";
 import { memoryGrantService } from "../services/memory-gateway/grants.js";
 import { memoryLinkService } from "../services/memory-gateway/link-check.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
+import { memoryStewardService } from "../services/memory-gateway/steward-actions.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
 
@@ -45,15 +51,44 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function memoryCallerFromRequest(req: Request, companyId: string): MemoryCaller {
   assertCompanyAccess(req, companyId);
   const actor = getActorInfo(req);
+  const runId = actor.runId && UUID_RE.test(actor.runId) ? actor.runId : null;
   return {
     companyId,
     actorType: actor.actorType,
     actorId: actor.actorId,
     agentId: actor.agentId,
     userId: actor.actorType === "user" ? actor.actorId : null,
-    runId: actor.runId && UUID_RE.test(actor.runId) ? actor.runId : null,
+    runId,
     isBoardAdmin: hasCompanyOwnerOrAdminRole(req, companyId),
+    ...memoryCallerApp(req.actor, runId),
   };
+}
+
+/**
+ * The app and session a memory call came through (GRE-1079), from the
+ * authenticated actor only. The person stays the agent or user id; this is
+ * the provenance label beside it (deck v7 slide 17).
+ */
+export function memoryCallerApp(
+  actor: Request["actor"],
+  runId: string | null,
+): { app: MemoryCallerApp | null; sessionId: string | null } {
+  switch (actor.source) {
+    case "session":
+      return { app: "gsam_web", sessionId: actor.sessionId ?? null };
+    case "local_implicit":
+      return { app: "gsam_local", sessionId: null };
+    case "board_key":
+      return { app: "gsam_board_key", sessionId: actor.keyId ?? null };
+    case "cloud_tenant":
+      return { app: "gsam_cloud", sessionId: actor.sessionId ?? null };
+    case "agent_jwt":
+      return { app: "gsam_agent_run", sessionId: runId };
+    case "agent_key":
+      return { app: isMemoryOnlyActor(actor) ? "memory_key" : "gsam_agent_key", sessionId: actor.keyId ?? null };
+    default:
+      return { app: null, sessionId: null };
+  }
 }
 
 // Organization memory gateway (GRE-672, ADR-0001). Every route is scoped to
@@ -69,6 +104,7 @@ export function memoryRoutes(
   const graphs = memoryGraphService(db, svc);
   const grants = memoryGrantService(db, svc);
   const links = memoryLinkService(db, svc);
+  const stewards = memoryStewardService(db, svc, reviews);
 
   // Runs before body validation so a company with memory off learns nothing
   // from any memory route, not even which bodies are valid.
@@ -276,6 +312,62 @@ export function memoryRoutes(
   router.post("/companies/:companyId/memory/relationships", requireEnabled, validate(createMemoryRelationshipSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     res.status(201).json(await reviews.createRelationship(await callerFor(req, companyId, "relationship_create"), req.body));
+  });
+
+  // Shared memory M1 (GRE-1089): the review queue, card actions and stewards
+  // per scope. A refusal answers 403 with a plain reason; a card that changed
+  // since the caller opened it answers 409.
+  router.get("/companies/:companyId/memory/review-queue", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "review_queue");
+    res.json(await stewards.reviewQueue(caller, parseQuery(memoryReviewQueueQuerySchema, req)));
+  });
+
+  router.post("/companies/:companyId/memory/records/:recordId/steward-action", requireEnabled, validate(memoryStewardActionSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, `steward_${req.body.action}`);
+    const recordId = recordIdOr404(req, res);
+    if (!recordId) return;
+    try {
+      res.json(await stewards.act(caller, recordId, req.body));
+    } catch (error) {
+      if (!(error instanceof MemorySensitiveContentError)) throw error;
+      res.status(422).json({
+        error: error.message,
+        code: MEMORY_SENSITIVE_CONTENT_CODE,
+        matchedTypes: error.matchedTypes,
+        detection: MEMORY_DETECTION_NOTE,
+      });
+    }
+  });
+
+  router.get("/companies/:companyId/memory/stewards", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    res.json(await stewards.listStewards(await callerFor(req, companyId, "stewards_list")));
+  });
+
+  router.put("/companies/:companyId/memory/stewards/:scopeId", requireEnabled, validate(setMemoryScopeStewardSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "steward_set");
+    const scopeId = req.params.scopeId as string;
+    if (!UUID_RE.test(scopeId)) {
+      res.status(404).json({ error: "Memory scope not found" });
+      return;
+    }
+    const steward = await stewards.setSteward(caller, scopeId, req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "memory.steward_set",
+      entityType: "company",
+      entityId: companyId,
+      details: { scopeId, primaryUserId: steward.primaryUserId, backupUserId: steward.backupUserId },
+    });
+    res.json(steward);
   });
 
   // Conflict queue data, grouped by the approved position (GRE-886); the steward reads it (GRE-887).

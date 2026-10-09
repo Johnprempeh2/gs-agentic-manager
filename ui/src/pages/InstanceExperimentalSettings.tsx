@@ -11,6 +11,7 @@ import type {
 import { experimentalSettingKey, isGraduatedInstanceFeatureKey, isRetiredInstanceFeatureKey } from "@greatstone/shared";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { getWorktreeInstanceId, isWorktreeRuntime } from "../lib/worktree-branding";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -88,7 +89,9 @@ function ExperimentalToggleCard({
   ariaLabel: string;
 }) {
   const { hidden: hiddenSettings } = useHiddenSettings();
-  const isManaged = managed?.managed === true;
+  const entitlement = useEntitlements().featureState(settingKey);
+  const notInPlan = entitlement?.entitled === false;
+  const isManaged = managed?.managed === true || notInPlan;
   if (hiddenSettings.has(experimentalSettingKey(settingKey))) return null;
   // Greatstone (GRE-196): retired switches are hidden; their code stays in place.
   if (isRetiredInstanceFeatureKey(settingKey)) return null;
@@ -100,7 +103,18 @@ function ExperimentalToggleCard({
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold">{title}</h3>
-            {isManaged ? <ManagedByCloudBadge /> : null}
+            {managed?.managed === true ? <ManagedByCloudBadge /> : null}
+            {notInPlan ? (
+              <Badge variant="outline" className="text-muted-foreground">
+                <Lock aria-hidden="true" />
+                Not in your plan
+              </Badge>
+            ) : null}
+            {entitlement?.pendingRestart ? (
+              <Badge variant="outline" className="text-muted-foreground">
+                Pending restart
+              </Badge>
+            ) : null}
           </div>
           <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>
           {footnote ? <p className="max-w-2xl text-xs text-muted-foreground">{footnote}</p> : null}
@@ -114,6 +128,42 @@ function ExperimentalToggleCard({
           disabled={disabled || isManaged}
           aria-label={ariaLabel}
         />
+      </div>
+    </Card>
+  );
+}
+
+/** GRE-1078: the signed plan in force, with "Sync now". Renders nothing while entitlements are off. */
+function EntitlementPlanStatus() {
+  const queryClient = useQueryClient();
+  const { data } = useEntitlements();
+  const syncMutation = useMutation({
+    mutationFn: () => instanceSettingsApi.syncEntitlements(),
+    onSuccess: async (result) => {
+      queryClient.setQueryData(queryKeys.instance.entitlements, result.entitlements);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.instance.experimentalSettings });
+    },
+  });
+  if (!data || data.state === "disabled") return null;
+  const syncError = syncMutation.error instanceof Error ? syncMutation.error.message : null;
+  const summary =
+    data.state === "floor"
+      ? "No valid plan document. Only the base features are on."
+      : data.state === "grace"
+        ? `Plan v${data.document?.version} has expired. It stays on until ${formatActivationTimestamp(data.document?.graceEndsAt ?? "")}.`
+        : `Plan v${data.document?.version} for ${data.document?.client}, valid until ${formatActivationTimestamp(data.document?.validUntil ?? "")}.`;
+  return (
+    <Card className="block bg-transparent p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">Your plan</p>
+          <p className="text-muted-foreground">{summary}</p>
+          {data.lastError ? <p className="text-xs text-muted-foreground">Last check: {data.lastError}</p> : null}
+          {syncError ? <p className="text-xs text-destructive">{syncError}</p> : null}
+        </div>
+        <Button size="sm" variant="outline" disabled={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+          {syncMutation.isPending ? "Syncing..." : "Sync now"}
+        </Button>
       </div>
     </Card>
   );
@@ -283,6 +333,8 @@ export function InstanceExperimentalSettings() {
           </div>
         </div>
       </div>
+
+      <EntitlementPlanStatus />
 
       {actionError && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">

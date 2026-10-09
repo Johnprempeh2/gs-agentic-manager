@@ -119,6 +119,9 @@ export const memoryOperations = pgTable(
     actorId: text("actor_id").notNull(),
     agentId: uuid("agent_id"),
     runId: uuid("run_id"),
+    /** The app the call came through and its session (GRE-1079); see `MemoryCallerApp`. */
+    app: text("app"),
+    sessionId: text("session_id"),
     scopeIds: jsonb("scope_ids").$type<string[]>().notNull().default([]),
     recordId: uuid("record_id"),
     detail: jsonb("detail").$type<Record<string, unknown> | null>(),
@@ -149,6 +152,9 @@ export const memoryReviewEvents = pgTable(
     agentId: uuid("agent_id"),
     userId: text("user_id"),
     runId: uuid("run_id"),
+    /** The app the person or agent acted through and its session (GRE-1079); see `MemoryCallerApp`. */
+    app: text("app"),
+    sessionId: text("session_id"),
     reason: text("reason"),
     relatedRecordId: uuid("related_record_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -289,5 +295,27 @@ export const memoryExtractedFacts = pgTable(
   (table) => ({
     unitUq: uniqueIndex("memory_extracted_facts_unit_uq").on(table.companyId, table.bankId, table.engineUnitId),
     companyRecordIdx: index("memory_extracted_facts_company_record_idx").on(table.companyId, table.recordId),
+  }),
+);
+
+/**
+ * Who reviews proposals in a scope (shared memory M1, GRE-1089). Stewards are
+ * people. Client and restricted-project scopes never get a row: they always
+ * route to the company owner. Rollback: drop this table (migration 0302).
+ */
+export const memoryScopeStewards = pgTable(
+  "memory_scope_stewards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    scopeId: uuid("scope_id").notNull().references(() => memoryScopes.id, { onDelete: "cascade" }),
+    primaryUserId: text("primary_user_id"),
+    backupUserId: text("backup_user_id"),
+    setByUserId: text("set_by_user_id").notNull(),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    scopeUq: uniqueIndex("memory_scope_stewards_scope_uq").on(table.scopeId),
+    companyIdx: index("memory_scope_stewards_company_idx").on(table.companyId),
   }),
 );

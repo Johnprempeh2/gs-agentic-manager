@@ -9,6 +9,7 @@ import { MEMORY_DISABLED_MESSAGE, memoryGatewayService } from "../services/memor
 import { callMemoryTool, memoryToolDefinitions } from "../services/memory-tools.js";
 import { projectToolContext } from "../services/project-tool-context.js";
 import { assertCompanyAccess } from "./authz.js";
+import { memoryCallerApp } from "./memory.js";
 import {
   acceptMcpMessage,
   classifyMcpMessage,
@@ -35,10 +36,15 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
   async function memoryToolIdentity(req: Request) {
     const actor = req.actor;
     if (isMemoryOnlyActor(actor) && actor.source === "agent_key" && actor.agentId && actor.companyId) {
-      return { companyId: actor.companyId, agentId: actor.agentId, runId: null };
+      return { companyId: actor.companyId, agentId: actor.agentId, runId: null, ...memoryCallerApp(actor, null) };
     }
     const context = await projectToolContext(db, actor, false, "Memory");
-    return { companyId: context.run.companyId, agentId: context.run.agentId, runId: context.run.id };
+    return {
+      companyId: context.run.companyId,
+      agentId: context.run.agentId,
+      runId: context.run.id,
+      ...memoryCallerApp(actor, context.run.id),
+    };
   }
 
   router.get("/mcp/memory-tools", (_req, res) => {
@@ -46,7 +52,7 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
   });
 
   router.post("/mcp/memory-tools", async (req, res) => {
-    const { companyId, agentId, runId } = await memoryToolIdentity(req);
+    const { companyId, agentId, runId, app, sessionId } = await memoryToolIdentity(req);
     assertCompanyAccess(req, companyId);
     if (!(await gateway.getSettings(companyId)).enabled) throw notFound(MEMORY_DISABLED_MESSAGE);
 
@@ -84,6 +90,8 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
           userId: null,
           runId,
           isBoardAdmin: false,
+          app,
+          sessionId,
         },
       });
       return send({ content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result });
