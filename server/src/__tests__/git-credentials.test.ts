@@ -11,8 +11,13 @@ import {
   createGitRemoteAuthProvider,
   describeGitAuthFailure,
   isGitHubHttpsRemoteUrl,
+  resolveManagedGitHubCredential,
+  resolveManagedGitHubIdentitySelection,
   scrubGitCredentialText,
 } from "../services/git-credentials.ts";
+
+const toolAccess = vi.hoisted(() => ({ refreshManagedGitHubGrantAccess: vi.fn() }));
+vi.mock("../services/tool-access.js", () => ({ toolAccessService: () => toolAccess }));
 
 const fakeDb = null as unknown as Db;
 
@@ -182,6 +187,124 @@ describe("createGitRemoteAuthProvider", () => {
     expect(invocation?.secretName).toBe("GH_TOKEN");
     expect(invocation?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY]).toBe("agent-b-legacy-token");
     expect(db.select).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("resolveManagedGitHubCredential with missing GitHub details", () => {
+  const githubDetails = { userId: "42", login: "ridge-bot", installationCount: 1, repositoryCount: 1 };
+  const connection = (connectorProfile?: string) => ({
+    id: "conn-1",
+    companyId: "company-1",
+    enabled: true,
+    status: "active",
+    healthStatus: "ok",
+    config: { sourceTemplateKey: "github", ...(connectorProfile ? { oauth: { connectorProfile } } : {}) },
+  });
+  const grant = (overrides: Record<string, unknown> = {}) => ({
+    id: "grant-1",
+    companyId: "company-1",
+    connectionId: "conn-1",
+    kind: "agent",
+    subjectAgentId: "agent-1",
+    subjectUserId: null,
+    status: "active",
+    createdAt: new Date("2026-10-09T00:00:00Z"),
+    credentialSecretRefs: [{ configPath: "oauth.access_token", secretId: "secret-access" }],
+    providerTenant: {},
+    ...overrides,
+  });
+  // Selects run in order: connections, installs, grants, then the connection lookup
+  // that decides whether a refresh can fill in GitHub details.
+  const buildDb = (rows: unknown[][]) => {
+    const select = vi.fn();
+    for (const result of rows) select.mockReturnValueOnce({ from: () => ({ where: async () => result }) });
+    return { select } as unknown as Db;
+  };
+  const install = { connectionId: "conn-1", companyId: "company-1", targetType: "company", targetId: "company-1" };
+  const context = { agentId: "agent-1", responsibleUserId: "user-1" };
+
+  it("refreshes GitHub access once on a github.code grant that lost its GitHub details", async () => {
+    toolAccess.refreshManagedGitHubGrantAccess.mockReset()
+      .mockResolvedValueOnce(grant({ providerTenant: { github: githubDetails } }));
+    const db = buildDb([[connection("github.code")], [install], [grant()], [connection("github.code")]]);
+    const secrets = { ...buildSecretsFake({}), resolveSecretValue: vi.fn(async () => "managed-token") };
+
+    const result = await resolveManagedGitHubCredential(db, secrets, "company-1", context);
+
+    expect(toolAccess.refreshManagedGitHubGrantAccess).toHaveBeenCalledTimes(1);
+    expect(result.error).toBeUndefined();
+    expect(result.credential).toMatchObject({
+      token: "managed-token",
+      source: "managed_connection",
+      githubIdentity: { userId: "42", login: "ridge-bot" },
+      grantId: "grant-1",
+    });
+  });
+
+  it("skips a grant on a connection that is not github.code and falls back to legacy credentials", async () => {
+    toolAccess.refreshManagedGitHubGrantAccess.mockReset();
+    const db = buildDb([[connection()], [install], [grant()]]);
+    const secrets = buildSecretsFake({ GITHUB_TOKEN: "legacy-token" });
+    const provider = createGitRemoteAuthProvider(db, "company-1", context, { secrets, env: {} });
+
+    const invocation = await provider("https://github.com/example/repo.git");
+
+    expect(invocation?.source).toBe("company_secret");
+    expect(invocation?.env[GIT_CREDENTIAL_TOKEN_ENV_KEY]).toBe("legacy-token");
+    expect(toolAccess.refreshManagedGitHubGrantAccess).not.toHaveBeenCalled();
+  });
+
+  it("names the missing part, grant, connection and connector profile when self-heal fails", async () => {
+    toolAccess.refreshManagedGitHubGrantAccess.mockReset().mockRejectedValueOnce(new Error("secret-bearing detail"));
+    const db = buildDb([[connection("github.code")], [install], [grant()], [connection("github.code")]]);
+    const secrets = buildSecretsFake({});
+
+    const result = await resolveManagedGitHubCredential(db, secrets, "company-1", context);
+
+    expect(result.credential).toBeUndefined();
+    expect(result.error).toBe(
+      "The managed GitHub identity is incomplete: missing GitHub account details "
+        + "(grant grant-1, connection conn-1, connector profile github.code); GitHub access refresh failed",
+    );
+    expect(result.error).not.toContain("secret-bearing");
+  });
+
+  it("names a missing access token reference", async () => {
+    toolAccess.refreshManagedGitHubGrantAccess.mockReset();
+    const db = buildDb([[connection("github.code")], [install], [grant({ credentialSecretRefs: [] })]]);
+
+    const result = await resolveManagedGitHubCredential(db, buildSecretsFake({}), "company-1", context);
+
+    expect(result.error).toBe(
+      "The managed GitHub identity is incomplete: missing access token reference and GitHub account details "
+        + "(grant grant-1, connection conn-1)",
+    );
+    expect(toolAccess.refreshManagedGitHubGrantAccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps grants on other connector profiles for tool-gateway selection", async () => {
+    // The GitHub MCP gateway selects without requireGitHubDetails: its calls only need the token.
+    const db = buildDb([[connection()], [install], [grant()]]);
+
+    const selection = await resolveManagedGitHubIdentitySelection(db, "company-1", {
+      ...context, allowStandingDelegation: false,
+    });
+
+    expect(selection).toMatchObject({ configured: true, identitySource: "dedicated", grant: { id: "grant-1" } });
+  });
+
+  it("names the agent, responsible user and connection when no grant matches", async () => {
+    const db = buildDb([[connection("github.code")], [install], [grant({ subjectAgentId: "other-agent" })]]);
+
+    const selection = await resolveManagedGitHubIdentitySelection(db, "company-1", {
+      ...context, allowStandingDelegation: false,
+    });
+
+    expect(selection.grant).toBeUndefined();
+    expect(selection.error).toBe(
+      "No managed GitHub identity is available for this run "
+        + "(no GitHub grant for agent agent-1 or responsible user user-1 on connection conn-1)",
+    );
   });
 });
 
