@@ -18,6 +18,16 @@ export {
   type RunnerGoalActionRequest,
   type RunnerGoalActionAccepted,
 } from "./runner-goal.js";
+export {
+  GOAL_KIND_PARENTS,
+  GOAL_KIND_DEFAULT_LEVEL,
+  STRATEGIC_PLAN_TEMPLATE,
+  STRATEGIC_PLAN_TEMPLATE_NAME,
+  goalKindParentError,
+  isBoardGoalKind,
+  isStrategicWorkGoalKind,
+  type StrategicPlanTemplateNode,
+} from "./goal-cascade.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   CONNECTION_INTENT_AGENT_GUIDANCE,
@@ -509,6 +519,10 @@ export {
   ISSUE_EXECUTION_MONITOR_CLEAR_REASONS,
   ISSUE_EXECUTION_DECISION_OUTCOMES,
   GOAL_LEVELS,
+  GOAL_KINDS,
+  GOAL_KIND_LABELS,
+  BOARD_GOAL_KINDS,
+  STRATEGIC_WORK_GOAL_KINDS,
   GOAL_STATUSES,
   PROJECT_STATUSES,
   ENVIRONMENT_DRIVERS,
@@ -696,6 +710,7 @@ export {
   type IssueExecutionMonitorClearReason,
   type IssueExecutionDecisionOutcome,
   type GoalLevel,
+  type GoalKind,
   type GoalStatus,
   type ProjectStatus,
   type EnvironmentDriver,

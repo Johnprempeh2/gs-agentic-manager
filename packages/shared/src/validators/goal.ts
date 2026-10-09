@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GOAL_LEVELS, GOAL_STATUSES } from "../constants.js";
+import { GOAL_KINDS, GOAL_LEVELS, GOAL_STATUSES } from "../constants.js";
 import { objectWithoutDefaults } from "./partial.js";
 
 const calendarDateSchema = z
@@ -9,10 +9,14 @@ const calendarDateSchema = z
 export const createGoalSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional().nullable(),
-  level: z.enum(GOAL_LEVELS).optional().default("task"),
+  /** When left out, the server picks the level from the kind (plain goals: "task"). */
+  level: z.enum(GOAL_LEVELS).optional(),
+  kind: z.enum(GOAL_KINDS).optional().nullable(),
   status: z.enum(GOAL_STATUSES).optional().default("planned"),
   parentId: z.string().guid().optional().nullable(),
   ownerAgentId: z.string().guid().optional().nullable(),
+  /** A person owner (a company member's user id). Send this or ownerAgentId, not both. */
+  ownerUserId: z.string().trim().min(1).max(200).optional().nullable(),
   targetDate: calendarDateSchema.optional().nullable(),
   doneWhen: z.string().optional().nullable(),
   targetValue: z.number().finite().positive().optional().nullable(),

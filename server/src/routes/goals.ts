@@ -1,12 +1,31 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import type { Db } from "@greatstone/db";
-import { createGoalCheckInSchema, createGoalSchema, updateGoalSchema } from "@greatstone/shared";
+import {
+  createGoalCheckInSchema,
+  createGoalSchema,
+  isBoardGoalKind,
+  updateGoalSchema,
+} from "@greatstone/shared";
 import { trackGoalCreated } from "@greatstone/shared/telemetry";
 import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
-import { assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import { assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyBoardRole } from "./authz.js";
 import { getTelemetryClient } from "../telemetry.js";
+
+export const BOARD_LAYER_REQUIRED_MESSAGE =
+  "Only board members (company owners) may edit the vision, values and critical success factors";
+
+/**
+ * Layer rights, one role check: the board layers (vision, value, csf) need a
+ * company owner. Pillars and below keep the normal write rules, so company
+ * admins (Exco), operators and agents may edit them.
+ */
+function assertMayEditGoalKinds(req: Request, companyId: string, ...kinds: Array<string | null | undefined>) {
+  if (kinds.some((kind) => isBoardGoalKind(kind)) && !hasCompanyBoardRole(req, companyId)) {
+    throw forbidden(BOARD_LAYER_REQUIRED_MESSAGE, { code: "board_layer_required" });
+  }
+}
 
 export function goalRoutes(db: Db) {
   const router = Router();
@@ -69,6 +88,7 @@ export function goalRoutes(db: Db) {
   router.post("/companies/:companyId/goals", validate(createGoalSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    assertMayEditGoalKinds(req, companyId, req.body.kind);
     const goal = await svc.create(companyId, req.body);
     const actor = getActorInfo(req);
     await logActivity(db, {
@@ -88,10 +108,32 @@ export function goalRoutes(db: Db) {
     res.status(201).json(goal);
   });
 
+  // One click: the empty one-page strategic plan (vision, values, CSF, objective, KPI).
+  // It creates board layers, so it needs a board member like any vision edit.
+  router.post("/companies/:companyId/goals/strategic-plan", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    assertMayEditGoalKinds(req, companyId, "vision");
+    const created = await svc.createStrategicPlan(companyId);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "goal.strategic_plan_created",
+      entityType: "goal",
+      entityId: created[0].id,
+      details: { goalIds: created.map((goal) => goal.id) },
+    });
+    res.status(201).json(created);
+  });
+
   router.patch("/goals/:id", validate(updateGoalSchema), async (req, res) => {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!existing) return;
+    assertMayEditGoalKinds(req, existing.companyId, existing.kind, req.body.kind);
     const goal = await svc.update(id, req.body);
     if (!goal) {
       res.status(404).json({ error: "Goal not found" });
@@ -117,6 +159,7 @@ export function goalRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!existing) return;
+    assertMayEditGoalKinds(req, existing.companyId, existing.kind);
     const goal = await svc.remove(id);
     if (!goal) {
       res.status(404).json({ error: "Goal not found" });

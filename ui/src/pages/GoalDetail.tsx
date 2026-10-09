@@ -5,11 +5,14 @@ import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
 import { assetsApi } from "../api/assets";
 import { agentsApi } from "../api/agents";
+import { accessApi } from "../api/access";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
+import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { GoalProperties } from "../components/GoalProperties";
 import { GoalTree } from "../components/GoalTree";
 import { StatusBadge } from "../components/StatusBadge";
@@ -29,6 +32,8 @@ import { GoalJourneyMap } from "../components/goals/GoalJourneyMap";
 import { GoalCheckIns } from "../components/goals/GoalCheckIns";
 import { GoalBlockerList } from "../components/goals/GoalBlockers";
 import { GoalOwnerPicker } from "../components/goals/GoalOwnerPicker";
+import { goalOwnerName } from "../components/goals/GoalOwner";
+import { GOAL_KIND_LABELS } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, SlidersHorizontal } from "lucide-react";
@@ -66,6 +71,7 @@ export function GoalDetail() {
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
 
   const {
     data: goal,
@@ -103,6 +109,17 @@ export function GoalDetail() {
     enabled: !!goalId
   });
 
+  const { data: userDirectory } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const usersById = useMemo(() => buildCompanyUserProfileMap(userDirectory?.users), [userDirectory?.users]);
+  const people = useMemo(
+    () => [...usersById.entries()].map(([id, profile]) => ({ id, ...profile })),
+    [usersById],
+  );
+
   const agentsById = useMemo(
     () => new Map((agents ?? []).map((agent) => [agent.id, agent])),
     [agents]
@@ -125,6 +142,10 @@ export function GoalDetail() {
           queryKey: queryKeys.goals.list(resolvedCompanyId)
         });
       }
+    },
+    // e.g. 403 when an Exco member edits the vision, 422 for a wrong parent kind.
+    onError: (err: Error) => {
+      pushToast({ title: "Goal not saved", body: err.message, tone: "error" });
     }
   });
 
@@ -179,7 +200,7 @@ export function GoalDetail() {
   if (!goal) return null;
 
   const health = goalHealth(goal);
-  const owner = goal.ownerAgentId ? agentsById.get(goal.ownerAgentId) : undefined;
+  const ownerName = goalOwnerName(goal, agentsById, usersById);
   const left = remainingLabel(goal);
   const target = formatTargetDate(goal.targetDate);
   const days = daysToTarget(goal.targetDate);
@@ -190,15 +211,17 @@ export function GoalDetail() {
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs uppercase text-muted-foreground">
-            {goal.level}
+            {goal.kind ? GOAL_KIND_LABELS[goal.kind] : goal.level}
           </span>
           <StatusBadge status={goal.status} />
           <GoalHealthPill health={health} />
           <div className="ml-auto flex items-center gap-2">
             <GoalOwnerPicker
               agents={agents ?? []}
-              value={goal.ownerAgentId}
-              onChange={(ownerAgentId) => updateGoal.mutate({ ownerAgentId })}
+              people={people}
+              ownerAgentId={goal.ownerAgentId}
+              ownerUserId={goal.ownerUserId}
+              onChange={(change) => updateGoal.mutate(change)}
               disabled={updateGoal.isPending}
             />
             <GoalPropertiesToggleButton
@@ -238,7 +261,7 @@ export function GoalDetail() {
           <GoalProgressRing percent={goal.progress.percent} health={health} />
           <div className="min-w-0">
             <GoalPercent percent={goal.progress.percent} />
-            <p className="mt-1 text-xs text-muted-foreground">{owner?.name ?? "No owner"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{ownerName ?? "No owner"}</p>
           </div>
         </div>
         <GoalKpi label="What is left" value={left ?? "No linked tasks yet"} />
@@ -276,7 +299,7 @@ export function GoalDetail() {
         <GoalCheckIns
           checkIns={checkIns ?? (goal.latestCheckIn ? [goal.latestCheckIn] : [])}
           agentsById={agentsById}
-          ownerName={owner?.name ?? null}
+          ownerName={ownerName}
         />
       </section>
 

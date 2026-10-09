@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import type { Goal } from "@greatstone/shared";
-import { GOAL_STATUSES, GOAL_LEVELS } from "@greatstone/shared";
+import { GOAL_STATUSES, GOAL_LEVELS, GOAL_KINDS, GOAL_KIND_LABELS, type GoalKind } from "@greatstone/shared";
 import { agentsApi } from "../api/agents";
+import { accessApi } from "../api/access";
+import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { goalsApi } from "../api/goals";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -31,15 +33,23 @@ function label(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+const NO_KIND = "none";
+
+function kindLabel(kind: string): string {
+  return kind === NO_KIND ? "Plain goal" : GOAL_KIND_LABELS[kind as GoalKind] ?? label(kind);
+}
+
 function PickerButton({
   current,
   options,
   onChange,
+  labelFor = label,
   children,
 }: {
   current: string;
   options: readonly string[];
   onChange: (value: string) => void;
+  labelFor?: (value: string) => string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -50,7 +60,7 @@ function PickerButton({
           {children}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-40 p-1" align="end">
+      <PopoverContent className="w-48 p-1" align="end">
         {options.map((opt) => (
           <Button
             key={opt}
@@ -62,7 +72,7 @@ function PickerButton({
               setOpen(false);
             }}
           >
-            {label(opt)}
+            {labelFor(opt)}
           </Button>
         ))}
       </PopoverContent>
@@ -85,8 +95,17 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
     enabled: !!selectedCompanyId,
   });
 
-  const ownerAgent = goal.ownerAgentId
+  const { data: userDirectory } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
+    enabled: !!selectedCompanyId && !!goal.ownerUserId,
+  });
+
+  const ownerAgent = !goal.ownerUserId && goal.ownerAgentId
     ? agents?.find((a) => a.id === goal.ownerAgentId)
+    : null;
+  const ownerPerson = goal.ownerUserId
+    ? buildCompanyUserProfileMap(userDirectory?.users).get(goal.ownerUserId)?.label ?? "A person"
     : null;
 
   const parentGoal = goal.parentId
@@ -124,8 +143,25 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
           )}
         </PropertyRow>
 
+        <PropertyRow label="Kind">
+          {onUpdate ? (
+            <PickerButton
+              current={goal.kind ?? NO_KIND}
+              options={[NO_KIND, ...GOAL_KINDS]}
+              labelFor={kindLabel}
+              onChange={(kind) => onUpdate({ kind: kind === NO_KIND ? null : kind })}
+            >
+              <span className="text-sm">{kindLabel(goal.kind ?? NO_KIND)}</span>
+            </PickerButton>
+          ) : (
+            <span className="text-sm">{kindLabel(goal.kind ?? NO_KIND)}</span>
+          )}
+        </PropertyRow>
+
         <PropertyRow label="Owner">
-          {ownerAgent ? (
+          {ownerPerson ? (
+            <span className="text-sm">{ownerPerson} <span className="text-muted-foreground">(person)</span></span>
+          ) : ownerAgent ? (
             <Link
               to={agentUrl(ownerAgent)}
               className="text-sm hover:underline"

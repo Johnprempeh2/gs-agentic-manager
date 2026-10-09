@@ -571,6 +571,29 @@ export type IssueExecutionDecisionOutcome = (typeof ISSUE_EXECUTION_DECISION_OUT
 export const GOAL_LEVELS = ["company", "team", "agent", "task"] as const;
 export type GoalLevel = (typeof GOAL_LEVELS)[number];
 
+/**
+ * Strategy layers of a goal, top to bottom. A goal with no kind is a plain
+ * goal and keeps the old rules. See `goal-cascade.ts` for the tree rules.
+ */
+export const GOAL_KINDS = ["vision", "value", "csf", "pillar", "objective", "kpi", "initiative"] as const;
+export type GoalKind = (typeof GOAL_KINDS)[number];
+
+export const GOAL_KIND_LABELS: Record<GoalKind, string> = {
+  vision: "Vision",
+  value: "Value",
+  csf: "Critical success factor",
+  pillar: "Pillar",
+  objective: "Objective",
+  kpi: "KPI",
+  initiative: "Initiative",
+};
+
+/** Layers only the board (company owners) may create, edit or delete. */
+export const BOARD_GOAL_KINDS = ["vision", "value", "csf"] as const satisfies readonly GoalKind[];
+
+/** Issues linked to a goal of these kinds count as strategic work. */
+export const STRATEGIC_WORK_GOAL_KINDS = ["objective", "initiative"] as const satisfies readonly GoalKind[];
+
 export const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 

@@ -2129,6 +2129,13 @@
       "when": 1791577425026,
       "tag": "0305_crm_sync_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1791578788584,
+      "tag": "0306_goal_kind_owner_user",
+      "breakpoints": true
     }
   ]
 }
