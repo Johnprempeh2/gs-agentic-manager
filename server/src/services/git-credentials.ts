@@ -4,6 +4,7 @@ import {
   companyMemberships,
   connectionGrantDelegations,
   connectionGrants,
+  toolAccessAuditEvents,
   toolConnectionInstalls,
   toolConnections,
   userSecretDefinitions,
@@ -293,6 +294,64 @@ export function createGitRemoteAuthProvider(
   };
 }
 
+/**
+ * The one rule for whose GitHub login a run may use. Work a person caused uses
+ * that person's own grant. Work nobody caused (`company_default`) may use only
+ * a personal grant its owner explicitly shared with this agent through
+ * Share with agents. A dedicated agent grant wins either way.
+ */
+export function githubIdentityScopeForRun(context: {
+  cause?: string | null;
+  responsibleUserId?: string | null;
+} | null | undefined): { responsibleUserId: string | null; allowStandingDelegation: boolean } {
+  return context?.cause === "company_default"
+    ? { responsibleUserId: null, allowStandingDelegation: true }
+    : { responsibleUserId: context?.responsibleUserId ?? null, allowStandingDelegation: false };
+}
+
+export const NO_SHARED_GITHUB_LOGIN =
+  "No GitHub login is shared with this agent. In Apps, open GitHub and use Share with agents.";
+
+/**
+ * Secret access events record whose credential was read; this row records that
+ * it was read through a standing delegation, so the share is auditable from
+ * creation through each use to revocation in one table.
+ */
+export async function recordGitHubDelegationUse(
+  db: Db,
+  input: {
+    companyId: string;
+    grant: typeof connectionGrants.$inferSelect;
+    agentId: string | null | undefined;
+    responsibleUserId: string | null | undefined;
+    heartbeatRunId?: string | null;
+    issueId?: string | null;
+    consumer: "git_credential" | "tool_gateway";
+  },
+) {
+  if (input.grant.kind !== "user" || !input.agentId || input.grant.subjectUserId === input.responsibleUserId) return;
+  const [delegation] = await db.select({ id: connectionGrantDelegations.id }).from(connectionGrantDelegations).where(and(
+    eq(connectionGrantDelegations.companyId, input.companyId),
+    eq(connectionGrantDelegations.grantId, input.grant.id),
+    eq(connectionGrantDelegations.agentId, input.agentId),
+  )).limit(1);
+  if (!delegation) return;
+  await db.insert(toolAccessAuditEvents).values({
+    companyId: input.companyId,
+    connectionId: input.grant.connectionId,
+    actorType: "agent",
+    actorId: input.agentId,
+    action: "connection_grant.delegation_used",
+    outcome: "success",
+    reasonCode: "standing_delegation",
+    details: {
+      grantId: input.grant.id, delegationId: delegation.id, agentId: input.agentId,
+      grantOwnerUserId: input.grant.subjectUserId, heartbeatRunId: input.heartbeatRunId ?? null,
+      issueId: input.issueId ?? null, consumer: input.consumer,
+    },
+  });
+}
+
 export async function resolveManagedGitHubIdentitySelection(
   db: Db,
   companyId: string,
@@ -370,11 +429,15 @@ export async function resolveManagedGitHubIdentitySelection(
   if (candidates.length === 0 || (candidates.length > 1 && (
     githubUserIds.some((id) => !id) || new Set(githubUserIds).size !== 1
   ))) {
+    const viaDelegation = dedicated.length === 0 && personal.length === 0 && context.allowStandingDelegation === true;
+    const logins = [...new Set(candidates.map((candidate) => candidate.providerTenant?.github?.login?.trim() || "unknown"))];
     return {
       configured: true, identitySource,
       error: candidates.length === 0
-        ? "No managed GitHub identity is available for this run"
-        : "More than one managed GitHub identity matches this run",
+        ? viaDelegation ? NO_SHARED_GITHUB_LOGIN : "No managed GitHub identity is available for this run"
+        : viaDelegation
+          ? `More than one GitHub login is shared with this agent (${logins.join(", ")}). In Apps, keep Share with agents on for one GitHub account only.`
+          : "More than one managed GitHub identity matches this run",
     };
   }
   const credentialIds = candidates.flatMap((grant) => grant.credentialSecretRefs
@@ -544,6 +607,10 @@ export async function resolveManagedGitHubCredential(
     } else {
       token = await secrets.resolveSecretValue(companyId, accessRef.secretId, accessRef.versionSelector ?? "latest", { accessContext });
     }
+    await recordGitHubDelegationUse(db, {
+      companyId, grant, agentId: context.agentId, responsibleUserId: context.responsibleUserId,
+      heartbeatRunId: context.heartbeatRunId, issueId: context.issueId, consumer: "git_credential",
+    });
     return {
       configured: true, identitySource: selection.identitySource,
       credential: {

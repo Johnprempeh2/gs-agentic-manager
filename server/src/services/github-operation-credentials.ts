@@ -12,6 +12,7 @@ import { forbidden } from "../errors.js";
 import { captureRunIdentity } from "./run-identity.js";
 import {
   buildGitAuthInvocation,
+  githubIdentityScopeForRun,
   resolveManagedGitHubCredential,
 } from "./git-credentials.js";
 import { secretService } from "./secrets.js";
@@ -145,11 +146,7 @@ export async function resolveGitHubOperationCredentials(
       {
         agentId: input.agentId,
         heartbeatRunId: input.runId,
-        allowStandingDelegation: false,
-        responsibleUserId:
-          context?.cause === "company_default"
-            ? null
-            : (context?.responsibleUserId ?? null),
+        ...githubIdentityScopeForRun(context),
         issueId:
           typeof run.contextSnapshot?.issueId === "string"
             ? run.contextSnapshot.issueId

@@ -185,6 +185,7 @@ import { logger } from "../middleware/logger.js";
 import {
   createGitRemoteAuthProvider,
   resolveManagedGitHubIdentitySelection,
+  githubIdentityScopeForRun,
   describeGitAuthFailure,
   filterResolvedGitHubConnectionsForRun,
   scrubGitCredentialText,
@@ -24181,8 +24182,7 @@ export function heartbeatService(
         agent.companyId,
         {
           agentId: agent.id,
-          responsibleUserId,
-          allowStandingDelegation: false,
+          ...githubIdentityScopeForRun({ cause: identityContext.cause, responsibleUserId }),
         },
       );
       const useHostGitHub =
