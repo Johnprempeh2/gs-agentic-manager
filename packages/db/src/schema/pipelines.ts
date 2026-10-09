@@ -68,3 +68,35 @@ export const pipelineTransitions = pgTable(
     pipelineToIdx: index("pipeline_transitions_pipeline_to_idx").on(table.pipelineId, table.toStageId),
   }),
 );
+
+// Typed fields a pipeline's cases carry (GRE-1075). Case values stay in
+// pipeline_cases.fields under the same key; key and type never change, and a
+// field is archived rather than deleted so stored values keep their meaning.
+export const pipelineFieldDefinitions = pgTable(
+  "pipeline_field_definitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    pipelineId: uuid("pipeline_id").notNull().references(() => pipelines.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    description: text("description"),
+    type: text("type").notNull(),
+    required: boolean("required").notNull().default(false),
+    options: jsonb("options").$type<string[]>().notNull().default([]),
+    position: integer("position").notNull().default(0),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    pipelineKeyUq: uniqueIndex("pipeline_field_definitions_pipeline_key_uq").on(table.pipelineId, table.key),
+    companyPipelineIdx: index("pipeline_field_definitions_company_pipeline_idx").on(table.companyId, table.pipelineId),
+    typeCheck: check(
+      "pipeline_field_definitions_type_check",
+      sql`${table.type} in ('text', 'long_text', 'number', 'boolean', 'date', 'select', 'multi_select', 'email', 'phone', 'url')`,
+    ),
+  }),
+);

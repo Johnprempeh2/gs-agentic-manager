@@ -47,6 +47,7 @@ import { routineService } from "./routines.js";
 import { secretService } from "./secrets.js";
 import type { IssueAssignmentWakeupDeps } from "./issue-assignment-wakeup.js";
 import { logActivity } from "./activity-log.js";
+import { assertCaseFieldValues } from "./pipeline-fields.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import { authorizationService } from "./authorization.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
@@ -3136,6 +3137,14 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
     const parentCaseChanged = input.parentCaseId !== undefined && input.parentCaseId !== current.parentCaseId;
     const workspaceRefChanged = input.workspaceRef !== undefined && !isDeepStrictEqual(input.workspaceRef, current.workspaceRef);
     const materialChanged = titleChanged || summaryChanged || fieldsChanged;
+    if (fieldsChanged) {
+      await assertCaseFieldValues(tx, {
+        companyId: input.companyId,
+        pipelineId: current.pipelineId,
+        fields: input.fields!,
+        previous: current.fields,
+      });
+    }
     const visibleMetadataChanged = titleChanged || summaryChanged;
     if (!materialChanged && !visibleMetadataChanged && !parentCaseChanged && !workspaceRefChanged) {
       return { case: current, event: null };
@@ -3964,6 +3973,11 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
         if (!stage) throw unprocessable("Pipeline has no stages", { code: "validation" });
         assertStageEnabled(stage, "ingest");
         validateAddFormFieldsForStage(stage, input.fields ?? {});
+        await assertCaseFieldValues(tx, {
+          companyId: input.companyId,
+          pipelineId: input.pipelineId,
+          fields: input.fields ?? {},
+        });
 
         const [inserted] = await tx
           .insert(pipelineCases)

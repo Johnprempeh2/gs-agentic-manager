@@ -140,6 +140,16 @@ export {
   type PipelineHealthWarningCode,
 } from "./pipeline-health.js";
 export {
+  PIPELINE_ACCESS_LEVELS,
+  PIPELINE_ADMIN_PERMISSION_KEY,
+  PIPELINE_CASES_PERMISSION_KEY,
+  pipelineAccessGrantScope,
+  pipelineAccessScopeIds,
+  resolvePipelineAccess,
+  type PipelineAccess,
+  type PipelineAccessLevel,
+} from "./pipeline-access.js";
+export {
   caseTypeMatchesPipeline,
   deriveCaseType,
   type CaseTypePipelineRef,
@@ -1982,6 +1992,7 @@ export {
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
+  agentPipelineAccessSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
@@ -2925,4 +2936,7 @@ export * from "./memory.js";
 export * from "./crm-sync.js";
 export * from "./types/crm-sync.js";
 export * from "./validators/crm-sync.js";
+export * from "./pipeline-fields.js";
+export * from "./types/pipeline-fields.js";
+export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";

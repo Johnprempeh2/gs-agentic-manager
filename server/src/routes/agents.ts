@@ -83,6 +83,7 @@ import {
   workspaceOperationService,
 } from "../services/index.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
+import { setAgentPipelineAccess } from "../services/agent-pipeline-access.js";
 import { ONBOARDING_FIRST_TASK_SKILL_KEY, GSAM_CORE_SKILL_KEYS } from "../services/company-skills.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
 import { runTranscriptDigestService } from "../services/run-transcript-digests.js";
@@ -5005,7 +5006,27 @@ export function agentRoutes(
       await assertBoardCanManageAgentsForCompany(req, existing.companyId);
     }
 
-    const { canConfigureAgents, canChangeSkills, canContributeMemory, canApproveMemory, ...permissionFlags } = req.body;
+    const {
+      canConfigureAgents,
+      canChangeSkills,
+      canContributeMemory,
+      canApproveMemory,
+      pipelineAccess,
+      ...permissionFlags
+    } = req.body;
+    // Pipeline access levels (GRE-1072) are changed only by board users who
+    // may manage permissions. Checked before anything is written.
+    if (pipelineAccess) {
+      if (req.actor.type !== "board") {
+        throw forbidden("Only board users with users:manage_permissions can change pipeline access");
+      }
+      const decision = await access.decide({
+        actor: req.actor,
+        action: "users:manage_permissions",
+        resource: { type: "company", companyId: existing.companyId },
+      });
+      if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
+    }
     // Memory rights have one writer: the owner-only grant service (G3,
     // GRE-933). This route cannot write them, so it must not answer 200 for
     // them either (GRE-988).
@@ -5041,8 +5062,30 @@ export function agentRoutes(
       effectiveCanAssignTasks,
       req.actor.type === "board" ? (req.actor.userId ?? null) : null,
     );
+    const pipelineAccessChange = pipelineAccess
+      ? await setAgentPipelineAccess(db, {
+          companyId: agent.companyId,
+          agentId: agent.id,
+          access: pipelineAccess,
+          grantedByUserId,
+        })
+      : null;
 
     const actor = getActorInfo(req);
+    if (pipelineAccessChange) {
+      await logActivity(db, {
+        companyId: agent.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "agent.pipeline_access_updated",
+        entityType: "agent",
+        entityId: agent.id,
+        details: { before: pipelineAccessChange.before, after: pipelineAccessChange.after },
+      });
+    }
     await logActivity(db, {
       companyId: agent.companyId,
       actorType: actor.actorType,

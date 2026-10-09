@@ -201,6 +201,15 @@ function scopeIncludesId(ids: string[], id: string | null | undefined) {
   return Boolean(id && ids.includes(id));
 }
 
+// Board members keep the pipeline access they had before levels existed
+// (GRE-1072): owners and admins administer, operators work cases, viewers
+// only view. Agents never get a role default; they need an explicit grant.
+function pipelineRoleDefaultAllows(role: string | null | undefined, permissionKey: PermissionKey) {
+  if (permissionKey !== "pipelines:cases" && permissionKey !== "pipelines:write") return false;
+  if (role === "owner" || role === "admin") return true;
+  return role === "operator" && permissionKey === "pipelines:cases";
+}
+
 function isSimpleAssignableAgentStatus(status: string | null | undefined) {
   return status !== "pending_approval" && status !== "terminated";
 }
@@ -394,7 +403,14 @@ async function scopeAllows(
         : null;
   const requestedProjectId = typeof requestedScope.projectId === "string" ? requestedScope.projectId : null;
   const requestedUserId = typeof requestedScope.userId === "string" ? requestedScope.userId : null;
+  const requestedPipelineId = typeof requestedScope.pipelineId === "string" ? requestedScope.pipelineId : null;
   let constrained = false;
+
+  const pipelineIds = scopeValuesForKeys(grantScope, ["pipelineId", "pipelineIds"]);
+  if (pipelineIds.length > 0) {
+    constrained = true;
+    if (!scopeIncludesId(pipelineIds, requestedPipelineId)) return false;
+  }
 
   const projectIds = [
     ...scopeValueList(grantScope.projectId),
@@ -688,6 +704,13 @@ export function authorizationService(db: Db | DbTransaction) {
           action: input.action,
           reason: "allow_role_default",
           explanation: `Allowed by the ${membership.membershipRole ?? "operator"} membership role.`,
+        });
+      }
+      if (input.principalType === "user" && pipelineRoleDefaultAllows(membership.membershipRole, input.permissionKey)) {
+        return allow({
+          action: input.action,
+          reason: "allow_role_default",
+          explanation: `Allowed by the ${membership.membershipRole} membership role.`,
         });
       }
       return deny({
@@ -1521,6 +1544,39 @@ export function authorizationService(db: Db | DbTransaction) {
       return broadDecision;
     }
 
+    // Work cases is granted by pipelines:cases, and also by pipelines:write so
+    // existing Administer holders keep every case action (GRE-1072).
+    async function decideWithPipelineCaseGrants(
+      principalType: PrincipalType,
+      principalId: string,
+    ): Promise<AuthorizationDecision> {
+      const casesDecision = await decidePrincipalGrant({
+        companyId,
+        principalType,
+        principalId,
+        action: input.action,
+        permissionKey: "pipelines:cases",
+        scope: input.scope,
+      });
+      if (casesDecision.allowed || casesDecision.reason === "deny_missing_membership") return casesDecision;
+      const writeDecision = await decidePrincipalGrant({
+        companyId,
+        principalType,
+        principalId,
+        action: input.action,
+        permissionKey: "pipelines:write",
+        scope: input.scope,
+      });
+      if (writeDecision.allowed) return writeDecision;
+      if (casesDecision.reason === "deny_scope") return casesDecision;
+      if (writeDecision.reason === "deny_scope") return writeDecision;
+      return deny({
+        action: input.action,
+        reason: "deny_missing_grant",
+        explanation: "Missing permission: pipelines:cases or pipelines:write.",
+      });
+    }
+
     async function decideWithAgentConfigReadGrant(
       principalType: PrincipalType,
       principalId: string,
@@ -1836,6 +1892,9 @@ export function authorizationService(db: Db | DbTransaction) {
         const policyEffect = taskAssignmentPolicyEffect ?? await assignmentPolicyEffect(input.resource);
         if (policyEffect.kind === "restricted") return denyRestrictedAssignmentPolicy(policyEffect);
         return grantDecision;
+      }
+      if (input.action === "pipelines:cases") {
+        return decideWithPipelineCaseGrants("user", input.actor.userId);
       }
       return decidePrincipalGrant({
         companyId,
@@ -2249,6 +2308,10 @@ export function authorizationService(db: Db | DbTransaction) {
         direct: "skills:create",
         suggest: "skills:suggest-changes",
       });
+    }
+
+    if (input.action === "pipelines:cases") {
+      return decideWithPipelineCaseGrants("agent", actorAgentId);
     }
 
     if (permissionKey) {
