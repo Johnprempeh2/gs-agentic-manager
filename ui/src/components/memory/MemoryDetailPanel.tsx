@@ -26,6 +26,9 @@ const ACTION_LABEL: Record<MemoryReviewEventAction, string> = {
   conflict_flagged: "Flagged a possible conflict",
   conflict_resolved: "Settled a conflict",
   delete: "Deleted",
+  edit: "Edited for confirmation",
+  reject: "Rejected",
+  merge: "Merged into another card",
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
