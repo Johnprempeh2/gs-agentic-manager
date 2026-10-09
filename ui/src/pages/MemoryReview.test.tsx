@@ -106,7 +106,7 @@ describe("MemoryReview", () => {
   it("blocks confirm on your own proposal and says why", async () => {
     await renderAt(`/memory/review?card=${ownProposal.proposal.id}`);
     expect(button("Confirm").disabled).toBe(true);
-    expect(button("Edit and confirm").disabled).toBe(false);
+    expect(button("Edit and submit").disabled).toBe(false);
     expect(body()).toContain("You proposed this card. Another steward must confirm it.");
     expect(body()).toContain("Nothing confirmed yet");
     expect(body()).toContain("Conflict");
@@ -140,6 +140,28 @@ describe("MemoryReview", () => {
     await act(async () => submit.click());
     await flush();
     expect(body()).toContain("This card changed since you opened it");
+  });
+
+  it("counts active filters on the phone Filters button", async () => {
+    await renderAt("/memory/review?age=overdue&conflict=true");
+    expect(button("Filters (2)")).toBeTruthy();
+    expect(reviewApiMock.queue).toHaveBeenCalledWith("co-kestrel", expect.objectContaining({ age: "overdue", conflict: "true" }));
+  });
+
+  it("keeps steward setup on its own Stewards view", async () => {
+    reviewApiMock.stewards.mockResolvedValue({
+      scopes: [
+        { scopeId: "scope-legal", scopeName: "Legal and contracts", scopeKind: "organization", primaryUserId: null, backupUserId: null, ownerOnly: false },
+      ],
+    });
+    await renderAt("/memory/review");
+    expect(body()).not.toContain("Legal and contracts");
+    expect(reviewApiMock.stewards).not.toHaveBeenCalled();
+    act(() => root.unmount());
+    root = createRoot(container);
+    await renderAt("/memory/review?view=stewards");
+    expect(body()).toContain("Legal and contracts");
+    expect(document.body.querySelector('section[aria-label="Review queue"]')).toBeNull();
   });
 
   it("tells a non-steward they cannot review", async () => {

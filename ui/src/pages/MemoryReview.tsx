@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Inbox, Lock, PowerOff, SearchX } from "lucide-react";
+import { Inbox, Lock, PowerOff, SearchX, SlidersHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -28,6 +30,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import {
   actionErrorText,
+  activeFilterCount,
   cardTitle,
   hasReviewFilters,
   mergeTargets,
@@ -62,66 +65,87 @@ function ReviewFilterBar({
   facets: MemoryReviewQueue["facets"] | undefined;
   onChange: (next: MemoryReviewFilters) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const pick = (key: keyof MemoryReviewFilters) => (value: string) =>
     onChange({ ...filters, [key]: value === ALL ? undefined : value });
+  const active = activeFilterCount(filters);
   return (
-    <div className="flex flex-wrap items-center gap-2" role="search" aria-label="Filter the review queue">
-      <Select value={filters.scopeId ?? ALL} onValueChange={pick("scopeId")}>
-        <SelectTrigger className="h-9 w-full sm:w-48" aria-label="Scope">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All scopes</SelectItem>
-          {(facets?.scopes ?? []).map((scope) => (
-            <SelectItem key={scope.id} value={scope.id}>{scope.name} ({scope.count})</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={filters.person ?? ALL} onValueChange={pick("person")}>
-        <SelectTrigger className="h-9 w-full sm:w-44" aria-label="Person">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>Everyone</SelectItem>
-          {(facets?.people ?? []).map((person) => (
-            <SelectItem key={`${person.type}:${person.id}`} value={`${person.type}:${person.id}`}>
-              {person.name} ({person.count})
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={filters.app ?? ALL} onValueChange={pick("app")}>
-        <SelectTrigger className="h-9 w-full sm:w-40" aria-label="App">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All apps</SelectItem>
-          {(facets?.apps ?? []).map((app) => (
-            <SelectItem key={app.app} value={app.app}>{app.app} ({app.count})</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={filters.age ?? ALL} onValueChange={pick("age")}>
-        <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Age">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>Any age</SelectItem>
-          <SelectItem value="fresh">Under 7 days</SelectItem>
-          <SelectItem value="overdue">Over 7 days</SelectItem>
-          <SelectItem value="expired">Expired (30+ days)</SelectItem>
-        </SelectContent>
-      </Select>
-      <Select value={filters.conflict ?? ALL} onValueChange={pick("conflict")}>
-        <SelectTrigger className="h-9 w-full sm:w-44" aria-label="Conflict">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>Any conflict state</SelectItem>
-          <SelectItem value="true">Conflict only</SelectItem>
-          <SelectItem value="false">No conflict</SelectItem>
-        </SelectContent>
-      </Select>
+    <div className="space-y-2">
+      {/* Phone: one button, so the proposal starts on the first screen (GRE-1095). */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="sm:hidden"
+        aria-expanded={open}
+        aria-controls="memory-review-filters"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <SlidersHorizontal aria-hidden="true" />
+        {active > 0 ? `Filters (${active})` : "Filters"}
+      </Button>
+      <div
+        id="memory-review-filters"
+        className={cn("flex-wrap items-center gap-2 sm:flex", open ? "flex" : "hidden")}
+        role="search"
+        aria-label="Filter the review queue"
+      >
+        <Select value={filters.scopeId ?? ALL} onValueChange={pick("scopeId")}>
+          <SelectTrigger className="h-9 w-full sm:w-48" aria-label="Scope">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All scopes</SelectItem>
+            {(facets?.scopes ?? []).map((scope) => (
+              <SelectItem key={scope.id} value={scope.id}>{scope.name} ({scope.count})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.person ?? ALL} onValueChange={pick("person")}>
+          <SelectTrigger className="h-9 w-full sm:w-44" aria-label="Person">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Everyone</SelectItem>
+            {(facets?.people ?? []).map((person) => (
+              <SelectItem key={`${person.type}:${person.id}`} value={`${person.type}:${person.id}`}>
+                {person.name} ({person.count})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.app ?? ALL} onValueChange={pick("app")}>
+          <SelectTrigger className="h-9 w-full sm:w-40" aria-label="App">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All apps</SelectItem>
+            {(facets?.apps ?? []).map((app) => (
+              <SelectItem key={app.app} value={app.app}>{app.app} ({app.count})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.age ?? ALL} onValueChange={pick("age")}>
+          <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Age">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Any age</SelectItem>
+            <SelectItem value="fresh">Under 7 days</SelectItem>
+            <SelectItem value="overdue">Over 7 days</SelectItem>
+            <SelectItem value="expired">Expired (30+ days)</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filters.conflict ?? ALL} onValueChange={pick("conflict")}>
+          <SelectTrigger className="h-9 w-full sm:w-44" aria-label="Conflict">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Any conflict state</SelectItem>
+            <SelectItem value="true">Conflict only</SelectItem>
+            <SelectItem value="false">No conflict</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }
@@ -287,7 +311,7 @@ function ReviewDetail({
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => onAction("confirm")} disabled={!item.allowed.confirm}>Confirm</Button>
         <Button variant="outline" onClick={() => onAction("edit_and_confirm")} disabled={!item.allowed.edit_and_confirm}>
-          Edit and confirm
+          {stewardActionLabel.edit_and_confirm}
         </Button>
         <Button variant="outline" onClick={() => onAction("merge")} disabled={!item.allowed.merge}>Merge</Button>
         <Button variant="outline" onClick={() => onAction("reject")} disabled={!item.allowed.reject}>Reject</Button>
@@ -309,6 +333,7 @@ export function MemoryReview() {
   const [params, setParams] = useSearchParams();
   const filters = useMemo(() => readReviewFilters(params), [params]);
   const selectedId = params.get("card");
+  const view = params.get("view") === "stewards" ? "stewards" : "queue";
   const [pendingAction, setPendingAction] = useState<MemoryStewardAction | null>(null);
 
   useEffect(() => {
@@ -373,46 +398,58 @@ export function MemoryReview() {
   return (
     <div className="space-y-4">
       {header}
-      <ReviewFilterBar filters={filters} facets={queue.data?.facets} onChange={setFilters} />
+      {/* Review is the daily task; steward setup is rare, so it has its own view (GRE-1095). */}
+      <Tabs value={view} onValueChange={(value) => updateParams({ view: value === "stewards" ? value : undefined, card: undefined })}>
+        <TabsList variant="line" className="justify-start" aria-label="Review view">
+          <TabsTrigger value="queue">Queue</TabsTrigger>
+          <TabsTrigger value="stewards">Stewards</TabsTrigger>
+        </TabsList>
 
-      {queue.isLoading ? (
-        <PageSkeleton variant="list" />
-      ) : queue.error && !queue.data ? (
-        <ErrorState error={queue.error} onRetry={() => void queue.refetch()} />
-      ) : items.length === 0 ? (
-        hasReviewFilters(filters) ? (
-          <EmptyState
-            icon={SearchX}
-            message="No proposals match these filters."
-            action="Clear filters"
-            onAction={() => setFilters({})}
-            hideActionIcon
-          />
-        ) : (
-          <EmptyState icon={Inbox} message="Nothing waiting for review." description="New proposals in your scopes appear here." />
-        )
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-(--gtc-memory-review)">
-          <section className="min-w-0 self-start overflow-hidden rounded-lg border border-border bg-card" aria-label="Review queue">
-            <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
-              {items.length} waiting{overdue > 0 ? ` · ${overdue} over 7 days` : ""}
+        <TabsContent value="queue" className="mt-2 space-y-4">
+          <ReviewFilterBar filters={filters} facets={queue.data?.facets} onChange={setFilters} />
+
+          {queue.isLoading ? (
+            <PageSkeleton variant="list" />
+          ) : queue.error && !queue.data ? (
+            <ErrorState error={queue.error} onRetry={() => void queue.refetch()} />
+          ) : items.length === 0 ? (
+            hasReviewFilters(filters) ? (
+              <EmptyState
+                icon={SearchX}
+                message="No proposals match these filters."
+                action="Clear filters"
+                onAction={() => setFilters({})}
+                hideActionIcon
+              />
+            ) : (
+              <EmptyState icon={Inbox} message="Nothing waiting for review." description="New proposals in your scopes appear here." />
+            )
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-(--gtc-memory-review)">
+              <section className="min-w-0 self-start overflow-hidden rounded-lg border border-border bg-card" aria-label="Review queue">
+                <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+                  {items.length} waiting{overdue > 0 ? ` · ${overdue} over 7 days` : ""}
+                </div>
+                <ul className="max-h-48 divide-y divide-border overflow-y-auto lg:max-h-(--sz-memory-list-max)">
+                  {items.map((item) => (
+                    <MemoryReviewRow
+                      key={item.proposal.id}
+                      item={item}
+                      selected={item.proposal.id === selected?.proposal.id}
+                      onSelect={() => updateParams({ card: item.proposal.id })}
+                    />
+                  ))}
+                </ul>
+              </section>
+              {selected ? <ReviewDetail item={selected} onAction={setPendingAction} /> : null}
             </div>
-            <ul className="divide-y divide-border lg:max-h-(--sz-memory-list-max) lg:overflow-y-auto">
-              {items.map((item) => (
-                <MemoryReviewRow
-                  key={item.proposal.id}
-                  item={item}
-                  selected={item.proposal.id === selected?.proposal.id}
-                  onSelect={() => updateParams({ card: item.proposal.id })}
-                />
-              ))}
-            </ul>
-          </section>
-          {selected ? <ReviewDetail item={selected} onAction={setPendingAction} /> : null}
-        </div>
-      )}
+          )}
+        </TabsContent>
 
-      <MemoryStewardsSection companyId={selectedCompanyId} />
+        <TabsContent value="stewards" className="mt-2">
+          <MemoryStewardsSection companyId={selectedCompanyId} />
+        </TabsContent>
+      </Tabs>
 
       {selected && pendingAction ? (
         <StewardActionDialog

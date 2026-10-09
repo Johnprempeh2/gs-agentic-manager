@@ -22,8 +22,12 @@ export function readReviewFilters(params: URLSearchParams): MemoryReviewFilters 
   };
 }
 
+export function activeFilterCount(filters: MemoryReviewFilters) {
+  return [filters.scopeId, filters.person, filters.app, filters.age, filters.conflict].filter(Boolean).length;
+}
+
 export function hasReviewFilters(filters: MemoryReviewFilters) {
-  return Boolean(filters.scopeId || filters.person || filters.app || filters.age || filters.conflict);
+  return activeFilterCount(filters) > 0;
 }
 
 /** The person first; the app is a label. "John · via ChatGPT". */
@@ -64,7 +68,7 @@ export function sortQueue(items: MemoryReviewQueueItem[]): MemoryReviewQueueItem
 
 export const stewardActionLabel: Record<MemoryStewardAction, string> = {
   confirm: "Confirm",
-  edit_and_confirm: "Edit and confirm",
+  edit_and_confirm: "Edit and submit",
   reject: "Reject",
   merge: "Merge",
 };
@@ -72,7 +76,7 @@ export const stewardActionLabel: Record<MemoryStewardAction, string> = {
 /** What each action does, shown in its dialog so the steward knows before they act. */
 export const stewardActionHint: Record<MemoryStewardAction, string> = {
   confirm: "The card goes live for everyone and ranks first in search.",
-  edit_and_confirm: "Your edit becomes a new version. Another steward must confirm it; you cannot.",
+  edit_and_confirm: "Your edit becomes a new version and goes back to the queue. Another steward must confirm it; you cannot.",
   reject: "The proposal is kept in history with your reason. It does not go live.",
   merge: "The proposal joins another card. Its history is kept.",
 };

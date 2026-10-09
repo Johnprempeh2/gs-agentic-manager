@@ -7,6 +7,8 @@ import type { MemoryScopeSteward } from "@greatstone/shared";
 import { memoryReviewApi } from "../../api/memoryReview";
 import { queryKeys } from "../../lib/queryKeys";
 import { actionErrorText } from "../../lib/memory-review";
+import { ErrorState } from "../ErrorState";
+import { PageSkeleton } from "../PageSkeleton";
 import { scopeKindLabel } from "./memoryLabels";
 
 const NONE = "none";
@@ -46,7 +48,8 @@ export function MemoryStewardsSection({ companyId }: { companyId: string }) {
     },
   });
 
-  if (stewards.isLoading || stewards.error) return null;
+  if (stewards.isLoading) return <PageSkeleton variant="list" />;
+  if (stewards.error) return <ErrorState error={stewards.error} onRetry={() => void stewards.refetch()} />;
   const rows = stewards.data?.scopes ?? [];
 
   const picker = (row: MemoryScopeSteward, field: "primaryUserId" | "backupUserId", label: string) => {
