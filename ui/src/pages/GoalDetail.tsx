@@ -33,6 +33,15 @@ import { GoalCheckIns } from "../components/goals/GoalCheckIns";
 import { GoalBlockerList } from "../components/goals/GoalBlockers";
 import { GoalOwnerPicker } from "../components/goals/GoalOwnerPicker";
 import { goalOwnerName } from "../components/goals/GoalOwner";
+import {
+  KpiReadingsList,
+  KpiStatusPill,
+  RecordKpiReadingForm,
+  kpiStatusSentence,
+  rollupSummary,
+  type NewKpiReading,
+} from "../components/goals/KpiReadings";
+import { InitiativeBudgetForm, KpiPlanForm } from "../components/goals/KpiPlanForm";
 import { GOAL_KIND_LABELS } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -109,6 +118,13 @@ export function GoalDetail() {
     enabled: !!goalId
   });
 
+  const isKpi = goal?.kind === "kpi";
+  const { data: readings } = useQuery({
+    queryKey: queryKeys.goals.readings(goalId!),
+    queryFn: () => goalsApi.listReadings(goalId!),
+    enabled: !!goalId && isKpi,
+  });
+
   const { data: userDirectory } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
@@ -147,6 +163,20 @@ export function GoalDetail() {
     onError: (err: Error) => {
       pushToast({ title: "Goal not saved", body: err.message, tone: "error" });
     }
+  });
+
+  const recordReading = useMutation({
+    mutationFn: (reading: NewKpiReading) => goalsApi.createReading(goalId!, reading),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.goals.readings(goalId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.goals.detail(goalId!) });
+      if (resolvedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(resolvedCompanyId) });
+      }
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Reading not saved", body: err.message, tone: "error" });
+    },
   });
 
   const uploadImage = useMutation({
@@ -205,6 +235,7 @@ export function GoalDetail() {
   const target = formatTargetDate(goal.targetDate);
   const days = daysToTarget(goal.targetDate);
   const newestCheckIn = checkIns?.[0] ?? goal.latestCheckIn;
+  const rollup = rollupSummary(goal.ragRollup);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -215,6 +246,14 @@ export function GoalDetail() {
           </span>
           <StatusBadge status={goal.status} />
           <GoalHealthPill health={health} />
+          {goal.kind === "kpi" ? (
+            <KpiStatusPill status={goal.kpiStatus?.status ?? null} />
+          ) : rollup ? (
+            <span className="flex items-center gap-1.5" data-testid="goal-rag-rollup">
+              <KpiStatusPill status={goal.ragRollup.status} />
+              <span className="text-xs text-muted-foreground">{rollup}</span>
+            </span>
+          ) : null}
           <div className="ml-auto flex items-center gap-2">
             <GoalOwnerPicker
               agents={agents ?? []}
@@ -271,6 +310,41 @@ export function GoalDetail() {
           value={newestCheckIn ? relativeTime(newestCheckIn.createdAt) : "None yet"}
         />
       </section>
+
+      {goal.kind === "kpi" ? (
+        <section className="space-y-3" aria-labelledby="kpi-readings-heading">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 id="kpi-readings-heading" className="text-sm font-semibold">
+              Readings
+            </h3>
+            <KpiStatusPill status={goal.kpiStatus?.status ?? null} />
+          </div>
+          {goal.kpiStatus ? (
+            <p className="text-sm text-muted-foreground" data-testid="kpi-status-sentence">
+              {kpiStatusSentence(goal.kpiStatus, goal.unit)}
+            </p>
+          ) : null}
+          <div className="grid items-start gap-4 lg:grid-cols-(--gtc-66)">
+            <KpiReadingsList
+              readings={readings ?? (goal.latestReading ? [goal.latestReading] : [])}
+              unit={goal.unit}
+              names={{ agents: agentsById, users: usersById }}
+            />
+            <RecordKpiReadingForm onSubmit={(reading) => recordReading.mutate(reading)} pending={recordReading.isPending} />
+          </div>
+          <h3 className="pt-2 text-sm font-semibold">Plan</h3>
+          <KpiPlanForm key={goal.id} goal={goal} onSave={(patch) => updateGoal.mutate(patch)} pending={updateGoal.isPending} />
+        </section>
+      ) : null}
+
+      {goal.kind === "initiative" ? (
+        <section className="space-y-3" aria-labelledby="initiative-budget-heading">
+          <h3 id="initiative-budget-heading" className="text-sm font-semibold">
+            Budget
+          </h3>
+          <InitiativeBudgetForm key={goal.id} goal={goal} onSave={(patch) => updateGoal.mutate(patch)} pending={updateGoal.isPending} />
+        </section>
+      ) : null}
 
       {goal.blockers.length > 0 ? (
         <section
