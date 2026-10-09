@@ -2136,6 +2136,13 @@
       "when": 1791578788584,
       "tag": "0306_goal_kind_owner_user",
       "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1791580893304,
+      "tag": "0307_crm_sync_review_queue",
+      "breakpoints": true
     }
   ]
 }

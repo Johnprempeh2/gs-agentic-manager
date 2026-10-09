@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { crmSyncValuesEqual, decideCrmSyncField } from "./crm-sync.js";
+import { crmSyncIsOwnChangeOnly, crmSyncValuesEqual, decideCrmSyncField } from "./crm-sync.js";
 
 describe("crmSyncValuesEqual", () => {
   it("treats null, missing, blank and empty list as the same empty value", () => {
@@ -61,5 +61,15 @@ describe("decideCrmSyncField (three-value rule)", () => {
       .toEqual({ action: "push_to_crm", value: "c" });
     expect(decideCrmSyncField({ owner: "shared", lastSynced: undefined, crm: "b", gsam: "c" }))
       .toEqual({ action: "conflict" });
+  });
+});
+
+describe("crmSyncIsOwnChangeOnly", () => {
+  it("is true only when the caller is the sole GSAM author", () => {
+    expect(crmSyncIsOwnChangeOnly([{ actorType: "user", userId: "u1" }], "u1")).toBe(true);
+    expect(crmSyncIsOwnChangeOnly([{ actorType: "user", userId: "u1" }, { actorType: "user", userId: "u2" }], "u1")).toBe(false);
+    expect(crmSyncIsOwnChangeOnly([{ actorType: "agent", agentId: "a1" }], "u1")).toBe(false);
+    // Unknown author (for example a change made before the sync knew who): anyone may decide.
+    expect(crmSyncIsOwnChangeOnly([], "u1")).toBe(false);
   });
 });

@@ -42,6 +42,29 @@ export type CrmSyncConflictStatus = (typeof CRM_SYNC_CONFLICT_STATUSES)[number];
 export const CRM_SYNC_CONFLICT_RESOLUTIONS = ["keep_crm", "keep_gsam", "custom"] as const;
 export type CrmSyncConflictResolution = (typeof CRM_SYNC_CONFLICT_RESOLUTIONS)[number];
 
+/**
+ * What holds a field in the "Sync conflicts" queue (GRE-1076).
+ * - conflict: a shared field changed on both sides since the last sync.
+ * - suggestion: a GSAM user or agent asked to change a CRM-owned field; it is
+ *   written to the CRM only after a person accepts it.
+ */
+export const CRM_SYNC_CONFLICT_KINDS = ["conflict", "suggestion"] as const;
+export type CrmSyncConflictKind = (typeof CRM_SYNC_CONFLICT_KINDS)[number];
+
+/** Someone who changed the GSAM side of a held field. */
+export type CrmSyncChangeAuthor =
+  | { actorType: "user"; userId: string }
+  | { actorType: "agent"; agentId: string };
+
+/**
+ * Nobody resolves a conflict that holds only their own change: true when the
+ * GSAM side was changed by this user and nobody else. The CRM side is not
+ * counted because CRM users are not matched to GSAM users yet.
+ */
+export function crmSyncIsOwnChangeOnly(authors: CrmSyncChangeAuthor[], userId: string): boolean {
+  return authors.length > 0 && authors.every((author) => author.actorType === "user" && author.userId === userId);
+}
+
 /** A mapped field value. Kept to plain JSON values so it can be stored and compared. */
 export type CrmSyncFieldValue = string | number | boolean | null | string[];
 
