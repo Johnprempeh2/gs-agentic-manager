@@ -1,4 +1,5 @@
-// CRM sync bindings, field maps, sync log and conflicts (GRE-1100). Contract:
+// CRM sync bindings, field maps, sync log, the conflict queue and suggested
+// changes (GRE-1100, GRE-1076). Contract:
 // doc/CRM-SYNC-CONTRACT.md. Every read and write here is scoped to one company;
 // routes check the caller before they call in.
 import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
@@ -18,13 +19,17 @@ import {
   toolConnections,
   type CrmSyncStoredValue,
 } from "@greatstone/db";
+import { coerceCrmSyncFieldValue, crmSyncIsOwnChangeOnly, crmSyncValuesEqual } from "@greatstone/shared";
 import type {
   CreateCrmSyncBinding,
+  CreateCrmSyncSuggestion,
   CrmSyncBinding,
   CrmSyncBindingDirection,
   CrmSyncBindingStatus,
   CrmSyncCaseStatus,
+  CrmSyncChangeAuthor,
   CrmSyncConflict,
+  CrmSyncConflictKind,
   CrmSyncConflictResolution,
   CrmSyncConflictStatus,
   CrmSyncContainerKind,
@@ -35,17 +40,20 @@ import type {
   CrmSyncFieldMap,
   CrmSyncFieldMapEntryInput,
   CrmSyncFieldOwner,
+  CrmSyncFieldValue,
   CrmSyncPage,
   CrmSyncRecordLink,
   CrmSyncStageMapEntry,
+  PipelineFieldType,
   ListCrmSyncConflictsQuery,
   ListCrmSyncEventsQuery,
+  ProposeCrmSyncConflictResolution,
   ResolveCrmSyncConflict,
   RunCrmSyncBinding,
   CrmSyncRunQueued,
   UpdateCrmSyncBinding,
 } from "@greatstone/shared";
-import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
+import { badRequest, conflict, HttpError, notFound, unprocessable } from "../errors.js";
 
 type SyncDb = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 type BindingRow = typeof crmSyncBindings.$inferSelect;
@@ -131,6 +139,7 @@ export function toCrmSyncConflict(row: ConflictRow): CrmSyncConflict {
     id: row.id,
     companyId: row.companyId,
     bindingId: row.bindingId,
+    kind: row.kind as CrmSyncConflictKind,
     entityKind: row.entityKind as CrmSyncEntityKind,
     entityId: row.entityId,
     externalId: row.externalId,
@@ -139,12 +148,27 @@ export function toCrmSyncConflict(row: ConflictRow): CrmSyncConflict {
     ...(row.lastSyncedValue ? { lastSyncedValue: row.lastSyncedValue.value } : {}),
     crmValue: row.crmValue.value,
     gsamValue: row.gsamValue.value,
+    crmChangedAt: iso(row.crmChangedAt),
+    gsamChangedBy: row.gsamChangedBy,
+    gsamChangedAt: iso(row.gsamChangedAt),
+    reason: row.reason,
+    proposal: row.proposedResolution && row.proposedAt
+      ? {
+        resolution: row.proposedResolution as CrmSyncConflictResolution,
+        value: row.proposedValue?.value ?? null,
+        reason: row.proposalReason ?? "",
+        proposedByAgentId: row.proposedByAgentId,
+        proposedByUserId: row.proposedByUserId,
+        proposedAt: row.proposedAt.toISOString(),
+      }
+      : null,
     status: row.status as CrmSyncConflictStatus,
     resolution: row.resolution as CrmSyncConflictResolution | null,
     ...(row.resolvedValue ? { resolvedValue: row.resolvedValue.value } : {}),
     resolvedByUserId: row.resolvedByUserId,
     resolvedByAgentId: row.resolvedByAgentId,
     resolvedAt: iso(row.resolvedAt),
+    decisionReason: row.resolutionReason ?? row.dismissReason,
     detectedAt: row.detectedAt.toISOString(),
   };
 }
@@ -279,6 +303,36 @@ async function writeFieldMap(
       position,
     })))
     .returning();
+}
+
+/** A typed value lands as the pipeline field's type (number, date, list), like an imported CRM value. */
+async function coerceForGsamField(
+  db: SyncDb,
+  input: { companyId: string; pipelineId: string; gsamField: string; value: CrmSyncFieldValue },
+) {
+  if (!input.gsamField.startsWith("fields.")) return input.value;
+  const definition = await db
+    .select({ type: pipelineFieldDefinitions.type })
+    .from(pipelineFieldDefinitions)
+    .where(and(
+      eq(pipelineFieldDefinitions.companyId, input.companyId),
+      eq(pipelineFieldDefinitions.pipelineId, input.pipelineId),
+      eq(pipelineFieldDefinitions.key, input.gsamField.slice("fields.".length)),
+    ))
+    .then((rows) => rows[0] ?? null);
+  const type = definition?.type as PipelineFieldType | undefined;
+  const value = coerceCrmSyncFieldValue(input.value, type);
+  if ((type === "number" && value !== null && typeof value !== "number") || (type === "boolean" && value !== null && typeof value !== "boolean")) {
+    throw unprocessable(`Enter a ${type} for this field`, { code: "invalid_value", gsamField: input.gsamField, type });
+  }
+  return value;
+}
+
+/** Nobody resolves a conflict that holds only their own change (deck slide 8). */
+function assertNotOwnChangeOnly(row: ConflictRow, userId: string) {
+  if (crmSyncIsOwnChangeOnly(row.gsamChangedBy, userId)) {
+    throw new HttpError(403, "This holds only your own change. Ask someone else to decide.", { code: "own_change" });
+  }
 }
 
 export function crmSyncService(db: Db) {
@@ -445,6 +499,7 @@ export function crmSyncService(db: Db) {
     async listConflicts(companyId: string, query: ListCrmSyncConflictsQuery): Promise<CrmSyncPage<CrmSyncConflict>> {
       const cursor = decodeCursor(query.cursor);
       const conditions = [eq(crmSyncConflicts.companyId, companyId), eq(crmSyncConflicts.status, query.status)];
+      if (query.kind) conditions.push(eq(crmSyncConflicts.kind, query.kind));
       if (query.bindingId) conditions.push(eq(crmSyncConflicts.bindingId, query.bindingId));
       if (query.entityId) conditions.push(eq(crmSyncConflicts.entityId, query.entityId));
       if (cursor) {
@@ -464,22 +519,84 @@ export function crmSyncService(db: Db) {
       };
     },
 
+    /**
+     * A person decides. Keep CRM, keep GSAM (for a suggestion: accept it) or a
+     * typed value; the next pass writes it to both sides. Nobody resolves a
+     * conflict that holds only their own change.
+     */
     async resolveConflict(row: ConflictRow, input: ResolveCrmSyncConflict, actor: { userId: string }) {
+      assertNotOwnChangeOnly(row, actor.userId);
       const resolvedValue: CrmSyncStoredValue = input.resolution === "keep_crm"
         ? row.crmValue
         : input.resolution === "keep_gsam"
           ? row.gsamValue
-          : { value: input.value };
-      return closeConflict(row, {
+          : { value: await coerceForGsamField(db, { ...(await conflictScope(row)), gsamField: row.gsamField, value: input.value }) };
+      const resolved = await closeConflict(row, {
         status: "resolved",
         resolution: input.resolution,
         resolvedValue,
+        resolutionReason: input.reason ?? null,
         resolvedByUserId: actor.userId,
         resolvedAt: new Date(),
       });
+      await queueNextPass(row.bindingId);
+      return resolved;
     },
 
+    /** A person accepts the open proposal as it stands. The proposal's reason is the decision's reason. */
+    async acceptProposal(row: ConflictRow, actor: { userId: string }) {
+      if (!row.proposedResolution || !row.proposedAt) {
+        throw unprocessable("This conflict has no proposed resolution", { code: "no_proposal" });
+      }
+      assertNotOwnChangeOnly(row, actor.userId);
+      const resolvedValue: CrmSyncStoredValue = row.proposedResolution === "keep_crm"
+        ? row.crmValue
+        : row.proposedResolution === "keep_gsam"
+          ? row.gsamValue
+          : row.proposedValue ?? { value: null };
+      const resolved = await closeConflict(row, {
+        status: "resolved",
+        resolution: row.proposedResolution,
+        resolvedValue,
+        resolutionReason: row.proposalReason,
+        resolvedByUserId: actor.userId,
+        resolvedAt: new Date(),
+      }, { proposedAt: row.proposedAt });
+      await queueNextPass(row.bindingId);
+      return resolved;
+    },
+
+    /** An agent with Work cases (or a person) proposes a resolution with a reason. It changes nothing until accepted. */
+    async proposeResolution(
+      row: ConflictRow,
+      input: ProposeCrmSyncConflictResolution,
+      actor: { agentId: string | null; userId: string | null },
+    ) {
+      const [updated] = await db
+        .update(crmSyncConflicts)
+        .set({
+          proposedResolution: input.resolution,
+          proposedValue: input.resolution === "custom"
+            ? { value: await coerceForGsamField(db, { ...(await conflictScope(row)), gsamField: row.gsamField, value: input.value }) }
+            : null,
+          proposalReason: input.reason,
+          proposedByAgentId: actor.agentId,
+          proposedByUserId: actor.userId,
+          proposedAt: new Date(),
+        })
+        .where(and(eq(crmSyncConflicts.id, row.id), eq(crmSyncConflicts.status, "open")))
+        .returning();
+      if (!updated) throw conflict("This conflict is already closed", { code: "conflict_closed", status: row.status });
+      return toCrmSyncConflict(updated);
+    },
+
+    /**
+     * Dismisses a conflict, or rejects a suggestion. The suggester may withdraw
+     * their own suggestion; a conflict that holds only the caller's change
+     * needs someone else.
+     */
     async dismissConflict(row: ConflictRow, reason: string | undefined, actor: { userId: string }) {
+      if (row.kind !== "suggestion") assertNotOwnChangeOnly(row, actor.userId);
       return closeConflict(row, {
         status: "dismissed",
         dismissReason: reason?.trim() || null,
@@ -489,18 +606,117 @@ export function crmSyncService(db: Db) {
     },
 
     /**
-     * Queues one inbound pass: the poll scheduler runs it on its next tick.
-     * While Pipedrive is rate-limiting, the pass waits for the retry time.
+     * A suggested change to a CRM-owned field. It holds the field for this case
+     * and waits in the queue; a person accepts it before it is written to the CRM.
+     */
+    async createSuggestion(
+      caseRow: { id: string; companyId: string; pipelineId: string },
+      input: CreateCrmSyncSuggestion,
+      author: CrmSyncChangeAuthor,
+    ) {
+      const links = await db
+        .select()
+        .from(crmSyncRecordLinks)
+        .where(and(
+          eq(crmSyncRecordLinks.companyId, caseRow.companyId),
+          eq(crmSyncRecordLinks.entityKind, "case"),
+          eq(crmSyncRecordLinks.entityId, caseRow.id),
+        ));
+      const bindings = links.length === 0 ? [] : await db
+        .select()
+        .from(crmSyncBindings)
+        .where(and(
+          eq(crmSyncBindings.companyId, caseRow.companyId),
+          eq(crmSyncBindings.pipelineId, caseRow.pipelineId),
+          inArray(crmSyncBindings.connectionId, links.map((link) => link.connectionId)),
+          isNull(crmSyncBindings.deletedAt),
+          ...(input.bindingId ? [eq(crmSyncBindings.id, input.bindingId)] : []),
+        ));
+      const mapped = bindings.length === 0 ? [] : await db
+        .select()
+        .from(crmSyncFieldMaps)
+        .where(and(
+          eq(crmSyncFieldMaps.companyId, caseRow.companyId),
+          inArray(crmSyncFieldMaps.bindingId, bindings.map((binding) => binding.id)),
+          eq(crmSyncFieldMaps.gsamField, input.gsamField),
+        ));
+      if (mapped.length === 0) {
+        throw unprocessable("This case does not sync this field with a CRM", { code: "field_not_synced", gsamField: input.gsamField });
+      }
+      const crmOwned = mapped.filter((row) => row.owner === "crm");
+      if (crmOwned.length === 0) {
+        throw unprocessable("Only CRM-owned fields take suggestions; edit this field on the case", {
+          code: "not_crm_owned",
+          gsamField: input.gsamField,
+          owner: mapped[0]!.owner,
+        });
+      }
+      if (crmOwned.length > 1) {
+        throw unprocessable("More than one CRM owns this field for this case; name the binding", {
+          code: "binding_required",
+          bindingIds: crmOwned.map((row) => row.bindingId),
+        });
+      }
+      const fieldRow = crmOwned[0]!;
+      const binding = bindings.find((row) => row.id === fieldRow.bindingId)!;
+      const link = links.find((row) => row.connectionId === binding.connectionId)!;
+      const hasBase = Object.prototype.hasOwnProperty.call(link.lastSyncedValues, input.gsamField);
+      const crmValue: CrmSyncFieldValue = hasBase ? link.lastSyncedValues[input.gsamField]! : null;
+      const value = await coerceForGsamField(db, {
+        companyId: caseRow.companyId,
+        pipelineId: caseRow.pipelineId,
+        gsamField: input.gsamField,
+        value: input.value,
+      });
+      if (crmSyncValuesEqual(crmValue, value)) {
+        throw unprocessable("The CRM already holds this value", { code: "no_change" });
+      }
+      try {
+        const [created] = await db.insert(crmSyncConflicts).values({
+          companyId: caseRow.companyId,
+          bindingId: binding.id,
+          kind: "suggestion",
+          entityKind: "case",
+          entityId: caseRow.id,
+          externalId: link.externalId,
+          gsamField: input.gsamField,
+          externalField: fieldRow.externalField,
+          lastSyncedValue: hasBase ? { value: crmValue } : null,
+          crmValue: { value: crmValue },
+          gsamValue: { value },
+          gsamChangedBy: [author],
+          gsamChangedAt: new Date(),
+          reason: input.reason,
+        }).returning();
+        return toCrmSyncConflict(created!);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw conflict("This field is already waiting for review on this case", {
+            code: "field_under_review",
+            gsamField: input.gsamField,
+          });
+        }
+        throw error;
+      }
+    },
+
+    /**
+     * Queues one pass (read changes, then write GSAM changes back): the poll
+     * scheduler runs it on its next tick. While Pipedrive is rate-limiting,
+     * the pass waits for the retry time.
      */
     async queueRun(binding: BindingRow, direction: RunCrmSyncBinding["direction"]): Promise<CrmSyncRunQueued> {
-      if (direction === "outbound") {
-        throw unprocessable("This binding cannot write to the CRM yet", { code: "outbound_not_supported" });
-      }
       if (binding.providerKey !== "pipedrive") {
         throw unprocessable("Sync is not built for this CRM yet", { code: "provider_not_supported", providerKey: binding.providerKey });
       }
-      if (binding.direction === "outbound_only") {
-        throw unprocessable("This binding only writes to the CRM, which is not built yet", { code: "outbound_not_supported" });
+      if (
+        (direction === "outbound" && binding.direction === "inbound_only") ||
+        (direction === "inbound" && binding.direction === "outbound_only")
+      ) {
+        throw unprocessable("This binding does not sync in that direction", {
+          code: "direction_not_allowed",
+          bindingDirection: binding.direction,
+        });
       }
       if (binding.status !== "active") {
         throw conflict("Resume the binding before you run a sync", { code: "binding_not_active", status: binding.status });
@@ -606,13 +822,50 @@ export function crmSyncService(db: Db) {
   };
 
   // A resolved or dismissed conflict is never reopened; only an open one can close.
-  async function closeConflict(row: ConflictRow, values: Partial<typeof crmSyncConflicts.$inferInsert>) {
+  // `expect.proposedAt` makes accepting a proposal fail if it was replaced meanwhile.
+  async function closeConflict(
+    row: ConflictRow,
+    values: Partial<typeof crmSyncConflicts.$inferInsert>,
+    expect: { proposedAt?: Date } = {},
+  ) {
     const [updated] = await db
       .update(crmSyncConflicts)
       .set(values)
-      .where(and(eq(crmSyncConflicts.id, row.id), eq(crmSyncConflicts.status, "open")))
+      .where(and(
+        eq(crmSyncConflicts.id, row.id),
+        eq(crmSyncConflicts.status, "open"),
+        ...(expect.proposedAt ? [eq(crmSyncConflicts.proposedAt, expect.proposedAt)] : []),
+      ))
       .returning();
-    if (!updated) throw conflict("This conflict is already closed", { code: "conflict_closed", status: row.status });
+    if (!updated) {
+      const latest = await loadCrmSyncConflict(db, row.id);
+      if (latest.status === "open") {
+        throw conflict("The proposal changed; review it again", { code: "proposal_changed" });
+      }
+      throw conflict("This conflict is already closed", { code: "conflict_closed", status: latest.status });
+    }
     return toCrmSyncConflict(updated);
+  }
+
+  async function conflictScope(row: ConflictRow) {
+    const binding = await db
+      .select({ pipelineId: crmSyncBindings.pipelineId })
+      .from(crmSyncBindings)
+      .where(eq(crmSyncBindings.id, row.bindingId))
+      .then((rows) => rows[0]!);
+    return { companyId: row.companyId, pipelineId: binding.pipelineId };
+  }
+
+  /** Runs the binding soon after a decision, so the result reaches both sides without waiting for the poll. */
+  async function queueNextPass(bindingId: string) {
+    const binding = await db
+      .select()
+      .from(crmSyncBindings)
+      .where(and(eq(crmSyncBindings.id, bindingId), isNull(crmSyncBindings.deletedAt), eq(crmSyncBindings.status, "active")))
+      .then((rows) => rows[0] ?? null);
+    if (!binding) return;
+    const at = new Date(readRateLimitedUntil(binding.syncState) ?? Date.now());
+    if (binding.nextSyncAt && binding.nextSyncAt <= at) return;
+    await db.update(crmSyncBindings).set({ nextSyncAt: at }).where(eq(crmSyncBindings.id, bindingId));
   }
 }

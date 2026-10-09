@@ -329,7 +329,7 @@ describeEmbeddedPostgres("Pipedrive read sync", () => {
       companyId: s.companyId,
       caseId: freight.id,
       fields: { ...freight.fields, notes: "Asked for three years" },
-      actor: { type: "user", userId: "board-user" },
+      actor: { type: "user", userId: "sales-rep" },
     });
 
     const second = fakePipedrive({
@@ -358,7 +358,10 @@ describeEmbeddedPostgres("Pipedrive read sync", () => {
       lastSyncedValue: { value: "Wants a two-year term" },
       crmValue: { value: "Signed for two years" },
       gsamValue: { value: "Asked for three years" },
+      kind: "conflict",
+      gsamChangedBy: [{ actorType: "user", userId: "sales-rep" }],
     });
+    expect(conflict.crmChangedAt).not.toBeNull();
 
     await request(app()).post(`/api/crm-sync/conflicts/${conflict.id}/resolve`).send({ resolution: "keep_crm" }).expect(200);
     const third = fakePipedrive({
@@ -461,14 +464,15 @@ describeEmbeddedPostgres("Pipedrive read sync", () => {
     expect(await sync.runDuePasses()).toEqual([]);
   });
 
-  it("POST sync queues a pass for board users only, waits out a rate limit, and refuses outbound", async () => {
+  it("POST sync queues a pass for board users only, waits out a rate limit, and refuses outbound on an inbound-only binding", async () => {
     const s = await seed();
     const queued = await request(app()).post(`/api/crm-sync/bindings/${s.bindingId}/sync`).send({}).expect(202);
     expect(queued.body.bindingId).toBe(s.bindingId);
     const audit = await db.select().from(activityLog).where(eq(activityLog.action, "crm_sync.run_queued"));
     expect(audit).toHaveLength(1);
 
-    await request(app()).post(`/api/crm-sync/bindings/${s.bindingId}/sync`).send({ direction: "outbound" }).expect(422);
+    const refused = await request(app()).post(`/api/crm-sync/bindings/${s.bindingId}/sync`).send({ direction: "outbound" }).expect(422);
+    expect(refused.body.details).toMatchObject({ code: "direction_not_allowed" });
     await request(app({
       type: "agent",
       agentId: randomUUID(),

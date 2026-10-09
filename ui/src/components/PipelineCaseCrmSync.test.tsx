@@ -46,7 +46,7 @@ describe("case CRM sync section", () => {
     flushSync(() => {
       root!.render(
         <QueryClientProvider client={queryClient}>
-          <PipelineCaseCrmSync caseId="case-1" wrap={(children: ReactNode) => <section data-testid="crm">{children}</section>} />
+          <PipelineCaseCrmSync caseId="case-1" companyId={null} wrap={(children: ReactNode) => <section data-testid="crm">{children}</section>} />
         </QueryClientProvider>,
       );
     });

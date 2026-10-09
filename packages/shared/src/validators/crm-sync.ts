@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   CRM_SYNC_BINDING_DIRECTIONS,
   CRM_SYNC_BINDING_STATUSES,
+  CRM_SYNC_CONFLICT_KINDS,
   CRM_SYNC_CONFLICT_STATUSES,
   CRM_SYNC_CONTAINER_KINDS,
   CRM_SYNC_ENTITY_KINDS,
@@ -22,6 +23,7 @@ export const crmSyncEntityKindSchema = z.enum(CRM_SYNC_ENTITY_KINDS);
 export const crmSyncEventDirectionSchema = z.enum(CRM_SYNC_EVENT_DIRECTIONS);
 export const crmSyncEventActionSchema = z.enum(CRM_SYNC_EVENT_ACTIONS);
 export const crmSyncConflictStatusSchema = z.enum(CRM_SYNC_CONFLICT_STATUSES);
+export const crmSyncConflictKindSchema = z.enum(CRM_SYNC_CONFLICT_KINDS);
 
 /**
  * GSAM side of a mapped field: the case title or summary, a pipeline case
@@ -194,17 +196,42 @@ export const crmSyncConflictSchema = z.object({
 
 export const listCrmSyncConflictsQuerySchema = z.object({
   status: crmSyncConflictStatusSchema.optional().default("open"),
+  kind: crmSyncConflictKindSchema.optional(),
   bindingId: z.string().guid().optional(),
   entityId: z.string().guid().optional(),
   cursor: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional().default(50),
 }).strict();
 
+const decisionReasonSchema = z.string().trim().min(1).max(2_000);
+
+/** Keep CRM, keep GSAM, or type a value. For a suggestion, keep_gsam accepts the suggested value. */
 export const resolveCrmSyncConflictSchema = z.discriminatedUnion("resolution", [
-  z.object({ resolution: z.literal("keep_crm") }).strict(),
-  z.object({ resolution: z.literal("keep_gsam") }).strict(),
-  z.object({ resolution: z.literal("custom"), value: crmSyncFieldValueSchema }).strict(),
+  z.object({ resolution: z.literal("keep_crm"), reason: decisionReasonSchema.optional() }).strict(),
+  z.object({ resolution: z.literal("keep_gsam"), reason: decisionReasonSchema.optional() }).strict(),
+  z.object({ resolution: z.literal("custom"), value: crmSyncFieldValueSchema, reason: decisionReasonSchema.optional() }).strict(),
 ]);
+
+/** An agent with Work cases proposes a resolution with a reason; a person accepts it. */
+export const proposeCrmSyncConflictResolutionSchema = z.discriminatedUnion("resolution", [
+  z.object({ resolution: z.literal("keep_crm"), reason: decisionReasonSchema }).strict(),
+  z.object({ resolution: z.literal("keep_gsam"), reason: decisionReasonSchema }).strict(),
+  z.object({ resolution: z.literal("custom"), value: crmSyncFieldValueSchema, reason: decisionReasonSchema }).strict(),
+]);
+
+export const acceptCrmSyncConflictProposalSchema = z.object({}).strict();
+
+/**
+ * A suggested change to a CRM-owned field. It waits in the review queue and is
+ * written to the CRM only after a person accepts it. `bindingId` is needed only
+ * when the case syncs with more than one source that maps the field.
+ */
+export const createCrmSyncSuggestionSchema = z.object({
+  gsamField: crmSyncGsamFieldSchema,
+  value: crmSyncFieldValueSchema,
+  reason: decisionReasonSchema,
+  bindingId: z.string().guid().optional(),
+}).strict();
 
 export const dismissCrmSyncConflictSchema = z.object({
   reason: z.string().trim().max(2_000).optional(),
@@ -223,3 +250,5 @@ export type CrmSyncConflictInput = z.infer<typeof crmSyncConflictSchema>;
 export type ListCrmSyncConflictsQuery = z.infer<typeof listCrmSyncConflictsQuerySchema>;
 export type ResolveCrmSyncConflict = z.infer<typeof resolveCrmSyncConflictSchema>;
 export type DismissCrmSyncConflict = z.infer<typeof dismissCrmSyncConflictSchema>;
+export type ProposeCrmSyncConflictResolution = z.infer<typeof proposeCrmSyncConflictResolutionSchema>;
+export type CreateCrmSyncSuggestion = z.infer<typeof createCrmSyncSuggestionSchema>;

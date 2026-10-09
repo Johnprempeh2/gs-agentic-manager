@@ -3,7 +3,7 @@
 // pipeline. Credentials stay on the connection; these tables never hold them.
 import { sql } from "drizzle-orm";
 import { check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import type { CrmSyncChangedField, CrmSyncFieldValue, CrmSyncStageMapping } from "@greatstone/shared";
+import type { CrmSyncChangeAuthor, CrmSyncChangedField, CrmSyncFieldValue, CrmSyncStageMapping } from "@greatstone/shared";
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
 import { pipelines } from "./pipelines.js";
@@ -107,6 +107,8 @@ export const crmSyncConflicts = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     bindingId: uuid("binding_id").notNull().references(() => crmSyncBindings.id, { onDelete: "cascade" }),
+    /** `conflict` (both sides changed a shared field) or `suggestion` (a change to a CRM-owned field). */
+    kind: text("kind").notNull().default("conflict"),
     entityKind: text("entity_kind").notNull(),
     entityId: uuid("entity_id").notNull(),
     externalId: text("external_id").notNull(),
@@ -116,9 +118,23 @@ export const crmSyncConflicts = pgTable(
     lastSyncedValue: jsonb("last_synced_value").$type<CrmSyncStoredValue>(),
     crmValue: jsonb("crm_value").$type<CrmSyncStoredValue>().notNull(),
     gsamValue: jsonb("gsam_value").$type<CrmSyncStoredValue>().notNull(),
+    /** The CRM record's own update time when the conflict was found. */
+    crmChangedAt: timestamp("crm_changed_at", { withTimezone: true }),
+    /** Who changed the GSAM side since the last sync; the suggester for a suggestion. */
+    gsamChangedBy: jsonb("gsam_changed_by").$type<CrmSyncChangeAuthor[]>().notNull().default([]),
+    gsamChangedAt: timestamp("gsam_changed_at", { withTimezone: true }),
+    /** Why a suggestion was made. */
+    reason: text("reason"),
+    proposedResolution: text("proposed_resolution"),
+    proposedValue: jsonb("proposed_value").$type<CrmSyncStoredValue>(),
+    proposalReason: text("proposal_reason"),
+    proposedByAgentId: uuid("proposed_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    proposedByUserId: text("proposed_by_user_id"),
+    proposedAt: timestamp("proposed_at", { withTimezone: true }),
     status: text("status").notNull().default("open"),
     resolution: text("resolution"),
     resolvedValue: jsonb("resolved_value").$type<CrmSyncStoredValue>(),
+    resolutionReason: text("resolution_reason"),
     dismissReason: text("dismiss_reason"),
     resolvedByUserId: text("resolved_by_user_id"),
     resolvedByAgentId: uuid("resolved_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
@@ -132,6 +148,11 @@ export const crmSyncConflicts = pgTable(
     companyStatusIdx: index("crm_sync_conflicts_company_status_idx").on(table.companyId, table.status, table.detectedAt),
     bindingStatusIdx: index("crm_sync_conflicts_binding_status_idx").on(table.bindingId, table.status),
     entityKindCheck: check("crm_sync_conflicts_entity_kind_check", sql`${table.entityKind} in ('case', 'contact')`),
+    kindCheck: check("crm_sync_conflicts_kind_check", sql`${table.kind} in ('conflict', 'suggestion')`),
+    proposedResolutionCheck: check(
+      "crm_sync_conflicts_proposed_resolution_check",
+      sql`${table.proposedResolution} is null or ${table.proposedResolution} in ('keep_crm', 'keep_gsam', 'custom')`,
+    ),
     statusCheck: check("crm_sync_conflicts_status_check", sql`${table.status} in ('open', 'resolved', 'dismissed')`),
     resolutionCheck: check(
       "crm_sync_conflicts_resolution_check",

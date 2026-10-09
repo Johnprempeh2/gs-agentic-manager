@@ -1,10 +1,11 @@
-// CRM sync passes and the poll scheduler (GRE-1100 part 2). Contract:
-// doc/CRM-SYNC-CONTRACT.md. One pass reads the deals Pipedrive changed since
-// the last pass and imports them into cases through the binding's field map
-// and stage map. It writes one sync log line per changed record. Nothing here
-// writes to Pipedrive: a field the three-value rule would push is logged as
-// `unchanged`.
-import { and, asc, eq, gt, isNull, lte, ne, or } from "drizzle-orm";
+// CRM sync passes and the poll scheduler (GRE-1100 part 2, write-back GRE-1076).
+// Contract: doc/CRM-SYNC-CONTRACT.md. One pass reads the deals Pipedrive
+// changed since the last pass and imports them into cases through the
+// binding's field map and stage map. It then writes GSAM changes back: fields
+// the three-value rule pushes, and values a person chose in the "Sync
+// conflicts" queue. Each record gets one inbound and at most one outbound log
+// line per pass. This runner is the only code that writes to Pipedrive.
+import { and, asc, desc, eq, gt, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   crmSyncBindings,
@@ -12,14 +13,17 @@ import {
   crmSyncEvents,
   crmSyncFieldMaps,
   crmSyncRecordLinks,
+  pipelineCaseEvents,
   pipelineCases,
   pipelineFieldDefinitions,
   pipelineStages,
   toolConnections,
 } from "@greatstone/db";
 import {
+  coerceCrmSyncFieldValue,
   crmSyncValuesEqual,
   decideCrmSyncField,
+  type CrmSyncChangeAuthor,
   type CrmSyncChangedField,
   type CrmSyncEventAction,
   type CrmSyncFieldOwner,
@@ -28,11 +32,13 @@ import {
 } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import {
+  buildPipedriveDealPatch,
   createPipedriveClient,
   flattenPipedriveDeal,
   PIPEDRIVE_PROVIDER_KEY,
   PipedriveAuthError,
   PipedriveRateLimitError,
+  PipedriveValueError,
   resolvePipedriveBaseUrl,
   type PipedriveClient,
   type PipedriveDeal,
@@ -52,6 +58,8 @@ const CLAIM_LEASE_MS = 10 * 60_000;
 const MAX_RATE_LIMIT_BACKOFF_MS = 30 * 60_000;
 const MAX_ERROR_BACKOFF_MS = 60 * 60_000;
 const DUE_BATCH_SIZE = 10;
+/** Cases changed in GSAM that one pass writes back, oldest change first. */
+const OUTBOUND_BATCH_SIZE = 50;
 const SYNC_ACTOR = { type: "system" } as const;
 
 type BindingRow = typeof crmSyncBindings.$inferSelect;
@@ -59,6 +67,7 @@ type ConnectionRow = typeof toolConnections.$inferSelect;
 type CaseRow = typeof pipelineCases.$inferSelect;
 type FieldMapRow = typeof crmSyncFieldMaps.$inferSelect;
 type LinkRow = typeof crmSyncRecordLinks.$inferSelect;
+type ConflictRow = typeof crmSyncConflicts.$inferSelect;
 
 /** Poll state kept in `crm_sync_bindings.sync_state`. Never holds credentials. */
 interface PipedriveSyncState {
@@ -125,28 +134,6 @@ function asFieldValue(raw: unknown): CrmSyncFieldValue {
   return null;
 }
 
-/** Shapes a CRM value for the typed field it lands in, so it compares and validates as that type. */
-function coerceForField(value: CrmSyncFieldValue, type: PipelineFieldType | undefined): CrmSyncFieldValue {
-  if (value === null || type === undefined) return value;
-  switch (type) {
-    case "number": {
-      if (typeof value === "number") return value;
-      const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
-      return Number.isFinite(parsed) ? parsed : value;
-    }
-    case "boolean":
-      if (value === "true") return true;
-      if (value === "false") return false;
-      return value;
-    case "multi_select":
-      return Array.isArray(value) ? value : [String(value)];
-    case "date":
-      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value;
-    default:
-      return Array.isArray(value) ? value.join(", ") : typeof value === "string" ? value : String(value);
-  }
-}
-
 function readCaseValue(row: Pick<CaseRow, "title" | "summary" | "fields">, gsamField: string): CrmSyncFieldValue {
   if (gsamField === "title") return row.title;
   if (gsamField === "summary") return row.summary;
@@ -169,6 +156,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
   const pipelines = pipelineService(db);
 
   async function writeEvent(binding: BindingRow, input: {
+    direction?: "inbound" | "outbound";
     action: CrmSyncEventAction;
     entityId: string | null;
     externalId: string;
@@ -179,7 +167,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
     await db.insert(crmSyncEvents).values({
       companyId: binding.companyId,
       bindingId: binding.id,
-      direction: "inbound",
+      direction: input.direction ?? "inbound",
       action: input.action,
       entityKind: "case",
       entityId: input.entityId,
@@ -192,6 +180,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
 
   interface PassContext {
     binding: BindingRow;
+    client: PipedriveClient;
     fieldRows: FieldMapRow[];
     fieldTypes: Map<string, PipelineFieldType>;
     stageKeyByExternalId: Map<string, string>;
@@ -204,7 +193,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
     const values = new Map<string, CrmSyncFieldValue>();
     for (const row of ctx.fieldRows) {
       const type = row.gsamField.startsWith("fields.") ? ctx.fieldTypes.get(row.gsamField.slice("fields.".length)) : undefined;
-      values.set(row.gsamField, coerceForField(flat[row.externalField] ?? null, type));
+      values.set(row.gsamField, coerceCrmSyncFieldValue(flat[row.externalField] ?? null, type));
     }
     return values;
   }
@@ -313,9 +302,63 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
     }
   }
 
-  /** A deal already linked to a case: apply the three-value rule field by field. */
+  /**
+   * Who changed the case in GSAM since the last sync, newest first. Case
+   * events do not say which field changed, so this names everyone who edited
+   * the case content in that window. The sync's own edits are not counted.
+   */
+  async function gsamAuthorsSince(binding: BindingRow, caseId: string, since: Date | null) {
+    const rows = await db
+      .select({
+        actorType: pipelineCaseEvents.actorType,
+        actorUserId: pipelineCaseEvents.actorUserId,
+        actorAgentId: pipelineCaseEvents.actorAgentId,
+        createdAt: pipelineCaseEvents.createdAt,
+      })
+      .from(pipelineCaseEvents)
+      .where(and(
+        eq(pipelineCaseEvents.companyId, binding.companyId),
+        eq(pipelineCaseEvents.caseId, caseId),
+        eq(pipelineCaseEvents.type, "updated"),
+        ne(pipelineCaseEvents.actorType, "system"),
+        sql`coalesce((${pipelineCaseEvents.payload} ->> 'materialChanged')::boolean, true)`,
+        ...(since ? [gt(pipelineCaseEvents.createdAt, since)] : []),
+      ))
+      .orderBy(desc(pipelineCaseEvents.createdAt))
+      .limit(50);
+    const authors: CrmSyncChangeAuthor[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const author: CrmSyncChangeAuthor | null = row.actorType === "user" && row.actorUserId
+        ? { actorType: "user", userId: row.actorUserId }
+        : row.actorType === "agent" && row.actorAgentId
+          ? { actorType: "agent", agentId: row.actorAgentId }
+          : null;
+      if (!author) continue;
+      const key = author.actorType === "user" ? `user:${author.userId}` : `agent:${author.agentId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      authors.push(author);
+    }
+    return { authors, at: rows[0]?.createdAt ?? null };
+  }
+
+  function dealUpdatedAt(deal: PipedriveDeal) {
+    if (!deal.update_time) return null;
+    const at = new Date(deal.update_time);
+    return Number.isNaN(at.getTime()) ? null : at;
+  }
+
+  /**
+   * A deal already linked to a case: apply the three-value rule field by
+   * field, then write GSAM changes back to the deal. A field held in the
+   * "Sync conflicts" queue (open conflict or suggestion) is skipped both ways;
+   * other fields keep syncing.
+   */
   async function syncLinkedDeal(ctx: PassContext, deal: PipedriveDeal, externalId: string, link: LinkRow) {
     const { binding } = ctx;
+    const allowPull = binding.direction !== "outbound_only";
+    const allowPush = binding.direction !== "inbound_only";
     const caseRow = await db
       .select()
       .from(pipelineCases)
@@ -343,7 +386,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
           eq(crmSyncConflicts.status, "open"),
         ))
         .then((rows) => new Set(rows.map((row) => row.gsamField))),
-      // Resolved since this record last synced: the chosen value goes into GSAM now.
+      // Resolved since this record last synced: the chosen value goes to both sides now.
       db
         .select()
         .from(crmSyncConflicts)
@@ -358,49 +401,69 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
         .then((rows) => new Map(rows.map((row) => [row.gsamField, row]))),
     ]);
 
+    const hasBase = (field: string) => Object.prototype.hasOwnProperty.call(link.lastSyncedValues, field);
     const lastSynced: Record<string, CrmSyncFieldValue> = { ...link.lastSyncedValues };
     const changed: CrmSyncChangedField[] = [];
     const content: { title?: string; summary?: string | null; fields: Record<string, unknown> } = { fields: {} };
     const conflictIds: string[] = [];
+    const pushes: Array<{ row: FieldMapRow; from: CrmSyncFieldValue; value: CrmSyncFieldValue; conflict: ConflictRow | null }> = [];
+    let gsamChange: Awaited<ReturnType<typeof gsamAuthorsSince>> | null = null;
     let blocked = 0;
 
     for (const row of ctx.fieldRows) {
       const field = row.gsamField;
-      if (openConflicts.has(field)) continue; // keeps its last-synced value until a person decides
+      if (openConflicts.has(field)) continue; // held until a person decides
       const crmValue = crm.get(field) ?? null;
       const gsamValue = readCaseValue(caseRow, field);
       const resolved = resolvedConflicts.get(field);
-      if (resolved?.resolvedValue) {
+      // A rejected suggestion changes nothing: the field syncs as usual.
+      const rejectedSuggestion = resolved?.kind === "suggestion" && resolved.resolution === "keep_crm";
+      if (resolved?.resolvedValue && !rejectedSuggestion) {
         const target = resolved.resolvedValue.value;
         if (!crmSyncValuesEqual(target, gsamValue)) {
           applyContent(content, field, target);
           changed.push({ gsamField: field, from: gsamValue, to: target });
         }
-        // The CRM still holds its value. With it as the base, a later write
-        // slice pushes the chosen value; this read slice never does.
-        lastSynced[field] = crmValue;
-        if (!crmSyncValuesEqual(target, crmValue)) blocked += 1;
+        if (crmSyncValuesEqual(target, crmValue)) {
+          lastSynced[field] = target;
+        } else if (allowPush) {
+          pushes.push({ row, from: crmValue, value: target, conflict: resolved });
+        } else {
+          // Inbound-only: the CRM keeps its value. With it as the base, the
+          // next pass treats the chosen value as a GSAM change.
+          lastSynced[field] = crmValue;
+          blocked += 1;
+        }
         continue;
       }
       const decision = decideCrmSyncField({
         owner: row.owner as CrmSyncFieldOwner,
-        lastSynced: Object.prototype.hasOwnProperty.call(link.lastSyncedValues, field) ? link.lastSyncedValues[field] : undefined,
+        lastSynced: hasBase(field) ? link.lastSyncedValues[field] : undefined,
         crm: crmValue,
         gsam: gsamValue,
       });
       if (decision.action === "none") {
         lastSynced[field] = decision.value;
       } else if (decision.action === "pull_from_crm") {
+        if (!allowPull) {
+          blocked += 1;
+          continue;
+        }
         applyContent(content, field, decision.value);
         lastSynced[field] = decision.value;
         changed.push({ gsamField: field, from: gsamValue, to: decision.value });
       } else if (decision.action === "push_to_crm") {
-        blocked += 1;
+        // Never blank a CRM value for a field that has not synced yet (a new link).
+        if (!hasBase(field) && crmSyncValuesEqual(decision.value, null)) continue;
+        if (allowPush) pushes.push({ row, from: crmValue, value: decision.value, conflict: null });
+        else blocked += 1;
       } else {
-        const previous = Object.prototype.hasOwnProperty.call(link.lastSyncedValues, field) ? link.lastSyncedValues[field] : undefined;
+        gsamChange ??= await gsamAuthorsSince(binding, caseRow.id, link.lastSyncedAt);
+        const previous = hasBase(field) ? link.lastSyncedValues[field] : undefined;
         const [created] = await db.insert(crmSyncConflicts).values({
           companyId: binding.companyId,
           bindingId: binding.id,
+          kind: "conflict",
           entityKind: "case",
           entityId: caseRow.id,
           externalId,
@@ -409,6 +472,9 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
           lastSyncedValue: previous === undefined ? null : { value: previous },
           crmValue: { value: crmValue },
           gsamValue: { value: gsamValue },
+          crmChangedAt: dealUpdatedAt(deal),
+          gsamChangedBy: gsamChange.authors,
+          gsamChangedAt: gsamChange.at,
         }).onConflictDoNothing().returning({ id: crmSyncConflicts.id });
         if (created) conflictIds.push(created.id);
       }
@@ -430,8 +496,9 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
       } catch (error) {
         failure = `Could not update the case: ${errorMessage(error)}`;
         changed.length = 0;
+        pushes.length = 0;
         for (const row of ctx.fieldRows) {
-          if (Object.prototype.hasOwnProperty.call(link.lastSyncedValues, row.gsamField)) {
+          if (hasBase(row.gsamField)) {
             lastSynced[row.gsamField] = link.lastSyncedValues[row.gsamField]!;
           } else {
             delete lastSynced[row.gsamField];
@@ -443,7 +510,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
     // Stage: move the case only when the deal's stage changed since the last sync,
     // so a stage set in GSAM is not undone by an unrelated deal edit.
     const crmStageKey = ctx.stageKeyByExternalId.get(String(deal.stage_id ?? ""));
-    if (!failure && crmStageKey && lastSynced.stage !== crmStageKey) {
+    if (!failure && allowPull && crmStageKey && lastSynced.stage !== crmStageKey) {
       const currentStageKey = ctx.stageKeyById.get(current.stageId) ?? null;
       if (currentStageKey !== crmStageKey) {
         try {
@@ -466,23 +533,69 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
       }
     }
 
+    // Write-back. On a passing error the link keeps its last sync time, so the
+    // next pass finds the case again and retries.
+    let pushed: CrmSyncChangedField[] = [];
+    let pushFailure: string | null = null;
+    let retryPush = false;
+    let pushError: unknown = null;
+    if (pushes.length > 0) {
+      try {
+        const patch = buildPipedriveDealPatch(
+          pushes.map((push) => ({ externalField: push.row.externalField, value: push.value })),
+          ctx.dealFields,
+        );
+        await ctx.client.updateDeal(externalId, patch);
+        for (const push of pushes) lastSynced[push.row.gsamField] = push.value;
+        pushed = pushes.map((push) => ({ gsamField: push.row.gsamField, from: push.from, to: push.value }));
+      } catch (error) {
+        pushError = error;
+        retryPush = !(error instanceof PipedriveValueError);
+        pushFailure = `Could not write to Pipedrive: ${errorMessage(error)}.${retryPush ? " It is tried again on the next pass." : " Fix the value in GSAM or the field map."}`;
+      }
+    }
+
     await db
       .update(crmSyncRecordLinks)
-      .set({ lastSyncedValues: lastSynced, lastSyncedAt: now(), updatedAt: now() })
+      .set({
+        lastSyncedValues: lastSynced,
+        ...(retryPush ? {} : { lastSyncedAt: now() }),
+        updatedAt: now(),
+      })
       .where(eq(crmSyncRecordLinks.id, link.id));
 
+    let wrote = false;
     if (failure) {
       await writeEvent(binding, { action: "failed", entityId: caseRow.id, externalId, changedFields: changed, errorMessage: failure });
+      wrote = true;
     } else if (conflictIds.length > 0) {
       await writeEvent(binding, { action: "conflict", entityId: caseRow.id, externalId, changedFields: changed, conflictId: conflictIds[0] });
+      wrote = true;
     } else if (changed.length > 0) {
       await writeEvent(binding, { action: "updated", entityId: caseRow.id, externalId, changedFields: changed });
+      wrote = true;
     } else if (blocked > 0) {
       await writeEvent(binding, { action: "unchanged", entityId: caseRow.id, externalId });
-    } else {
-      return false; // nothing changed: no log line
+      wrote = true;
     }
-    return true;
+    if (pushes.length > 0) {
+      const conflictId = pushes.find((push) => push.conflict)?.conflict?.id ?? null;
+      await writeEvent(binding, pushFailure
+        ? {
+          direction: "outbound",
+          action: "failed",
+          entityId: caseRow.id,
+          externalId,
+          changedFields: pushes.map((push) => ({ gsamField: push.row.gsamField, from: push.from, to: push.value })),
+          conflictId,
+          errorMessage: pushFailure,
+        }
+        : { direction: "outbound", action: "updated", entityId: caseRow.id, externalId, changedFields: pushed, conflictId });
+      wrote = true;
+    }
+    // The pass stops on a rate limit or a refused credential.
+    if (pushError instanceof PipedriveRateLimitError || pushError instanceof PipedriveAuthError) throw pushError;
+    return wrote;
   }
 
   async function syncDeal(ctx: PassContext, deal: PipedriveDeal) {
@@ -491,6 +604,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
       const link = await findLink(ctx.binding, externalId);
       return link ? await syncLinkedDeal(ctx, deal, externalId, link) : await importNewDeal(ctx, deal, externalId);
     } catch (error) {
+      if (error instanceof PipedriveRateLimitError || error instanceof PipedriveAuthError) throw error;
       logger.warn({ err: error, bindingId: ctx.binding.id, externalId }, "crm sync deal failed");
       await writeEvent(ctx.binding, { action: "failed", entityId: null, externalId, errorMessage: errorMessage(error) });
       return true;
@@ -519,12 +633,43 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
     ]);
     return {
       binding,
+      client,
       fieldRows: caseFieldRows(fieldRows),
       fieldTypes: new Map(definitions.map((row) => [row.key, row.type as PipelineFieldType])),
       stageKeyByExternalId: new Map(binding.stageMap.map((entry) => [entry.externalStageId, entry.stageKey])),
       stageKeyById: new Map(stages.map((row) => [row.id, row.key])),
       dealFields,
     };
+  }
+
+  /** Linked cases with something to write back. Inbound-only bindings only apply queue decisions. */
+  async function pendingOutboundLinks(binding: BindingRow, skipExternalIds: Set<string>) {
+    const since = sql`coalesce(${crmSyncRecordLinks.lastSyncedAt}, '-infinity'::timestamptz)`;
+    const decided = sql`exists (
+      select 1 from ${crmSyncConflicts}
+      where ${crmSyncConflicts.bindingId} = ${binding.id}
+        and ${crmSyncConflicts.entityKind} = 'case'
+        and ${crmSyncConflicts.entityId} = ${crmSyncRecordLinks.entityId}
+        and ${crmSyncConflicts.status} = 'resolved'
+        and ${crmSyncConflicts.resolvedAt} > ${since}
+    )`;
+    const caseChanged = sql`${pipelineCases.updatedAt} > ${since}`;
+    const rows = await db
+      .select({ link: crmSyncRecordLinks })
+      .from(crmSyncRecordLinks)
+      .innerJoin(pipelineCases, eq(pipelineCases.id, crmSyncRecordLinks.entityId))
+      .where(and(
+        eq(crmSyncRecordLinks.companyId, binding.companyId),
+        eq(crmSyncRecordLinks.connectionId, binding.connectionId),
+        eq(crmSyncRecordLinks.entityKind, "case"),
+        eq(pipelineCases.companyId, binding.companyId),
+        eq(pipelineCases.pipelineId, binding.pipelineId),
+        isNull(pipelineCases.retiredAt),
+        binding.direction === "inbound_only" ? decided : or(caseChanged, decided),
+      ))
+      .orderBy(asc(pipelineCases.updatedAt))
+      .limit(OUTBOUND_BATCH_SIZE);
+    return rows.map((row) => row.link).filter((link) => !skipExternalIds.has(link.externalId));
   }
 
   async function saveState(bindingId: string, values: Partial<typeof crmSyncBindings.$inferInsert>) {
@@ -541,7 +686,6 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
     if (!binding) return { status: "skipped", reason: "binding_not_found" };
     if (binding.status !== "active") return { status: "skipped", reason: "binding_not_active" };
     if (binding.providerKey !== PIPEDRIVE_PROVIDER_KEY) return { status: "skipped", reason: "provider_not_supported" };
-    if (binding.direction === "outbound_only") return { status: "skipped", reason: "outbound_only" };
 
     const state = { ...(binding.syncState as PipedriveSyncState) };
     let processed = 0;
@@ -565,8 +709,10 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
       });
       const ctx = await loadContext(binding, client);
 
+      const seen = new Set<string>();
       let cursor: string | null = null;
-      do {
+      // An outbound-only binding never reads changes from Pipedrive.
+      if (binding.direction !== "outbound_only") do {
         const page = await client.listDealsPage({
           pipelineId: binding.externalContainerId,
           updatedSince: state.updatedSince ?? null,
@@ -576,6 +722,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
           // Deals from another Pipedrive pipeline are never imported here.
           if (deal.pipeline_id != null && String(deal.pipeline_id) !== binding.externalContainerId) continue;
           if (await syncDeal(ctx, deal)) events += 1;
+          seen.add(String(deal.id));
           processed += 1;
           if (deal.update_time && (!state.updatedSince || deal.update_time > state.updatedSince)) {
             state.updatedSince = deal.update_time;
@@ -585,6 +732,27 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
         await saveState(binding.id, { syncState: { ...state } as Record<string, unknown> });
         cursor = page.nextCursor;
       } while (cursor);
+
+      // Outbound: cases changed in GSAM, or with a decision from the queue,
+      // since they last synced. Each deal is read fresh so the three-value
+      // rule compares against what Pipedrive holds now.
+      for (const link of await pendingOutboundLinks(binding, seen)) {
+        const deal = await client.getDeal(link.externalId);
+        if (!deal) {
+          await writeEvent(binding, {
+            direction: "outbound",
+            action: "failed",
+            entityId: link.entityId,
+            externalId: link.externalId,
+            errorMessage: "The Pipedrive deal no longer exists, so GSAM changes were not written back",
+          });
+          await db.update(crmSyncRecordLinks).set({ lastSyncedAt: now(), updatedAt: now() }).where(eq(crmSyncRecordLinks.id, link.id));
+          events += 1;
+          continue;
+        }
+        if (await syncDeal(ctx, deal)) events += 1;
+        processed += 1;
+      }
 
       delete state.rateLimitedUntil;
       delete state.consecutiveFailures;
@@ -659,7 +827,6 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
         isNull(crmSyncBindings.deletedAt),
         eq(crmSyncBindings.status, "active"),
         eq(crmSyncBindings.providerKey, PIPEDRIVE_PROVIDER_KEY),
-        ne(crmSyncBindings.direction, "outbound_only"),
         or(isNull(crmSyncBindings.nextSyncAt), lte(crmSyncBindings.nextSyncAt, at)),
       ))
       .orderBy(asc(crmSyncBindings.nextSyncAt))

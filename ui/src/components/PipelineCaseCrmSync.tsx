@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { CrmSyncCaseSource } from "@greatstone/shared";
 import { pipelinesApi } from "../api/pipelines";
 import { queryKeys } from "../lib/queryKeys";
+import { CrmSyncConflictQueue, CrmSyncSuggestChange } from "./CrmSyncConflictQueue";
 import { cn, relativeTime } from "../lib/utils";
 
 const PROVIDER_LABELS: Record<string, string> = { pipedrive: "Pipedrive" };
@@ -34,7 +35,7 @@ export function crmSyncNotice(source: CrmSyncCaseSource): Notice | null {
     return { tone: "danger", text: source.lastEvent.errorMessage ?? "The last sync of this case failed." };
   }
   if (source.lastEvent?.action === "conflict") {
-    return { tone: "warning", text: `A field changed in both places. Choose which value to keep.` };
+    return { tone: "warning", text: `A field changed in both places. It stops syncing until someone chooses which value to keep.` };
   }
   if (source.lastErrorMessage) return { tone: "warning", text: source.lastErrorMessage };
   return null;
@@ -74,13 +75,17 @@ function SourceRow({ source }: { source: CrmSyncCaseSource }) {
 
 /**
  * Where a case's data comes from in a CRM, and whether that sync is healthy
- * (GRE-1100). Renders nothing for a case with no CRM link.
+ * (GRE-1100). Also lists the case's held fields and lets a person suggest a
+ * change to a CRM-owned field (GRE-1076). Renders nothing for a case with no
+ * CRM link.
  */
 export function PipelineCaseCrmSync({
   caseId,
+  companyId,
   wrap,
 }: {
   caseId: string;
+  companyId: string | null | undefined;
   wrap: (children: ReactNode) => ReactNode;
 }) {
   const query = useQuery({
@@ -95,8 +100,12 @@ export function PipelineCaseCrmSync({
   const sources = query.data?.sources ?? [];
   if (sources.length === 0) return null;
   return wrap(
-    <ul className="divide-y divide-border">
-      {sources.map((source) => <SourceRow key={source.bindingId} source={source} />)}
-    </ul>,
+    <>
+      <ul className="divide-y divide-border">
+        {sources.map((source) => <SourceRow key={source.bindingId} source={source} />)}
+      </ul>
+      {companyId ? <CrmSyncConflictQueue companyId={companyId} caseId={caseId} title="Waiting for a decision" /> : null}
+      <CrmSyncSuggestChange caseId={caseId} bindingIds={sources.map((source) => source.bindingId)} />
+    </>,
   );
 }

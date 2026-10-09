@@ -1,5 +1,13 @@
 import type {
+  CreateCrmSyncSuggestion,
+  CrmSyncBinding,
   CrmSyncCaseStatus,
+  CrmSyncConflict,
+  CrmSyncConflictKind,
+  CrmSyncFieldMap,
+  CrmSyncPage,
+  ProposeCrmSyncConflictResolution,
+  ResolveCrmSyncConflict,
   Issue,
   PipelineAutomationRetryCleanupOptions,
   PipelineAutomationRetryPlan,
@@ -648,6 +656,26 @@ export const pipelinesApi = {
     api.delete<{ deleted: true }>(`/cases/${caseId}/project-links/${projectId}`),
   getCaseCrmSyncStatus: (caseId: string) =>
     api.get<CrmSyncCaseStatus>(`/cases/${caseId}/crm-sync/status`),
+  listCrmSyncBindings: (companyId: string) =>
+    api.get<CrmSyncBinding[]>(`/companies/${companyId}/crm-sync/bindings`),
+  getCrmSyncFieldMap: (bindingId: string) =>
+    api.get<CrmSyncFieldMap>(`/crm-sync/bindings/${bindingId}/field-map`),
+  listCrmSyncConflicts: (companyId: string, filters: { entityId?: string; kind?: CrmSyncConflictKind } = {}) => {
+    const params = new URLSearchParams({ status: "open", limit: "100" });
+    if (filters.entityId) params.set("entityId", filters.entityId);
+    if (filters.kind) params.set("kind", filters.kind);
+    return api.get<CrmSyncPage<CrmSyncConflict>>(`/companies/${companyId}/crm-sync/conflicts?${params.toString()}`);
+  },
+  resolveCrmSyncConflict: (conflictId: string, input: ResolveCrmSyncConflict) =>
+    api.post<CrmSyncConflict>(`/crm-sync/conflicts/${conflictId}/resolve`, input),
+  acceptCrmSyncProposal: (conflictId: string) =>
+    api.post<CrmSyncConflict>(`/crm-sync/conflicts/${conflictId}/accept-proposal`, {}),
+  proposeCrmSyncResolution: (conflictId: string, input: ProposeCrmSyncConflictResolution) =>
+    api.post<CrmSyncConflict>(`/crm-sync/conflicts/${conflictId}/propose`, input),
+  dismissCrmSyncConflict: (conflictId: string, reason?: string) =>
+    api.post<CrmSyncConflict>(`/crm-sync/conflicts/${conflictId}/dismiss`, reason ? { reason } : {}),
+  suggestCrmSyncChange: (caseId: string, input: CreateCrmSyncSuggestion) =>
+    api.post<CrmSyncConflict>(`/cases/${caseId}/crm-sync/suggestions`, input),
   listCaseContacts: (caseId: string) =>
     api.get<PipelineCaseContact[]>(`/cases/${caseId}/contacts`),
   createCaseContact: (caseId: string, input: PipelineCaseContactInput) =>

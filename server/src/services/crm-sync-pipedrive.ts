@@ -1,7 +1,8 @@
-// Read-only Pipedrive client for CRM sync (GRE-1100 part 2). Contract:
-// doc/CRM-SYNC-CONTRACT.md. It only sends GET requests; nothing here writes to
-// Pipedrive. Rate-limit answers (429) are retried with back-off before the
-// caller sees them.
+// Pipedrive client for CRM sync (GRE-1100 part 2, write-back GRE-1076).
+// Contract: doc/CRM-SYNC-CONTRACT.md. It reads deals and deal fields, and
+// updates one deal's fields. Only the sync runner calls `updateDeal`; agents
+// never write to Pipedrive through it. Rate-limit answers (429) are retried
+// with back-off before the caller sees them.
 import type { CrmSyncFieldValue } from "@greatstone/shared";
 
 export const PIPEDRIVE_PROVIDER_KEY = "pipedrive";
@@ -11,7 +12,11 @@ const DEFAULT_MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 1_000;
 const MAX_RETRY_DELAY_MS = 30_000;
 
-export type PipedriveFetch = (url: string, init: { method: "GET"; headers: Record<string, string> }) => Promise<{
+export type PipedriveFetch = (url: string, init: {
+  method: "GET" | "PATCH";
+  headers: Record<string, string>;
+  body?: string;
+}) => Promise<{
   status: number;
   headers: { get(name: string): string | null };
   json(): Promise<unknown>;
@@ -92,15 +97,23 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
     ? { Authorization: `Bearer ${options.token}`, Accept: "application/json" }
     : { "x-api-token": options.token, Accept: "application/json" };
 
-  async function get(path: string, query: Record<string, string | number | undefined>) {
+  async function send(
+    method: "GET" | "PATCH",
+    path: string,
+    query: Record<string, string | number | undefined>,
+    payload?: Record<string, unknown>,
+  ) {
     const url = new URL(`${baseUrl}${path}`);
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
     }
+    const init = payload
+      ? { method, headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload) }
+      : { method, headers };
     for (let attempt = 0; ; attempt += 1) {
       let response: Awaited<ReturnType<PipedriveFetch>>;
       try {
-        response = await doFetch(url.toString(), { method: "GET", headers });
+        response = await doFetch(url.toString(), init);
       } catch (error) {
         throw new PipedriveApiError(`Could not reach Pipedrive: ${(error as Error).message}`, null);
       }
@@ -112,7 +125,11 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       }
       if (response.status === 401 || response.status === 403) throw new PipedriveAuthError(response.status);
       if (response.status < 200 || response.status >= 300) {
-        throw new PipedriveApiError(`Pipedrive answered ${response.status} for ${path}`, response.status);
+        const detail = await response.json().catch(() => null) as { error?: string } | null;
+        throw new PipedriveApiError(
+          `Pipedrive answered ${response.status} for ${path}${detail?.error ? `: ${detail.error}` : ""}`,
+          response.status,
+        );
       }
       const body = await response.json().catch(() => null) as { success?: boolean; error?: string } | null;
       if (!body || body.success === false) {
@@ -121,6 +138,8 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       return body as Record<string, unknown>;
     }
   }
+
+  const get = (path: string, query: Record<string, string | number | undefined>) => send("GET", path, query);
 
   return {
     /** Deals in one Pipedrive pipeline changed since `updatedSince`, oldest change first (API v2). */
@@ -136,6 +155,23 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       const data = Array.isArray(body.data) ? body.data as PipedriveDeal[] : [];
       const extra = body.additional_data as { next_cursor?: string | null } | undefined;
       return { deals: data, nextCursor: extra?.next_cursor ?? null };
+    },
+
+    /** One deal by id (API v2). Null when Pipedrive no longer has it. */
+    async getDeal(dealId: string): Promise<PipedriveDeal | null> {
+      try {
+        const body = await get(`/api/v2/deals/${encodeURIComponent(dealId)}`, {});
+        return (body.data ?? null) as PipedriveDeal | null;
+      } catch (error) {
+        if (error instanceof PipedriveApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+
+    /** Writes changed fields to one deal (API v2 PATCH). Used by the sync runner only. */
+    async updateDeal(dealId: string, patch: PipedriveDealPatch): Promise<PipedriveDeal> {
+      const body = await send("PATCH", `/api/v2/deals/${encodeURIComponent(dealId)}`, {}, patch);
+      return body.data as PipedriveDeal;
     },
 
     /** Every deal field, so option ids can be shown as their labels. */
@@ -203,4 +239,70 @@ export function flattenPipedriveDeal(deal: PipedriveDeal, fields: PipedriveDealF
     flat[key] = toFieldValue(raw, labels.get(key));
   }
   return flat;
+}
+
+/** Body of a v2 deal update: top-level fields by name, custom fields under `custom_fields`. */
+export type PipedriveDealPatch = Record<string, unknown> & { custom_fields?: Record<string, unknown> };
+
+/** Deal fields Pipedrive sets itself. The sync never writes them. */
+const PIPEDRIVE_READ_ONLY_DEAL_FIELDS = new Set([
+  "id",
+  "add_time",
+  "update_time",
+  "close_time",
+  "won_time",
+  "lost_time",
+  "stage_change_time",
+  "creator_user_id",
+  "pipeline_id",
+  "is_deleted",
+]);
+
+/** Custom deal fields have a 40-character hex key; every other key is a top-level field. */
+function isPipedriveCustomFieldKey(key: string) {
+  return /^[0-9a-f]{40}$/.test(key);
+}
+
+export class PipedriveValueError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PipedriveValueError";
+  }
+}
+
+/**
+ * Turns GSAM values back into a v2 deal update. Choice fields go back from
+ * labels to option ids, the reverse of `flattenPipedriveDeal`. Throws
+ * `PipedriveValueError` for a read-only field or a label Pipedrive does not have.
+ */
+export function buildPipedriveDealPatch(
+  values: Array<{ externalField: string; value: CrmSyncFieldValue }>,
+  fields: PipedriveDealField[],
+): PipedriveDealPatch {
+  const patch: PipedriveDealPatch = {};
+  const byKey = new Map(fields.map((field) => [field.key, field]));
+  for (const { externalField, value } of values) {
+    if (PIPEDRIVE_READ_ONLY_DEAL_FIELDS.has(externalField)) {
+      throw new PipedriveValueError(`Pipedrive field ${externalField} is read-only`);
+    }
+    const field = byKey.get(externalField);
+    let out: unknown = value;
+    if (field?.options?.length && value !== null) {
+      const idByLabel = new Map(field.options.map((option) => [option.label.trim().toLowerCase(), option.id]));
+      const toId = (label: string) => {
+        const id = idByLabel.get(label.trim().toLowerCase());
+        if (id === undefined) {
+          throw new PipedriveValueError(`"${label}" is not an option of the Pipedrive field ${field.name ?? externalField}`);
+        }
+        return typeof id === "string" && /^\d+$/.test(id) ? Number(id) : id;
+      };
+      out = Array.isArray(value) ? value.map(toId) : toId(String(value));
+    }
+    if (isPipedriveCustomFieldKey(externalField)) {
+      patch.custom_fields = { ...(patch.custom_fields ?? {}), [externalField]: out };
+    } else {
+      patch[externalField] = out;
+    }
+  }
+  return patch;
 }
