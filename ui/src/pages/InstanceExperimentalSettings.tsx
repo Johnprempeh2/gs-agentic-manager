@@ -223,6 +223,7 @@ export function InstanceExperimentalSettings() {
   const enableBetaSkills = experimentalQuery.data?.enableBetaSkills === true;
   const enableSummaries = experimentalQuery.data?.enableSummaries === true;
   const enableStatusCards = experimentalQuery.data?.enableStatusCards === true;
+  const enableWebsiteView = experimentalQuery.data?.enableWebsiteView === true;
   const summariesManaged = managedKeys.enableSummaries?.managed === true;
   const statusCardsManaged = managedKeys.enableStatusCards?.managed === true;
   const statusCardsBlockedByManagedSummaries = summariesManaged && !enableSummaries;
@@ -550,6 +551,18 @@ export function InstanceExperimentalSettings() {
             ariaLabel="Toggle isolated workspaces by default experimental setting"
           />
         )}
+
+        <ExperimentalToggleCard
+          title="Website view"
+          description="A read-only Website page built from Google Analytics 4 and Search Console, with a daily pull stored in this instance."
+          footnote="Turning this off hides the Website page and blocks the Website API; stored reports are kept."
+          checked={enableWebsiteView}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableWebsiteView: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableWebsiteView"
+          managed={managedKeys.enableWebsiteView}
+          ariaLabel="Toggle website view experimental setting"
+        />
       </section>
 
       {showDeveloperSection ? (
