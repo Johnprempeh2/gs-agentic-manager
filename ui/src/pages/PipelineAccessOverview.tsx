@@ -90,9 +90,9 @@ export function PipelineAccessOverview() {
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm" aria-label="Agent access by pipeline">
-            <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+            <thead className="text-left text-xs text-muted-foreground">
               <tr>
-                <th className="sticky left-0 z-raised bg-background px-3 py-2 font-medium">Agent</th>
+                <th className="sticky left-0 z-raised min-w-36 bg-background px-3 py-2 font-medium">Agent</th>
                 {pipelineFilter ? null : <th className="px-3 py-2 font-medium">All pipelines</th>}
                 {pipelines.map((pipeline) => (
                   <th key={pipeline.id} className="px-3 py-2 font-medium">

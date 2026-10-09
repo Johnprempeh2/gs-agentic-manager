@@ -4,6 +4,9 @@ import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
 import { useLocation, useNavigate } from "@/lib/router";
+import { useQuery } from "@tanstack/react-query";
+import { instanceSettingsApi } from "@/api/instanceSettings";
+import { queryKeys } from "@/lib/queryKeys";
 
 const items = [
   { value: "general", label: "General", href: "/company/settings" },
@@ -11,6 +14,7 @@ const items = [
   { value: "import", label: "Import", href: "/company/import" },
   { value: "members", label: "Members", href: "/company/settings/members" },
   { value: "secrets", label: "Secrets", href: "/company/settings/secrets" },
+  { value: "pipelines-access", label: "Pipelines access", href: "/company/settings/pipelines-access" },
   { value: "instance-profile", label: "Profile", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/profile` },
   { value: "instance-environments", label: "Environments", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/environments` },
   { value: "instance-access", label: "Access", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/access` },
@@ -89,6 +93,10 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab {
     return "secrets";
   }
 
+  if (pathname.includes("/company/settings/pipelines-access")) {
+    return "pipelines-access";
+  }
+
   return "general";
 }
 
@@ -99,9 +107,14 @@ export function CompanySettingsNav() {
   // Import is floored server-side on cloud-managed instances (403 cloud_managed), so the
   // tab is suppressed there rather than dead-ending.
   const isCloud = Boolean(useCloudInstance());
+  const { data: experimentalSettings } = useQuery({
+    queryKey: queryKeys.instance.experimentalSettings,
+    queryFn: () => instanceSettingsApi.getExperimental(),
+  });
   const activeTab = getCompanySettingsTab(location.pathname);
   const visibleItems = items.filter((item) => {
     if (item.value === "import" && isCloud) return false;
+    if (item.value === "pipelines-access" && experimentalSettings?.enablePipelines !== true) return false;
     const hiddenKey = hiddenSettingKeyByTab[item.value];
     return !hiddenKey || !hiddenSettings.has(hiddenKey);
   });
