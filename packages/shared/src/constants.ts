@@ -601,6 +601,31 @@ export type IssueWorkFilter = (typeof ISSUE_WORK_FILTERS)[number];
 export const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
+/** Which way is good for a KPI: "up" (revenue) or "down" (churn, cost). */
+export const KPI_DIRECTIONS = ["up", "down"] as const;
+export type KpiDirection = (typeof KPI_DIRECTIONS)[number];
+
+/**
+ * Where a KPI reading came from. Owners report their own numbers; an agent
+ * that checked the data posts `agent_verified`; `system` is an import (for
+ * example from accounting).
+ */
+export const KPI_READING_SOURCES = ["owner_reported", "agent_verified", "system"] as const;
+export type KpiReadingSource = (typeof KPI_READING_SOURCES)[number];
+
+export const KPI_READING_SOURCE_LABELS: Record<KpiReadingSource, string> = {
+  owner_reported: "Owner reported",
+  agent_verified: "Agent verified",
+  system: "From a system",
+};
+
+export const KPI_RAG_STATUSES = ["green", "amber", "red"] as const;
+export type KpiRagStatus = (typeof KPI_RAG_STATUSES)[number];
+
+/** Default slippage lines, in percent off the planned path. */
+export const DEFAULT_KPI_AMBER_THRESHOLD_PCT = 10;
+export const DEFAULT_KPI_RED_THRESHOLD_PCT = 20;
+
 export const PROJECT_STATUSES = [
   "backlog",
   "planned",

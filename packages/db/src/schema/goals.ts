@@ -7,6 +7,7 @@ import {
   index,
   date,
   doublePrecision,
+  bigint,
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
@@ -31,6 +32,17 @@ export const goals = pgTable(
     targetValue: doublePrecision("target_value"),
     currentValue: doublePrecision("current_value"),
     unit: text("unit"),
+    /** KPI plan (GRE-1133): baseline to target by targetDate. See shared goal-kpi-status.ts. */
+    baselineValue: doublePrecision("baseline_value"),
+    baselineDate: date("baseline_date"),
+    /** "up" or "down" is good; null means up. */
+    kpiDirection: text("kpi_direction"),
+    amberThresholdPct: doublePrecision("amber_threshold_pct"),
+    redThresholdPct: doublePrecision("red_threshold_pct"),
+    /** Initiative budget in minor units of budgetCurrency. */
+    budgetPlannedCents: bigint("budget_planned_cents", { mode: "number" }),
+    budgetSpentCents: bigint("budget_spent_cents", { mode: "number" }),
+    budgetCurrency: text("budget_currency"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

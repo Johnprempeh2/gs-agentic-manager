@@ -2143,6 +2143,13 @@
       "when": 1791580893304,
       "tag": "0307_crm_sync_review_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1791587368994,
+      "tag": "0308_goal_kpi_readings_budget",
+      "breakpoints": true
     }
   ]
 }

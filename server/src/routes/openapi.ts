@@ -120,6 +120,7 @@ import {
   // Goal
   createGoalSchema,
   createGoalCheckInSchema,
+  createGoalKpiReadingSchema,
   updateGoalSchema,
   // Secret
   createSecretSchema,
@@ -5671,6 +5672,29 @@ registry.registerPath({
     body: jsonBody(createGoalCheckInSchema),
   },
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/goals/{id}/readings",
+  tags: ["goals"],
+  summary: "List a KPI's readings, newest first, with source and who recorded each",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/goals/{id}/readings",
+  tags: ["goals"],
+  summary:
+    "Record a KPI reading. source: owner_reported (board user, owner agent or lead agent), " +
+    "agent_verified or system (an agent that is not the KPI owner). The goal must be a KPI.",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(createGoalKpiReadingSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({
