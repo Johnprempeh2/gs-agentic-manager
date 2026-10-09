@@ -1,0 +1,521 @@
+// CRM sync bindings, field maps, sync log and conflicts (GRE-1100). Contract:
+// doc/CRM-SYNC-CONTRACT.md. Every read and write here is scoped to one company;
+// routes check the caller before they call in.
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import type { Db } from "@greatstone/db";
+import {
+  crmSyncBindings,
+  crmSyncConflicts,
+  crmSyncEvents,
+  crmSyncFieldMaps,
+  crmSyncRecordLinks,
+  pipelineCaseContacts,
+  pipelineCases,
+  pipelineFieldDefinitions,
+  pipelineStages,
+  pipelines,
+  toolConnections,
+  type CrmSyncStoredValue,
+} from "@greatstone/db";
+import type {
+  CreateCrmSyncBinding,
+  CrmSyncBinding,
+  CrmSyncBindingDirection,
+  CrmSyncBindingStatus,
+  CrmSyncConflict,
+  CrmSyncConflictResolution,
+  CrmSyncConflictStatus,
+  CrmSyncContainerKind,
+  CrmSyncEntityKind,
+  CrmSyncEvent,
+  CrmSyncEventAction,
+  CrmSyncEventDirection,
+  CrmSyncFieldMap,
+  CrmSyncFieldMapEntryInput,
+  CrmSyncFieldOwner,
+  CrmSyncPage,
+  CrmSyncRecordLink,
+  CrmSyncStageMapEntry,
+  ListCrmSyncConflictsQuery,
+  ListCrmSyncEventsQuery,
+  ResolveCrmSyncConflict,
+  UpdateCrmSyncBinding,
+} from "@greatstone/shared";
+import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
+
+type SyncDb = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+type BindingRow = typeof crmSyncBindings.$inferSelect;
+type ConflictRow = typeof crmSyncConflicts.$inferSelect;
+type EventRow = typeof crmSyncEvents.$inferSelect;
+type FieldMapRow = typeof crmSyncFieldMaps.$inferSelect;
+
+function isUniqueViolation(error: unknown) {
+  const candidate = error as { code?: unknown; cause?: { code?: unknown } } | null;
+  return candidate?.code === "23505" || candidate?.cause?.code === "23505";
+}
+
+function iso(value: Date | null) {
+  return value ? value.toISOString() : null;
+}
+
+export function toCrmSyncBinding(row: BindingRow, openConflictCount: number): CrmSyncBinding {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    connectionId: row.connectionId,
+    providerKey: row.providerKey,
+    containerKind: row.containerKind as CrmSyncContainerKind,
+    externalContainerId: row.externalContainerId,
+    externalContainerLabel: row.externalContainerLabel,
+    pipelineId: row.pipelineId,
+    direction: row.direction as CrmSyncBindingDirection,
+    status: row.status as CrmSyncBindingStatus,
+    stageMap: row.stageMap,
+    openConflictCount,
+    lastSyncedAt: iso(row.lastSyncedAt),
+    lastErrorMessage: row.lastErrorMessage,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toFieldMap(binding: BindingRow, rows: FieldMapRow[]): CrmSyncFieldMap {
+  return {
+    bindingId: binding.id,
+    fields: rows.map((row) => ({
+      id: row.id,
+      bindingId: row.bindingId,
+      externalField: row.externalField,
+      externalFieldLabel: row.externalFieldLabel,
+      gsamField: row.gsamField,
+      owner: row.owner as CrmSyncFieldOwner,
+    })),
+    updatedAt: binding.fieldMapUpdatedAt.toISOString(),
+  };
+}
+
+function toEvent(row: EventRow): CrmSyncEvent {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    bindingId: row.bindingId,
+    direction: row.direction as CrmSyncEventDirection,
+    action: row.action as CrmSyncEventAction,
+    entityKind: row.entityKind as CrmSyncEntityKind,
+    entityId: row.entityId,
+    externalId: row.externalId,
+    changedFields: row.changedFields,
+    conflictId: row.conflictId,
+    errorMessage: row.errorMessage,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toCrmSyncConflict(row: ConflictRow): CrmSyncConflict {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    bindingId: row.bindingId,
+    entityKind: row.entityKind as CrmSyncEntityKind,
+    entityId: row.entityId,
+    externalId: row.externalId,
+    gsamField: row.gsamField,
+    externalField: row.externalField,
+    ...(row.lastSyncedValue ? { lastSyncedValue: row.lastSyncedValue.value } : {}),
+    crmValue: row.crmValue.value,
+    gsamValue: row.gsamValue.value,
+    status: row.status as CrmSyncConflictStatus,
+    resolution: row.resolution as CrmSyncConflictResolution | null,
+    ...(row.resolvedValue ? { resolvedValue: row.resolvedValue.value } : {}),
+    resolvedByUserId: row.resolvedByUserId,
+    resolvedByAgentId: row.resolvedByAgentId,
+    resolvedAt: iso(row.resolvedAt),
+    detectedAt: row.detectedAt.toISOString(),
+  };
+}
+
+// Pages are newest first. The cursor is the (time, id) of the last item served.
+function encodeCursor(at: Date, id: string) {
+  return Buffer.from(JSON.stringify([at.toISOString(), id])).toString("base64url");
+}
+
+function decodeCursor(cursor: string | undefined) {
+  if (!cursor) return null;
+  try {
+    const [at, id] = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as [string, string];
+    const date = new Date(at);
+    if (Number.isNaN(date.getTime()) || typeof id !== "string") throw new Error("bad cursor");
+    return { at: date, id };
+  } catch {
+    throw badRequest("Invalid cursor");
+  }
+}
+
+// Postgres keeps microseconds and the cursor keeps milliseconds, so compare at
+// millisecond precision; the id breaks ties.
+function beforeCursor(at: AnyPgColumn, id: AnyPgColumn, cursor: { at: Date; id: string }) {
+  return sql`(date_trunc('milliseconds', ${at}), ${id}) < (${cursor.at.toISOString()}::timestamptz, ${cursor.id}::uuid)`;
+}
+
+async function openConflictCounts(db: SyncDb, bindingIds: string[]) {
+  const counts = new Map<string, number>();
+  if (bindingIds.length === 0) return counts;
+  const rows = await db
+    .select({ bindingId: crmSyncConflicts.bindingId, count: sql<number>`count(*)::int` })
+    .from(crmSyncConflicts)
+    .where(and(inArray(crmSyncConflicts.bindingId, bindingIds), eq(crmSyncConflicts.status, "open")))
+    .groupBy(crmSyncConflicts.bindingId);
+  for (const row of rows) counts.set(row.bindingId, row.count);
+  return counts;
+}
+
+/** Loads a live (not deleted) binding. Routes check the caller's company against the result. */
+export async function loadCrmSyncBinding(db: SyncDb, bindingId: string) {
+  const row = await db
+    .select()
+    .from(crmSyncBindings)
+    .where(and(eq(crmSyncBindings.id, bindingId), isNull(crmSyncBindings.deletedAt)))
+    .then((rows) => rows[0] ?? null);
+  if (!row) throw notFound("Binding not found");
+  return row;
+}
+
+export async function loadCrmSyncConflict(db: SyncDb, conflictId: string) {
+  const row = await db
+    .select()
+    .from(crmSyncConflicts)
+    .where(eq(crmSyncConflicts.id, conflictId))
+    .then((rows) => rows[0] ?? null);
+  if (!row) throw notFound("Conflict not found");
+  return row;
+}
+
+export async function loadCaseCompanyId(db: SyncDb, caseId: string) {
+  const row = await db
+    .select({ companyId: pipelineCases.companyId })
+    .from(pipelineCases)
+    .where(eq(pipelineCases.id, caseId))
+    .then((rows) => rows[0] ?? null);
+  if (!row) throw notFound("Case not found");
+  return row.companyId;
+}
+
+async function assertStageMapMatchesPipeline(db: SyncDb, pipelineId: string, stageMap: CrmSyncStageMapEntry[]) {
+  if (stageMap.length === 0) return;
+  const keys = await db
+    .select({ key: pipelineStages.key })
+    .from(pipelineStages)
+    .where(eq(pipelineStages.pipelineId, pipelineId))
+    .then((rows) => new Set(rows.map((row) => row.key)));
+  const missing = stageMap.map((entry) => entry.stageKey).filter((key) => !keys.has(key));
+  if (missing.length > 0) {
+    throw unprocessable("The stage map names stages this pipeline does not have", {
+      code: "unknown_stage_key",
+      stageKeys: [...new Set(missing)],
+    });
+  }
+}
+
+// `fields.<key>` must name a typed field (GRE-1075) on the bound pipeline that
+// is not archived, so imported values land in a field with a known type.
+async function assertFieldMapMatchesPipeline(
+  db: SyncDb,
+  input: { companyId: string; pipelineId: string; fields: CrmSyncFieldMapEntryInput[] },
+) {
+  const wanted = input.fields
+    .map((entry) => entry.gsamField)
+    .filter((field) => field.startsWith("fields."))
+    .map((field) => field.slice("fields.".length));
+  if (wanted.length === 0) return;
+  const known = await db
+    .select({ key: pipelineFieldDefinitions.key })
+    .from(pipelineFieldDefinitions)
+    .where(and(
+      eq(pipelineFieldDefinitions.companyId, input.companyId),
+      eq(pipelineFieldDefinitions.pipelineId, input.pipelineId),
+      isNull(pipelineFieldDefinitions.archivedAt),
+    ))
+    .then((rows) => new Set(rows.map((row) => row.key)));
+  const missing = wanted.filter((key) => !known.has(key));
+  if (missing.length > 0) {
+    throw unprocessable("The field map names pipeline fields that do not exist or are archived", {
+      code: "unknown_pipeline_field",
+      fieldKeys: missing,
+    });
+  }
+}
+
+async function writeFieldMap(
+  db: SyncDb,
+  binding: Pick<BindingRow, "id" | "companyId">,
+  fields: CrmSyncFieldMapEntryInput[],
+) {
+  await db.delete(crmSyncFieldMaps).where(eq(crmSyncFieldMaps.bindingId, binding.id));
+  if (fields.length === 0) return [];
+  return db
+    .insert(crmSyncFieldMaps)
+    .values(fields.map((entry, position) => ({
+      companyId: binding.companyId,
+      bindingId: binding.id,
+      externalField: entry.externalField,
+      externalFieldLabel: entry.externalFieldLabel ?? null,
+      gsamField: entry.gsamField,
+      owner: entry.owner,
+      position,
+    })))
+    .returning();
+}
+
+export function crmSyncService(db: Db) {
+  async function bindingWithCount(row: BindingRow) {
+    const counts = await openConflictCounts(db, [row.id]);
+    return toCrmSyncBinding(row, counts.get(row.id) ?? 0);
+  }
+
+  return {
+    async listBindings(companyId: string) {
+      const rows = await db
+        .select()
+        .from(crmSyncBindings)
+        .where(and(eq(crmSyncBindings.companyId, companyId), isNull(crmSyncBindings.deletedAt)))
+        .orderBy(asc(crmSyncBindings.createdAt), asc(crmSyncBindings.id));
+      const counts = await openConflictCounts(db, rows.map((row) => row.id));
+      return rows.map((row) => toCrmSyncBinding(row, counts.get(row.id) ?? 0));
+    },
+
+    getBinding: bindingWithCount,
+
+    async createBinding(companyId: string, input: CreateCrmSyncBinding, actor: { userId: string }) {
+      const [connection, pipeline] = await Promise.all([
+        db
+          .select({ id: toolConnections.id })
+          .from(toolConnections)
+          .where(and(eq(toolConnections.id, input.connectionId), eq(toolConnections.companyId, companyId)))
+          .then((rows) => rows[0] ?? null),
+        db
+          .select({ id: pipelines.id })
+          .from(pipelines)
+          .where(and(eq(pipelines.id, input.pipelineId), eq(pipelines.companyId, companyId)))
+          .then((rows) => rows[0] ?? null),
+      ]);
+      // Same answer for "missing" and "another company's" so ids do not leak.
+      if (!connection) throw unprocessable("Connection not found", { code: "connection_not_found" });
+      if (!pipeline) throw unprocessable("Pipeline not found", { code: "pipeline_not_found" });
+      await assertStageMapMatchesPipeline(db, input.pipelineId, input.stageMap);
+      await assertFieldMapMatchesPipeline(db, { companyId, pipelineId: input.pipelineId, fields: input.fieldMap });
+
+      try {
+        const created = await db.transaction(async (tx) => {
+          const [row] = await tx.insert(crmSyncBindings).values({
+            companyId,
+            connectionId: input.connectionId,
+            providerKey: input.providerKey,
+            containerKind: input.containerKind,
+            externalContainerId: input.externalContainerId,
+            externalContainerLabel: input.externalContainerLabel ?? null,
+            pipelineId: input.pipelineId,
+            direction: input.direction,
+            stageMap: input.stageMap,
+            createdByUserId: actor.userId,
+          }).returning();
+          await writeFieldMap(tx, row!, input.fieldMap);
+          return row!;
+        });
+        return toCrmSyncBinding(created, 0);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw conflict("This external container is already bound for this connection", {
+            code: "duplicate_binding",
+            externalContainerId: input.externalContainerId,
+          });
+        }
+        throw error;
+      }
+    },
+
+    async updateBinding(binding: BindingRow, patch: UpdateCrmSyncBinding) {
+      if (patch.stageMap) await assertStageMapMatchesPipeline(db, binding.pipelineId, patch.stageMap);
+      const values: Partial<typeof crmSyncBindings.$inferInsert> = { updatedAt: new Date() };
+      if (patch.externalContainerLabel !== undefined) values.externalContainerLabel = patch.externalContainerLabel;
+      if (patch.direction) values.direction = patch.direction;
+      if (patch.stageMap) values.stageMap = patch.stageMap;
+      if (patch.status) {
+        values.status = patch.status;
+        // Resuming clears the server error so the next pass can run.
+        if (patch.status === "active") values.lastErrorMessage = null;
+      }
+      const [updated] = await db
+        .update(crmSyncBindings)
+        .set(values)
+        .where(and(eq(crmSyncBindings.id, binding.id), isNull(crmSyncBindings.deletedAt)))
+        .returning();
+      if (!updated) throw notFound("Binding not found");
+      return bindingWithCount(updated);
+    },
+
+    /** Stops sync. Keeps the log, record links and resolved conflicts; open conflicts are dismissed. */
+    async deleteBinding(binding: BindingRow, actor: { userId: string }) {
+      const now = new Date();
+      return db.transaction(async (tx) => {
+        const dismissed = await tx
+          .update(crmSyncConflicts)
+          .set({
+            status: "dismissed",
+            dismissReason: "Binding deleted",
+            resolvedByUserId: actor.userId,
+            resolvedAt: now,
+          })
+          .where(and(eq(crmSyncConflicts.bindingId, binding.id), eq(crmSyncConflicts.status, "open")))
+          .returning({ id: crmSyncConflicts.id });
+        await tx
+          .update(crmSyncBindings)
+          .set({ deletedAt: now, status: "paused", nextSyncAt: null, updatedAt: now })
+          .where(eq(crmSyncBindings.id, binding.id));
+        return { dismissedConflictCount: dismissed.length };
+      });
+    },
+
+    async getFieldMap(binding: BindingRow) {
+      const rows = await db
+        .select()
+        .from(crmSyncFieldMaps)
+        .where(and(eq(crmSyncFieldMaps.bindingId, binding.id), eq(crmSyncFieldMaps.companyId, binding.companyId)))
+        .orderBy(asc(crmSyncFieldMaps.position));
+      return toFieldMap(binding, rows);
+    },
+
+    async replaceFieldMap(binding: BindingRow, fields: CrmSyncFieldMapEntryInput[]) {
+      await assertFieldMapMatchesPipeline(db, {
+        companyId: binding.companyId,
+        pipelineId: binding.pipelineId,
+        fields,
+      });
+      return db.transaction(async (tx) => {
+        const rows = await writeFieldMap(tx, binding, fields);
+        const [updated] = await tx
+          .update(crmSyncBindings)
+          .set({ fieldMapUpdatedAt: new Date(), updatedAt: new Date() })
+          .where(eq(crmSyncBindings.id, binding.id))
+          .returning();
+        return toFieldMap(updated!, rows);
+      });
+    },
+
+    async listEvents(binding: BindingRow, query: ListCrmSyncEventsQuery): Promise<CrmSyncPage<CrmSyncEvent>> {
+      const cursor = decodeCursor(query.cursor);
+      const conditions = [
+        eq(crmSyncEvents.companyId, binding.companyId),
+        eq(crmSyncEvents.bindingId, binding.id),
+      ];
+      if (query.direction) conditions.push(eq(crmSyncEvents.direction, query.direction));
+      if (query.action) conditions.push(eq(crmSyncEvents.action, query.action));
+      if (query.entityId) conditions.push(eq(crmSyncEvents.entityId, query.entityId));
+      if (cursor) {
+        conditions.push(beforeCursor(crmSyncEvents.createdAt, crmSyncEvents.id, cursor));
+      }
+      const rows = await db
+        .select()
+        .from(crmSyncEvents)
+        .where(and(...conditions))
+        .orderBy(desc(crmSyncEvents.createdAt), desc(crmSyncEvents.id))
+        .limit(query.limit + 1);
+      const items = rows.slice(0, query.limit);
+      const last = items[items.length - 1];
+      return {
+        items: items.map(toEvent),
+        nextCursor: rows.length > query.limit && last ? encodeCursor(last.createdAt, last.id) : null,
+      };
+    },
+
+    async listConflicts(companyId: string, query: ListCrmSyncConflictsQuery): Promise<CrmSyncPage<CrmSyncConflict>> {
+      const cursor = decodeCursor(query.cursor);
+      const conditions = [eq(crmSyncConflicts.companyId, companyId), eq(crmSyncConflicts.status, query.status)];
+      if (query.bindingId) conditions.push(eq(crmSyncConflicts.bindingId, query.bindingId));
+      if (query.entityId) conditions.push(eq(crmSyncConflicts.entityId, query.entityId));
+      if (cursor) {
+        conditions.push(beforeCursor(crmSyncConflicts.detectedAt, crmSyncConflicts.id, cursor));
+      }
+      const rows = await db
+        .select()
+        .from(crmSyncConflicts)
+        .where(and(...conditions))
+        .orderBy(desc(crmSyncConflicts.detectedAt), desc(crmSyncConflicts.id))
+        .limit(query.limit + 1);
+      const items = rows.slice(0, query.limit);
+      const last = items[items.length - 1];
+      return {
+        items: items.map(toCrmSyncConflict),
+        nextCursor: rows.length > query.limit && last ? encodeCursor(last.detectedAt, last.id) : null,
+      };
+    },
+
+    async resolveConflict(row: ConflictRow, input: ResolveCrmSyncConflict, actor: { userId: string }) {
+      const resolvedValue: CrmSyncStoredValue = input.resolution === "keep_crm"
+        ? row.crmValue
+        : input.resolution === "keep_gsam"
+          ? row.gsamValue
+          : { value: input.value };
+      return closeConflict(row, {
+        status: "resolved",
+        resolution: input.resolution,
+        resolvedValue,
+        resolvedByUserId: actor.userId,
+        resolvedAt: new Date(),
+      });
+    },
+
+    async dismissConflict(row: ConflictRow, reason: string | undefined, actor: { userId: string }) {
+      return closeConflict(row, {
+        status: "dismissed",
+        dismissReason: reason?.trim() || null,
+        resolvedByUserId: actor.userId,
+        resolvedAt: new Date(),
+      });
+    },
+
+    /** External ids held by the case and its contacts. */
+    async listCaseLinks(companyId: string, caseId: string): Promise<CrmSyncRecordLink[]> {
+      const contactIds = await db
+        .select({ id: pipelineCaseContacts.id })
+        .from(pipelineCaseContacts)
+        .where(and(eq(pipelineCaseContacts.companyId, companyId), eq(pipelineCaseContacts.caseId, caseId)))
+        .then((rows) => rows.map((row) => row.id));
+      const rows = await db
+        .select()
+        .from(crmSyncRecordLinks)
+        .where(and(
+          eq(crmSyncRecordLinks.companyId, companyId),
+          or(
+            and(eq(crmSyncRecordLinks.entityKind, "case"), eq(crmSyncRecordLinks.entityId, caseId)),
+            contactIds.length > 0
+              ? and(eq(crmSyncRecordLinks.entityKind, "contact"), inArray(crmSyncRecordLinks.entityId, contactIds))
+              : sql`false`,
+          ),
+        ))
+        .orderBy(asc(crmSyncRecordLinks.createdAt), asc(crmSyncRecordLinks.id));
+      return rows.map((row) => ({
+        id: row.id,
+        companyId: row.companyId,
+        entityKind: row.entityKind as CrmSyncEntityKind,
+        entityId: row.entityId,
+        connectionId: row.connectionId,
+        providerKey: row.providerKey,
+        externalId: row.externalId,
+        lastSyncedAt: iso(row.lastSyncedAt),
+        createdAt: row.createdAt.toISOString(),
+      }));
+    },
+  };
+
+  // A resolved or dismissed conflict is never reopened; only an open one can close.
+  async function closeConflict(row: ConflictRow, values: Partial<typeof crmSyncConflicts.$inferInsert>) {
+    const [updated] = await db
+      .update(crmSyncConflicts)
+      .set(values)
+      .where(and(eq(crmSyncConflicts.id, row.id), eq(crmSyncConflicts.status, "open")))
+      .returning();
+    if (!updated) throw conflict("This conflict is already closed", { code: "conflict_closed", status: row.status });
+    return toCrmSyncConflict(updated);
+  }
+}
