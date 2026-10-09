@@ -432,12 +432,13 @@ describeEmbeddedPostgres("smoke lab retired flag (GRE-196)", () => {
     await tempDb?.cleanup();
   });
 
-  it("stays hidden (404) even when the stored flag says on", async () => {
+  it("stays refused (403 not_entitled) even when the stored flag says on", async () => {
     const company = await createCompany(db);
     await enableSmokeLab(db);
 
-    await request(createRouteApp(db, boardActor(company.id)))
+    const res = await request(createRouteApp(db, boardActor(company.id)))
       .get(`/api/companies/${company.id}/smoke-lab/services`)
-      .expect(404);
+      .expect(403);
+    expect(res.body).toMatchObject({ code: "not_entitled", feature: "enableSmokeLab" });
   });
 });

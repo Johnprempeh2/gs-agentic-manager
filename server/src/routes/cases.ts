@@ -44,9 +44,10 @@ import {
   isUuidLike,
 } from "@greatstone/shared";
 import { formatAttachmentSize, MAX_ATTACHMENT_BYTES, normalizeContentType } from "../attachment-types.js";
-import { badRequest, conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { assertEntitled, requireEntitlement } from "../services/entitlements.js";
 import { documentAnnotationService, logActivity } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
@@ -64,10 +65,7 @@ function eventActorValues(actor: CaseActor) {
 }
 
 async function assertCasesEnabled(db: Db) {
-  const experimental = await instanceSettingsService(db).getExperimental();
-  if (!experimental.enableCases) {
-    throw forbidden("Cases are disabled");
-  }
+  await assertEntitled(instanceSettingsService(db), "enableCases");
 }
 
 async function lockCaseUpsertKey(db: CaseRouteDb, input: { companyId: string; caseType: string; key: string | null | undefined }) {
@@ -550,6 +548,10 @@ export function caseRoutes(db: Db, storage: StorageService) {
   const router = Router();
   const documentAnnotationsSvc = documentAnnotationService(db);
 
+  // GRE-1077: company case routes are refused while enableCases is off, before
+  // validation. /cases/:id routes check per route (see resolveSharedPathCase).
+  router.use("/companies/:companyId/cases", requireEntitlement(db, "enableCases"));
+
   async function logCaseAnnotationRemaps(input: {
     caseRow: typeof cases.$inferSelect;
     key: string;
@@ -590,7 +592,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
   }
 
   router.post("/companies/:companyId/cases", validate(createCaseSchema), async (req, res) => {
-    await assertCasesEnabled(db);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const actor = getActorInfo(req);
@@ -667,7 +668,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
   });
 
   router.get("/companies/:companyId/cases", async (req, res) => {
-    await assertCasesEnabled(db);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const parsed = listCasesQuerySchema.safeParse(req.query);
