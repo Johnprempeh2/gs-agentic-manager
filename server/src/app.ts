@@ -84,6 +84,7 @@ import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
 import { crmSyncRoutes } from "./routes/crm-sync.js";
+import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
@@ -1282,6 +1283,8 @@ export async function createApp(
       IMPORT_TRANSFER_SPOOL_SWEEP_INTERVAL_MS,
     );
   importTransferSweepTimer.unref?.();
+  // CRM sync (GRE-1100): polls due Pipedrive bindings once a minute. Read only.
+  const stopCrmSyncScheduler = startCrmSyncScheduler(db);
   // Startup only (never on the hourly interval — that would kill live
   // applies): apply jobs are in-memory in this single process, so any run
   // still "applying" now was interrupted by the previous shutdown and would
@@ -1388,6 +1391,7 @@ export async function createApp(
         clearInterval(importTransferSweepTimer);
         importTransferSweepTimer = null;
       }
+      stopCrmSyncScheduler();
       devWatcher?.close();
       viteHtmlRenderer?.dispose();
       void viteDevServer?.close().catch(() => undefined);

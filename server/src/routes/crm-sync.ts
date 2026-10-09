@@ -11,11 +11,13 @@ import {
   listCrmSyncEventsQuerySchema,
   replaceCrmSyncFieldMapSchema,
   resolveCrmSyncConflictSchema,
+  runCrmSyncBindingSchema,
   updateCrmSyncBindingSchema,
   type CreateCrmSyncBinding,
   type DismissCrmSyncConflict,
   type ReplaceCrmSyncFieldMap,
   type ResolveCrmSyncConflict,
+  type RunCrmSyncBinding,
   type UpdateCrmSyncBinding,
 } from "@greatstone/shared";
 import { badRequest, HttpError, notFound } from "../errors.js";
@@ -170,6 +172,18 @@ export function crmSyncRoutes(db: Db) {
     res.json(map);
   });
 
+  router.post("/crm-sync/bindings/:bindingId/sync", validate(runCrmSyncBindingSchema), async (req, res) => {
+    const binding = await bindingFor(req);
+    const actor = assertBoardWriter(req, binding.companyId);
+    const { direction } = req.body as RunCrmSyncBinding;
+    const queued = await svc.queueRun(binding, direction);
+    await audit(binding.companyId, actor.userId, "crm_sync.run_queued", "crm_sync_binding", binding.id, {
+      direction,
+      nextSyncAt: queued.nextSyncAt,
+    });
+    res.status(202).json(queued);
+  });
+
   router.get("/crm-sync/bindings/:bindingId/events", async (req, res) => {
     const binding = await bindingFor(req);
     res.json(await svc.listEvents(binding, parseQuery(listCrmSyncEventsQuerySchema, req)));
@@ -211,6 +225,13 @@ export function crmSyncRoutes(db: Db) {
     const companyId = await loadCaseCompanyId(db, caseId);
     assertSyncCompanyAccess(req, companyId, "Case");
     res.json(await svc.listCaseLinks(companyId, caseId));
+  });
+
+  router.get("/cases/:caseId/crm-sync/status", async (req, res) => {
+    const caseId = parseId(req.params.caseId, "Case");
+    const companyId = await loadCaseCompanyId(db, caseId);
+    assertSyncCompanyAccess(req, companyId, "Case");
+    res.json(await svc.getCaseStatus(companyId, caseId));
   });
 
   return router;
