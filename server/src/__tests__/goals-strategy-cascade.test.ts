@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { activityLog, agents, companyMemberships, goalCheckIns, goals, issues } from "@greatstone/db";
 import {
-  GOAL_KINDS,
   STRATEGIC_PLAN_TEMPLATE,
+  STRATEGIC_PLAN_TEMPLATE_NAME,
   goalKindParentError,
   type GoalWithProgress,
 } from "@greatstone/shared";
@@ -26,16 +26,21 @@ describe("goal kind tree rules (pure)", () => {
     }
   });
 
-  it("puts pillar under CSF or vision, objective under pillar, KPI and initiative under objective", () => {
+  it("puts pillar under CSF or vision, objective under CSF or pillar, KPI under CSF, pillar or objective, initiative under objective", () => {
     expect(goalKindParentError("pillar", true, "csf")).toBeNull();
     expect(goalKindParentError("pillar", true, "vision")).toBeNull();
     expect(goalKindParentError("pillar", true, "value")).toMatch(/csf or vision/);
+    expect(goalKindParentError("objective", true, "csf")).toBeNull();
     expect(goalKindParentError("objective", true, "pillar")).toBeNull();
-    expect(goalKindParentError("objective", false, null)).toMatch(/pillar/);
+    expect(goalKindParentError("objective", true, "vision")).toMatch(/csf or pillar/);
+    expect(goalKindParentError("objective", false, null)).toMatch(/csf or pillar/);
+    expect(goalKindParentError("kpi", true, "csf")).toBeNull();
+    expect(goalKindParentError("kpi", true, "pillar")).toBeNull();
     expect(goalKindParentError("kpi", true, "objective")).toBeNull();
+    expect(goalKindParentError("kpi", true, "vision")).toMatch(/csf or pillar or objective/);
+    expect(goalKindParentError("kpi", true, null)).toMatch(/csf or pillar or objective/);
     expect(goalKindParentError("initiative", true, "objective")).toBeNull();
-    expect(goalKindParentError("kpi", true, "pillar")).toMatch(/objective/);
-    expect(goalKindParentError("kpi", true, null)).toMatch(/objective/);
+    expect(goalKindParentError("initiative", true, "csf")).toMatch(/objective/);
   });
 
   it("does not check plain goals", () => {
@@ -43,8 +48,9 @@ describe("goal kind tree rules (pure)", () => {
     expect(goalKindParentError(undefined, false, null)).toBeNull();
   });
 
-  it("the template has one goal of every kind and obeys the rules", () => {
-    expect(STRATEGIC_PLAN_TEMPLATE.map((node) => node.kind).sort()).toEqual([...GOAL_KINDS].sort());
+  it("the one-page template has vision, values, a CSF with an objective and a KPI, and obeys the rules", () => {
+    expect(STRATEGIC_PLAN_TEMPLATE_NAME).toBe("One-page strategic plan");
+    expect(STRATEGIC_PLAN_TEMPLATE.map((node) => node.kind)).toEqual(["vision", "value", "csf", "objective", "kpi"]);
     const kindByKey = new Map(STRATEGIC_PLAN_TEMPLATE.map((node) => [node.key, node.kind]));
     for (const node of STRATEGIC_PLAN_TEMPLATE) {
       const parentKind = node.parentKey ? kindByKey.get(node.parentKey) ?? null : null;
@@ -123,7 +129,7 @@ describeEmbeddedPostgres("goals API: strategy cascade (GRE-1132)", () => {
       .post(`/api/companies/${companyId}/goals`)
       .send({ title: "KPI under vision", kind: "kpi", parentId: vision.id });
     expect(badKpi.status).toBe(422);
-    expect(badKpi.body.error).toMatch(/must sit under a goal of kind objective/);
+    expect(badKpi.body.error).toMatch(/must sit under a goal of kind csf or pillar or objective/);
 
     const badPillar = await request(app)
       .post(`/api/companies/${companyId}/goals`)
@@ -144,9 +150,28 @@ describeEmbeddedPostgres("goals API: strategy cascade (GRE-1132)", () => {
       .post(`/api/companies/${companyId}/goals`)
       .send({ title: "Objective", kind: "objective", parentId: pillar.body.id });
     expect(objective.status).toBe(201);
-    const recast = await request(app).patch(`/api/goals/${pillar.body.id}`).send({ kind: "csf", parentId: null });
+    const recast = await request(app).patch(`/api/goals/${pillar.body.id}`).send({ kind: "value", parentId: null });
     expect(recast.status).toBe(422);
     expect(recast.body.error).toMatch(/Objective/);
+  });
+
+  it("takes objectives and KPIs straight under a CSF, as on a one-page plan", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "OnePage");
+    const app = routeApp(ctx.db, actor, goalRoutes);
+    const csf = await seedGoal(companyId, { kind: "csf", title: "People" });
+
+    const objective = await request(app)
+      .post(`/api/companies/${companyId}/goals`)
+      .send({ title: "Grow skills", kind: "objective", parentId: csf.id });
+    expect(objective.status).toBe(201);
+    const kpi = await request(app)
+      .post(`/api/companies/${companyId}/goals`)
+      .send({ title: "Staff turnover", kind: "kpi", parentId: csf.id });
+    expect(kpi.status).toBe(201);
+    const initiative = await request(app)
+      .post(`/api/companies/${companyId}/goals`)
+      .send({ title: "Training plan", kind: "initiative", parentId: csf.id });
+    expect(initiative.status).toBe(422);
   });
 
   it("rejects a parent from another company", async () => {
@@ -211,14 +236,13 @@ describeEmbeddedPostgres("goals API: strategy cascade (GRE-1132)", () => {
     const rows = await ctx.db.select().from(goals).where(eq(goals.companyId, companyId));
     expect(rows).toHaveLength(STRATEGIC_PLAN_TEMPLATE.length);
     const byKind = new Map(rows.map((row) => [row.kind, row]));
-    expect([...byKind.keys()].sort()).toEqual([...GOAL_KINDS].sort());
+    expect([...byKind.keys()].sort()).toEqual(["csf", "kpi", "objective", "value", "vision"]);
     expect(byKind.get("vision")!.parentId).toBeNull();
     expect(byKind.get("value")!.parentId).toBeNull();
     expect(byKind.get("csf")!.parentId).toBeNull();
-    expect(byKind.get("pillar")!.parentId).toBe(byKind.get("vision")!.id);
-    expect(byKind.get("objective")!.parentId).toBe(byKind.get("pillar")!.id);
-    expect(byKind.get("kpi")!.parentId).toBe(byKind.get("objective")!.id);
-    expect(byKind.get("initiative")!.parentId).toBe(byKind.get("objective")!.id);
+    expect(byKind.get("objective")!.parentId).toBe(byKind.get("csf")!.id);
+    expect(byKind.get("kpi")!.parentId).toBe(byKind.get("csf")!.id);
+    expect(byKind.get("value")!.description).toMatch(/behaviour/);
     expect(rows.every((row) => row.status === "planned")).toBe(true);
   });
 

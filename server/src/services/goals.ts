@@ -558,6 +558,7 @@ export function goalService(db: Db) {
             .values({
               companyId,
               title: node.title,
+              description: node.description,
               kind: node.kind,
               level: GOAL_KIND_DEFAULT_LEVEL[node.kind],
               status: "planned",

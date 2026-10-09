@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { GoalWithProgress } from "@greatstone/shared";
+import { STRATEGIC_PLAN_TEMPLATE_NAME, type GoalWithProgress } from "@greatstone/shared";
 import { goalsApi } from "../api/goals";
 import { agentsApi } from "../api/agents";
 import { accessApi } from "../api/access";
@@ -71,7 +71,7 @@ export function Goals() {
     mutationFn: () => goalsApi.createStrategicPlan(selectedCompanyId!),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(selectedCompanyId!) });
-      pushToast({ title: "Strategic plan added", body: "Rename each layer and set its owner.", tone: "success" });
+      pushToast({ title: `${STRATEGIC_PLAN_TEMPLATE_NAME} added`, body: "Rename each layer and set its owner.", tone: "success" });
     },
     onError: (err: Error) => {
       pushToast({ title: "Could not add the strategic plan", body: err.message, tone: "error" });
@@ -128,7 +128,7 @@ export function Goals() {
                 onClick={() => createStrategicPlan.mutate()}
               >
                 <Network className="size-3.5" />
-                {createStrategicPlan.isPending ? "Adding…" : "Strategic plan"}
+                {createStrategicPlan.isPending ? "Adding…" : STRATEGIC_PLAN_TEMPLATE_NAME}
               </Button>
             ) : null}
             {hasAchieved ? (

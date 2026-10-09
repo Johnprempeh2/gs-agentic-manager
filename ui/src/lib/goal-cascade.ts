@@ -1,9 +1,11 @@
 import { GOAL_KINDS, type GoalKind, type GoalWithProgress } from "@greatstone/shared";
 
 /**
- * Goals page, strategy cascade (GRE-1132): the board layers (vision, values,
- * CSFs) and the strategy tree (pillar → objective → KPI and initiative) built
- * from goals that have a kind. Plain goals stay on the scoreboard.
+ * Goals page, strategy cascade (GRE-1132): the board layers (vision, values)
+ * and the strategy tree built from goals that have a kind. Each CSF is a
+ * strategic area at the top of the tree, with its KPIs, objectives and work
+ * under it; pillars under the vision are roots too. Plain goals stay on the
+ * scoreboard.
  */
 
 export interface CascadeRow<G> {
@@ -54,6 +56,7 @@ export function buildStrategyCascade<G extends CascadeGoal>(goals: readonly G[])
     strategy.push({ goal, depth });
     for (const child of children.get(goal.id) ?? []) walk(child, depth + 1);
   };
+  for (const csf of ofKind("csf")) walk(csf, 0);
   for (const pillar of ofKind("pillar")) walk(pillar, 0);
 
   return { vision: ofKind("vision"), values: ofKind("value"), csfs: ofKind("csf"), strategy };

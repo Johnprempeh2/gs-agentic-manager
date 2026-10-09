@@ -5626,7 +5626,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/goals/strategic-plan",
   tags: ["goals"],
-  summary: "Create the empty strategic plan (vision, value, CSF, pillar, objective, KPI, initiative). Company owners only.",
+  summary: "Create the empty one-page strategic plan (vision, value, CSF, objective, KPI). Company owners only.",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });

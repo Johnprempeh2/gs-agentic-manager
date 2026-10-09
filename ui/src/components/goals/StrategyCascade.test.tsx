@@ -32,17 +32,27 @@ const plan = [
   makeGoal({ id: "o", kind: "objective", parentId: "p", title: "Grow skills", ownerUserId: "u1", createdAt: at(3) }),
   makeGoal({ id: "i", kind: "initiative", parentId: "o", title: "Training plan", createdAt: at(4) }),
   makeGoal({ id: "k", kind: "kpi", parentId: "o", title: "Training hours", createdAt: at(5) }),
+  makeGoal({ id: "co", kind: "objective", parentId: "c", title: "Win back trust", createdAt: at(2) }),
+  makeGoal({ id: "ck", kind: "kpi", parentId: "c", title: "Net promoter score", createdAt: at(3) }),
   makeGoal({ id: "plain", title: "Plain goal" }),
   makeGoal({ id: "gone", kind: "pillar", parentId: "c", title: "Dropped pillar", status: "cancelled" }),
 ];
 
 describe("buildStrategyCascade", () => {
-  it("splits the board layers and walks each pillar down, KPI before initiative", () => {
+  it("splits the board layers and walks each CSF, then each pillar, down", () => {
     const cascade = buildStrategyCascade(plan);
     expect(cascade.vision.map((g) => g.id)).toEqual(["v"]);
     expect(cascade.values.map((g) => g.id)).toEqual(["val"]);
     expect(cascade.csfs.map((g) => g.id)).toEqual(["c"]);
-    expect(cascade.strategy.map(({ goal, depth }) => `${goal.id}:${depth}`)).toEqual(["p:0", "o:1", "k:2", "i:2"]);
+    expect(cascade.strategy.map(({ goal, depth }) => `${goal.id}:${depth}`)).toEqual([
+      "c:0",
+      "co:1",
+      "ck:1",
+      "p:0",
+      "o:1",
+      "k:2",
+      "i:2",
+    ]);
   });
 
   it("knows when there is no strategic plan yet", () => {
@@ -58,8 +68,9 @@ describe("StrategyCascadeView", () => {
       <StrategyCascadeView cascade={buildStrategyCascade(plan)} agentsById={agentsById} usersById={usersById} />,
     );
     expect(html).toContain("Strategic plan");
-    expect(html.match(/data-testid="cascade-board-goal"/g)).toHaveLength(3);
-    expect(html.match(/data-testid="cascade-row"/g)).toHaveLength(4);
+    expect(html.match(/data-testid="cascade-board-goal"/g)).toHaveLength(2);
+    expect(html.match(/data-testid="cascade-row"/g)).toHaveLength(7);
+    expect(html).toContain('data-kind="csf"');
     expect(html).toContain('data-kind="pillar"');
     expect(html).toContain('data-kind="kpi"');
     expect(html).toContain("Board chair");

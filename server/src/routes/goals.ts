@@ -108,7 +108,7 @@ export function goalRoutes(db: Db) {
     res.status(201).json(goal);
   });
 
-  // One click: the empty strategic plan (vision down to KPI and initiative).
+  // One click: the empty one-page strategic plan (vision, values, CSF, objective, KPI).
   // It creates board layers, so it needs a board member like any vision edit.
   router.post("/companies/:companyId/goals/strategic-plan", async (req, res) => {
     const companyId = req.params.companyId as string;

@@ -22,6 +22,7 @@ export {
   GOAL_KIND_PARENTS,
   GOAL_KIND_DEFAULT_LEVEL,
   STRATEGIC_PLAN_TEMPLATE,
+  STRATEGIC_PLAN_TEMPLATE_NAME,
   goalKindParentError,
   isBoardGoalKind,
   isStrategicWorkGoalKind,

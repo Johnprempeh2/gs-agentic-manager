@@ -9,7 +9,7 @@ import { GoalHealthPill } from "./GoalHealth";
 import { GoalOwner, type UsersById } from "./GoalOwner";
 import type { AgentsById } from "./GoalScoreboard";
 
-/** Left padding per level: pillar, objective, KPI and initiative. */
+/** Left padding per level: CSF or pillar, then objective, KPI and initiative. */
 const DEPTH_INDENT = ["pl-4", "pl-8 sm:pl-10", "pl-12 sm:pl-16", "pl-14 sm:pl-20"];
 
 function KindBadge({ kind }: { kind: GoalKind }) {
@@ -51,8 +51,8 @@ function BoardColumn({
 }
 
 /**
- * The strategic plan, top down: what the board sets (vision, values, CSFs),
- * then each pillar with its objectives, KPIs and initiatives and their owners.
+ * The strategic plan, top down: vision and values, then each critical success
+ * factor (or pillar) with its KPIs, objectives and initiatives and their owners.
  */
 export function StrategyCascadeView({
   cascade,
@@ -68,24 +68,19 @@ export function StrategyCascadeView({
       <div>
         <h2 id="strategy-cascade-title" className="text-base font-semibold">Strategic plan</h2>
         <p className="text-sm text-muted-foreground">
-          The board sets the vision, values and critical success factors. Exco owns the pillars and everything below.
+          The board sets the vision, values and critical success factors. Exco owns the objectives, KPIs and work
+          under them.
         </p>
       </div>
 
-      <Card className="grid gap-4 p-4 sm:grid-cols-3">
-        <BoardColumn title="Vision" goals={cascade.vision} agentsById={agentsById} usersById={usersById} />
+      <Card className="grid gap-4 p-4 sm:grid-cols-2">
+        <BoardColumn title="Vision and purpose" goals={cascade.vision} agentsById={agentsById} usersById={usersById} />
         <BoardColumn title="Values" goals={cascade.values} agentsById={agentsById} usersById={usersById} />
-        <BoardColumn
-          title="Critical success factors"
-          goals={cascade.csfs}
-          agentsById={agentsById}
-          usersById={usersById}
-        />
       </Card>
 
       <Card className="gap-0 p-0">
         {cascade.strategy.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">No pillars yet. Add a pillar under the vision or a CSF.</p>
+          <p className="p-4 text-sm text-muted-foreground">No critical success factors yet. Add a CSF, then its objectives and KPIs.</p>
         ) : (
           <ul className="divide-y divide-border">
             {cascade.strategy.map(({ goal, depth }) => (
