@@ -136,6 +136,7 @@ import { extractIssueTimelineEvents } from "../lib/issue-timeline-events";
 import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/optimistic-issue-comments";
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
+import { ClientCardFlags } from "@/components/ClientCardFlags";
 
 type PipelineConversationActionableInteraction =
   | SuggestTasksInteraction
@@ -1288,6 +1289,7 @@ function PipelineCaseCard({
               {formatLiveDownstream(liveDownstreamCount)}
             </Badge>
           ) : null}
+          <ClientCardFlags caseItem={caseItem} />
         </div>
         {childrenSummary != null ? (
           <p className="mt-1.5 text-xs text-muted-foreground">
