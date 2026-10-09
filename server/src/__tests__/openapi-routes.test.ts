@@ -66,6 +66,7 @@ const apiPrefixes: Record<string, string> = {
   "issue-tree-control.ts": "/api",
   "issue-tabling.ts": "/api",
   "deliverables.ts": "/api",
+  "fleet.ts": "/api",
   "llms.ts": "/api",
   "managed-agent-profiles.ts": "/api",
   "onboarding-seed.ts": "/api",
@@ -160,6 +161,10 @@ function resolveMountedPath(file: string, prefix: string, routePath: string) {
     file === "connection-intents.ts" &&
     (routePath.startsWith("/mcp/") || routePath.startsWith("/runtime-tools/"))
   ) {
+    return routePath;
+  }
+  // Fleet spoke routes are mounted on the app with their full path.
+  if (file === "fleet.ts" && routePath.startsWith("/api/")) {
     return routePath;
   }
   if ((file === "companies.ts" || file === "health.ts") && routePath === "/") {
