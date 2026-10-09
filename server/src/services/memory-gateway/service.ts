@@ -18,6 +18,7 @@ import {
   MEMORY_EVIDENCE_NOTE,
   MEMORY_FLAG_NOTE,
   MEMORY_HARD_BOUNDARY_KINDS,
+  MEMORY_REVIEW_EXPIRED_DAYS,
   MEMORY_UNAVAILABLE_MESSAGE,
   type ContributeMemory,
   type CreateMemoryScope,
@@ -68,6 +69,7 @@ export const MEMORY_TOPICS_REQUIRED_CODE = "memory_topics_required";
 /** Slack after the direct call's timeout before the drain may take the entry. */
 export const DIRECT_RETAIN_GRACE_MS = 5_000;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -177,6 +179,29 @@ export function toRecord(row: RecordRow, scope: ScopeRow): MemoryRecord {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
+  };
+}
+
+/**
+ * The engine copy of a record. Review state lives in GSAM only; the engine
+ * tags never change, so none of them is a status.
+ */
+export function memoryEngineDocument(row: RecordRow, scope: ScopeRow, mode: MemoryRetainMode): MemoryEngineDocument {
+  return {
+    bankId: scope.bankId,
+    documentId: row.id,
+    content: row.title ? `${row.title}\n\n${row.content}` : row.content!,
+    context: row.sourceKind ? `${row.sourceKind}:${row.sourceId ?? ""}` : null,
+    tags: [
+      scope.tag,
+      `type:${row.entryType}`,
+      `sens:${row.sensitivity}`,
+      row.contributorAgentId ? `by:agent:${row.contributorAgentId}` : `by:user:${row.contributorUserId}`,
+    ],
+    entities: row.entities,
+    metadata: { gsamRecordId: row.id, gsamScopeId: scope.id },
+    timestamp: (row.effectiveFrom ?? row.createdAt).toISOString(),
+    mode,
   };
 }
 
@@ -522,23 +547,7 @@ export function memoryGatewayService(
           syncState: "pending",
         })
         .returning();
-      const doc: MemoryEngineDocument = {
-        bankId: scope.bankId,
-        documentId: inserted.id,
-        content: inserted.title ? `${inserted.title}\n\n${inserted.content}` : inserted.content!,
-        context: inserted.sourceKind ? `${inserted.sourceKind}:${inserted.sourceId ?? ""}` : null,
-        tags: [
-          scope.tag,
-          // Review state lives in GSAM only; the engine tag never changes, so it is not a status.
-          `type:${inserted.entryType}`,
-          `sens:${inserted.sensitivity}`,
-          caller.agentId ? `by:agent:${caller.agentId}` : `by:user:${caller.userId}`,
-        ],
-        entities: inserted.entities,
-        metadata: { gsamRecordId: inserted.id, gsamScopeId: scope.id },
-        timestamp: (inserted.effectiveFrom ?? inserted.createdAt).toISOString(),
-        mode: settings.retainMode,
-      };
+      const doc = memoryEngineDocument(inserted, scope, settings.retainMode);
       const queued = await enqueueMemoryIngest(tx, {
         companyId: caller.companyId,
         recordId: inserted.id,
@@ -844,7 +853,11 @@ export function memoryGatewayService(
       const inForce = await inForceAsOf(caller.companyId, candidates.map((hit) => hit.record), input.asOf);
       for (const hit of candidates) hit.inForceAsOf = inForce.has(hit.record.id);
     }
-    const order = (hit: MemoryRecallHit) => (hit.inForceAsOf === false ? 10 : 0) + (rank[hit.record.status] ?? 9);
+    // A proposal left unreviewed past the expiry age ranks after history (GRE-1089).
+    const expiredBefore = Date.now() - MEMORY_REVIEW_EXPIRED_DAYS * DAY_MS;
+    const statusRank = (record: MemoryRecord) =>
+      record.status === "unreviewed" && new Date(record.createdAt).getTime() <= expiredBefore ? 4 : (rank[record.status] ?? 9);
+    const order = (hit: MemoryRecallHit) => (hit.inForceAsOf === false ? 10 : 0) + statusRank(hit.record);
     const results = candidates.sort((a, b) => {
       const byStatus = order(a) - order(b);
       return byStatus !== 0 ? byStatus : (b.score ?? -1) - (a.score ?? -1);

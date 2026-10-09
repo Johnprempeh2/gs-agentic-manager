@@ -251,6 +251,88 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
   }
 
   /**
+   * The supersession writes, in the caller's transaction: `old` becomes
+   * superseded and `replacement` approved, conflicts between them are settled
+   * and other open challenges to `old` move to `replacement`. Null when `old`
+   * changed since it was read. Also used by steward confirm (GRE-1089).
+   */
+  async function applySupersede(
+    tx: DbOrTransaction,
+    caller: MemoryCaller,
+    old: RecordRow,
+    replacement: RecordRow,
+    reason: string,
+    now: Date,
+  ) {
+    const [oldNext] = await tx
+      .update(memoryRecords)
+      .set({
+        status: "superseded",
+        supersededById: replacement.id,
+        supersededAt: now,
+        effectiveTo: old.effectiveTo ?? replacement.effectiveFrom ?? now,
+        updatedAt: now,
+      })
+      .where(and(eq(memoryRecords.id, old.id), eq(memoryRecords.status, old.status)))
+      .returning();
+    if (!oldNext) return null;
+    const [replacementNext] = await tx
+      .update(memoryRecords)
+      .set({ status: "approved", supersedesId: old.id, version: old.version + 1, reviewedAt: now, updatedAt: now })
+      .where(and(eq(memoryRecords.id, replacement.id), eq(memoryRecords.status, replacement.status)))
+      .returning();
+    if (!replacementNext) throw conflict("The replacement changed while it was reviewed; read it again");
+    // Conflicts between the two are settled by this supersession.
+    await tx
+      .update(memoryConflicts)
+      .set({
+        state: "resolved",
+        resolution: "superseded",
+        resolutionNote: reason,
+        resolvedByActorType: caller.actorType,
+        resolvedByActorId: caller.actorId,
+        resolvedAt: now,
+      })
+      .where(
+        and(
+          eq(memoryConflicts.state, "open"),
+          or(
+            and(eq(memoryConflicts.recordId, replacement.id), eq(memoryConflicts.approvedRecordId, old.id)),
+            and(eq(memoryConflicts.recordId, old.id), eq(memoryConflicts.approvedRecordId, replacement.id)),
+          ),
+        ),
+      );
+    // Other open challenges to the old position now challenge the new one.
+    await tx
+      .update(memoryConflicts)
+      .set({ approvedRecordId: replacement.id })
+      .where(
+        and(
+          eq(memoryConflicts.state, "open"),
+          eq(memoryConflicts.approvedRecordId, old.id),
+          ne(memoryConflicts.recordId, replacement.id),
+        ),
+      );
+    await insertReviewEvent(tx, caller, old, {
+      action: "superseded_by",
+      fromStatus: old.status,
+      toStatus: "superseded",
+      reason,
+      relatedRecordId: replacement.id,
+      now,
+    });
+    await insertReviewEvent(tx, caller, replacement, {
+      action: "supersede",
+      fromStatus: replacement.status,
+      toStatus: "approved",
+      reason,
+      relatedRecordId: old.id,
+      now,
+    });
+    return { oldNext, replacementNext };
+  }
+
+  /**
    * Replaces a record with a newer one in the same scope (correction or a
    * dated change). The old record stays, linked and readable, as history.
    * The replacement becomes approved, so its contributor cannot do this.
@@ -286,74 +368,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     if (isContributor(caller, replacement)) await refuse(caller, operation, "own_entry", audit);
 
     const now = new Date();
-    const result = await db.transaction(async (tx) => {
-      const [oldNext] = await tx
-        .update(memoryRecords)
-        .set({
-          status: "superseded",
-          supersededById: replacement.id,
-          supersededAt: now,
-          effectiveTo: old.effectiveTo ?? replacement.effectiveFrom ?? now,
-          updatedAt: now,
-        })
-        .where(and(eq(memoryRecords.id, old.id), eq(memoryRecords.status, old.status)))
-        .returning();
-      if (!oldNext) return null;
-      const [replacementNext] = await tx
-        .update(memoryRecords)
-        .set({ status: "approved", supersedesId: old.id, version: old.version + 1, reviewedAt: now, updatedAt: now })
-        .where(and(eq(memoryRecords.id, replacement.id), eq(memoryRecords.status, replacement.status)))
-        .returning();
-      if (!replacementNext) throw conflict("The replacement changed while it was reviewed; read it again");
-      // Conflicts between the two are settled by this supersession.
-      await tx
-        .update(memoryConflicts)
-        .set({
-          state: "resolved",
-          resolution: "superseded",
-          resolutionNote: input.reason,
-          resolvedByActorType: caller.actorType,
-          resolvedByActorId: caller.actorId,
-          resolvedAt: now,
-        })
-        .where(
-          and(
-            eq(memoryConflicts.state, "open"),
-            or(
-              and(eq(memoryConflicts.recordId, replacement.id), eq(memoryConflicts.approvedRecordId, old.id)),
-              and(eq(memoryConflicts.recordId, old.id), eq(memoryConflicts.approvedRecordId, replacement.id)),
-            ),
-          ),
-        );
-      // Other open challenges to the old position now challenge the new one.
-      await tx
-        .update(memoryConflicts)
-        .set({ approvedRecordId: replacement.id })
-        .where(
-          and(
-            eq(memoryConflicts.state, "open"),
-            eq(memoryConflicts.approvedRecordId, old.id),
-            ne(memoryConflicts.recordId, replacement.id),
-          ),
-        );
-      await insertReviewEvent(tx, caller, old, {
-        action: "superseded_by",
-        fromStatus: old.status,
-        toStatus: "superseded",
-        reason: input.reason,
-        relatedRecordId: replacement.id,
-        now,
-      });
-      await insertReviewEvent(tx, caller, replacement, {
-        action: "supersede",
-        fromStatus: replacement.status,
-        toStatus: "approved",
-        reason: input.reason,
-        relatedRecordId: old.id,
-        now,
-      });
-      return { oldNext, replacementNext };
-    });
+    const result = await db.transaction((tx) => applySupersede(tx, caller, old, replacement, input.reason, now));
     if (!result) throw conflict("The record changed while it was reviewed; read it again");
     await logOperation(caller, operation, "ok", { ...audit, detail: { replacementRecordId: replacement.id } });
     return { superseded: toRecord(result.oldNext, scope), replacement: toRecord(result.replacementNext, scope) };
@@ -873,6 +888,8 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
   }
 
   return {
+    /** For the steward actions (steward-actions.ts) only. */
+    internals: { reviewRefusal, applySupersede, loadReadable, refuse },
     review,
     supersede,
     deleteRecord,
