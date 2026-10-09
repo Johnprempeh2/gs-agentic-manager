@@ -97,7 +97,7 @@ describeEmbeddedPostgres("pipeline access levels (GRE-1072)", () => {
     return company!;
   }
 
-  async function seedBoardUser(companyId: string, role: "owner" | "operator", grants: string[]) {
+  async function seedBoardUser(companyId: string, role: "owner" | "admin" | "operator" | "viewer", grants: string[]) {
     const userId = `user-${randomUUID().slice(0, 8)}`;
     await db.insert(companyMemberships).values({
       companyId,
@@ -237,6 +237,32 @@ describeEmbeddedPostgres("pipeline access levels (GRE-1072)", () => {
 
     const statuses = await caseActionStatuses(harbor.actor, created.body.id);
     expect(statuses).toEqual({ create: 201, edit: 200, move: 200, claim: 200 });
+  });
+
+  // GRE-1140: the responsible-user check re-runs pipelines:write as the user
+  // Harbor acts for. Owners and admins pass on their role default with no
+  // user grant; operators and viewers still refuse the agent.
+  it("lets an agent with pipelines:write create a pipeline for an owner or admin, not for an operator or viewer", async () => {
+    const company = await seedCompany();
+    const statuses: Record<string, { status: number; code?: string }> = {};
+    for (const role of ["owner", "admin", "operator", "viewer"] as const) {
+      const user = await seedBoardUser(company.id, role, []);
+      const harbor = await seedAgent(company.id, `Harbor ${role}`, { onBehalfOf: { userId: user.userId, role } });
+      await grant(company.id, harbor.agent.id, "pipelines:write");
+      const res = await request(app(harbor.actor))
+        .post(`/api/companies/${company.id}/pipelines`)
+        .send({ key: `sales-${role}`, name: `Sales ${role}`, stages: STAGES });
+      statuses[role] = { status: res.status, ...(res.body.code ? { code: res.body.code } : {}) };
+    }
+
+    expect(statuses).toEqual({
+      owner: { status: 201 },
+      admin: { status: 201 },
+      operator: { status: 403, code: "RESPONSIBLE_USER_UNAUTHORIZED" },
+      viewer: { status: 403, code: "RESPONSIBLE_USER_UNAUTHORIZED" },
+    });
+    const created = await db.select({ key: pipelines.key }).from(pipelines).where(eq(pipelines.companyId, company.id));
+    expect(created.map((row) => row.key).sort()).toEqual(["sales-admin", "sales-owner"]);
   });
 
   it("refuses pipeline access changes from users without users:manage_permissions and from agents", async () => {
