@@ -1,4 +1,4 @@
-import type { ExecutionReconciliation } from "@greatstone/shared";
+import type { ExecutionReconciliation, IssueWorkFilter } from "@greatstone/shared";
 import type {
   AcceptedPlanDecompositionSummary,
   AskUserQuestionsAnswer,
@@ -104,6 +104,7 @@ export type IssueListFilters = {
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
+  work?: IssueWorkFilter;
   q?: string;
   limit?: number;
   offset?: number;
@@ -151,6 +152,7 @@ function issueListSearchParams(filters?: IssueListFilters) {
   if (filters?.hasPlanDocument !== undefined) {
     params.set("hasPlanDocument", filters.hasPlanDocument ? "true" : "false");
   }
+  if (filters?.work) params.set("work", filters.work);
   if (filters?.q) params.set("q", filters.q);
   if (filters?.limit) params.set("limit", String(filters.limit));
   if (filters?.offset !== undefined)

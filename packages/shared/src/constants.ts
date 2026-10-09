@@ -594,6 +594,10 @@ export const BOARD_GOAL_KINDS = ["vision", "value", "csf"] as const satisfies re
 /** Issues linked to a goal of these kinds count as strategic work. */
 export const STRATEGIC_WORK_GOAL_KINDS = ["objective", "initiative"] as const satisfies readonly GoalKind[];
 
+/** `work=` on the issues list: strategic work, or day-to-day work (no goal, or a goal of another kind). */
+export const ISSUE_WORK_FILTERS = ["strategic", "day_to_day"] as const;
+export type IssueWorkFilter = (typeof ISSUE_WORK_FILTERS)[number];
+
 export const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 

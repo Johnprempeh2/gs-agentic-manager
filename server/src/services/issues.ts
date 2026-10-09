@@ -104,6 +104,8 @@ import {
   issueCommentPresentationSchema,
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
+  STRATEGIC_WORK_GOAL_KINDS,
+  type IssueWorkFilter,
 } from "@greatstone/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
@@ -1854,6 +1856,8 @@ export interface IssueFilters {
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
+  /** Strategic work (goal kind objective or initiative) or everything else. */
+  work?: IssueWorkFilter;
   lowTrustBoundary?: LowTrustBoundary & { companyId: string };
   q?: string;
   limit?: number;
@@ -4958,6 +4962,10 @@ const issueListSelect = {
   projectId: issues.projectId,
   projectWorkspaceId: issues.projectWorkspaceId,
   goalId: issues.goalId,
+  goalKind: sql<string | null>`(
+    SELECT ${goals.kind} FROM ${goals}
+    WHERE ${goals.id} = ${issues.goalId} AND ${goals.companyId} = ${issues.companyId}
+  )`,
   parentId: issues.parentId,
   title: issues.title,
   description: sql<string | null>`
@@ -5340,6 +5348,21 @@ function hasPlanDocumentCondition(
   return hasPlanDocument
     ? existsPlanDocument
     : sql<boolean>`NOT ${existsPlanDocument}`;
+}
+
+function issueWorkCondition(companyId: string, work: IssueWorkFilter): SQL {
+  const linkedToStrategicGoal = sql<boolean>`
+    EXISTS (
+      SELECT 1
+      FROM ${goals}
+      WHERE ${goals.companyId} = ${companyId}
+        AND ${goals.id} = ${issues.goalId}
+        AND ${inArray(goals.kind, [...STRATEGIC_WORK_GOAL_KINDS])}
+    )
+  `;
+  return work === "strategic"
+    ? linkedToStrategicGoal
+    : sql<boolean>`NOT ${linkedToStrategicGoal}`;
 }
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -6440,6 +6463,7 @@ async function blockedInboxIssueConditions(
       hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
     );
   }
+  if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
   if (!shouldIncludePluginOperationIssues(filters))
     conditions.push(nonPluginOperationIssueCondition());
   if (filters?.labelId) {
@@ -8137,6 +8161,7 @@ export function issueService(db: Db) {
           hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
         );
       }
+      if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
       if (!shouldIncludePluginOperationIssues(filters)) {
         conditions.push(nonPluginOperationIssueCondition());
       }
@@ -8424,6 +8449,7 @@ export function issueService(db: Db) {
           hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
         );
       }
+      if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
       if (!shouldIncludePluginOperationIssues(filters))
         conditions.push(nonPluginOperationIssueCondition());
       const [row] = await db
