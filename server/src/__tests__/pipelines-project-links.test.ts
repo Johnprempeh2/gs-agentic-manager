@@ -4,6 +4,7 @@ import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  activityLog,
   companies,
   createDb,
   goals,
@@ -54,6 +55,7 @@ describeEmbeddedPostgres("pipeline case project links", () => {
     await db.delete(pipelineCases);
     await db.delete(pipelineTransitions);
     await db.delete(pipelineStages);
+    await db.delete(activityLog);
     await db.delete(pipelines);
     await db.delete(projectGoals);
     await db.delete(goals);

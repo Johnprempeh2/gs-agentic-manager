@@ -1,6 +1,9 @@
 import { PERMISSION_KEYS, type PrincipalPermissionGrant } from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 
+// Pipeline keys are set with the Pipeline access control (GRE-1072).
+const READ_ONLY_KEYS = PERMISSION_KEYS.filter((key) => !key.startsWith("pipelines:"));
+
 /**
  * Read-only list of every known permission grant key and whether this agent
  * holds it. Grants come from the agent detail response (`access.grants`).
@@ -19,7 +22,7 @@ export function AgentPermissionGrantsList({
         Permission grants this agent holds. Read-only.
       </p>
       <ul className="border border-border rounded-lg divide-y divide-border" aria-label="Permission grants">
-        {PERMISSION_KEYS.map((key) => {
+        {READ_ONLY_KEYS.map((key) => {
           const isGranted = granted.has(key);
           return (
             <li
