@@ -1314,6 +1314,7 @@ export type {
   CostEvent,
   CostSummary,
   IssueCostSummary,
+  IssueCostModelRow,
   CostByAgent,
   CostByProviderModel,
   CostByBiller,
