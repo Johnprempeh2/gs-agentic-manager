@@ -9,6 +9,7 @@ import { ToastProvider } from "@/context/ToastContext";
 import { PipelineAgentAccessSection } from "./PipelineAgentAccessSection";
 import { AgentPipelinesAccessSection } from "./AgentPipelinesAccessSection";
 import { PipelineAccessOverview } from "@/pages/PipelineAccessOverview";
+import { usePipelineAdminRights } from "@/hooks/usePipelineAccess";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -21,9 +22,14 @@ vi.mock("@/lib/router", () => ({
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 
+const GRACE = { at: new Date().toISOString(), actorType: "user", actorId: "u1", actorName: "Grace" };
+const ALAN = { at: new Date().toISOString(), actorType: "user", actorId: "u2", actorName: "Alan" };
+
 function matrix(canManage: boolean): PipelineAccessMatrix {
   return {
     canManage,
+    canCreatePipelines: canManage,
+    administerPipelineIds: canManage ? ["p-sales"] : [],
     pipelines: [
       { id: "p-sales", name: "Sales", archivedAt: null },
       { id: "p-support", name: "Support", archivedAt: null },
@@ -37,7 +43,8 @@ function matrix(canManage: boolean): PipelineAccessMatrix {
         status: "idle",
         levels: { "p-sales": "administer", "p-support": "work_cases", "p-old": "view" },
         allPipelinesLevel: null,
-        lastChange: { at: new Date().toISOString(), actorType: "user", actorId: "u1", actorName: "Grace" },
+        lastChange: ALAN,
+        lastChanges: { "p-sales": GRACE, "p-support": ALAN, "p-old": null },
       },
       {
         agentId: "a-ridge",
@@ -47,6 +54,7 @@ function matrix(canManage: boolean): PipelineAccessMatrix {
         levels: { "p-sales": "view", "p-support": "view", "p-old": "view" },
         allPipelinesLevel: "view",
         lastChange: null,
+        lastChanges: { "p-sales": null, "p-support": null, "p-old": null },
       },
     ],
   };
@@ -104,7 +112,9 @@ describe("pipeline access views (GRE-1073)", () => {
     await render(<PipelineAgentAccessSection companyId="company-1" pipelineId="p-sales" pipelineName="Sales" />);
 
     expect(select("Harbor on Sales")?.value).toBe("administer");
+    // Who changed this pipeline's grant, not the agent's latest change elsewhere.
     expect(container.textContent).toContain("Changed by Grace");
+    expect(container.textContent).not.toContain("Changed by Alan");
     await choose("Ridge on Sales", "work_cases");
     expect(mockApi.setLevel).toHaveBeenCalledWith("company-1", "a-ridge", { level: "work_cases", pipelineId: "p-sales" });
   });
@@ -126,6 +136,9 @@ describe("pipeline access views (GRE-1073)", () => {
     expect(select("Harbor on all pipelines")?.value).toBe("");
     expect(container.textContent).toContain("Levels differ by pipeline");
     expect(select("Harbor on Old")).toBeNull();
+    const rows = [...container.querySelectorAll('ul[aria-label="Level per pipeline"] li')].map((li) => li.textContent);
+    expect(rows[0]).toContain("Changed by Grace");
+    expect(rows[1]).toContain("Changed by Alan");
     await choose("Harbor on Support", "view");
     expect(mockApi.setLevel).toHaveBeenLastCalledWith("company-1", "a-harbor", { level: "view", pipelineId: "p-support" });
     await choose("Harbor on all pipelines", "work_cases");
@@ -147,6 +160,9 @@ describe("pipeline access views (GRE-1073)", () => {
     expect(select("Harbor on Sales")?.value).toBe("administer");
     expect(select("Ridge on Support")?.value).toBe("view");
     expect(select("Harbor on Old")).toBeNull();
+    // Each cell carries its own last change.
+    expect(select("Harbor on Sales")!.closest("td")!.textContent).toContain("Grace,");
+    expect(select("Harbor on Support")!.closest("td")!.textContent).toContain("Alan,");
 
     const filter = container.querySelector('input[aria-label="Filter agents"]') as HTMLInputElement;
     await act(async () => {
@@ -170,5 +186,49 @@ describe("pipeline access views (GRE-1073)", () => {
     await render(<PipelineAccessOverview />);
     expect(container.querySelectorAll("table select")).toHaveLength(0);
     expect(container.textContent).toContain("Only owners who manage permissions can change levels.");
+  });
+
+  it("overview on a phone: one card per agent with every pipeline as a row", async () => {
+    const matchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      mockApi.matrix.mockResolvedValue(matrix(true));
+      await render(<PipelineAccessOverview />);
+      expect(container.querySelector("table")).toBeNull();
+      const cards = container.querySelectorAll('ul[aria-label="Agent access by pipeline"] > li');
+      expect(cards).toHaveLength(2);
+      expect(cards[0]!.textContent).toContain("Sales");
+      expect(cards[0]!.textContent).toContain("Support");
+      expect(cards[0]!.textContent).toContain("Changed by Alan");
+      expect(select("Harbor on Support")?.value).toBe("work_cases");
+      expect(select("Harbor on all pipelines")).not.toBeNull();
+    } finally {
+      window.matchMedia = matchMedia;
+    }
+  });
+
+  it("pipeline admin rights: only pipelines the viewer administers", async () => {
+    function Probe() {
+      const rights = usePipelineAdminRights("company-1");
+      return (
+        <span data-testid="rights">
+          {`${rights.canCreatePipelines}:${rights.canAdministerPipeline("p-sales")}:${rights.canAdministerPipeline("p-support")}`}
+        </span>
+      );
+    }
+    mockApi.matrix.mockResolvedValue(matrix(true));
+    await render(<Probe />);
+    expect(container.textContent).toBe("true:true:false");
+
+    mockApi.matrix.mockResolvedValue(matrix(false));
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(<Probe />);
+    expect(container.textContent).toBe("false:false:false");
   });
 });

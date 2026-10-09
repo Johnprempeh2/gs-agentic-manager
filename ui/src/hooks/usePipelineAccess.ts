@@ -9,14 +9,18 @@ import { queryKeys } from "@/lib/queryKeys";
  * (GRE-1073). The pipeline view, the agent view and the overview all use this,
  * so a change in one shows in the others.
  */
-export function usePipelineAccess(companyId: string | null | undefined) {
-  const queryClient = useQueryClient();
-  const { pushToast } = useToastActions();
-  const query = useQuery({
+function usePipelineAccessQuery(companyId: string | null | undefined) {
+  return useQuery({
     queryKey: companyId ? queryKeys.pipelineAccess(companyId) : ["pipeline-access", "__disabled__"],
     queryFn: () => pipelineAccessApi.matrix(companyId!),
     enabled: Boolean(companyId),
   });
+}
+
+export function usePipelineAccess(companyId: string | null | undefined) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
+  const query = usePipelineAccessQuery(companyId);
 
   const setLevel = useMutation({
     mutationFn: (input: { agentId: string; level: PipelineAccessLevel; pipelineId?: string }) =>
@@ -37,4 +41,21 @@ export function usePipelineAccess(companyId: string | null | undefined) {
   });
 
   return { query, matrix: query.data ?? null, setLevel };
+}
+
+/**
+ * The viewer's own pipeline admin rights (GRE-1073), from the same query, so
+ * pipeline screens show create, rename, archive, stage and move controls only
+ * to people who may use them. Hidden while loading; if the rights cannot be
+ * read, the controls show and the server decides.
+ */
+export function usePipelineAdminRights(companyId: string | null | undefined) {
+  const query = usePipelineAccessQuery(companyId);
+  const matrix = query.data ?? null;
+  const unknown = query.isError;
+  return {
+    canCreatePipelines: matrix ? matrix.canCreatePipelines : unknown,
+    canAdministerPipeline: (pipelineId: string) =>
+      matrix ? matrix.administerPipelineIds.includes(pipelineId) : unknown,
+  };
 }

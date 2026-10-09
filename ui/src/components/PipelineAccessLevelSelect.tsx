@@ -66,7 +66,7 @@ export function PipelineAccessLevelSelect({
   );
 }
 
-/** "Changed by Grace, 2h ago" for a matrix row. */
+/** "Changed by Grace, 2h ago" for one grant. */
 export function pipelineAccessChangeText(
   change: { at: string; actorType: string; actorName: string | null } | null,
   timeAgo: (value: string) => string,
@@ -74,4 +74,14 @@ export function pipelineAccessChangeText(
   if (!change) return "Not changed yet";
   const who = change.actorName ?? (change.actorType === "user" ? "a board user" : "the system");
   return `Changed by ${who}, ${timeAgo(change.at)}`;
+}
+
+/** "Grace, 2h ago" under a matrix cell; empty when never changed. */
+export function pipelineAccessChangeShort(
+  change: { at: string; actorType: string; actorName: string | null } | null,
+  timeAgo: (value: string) => string,
+) {
+  if (!change) return "";
+  const who = change.actorName ?? (change.actorType === "user" ? "A board user" : "System");
+  return `${who}, ${timeAgo(change.at)}`;
 }

@@ -3,12 +3,14 @@ import { ShieldCheck } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import {
   PipelineAccessLevelSelect,
+  pipelineAccessChangeShort,
   pipelineAccessChangeText,
 } from "@/components/PipelineAccessLevelSelect";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
+import { useIsPhone } from "@/hooks/useIsPhone";
 import { usePipelineAccess } from "@/hooks/usePipelineAccess";
 import { Link } from "@/lib/router";
 import { timeAgo } from "@/lib/timeAgo";
@@ -16,13 +18,16 @@ import { agentUrl } from "@/lib/utils";
 
 /**
  * Company settings → Pipelines access (GRE-1073): every agent's level on
- * every pipeline, with who changed it last. Board users with
+ * every pipeline, with who changed each grant last. Board users with
  * users:manage_permissions can change levels here; the server is the gate.
+ * On a phone each agent is a card with one row per pipeline, so no column
+ * is cut off.
  */
 export function PipelineAccessOverview() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { query, matrix, setLevel } = usePipelineAccess(selectedCompanyId);
+  const isPhone = useIsPhone();
   const [agentFilter, setAgentFilter] = useState("");
   const [pipelineFilter, setPipelineFilter] = useState("");
 
@@ -51,7 +56,7 @@ export function PipelineAccessOverview() {
         </div>
         <p className="text-sm text-muted-foreground">
           What each agent may do on each pipeline. View sees it, Work cases also works its cases,
-          Administer also edits the pipeline, its stages and moves.
+          Administer also edits the pipeline, its stages and moves. Under each level is who changed it last.
           {matrix && !canEdit ? " Only owners who manage permissions can change levels." : null}
         </p>
       </div>
@@ -87,6 +92,47 @@ export function PipelineAccessOverview() {
         <EmptyState icon={ShieldCheck} message="No pipelines yet." description="Create a pipeline first, then give agents access here." />
       ) : agents.length === 0 ? (
         <EmptyState icon={ShieldCheck} message={needle ? "No agents match this filter." : "No agents in this company yet."} />
+      ) : isPhone ? (
+        <ul className="space-y-3" aria-label="Agent access by pipeline">
+          {agents.map((agent) => (
+            <li key={agent.agentId} className="rounded-lg border border-border">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+                <Link to={`${agentUrl({ id: agent.agentId, name: agent.name })}/permissions`} className="min-w-0 truncate font-medium hover:underline">
+                  {agent.name}
+                </Link>
+                {pipelineFilter ? null : (
+                  <PipelineAccessLevelSelect
+                    label={`${agent.name} on all pipelines`}
+                    value={agent.allPipelinesLevel}
+                    mixedLabel="Per pipeline"
+                    canEdit={canEdit}
+                    disabled={pending?.agentId === agent.agentId}
+                    onChange={(level) => setLevel.mutate({ agentId: agent.agentId, level })}
+                  />
+                )}
+              </div>
+              <ul className="divide-y divide-border">
+                {pipelines.map((pipeline) => (
+                  <li key={pipeline.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                    <div className="min-w-0 text-sm">
+                      <div className="truncate">{pipeline.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {pipelineAccessChangeText(agent.lastChanges[pipeline.id] ?? null, timeAgo)}
+                      </div>
+                    </div>
+                    <PipelineAccessLevelSelect
+                      label={`${agent.name} on ${pipeline.name}`}
+                      value={agent.levels[pipeline.id] ?? "view"}
+                      canEdit={canEdit}
+                      disabled={pending?.agentId === agent.agentId}
+                      onChange={(level) => setLevel.mutate({ agentId: agent.agentId, pipelineId: pipeline.id, level })}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm" aria-label="Agent access by pipeline">
@@ -110,7 +156,6 @@ export function PipelineAccessOverview() {
                     <Link to={`${agentUrl({ id: agent.agentId, name: agent.name })}/permissions`} className="font-medium hover:underline">
                       {agent.name}
                     </Link>
-                    <div className="text-xs text-muted-foreground">{pipelineAccessChangeText(agent.lastChange, timeAgo)}</div>
                   </td>
                   {pipelineFilter ? null : (
                     <td className="px-3 py-2 align-top">
@@ -133,6 +178,9 @@ export function PipelineAccessOverview() {
                         disabled={pending?.agentId === agent.agentId}
                         onChange={(level) => setLevel.mutate({ agentId: agent.agentId, pipelineId: pipeline.id, level })}
                       />
+                      <div className="mt-1 whitespace-nowrap text-xs text-muted-foreground">
+                        {pipelineAccessChangeShort(agent.lastChanges[pipeline.id] ?? null, timeAgo)}
+                      </div>
                     </td>
                   ))}
                 </tr>
