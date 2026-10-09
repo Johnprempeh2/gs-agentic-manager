@@ -1,6 +1,7 @@
 // Two-way CRM sync contract (GRE-1074). Constants and the three-value field
 // rule shared by server and UI. No sync job or external call lives here; see
 // doc/CRM-SYNC-CONTRACT.md for the endpoints.
+import type { PipelineFieldType } from "./pipeline-fields.js";
 
 /** What the external side of a binding is: a CRM pipeline or a Notion database. */
 export const CRM_SYNC_CONTAINER_KINDS = ["crm_pipeline", "notion_database"] as const;
@@ -133,4 +134,33 @@ export function decideCrmSyncField(input: CrmSyncFieldInput): CrmSyncFieldDecisi
   if (crmChanged && !gsamChanged) return { action: "pull_from_crm", value: crm };
   if (gsamChanged && !crmChanged) return { action: "push_to_crm", value: gsam };
   return { action: "conflict" };
+}
+
+/**
+ * Shapes a value for the typed pipeline field it lands in, so it compares and
+ * validates as that type: CRM values on import, and values a person types in
+ * the review queue. A value that cannot be read as the type is returned as is.
+ */
+export function coerceCrmSyncFieldValue(value: CrmSyncFieldValue, type: PipelineFieldType | undefined): CrmSyncFieldValue {
+  if (value === null || type === undefined) return value;
+  switch (type) {
+    case "number": {
+      if (typeof value === "number") return value;
+      const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
+      return Number.isFinite(parsed) ? parsed : value;
+    }
+    case "boolean":
+      if (value === "true") return true;
+      if (value === "false") return false;
+      return value;
+    case "multi_select":
+      if (Array.isArray(value)) return value;
+      return typeof value === "string" && value.includes(",")
+        ? value.split(",").map((item) => item.trim()).filter(Boolean)
+        : [String(value)];
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value;
+    default:
+      return Array.isArray(value) ? value.join(", ") : typeof value === "string" ? value : String(value);
+  }
 }

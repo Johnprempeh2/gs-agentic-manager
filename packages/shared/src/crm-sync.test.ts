@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { crmSyncIsOwnChangeOnly, crmSyncValuesEqual, decideCrmSyncField } from "./crm-sync.js";
+import { coerceCrmSyncFieldValue, crmSyncIsOwnChangeOnly, crmSyncValuesEqual, decideCrmSyncField } from "./crm-sync.js";
 
 describe("crmSyncValuesEqual", () => {
   it("treats null, missing, blank and empty list as the same empty value", () => {
@@ -71,5 +71,17 @@ describe("crmSyncIsOwnChangeOnly", () => {
     expect(crmSyncIsOwnChangeOnly([{ actorType: "agent", agentId: "a1" }], "u1")).toBe(false);
     // Unknown author (for example a change made before the sync knew who): anyone may decide.
     expect(crmSyncIsOwnChangeOnly([], "u1")).toBe(false);
+  });
+});
+
+describe("coerceCrmSyncFieldValue", () => {
+  it("shapes typed text as the field's type and leaves unreadable values as they are", () => {
+    expect(coerceCrmSyncFieldValue("20000", "number")).toBe(20000);
+    expect(coerceCrmSyncFieldValue("lots", "number")).toBe("lots");
+    expect(coerceCrmSyncFieldValue("true", "boolean")).toBe(true);
+    expect(coerceCrmSyncFieldValue("a, b", "multi_select")).toEqual(["a", "b"]);
+    expect(coerceCrmSyncFieldValue("2026-12-15T00:00:00Z", "date")).toBe("2026-12-15");
+    expect(coerceCrmSyncFieldValue(["a", "b"], "text")).toBe("a, b");
+    expect(coerceCrmSyncFieldValue("x", undefined)).toBe("x");
   });
 });

@@ -572,7 +572,10 @@ describeEmbeddedPostgres("CRM sync review queue and write-back", () => {
     const same = await suggest({ gsamField: "fields.dealValue", value: 12000, reason: "y" }).expect(422);
     expect(same.body.details).toMatchObject({ code: "no_change" });
 
-    const created = await suggest({ gsamField: "fields.dealValue", value: 20000, reason: "Scope grew to three sites" }).expect(201);
+    const notANumber = await suggest({ gsamField: "fields.dealValue", value: "lots", reason: "y" }).expect(422);
+    expect(notANumber.body.details).toMatchObject({ code: "invalid_value", type: "number" });
+    // Typed as text, stored as the field's type.
+    const created = await suggest({ gsamField: "fields.dealValue", value: "20000", reason: "Scope grew to three sites" }).expect(201);
     expect(created.body).toMatchObject({
       kind: "suggestion",
       status: "open",

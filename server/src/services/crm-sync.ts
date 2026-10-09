@@ -19,7 +19,7 @@ import {
   toolConnections,
   type CrmSyncStoredValue,
 } from "@greatstone/db";
-import { crmSyncIsOwnChangeOnly, crmSyncValuesEqual } from "@greatstone/shared";
+import { coerceCrmSyncFieldValue, crmSyncIsOwnChangeOnly, crmSyncValuesEqual } from "@greatstone/shared";
 import type {
   CreateCrmSyncBinding,
   CreateCrmSyncSuggestion,
@@ -44,6 +44,7 @@ import type {
   CrmSyncPage,
   CrmSyncRecordLink,
   CrmSyncStageMapEntry,
+  PipelineFieldType,
   ListCrmSyncConflictsQuery,
   ListCrmSyncEventsQuery,
   ProposeCrmSyncConflictResolution,
@@ -304,6 +305,29 @@ async function writeFieldMap(
     .returning();
 }
 
+/** A typed value lands as the pipeline field's type (number, date, list), like an imported CRM value. */
+async function coerceForGsamField(
+  db: SyncDb,
+  input: { companyId: string; pipelineId: string; gsamField: string; value: CrmSyncFieldValue },
+) {
+  if (!input.gsamField.startsWith("fields.")) return input.value;
+  const definition = await db
+    .select({ type: pipelineFieldDefinitions.type })
+    .from(pipelineFieldDefinitions)
+    .where(and(
+      eq(pipelineFieldDefinitions.companyId, input.companyId),
+      eq(pipelineFieldDefinitions.pipelineId, input.pipelineId),
+      eq(pipelineFieldDefinitions.key, input.gsamField.slice("fields.".length)),
+    ))
+    .then((rows) => rows[0] ?? null);
+  const type = definition?.type as PipelineFieldType | undefined;
+  const value = coerceCrmSyncFieldValue(input.value, type);
+  if ((type === "number" && value !== null && typeof value !== "number") || (type === "boolean" && value !== null && typeof value !== "boolean")) {
+    throw unprocessable(`Enter a ${type} for this field`, { code: "invalid_value", gsamField: input.gsamField, type });
+  }
+  return value;
+}
+
 /** Nobody resolves a conflict that holds only their own change (deck slide 8). */
 function assertNotOwnChangeOnly(row: ConflictRow, userId: string) {
   if (crmSyncIsOwnChangeOnly(row.gsamChangedBy, userId)) {
@@ -506,7 +530,7 @@ export function crmSyncService(db: Db) {
         ? row.crmValue
         : input.resolution === "keep_gsam"
           ? row.gsamValue
-          : { value: input.value };
+          : { value: await coerceForGsamField(db, { ...(await conflictScope(row)), gsamField: row.gsamField, value: input.value }) };
       const resolved = await closeConflict(row, {
         status: "resolved",
         resolution: input.resolution,
@@ -552,7 +576,9 @@ export function crmSyncService(db: Db) {
         .update(crmSyncConflicts)
         .set({
           proposedResolution: input.resolution,
-          proposedValue: input.resolution === "custom" ? { value: input.value } : null,
+          proposedValue: input.resolution === "custom"
+            ? { value: await coerceForGsamField(db, { ...(await conflictScope(row)), gsamField: row.gsamField, value: input.value }) }
+            : null,
           proposalReason: input.reason,
           proposedByAgentId: actor.agentId,
           proposedByUserId: actor.userId,
@@ -636,7 +662,13 @@ export function crmSyncService(db: Db) {
       const link = links.find((row) => row.connectionId === binding.connectionId)!;
       const hasBase = Object.prototype.hasOwnProperty.call(link.lastSyncedValues, input.gsamField);
       const crmValue: CrmSyncFieldValue = hasBase ? link.lastSyncedValues[input.gsamField]! : null;
-      if (crmSyncValuesEqual(crmValue, input.value)) {
+      const value = await coerceForGsamField(db, {
+        companyId: caseRow.companyId,
+        pipelineId: caseRow.pipelineId,
+        gsamField: input.gsamField,
+        value: input.value,
+      });
+      if (crmSyncValuesEqual(crmValue, value)) {
         throw unprocessable("The CRM already holds this value", { code: "no_change" });
       }
       try {
@@ -651,7 +683,7 @@ export function crmSyncService(db: Db) {
           externalField: fieldRow.externalField,
           lastSyncedValue: hasBase ? { value: crmValue } : null,
           crmValue: { value: crmValue },
-          gsamValue: { value: input.value },
+          gsamValue: { value },
           gsamChangedBy: [author],
           gsamChangedAt: new Date(),
           reason: input.reason,
@@ -813,6 +845,15 @@ export function crmSyncService(db: Db) {
       throw conflict("This conflict is already closed", { code: "conflict_closed", status: latest.status });
     }
     return toCrmSyncConflict(updated);
+  }
+
+  async function conflictScope(row: ConflictRow) {
+    const binding = await db
+      .select({ pipelineId: crmSyncBindings.pipelineId })
+      .from(crmSyncBindings)
+      .where(eq(crmSyncBindings.id, row.bindingId))
+      .then((rows) => rows[0]!);
+    return { companyId: row.companyId, pipelineId: binding.pipelineId };
   }
 
   /** Runs the binding soon after a decision, so the result reaches both sides without waiting for the poll. */

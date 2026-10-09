@@ -20,6 +20,7 @@ import {
   toolConnections,
 } from "@greatstone/db";
 import {
+  coerceCrmSyncFieldValue,
   crmSyncValuesEqual,
   decideCrmSyncField,
   type CrmSyncChangeAuthor,
@@ -133,28 +134,6 @@ function asFieldValue(raw: unknown): CrmSyncFieldValue {
   return null;
 }
 
-/** Shapes a CRM value for the typed field it lands in, so it compares and validates as that type. */
-function coerceForField(value: CrmSyncFieldValue, type: PipelineFieldType | undefined): CrmSyncFieldValue {
-  if (value === null || type === undefined) return value;
-  switch (type) {
-    case "number": {
-      if (typeof value === "number") return value;
-      const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
-      return Number.isFinite(parsed) ? parsed : value;
-    }
-    case "boolean":
-      if (value === "true") return true;
-      if (value === "false") return false;
-      return value;
-    case "multi_select":
-      return Array.isArray(value) ? value : [String(value)];
-    case "date":
-      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value;
-    default:
-      return Array.isArray(value) ? value.join(", ") : typeof value === "string" ? value : String(value);
-  }
-}
-
 function readCaseValue(row: Pick<CaseRow, "title" | "summary" | "fields">, gsamField: string): CrmSyncFieldValue {
   if (gsamField === "title") return row.title;
   if (gsamField === "summary") return row.summary;
@@ -214,7 +193,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
     const values = new Map<string, CrmSyncFieldValue>();
     for (const row of ctx.fieldRows) {
       const type = row.gsamField.startsWith("fields.") ? ctx.fieldTypes.get(row.gsamField.slice("fields.".length)) : undefined;
-      values.set(row.gsamField, coerceForField(flat[row.externalField] ?? null, type));
+      values.set(row.gsamField, coerceCrmSyncFieldValue(flat[row.externalField] ?? null, type));
     }
     return values;
   }
