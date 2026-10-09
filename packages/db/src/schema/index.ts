@@ -79,6 +79,7 @@ export {
 export {
   pipelineCases,
   pipelineCaseIssueLinks,
+  pipelineCaseProjectLinks,
   pipelineCaseBlockers,
   pipelineDocuments,
   pipelineCaseDocuments,

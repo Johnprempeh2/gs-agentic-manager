@@ -131,6 +131,9 @@ export const createIssueLinkSchema = z.object({
   issueId: z.string().guid(),
   role: issueLinkRoleSchema,
 });
+export const createProjectLinkSchema = z.object({
+  projectId: z.string().guid(),
+});
 export const bulkReviewSchema = z.object({
   items: z.array(reviewCaseSchema.extend({ caseId: z.string().guid() })).max(100),
 });

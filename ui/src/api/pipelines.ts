@@ -237,6 +237,29 @@ export interface PipelineCaseIssueLinkWithIssue {
   issue: Issue;
 }
 
+export interface PipelineCaseProjectLink {
+  id: string;
+  companyId: string;
+  caseId: string;
+  projectId: string;
+  createdByUserId?: string | null;
+  createdByAgentId?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface PipelineCaseProjectLinkWithProject {
+  link: PipelineCaseProjectLink;
+  project: { id: string; companyId: string; name: string; status: string; color: string | null };
+  goals: Array<{ id: string; title: string; status: string }>;
+}
+
+export interface ProjectPipelineCase {
+  case: { id: string; pipelineId: string; caseKey: string; title: string };
+  pipeline: { id: string; name: string };
+  stage: { id: string; key: string; name: string; kind: string };
+}
+
 export interface PipelineCaseBlocker {
   id: string;
   companyId: string;
@@ -563,6 +586,14 @@ export const pipelinesApi = {
   },
   getCaseIssueLinks: (caseId: string) =>
     api.get<PipelineCaseIssueLinkWithIssue[]>(`/cases/${caseId}/issue-links`),
+  getCaseProjectLinks: (caseId: string) =>
+    api.get<PipelineCaseProjectLinkWithProject[]>(`/cases/${caseId}/project-links`),
+  linkCaseProject: (caseId: string, projectId: string) =>
+    api.post<PipelineCaseProjectLink>(`/cases/${caseId}/project-links`, { projectId }),
+  unlinkCaseProject: (caseId: string, projectId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/project-links/${projectId}`),
+  listProjectCases: (projectId: string) =>
+    api.get<ProjectPipelineCase[]>(`/projects/${projectId}/pipeline-cases`),
   getCaseOutputs: (caseId: string) =>
     api.get<PipelineCaseOutputsResponse>(`/cases/${caseId}/outputs`),
   createIssueLink: (

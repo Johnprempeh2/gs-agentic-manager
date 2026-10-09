@@ -84,6 +84,7 @@ import { authApi } from "../api/auth";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
+import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { EmptyState } from "../components/EmptyState";
 import { IssueChatThread } from "../components/IssueChatThread";
 import { MarkdownBody } from "../components/MarkdownBody";
@@ -3355,6 +3356,10 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
         <aside className="min-w-0 space-y-8">
           {reviewPanel}
+
+          <DetailSection title="Projects">
+            <PipelineCaseProjects caseId={caseId} companyId={item.data?.case.companyId ?? selectedCompanyId ?? null} />
+          </DetailSection>
 
           <DetailSection title="Linked work">
             <PipelineWorkReferences references={workReferences} />
