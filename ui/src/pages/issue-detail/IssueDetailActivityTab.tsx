@@ -16,6 +16,7 @@ import { IssueWriteDenialNotice } from "../../components/IssueWriteDenialNotice"
 import { issueWriteDenialForActivity } from "../../lib/issue-write-denial-activity";
 import { IssueScheduledRetryCard } from "../../components/IssueScheduledRetryCard";
 import { IssueRunLedger } from "../../components/IssueRunLedger";
+import { IssueTreeApiEquivalent } from "../../components/IssueTreeApiEquivalent";
 import { formatIssueActivityAction } from "@/lib/activity-format";
 import {
   successfulRunHandoffActivityTone,
@@ -268,6 +269,9 @@ export function IssueDetailActivityTab({
                     {issueTreeCostSummary.issueCount === 1 ? "" : "s"}
                   </span>
                 </div>
+              ) : null}
+              {hasIssueTreeCost && issueTreeCostSummary ? (
+                <IssueTreeApiEquivalent summary={issueTreeCostSummary} />
               ) : null}
             </div>
           )}

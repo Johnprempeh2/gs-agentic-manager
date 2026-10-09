@@ -1,14 +1,18 @@
 # CRM sync: shared types and API contract
 
-Status: contract only (GRE-1074, week 1). Source: GRE-1069 discovery deck v7, slides 6-9.
-No sync job, adapter, external call, route or migration exists yet. This page and
-the shared module are what later work builds against.
+Status: tables and routes built (GRE-1100 part 1). Source: GRE-1069 discovery deck v7, slides 6-9.
+The tables (migration `0305_crm_sync_tables`) and every route below except `POST .../sync`
+exist. No sync job, adapter or external call exists yet; the Pipedrive read adapter is
+GRE-1100 part 2.
 
 Code:
 
 - `packages/shared/src/crm-sync.ts` — constants and the three-value rule (`decideCrmSyncField`).
 - `packages/shared/src/validators/crm-sync.ts` — request and record validators.
 - `packages/shared/src/types/crm-sync.ts` — API response shapes.
+- `packages/db/src/schema/crm_sync.ts` — tables: `crm_sync_bindings`, `crm_sync_field_maps`,
+  `crm_sync_record_links`, `crm_sync_conflicts`, `crm_sync_events`.
+- `server/src/services/crm-sync.ts`, `server/src/routes/crm-sync.ts` — the routes below.
 
 ## The model
 
@@ -73,7 +77,7 @@ company; agents may read. Every write is recorded in the activity log.
 | `DELETE /api/crm-sync/bindings/:bindingId` | — | 204. Stops sync. Keeps the log, record links and resolved conflicts; open conflicts are dismissed. |
 | `GET /api/crm-sync/bindings/:bindingId/field-map` | — | `CrmSyncFieldMap` |
 | `PUT /api/crm-sync/bindings/:bindingId/field-map` | `replaceCrmSyncFieldMapSchema` (whole map) | `CrmSyncFieldMap` |
-| `POST /api/crm-sync/bindings/:bindingId/sync` | `runCrmSyncBindingSchema` | 202, queues one pass |
+| `POST /api/crm-sync/bindings/:bindingId/sync` | `runCrmSyncBindingSchema` | 202, queues one pass (comes with the sync job, part 2) |
 | `GET /api/crm-sync/bindings/:bindingId/events` | `listCrmSyncEventsQuerySchema` | `CrmSyncPage<CrmSyncEvent>`, newest first |
 | `GET /api/companies/:companyId/crm-sync/conflicts` | `listCrmSyncConflictsQuerySchema` (open by default) | `CrmSyncPage<CrmSyncConflict>` |
 | `POST /api/crm-sync/conflicts/:conflictId/resolve` | `resolveCrmSyncConflictSchema` | `CrmSyncConflict` |
@@ -91,8 +95,14 @@ Notes:
 - Sync events and conflicts are written by the server only (`crmSyncEventSchema`,
   `crmSyncConflictSchema` validate what the sync writes).
 - Inbound webhooks from CRMs are out of scope here; they come with the first adapter.
+- The routes are off while `enablePipelines` is off (403 `not_entitled`), because every binding
+  targets a pipeline.
+- `fields.<key>` in a field map must name a typed field (GRE-1075) on the bound pipeline that is
+  not archived (422 `unknown_pipeline_field`).
+- DELETE is a soft delete (`deleted_at`). The same container can be bound again afterwards.
+- Another company's binding, conflict or case answers 404, so ids do not leak.
 
 ## Not in this slice
 
-- Any table or migration, sync job, scheduler, adapter or external call.
+- Sync job, scheduler, adapter or external call (GRE-1100 part 2).
 - Which CRMs ship first, and anything marked Open on slide 38 of the deck.

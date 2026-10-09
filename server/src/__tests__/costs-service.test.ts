@@ -824,7 +824,157 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
       outputTokens: 12,
       runCount: 0,
       runtimeMs: 0,
+      apiEquivalentCents: computeApiEquivalentCents({
+        provider: "openai", model: "gpt-5", inputTokens: 60, cachedInputTokens: 6, outputTokens: 12,
+      }),
+      unpricedTokens: 0,
+      byModel: [
+        {
+          provider: "openai",
+          model: "gpt-5",
+          inputTokens: 60,
+          cachedInputTokens: 6,
+          outputTokens: 12,
+          costCents: 600,
+          apiEquivalentCents: computeApiEquivalentCents({
+            provider: "openai", model: "gpt-5", inputTokens: 60, cachedInputTokens: 6, outputTokens: 12,
+          }),
+        },
+      ],
     });
+  });
+
+  it("prices the issue tree at API-equivalent rates per model, matching the company view", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const rootIssueId = randomUUID();
+    const childIssueId = randomUUID();
+    const grandchildIssueId = randomUUID();
+    const harnessIssueId = randomUUID();
+    const subscriptionRootId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Cost Agent",
+      role: "engineer",
+      status: "active",
+      adapterType: "claude_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    const issue = (id: string, issueNumber: number, extra: Partial<typeof issues.$inferInsert> = {}) => ({
+      id,
+      companyId,
+      title: `Issue ${issueNumber}`,
+      status: "done" as const,
+      priority: "medium" as const,
+      issueNumber,
+      identifier: `TST-${issueNumber}`,
+      ...extra,
+    });
+    await db.insert(issues).values([
+      issue(rootIssueId, 1),
+      issue(childIssueId, 2, { parentId: rootIssueId }),
+      issue(grandchildIssueId, 3, { parentId: childIssueId }),
+      issue(harnessIssueId, 4, { parentId: rootIssueId, workMode: "skill_test", harnessKind: "skill_test" }),
+      issue(subscriptionRootId, 5),
+    ]);
+    const event = (
+      issueId: string,
+      billingType: "metered_api" | "subscription_included",
+      provider: string,
+      model: string,
+      tokens: [number, number, number],
+      costCents = 0,
+    ) => ({
+      companyId,
+      agentId,
+      issueId,
+      provider,
+      biller: provider,
+      billingType,
+      model,
+      inputTokens: tokens[0],
+      cachedInputTokens: tokens[1],
+      outputTokens: tokens[2],
+      costCents,
+      occurredAt: new Date("2026-10-01T00:00:00.000Z"),
+    });
+    await db.insert(costEvents).values([
+      // Mixed tree: two models, metered and subscription rows.
+      event(rootIssueId, "subscription_included", "anthropic", "claude-opus-5-5", [200_000, 1_000_000, 20_000]),
+      event(childIssueId, "subscription_included", "anthropic", "claude-sonnet-5", [30_000, 500_000, 10_000]),
+      event(grandchildIssueId, "metered_api", "anthropic", "claude-sonnet-5", [6_000, 90_000, 1_000], 42),
+      // Unpriced model: tokens counted, not priced.
+      event(grandchildIssueId, "subscription_included", "anthropic", "claude-unknown-model", [1_000, 0, 500]),
+      // Harness issue under root: left out of the tree.
+      event(harnessIssueId, "subscription_included", "anthropic", "claude-opus-5-5", [999_000, 0, 999_000]),
+      // Subscription-only tree.
+      event(subscriptionRootId, "subscription_included", "anthropic", "claude-opus-5-5", [10_000, 50_000, 2_000]),
+    ]);
+
+    const price = (model: string, tokens: [number, number, number]) =>
+      computeApiEquivalentCents({
+        provider: "anthropic",
+        model,
+        inputTokens: tokens[0],
+        cachedInputTokens: tokens[1],
+        outputTokens: tokens[2],
+      })!;
+    const opusCents = price("claude-opus-5-5", [200_000, 1_000_000, 20_000]);
+    const sonnetCents = price("claude-sonnet-5", [36_000, 590_000, 11_000]);
+
+    // Mixed metered + subscription tree with two priced models.
+    const mixed = await costs.issueTreeSummary(companyId, rootIssueId);
+    expect(mixed.costCents).toBe(42);
+    expect(mixed.apiEquivalentCents).toBeGreaterThan(0);
+    expect(mixed.apiEquivalentCents).toBeCloseTo(opusCents + sonnetCents, 6);
+    expect(mixed.unpricedTokens).toBe(1_500);
+    expect(mixed.byModel.map((row) => row.model)).toEqual([
+      "claude-opus-5-5",
+      "claude-sonnet-5",
+      "claude-unknown-model",
+    ]);
+    const mixedByModel = Object.fromEntries(mixed.byModel.map((row) => [row.model, row]));
+    expect(mixedByModel["claude-opus-5-5"]!.apiEquivalentCents).toBeCloseTo(opusCents, 6);
+    expect(mixedByModel["claude-sonnet-5"]).toMatchObject({
+      inputTokens: 36_000,
+      cachedInputTokens: 590_000,
+      outputTokens: 11_000,
+      costCents: 42,
+    });
+    expect(mixedByModel["claude-sonnet-5"]!.apiEquivalentCents).toBeCloseTo(sonnetCents, 6);
+    expect(mixedByModel["claude-unknown-model"]!.apiEquivalentCents).toBeNull();
+
+    // excludeRoot drops the root's opus row but keeps descendants.
+    const descendants = await costs.issueTreeSummary(companyId, rootIssueId, { excludeRoot: true });
+    expect(descendants.byModel.map((row) => row.model)).toEqual(["claude-sonnet-5", "claude-unknown-model"]);
+    expect(descendants.apiEquivalentCents).toBeCloseTo(sonnetCents, 6);
+
+    // Subscription-only tree: no real spend, API-equivalent still priced.
+    const subscriptionOnly = await costs.issueTreeSummary(companyId, subscriptionRootId);
+    expect(subscriptionOnly.costCents).toBe(0);
+    expect(subscriptionOnly.apiEquivalentCents).toBeCloseTo(
+      price("claude-opus-5-5", [10_000, 50_000, 2_000]),
+      6,
+    );
+
+    // The trees together cover every non-harness event, so their sum must
+    // match the company API-equivalent figure for the same runs.
+    await db.delete(costEvents).where(eq(costEvents.issueId, harnessIssueId));
+    const company = await costs.apiEquivalent(companyId);
+    expect(mixed.apiEquivalentCents + subscriptionOnly.apiEquivalentCents).toBeCloseTo(
+      company.apiEquivalentCents,
+      6,
+    );
   });
 
   it("aggregates run wall-clock duration across the recursive issue tree", async () => {

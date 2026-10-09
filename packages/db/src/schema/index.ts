@@ -67,7 +67,7 @@ export {
 } from "./chat_channels.js";
 export { issueRelations } from "./issue_relations.js";
 export { routines, routineRevisions, routineTriggers, routineWebhookTestReceipts, routineRuns } from "./routines.js";
-export { pipelines, pipelineStages, pipelineTransitions } from "./pipelines.js";
+export { pipelines, pipelineStages, pipelineTransitions, pipelineFieldDefinitions } from "./pipelines.js";
 export {
   cases,
   caseAttachments,
@@ -87,6 +87,14 @@ export {
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
+export {
+  crmSyncBindings,
+  crmSyncFieldMaps,
+  crmSyncRecordLinks,
+  crmSyncConflicts,
+  crmSyncEvents,
+  type CrmSyncStoredValue,
+} from "./crm_sync.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
 export { labels } from "./labels.js";

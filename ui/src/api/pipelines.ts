@@ -8,6 +8,8 @@ import type {
   PipelineCaseDocumentRevision,
   PipelineCaseLiveness,
   PipelineCaseOutputsResponse,
+  PipelineFieldDefinition,
+  PipelineFieldType,
   PipelineHealthReport,
   RoutineEnvConfig,
 } from "@greatstone/shared";
@@ -76,6 +78,7 @@ export interface PipelineDetail extends PipelineListItem {
   stages: PipelineStage[];
   transitions: Array<{ fromStageId: string; toStageId: string; label?: string | null }>;
   documentKeys?: Array<{ key: string; documentId: string }>;
+  fieldDefinitions?: PipelineFieldDefinition[];
 }
 
 export interface PipelineTransitionEdge {
@@ -506,6 +509,22 @@ export type PipelineBatchIngestResult =
       };
     };
 
+export type { PipelineFieldDefinition, PipelineFieldType } from "@greatstone/shared";
+
+export interface PipelineFieldInput {
+  key: string;
+  label: string;
+  description?: string | null;
+  type: PipelineFieldType;
+  required?: boolean;
+  options?: string[];
+}
+
+export type PipelineFieldPatch = Partial<Omit<PipelineFieldInput, "key" | "type">> & {
+  position?: number;
+  archived?: boolean;
+};
+
 export const pipelinesApi = {
   list: (companyId: string) => api.get<PipelineListItem[]>(`/companies/${companyId}/pipelines`),
   create: (
@@ -518,6 +537,14 @@ export const pipelinesApi = {
     pipelineId: string,
     data: { name?: string; description?: string | null; enforceTransitions?: boolean; archived?: boolean },
   ) => api.patch<PipelineListItem>(`/pipelines/${pipelineId}`, data),
+  listFields: (pipelineId: string, options?: { includeArchived?: boolean }) =>
+    api.get<PipelineFieldDefinition[]>(
+      `/pipelines/${pipelineId}/fields${options?.includeArchived ? "?includeArchived=true" : ""}`,
+    ),
+  createField: (pipelineId: string, data: PipelineFieldInput) =>
+    api.post<PipelineFieldDefinition>(`/pipelines/${pipelineId}/fields`, data),
+  updateField: (pipelineId: string, fieldId: string, data: PipelineFieldPatch) =>
+    api.patch<PipelineFieldDefinition>(`/pipelines/${pipelineId}/fields/${fieldId}`, data),
   createStage: (
     pipelineId: string,
     data: { key: string; name: string; kind: string; position: number; config?: Record<string, unknown> },

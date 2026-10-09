@@ -1000,3 +1000,4 @@ export * from "./chat-github.js";
 
 export * from "./email.js";
 export * from "./crm-sync.js";
+export * from "./pipeline-fields.js";
