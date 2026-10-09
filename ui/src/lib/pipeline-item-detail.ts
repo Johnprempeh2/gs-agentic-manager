@@ -326,6 +326,9 @@ export function formatPipelineItemEvent(event: PipelineCaseEvent, stages?: Stage
   if (kind === "ingested") return "Item added.";
   if (kind === "updated") {
     if (payload.action === "stage_automation_rerun_requested") return "Stage automation re-run requested.";
+    if (payload.action === "contact_added") return "Contact added.";
+    if (payload.action === "contact_updated") return "Contact updated.";
+    if (payload.action === "contact_removed") return "Contact removed.";
     return "Item details updated.";
   }
   if (kind === "transitioned") {
