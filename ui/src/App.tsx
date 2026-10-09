@@ -51,6 +51,7 @@ import { Goals } from "./pages/Goals";
 import { Releases } from "./pages/Releases";
 import { Artifacts } from "./pages/Artifacts";
 import { Deliverables } from "./pages/Deliverables";
+import { Website } from "./pages/Website";
 import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
 import { GoalDetail } from "./pages/GoalDetail";
@@ -394,6 +395,7 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       </Route>
       <Route path="goals/:goalId" element={<GoalDetail />} />
       <Route path="deliverables" element={<Deliverables />} />
+      <Route path="website" element={<Website />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="artifacts" element={<Artifacts />} />
@@ -811,6 +813,7 @@ export function App() {
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
+          <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
