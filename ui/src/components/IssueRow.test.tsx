@@ -189,6 +189,19 @@ describe("IssueRow", () => {
     act(() => root.unmount());
   });
 
+  it("shows the Strategic badge only for work linked to an objective or initiative", () => {
+    const root = createRoot(container);
+    for (const presentation of ["task", "legacy"] as const) {
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: "initiative" })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")?.textContent).toBe("Strategic");
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: "kpi" })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")).toBeNull();
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: null })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")).toBeNull();
+    }
+    act(() => root.unmount());
+  });
+
   it("renders the list status glyph at md (16px)", () => {
     const root = createRoot(container);
 

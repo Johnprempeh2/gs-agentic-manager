@@ -17,6 +17,7 @@ import {
   issuePriorityOrder,
   issueQuickFilterPresets,
   issueStatusOrder,
+  issueWorkFilterOptions,
   searchIssueFilterOptions,
   toggleIssueFilterValue,
   type IssueFilterState,
@@ -314,6 +315,31 @@ export function IssueFiltersPopover({
                     onClick={() => onChange({ statuses: isActive ? [] : [...preset.statuses] })}
                   >
                     {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-1.5" role="radiogroup" aria-label="Work">
+            <span className="text-xs text-muted-foreground">Work</span>
+            <div className="flex flex-wrap gap-1.5">
+              {issueWorkFilterOptions.map((option) => {
+                const isActive = (state.work ?? null) === option.value;
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      isActive
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                    }`}
+                    onClick={() => onChange({ work: option.value })}
+                  >
+                    {option.label}
                   </button>
                 );
               })}
