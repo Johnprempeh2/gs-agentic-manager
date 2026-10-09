@@ -119,6 +119,9 @@ export const memoryOperations = pgTable(
     actorId: text("actor_id").notNull(),
     agentId: uuid("agent_id"),
     runId: uuid("run_id"),
+    /** The app the call came through and its session (GRE-1079); see `MemoryCallerApp`. */
+    app: text("app"),
+    sessionId: text("session_id"),
     scopeIds: jsonb("scope_ids").$type<string[]>().notNull().default([]),
     recordId: uuid("record_id"),
     detail: jsonb("detail").$type<Record<string, unknown> | null>(),
@@ -149,6 +152,9 @@ export const memoryReviewEvents = pgTable(
     agentId: uuid("agent_id"),
     userId: text("user_id"),
     runId: uuid("run_id"),
+    /** The app the person or agent acted through and its session (GRE-1079); see `MemoryCallerApp`. */
+    app: text("app"),
+    sessionId: text("session_id"),
     reason: text("reason"),
     relatedRecordId: uuid("related_record_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

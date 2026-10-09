@@ -198,6 +198,24 @@ export type MemoryContributeResult = {
   flagNote: string | null;
 };
 
+/**
+ * The app a memory action came through (GRE-1079, deck v7 slide 17: the
+ * person is the identity, the app is a provenance label). `sessionId` on the
+ * same row is the sign-in session for `gsam_web`, the run for `gsam_agent_run`,
+ * the API key id for the key apps, and null otherwise.
+ */
+export const MEMORY_CALLER_APPS = [
+  "gsam_web",
+  "gsam_local",
+  "gsam_board_key",
+  "gsam_cloud",
+  "gsam_agent_run",
+  "gsam_agent_key",
+  "memory_key",
+  "gsam_scheduler",
+] as const;
+export type MemoryCallerApp = (typeof MEMORY_CALLER_APPS)[number];
+
 export interface MemoryReviewEvent {
   id: string;
   recordId: string;
@@ -210,6 +228,10 @@ export interface MemoryReviewEvent {
   agentId: string | null;
   userId: string | null;
   runId: string | null;
+  /** The app the action came through (GRE-1079). Null on events from before it was stored. */
+  app: MemoryCallerApp | null;
+  /** That app's session: a sign-in session, an agent run or an API key id, by `app`. */
+  sessionId: string | null;
   reason: string | null;
   relatedRecordId: string | null;
   createdAt: Date | string;

@@ -370,7 +370,9 @@ export interface DrainMemoryIngestResult {
   /** True when the drain stopped early because the engine or the plan is down. */
   haltedOn: MemoryEngineErrorKind | null;
   /** Entries deferred this pass whose attempts reached the attention threshold. */
-  overdue: Array<{ id: string; recordId: string; attempts: number; kind: MemoryEngineErrorKind }>;
+  overdue: Array<{ id: string; companyId: string; recordId: string; attempts: number; kind: MemoryEngineErrorKind }>;
+  /** Entries the engine refused for good this pass; each now waits in `needs_attention`. */
+  failed: Array<{ id: string; companyId: string; recordId: string; op: MemoryIngestOp; kind: MemoryEngineErrorKind; error: string }>;
 }
 
 export interface DrainMemoryIngestOptions {
@@ -408,6 +410,7 @@ export async function drainMemoryIngestOutbox(
     lostClaims: 0,
     haltedOn: null,
     overdue: [],
+    failed: [],
   };
 
   const claimed = await options.store.claimDue({
@@ -457,8 +460,19 @@ export async function drainMemoryIngestOutbox(
           kind: classified.kind,
           error: classified.message,
         });
-        if (ok) result.parked += 1;
-        else result.lostClaims += 1;
+        if (ok) {
+          result.parked += 1;
+          result.failed.push({
+            id: entry.id,
+            companyId: entry.companyId,
+            recordId: entry.recordId,
+            op: entry.op,
+            kind: classified.kind,
+            error: classified.message,
+          });
+        } else {
+          result.lostClaims += 1;
+        }
         continue;
       }
 
@@ -479,7 +493,7 @@ export async function drainMemoryIngestOutbox(
       if (ok) {
         result.deferred += 1;
         if (attempts >= overdueAfter) {
-          result.overdue.push({ id: entry.id, recordId: entry.recordId, attempts, kind: classified.kind });
+          result.overdue.push({ id: entry.id, companyId: entry.companyId, recordId: entry.recordId, attempts, kind: classified.kind });
         }
       } else {
         result.lostClaims += 1;

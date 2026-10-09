@@ -134,7 +134,7 @@ describe("environment instance routes", () => {
     mockProjectService.clearExecutionWorkspaceEnvironmentSelection.mockReset();
     mockInstanceSettingsService.listCompanyIds.mockReset();
     mockInstanceSettingsService.getExperimental.mockReset();
-    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableManagedSandboxOnly: false });
+    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableEnvironments: true, enableManagedSandboxOnly: false });
     mockEnvironmentService.list.mockReset();
     mockEnvironmentService.getById.mockReset();
     mockEnvironmentService.create.mockReset();

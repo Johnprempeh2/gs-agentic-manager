@@ -292,10 +292,12 @@ export function IssueProperties({
   const { data: paneTabPlanDocument } = useIssuePlanDocument(
     taskChatShellEnabled ? issue.id : null,
   );
+  // The server refuses this read while the switch is off (GRE-1090).
+  const planDecompositionsEnabled = experimentalSettings?.enableIssuePlanDecompositions === true;
   const { data: paneTabAcceptedPlans } = useQuery({
     queryKey: queryKeys.issues.acceptedPlanDecompositions(issue.id),
     queryFn: () => issuesApi.listAcceptedPlanDecompositions(issue.id),
-    enabled: taskChatShellEnabled,
+    enabled: taskChatShellEnabled && planDecompositionsEnabled,
   });
   const { data: paneTabAttachments } = useQuery({
     queryKey: queryKeys.issues.attachments(issue.id),

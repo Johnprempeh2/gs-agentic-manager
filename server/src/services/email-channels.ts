@@ -47,6 +47,7 @@ import { supportQueueService } from "./support-queue.js";
 import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { assertEntitled } from "./entitlements.js";
 import { toolAccessPolicyService } from "./tool-access-policy.js";
 import type { heartbeatService } from "./heartbeat.js";
 import type { StorageService } from "../storage/types.js";
@@ -138,8 +139,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       .enableChatConnectors;
   }
   async function requireEnabled() {
-    if (!(await enabled()))
-      throw forbidden("Enable experimental chat connections first");
+    await assertEntitled(db, "enableChatConnectors");
   }
   async function getEndpoint(id: string) {
     const [row] = await db

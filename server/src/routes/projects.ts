@@ -28,6 +28,7 @@ import { trackProjectCreated } from "@greatstone/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
 import { conflict, forbidden, HttpError, unprocessable } from "../errors.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
@@ -231,13 +232,17 @@ export function projectRoutes(db: Db) {
     res.json(project);
   });
 
-  router.get("/projects/:id/external-object-summary", async (req, res) => {
-    const id = req.params.id as string;
-    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
-    if (!project) return;
-    const summary = await externalObjectsSvc.getProjectSummary(project.id);
-    res.json(summary);
-  });
+  router.get(
+    "/projects/:id/external-object-summary",
+    requireEntitlement(instanceSettings, "enableExternalObjects"),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+      if (!project) return;
+      const summary = await externalObjectsSvc.getProjectSummary(project.id);
+      res.json(summary);
+    },
+  );
 
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
     const companyId = req.params.companyId as string;

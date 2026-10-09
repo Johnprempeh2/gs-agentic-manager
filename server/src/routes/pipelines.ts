@@ -62,6 +62,7 @@ import {
   routines,
 } from "@greatstone/db";
 import { validate } from "../middleware/validate.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized, unprocessable } from "../errors.js";
 import {
   PIPELINE_CASE_EVENTS_DEFAULT_LIMIT,
@@ -745,6 +746,17 @@ async function loadStageEnteredAtForCases(
   return result;
 }
 
+/** Path prefixes owned by the pipelines router; all gated by enablePipelines. */
+export const PIPELINE_ROUTE_PREFIXES = [
+  "/companies/:companyId/pipelines",
+  "/companies/:companyId/pipelines-attention",
+  "/companies/:companyId/case-events",
+  "/companies/:companyId/review-cases",
+  "/pipelines",
+  "/cases",
+  "/projects/:id/pipeline-cases",
+];
+
 export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineService>[1] = {}) {
   const router = Router();
   const svc = pipelineService(db, options);
@@ -752,6 +764,11 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
   const access = accessService(db);
   const issuesSvc = issueService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
+
+  // GRE-1077: every pipeline path is refused while enablePipelines is off. The
+  // Cases router runs first and falls through on /cases/* only for ids that
+  // are not new-Cases rows, so this gate never blocks the Cases feature.
+  router.use(PIPELINE_ROUTE_PREFIXES, requireEntitlement(db, "enablePipelines"));
 
   router.get("/companies/:companyId/pipelines", async (req, res) => {
     const companyId = req.params.companyId as string;

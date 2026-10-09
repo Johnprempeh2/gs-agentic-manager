@@ -1,7 +1,7 @@
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { memoryConflicts, memoryRecords, memoryRelationships, memoryReviewEvents } from "@greatstone/db";
-import type { MemoryConflictLink, MemoryRecordStatus, MemoryReviewEventAction } from "@greatstone/shared";
+import type { MemoryCallerApp, MemoryConflictLink, MemoryRecordStatus, MemoryReviewEventAction } from "@greatstone/shared";
 import { textConflictTerms } from "./text-conflict.js";
 
 // Review events and conflict detection (GRE-886, plan 8.5). Shared by the
@@ -19,6 +19,9 @@ export type MemoryReviewActor = {
   agentId: string | null;
   userId: string | null;
   runId: string | null;
+  /** The app and its session (GRE-1079). Taken from the authenticated request, like the rest. */
+  app?: MemoryCallerApp | null;
+  sessionId?: string | null;
 };
 
 export async function insertReviewEvent(
@@ -46,6 +49,8 @@ export async function insertReviewEvent(
     agentId: actor.agentId,
     userId: actor.userId,
     runId: actor.runId,
+    app: actor.app ?? null,
+    sessionId: actor.sessionId ?? null,
     reason: event.reason ?? null,
     relatedRecordId: event.relatedRecordId ?? null,
     ...(event.now ? { createdAt: event.now } : {}),

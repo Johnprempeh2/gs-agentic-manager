@@ -36,6 +36,7 @@ import {
 } from "@greatstone/shared";
 import { eq } from "drizzle-orm";
 import { getManagedInstanceConfig, type ManagedInstanceConfig } from "./managed-config.js";
+import { applyEntitlementsToExperimental } from "./entitlement-runtime.js";
 import { getOperatorSettingDefaults } from "./setting-defaults.js";
 
 const DEFAULT_SINGLETON_KEY = "default";
@@ -462,10 +463,14 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
   }
 
   function toExperimentalView(raw: unknown): InstanceExperimentalSettingsWithManaged {
-    const { experimental, managedKeys } = applyManagedExperimentalOverlay(
+    const overlaid = applyManagedExperimentalOverlay(
       applyCloudCatalogDefaults(normalizeExperimentalSettings(raw), raw, managedConfig),
       managedConfig,
     );
+    const managedKeys = overlaid.managedKeys;
+    // GRE-1078: the signed entitlement document narrows managed product
+    // features last, so neither a stored nor a managed "on" passes it.
+    const experimental = applyEntitlementsToExperimental(overlaid.experimental);
     // Self-hosted responses stay byte-identical: no managedKeys field at all.
     return managedConfig ? { ...experimental, managedKeys } : experimental;
   }

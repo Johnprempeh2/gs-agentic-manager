@@ -22,7 +22,9 @@ import {
   setMemoryScopeStewardSchema,
   supersedeMemoryRecordSchema,
   updateMemorySettingsSchema,
+  type MemoryCallerApp,
 } from "@greatstone/shared";
+import { isMemoryOnlyActor } from "../middleware/memory-only-key-guard.js";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/index.js";
 import type { EngineCallSlots, MemoryEngine } from "../services/memory-gateway/engine.js";
@@ -49,15 +51,44 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function memoryCallerFromRequest(req: Request, companyId: string): MemoryCaller {
   assertCompanyAccess(req, companyId);
   const actor = getActorInfo(req);
+  const runId = actor.runId && UUID_RE.test(actor.runId) ? actor.runId : null;
   return {
     companyId,
     actorType: actor.actorType,
     actorId: actor.actorId,
     agentId: actor.agentId,
     userId: actor.actorType === "user" ? actor.actorId : null,
-    runId: actor.runId && UUID_RE.test(actor.runId) ? actor.runId : null,
+    runId,
     isBoardAdmin: hasCompanyOwnerOrAdminRole(req, companyId),
+    ...memoryCallerApp(req.actor, runId),
   };
+}
+
+/**
+ * The app and session a memory call came through (GRE-1079), from the
+ * authenticated actor only. The person stays the agent or user id; this is
+ * the provenance label beside it (deck v7 slide 17).
+ */
+export function memoryCallerApp(
+  actor: Request["actor"],
+  runId: string | null,
+): { app: MemoryCallerApp | null; sessionId: string | null } {
+  switch (actor.source) {
+    case "session":
+      return { app: "gsam_web", sessionId: actor.sessionId ?? null };
+    case "local_implicit":
+      return { app: "gsam_local", sessionId: null };
+    case "board_key":
+      return { app: "gsam_board_key", sessionId: actor.keyId ?? null };
+    case "cloud_tenant":
+      return { app: "gsam_cloud", sessionId: actor.sessionId ?? null };
+    case "agent_jwt":
+      return { app: "gsam_agent_run", sessionId: runId };
+    case "agent_key":
+      return { app: isMemoryOnlyActor(actor) ? "memory_key" : "gsam_agent_key", sessionId: actor.keyId ?? null };
+    default:
+      return { app: null, sessionId: null };
+  }
 }
 
 // Organization memory gateway (GRE-672, ADR-0001). Every route is scoped to

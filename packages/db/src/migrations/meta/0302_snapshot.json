@@ -1,5 +1,5 @@
 {
-  "id": "643c6e3d-fce9-48ef-84c9-a34972d38cbf",
+  "id": "cbeaca75-f7d7-459a-8312-1e844fb6443d",
   "prevId": "e2b01262-77fd-4b12-828c-688987b14477",
   "version": "7",
   "dialect": "postgresql",
@@ -33270,6 +33270,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "app": {
+          "name": "app",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "scope_ids": {
           "name": "scope_ids",
           "type": "jsonb",
@@ -33981,6 +33993,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "app": {
+          "name": "app",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "reason": {
           "name": "reason",
           "type": "text",
@@ -34071,121 +34095,6 @@
           "tableTo": "memory_records",
           "columnsFrom": [
             "record_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.memory_scope_stewards": {
-      "name": "memory_scope_stewards",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scope_id": {
-          "name": "scope_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "primary_user_id": {
-          "name": "primary_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "backup_user_id": {
-          "name": "backup_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_by_user_id": {
-          "name": "set_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "set_at": {
-          "name": "set_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "memory_scope_stewards_scope_uq": {
-          "name": "memory_scope_stewards_scope_uq",
-          "columns": [
-            {
-              "expression": "scope_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "memory_scope_stewards_company_idx": {
-          "name": "memory_scope_stewards_company_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "memory_scope_stewards_company_id_companies_id_fk": {
-          "name": "memory_scope_stewards_company_id_companies_id_fk",
-          "tableFrom": "memory_scope_stewards",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "memory_scope_stewards_scope_id_memory_scopes_id_fk": {
-          "name": "memory_scope_stewards_scope_id_memory_scopes_id_fk",
-          "tableFrom": "memory_scope_stewards",
-          "tableTo": "memory_scopes",
-          "columnsFrom": [
-            "scope_id"
           ],
           "columnsTo": [
             "id"
