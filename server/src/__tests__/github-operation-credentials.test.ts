@@ -690,6 +690,18 @@ const support = await getEmbeddedPostgresTestSupport();
           .toBe("More than one GitHub login is shared with this agent (A, B). In Apps, keep Share with agents on for one GitHub account only.");
       });
 
+      it("falls back instead of failing when the only shared grant has no OAuth token", async () => {
+        const input = await seed();
+        const a = await grant(input, "A");
+        await db.update(connectionGrants).set({
+          credentialSecretRefs: [{ secretId: a.secretId, configPath: "credentials.authorization" }],
+          providerTenant: {},
+        }).where(eq(connectionGrants.id, a.id));
+        await companyDefault(input);
+        await share(input, a.id, "A");
+        expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({ status: "absent", env: {} });
+      });
+
       it("still withholds a shared grant from low-trust work", async () => {
         const input = await seed();
         const a = await grant(input, "A");

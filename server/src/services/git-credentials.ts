@@ -413,39 +413,40 @@ export async function resolveManagedGitHubIdentitySelection(
     inArray(connectionGrants.connectionId, [...eligibleConnectionIds]),
     or(eq(connectionGrants.kind, "agent"), eq(connectionGrants.kind, "user")),
   ));
-  // A grant with no OAuth access token (a pasted token, or a sign-in that never
-  // finished) cannot supply git credentials, like a token-only connection. If
-  // it were selected, every run for that person would fail closed as
-  // "incomplete" (GRE-1103), so it is not a managed identity candidate.
-  const grants = context.requireGitToken
-    ? allGrants.filter((grant) => grant.credentialSecretRefs.some((ref) => ref.configPath === "oauth.access_token"))
-    : allGrants;
-  const isRunCandidate = (grant: typeof connectionGrants.$inferSelect) =>
-    (grant.kind === "agent" && Boolean(context.agentId) && grant.subjectAgentId === context.agentId)
-    || (grant.kind === "user" && Boolean(context.responsibleUserId) && grant.subjectUserId === context.responsibleUserId);
-  const dedicated = context.agentId
-    ? grants.filter((grant) => grant.kind === "agent" && grant.subjectAgentId === context.agentId)
+  // With requireGitToken, a grant with no OAuth access token (a pasted token, or
+  // a sign-in that never finished) cannot supply git credentials, like a
+  // token-only connection. Selecting it made every run for that person, or every
+  // agent it was shared with, fail closed as "incomplete" (GRE-1103).
+  const hasGitToken = (grant: typeof connectionGrants.$inferSelect) =>
+    !context.requireGitToken || grant.credentialSecretRefs.some((ref) => ref.configPath === "oauth.access_token");
+  const dedicatedAll = context.agentId
+    ? allGrants.filter((grant) => grant.kind === "agent" && grant.subjectAgentId === context.agentId)
     : [];
   // Connections are already restricted above to the owner-selected install
   // targets. Within that consent boundary the server-resolved responsible user
   // is authoritative; standing delegation is only an ownerless-run fallback.
-  const personal = context.responsibleUserId
-    ? grants.filter((grant) => grant.kind === "user" && grant.subjectUserId === context.responsibleUserId)
+  const personalAll = context.responsibleUserId
+    ? allGrants.filter((grant) => grant.kind === "user" && grant.subjectUserId === context.responsibleUserId)
     : [];
-  const delegated = context.allowStandingDelegation !== false && !context.responsibleUserId && context.agentId
+  const delegatedAll = context.allowStandingDelegation !== false && !context.responsibleUserId && context.agentId
     ? await db.select({ grantId: connectionGrantDelegations.grantId }).from(connectionGrantDelegations).where(and(
         eq(connectionGrantDelegations.companyId, companyId),
         eq(connectionGrantDelegations.agentId, context.agentId),
-        inArray(connectionGrantDelegations.grantId, grants.map((grant) => grant.id)),
+        inArray(connectionGrantDelegations.grantId, allGrants.map((grant) => grant.id)),
       )).then((rows) => {
         const delegatedIds = new Set(rows.map((row) => row.grantId));
-        return grants.filter((grant) => grant.kind === "user" && delegatedIds.has(grant.id));
+        return allGrants.filter((grant) => grant.kind === "user" && delegatedIds.has(grant.id));
       })
     : [];
+  const dedicated = dedicatedAll.filter(hasGitToken);
+  const personal = personalAll.filter(hasGitToken);
+  const delegated = delegatedAll.filter(hasGitToken);
   const candidates = dedicated.length > 0 ? dedicated : personal.length > 0 ? personal : delegated;
-  // This run's own identities are all token-only: no managed identity exists for
-  // it, so git falls back to the legacy credential sources instead of failing.
-  if (candidates.length === 0 && allGrants.some(isRunCandidate)) return { configured: false };
+  // Every identity this run could use is token-only: no managed identity exists
+  // for it, so git falls back to the legacy credential sources instead of failing.
+  if (candidates.length === 0 && dedicatedAll.length + personalAll.length + delegatedAll.length > 0) {
+    return { configured: false };
+  }
   const identitySource = dedicated.length > 0 ? "dedicated" as const : "personal" as const;
   // Reconnecting can create another connection/grant for the same GitHub
   // account. Ambiguity is about provider identities, not the number of rows.
