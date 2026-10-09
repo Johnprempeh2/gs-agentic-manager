@@ -632,6 +632,16 @@ export {
   type CreateGoalCheckIn,
   type CreateGoalKpiReading,
 } from "./goal.js";
+export {
+  createGoalWhyRequestSchema,
+  answerGoalWhyRequestSchema,
+  createStrategyBoardPackSchema,
+  setStrategyBoardMembersSchema,
+  type CreateGoalWhyRequest,
+  type AnswerGoalWhyRequest,
+  type CreateStrategyBoardPack,
+  type SetStrategyBoardMembers,
+} from "./strategy-board.js";
 
 export {
   applyOnboardingSeedSchema,

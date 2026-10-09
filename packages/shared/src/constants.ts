@@ -367,6 +367,9 @@ export const ISSUE_ORIGIN_KINDS = [
   "chat_channel",
   // Renew reminder for a live memory steward grant (GRE-933). originId: the grant id.
   "memory_steward_grant_renewal",
+  // Board control panel (GRE-1135). originId: the KPI alert id / the "Why?" request id.
+  "strategy_board_kpi_alert",
+  "strategy_board_why_request",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;
@@ -621,6 +624,10 @@ export const KPI_READING_SOURCE_LABELS: Record<KpiReadingSource, string> = {
 
 export const KPI_RAG_STATUSES = ["green", "amber", "red"] as const;
 export type KpiRagStatus = (typeof KPI_RAG_STATUSES)[number];
+
+/** A board member's "Why?" request on a KPI (GRE-1135). */
+export const GOAL_WHY_REQUEST_STATUSES = ["open", "answered"] as const;
+export type GoalWhyRequestStatus = (typeof GOAL_WHY_REQUEST_STATUSES)[number];
 
 /** Default slippage lines, in percent off the planned path. */
 export const DEFAULT_KPI_AMBER_THRESHOLD_PCT = 10;
@@ -1102,6 +1109,11 @@ export const PERMISSION_KEYS = [
   "memory:correct",
   "memory:delete",
   "memory:admin",
+  // Board control panel (GRE-1135). Granted to company viewers only, so a board
+  // member reads the strategy and asks "Why?" but cannot edit goals, run agents
+  // or change settings. The chair also gets the slippage alerts.
+  "strategy:board_member",
+  "strategy:board_chair",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
