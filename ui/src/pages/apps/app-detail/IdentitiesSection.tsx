@@ -8,6 +8,7 @@ import type {
 } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Identity } from "@/components/Identity";
+import { AgentMultiSelect, type AgentMultiSelectOption } from "@/components/AgentMultiSelect";
 import { GithubIcon } from "@/components/icons/github-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InlineBanner } from "@/components/InlineBanner";
@@ -95,6 +96,9 @@ export function IdentitiesSection({
   audienceGrantId,
   onOpenAudience,
   onCloseAudience,
+  shareAgents = [],
+  onShareWithAgents,
+  sharePending = false,
 }: {
   appName: string;
   credentialPolicy: ToolConnectionCredentialPolicy;
@@ -121,6 +125,14 @@ export function IdentitiesSection({
   audienceGrantId: string | null;
   onOpenAudience: (grantId: string) => void;
   onCloseAudience: () => void;
+  /** Agents the current user may share their own personal identity with. */
+  shareAgents?: AgentMultiSelectOption[];
+  /**
+   * Replace the agents that may use the current user's personal grant for work
+   * no person instructed. Absent when the connection cannot be delegated.
+   */
+  onShareWithAgents?: (grant: ConnectionGrant, agentIds: Set<string>) => void;
+  sharePending?: boolean;
 }) {
   const grants = grantsQuery?.grants ?? [];
   const capabilities = grantsQuery?.capabilities;
@@ -268,6 +280,16 @@ export function IdentitiesSection({
         )}
       </div>
 
+      {usesPersonalIdentity && myGrant?.status === "active" && onShareWithAgents ? (
+        <ShareWithAgents
+          appName={appName}
+          grant={myGrant}
+          agents={shareAgents}
+          pending={sharePending}
+          onSave={(agentIds) => onShareWithAgents(myGrant, agentIds)}
+        />
+      ) : null}
+
       {audienceGrant ? (
         <AudienceDialog
           appName={appName}
@@ -374,6 +396,49 @@ function GitHubConnectionSummary({
           Missing an organization or repository? <a href={configurationUrl} target="_blank" rel="noreferrer" className="text-foreground hover:underline">Configure access on GitHub</a>, then refresh this list.
         </p> : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Standing delegation (GRE-1103). Work that no person instructed (scheduled or
+ * agent-started tasks) has no one's personal identity to use; the owner opts
+ * specific agents in here. Only the grant owner sees this control.
+ */
+function ShareWithAgents({
+  appName,
+  grant,
+  agents,
+  pending,
+  onSave,
+}: {
+  appName: string;
+  grant: ConnectionGrant;
+  agents: AgentMultiSelectOption[];
+  pending: boolean;
+  onSave: (agentIds: Set<string>) => void;
+}) {
+  const sharedAgentIds = useMemo(
+    () => new Set((grant.delegations ?? []).map((delegation) => delegation.agentId)),
+    [grant.delegations],
+  );
+  return (
+    <div id="share-with-agents" className="space-y-2">
+      <div className="text-sm font-medium text-foreground">Share with agents</div>
+      <p className="text-xs text-muted-foreground">
+        Agents you pick can use your {appName} identity for work no person instructed, such as
+        scheduled or agent-started tasks. Work you instruct always uses your identity.
+      </p>
+      <AgentMultiSelect
+        agents={agents}
+        selectedAgentIds={sharedAgentIds}
+        pending={pending}
+        disabled={pending}
+        onSave={onSave}
+        triggerLabel={sharedAgentIds.size === 0
+          ? "Choose agents"
+          : `Shared with ${sharedAgentIds.size} ${sharedAgentIds.size === 1 ? "agent" : "agents"}`}
+      />
     </div>
   );
 }
