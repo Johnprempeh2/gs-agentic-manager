@@ -6,6 +6,7 @@ import {
   authUsers,
   companyMemberships,
   goalCheckIns,
+  goalKpiReadings,
   goals,
   heartbeatRuns,
   issueApprovals,
@@ -15,14 +16,25 @@ import {
   issueThreadInteractions,
 } from "@greatstone/db";
 import {
+  DEFAULT_KPI_AMBER_THRESHOLD_PCT,
+  DEFAULT_KPI_RED_THRESHOLD_PCT,
   GOAL_KIND_DEFAULT_LEVEL,
   STRATEGIC_PLAN_TEMPLATE,
+  computeKpiStatus,
   goalKindParentError,
+  rollUpKpiStatus,
   type GoalKind,
 } from "@greatstone/shared";
 import type {
   CreateGoalCheckIn,
+  CreateGoalKpiReading,
   GoalCheckIn,
+  GoalKpiReading,
+  GoalRagRollup,
+  KpiDirection,
+  KpiRagStatus,
+  KpiReadingSource,
+  KpiStatus,
   GoalDetail,
   GoalMilestone,
   GoalWithProgress,
@@ -105,9 +117,39 @@ export async function getCompanyLeadAgentId(db: GoalReader, companyId: string): 
 type GoalRow = typeof goals.$inferSelect;
 type GoalInsert = typeof goals.$inferInsert;
 type GoalCheckInRow = typeof goalCheckIns.$inferSelect;
+type GoalKpiReadingRow = typeof goalKpiReadings.$inferSelect;
 
 function toCheckIn(row: GoalCheckInRow): GoalCheckIn {
   return { ...row, blockers: Array.isArray(row.blockers) ? row.blockers : [] };
+}
+
+function toReading(row: GoalKpiReadingRow): GoalKpiReading {
+  return { ...row, source: row.source as KpiReadingSource };
+}
+
+/** Today as "YYYY-MM-DD" (UTC), the date KPI deadlines are checked against. */
+function todayIso(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/** Newest first: by reading date, then by when it was recorded. */
+const READING_ORDER = [desc(goalKpiReadings.readingDate), desc(goalKpiReadings.createdAt), desc(goalKpiReadings.id)];
+
+interface KpiState {
+  latest: Map<string, GoalKpiReading>;
+  statusById: Map<string, KpiStatus>;
+  rollup: Map<string, GoalRagRollup>;
+}
+
+const NO_ROLLUP: GoalRagRollup = { status: null, red: 0, amber: 0, green: 0, noStatus: 0 };
+
+/** Red may not sit below amber. Null thresholds fall back to the defaults. */
+function assertValidThresholds(amber: number | null | undefined, red: number | null | undefined) {
+  const amberPct = amber ?? DEFAULT_KPI_AMBER_THRESHOLD_PCT;
+  const redPct = red ?? DEFAULT_KPI_RED_THRESHOLD_PCT;
+  if (redPct < amberPct) {
+    throw unprocessable(`The red line (${redPct}%) must not be below the amber line (${amberPct}%)`);
+  }
 }
 
 export function goalService(db: Db) {
@@ -315,11 +357,54 @@ export function goalService(db: Db) {
     return latest;
   }
 
+  /**
+   * Status of every KPI in the company and its roll-up up the tree. Reads the
+   * newest and the oldest reading per KPI (the oldest is the baseline when
+   * none is set) in two batched queries.
+   */
+  async function loadKpiState(companyGoals: GoalRow[]): Promise<KpiState> {
+    const kpis = companyGoals.filter((goal) => goal.kind === "kpi");
+    const latest = new Map<string, GoalKpiReading>();
+    const first = new Map<string, GoalKpiReading>();
+    if (kpis.length > 0) {
+      const ids = kpis.map((goal) => goal.id);
+      const [latestRows, firstRows] = await Promise.all([
+        db
+          .selectDistinctOn([goalKpiReadings.goalId])
+          .from(goalKpiReadings)
+          .where(inArray(goalKpiReadings.goalId, ids))
+          .orderBy(goalKpiReadings.goalId, ...READING_ORDER),
+        db
+          .selectDistinctOn([goalKpiReadings.goalId])
+          .from(goalKpiReadings)
+          .where(inArray(goalKpiReadings.goalId, ids))
+          .orderBy(goalKpiReadings.goalId, asc(goalKpiReadings.readingDate), asc(goalKpiReadings.createdAt)),
+      ]);
+      for (const row of latestRows) latest.set(row.goalId, toReading(row));
+      for (const row of firstRows) first.set(row.goalId, toReading(row));
+    }
+    const today = todayIso();
+    const statusById = new Map<string, KpiStatus>();
+    const ragById = new Map<string, KpiRagStatus | null>();
+    for (const kpi of kpis) {
+      const status = computeKpiStatus(
+        { ...kpi, kpiDirection: kpi.kpiDirection as KpiDirection | null },
+        latest.get(kpi.id) ?? null,
+        first.get(kpi.id) ?? null,
+        today,
+      );
+      statusById.set(kpi.id, status);
+      ragById.set(kpi.id, status.status);
+    }
+    return { latest, statusById, rollup: rollUpKpiStatus(companyGoals, ragById) };
+  }
+
   function withProgress(
     goal: GoalRow,
     companyGoals: GoalRow[],
     loaded: Awaited<ReturnType<typeof loadIssueCounts>>,
     latestCheckIns: Map<string, GoalCheckIn>,
+    kpiState: KpiState,
   ): GoalWithProgress {
     const subtree = goalSubtreeIds(goal.id, companyGoals);
     const latestCheckIn = latestCheckIns.get(goal.id) ?? null;
@@ -328,17 +413,21 @@ export function goalService(db: Db) {
       progress: computeGoalProgress(goal, subtree, loaded.countsByGoal),
       blockers: collectGoalBlockers(subtree, loaded.blockedByGoal, latestCheckIn, loaded.dependents),
       latestCheckIn,
+      kpiStatus: kpiState.statusById.get(goal.id) ?? null,
+      ragRollup: kpiState.rollup.get(goal.id) ?? NO_ROLLUP,
+      latestReading: kpiState.latest.get(goal.id) ?? null,
     };
   }
 
   async function listWithProgress(companyId: string): Promise<GoalWithProgress[]> {
     const companyGoals = await db.select().from(goals).where(eq(goals.companyId, companyId));
     if (companyGoals.length === 0) return [];
-    const [loaded, latestCheckIns] = await Promise.all([
+    const [loaded, latestCheckIns, kpiState] = await Promise.all([
       loadIssueCounts(companyId),
       loadLatestCheckIns(companyGoals.map((g) => g.id)),
+      loadKpiState(companyGoals),
     ]);
-    return companyGoals.map((goal) => withProgress(goal, companyGoals, loaded, latestCheckIns));
+    return companyGoals.map((goal) => withProgress(goal, companyGoals, loaded, latestCheckIns, kpiState));
   }
 
   async function getDetail(id: string): Promise<GoalDetail | null> {
@@ -347,9 +436,10 @@ export function goalService(db: Db) {
     const companyGoals = await db.select().from(goals).where(eq(goals.companyId, goal.companyId));
     const subtree = goalSubtreeIds(goal.id, companyGoals);
     const directChildren = companyGoals.filter((g) => g.parentId === goal.id && g.id !== goal.id);
-    const [loaded, latestCheckIns, issueRows] = await Promise.all([
+    const [loaded, latestCheckIns, kpiState, issueRows] = await Promise.all([
       loadIssueCounts(goal.companyId, subtree),
       loadLatestCheckIns([goal.id, ...directChildren.map((g) => g.id)]),
+      loadKpiState(companyGoals),
       db
         .select({
           id: issues.id,
@@ -375,9 +465,9 @@ export function goalService(db: Db) {
       issueRows.map((row) => ({ ...row, goalId: row.goalId as string, status: row.status as IssueStatus })),
     ) satisfies GoalMilestone[];
     return {
-      ...withProgress(goal, companyGoals, loaded, latestCheckIns),
+      ...withProgress(goal, companyGoals, loaded, latestCheckIns, kpiState),
       subGoals: sortSubGoals(directChildren).map((child) =>
-        withProgress(child, companyGoals, loaded, latestCheckIns)),
+        withProgress(child, companyGoals, loaded, latestCheckIns, kpiState)),
       milestones,
     };
   }
@@ -492,6 +582,54 @@ export function goalService(db: Db) {
       return toCheckIn(row);
     },
 
+    listReadings: (goalId: string) =>
+      db
+        .select()
+        .from(goalKpiReadings)
+        .where(eq(goalKpiReadings.goalId, goalId))
+        .orderBy(...READING_ORDER)
+        .then((rows) => rows.map(toReading)),
+
+    /**
+     * Records one KPI reading. When it is the newest by reading date, the
+     * goal's currentValue follows it so the progress bar shows the same number.
+     */
+    createReading: (
+      goal: Pick<GoalRow, "id" | "companyId">,
+      input: CreateGoalKpiReading,
+      recordedBy: { agentId: string | null; userId: string | null },
+    ): Promise<GoalKpiReading> =>
+      db.transaction(async (tx) => {
+        const row = await tx
+          .insert(goalKpiReadings)
+          .values({
+            companyId: goal.companyId,
+            goalId: goal.id,
+            value: input.value,
+            readingDate: input.readingDate,
+            note: input.note ?? null,
+            source: input.source,
+            recordedByAgentId: recordedBy.agentId,
+            recordedByUserId: recordedBy.userId,
+          })
+          .returning()
+          .then((rows) => rows[0]);
+        const newest = await tx
+          .select({ id: goalKpiReadings.id })
+          .from(goalKpiReadings)
+          .where(eq(goalKpiReadings.goalId, goal.id))
+          .orderBy(...READING_ORDER)
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        if (newest?.id === row.id) {
+          await tx
+            .update(goals)
+            .set({ currentValue: row.value, updatedAt: new Date() })
+            .where(eq(goals.id, goal.id));
+        }
+        return toReading(row);
+      }),
+
     getById: (id: string) =>
       db
         .select()
@@ -509,6 +647,7 @@ export function goalService(db: Db) {
         { kind, parentId: data.parentId ?? null, ownerAgentId: data.ownerAgentId ?? null, ownerUserId },
         null,
       );
+      assertValidThresholds(data.amberThresholdPct, data.redThresholdPct);
       // No owner sent: the lead agent owns it, as before.
       const ownerAgentId = ownerUserId
         ? null
@@ -538,6 +677,12 @@ export function goalService(db: Db) {
         },
         existing,
       );
+      if (patch.amberThresholdPct !== undefined || patch.redThresholdPct !== undefined) {
+        assertValidThresholds(
+          patch.amberThresholdPct !== undefined ? patch.amberThresholdPct : existing.amberThresholdPct,
+          patch.redThresholdPct !== undefined ? patch.redThresholdPct : existing.redThresholdPct,
+        );
+      }
       return db
         .update(goals)
         .set({ ...patch, updatedAt: new Date() })

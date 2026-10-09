@@ -2,12 +2,14 @@ import { Router, type Request } from "express";
 import type { Db } from "@greatstone/db";
 import {
   createGoalCheckInSchema,
+  createGoalKpiReadingSchema,
   createGoalSchema,
   isBoardGoalKind,
   updateGoalSchema,
+  type KpiReadingSource,
 } from "@greatstone/shared";
 import { trackGoalCreated } from "@greatstone/shared/telemetry";
-import { forbidden } from "../errors.js";
+import { forbidden, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyBoardRole } from "./authz.js";
@@ -83,6 +85,64 @@ export function goalRoutes(db: Db) {
       details: { checkInId: checkIn.id, progressPercent: checkIn.progressPercent },
     });
     res.status(201).json(checkIn);
+  });
+
+  router.get("/goals/:id/readings", async (req, res) => {
+    const id = req.params.id as string;
+    const goal = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
+    if (!goal) return;
+    res.json(await svc.listReadings(goal.id));
+  });
+
+  /**
+   * Records a KPI reading. Source rules, so an owner cannot mark their own
+   * number as checked:
+   * - owner_reported: any board user, the owner agent or the lead agent.
+   * - agent_verified / system: agents only, and not the KPI's owner agent.
+   */
+  router.post("/goals/:id/readings", validate(createGoalKpiReadingSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const goal = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
+    if (!goal) return;
+    if (goal.kind !== "kpi") throw unprocessable("Readings can only be recorded on a KPI goal");
+    const actor = getActorInfo(req);
+    const source = req.body.source as KpiReadingSource;
+    if (source === "owner_reported") {
+      if (actor.actorType === "agent") {
+        const isOwner = actor.agentId != null && actor.agentId === goal.ownerAgentId;
+        const isLead = !isOwner
+          && actor.agentId != null
+          && actor.agentId === (await svc.getCompanyLeadAgentId(goal.companyId));
+        if (!isOwner && !isLead) {
+          throw forbidden("Only the KPI owner or the lead agent may post an owner-reported reading", {
+            code: "kpi_reading_not_owner",
+          });
+        }
+      }
+    } else if (actor.actorType !== "agent") {
+      throw forbidden("Only an agent that checked the data may post a verified or system reading", {
+        code: "kpi_reading_agent_only",
+      });
+    } else if (actor.agentId != null && actor.agentId === goal.ownerAgentId) {
+      throw forbidden("The KPI owner cannot verify its own reading; another agent must check it", {
+        code: "kpi_reading_self_verify",
+      });
+    }
+    const reading = await svc.createReading(goal, req.body, {
+      agentId: actor.agentId,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    await logActivity(db, {
+      companyId: goal.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "goal.kpi_reading_recorded",
+      entityType: "goal",
+      entityId: goal.id,
+      details: { readingId: reading.id, value: reading.value, readingDate: reading.readingDate, source: reading.source },
+    });
+    res.status(201).json(reading);
   });
 
   router.post("/companies/:companyId/goals", validate(createGoalSchema), async (req, res) => {
