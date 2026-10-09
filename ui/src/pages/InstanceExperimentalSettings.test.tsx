@@ -15,6 +15,8 @@ import { queryKeys } from "../lib/queryKeys";
 const mockInstanceSettingsApi = vi.hoisted(() => ({
   getExperimental: vi.fn(),
   updateExperimental: vi.fn(),
+  getEntitlements: vi.fn(),
+  syncEntitlements: vi.fn(),
 }));
 
 vi.mock("@/api/instanceSettings", () => ({
@@ -183,6 +185,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     mockInstanceSettingsApi.getExperimental.mockImplementation(async () => ({
       ...currentExperimentalSettings,
     }));
+    mockInstanceSettingsApi.getEntitlements.mockResolvedValue({ state: "disabled", features: {} });
     mockInstanceSettingsApi.updateExperimental.mockImplementation(async (patch) => {
       currentExperimentalSettings = { ...currentExperimentalSettings, ...patch };
       return { ...currentExperimentalSettings };
@@ -208,6 +211,42 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     );
     expect(warning?.textContent).toContain("Experimental features may break at any time.");
     expect(warning?.textContent).toContain("no compatibility guarantees");
+  });
+
+  it("locks features the signed plan does not grant and offers sync now (GRE-1078)", async () => {
+    const entitlements = {
+      state: "active",
+      document: {
+        client: "acme",
+        version: 3,
+        issuedAt: "2026-10-01T00:00:00.000Z",
+        issuedBy: "hub-admin",
+        validUntil: "2026-11-01T00:00:00.000Z",
+        graceEndsAt: "2026-11-15T00:00:00.000Z",
+      },
+      features: {
+        enableBuiltInAgents: { entitled: false, effective: false, pendingRestart: false },
+        enableConferenceRoomChat: { entitled: true, effective: false, pendingRestart: true },
+      },
+      limits: {},
+      ignoredFeatureKeys: [],
+      lastCheckedAt: null,
+      lastError: null,
+    };
+    mockInstanceSettingsApi.getEntitlements.mockResolvedValue(entitlements);
+    mockInstanceSettingsApi.syncEntitlements.mockResolvedValue({ applied: false, error: null, entitlements });
+    await renderPage();
+
+    expect(container.textContent).toContain("Plan v3 for acme");
+    expect(container.textContent).toContain("Not in your plan");
+    expect(container.textContent).toContain("Pending restart");
+    expect(container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR)?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR)?.disabled).toBe(false);
+
+    const syncButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Sync now");
+    await act(() => syncButton!.click());
+    await flushReact();
+    expect(mockInstanceSettingsApi.syncEntitlements).toHaveBeenCalledTimes(1);
   });
 
   it("does not render an Apps experimental setting", async () => {
