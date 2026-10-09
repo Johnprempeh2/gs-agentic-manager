@@ -245,10 +245,13 @@ export function GoalDetail() {
             {goal.kind ? GOAL_KIND_LABELS[goal.kind] : goal.level}
           </span>
           <StatusBadge status={goal.status} />
-          <GoalHealthPill health={health} />
+          {/* On a KPI the reading against plan is the status, not task progress. */}
           {goal.kind === "kpi" ? (
             <KpiStatusPill status={goal.kpiStatus?.status ?? null} />
-          ) : rollup ? (
+          ) : (
+            <GoalHealthPill health={health} />
+          )}
+          {goal.kind !== "kpi" && rollup ? (
             <span className="flex items-center gap-1.5" data-testid="goal-rag-rollup">
               <KpiStatusPill status={goal.ragRollup.status} />
               <span className="text-xs text-muted-foreground">{rollup}</span>
@@ -313,12 +316,9 @@ export function GoalDetail() {
 
       {goal.kind === "kpi" ? (
         <section className="space-y-3" aria-labelledby="kpi-readings-heading">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 id="kpi-readings-heading" className="text-sm font-semibold">
-              Readings
-            </h3>
-            <KpiStatusPill status={goal.kpiStatus?.status ?? null} />
-          </div>
+          <h3 id="kpi-readings-heading" className="text-sm font-semibold">
+            Readings
+          </h3>
           {goal.kpiStatus ? (
             <p className="text-sm text-muted-foreground" data-testid="kpi-status-sentence">
               {kpiStatusSentence(goal.kpiStatus, goal.unit)}
