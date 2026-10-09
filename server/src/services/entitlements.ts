@@ -29,6 +29,8 @@ export const NOT_ENTITLED_ERROR_CODE = "not_entitled";
 export interface EntitlementProbe {
   method: "get" | "post" | "put" | "patch" | "delete";
   path: string;
+  /** JSON body; defaults to `{}`. */
+  body?: Record<string, unknown>;
 }
 
 export type FeatureEntitlementGate =
@@ -89,39 +91,59 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     probes: [{ method: "post", path: "/board/chat/stream" }],
   },
   enableChatConnectors: {
-    kind: "pending",
-    followUp: "GRE-1090",
-    reason: "Gated today by a 403 without the not_entitled code; move onto assertEntitled.",
+    kind: "api",
+    probes: [
+      { method: "get", path: "/chat-identity-links/preview?token=x" },
+      { method: "post", path: "/chat-identity-links/confirm" },
+      { method: "post", path: "/chat-identity-links/request-access" },
+      { method: "get", path: "/slack/search/callback" },
+      { method: "get", path: `${COMPANY}/slack/endpoints/${ID}/search` },
+    ],
   },
   enableAgentChat: {
-    kind: "pending",
-    followUp: "GRE-1090",
-    reason: "Agent Chat routes live in the issues router and answer 404 when off; move onto assertEntitled.",
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/chats/agent` },
+      { method: "post", path: `${COMPANY}/chats/agent` },
+    ],
   },
   enableMemoryConnectors: {
-    kind: "pending",
-    followUp: "GRE-1090",
-    reason: "Setup is refused in tool-access with code memory_connectors_disabled; move onto assertEntitled.",
+    kind: "api",
+    probes: [{ method: "get", path: `${COMPANY}/tools/apps/mem0/preflight` }],
   },
   enableExternalObjects: {
-    kind: "pending",
-    followUp: "GRE-1090",
-    reason: "The service returns empty results when off; the UI queries the routes unguarded, so a 403 needs a UI guard first.",
+    kind: "api",
+    probes: [
+      { method: "get", path: `/issues/${ID}/external-objects` },
+      { method: "post", path: `/issues/${ID}/external-objects/refresh` },
+      { method: "get", path: `/issues/${ID}/external-object-summary` },
+      { method: "post", path: `${COMPANY}/issues/external-object-summaries` },
+      { method: "get", path: `/projects/${ID}/external-object-summary` },
+    ],
   },
   enableIssuePlanDecompositions: {
-    kind: "pending",
-    followUp: "GRE-1090",
-    reason: "GET /issues/:id/accepted-plan-decompositions is not gated.",
+    kind: "api",
+    probes: [{ method: "get", path: `/issues/${ID}/accepted-plan-decompositions` }],
   },
   enableDeepDive: {
-    kind: "pending",
-    followUp: "GRE-1090",
-    reason: "Deep Dive is stored as Cases; the Cases gate covers it only when Cases is off.",
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/cases?types=deep_dive_stream` },
+      { method: "post", path: `${COMPANY}/cases`, body: { caseType: "deep_dive", title: "Deep Dive" } },
+    ],
   },
   enableEnvironments: {
-    kind: "pending",
-    followUp: "GRE-1090",
-    reason: "Agent setup and onboarding read the environments API with the switch off; gating needs those callers changed first.",
+    kind: "api",
+    // Reads stay open: agent setup, onboarding and the project pickers list
+    // environments with the switch off. Every write is refused.
+    probes: [
+      { method: "post", path: `${COMPANY}/environments` },
+      { method: "post", path: `${COMPANY}/environments/probe-config` },
+      { method: "patch", path: `/environments/${ID}` },
+      { method: "delete", path: `/environments/${ID}` },
+      { method: "post", path: `/environments/${ID}/probe` },
+      { method: "post", path: `/environment-custom-image-setup-sessions/${ID}/cancel` },
+    ],
   },
   enableSmokeLab: {
     kind: "runtime",
@@ -176,9 +198,20 @@ export async function assertEntitled(source: Db | EntitlementSettingsReader, fea
   if (!(await isEntitled(source, feature))) throw notEntitled(feature);
 }
 
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 /** Route middleware form of `assertEntitled`; mount with `router.use(paths, ...)`. */
 export function requireEntitlement(source: Db | EntitlementSettingsReader, feature: InstanceFeatureKey): RequestHandler {
   return (_req, _res, next) => {
     assertEntitled(source, feature).then(() => next(), next);
   };
+}
+
+/** Like `requireEntitlement`, but reads (GET, HEAD, OPTIONS) pass with the switch off. */
+export function requireEntitlementForWrites(
+  source: Db | EntitlementSettingsReader,
+  feature: InstanceFeatureKey,
+): RequestHandler {
+  const gate = requireEntitlement(source, feature);
+  return (req, res, next) => (READ_METHODS.has(req.method) ? next() : gate(req, res, next));
 }
