@@ -6,6 +6,7 @@ export const lanes = {
     files: [
       "tests/lifecycle-baseline/authority.test.ts",
       "tests/lifecycle-baseline/accounting.test.ts",
+      "tests/lifecycle-baseline/github-setup-guidance.test.ts",
       "server/src/services/execution-recovery-attempt.test.ts",
       "server/src/services/recovery/legacy-continuation.test.ts",
       // GRE-15: a rejected login is a board-owned blocker, never a retried transient.

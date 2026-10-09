@@ -12,6 +12,7 @@ import { forbidden } from "../errors.js";
 import { captureRunIdentity } from "./run-identity.js";
 import {
   buildGitAuthInvocation,
+  GITHUB_GIT_SETUP_GUIDANCE,
   githubIdentityScopeForRun,
   resolveManagedGitHubCredential,
 } from "./git-credentials.js";
@@ -167,7 +168,7 @@ export async function resolveGitHubOperationCredentials(
       summary = {
         status: resolved.configured ? "unavailable" : "absent",
         source: resolved.identitySource ?? "personal",
-        reason: resolved.error ?? "No GitHub identity connected",
+        reason: resolved.error ?? GITHUB_GIT_SETUP_GUIDANCE,
       };
     }
   } catch {
