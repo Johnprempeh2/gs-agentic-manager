@@ -115,6 +115,22 @@ const checkView = (value: { ok: boolean; at: string } | null | undefined, now: n
 };
 
 /**
+ * One alert per check over the whole instance. The `:<company id>` suffix of a
+ * per-company signal is cut off and the signals of one check fold together:
+ * the check fails when any company fails. A key outside the pattern is sent as
+ * "other", so a new watch check never stops the check-in.
+ */
+export function instanceAlerts(signals: WatchSignal[]): FleetCheckIn["alerts"] {
+  const folded = new Map<string, boolean>();
+  for (const signal of signals) {
+    const base = signal.key.split(":", 1)[0]!;
+    const key = FLEET_ALERT_KEY_PATTERN.test(base) ? base : "other";
+    folded.set(key, (folded.get(key) ?? true) && signal.ok);
+  }
+  return [...folded].slice(0, 64).map(([key, ok]) => ({ key, ok }));
+}
+
+/**
  * The check-in from host facts. Signal details (free text) are dropped: only
  * each key and pass/fail leaves the host. Throws when a value does not fit the
  * closed schema, so nothing unexpected is ever signed.
@@ -136,28 +152,61 @@ export function buildCheckIn(input: CheckInInput, now = Date.now()): FleetCheckI
       lastUpgrade: input.lastUpgrade && upgradeAge !== null ? { toTag: input.lastUpgrade.to.tag, ageMinutes: upgradeAge } : null,
     },
     usage: input.usage,
-    // A key outside the pattern is sent as "other", so a new watch check never stops the check-in.
-    alerts: input.signals.slice(0, 64).map((s) => ({ key: FLEET_ALERT_KEY_PATTERN.test(s.key) ? s.key : "other", ok: s.ok })),
+    alerts: instanceAlerts(input.signals),
   });
 }
 
 export interface UsageCompany {
   agents: Array<{ status: string }>;
-  runs: Array<{ createdAt?: string | null }>;
+  runsLast24h: number;
   spendCents: number;
   budgetCents: number;
 }
 
+/** The run list API returns at most this many rows per call. */
+export const RUN_PAGE_LIMIT = 1000;
+
+/**
+ * Count every run created at or after `since`. The list API caps a page at
+ * 1000 rows, newest first, with `before` exclusive. Each next page asks for
+ * `before` = oldest `createdAt` + 1 ms, so rows that share the oldest
+ * timestamp come back again; the id set counts each run once. When a full
+ * page is all one millisecond, the next page starts below it so the count
+ * still moves on (only runs past 1000 in that one millisecond are lost).
+ */
+export async function countRunsSince(
+  fetchPage: (since: Date, before: Date | null) => Promise<Array<{ id: string; createdAt: string }>>,
+  since: Date,
+): Promise<number> {
+  const seen = new Set<string>();
+  let before: Date | null = null;
+  for (;;) {
+    const page = await fetchPage(since, before);
+    let added = 0;
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const run of page) {
+      if (!seen.has(run.id)) {
+        seen.add(run.id);
+        added += 1;
+      }
+      oldest = Math.min(oldest, Date.parse(run.createdAt));
+    }
+    if (page.length < RUN_PAGE_LIMIT || !Number.isFinite(oldest)) return seen.size;
+    // Every row is older than `before`, so `oldest` always moves the window back.
+    const stuck: boolean = added === 0 || (before !== null && oldest + 1 >= before.getTime());
+    before = new Date(stuck ? oldest : oldest + 1);
+  }
+}
+
 /** Totals over every company. Never per company, agent or person. */
-export function usageTotals(companies: UsageCompany[], storageBytes: number, now = Date.now()): FleetCheckIn["usage"] {
-  const dayAgo = now - 24 * 60 * 60 * 1000;
+export function usageTotals(companies: UsageCompany[], storageBytes: number): FleetCheckIn["usage"] {
   let activeAgents = 0;
   let runsLast24h = 0;
   let spendCentsMonth = 0;
   let budgetCentsMonth = 0;
   for (const company of companies) {
     activeAgents += company.agents.filter((a) => a.status !== "terminated" && a.status !== "paused" && a.status !== "pending_approval").length;
-    runsLast24h += company.runs.filter((r) => Date.parse(r.createdAt ?? "") >= dayAgo).length;
+    runsLast24h += Math.max(0, Math.round(company.runsLast24h));
     spendCentsMonth += Math.max(0, Math.round(company.spendCents));
     budgetCentsMonth += Math.max(0, Math.round(company.budgetCents));
   }

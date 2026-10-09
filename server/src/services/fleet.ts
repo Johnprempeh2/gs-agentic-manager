@@ -139,15 +139,33 @@ export function fleetService(db: Db) {
     const claims = verifyMessage(compactJws, publicKeyFromX(row.publicKeyX), { act, sub: row.id }, now);
     if (row.status === "revoked") reject("fleet_key_revoked");
     if (row.status !== "active") reject("fleet_not_registered");
-    return { row, claims };
+    return { signer: { id: row.id, publicKeyX: row.publicKeyX }, claims };
   }
 
-  /** Move the replay fence; false when `seq` is not new or the row is no longer active. */
-  async function advanceSeq(tx: Pick<Db, "update">, id: string, seq: number, now: Date, fields: Partial<FleetInstanceRow> = {}) {
+  /**
+   * Move the replay fence; false when `seq` is not new, the row is no longer
+   * active, or the key that signed the message is no longer the stored key.
+   * The key check closes the gap between verify and write: a revoke and
+   * re-register in that gap must not let a message from the old key land.
+   */
+  async function advanceSeq(
+    tx: Pick<Db, "update">,
+    signer: { id: string; publicKeyX: string },
+    seq: number,
+    now: Date,
+    fields: Partial<FleetInstanceRow> = {},
+  ) {
     const rows = await tx
       .update(fleetInstances)
       .set({ lastSeq: seq, updatedAt: now, ...fields })
-      .where(and(eq(fleetInstances.id, id), eq(fleetInstances.status, "active"), or(isNull(fleetInstances.lastSeq), lt(fleetInstances.lastSeq, seq))))
+      .where(
+        and(
+          eq(fleetInstances.id, signer.id),
+          eq(fleetInstances.status, "active"),
+          eq(fleetInstances.publicKeyX, signer.publicKeyX),
+          or(isNull(fleetInstances.lastSeq), lt(fleetInstances.lastSeq, seq)),
+        ),
+      )
       .returning({ id: fleetInstances.id });
     return rows.length > 0;
   }
@@ -253,20 +271,22 @@ export function fleetService(db: Db) {
 
     /** Spoke: one signed check-in. Stored as parsed by the closed schema, nothing else. */
     async checkIn(compactJws: string, now = new Date()) {
-      const { row, claims } = await signedSender(compactJws, "check-in", now);
+      const { signer, claims } = await signedSender(compactJws, "check-in", now);
       await db.transaction(async (tx) => {
-        if (!(await advanceSeq(tx, row.id, claims.seq, now, { lastCheckInAt: now }))) reject("fleet_replay", 409);
-        await tx.insert(fleetCheckIns).values({ fleetInstanceId: row.id, seq: claims.seq, payload: claims.checkIn!, receivedAt: now });
+        if (!(await advanceSeq(tx, signer, claims.seq, now, { lastCheckInAt: now }))) reject("fleet_replay", 409);
+        await tx.insert(fleetCheckIns).values({ fleetInstanceId: signer.id, seq: claims.seq, payload: claims.checkIn!, receivedAt: now });
         const cutoff = new Date(now.getTime() - CHECK_IN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-        await tx.delete(fleetCheckIns).where(and(eq(fleetCheckIns.fleetInstanceId, row.id), lt(fleetCheckIns.receivedAt, cutoff)));
+        await tx.delete(fleetCheckIns).where(and(eq(fleetCheckIns.fleetInstanceId, signer.id), lt(fleetCheckIns.receivedAt, cutoff)));
       });
       return { receivedAt: now.toISOString() };
     },
 
     /** Spoke: revoke its own key. After this the hub refuses every message signed by it. */
     async revokeFromSpoke(compactJws: string, now = new Date()) {
-      const { row, claims } = await signedSender(compactJws, "revoke", now);
-      if (!(await advanceSeq(db, row.id, claims.seq, now, { status: "revoked", revokedAt: now, revokedBy: "spoke" }))) reject("fleet_replay", 409);
+      const { signer, claims } = await signedSender(compactJws, "revoke", now);
+      await db.transaction(async (tx) => {
+        if (!(await advanceSeq(tx, signer, claims.seq, now, { status: "revoked", revokedAt: now, revokedBy: "spoke" }))) reject("fleet_replay", 409);
+      });
       return { revokedAt: now.toISOString() };
     },
   };

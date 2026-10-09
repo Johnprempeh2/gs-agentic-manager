@@ -66,11 +66,13 @@ import {
 } from "./offsite.js";
 import {
   buildCheckIn,
+  countRunsSince,
   fleetHubUrl,
   generateFleetKey,
   hubAnswer,
   nextSeq,
   registrationSubject,
+  RUN_PAGE_LIMIT,
   signFleetMessage,
   usageTotals,
   type FleetKey,
@@ -1257,11 +1259,17 @@ async function fleetUsage(root: string, state: InstanceState, operatorPassword: 
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const rows: UsageCompany[] = [];
   for (const company of companies) {
+    const runsPage = (since: Date, before: Date | null) =>
+      read<Array<{ id: string; createdAt: string }>>(
+        "GET",
+        `/api/companies/${company.id}/heartbeat-runs?limit=${RUN_PAGE_LIMIT}&summary=true&since=${encodeURIComponent(since.toISOString())}${before ? `&before=${encodeURIComponent(before.toISOString())}` : ""}`,
+      );
     rows.push({
       agents: await read("GET", `/api/companies/${company.id}/agents`),
-      runs: await read("GET", `/api/companies/${company.id}/heartbeat-runs?limit=1000&summary=true`),
+      runsLast24h: await countRunsSince(runsPage, dayAgo),
       ...(await read<{ spendCents: number; budgetCents: number }>("GET", `/api/companies/${company.id}/costs/summary?from=${encodeURIComponent(monthStart.toISOString())}`)),
     });
   }

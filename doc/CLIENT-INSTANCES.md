@@ -400,8 +400,11 @@ fixed schema (`packages/shared/src/fleet.ts`): edition; health (app up,
 backup age, last restore-check and off-host backup); version (release tag,
 app version, last upgrade); usage totals over the whole instance (companies,
 active agents, runs in 24 h, spend and budget this month, storage bytes); and
-each watch signal as key and pass/fail only. The signal detail text stays on
-the host. No names, emails, titles or client records. A new field needs a
+one alert per watch check as key and pass/fail only. Per-company signals fold
+into one key for the whole instance (it fails when any company fails), so no
+company id leaves the host; the hub refuses a key with a `:` suffix. The
+signal detail text stays on the host. Runs in 24 h are counted page by page,
+so the count is not capped at 1000. No names, emails, titles or client records. A new field needs a
 code change and review; the hub refuses any field it does not know.
 
 **Revoke.** From the hub: `POST <hub>/api/fleet/instances/<id>/revoke`. From

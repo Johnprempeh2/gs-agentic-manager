@@ -9,6 +9,7 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/index.js";
 import { fleetHubRoutes, fleetSpokeRoutes } from "../routes/fleet.js";
+import { fleetService } from "../services/fleet.js";
 // The spoke's own helpers: the test proves the script and the hub agree.
 import {
   generateFleetKey,
@@ -35,7 +36,7 @@ const checkIn: FleetCheckIn = {
   health: { app: "ok", backupAgeMinutes: 12, restoreCheck: { ok: true, ageMinutes: 600 }, offsiteBackup: null },
   version: { releaseTag: "stable-2026-10-01.1", appVersion: "0.3.1", lastUpgrade: null },
   usage: { companies: 1, activeAgents: 3, runsLast24h: 20, spendCentsMonth: 1234, budgetCentsMonth: 15000, storageBytes: 1024 },
-  alerts: [{ key: "health", ok: true }, { key: "ai-connections:abcdef12", ok: false }],
+  alerts: [{ key: "health", ok: true }, { key: "ai-connections", ok: false }],
 };
 
 describe("fleet check-in schema", () => {
@@ -46,6 +47,12 @@ describe("fleet check-in schema", () => {
     expect(fleetCheckInSchema.safeParse({ ...checkIn, alerts: [{ key: "health", ok: false, detail: "Acme Ltd board pack" }] }).success).toBe(false);
     expect(fleetCheckInSchema.safeParse({ ...checkIn, alerts: [{ key: "Issue: Acme merger", ok: false }] }).success).toBe(false);
     expect(fleetCheckInSchema.safeParse({ ...checkIn, version: { ...checkIn.version, releaseTag: "Acme merger plan" } }).success).toBe(false);
+  });
+
+  it("refuses a company id in an alert key", () => {
+    for (const key of ["ai-connections:abcdef12", "ai-failed-auth:11111111", "health:0d6f3c2a-1111-2222-3333-444455556666"]) {
+      expect(fleetCheckInSchema.safeParse({ ...checkIn, alerts: [{ key, ok: false }] }).success).toBe(false);
+    }
   });
 });
 
@@ -249,6 +256,50 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     expect((await sendCheckIn(fresh, id, nextSeq(seq) + 200)).status).toBe(200);
     // A registered instance must be revoked before a new code.
     expect((await request(app()).post(`/api/fleet/instances/${id}/registration-code`)).status).toBe(409);
+  });
+
+  // A message is verified with the key read before the write. If the hub
+  // revokes, makes a new code and a new key registers in that gap, the old
+  // key's message must still be refused (review of PR #466).
+  function raceAfterVerify(old: Awaited<ReturnType<typeof register>>) {
+    const base = fleetService(db);
+    const replacement = generateFleetKey();
+    return new Proxy(db, {
+      get(target, property, receiver) {
+        if (property === "transaction") {
+          return async (callback: Parameters<typeof db.transaction>[0]) => {
+            await base.revokeFromHub(old.id);
+            const code = await base.reissueCode(old.id);
+            await base.register({
+              registrationCode: code!.registrationCode,
+              publicKey: replacement.publicKey,
+              proof: signFleetMessage(replacement.privateJwk, {
+                act: "register",
+                sub: registrationSubject(code!.registrationCode),
+                seq: old.seq + 1,
+              }),
+            });
+            return target.transaction(callback);
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+  }
+
+  it("refuses an old-key check-in when the key is replaced between verify and write", async () => {
+    const old = await register("c001");
+    const stale = signFleetMessage(old.key.privateJwk, { act: "check-in", sub: old.id, seq: old.seq + 1000, checkIn });
+    await expect(fleetService(raceAfterVerify(old)).checkIn(stale)).rejects.toThrow("fleet_replay");
+    expect(await db.select().from(fleetCheckIns)).toHaveLength(0);
+    expect((await db.select().from(fleetInstances))[0]).toMatchObject({ status: "active", lastCheckInAt: null });
+  });
+
+  it("refuses an old-key spoke revoke when the key is replaced between verify and write", async () => {
+    const old = await register("c001");
+    const stale = signFleetMessage(old.key.privateJwk, { act: "revoke", sub: old.id, seq: old.seq + 1000 });
+    await expect(fleetService(raceAfterVerify(old)).revokeFromSpoke(stale)).rejects.toThrow("fleet_replay");
+    expect((await db.select().from(fleetInstances))[0]).toMatchObject({ status: "active", revokedBy: null });
   });
 
   it("keeps each instance's facts apart: one key cannot write as another, and no spoke route reads facts", async () => {

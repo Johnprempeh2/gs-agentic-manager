@@ -32,8 +32,12 @@ export type FleetInstanceStatus = (typeof FLEET_INSTANCE_STATUSES)[number];
 /** The instance code (the `<root>` folder name), never a client name. */
 export const fleetInstanceCodeSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/, "code: a-z, 0-9 and -, 3 to 32 characters");
 
-/** Watch signal key (scripts/client-instance/watch.ts), optionally with the short company id. */
-export const FLEET_ALERT_KEY_PATTERN = /^[a-z][a-z-]{0,39}(?::[0-9a-f]{8})?$/;
+/**
+ * Watch signal key (scripts/client-instance/watch.ts) without any suffix. The
+ * spoke folds per-company signals (`ai-connections:<id>`) into one key per
+ * check, so no company id ever leaves the host.
+ */
+export const FLEET_ALERT_KEY_PATTERN = /^[a-z][a-z-]{0,39}$/;
 
 const count = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const ageMinutes = z.number().int().min(0).max(100_000_000);
@@ -70,7 +74,10 @@ export const fleetCheckInSchema = z
         storageBytes: count,
       })
       .strict(),
-    /** The watch signals of the last pass: key and pass/fail only. The detail text stays on the host. */
+    /**
+     * The watch signals of the last pass, one per check over the whole
+     * instance: key and pass/fail only. Detail text and company ids stay on the host.
+     */
     alerts: z.array(z.object({ key: z.string().regex(FLEET_ALERT_KEY_PATTERN), ok: z.boolean() }).strict()).max(64),
   })
   .strict();
