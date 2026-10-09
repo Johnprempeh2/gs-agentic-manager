@@ -51,7 +51,7 @@ export function StageStrip({
   const daysLabel = formatDaysInStage(daysInStage(stageEnteredAt));
   return (
     <div className="space-y-2">
-      <ol aria-label="Client journey" className="flex gap-1 overflow-x-auto pb-1">
+      <ol aria-label="Client journey" className="flex gap-1 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
         {steps.map((step, index) => (
           <li
             key={step.id}
