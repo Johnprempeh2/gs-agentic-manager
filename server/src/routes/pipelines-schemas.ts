@@ -134,6 +134,22 @@ export const createIssueLinkSchema = z.object({
 export const createProjectLinkSchema = z.object({
   projectId: z.string().guid(),
 });
+const optionalContactText = (max: number) =>
+  z.string().trim().max(max).transform((value) => (value === "" ? null : value)).nullable().optional();
+export const createCaseContactSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  role: optionalContactText(300),
+  phone: optionalContactText(60),
+  email: z.union([z.string().trim().email().max(320), z.literal("")])
+    .transform((value) => (value === "" ? null : value))
+    .nullable()
+    .optional(),
+  position: z.number().int().min(0).max(10_000).optional(),
+});
+export const updateCaseContactSchema = createCaseContactSchema.partial().refine(
+  (value) => Object.keys(value).length > 0,
+  { message: "Nothing to update" },
+);
 export const bulkReviewSchema = z.object({
   items: z.array(reviewCaseSchema.extend({ caseId: z.string().guid() })).max(100),
 });
