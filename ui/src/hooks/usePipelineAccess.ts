@@ -46,16 +46,16 @@ export function usePipelineAccess(companyId: string | null | undefined) {
 /**
  * The viewer's own pipeline admin rights (GRE-1073), from the same query, so
  * pipeline screens show create, rename, archive, stage and move controls only
- * to people who may use them. Hidden while loading; if the rights cannot be
- * read, the controls show and the server decides.
+ * to people who may use them. Hidden while loading and when the rights cannot
+ * be read (`rightsError` lets the screen say so); the server is the real gate.
  */
 export function usePipelineAdminRights(companyId: string | null | undefined) {
   const query = usePipelineAccessQuery(companyId);
   const matrix = query.data ?? null;
-  const unknown = query.isError;
   return {
-    canCreatePipelines: matrix ? matrix.canCreatePipelines : unknown,
+    canCreatePipelines: matrix ? matrix.canCreatePipelines : false,
     canAdministerPipeline: (pipelineId: string) =>
-      matrix ? matrix.administerPipelineIds.includes(pipelineId) : unknown,
+      matrix ? matrix.administerPipelineIds.includes(pipelineId) : false,
+    rightsError: query.isError,
   };
 }

@@ -1285,7 +1285,7 @@ export function PipelineSettings() {
   const [searchParams] = useSearchParams();
   // Rename, archive, stage and move controls show only to people who may
   // administer this pipeline (GRE-1073); the server checks every change.
-  const { canAdministerPipeline } = usePipelineAdminRights(selectedCompanyId);
+  const { canAdministerPipeline, rightsError } = usePipelineAdminRights(selectedCompanyId);
   const canAdminister = pipelineId ? canAdministerPipeline(pipelineId) : false;
   const queryClient = useQueryClient();
   const [activeStageSection, setActiveStageSection] = useState<StageSectionKey>("instructions");
@@ -2598,7 +2598,11 @@ export function PipelineSettings() {
           </DropdownMenu>
           ) : null}
         </div>
-        {canAdminister ? null : (
+        {canAdminister ? null : rightsError ? (
+          <p className="mb-3 text-sm text-destructive">
+            Could not check your rights on this pipeline, so its edit controls are hidden. Reload the page to try again.
+          </p>
+        ) : (
           <p className="mb-3 text-sm text-muted-foreground">
             You can view this pipeline. Only people who administer it can rename it, archive it or change its stages and moves.
           </p>
@@ -3114,6 +3118,7 @@ export function PipelineSettings() {
                                   ? "Describe the judgement the agent should make: what counts as a piece worth splitting out?"
                                   : "Tell the agent exactly what to do when an item enters this step..."
                               }
+                              readOnly={!canAdminister}
                               bordered={false}
                               contentClassName="min-h-(--sz-120px) text-sm leading-7"
                               mentions={mentionOptions}

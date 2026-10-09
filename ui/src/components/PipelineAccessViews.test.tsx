@@ -231,4 +231,18 @@ describe("pipeline access views (GRE-1073)", () => {
     await render(<Probe />);
     expect(container.textContent).toBe("false:false:false");
   });
+
+  it("pipeline admin rights: fail closed when the rights cannot be read", async () => {
+    function Probe() {
+      const rights = usePipelineAdminRights("company-1");
+      return (
+        <span>
+          {`${rights.canCreatePipelines}:${rights.canAdministerPipeline("p-sales")}:${rights.rightsError}`}
+        </span>
+      );
+    }
+    mockApi.matrix.mockRejectedValue(new Error("network down"));
+    await render(<Probe />);
+    expect(container.textContent).toBe("false:false:true");
+  });
 });

@@ -915,7 +915,7 @@ function PipelinesIndex() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<PipelineViewMode>("nested");
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
-  const { canCreatePipelines } = usePipelineAdminRights(selectedCompanyId);
+  const { canCreatePipelines, rightsError } = usePipelineAdminRights(selectedCompanyId);
 
   useEffect(() => setBreadcrumbs([{ label: "Pipelines" }]), [setBreadcrumbs]);
 
@@ -980,6 +980,11 @@ function PipelinesIndex() {
 
       {pipelinesQuery.error ? (
         <p className="mb-4 text-sm text-destructive">Could not load pipelines.</p>
+      ) : null}
+      {rightsError ? (
+        <p className="mb-4 text-sm text-destructive">
+          Could not check your pipeline rights, so the controls to create pipelines are hidden. Reload the page to try again.
+        </p>
       ) : null}
 
       {pipelines.length === 0 && !pipelinesQuery.error ? (
