@@ -86,6 +86,7 @@ import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
+import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
@@ -3293,7 +3294,19 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               issueLinks={issueLinks.data ?? []}
               projects={projectsPanel}
             />
-          ) : null}
+          ) : (
+            <PipelineCaseCrmSync
+              caseId={caseId}
+              wrap={(children) => (
+                <section>
+                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+                    CRM sync
+                  </h2>
+                  <div className="border-y border-border">{children}</div>
+                </section>
+              )}
+            />
+          )}
 
           <PipelineItemBodyDocument
             caseId={caseId}
