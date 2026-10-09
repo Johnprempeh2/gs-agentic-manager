@@ -931,7 +931,7 @@ export type {
   RoutineExecutionIssueOrigin,
   RoutineListItem,
 } from "./routine.js";
-export type { CostEvent, CostSummary, IssueCostSummary, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
+export type { CostEvent, CostSummary, IssueCostSummary, IssueCostModelRow, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
 export type { FinanceEvent, FinanceSummary, FinanceByBiller, FinanceByKind } from "./finance.js";
 export type {
   AgentWakeupResponse,
