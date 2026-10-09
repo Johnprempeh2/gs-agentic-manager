@@ -16,7 +16,7 @@ CREATE TABLE "pipeline_case_project_links" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "pipeline_case_events" DROP CONSTRAINT "pipeline_case_events_type_check";--> statement-breakpoint
+ALTER TABLE "pipeline_case_events" DROP CONSTRAINT IF EXISTS "pipeline_case_events_type_check";--> statement-breakpoint
 ALTER TABLE "pipeline_case_project_links" ADD CONSTRAINT "pipeline_case_project_links_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pipeline_case_project_links" ADD CONSTRAINT "pipeline_case_project_links_case_id_pipeline_cases_id_fk" FOREIGN KEY ("case_id") REFERENCES "public"."pipeline_cases"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pipeline_case_project_links" ADD CONSTRAINT "pipeline_case_project_links_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
