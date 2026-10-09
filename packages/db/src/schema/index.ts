@@ -229,6 +229,7 @@ export {
   memoryConflicts,
   memoryExtractedFacts,
   memoryLinkLeads,
+  memoryScopeStewards,
 } from "./memory.js";
 export { memoryIngestOutbox } from "./memory_ingest_outbox.js";
 export * from "./memory_steward.js";

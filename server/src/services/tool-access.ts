@@ -1,6 +1,6 @@
 import { COGNEE_STDIO_TEMPLATE, cogneeCloudUrl } from "./cognee-connection.js";
 import { isMemoryConnectorId, isRemoteMcpConnectorMethod, connectionPurposeTransportSchema } from "@greatstone/shared";
-import { instanceSettingsService } from "./instance-settings.js";
+import { assertEntitled } from "./entitlements.js";
 import { githubBotRequest } from "./chat-github-client.js";
 import { syncConnectionCredentialBindings } from "./connection-credential-bindings.js";
 import {
@@ -11927,10 +11927,7 @@ export function toolAccessService(
   }
 
   async function assertExperimentalConnectorSetupEnabled(provider: unknown, existing = false) {
-    if (!existing && isMemoryConnectorId(provider)
-      && !(await instanceSettingsService(db).getExperimental()).enableMemoryConnectors) {
-      throw forbidden("Enable memory connectors in Settings → Experimental to set up this connection", { code: "memory_connectors_disabled" });
-    }
+    if (!existing && isMemoryConnectorId(provider)) await assertEntitled(db, "enableMemoryConnectors");
   }
 
   async function connectGalleryApp(
@@ -17011,6 +17008,7 @@ export function toolAccessService(
 
     completeOAuthCallback,
     refreshOAuthGrantCredentials,
+    refreshManagedGitHubGrantAccess,
     finalizeOAuthAccess,
 
     listExamples: async (companyId: string): Promise<ToolExampleSummary[]> => {

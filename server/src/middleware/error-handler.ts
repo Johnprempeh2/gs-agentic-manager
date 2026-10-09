@@ -216,6 +216,10 @@ export function errorHandler(
             ...(typeof responseDetails?.code === "string"
               ? { code: responseDetails.code }
               : {}),
+            ...(responseDetails?.code === "not_entitled" &&
+            typeof responseDetails.feature === "string"
+              ? { feature: responseDetails.feature }
+              : {}),
             ...(redactedSkillPolicyDenial &&
             typeof responseDetails?.reason === "string"
               ? { reason: responseDetails.reason }

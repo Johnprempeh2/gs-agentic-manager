@@ -1,7 +1,7 @@
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { memoryConflicts, memoryRecords, memoryRelationships, memoryReviewEvents } from "@greatstone/db";
-import type { MemoryConflictLink, MemoryRecordStatus, MemoryReviewEventAction } from "@greatstone/shared";
+import type { MemoryCallerApp, MemoryConflictLink, MemoryRecordStatus, MemoryReviewEventAction } from "@greatstone/shared";
 import { textConflictTerms } from "./text-conflict.js";
 
 // Review events and conflict detection (GRE-886, plan 8.5). Shared by the
@@ -19,6 +19,9 @@ export type MemoryReviewActor = {
   agentId: string | null;
   userId: string | null;
   runId: string | null;
+  /** The app and its session (GRE-1079). Taken from the authenticated request, like the rest. */
+  app?: MemoryCallerApp | null;
+  sessionId?: string | null;
 };
 
 export async function insertReviewEvent(
@@ -46,10 +49,67 @@ export async function insertReviewEvent(
     agentId: actor.agentId,
     userId: actor.userId,
     runId: actor.runId,
+    app: actor.app ?? null,
+    sessionId: actor.sessionId ?? null,
     reason: event.reason ?? null,
     relatedRecordId: event.relatedRecordId ?? null,
     ...(event.now ? { createdAt: event.now } : {}),
   });
+}
+
+/**
+ * The record and every earlier version an edit replaced, oldest first. Steward
+ * edit and confirm (GRE-1089) writes each edit as a new version and an `edit`
+ * event on the version it replaced; only those links are followed, not the
+ * supersession of an approved card. There is no length limit: null means the
+ * history cannot be fully read (a missing version or a loop), and callers then
+ * refuse to approve rather than check part of it.
+ */
+export async function loadEditChain(database: DbOrTransaction, companyId: string, row: RecordRow): Promise<RecordRow[] | null> {
+  const chain = [row];
+  const seen = new Set([row.id]);
+  for (let current = row; current.supersedesId; ) {
+    const previousId = current.supersedesId;
+    const edit = await database
+      .select({ id: memoryReviewEvents.id })
+      .from(memoryReviewEvents)
+      .where(
+        and(
+          eq(memoryReviewEvents.companyId, companyId),
+          eq(memoryReviewEvents.recordId, previousId),
+          eq(memoryReviewEvents.action, "edit"),
+          eq(memoryReviewEvents.relatedRecordId, current.id),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!edit) break;
+    if (seen.has(previousId)) return null;
+    const previous = await database
+      .select()
+      .from(memoryRecords)
+      .where(and(eq(memoryRecords.id, previousId), eq(memoryRecords.companyId, companyId)))
+      .then((rows) => rows[0] ?? null);
+    if (!previous) return null;
+    chain.unshift(previous);
+    seen.add(previous.id);
+    current = previous;
+  }
+  return chain;
+}
+
+/** Why this actor may not approve: they wrote the first version of the chain, or a later edit. */
+export function authorRefusal(
+  actor: Pick<MemoryReviewActor, "agentId" | "userId">,
+  chain: Array<Pick<RecordRow, "contributorAgentId" | "contributorUserId">>,
+): "own_proposal" | "own_edit" | null {
+  const wrote = (version: Pick<RecordRow, "contributorAgentId" | "contributorUserId">) =>
+    (version.contributorAgentId !== null && version.contributorAgentId === actor.agentId) ||
+    (version.contributorUserId !== null && version.contributorUserId === actor.userId);
+  const [first, ...edits] = chain;
+  if (first && wrote(first)) return "own_proposal";
+  if (edits.some(wrote)) return "own_edit";
+  return null;
 }
 
 function normalised(values: string[]) {

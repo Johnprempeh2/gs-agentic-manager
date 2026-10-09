@@ -2,7 +2,8 @@ import { Router, type Request } from "express";
 import type { Db } from "@greatstone/db";
 import { builtInAgentEmptyMutationSchema, builtInAgentProvisionSchema, builtInAgentResetSchema } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
-import { forbidden, notFound } from "../errors.js";
+import { requireEntitlement } from "../services/entitlements.js";
+import { forbidden } from "../errors.js";
 import { accessService, instanceSettingsService, logActivity } from "../services/index.js";
 import { builtInAgentService } from "../services/built-in-agents.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
@@ -75,12 +76,9 @@ export function builtInAgentRoutes(db: Db) {
   const svc = builtInAgentService(db);
   const settings = instanceSettingsService(db);
 
-  async function assertBuiltInAgentsEnabled() {
-    const experimental = await settings.getExperimental();
-    if (experimental.enableBuiltInAgents !== true) {
-      throw notFound("Built-in agents are not enabled");
-    }
-  }
+  // GRE-1077: refuse every route while enableBuiltInAgents is off, before validation.
+  router.use("/companies/:companyId/built-in-agents", requireEntitlement(settings, "enableBuiltInAgents"));
+
 
   async function assertCanProvisionBuiltInAgents(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
@@ -148,7 +146,6 @@ export function builtInAgentRoutes(db: Db) {
   router.get("/companies/:companyId/built-in-agents", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    await assertBuiltInAgentsEnabled();
     const states = await svc.list(companyId);
     res.json(states.map(redactBuiltInAgentListState));
   });
@@ -157,14 +154,12 @@ export function builtInAgentRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     const key = req.params.key as string;
     assertCompanyAccess(req, companyId);
-    await assertBuiltInAgentsEnabled();
     res.json(redactBuiltInAgentListState(await svc.get(companyId, key)));
   });
 
   router.post("/companies/:companyId/built-in-agents/:key/reconcile", validate(builtInAgentEmptyMutationSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     const key = req.params.key as string;
-    await assertBuiltInAgentsEnabled();
     await assertCanProvisionBuiltInAgents(req, companyId);
     const state = await svc.ensure(companyId, key);
     await logBuiltInAgentMutation(req, {
@@ -183,7 +178,6 @@ export function builtInAgentRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const key = req.params.key as string;
-      await assertBuiltInAgentsEnabled();
       await assertCanProvisionBuiltInAgents(req, companyId);
       const actor = getActorInfo(req);
       const result = await svc.provision(companyId, key, req.body, {
@@ -215,7 +209,6 @@ export function builtInAgentRoutes(db: Db) {
   router.post("/companies/:companyId/built-in-agents/:key/reset", validate(builtInAgentResetSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     const key = req.params.key as string;
-    await assertBuiltInAgentsEnabled();
     await assertCanProvisionBuiltInAgents(req, companyId);
     const state = await svc.reset(companyId, key, req.body);
     await logBuiltInAgentMutation(req, {
@@ -235,7 +228,6 @@ export function builtInAgentRoutes(db: Db) {
       const companyId = req.params.companyId as string;
       const key = req.params.key as string;
       const routineKey = req.params.routineKey as string;
-      await assertBuiltInAgentsEnabled();
       assertCompanyAccess(req, companyId);
       await assertCanControlBuiltInRoutine(req, companyId);
       const actor = getActorInfo(req);
@@ -263,7 +255,6 @@ export function builtInAgentRoutes(db: Db) {
       const companyId = req.params.companyId as string;
       const key = req.params.key as string;
       const routineKey = req.params.routineKey as string;
-      await assertBuiltInAgentsEnabled();
       assertCompanyAccess(req, companyId);
       await assertCanControlBuiltInRoutine(req, companyId);
       const actor = getActorInfo(req);
@@ -291,7 +282,6 @@ export function builtInAgentRoutes(db: Db) {
       const companyId = req.params.companyId as string;
       const key = req.params.key as string;
       const routineKey = req.params.routineKey as string;
-      await assertBuiltInAgentsEnabled();
       assertCompanyAccess(req, companyId);
       const current = await svc.get(companyId, key);
       await assertCanControlBuiltInRoutine(req, companyId);

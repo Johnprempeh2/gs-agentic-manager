@@ -147,6 +147,33 @@ signing helper that agents cannot read.
   approved, cited by an approved record or in an open conflict, superseded entries 1 year. `POST .../memory/retention`
   with `{"dryRun": true, "withinDays": 14}` lists what falls due soon; `{"dryRun": false}` deletes what is due. Owner or
   `memory:admin` only. Backups follow the 90-day rule below.
+- **Scheduled retention (GRE-1079).** The server runs the same rules once a day for each company with memory on (the
+  execution-control sweep, `memory_retention`). Each due record is deleted as above (text removed, tombstone kept),
+  with a `delete` review event by the system actor `memory-retention` and reason `Retention: <rule>`. Each pass writes
+  one `retention` row to `memory_operations` (`detail.trigger = "schedule"`, count per rule). The last pass is read
+  from that table, so a restart does not run it early and a missed day runs on the next sweep. A failed pass is
+  logged and retried within the hour. The engine may be down: its deletes wait in the outbox.
+
+## Retry queue (GRE-1079)
+
+The outbox (`memory_ingest_outbox`) is the retry queue for every engine write the direct call could not finish. The
+server drains it from the execution-control sweep (`memory_ingest_drain`, every 15 seconds, one pass at a time, 25
+entries a pass). An outage or a plan limit stops the pass and defers the rest without a call each; backoff is
+30 seconds doubling to 1 hour. Failures are reported once each, as a warning in the server log and a row in
+`memory_operations` (ids and error kind, never the text):
+
+- `ingest_failed` (outcome `failed`): the engine refused the entry for good. It stays in `needs_attention` and is
+  not retried; the steward review lists it as failed ingestion.
+- `ingest_overdue` (outcome `overdue`): the entry reached 12 failed attempts (about 5 hours). It keeps retrying.
+
+## App and session on each action (GRE-1079)
+
+Every `memory_review_events` row (propose = `contribute`, confirm = `approve`, reject = `dispute`, and the rest) and
+every `memory_operations` row stores the person (agent or user id, as before) plus `app` and `session_id`, taken
+from the authenticated request only. `app` is one of `gsam_web` (session = sign-in session), `gsam_agent_run`
+(session = run), `gsam_agent_key` and `memory_key` (session = API key id; `memory_key` is a memory-only key such as
+John's Claude Code or Codex), `gsam_board_key` (session = key id), `gsam_local`, `gsam_cloud` and `gsam_scheduler`.
+Rows written before migration `0302` have both null.
 
 ## Graph and contribution activity (GRE-864)
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   activityLog,
   agents,
@@ -63,6 +63,11 @@ describeEmbeddedPostgres("pipeline routes", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipelines-routes-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
+
+  // GRE-1077: the pipelines API is gated on enablePipelines.
+  beforeEach(async () => {
+    await instanceSettingsService(db).updateExperimental({ enablePipelines: true });
+  });
 
   afterEach(async () => {
     await db.delete(pipelineAutomationExecutions);

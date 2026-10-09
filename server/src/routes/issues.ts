@@ -2,6 +2,12 @@ import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractio
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
+import {
+  assertEntitled,
+  isEntitled,
+  requireEntitlement,
+  type EntitlementSettingsReader,
+} from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, requiresExecutionReconciliation } from "@greatstone/shared";
 import {
@@ -442,7 +448,10 @@ async function listIssueLinkedCases(
   db: Db,
   companyId: string,
   issueId: string,
+  settings: EntitlementSettingsReader,
 ) {
+  // GRE-1077: linked pipeline cases are pipeline data; hide them when off.
+  if (!(await isEntitled(settings, "enablePipelines"))) return [];
   const rows = await db
     .select({
       link: pipelineCaseIssueLinks,
@@ -3729,6 +3738,21 @@ export function issueRoutes(
     opts.searchRateLimiter ?? defaultCompanySearchRateLimiter;
   const instanceSettings = instanceSettingsService(db);
   const agentsSvc = agentService(db);
+  // GRE-1090: refuse these feature routes while their managed switch is off,
+  // before validation. Agent Chat on existing conversations checks per route.
+  router.use(
+    [
+      "/issues/:id/external-objects",
+      "/issues/:id/external-object-summary",
+      "/companies/:companyId/issues/external-object-summaries",
+    ],
+    requireEntitlement(instanceSettings, "enableExternalObjects"),
+  );
+  router.get(
+    "/issues/:id/accepted-plan-decompositions",
+    requireEntitlement(instanceSettings, "enableIssuePlanDecompositions"),
+  );
+  router.use("/companies/:companyId/chats", requireEntitlement(instanceSettings, "enableAgentChat"));
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
@@ -9181,7 +9205,7 @@ export function issueRoutes(
       listSuccessfulRunHandoffStates(db, issue.companyId, [issue.id]),
       svc.getCurrentScheduledRetry(issue.id),
       recoveryActionsSvc.getActiveForIssue(issue.companyId, issue.id),
-      listIssueLinkedCases(db, issue.companyId, issue.id),
+      listIssueLinkedCases(db, issue.companyId, issue.id, instanceSettings),
       inboxArchiveFieldsPromise,
       getExternalChannelBindingSummary(db, issue.companyId, issue.id),
     ]);
@@ -16025,7 +16049,7 @@ export function issueRoutes(
       const decision = await decideIssueAccess(req, issue, "issue:comment");
       if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
       if (issue.conversationAgentId) {
-        if (!(await instanceSettings.getExperimental()).enableAgentChat) throw notFound("Agent Chat is disabled");
+        await assertEntitled(instanceSettings, "enableAgentChat");
         if (req.actor.userId !== issue.conversationUserId) {
           throw forbidden("Only the conversation owner can interrupt a chat to send queued messages");
         }
@@ -17873,7 +17897,6 @@ export function issueRoutes(
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
       if (req.actor.type !== "board" || !req.actor.userId) throw forbidden("Board user access required");
-      if (!(await instanceSettings.getExperimental()).enableAgentChat) throw notFound("Agent Chat is disabled");
       const resolved = await agentsSvc.resolveByReference(companyId, req.params.agentRef as string);
       if (resolved.ambiguous) throw conflict("Agent reference is ambiguous");
       if (!resolved.agent) throw notFound("Agent not found");
@@ -17906,7 +17929,7 @@ export function issueRoutes(
       );
       if (!issue) return;
       if (issue.conversationAgentId && req.actor.type === "board") {
-        if (!(await instanceSettings.getExperimental()).enableAgentChat) throw notFound("Agent Chat is disabled");
+        await assertEntitled(instanceSettings, "enableAgentChat");
         if (!req.actor.userId) throw forbidden("Board user access required");
         if (req.actor.userId !== issue.conversationUserId) throw forbidden("Only the conversation owner can send messages or start a new session");
         if (!req.body.clientRequestId) throw unprocessable("Chat messages require a clientRequestId for safe retries");
@@ -19125,8 +19148,8 @@ export function issueRoutes(
         res.status(422).json({ error: "Issue does not belong to company" });
         return;
       }
-      if (issue.conversationAgentId && req.actor.type === "board" && !(await instanceSettings.getExperimental()).enableAgentChat) {
-        throw notFound("Agent Chat is disabled");
+      if (issue.conversationAgentId && req.actor.type === "board") {
+        await assertEntitled(instanceSettings, "enableAgentChat");
       }
       if (issue.conversationAgentId && req.actor.type === "board" && req.actor.userId !== issue.conversationUserId) {
         throw forbidden("Only the conversation owner can upload attachments");

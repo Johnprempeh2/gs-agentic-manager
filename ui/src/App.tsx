@@ -53,6 +53,7 @@ import { Artifacts } from "./pages/Artifacts";
 import { Deliverables } from "./pages/Deliverables";
 import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
+import { MemoryReview } from "./pages/MemoryReview";
 import { GoalDetail } from "./pages/GoalDetail";
 import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
@@ -396,6 +397,7 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route path="deliverables" element={<Deliverables />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />
+      <Route path="memory/review" element={<MemoryReview />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
@@ -813,6 +815,7 @@ export function App() {
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/review" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
           {streamlinedUiEnabled ? (
             <>

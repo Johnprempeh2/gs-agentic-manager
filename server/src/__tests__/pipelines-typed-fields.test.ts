@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   activityLog,
   companies,
@@ -21,6 +21,7 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -39,6 +40,11 @@ describeEmbeddedPostgres("typed pipeline fields", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipeline-typed-fields-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
+
+  // GRE-1077: the pipelines API is gated on enablePipelines.
+  beforeEach(async () => {
+    await instanceSettingsService(db).updateExperimental({ enablePipelines: true });
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);
@@ -148,6 +154,21 @@ describeEmbeddedPostgres("typed pipeline fields", () => {
     const actions = (await db.select().from(activityLog).where(eq(activityLog.companyId, companyId)))
       .map((row) => row.action);
     expect(actions).toEqual(expect.arrayContaining(["pipeline.field_created", "pipeline.field_updated"]));
+  });
+
+  it("refuses the field routes while enablePipelines is off", async () => {
+    const { pipelineId } = await seedPipeline();
+    await instanceSettingsService(db).updateExperimental({ enablePipelines: false });
+    const http = request(app());
+
+    const list = await http.get(`/api/pipelines/${pipelineId}/fields`);
+    expect(list.status).toBe(403);
+    expect(list.body.code).toBe("not_entitled");
+    const create = await http
+      .post(`/api/pipelines/${pipelineId}/fields`)
+      .send({ key: "dealValue", label: "Deal value", type: "number" });
+    expect(create.status).toBe(403);
+    expect(create.body.code).toBe("not_entitled");
   });
 
   it("rejects bad field definitions", async () => {

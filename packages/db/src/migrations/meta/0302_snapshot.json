@@ -1,5 +1,5 @@
 {
-  "id": "0ce1d809-6aba-4e91-a848-90c227092622",
+  "id": "cbeaca75-f7d7-459a-8312-1e844fb6443d",
   "prevId": "e2b01262-77fd-4b12-828c-688987b14477",
   "version": "7",
   "dialect": "postgresql",
@@ -33270,6 +33270,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "app": {
+          "name": "app",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "scope_ids": {
           "name": "scope_ids",
           "type": "jsonb",
@@ -33978,6 +33990,18 @@
         "run_id": {
           "name": "run_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "app": {
+          "name": "app",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -36747,203 +36771,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.pipeline_field_definitions": {
-      "name": "pipeline_field_definitions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pipeline_id": {
-          "name": "pipeline_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "required": {
-          "name": "required",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "options": {
-          "name": "options",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "archived_at": {
-          "name": "archived_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_agent_id": {
-          "name": "created_by_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "pipeline_field_definitions_pipeline_key_uq": {
-          "name": "pipeline_field_definitions_pipeline_key_uq",
-          "columns": [
-            {
-              "expression": "pipeline_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "pipeline_field_definitions_company_pipeline_idx": {
-          "name": "pipeline_field_definitions_company_pipeline_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "pipeline_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "pipeline_field_definitions_company_id_companies_id_fk": {
-          "name": "pipeline_field_definitions_company_id_companies_id_fk",
-          "tableFrom": "pipeline_field_definitions",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "pipeline_field_definitions_pipeline_id_pipelines_id_fk": {
-          "name": "pipeline_field_definitions_pipeline_id_pipelines_id_fk",
-          "tableFrom": "pipeline_field_definitions",
-          "tableTo": "pipelines",
-          "columnsFrom": [
-            "pipeline_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "pipeline_field_definitions_created_by_agent_id_agents_id_fk": {
-          "name": "pipeline_field_definitions_created_by_agent_id_agents_id_fk",
-          "tableFrom": "pipeline_field_definitions",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "created_by_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pipeline_field_definitions_type_check": {
-          "name": "pipeline_field_definitions_type_check",
-          "value": "\"pipeline_field_definitions\".\"type\" in ('text', 'long_text', 'number', 'boolean', 'date', 'select', 'multi_select', 'email', 'phone', 'url')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.pipeline_stages": {
