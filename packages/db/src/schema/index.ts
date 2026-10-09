@@ -87,6 +87,14 @@ export {
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
+export {
+  crmSyncBindings,
+  crmSyncFieldMaps,
+  crmSyncRecordLinks,
+  crmSyncConflicts,
+  crmSyncEvents,
+  type CrmSyncStoredValue,
+} from "./crm_sync.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
 export { labels } from "./labels.js";
