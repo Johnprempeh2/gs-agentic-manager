@@ -848,6 +848,7 @@ export type {
   GoalBlockerWaitingOn,
   GoalIssueBlocker,
   GoalCheckIn,
+  GoalKpiReading,
   GoalDetail,
   GoalMilestone,
   GoalProgress,
