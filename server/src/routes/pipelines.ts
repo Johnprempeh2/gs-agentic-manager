@@ -110,6 +110,7 @@ import {
 } from "@greatstone/shared";
 import { documentAnnotationService } from "../services/document-annotations.js";
 import { logActivity } from "../services/activity-log.js";
+import { pipelineAccessRoutes } from "./pipeline-access.js";
 import {
   formatPipelineConversationBodyDocumentContextMarkdown,
   loadPipelineConversationBodyDocumentContext,
@@ -885,6 +886,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
   // Cases router runs first and falls through on /cases/* only for ids that
   // are not new-Cases rows, so this gate never blocks the Cases feature.
   router.use(PIPELINE_ROUTE_PREFIXES, requireEntitlement(db, "enablePipelines"));
+  router.use(pipelineAccessRoutes(db));
 
   router.get("/companies/:companyId/pipelines", async (req, res) => {
     const companyId = req.params.companyId as string;
