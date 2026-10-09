@@ -464,6 +464,11 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "project-links"] as const,
     caseCrmSync: (caseId: string) =>
       ["pipelines", "item", caseId, "crm-sync"] as const,
+    /** Open "Sync conflicts" items for a company, or for one case. */
+    crmSyncConflicts: (companyId: string, caseId?: string) =>
+      ["pipelines", "crm-sync-conflicts", companyId, caseId ?? "all"] as const,
+    crmSyncFieldMap: (bindingId: string) =>
+      ["pipelines", "crm-sync-field-map", bindingId] as const,
     caseContacts: (caseId: string) =>
       ["pipelines", "item", caseId, "contacts"] as const,
     projectCases: (projectId: string) =>

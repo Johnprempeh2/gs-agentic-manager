@@ -87,6 +87,7 @@ import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
+import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
 import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
@@ -3306,6 +3307,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
           ) : (
             <PipelineCaseCrmSync
               caseId={caseId}
+              companyId={detail.case.companyId}
               wrap={(children) => (
                 <section>
                   <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
@@ -5197,6 +5199,8 @@ export function ReviewQueue() {
           ))}
         </div>
       )}
+
+      <CrmSyncConflictQueue companyId={selectedCompanyId} />
 
       <p className="text-xs text-muted-foreground">
         Shortcuts: <span className="font-semibold">j</span>/<span className="font-semibold">k</span> or arrow keys move, <span className="font-semibold">Enter</span> opens item, <span className="font-semibold">a</span> approves.
