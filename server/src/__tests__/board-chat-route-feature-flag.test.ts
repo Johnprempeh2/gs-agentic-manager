@@ -37,9 +37,11 @@ vi.mock("../routes/authz.js", () => ({
 
 async function createApp(deploymentMode: "local_trusted" | "authenticated" = "local_trusted") {
   const { boardChatRoutes } = await import("../routes/board-chat.js");
+  const { errorHandler } = await import("../middleware/error-handler.js");
   const app = express();
   app.use(express.json());
   app.use("/api", boardChatRoutes({} as any, { deploymentMode }));
+  app.use(errorHandler);
   return app;
 }
 
@@ -48,7 +50,7 @@ describe("POST /api/board/chat/stream feature flag guard (PAP-137)", () => {
     vi.clearAllMocks();
   });
 
-  it("returns 403 FEATURE_DISABLED when enableConferenceRoomChat is off", async () => {
+  it("returns 403 not_entitled when enableConferenceRoomChat is off", async () => {
     mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: false });
     const app = await createApp();
 
@@ -57,9 +59,9 @@ describe("POST /api/board/chat/stream feature flag guard (PAP-137)", () => {
       .send({ companyId: "company-1", message: "hello" });
 
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({
-      error: "Conference Room Chat is not enabled",
-      code: "FEATURE_DISABLED",
+    expect(res.body).toMatchObject({
+      code: "not_entitled",
+      feature: "enableConferenceRoomChat",
     });
     // The guard must fire before anything is persisted.
     expect(mockIssueService.addComment).not.toHaveBeenCalled();

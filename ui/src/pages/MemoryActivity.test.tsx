@@ -68,6 +68,8 @@ function item(index: number, createdAt: string, contributor = kestrelAgents.maso
         agentId: null,
         userId: "hu-john-syn",
         runId: null,
+        app: "gsam_web",
+        sessionId: null,
         reason: null,
         relatedRecordId: null,
         createdAt,

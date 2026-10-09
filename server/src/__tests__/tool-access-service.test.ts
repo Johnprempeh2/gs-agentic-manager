@@ -11676,7 +11676,7 @@ describeEmbeddedPostgres("tool access service", () => {
     try {
       const response = await request(createRouteApp(db)).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
       expect(response.body.apps.some((app: { slug: string }) => app.slug === provider)).toBe(false);
-      await expect(service.connectGalleryApp(company.id, { galleryKey: provider })).rejects.toMatchObject({ status: 403, details: { code: "memory_connectors_disabled" } });
+      await expect(service.connectGalleryApp(company.id, { galleryKey: provider })).rejects.toMatchObject({ status: 403, details: { code: "not_entitled", feature: "enableMemoryConnectors" } });
       expect(await db.select().from(toolConnections).where(eq(toolConnections.companyId, company.id))).toHaveLength(0);
       expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toHaveLength(0);
     } finally {

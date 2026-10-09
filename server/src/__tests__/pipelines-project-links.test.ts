@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  activityLog,
   companies,
   createDb,
   goals,
@@ -23,6 +24,7 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -42,12 +44,18 @@ describeEmbeddedPostgres("pipeline case project links", () => {
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
+  // GRE-1077: the pipelines API is gated on enablePipelines.
+  beforeEach(async () => {
+    await instanceSettingsService(db).updateExperimental({ enablePipelines: true });
+  });
+
   afterEach(async () => {
     await db.delete(pipelineCaseProjectLinks);
     await db.delete(pipelineCaseEvents);
     await db.delete(pipelineCases);
     await db.delete(pipelineTransitions);
     await db.delete(pipelineStages);
+    await db.delete(activityLog);
     await db.delete(pipelines);
     await db.delete(projectGoals);
     await db.delete(goals);

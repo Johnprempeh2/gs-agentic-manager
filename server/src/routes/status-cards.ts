@@ -11,6 +11,7 @@ import {
 } from "@greatstone/shared";
 import { forbidden, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import { accessService, heartbeatService, instanceSettingsService, issueService, logActivity, statusCardService } from "../services/index.js";
 import { queueIssueAssignmentWakeup, type IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
@@ -24,10 +25,9 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   const issueSvc = issueService(db);
   const heartbeat = opts.heartbeat ?? heartbeatService(db);
 
-  async function assertStatusCardsEnabled() {
-    const experimental = await settings.getExperimental();
-    if (experimental.enableStatusCards !== true) throw notFound("Status cards are not enabled");
-  }
+  // GRE-1077: refuse every route while enableStatusCards is off, before validation.
+  router.use(["/companies/:companyId/status-cards", "/status-cards"], requireEntitlement(settings, "enableStatusCards"));
+
 
   async function assertCanMutate(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
@@ -142,14 +142,12 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   router.get("/companies/:companyId/status-cards", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    await assertStatusCardsEnabled();
     const query = listStatusCardsQuerySchema.parse(req.query);
     res.json(await service.list(companyId, query.archived));
   });
 
   router.post("/companies/:companyId/status-cards", validate(createStatusCardSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
-    await assertStatusCardsEnabled();
     await assertCanMutate(req, companyId);
     assertAgentPromptLimit(req, req.body.interestPrompt);
     const actor = getActorInfo(req);
@@ -168,14 +166,12 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   });
 
   router.get("/status-cards/:id", async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     res.json(await service.hydrate(card));
   });
 
   router.patch("/status-cards/:id", validate(patchStatusCardSchema), async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     await assertCanManageCard(req, card);
@@ -197,7 +193,6 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   });
 
   router.delete("/status-cards/:id", async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     await assertCanManageCard(req, card);
@@ -207,21 +202,18 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   });
 
   router.get("/status-cards/:id/updates", async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     res.json(await service.listUpdates(card.id));
   });
 
   router.get("/status-cards/:id/summary-revisions", async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     res.json(await service.listSummaryRevisions(card));
   });
 
   router.post("/status-cards/:id/recompile", async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     await assertCanManageCard(req, card);
@@ -234,7 +226,6 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   });
 
   router.post("/status-cards/:id/refresh", validate(refreshStatusCardSchema), async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     await assertCanManageCard(req, card);
@@ -249,7 +240,6 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   });
 
   router.get("/status-cards/:id/dry-run", async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     const decision = await access.decide({
@@ -269,7 +259,6 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   });
 
   router.put("/status-cards/:id/query", validate(writeStatusCardQuerySchema), async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     if (!hasCompanyAccess(req, card.companyId)) throw notFound("Status card not found");
@@ -288,7 +277,6 @@ export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWake
   });
 
   router.put("/status-cards/:id/summary", validate(writeStatusCardSummarySchema), async (req, res) => {
-    await assertStatusCardsEnabled();
     const card = await getAccessibleResource(req, res, service.getById(req.params.id as string), "Status card not found");
     if (!card) return;
     if (!hasCompanyAccess(req, card.companyId)) throw notFound("Status card not found");

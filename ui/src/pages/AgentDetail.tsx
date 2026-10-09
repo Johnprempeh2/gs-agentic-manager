@@ -30,6 +30,8 @@ import { copyTextToClipboard } from "../lib/clipboard";
 import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { AgentPermissionGrantsList } from "../components/AgentPermissionGrantsList";
+import { AgentPipelineAccessControl } from "../components/AgentPipelineAccessControl";
+import { pipelinesApi } from "../api/pipelines";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -2030,6 +2032,12 @@ export function ConfigurationTab({
     enabled: Boolean(companyId && lowTrustSelected) && content === "permissions",
   });
 
+  const { data: companyPipelines, isLoading: companyPipelinesLoading } = useQuery({
+    queryKey: companyId ? queryKeys.pipelines.list(companyId) : ["pipelines", "__agent-access-disabled"],
+    queryFn: () => pipelinesApi.list(companyId!),
+    enabled: Boolean(companyId) && content === "permissions",
+  });
+
   const updateAgent = useMutation({
     mutationFn: (data: Record<string, unknown>) => agentsApi.update(agent.id, data, companyId),
     onMutate: () => {
@@ -2237,6 +2245,23 @@ export function ConfigurationTab({
           </div>
         </div>
       </div> : null}
+
+      {content === "permissions" ? <AgentPipelineAccessControl
+        grants={agent.access?.grants ?? []}
+        pipelines={(companyPipelines ?? [])
+          .filter((pipeline) => !pipeline.archivedAt)
+          .map((pipeline) => ({ id: pipeline.id, name: pipeline.name }))}
+        pipelinesLoading={companyPipelinesLoading}
+        disabled={updatePermissions.isPending}
+        onSave={(pipelineAccess) =>
+          updatePermissions.mutate({
+            canCreateAgents,
+            canCreateSkills,
+            canAssignTasks,
+            pipelineAccess,
+          })
+        }
+      /> : null}
 
       {content === "permissions" ? <AgentPermissionGrantsList grants={agent.access?.grants ?? []} /> : null}
     </div>

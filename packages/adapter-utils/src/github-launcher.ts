@@ -81,7 +81,7 @@ async function main() {
         diagnostic('broker_response_unavailable');
       } else {
       const result = await response.json();
-      if (result.status === 'unavailable') {
+      if (result.status === 'unavailable' || result.status === 'absent') {
         const reason = typeof result.reason === 'string'
           ? result.reason.replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 500)
           : 'Check the GitHub connection in GS Agentic Manager';

@@ -67,7 +67,7 @@ export {
 } from "./chat_channels.js";
 export { issueRelations } from "./issue_relations.js";
 export { routines, routineRevisions, routineTriggers, routineWebhookTestReceipts, routineRuns } from "./routines.js";
-export { pipelines, pipelineStages, pipelineTransitions } from "./pipelines.js";
+export { pipelines, pipelineStages, pipelineTransitions, pipelineFieldDefinitions } from "./pipelines.js";
 export {
   cases,
   caseAttachments,
@@ -229,6 +229,7 @@ export {
   memoryConflicts,
   memoryExtractedFacts,
   memoryLinkLeads,
+  memoryScopeStewards,
 } from "./memory.js";
 export { memoryIngestOutbox } from "./memory_ingest_outbox.js";
 export * from "./memory_steward.js";

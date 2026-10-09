@@ -44,6 +44,10 @@ vi.mock("../services/secrets.js", () => ({
 vi.mock("../services/git-credentials.js", () => ({
   resolveManagedGitHubCredential: credentials.resolveManagedGitHubCredential,
   buildGitAuthInvocation: () => ({ env: { GH_TOKEN: "test-export-sentinel" } }),
+  githubIdentityScopeForRun: (context: { cause?: string | null; responsibleUserId?: string | null }) =>
+    context?.cause === "company_default"
+      ? { responsibleUserId: null, allowStandingDelegation: true }
+      : { responsibleUserId: context?.responsibleUserId ?? null, allowStandingDelegation: false },
 }));
 
 const support = await getEmbeddedPostgresTestSupport();
