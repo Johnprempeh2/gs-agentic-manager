@@ -451,6 +451,7 @@ export const queryKeys = {
     detail: (pipelineId: string) =>
       ["pipelines", "detail", pipelineId] as const,
     cases: (pipelineId: string) => ["pipelines", "cases", pipelineId] as const,
+    fields: (pipelineId: string) => ["pipelines", "fields", pipelineId] as const,
     caseDetail: (caseId: string) => ["pipelines", "item", caseId] as const,
     caseChildren: (caseId: string) =>
       ["pipelines", "item", caseId, "children"] as const,

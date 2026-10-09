@@ -57,6 +57,7 @@ import type {
   PipelineTransitionEdge,
 } from "../api/pipelines";
 import { pipelinesApi } from "../api/pipelines";
+import { PipelineFieldsEditor } from "../components/PipelineFieldsEditor";
 import { EmptyState } from "../components/EmptyState";
 import { StageSecretsPanel } from "../components/StageSecretsPanel";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -3311,6 +3312,7 @@ export function PipelineSettings() {
             </form>
           ) : null}
       </div>
+      <PipelineFieldsEditor pipelineId={pipeline.id} />
       <Dialog
         open={deleteStageDialogOpen}
         onOpenChange={setDeleteStageDialogOpen}
