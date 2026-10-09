@@ -8,8 +8,8 @@ describe("GRE-1119: missing git credentials have a setup path", () => {
       used: null,
     });
     expect(guidance).toContain("cannot supply git credentials");
-    expect(guidance).toContain("Connect as me");
-    expect(guidance).toContain("Share with agents");
+    expect(guidance).toContain("Agents cannot push with a GitHub personal access token");
+    expect(guidance).toContain("Add account, then Use this connection as an agent tool");
     expect(guidance).toContain("Settings → Secrets");
   });
 });

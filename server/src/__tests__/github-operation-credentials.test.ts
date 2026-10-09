@@ -1227,11 +1227,11 @@ const support = await getEmbeddedPostgresTestSupport();
         }).then(r=>({stderr:r.stderr,code:0}),e=>({stderr:e.stderr,code:e.code}));
         expect(result.code).not.toBe(0);
         expect(result.stderr).toContain("cannot supply git credentials");
-        expect(result.stderr).toContain("Connect as me");
+        expect(result.stderr).toContain("Agents cannot push with a GitHub personal access token");
         const summary=await resolveGitHubOperationCredentials(db,input);
         expect(summary).toMatchObject({ status: "absent", env: {} });
         expect(summary.reason).toContain("cannot supply git credentials");
-        expect(summary.reason).toContain("Share with agents");
+        expect(summary.reason).toContain("Add account, then Use this connection as an agent tool");
         expect({reason:summary.reason,stderr:result.stderr}).toEqual(expect.objectContaining({
           reason:expect.stringMatching(/Apps|connect.*GitHub|configure.*token|share/i)
         }));

@@ -30,7 +30,7 @@ import { toolAccessService } from "./tool-access.js";
 export const DEFAULT_GITHUB_TOKEN_SECRET_NAMES = ["GITHUB_TOKEN", "GH_TOKEN", "GSAM_GITHUB_TOKEN"] as const;
 
 export const GITHUB_GIT_SETUP_GUIDANCE =
-  "No managed GitHub git credential is available. A token-only Apps connection cannot supply git credentials. In Apps → GitHub, use Connect as me; for agent-started work, use Share with agents. For server-side git fallback, add a GITHUB_TOKEN or GH_TOKEN company secret in Settings → Secrets, or ask the operator to configure GITHUB_TOKEN or GH_TOKEN on the server.";
+  "Agents cannot push with a GitHub personal access token: a token-only connection cannot supply git credentials. In Apps → GitHub, choose Add account, then Use this connection as an agent tool. For a server-side git fallback, add a GITHUB_TOKEN or GH_TOKEN company secret in Settings → Secrets.";
 
 /** Env var the credential helper reads the token from; never appears in argv. */
 export const GIT_CREDENTIAL_TOKEN_ENV_KEY = "GSAM_GIT_TOKEN";
