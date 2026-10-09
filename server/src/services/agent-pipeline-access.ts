@@ -7,9 +7,11 @@ import {
   pipelineAccessGrantScope,
   pipelineAccessLevelFor,
   pipelineAllPipelinesLevel,
+  pipelinesTouchedByAccessChange,
   planPipelineLevelChange,
   resolvePipelineAccess,
   type PipelineAccess,
+  type PipelineAccessLastChange,
   type PipelineAccessLevel,
   type PipelineAccessMatrix,
   type PipelineGrantScopeState,
@@ -130,14 +132,48 @@ export async function setAgentPipelineLevel(
 }
 
 /**
+ * Sets one level on all pipelines (GRE-1073) and reports which pipelines
+ * changed level, read per pipeline so mixed grants are not lost. The activity
+ * log stores the list so each grant's last change can be shown.
+ */
+export async function setAgentAllPipelinesLevel(
+  db: Db,
+  input: { companyId: string; agentId: string; level: PipelineAccessLevel; grantedByUserId: string | null },
+): Promise<{ before: PipelineAccess; after: PipelineAccess; changedPipelineIds: string[] }> {
+  const access = accessService(db);
+  const companyPipelineIds = await db
+    .select({ id: pipelines.id })
+    .from(pipelines)
+    .where(eq(pipelines.companyId, input.companyId))
+    .then((rows) => rows.map((row) => row.id));
+  const levelsNow = async () => {
+    const grants = await access.listPrincipalGrants(input.companyId, "agent", input.agentId);
+    return new Map(companyPipelineIds.map((id) => [id, pipelineAccessLevelFor(grants, id)]));
+  };
+  const beforeLevels = await levelsNow();
+  const change = await setAgentPipelineAccess(db, {
+    companyId: input.companyId,
+    agentId: input.agentId,
+    access: { level: input.level, pipelineIds: null },
+    grantedByUserId: input.grantedByUserId,
+  });
+  const afterLevels = await levelsNow();
+  return {
+    ...change,
+    changedPipelineIds: companyPipelineIds.filter((id) => beforeLevels.get(id) !== afterLevels.get(id)),
+  };
+}
+
+/**
  * Agent × pipeline access for a company (GRE-1073), read from the same
  * grants the authorization service checks. Last change comes from the
- * activity log so removed grants are covered too.
+ * activity log so removed grants are covered too: per agent, and per
+ * pipeline from the newest entry that touched that pipeline.
  */
 export async function loadPipelineAccessMatrix(
   db: Db,
   companyId: string,
-): Promise<Omit<PipelineAccessMatrix, "canManage">> {
+): Promise<Pick<PipelineAccessMatrix, "pipelines" | "agents">> {
   const [pipelineRows, agentRows, grantRows, changeRows] = await Promise.all([
     db
       .select({ id: pipelines.id, name: pipelines.name, archivedAt: pipelines.archivedAt })
@@ -162,12 +198,13 @@ export async function loadPipelineAccessMatrix(
         inArray(principalPermissionGrants.permissionKey, [PIPELINE_CASES_PERMISSION_KEY, PIPELINE_ADMIN_PERMISSION_KEY]),
       )),
     db
-      .selectDistinctOn([activityLog.entityId], {
+      .select({
         agentId: activityLog.entityId,
         at: activityLog.createdAt,
         actorType: activityLog.actorType,
         actorId: activityLog.actorId,
         actorName: authUsers.name,
+        details: activityLog.details,
       })
       .from(activityLog)
       .leftJoin(authUsers, eq(authUsers.id, activityLog.actorId))
@@ -176,7 +213,7 @@ export async function loadPipelineAccessMatrix(
         eq(activityLog.entityType, "agent"),
         eq(activityLog.action, PIPELINE_ACCESS_UPDATED_ACTION),
       ))
-      .orderBy(activityLog.entityId, desc(activityLog.createdAt)),
+      .orderBy(desc(activityLog.createdAt)),
   ]);
 
   const grantsByAgent = new Map<string, typeof grantRows>();
@@ -185,7 +222,23 @@ export async function loadPipelineAccessMatrix(
     list.push(row);
     grantsByAgent.set(row.principalId, list);
   }
-  const changeByAgent = new Map(changeRows.map((row) => [row.agentId, row]));
+  const pipelineIds = pipelineRows.map((row) => row.id);
+  // Rows are newest first, so the first entry seen for an agent or a cell wins.
+  const changeByAgent = new Map<string, PipelineAccessLastChange>();
+  const changeByCell = new Map<string, PipelineAccessLastChange>();
+  for (const row of changeRows) {
+    const change: PipelineAccessLastChange = {
+      at: row.at.toISOString(),
+      actorType: row.actorType,
+      actorId: row.actorId,
+      actorName: row.actorName ?? null,
+    };
+    if (!changeByAgent.has(row.agentId)) changeByAgent.set(row.agentId, change);
+    for (const pipelineId of pipelinesTouchedByAccessChange(row.details, pipelineIds)) {
+      const key = `${row.agentId}:${pipelineId}`;
+      if (!changeByCell.has(key)) changeByCell.set(key, change);
+    }
+  }
 
   return {
     pipelines: pipelineRows.map((row) => ({
@@ -195,7 +248,6 @@ export async function loadPipelineAccessMatrix(
     })),
     agents: agentRows.map((agent) => {
       const grants = grantsByAgent.get(agent.id) ?? [];
-      const change = changeByAgent.get(agent.id);
       return {
         agentId: agent.id,
         name: agent.name,
@@ -203,9 +255,10 @@ export async function loadPipelineAccessMatrix(
         status: agent.status,
         levels: Object.fromEntries(pipelineRows.map((pipeline) => [pipeline.id, pipelineAccessLevelFor(grants, pipeline.id)])),
         allPipelinesLevel: pipelineAllPipelinesLevel(grants),
-        lastChange: change
-          ? { at: change.at.toISOString(), actorType: change.actorType, actorId: change.actorId, actorName: change.actorName ?? null }
-          : null,
+        lastChange: changeByAgent.get(agent.id) ?? null,
+        lastChanges: Object.fromEntries(
+          pipelineIds.map((pipelineId) => [pipelineId, changeByCell.get(`${agent.id}:${pipelineId}`) ?? null]),
+        ),
       };
     }),
   };

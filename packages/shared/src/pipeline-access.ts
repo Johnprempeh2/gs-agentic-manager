@@ -144,7 +144,10 @@ export interface PipelineAccessMatrixAgent {
   levels: Record<string, PipelineAccessLevel>;
   /** The level when it is the same "all pipelines" grant, else null (mixed or picked). */
   allPipelinesLevel: PipelineAccessLevel | null;
+  /** Latest change to this agent's pipeline access on any pipeline. */
   lastChange: PipelineAccessLastChange | null;
+  /** Latest change that touched the grant on each pipeline. Every listed pipeline has an entry. */
+  lastChanges: Record<string, PipelineAccessLastChange | null>;
 }
 
 /** Agent × pipeline access overview (GRE-1073). */
@@ -153,6 +156,45 @@ export interface PipelineAccessMatrix {
   agents: PipelineAccessMatrixAgent[];
   /** True when the viewer may change grants (board user with users:manage_permissions). */
   canManage: boolean;
+  /** True when the viewer may create pipelines (pipelines:write for the company). */
+  canCreatePipelines: boolean;
+  /** Pipelines the viewer may administer: rename, archive, edit stages and moves. */
+  administerPipelineIds: string[];
+}
+
+function levelOnPipeline(access: unknown, pipelineId: string): PipelineAccessLevel | undefined {
+  if (!access || typeof access !== "object") return undefined;
+  const { level, pipelineIds } = access as { level?: unknown; pipelineIds?: unknown };
+  if (!PIPELINE_ACCESS_LEVELS.includes(level as PipelineAccessLevel)) return undefined;
+  if (level === "view") return "view";
+  if (pipelineIds === null || pipelineIds === undefined) return level as PipelineAccessLevel;
+  if (!Array.isArray(pipelineIds)) return undefined;
+  return pipelineIds.includes(pipelineId) ? (level as PipelineAccessLevel) : "view";
+}
+
+/**
+ * The pipelines one `agent.pipeline_access_updated` entry touched (GRE-1073).
+ * A per-pipeline change names its pipeline. An all-pipelines change lists
+ * `changedPipelineIds`; older entries (GRE-1072) record the access before and
+ * after, and touched the pipelines whose level differs. Details that cannot
+ * be read count as touching every pipeline.
+ */
+export function pipelinesTouchedByAccessChange(
+  details: Record<string, unknown> | null | undefined,
+  pipelineIds: ReadonlyArray<string>,
+): string[] {
+  if (details && typeof details.pipelineId === "string") {
+    return pipelineIds.includes(details.pipelineId) ? [details.pipelineId] : [];
+  }
+  if (details && Array.isArray(details.changedPipelineIds)) {
+    const changed = details.changedPipelineIds;
+    return pipelineIds.filter((pipelineId) => changed.includes(pipelineId));
+  }
+  return pipelineIds.filter((pipelineId) => {
+    const before = levelOnPipeline(details?.before, pipelineId);
+    const after = levelOnPipeline(details?.after, pipelineId);
+    return before === undefined || after === undefined || before !== after;
+  });
 }
 
 /**

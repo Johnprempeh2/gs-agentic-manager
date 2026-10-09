@@ -245,6 +245,51 @@ describeEmbeddedPostgres("pipeline access matrix and per-pipeline grants (GRE-10
 
     const read = await request(app(operator.actor)).get(`/api/companies/${company.id}/pipeline-access`).expect(200);
     expect(read.body.canManage).toBe(false);
+    expect(read.body.canCreatePipelines).toBe(false);
+    expect(read.body.administerPipelineIds).toEqual([]);
+  });
+
+  it("attributes the last change to each grant, not to the agent as a whole", async () => {
+    const company = await seedCompany();
+    const grace = await seedBoardUser(company.id, "owner", ["users:manage_permissions"], "Grace Owner");
+    const alan = await seedBoardUser(company.id, "owner", ["users:manage_permissions"], "Alan Owner");
+    const sales = await seedPipeline(company.id, "sales");
+    const support = await seedPipeline(company.id, "support");
+    const harbor = await seedAgent(company.id, "Harbor");
+    const path = `/api/companies/${company.id}/pipeline-access/agents/${harbor.agent.id}`;
+
+    await request(app(grace.actor)).put(path).send({ pipelineId: sales.id, level: "administer" }).expect(200);
+    const matrix = (await request(app(alan.actor)).put(path).send({ pipelineId: support.id, level: "work_cases" }).expect(200)).body;
+    const row = matrix.agents.find((agent: { agentId: string }) => agent.agentId === harbor.agent.id);
+    expect(row.lastChange).toMatchObject({ actorName: "Alan Owner" });
+    expect(row.lastChanges[sales.id]).toMatchObject({ actorId: grace.userId, actorName: "Grace Owner" });
+    expect(row.lastChanges[support.id]).toMatchObject({ actorId: alan.userId, actorName: "Alan Owner" });
+
+    // An all-pipelines change touches only the pipelines whose level moved.
+    const all = (await request(app(grace.actor)).put(path).send({ level: "work_cases" }).expect(200)).body;
+    const allRow = all.agents.find((agent: { agentId: string }) => agent.agentId === harbor.agent.id);
+    expect(allRow.lastChanges[sales.id]).toMatchObject({ actorName: "Grace Owner" });
+    expect(allRow.lastChanges[support.id]).toMatchObject({ actorName: "Alan Owner" });
+  });
+
+  it("reports which pipelines the viewer may create and administer", async () => {
+    const company = await seedCompany();
+    const owner = await seedBoardUser(company.id, "owner", ["users:manage_permissions"]);
+    const sales = await seedPipeline(company.id, "sales");
+    const support = await seedPipeline(company.id, "support");
+    const harbor = await seedAgent(company.id, "Harbor");
+    await request(app(owner.actor))
+      .put(`/api/companies/${company.id}/pipeline-access/agents/${harbor.agent.id}`)
+      .send({ pipelineId: sales.id, level: "administer" })
+      .expect(200);
+
+    const ownerView = (await request(app(owner.actor)).get(`/api/companies/${company.id}/pipeline-access`).expect(200)).body;
+    expect(ownerView.canCreatePipelines).toBe(true);
+    expect(ownerView.administerPipelineIds).toEqual([sales.id, support.id]);
+
+    const agentView = (await request(app(harbor.actor)).get(`/api/companies/${company.id}/pipeline-access`).expect(200)).body;
+    expect(agentView.canManage).toBe(false);
+    expect(agentView.administerPipelineIds).toEqual([sales.id]);
   });
 
   it("keeps companies apart", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   pipelineAccessLevelFor,
   pipelineAllPipelinesLevel,
+  pipelinesTouchedByAccessChange,
   planPipelineLevelChange,
 } from "./pipeline-access.js";
 
@@ -48,5 +49,34 @@ describe("pipelineAllPipelinesLevel", () => {
     expect(pipelineAllPipelinesLevel([cases(null)])).toBe("work_cases");
     expect(pipelineAllPipelinesLevel([cases(["a"])])).toBeNull();
     expect(pipelineAllPipelinesLevel([write(["a"]), cases(null)])).toBeNull();
+  });
+});
+
+describe("pipelinesTouchedByAccessChange", () => {
+  it("names the pipeline of a per-pipeline change", () => {
+    expect(pipelinesTouchedByAccessChange({ pipelineId: "b", before: "view", after: "work_cases" }, ALL)).toEqual(["b"]);
+    expect(pipelinesTouchedByAccessChange({ pipelineId: "gone", before: "view", after: "work_cases" }, ALL)).toEqual([]);
+  });
+
+  it("finds the pipelines whose level an all-pipelines change moved", () => {
+    const details = {
+      pipelineId: null,
+      before: { level: "work_cases", pipelineIds: ["a", "b"] },
+      after: { level: "work_cases", pipelineIds: null },
+    };
+    expect(pipelinesTouchedByAccessChange(details, ALL)).toEqual(["c"]);
+    expect(pipelinesTouchedByAccessChange({
+      before: { level: "view", pipelineIds: null },
+      after: { level: "administer", pipelineIds: null },
+    }, ALL)).toEqual(ALL);
+  });
+
+  it("uses the changed pipeline list when an entry has one", () => {
+    expect(pipelinesTouchedByAccessChange({ pipelineId: null, changedPipelineIds: ["c", "gone"] }, ALL)).toEqual(["c"]);
+  });
+
+  it("treats unreadable details as touching every pipeline", () => {
+    expect(pipelinesTouchedByAccessChange(null, ALL)).toEqual(ALL);
+    expect(pipelinesTouchedByAccessChange({ before: "?", after: "?" }, ALL)).toEqual(ALL);
   });
 });

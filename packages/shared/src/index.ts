@@ -147,6 +147,7 @@ export {
   pipelineAccessScopeIds,
   pipelineAccessLevelFor,
   pipelineAllPipelinesLevel,
+  pipelinesTouchedByAccessChange,
   planPipelineLevelChange,
   resolvePipelineAccess,
   type PipelineAccess,

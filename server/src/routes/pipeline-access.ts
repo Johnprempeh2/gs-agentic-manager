@@ -12,7 +12,7 @@ import { requireEntitlement } from "../services/entitlements.js";
 import {
   PIPELINE_ACCESS_UPDATED_ACTION,
   loadPipelineAccessMatrix,
-  setAgentPipelineAccess,
+  setAgentAllPipelinesLevel,
   setAgentPipelineLevel,
 } from "../services/agent-pipeline-access.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -39,9 +39,33 @@ export function pipelineAccessRoutes(db: Db) {
     return decision.allowed;
   }
 
+  // The viewer's own pipelines:write rights, so the pipeline screens show only
+  // the controls they may use. The pipeline routes still check every change.
+  async function canWritePipelines(req: Request, companyId: string, pipelineId: string | null) {
+    const decision = await access.decide({
+      actor: req.actor,
+      action: "pipelines:write",
+      resource: { type: "company", companyId },
+      scope: pipelineId ? { pipelineId } : null,
+    });
+    return decision.allowed;
+  }
+
   async function matrixFor(req: Request, companyId: string): Promise<PipelineAccessMatrix> {
-    const [matrix, manage] = await Promise.all([loadPipelineAccessMatrix(db, companyId), canManage(req, companyId)]);
-    return { ...matrix, canManage: manage };
+    const [matrix, manage, canCreatePipelines] = await Promise.all([
+      loadPipelineAccessMatrix(db, companyId),
+      canManage(req, companyId),
+      canWritePipelines(req, companyId, null),
+    ]);
+    const writable = await Promise.all(
+      matrix.pipelines.map((pipeline) => canWritePipelines(req, companyId, pipeline.id)),
+    );
+    return {
+      ...matrix,
+      canManage: manage,
+      canCreatePipelines,
+      administerPipelineIds: matrix.pipelines.filter((_, index) => writable[index]).map((pipeline) => pipeline.id),
+    };
   }
 
   router.get("/companies/:companyId/pipeline-access", async (req, res) => {
@@ -83,12 +107,7 @@ export function pipelineAccessRoutes(db: Db) {
           }
         : {
             pipelineId: null,
-            ...(await setAgentPipelineAccess(db, {
-              companyId,
-              agentId,
-              access: { level, pipelineIds: null },
-              grantedByUserId,
-            })),
+            ...(await setAgentAllPipelinesLevel(db, { companyId, agentId, level, grantedByUserId })),
           };
 
       const actor = getActorInfo(req);
