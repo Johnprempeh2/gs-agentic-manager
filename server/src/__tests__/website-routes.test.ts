@@ -150,6 +150,7 @@ describeEmbeddedPostgres("website view routes", () => {
     for (const response of await Promise.all(calls)) {
       expect(response.status).toBe(403);
       expect(response.body.code).toBe("not_entitled");
+      expect(response.body.feature).toBe("enableWebsiteView");
     }
     expect(await db.select().from(websiteProperties)).toEqual([]);
 

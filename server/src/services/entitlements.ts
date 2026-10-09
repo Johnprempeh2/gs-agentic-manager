@@ -145,6 +145,19 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
       { method: "post", path: `/environment-custom-image-setup-sessions/${ID}/cancel` },
     ],
   },
+  enableWebsiteView: {
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/website` },
+      { method: "post", path: `${COMPANY}/website/properties` },
+      { method: "patch", path: `${COMPANY}/website/properties/${ID}` },
+      { method: "get", path: `${COMPANY}/website/properties/${ID}/report` },
+      { method: "post", path: `${COMPANY}/website/properties/${ID}/google/connect` },
+      { method: "post", path: `${COMPANY}/website/properties/${ID}/google/disconnect` },
+      { method: "post", path: `${COMPANY}/website/properties/${ID}/pull` },
+      { method: "get", path: "/website/google/callback?code=x&state=x" },
+    ],
+  },
   enableSmokeLab: {
     kind: "runtime",
     reason: "Retired: always reads off. The smoke-lab service refuses every call through assertEntitled.",

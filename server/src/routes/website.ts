@@ -1,10 +1,9 @@
-import { Router, type NextFunction, type Request, type Response } from "express";
+import { Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { companies } from "@greatstone/db";
 import {
   WEBSITE_API_ROUTES,
-  WEBSITE_NOT_ENTITLED_CODE,
   createWebsitePropertySchema,
   startWebsiteGoogleConnectSchema,
   updateWebsitePropertySchema,
@@ -15,33 +14,22 @@ import { forbidden, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { trustedBoardMutationOrigin } from "../middleware/board-mutation-guard.js";
 import { runtimeCanonicalOrigin } from "../services/cloud-runtime-identity.js";
-import { instanceSettingsService, logActivity } from "../services/index.js";
+import { logActivity } from "../services/index.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { websiteService, type WebsiteServiceOptions } from "../services/website/index.js";
 import { isLoopbackHost } from "../url-utils.js";
 import { logger } from "../middleware/logger.js";
 import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo } from "./authz.js";
 
 // Website view routes (GRE-1087). The `enableWebsiteView` switch gates every
-// one of them before anything else runs: off answers 403 `not_entitled`.
+// one of them through the shared entitlement gate (GRE-1077) before anything
+// else runs: off answers 403 `not_entitled` with `feature`.
 
 export function websiteRoutes(db: Db, opts: WebsiteServiceOptions = {}) {
   const router = Router();
-  const settings = instanceSettingsService(db);
   const service = websiteService(db, opts);
 
-  async function websiteGate(_req: Request, _res: Response, next: NextFunction) {
-    try {
-      const experimental = await settings.getExperimental();
-      if (experimental.enableWebsiteView !== true) {
-        throw forbidden("The Website view is not part of this plan", { code: WEBSITE_NOT_ENTITLED_CODE });
-      }
-      next();
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  router.use(["/companies/:companyId/website", "/website"], websiteGate);
+  router.use(["/companies/:companyId/website", "/website"], requireEntitlement(db, "enableWebsiteView"));
 
   function configuredPublicOrigin(): string | null {
     const runtimeOrigin = runtimeCanonicalOrigin();
