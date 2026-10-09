@@ -443,7 +443,9 @@ describeEmbeddedPostgres("pipeline routes", () => {
       permissionKey: "pipelines:write",
       scope: null,
     });
-    const runId = randomUUID();
+    // Structure changes are audited with the run id, so the run must exist.
+    const [run] = await db.insert(heartbeatRuns).values({ companyId: company.id, agentId: agent!.id }).returning();
+    const runId = run!.id;
     const agentActor: Express.Request["actor"] = {
       type: "agent",
       agentId: agent!.id,
@@ -1003,9 +1005,30 @@ describeEmbeddedPostgres("pipeline routes", () => {
     const caseRes = await http.post(`/api/pipelines/${pipelineRes.body.id}/cases`).send({ caseKey: "review", title: "Review me" }).expect(201);
     await http.post(`/api/cases/${caseRes.body.case.id}/transition`).send({ toStageKey: "review", expectedVersion: 1 }).expect(200);
 
+    // The agent may work cases (GRE-1072), so the refusal comes from the review gate.
+    const [reviewAgent] = await db.insert(agents).values({
+      companyId: company.id,
+      name: "Case worker",
+      role: "engineer",
+      adapterType: "codex_local",
+    }).returning();
+    await db.insert(companyMemberships).values({
+      companyId: company.id,
+      principalType: "agent",
+      principalId: reviewAgent!.id,
+      status: "active",
+      membershipRole: "member",
+    });
+    await db.insert(principalPermissionGrants).values({
+      companyId: company.id,
+      principalType: "agent",
+      principalId: reviewAgent!.id,
+      permissionKey: "pipelines:cases",
+      scope: null,
+    });
     const agentActor: Express.Request["actor"] = {
       type: "agent",
-      agentId: randomUUID(),
+      agentId: reviewAgent!.id,
       companyId: company.id,
       runId: randomUUID(),
       source: "agent_key",
