@@ -128,9 +128,9 @@ describe("client case page", () => {
         })}
         stages={stages}
         events={[
-          { id: "e1", companyId: "co-1", caseId: "case-1", type: "ingested", actorType: "user", toStageId: "stage-2", createdAt: "2026-09-01T10:00:00Z" },
-          { id: "e2", companyId: "co-1", caseId: "case-1", type: "transitioned", actorType: "user", toStageId: "stage-3", createdAt: "2026-09-27T10:00:00Z" },
-          { id: "e3", companyId: "co-1", caseId: "case-1", type: "updated", actorType: "user", createdAt: "2026-09-28T10:00:00Z" },
+          { id: "e1", companyId: "co-1", caseId: "case-1", type: "ingested", actorType: "user", toStageId: "stage-2", createdAt: "2026-09-01T10:00:00Z", updatedAt: "2026-09-01T10:00:00Z" },
+          { id: "e2", companyId: "co-1", caseId: "case-1", type: "transitioned", actorType: "user", toStageId: "stage-3", createdAt: "2026-09-27T10:00:00Z", updatedAt: "2026-09-27T10:00:00Z" },
+          { id: "e3", companyId: "co-1", caseId: "case-1", type: "updated", actorType: "user", createdAt: "2026-09-28T10:00:00Z", updatedAt: "2026-09-28T10:00:00Z" },
         ]}
         issueLinks={[
           { link: { id: "l1" }, issue: { id: "i1", identifier: "GRE-1", title: "Send the proposal", status: "todo" } },
@@ -143,6 +143,7 @@ describe("client case page", () => {
     // Nine journey stages; Paused and Lost stay off the strip.
     expect(strip.querySelectorAll("li")).toHaveLength(9);
     expect(strip.querySelector('[aria-current="step"]')?.textContent).toContain("Executive Discovery");
+    expect(container.textContent).toContain("Stage 3 of 9");
     expect(container.textContent).toContain("12 days in stage");
 
     expect(container.textContent).toContain("Ghana");
@@ -165,8 +166,27 @@ describe("client case page", () => {
     await render(<ClientCaseOverview detail={caseDetail({}, "stage-paused")} stages={stages} events={[]} issueLinks={[]} />);
 
     expect(container.querySelector('[aria-current="step"]')).toBeNull();
+    expect(container.textContent).not.toContain("Stage 3 of 9");
     expect(container.textContent).toContain("Paused");
     expect(container.textContent).toContain("Not set");
+  });
+
+  it("puts linked projects with the client overview, before stage history", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+
+    await render(
+      <ClientCaseOverview
+        detail={caseDetail({})}
+        stages={stages}
+        events={[]}
+        issueLinks={[]}
+        projects={<p>Website rebuild</p>}
+      />,
+    );
+
+    const titles = [...container.querySelectorAll("section > h2")].map((heading) => heading.textContent);
+    expect(titles).toEqual(["Client record", "Contacts", "Open tasks", "Projects", "Stage history"]);
+    expect(container.textContent).toContain("Website rebuild");
   });
 
   it("adds, edits and removes a contact", async () => {

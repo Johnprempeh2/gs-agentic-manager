@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { Link } from "@/lib/router";
 import type {
@@ -15,7 +15,7 @@ import {
   readClientRecord,
 } from "../lib/client-case";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
-import { cn } from "../lib/utils";
+import { cn, formatDate } from "../lib/utils";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
 import { StatusBadge } from "./StatusBadge";
 
@@ -35,7 +35,7 @@ function OverviewSection({ title, children }: { title: string; children: ReactNo
 function formatDay(value: Date | string) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return String(value);
-  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return formatDate(date);
 }
 
 export function StageStrip({
@@ -49,12 +49,30 @@ export function StageStrip({
 }) {
   const { steps, sideStage } = buildStageStrip(stages, currentStageId);
   const daysLabel = formatDaysInStage(daysInStage(stageEnteredAt));
+  const currentIndex = steps.findIndex((step) => step.state === "current");
+  const stripRef = useRef<HTMLOListElement>(null);
+  const currentRef = useRef<HTMLLIElement>(null);
+
+  // On a phone the strip scrolls sideways; bring the current stage into view
+  // without moving the page.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const current = currentRef.current;
+    if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
+    strip.scrollLeft = Math.max(0, current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2);
+  }, [currentIndex, steps.length]);
+
   return (
     <div className="space-y-2">
-      <ol aria-label="Client journey" className="flex gap-1 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+      <ol
+        ref={stripRef}
+        aria-label="Client journey"
+        className="relative flex gap-1 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible"
+      >
         {steps.map((step, index) => (
           <li
             key={step.id}
+            ref={step.state === "current" ? currentRef : undefined}
             aria-current={step.state === "current" ? "step" : undefined}
             className={cn(
               "flex shrink-0 items-center gap-1 rounded-sm border px-2 py-1 text-xs",
@@ -71,8 +89,13 @@ export function StageStrip({
         ))}
       </ol>
       <p className="text-xs text-muted-foreground">
+        {currentIndex >= 0 ? (
+          <span className="mr-2 font-medium text-foreground">
+            Stage {currentIndex + 1} of {steps.length}
+          </span>
+        ) : null}
         {sideStage ? (
-          <span className="mr-2 rounded-sm border border-amber-400/50 bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-900/25 dark:text-amber-200">
+          <span className="mr-2 rounded-sm border border-status-warning/40 bg-status-warning-soft px-1.5 py-0.5 font-medium text-status-warning-foreground">
             {sideStage.name}
           </span>
         ) : null}
@@ -100,11 +123,14 @@ export function ClientCaseOverview({
   stages,
   events,
   issueLinks,
+  projects,
 }: {
   detail: PipelineCaseDetail;
   stages: PipelineStage[];
   events: PipelineCaseEvent[];
   issueLinks: PipelineCaseIssueLinkWithIssue[];
+  /** Linked projects, shown here below `lg` so they sit with the CRM overview on a phone. */
+  projects?: ReactNode;
 }) {
   const record = readClientRecord(detail.case.fields);
   const history = buildStageHistory(events, stages);
@@ -161,6 +187,12 @@ export function ClientCaseOverview({
           <p className="py-3 text-sm text-muted-foreground">No open tasks linked to this client.</p>
         )}
       </OverviewSection>
+
+      {projects ? (
+        <div className="lg:hidden">
+          <OverviewSection title="Projects">{projects}</OverviewSection>
+        </div>
+      ) : null}
 
       <OverviewSection title="Stage history">
         {history.length > 0 ? (

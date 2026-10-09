@@ -2769,6 +2769,9 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
   const workReferences = extractWorkReferences(detail.case);
   const referenceKeys = referenceFieldKeys(detail.case.fields);
   const isClientCase = detail.caseType === CLIENT_CASE_TYPE;
+  const projectsPanel = (
+    <PipelineCaseProjects caseId={caseId} companyId={item.data?.case.companyId ?? selectedCompanyId ?? null} />
+  );
   const { shortFields: itemFields, longFields: mainPaneFields } = splitPipelineItemFields(
     displayPipelineItemFields(detail.case.fields).filter((field) =>
       !referenceKeys.has(field.key) && !(isClientCase && CLIENT_RECORD_FIELD_KEYS.has(field.key))
@@ -3286,6 +3289,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               stages={pipeline.data.stages}
               events={eventRows}
               issueLinks={issueLinks.data ?? []}
+              projects={projectsPanel}
             />
           ) : null}
 
@@ -3403,9 +3407,10 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         <aside className="min-w-0 space-y-8">
           {reviewPanel}
 
-          <DetailSection title="Projects">
-            <PipelineCaseProjects caseId={caseId} companyId={item.data?.case.companyId ?? selectedCompanyId ?? null} />
-          </DetailSection>
+          {/* Client cases show Projects inside the overview on narrow screens. */}
+          <div className={isClientCase ? "hidden lg:block" : undefined}>
+            <DetailSection title="Projects">{projectsPanel}</DetailSection>
+          </div>
 
           <DetailSection title="Linked work">
             <PipelineWorkReferences references={workReferences} />
