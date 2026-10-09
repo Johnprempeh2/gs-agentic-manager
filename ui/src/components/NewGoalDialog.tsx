@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { GOAL_STATUSES, GOAL_LEVELS } from "@greatstone/shared";
+import { GOAL_STATUSES, GOAL_LEVELS, GOAL_KINDS, GOAL_KIND_LABELS, type GoalKind } from "@greatstone/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { goalsApi } from "../api/goals";
@@ -22,6 +22,7 @@ import {
   Minimize2,
   Target,
   Layers,
+  Network,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
@@ -43,11 +44,13 @@ export function NewGoalDialog() {
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("planned");
   const [level, setLevel] = useState("task");
+  const [kind, setKind] = useState<GoalKind | "">("");
   const [parentId, setParentId] = useState("");
   const [expanded, setExpanded] = useState(false);
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [levelOpen, setLevelOpen] = useState(false);
+  const [kindOpen, setKindOpen] = useState(false);
   const [parentOpen, setParentOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
@@ -82,7 +85,9 @@ export function NewGoalDialog() {
     setDescription("");
     setStatus("planned");
     setLevel("task");
+    setKind("");
     setParentId("");
+    createGoal.reset();
     setExpanded(false);
   }
 
@@ -92,7 +97,8 @@ export function NewGoalDialog() {
       title: title.trim(),
       description: description.trim() || undefined,
       status,
-      level,
+      // A kind picks its own level on the server.
+      ...(kind ? { kind } : { level }),
       ...(appliedParentId ? { parentId: appliedParentId } : {}),
     });
   }
@@ -242,6 +248,39 @@ export function NewGoalDialog() {
             </PopoverContent>
           </Popover>
 
+          {/* Strategy layer */}
+          <Popover open={kindOpen} onOpenChange={setKindOpen}>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                <Network className="h-3 w-3 text-muted-foreground" />
+                {kind ? GOAL_KIND_LABELS[kind] : "Kind"}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-52 p-1" align="start">
+              <button
+                className={cn(
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                  !kind && "bg-accent"
+                )}
+                onClick={() => { setKind(""); setKindOpen(false); }}
+              >
+                Plain goal
+              </button>
+              {GOAL_KINDS.map((k) => (
+                <button
+                  key={k}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    k === kind && "bg-accent"
+                  )}
+                  onClick={() => { setKind(k); setKindOpen(false); }}
+                >
+                  {GOAL_KIND_LABELS[k]}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
           {/* Parent goal */}
           <Popover open={parentOpen} onOpenChange={setParentOpen}>
             <PopoverTrigger asChild>
@@ -277,7 +316,12 @@ export function NewGoalDialog() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
+        <div className="flex items-center justify-end gap-3 px-4 py-2.5 border-t border-border">
+          {createGoal.error ? (
+            <p role="alert" className="mr-auto min-w-0 text-xs text-destructive">
+              {createGoal.error.message}
+            </p>
+          ) : null}
           <Button
             size="sm"
             disabled={!title.trim() || createGoal.isPending}

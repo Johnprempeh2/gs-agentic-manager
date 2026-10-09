@@ -7,6 +7,8 @@ export const goalsApi = {
   listCheckIns: (id: string) => api.get<GoalCheckIn[]>(`/goals/${id}/check-ins`),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Goal>(`/companies/${companyId}/goals`, data),
+  /** Creates the empty strategic plan (vision down to KPI and initiative). Company owners only. */
+  createStrategicPlan: (companyId: string) => api.post<Goal[]>(`/companies/${companyId}/goals/strategic-plan`, {}),
   update: (id: string, data: Record<string, unknown>) => api.patch<Goal>(`/goals/${id}`, data),
   remove: (id: string) => api.delete<Goal>(`/goals/${id}`),
 };
