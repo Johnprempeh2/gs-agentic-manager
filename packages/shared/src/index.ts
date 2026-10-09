@@ -2934,4 +2934,7 @@ export * from "./memory.js";
 export * from "./crm-sync.js";
 export * from "./types/crm-sync.js";
 export * from "./validators/crm-sync.js";
+export * from "./pipeline-fields.js";
+export * from "./types/pipeline-fields.js";
+export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";

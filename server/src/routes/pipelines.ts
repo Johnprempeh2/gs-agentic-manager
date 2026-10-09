@@ -97,12 +97,17 @@ import { issueService } from "../services/issues.js";
 import { assertCompanyAccess } from "./authz.js";
 import {
   computePipelineHealth,
+  createPipelineFieldSchema,
   deriveCaseType,
   envConfigSchema,
   issueDocumentKeySchema,
   PIPELINE_CASE_BODY_DOCUMENT_KEY,
   pipelineAutomationRetryRequestSchema,
   pipelineAutomationRetryScopeSchema,
+  updatePipelineFieldSchema,
+  listPipelineFieldsQuerySchema,
+  type CreatePipelineField,
+  type UpdatePipelineField,
   type PipelineStageAutomation,
   type PipelineCaseLiveness,
   type PipelineHealthFailedAutomationInput,
@@ -110,6 +115,11 @@ import {
 } from "@greatstone/shared";
 import { documentAnnotationService } from "../services/document-annotations.js";
 import { logActivity } from "../services/activity-log.js";
+import {
+  createPipelineFieldDefinition,
+  listPipelineFieldDefinitions,
+  updatePipelineFieldDefinition,
+} from "../services/pipeline-fields.js";
 import {
   formatPipelineConversationBodyDocumentContextMarkdown,
   loadPipelineConversationBodyDocumentContext,
@@ -1051,13 +1061,14 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
   router.get("/pipelines/:pipelineId", async (req, res) => {
     const pipelineId = req.params.pipelineId as string;
     const companyId = await assertPipelineAccess(db, req, pipelineId);
-    const [pipeline, stages, transitions, documentKeys] = await Promise.all([
+    const [pipeline, stages, transitions, documentKeys, fieldDefinitions] = await Promise.all([
       db.select().from(pipelines).where(and(eq(pipelines.id, pipelineId), eq(pipelines.companyId, companyId))).then((rows) => rows[0] ?? null),
       db.select().from(pipelineStages).where(eq(pipelineStages.pipelineId, pipelineId)).orderBy(asc(pipelineStages.position)),
       db.select().from(pipelineTransitions).where(eq(pipelineTransitions.pipelineId, pipelineId)),
       db.select({ key: pipelineDocuments.key, documentId: pipelineDocuments.documentId })
         .from(pipelineDocuments)
         .where(and(eq(pipelineDocuments.companyId, companyId), eq(pipelineDocuments.pipelineId, pipelineId))),
+      listPipelineFieldDefinitions(db, { companyId, pipelineId }),
     ]);
     if (!pipeline) throw notFound("Pipeline not found");
     const automationRoutineIds = stages.flatMap((stage) => {
@@ -1089,7 +1100,13 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         latestRevisionNumber: row.latestRevisionNumber,
       },
     ]));
-    res.json({ ...pipeline, stages: stages.map((stage) => withDerivedStageAutomation(stage, routineById)), transitions, documentKeys });
+    res.json({
+      ...pipeline,
+      stages: stages.map((stage) => withDerivedStageAutomation(stage, routineById)),
+      transitions,
+      documentKeys,
+      fieldDefinitions,
+    });
   });
 
   // Setup-health warnings: surface any configuration that won't actually run
@@ -1279,6 +1296,71 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
       after: pipelineAuditSnapshot(updated),
     });
     res.json(updated);
+  });
+
+  // Typed fields (GRE-1075). Anyone with pipeline access reads; pipeline
+  // writers create and edit. Fields are archived, never deleted.
+  router.get("/pipelines/:pipelineId/fields", async (req, res) => {
+    const pipelineId = req.params.pipelineId as string;
+    const companyId = await assertPipelineAccess(db, req, pipelineId);
+    const parsed = listPipelineFieldsQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw badRequest("Invalid query", parsed.error.flatten());
+    res.json(await listPipelineFieldDefinitions(db, {
+      companyId,
+      pipelineId,
+      includeArchived: parsed.data.includeArchived,
+    }));
+  });
+
+  router.post("/pipelines/:pipelineId/fields", validate(createPipelineFieldSchema), async (req, res) => {
+    const pipelineId = req.params.pipelineId as string;
+    const companyId = await assertPipelineAccess(db, req, pipelineId);
+    await assertPipelineWriteAccess(req, { access, companyId, pipelineId });
+    const actor = actorForMutation(req);
+    const field = await createPipelineFieldDefinition(db, {
+      companyId,
+      pipelineId,
+      field: req.body as CreatePipelineField,
+      actor,
+    });
+    await logActivity(db, {
+      companyId,
+      ...activityActorForPipelineRoute(actor),
+      action: "pipeline.field_created",
+      entityType: "pipeline",
+      entityId: pipelineId,
+      details: { fieldId: field.id, key: field.key, type: field.type },
+    });
+    res.status(201).json(field);
+  });
+
+  router.patch("/pipelines/:pipelineId/fields/:fieldId", validate(updatePipelineFieldSchema), async (req, res) => {
+    const pipelineId = req.params.pipelineId as string;
+    const fieldId = z.string().guid().safeParse(req.params.fieldId);
+    if (!fieldId.success) throw notFound("Field not found");
+    const companyId = await assertPipelineAccess(db, req, pipelineId);
+    await assertPipelineWriteAccess(req, { access, companyId, pipelineId });
+    const actor = actorForMutation(req);
+    const patch = req.body as UpdatePipelineField;
+    const { before, after } = await updatePipelineFieldDefinition(db, {
+      companyId,
+      pipelineId,
+      fieldId: fieldId.data,
+      patch,
+    });
+    await logActivity(db, {
+      companyId,
+      ...activityActorForPipelineRoute(actor),
+      action: patch.archived === true && !before.archivedAt
+        ? "pipeline.field_archived"
+        : patch.archived === false && before.archivedAt
+          ? "pipeline.field_restored"
+          : "pipeline.field_updated",
+      entityType: "pipeline",
+      entityId: pipelineId,
+      details: { fieldId: after.id, key: after.key, changed: Object.keys(patch) },
+    });
+    res.json(after);
   });
 
   router.post("/pipelines/:pipelineId/stages", validate(createStageSchema), async (req, res) => {
