@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import {
   activityLog,
+  agentApiKeys,
   agents,
   authUsers,
   companyMemberships,
@@ -66,6 +67,7 @@ describeEmbeddedPostgres("shared memory M1: stewards, review queue and card acti
       await db.delete(memoryScopes);
       await db.delete(memorySettings);
       await db.delete(principalPermissionGrants);
+      await db.delete(agentApiKeys);
       await db.delete(heartbeatRuns);
       await db.delete(projects);
       await db.delete(agents);
@@ -156,7 +158,8 @@ describeEmbeddedPostgres("shared memory M1: stewards, review queue and card acti
     const challenge = queue.items.find((item) => item.proposal.id === challenger.id)!;
     expect(challenge.current?.id).toBe(approved.id);
     expect(challenge.conflictIds).toHaveLength(1);
-    expect(challenge.proposer).toEqual({ type: "agent", id: mason.id, name: "Mason", app: null });
+    // An agent key with no key row on file: the generic key label.
+    expect(challenge.proposer).toEqual({ type: "agent", id: mason.id, name: "Mason", app: "Agent API key" });
     expect(challenge.allowed).toEqual({ confirm: true, edit_and_confirm: true, reject: true, merge: true });
     expect(challenge.blockedReason).toBeNull();
     expect(queue.items.find((item) => item.proposal.id === overdue.id)!.current).toBeNull();
@@ -176,6 +179,54 @@ describeEmbeddedPostgres("shared memory M1: stewards, review queue and card acti
 
     // A person who is not a steward has nothing to review.
     expect(((await request(outsider).get(`${base}/review-queue`)).body as MemoryReviewQueue).items).toEqual([]);
+  });
+
+  it("shows the app a proposal came through, and filters by it (GRE-1124)", async () => {
+    const { board, steward, agent, mason, base, org, companyId, actor } = await setup("Apps");
+    const [key] = await ctx.db
+      .insert(agentApiKeys)
+      .values({ agentId: mason.id, companyId, name: "ChatGPT", keyHash: "hash-chatgpt", responsibleUserId: "user-backup", scopeConfig: { kind: "memory_only" } })
+      .returning();
+    const viaChatGpt = routeApp(
+      ctx.db,
+      { type: "agent", agentId: mason.id, companyId, keyId: key!.id, keyScope: { kind: "memory_only" }, runId: null, source: "agent_key" } as never,
+      (db) => memoryRoutes(db, { engine: fakeEngine() }),
+    );
+    const fromApp = await contribute(viaChatGpt, base, { scopeId: org.id, content: "Invoices go out on the 1st.", topics: ["invoicing"] });
+    const fromKey = await contribute(agent, base, { scopeId: org.id, content: "Parking is on level 2.", topics: ["parking"] });
+    const fromWeb = await contribute(board, base, { scopeId: org.id, content: "Office closes at 18:00.", topics: ["office"] });
+
+    const events = await ctx.db.select().from(memoryReviewEvents).where(eq(memoryReviewEvents.recordId, fromApp.id));
+    expect(events.find((event) => event.action === "contribute")).toMatchObject({ app: "memory_key", sessionId: key!.id });
+
+    const queue = (await request(steward).get(`${base}/review-queue`)).body as MemoryReviewQueue;
+    const byId = (id: string) => queue.items.find((item) => item.proposal.id === id)!;
+    expect(byId(fromApp.id).proposer).toEqual({ type: "agent", id: mason.id, name: "Mason", app: "ChatGPT" });
+    expect(byId(fromKey.id).proposer.app).toBe("Agent API key");
+    // GSAM's own screens add no label: the person is the identity.
+    expect(byId(fromWeb.id).proposer.app).toBeNull();
+    expect(queue.facets.apps).toEqual(expect.arrayContaining([{ app: "ChatGPT", count: 1 }, { app: "Agent API key", count: 1 }]));
+    expect(queue.facets.apps).toHaveLength(2);
+
+    const filtered = async (app: string) =>
+      ((await request(steward).get(`${base}/review-queue?app=${encodeURIComponent(app)}`)).body as MemoryReviewQueue).items.map((item) => item.proposal.id);
+    expect(await filtered("ChatGPT")).toEqual([fromApp.id]);
+
+    // An edit keeps the proposer's app; the editor's own app sits on editedBy.
+    const stewardByKey = routeApp(
+      ctx.db,
+      { ...actor, userId: "user-steward", memberships: [{ companyId, membershipRole: "operator", status: "active" }], source: "board_key", keyId: "board-key-1" } as never,
+      (db) => memoryRoutes(db, { engine: fakeEngine() }),
+    );
+    const edit = await act(stewardByKey, base, fromApp.id, { action: "edit_and_confirm", expectedVersion: fromApp.version, content: "Invoices go out on the 1st working day.", reason: "Clearer" });
+    expect(edit.status).toBe(200);
+    const edited = ((await request(board).get(`${base}/review-queue`)).body as MemoryReviewQueue).items.find((item) => item.proposal.id === edit.body.newRecord.id)!;
+    expect(edited.proposer).toMatchObject({ type: "agent", id: mason.id, app: "ChatGPT" });
+    expect(edited.editedBy).toMatchObject({ type: "user", id: "user-steward", name: "Sam", app: "Board API key" });
+    const ownerFiltered = async (app: string) =>
+      ((await request(board).get(`${base}/review-queue?app=${encodeURIComponent(app)}`)).body as MemoryReviewQueue).items.map((item) => item.proposal.id);
+    expect(await ownerFiltered("ChatGPT")).toEqual([edited.proposal.id]);
+    expect(await ownerFiltered("Board API key")).toEqual([edited.proposal.id]);
   });
 
   it("refuses confirming your own proposal", async () => {

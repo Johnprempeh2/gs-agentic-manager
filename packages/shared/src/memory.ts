@@ -793,7 +793,7 @@ export interface MemoryActorLabel {
   type: "user" | "agent";
   id: string;
   name: string;
-  /** "ChatGPT", "Claude Code"; null for GSAM itself or unknown (until M0, GRE-1079, always null). */
+  /** "ChatGPT", "Claude Code": the name of the API key the call came through; null for GSAM itself or unknown. */
   app: string | null;
 }
 

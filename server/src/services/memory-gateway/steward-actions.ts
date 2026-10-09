@@ -1,11 +1,13 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
+  agentApiKeys,
   agents,
   authUsers,
   companyMemberships,
   memoryConflicts,
   memoryRecords,
+  memoryReviewEvents,
   memoryScopes,
   memoryScopeStewards,
 } from "@greatstone/db";
@@ -13,6 +15,7 @@ import {
   MEMORY_STEWARD_ACTIONS,
   memoryReviewAgeFlag,
   type MemoryActorLabel,
+  type MemoryCallerApp,
   type MemoryReviewQueue,
   type MemoryReviewQueueItem,
   type MemoryReviewQueueQuery,
@@ -81,6 +84,17 @@ function actorKey(row: Pick<RecordRow, "contributorAgentId" | "contributorUserId
   if (row.contributorUserId) return { type: "user" as const, id: row.contributorUserId };
   return null;
 }
+
+/**
+ * The app label a steward sees beside the person (GRE-1124). GSAM's own
+ * surfaces say nothing: the person is the identity. A call through an API key
+ * shows the key's name ("ChatGPT"), which is how the owner told the apps apart.
+ */
+const KEY_APP_FALLBACK: Partial<Record<MemoryCallerApp, string>> = {
+  memory_key: "Memory key",
+  gsam_agent_key: "Agent API key",
+  gsam_board_key: "Board API key",
+};
 
 /** Why the caller may not confirm: they wrote some version, or the full history cannot be read. */
 function confirmRefusal(caller: MemoryCaller, chain: RecordRow[] | null): StewardRefusal | null {
@@ -160,13 +174,67 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
             (agent) => [agent.id, agent.name],
           ),
     );
-    // The app comes from M0 (GRE-1079); until it lands every label says null.
-    return (key: { type: "user" | "agent"; id: string }): MemoryActorLabel => ({
+    return (key: { type: "user" | "agent"; id: string }, app: string | null = null): MemoryActorLabel => ({
       type: key.type,
       id: key.id,
       name: (key.type === "user" ? users.get(key.id) : agentNames.get(key.id)) ?? (key.type === "user" ? "Unknown person" : "Unknown agent"),
-      app: null,
+      app,
     });
+  }
+
+  /**
+   * The app each version came through, from its review events (GRE-1079):
+   * `contributed` by the record's `contribute` event, `edited` by the `edit`
+   * event that produced it (keyed by the new version's id).
+   */
+  async function appLabels(companyId: string, recordIds: string[]) {
+    const contributed = new Map<string, string | null>();
+    const edited = new Map<string, string | null>();
+    if (recordIds.length === 0) return { contributed, edited };
+    const events = await db
+      .select({
+        recordId: memoryReviewEvents.recordId,
+        relatedRecordId: memoryReviewEvents.relatedRecordId,
+        action: memoryReviewEvents.action,
+        app: memoryReviewEvents.app,
+        sessionId: memoryReviewEvents.sessionId,
+      })
+      .from(memoryReviewEvents)
+      .where(
+        and(
+          eq(memoryReviewEvents.companyId, companyId),
+          inArray(memoryReviewEvents.recordId, recordIds),
+          inArray(memoryReviewEvents.action, ["contribute", "edit"]),
+        ),
+      )
+      .orderBy(asc(memoryReviewEvents.createdAt));
+    const keyIds = [
+      ...new Set(
+        events
+          .filter((event) => (event.app === "memory_key" || event.app === "gsam_agent_key") && event.sessionId)
+          .map((event) => event.sessionId!),
+      ),
+    ];
+    const keyNames = new Map(
+      keyIds.length === 0
+        ? []
+        : (
+            await db
+              .select({ id: agentApiKeys.id, name: agentApiKeys.name })
+              .from(agentApiKeys)
+              .where(and(eq(agentApiKeys.companyId, companyId), inArray(agentApiKeys.id, keyIds)))
+          ).map((key) => [key.id, key.name]),
+    );
+    const display = (app: string | null, sessionId: string | null) => {
+      const fallback = app ? KEY_APP_FALLBACK[app as MemoryCallerApp] : undefined;
+      if (!fallback) return null;
+      return (sessionId ? keyNames.get(sessionId) : undefined) ?? fallback;
+    };
+    for (const event of events) {
+      if (event.action === "contribute" && !contributed.has(event.recordId)) contributed.set(event.recordId, display(event.app, event.sessionId));
+      if (event.action === "edit" && event.relatedRecordId) edited.set(event.relatedRecordId, display(event.app, event.sessionId));
+    }
+    return { contributed, edited };
   }
 
   async function reviewQueue(caller: MemoryCaller, query: MemoryReviewQueueQuery): Promise<MemoryReviewQueue> {
@@ -230,6 +298,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
     const label = await labels(
       reviewable.flatMap((row) => (chains.get(row.id) ?? [row]).map(actorKey)).filter((key): key is NonNullable<typeof key> => key !== null),
     );
+    const apps = await appLabels(caller.companyId, [...new Set(reviewable.flatMap((row) => (chains.get(row.id) ?? [row]).map((version) => version.id)))]);
     const now = Date.now();
     const all: MemoryReviewQueueItem[] = reviewable.map((row) => {
       const scope = scopesById.get(row.scopeId)!;
@@ -251,8 +320,10 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
       allowed.confirm = blockedReason === null;
       return {
         proposal: toRecord(row, scope),
-        proposer: proposerKey ? label(proposerKey) : { type: "user", id: "", name: "Unknown person", app: null },
-        editedBy: editorKey ? label(editorKey) : null,
+        proposer: proposerKey
+          ? label(proposerKey, apps.contributed.get(first.id) ?? null)
+          : { type: "user", id: "", name: "Unknown person", app: apps.contributed.get(first.id) ?? null },
+        editedBy: editorKey ? label(editorKey, apps.edited.get(row.id) ?? apps.contributed.get(row.id) ?? null) : null,
         current: currentRow ? toRecord(currentRow, scopesById.get(currentRow.scopeId) ?? scope) : null,
         scope: { id: scope.id, name: scope.name, kind: scope.kind as MemoryScopeKind },
         ageDays,
@@ -273,7 +344,10 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
       count(facets.scopes, (entry) => entry.id === item.scope.id, () => ({ id: item.scope.id, name: item.scope.name, count: 1 }));
       const person = item.proposer;
       count(facets.people, (entry) => entry.type === person.type && entry.id === person.id, () => ({ type: person.type, id: person.id, name: person.name, count: 1 }));
-      if (person.app) count(facets.apps, (entry) => entry.app === person.app, () => ({ app: person.app!, count: 1 }));
+      // The app filter matches the proposer's or the editor's app; the facet counts cards.
+      for (const app of new Set([person.app, item.editedBy?.app].filter((app): app is string => Boolean(app)))) {
+        count(facets.apps, (entry) => entry.app === app, () => ({ app, count: 1 }));
+      }
     }
 
     const items = all
