@@ -24183,6 +24183,7 @@ export function heartbeatService(
         {
           agentId: agent.id,
           ...githubIdentityScopeForRun({ cause: identityContext.cause, responsibleUserId }),
+          requireGitToken: true,
         },
       );
       const useHostGitHub =

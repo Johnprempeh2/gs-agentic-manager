@@ -756,6 +756,38 @@ const support = await getEmbeddedPostgresTestSupport();
         env: {},
       });
     });
+    it("falls back instead of failing when a person-started run's only grant has no OAuth token", async () => {
+      const input = await seed();
+      const pasted = await grant(input, "A");
+      await db.update(connectionGrants).set({
+        credentialSecretRefs: [{ secretId: pasted.secretId, configPath: "credentials.authorization" }],
+        providerTenant: {},
+      }).where(eq(connectionGrants.id, pasted.id));
+      // Same selection the heartbeat uses to decide on the host `gh` fallback.
+      expect(
+        await resolveManagedGitHubIdentitySelection(db, input.companyId, {
+          agentId: input.agentId,
+          responsibleUserId: "A",
+          requireGitToken: true,
+        }),
+      ).toEqual({ configured: false });
+      expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({
+        status: "absent",
+        env: {},
+      });
+    });
+    it("uses the person's OAuth grant when they also have a token-only grant", async () => {
+      const input = await seed();
+      await grant(input, "A");
+      const pasted = await grant(input, "A");
+      await db.update(connectionGrants).set({
+        credentialSecretRefs: [{ secretId: pasted.secretId, configPath: "credentials.authorization" }],
+        providerTenant: {},
+      }).where(eq(connectionGrants.id, pasted.id));
+      const result = await resolveGitHubOperationCredentials(db, input);
+      expect(result).toMatchObject({ status: "available", login: "A", source: "personal" });
+      expect(result.env.GH_TOKEN).toBe("test-token-A");
+    });
     it.each([false, true])(
       "withholds sponsor and dedicated credentials from every low-trust policy source (dedicated=%s)",
       async (dedicated) => {

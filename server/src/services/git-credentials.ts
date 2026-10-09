@@ -377,6 +377,8 @@ export async function resolveManagedGitHubIdentitySelection(
     agentId?: string | null;
     allowStandingDelegation?: boolean;
     excludeGrantId?: string;
+    /** Git needs an OAuth access token; skip grants that cannot supply one. */
+    requireGitToken?: boolean;
   },
 ): Promise<{
   configured: boolean;
@@ -406,11 +408,21 @@ export async function resolveManagedGitHubIdentitySelection(
   // make unrelated agents fail before their adapter starts and would also
   // suppress their otherwise-eligible legacy credential fallback.
   if (eligibleConnectionIds.size === 0) return { configured: false };
-  const grants = await db.select().from(connectionGrants).where(and(
+  const allGrants = await db.select().from(connectionGrants).where(and(
     eq(connectionGrants.companyId, companyId),
     inArray(connectionGrants.connectionId, [...eligibleConnectionIds]),
     or(eq(connectionGrants.kind, "agent"), eq(connectionGrants.kind, "user")),
   ));
+  // A grant with no OAuth access token (a pasted token, or a sign-in that never
+  // finished) cannot supply git credentials, like a token-only connection. If
+  // it were selected, every run for that person would fail closed as
+  // "incomplete" (GRE-1103), so it is not a managed identity candidate.
+  const grants = context.requireGitToken
+    ? allGrants.filter((grant) => grant.credentialSecretRefs.some((ref) => ref.configPath === "oauth.access_token"))
+    : allGrants;
+  const isRunCandidate = (grant: typeof connectionGrants.$inferSelect) =>
+    (grant.kind === "agent" && Boolean(context.agentId) && grant.subjectAgentId === context.agentId)
+    || (grant.kind === "user" && Boolean(context.responsibleUserId) && grant.subjectUserId === context.responsibleUserId);
   const dedicated = context.agentId
     ? grants.filter((grant) => grant.kind === "agent" && grant.subjectAgentId === context.agentId)
     : [];
@@ -431,6 +443,9 @@ export async function resolveManagedGitHubIdentitySelection(
       })
     : [];
   const candidates = dedicated.length > 0 ? dedicated : personal.length > 0 ? personal : delegated;
+  // This run's own identities are all token-only: no managed identity exists for
+  // it, so git falls back to the legacy credential sources instead of failing.
+  if (candidates.length === 0 && allGrants.some(isRunCandidate)) return { configured: false };
   const identitySource = dedicated.length > 0 ? "dedicated" as const : "personal" as const;
   // Reconnecting can create another connection/grant for the same GitHub
   // account. Ambiguity is about provider identities, not the number of rows.
@@ -543,7 +558,8 @@ export async function resolveManagedGitHubCredential(
     allowStandingDelegation?: boolean;
   },
 ): Promise<{ configured: boolean; identitySource?: "personal" | "dedicated"; credential?: GitCredential; error?: string }> {
-  const selection = await resolveManagedGitHubIdentitySelection(db, companyId, context);
+  const gitContext = { ...context, requireGitToken: true };
+  const selection = await resolveManagedGitHubIdentitySelection(db, companyId, gitContext);
   if (!selection.configured) return { configured: false };
   if (!selection.grant) return { configured: true, identitySource: selection.identitySource, error: selection.error };
   const acquire = async (selection: Awaited<ReturnType<typeof resolveManagedGitHubIdentitySelection>>) => {
@@ -642,7 +658,7 @@ export async function resolveManagedGitHubCredential(
   // Retry credential acquisition, never the GitHub operation. An alternate
   // authorization must still belong to this exact principal and account.
   const alternate = await resolveManagedGitHubIdentitySelection(db, companyId, {
-    ...context, excludeGrantId: selection.grant.id,
+    ...gitContext, excludeGrantId: selection.grant.id,
   });
   const accountId = selection.grant.providerTenant?.github?.userId;
   if (!accountId || !alternate.grant || alternate.identitySource !== selection.identitySource
