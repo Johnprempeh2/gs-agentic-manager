@@ -1,3 +1,4 @@
+import { resolveHeartbeatGitHubAccess } from "../services/heartbeat-github-access.js";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,6 @@ import { promisify } from "node:util";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createGitRemoteAuthProvider } from "../services/git-credentials.js";
-import { resolveHeartbeatGitHubAccess } from "../services/heartbeat-github-access.js";
 import { createNativeGitHubAccess } from "../services/native-runtime/native-github-access.js";
 import express from "express";
 import request from "supertest";
