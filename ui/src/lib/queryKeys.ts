@@ -592,6 +592,12 @@ export const queryKeys = {
   memory: {
     settings: (companyId: string) => ["memory", companyId, "settings"] as const,
   },
+  memoryReview: {
+    all: (companyId: string) => ["memory-review", companyId] as const,
+    queue: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-review", companyId, "queue", filters] as const,
+    stewards: (companyId: string) => ["memory-review", companyId, "stewards"] as const,
+  },
   memoryGraph: {
     graph: (companyId: string, filters: Record<string, string | undefined>) =>
       ["memory-graph", companyId, "graph", filters] as const,

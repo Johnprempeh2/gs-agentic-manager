@@ -39,6 +39,9 @@ const EVENT_LABEL: Record<string, string> = {
   conflict_flagged: "Possible conflict flagged",
   conflict_resolved: "Conflict settled",
   delete: "Deleted",
+  edit: "Edited for confirmation",
+  reject: "Rejected",
+  merge: "Merged into another card",
 };
 
 type GroupBy = "date" | "contributor";

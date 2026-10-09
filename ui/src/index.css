@@ -420,6 +420,7 @@
   --sz-memory-graph-height-phone: min(22rem, 50svh); /* Graph and its legend fit above the phone bottom nav. */
   --sz-memory-list-max: calc(100vh - 8rem);
   --gtc-memory-explorer: 14rem minmax(0, 1fr); /* Memory page: contributors beside the graph or list. */
+  --gtc-memory-review: 22rem minmax(0, 1fr); /* Memory review: queue beside the card under review (GRE-1080). */
   --sz-memory-contributors-phone: 11rem; /* Contributor list height on phones, above the graph. */
 
   /* New-task dialog geometry inputs and gap tokens. The derived top/height

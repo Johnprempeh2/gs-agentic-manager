@@ -13,10 +13,13 @@ import {
   memoryActivityCountsQuerySchema,
   memoryActivityQuerySchema,
   memoryGraphQuerySchema,
+  memoryReviewQueueQuerySchema,
+  memoryStewardActionSchema,
   recallMemorySchema,
   resolveMemoryConflictSchema,
   reviewMemoryRecordSchema,
   runMemoryRetentionSchema,
+  setMemoryScopeStewardSchema,
   supersedeMemoryRecordSchema,
   updateMemorySettingsSchema,
   type MemoryCallerApp,
@@ -35,6 +38,7 @@ import { memoryGraphService } from "../services/memory-gateway/graph.js";
 import { memoryGrantService } from "../services/memory-gateway/grants.js";
 import { memoryLinkService } from "../services/memory-gateway/link-check.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
+import { memoryStewardService } from "../services/memory-gateway/steward-actions.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
 
@@ -100,6 +104,7 @@ export function memoryRoutes(
   const graphs = memoryGraphService(db, svc);
   const grants = memoryGrantService(db, svc);
   const links = memoryLinkService(db, svc);
+  const stewards = memoryStewardService(db, svc, reviews);
 
   // Runs before body validation so a company with memory off learns nothing
   // from any memory route, not even which bodies are valid.
@@ -307,6 +312,62 @@ export function memoryRoutes(
   router.post("/companies/:companyId/memory/relationships", requireEnabled, validate(createMemoryRelationshipSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     res.status(201).json(await reviews.createRelationship(await callerFor(req, companyId, "relationship_create"), req.body));
+  });
+
+  // Shared memory M1 (GRE-1089): the review queue, card actions and stewards
+  // per scope. A refusal answers 403 with a plain reason; a card that changed
+  // since the caller opened it answers 409.
+  router.get("/companies/:companyId/memory/review-queue", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "review_queue");
+    res.json(await stewards.reviewQueue(caller, parseQuery(memoryReviewQueueQuerySchema, req)));
+  });
+
+  router.post("/companies/:companyId/memory/records/:recordId/steward-action", requireEnabled, validate(memoryStewardActionSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, `steward_${req.body.action}`);
+    const recordId = recordIdOr404(req, res);
+    if (!recordId) return;
+    try {
+      res.json(await stewards.act(caller, recordId, req.body));
+    } catch (error) {
+      if (!(error instanceof MemorySensitiveContentError)) throw error;
+      res.status(422).json({
+        error: error.message,
+        code: MEMORY_SENSITIVE_CONTENT_CODE,
+        matchedTypes: error.matchedTypes,
+        detection: MEMORY_DETECTION_NOTE,
+      });
+    }
+  });
+
+  router.get("/companies/:companyId/memory/stewards", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    res.json(await stewards.listStewards(await callerFor(req, companyId, "stewards_list")));
+  });
+
+  router.put("/companies/:companyId/memory/stewards/:scopeId", requireEnabled, validate(setMemoryScopeStewardSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "steward_set");
+    const scopeId = req.params.scopeId as string;
+    if (!UUID_RE.test(scopeId)) {
+      res.status(404).json({ error: "Memory scope not found" });
+      return;
+    }
+    const steward = await stewards.setSteward(caller, scopeId, req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "memory.steward_set",
+      entityType: "company",
+      entityId: companyId,
+      details: { scopeId, primaryUserId: steward.primaryUserId, backupUserId: steward.backupUserId },
+    });
+    res.json(steward);
   });
 
   // Conflict queue data, grouped by the approved position (GRE-886); the steward reads it (GRE-887).

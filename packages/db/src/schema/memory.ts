@@ -297,3 +297,25 @@ export const memoryExtractedFacts = pgTable(
     companyRecordIdx: index("memory_extracted_facts_company_record_idx").on(table.companyId, table.recordId),
   }),
 );
+
+/**
+ * Who reviews proposals in a scope (shared memory M1, GRE-1089). Stewards are
+ * people. Client and restricted-project scopes never get a row: they always
+ * route to the company owner. Rollback: drop this table (migration 0302).
+ */
+export const memoryScopeStewards = pgTable(
+  "memory_scope_stewards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    scopeId: uuid("scope_id").notNull().references(() => memoryScopes.id, { onDelete: "cascade" }),
+    primaryUserId: text("primary_user_id"),
+    backupUserId: text("backup_user_id"),
+    setByUserId: text("set_by_user_id").notNull(),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    scopeUq: uniqueIndex("memory_scope_stewards_scope_uq").on(table.scopeId),
+    companyIdx: index("memory_scope_stewards_company_idx").on(table.companyId),
+  }),
+);
