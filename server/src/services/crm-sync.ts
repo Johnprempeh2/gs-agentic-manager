@@ -23,6 +23,7 @@ import type {
   CrmSyncBinding,
   CrmSyncBindingDirection,
   CrmSyncBindingStatus,
+  CrmSyncCaseStatus,
   CrmSyncConflict,
   CrmSyncConflictResolution,
   CrmSyncConflictStatus,
@@ -40,6 +41,8 @@ import type {
   ListCrmSyncConflictsQuery,
   ListCrmSyncEventsQuery,
   ResolveCrmSyncConflict,
+  RunCrmSyncBinding,
+  CrmSyncRunQueued,
   UpdateCrmSyncBinding,
 } from "@greatstone/shared";
 import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
@@ -75,9 +78,20 @@ export function toCrmSyncBinding(row: BindingRow, openConflictCount: number): Cr
     openConflictCount,
     lastSyncedAt: iso(row.lastSyncedAt),
     lastErrorMessage: row.lastErrorMessage,
+    nextSyncAt: iso(row.nextSyncAt),
+    rateLimitedUntil: readRateLimitedUntil(row.syncState),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** `syncState.rateLimitedUntil` as an ISO time, or null once it has passed or was never set. */
+export function readRateLimitedUntil(syncState: Record<string, unknown>, now = new Date()) {
+  const raw = syncState.rateLimitedUntil;
+  if (typeof raw !== "string") return null;
+  const until = new Date(raw);
+  if (Number.isNaN(until.getTime()) || until <= now) return null;
+  return until.toISOString();
 }
 
 function toFieldMap(binding: BindingRow, rows: FieldMapRow[]): CrmSyncFieldMap {
@@ -472,6 +486,89 @@ export function crmSyncService(db: Db) {
         resolvedByUserId: actor.userId,
         resolvedAt: new Date(),
       });
+    },
+
+    /**
+     * Queues one inbound pass: the poll scheduler runs it on its next tick.
+     * While Pipedrive is rate-limiting, the pass waits for the retry time.
+     */
+    async queueRun(binding: BindingRow, direction: RunCrmSyncBinding["direction"]): Promise<CrmSyncRunQueued> {
+      if (direction === "outbound") {
+        throw unprocessable("This binding cannot write to the CRM yet", { code: "outbound_not_supported" });
+      }
+      if (binding.providerKey !== "pipedrive") {
+        throw unprocessable("Sync is not built for this CRM yet", { code: "provider_not_supported", providerKey: binding.providerKey });
+      }
+      if (binding.direction === "outbound_only") {
+        throw unprocessable("This binding only writes to the CRM, which is not built yet", { code: "outbound_not_supported" });
+      }
+      if (binding.status !== "active") {
+        throw conflict("Resume the binding before you run a sync", { code: "binding_not_active", status: binding.status });
+      }
+      const rateLimitedUntil = readRateLimitedUntil(binding.syncState);
+      const nextSyncAt = rateLimitedUntil ? new Date(rateLimitedUntil) : new Date();
+      await db
+        .update(crmSyncBindings)
+        .set({ nextSyncAt, updatedAt: new Date() })
+        .where(and(eq(crmSyncBindings.id, binding.id), isNull(crmSyncBindings.deletedAt)));
+      return { bindingId: binding.id, nextSyncAt: nextSyncAt.toISOString() };
+    },
+
+    /** Sync state for each source the case is linked to, with its newest log line. */
+    async getCaseStatus(companyId: string, caseId: string): Promise<CrmSyncCaseStatus> {
+      const caseRow = await db
+        .select({ pipelineId: pipelineCases.pipelineId })
+        .from(pipelineCases)
+        .where(and(eq(pipelineCases.id, caseId), eq(pipelineCases.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!caseRow) throw notFound("Case not found");
+      const links = await db
+        .select()
+        .from(crmSyncRecordLinks)
+        .where(and(
+          eq(crmSyncRecordLinks.companyId, companyId),
+          eq(crmSyncRecordLinks.entityKind, "case"),
+          eq(crmSyncRecordLinks.entityId, caseId),
+        ));
+      if (links.length === 0) return { caseId, sources: [] };
+      const bindings = await db
+        .select()
+        .from(crmSyncBindings)
+        .where(and(
+          eq(crmSyncBindings.companyId, companyId),
+          eq(crmSyncBindings.pipelineId, caseRow.pipelineId),
+          inArray(crmSyncBindings.connectionId, links.map((link) => link.connectionId)),
+          isNull(crmSyncBindings.deletedAt),
+        ))
+        .orderBy(asc(crmSyncBindings.createdAt));
+      const sources = await Promise.all(bindings.map(async (binding) => {
+        const link = links.find((row) => row.connectionId === binding.connectionId)!;
+        const lastEvent = await db
+          .select()
+          .from(crmSyncEvents)
+          .where(and(
+            eq(crmSyncEvents.companyId, companyId),
+            eq(crmSyncEvents.bindingId, binding.id),
+            eq(crmSyncEvents.entityId, caseId),
+          ))
+          .orderBy(desc(crmSyncEvents.createdAt), desc(crmSyncEvents.id))
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        return {
+          bindingId: binding.id,
+          connectionId: binding.connectionId,
+          providerKey: binding.providerKey,
+          externalContainerLabel: binding.externalContainerLabel,
+          externalId: link.externalId,
+          bindingStatus: binding.status as CrmSyncBindingStatus,
+          lastSyncedAt: iso(link.lastSyncedAt),
+          lastErrorMessage: binding.lastErrorMessage,
+          nextSyncAt: iso(binding.nextSyncAt),
+          rateLimitedUntil: readRateLimitedUntil(binding.syncState),
+          lastEvent: lastEvent ? toEvent(lastEvent) : null,
+        };
+      }));
+      return { caseId, sources };
     },
 
     /** External ids held by the case and its contacts. */

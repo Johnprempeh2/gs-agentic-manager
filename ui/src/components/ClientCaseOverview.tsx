@@ -17,6 +17,7 @@ import {
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { cn, formatDate } from "../lib/utils";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
+import { PipelineCaseCrmSync } from "./PipelineCaseCrmSync";
 import { StatusBadge } from "./StatusBadge";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
@@ -162,6 +163,11 @@ export function ClientCaseOverview({
           </RecordRow>
         </dl>
       </OverviewSection>
+
+      <PipelineCaseCrmSync
+        caseId={detail.case.id}
+        wrap={(children) => <OverviewSection title="CRM sync">{children}</OverviewSection>}
+      />
 
       <OverviewSection title="Contacts">
         <PipelineCaseContacts caseId={detail.case.id} recordFields={detail.case.fields} />

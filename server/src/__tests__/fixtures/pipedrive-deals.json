@@ -1,0 +1,135 @@
+{
+  "_about": "Pipedrive API answers in the recorded shape of GET /api/v2/deals and GET /api/v1/dealFields, trimmed to the fields CRM sync reads. Company names and people are made up. Used by crm-sync-pipedrive.test.ts; no test calls Pipedrive.",
+  "dealFields": {
+    "success": true,
+    "data": [
+      { "key": "title", "name": "Title", "field_type": "varchar" },
+      { "key": "value", "name": "Value", "field_type": "monetary" },
+      { "key": "stage_id", "name": "Stage", "field_type": "stage" },
+      { "key": "expected_close_date", "name": "Expected close date", "field_type": "date" },
+      {
+        "key": "8f3a1c2b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70",
+        "name": "Priority",
+        "field_type": "enum",
+        "options": [
+          { "id": 7, "label": "High" },
+          { "id": 8, "label": "Low" }
+        ]
+      },
+      { "key": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e", "name": "Notes", "field_type": "text" }
+    ],
+    "additional_data": { "pagination": { "start": 0, "limit": 500, "more_items_in_collection": false } }
+  },
+  "firstPassPage1": {
+    "success": true,
+    "data": [
+      {
+        "id": 101,
+        "title": "Example Freight renewal",
+        "value": 12000,
+        "currency": "GBP",
+        "status": "open",
+        "pipeline_id": 1,
+        "stage_id": 10,
+        "expected_close_date": "2026-11-30",
+        "add_time": "2026-10-01T09:00:00Z",
+        "update_time": "2026-10-08T10:00:00Z",
+        "custom_fields": {
+          "8f3a1c2b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70": 7,
+          "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e": "Wants a two-year term"
+        }
+      },
+      {
+        "id": 102,
+        "title": "Sample Labs pilot",
+        "value": 4500,
+        "currency": "GBP",
+        "status": "open",
+        "pipeline_id": 1,
+        "stage_id": 11,
+        "expected_close_date": null,
+        "add_time": "2026-10-02T09:00:00Z",
+        "update_time": "2026-10-08T11:00:00Z",
+        "custom_fields": {
+          "8f3a1c2b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70": 8,
+          "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e": null
+        }
+      }
+    ],
+    "additional_data": { "next_cursor": "eyJpZCI6MTAyfQ" }
+  },
+  "firstPassPage2": {
+    "success": true,
+    "data": [
+      {
+        "id": 103,
+        "title": "Other pipeline deal",
+        "value": 900,
+        "currency": "GBP",
+        "status": "open",
+        "pipeline_id": 2,
+        "stage_id": 20,
+        "update_time": "2026-10-08T11:30:00Z",
+        "custom_fields": {}
+      },
+      {
+        "id": 104,
+        "title": "Demo Retail expansion",
+        "value": 30000,
+        "currency": "GBP",
+        "status": "open",
+        "pipeline_id": 1,
+        "stage_id": 12,
+        "update_time": "2026-10-08T12:00:00Z",
+        "custom_fields": {
+          "8f3a1c2b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70": 7
+        }
+      }
+    ],
+    "additional_data": { "next_cursor": null }
+  },
+  "secondPass": {
+    "success": true,
+    "data": [
+      {
+        "id": 104,
+        "title": "Demo Retail expansion",
+        "value": 30000,
+        "currency": "GBP",
+        "status": "open",
+        "pipeline_id": 1,
+        "stage_id": 12,
+        "update_time": "2026-10-08T12:00:00Z",
+        "custom_fields": {
+          "8f3a1c2b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70": 7
+        }
+      },
+      {
+        "id": 101,
+        "title": "Example Freight renewal",
+        "value": 15000,
+        "currency": "GBP",
+        "status": "won",
+        "pipeline_id": 1,
+        "stage_id": 11,
+        "expected_close_date": "2026-11-30",
+        "update_time": "2026-10-09T08:00:00Z",
+        "custom_fields": {
+          "8f3a1c2b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70": 7,
+          "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e": "Signed for two years"
+        }
+      }
+    ],
+    "additional_data": { "next_cursor": null }
+  },
+  "rateLimited": {
+    "status": 429,
+    "headers": { "retry-after": "2", "x-ratelimit-limit": "80", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "2" },
+    "body": { "success": false, "error": "Request over limit", "errorCode": 429 }
+  },
+  "unauthorized": {
+    "status": 401,
+    "headers": {},
+    "body": { "success": false, "error": "unauthorized access", "errorCode": 401 }
+  }
+}

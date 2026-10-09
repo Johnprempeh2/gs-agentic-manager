@@ -143,8 +143,9 @@ export const crmSyncRecordLinksSchema = z.array(crmSyncRecordLinkSchema).superRe
   });
 });
 
+// The log also records stage moves (`stage`), which the stage map drives.
 const changedFieldSchema = z.object({
-  gsamField: crmSyncGsamFieldSchema,
+  gsamField: z.union([crmSyncGsamFieldSchema, z.literal("stage")]),
   from: crmSyncFieldValueSchema,
   to: crmSyncFieldValueSchema,
 }).strict();

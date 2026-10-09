@@ -34,8 +34,39 @@ export interface CrmSyncBinding {
   openConflictCount: number;
   lastSyncedAt: string | null;
   lastErrorMessage: string | null;
+  /** When the next poll may run. Null when the binding is not scheduled. */
+  nextSyncAt: string | null;
+  /** Set while the CRM is refusing calls for too many requests (429). */
+  rateLimitedUntil: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 202 answer to `POST .../sync`. */
+export interface CrmSyncRunQueued {
+  bindingId: string;
+  nextSyncAt: string;
+}
+
+/** Sync state of one source a case is linked to. */
+export interface CrmSyncCaseSource {
+  bindingId: string;
+  connectionId: string;
+  providerKey: string;
+  externalContainerLabel: string | null;
+  externalId: string;
+  bindingStatus: CrmSyncBindingStatus;
+  lastSyncedAt: string | null;
+  lastErrorMessage: string | null;
+  nextSyncAt: string | null;
+  rateLimitedUntil: string | null;
+  /** Newest sync log line for this case, if any. */
+  lastEvent: CrmSyncEvent | null;
+}
+
+export interface CrmSyncCaseStatus {
+  caseId: string;
+  sources: CrmSyncCaseSource[];
 }
 
 export interface CrmSyncFieldMapEntry {
