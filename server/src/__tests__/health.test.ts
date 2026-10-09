@@ -66,6 +66,8 @@ describe("GET /health", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockReadPersistedDevServerStatus.mockReturnValue(undefined);
+    // Keep these responses independent of whether this host has bwrap.
+    vi.stubEnv("GSAM_AGENT_SECRET_SHIELD", "off");
   });
 
   afterEach(() => {
@@ -167,6 +169,32 @@ describe("GET /health", () => {
       version: serverVersion,
       serverInfo: testServerInfo,
     });
+  });
+
+  it("warns on full health details when local agent runs cannot be sandboxed (GRE-1094)", async () => {
+    const { resetAgentSecretShieldCacheForTests } = await import("@greatstone/adapter-utils/local-process-sandbox");
+    vi.stubEnv("GSAM_AGENT_SECRET_SHIELD", "");
+    vi.stubEnv("GSAM_AGENT_SECRET_SHIELD_BWRAP", path.join(os.tmpdir(), "gsam-missing-bwrap-for-health-test"));
+    resetAgentSecretShieldCacheForTests();
+    try {
+      const res = await request(createApp(createHealthyDb())).get("/health");
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("ok");
+      if (process.platform === "linux") {
+        expect(res.body.agentSandbox).toMatchObject({ state: "unavailable", command: null });
+        expect(res.body.warnings).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            code: "agent_sandbox_unavailable",
+            message: expect.stringContaining("install bubblewrap"),
+          }),
+        ]));
+      } else {
+        expect(res.body.agentSandbox).toMatchObject({ state: "disabled" });
+      }
+    } finally {
+      resetAgentSecretShieldCacheForTests();
+    }
   });
 
   it("returns 503 when the database probe fails", async () => {
