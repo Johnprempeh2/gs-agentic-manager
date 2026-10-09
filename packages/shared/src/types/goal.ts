@@ -1,4 +1,4 @@
-import type { GoalLevel, GoalStatus, IssueStatus } from "../constants.js";
+import type { GoalKind, GoalLevel, GoalStatus, IssueStatus } from "../constants.js";
 
 export interface Goal {
   id: string;
@@ -6,9 +6,13 @@ export interface Goal {
   title: string;
   description: string | null;
   level: GoalLevel;
+  /** Strategy layer; null for a plain goal. */
+  kind: GoalKind | null;
   status: GoalStatus;
   parentId: string | null;
   ownerAgentId: string | null;
+  /** A person owner. A goal has a person or an agent owner, not both. */
+  ownerUserId: string | null;
   /** Calendar date, "YYYY-MM-DD". */
   targetDate: string | null;
   doneWhen: string | null;

@@ -4,6 +4,7 @@ import {
   agents,
   approvals,
   authUsers,
+  companyMemberships,
   goalCheckIns,
   goals,
   heartbeatRuns,
@@ -13,6 +14,12 @@ import {
   issues,
   issueThreadInteractions,
 } from "@greatstone/db";
+import {
+  GOAL_KIND_DEFAULT_LEVEL,
+  STRATEGIC_PLAN_TEMPLATE,
+  goalKindParentError,
+  type GoalKind,
+} from "@greatstone/shared";
 import type {
   CreateGoalCheckIn,
   GoalCheckIn,
@@ -35,6 +42,7 @@ import {
   type GoalDependent,
   type GoalIssueCounts,
 } from "./goal-progress.js";
+import { badRequest, unprocessable } from "../errors.js";
 
 type GoalReader = Pick<Db, "select">;
 
@@ -95,6 +103,7 @@ export async function getCompanyLeadAgentId(db: GoalReader, companyId: string): 
 }
 
 type GoalRow = typeof goals.$inferSelect;
+type GoalInsert = typeof goals.$inferInsert;
 type GoalCheckInRow = typeof goalCheckIns.$inferSelect;
 
 function toCheckIn(row: GoalCheckInRow): GoalCheckIn {
@@ -373,6 +382,74 @@ export function goalService(db: Db) {
     };
   }
 
+  /**
+   * Checks a create or update before it is written: the parent is in the same
+   * company, the kind fits under the parent kind (and, on update, the direct
+   * children still fit under the new kind), and the owner is one person or one
+   * agent of this company. Throws 400/422 with a reason the user can act on.
+   */
+  async function assertValidGoalChange(
+    companyId: string,
+    next: { kind: GoalKind | null; parentId: string | null; ownerAgentId: string | null; ownerUserId: string | null },
+    existing: GoalRow | null,
+  ) {
+    if (next.ownerAgentId && next.ownerUserId) {
+      throw badRequest("A goal has one owner: a person or an agent, not both");
+    }
+    if (next.ownerUserId && next.ownerUserId !== existing?.ownerUserId) {
+      const member = await db
+        .select({ id: companyMemberships.id })
+        .from(companyMemberships)
+        .where(
+          and(
+            eq(companyMemberships.companyId, companyId),
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.principalId, next.ownerUserId),
+            eq(companyMemberships.status, "active"),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!member) throw unprocessable("Owner must be an active member of this company");
+    }
+    if (next.ownerAgentId && next.ownerAgentId !== existing?.ownerAgentId) {
+      const agent = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.id, next.ownerAgentId), eq(agents.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!agent) throw unprocessable("Owner agent must belong to this company");
+    }
+
+    const kindChanged = existing ? next.kind !== (existing.kind ?? null) : true;
+    const parentChanged = existing ? next.parentId !== existing.parentId : true;
+    if (!kindChanged && !parentChanged) return;
+
+    let parentKind: GoalKind | null = null;
+    if (next.parentId) {
+      if (existing && next.parentId === existing.id) throw unprocessable("A goal cannot be its own parent");
+      const parent = await db
+        .select({ kind: goals.kind })
+        .from(goals)
+        .where(and(eq(goals.id, next.parentId), eq(goals.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!parent) throw unprocessable("Parent goal not found in this company");
+      parentKind = (parent.kind as GoalKind | null) ?? null;
+    }
+    const parentError = goalKindParentError(next.kind, next.parentId != null, parentKind);
+    if (parentError) throw unprocessable(parentError);
+
+    if (existing && kindChanged) {
+      const children = await db
+        .select({ title: goals.title, kind: goals.kind })
+        .from(goals)
+        .where(and(eq(goals.parentId, existing.id), eq(goals.companyId, companyId)));
+      for (const child of children) {
+        const childError = goalKindParentError(child.kind as GoalKind | null, true, next.kind);
+        if (childError) throw unprocessable(`Cannot change kind: sub-goal "${child.title}" no longer fits. ${childError}`);
+      }
+    }
+  }
+
   return {
     list: (companyId: string) => db.select().from(goals).where(eq(goals.companyId, companyId)),
 
@@ -424,22 +501,75 @@ export function goalService(db: Db) {
 
     getDefaultCompanyGoal: (companyId: string) => getDefaultCompanyGoal(db, companyId),
 
-    create: async (companyId: string, data: Omit<typeof goals.$inferInsert, "companyId">) => {
-      const ownerAgentId = data.ownerAgentId ?? (await getCompanyLeadAgentId(db, companyId));
+    create: async (companyId: string, data: Omit<GoalInsert, "companyId">) => {
+      const kind = (data.kind as GoalKind | null | undefined) ?? null;
+      const ownerUserId = data.ownerUserId ?? null;
+      await assertValidGoalChange(
+        companyId,
+        { kind, parentId: data.parentId ?? null, ownerAgentId: data.ownerAgentId ?? null, ownerUserId },
+        null,
+      );
+      // No owner sent: the lead agent owns it, as before.
+      const ownerAgentId = ownerUserId
+        ? null
+        : data.ownerAgentId ?? (await getCompanyLeadAgentId(db, companyId));
+      const level = data.level ?? (kind ? GOAL_KIND_DEFAULT_LEVEL[kind] : "task");
       return db
         .insert(goals)
-        .values({ ...data, ownerAgentId, companyId })
+        .values({ ...data, kind, level, ownerAgentId, ownerUserId, companyId })
         .returning()
         .then((rows) => rows[0]);
     },
 
-    update: (id: string, data: Partial<typeof goals.$inferInsert>) =>
-      db
+    update: async (id: string, data: Partial<GoalInsert>) => {
+      const existing = await db.select().from(goals).where(eq(goals.id, id)).then((rows) => rows[0] ?? null);
+      if (!existing) return null;
+      const patch = { ...data };
+      // Setting one kind of owner clears the other.
+      if (patch.ownerUserId && patch.ownerAgentId === undefined) patch.ownerAgentId = null;
+      if (patch.ownerAgentId && patch.ownerUserId === undefined) patch.ownerUserId = null;
+      await assertValidGoalChange(
+        existing.companyId,
+        {
+          kind: (patch.kind !== undefined ? patch.kind : existing.kind) as GoalKind | null,
+          parentId: patch.parentId !== undefined ? patch.parentId : existing.parentId,
+          ownerAgentId: patch.ownerAgentId !== undefined ? patch.ownerAgentId : existing.ownerAgentId,
+          ownerUserId: patch.ownerUserId !== undefined ? patch.ownerUserId : existing.ownerUserId,
+        },
+        existing,
+      );
+      return db
         .update(goals)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(goals.id, id))
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(goals.id, existing.id))
         .returning()
-        .then((rows) => rows[0] ?? null),
+        .then((rows) => rows[0] ?? null);
+    },
+
+    /** Creates the empty strategic plan (STRATEGIC_PLAN_TEMPLATE) in one transaction. */
+    createStrategicPlan: (companyId: string): Promise<GoalRow[]> =>
+      db.transaction(async (tx) => {
+        const idsByKey = new Map<string, string>();
+        const created: GoalRow[] = [];
+        for (const node of STRATEGIC_PLAN_TEMPLATE) {
+          const parentId = node.parentKey ? idsByKey.get(node.parentKey) ?? null : null;
+          const row = await tx
+            .insert(goals)
+            .values({
+              companyId,
+              title: node.title,
+              kind: node.kind,
+              level: GOAL_KIND_DEFAULT_LEVEL[node.kind],
+              status: "planned",
+              parentId,
+            })
+            .returning()
+            .then((rows) => rows[0]);
+          idsByKey.set(node.key, row.id);
+          created.push(row);
+        }
+        return created;
+      }),
 
     remove: (id: string) =>
       db

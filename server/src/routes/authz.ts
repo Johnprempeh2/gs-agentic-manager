@@ -140,6 +140,21 @@ export function hasCompanyOwnerOrAdminRole(req: Request, companyId: string): boo
 }
 
 /**
+ * True when a board actor sits on the company's board for the strategy
+ * cascade: the implicit local board, an instance admin, or an active member
+ * with the owner role. Admins (Exco), operators, viewers and agents are false.
+ * Used for the top strategy layers (vision, values, CSFs), see GRE-1132.
+ */
+export function hasCompanyBoardRole(req: Request, companyId: string): boolean {
+  if (req.actor.type !== "board") return false;
+  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
+  const membership = req.actor.memberships?.find(
+    (item) => item.companyId === companyId && item.status === "active",
+  );
+  return membership?.membershipRole === "owner";
+}
+
+/**
  * Guard for company-wide actions: company access first (so another company's
  * user and viewers keep their existing errors), then a board actor, then the
  * owner or admin role. Operators get 403 "Owner or admin role required".

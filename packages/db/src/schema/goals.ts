@@ -19,9 +19,13 @@ export const goals = pgTable(
     title: text("title").notNull(),
     description: text("description"),
     level: text("level").notNull().default("task"),
+    /** Strategy layer (vision, value, csf, pillar, objective, kpi, initiative). Null for plain goals. */
+    kind: text("kind"),
     status: text("status").notNull().default("planned"),
     parentId: uuid("parent_id").references((): AnyPgColumn => goals.id),
     ownerAgentId: uuid("owner_agent_id").references(() => agents.id),
+    /** A person who owns the goal. A goal has a person or an agent owner, not both. */
+    ownerUserId: text("owner_user_id"),
     targetDate: date("target_date"),
     doneWhen: text("done_when"),
     targetValue: doublePrecision("target_value"),
