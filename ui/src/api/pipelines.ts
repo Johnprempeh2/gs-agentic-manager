@@ -1,4 +1,5 @@
 import type {
+  CrmSyncCaseStatus,
   Issue,
   PipelineAutomationRetryCleanupOptions,
   PipelineAutomationRetryPlan,
@@ -645,6 +646,8 @@ export const pipelinesApi = {
     api.post<PipelineCaseProjectLink>(`/cases/${caseId}/project-links`, { projectId }),
   unlinkCaseProject: (caseId: string, projectId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/project-links/${projectId}`),
+  getCaseCrmSyncStatus: (caseId: string) =>
+    api.get<CrmSyncCaseStatus>(`/cases/${caseId}/crm-sync/status`),
   listCaseContacts: (caseId: string) =>
     api.get<PipelineCaseContact[]>(`/cases/${caseId}/contacts`),
   createCaseContact: (caseId: string, input: PipelineCaseContactInput) =>

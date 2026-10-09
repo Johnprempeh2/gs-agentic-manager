@@ -14,6 +14,7 @@ const mockPipelinesApi = vi.hoisted(() => ({
   createCaseContact: vi.fn(),
   updateCaseContact: vi.fn(),
   deleteCaseContact: vi.fn(),
+  getCaseCrmSyncStatus: vi.fn(),
 }));
 const mockPushToast = vi.hoisted(() => vi.fn());
 
@@ -104,6 +105,7 @@ describe("client case page", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPipelinesApi.getCaseCrmSyncStatus.mockResolvedValue({ caseId: "case-1", sources: [] });
     container = document.createElement("div");
     document.body.appendChild(container);
   });
