@@ -36,6 +36,8 @@ export const MANAGED_FEATURES_OFF = [
   "enablePipelines",
   "enableCases",
   "enableDeepDive",
+  // GRE-1087: Website view; which edition gets it is Harbor and John's call.
+  "enableWebsiteView",
   "enableAgentChat",
   "enableConferenceRoomChat",
   "enableSummaries",

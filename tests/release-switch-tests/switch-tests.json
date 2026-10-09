@@ -76,6 +76,9 @@
     "enableDeepDive": [
       "ui/src/pages/DeepDive.test.tsx"
     ],
+    "enableWebsiteView": [
+      "server/src/__tests__/website-routes.test.ts"
+    ],
     "enableAgentChat": [
       "server/src/__tests__/agent-conversations.test.ts"
     ],

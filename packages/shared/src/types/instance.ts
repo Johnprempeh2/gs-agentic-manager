@@ -124,6 +124,8 @@ export interface InstanceExperimentalSettings {
   enableCases: boolean;
   /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
   enableDeepDive: boolean;
+  /** Greatstone: the read-only Website view (GA4 and Search Console). Off = `403 not_entitled`. */
+  enableWebsiteView: boolean;
   enableAgentChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
