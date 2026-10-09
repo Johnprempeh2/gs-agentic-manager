@@ -21,6 +21,7 @@ import {
   MEMORY_UNAVAILABLE_MESSAGE,
   type ContributeMemory,
   type CreateMemoryScope,
+  type MemoryCallerApp,
   type MemoryConflictLink,
   type MemoryContributeResult,
   type MemoryContributionFlag,
@@ -56,7 +57,7 @@ import {
 import { detectContributionFlags } from "./contribution-flags.js";
 import { classifyEngineError, nextAttemptAt } from "./ingest-outbox.js";
 import { enqueueMemoryIngest, settleDirectMemoryIngest } from "./ingest-outbox-db.js";
-import { flagPossibleConflicts, insertReviewEvent, openConflictLinks } from "./review-store.js";
+import { flagPossibleConflicts, insertReviewEvent, openConflictLinks, type MemoryReviewActor } from "./review-store.js";
 import {
   detectSensitiveContent,
   MEMORY_SENSITIVE_CONTENT_CODE,
@@ -83,6 +84,9 @@ export type MemoryCaller = {
   runId: string | null;
   /** Local board, instance admin, or owner/admin of this company. */
   isBoardAdmin: boolean;
+  /** The app the call came through and its session (GRE-1079). Stored on every audit and review row. */
+  app?: MemoryCallerApp | null;
+  sessionId?: string | null;
 };
 
 export type ScopeRow = typeof memoryScopes.$inferSelect;
@@ -209,7 +213,7 @@ export function memoryGatewayService(
     withEngineTimeout(Promise.resolve().then(work), engineTimeoutMs);
 
   async function logOperation(
-    caller: MemoryCaller,
+    caller: MemoryReviewActor,
     operation: string,
     outcome: "ok" | "denied" | "unavailable",
     extra: { scopeIds?: string[]; recordId?: string | null; detail?: Record<string, unknown> } = {},
@@ -222,6 +226,8 @@ export function memoryGatewayService(
       actorId: caller.actorId,
       agentId: caller.agentId,
       runId: caller.runId,
+      app: caller.app ?? null,
+      sessionId: caller.sessionId ?? null,
       scopeIds: extra.scopeIds ?? [],
       recordId: extra.recordId ?? null,
       detail: extra.detail ?? null,
