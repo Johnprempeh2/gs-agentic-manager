@@ -21,6 +21,10 @@
 //                                     (off-host backups with restic, GRE-666)
 //   scripts/client-instance.sh watch --root <dir> --watch-config <file> [--public-url https://<host>]
 //                                     (host watch: health, backups, disk, memory, AI access, public URL; GRE-666)
+//   scripts/client-instance.sh fleet-register --root <dir> --fleet-hub <url>   (code in CLIENT_INSTANCE_FLEET_CODE)
+//   scripts/client-instance.sh fleet-check-in --root <dir> --watch-config <file>
+//   scripts/client-instance.sh fleet-revoke --root <dir> [--local-only yes]
+//                                     (signed registration and check-in with a Greatstone hub, GRE-1082)
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
 //                                      Stable image: scripts/greatstone-stable-image.sh)
@@ -33,7 +37,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statfsSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { freemem, homedir, tmpdir, userInfo } from "node:os";
 import path from "node:path";
@@ -60,6 +64,21 @@ import {
   type OffsiteBackup,
   type OffsiteConfig,
 } from "./offsite.js";
+import {
+  buildCheckIn,
+  countRunsSince,
+  fleetHubUrl,
+  generateFleetKey,
+  hubAnswer,
+  nextSeq,
+  registrationSubject,
+  RUN_PAGE_LIMIT,
+  signFleetMessage,
+  usageTotals,
+  type FleetKey,
+  type FleetRegistration,
+  type UsageCompany,
+} from "./fleet.js";
 import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, verifyStatusLines, type RestoreCheck, type VerifyRecord } from "./status.js";
 import {
   aiSignals,
@@ -118,6 +137,7 @@ const USAGE = `usage:
          [--ai-route R]                    AI access route, set at every start [${DEFAULT_AI_ROUTE}]
                                            (${AI_ACCESS_ROUTES.join(", ")})
          [--board-approval on|off]         board approval for new agents in the company [on]
+         [--fleet-hub <url>]               register with the hub at the end (code in CLIENT_INSTANCE_FLEET_CODE)
   limits --root <dir> [limit flags]        show or change the install limits (used at the next start)
   ai-route --root <dir> [--ai-route R]     show or change the AI access route (used at the next start)
   start|stop|status|backup --root <dir>
@@ -139,6 +159,13 @@ const USAGE = `usage:
   watch --root <dir> --watch-config <file> [--public-url https://<host>]
                                            host watch (every 5 min): health, backups, restore-check, disk,
                                            memory, AI access, public URL; pings the dead-man check, mails on failure
+  fleet-register --root <dir> --fleet-hub <url>
+                                           register with the Greatstone hub: makes this instance's key pair and
+                                           sends the public key with the one-time code (CLIENT_INSTANCE_FLEET_CODE)
+  fleet-check-in --root <dir> --watch-config <file>
+                                           send one signed check-in now (watch sends one every pass)
+  fleet-revoke --root <dir> [--local-only yes]
+                                           revoke this instance's key at the hub, then delete it
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -1147,7 +1174,188 @@ async function cmdWatch(root: string, state: InstanceState, opts: Record<string,
     if (delivered) alert = { failing: [...failing].sort(), alertedAt: at };
   }
   writeFileSync(stateFile, `${JSON.stringify({ ...alert, lastRun: { at, signals } }, null, 2)}\n`);
+  // GRE-1082: the same pass reports to the hub, when this instance is registered.
+  const checkIn = await sendFleetCheckIn(root, state, config.operatorPassword, signals);
+  if (checkIn) say(checkIn.ok ? "fleet check-in sent" : `WARNING: fleet check-in FAILED: ${checkIn.detail}`);
   if (failing.length) process.exit(1);
+}
+
+// ---------------------------------------------------------------- fleet (GRE-1082)
+
+const FLEET_DIR = "fleet";
+const fleetKeyFile = (root: string) => path.join(root, FLEET_DIR, "key.json");
+const fleetHubFile = (root: string) => path.join(root, FLEET_DIR, "hub.json");
+
+function readFleet(root: string): { registration: FleetRegistration; key: FleetKey } | null {
+  if (!existsSync(fleetHubFile(root))) return null;
+  const keyError = checkPrivateFile(fleetKeyFile(root), "fleet key");
+  if (keyError) die(keyError);
+  return {
+    registration: JSON.parse(readFileSync(fleetHubFile(root), "utf8")) as FleetRegistration,
+    key: JSON.parse(readFileSync(fleetKeyFile(root), "utf8")) as FleetKey,
+  };
+}
+
+function writeFleetRegistration(root: string, registration: FleetRegistration) {
+  writeFileSync(fleetHubFile(root), `${JSON.stringify(registration, null, 2)}\n`);
+}
+
+async function postToHub(hubUrl: string, route: string, body: unknown): Promise<{ status: number; json: unknown }> {
+  const res = await fetch(`${hubUrl}${route}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+    redirect: "manual",
+    signal: AbortSignal.timeout(15_000),
+  });
+  return { status: res.status, json: await res.json().catch(() => null) };
+}
+
+/**
+ * fleet-register: make this instance's own key pair and trade the hub's
+ * one-time code for a registration. The private key stays in <root>/fleet
+ * (mode 600); the code is used once and not written down.
+ */
+async function cmdFleetRegister(root: string, opts: Record<string, string>) {
+  const hubUrl = fleetHubUrl(opts["fleet-hub"] ?? die("--fleet-hub <url> is required"));
+  if (typeof hubUrl !== "string") die(`--fleet-hub: ${hubUrl.error}`);
+  const registrationCode = process.env.CLIENT_INSTANCE_FLEET_CODE?.trim() || die("set CLIENT_INSTANCE_FLEET_CODE to the one-time code from the hub");
+  if (existsSync(fleetHubFile(root))) die("this instance is registered already; run fleet-revoke first");
+  const key = generateFleetKey();
+  const seq = nextSeq(0);
+  const proof = signFleetMessage(key.privateJwk, { act: "register", sub: registrationSubject(registrationCode), seq });
+  const res = await postToHub(hubUrl, "/api/fleet/spoke/register", { registrationCode, publicKey: key.publicKey, proof });
+  const answer = hubAnswer(res.status, res.json);
+  if (!answer.ok) die(`fleet-register FAILED: ${answer.detail}`);
+  const { instanceId, code } = res.json as { instanceId: string; code: string };
+  mkdirSync(path.join(root, FLEET_DIR), { recursive: true, mode: 0o700 });
+  writeFileSync(fleetKeyFile(root), `${JSON.stringify(key)}\n`, { mode: 0o600 });
+  writeFleetRegistration(root, { hubUrl, instanceId, code, registeredAt: new Date().toISOString(), lastSeq: seq });
+  say(`fleet-register OK: hub ${hubUrl}, code ${code}, instance ${instanceId}`);
+  if (code !== instanceCode(root)) say(`WARNING: the hub knows this instance as ${code}, but its folder is ${instanceCode(root)}`);
+}
+
+function folderBytes(dir: string): number {
+  if (!existsSync(dir)) return 0;
+  let total = 0;
+  for (const name of readdirSync(dir)) {
+    const file = path.join(dir, name);
+    const info = lstatSync(file);
+    total += info.isDirectory() ? folderBytes(file) : info.isFile() ? info.size : 0;
+  }
+  return total;
+}
+
+/** Usage totals over every company, read as the operator log-in. Throws (never exits) when a read fails. */
+async function fleetUsage(root: string, state: InstanceState, operatorPassword: string) {
+  const operator = new Session(baseUrl(state));
+  const read = async <T,>(method: string, route: string, body?: unknown): Promise<T> => {
+    const res = await operator.request(method, route, body);
+    if (res.status !== 200) throw new Error(`${method} ${route.split("?")[0]} returned ${res.status}`);
+    return res.json as T;
+  };
+  await read("POST", "/api/auth/sign-in/email", { email: OPERATOR_EMAIL, password: operatorPassword });
+  const companies = await read<Array<{ id: string }>>("GET", "/api/companies");
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows: UsageCompany[] = [];
+  for (const company of companies) {
+    const runsPage = (since: Date, before: Date | null) =>
+      read<Array<{ id: string; createdAt: string }>>(
+        "GET",
+        `/api/companies/${company.id}/heartbeat-runs?limit=${RUN_PAGE_LIMIT}&summary=true&since=${encodeURIComponent(since.toISOString())}${before ? `&before=${encodeURIComponent(before.toISOString())}` : ""}`,
+      );
+    rows.push({
+      agents: await read("GET", `/api/companies/${company.id}/agents`),
+      runsLast24h: await countRunsSince(runsPage, dayAgo),
+      ...(await read<{ spendCents: number; budgetCents: number }>("GET", `/api/companies/${company.id}/costs/summary?from=${encodeURIComponent(monthStart.toISOString())}`)),
+    });
+  }
+  return usageTotals(rows, folderBytes(path.join(instanceDir(root), "data", "storage")));
+}
+
+/**
+ * One signed check-in: host facts, the last watch signals (key and pass/fail
+ * only) and usage totals. Returns the outcome; never exits, so a hub that is
+ * down does not stop the watch.
+ */
+async function sendFleetCheckIn(root: string, state: InstanceState, operatorPassword: string, signals: WatchSignal[]): Promise<{ ok: boolean; detail: string } | null> {
+  const fleet = readFleet(root);
+  if (!fleet) return null;
+  const { registration, key } = fleet;
+  let outcome: { ok: boolean; detail: string };
+  try {
+    const body = readPid(root) ? await health(state) : null;
+    const appUp = body?.status === "ok";
+    const version = typeof body?.version === "string" && /^[0-9A-Za-z.+-]{1,40}$/.test(body.version) ? body.version : null;
+    const newest = newestBackup(backupDir(root));
+    const checkIn = buildCheckIn({
+      edition: state.edition,
+      appUp,
+      newestBackupAt: newest ? new Date(newest.mtimeMs).toISOString() : null,
+      lastRestoreCheck: state.lastRestoreCheck ?? null,
+      lastOffsiteBackup: state.lastOffsiteBackup ?? null,
+      releaseTag: state.release?.tag ?? null,
+      appVersion: version,
+      lastUpgrade: state.lastUpgrade ?? null,
+      usage: appUp ? await fleetUsage(root, state, operatorPassword) : usageTotals([], 0),
+      signals,
+    });
+    const seq = nextSeq(registration.lastSeq);
+    registration.lastSeq = seq;
+    // Saved before sending: a seq is never used twice, even when the send fails.
+    writeFleetRegistration(root, registration);
+    const message = signFleetMessage(key.privateJwk, { act: "check-in", sub: registration.instanceId, seq, checkIn });
+    const res = await postToHub(registration.hubUrl, "/api/fleet/spoke/check-in", { message });
+    outcome = hubAnswer(res.status, res.json);
+  } catch (err) {
+    outcome = { ok: false, detail: `check-in not sent: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  writeFleetRegistration(root, { ...registration, lastCheckIn: { at: new Date().toISOString(), ...outcome } });
+  return outcome;
+}
+
+async function cmdFleetCheckIn(root: string, state: InstanceState, opts: Record<string, string>) {
+  if (!existsSync(fleetHubFile(root))) die("this instance is not registered with a hub; run fleet-register");
+  const config = loadWatchConfig(opts["watch-config"], undefined);
+  const stateFile = path.join(root, WATCH_STATE_FILE);
+  const signals = existsSync(stateFile) ? ((JSON.parse(readFileSync(stateFile, "utf8")) as { lastRun?: { signals?: WatchSignal[] } }).lastRun?.signals ?? []) : [];
+  const outcome = (await sendFleetCheckIn(root, state, config.operatorPassword, signals))!;
+  say(`fleet-check-in ${outcome.ok ? "OK" : "FAILED"}: ${outcome.detail}`);
+  if (!outcome.ok) process.exit(1);
+}
+
+/**
+ * fleet-revoke: tell the hub to refuse this key from now on, then delete it.
+ * With --local-only yes (the hub revoked it already, or is gone), only delete.
+ */
+async function cmdFleetRevoke(root: string, opts: Record<string, string>) {
+  const fleet = readFleet(root);
+  if (!fleet) die("this instance is not registered with a hub");
+  const { registration, key } = fleet;
+  if (opts["local-only"] !== "yes") {
+    const seq = nextSeq(registration.lastSeq);
+    writeFleetRegistration(root, { ...registration, lastSeq: seq });
+    const message = signFleetMessage(key.privateJwk, { act: "revoke", sub: registration.instanceId, seq });
+    const res = await postToHub(registration.hubUrl, "/api/fleet/spoke/revoke", { message });
+    const answer = hubAnswer(res.status, res.json);
+    const revokedAlready = (res.json as { error?: unknown } | null)?.error === "fleet_key_revoked";
+    if (!answer.ok && !revokedAlready) die(`fleet-revoke FAILED: ${answer.detail} (the key is kept; add --local-only yes to delete it anyway)`);
+  }
+  rmSync(path.join(root, FLEET_DIR), { recursive: true, force: true });
+  say(`fleet-revoke OK: instance ${registration.instanceId} at ${registration.hubUrl}; the key is deleted`);
+}
+
+function fleetStatusLines(root: string): string[] {
+  if (!existsSync(fleetHubFile(root))) return ["fleet: not registered with a hub"];
+  const registration = JSON.parse(readFileSync(fleetHubFile(root), "utf8")) as FleetRegistration;
+  const last = registration.lastCheckIn;
+  return [
+    `fleet: ${registration.code} at ${registration.hubUrl}, registered ${registration.registeredAt}`,
+    !last ? "WARNING: no fleet check-in sent yet" : last.ok ? `last fleet check-in OK at ${last.at}` : `WARNING: last fleet check-in FAILED at ${last.at}: ${last.detail}`,
+  ];
 }
 
 // ---------------------------------------------------------------- install limits
@@ -1221,6 +1429,11 @@ async function cmdCreate(opts: Record<string, string>) {
     die("managed-plus needs --passed-features: the beta features whose Beacon verdict (GRE-81) has passed (\"\" for none)");
   }
   if (existsSync(root) && readdirSync(root).length > 0) die(`${root} is not empty; pick a new folder for a new instance`);
+  if (opts["fleet-hub"] !== undefined) {
+    const hub = fleetHubUrl(opts["fleet-hub"]);
+    if (typeof hub !== "string") die(`--fleet-hub: ${hub.error}`);
+    if (!process.env.CLIENT_INSTANCE_FLEET_CODE?.trim()) die("--fleet-hub needs CLIENT_INSTANCE_FLEET_CODE, the one-time code from the hub");
+  }
 
   const { port, dbPort } = await choosePorts({
     port: opts.port ? Number(opts.port) : undefined,
@@ -1305,6 +1518,7 @@ async function cmdCreate(opts: Record<string, string>) {
     ].join("\n"),
   );
   if (!ok) die("some checks failed; the instance is running so you can look, stop it with: stop --root");
+  if (opts["fleet-hub"]) await cmdFleetRegister(root, opts);
 }
 
 async function cmdVerify(root: string, state: InstanceState) {
@@ -1481,6 +1695,7 @@ async function main() {
         ...offsiteStatusLines(state.lastOffsiteBackup),
         ...releaseStatusLines(state),
         ...verifyStatusLines(state),
+        ...fleetStatusLines(root),
       ]) {
         say(line);
       }
@@ -1502,6 +1717,12 @@ async function main() {
       return cmdWatch(root, state, opts);
     case "ai-route":
       return cmdAiRoute(root, state, opts);
+    case "fleet-register":
+      return cmdFleetRegister(root, opts);
+    case "fleet-check-in":
+      return cmdFleetCheckIn(root, state, opts);
+    case "fleet-revoke":
+      return cmdFleetRevoke(root, opts);
     default:
       die(USAGE);
   }

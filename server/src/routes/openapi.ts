@@ -1321,6 +1321,10 @@ const RUNTIME_TOOLS_OPERATIONS = new Set([
 
 const PUBLIC_OPERATIONS = new Set([
   "GET /api/agent-avatars/{version}/{palette}/{file}",
+  // Fleet spokes (GRE-1082): no session; the signed message is the authorization.
+  "POST /api/fleet/spoke/register",
+  "POST /api/fleet/spoke/check-in",
+  "POST /api/fleet/spoke/revoke",
   "GET /api/health",
   "GET /api/openapi.json",
   "GET /api/board-claim/{token}",
@@ -1586,6 +1590,11 @@ const BOARD_ONLY_OPERATIONS = new Set([
 ]);
 
 const INSTANCE_ADMIN_OPERATIONS = new Set([
+  "GET /api/fleet/instances",
+  "POST /api/fleet/instances",
+  "POST /api/fleet/instances/{id}/registration-code",
+  "POST /api/fleet/instances/{id}/revoke",
+  "GET /api/fleet/instances/{id}/check-ins",
   "POST /api/companies",
   "POST /api/plugins/install",
   "POST /api/instance/database-backups",
@@ -1595,6 +1604,9 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
 ]);
 
 const CREATED_OPERATIONS = new Set([
+  "POST /api/fleet/instances",
+  "POST /api/fleet/instances/{id}/registration-code",
+  "POST /api/fleet/spoke/register",
   "POST /api/adapters/install",
   "POST /api/chat-endpoints/{endpointId}/setup-secret",
   "POST /api/companies/{companyId}/agent-hires",
@@ -10098,6 +10110,91 @@ registry.registerPath({
   tags: ["instance"],
   summary: "Trigger a database backup",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+// ─── Fleet hub (GRE-1082) ──────────────────────────────────────────────────────
+// Every fleet route answers 404 unless the server runs with GSAM_FLEET_HUB=true.
+
+const fleetIdParams = z.object({ id: z.string().uuid() });
+const fleetSignedBody = z.object({ message: z.string().describe("Compact EdDSA JWS signed by the spoke's own key") });
+
+registry.registerPath({
+  method: "get",
+  path: "/api/fleet/instances",
+  tags: ["fleet"],
+  summary: "List client instances the hub oversees",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/instances",
+  tags: ["fleet"],
+  summary: "Add a client instance and make its one-time registration code",
+  request: { body: { content: { "application/json": { schema: z.object({ code: z.string() }) } } } },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/instances/{id}/registration-code",
+  tags: ["fleet"],
+  summary: "Make a new one-time registration code for a pending or revoked instance",
+  request: { params: fleetIdParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/instances/{id}/revoke",
+  tags: ["fleet"],
+  summary: "Revoke an instance's key from the hub",
+  request: { params: fleetIdParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/fleet/instances/{id}/check-ins",
+  tags: ["fleet"],
+  summary: "Recent check-ins of one instance",
+  request: { params: fleetIdParams, query: z.object({ limit: z.coerce.number().int().optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/spoke/register",
+  tags: ["fleet"],
+  summary: "Spoke: trade the one-time code and a signed proof for a registration",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ registrationCode: z.string(), publicKey: z.object({ kty: z.string(), crv: z.string(), x: z.string() }), proof: z.string() }),
+        },
+      },
+    },
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/spoke/check-in",
+  tags: ["fleet"],
+  summary: "Spoke: one signed check-in (fixed schema, no business data)",
+  request: { body: { content: { "application/json": { schema: fleetSignedBody } } } },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/spoke/revoke",
+  tags: ["fleet"],
+  summary: "Spoke: revoke its own key",
+  request: { body: { content: { "application/json": { schema: fleetSignedBody } } } },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict },
 });
 
 // ─── LLM text endpoints ───────────────────────────────────────────────────────

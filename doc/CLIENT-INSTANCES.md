@@ -361,6 +361,73 @@ RESTIC=/path/to/restic scripts/client-instance/offsite-watch.sandbox-test.sh <em
 node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/offsite.test.ts scripts/client-instance/watch.test.ts
 ```
 
+## Report to the Greatstone hub (GRE-1082)
+
+A client instance can report to a Greatstone hub: a GS Agentic Manager that
+oversees all client instances. The channel is in the app. Each message is
+signed with the instance's own key; the network (Tailscale or other) is not
+chosen yet and is never the only lock. The hub cannot send commands.
+
+**On the hub.** Start the hub with `GSAM_FLEET_HUB=true`. Without it, every
+fleet route answers 404 (a client instance is never a hub). An instance
+admin of the hub makes a one-time code for an instance code:
+
+```sh
+curl -X POST <hub>/api/fleet/instances -d '{"code":"c001"}'   # as a hub instance admin
+```
+
+The answer holds `registrationCode`, shown once and good for 24 h. The hub
+keeps only its hash. Give it to the person who runs `create`; never put it
+in an issue or a log.
+
+**On the client host.** Register at create, or later:
+
+```sh
+CLIENT_INSTANCE_FLEET_CODE=<code> scripts/client-instance.sh create --root <root> --edition managed --fleet-hub https://<hub>
+CLIENT_INSTANCE_FLEET_CODE=<code> scripts/client-instance.sh fleet-register --root <root> --fleet-hub https://<hub>
+```
+
+The instance makes its own Ed25519 key pair in `<root>/fleet/key.json` (mode
+600) and sends only the public key. The hub URL must be https (http only on
+loopback, for sandbox tests). The key is not in the backups: after a restore
+on a new host, revoke and register again.
+
+**Check-in.** Each `watch` pass (every 5 minutes) sends one signed check-in
+when the instance is registered. `fleet-check-in --root <root> --watch-config
+<file>` sends one now. A failed check-in prints a `WARNING` and does not
+change the watch exit code; `status` shows the last one. The check-in has a
+fixed schema (`packages/shared/src/fleet.ts`): edition; health (app up,
+backup age, last restore-check and off-host backup); version (release tag,
+app version, last upgrade); usage totals over the whole instance (companies,
+active agents, runs in 24 h, spend and budget this month, storage bytes); and
+one alert per watch check as key and pass/fail only. Per-company signals fold
+into one key for the whole instance (it fails when any company fails), so no
+company id leaves the host; the hub refuses a key with a `:` suffix. The
+signal detail text stays on the host. Runs in 24 h are counted page by page,
+so the count is not capped at 1000. No names, emails, titles or client records. A new field needs a
+code change and review; the hub refuses any field it does not know.
+
+**Revoke.** From the hub: `POST <hub>/api/fleet/instances/<id>/revoke`. From
+the client host: `fleet-revoke --root <root>` (signed; then the key is
+deleted). After a hub revoke the next check-in fails with "the hub revoked
+this instance"; run `fleet-revoke --root <root> --local-only yes` to delete
+the old key, ask the hub for a new code
+(`POST <hub>/api/fleet/instances/<id>/registration-code`), and register again.
+
+The hub refuses a bad signature, a revoked key, a message older than 5
+minutes, and any message it has seen (each carries a growing `seq`). One
+instance's key cannot write as another, and no route lets an instance read
+anything back. Read check-ins on the hub (instance admins only):
+`GET <hub>/api/fleet/instances` and `GET <hub>/api/fleet/instances/<id>/check-ins`.
+The hub keeps 7 days of check-ins.
+
+Tests:
+
+```sh
+node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/fleet.test.ts
+(cd server && npx vitest run src/__tests__/fleet-routes.test.ts)
+```
+
 ## Agree the update time with the client
 
 Clients run only `stable-*` tags (`stable-YYYY-MM-DD.N`), made by John with

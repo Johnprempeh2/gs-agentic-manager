@@ -41,6 +41,7 @@ import {
 } from "./services/company-import-transfers.js";
 import { companyTransferRunService } from "./services/company-transfer-runs.js";
 import { healthRoutes } from "./routes/health.js";
+import { fleetHubRoutes, fleetSpokeRoutes } from "./routes/fleet.js";
 import {
   connectivityProbeUrlsFromEnv,
   connectivityWatcher,
@@ -637,6 +638,8 @@ export async function createApp(
   // before GS Agentic Manager persists or acts on any event.
   const emailChannels = emailChannelService(db, { heartbeat: connectionIntentHeartbeat, storage: opts.storageService, publicBaseUrl: opts.chatWebhookPublicBaseUrl ?? opts.authPublicBaseUrl });
   app.use(emailWebhookRoutes(emailChannels));
+  // Fleet spokes sign each message with their own key (GRE-1082); no session.
+  app.use(fleetSpokeRoutes(db));
   app.use(chatWebhookRoutes(chatChannels));
   // The instance validates single-use registration state and its trusted
   // current origin. This exact GET is the only public setup return.
@@ -698,6 +701,7 @@ export async function createApp(
   api.use(openApiRoutes());
   api.use("/cloud", cloudRoutes());
   api.use(releasesFloorRoutes());
+  api.use(fleetHubRoutes(db));
   api.use("/companies", companyRoutes(db, opts.storageService));
   api.use(llmRoutes(db));
   api.use(folderRoutes(db));

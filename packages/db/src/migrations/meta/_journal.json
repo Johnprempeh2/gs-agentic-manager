@@ -2122,6 +2122,13 @@
       "when": 1791575935493,
       "tag": "0304_pipeline_field_definitions",
       "breakpoints": true
+    },
+    {
+      "idx": 305,
+      "version": "7",
+      "when": 1791577647525,
+      "tag": "0305_fleet_instances",
+      "breakpoints": true
     }
   ]
 }
