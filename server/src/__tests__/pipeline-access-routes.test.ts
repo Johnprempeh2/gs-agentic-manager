@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   activityLog,
   agents,
@@ -21,6 +21,7 @@ import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } fro
 import { errorHandler } from "../middleware/index.js";
 import { agentRoutes } from "../routes/agents.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -42,6 +43,11 @@ describeEmbeddedPostgres("pipeline access levels (GRE-1072)", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipeline-access-");
     db = createDb(tempDb.connectionString);
   }, 60_000);
+
+  // GRE-1077: the pipelines API is gated on enablePipelines.
+  beforeEach(async () => {
+    await instanceSettingsService(db).updateExperimental({ enablePipelines: true });
+  });
 
   afterEach(async () => {
     await db.delete(pipelineCaseEvents);
