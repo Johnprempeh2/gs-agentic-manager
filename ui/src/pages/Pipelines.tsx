@@ -126,6 +126,7 @@ import { getPipelineStageColumnTone, pipelineStageAutomationSettingsHref } from 
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { useProjectOrder } from "../hooks/useProjectOrder";
+import { usePipelineAdminRights } from "../hooks/usePipelineAccess";
 import { shouldDisableRerunForPermission, type LivenessRetryKind } from "../lib/pipeline-liveness";
 import { cn, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault } from "../lib/status-colors";
@@ -914,6 +915,7 @@ function PipelinesIndex() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<PipelineViewMode>("nested");
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
+  const { canCreatePipelines, rightsError } = usePipelineAdminRights(selectedCompanyId);
 
   useEffect(() => setBreadcrumbs([{ label: "Pipelines" }]), [setBreadcrumbs]);
 
@@ -968,22 +970,29 @@ function PipelinesIndex() {
             {formatNumber(pipelines.length)} pipeline{pipelines.length === 1 ? "" : "s"}. Connected ones are grouped from upstream work into downstream work.
           </p>
         </div>
-        <Button onClick={() => setNewPipelineOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          New pipeline
-        </Button>
+        {canCreatePipelines ? (
+          <Button onClick={() => setNewPipelineOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            New pipeline
+          </Button>
+        ) : null}
       </div>
 
       {pipelinesQuery.error ? (
         <p className="mb-4 text-sm text-destructive">Could not load pipelines.</p>
+      ) : null}
+      {rightsError ? (
+        <p className="mb-4 text-sm text-destructive">
+          Could not check your pipeline rights, so the controls to create pipelines are hidden. Reload the page to try again.
+        </p>
       ) : null}
 
       {pipelines.length === 0 && !pipelinesQuery.error ? (
         <EmptyState
           icon={Hexagon}
           message="No pipelines yet."
-          action="New pipeline"
-          onAction={() => setNewPipelineOpen(true)}
+          action={canCreatePipelines ? "New pipeline" : undefined}
+          onAction={canCreatePipelines ? () => setNewPipelineOpen(true) : undefined}
         />
       ) : (
         <PipelinesIndexTable

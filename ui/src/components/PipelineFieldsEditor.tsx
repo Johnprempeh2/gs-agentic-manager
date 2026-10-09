@@ -219,7 +219,7 @@ function FieldRow({
   field: PipelineFieldDefinition;
   busy: boolean;
   onEdit?: () => void;
-  onToggleArchived: () => void;
+  onToggleArchived?: () => void;
 }) {
   const archived = field.archivedAt !== null;
   return (
@@ -246,22 +246,27 @@ function FieldRow({
           <Pencil className="h-3.5 w-3.5" />
         </button>
       ) : null}
-      <button
-        type="button"
-        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-        aria-label={archived ? `Restore ${field.label}` : `Archive ${field.label}`}
-        title={archived ? "Restore" : "Archive. Values on items are kept."}
-        disabled={busy}
-        onClick={onToggleArchived}
-      >
-        {archived ? <RotateCcw className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
-      </button>
+      {onToggleArchived ? (
+        <button
+          type="button"
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          aria-label={archived ? `Restore ${field.label}` : `Archive ${field.label}`}
+          title={archived ? "Restore" : "Archive. Values on items are kept."}
+          disabled={busy}
+          onClick={onToggleArchived}
+        >
+          {archived ? <RotateCcw className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+        </button>
+      ) : null}
     </li>
   );
 }
 
-/** Typed fields every item in a pipeline carries (GRE-1075). */
-export function PipelineFieldsEditor({ pipelineId }: { pipelineId: string }) {
+/**
+ * Typed fields every item in a pipeline carries (GRE-1075). Without
+ * `canEdit` the list is read-only; the server still refuses writes.
+ */
+export function PipelineFieldsEditor({ pipelineId, canEdit }: { pipelineId: string; canEdit: boolean }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<PipelineFieldDefinition | "new" | null>(null);
   const fieldsQuery = useQuery({
@@ -310,7 +315,7 @@ export function PipelineFieldsEditor({ pipelineId }: { pipelineId: string }) {
             Details every item in this pipeline carries. Values are checked when an item is added or edited.
           </p>
         </div>
-        {editing === null ? (
+        {canEdit && editing === null ? (
           <Button type="button" size="sm" variant="outline" onClick={() => { saveField.reset(); setEditing("new"); }}>
             <ListPlus className="h-4 w-4" />
             Add field
@@ -318,7 +323,7 @@ export function PipelineFieldsEditor({ pipelineId }: { pipelineId: string }) {
         ) : null}
       </div>
 
-      {editing !== null ? (
+      {canEdit && editing !== null ? (
         <FieldForm
           key={editing === "new" ? "new" : editing.id}
           field={editing === "new" ? null : editing}
@@ -334,7 +339,9 @@ export function PipelineFieldsEditor({ pipelineId }: { pipelineId: string }) {
       ) : fieldsQuery.error ? (
         <p className="text-sm text-destructive">Could not load fields: {fieldsQuery.error.message}</p>
       ) : active.length === 0 && editing === null ? (
-        <p className="text-sm text-muted-foreground">No fields yet. Add one to give every item the same details.</p>
+        <p className="text-sm text-muted-foreground">
+          {canEdit ? "No fields yet. Add one to give every item the same details." : "No fields yet."}
+        </p>
       ) : (
         <ul className="divide-y divide-border">
           {active.map((field) => (
@@ -342,8 +349,8 @@ export function PipelineFieldsEditor({ pipelineId }: { pipelineId: string }) {
               key={field.id}
               field={field}
               busy={busy}
-              onEdit={() => { saveField.reset(); setEditing(field); }}
-              onToggleArchived={() => toggleArchived.mutate(field)}
+              onEdit={canEdit ? () => { saveField.reset(); setEditing(field); } : undefined}
+              onToggleArchived={canEdit ? () => toggleArchived.mutate(field) : undefined}
             />
           ))}
         </ul>
@@ -355,7 +362,12 @@ export function PipelineFieldsEditor({ pipelineId }: { pipelineId: string }) {
           <summary className="cursor-pointer text-muted-foreground">Archived ({archived.length})</summary>
           <ul className="divide-y divide-border">
             {archived.map((field) => (
-              <FieldRow key={field.id} field={field} busy={busy} onToggleArchived={() => toggleArchived.mutate(field)} />
+              <FieldRow
+                key={field.id}
+                field={field}
+                busy={busy}
+                onToggleArchived={canEdit ? () => toggleArchived.mutate(field) : undefined}
+              />
             ))}
           </ul>
         </details>
