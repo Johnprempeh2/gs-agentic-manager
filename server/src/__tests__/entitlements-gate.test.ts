@@ -1,4 +1,4 @@
-import express, { type Router } from "express";
+import express, { Router } from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { INSTANCE_FEATURE_CATALOG, INSTANCE_FEATURE_KEYS, type InstanceFeatureKey } from "@greatstone/shared";
@@ -6,6 +6,8 @@ import { INSTANCE_FEATURE_CATALOG, INSTANCE_FEATURE_KEYS, type InstanceFeatureKe
 // GRE-1077: every managed switch has a server gate entry, and every `api`
 // gate answers 403 not_entitled on each probe with the switch off. The real
 // routers are mounted over a fake db; the gate must refuse before any query.
+// GRE-1090: each probe runs with only its own switch off, so a gate layered
+// on another (Deep Dive on Cases) proves its own check.
 
 const mockGetExperimental = vi.hoisted(() => vi.fn());
 
@@ -31,9 +33,27 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
   enableBuiltInAgents: async () => (await import("../routes/built-in-agents.js")).builtInAgentRoutes(fakeDb),
   enableConferenceRoomChat: async () =>
     (await import("../routes/board-chat.js")).boardChatRoutes(fakeDb, { deploymentMode: "local_trusted" }),
+  enableChatConnectors: async () =>
+    Router()
+      .use((await import("../routes/chat-channels.js")).chatChannelRoutes(fakeDb, { service: {} as never }))
+      .use((await import("../routes/slack-tools.js")).slackToolRoutes(fakeDb)),
+  enableAgentChat: issueRouter,
+  enableMemoryConnectors: async () => (await import("../routes/tool-access.js")).toolAccessRoutes(fakeDb, {}),
+  enableExternalObjects: async () =>
+    Router()
+      .use(await issueRouter())
+      .use((await import("../routes/projects.js")).projectRoutes(fakeDb)),
+  enableIssuePlanDecompositions: issueRouter,
+  enableDeepDive: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
+  enableEnvironments: async () => (await import("../routes/environments.js")).environmentRoutes(fakeDb),
 };
 
+async function issueRouter() {
+  return (await import("../routes/issues.js")).issueRoutes(fakeDb, {} as never);
+}
+
 const allOff = Object.fromEntries(INSTANCE_FEATURE_KEYS.map((key) => [key, false]));
+const onlyOff = (feature: InstanceFeatureKey) => ({ ...Object.fromEntries(INSTANCE_FEATURE_KEYS.map((key) => [key, true])), [feature]: false });
 
 async function appFor(feature: InstanceFeatureKey) {
   const mount = GATED_ROUTERS[feature];
@@ -90,8 +110,9 @@ describe("managed feature server gates with the switch off", () => {
   for (const { feature, gate } of apiGates) {
     for (const probe of gate.probes) {
       it(`${feature}: ${probe.method.toUpperCase()} ${probe.path} → 403 not_entitled`, async () => {
+        mockGetExperimental.mockResolvedValue(onlyOff(feature));
         const app = await appFor(feature);
-        const res = await request(app)[probe.method](`/api${probe.path}`).send({});
+        const res = await request(app)[probe.method](`/api${probe.path}`).send(probe.body ?? {});
         expect(res.status).toBe(403);
         expect(res.body).toMatchObject({ code: NOT_ENTITLED_ERROR_CODE, feature });
       });
@@ -102,6 +123,26 @@ describe("managed feature server gates with the switch off", () => {
     mockGetExperimental.mockResolvedValue({ ...allOff, enablePipelines: true });
     const app = await appFor("enablePipelines");
     const res = await request(app).get(`/api/pipelines/00000000-0000-4000-8000-000000000001`);
+    expect(res.body.code).not.toBe(NOT_ENTITLED_ERROR_CODE);
+  });
+});
+
+describe("managed feature reads that stay open with the switch off (GRE-1090)", () => {
+  beforeEach(() => {
+    mockGetExperimental.mockReset();
+  });
+
+  it("keeps environment reads open for agent setup and onboarding", async () => {
+    mockGetExperimental.mockResolvedValue(onlyOff("enableEnvironments"));
+    const app = await appFor("enableEnvironments");
+    const res = await request(app).get(`/api/environments/00000000-0000-4000-8000-000000000001`);
+    expect(res.body.code).not.toBe(NOT_ENTITLED_ERROR_CODE);
+  });
+
+  it("lets ordinary case types through with Deep Dive off", async () => {
+    mockGetExperimental.mockResolvedValue(onlyOff("enableDeepDive"));
+    const app = await appFor("enableDeepDive");
+    const res = await request(app).get(`/api/companies/00000000-0000-4000-8000-000000000001/cases?types=lead`);
     expect(res.body.code).not.toBe(NOT_ENTITLED_ERROR_CODE);
   });
 });

@@ -6,7 +6,7 @@ import { slackExplicitPublicationDuplicate } from "./connectors/slack-publicatio
 import { rememberVerifiedSlackSearchEvent, slackSearchActionToken } from "./connectors/slack-search-context.js";
 import { slackAuthorizationRevision } from "./connectors/slack-revision.js";
 import { slackPublicationAllowed } from "./connectors/slack-access.js";
-import { instanceSettingsService } from "./instance-settings.js";
+import { assertEntitled } from "./entitlements.js";
 import { registerSlackTaskAuthority, slackRunOrigin } from "./connectors/slack-authority.js";
 import { captureRunIdentity } from "./run-identity.js";
 import { buildChatCommunicationGuidance } from "./chat-communication-guidance.js";
@@ -38309,8 +38309,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   }
 
   const unregisterSlackTaskAuthority = registerSlackTaskAuthority(db, async (binding) => {
-    if (!(await instanceSettingsService(db).getExperimental()).enableChatConnectors)
-      throw forbidden("Chat connectors are disabled");
+    await assertEntitled(db, "enableChatConnectors");
     const identity = await slackRunOrigin(db, binding);
     const run = identity.run;
     if ((run.contextSnapshot?.issueId ?? run.contextSnapshot?.taskId) !== binding.issueId || !run.responsibleUserId)
