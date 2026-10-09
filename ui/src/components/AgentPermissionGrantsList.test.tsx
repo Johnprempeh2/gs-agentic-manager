@@ -8,6 +8,9 @@ import { AgentPermissionGrantsList } from "./AgentPermissionGrantsList";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+// Pipeline keys have their own control (GRE-1072), so the read-only list skips them.
+const READ_ONLY_KEYS = PERMISSION_KEYS.filter((key) => !key.startsWith("pipelines:"));
+
 describe("AgentPermissionGrantsList", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -35,7 +38,7 @@ describe("AgentPermissionGrantsList", () => {
     });
 
     const rows = container.querySelectorAll("[data-permission-key]");
-    expect(rows).toHaveLength(PERMISSION_KEYS.length);
+    expect(rows).toHaveLength(READ_ONLY_KEYS.length);
 
     expect(rowFor("inbox:manage")?.dataset.granted).toBe("true");
     expect(rowFor("inbox:manage")?.textContent).toContain("granted");
@@ -52,8 +55,17 @@ describe("AgentPermissionGrantsList", () => {
     });
 
     const rows = Array.from(container.querySelectorAll<HTMLElement>("[data-permission-key]"));
-    expect(rows).toHaveLength(PERMISSION_KEYS.length);
+    expect(rows).toHaveLength(READ_ONLY_KEYS.length);
     expect(rows.every((row) => row.dataset.granted === "false")).toBe(true);
+  });
+
+  it("leaves pipeline keys to the pipeline access control", () => {
+    act(() => {
+      root.render(<AgentPermissionGrantsList grants={[{ permissionKey: "pipelines:write" }]} />);
+    });
+
+    expect(rowFor("pipelines:write")).toBeNull();
+    expect(rowFor("pipelines:cases")).toBeNull();
   });
 
   it("has no edit controls", () => {

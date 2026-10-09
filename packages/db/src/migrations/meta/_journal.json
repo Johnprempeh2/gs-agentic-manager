@@ -2119,8 +2119,22 @@
     {
       "idx": 304,
       "version": "7",
-      "when": 1791576581278,
-      "tag": "0304_goal_kind_owner_user",
+      "when": 1791575935493,
+      "tag": "0304_pipeline_field_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 305,
+      "version": "7",
+      "when": 1791577425026,
+      "tag": "0305_crm_sync_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1791578788584,
+      "tag": "0306_goal_kind_owner_user",
       "breakpoints": true
     }
   ]

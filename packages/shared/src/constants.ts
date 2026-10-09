@@ -1061,6 +1061,9 @@ export const PERMISSION_KEYS = [
   "tasks:assign",
   "tasks:assign_scope",
   "tasks:manage_active_checkouts",
+  // Pipeline access levels (GRE-1072). Scope: { pipelineIds: string[] }; null = all pipelines.
+  // pipelines:cases = Work cases; pipelines:write = Administer (also covers Work cases).
+  "pipelines:cases",
   "pipelines:write",
   "joins:approve",
   // Organization memory (GRE-672). Grant scope: { memoryScopeIds: string[] }; null = org and project scopes, never client or restricted.
