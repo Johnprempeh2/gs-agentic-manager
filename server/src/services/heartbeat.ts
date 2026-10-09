@@ -1,3 +1,4 @@
+import { resolveHeartbeatGitHubAccess } from "./heartbeat-github-access.js";
 import { applyWorkspaceRestoreFailure } from "@greatstone/adapter-utils/workspace-restore-result";
 import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { externalConversationStateSql, nonIdleSlackIssueCondition } from "./slack-conversation-state.js";
@@ -184,8 +185,6 @@ import { incrementToolRuntimeMetricCounter } from "./tool-runtime-metrics.js";
 import { logger } from "../middleware/logger.js";
 import {
   createGitRemoteAuthProvider,
-  resolveManagedGitHubIdentitySelection,
-  githubIdentityScopeForRun,
   describeGitAuthFailure,
   filterResolvedGitHubConnectionsForRun,
   scrubGitCredentialText,
@@ -24177,20 +24176,14 @@ export function heartbeatService(
         !acceptedPlanWakeRoutingDecision?.suppressAcceptedContinuation
           ? [...runScopedMentionedSkillKeys, ACCEPTED_PLAN_CONVERSION_SKILL_KEY]
           : runScopedMentionedSkillKeys;
-      const githubSelection = await resolveManagedGitHubIdentitySelection(
-        db,
-        agent.companyId,
-        {
-          agentId: agent.id,
-          ...githubIdentityScopeForRun({ cause: identityContext.cause, responsibleUserId }),
-        },
-      );
-      const useHostGitHub =
-        !githubSelection.configured &&
-        trustPreset.kind === "standard" &&
-        ["local", "ssh"].includes(
-          selectedEnvironmentForConfig?.driver ?? "local",
-        );
+      const { githubSelection, useHostGitHub } = await resolveHeartbeatGitHubAccess(db, {
+        companyId: agent.companyId,
+        agentId: agent.id,
+        cause: identityContext.cause,
+        responsibleUserId,
+        trustKind: trustPreset.kind,
+        environmentDriver: selectedEnvironmentForConfig?.driver ?? "local",
+      });
       const aiAccessRoute = agentAiAccessRoute(agent);
       let aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
       const { resolvedConfig, secretKeys, secretManifest } =

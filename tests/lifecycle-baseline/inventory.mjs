@@ -6,6 +6,7 @@ export const lanes = {
     files: [
       "tests/lifecycle-baseline/authority.test.ts",
       "tests/lifecycle-baseline/accounting.test.ts",
+      "tests/lifecycle-baseline/github-setup-guidance.test.ts",
       "server/src/services/execution-recovery-attempt.test.ts",
       "server/src/services/recovery/legacy-continuation.test.ts",
       // GRE-15: a rejected login is a board-owned blocker, never a retried transient.
@@ -36,6 +37,8 @@ export const lanes = {
   integration: {
     files: [
       "server/test-baselines/lifecycle-heartbeat.test.ts",
+      // GRE-1108: an unusable GitHub grant must not strand an eligible host-backed run.
+      `${server}github-operation-credentials.test.ts`,
       `${server}activity-service.test.ts`,
       `${server}legacy-continuation-authority.test.ts`,
       `${server}native-status-arbiter-corpus.test.ts`,
