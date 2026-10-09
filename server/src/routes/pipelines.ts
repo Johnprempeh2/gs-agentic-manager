@@ -2159,7 +2159,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
 
   router.post("/cases/:caseId/release", validate(releaseCaseSchema), async (req, res) => {
     const caseId = req.params.caseId as string;
-    const companyId = await assertCaseAccess(db, req, caseId);
+    const companyId = await assertCaseWorkAccess(db, req, access, caseId);
     const actor = actorForMutation(req);
     if (req.body.force && actor.type === "agent") throw new HttpError(403, "Agents cannot force-release pipeline leases", { code: "forbidden" });
     res.json(await svc.releaseCase({ companyId, caseId, actor, leaseToken: req.body.leaseToken, force: req.body.force }));
@@ -2233,7 +2233,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
 
   router.post("/cases/:caseId/open-conversation", async (req, res) => {
     const caseId = req.params.caseId as string;
-    const companyId = await assertCaseAccess(db, req, caseId);
+    const companyId = await assertCaseWorkAccess(db, req, access, caseId);
     const actor = actorForMutation(req);
     const conversationSource = await resolvePipelineCaseConversationSource(db, companyId, caseId);
     if (conversationSource?.isActive) {

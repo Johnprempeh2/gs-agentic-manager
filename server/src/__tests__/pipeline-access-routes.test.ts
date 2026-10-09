@@ -10,7 +10,10 @@ import {
   companyMemberships,
   createDb,
   heartbeatRuns,
+  issueDocuments,
+  issues,
   pipelineCaseEvents,
+  pipelineCaseIssueLinks,
   pipelineCases,
   pipelineStages,
   pipelineTransitions,
@@ -50,6 +53,9 @@ describeEmbeddedPostgres("pipeline access levels (GRE-1072)", () => {
   });
 
   afterEach(async () => {
+    await db.delete(pipelineCaseIssueLinks);
+    await db.delete(issueDocuments);
+    await db.delete(issues);
     await db.delete(pipelineCaseEvents);
     await db.delete(pipelineCases);
     await db.delete(pipelineTransitions);
@@ -338,6 +344,42 @@ describeEmbeddedPostgres("pipeline access levels (GRE-1072)", () => {
     expect(await caseActionStatuses(admin.actor, other.id)).toEqual({ create: 403, edit: 403, move: 403, claim: 403 });
     // A scoped admin cannot create new pipelines; that needs all pipelines.
     await request(app(admin.actor)).post(`/api/companies/${company.id}/pipelines`).send({ key: "new", name: "New" }).expect(403);
+  });
+
+  // GRE-1155: release and open-conversation change case state, so they need Work cases.
+  async function releaseAndConversationStatuses(actor: Actor, pipelineId: string) {
+    const http = request(app(actor));
+    const tag = randomUUID().slice(0, 6);
+    const released = await seedCase(pipelineId, `release-${tag}`);
+    const discussed = await seedCase(pipelineId, `talk-${tag}`);
+    const release = await http.post(`/api/cases/${released.id}/release`).send({});
+    const conversation = await http.post(`/api/cases/${discussed.id}/open-conversation`).send({});
+    return { release: release.status, conversation: conversation.status };
+  }
+
+  it("needs Work cases on the case's pipeline to release a case or open its conversation", async () => {
+    const company = await seedCompany();
+    const allowed = await seedPipeline(company.id, "allowed");
+    const other = await seedPipeline(company.id, "other");
+    const viewer = await seedAgent(company.id, "Viewer");
+    const worker = await seedAgent(company.id, "Worker");
+    const scoped = await seedAgent(company.id, "Scoped worker");
+    await grant(company.id, worker.agent.id, "pipelines:cases");
+    await request(app(localBoard))
+      .patch(`/api/agents/${scoped.agent.id}/permissions`)
+      .send({ canCreateAgents: false, canAssignTasks: false, pipelineAccess: { level: "work_cases", pipelineIds: [allowed.id] } })
+      .expect(200);
+
+    expect(await releaseAndConversationStatuses(viewer.actor, allowed.id)).toEqual({ release: 403, conversation: 403 });
+    expect(await releaseAndConversationStatuses(worker.actor, allowed.id)).toEqual({ release: 200, conversation: 201 });
+    expect(await releaseAndConversationStatuses(scoped.actor, allowed.id)).toEqual({ release: 200, conversation: 201 });
+    expect(await releaseAndConversationStatuses(scoped.actor, other.id)).toEqual({ release: 403, conversation: 403 });
+
+    // Same refusal as case moves, so the error handler records it the same way.
+    const denied = await seedCase(allowed.id, "denied");
+    const refusal = await request(app(viewer.actor)).post(`/api/cases/${denied.id}/release`).send({}).expect(403);
+    expect(refusal.body.error).toBe("Missing permission: pipelines:cases or pipelines:write.");
+    expect(refusal.body.details).toMatchObject({ pipelineId: allowed.id });
   });
 
   it("keeps every case and admin action for existing pipelines:write holders", async () => {
