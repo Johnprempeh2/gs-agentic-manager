@@ -1,3 +1,4 @@
+import { resolveHeartbeatGitHubAccess } from "../services/heartbeat-github-access.js";
 import { createNativeGitHubAccess } from "../services/native-runtime/native-github-access.js";
 import express from "express";
 import request from "supertest";
@@ -690,6 +691,18 @@ const support = await getEmbeddedPostgresTestSupport();
           .toBe("More than one GitHub login is shared with this agent (A, B). In Apps, keep Share with agents on for one GitHub account only.");
       });
 
+      it("falls back instead of failing when the only shared grant has no OAuth token", async () => {
+        const input = await seed();
+        const a = await grant(input, "A");
+        await db.update(connectionGrants).set({
+          credentialSecretRefs: [{ secretId: a.secretId, configPath: "credentials.authorization" }],
+          providerTenant: {},
+        }).where(eq(connectionGrants.id, a.id));
+        await companyDefault(input);
+        await share(input, a.id, "A");
+        expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({ status: "absent", env: {} });
+      });
+
       it("still withholds a shared grant from low-trust work", async () => {
         const input = await seed();
         const a = await grant(input, "A");
@@ -704,6 +717,128 @@ const support = await getEmbeddedPostgresTestSupport();
         });
         expect(vault.resolveUserSecretValue).not.toHaveBeenCalled();
       });
+    });
+    it("heartbeat permits host fallback for a grant with a token but no usable GitHub details", async () => {
+      const input = await seed();
+      const a = await grant(input, "A");
+      await db.update(toolConnections).set({
+        config: { sourceTemplateKey: "github", oauth: { connectorProfile: "github.other" } },
+      }).where(eq(toolConnections.id, a.connectionId));
+      await db.update(connectionGrants).set({ providerTenant: {} }).where(eq(connectionGrants.id, a.id));
+      for (const environmentDriver of ["local", "ssh", "daytona"]) {
+        for (const trustKind of ["standard", "low_trust_review"]) {
+          const result = await resolveHeartbeatGitHubAccess(db, {
+            ...input, cause: "instruction", responsibleUserId: "A", trustKind, environmentDriver,
+          });
+          expect(result.githubSelection).toEqual({ configured: false });
+          expect(result.useHostGitHub).toBe(trustKind === "standard" && environmentDriver !== "daytona");
+        }
+      }
+      // MCP still selects this OAuth token without needing git account metadata.
+      expect(await resolveManagedGitHubIdentitySelection(db, input.companyId, {
+        agentId: input.agentId, responsibleUserId: "A", allowStandingDelegation: false,
+      })).toMatchObject({ configured: true, grant: { id: a.id } });
+    });
+
+    it.each(["revoked", "disabled"])("heartbeat does not bypass a %s managed identity with missing details", async (state) => {
+      const input = await seed();
+      const a = await grant(input, "A");
+      await db.update(toolConnections).set({
+        config: { sourceTemplateKey: "github", oauth: { connectorProfile: "github.other" } },
+        enabled: state !== "disabled",
+      }).where(eq(toolConnections.id, a.connectionId));
+      await db.update(connectionGrants).set({
+        providerTenant: {}, status: state === "revoked" ? "revoked" : "active",
+      }).where(eq(connectionGrants.id, a.id));
+      const result = await resolveHeartbeatGitHubAccess(db, {
+        ...input, cause: "instruction", responsibleUserId: "A", trustKind: "standard", environmentDriver: "local",
+      });
+      expect(result.useHostGitHub).toBe(false);
+      expect(result.githubSelection).toMatchObject({ configured: true, error: expect.any(String) });
+    });
+
+    it("treats a token-only GitHub connection as no managed identity so git can fall back", async () => {
+      const input = await seed();
+      const applicationId = randomUUID(),
+        connectionId = randomUUID();
+      await db.insert(toolApplications).values({
+        id: applicationId,
+        companyId: input.companyId,
+        name: applicationId,
+        type: "mcp_http",
+      });
+      await db.insert(toolConnections).values({
+        id: connectionId,
+        companyId: input.companyId,
+        applicationId,
+        name: "GitHub PAT",
+        uid: connectionId,
+        transport: "mcp_remote",
+        status: "active",
+        enabled: true,
+        credentialPolicy: "shared",
+        config: { sourceTemplateKey: "github", connectionMethodKey: "mcp-key" },
+      });
+      await db.insert(toolConnectionInstalls).values({
+        companyId: input.companyId,
+        connectionId,
+        targetType: "company",
+        targetId: input.companyId,
+      });
+      await db.insert(connectionGrants).values({
+        companyId: input.companyId,
+        connectionId,
+        kind: "organization",
+        status: "active",
+        isDefault: true,
+        credentialSecretRefs: [
+          { secretId: randomUUID(), configPath: "credentials.authorization" },
+        ],
+      });
+      expect(
+        await resolveManagedGitHubIdentitySelection(db, input.companyId, {
+          agentId: input.agentId,
+          responsibleUserId: "A",
+        }),
+      ).toEqual({ configured: false });
+      // "absent" lets the git provider use the company secret / server env
+      // fallback instead of failing every run closed.
+      expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({
+        status: "absent",
+        env: {},
+      });
+    });
+    it("falls back instead of failing when a person-started run's only grant has no OAuth token", async () => {
+      const input = await seed();
+      const pasted = await grant(input, "A");
+      await db.update(connectionGrants).set({
+        credentialSecretRefs: [{ secretId: pasted.secretId, configPath: "credentials.authorization" }],
+        providerTenant: {},
+      }).where(eq(connectionGrants.id, pasted.id));
+      // Same selection the heartbeat uses to decide on the host `gh` fallback.
+      expect(
+        await resolveManagedGitHubIdentitySelection(db, input.companyId, {
+          agentId: input.agentId,
+          responsibleUserId: "A",
+          requireGitToken: true,
+        }),
+      ).toEqual({ configured: false });
+      expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({
+        status: "absent",
+        env: {},
+      });
+    });
+    it("uses the person's OAuth grant when they also have a token-only grant", async () => {
+      const input = await seed();
+      await grant(input, "A");
+      const pasted = await grant(input, "A");
+      await db.update(connectionGrants).set({
+        credentialSecretRefs: [{ secretId: pasted.secretId, configPath: "credentials.authorization" }],
+        providerTenant: {},
+      }).where(eq(connectionGrants.id, pasted.id));
+      const result = await resolveGitHubOperationCredentials(db, input);
+      expect(result).toMatchObject({ status: "available", login: "A", source: "personal" });
+      expect(result.env.GH_TOKEN).toBe("test-token-A");
     });
     it.each([false, true])(
       "withholds sponsor and dedicated credentials from every low-trust policy source (dedicated=%s)",

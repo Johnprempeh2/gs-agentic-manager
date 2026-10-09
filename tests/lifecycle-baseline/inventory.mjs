@@ -36,6 +36,8 @@ export const lanes = {
   integration: {
     files: [
       "server/test-baselines/lifecycle-heartbeat.test.ts",
+      // GRE-1108: an unusable GitHub grant must not strand an eligible host-backed run.
+      `${server}github-operation-credentials.test.ts`,
       `${server}activity-service.test.ts`,
       `${server}legacy-continuation-authority.test.ts`,
       `${server}native-status-arbiter-corpus.test.ts`,

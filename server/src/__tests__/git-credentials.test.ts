@@ -269,16 +269,13 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
     expect(result.error).not.toContain("secret-bearing");
   });
 
-  it("names a missing access token reference", async () => {
+  it("skips a grant with no access token reference, matching the token-only fallback", async () => {
     toolAccess.refreshManagedGitHubGrantAccess.mockReset();
     const db = buildDb([[connection("github.code")], [install], [grant({ credentialSecretRefs: [] })]]);
 
     const result = await resolveManagedGitHubCredential(db, buildSecretsFake({}), "company-1", context);
 
-    expect(result.error).toBe(
-      "The managed GitHub identity is incomplete: missing access token reference and GitHub account details "
-        + "(grant grant-1, connection conn-1)",
-    );
+    expect(result).toEqual({ configured: false });
     expect(toolAccess.refreshManagedGitHubGrantAccess).not.toHaveBeenCalled();
   });
 
@@ -303,7 +300,7 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
     expect(selection.grant).toBeUndefined();
     expect(selection.error).toBe(
       "No managed GitHub identity is available for this run "
-        + "(no GitHub grant for agent agent-1 or responsible user user-1 on connection conn-1)",
+        + "(no GitHub grant for agent agent-1 or responsible user user-1 on connection conn-1). Connect your own GitHub in Apps (Connect as me).",
     );
   });
 });
@@ -360,7 +357,17 @@ describe("credential helper execution (real git, no network)", () => {
         (resolve, reject) => {
           const child = spawn("git", [...invocation.configArgs, "credential", "fill"], {
             cwd,
-            env: { ...process.env, ...invocation.env },
+            // Only the fixture credential reaches this child. The runtime launcher
+            // would replace it with the live run's credential before Git sees it.
+            env: {
+              PATH: (process.env.PATH ?? "").split(path.delimiter)
+                .filter((entry) => entry !== process.env.GSAM_GITHUB_LAUNCHER_DIR)
+                .join(path.delimiter),
+              SystemRoot: process.env.SystemRoot,
+              GIT_CONFIG_GLOBAL: os.devNull,
+              GIT_CONFIG_SYSTEM: os.devNull,
+              ...invocation.env,
+            },
             stdio: ["pipe", "pipe", "pipe"],
           });
           let stdout = "";
