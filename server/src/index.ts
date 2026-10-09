@@ -64,6 +64,9 @@ import {
   getManagedInstanceConfig,
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
+import { readEntitlementConfig } from "./services/entitlement-document.js";
+import { createEntitlementRuntime, setEntitlementRuntime } from "./services/entitlement-runtime.js";
+import { entitlementActivityAuditSink } from "./services/entitlement-audit.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
 import { getInstallLimits } from "./services/install-limits.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
@@ -872,6 +875,36 @@ async function startServerWithDatabaseTeardown(
     if (installLimits) logger.warn({ installLimits }, "client install limits active");
   } catch (err) {
     logger.error({ err }, "invalid GSAM_INSTALL_LIMITS; refusing to start (fail closed)");
+    throw err;
+  }
+
+  // Signed entitlement document (GRE-1078). Off unless GSAM_ENTITLEMENT_PUBLIC_KEY
+  // is set; a malformed key refuses startup (fail closed). The document is read
+  // before routes serve, then re-read every minute and on "sync now".
+  let entitlementRuntime: ReturnType<typeof createEntitlementRuntime> | null = null;
+  try {
+    const entitlementConfig = readEntitlementConfig();
+    if (entitlementConfig) {
+      entitlementRuntime = createEntitlementRuntime({
+        ...entitlementConfig,
+        onAudit: entitlementActivityAuditSink(db as any),
+        onError: (err, context) => logger.error({ err }, context),
+      });
+      const started = await entitlementRuntime.start();
+      setEntitlementRuntime(entitlementRuntime);
+      entitlementRuntime.startPolling();
+      logger.warn(
+        {
+          filePath: entitlementConfig.filePath,
+          state: started.entitlements.state,
+          version: started.entitlements.document?.version ?? null,
+          error: started.error,
+        },
+        "signed entitlements active",
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "invalid entitlement configuration; refusing to start (fail closed)");
     throw err;
   }
 
@@ -2181,6 +2214,7 @@ async function startServerWithDatabaseTeardown(
     await systemdNotify(["--stopping", `--status=Stopping after ${signal}`]);
     heartbeatSchedulerStopped = true;
     clearInterval(executionControlInterval);
+    entitlementRuntime?.stop();
     decisionPushStopped = true;
     if (decisionPushTimer) clearTimeout(decisionPushTimer);
     if (heartbeatSchedulerInterval) {
