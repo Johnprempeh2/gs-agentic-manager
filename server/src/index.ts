@@ -110,6 +110,8 @@ import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.
 import { localAiLoginService } from "./services/local-ai-login.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
 import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
+import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
+import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
 import { resolveWorktreeRunExecutionActivationState } from "./services/instance-settings.js";
 import {
   parseAdapterRegistryEnv,
@@ -1267,6 +1269,8 @@ async function startServerWithDatabaseTeardown(
     }
   };
   const executionControlSweepsInFlight = new Set<string>();
+  // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
+  const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
     ["finalization", () => reconcileAbandonedExecutionControl(db)],
     ["replacement", () => heartbeat ? reconcileSafeNativeReplacements(db, new Date(), { verifyStoppedSession: run => verifyStoppedNativeSessionForReplacement(db, run) }) : undefined],
@@ -1278,6 +1282,10 @@ async function startServerWithDatabaseTeardown(
     ["memory_steward_grant_renewal", () => remindStewardGrantRenewals(db)],
     // Memory linking: the link check, at most every 6 hours per company with memory on.
     ["memory_link_check", () => runScheduledMemoryLinkChecks(db)],
+    // GRE-1079: the 90/180/365-day retention rules, once a day per company with memory on.
+    ["memory_retention", () => runScheduledMemoryRetention(db)],
+    // GRE-1079: deliver the memory ingest outbox (the retry queue) and report what fails.
+    ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;
