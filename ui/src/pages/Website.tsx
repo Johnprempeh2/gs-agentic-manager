@@ -32,7 +32,7 @@ import { MetricCard } from "../components/MetricCard";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { useSearchParams } from "@/lib/router";
-import { cn, formatDateTime, relativeTime } from "@/lib/utils";
+import { cn, formatCalendarDay, formatDateTime, relativeTime } from "@/lib/utils";
 
 /* ---- Formatting ---- */
 
@@ -47,19 +47,10 @@ export function formatPosition(value: number): string {
   return value.toFixed(1);
 }
 
-/** `YYYY-MM-DD` read as a calendar day, so the label never shifts with the time zone. */
-function dayLabel(day: string, withYear = false): string {
-  const [year, month, date] = day.split("-").map(Number);
-  return new Date(Date.UTC(year!, (month ?? 1) - 1, date ?? 1)).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    ...(withYear ? { year: "numeric" } : {}),
-    timeZone: "UTC",
-  });
-}
+const dayLabel = (day: string) => formatCalendarDay(day);
 
 export function formatRange(range: WebsiteDateRange): string {
-  return `${dayLabel(range.startDate)} – ${dayLabel(range.endDate, true)}`;
+  return `${dayLabel(range.startDate)} – ${formatCalendarDay(range.endDate, { includeYear: true })}`;
 }
 
 const ERROR_SOURCE_LABELS: Record<WebsitePullError["source"], string> = {
@@ -175,9 +166,9 @@ function TrendBars({ points, label }: { points: { date: string; value: number }[
         {points.map((point) => (
           <div key={point.date} className="flex h-full flex-1 flex-col justify-end" title={`${dayLabel(point.date)}: ${formatCount(point.value)}`}>
             {point.value > 0 ? (
-              <div className="rounded-t-sm bg-chart-1" style={{ height: `${(point.value / max) * 100}%`, minHeight: 2 }} />
+              <div className="min-h-0.5 rounded-t-sm bg-chart-1" style={{ height: `${(point.value / max) * 100}%` }} />
             ) : (
-              <div className="rounded-sm bg-muted/30" style={{ height: 2 }} />
+              <div className="h-0.5 rounded-sm bg-muted/30" />
             )}
           </div>
         ))}
