@@ -469,7 +469,8 @@ describeEmbeddedPostgres("CRM sync routes", () => {
       { companyId: seed.companyId, entityKind: "contact", entityId: contact!.id, connectionId: seed.connectionId, providerKey: "pipedrive", externalId: "p-9" },
     ]);
     const links = await request(app()).get(`/api/cases/${caseRow!.id}/crm-sync/links`).expect(200);
-    expect(links.body.map((row: { entityKind: string; externalId: string }) => [row.entityKind, row.externalId])).toEqual([
+    // Both links share one insert time, so their order is not fixed.
+    expect(links.body.map((row: { entityKind: string; externalId: string }) => [row.entityKind, row.externalId]).sort()).toEqual([
       ["case", "500"],
       ["contact", "p-9"],
     ]);
