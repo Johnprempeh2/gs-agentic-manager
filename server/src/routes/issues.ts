@@ -2,6 +2,7 @@ import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractio
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
+import { isEntitled, type EntitlementSettingsReader } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
 import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, requiresExecutionReconciliation } from "@greatstone/shared";
 import {
@@ -442,7 +443,10 @@ async function listIssueLinkedCases(
   db: Db,
   companyId: string,
   issueId: string,
+  settings: EntitlementSettingsReader,
 ) {
+  // GRE-1077: linked pipeline cases are pipeline data; hide them when off.
+  if (!(await isEntitled(settings, "enablePipelines"))) return [];
   const rows = await db
     .select({
       link: pipelineCaseIssueLinks,
@@ -9181,7 +9185,7 @@ export function issueRoutes(
       listSuccessfulRunHandoffStates(db, issue.companyId, [issue.id]),
       svc.getCurrentScheduledRetry(issue.id),
       recoveryActionsSvc.getActiveForIssue(issue.companyId, issue.id),
-      listIssueLinkedCases(db, issue.companyId, issue.id),
+      listIssueLinkedCases(db, issue.companyId, issue.id, instanceSettings),
       inboxArchiveFieldsPromise,
       getExternalChannelBindingSummary(db, issue.companyId, issue.id),
     ]);

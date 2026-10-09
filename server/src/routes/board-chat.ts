@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { Db } from "@greatstone/db";
 import type { DeploymentMode } from "@greatstone/shared";
 import { instanceSettingsService, issueService } from "../services/index.js";
+import { assertEntitled } from "../services/entitlements.js";
 import {
   boardChatClaudeEnv,
   resolveBoardChatClaudeCredential,
@@ -104,14 +105,7 @@ export function boardChatRoutes(
     // Conference Room Chat is an experimental surface (PAP-136/PAP-137): the
     // API is gated alongside the UI so the endpoint is inert while the flag
     // is off, not just hidden.
-    const experimental = await instanceSettingsService(db).getExperimental();
-    if (experimental.enableConferenceRoomChat !== true) {
-      res.status(403).json({
-        error: "Conference Room Chat is not enabled",
-        code: "FEATURE_DISABLED",
-      });
-      return;
-    }
+    await assertEntitled(instanceSettingsService(db), "enableConferenceRoomChat");
 
     // The relay spawns the operator's local `claude` CLI with permissions
     // skipped (it must run headless), so it is only safe where the requester
