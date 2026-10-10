@@ -11,6 +11,7 @@ import { forbidden, notFound } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
 import { requireEntitlement } from "../services/entitlements.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
 import { boardViewerRights, strategyBoardService } from "../services/strategy-board.js";
 import {
   assertCompanyAccess,
@@ -30,6 +31,7 @@ export const STRATEGY_BOARD_ROUTE_PREFIXES = [
 ];
 
 export const BOARD_ACTION_REQUIRED_MESSAGE = "Only board members, company owners and admins may do this on the board";
+export const BOARD_SECRETARY_REQUIRED_MESSAGE = "Only the board secretary agent may make a draft board pack";
 
 /**
  * Board control panel API (GRE-1135).
@@ -39,6 +41,11 @@ export const BOARD_ACTION_REQUIRED_MESSAGE = "Only board members, company owners
  * even though board members are viewers, so these routes check company access
  * without the viewer write rule and then check the board right. Choosing the
  * board is for company owners.
+ *
+ * GRE-1200: one agent per instance, the board secretary
+ * (`strategyBoardSecretaryAgentId`), may make a board pack too. Its pack is a
+ * draft until a board member accepts it; only accepted packs count as the
+ * meeting's pack.
  */
 export function strategyBoardRoutes(db: Db) {
   const router = Router();
@@ -121,9 +128,28 @@ export function strategyBoardRoutes(db: Db) {
 
   router.post("/companies/:companyId/strategy-board/packs", validate(createStrategyBoardPackSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
-    const actor = await assertBoardAction(req, res, companyId, "mayMakeBoardPack");
-    if (!actor) return;
-    const pack = await svc.createPack(companyId, req.body, actor.actorType === "user" ? actor.actorId : null);
+    let actor: ReturnType<typeof getActorInfo> | null;
+    if (req.actor.type === "agent") {
+      if (!hasCompanyAccess(req, companyId)) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      const { strategyBoardSecretaryAgentId } = await instanceSettingsService(db).getExperimental();
+      if (!req.actor.agentId || req.actor.agentId !== strategyBoardSecretaryAgentId) {
+        throw forbidden(BOARD_SECRETARY_REQUIRED_MESSAGE, { code: "board_secretary_required" });
+      }
+      actor = getActorInfo(req);
+    } else {
+      actor = await assertBoardAction(req, res, companyId, "mayMakeBoardPack");
+      if (!actor) return;
+    }
+    const pack = await svc.createPack(
+      companyId,
+      req.body,
+      actor.actorType === "agent" && actor.agentId
+        ? { kind: "secretary", agentId: actor.agentId }
+        : { kind: "user", userId: actor.actorType === "user" ? actor.actorId : null },
+    );
     await logActivity(db, {
       companyId,
       actorType: actor.actorType,
@@ -132,9 +158,43 @@ export function strategyBoardRoutes(db: Db) {
       action: "strategy_board.pack_created",
       entityType: "company",
       entityId: companyId,
-      details: { packId: pack.id, periodStart: pack.periodStart, periodEnd: pack.periodEnd },
+      details: {
+        packId: pack.id,
+        status: pack.status,
+        createdByUserId: pack.createdByUserId,
+        createdByAgentId: pack.createdByAgentId,
+        periodStart: pack.periodStart,
+        periodEnd: pack.periodEnd,
+      },
     });
     res.status(201).json(pack);
+  });
+
+  /** A board member accepts the secretary's draft; it becomes the meeting's pack. Agents may not. */
+  router.post("/strategy-board/packs/:id/accept", async (req, res) => {
+    const pack = await svc.getPack(req.params.id as string);
+    if (!pack || !hasCompanyAccess(req, pack.companyId)) {
+      res.status(404).json({ error: "Board pack not found" });
+      return;
+    }
+    const actor = await assertBoardAction(req, res, pack.companyId, "mayMakeBoardPack");
+    if (!actor) return;
+    const accepted = await svc.acceptPack(pack.id, actor.actorType === "user" ? actor.actorId : null);
+    if (!accepted) {
+      res.status(409).json({ error: "This board pack has been accepted already" });
+      return;
+    }
+    await logActivity(db, {
+      companyId: pack.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "strategy_board.pack_accepted",
+      entityType: "company",
+      entityId: pack.companyId,
+      details: { packId: accepted.id, createdByAgentId: accepted.createdByAgentId, acceptedByUserId: accepted.acceptedByUserId },
+    });
+    res.json(accepted);
   });
 
   router.get("/strategy-board/packs/:id", async (req, res) => {
