@@ -19,6 +19,8 @@ export const strategyBoardApi = {
   createPack: (companyId: string, data: { periodStart: string; periodEnd: string; title?: string }) =>
     api.post<StrategyBoardPack>(`/companies/${companyId}/strategy-board/packs`, data),
   getPack: (id: string) => api.get<StrategyBoardPack>(`/strategy-board/packs/${id}`),
+  /** A board member accepts the board secretary's draft (GRE-1200). */
+  acceptPack: (id: string) => api.post<StrategyBoardPack>(`/strategy-board/packs/${id}/accept`, {}),
   listWhyRequests: (goalId: string) => api.get<GoalWhyRequest[]>(`/goals/${goalId}/why-requests`),
   askWhy: (goalId: string, question: string) => api.post<GoalWhyRequest>(`/goals/${goalId}/why-requests`, { question }),
   answerWhy: (id: string, answer: string) => api.post<GoalWhyRequest>(`/why-requests/${id}/answer`, { answer }),

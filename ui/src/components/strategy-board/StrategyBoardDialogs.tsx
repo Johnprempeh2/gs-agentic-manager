@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { StrategyBoardKpi, StrategyBoardMember, StrategyBoardPack } from "@greatstone/shared";
-import { Download, Printer } from "lucide-react";
+import { Check, Download, Printer } from "lucide-react";
 import { strategyBoardApi } from "@/api/strategyBoard";
 import { useToastActions } from "@/context/ToastContext";
 import { queryKeys } from "@/lib/queryKeys";
@@ -147,11 +147,33 @@ export function MakeBoardPackDialog({
   );
 }
 
-export function BoardPackViewer({ packId, onClose }: { packId: string | null; onClose: () => void }) {
+export function BoardPackViewer({
+  companyId,
+  packId,
+  canAccept,
+  onClose,
+}: {
+  companyId: string;
+  packId: string | null;
+  /** A board member may accept the board secretary's draft (GRE-1200). */
+  canAccept: boolean;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const { data: pack, isLoading, error } = useQuery({
     queryKey: queryKeys.strategyBoard.pack(packId ?? ""),
     queryFn: () => strategyBoardApi.getPack(packId!),
     enabled: !!packId,
+  });
+  const accept = useMutation({
+    mutationFn: () => strategyBoardApi.acceptPack(packId!),
+    onSuccess: (accepted) => {
+      queryClient.setQueryData(queryKeys.strategyBoard.pack(accepted.id), accepted);
+      invalidateBoard(queryClient, companyId);
+      pushToast({ title: "Board pack accepted", body: "It is now the meeting's pack.", tone: "success" });
+    },
+    onError: (err: Error) => pushToast({ title: "Board pack not accepted", body: err.message, tone: "error" }),
   });
   return (
     <Dialog open={packId != null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
@@ -168,6 +190,20 @@ export function BoardPackViewer({ packId, onClose }: { packId: string | null; on
           {error ? <p className="text-sm text-status-danger">Could not load the pack: {(error as Error).message}</p> : null}
           {pack ? (
             <>
+              {pack.status === "draft" ? (
+                <div
+                  role="status"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-sm print:hidden"
+                >
+                  <span>Draft from the board secretary. It is not the meeting's pack until a board member accepts it.</span>
+                  {canAccept ? (
+                    <Button size="sm" onClick={() => accept.mutate()} disabled={accept.isPending}>
+                      <Check className="size-3.5" />
+                      {accept.isPending ? "Accepting…" : "Accept as the meeting's pack"}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2 print:hidden">
                 <Button size="sm" variant="outline" onClick={() => downloadMarkdown(packFileName(pack.title), pack.body)}>
                   <Download className="size-3.5" />

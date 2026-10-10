@@ -19,6 +19,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { BoardSecretarySetting } from "@/components/strategy-board/BoardSecretarySetting";
 
 type WorktreeRunExecutionDisplayState =
   | { kind: "off" }
@@ -386,6 +387,14 @@ export function InstanceExperimentalSettings() {
           managed={managedKeys.enableStrategyBoard}
           ariaLabel="Toggle board control panel experimental setting"
         />
+
+        {experimentalQuery.data?.enableStrategyBoard === true ? (
+          <BoardSecretarySetting
+            value={experimentalQuery.data.strategyBoardSecretaryAgentId ?? null}
+            onChange={(agentId) => toggleMutation.mutate({ strategyBoardSecretaryAgentId: agentId })}
+            disabled={toggleMutation.isPending}
+          />
+        ) : null}
 
         <ExperimentalToggleCard
           title="Built-in Agents"

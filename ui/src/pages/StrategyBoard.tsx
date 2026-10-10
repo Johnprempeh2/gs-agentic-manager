@@ -7,9 +7,10 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
-import { boardAssurance } from "@/lib/strategy-board";
+import { boardAssurance, meetingPackId } from "@/lib/strategy-board";
 import { ErrorState } from "@/components/ErrorState";
 import { PageSkeleton } from "@/components/PageSkeleton";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AttentionQueue, ChangesSinceSnapshot, StrategyAtAGlance } from "@/components/strategy-board/StrategyBoardViews";
 import { AskWhyDialog, BoardMembersCard, BoardPackViewer, MakeBoardPackDialog } from "@/components/strategy-board/StrategyBoardDialogs";
@@ -74,6 +75,7 @@ export function StrategyBoard() {
   if (error || !board) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
   const rights = board.viewer;
+  const meetingPack = packs ? meetingPackId(packs) : null;
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -135,8 +137,12 @@ export function StrategyBoard() {
                     className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-accent/50"
                     onClick={() => setOpenPackId(pack.id)}
                   >
-                    <span className="font-medium">{pack.title}</span>
-                    <span className="text-xs text-muted-foreground">{pack.periodStart} to {pack.periodEnd}</span>
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="font-medium">{pack.title}</span>
+                      {pack.status === "draft" ? <Badge variant="outline">Draft</Badge> : null}
+                      {pack.id === meetingPack ? <Badge variant="secondary">Meeting pack</Badge> : null}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{pack.periodStart} to {pack.periodEnd}</span>
                   </button>
                 </li>
               ))}
@@ -166,7 +172,12 @@ export function StrategyBoard() {
           }}
         />
       ) : null}
-      <BoardPackViewer packId={openPackId} onClose={() => setOpenPackId(null)} />
+      <BoardPackViewer
+        companyId={selectedCompanyId!}
+        packId={openPackId}
+        canAccept={rights.mayMakeBoardPack}
+        onClose={() => setOpenPackId(null)}
+      />
     </div>
   );
 }
