@@ -548,7 +548,7 @@ function emailAddress(value: string): string {
 
 export interface BoardReplyResult {
   stored: "why_answer" | "readings" | "nothing";
-  reason?: "not_board_thread" | "switch_off" | "unknown_sender" | "already_answered" | "no_answer" | "no_readings" | "not_stored_kind";
+  reason?: "not_board_thread" | "switch_off" | "unknown_sender" | "sender_not_authenticated" | "already_answered" | "no_answer" | "no_readings" | "not_stored_kind";
   readings?: number;
 }
 
@@ -557,10 +557,14 @@ export interface BoardReplyResult {
  * person the board emailed is stored on the plan: the answer to a "Why?"
  * request, or owner-reported readings from a meeting reminder. Anything else
  * stays in the email thread only. Safe to call again for the same message.
+ *
+ * GRE-1215: a From header can be forged, so the address match alone is not
+ * enough. `senderAuthenticated` is AgentMail's DMARC verdict (see
+ * `isSenderAuthenticated`); without a pass nothing is written to the plan.
  */
 export async function storeBoardEmailReply(
   db: Db,
-  input: { companyId: string; conversationId: string; providerMessageId: string },
+  input: { companyId: string; conversationId: string; providerMessageId: string; senderAuthenticated: boolean },
 ): Promise<BoardReplyResult> {
   const [sent] = await db
     .select({ email: strategyBoardEmails, threadIssueId: chatConversations.issueId })
@@ -588,6 +592,12 @@ export async function storeBoardEmailReply(
   if (emailAddress(message.envelope.from) !== emailAddress(email.recipientEmail)) {
     await note("Not stored on the plan: this reply did not come from the person the board emailed, so it stays in this email thread only.");
     return { stored: "nothing", reason: "unknown_sender" };
+  }
+  if (!input.senderAuthenticated) {
+    await note(
+      "Not stored on the plan: the email system could not confirm this reply was sent by the person the board emailed (their mail domain did not pass DMARC), so it stays in this email thread only. They can answer on the board or enter readings on the KPI page.",
+    );
+    return { stored: "nothing", reason: "sender_not_authenticated" };
   }
   const board = strategyBoardService(db);
   const text = replyBody(message.text);

@@ -26,6 +26,17 @@ export const agentmailMessageSchema = z.object({
   created_at: z.string().datetime({ offset: true }).optional(),
   labels: strings.default([]),
   headers: z.record(z.string(), z.string()).default({}),
+  // AgentMail's own SES receipt verdicts, on received mail only. Unlike an
+  // `Authentication-Results` header in `headers`, a sender cannot plant these.
+  // Any key may be absent; verdicts are kept as strings so a new value never
+  // fails the parse.
+  authentication_results: z
+    .object({
+      spf: z.string().optional(),
+      dkim: z.string().optional(),
+      dmarc: z.string().optional(),
+    })
+    .optional(),
   attachments: z
     .array(
       z.object({
@@ -202,6 +213,16 @@ export function isFilteredEmail(message: AgentmailMessage): boolean {
   return message.labels.some((label) =>
     ["spam", "blocked", "unauthenticated", "trash"].includes(label),
   );
+}
+/**
+ * True only when AgentMail reports DMARC `pass`: the From domain is aligned
+ * with a passing SPF or DKIM check. The `unauthenticated` label is looser (an
+ * unaligned SPF pass with no DMARC record gets no label), so it does not
+ * prove the From address. AgentMail withholds `dmarc` when From spans more
+ * than one domain.
+ */
+export function isSenderAuthenticated(message: AgentmailMessage): boolean {
+  return message.authentication_results?.dmarc === "pass";
 }
 export function verifyAgentmailWebhook(
   body: Buffer,

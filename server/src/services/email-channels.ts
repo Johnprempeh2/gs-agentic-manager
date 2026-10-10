@@ -64,6 +64,7 @@ import {
   emailReplyRecipients,
   isAutomaticEmail,
   isFilteredEmail,
+  isSenderAuthenticated,
   normalizeAgentmailEvent,
   verifyAgentmailWebhook,
   AGENTMAIL_EVENTS,
@@ -1233,6 +1234,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       admissionToWakeMs?: number;
       supportReceivedAt?: string;
       boardReplyPending?: boolean;
+      boardReplySenderAuthenticated?: boolean;
       conversationId?: string;
     };
     if (event.inbox_id !== endpoint.botExternalId)
@@ -1454,6 +1456,8 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           !alreadyRetained &&
           !isAutomaticEmail(message) &&
           !message.labels.includes("sent");
+        // Kept on the event so a retried delivery decides the same way (GRE-1215).
+        event.boardReplySenderAuthenticated = isSenderAuthenticated(message);
         await tx
           .update(chatDeliveries)
           .set({
@@ -1485,6 +1489,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
         companyId: endpoint.companyId,
         conversationId: event.conversationId,
         providerMessageId: event.message_id,
+        senderAuthenticated: event.boardReplySenderAuthenticated === true,
       }).catch((err: unknown) =>
         logger.warn(
           { err, issueId: event.issueId },
