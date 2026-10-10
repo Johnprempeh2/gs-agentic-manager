@@ -22,9 +22,9 @@ import { StatusBadge } from "./StatusBadge";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 
-function OverviewSection({ title, children }: { title: string; children: ReactNode }) {
+function OverviewSection({ title, tour, children }: { title: string; tour?: string; children: ReactNode }) {
   return (
-    <section>
+    <section data-tour={tour}>
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
         {title}
       </h2>
@@ -64,7 +64,7 @@ export function StageStrip({
   }, [currentIndex, steps.length]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-tour="client-journey">
       <ol
         ref={stripRef}
         aria-label="Client journey"
@@ -106,9 +106,9 @@ export function StageStrip({
   );
 }
 
-function RecordRow({ label, children }: { label: string; children: ReactNode }) {
+function RecordRow({ label, tour, children }: { label: string; tour?: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-(--gtc-47) gap-3 py-2 text-sm">
+    <div data-tour={tour} className="grid grid-cols-(--gtc-47) gap-3 py-2 text-sm">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-foreground [overflow-wrap:anywhere]">{children}</dd>
     </div>
@@ -153,11 +153,11 @@ export function ClientCaseOverview({
             {record.owner ?? <span className="text-muted-foreground">Not set</span>}
             {record.leadAgent ? <span className="block text-xs text-muted-foreground">Lead agent: {record.leadAgent}</span> : null}
           </RecordRow>
-          <RecordRow label="Next action">
+          <RecordRow label="Next action" tour="client-next-action">
             {record.nextAction ?? <span className="text-muted-foreground">Not set</span>}
             {nextActionMeta ? <span className="block text-xs text-muted-foreground">{nextActionMeta}</span> : null}
           </RecordRow>
-          <RecordRow label="Last contact">
+          <RecordRow label="Last contact" tour="client-last-contact">
             {record.lastContact ? formatDay(record.lastContact) : <span className="text-muted-foreground">Not set</span>}
             {record.lastContactNote ? <span className="block text-xs text-muted-foreground">{record.lastContactNote}</span> : null}
           </RecordRow>
@@ -170,7 +170,7 @@ export function ClientCaseOverview({
         wrap={(children) => <OverviewSection title="CRM sync">{children}</OverviewSection>}
       />
 
-      <OverviewSection title="Contacts">
+      <OverviewSection title="Contacts" tour="client-contacts">
         <PipelineCaseContacts caseId={detail.case.id} recordFields={detail.case.fields} />
       </OverviewSection>
 
@@ -196,7 +196,7 @@ export function ClientCaseOverview({
       </OverviewSection>
 
       {projects ? (
-        <div className="lg:hidden">
+        <div className="lg:hidden" data-tour="client-projects">
           <OverviewSection title="Projects">{projects}</OverviewSection>
         </div>
       ) : null}
