@@ -138,6 +138,47 @@ export interface StrategyBoardMember {
   role: string;
   isBoardMember: boolean;
   isChair: boolean;
+  /** Agents this board member may ask about performance (GRE-1186); empty for owners. */
+  agentIds: string[];
+}
+
+/** An agent a board member may ask about the plan (GRE-1186). */
+export interface StrategyBoardAgent {
+  id: string;
+  name: string;
+  title: string | null;
+  icon: string | null;
+}
+
+/** A plan task the board agent can cite: an open action under a plan goal. */
+export interface StrategyBoardBriefAction {
+  identifier: string | null;
+  title: string;
+  status: string;
+  goalId: string;
+  assigneeName: string | null;
+}
+
+/** The newest check-in on a plan goal. */
+export interface StrategyBoardBriefCheckIn {
+  goalId: string;
+  body: string;
+  progressPercent: number | null;
+  /** "YYYY-MM-DD". */
+  date: string;
+  authorName: string | null;
+}
+
+/** What the board agent answers from: the plan as the board sees it today. */
+export interface StrategyBoardBrief {
+  companyName: string;
+  /** Used to build links, for example "/GRE/board". */
+  issuePrefix: string;
+  asOf: string;
+  kpis: StrategyBoardKpi[];
+  actions: StrategyBoardBriefAction[];
+  checkIns: StrategyBoardBriefCheckIn[];
+  whyRequests: Array<{ goalId: string; question: string; status: GoalWhyRequestStatus; answer: string | null; askedAt: string }>;
 }
 
 /** Frozen content of a board pack: what the board saw, kept as it was. */

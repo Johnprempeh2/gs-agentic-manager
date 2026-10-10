@@ -641,10 +641,12 @@ export {
   answerGoalWhyRequestSchema,
   createStrategyBoardPackSchema,
   setStrategyBoardMembersSchema,
+  setStrategyBoardMemberAgentsSchema,
   type CreateGoalWhyRequest,
   type AnswerGoalWhyRequest,
   type CreateStrategyBoardPack,
   type SetStrategyBoardMembers,
+  type SetStrategyBoardMemberAgents,
 } from "./strategy-board.js";
 
 export {
