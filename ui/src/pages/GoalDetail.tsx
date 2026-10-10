@@ -41,6 +41,9 @@ import {
   rollupSummary,
   type NewKpiReading,
 } from "../components/goals/KpiReadings";
+import { GoalWhyRequests } from "../components/strategy-board/GoalWhyRequests";
+import { useStrategyBoardEnabled } from "../components/StrategyBoardExperimentalGate";
+import { strategyBoardApi } from "../api/strategyBoard";
 import { InitiativeBudgetForm, KpiPlanForm } from "../components/goals/KpiPlanForm";
 import { PackKpiDraftsDialog } from "../components/goals/PackKpiDraftsDialog";
 import { KpiDraftNotice } from "../components/goals/KpiDraftNotice";
@@ -126,6 +129,14 @@ export function GoalDetail() {
     queryKey: queryKeys.goals.readings(goalId!),
     queryFn: () => goalsApi.listReadings(goalId!),
     enabled: !!goalId && isKpi,
+  });
+
+  // GRE-1135: the board's "Why?" questions, while the board control panel is on.
+  const { enabled: strategyBoardOn } = useStrategyBoardEnabled();
+  const { data: boardSummary } = useQuery({
+    queryKey: queryKeys.strategyBoard.summary(selectedCompanyId!),
+    queryFn: () => strategyBoardApi.summary(selectedCompanyId!),
+    enabled: strategyBoardOn && isKpi && !!selectedCompanyId,
   });
 
   const { data: userDirectory } = useQuery({
@@ -341,6 +352,17 @@ export function GoalDetail() {
           </div>
           <h3 className="pt-2 text-sm font-semibold">Plan</h3>
           <KpiPlanForm key={goal.id} goal={goal} onSave={(patch) => updateGoal.mutate(patch)} pending={updateGoal.isPending} />
+          {strategyBoardOn ? (
+            <>
+              <h3 className="pt-2 text-sm font-semibold">Why? requests from the board</h3>
+              <GoalWhyRequests
+                goalId={goal.id}
+                companyId={goal.companyId}
+                names={{ agents: agentsById, users: usersById }}
+                mayAnswer={boardSummary ? !boardSummary.viewer.isBoardMember : false}
+              />
+            </>
+          ) : null}
         </section>
       ) : null}
 

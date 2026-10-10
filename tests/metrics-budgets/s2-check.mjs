@@ -12,11 +12,12 @@
 // or when the report is over 6 hours old or undated (GRE-837).
 // Budgets default to budgets.keystone-host.json, calibrated on the machine
 // Keystone runs on; budgets.json is the Apple-silicon calibration.
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { ensureChromiumLibs, headlessShell } from "../../scripts/chromium-libs.mjs";
 import { checkBudgets, formatMeasured } from "./check.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -90,49 +91,13 @@ function run(command, args, env = {}) {
 
 // Agent runs get a fresh HOME and the host may lack Chromium's system
 // libraries (WSL has no libnss3). Install the browser, then fetch any missing
-// library into ./tmp/chromium-libs without root, so Keystone needs no setup.
-const LIB_PACKAGES = {
-  "libnspr4.so": ["libnspr4"],
-  "libnss3.so": ["libnss3"],
-  "libnssutil3.so": ["libnss3"],
-  "libsmime3.so": ["libnss3"],
-  "libasound.so.2": ["libasound2t64", "libasound2"],
-};
-
-function headlessShell() {
-  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), ".cache", "ms-playwright");
-  const dir = existsSync(root) ? readdirSync(root).filter((name) => name.startsWith("chromium_headless_shell-")).sort().pop() : undefined;
-  const binary = dir && join(root, dir, "chrome-headless-shell-linux64", "chrome-headless-shell");
-  return binary && existsSync(binary) ? binary : undefined;
-}
-
-function missingLibs(binary, env) {
-  const output = execFileSync("ldd", [binary], { encoding: "utf8", env: { ...process.env, ...env } });
-  return [...output.matchAll(/^\s*(\S+) => not found/gm)].map((match) => match[1]);
-}
-
+// library without root into the account's shared folder (GRE-1065), so
+// Keystone needs no setup.
 function prepareBrowser() {
   if (!run("pnpm", ["exec", "playwright", "install", "--only-shell", "chromium"])) throw new Error("could not install Playwright Chromium");
-  const binary = process.platform === "linux" ? headlessShell() : undefined;
-  if (!binary) return {};
-  const libRoot = resolve(ROOT, "tmp", "chromium-libs");
-  const libDir = join(libRoot, "root", "usr", "lib", "x86_64-linux-gnu");
-  const env = { LD_LIBRARY_PATH: [libDir, process.env.LD_LIBRARY_PATH].filter(Boolean).join(":") };
-  let missing = missingLibs(binary, env);
-  if (missing.length === 0) return env;
-  const unknown = missing.filter((lib) => !LIB_PACKAGES[lib]);
-  if (unknown.length) throw new Error(`Chromium needs ${unknown.join(", ")}; ask John to run \`sudo pnpm exec playwright install-deps chromium\` once`);
-  mkdirSync(join(libRoot, "debs"), { recursive: true });
-  for (const options of new Set(missing.map((lib) => LIB_PACKAGES[lib]))) {
-    const fetched = options.some((name) => spawnSync("apt-get", ["download", name], { cwd: join(libRoot, "debs"), stdio: "ignore" }).status === 0);
-    if (!fetched) throw new Error(`could not download ${options.join(" or ")} for Chromium`);
-  }
-  for (const deb of readdirSync(join(libRoot, "debs")).filter((name) => name.endsWith(".deb"))) {
-    execFileSync("dpkg-deb", ["-x", join(libRoot, "debs", deb), join(libRoot, "root")]);
-  }
-  missing = missingLibs(binary, env);
-  if (missing.length) throw new Error(`Chromium still misses ${missing.join(", ")}`);
-  return env;
+  const browsers = process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), ".cache", "ms-playwright");
+  const binary = process.platform === "linux" ? headlessShell(browsers) : undefined;
+  return binary ? ensureChromiumLibs(binary) : {};
 }
 
 async function measure({ skipBuild }) {

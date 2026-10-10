@@ -83,6 +83,8 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableCases: z.boolean().default(false),
   // Greatstone: Deep Dive record (Book V). Requires Cases; the UI turns Cases on with it.
   enableDeepDive: z.boolean().default(false),
+  // Greatstone: board control panel (GRE-1135). Off by default; set per instance.
+  enableStrategyBoard: z.boolean().default(false),
   enableAgentChat: z.boolean().default(false),
   enableConferenceRoomChat: z.boolean().default(false),
   enableClassicTaskInterface: z.boolean().default(false),

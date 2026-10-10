@@ -153,6 +153,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableStrategyBoard: {
+    title: "Board control panel",
+    description:
+      "The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, \"Why?\" requests and the quarterly board pack.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableAgentChat: {
     title: "Agent Chat",
     description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",

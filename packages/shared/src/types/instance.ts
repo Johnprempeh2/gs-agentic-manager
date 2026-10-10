@@ -124,6 +124,8 @@ export interface InstanceExperimentalSettings {
   enableCases: boolean;
   /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
   enableDeepDive: boolean;
+  /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). */
+  enableStrategyBoard: boolean;
   enableAgentChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;

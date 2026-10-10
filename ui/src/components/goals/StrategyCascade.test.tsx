@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { buildStrategyCascade, hasStrategyGoals } from "@/lib/goal-cascade";
 import { makeGoal } from "@/lib/goal-journey.fixtures";
-import { StrategyCascadeView } from "./StrategyCascade";
+import { CascadeStatus, StrategyCascadeView } from "./StrategyCascade";
 
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompany: null }),
@@ -80,5 +80,48 @@ describe("StrategyCascadeView", () => {
     expect(html).toContain("No owner");
     expect(html).not.toContain("Plain goal");
     expect(html).not.toContain("Dropped pillar");
+  });
+});
+
+describe("CascadeStatus (GRE-1163)", () => {
+  // The fixture has half its tasks done, which reads as healthy from task progress.
+  it("shows the RAG status on a KPI row, not task progress", () => {
+    const html = render(
+      <CascadeStatus
+        goal={makeGoal({
+          kind: "kpi",
+          kpiStatus: { status: "red" } as never,
+          ragRollup: { status: "red", red: 1, amber: 0, green: 0, noStatus: 0 },
+        })}
+      />,
+    );
+    expect(html).toContain('data-rag="red"');
+    expect(html).not.toContain("data-health");
+  });
+
+  it("shows No status on a KPI with no reading", () => {
+    const html = render(<CascadeStatus goal={makeGoal({ kind: "kpi" })} />);
+    expect(html).toContain('data-rag="none"');
+    expect(html).not.toContain("data-health");
+  });
+
+  it("shows the worst KPI status on a goal above KPIs, with the counts", () => {
+    const html = render(
+      <CascadeStatus
+        goal={makeGoal({
+          kind: "objective",
+          ragRollup: { status: "red", red: 1, amber: 0, green: 2, noStatus: 0 },
+        })}
+      />,
+    );
+    expect(html).toContain('data-rag="red"');
+    expect(html).toContain("1 red, 2 green of 3 KPIs");
+    expect(html).not.toContain("data-health");
+  });
+
+  it("falls back to task progress on a goal with no KPIs under it", () => {
+    const html = render(<CascadeStatus goal={makeGoal({ kind: "initiative" })} />);
+    expect(html).toContain("data-health");
+    expect(html).not.toContain("data-rag");
   });
 });

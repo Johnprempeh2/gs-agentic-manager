@@ -855,6 +855,20 @@ export type {
   GoalProgressSource,
   GoalWithProgress,
 } from "./goal.js";
+export type {
+  GoalKpiAlert,
+  GoalWhyRequest,
+  StrategyBoardArea,
+  StrategyBoardKpi,
+  StrategyBoardMember,
+  StrategyBoardOwner,
+  StrategyBoardPack,
+  StrategyBoardPackListItem,
+  StrategyBoardPackSnapshot,
+  StrategyBoardSnapshotRef,
+  StrategyBoardSummary,
+  StrategyBoardViewerRights,
+} from "./strategy-board.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
   BudgetPolicy,

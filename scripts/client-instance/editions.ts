@@ -52,6 +52,9 @@ export const MANAGED_FEATURES_OFF = [
   "enableOwnerInstanceAdmin",
   // GRE-575: beta history view on task pages; off by default, now pinned off.
   "enableIssuePlanDecompositions",
+  // GRE-1135: board control panel. Off in Managed; the strategy edition passes
+  // it on Managed plus (Harbor's edition doc on GRE-1136, section 5).
+  "enableStrategyBoard",
 ] as const satisfies readonly InstanceFeatureKey[];
 
 /**

@@ -14,6 +14,9 @@ import { forbidden, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
 import { isAcceptingDraftKpi } from "../services/goals.js";
+import { isEntitled } from "../services/entitlements.js";
+import { strategyBoardService } from "../services/strategy-board.js";
+import { logger } from "../middleware/logger.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyBoardRole } from "./authz.js";
 import { getTelemetryClient } from "../telemetry.js";
 
@@ -34,6 +37,21 @@ function assertMayEditGoalKinds(req: Request, companyId: string, ...kinds: Array
 export function goalRoutes(db: Db) {
   const router = Router();
   const svc = goalService(db);
+  const board = strategyBoardService(db);
+
+  /**
+   * Board control panel (GRE-1135): after a KPI's reading or plan changes,
+   * open or clear its red spell and alert the chair once. A failure here is
+   * logged and never fails the write; the hourly sweep checks again.
+   */
+  async function checkKpiAlert(companyId: string, goalId: string, readingId: string | null = null) {
+    try {
+      if (!(await isEntitled(db, "enableStrategyBoard"))) return;
+      await board.evaluateAlerts(companyId, { goalIds: [goalId], readingId });
+    } catch (err) {
+      logger.error({ err, companyId, goalId }, "strategy board: KPI alert check failed; the hourly sweep will retry");
+    }
+  }
 
   router.get("/companies/:companyId/goals", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -144,6 +162,7 @@ export function goalRoutes(db: Db) {
       entityId: goal.id,
       details: { readingId: reading.id, value: reading.value, readingDate: reading.readingDate, source: reading.source },
     });
+    await checkKpiAlert(goal.companyId, goal.id, reading.id);
     res.status(201).json(reading);
   });
 
@@ -249,6 +268,7 @@ export function goalRoutes(db: Db) {
       entityId: goal.id,
       details: req.body,
     });
+    if (goal.kind === "kpi" || existing.kind === "kpi") await checkKpiAlert(goal.companyId, goal.id);
 
     res.json(goal);
   });

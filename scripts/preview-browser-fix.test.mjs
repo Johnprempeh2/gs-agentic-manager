@@ -10,14 +10,18 @@ test("a browser that is not installed names the install command and the folder",
     "The browser is not installed. Install it once with: PLAYWRIGHT_BROWSERS_PATH=/home/u/.cache/ms-playwright npx playwright install chromium-headless-shell");
 });
 
-test("missing system libraries name the libraries and say John must install them", () => {
+test("missing system libraries ask John for sudo only when the no-root fetch failed", () => {
   // As Playwright 1.62 reports it on Ubuntu 24.04 without libnspr4.
   const message = "browserType.launch: Target page, context or browser has been closed\nBrowser logs:\n"
     + "[pid=1][err] /pw/chrome-headless-shell: error while loading shared libraries: libnspr4.so: cannot open shared object file\n"
     + "  - [pid=1][err] /pw/chrome-headless-shell: error while loading shared libraries: libnspr4.so: cannot open shared object file\n";
-  const fix = browserFix(message, "/pw");
-  assert.match(fix, /^The host is missing system libraries \(libnspr4\.so\)\. John must install them once with: sudo npx playwright install-deps chromium/);
-  assert.doesNotMatch(fix, /playwright install chromium-headless-shell/);
+  const failed = browserFix(message, "/pw", "could not download libnspr4 with apt-get");
+  assert.match(failed, /^The host is missing system libraries \(libnspr4\.so\)\. The no-root fetch failed: could not download libnspr4 with apt-get\. John must install them once with: sudo npx playwright install-deps chromium/);
+  assert.doesNotMatch(failed, /playwright install chromium-headless-shell/);
+
+  const noFetchError = browserFix(message, "/pw");
+  assert.match(noFetchError, /Fetch them without root with: node scripts\/chromium-libs\.mjs/);
+  assert.doesNotMatch(noFetchError, /sudo/);
   assert.match(browserFix("Host system is missing dependencies to run browsers. libnss3.so libasound.so.2", ""),
     /\(libnss3\.so, libasound\.so\.2\)/);
 });

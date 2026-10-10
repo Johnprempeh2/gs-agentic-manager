@@ -375,6 +375,18 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
+          title="Board control panel"
+          description="The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, “Why?” requests and the quarterly board pack."
+          footnote="Turning it off hides the Board page, the alerts and the board packs; nothing is deleted."
+          checked={experimentalQuery.data?.enableStrategyBoard === true}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableStrategyBoard: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableStrategyBoard"
+          managed={managedKeys.enableStrategyBoard}
+          ariaLabel="Toggle board control panel experimental setting"
+        />
+
+        <ExperimentalToggleCard
           title="Built-in Agents"
           description="Show GS Agentic Manager-managed built-in agent surfaces, including built-in roster badges, the Built-in agents tab, and built-in agent setup controls."
           checked={enableBuiltInAgents}

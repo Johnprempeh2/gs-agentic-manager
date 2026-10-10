@@ -576,6 +576,13 @@ export const queryKeys = {
     checkIns: (id: string) => ["goals", "check-ins", id] as const,
     readings: (id: string) => ["goals", "readings", id] as const,
   },
+  strategyBoard: {
+    summary: (companyId: string) => ["strategy-board", companyId] as const,
+    members: (companyId: string) => ["strategy-board", companyId, "members"] as const,
+    packs: (companyId: string) => ["strategy-board", companyId, "packs"] as const,
+    pack: (id: string) => ["strategy-board", "pack", id] as const,
+    whyRequests: (goalId: string) => ["strategy-board", "why-requests", goalId] as const,
+  },
   artifacts: {
     list: (
       companyId: string,
