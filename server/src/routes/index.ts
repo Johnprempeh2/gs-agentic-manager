@@ -22,6 +22,7 @@ export {
 } from "./file-resources.js";
 export { routineRoutes } from "./routines.js";
 export { goalRoutes } from "./goals.js";
+export { workflowTemplateRoutes } from "./workflow-templates.js";
 export { onboardingSeedRoutes } from "./onboarding-seed.js";
 export { approvalRoutes } from "./approvals.js";
 export { secretRoutes } from "./secrets.js";

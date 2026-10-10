@@ -12,6 +12,7 @@ import {
   unique,
   bigint,
   check,
+  date,
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { projects } from "./projects.js";
@@ -96,6 +97,9 @@ export const issues = pgTable(
     tabledUntil: timestamp("tabled_until", { withTimezone: true }),
     tabledByUserId: text("tabled_by_user_id"),
     tabledFromStatus: text("tabled_from_status"),
+    // Deadline of a plan action (GRE-1188): only tasks under a plan objective
+    // carry one, so the board can list the overdue ones.
+    dueDate: date("due_date", { mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -131,6 +135,9 @@ export const issues = pgTable(
     projectWorkspaceIdx: index("issues_company_project_workspace_idx").on(table.companyId, table.projectWorkspaceId),
     executionWorkspaceIdx: index("issues_company_execution_workspace_idx").on(table.companyId, table.executionWorkspaceId),
     dueMonitorIdx: index("issues_company_monitor_due_idx").on(table.companyId, table.monitorNextCheckAt),
+    dueDateIdx: index("issues_company_due_date_idx")
+      .on(table.companyId, table.dueDate)
+      .where(sql`${table.dueDate} is not null`),
     tabledIdx: index("issues_tabled_until_idx")
       .on(table.tabledUntil)
       .where(sql`${table.tabledAt} is not null`),

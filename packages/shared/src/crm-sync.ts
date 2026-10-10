@@ -1,6 +1,7 @@
 // Two-way CRM sync contract (GRE-1074). Constants and the three-value field
 // rule shared by server and UI. No sync job or external call lives here; see
 // doc/CRM-SYNC-CONTRACT.md for the endpoints.
+import type { PipelineFieldType } from "./pipeline-fields.js";
 
 /** What the external side of a binding is: a CRM pipeline or a Notion database. */
 export const CRM_SYNC_CONTAINER_KINDS = ["crm_pipeline", "notion_database"] as const;
@@ -41,6 +42,29 @@ export type CrmSyncConflictStatus = (typeof CRM_SYNC_CONFLICT_STATUSES)[number];
 
 export const CRM_SYNC_CONFLICT_RESOLUTIONS = ["keep_crm", "keep_gsam", "custom"] as const;
 export type CrmSyncConflictResolution = (typeof CRM_SYNC_CONFLICT_RESOLUTIONS)[number];
+
+/**
+ * What holds a field in the "Sync conflicts" queue (GRE-1076).
+ * - conflict: a shared field changed on both sides since the last sync.
+ * - suggestion: a GSAM user or agent asked to change a CRM-owned field; it is
+ *   written to the CRM only after a person accepts it.
+ */
+export const CRM_SYNC_CONFLICT_KINDS = ["conflict", "suggestion"] as const;
+export type CrmSyncConflictKind = (typeof CRM_SYNC_CONFLICT_KINDS)[number];
+
+/** Someone who changed the GSAM side of a held field. */
+export type CrmSyncChangeAuthor =
+  | { actorType: "user"; userId: string }
+  | { actorType: "agent"; agentId: string };
+
+/**
+ * Nobody resolves a conflict that holds only their own change: true when the
+ * GSAM side was changed by this user and nobody else. The CRM side is not
+ * counted because CRM users are not matched to GSAM users yet.
+ */
+export function crmSyncIsOwnChangeOnly(authors: CrmSyncChangeAuthor[], userId: string): boolean {
+  return authors.length > 0 && authors.every((author) => author.actorType === "user" && author.userId === userId);
+}
 
 /** A mapped field value. Kept to plain JSON values so it can be stored and compared. */
 export type CrmSyncFieldValue = string | number | boolean | null | string[];
@@ -110,4 +134,33 @@ export function decideCrmSyncField(input: CrmSyncFieldInput): CrmSyncFieldDecisi
   if (crmChanged && !gsamChanged) return { action: "pull_from_crm", value: crm };
   if (gsamChanged && !crmChanged) return { action: "push_to_crm", value: gsam };
   return { action: "conflict" };
+}
+
+/**
+ * Shapes a value for the typed pipeline field it lands in, so it compares and
+ * validates as that type: CRM values on import, and values a person types in
+ * the review queue. A value that cannot be read as the type is returned as is.
+ */
+export function coerceCrmSyncFieldValue(value: CrmSyncFieldValue, type: PipelineFieldType | undefined): CrmSyncFieldValue {
+  if (value === null || type === undefined) return value;
+  switch (type) {
+    case "number": {
+      if (typeof value === "number") return value;
+      const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : Number.NaN;
+      return Number.isFinite(parsed) ? parsed : value;
+    }
+    case "boolean":
+      if (value === "true") return true;
+      if (value === "false") return false;
+      return value;
+    case "multi_select":
+      if (Array.isArray(value)) return value;
+      return typeof value === "string" && value.includes(",")
+        ? value.split(",").map((item) => item.trim()).filter(Boolean)
+        : [String(value)];
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value;
+    default:
+      return Array.isArray(value) ? value.join(", ") : typeof value === "string" ? value : String(value);
+  }
 }

@@ -164,6 +164,40 @@ Settings.
 
 It stops with an error if any check fails; the instance stays up so you can look.
 
+### Add board, Exco and owner log-ins (GRE-1189)
+
+`create` makes one client log-in, and invites stay hidden for clients. To add
+the rest (about 35 for a Strategy Board client), write a list and run `users`
+on the running instance:
+
+```sh
+# list.csv: keep it off the app, issues and pull requests; delete it when done
+name,email,role
+Ada Board,ada@example.test,board
+"Kofi, Exco",kofi@example.test,exco
+Ola Owner,ola@example.test,owner
+
+scripts/client-instance.sh users --root <root> --file list.csv --dry-run   # what it would do
+scripts/client-instance.sh users --root <root> --file list.csv
+```
+
+| role | company role | board right (GRE-1135) |
+| --- | --- | --- |
+| `board` | Viewer | `strategy:board_member`: reads the strategy, asks "Why?", makes board packs; cannot edit goals, run agents or change settings |
+| `exco` (or `admin`) | Admin | acts on the board through the Admin role |
+| `owner` | Owner | acts on the board through the Owner role; chooses the board and the chair |
+
+- The whole list is checked first. With any bad row (no name, bad email,
+  unknown role, an email listed twice) it prints each one and writes nothing.
+- It makes a backup (`pre-users-*`) before the first change.
+- Safe to run again: a log-in that is already as the list says is `unchanged`.
+  A log-in with the membership but without a right gets the right (`added`).
+- It never changes a role. A log-in that has another role, or a membership that
+  is not active, is `REFUSED`; the exit code is then 1. Change that role in the
+  app (owners do it in Company settings > Members).
+- New log-ins get a random password, printed **once** to the terminal. Give
+  them to John. The chair is chosen in the app by an owner.
+
 ## Start, stop, status
 
 ```sh
@@ -199,6 +233,37 @@ fails.
 `instance.environments`, `company.secrets`, `company.export` and
 `company.invites` also return 403 since GRE-107. `verify` proves they are
 hidden; it does not yet send a change request to each of them.
+
+## Copy a drafted plan to the client (GRE-1190)
+
+The strategy plan is drafted in the practice (workshop) instance. This step
+copies it to the client's instance. Both instances must be running. Add the
+client's users first (F11), so that owners can be matched.
+
+```sh
+scripts/client-instance.sh plan-copy --from <practice root> --to <client root>              # report only
+scripts/client-instance.sh plan-copy --from <practice root> --to <client root> --apply on   # copy
+```
+
+- What moves: every goal with a strategy kind (vision, value, CSF, pillar,
+  objective, KPI, initiative) with its plan fields: KPI target, baseline,
+  direction and thresholds, due dates, done-when, initiative budget, benchmark
+  note. Nothing else moves: no plain goals, issues, comments, check-ins, KPI
+  readings, agents, secrets or research-pack links.
+- Owners: a person owner is matched by email to an active member of the client
+  company. An owner with no match, and every agent owner, is listed; the goal
+  moves without that owner. Add the user, then run again.
+- `--apply on` backs up the client instance first (`pre-plan-copy-*`), then
+  writes the whole plan in one transaction.
+- Run it again after a workshop change: each goal keeps its id, so a re-run
+  updates the copied goals and makes no duplicates. It never deletes a goal in
+  the client instance, and it does not clear an owner set there.
+- The practice instance needs `--from-company <id>` when it has more than one
+  company. The client instance must have exactly one company.
+- Owner emails are printed to the terminal only. Do not paste them into issues.
+
+The company export/import is not used: it does not carry goals, and a client
+edition refuses import.
 
 ## Back up
 

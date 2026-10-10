@@ -369,6 +369,8 @@ export const queryKeys = {
       ["issues", "document", issueId, key] as const,
     documentRevisions: (issueId: string, key: string) =>
       ["issues", "document-revisions", issueId, key] as const,
+    documentEvidence: (issueId: string, key: string) =>
+      ["issues", "document-evidence", issueId, key] as const,
     documentAnnotations: (
       issueId: string,
       key: string,
@@ -446,6 +448,7 @@ export const queryKeys = {
     list: (companyId: string, kind: string) =>
       ["folders", companyId, kind] as const,
   },
+  pipelineAccess: (companyId: string) => ["pipeline-access", companyId] as const,
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
     detail: (pipelineId: string) =>
@@ -461,6 +464,13 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "issue-links"] as const,
     caseProjectLinks: (caseId: string) =>
       ["pipelines", "item", caseId, "project-links"] as const,
+    caseCrmSync: (caseId: string) =>
+      ["pipelines", "item", caseId, "crm-sync"] as const,
+    /** Open "Sync conflicts" items for a company, or for one case. */
+    crmSyncConflicts: (companyId: string, caseId?: string) =>
+      ["pipelines", "crm-sync-conflicts", companyId, caseId ?? "all"] as const,
+    crmSyncFieldMap: (bindingId: string) =>
+      ["pipelines", "crm-sync-field-map", bindingId] as const,
     caseContacts: (caseId: string) =>
       ["pipelines", "item", caseId, "contacts"] as const,
     projectCases: (projectId: string) =>
@@ -557,10 +567,25 @@ export const queryKeys = {
   agentTeams: {
     list: (companyId: string) => ["agent-teams", companyId] as const,
   },
+  workflowTemplates: {
+    list: (companyId: string) => ["workflow-templates", companyId] as const,
+  },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
     checkIns: (id: string) => ["goals", "check-ins", id] as const,
+    readings: (id: string) => ["goals", "readings", id] as const,
+  },
+  strategyBoard: {
+    summary: (companyId: string) => ["strategy-board", companyId] as const,
+    members: (companyId: string) => ["strategy-board", companyId, "members"] as const,
+    settings: (companyId: string) => ["strategy-board", companyId, "settings"] as const,
+    emails: (companyId: string) => ["strategy-board", companyId, "emails"] as const,
+    packs: (companyId: string) => ["strategy-board", companyId, "packs"] as const,
+    pack: (id: string) => ["strategy-board", "pack", id] as const,
+    whyRequests: (goalId: string) => ["strategy-board", "why-requests", goalId] as const,
+    agents: (companyId: string) => ["strategy-board", companyId, "agents"] as const,
+    chat: (companyId: string, agentId: string) => ["strategy-board", companyId, "chat", agentId] as const,
   },
   artifacts: {
     list: (
@@ -585,6 +610,11 @@ export const queryKeys = {
       ["deliverables", companyId, "list", params] as const,
     detail: (companyId: string, id: string) => ["deliverables", companyId, "detail", id] as const,
     comments: (companyId: string, id: string) => ["deliverables", companyId, "comments", id] as const,
+  },
+  website: {
+    overview: (companyId: string) => ["website", companyId, "overview"] as const,
+    report: (companyId: string, propertyId: string) =>
+      ["website", companyId, "report", propertyId] as const,
   },
   budgets: {
     overview: (companyId: string) =>

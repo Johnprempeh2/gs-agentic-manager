@@ -28,7 +28,7 @@ import type {
   PluginExecutionWorkspaceMetadata,
 } from "@greatstone/plugin-sdk";
 import type { CreateIssueThreadInteraction, InviteJoinType, IssueDocumentSummary, PermissionKey, PrincipalType } from "@greatstone/shared";
-import { pluginOperationIssueOriginKind } from "@greatstone/shared";
+import { isBoardGoalKind, pluginOperationIssueOriginKind } from "@greatstone/shared";
 import { companyService } from "./companies.js";
 import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
@@ -2881,7 +2881,11 @@ export function buildHostServices(
       async update(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        requireInCompany("Goal", await goals.getById(params.goalId), companyId);
+        const existing = requireInCompany("Goal", await goals.getById(params.goalId), companyId);
+        // Vision, values and CSFs are for the board only (GRE-1132); plugins act as no board member.
+        if (isBoardGoalKind(existing.kind) || isBoardGoalKind((params.patch as { kind?: string | null }).kind)) {
+          throw new Error("Plugins cannot edit vision, value or critical success factor goals");
+        }
         return (await goals.update(params.goalId, params.patch as any)) as Goal;
       },
     },

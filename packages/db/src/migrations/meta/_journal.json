@@ -2126,8 +2126,92 @@
     {
       "idx": 305,
       "version": "7",
-      "when": 1791577647525,
-      "tag": "0305_fleet_instances",
+      "when": 1791577425026,
+      "tag": "0305_crm_sync_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1791578788584,
+      "tag": "0306_goal_kind_owner_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1791580893304,
+      "tag": "0307_crm_sync_review_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1791587368994,
+      "tag": "0308_goal_kpi_readings_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 309,
+      "version": "7",
+      "when": 1791590010928,
+      "tag": "0309_workflow_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 310,
+      "version": "7",
+      "when": 1791593523832,
+      "tag": "0310_document_evidence_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 311,
+      "version": "7",
+      "when": 1791600398768,
+      "tag": "0311_strategy_board",
+      "breakpoints": true
+    },
+    {
+      "idx": 312,
+      "version": "7",
+      "when": 1791609276346,
+      "tag": "0312_goal_kpi_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 313,
+      "version": "7",
+      "when": 1791620604678,
+      "tag": "0313_website_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 314,
+      "version": "7",
+      "when": 1791630201750,
+      "tag": "0314_issue_due_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 315,
+      "version": "7",
+      "when": 1791632177311,
+      "tag": "0315_strategy_board_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 316,
+      "version": "7",
+      "when": 1791658557790,
+      "tag": "0316_deliverable_comment_anchors",
+      "breakpoints": true
+    },
+    {
+      "idx": 317,
+      "version": "7",
+      "when": 1791663696155,
+      "tag": "0317_fleet_instances",
       "breakpoints": true
     }
   ]

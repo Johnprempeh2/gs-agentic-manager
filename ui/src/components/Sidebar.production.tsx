@@ -3,6 +3,7 @@ import {
   ListChecks,
   CircleDot,
   Target,
+  Landmark,
   LayoutDashboard,
   DollarSign,
   History,
@@ -24,6 +25,8 @@ import {
   UserCheck,
   FileCheck2,
   Brain,
+  Workflow,
+  Globe,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -69,6 +72,8 @@ export function Sidebar() {
   const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
   const showApps = experimentalSettings?.enableApps === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
+  // Website view (GRE-1088): hidden while the managed switch is off.
+  const showWebsite = experimentalSettings?.enableWebsiteView === true;
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
@@ -180,11 +185,16 @@ export function Sidebar() {
             <SidebarNavItem to="/deep-dive" label="Deep Dive" icon={Microscope} textBadge="beta" />
           ) : null}
           <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
+          <SidebarNavItem to="/workflows" label="Workflows" icon={Workflow} />
           {showPipelines ? (
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
           ) : null}
           {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
+          {/* GRE-1135: board control panel, behind enableStrategyBoard. */}
+          {experimentalSettings?.enableStrategyBoard === true ? (
+            <SidebarNavItem to="/strategy-board" label="Board" icon={Landmark} />
+          ) : null}
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (
@@ -219,6 +229,7 @@ export function Sidebar() {
         <SidebarSection label="Company" collapsible={{ open: companyOpen, onOpenChange: setCompanyOpen }}>
           <SidebarNavItem to="/org" label="Org" icon={Network} />
           {showApps ? <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} /> : null}
+          {showWebsite ? <SidebarNavItem to="/website" label="Website" icon={Globe} /> : null}
           <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           {/* One entry — /audit merged into the rich Activity feed (PAP-16302). */}

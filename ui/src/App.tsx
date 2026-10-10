@@ -43,18 +43,24 @@ import { IssueChatLongThreadPerf } from "./pages/IssueChatLongThreadPerf";
 import { Routines } from "./pages/Routines";
 import { Learnings, PipelineItemDetail, PipelineItemLegacyRedirect, Pipelines, ReviewQueue } from "./pages/Pipelines";
 import { PipelineSettings } from "./pages/PipelineSettings";
+import { PipelineAccessOverview } from "./pages/PipelineAccessOverview";
 import { StatusCards } from "./pages/StatusCards";
 import { RoutineDetail } from "./pages/RoutineDetail";
 import { UserProfile } from "./pages/UserProfile";
 import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
+import { WorkflowTemplates } from "./pages/WorkflowTemplates";
 import { Releases } from "./pages/Releases";
 import { Artifacts } from "./pages/Artifacts";
 import { Deliverables } from "./pages/Deliverables";
+import { Website } from "./pages/Website";
 import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
 import { GoalDetail } from "./pages/GoalDetail";
+import { StrategyBoard } from "./pages/StrategyBoard";
+import { BoardAgentChat } from "./pages/BoardAgentChat";
+import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
 import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { CompanyActivity } from "./pages/audit/CompanyActivity";
@@ -198,6 +204,10 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route element={<HiddenSettingsPageGate pageKey="company.secrets" />}>
         <Route path="company/settings/secrets" element={<Secrets />} />
       </Route>
+      <Route
+        path="company/settings/pipelines-access"
+        element={<PipelinesExperimentalGate><PipelineAccessOverview /></PipelinesExperimentalGate>}
+      />
       <Route path="company/settings/tools" element={<LegacyToolsSettingsRedirect />} />
       <Route path="company/settings/tools/:tab" element={<LegacyToolsSettingsRedirect />} />
       <Route path="tools" element={<LegacyToolsRedirect />} />
@@ -390,11 +400,21 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         </Route>
       </Route>
       <Route path="goals" element={<Goals />} />
+      <Route path="workflows" element={<WorkflowTemplates />} />
       <Route element={<HiddenSettingsPageGate pageKey="instance.releases" redirectTo="/dashboard" />}>
         <Route path="releases" element={<Releases />} />
       </Route>
       <Route path="goals/:goalId" element={<GoalDetail />} />
+      <Route
+        path="strategy-board"
+        element={<StrategyBoardExperimentalGate><StrategyBoard /></StrategyBoardExperimentalGate>}
+      />
+      <Route
+        path="strategy-board/ask/:agentId"
+        element={<StrategyBoardExperimentalGate><BoardAgentChat /></StrategyBoardExperimentalGate>}
+      />
       <Route path="deliverables" element={<Deliverables />} />
+      <Route path="website" element={<Website />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
@@ -796,6 +816,7 @@ export function App() {
           <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
           <Route path="routines" element={<UnprefixedBoardRedirect />} />
           <Route path="routines/:routineId" element={<UnprefixedBoardRedirect />} />
+          <Route path="workflows" element={<UnprefixedBoardRedirect />} />
           <Route path="review-queue" element={<UnprefixedBoardRedirect />} />
           <Route path="learnings" element={<UnprefixedBoardRedirect />} />
           <Route path="cases" element={<UnprefixedBoardRedirect />} />
@@ -813,6 +834,7 @@ export function App() {
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
+          <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />

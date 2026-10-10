@@ -104,6 +104,8 @@ import {
   issueCommentPresentationSchema,
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
+  STRATEGIC_WORK_GOAL_KINDS,
+  type IssueWorkFilter,
 } from "@greatstone/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
@@ -153,6 +155,7 @@ import {
 } from "./issue-goal-fallback.js";
 import { getRunLogStore } from "./run-log-store.js";
 import { getDefaultCompanyGoal } from "./goals.js";
+import { assertDueDateOnPlan, resolveNextDueDate } from "./issue-due-date.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import {
   CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
@@ -1854,6 +1857,8 @@ export interface IssueFilters {
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
+  /** Strategic work (goal kind objective or initiative) or everything else. */
+  work?: IssueWorkFilter;
   lowTrustBoundary?: LowTrustBoundary & { companyId: string };
   q?: string;
   limit?: number;
@@ -4958,6 +4963,10 @@ const issueListSelect = {
   projectId: issues.projectId,
   projectWorkspaceId: issues.projectWorkspaceId,
   goalId: issues.goalId,
+  goalKind: sql<string | null>`(
+    SELECT ${goals.kind} FROM ${goals}
+    WHERE ${goals.id} = ${issues.goalId} AND ${goals.companyId} = ${issues.companyId}
+  )`,
   parentId: issues.parentId,
   title: issues.title,
   description: sql<string | null>`
@@ -5029,6 +5038,7 @@ const issueListSelect = {
   tabledUntil: issues.tabledUntil,
   tabledByUserId: issues.tabledByUserId,
   tabledFromStatus: issues.tabledFromStatus,
+  dueDate: issues.dueDate,
   createdAt: issues.createdAt,
   updatedAt: issues.updatedAt,
 };
@@ -5340,6 +5350,21 @@ function hasPlanDocumentCondition(
   return hasPlanDocument
     ? existsPlanDocument
     : sql<boolean>`NOT ${existsPlanDocument}`;
+}
+
+function issueWorkCondition(companyId: string, work: IssueWorkFilter): SQL {
+  const linkedToStrategicGoal = sql<boolean>`
+    EXISTS (
+      SELECT 1
+      FROM ${goals}
+      WHERE ${goals.companyId} = ${companyId}
+        AND ${goals.id} = ${issues.goalId}
+        AND ${inArray(goals.kind, [...STRATEGIC_WORK_GOAL_KINDS])}
+    )
+  `;
+  return work === "strategic"
+    ? linkedToStrategicGoal
+    : sql<boolean>`NOT ${linkedToStrategicGoal}`;
 }
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -6440,6 +6465,7 @@ async function blockedInboxIssueConditions(
       hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
     );
   }
+  if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
   if (!shouldIncludePluginOperationIssues(filters))
     conditions.push(nonPluginOperationIssueCondition());
   if (filters?.labelId) {
@@ -8137,6 +8163,7 @@ export function issueService(db: Db) {
           hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
         );
       }
+      if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
       if (!shouldIncludePluginOperationIssues(filters)) {
         conditions.push(nonPluginOperationIssueCondition());
       }
@@ -8424,6 +8451,7 @@ export function issueService(db: Db) {
           hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
         );
       }
+      if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
       if (!shouldIncludePluginOperationIssues(filters))
         conditions.push(nonPluginOperationIssueCondition());
       const [row] = await db
@@ -10321,6 +10349,9 @@ export function issueService(db: Db) {
           issueNumber,
           identifier,
         } as typeof issues.$inferInsert;
+        if (values.dueDate) {
+          await assertDueDateOnPlan(tx, companyId, values.goalId ?? null);
+        }
         if (values.status === "in_progress" && !values.startedAt) {
           values.startedAt = new Date();
         }
@@ -11124,6 +11155,13 @@ export function issueService(db: Db) {
           projectGoalId: nextProjectGoalId,
           defaultGoalId: defaultCompanyGoal?.id ?? null,
         });
+        const nextDueDate = await resolveNextDueDate(tx, existing.companyId, {
+          currentDueDate: existing.dueDate,
+          currentGoalId: existing.goalId,
+          dueDate: issueData.dueDate,
+          goalId: patch.goalId ?? null,
+        });
+        if (nextDueDate !== undefined) patch.dueDate = nextDueDate;
         // Ownership changes invalidate observed handoff versions even if status
         // stays the same, including an A -> B -> A assignment race.
         if ((issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== receiptExisting.assigneeAgentId)
@@ -12366,15 +12404,21 @@ export function issueService(db: Db) {
         await dbOrTx.select({ id: issues.id }).from(issues).where(eq(issues.id, issueId)).for(REFERENCED_ROW_LOCK);
       }
       const issue = await dbOrTx
-        .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId })
+        .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId, originKind: issues.originKind })
         .from(issues)
         .where(eq(issues.id, issueId))
-        .then((rows: Array<{ companyId: string; conversationAgentId: string | null }>) => rows[0] ?? null);
+        .then((rows: Array<{ companyId: string; conversationAgentId: string | null; originKind: string }>) => rows[0] ?? null);
 
       if (!issue) throw notFound("Issue not found");
 
-      if (issue.conversationAgentId && actor.userId && !(await instanceSettingsService(dbOrTx).getExperimental()).enableAgentChat) {
-        throw unprocessable("Agent Chat is disabled in Experimental settings");
+      if (issue.conversationAgentId && actor.userId) {
+        // A board question chat (GRE-1186) runs under the Strategy Board switch, not Agent Chat.
+        const experimental = await instanceSettingsService(dbOrTx).getExperimental();
+        if (issue.originKind === "strategy_board_question") {
+          if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
+        } else if (!experimental.enableAgentChat) {
+          throw unprocessable("Agent Chat is disabled in Experimental settings");
+        }
       }
       const currentUserRedactionOptions = {
         // Keep every read on the caller's transaction connection. Re-entering

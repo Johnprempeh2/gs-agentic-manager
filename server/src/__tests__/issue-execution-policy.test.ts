@@ -2096,6 +2096,155 @@ describe("review round circuit breaker", () => {
   });
 });
 
+// GRE-1179: on GRE-1087 the reviewer said "ready, pending a recheck" by moving
+// the issue to `blocked` on another issue. That was counted as a third
+// changes-requested round, hit the cap, and parked the review on the human.
+describe("reviewer blocks the stage on a dependency (GRE-1179)", () => {
+  const policy = reviewOnlyPolicy();
+  const reviewStageId = policy.stages[0].id;
+
+  function changesRequestedIssue(changesRequestedCount: number) {
+    return {
+      status: "in_progress",
+      assigneeAgentId: coderAgentId,
+      assigneeUserId: null,
+      responsibleUserId: boardUserId,
+      executionPolicy: policy,
+      executionState: {
+        status: "changes_requested",
+        currentStageId: reviewStageId,
+        currentStageIndex: 0,
+        currentStageType: "review",
+        currentParticipant: { type: "agent", agentId: qaAgentId },
+        returnAssignee: { type: "agent", agentId: coderAgentId },
+        completedStageIds: [],
+        lastDecisionId: null,
+        lastDecisionOutcome: "changes_requested",
+        changesRequestedCount,
+      },
+    };
+  }
+
+  function issueAfterPatch(issue: Record<string, unknown>, patch: Record<string, unknown>, requestedStatus?: string) {
+    return {
+      ...issue,
+      ...(requestedStatus ? { status: requestedStatus } : {}),
+      ...patch,
+    };
+  }
+
+  it("resubmit after changes_requested goes back to the stage's reviewer", () => {
+    const result = applyIssueExecutionPolicyTransition({
+      issue: changesRequestedIssue(2),
+      policy,
+      requestedStatus: "in_review",
+      requestedAssigneePatch: {},
+      actor: { agentId: coderAgentId },
+      commentBody: "Merged main, CI green",
+    });
+
+    expect(result.patch.status).toBe("in_review");
+    expect(result.patch.assigneeAgentId).toBe(qaAgentId);
+    expect(result.patch.assigneeUserId).toBeNull();
+    expect(result.patch.executionState).toMatchObject({
+      status: "pending",
+      currentParticipant: { type: "agent", agentId: qaAgentId },
+      changesRequestedCount: 2,
+    });
+  });
+
+  it("does not count a reviewer's blocked as a round or escalate at the cap", () => {
+    const resubmit = applyIssueExecutionPolicyTransition({
+      issue: changesRequestedIssue(2),
+      policy,
+      requestedStatus: "in_review",
+      requestedAssigneePatch: {},
+      actor: { agentId: coderAgentId },
+      commentBody: "Merged main, CI green",
+    });
+    const pending = issueAfterPatch(changesRequestedIssue(2), resubmit.patch);
+
+    const blocked = applyIssueExecutionPolicyTransition({
+      issue: pending,
+      policy,
+      requestedStatus: "blocked",
+      requestedAssigneePatch: {},
+      actor: { agentId: qaAgentId },
+      commentBody: "Ready to merge, pending the migration recheck",
+    });
+
+    expect(blocked.decision).toBeUndefined();
+    expect(blocked.patch.status).toBeUndefined();
+    expect(blocked.patch.assigneeUserId ?? null).toBeNull();
+    expect(blocked.patch.executionState).toBeUndefined();
+  });
+
+  it("keeps the reviewer on a blocked stage and lets them approve once unblocked", () => {
+    const blockedIssue = {
+      ...changesRequestedIssue(2),
+      status: "blocked",
+      assigneeAgentId: qaAgentId,
+      executionState: {
+        ...changesRequestedIssue(2).executionState,
+        status: "pending",
+      },
+    };
+
+    // An unrelated update (a comment) must not pull the issue out of blocked.
+    const comment = applyIssueExecutionPolicyTransition({
+      issue: blockedIssue,
+      policy,
+      requestedAssigneePatch: {},
+      actor: { agentId: qaAgentId },
+      commentBody: "Still waiting on the recheck",
+    });
+    expect(comment.patch).toEqual({});
+
+    // Someone else cannot use blocked to move the stage.
+    expect(() =>
+      applyIssueExecutionPolicyTransition({
+        issue: { ...blockedIssue, status: "in_review" },
+        policy,
+        requestedStatus: "blocked",
+        requestedAssigneePatch: {},
+        actor: { agentId: coderAgentId },
+        commentBody: "Blocking it myself",
+      }),
+    ).toThrow("Only the active reviewer or approver can advance the current execution stage");
+
+    const approve = applyIssueExecutionPolicyTransition({
+      issue: blockedIssue,
+      policy,
+      requestedStatus: "done",
+      requestedAssigneePatch: {},
+      actor: { agentId: qaAgentId },
+      commentBody: "Recheck passed, merged",
+    });
+    expect(approve.decision).toMatchObject({ outcome: "approved" });
+    expect(approve.patch.executionState).toMatchObject({ status: "completed" });
+  });
+
+  it("keeps the reviewer as assignee when they block and try to reassign", () => {
+    const result = applyIssueExecutionPolicyTransition({
+      issue: {
+        ...changesRequestedIssue(0),
+        status: "in_review",
+        assigneeAgentId: qaAgentId,
+        executionState: { ...changesRequestedIssue(0).executionState, status: "pending" },
+      },
+      policy,
+      requestedStatus: "blocked",
+      requestedAssigneePatch: { assigneeAgentId: ctoAgentId },
+      actor: { agentId: qaAgentId },
+      commentBody: "Waiting on the recheck",
+    });
+
+    expect(result.decision).toBeUndefined();
+    expect(result.patch.assigneeAgentId).toBe(qaAgentId);
+    expect(result.patch.assigneeUserId).toBeNull();
+  });
+});
+
 describe("a stage that waits on the legacy local-board user", () => {
   const policy = makePolicy([{ type: "review", participants: [{ type: "user", userId: "local-board" }] }]);
   const issue = {

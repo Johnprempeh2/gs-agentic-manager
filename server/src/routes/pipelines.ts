@@ -115,6 +115,7 @@ import {
 } from "@greatstone/shared";
 import { documentAnnotationService } from "../services/document-annotations.js";
 import { logActivity } from "../services/activity-log.js";
+import { pipelineAccessRoutes } from "./pipeline-access.js";
 import {
   createPipelineFieldDefinition,
   listPipelineFieldDefinitions,
@@ -895,6 +896,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
   // Cases router runs first and falls through on /cases/* only for ids that
   // are not new-Cases rows, so this gate never blocks the Cases feature.
   router.use(PIPELINE_ROUTE_PREFIXES, requireEntitlement(db, "enablePipelines"));
+  router.use(pipelineAccessRoutes(db));
 
   router.get("/companies/:companyId/pipelines", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -2157,7 +2159,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
 
   router.post("/cases/:caseId/release", validate(releaseCaseSchema), async (req, res) => {
     const caseId = req.params.caseId as string;
-    const companyId = await assertCaseAccess(db, req, caseId);
+    const companyId = await assertCaseWorkAccess(db, req, access, caseId);
     const actor = actorForMutation(req);
     if (req.body.force && actor.type === "agent") throw new HttpError(403, "Agents cannot force-release pipeline leases", { code: "forbidden" });
     res.json(await svc.releaseCase({ companyId, caseId, actor, leaseToken: req.body.leaseToken, force: req.body.force }));
@@ -2231,7 +2233,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
 
   router.post("/cases/:caseId/open-conversation", async (req, res) => {
     const caseId = req.params.caseId as string;
-    const companyId = await assertCaseAccess(db, req, caseId);
+    const companyId = await assertCaseWorkAccess(db, req, access, caseId);
     const actor = actorForMutation(req);
     const conversationSource = await resolvePipelineCaseConversationSource(db, companyId, caseId);
     if (conversationSource?.isActive) {

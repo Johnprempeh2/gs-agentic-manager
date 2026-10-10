@@ -62,7 +62,7 @@ export function McpConfigHelpDialog() {
           <HelpCircle className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-2xl">
+      <DialogContent scrollBody className="max-h-(--sz-85vh) sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Ask an agent for an MCP config</DialogTitle>
           <DialogDescription>

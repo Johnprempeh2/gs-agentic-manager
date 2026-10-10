@@ -2527,6 +2527,13 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   vertical-align: top;
 }
 
+/* On a phone an 18rem first column fills the screen and hides the rest; keep two columns in view. */
+@media (max-width: 40rem) {
+  .paperclip-markdown-table-scroll :where(th, td) {
+    max-width: 10rem;
+  }
+}
+
 .paperclip-markdown th {
   font-weight: 600;
   text-align: left;

@@ -1,8 +1,8 @@
-import { requiresExecutionReconciliation } from "@greatstone/shared";
+import { isStrategicWorkGoalKind, requiresExecutionReconciliation } from "@greatstone/shared";
 import type { ReactNode } from "react";
 import type { ExternalObjectSummary, Issue, IssueRecoveryAction } from "@greatstone/shared";
 import { Link } from "@/lib/router";
-import { Archive, Flag } from "lucide-react";
+import { Archive, Flag, Target } from "lucide-react";
 import {
   createIssueDetailPath,
   rememberIssueDetailLocationState,
@@ -260,6 +260,20 @@ export function IssueRow({
     </Badge>
   ) : null;
 
+  const strategicBadge = isStrategicWorkGoalKind(issue.goalKind) ? (
+    <Badge variant="outline"
+      data-testid="issue-row-strategic"
+      className={cn(
+        "shrink-0 gap-0.5 border-primary/40 bg-primary/10 text-(length:--text-nano) text-primary",
+        selected ? "!border-muted-foreground !text-muted-foreground" : null,
+      )}
+      title="Strategic work: linked to an objective or initiative"
+    >
+      <Target className="h-2.5 w-2.5" aria-hidden />
+      Strategic
+    </Badge>
+  ) : null;
+
   if (presentation === "task") {
     const isUnread = unreadState === "visible" || unreadState === "fading";
     return (
@@ -358,6 +372,7 @@ export function IssueRow({
               {issue.title}{titleSuffix}
             </span>
             {ownerLabel}
+            {strategicBadge}
             {blockedNote}
             {recoveryIndicator}
             {mobileTitleMeta ? (
@@ -454,6 +469,7 @@ export function IssueRow({
             {issue.title}{titleSuffix}
           </span>
           {ownerLabel}
+          {strategicBadge}
           {blockedNote}
           {recoveryIndicator}
         </span>

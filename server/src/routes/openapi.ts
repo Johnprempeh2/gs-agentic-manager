@@ -120,6 +120,14 @@ import {
   // Goal
   createGoalSchema,
   createGoalCheckInSchema,
+  createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  createGoalWhyRequestSchema,
+  answerGoalWhyRequestSchema,
+  createStrategyBoardPackSchema,
+  setStrategyBoardMembersSchema,
+  setStrategyBoardMemberAgentsSchema,
+  updateStrategyBoardSettingsSchema,
   updateGoalSchema,
   // Secret
   createSecretSchema,
@@ -233,6 +241,8 @@ import {
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
   updateDocumentAnnotationThreadSchema,
+  // Document evidence trail
+  upsertDocumentEvidenceSchema,
   // Issue recovery and decomposition
   createAcceptedPlanDecompositionSchema,
   resolveIssueRecoveryActionSchema,
@@ -5635,6 +5645,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/goals/strategic-plan",
+  tags: ["goals"],
+  summary: "Create the empty one-page strategic plan (vision, value, CSF, objective, KPI). Company owners only.",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/goals/{id}",
   tags: ["goals"],
@@ -5674,6 +5693,196 @@ registry.registerPath({
     body: jsonBody(createGoalCheckInSchema),
   },
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/goals/{id}/readings",
+  tags: ["goals"],
+  summary: "List a KPI's readings, newest first, with source and who recorded each",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/goals/{id}/readings",
+  tags: ["goals"],
+  summary:
+    "Record a KPI reading. source: owner_reported (board user, owner agent or lead agent), " +
+    "agent_verified or system (an agent that is not the KPI owner). The goal must be a KPI.",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(createGoalKpiReadingSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+// Board control panel (GRE-1135). Every path answers 403 not_entitled while enableStrategyBoard is off.
+const companyParams = z.object({ companyId: z.string() });
+const idParams = z.object({ id: z.string() });
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board",
+  tags: ["strategy-board"],
+  summary: "The board's view: KPI counts, slippages biggest first, areas, overdue plan actions (tasks under an objective past their due date), changes since the last board pack, and the caller's board rights",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/alerts",
+  tags: ["strategy-board"],
+  summary: "KPI red spells and who the slippage alert went to, newest first",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/members",
+  tags: ["strategy-board"],
+  summary: "Company members with their board member and chair rights (company owners only)",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/strategy-board/members",
+  tags: ["strategy-board"],
+  summary: "Set the board: viewers become board members, one member or owner is chair (company owners only)",
+  request: { params: companyParams, body: jsonBody(setStrategyBoardMembersSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/strategy-board/members/{userId}/agents",
+  tags: ["strategy-board"],
+  summary: "Set the agents one board member may ask about performance (company owners only)",
+  request: { params: z.object({ companyId: z.string(), userId: z.string() }), body: jsonBody(setStrategyBoardMemberAgentsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/agents",
+  tags: ["strategy-board"],
+  summary: "The agents the signed-in board member may ask; empty for everyone else",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+for (const method of ["get", "post"] as const) {
+  registry.registerPath({
+    method,
+    path: "/api/companies/{companyId}/strategy-board/chats/{agentId}",
+    tags: ["strategy-board"],
+    summary: method === "get"
+      ? "The board member's questions-only chat with one of their agents, or null"
+      : "Open the board member's questions-only chat with one of their agents (Ask mode)",
+    request: { params: z.object({ companyId: z.string(), agentId: z.string() }) },
+    responses: { 200: r.ok(), 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+  });
+}
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/settings",
+  tags: ["strategy-board"],
+  summary: "Board email settings: next board meeting, reminder lead days and the board secretary inbox (owners and admins)",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/strategy-board/settings",
+  tags: ["strategy-board"],
+  summary: "Change board email settings; the secretary inbox must be one of the company's email inboxes (company owners only)",
+  request: { params: companyParams, body: jsonBody(updateStrategyBoardSettingsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/emails",
+  tags: ["strategy-board"],
+  summary: "Board emails sent: meeting reminders, slippage alerts and \"Why?\" requests, newest first (owners and admins)",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/packs",
+  tags: ["strategy-board"],
+  summary: "List board packs, newest first",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/strategy-board/packs",
+  tags: ["strategy-board"],
+  summary: "Make a board pack for a period: a frozen snapshot and a Markdown document (board members, owners, admins)",
+  request: { params: companyParams, body: jsonBody(createStrategyBoardPackSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/strategy-board/packs/{id}",
+  tags: ["strategy-board"],
+  summary: "Get a board pack with its snapshot and Markdown body",
+  request: { params: idParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/goals/{id}/why-requests",
+  tags: ["strategy-board"],
+  summary: "List a KPI's \"Why?\" requests and answers, newest first",
+  request: { params: idParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/goals/{id}/why-requests",
+  tags: ["strategy-board"],
+  summary: "Ask the KPI owner to explain a slippage; the owner gets a task (board members, owners, admins)",
+  request: { params: idParams, body: jsonBody(createGoalWhyRequestSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/why-requests/{id}/answer",
+  tags: ["strategy-board"],
+  summary: "Answer a \"Why?\" request (the KPI owner, the lead agent, or a company owner or admin); logged on the KPI",
+  request: { params: idParams, body: jsonBody(answerGoalWhyRequestSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/goals/{id}/kpi-drafts",
+  tags: ["goals"],
+  summary:
+    "Pre-fill draft KPIs under this goal from slide-5 rows of a research pack document, in one transaction. " +
+    "Each draft keeps baseline, unit, benchmark note and a link to its bullet; target stays empty and status is draft " +
+    "(no RAG status) until a person sets the target and accepts it. First reading: system (agent) or owner_reported (person).",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(createKpiDraftsFromPackSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({
@@ -11274,6 +11483,47 @@ registerCurrentRoute({
   tags: ["issues"],
   summary: "Update a document annotation thread",
   body: updateDocumentAnnotationThreadSchema,
+});
+
+// GRE-1146: evidence trail on issue documents.
+for (const route of [
+  [
+    "get",
+    "/api/issues/{id}/documents/{key}/evidence",
+    "List a document's bullets with their source links and the missing-label check",
+  ],
+  [
+    "get",
+    "/api/issues/{id}/documents/{key}/evidence/export",
+    "Export evidence notes, footnotes and source appendix for the deck (format=markdown for text)",
+  ],
+  [
+    "delete",
+    "/api/issues/{id}/documents/{key}/evidence/{bulletId}",
+    "Remove one bullet's source links",
+  ],
+] as const) {
+  registerCurrentRoute({
+    method: route[0],
+    path: route[1],
+    tags: ["issues"],
+    summary: route[2],
+  });
+}
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/issues/{id}/documents/{key}/evidence",
+  tags: ["issues"],
+  summary: "Set source links and labels for document bullets, by bullet ID",
+  body: upsertDocumentEvidenceSchema,
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    404: r.notFound,
+    422: r.unprocessable,
+  },
 });
 
 for (const route of [

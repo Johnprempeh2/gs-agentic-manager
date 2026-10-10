@@ -9,6 +9,8 @@
 //   scripts/client-instance.sh limits --root <dir> [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
 //   scripts/client-instance.sh ai-route --root <dir> [--ai-route R]
 //   scripts/client-instance.sh start|stop|status|backup --root <dir>
+//   scripts/client-instance.sh users --root <dir> --file <list.csv> [--dry-run]
+//                                     (board, Exco and owner log-ins from a name,email,role list; GRE-1189)
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
 //   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
 //   scripts/client-instance.sh restore <dir> <backup file>
@@ -25,6 +27,8 @@
 //   scripts/client-instance.sh fleet-check-in --root <dir> --watch-config <file>
 //   scripts/client-instance.sh fleet-revoke --root <dir> [--local-only yes]
 //                                     (signed registration and check-in with a Greatstone hub, GRE-1082)
+//   scripts/client-instance.sh plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
+//                                     (copy the strategy plan; without --apply on it only reports; GRE-1190)
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
 //                                      Stable image: scripts/greatstone-stable-image.sh)
@@ -50,6 +54,7 @@ import { AI_ACCESS_ROUTES, type AiAccessRoute } from "../../packages/shared/src/
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
+import { copyPlan, companyIds, planCopyLines } from "./plan-copy.js";
 import { choosePorts, siblingPortClaims } from "./ports.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor, releaseFolderLines, releaseFolders } from "./releases.js";
 import {
@@ -141,7 +146,11 @@ const USAGE = `usage:
   limits --root <dir> [limit flags]        show or change the install limits (used at the next start)
   ai-route --root <dir> [--ai-route R]     show or change the AI access route (used at the next start)
   start|stop|status|backup --root <dir>
-  verify --root <dir>                      (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+  users --root <dir> --file <list.csv> [--dry-run]
+                                           add board, Exco and owner log-ins from a list of
+                                           name,email,role (role: board, exco, admin or owner).
+                                           Safe to run again; prints new passwords once
+  verify --root <dir>                     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
   upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
   restore <dir> <backup file>
   releases <instances dir> [--releases <dir>]
@@ -166,6 +175,10 @@ const USAGE = `usage:
                                            send one signed check-in now (watch sends one every pass)
   fleet-revoke --root <dir> [--local-only yes]
                                            revoke this instance's key at the hub, then delete it
+  plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
+                                           copy the strategy plan (vision to initiatives, with targets and
+                                           due dates) to the client instance; owners matched by email.
+                                           Without --apply on it only reports. Both instances must run.
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -224,6 +237,9 @@ function die(message: string): never {
   process.exit(1);
 }
 
+/** Flags that take no value. */
+const SWITCH_FLAGS = new Set(["dry-run"]);
+
 function parseArgs(argv: string[]) {
   const [command, ...rest] = argv;
   const opts: Record<string, string> = {};
@@ -232,6 +248,10 @@ function parseArgs(argv: string[]) {
     const arg = rest[i]!;
     if (!arg.startsWith("--")) {
       positional.push(arg);
+      continue;
+    }
+    if (SWITCH_FLAGS.has(arg.slice(2))) {
+      opts[arg.slice(2)] = "true";
       continue;
     }
     const value = rest[i + 1];
@@ -1530,6 +1550,69 @@ async function cmdVerify(root: string, state: InstanceState) {
 }
 
 /**
+ * users --root <dir> --file <list> [--dry-run] (GRE-1189): board, Exco and
+ * owner log-ins for the instance's one company. The whole list is checked
+ * first; with any bad row nothing is written. A backup is made before the
+ * first change. Passwords of new log-ins are printed once and never stored.
+ */
+async function cmdUsers(root: string, state: InstanceState, opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => !["root", "file", "dry-run"].includes(flag));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (!opts.file) die("--file <list.csv> is required (one name,email,role per line)");
+  const file = path.resolve(opts.file);
+  if (!existsSync(file)) die(`${file} not found`);
+  const dryRun = opts["dry-run"] === "true";
+  const { addClientUsers, parseClientUserList } = await import("../../server/src/services/client-users.js");
+  const { rows, problems } = parseClientUserList(readFileSync(file, "utf8"));
+  if (problems.length > 0) {
+    for (const p of problems) say(`BAD line ${p.line}: ${p.message}`);
+    die(`${plural(problems.length, "bad row", "bad rows")} in ${file}; nothing changed. Fix the list and run again.`);
+  }
+  if (rows.length === 0) die(`${file} lists nobody`);
+  if (!readPid(root)) die("the instance is not running; start it first");
+
+  const db = await import("../../packages/db/src/index.js");
+  const url = db.resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
+  let results: Awaited<ReturnType<typeof addClientUsers>>;
+  try {
+    const conn = db.createDb(url);
+    const companyRows = await conn.select({ id: db.companies.id }).from(db.companies);
+    if (companyRows.length !== 1) die(`the instance has ${companyRows.length} companies; users needs exactly one`);
+    const input = { companyId: companyRows[0]!.id, rows, makePassword: newPassword };
+    const plan = await addClientUsers(conn, { ...input, dryRun: true });
+    const changes = plan.some((r) => r.outcome === "created" || r.outcome === "added");
+    if (dryRun || !changes) {
+      results = plan;
+    } else {
+      say(`backup written: ${backupNow(root, state, "pre-users")}`);
+      results = await addClientUsers(conn, input);
+    }
+  } finally {
+    await db.closeRegisteredClients(url);
+  }
+
+  for (const r of results) say(`${r.outcome === "refused" ? "REFUSED" : r.outcome} line ${r.line} ${r.email} (${r.role}): ${r.detail}`);
+  const count = (outcome: string) => results.filter((r) => r.outcome === outcome).length;
+  say(
+    `${dryRun ? "dry run, nothing written: " : ""}${count("created")} created, ${count("added")} added to, ${count("unchanged")} unchanged, ${count("refused")} refused`,
+  );
+  const made = results.filter((r) => r.password);
+  if (made.length > 0) {
+    // Printed once. Not written to any file or log.
+    process.stdout.write(
+      [
+        "",
+        "New log-ins (shown once; give them to John, do not store them in the app, issues or logs):",
+        `  URL: ${baseUrl(state)}`,
+        ...made.map((r) => `  ${r.email} / ${r.password}   (${r.role})`),
+        "",
+      ].join("\n"),
+    );
+  }
+  if (count("refused") > 0) process.exit(1);
+}
+
+/**
  * The two edition values as KEY=VALUE lines (a `docker run --env-file`). Each
  * value is one line. Needs no instance: the Stable image check (GRE-138)
  * starts the image with the same values a client instance gets.
@@ -1640,6 +1723,51 @@ function cmdReleases(instancesDir: string, opts: Record<string, string>) {
   for (const line of releaseFolderLines(folders)) say(line);
 }
 
+/**
+ * plan-copy (GRE-1190): copy the drafted strategy plan from the practice
+ * instance to the client instance. Only the plan moves; see plan-copy.ts.
+ * The client instance is backed up first. Owner e-mails are printed to this
+ * terminal only.
+ */
+async function cmdPlanCopy(opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => !["from", "to", "from-company", "apply"].includes(flag));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (opts.apply !== undefined && opts.apply !== "on") die("--apply takes only: on");
+  const apply = opts.apply === "on";
+  if (!opts.from || !opts.to) die("usage: plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]");
+  const fromRoot = resolveRoot(opts.from);
+  const toRoot = resolveRoot(opts.to);
+  if (realpathSync(fromRoot) === realpathSync(toRoot)) die("--from and --to are the same instance");
+  const fromState = readState(fromRoot);
+  const toState = readState(toRoot);
+  // The embedded database runs only with its server.
+  if (!readPid(fromRoot)) die(`the practice instance at ${fromRoot} is not running; start it first`);
+  if (!readPid(toRoot)) die(`the client instance at ${toRoot} is not running; start it first`);
+
+  const { createDb, closeRegisteredClients, resolveEmbeddedPostgresConnectionString } = await import("../../packages/db/src/index.js");
+  const fromUrl = resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(fromRoot), "db"), port: fromState.dbPort });
+  const toUrl = resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(toRoot), "db"), port: toState.dbPort });
+  try {
+    const source = createDb(fromUrl).$client;
+    const target = createDb(toUrl).$client;
+    const fromCompanies = await companyIds(source);
+    const fromCompany = opts["from-company"] ?? (fromCompanies.length === 1 ? fromCompanies[0]!.id : undefined);
+    if (!fromCompany || !fromCompanies.some((c) => c.id === fromCompany)) {
+      die(`pick the practice company with --from-company <id>: ${fromCompanies.map((c) => c.id).join(", ") || "none"}`);
+    }
+    const toCompanies = await companyIds(target);
+    if (toCompanies.length !== 1) die(`the client instance must have exactly one company (found ${toCompanies.length})`);
+
+    if (apply) say(`backup of the client instance first: ${backupNow(toRoot, toState, "pre-plan-copy")}`);
+    const report = await copyPlan(source, target, { sourceCompanyId: fromCompany, targetCompanyId: toCompanies[0]!.id, apply });
+    say(`${apply ? "copied" : "dry run (nothing written; add --apply on to copy)"}: ${fromRoot} -> ${toRoot}`);
+    for (const line of planCopyLines(report)) say(line);
+  } finally {
+    await closeRegisteredClients(fromUrl);
+    await closeRegisteredClients(toUrl);
+  }
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === "help" || argv.includes("--help") || argv.includes("-h")) {
@@ -1650,6 +1778,10 @@ async function main() {
   if (command === "create") return cmdCreate(opts);
   if (command === "edition-env") return cmdEditionEnv(opts);
   if (command === "offsite-check") return cmdOffsiteCheck(opts);
+  if (command === "plan-copy") {
+    if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
+    return cmdPlanCopy(opts);
+  }
   if (command === "upgrade" || command === "restore") {
     const [rootArg, second, ...extra] = positional;
     if (extra.length > 0 || (opts.root && rootArg && second)) die(`too many arguments for ${command}`);
@@ -1707,6 +1839,8 @@ async function main() {
       return;
     case "verify":
       return cmdVerify(root, state);
+    case "users":
+      return cmdUsers(root, state, opts);
     case "limits":
       return cmdLimits(root, state, opts);
     case "offsite-init":

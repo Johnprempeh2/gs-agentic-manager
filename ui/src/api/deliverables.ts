@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type {
-  CreateDeliverableComment,
+  CreateDeliverableCommentInput,
   DeliverableComment,
   DeliverableCommentsResponse,
   DeliverableDetail,
@@ -13,7 +13,9 @@ import type {
 
 export type {
   CreateDeliverableComment,
+  CreateDeliverableCommentInput,
   DeliverableComment,
+  DeliverableCommentLocator,
   SendDeliverableCommentsResponse,
   Deliverable,
   DeliverableDetail,
@@ -72,7 +74,7 @@ export const deliverablesApi = {
     `/api/companies/${companyId}/deliverables/${id}/review-content`,
   listComments: (companyId: string, id: string) =>
     api.get<DeliverableCommentsResponse>(`/companies/${companyId}/deliverables/${id}/comments`),
-  createComment: (companyId: string, id: string, input: CreateDeliverableComment) =>
+  createComment: (companyId: string, id: string, input: CreateDeliverableCommentInput) =>
     api.post<DeliverableComment>(`/companies/${companyId}/deliverables/${id}/comments`, input),
   updateComment: (companyId: string, id: string, commentId: string, body: string) =>
     api.patch<DeliverableComment>(`/companies/${companyId}/deliverables/${id}/comments/${commentId}`, { body }),

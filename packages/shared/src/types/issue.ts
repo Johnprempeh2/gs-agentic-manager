@@ -33,6 +33,7 @@ import type {
   IssueThreadInteractionResolverPolicyProvenance,
   IssueThreadInteractionStatus,
   IssueStatus,
+  GoalKind,
 } from "../constants.js";
 import type { Goal } from "./goal.js";
 import type { Project, ProjectWorkspace } from "./project.js";
@@ -791,6 +792,8 @@ export interface Issue {
   projectId: string | null;
   projectWorkspaceId: string | null;
   goalId: string | null;
+  /** Kind of the linked goal; list reads include it so rows can show strategic work. */
+  goalKind?: GoalKind | null;
   parentId: string | null;
   ancestors?: IssueAncestor[];
   title: string;
@@ -843,6 +846,11 @@ export interface Issue {
   tabledByUserId?: string | null;
   /** Status the task returns to when it comes back. */
   tabledFromStatus?: IssueStatus | null;
+  /**
+   * Deadline "YYYY-MM-DD" of a plan action (GRE-1188). Only tasks under a
+   * plan objective carry one; the board lists the overdue ones.
+   */
+  dueDate?: string | null;
   sourceTrust?: SourceTrustMetadata | null;
   labelIds?: string[];
   labels?: IssueLabel[];
@@ -897,6 +905,7 @@ export type CompactIssue = Pick<
   | "projectId"
   | "projectWorkspaceId"
   | "goalId"
+  | "goalKind"
   | "parentId"
   | "title"
   | "description"

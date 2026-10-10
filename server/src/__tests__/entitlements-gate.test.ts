@@ -45,7 +45,9 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
       .use((await import("../routes/projects.js")).projectRoutes(fakeDb)),
   enableIssuePlanDecompositions: issueRouter,
   enableDeepDive: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
+  enableStrategyBoard: async () => (await import("../routes/strategy-board.js")).strategyBoardRoutes(fakeDb),
   enableEnvironments: async () => (await import("../routes/environments.js")).environmentRoutes(fakeDb),
+  enableWebsiteView: async () => (await import("../routes/website.js")).websiteRoutes(fakeDb),
 };
 
 async function issueRouter() {

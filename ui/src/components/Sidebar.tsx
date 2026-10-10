@@ -3,6 +3,7 @@ import {
   ListChecks,
   CircleCheck,
   Target,
+  Landmark,
   LayoutDashboard,
   DollarSign,
   History,
@@ -26,6 +27,8 @@ import {
   Rocket,
   FileCheck2,
   Brain,
+  Workflow,
+  Globe,
 } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -107,6 +110,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   );
   const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
+  // Website view (GRE-1088): hidden while the managed switch is off.
+  const showWebsite = experimentalSettings?.enableWebsiteView === true;
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
@@ -162,7 +167,12 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const tasksItem = <SidebarNavItem to="/issues" label="Agent tasks" icon={CircleCheck} />;
   // Greatstone (GRE-191): Goals graduated from Experimental; always shown.
   const goalsItem = <SidebarNavItem to="/goals" label="Goals" icon={Target} />;
+  // GRE-1135: board control panel, behind enableStrategyBoard.
+  const boardItem = experimentalSettings?.enableStrategyBoard === true ? (
+    <SidebarNavItem to="/strategy-board" label="Board" icon={Landmark} />
+  ) : null;
   const routinesItem = <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />;
+  const workflowsItem = <SidebarNavItem to="/workflows" label="Workflows" icon={Workflow} />;
   const artifactsItem = <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />;
   const casesItem = showCases ? (
     <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
@@ -172,6 +182,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   ) : null;
   const pipelinesItem = showPipelines ? (
     <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
+  ) : null;
+  const websiteItem = showWebsite ? (
+    <SidebarNavItem to="/website" label="Website" icon={Globe} />
   ) : null;
   const workspacesItem = showWorkspacesLink ? (
     <SidebarNavItem to="/workspaces" label="Workspaces" icon={GitBranch} />
@@ -270,6 +283,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               {decisionsItem}
               {tasksItem}
               {goalsItem}
+              {boardItem}
             </SidebarSection>
 
             <SidebarSection label="Team" collapsible={{ open: teamOpen, onOpenChange: setTeamOpen }}>
@@ -282,6 +296,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
               <SidebarStarredProjects />
               {routinesItem}
+              {workflowsItem}
               {pipelinesItem}
               {workspacesItem}
               {artifactsItem}
@@ -296,6 +311,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             >
               <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
               <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
+              {websiteItem}
               <SidebarNavItem to="/activity" label="Audit" icon={History} />
               {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
               <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
@@ -305,11 +321,13 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
             {tasksItem}
             {routinesItem}
+            {workflowsItem}
             {artifactsItem}
             {casesItem}
             {deepDiveItem}
             {pipelinesItem}
             {goalsItem}
+            {boardItem}
             {workspacesItem}
             {pluginNavOutlets}
           </SidebarSection>
@@ -330,6 +348,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             >
               <SidebarNavItem to="/org" label="Org" icon={Network} />
               <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
+              {websiteItem}
               <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
               <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
               <SidebarNavItem to="/activity" label="Activity" icon={History} />

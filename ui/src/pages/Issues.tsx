@@ -14,7 +14,7 @@ import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
 import { CircleDot } from "lucide-react";
-import type { Issue } from "@greatstone/shared";
+import type { Issue, IssueWorkFilter } from "@greatstone/shared";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { issueQuickFilterPresets } from "../lib/issue-filters";
 
@@ -88,6 +88,11 @@ export function Issues() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const handleStatusFilterChange = useCallback((statuses: string[]) => {
     setStatusFilter(issuesStatusQueryParam(statuses));
+  }, []);
+  // Strategic or day-to-day work is also a server filter, so paging is not thinned out by the client.
+  const [workFilter, setWorkFilter] = useState<IssueWorkFilter | undefined>(undefined);
+  const handleWorkFilterChange = useCallback((work: IssueWorkFilter | null) => {
+    setWorkFilter(work ?? undefined);
   }, []);
 
   const urlSearch = searchParams.get("q") ?? "";
@@ -173,6 +178,8 @@ export function Issues() {
       workspaceIdFilter ?? "__all__",
       "status",
       statusFilter ?? "__all__",
+      "work",
+      workFilter ?? "__all__",
       "compact",
       "with-routine-executions",
       "infinite",
@@ -182,6 +189,7 @@ export function Issues() {
       participantAgentId,
       workspaceId: workspaceIdFilter,
       status: statusFilter,
+      work: workFilter,
       includeRoutineExecutions: true,
       limit: issuePageSize,
       offset: pageParam,
@@ -247,6 +255,7 @@ export function Issues() {
       defaultStatuses={ISSUES_DEFAULT_STATUSES}
       showStatusChips
       onStatusFilterChange={handleStatusFilterChange}
+      onWorkFilterChange={handleWorkFilterChange}
       hasMoreIssues={hasMoreServerIssues}
       onLoadMoreIssues={loadMoreServerIssues}
       onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}

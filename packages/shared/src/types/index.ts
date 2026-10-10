@@ -161,6 +161,8 @@ export {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+  type StrategyBoardEmailSettings,
   GSAM_CLOUD_MANAGED_BY,
   GREATSTONE_TEAM_TAG,
   TEAM_CATALOG_ADD_MODES,
@@ -848,12 +850,35 @@ export type {
   GoalBlockerWaitingOn,
   GoalIssueBlocker,
   GoalCheckIn,
+  GoalKpiReading,
   GoalDetail,
   GoalMilestone,
   GoalProgress,
   GoalProgressSource,
   GoalWithProgress,
 } from "./goal.js";
+export type {
+  GoalKpiAlert,
+  GoalWhyRequest,
+  StrategyBoardAgent,
+  StrategyBoardAction,
+  StrategyBoardArea,
+  StrategyBoardBrief,
+  StrategyBoardBriefAction,
+  StrategyBoardBriefCheckIn,
+  StrategyBoardKpi,
+  StrategyBoardMember,
+  StrategyBoardOwner,
+  StrategyBoardPack,
+  StrategyBoardPackListItem,
+  StrategyBoardPackSnapshot,
+  StrategyBoardSnapshotRef,
+  StrategyBoardSummary,
+  StrategyBoardViewerRights,
+  StrategyBoardEmail,
+  StrategyBoardEmailKind,
+  StrategyBoardSettings,
+} from "./strategy-board.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
   BudgetPolicy,
@@ -931,7 +956,7 @@ export type {
   RoutineExecutionIssueOrigin,
   RoutineListItem,
 } from "./routine.js";
-export type { CostEvent, CostSummary, IssueCostSummary, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
+export type { CostEvent, CostSummary, IssueCostSummary, IssueCostModelRow, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
 export type { FinanceEvent, FinanceSummary, FinanceByBiller, FinanceByKind } from "./finance.js";
 export type {
   AgentWakeupResponse,

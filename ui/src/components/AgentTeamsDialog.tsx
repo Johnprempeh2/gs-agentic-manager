@@ -98,7 +98,7 @@ export function AgentTeamsDialog({ companyId, teams, agents, onClose }: {
   }
 
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="max-h-(--sz-calc-16) overflow-y-auto sm:max-w-xl">
+    <DialogContent scrollBody className="max-h-(--sz-calc-16) sm:max-w-xl">
       <DialogTitle>{draft ? (draft.id ? "Edit team" : "New team") : "Teams"}</DialogTitle>
       <DialogDescription>
         Group agents by what they work on. An agent can be in more than one team.

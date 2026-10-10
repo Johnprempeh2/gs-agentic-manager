@@ -131,6 +131,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const isCompanySettingsRoute = shellRoute.builtInContextualSurface === "settings";
   const companyPathSegments = shellRoute.companySegments;
   const isTaskDetailRoute = shellRoute.isTaskDetail;
+  const isMobileChatRoute = shellRoute.isMobileChat;
   const useStreamlinedTaskDetailShell = streamlinedUiEnabled && isTaskDetailRoute;
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
@@ -156,7 +157,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
   // Task and chat threads read like Messages on a phone: the back arrow is
   // the way out, so the tab bar steps aside and the composer docks low.
-  const showMobileNav = mobileNavVisible && !isTaskDetailRoute;
+  const showMobileNav = mobileNavVisible && !isMobileChatRoute;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const matchedCompany = useMemo(() => {
     if (!companyPrefix) return null;
@@ -783,7 +784,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                 // changes (e.g. switching skill-detail tabs) don't widen/shift
                 // when the vertical scrollbar appears or disappears (PAP-10907).
                 isMobile
-                  ? isTaskDetailRoute && !showMobileNav
+                  ? isMobileChatRoute && !showMobileNav
                     ? "overflow-visible pb-(--tc-composer-hidden-nav-offset)"
                     : "overflow-visible pb-(--sz-calc-14)"
                   : "overflow-auto [scrollbar-gutter:stable]",

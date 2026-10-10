@@ -99,6 +99,7 @@ import {
   toolAccessService,
   workspaceOperationService,
 } from "./services/index.js";
+import { websiteService } from "./services/website/index.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { deliverNativeQuestionResponse } from "./services/native-runtime/native-question-bridge.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
@@ -112,6 +113,9 @@ import {
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
+import { runScheduledStrategyBoardAlerts } from "./services/strategy-board.js";
+import { runScheduledStrategyBoardEmails } from "./services/strategy-board-email.js";
+import { emailChannelService } from "./services/email-channels.js";
 import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
@@ -1302,6 +1306,9 @@ async function startServerWithDatabaseTeardown(
     }
   };
   const executionControlSweepsInFlight = new Set<string>();
+  // GRE-1187: board emails are only queued here; the app's email service
+  // (started in app.ts) delivers them on its own tick.
+  const boardEmailSender = emailChannelService(db, { heartbeat: { wakeup: async () => null } });
   // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
   const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
@@ -1319,6 +1326,10 @@ async function startServerWithDatabaseTeardown(
     ["memory_retention", () => runScheduledMemoryRetention(db)],
     // GRE-1079: deliver the memory ingest outbox (the retry queue) and report what fails.
     ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
+    // GRE-1135: hourly KPI slippage check (a deadline can pass with no new reading).
+    ["strategy_board_alerts", () => runScheduledStrategyBoardAlerts(db)],
+    // GRE-1187: meeting reminders, slippage alerts and "Why?" requests by email.
+    ["strategy_board_emails", () => runScheduledStrategyBoardEmails(db, { sender: boardEmailSender, publicBaseUrl: config.authPublicBaseUrl ?? null })],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;
@@ -1472,6 +1483,7 @@ async function startServerWithDatabaseTeardown(
     const environmentCustomImages = environmentCustomImageService(db as any, { pluginWorkerManager });
     const routines = routineService(db as any, { pluginWorkerManager });
     const statusCards = statusCardService(db as any);
+    const website = websiteService(db as any);
     const issues = issueService(db as any);
     const mergedPullRequestConfirmations = issueThreadInteractionService(db as any, {
       wakeup: heartbeat.wakeup,
@@ -1961,6 +1973,21 @@ async function startServerWithDatabaseTeardown(
           }
         })().catch((err) => {
           logger.error({ err }, "status-card scheduler tick failed");
+        }));
+
+        if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork((async () => {
+          const experimental = await instanceSettingsService(db).getExperimental();
+          if (experimental.enableWebsiteView !== true) return;
+          const result = await website.tickDuePulls(new Date());
+          const failed = result.results.filter((entry) => entry.status === "failed" || entry.status === "error");
+          if (failed.length > 0) {
+            logger.warn({ failed }, "website daily pull failed for some properties; errors are on each property");
+          } else if (result.results.length > 0) {
+            logger.info({ pulled: result.results.length }, "website daily pull complete");
+          }
+        })().catch((err) => {
+          logger.error({ err }, "website daily pull tick failed");
         }));
 
         if (heartbeatSchedulerStopped) return;

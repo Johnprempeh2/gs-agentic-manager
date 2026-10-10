@@ -297,6 +297,13 @@ export const agentPipelineAccessSchema = z.object({
   pipelineIds: z.array(z.string().uuid()).min(1).max(200).nullable(),
 }).strict();
 
+// One agent's level on one pipeline, or on all pipelines when pipelineId is
+// omitted (GRE-1073). Board users with users:manage_permissions only.
+export const setAgentPipelineLevelSchema = z.object({
+  level: z.enum(PIPELINE_ACCESS_LEVELS),
+  pipelineId: z.string().uuid().optional(),
+}).strict();
+
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
   canCreateSkills: z.boolean().optional(),

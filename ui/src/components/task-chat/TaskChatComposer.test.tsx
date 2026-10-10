@@ -977,6 +977,15 @@ describe("TaskChatComposer", () => {
     expect(onAdd).toHaveBeenCalledWith("wake up", true, undefined, undefined, expect.any(String));
   });
 
+  it("shows a plain Questions only cue instead of the mode picker for a board chat", () => {
+    render(<TaskChatComposer onAdd={vi.fn()} workMode="ask" questionsOnly />);
+    expect(
+      container.querySelector('[data-testid="task-chat-composer-questions-only"]')?.textContent,
+    ).toBe("Questions only");
+    expect(container.querySelector('[data-testid="task-chat-composer-mode"]')).toBeNull();
+    expect(container.querySelector('[data-testid="task-chat-composer-attach"]')).toBeNull();
+  });
+
   it("hides the attach button without an upload handler and shows it with one", () => {
     render(<TaskChatComposer onAdd={vi.fn()} workMode="standard" />);
     expect(

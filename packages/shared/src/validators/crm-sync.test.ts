@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   createCrmSyncBindingSchema,
+  createCrmSyncSuggestionSchema,
   crmSyncConflictSchema,
   crmSyncEventSchema,
   crmSyncFieldMapSchema,
   crmSyncGsamFieldSchema,
   crmSyncRecordLinksSchema,
   listCrmSyncConflictsQuerySchema,
+  proposeCrmSyncConflictResolutionSchema,
   resolveCrmSyncConflictSchema,
   updateCrmSyncBindingSchema,
 } from "../index.js";
@@ -146,5 +148,27 @@ describe("CRM sync conflict", () => {
   it("lists open conflicts by default", () => {
     expect(listCrmSyncConflictsQuerySchema.parse({})).toMatchObject({ status: "open", limit: 50 });
     expect(listCrmSyncConflictsQuerySchema.parse({ limit: "10" }).limit).toBe(10);
+  });
+});
+
+describe("conflict review requests", () => {
+  it("takes an optional reason on a decision and needs one on a proposal", () => {
+    expect(resolveCrmSyncConflictSchema.parse({ resolution: "keep_gsam", reason: "Agreed on the call" }))
+      .toEqual({ resolution: "keep_gsam", reason: "Agreed on the call" });
+    expect(proposeCrmSyncConflictResolutionSchema.safeParse({ resolution: "keep_crm" }).success).toBe(false);
+    expect(proposeCrmSyncConflictResolutionSchema.safeParse({ resolution: "keep_crm", reason: "  " }).success).toBe(false);
+    expect(proposeCrmSyncConflictResolutionSchema.parse({ resolution: "custom", value: 5, reason: "Signed" }))
+      .toEqual({ resolution: "custom", value: 5, reason: "Signed" });
+  });
+
+  it("needs a mapped GSAM field, a value and a reason for a suggestion", () => {
+    expect(createCrmSyncSuggestionSchema.safeParse({ gsamField: "fields.dealValue", value: 20000, reason: "Scope grew" }).success).toBe(true);
+    expect(createCrmSyncSuggestionSchema.safeParse({ gsamField: "stage", value: "won", reason: "x" }).success).toBe(false);
+    expect(createCrmSyncSuggestionSchema.safeParse({ gsamField: "title", value: "x" }).success).toBe(false);
+  });
+
+  it("filters the queue by kind", () => {
+    expect(listCrmSyncConflictsQuerySchema.parse({ kind: "suggestion" })).toMatchObject({ kind: "suggestion", status: "open" });
+    expect(listCrmSyncConflictsQuerySchema.safeParse({ kind: "other" }).success).toBe(false);
   });
 });

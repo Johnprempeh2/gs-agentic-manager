@@ -1,8 +1,9 @@
 import { PERMISSION_KEYS, type PrincipalPermissionGrant } from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 
-// Pipeline keys are set with the Pipeline access control (GRE-1072).
-const READ_ONLY_KEYS = PERMISSION_KEYS.filter((key) => !key.startsWith("pipelines:"));
+// Pipeline keys are set with the Pipeline access control (GRE-1072). Board
+// keys are for people, set on the Board page (GRE-1135); agents never hold them.
+const READ_ONLY_KEYS = PERMISSION_KEYS.filter((key) => !key.startsWith("pipelines:") && !key.startsWith("strategy:"));
 
 /**
  * Read-only list of every known permission grant key and whether this agent

@@ -384,7 +384,8 @@ export function ConnectionIntentInteractionBody({
               </Button>
             </DialogTrigger>
             <DialogContent
-              className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-3xl"
+              scrollBody
+              className="max-h-(--sz-85vh) sm:max-w-3xl"
               showCloseButton={false}
               onCloseAutoFocus={(event) => {
                 event.preventDefault();

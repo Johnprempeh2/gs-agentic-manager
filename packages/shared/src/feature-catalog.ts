@@ -153,6 +153,22 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableStrategyBoard: {
+    title: "Board control panel",
+    description:
+      "The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, \"Why?\" requests and the quarterly board pack.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
+  enableWebsiteView: {
+    title: "Website view",
+    description:
+      "Read-only Website page built from Google Analytics 4 and Search Console: Google sign-in with read-only scopes, a daily pull stored in this instance, and the report API. Off answers every Website route with 403 not_entitled.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableAgentChat: {
     title: "Agent Chat",
     description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",

@@ -125,6 +125,19 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     kind: "api",
     probes: [{ method: "get", path: `/issues/${ID}/accepted-plan-decompositions` }],
   },
+  enableStrategyBoard: {
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/strategy-board` },
+      { method: "get", path: `${COMPANY}/strategy-board/packs` },
+      { method: "post", path: `${COMPANY}/strategy-board/packs`, body: { periodStart: "2026-07-01", periodEnd: "2026-09-30" } },
+      { method: "put", path: `${COMPANY}/strategy-board/members`, body: { members: [] } },
+      { method: "get", path: `/strategy-board/packs/${ID}` },
+      { method: "get", path: `/goals/${ID}/why-requests` },
+      { method: "post", path: `/goals/${ID}/why-requests`, body: { question: "Why?" } },
+      { method: "post", path: `/why-requests/${ID}/answer`, body: { answer: "Because" } },
+    ],
+  },
   enableDeepDive: {
     kind: "api",
     probes: [
@@ -143,6 +156,19 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
       { method: "delete", path: `/environments/${ID}` },
       { method: "post", path: `/environments/${ID}/probe` },
       { method: "post", path: `/environment-custom-image-setup-sessions/${ID}/cancel` },
+    ],
+  },
+  enableWebsiteView: {
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/website` },
+      { method: "post", path: `${COMPANY}/website/properties` },
+      { method: "patch", path: `${COMPANY}/website/properties/${ID}` },
+      { method: "get", path: `${COMPANY}/website/properties/${ID}/report` },
+      { method: "post", path: `${COMPANY}/website/properties/${ID}/google/connect` },
+      { method: "post", path: `${COMPANY}/website/properties/${ID}/google/disconnect` },
+      { method: "post", path: `${COMPANY}/website/properties/${ID}/pull` },
+      { method: "get", path: "/website/google/callback?code=x&state=x" },
     ],
   },
   enableSmokeLab: {

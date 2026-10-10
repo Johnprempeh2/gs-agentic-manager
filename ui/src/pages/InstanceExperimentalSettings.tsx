@@ -273,6 +273,7 @@ export function InstanceExperimentalSettings() {
   const enableBetaSkills = experimentalQuery.data?.enableBetaSkills === true;
   const enableSummaries = experimentalQuery.data?.enableSummaries === true;
   const enableStatusCards = experimentalQuery.data?.enableStatusCards === true;
+  const enableWebsiteView = experimentalQuery.data?.enableWebsiteView === true;
   const summariesManaged = managedKeys.enableSummaries?.managed === true;
   const statusCardsManaged = managedKeys.enableStatusCards?.managed === true;
   const statusCardsBlockedByManagedSummaries = summariesManaged && !enableSummaries;
@@ -372,6 +373,18 @@ export function InstanceExperimentalSettings() {
           settingKey="enableBetaSkills"
           managed={managedKeys.enableBetaSkills}
           ariaLabel="Toggle beta skills experimental setting"
+        />
+
+        <ExperimentalToggleCard
+          title="Board control panel"
+          description="The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, “Why?” requests and the quarterly board pack."
+          footnote="Turning it off hides the Board page, the alerts and the board packs; nothing is deleted."
+          checked={experimentalQuery.data?.enableStrategyBoard === true}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableStrategyBoard: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableStrategyBoard"
+          managed={managedKeys.enableStrategyBoard}
+          ariaLabel="Toggle board control panel experimental setting"
         />
 
         <ExperimentalToggleCard
@@ -602,6 +615,18 @@ export function InstanceExperimentalSettings() {
             ariaLabel="Toggle isolated workspaces by default experimental setting"
           />
         )}
+
+        <ExperimentalToggleCard
+          title="Website view"
+          description="A read-only Website page built from Google Analytics 4 and Search Console, with a daily pull stored in this instance."
+          footnote="Turning this off hides the Website page and blocks the Website API; stored reports are kept."
+          checked={enableWebsiteView}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableWebsiteView: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableWebsiteView"
+          managed={managedKeys.enableWebsiteView}
+          ariaLabel="Toggle website view experimental setting"
+        />
       </section>
 
       {showDeveloperSection ? (

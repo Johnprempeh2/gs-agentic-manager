@@ -417,6 +417,8 @@ export type TaskChatThreadProps = ComponentProps<typeof IssueChatThread> & {
   initialHistoryError?: boolean;
   onRetryInitialHistory?: () => void;
   onOpenSkill?: (skillId: string, name: string) => void;
+  /** A board question chat (GRE-1186): the composer shows a fixed "Questions only" cue. */
+  questionsOnly?: boolean;
 };
 
 type PendingComposerInput =
@@ -506,6 +508,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     stopScope,
     issueWorkMode = "standard",
     onWorkModeChange,
+    questionsOnly = false,
     composerAccessory,
     footer,
     showComposer = true,
@@ -3201,6 +3204,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                       stopScope={stopScope}
                       workMode={issueWorkMode}
                       onWorkModeChange={onWorkModeChange}
+                      questionsOnly={questionsOnly}
                       disabled={Boolean(runtimeComposerDisabledReason)}
                       disabledReason={runtimeComposerDisabledReason}
                       onAttachImage={onAttachImage}

@@ -25,6 +25,7 @@ import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
+import { boardQuestionRunGuard } from "./middleware/board-question-run-guard.js";
 import {
   privateHostnameGuard,
   resolvePrivateHostnameAllowSet,
@@ -63,6 +64,7 @@ import { releaseRoutes } from "./routes/releases.js";
 import { releasesFloorRoutes } from "./routes/releases-floor.js";
 import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
+import { websiteRoutes } from "./routes/website.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
 import type { SetupTokenSessionService } from "./services/setup-token-session.js";
@@ -84,9 +86,13 @@ import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
+import { crmSyncRoutes } from "./routes/crm-sync.js";
+import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
+import { strategyBoardRoutes } from "./routes/strategy-board.js";
+import { workflowTemplateRoutes } from "./routes/workflow-templates.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
@@ -151,7 +157,8 @@ import { remoteAgentProfileRoutes } from "./routes/remote-agent-profiles.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { readBrandedStaticIndexHtml } from "./static-index-html.js";
 import { staticUiCacheControl } from "./static-ui-cache.js";
-import { applyUiBranding } from "./ui-branding.js";
+import { applyUiBranding, renderPartnerWebManifest } from "./ui-branding.js";
+import { getPartnerBranding } from "./services/partner-branding.js";
 import { logger } from "./middleware/logger.js";
 import {
   DEFAULT_LOCAL_PLUGIN_DIR,
@@ -685,6 +692,8 @@ export async function createApp(
   const agentAvatars = agentAvatarRoutes();
   api.use(agentAvatars.router);
   api.use(boardMutationGuard());
+  // Board question chats are questions only (GRE-1186).
+  api.use(boardQuestionRunGuard(db));
   // Password re-check for release, rollback and promote (GRE-133). After the
   // mutation guard so a cross-site page cannot post a password.
   api.use(releaseReauthRoutes(db));
@@ -713,6 +722,7 @@ export async function createApp(
   api.use(releaseRoutes(db));
   api.use(clientVersionRoutes());
   api.use(statusCardRoutes(db));
+  api.use(websiteRoutes(db));
   api.use(teamsCatalogRoutes(db));
   // The setup-token login session service. The router builds it and hands it
   // back through the callback below, so the shutdown hook can cancel every live
@@ -807,6 +817,7 @@ export async function createApp(
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(pipelineRoutes(db));
+  api.use(crmSyncRoutes(db));
   api.use(
     environmentRoutes(db, {
       pluginWorkerManager: workerManager,
@@ -821,6 +832,8 @@ export async function createApp(
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(emailRoutes(db, emailChannels));
   api.use(goalRoutes(db));
+  api.use(strategyBoardRoutes(db));
+  api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(agentTeamRoutes(db));
   const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));
@@ -1028,6 +1041,17 @@ export async function createApp(
       localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
     }),
   );
+
+  // Partner branding: parsed here at startup so a rejected value (a bad logo
+  // URL, a colour that fails contrast) is warned about at boot, not on the
+  // first page view. A branded instance serves its own phone manifest; an
+  // unbranded one falls through to the static file.
+  const partnerManifest = renderPartnerWebManifest(getPartnerBranding());
+  if (partnerManifest) {
+    app.get("/site.webmanifest", (_req, res) => {
+      res.type("application/manifest+json").set("Cache-Control", "no-cache").send(partnerManifest);
+    });
+  }
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   if (opts.uiMode === "static") {
@@ -1284,6 +1308,8 @@ export async function createApp(
       IMPORT_TRANSFER_SPOOL_SWEEP_INTERVAL_MS,
     );
   importTransferSweepTimer.unref?.();
+  // CRM sync (GRE-1100): polls due Pipedrive bindings once a minute. Read only.
+  const stopCrmSyncScheduler = startCrmSyncScheduler(db);
   // Startup only (never on the hourly interval — that would kill live
   // applies): apply jobs are in-memory in this single process, so any run
   // still "applying" now was interrupted by the previous shutdown and would
@@ -1390,6 +1416,7 @@ export async function createApp(
         clearInterval(importTransferSweepTimer);
         importTransferSweepTimer = null;
       }
+      stopCrmSyncScheduler();
       devWatcher?.close();
       viteHtmlRenderer?.dispose();
       void viteDevServer?.close().catch(() => undefined);

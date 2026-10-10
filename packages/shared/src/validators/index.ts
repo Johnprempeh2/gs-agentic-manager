@@ -40,6 +40,7 @@ export {
 export {
   instanceSettingsSchema,
   instanceGeneralSettingsSchema,
+  strategyBoardEmailSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
   type PatchInstanceGeneralSettings,
@@ -368,6 +369,7 @@ export {
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
   agentPipelineAccessSchema,
+  setAgentPipelineLevelSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
@@ -625,10 +627,30 @@ export {
   createGoalSchema,
   updateGoalSchema,
   createGoalCheckInSchema,
+  createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  kpiDraftRowSchema,
   type CreateGoal,
   type UpdateGoal,
   type CreateGoalCheckIn,
+  type CreateGoalKpiReading,
+  type CreateKpiDraftsFromPack,
+  type KpiDraftRow,
 } from "./goal.js";
+export {
+  createGoalWhyRequestSchema,
+  answerGoalWhyRequestSchema,
+  createStrategyBoardPackSchema,
+  setStrategyBoardMembersSchema,
+  setStrategyBoardMemberAgentsSchema,
+  type CreateGoalWhyRequest,
+  type AnswerGoalWhyRequest,
+  type CreateStrategyBoardPack,
+  type SetStrategyBoardMembers,
+  type SetStrategyBoardMemberAgents,
+  updateStrategyBoardSettingsSchema,
+  type UpdateStrategyBoardSettings,
+} from "./strategy-board.js";
 
 export {
   applyOnboardingSeedSchema,

@@ -201,6 +201,18 @@ Use in property rows, comment headers, assignee displays, and anywhere a user/ag
 **File:** `GoalTree.tsx`
 **Usage:** Hierarchical goal tree with expand/collapse. Used on the goals page.
 
+### Board control panel (AssuranceBadge, AttentionQueue, StrategyAtAGlance, ChangesSinceSnapshot)
+
+**File:** `strategy-board/StrategyBoardViews.tsx`
+**Usage:** The pieces of the board control panel (`/strategy-board`), shown with sample data in the design guide's "Board control panel" section.
+
+- `AssuranceBadge` (`kpi: { latestReadingSource, readingAgeDays }`): evidence strength (strong, moderate, weak), separate from the RAG colour. Never let a colour suggest a number is checked.
+- `AttentionQueue` (`kpis`, `canAskWhy`, `onAskWhy`): red then amber KPIs, biggest slippage first, with an Ask why button for board members. Has its own empty state.
+- `StrategyAtAGlance` (`areas`): a card per pillar or CSF with its worst KPI status (`KpiStatusPill`) and a dot per objective.
+- `ChangesSinceSnapshot` (`kpis`, `hasSnapshot`): KPIs that changed colour since the last board pack. The old pill, arrow and new pill stay together on one line.
+
+For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under it (`ragRollup`); `GoalHealthPill` (task progress) only when there are no KPIs. `StrategyCascade`'s `CascadeStatus` follows this rule.
+
 ### CompanySwitcher
 
 **File:** `CompanySwitcher.tsx`

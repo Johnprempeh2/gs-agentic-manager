@@ -682,7 +682,7 @@ describe("Sidebar", () => {
     expect(headings).toEqual(["Work", "Team", "Build", "Company"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Inbox", "My tasks", "Decisions", "Agent tasks", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workspaces", "Artifacts", "Casesbeta"]);
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workflows", "Workspaces", "Artifacts", "Casesbeta"]);
     expect(sectionLabels("Company")).toEqual(["Skills", "Connectors", "Audit", "Releases", "Settings"]);
     expect(
       container.querySelector('a[href="/issues"] svg')?.classList.contains("lucide-circle-check"),
@@ -698,7 +698,7 @@ describe("Sidebar", () => {
   it("shows Deep Dive after Cases only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Artifacts", "Casesbeta", "Deep Divebeta"]);
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workflows", "Artifacts", "Casesbeta", "Deep Divebeta"]);
     flushSync(() => {
       root.unmount();
     });
@@ -706,6 +706,24 @@ describe("Sidebar", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: false, enableDeepDive: true });
     root = await renderSidebar();
     expect(container.textContent).not.toContain("Deep Dive");
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows the Board link after Goals only while the board control panel is on (GRE-1135)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStrategyBoard: true });
+    let root = await renderSidebar();
+    const link = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Board");
+    expect(link?.getAttribute("href")).toBe("/strategy-board");
+    expect(sectionLabels("Work").slice(-2)).toEqual(["Goals", "Board"]);
+    flushSync(() => {
+      root.unmount();
+    });
+
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStrategyBoard: false });
+    root = await renderSidebar();
+    expect([...container.querySelectorAll("a")].some((anchor) => anchor.textContent === "Board")).toBe(false);
     flushSync(() => {
       root.unmount();
     });

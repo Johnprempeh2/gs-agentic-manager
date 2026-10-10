@@ -52,6 +52,8 @@ describe("instance settings service", () => {
       enablePipelines: false,
       enableCases: false,
       enableDeepDive: false,
+      enableStrategyBoard: false,
+      enableWebsiteView: false,
       enableIssuePlanDecompositions: true,
       enableExperimentalFileViewer: true,
       enableBuiltInAgents: true,

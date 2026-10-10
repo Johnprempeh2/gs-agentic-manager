@@ -1,5 +1,6 @@
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
+import { isBoardQuestionChat, strategyBoardChatService } from "../services/strategy-board-chat.js";
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
 import {
@@ -9,7 +10,7 @@ import {
   type EntitlementSettingsReader,
 } from "../services/entitlements.js";
 import { decideReassignmentRunStop } from "../services/reassignment-handover.js";
-import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, requiresExecutionReconciliation } from "@greatstone/shared";
+import { extractIssueReferenceIdentifiers, HTML_ATTACHMENT_CSP, ISSUE_WORK_FILTERS, requiresExecutionReconciliation, type IssueWorkFilter } from "@greatstone/shared";
 import {
   validateExecutionReconciliation,
   markExecutionReconciliation,
@@ -81,6 +82,8 @@ import {
   checkoutIssueSchema,
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
+  documentEvidenceBulletIdSchema,
+  upsertDocumentEvidenceSchema,
   createChildIssueSchema,
   createIssueSchema,
   resolveCreateIssueStatusDefault,
@@ -199,6 +202,7 @@ import {
   type QueuedCommentIssueContext,
 } from "../modules/wake-queue/index.js";
 import { artifactReviewDocumentService } from "../services/artifact-review-documents.js";
+import { documentEvidenceService } from "../services/document-evidence.js";
 import { assertCanResolveProposal } from "../services/secret-proposal-authorization.js";
 import {
   buildDocumentReviewContext,
@@ -242,6 +246,7 @@ import {
   assertCompanyAccess,
   getAccessibleResource,
   getActorInfo,
+  hasCompanyAccess,
 } from "./authz.js";
 import {
   assertNoAgentHostWorkspaceCommandMutation,
@@ -3155,6 +3160,16 @@ class AutoApprovalIssueMissingError extends Error {
   }
 }
 
+const ISSUE_WORK_QUERY_ERROR = `work must be one of: ${ISSUE_WORK_FILTERS.join(", ")}`;
+
+/** `undefined` when absent, `null` when not a known work filter. */
+function parseIssueWorkQuery(value: unknown): IssueWorkFilter | null | undefined {
+  if (value === undefined || value === "") return undefined;
+  return typeof value === "string" && (ISSUE_WORK_FILTERS as readonly string[]).includes(value)
+    ? (value as IssueWorkFilter)
+    : null;
+}
+
 function toCompactIssue(issue: any): CompactIssue {
   return {
     externalConversationState: issue.externalConversationState ?? null,
@@ -3163,6 +3178,7 @@ function toCompactIssue(issue: any): CompactIssue {
     projectId: issue.projectId,
     projectWorkspaceId: issue.projectWorkspaceId,
     goalId: issue.goalId,
+    goalKind: issue.goalKind ?? null,
     parentId: issue.parentId,
     title: issue.title,
     description: issue.description,
@@ -3738,6 +3754,7 @@ export function issueRoutes(
     opts.searchRateLimiter ?? defaultCompanySearchRateLimiter;
   const instanceSettings = instanceSettingsService(db);
   const agentsSvc = agentService(db);
+  const boardChats = strategyBoardChatService(db);
   // GRE-1090: refuse these feature routes while their managed switch is off,
   // before validation. Agent Chat on existing conversations checks per route.
   router.use(
@@ -3763,6 +3780,7 @@ export function issueRoutes(
   const artifactReviewDocumentsSvc = artifactReviewDocumentService(db, storage);
   const companySkillsSvc = companySkillService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
+  const documentEvidenceSvc = documentEvidenceService(db);
   const decisionTrainingSvc = decisionTrainingService(db);
   const issueReferencesSvc = issueReferenceService(db);
   const issueThreadInteractionsSvc = issueThreadInteractionService(db);
@@ -6769,6 +6787,31 @@ export function issueRoutes(
     return false;
   }
 
+  /**
+   * True when this comment is a message on a board question chat (GRE-1186):
+   * from the board member who owns it while they may still ask that agent, or
+   * the reply of its agent from a run that serves this chat. Lets the write
+   * past the viewer rule; nothing else on the chat is opened up.
+   */
+  async function boardChatWriteAllowed(
+    req: Request,
+    issue: { id: string; companyId: string; originKind?: string | null; conversationAgentId: string | null; conversationUserId: string | null },
+  ) {
+    if (!isBoardQuestionChat(issue) || !hasCompanyAccess(req, issue.companyId)) return false;
+    if (!(await isEntitled(instanceSettings, "enableStrategyBoard"))) return false;
+    if (req.actor.type === "board") {
+      const userId = req.actor.userId;
+      return Boolean(userId && userId === issue.conversationUserId
+        && (await boardChats.mayChat(issue.companyId, userId, issue.conversationAgentId!)));
+    }
+    if (req.actor.type === "agent") {
+      if (!req.actor.agentId || req.actor.agentId !== issue.conversationAgentId || !req.actor.runId) return false;
+      const chat = await boardChats.boardChatForRun(issue.companyId, req.actor.agentId, req.actor.runId);
+      return chat?.id === issue.id;
+    }
+    return false;
+  }
+
   async function assertBoardCommentNotPaused(
     req: Request,
     res: Response,
@@ -8244,6 +8287,7 @@ export function issueRoutes(
     const hasPlanDocument = parseOptionalBooleanQuery(
       req.query.hasPlanDocument,
     );
+    const work = parseIssueWorkQuery(req.query.work);
     const includeLiveDescendantSummary = parseOptionalBooleanQuery(
       req.query.includeLiveDescendantSummary,
     );
@@ -8335,6 +8379,10 @@ export function issueRoutes(
         .json({ error: "hasPlanDocument must be true or false when provided" });
       return;
     }
+    if (work === null) {
+      res.status(400).json({ error: ISSUE_WORK_QUERY_ERROR });
+      return;
+    }
     if (includeLiveDescendantSummary === null) {
       res.status(400).json({
         error:
@@ -8422,6 +8470,7 @@ export function issueRoutes(
         req.query.includeBlockedInboxAttention === "1",
       includeLiveDescendantSummary: includeLiveDescendantSummary === true,
       hasPlanDocument,
+      work,
       q: req.query.q as string | undefined,
       limit,
       offset,
@@ -8593,6 +8642,7 @@ export function issueRoutes(
     const hasPlanDocument = parseOptionalBooleanQuery(
       req.query.hasPlanDocument,
     );
+    const work = parseIssueWorkQuery(req.query.work);
     if (attention !== "blocked") {
       res
         .status(400)
@@ -8609,6 +8659,10 @@ export function issueRoutes(
       res
         .status(400)
         .json({ error: "hasPlanDocument must be true or false when provided" });
+      return;
+    }
+    if (work === null) {
+      res.status(400).json({ error: ISSUE_WORK_QUERY_ERROR });
       return;
     }
 
@@ -8641,6 +8695,7 @@ export function issueRoutes(
       includeBlockedBy: true,
       includeBlockedInboxAttention: true,
       hasPlanDocument,
+      work,
       q: req.query.q as string | undefined,
     } as const;
 
@@ -10179,6 +10234,140 @@ export function issueRoutes(
         },
       );
     res.json({ ...doc, annotations });
+  });
+
+  // Evidence trail (GRE-1146): source links and labels per document bullet,
+  // the missing-label check, and the notes export for the deck builder.
+  function parseDocumentKeyParam(req: Request, res: Response): string | null {
+    const keyParsed = issueDocumentKeySchema.safeParse(
+      String(req.params.key ?? "")
+        .trim()
+        .toLowerCase(),
+    );
+    if (!keyParsed.success) {
+      res.status(400).json({
+        error: "Invalid document key",
+        details: keyParsed.error.issues,
+      });
+      return null;
+    }
+    return keyParsed.data;
+  }
+
+  async function readableIssueForEvidence(req: Request, res: Response) {
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      getIssueById(req, req.params.id as string),
+      "Issue not found",
+    );
+    if (!issue) return null;
+    if (!(await assertIssueReadAllowed(req, res, issue))) return null;
+    return issue;
+  }
+
+  async function writableIssueForEvidence(req: Request, res: Response) {
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(req.params.id as string),
+      "Issue not found",
+    );
+    if (!issue) return null;
+    if (
+      !(await assertAgentIssueMutationAllowed(req, res, issue, {
+        allowVisibleIssueWrite: true,
+      }))
+    )
+      return null;
+    return issue;
+  }
+
+  router.get("/issues/:id/documents/:key/evidence", async (req, res) => {
+    const issue = await readableIssueForEvidence(req, res);
+    if (!issue) return;
+    const key = parseDocumentKeyParam(req, res);
+    if (!key) return;
+    res.json(await documentEvidenceSvc.getView(issue, key));
+  });
+
+  router.get("/issues/:id/documents/:key/evidence/export", async (req, res) => {
+    const issue = await readableIssueForEvidence(req, res);
+    if (!issue) return;
+    const key = parseDocumentKeyParam(req, res);
+    if (!key) return;
+    const exported = await documentEvidenceSvc.exportForDeck(issue, key);
+    if (req.query.format === "markdown") {
+      res.type("text/markdown").send(exported.markdown);
+      return;
+    }
+    res.json(exported);
+  });
+
+  router.put(
+    "/issues/:id/documents/:key/evidence",
+    validate(upsertDocumentEvidenceSchema),
+    async (req, res) => {
+      const issue = await writableIssueForEvidence(req, res);
+      if (!issue) return;
+      const key = parseDocumentKeyParam(req, res);
+      if (!key) return;
+      const { actor, annotationActor } = annotationActorInput(req);
+      const view = await documentEvidenceSvc.upsert(issue, key, req.body, {
+        agentId: annotationActor.agentId,
+        userId: annotationActor.userId,
+      });
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.document_evidence_updated",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          key: view.documentKey,
+          documentId: view.documentId,
+          revisionNumber: view.revisionNumber,
+          bulletIds: (req.body as { bullets: { bulletId: string }[] }).bullets.map((bullet) => bullet.bulletId),
+          check: view.check.totals,
+        },
+      });
+      res.json(view);
+    },
+  );
+
+  router.delete("/issues/:id/documents/:key/evidence/:bulletId", async (req, res) => {
+    const issue = await writableIssueForEvidence(req, res);
+    if (!issue) return;
+    const key = parseDocumentKeyParam(req, res);
+    if (!key) return;
+    const bulletId = documentEvidenceBulletIdSchema.safeParse(req.params.bulletId);
+    if (!bulletId.success) {
+      res.status(400).json({ error: "Invalid bullet ID", details: bulletId.error.issues });
+      return;
+    }
+    const removed = await documentEvidenceSvc.remove(issue, key, bulletId.data);
+    if (!removed) {
+      res.status(404).json({ error: "No evidence for this bullet" });
+      return;
+    }
+    const { actor } = annotationActorInput(req);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "issue.document_evidence_removed",
+      entityType: "issue",
+      entityId: issue.id,
+      details: { key, bulletId: bulletId.data },
+    });
+    res.json({ ok: true });
   });
 
   router.get("/issues/:id/documents/:key/annotations", async (req, res) => {
@@ -15530,8 +15719,9 @@ export function issueRoutes(
           }
         }
 
+        const wakeDeliveries: Promise<unknown>[] = [];
         for (const { agentId, wakeup } of wakeups.values()) {
-          heartbeat
+          wakeDeliveries.push(heartbeat
             .wakeup(agentId, wakeup)
             .then((wakeRun) => {
               if (wakeup.reason !== ISSUE_BLOCKERS_RESOLVED_WAKE_REASON) return;
@@ -15572,7 +15762,22 @@ export function issueRoutes(
                 { err, issueId: issue.id, agentId },
                 "failed to wake agent on issue update",
               ),
-            );
+            ));
+        }
+
+        // GRE-1082: a blocker can stop counting without reaching `done`
+        // (blockedByIssueIds edited, blocker status changed). Wake any issue on
+        // either side of this edit whose dependency cancel is now cleared. Runs
+        // after the wakes above so a blocker completion is never woken twice.
+        if (
+          Array.isArray(req.body.blockedByIssueIds) ||
+          existing.status !== issue.status
+        ) {
+          await Promise.allSettled(wakeDeliveries);
+          await wakeIssuesWithClearedBlockers(issue.companyId, [
+            issue.id,
+            ...(await listDependentIssueIds(issue.companyId, issue.id)),
+          ]);
         }
       })();
 
@@ -15593,6 +15798,25 @@ export function issueRoutes(
     },
   );
 
+  async function listDependentIssueIds(companyId: string, blockerIssueId: string) {
+    try {
+      const dependents = await svc.listOpenBlockedDependents(companyId, blockerIssueId);
+      return (dependents ?? []).map((dependent: { id: string }) => dependent.id);
+    } catch (err) {
+      logger.warn({ err, blockerIssueId }, "failed to list dependents of blocker");
+      return [];
+    }
+  }
+
+  async function wakeIssuesWithClearedBlockers(companyId: string, issueIds: string[]) {
+    if (issueIds.length === 0) return;
+    try {
+      await heartbeat.reconcileResolvedDependencyWakes({ companyId, issueIds });
+    } catch (err) {
+      logger.warn({ err, issueIds }, "failed to wake issues whose blockers cleared");
+    }
+  }
+
   router.delete("/issues/:id", async (req, res) => {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(
@@ -15604,12 +15828,15 @@ export function issueRoutes(
     if (!existing) return;
     if (!(await assertAgentIssueMutationAllowed(req, res, existing))) return;
     const attachments = await svc.listAttachments(id);
+    const dependentIssueIds = await listDependentIssueIds(existing.companyId, id);
 
     const issue = await svc.remove(id);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
     }
+    // GRE-1082: deleting a blocker removes its relations by cascade.
+    void wakeIssuesWithClearedBlockers(issue.companyId, dependentIssueIds);
 
     for (const attachment of attachments) {
       try {
@@ -17921,15 +18148,18 @@ export function issueRoutes(
     validate(addIssueCommentSchema),
     async (req, res) => {
       const id = req.params.id as string;
+      const found = await svc.getById(id);
+      const boardChatWrite = found ? await boardChatWriteAllowed(req, found) : false;
       const issue = await getAccessibleResource(
         req,
         res,
-        svc.getById(id),
+        found,
         "Issue not found",
+        { boardChatWrite },
       );
       if (!issue) return;
       if (issue.conversationAgentId && req.actor.type === "board") {
-        await assertEntitled(instanceSettings, "enableAgentChat");
+        await assertEntitled(instanceSettings, isBoardQuestionChat(issue) ? "enableStrategyBoard" : "enableAgentChat");
         if (!req.actor.userId) throw forbidden("Board user access required");
         if (req.actor.userId !== issue.conversationUserId) throw forbidden("Only the conversation owner can send messages or start a new session");
         if (!req.body.clientRequestId) throw unprocessable("Chat messages require a clientRequestId for safe retries");
@@ -17978,11 +18208,11 @@ export function issueRoutes(
         );
         return;
       }
-      const commentAccessDecision = await assertAgentIssueCommentAllowed(
-        req,
-        res,
-        issue,
-      );
+      // The agent of a board question chat replies on it while acting for a
+      // viewer; boardChatWriteAllowed proved this is that reply (GRE-1186).
+      const commentAccessDecision = boardChatWrite
+        ? true
+        : await assertAgentIssueCommentAllowed(req, res, issue);
       if (!commentAccessDecision) return;
       if (!(await assertBoardCommentNotPaused(req, res, issue))) return;
       const commentAuthorizationReason = issueWriteAuthorizationReason(

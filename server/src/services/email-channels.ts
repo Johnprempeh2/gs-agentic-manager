@@ -44,6 +44,7 @@ import { secretService } from "./secrets.js";
 import { authorizationService } from "./authorization.js";
 import { issueService } from "./issues.js";
 import { supportQueueService } from "./support-queue.js";
+import { storeBoardEmailReply } from "./strategy-board-email.js";
 import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { instanceSettingsService } from "./instance-settings.js";
@@ -63,6 +64,7 @@ import {
   emailReplyRecipients,
   isAutomaticEmail,
   isFilteredEmail,
+  isSenderAuthenticated,
   normalizeAgentmailEvent,
   verifyAgentmailWebhook,
   AGENTMAIL_EVENTS,
@@ -74,6 +76,11 @@ export type EmailActor = {
   agentId?: string;
   runId?: string;
   localImplicit?: boolean;
+  /**
+   * A server job, not a person or a run: only the Strategy Board's own emails
+   * (GRE-1187), queued through `queueBoardSend`. Routes never set it.
+   */
+  system?: "strategy_board";
 };
 type Endpoint = typeof chatEndpoints.$inferSelect;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -518,6 +525,28 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       if (!membership || (membership.membershipRole === "viewer" && !admin))
         throw forbidden("Board user no longer has company write access");
     }
+    if (actor.system) {
+      if (actor.system !== "strategy_board" || actor.userId || actor.agentId)
+        throw forbidden("Unknown system email sender");
+      if (task.status === "cancelled")
+        throw forbidden("Cancelled tasks cannot send email");
+      // The board sends as its secretary: the inbox's agent must still be able to work.
+      const [agent] = await db
+        .select({ status: agents.status })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.companyId, endpoint.companyId),
+            eq(agents.id, endpoint.assignedAgentId),
+          ),
+        );
+      if (
+        !agent ||
+        ["paused", "terminated", "pending_approval"].includes(agent.status)
+      )
+        throw forbidden("The board secretary agent is not available to send email");
+      return task;
+    }
     if (!actor.userId && !actor.agentId)
       throw forbidden("An authenticated actor is required");
     if (task.status === "cancelled")
@@ -596,12 +625,14 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
     consume: boolean,
   ) {
     const service = toolAccessPolicyService(db);
+    // A board email is judged by the secretary agent's tool rules.
+    const agentId = actor.system ? endpoint.assignedAgentId : actor.agentId;
     const request = {
       companyId: endpoint.companyId,
       actor: {
-        actorType: actor.agentId ? ("agent" as const) : ("user" as const),
-        actorId: actor.agentId ?? actor.userId ?? "board",
-        agentId: actor.agentId,
+        actorType: agentId ? ("agent" as const) : ("user" as const),
+        actorId: agentId ?? actor.userId ?? "board",
+        agentId,
       },
       runContext: { issueId: input.parentIssueId, heartbeatRunId: actor.runId },
       request: {
@@ -1202,6 +1233,9 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       wakePending?: boolean;
       admissionToWakeMs?: number;
       supportReceivedAt?: string;
+      boardReplyPending?: boolean;
+      boardReplySenderAuthenticated?: boolean;
+      conversationId?: string;
     };
     if (event.inbox_id !== endpoint.botExternalId)
       throw forbidden("Email delivery inbox mismatch");
@@ -1416,6 +1450,14 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           task.status !== "cancelled" &&
           !isAutomaticEmail(message) &&
           !message.labels.includes("sent");
+        // A reply on a Strategy Board thread may be stored on the plan (GRE-1196).
+        event.conversationId = conversation.id;
+        event.boardReplyPending =
+          !alreadyRetained &&
+          !isAutomaticEmail(message) &&
+          !message.labels.includes("sent");
+        // Kept on the event so a retried delivery decides the same way (GRE-1215).
+        event.boardReplySenderAuthenticated = isSenderAuthenticated(message);
         await tx
           .update(chatDeliveries)
           .set({
@@ -1441,6 +1483,19 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
         .catch((err: unknown) =>
           logger.warn({ err, issueId: event.issueId }, "support ticket intake failed; the clock sweep will repair it"),
         );
+    // Idempotent, and never blocks the wake: the email stays in the thread either way.
+    if (event.boardReplyPending && event.conversationId)
+      await storeBoardEmailReply(db, {
+        companyId: endpoint.companyId,
+        conversationId: event.conversationId,
+        providerMessageId: event.message_id,
+        senderAuthenticated: event.boardReplySenderAuthenticated === true,
+      }).catch((err: unknown) =>
+        logger.warn(
+          { err, issueId: event.issueId },
+          "strategy board: an email reply could not be stored on the plan; it stays in the email thread. Enter it on the KPI page.",
+        ),
+      );
     if (event.wakePending && event.issueId) {
       await active(endpoint);
       await options.heartbeat.wakeup(endpoint.assignedAgentId, {
@@ -1481,7 +1536,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       .set({
         state: "processed",
         processedAt: new Date(),
-        normalizedEvent: { ...event, wakePending: false },
+        normalizedEvent: { ...event, wakePending: false, boardReplyPending: false },
       })
       .where(eq(chatDeliveries.id, delivery.id));
   }
@@ -1557,8 +1612,11 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
             parentId: input.parentIssueId,
             projectId: sourceTask.projectId,
             executionWorkspaceSettings: sourceTask.executionWorkspaceSettings,
-            description: `Email conversation from ${endpoint.botExternalId}`,
-            status: "todo",
+            description: actor.system
+              ? `Board email from ${endpoint.botExternalId}. A reply reopens this task.`
+              : `Email conversation from ${endpoint.botExternalId}`,
+            // A board email needs no work from the secretary until someone replies.
+            status: actor.system ? "done" : "todo",
             priority: "medium",
             assigneeAgentId: endpoint.assignedAgentId,
             responsibleUserId: endpoint.sponsorUserId,
@@ -1618,6 +1676,15 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
     });
     if (timer) void tick().catch(() => {});
     return publication(input.idempotencyKey, companyId);
+  }
+  /** The Strategy Board's own emails (GRE-1187): a new email under `parentIssueId`. */
+  async function queueBoardSend(
+    companyId: string,
+    input: EmailSendInput,
+  ): Promise<EmailPublicationSummary> {
+    if (input.conversationId)
+      throw badRequest("Board emails are new emails, not replies");
+    return queueSend(companyId, input, { system: "strategy_board" });
   }
   async function publication(
     id: string,
@@ -2657,6 +2724,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
     getEndpoint,
     summary,
     queueSend,
+    queueBoardSend,
     publication,
     thread,
     webhook,

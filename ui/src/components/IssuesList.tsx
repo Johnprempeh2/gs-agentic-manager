@@ -102,7 +102,7 @@ import {
   type TaskCollectionPreferenceLocation,
 } from "../lib/task-collection-preferences";
 import { taskDateGroup, taskDateGroupSeparator, type TaskDateGroup } from "../lib/task-date-groups";
-import { deriveOriginatingActor, ISSUE_STATUSES, type Issue, type IssueStatus, type Project } from "@greatstone/shared";
+import { deriveOriginatingActor, ISSUE_STATUSES, type Issue, type IssueStatus, type IssueWorkFilter, type Project } from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 const ISSUE_SEARCH_DEBOUNCE_MS = 250;
 const ISSUE_SEARCH_RESULT_LIMIT = 200;
@@ -498,6 +498,8 @@ interface IssuesListProps {
   showStatusChips?: boolean;
   /** Reports the status filter so the page can ask the server for just those tasks. */
   onStatusFilterChange?: (statuses: string[]) => void;
+  /** Reports the work filter (strategic or day-to-day) so the page can ask the server for just that work. */
+  onWorkFilterChange?: (work: IssueWorkFilter | null) => void;
   showProgressSummary?: boolean;
   /**
    * When set together with `showProgressSummary`, the progress strip fetches
@@ -787,6 +789,7 @@ function StreamlinedIssuesList({
   defaultStatuses,
   showStatusChips = false,
   onStatusFilterChange,
+  onWorkFilterChange,
   showProgressSummary = false,
   parentIssueIdForCostSummary,
   enableRoutineVisibilityFilter = false,
@@ -940,6 +943,11 @@ function StreamlinedIssuesList({
   useEffect(() => {
     onStatusFilterChange?.(statusFilterKey ? statusFilterKey.split(",") : []);
   }, [onStatusFilterChange, statusFilterKey]);
+
+  const workFilter = viewState.work ?? null;
+  useEffect(() => {
+    onWorkFilterChange?.(workFilter);
+  }, [onWorkFilterChange, workFilter]);
 
   useEffect(() => {
     if (!experimentalSettingsLoaded || externalObjectsEnabled || viewState.externalObjectStatuses.length === 0) return;

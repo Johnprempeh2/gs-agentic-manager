@@ -104,7 +104,7 @@ describe("PipelineFieldsEditor", () => {
 
   it("shows an empty state when the pipeline has no fields", async () => {
     mockPipelinesApi.listFields.mockResolvedValue([]);
-    await render(<PipelineFieldsEditor pipelineId="pipe-1" />);
+    await render(<PipelineFieldsEditor pipelineId="pipe-1" canEdit />);
     expect(container.textContent).toContain("No fields yet");
     expect(mockPipelinesApi.listFields).toHaveBeenCalledWith("pipe-1", { includeArchived: true });
   });
@@ -115,7 +115,7 @@ describe("PipelineFieldsEditor", () => {
       field({ id: "field-2", key: "tier", label: "Tier", type: "select", required: false, options: ["Gold", "Silver"] }),
       field({ id: "field-3", key: "oldNote", label: "Old note", type: "text", required: false, archivedAt: "2026-10-01T00:00:00Z" }),
     ]);
-    await render(<PipelineFieldsEditor pipelineId="pipe-1" />);
+    await render(<PipelineFieldsEditor pipelineId="pipe-1" canEdit />);
     expect(container.textContent).toContain("Deal value");
     expect(container.textContent).toContain("Required");
     expect(container.textContent).toContain("Gold, Silver");
@@ -126,7 +126,7 @@ describe("PipelineFieldsEditor", () => {
   it("adds a choice field with a key made from its name", async () => {
     mockPipelinesApi.listFields.mockResolvedValue([]);
     mockPipelinesApi.createField.mockResolvedValue(field({ key: "accountTier", type: "select" }));
-    await render(<PipelineFieldsEditor pipelineId="pipe-1" />);
+    await render(<PipelineFieldsEditor pipelineId="pipe-1" canEdit />);
 
     click(buttonByText(container, "Add field"));
     setValue(container.querySelector<HTMLInputElement>('[aria-label="Field name"]')!, "Account tier");
@@ -152,7 +152,7 @@ describe("PipelineFieldsEditor", () => {
   it("edits a field without sending key or type, and shows server errors", async () => {
     mockPipelinesApi.listFields.mockResolvedValue([field({})]);
     mockPipelinesApi.updateField.mockRejectedValueOnce(new Error("Deal value is in use"));
-    await render(<PipelineFieldsEditor pipelineId="pipe-1" />);
+    await render(<PipelineFieldsEditor pipelineId="pipe-1" canEdit />);
 
     click(container.querySelector('[aria-label="Edit Deal value"]'));
     expect(container.querySelector<HTMLInputElement>('[aria-label="Field key"]')!.disabled).toBe(true);
@@ -173,9 +173,23 @@ describe("PipelineFieldsEditor", () => {
   it("archives a field", async () => {
     mockPipelinesApi.listFields.mockResolvedValue([field({})]);
     mockPipelinesApi.updateField.mockResolvedValue(field({ archivedAt: "2026-10-09T00:00:00Z" }));
-    await render(<PipelineFieldsEditor pipelineId="pipe-1" />);
+    await render(<PipelineFieldsEditor pipelineId="pipe-1" canEdit />);
     click(container.querySelector('[aria-label="Archive Deal value"]'));
     await flushReact();
     expect(mockPipelinesApi.updateField).toHaveBeenCalledWith("pipe-1", "field-1", { archived: true });
+  });
+
+  it("shows fields read-only to a viewer who cannot administer the pipeline", async () => {
+    mockPipelinesApi.listFields.mockResolvedValue([
+      field({}),
+      field({ id: "field-3", key: "oldNote", label: "Old note", type: "text", required: false, archivedAt: "2026-10-01T00:00:00Z" }),
+    ]);
+    await render(<PipelineFieldsEditor pipelineId="pipe-1" canEdit={false} />);
+    expect(container.textContent).toContain("Deal value");
+    expect(container.textContent).toContain("Archived (1)");
+    expect(Array.from(container.querySelectorAll("button")).some((b) => b.textContent?.includes("Add field"))).toBe(false);
+    expect(container.querySelector('[aria-label="Edit Deal value"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Archive Deal value"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Restore Old note"]')).toBeNull();
   });
 });

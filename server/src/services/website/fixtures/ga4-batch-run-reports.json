@@ -1,0 +1,914 @@
+{
+  "reports": [
+    {
+      "dimensionHeaders": [
+        {
+          "name": "date"
+        }
+      ],
+      "metricHeaders": [
+        {
+          "name": "totalUsers",
+          "type": "TYPE_INTEGER"
+        },
+        {
+          "name": "sessions",
+          "type": "TYPE_INTEGER"
+        },
+        {
+          "name": "keyEvents",
+          "type": "TYPE_INTEGER"
+        }
+      ],
+      "rows": [
+        {
+          "dimensionValues": [
+            {
+              "value": "20260911"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "120"
+            },
+            {
+              "value": "156"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260912"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "90"
+            },
+            {
+              "value": "117"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260913"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "99"
+            },
+            {
+              "value": "128"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260914"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "147"
+            },
+            {
+              "value": "191"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260915"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "152"
+            },
+            {
+              "value": "197"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260916"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "154"
+            },
+            {
+              "value": "200"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260917"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "154"
+            },
+            {
+              "value": "200"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260918"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "152"
+            },
+            {
+              "value": "197"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260919"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "107"
+            },
+            {
+              "value": "139"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260920"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "101"
+            },
+            {
+              "value": "131"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260921"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "135"
+            },
+            {
+              "value": "175"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260922"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "129"
+            },
+            {
+              "value": "167"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260923"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "125"
+            },
+            {
+              "value": "162"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260924"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "122"
+            },
+            {
+              "value": "158"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260925"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "123"
+            },
+            {
+              "value": "159"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260926"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "86"
+            },
+            {
+              "value": "111"
+            },
+            {
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260927"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "91"
+            },
+            {
+              "value": "118"
+            },
+            {
+              "value": "2"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260928"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "139"
+            },
+            {
+              "value": "180"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260929"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "149"
+            },
+            {
+              "value": "193"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20260930"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "159"
+            },
+            {
+              "value": "206"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20261001"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "169"
+            },
+            {
+              "value": "219"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20261002"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "178"
+            },
+            {
+              "value": "231"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20261003"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "145"
+            },
+            {
+              "value": "188"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20261004"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "150"
+            },
+            {
+              "value": "195"
+            },
+            {
+              "value": "3"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20261005"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "192"
+            },
+            {
+              "value": "249"
+            },
+            {
+              "value": "4"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20261006"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "192"
+            },
+            {
+              "value": "249"
+            },
+            {
+              "value": "4"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20261007"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "189"
+            },
+            {
+              "value": "245"
+            },
+            {
+              "value": "4"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "20261008"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "184"
+            },
+            {
+              "value": "239"
+            },
+            {
+              "value": "4"
+            }
+          ]
+        }
+      ],
+      "totals": [
+        {
+          "dimensionValues": [
+            {
+              "value": "RESERVED_TOTAL"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "2140"
+            },
+            {
+              "value": "5100"
+            },
+            {
+              "value": "76"
+            }
+          ]
+        }
+      ],
+      "rowCount": 28,
+      "metadata": {
+        "currencyCode": "GBP",
+        "timeZone": "Europe/London"
+      },
+      "kind": "analyticsData#runReport"
+    },
+    {
+      "dimensionHeaders": [
+        {
+          "name": "sessionSource"
+        },
+        {
+          "name": "sessionMedium"
+        }
+      ],
+      "metricHeaders": [
+        {
+          "name": "sessions",
+          "type": "TYPE_INTEGER"
+        },
+        {
+          "name": "totalUsers",
+          "type": "TYPE_INTEGER"
+        }
+      ],
+      "rows": [
+        {
+          "dimensionValues": [
+            {
+              "value": "google"
+            },
+            {
+              "value": "organic"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "1810"
+            },
+            {
+              "value": "1402"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "(direct)"
+            },
+            {
+              "value": "(none)"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "905"
+            },
+            {
+              "value": "760"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "linkedin.com"
+            },
+            {
+              "value": "referral"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "412"
+            },
+            {
+              "value": "355"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "bing"
+            },
+            {
+              "value": "organic"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "160"
+            },
+            {
+              "value": "131"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "newsletter"
+            },
+            {
+              "value": "email"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "98"
+            },
+            {
+              "value": "80"
+            }
+          ]
+        }
+      ],
+      "rowCount": 5,
+      "metadata": {
+        "currencyCode": "GBP",
+        "timeZone": "Europe/London"
+      },
+      "kind": "analyticsData#runReport"
+    },
+    {
+      "dimensionHeaders": [
+        {
+          "name": "pagePath"
+        },
+        {
+          "name": "pageTitle"
+        }
+      ],
+      "metricHeaders": [
+        {
+          "name": "screenPageViews",
+          "type": "TYPE_INTEGER"
+        },
+        {
+          "name": "totalUsers",
+          "type": "TYPE_INTEGER"
+        }
+      ],
+      "rows": [
+        {
+          "dimensionValues": [
+            {
+              "value": "/"
+            },
+            {
+              "value": "Greatstone International"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "2210"
+            },
+            {
+              "value": "1630"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "/services"
+            },
+            {
+              "value": "Services | Greatstone"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "880"
+            },
+            {
+              "value": "640"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "/about"
+            },
+            {
+              "value": "About us | Greatstone"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "515"
+            },
+            {
+              "value": "430"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "/contact"
+            },
+            {
+              "value": "Contact | Greatstone"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "302"
+            },
+            {
+              "value": "260"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "/insights/operating-model"
+            },
+            {
+              "value": "The operating model | Greatstone"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "188"
+            },
+            {
+              "value": "170"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "/insights/old-announcement"
+            },
+            {
+              "value": "An old announcement | Greatstone"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "21"
+            },
+            {
+              "value": "19"
+            }
+          ]
+        }
+      ],
+      "rowCount": 6,
+      "metadata": {
+        "currencyCode": "GBP",
+        "timeZone": "Europe/London"
+      },
+      "kind": "analyticsData#runReport"
+    },
+    {
+      "dimensionHeaders": [
+        {
+          "name": "eventName"
+        }
+      ],
+      "metricHeaders": [
+        {
+          "name": "keyEvents",
+          "type": "TYPE_INTEGER"
+        }
+      ],
+      "rows": [
+        {
+          "dimensionValues": [
+            {
+              "value": "generate_lead"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "41"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "contact_form_submit"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "19"
+            }
+          ]
+        },
+        {
+          "dimensionValues": [
+            {
+              "value": "file_download"
+            }
+          ],
+          "metricValues": [
+            {
+              "value": "7"
+            }
+          ]
+        }
+      ],
+      "rowCount": 3,
+      "metadata": {
+        "currencyCode": "GBP",
+        "timeZone": "Europe/London"
+      },
+      "kind": "analyticsData#runReport"
+    },
+    {
+      "dimensionHeaders": [],
+      "metricHeaders": [
+        {
+          "name": "totalUsers",
+          "type": "TYPE_INTEGER"
+        },
+        {
+          "name": "sessions",
+          "type": "TYPE_INTEGER"
+        },
+        {
+          "name": "screenPageViews",
+          "type": "TYPE_INTEGER"
+        },
+        {
+          "name": "keyEvents",
+          "type": "TYPE_INTEGER"
+        }
+      ],
+      "rows": [
+        {
+          "metricValues": [
+            {
+              "value": "2140"
+            },
+            {
+              "value": "5100"
+            },
+            {
+              "value": "4116"
+            },
+            {
+              "value": "76"
+            }
+          ]
+        }
+      ],
+      "rowCount": 1,
+      "metadata": {
+        "currencyCode": "GBP",
+        "timeZone": "Europe/London"
+      },
+      "kind": "analyticsData#runReport"
+    }
+  ],
+  "kind": "analyticsData#batchRunReports"
+}

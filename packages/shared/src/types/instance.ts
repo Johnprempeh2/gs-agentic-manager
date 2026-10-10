@@ -63,7 +63,25 @@ export interface InstanceGeneralSettings {
   teamCatalogFilter: TeamCatalogFilter;
   /** Team Catalogue add button (GRE-434). Default `"request"`. */
   teamCatalogAddMode: TeamCatalogAddMode;
+  /** Which board emails go out (GRE-1187). Default: all of them. */
+  strategyBoardEmail: StrategyBoardEmailSettings;
 }
+
+/** Board emails by kind (GRE-1187). Off = that kind stays in-app only. */
+export interface StrategyBoardEmailSettings {
+  /** Reminders to KPI owners before each board meeting. */
+  meetingReminders: boolean;
+  /** Slippage alerts to the chair when a KPI turns red. */
+  slippageAlerts: boolean;
+  /** "Why?" requests to the KPI owner. */
+  whyRequests: boolean;
+}
+
+export const DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS: StrategyBoardEmailSettings = {
+  meetingReminders: true,
+  slippageAlerts: true,
+  whyRequests: true,
+};
 
 export interface RunAdmissionSettingsInput {
   maxConcurrentRuns?: number;
@@ -124,6 +142,10 @@ export interface InstanceExperimentalSettings {
   enableCases: boolean;
   /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
   enableDeepDive: boolean;
+  /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). */
+  enableStrategyBoard: boolean;
+  /** Greatstone: the read-only Website view (GA4 and Search Console). Off = `403 not_entitled`. */
+  enableWebsiteView: boolean;
   enableAgentChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;

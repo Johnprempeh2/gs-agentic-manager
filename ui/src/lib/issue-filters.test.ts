@@ -6,6 +6,7 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  normalizeIssueFilterState,
   resolveIssueFilterWorkspaceId,
   searchIssueFilterOptions,
   shouldIncludeIssueFilterWorkspaceOption,
@@ -265,5 +266,30 @@ describe("issue filters", () => {
     );
 
     expect(filtered).toEqual([]);
+  });
+});
+
+describe("work filter (GRE-1144)", () => {
+  const issues = [
+    makeIssue({ id: "objective", goalKind: "objective" }),
+    makeIssue({ id: "initiative", goalKind: "initiative" }),
+    makeIssue({ id: "kpi", goalKind: "kpi" }),
+    makeIssue({ id: "no-goal", goalKind: null }),
+    makeIssue({ id: "legacy" }),
+  ];
+  const ids = (list: Issue[]) => list.map((issue) => issue.id);
+
+  it("keeps only strategic or only day-to-day work", () => {
+    expect(ids(applyIssueFilters(issues, { ...defaultIssueFilterState, work: "strategic" }))).toEqual(["objective", "initiative"]);
+    expect(ids(applyIssueFilters(issues, { ...defaultIssueFilterState, work: "day_to_day" }))).toEqual(["kpi", "no-goal", "legacy"]);
+    expect(applyIssueFilters(issues, defaultIssueFilterState)).toHaveLength(5);
+  });
+
+  it("counts as an active filter and drops unknown saved values", () => {
+    expect(countActiveIssueFilters({ ...defaultIssueFilterState, work: "strategic" })).toBe(1);
+    expect(countActiveIssueFilters(defaultIssueFilterState)).toBe(0);
+    expect(normalizeIssueFilterState({ work: "day_to_day" }).work).toBe("day_to_day");
+    expect(normalizeIssueFilterState({ work: "urgent" }).work).toBeNull();
+    expect(normalizeIssueFilterState({}).work).toBeNull();
   });
 });

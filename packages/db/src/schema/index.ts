@@ -42,6 +42,8 @@ export { workspaceRuntimeServices } from "./workspace_runtime_services.js";
 export { projectGoals } from "./project_goals.js";
 export { goals } from "./goals.js";
 export { goalCheckIns } from "./goal_check_ins.js";
+export { goalKpiReadings } from "./goal_kpi_readings.js";
+export { goalWhyRequests, goalKpiAlerts, strategyBoardPacks, strategyBoardSettings, strategyBoardEmails } from "./strategy_board.js";
 export { folders } from "./folders.js";
 export { issues } from "./issues.js";
 export { issueWatchdogs } from "./issue_watchdogs.js";
@@ -87,8 +89,17 @@ export {
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
+export {
+  crmSyncBindings,
+  crmSyncFieldMaps,
+  crmSyncRecordLinks,
+  crmSyncConflicts,
+  crmSyncEvents,
+  type CrmSyncStoredValue,
+} from "./crm_sync.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
+export { websiteProperties, websitePulls } from "./website.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
 export { issueApprovals } from "./issue_approvals.js";
@@ -234,3 +245,5 @@ export {
 export { memoryIngestOutbox } from "./memory_ingest_outbox.js";
 export * from "./memory_steward.js";
 export { fleetInstances, fleetCheckIns } from "./fleet.js";
+export { workflowTemplates } from "./workflow_templates.js";
+export { documentEvidenceLinks } from "./document_evidence_links.js";

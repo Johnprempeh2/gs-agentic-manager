@@ -18,6 +18,48 @@ export {
   type RunnerGoalActionRequest,
   type RunnerGoalActionAccepted,
 } from "./runner-goal.js";
+export {
+  GOAL_KIND_PARENTS,
+  GOAL_KIND_DEFAULT_LEVEL,
+  STRATEGIC_PLAN_TEMPLATE,
+  STRATEGIC_PLAN_TEMPLATE_NAME,
+  goalKindParentError,
+  isBoardGoalKind,
+  isStrategicWorkGoalKind,
+  type StrategicPlanTemplateNode,
+} from "./goal-cascade.js";
+export {
+  computeKpiStatus,
+  plannedKpiValue,
+  rollUpKpiStatus,
+  type GoalRagRollup,
+  type KpiPlan,
+  type KpiReadingPoint,
+  type KpiStatus,
+  type KpiStatusReason,
+  type RollupGoal,
+} from "./goal-kpi-status.js";
+export {
+  isPackReferenceSection,
+  suggestKpiDraftsFromPack,
+  type KpiDraftSuggestion,
+} from "./goal-kpi-drafts.js";
+export {
+  buildStrategyBoardAreas,
+  buildStrategyBoardKpis,
+  buildStrategyBoardOverdueActions,
+  findPlanObjective,
+  countStrategyBoardKpis,
+  kpiAlertAction,
+  rankStrategyBoardAttention,
+  boardEvidenceTrust,
+  renderStrategyBoardBrief,
+  renderStrategyBoardPackMarkdown,
+  strategyBoardOwner,
+  type StrategyBoardGoal,
+  type StrategyBoardKpiInput,
+  type StrategyBoardActionTask,
+} from "./strategy-board.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   CONNECTION_INTENT_AGENT_GUIDANCE,
@@ -145,9 +187,17 @@ export {
   PIPELINE_CASES_PERMISSION_KEY,
   pipelineAccessGrantScope,
   pipelineAccessScopeIds,
+  pipelineAccessLevelFor,
+  pipelineAllPipelinesLevel,
+  pipelinesTouchedByAccessChange,
+  planPipelineLevelChange,
   resolvePipelineAccess,
   type PipelineAccess,
+  type PipelineAccessLastChange,
   type PipelineAccessLevel,
+  type PipelineAccessMatrix,
+  type PipelineAccessMatrixAgent,
+  type PipelineGrantScopeState,
 } from "./pipeline-access.js";
 export {
   caseTypeMatchesPipeline,
@@ -390,6 +440,13 @@ export {
 export * from "./validators/status-card.js";
 export * from "./types/deliverable.js";
 export * from "./validators/deliverable.js";
+export * from "./types/workflow-template.js";
+export * from "./validators/workflow-template.js";
+export * from "./types/document-evidence.js";
+export * from "./validators/document-evidence.js";
+export * from "./document-evidence.js";
+export * from "./types/website.js";
+export * from "./validators/website.js";
 export { appDefinitionSchema, appDefinitionsSchema, connectionMethodDefSchema } from "./validators/app-definition.js";
 export * from "./types/chat-channels.js";
 export * from "./types/chat-github.js";
@@ -509,7 +566,19 @@ export {
   ISSUE_EXECUTION_MONITOR_CLEAR_REASONS,
   ISSUE_EXECUTION_DECISION_OUTCOMES,
   GOAL_LEVELS,
+  GOAL_KINDS,
+  GOAL_KIND_LABELS,
+  BOARD_GOAL_KINDS,
+  STRATEGIC_WORK_GOAL_KINDS,
+  ISSUE_WORK_FILTERS,
   GOAL_STATUSES,
+  KPI_DIRECTIONS,
+  KPI_READING_SOURCES,
+  KPI_READING_SOURCE_LABELS,
+  KPI_RAG_STATUSES,
+  GOAL_WHY_REQUEST_STATUSES,
+  DEFAULT_KPI_AMBER_THRESHOLD_PCT,
+  DEFAULT_KPI_RED_THRESHOLD_PCT,
   PROJECT_STATUSES,
   ENVIRONMENT_DRIVERS,
   ENVIRONMENT_STATUSES,
@@ -696,7 +765,13 @@ export {
   type IssueExecutionMonitorClearReason,
   type IssueExecutionDecisionOutcome,
   type GoalLevel,
+  type GoalKind,
+  type IssueWorkFilter,
   type GoalStatus,
+  type KpiDirection,
+  type KpiReadingSource,
+  type KpiRagStatus,
+  type GoalWhyRequestStatus,
   type ProjectStatus,
   type EnvironmentDriver,
   type EnvironmentStatus,
@@ -1298,11 +1373,32 @@ export type {
   GoalBlockerWaitingOn,
   GoalIssueBlocker,
   GoalCheckIn,
+  GoalKpiReading,
   GoalDetail,
   GoalMilestone,
   GoalProgress,
   GoalProgressSource,
   GoalWithProgress,
+  GoalKpiAlert,
+  GoalWhyRequest,
+  StrategyBoardAgent,
+  StrategyBoardAction,
+  StrategyBoardArea,
+  StrategyBoardBrief,
+  StrategyBoardBriefAction,
+  StrategyBoardBriefCheckIn,
+  StrategyBoardKpi,
+  StrategyBoardMember,
+  StrategyBoardOwner,
+  StrategyBoardPack,
+  StrategyBoardPackListItem,
+  StrategyBoardPackSnapshot,
+  StrategyBoardSnapshotRef,
+  StrategyBoardSummary,
+  StrategyBoardViewerRights,
+  StrategyBoardEmail,
+  StrategyBoardEmailKind,
+  StrategyBoardSettings,
   Approval,
   ApprovalComment,
   BudgetPolicy,
@@ -1314,6 +1410,7 @@ export type {
   CostEvent,
   CostSummary,
   IssueCostSummary,
+  IssueCostModelRow,
   CostByAgent,
   CostByProviderModel,
   CostByBiller,
@@ -1848,6 +1945,8 @@ export {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+  type StrategyBoardEmailSettings,
   DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
   DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
   DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB,
@@ -1892,6 +1991,7 @@ export {
 export {
   instanceSettingsSchema,
   instanceGeneralSettingsSchema,
+  strategyBoardEmailSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type PatchInstanceGeneralSettings,
   instanceExperimentalSettingsSchema,
@@ -1991,6 +2091,7 @@ export {
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
   agentPipelineAccessSchema,
+  setAgentPipelineLevelSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
@@ -2205,9 +2306,27 @@ export {
   createGoalSchema,
   updateGoalSchema,
   createGoalCheckInSchema,
+  createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  kpiDraftRowSchema,
   type CreateGoal,
   type UpdateGoal,
   type CreateGoalCheckIn,
+  type CreateGoalKpiReading,
+  type CreateKpiDraftsFromPack,
+  type KpiDraftRow,
+  createGoalWhyRequestSchema,
+  answerGoalWhyRequestSchema,
+  createStrategyBoardPackSchema,
+  setStrategyBoardMembersSchema,
+  setStrategyBoardMemberAgentsSchema,
+  type CreateGoalWhyRequest,
+  type AnswerGoalWhyRequest,
+  type CreateStrategyBoardPack,
+  type SetStrategyBoardMembers,
+  type SetStrategyBoardMemberAgents,
+  updateStrategyBoardSettingsSchema,
+  type UpdateStrategyBoardSettings,
   applyOnboardingSeedSchema,
   type ApplyOnboardingSeed,
   createApprovalSchema,
@@ -2938,3 +3057,4 @@ export * from "./pipeline-fields.js";
 export * from "./types/pipeline-fields.js";
 export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";
+export * from "./partner-branding.js";

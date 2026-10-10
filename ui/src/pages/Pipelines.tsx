@@ -86,6 +86,8 @@ import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
+import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
+import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
 import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
@@ -126,6 +128,7 @@ import { getPipelineStageColumnTone, pipelineStageAutomationSettingsHref } from 
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { useProjectOrder } from "../hooks/useProjectOrder";
+import { usePipelineAdminRights } from "../hooks/usePipelineAccess";
 import { shouldDisableRerunForPermission, type LivenessRetryKind } from "../lib/pipeline-liveness";
 import { cn, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault } from "../lib/status-colors";
@@ -914,6 +917,7 @@ function PipelinesIndex() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<PipelineViewMode>("nested");
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
+  const { canCreatePipelines, rightsError } = usePipelineAdminRights(selectedCompanyId);
 
   useEffect(() => setBreadcrumbs([{ label: "Pipelines" }]), [setBreadcrumbs]);
 
@@ -968,22 +972,29 @@ function PipelinesIndex() {
             {formatNumber(pipelines.length)} pipeline{pipelines.length === 1 ? "" : "s"}. Connected ones are grouped from upstream work into downstream work.
           </p>
         </div>
-        <Button onClick={() => setNewPipelineOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          New pipeline
-        </Button>
+        {canCreatePipelines ? (
+          <Button onClick={() => setNewPipelineOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            New pipeline
+          </Button>
+        ) : null}
       </div>
 
       {pipelinesQuery.error ? (
         <p className="mb-4 text-sm text-destructive">Could not load pipelines.</p>
+      ) : null}
+      {rightsError ? (
+        <p className="mb-4 text-sm text-destructive">
+          Could not check your pipeline rights, so the controls to create pipelines are hidden. Reload the page to try again.
+        </p>
       ) : null}
 
       {pipelines.length === 0 && !pipelinesQuery.error ? (
         <EmptyState
           icon={Hexagon}
           message="No pipelines yet."
-          action="New pipeline"
-          onAction={() => setNewPipelineOpen(true)}
+          action={canCreatePipelines ? "New pipeline" : undefined}
+          onAction={canCreatePipelines ? () => setNewPipelineOpen(true) : undefined}
         />
       ) : (
         <PipelinesIndexTable
@@ -3293,7 +3304,20 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               issueLinks={issueLinks.data ?? []}
               projects={projectsPanel}
             />
-          ) : null}
+          ) : (
+            <PipelineCaseCrmSync
+              caseId={caseId}
+              companyId={detail.case.companyId}
+              wrap={(children) => (
+                <section>
+                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+                    CRM sync
+                  </h2>
+                  <div className="border-y border-border">{children}</div>
+                </section>
+              )}
+            />
+          )}
 
           <PipelineItemBodyDocument
             caseId={caseId}
@@ -5175,6 +5199,8 @@ export function ReviewQueue() {
           ))}
         </div>
       )}
+
+      <CrmSyncConflictQueue companyId={selectedCompanyId} />
 
       <p className="text-xs text-muted-foreground">
         Shortcuts: <span className="font-semibold">j</span>/<span className="font-semibold">k</span> or arrow keys move, <span className="font-semibold">Enter</span> opens item, <span className="font-semibold">a</span> approves.
