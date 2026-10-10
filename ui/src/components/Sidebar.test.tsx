@@ -682,7 +682,7 @@ describe("Sidebar", () => {
     expect(headings).toEqual(["Work", "Team", "Build", "Company"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Inbox", "My tasks", "Decisions", "Agent tasks", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workspaces", "Artifacts", "Casesbeta"]);
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workflows", "Workspaces", "Artifacts", "Casesbeta"]);
     expect(sectionLabels("Company")).toEqual(["Skills", "Connectors", "Audit", "Releases", "Settings"]);
     expect(
       container.querySelector('a[href="/issues"] svg')?.classList.contains("lucide-circle-check"),
@@ -698,7 +698,7 @@ describe("Sidebar", () => {
   it("shows Deep Dive after Cases only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Artifacts", "Casesbeta", "Deep Divebeta"]);
+    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workflows", "Artifacts", "Casesbeta", "Deep Divebeta"]);
     flushSync(() => {
       root.unmount();
     });

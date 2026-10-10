@@ -2150,6 +2150,13 @@
       "when": 1791587368994,
       "tag": "0308_goal_kpi_readings_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 309,
+      "version": "7",
+      "when": 1791590010928,
+      "tag": "0309_workflow_templates",
+      "breakpoints": true
     }
   ]
 }

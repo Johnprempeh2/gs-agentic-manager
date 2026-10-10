@@ -419,6 +419,8 @@ export {
 export * from "./validators/status-card.js";
 export * from "./types/deliverable.js";
 export * from "./validators/deliverable.js";
+export * from "./types/workflow-template.js";
+export * from "./validators/workflow-template.js";
 export { appDefinitionSchema, appDefinitionsSchema, connectionMethodDefSchema } from "./validators/app-definition.js";
 export * from "./types/chat-channels.js";
 export * from "./types/chat-github.js";
