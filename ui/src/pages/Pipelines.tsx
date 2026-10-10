@@ -423,10 +423,6 @@ function pipelineAttentionCount(pipeline: PipelineListItem) {
   return pipeline.attentionCount ?? 0;
 }
 
-function pipelineInMotionCount(pipeline: PipelineListItem) {
-  return pipeline.inMotionCount ?? 0;
-}
-
 function descendantActiveWorkCount(value: { descendantActiveWorkCount?: number | null }) {
   return value.descendantActiveWorkCount ?? 0;
 }
@@ -439,14 +435,13 @@ function pipelineActivityTime(pipeline: PipelineListItem) {
   return pipeline.lastActivityAt ?? pipeline.updatedAt ?? pipeline.createdAt ?? null;
 }
 
-type PipelineSortField = "name" | "activity" | "review" | "inMotion" | "openItems";
+type PipelineSortField = "name" | "activity" | "review" | "openItems";
 type PipelineSortDir = "asc" | "desc";
 
 const PIPELINE_SORT_OPTIONS: ReadonlyArray<readonly [PipelineSortField, string]> = [
   ["name", "Name"],
   ["activity", "Last activity"],
-  ["review", "Most to review"],
-  ["inMotion", "Most in motion"],
+  ["review", "Most needing attention"],
   ["openItems", "Most open items"],
 ];
 
@@ -466,9 +461,6 @@ function comparePipelinesBySort(field: PipelineSortField, dir: PipelineSortDir) 
       }
       case "review":
         cmp = pipelineAttentionCount(left) - pipelineAttentionCount(right);
-        break;
-      case "inMotion":
-        cmp = pipelineInMotionCount(left) - pipelineInMotionCount(right);
         break;
       case "openItems":
         cmp = pipelineOpenItemCount(left) - pipelineOpenItemCount(right);
@@ -575,10 +567,6 @@ export function buildPipelineTableRows(
   return rows;
 }
 
-function formatOpenItems(count: number) {
-  return `${formatNumber(count)} open`;
-}
-
 function formatPipelineActivity(value: string | Date | null) {
   if (!value) return "No activity";
   const then = new Date(value).getTime();
@@ -602,16 +590,72 @@ function PipelineStatusChip({ archivedAt }: { archivedAt: Date | string | null }
   return (
     <Badge variant="outline"
       className={cn(
-        "font-semibold",
+        "border-transparent font-semibold",
         paused
-          ? "border-muted-foreground/20 bg-muted text-muted-foreground"
-          : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300",
+          ? "bg-status-neutral-soft text-status-neutral-foreground"
+          : "bg-status-success-soft text-status-success-foreground",
       )}
     >
       {paused ? "Paused" : "Active"}
     </Badge>
   );
 }
+
+const STAGE_CHIP_LIMIT = 4;
+
+/** Stages an open item can sit in, in journey order (finished and cancelled stages hold no open items). */
+export function pipelineOpenStages(pipeline: Pick<PipelineListItem, "stages">) {
+  return (pipeline.stages ?? []).filter((stage) => stage.kind !== "done" && stage.kind !== "cancelled");
+}
+
+export function formatNeedsAttention(count: number) {
+  return `${formatNumber(count)} need${count === 1 ? "s" : ""} attention`;
+}
+
+export function PipelineStageDistribution({ pipeline }: { pipeline: Pick<PipelineListItem, "stages" | "openCaseCount"> }) {
+  const stages = pipelineOpenStages(pipeline);
+  if (stages.length === 0) return null;
+  const occupied = stages.filter((stage) => (stage.openCaseCount ?? 0) > 0);
+  const shown = occupied.slice(0, STAGE_CHIP_LIMIT);
+  const hidden = occupied.slice(STAGE_CHIP_LIMIT);
+  return (
+    <div className="mt-2 space-y-1.5">
+      <div className="flex max-w-(--sz-420px) gap-0.5" aria-hidden="true">
+        {stages.map((stage) => (
+          <span
+            key={stage.id}
+            className={cn("h-1.5 flex-1 rounded-full", (stage.openCaseCount ?? 0) > 0 ? "bg-primary" : "bg-border")}
+          />
+        ))}
+      </div>
+      {occupied.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No open items in any stage</p>
+      ) : (
+        <ul className="flex flex-wrap gap-1" aria-label="Open items by stage">
+          {shown.map((stage) => (
+            <li
+              key={stage.id}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-sm bg-muted px-1.5 py-0.5 text-xs"
+            >
+              <span className="truncate text-muted-foreground">{stage.name}</span>
+              <span className="font-semibold tabular-nums text-foreground">{formatNumber(stage.openCaseCount ?? 0)}</span>
+            </li>
+          ))}
+          {hidden.length > 0 ? (
+            <li
+              className="relative z-raised inline-flex cursor-default items-center rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground"
+              title={hidden.map((stage) => `${stage.name}: ${formatNumber(stage.openCaseCount ?? 0)}`).join(", ")}
+            >
+              +{formatNumber(hidden.length)} more
+            </li>
+          ) : null}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const PIPELINE_ROW_GRID = "lg:grid lg:grid-cols-[minmax(0,1fr)_11rem_5rem_6rem_7.5rem] lg:items-start lg:gap-x-6";
 
 interface PipelinesIndexTableProps {
   pipelines: PipelineListItem[];
@@ -747,82 +791,96 @@ export function PipelinesIndexTable({
       {rows.length === 0 ? (
         <EmptyState icon={Hexagon} message="No pipelines match your search." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-(--sz-780px) border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-(length:--text-micro) font-semibold uppercase tracking-widest text-muted-foreground">
-                <th className="py-2 pl-3 pr-4">Name</th>
-                <th className="px-4 py-2">Attention</th>
-                <th className="px-4 py-2">Open items</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Last activity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const attentionCount = pipelineAttentionCount(row.pipeline);
-                const inMotionCount = pipelineInMotionCount(row.pipeline);
-                const liveDownstreamCount = descendantActiveWorkCount(row.pipeline);
-                return (
-                  <tr key={row.pipeline.id} className="h-10 border-b border-border/70">
-                    <td className="pl-3 pr-4">
-                      <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: row.depth * 28 }}>
-                        {row.hasChildren ? (
-                          <button
-                            type="button"
-                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                            aria-label={row.expanded ? `Collapse ${row.pipeline.name}` : `Expand ${row.pipeline.name}`}
-                            onClick={() => togglePipeline(row.pipeline.id)}
-                          >
-                            {row.expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </button>
-                        ) : (
-                          <span className="h-6 w-6 shrink-0" aria-hidden="true" />
-                        )}
-                        <div className="min-w-0">
-                          <Link
-                            to={`/pipelines/${row.pipeline.id}`}
-                            className="font-semibold text-foreground hover:underline"
-                          >
-                            {row.pipeline.name}
-                          </Link>
-                          {row.parentPipelineName ? (
-                            <span className="ml-2 text-muted-foreground">under {row.parentPipelineName}</span>
-                          ) : row.pipeline.description ? (
-                            <span className="ml-2 text-muted-foreground">- {row.pipeline.description}</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 text-sm">
-                      <div className="flex items-center gap-3 whitespace-nowrap">
-                        {attentionCount > 0 ? (
-                          <span className="inline-flex items-center gap-1.5 font-semibold text-red-700 dark:text-red-400">
-                            <span className="h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />
-                            {formatNumber(attentionCount)} to review
-                          </span>
-                        ) : null}
-                        {inMotionCount > 0 ? (
-                          <span className="text-muted-foreground">
-                            {formatNumber(inMotionCount)} in motion
-                          </span>
-                        ) : null}
-                        {liveDownstreamCount > 0 ? (
-                          <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                            {formatLiveDownstream(liveDownstreamCount)}
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-4 text-muted-foreground">{formatOpenItems(pipelineOpenItemCount(row.pipeline))}</td>
-                    <td className="px-4"><PipelineStatusChip archivedAt={row.pipeline.archivedAt} /></td>
-                    <td className="px-4 text-muted-foreground">{formatPipelineActivity(pipelineActivityTime(row.pipeline))}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div>
+          <div
+            className={cn(
+              "hidden border-b border-border px-3 pb-2 text-(length:--text-micro) font-semibold uppercase tracking-widest text-muted-foreground",
+              PIPELINE_ROW_GRID,
+            )}
+            aria-hidden="true"
+          >
+            <span>Pipeline</span>
+            <span>Needs attention</span>
+            <span className="text-right">Open</span>
+            <span>Status</span>
+            <span>Last activity</span>
+          </div>
+          <ul className="space-y-3 lg:space-y-0">
+            {rows.map((row) => {
+              const attentionCount = pipelineAttentionCount(row.pipeline);
+              const liveDownstreamCount = descendantActiveWorkCount(row.pipeline);
+              const openCount = pipelineOpenItemCount(row.pipeline);
+              return (
+                <li
+                  key={row.pipeline.id}
+                  className={cn(
+                    "relative rounded-lg border border-border p-4 transition-colors hover:bg-accent/40 lg:rounded-none lg:border-x-0 lg:border-t-0 lg:px-3 lg:py-3",
+                    PIPELINE_ROW_GRID,
+                  )}
+                >
+                  <div className="flex min-w-0 items-start gap-2" style={{ paddingLeft: row.depth * 24 }}>
+                    {row.hasChildren ? (
+                      <button
+                        type="button"
+                        className="relative z-raised inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                        aria-label={row.expanded ? `Collapse ${row.pipeline.name}` : `Expand ${row.pipeline.name}`}
+                        onClick={() => togglePipeline(row.pipeline.id)}
+                      >
+                        {row.expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </button>
+                    ) : rows.some((other) => other.hasChildren) ? (
+                      <span className="h-6 w-6 shrink-0" aria-hidden="true" />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        to={`/pipelines/${row.pipeline.id}`}
+                        title={row.pipeline.description || undefined}
+                        className="block truncate text-sm font-semibold leading-6 text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring lg:after:rounded-none"
+                      >
+                        {row.pipeline.name}
+                      </Link>
+                      {row.parentPipelineName ? (
+                        <p className="truncate text-xs text-muted-foreground">Fed by {row.parentPipelineName}</p>
+                      ) : null}
+                      {row.pipeline.description ? (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {row.pipeline.description}
+                        </p>
+                      ) : null}
+                      <PipelineStageDistribution pipeline={row.pipeline} />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm lg:contents">
+                    <div className="leading-6">
+                      {attentionCount > 0 ? (
+                        <Link
+                          to="/review-queue"
+                          className="relative z-raised inline-flex items-center gap-1.5 font-semibold text-foreground hover:underline"
+                        >
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-status-warning" aria-hidden="true" />
+                          {formatNeedsAttention(attentionCount)}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">Nothing waiting</span>
+                      )}
+                      {liveDownstreamCount > 0 ? (
+                        <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground lg:flex">
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-status-running" aria-hidden="true" />
+                          {formatLiveDownstream(liveDownstreamCount)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="leading-6 tabular-nums text-foreground lg:text-right">
+                      {formatNumber(openCount)}
+                      <span className="text-muted-foreground lg:sr-only"> open</span>
+                    </div>
+                    <div className="leading-6"><PipelineStatusChip archivedAt={row.pipeline.archivedAt} /></div>
+                    <div className="leading-6 text-muted-foreground">{formatPipelineActivity(pipelineActivityTime(row.pipeline))}</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
           <p className="mt-4 text-sm text-muted-foreground">
             Showing {formatNumber(rows.length)} of {formatNumber(filteredPipelines.length)}.
           </p>

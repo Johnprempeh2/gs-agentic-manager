@@ -30,13 +30,28 @@ const BOARD_ROUTE_ROOTS = new Set([
   "my-tasks",
   "inbox",
   "board-chat",
-  "artifacts",
   "u",
   "design-guide",
   "search",
   "settings",
   "timeline",
   "since-last-visit",
+  // Every root mounted under /:companyPrefix must be listed, or a link to it is
+  // mistaken for an already-prefixed path and left bare (GRE: /strategy-board
+  // became the "STRATEGY-BOARD" company and broke every sidebar link after it).
+  "strategy-board",
+  "pipelines",
+  "review-queue",
+  "learnings",
+  "cases",
+  "status",
+  "status-cards",
+  "memory",
+  "website",
+  "runs",
+  "budgets",
+  "plugins",
+  "dev",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);

@@ -917,7 +917,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
       .groupBy(pipelines.id)
       .orderBy(asc(pipelines.createdAt));
     const pipelineIds = rows.map((row) => row.pipeline.id);
-    const [connections, descendantActiveWorkCounts, stageRows] = await Promise.all([
+    const [connections, descendantActiveWorkCounts, stageRows, stageCountRows] = await Promise.all([
       loadPipelineConnections(db, companyId),
       loadPipelineDescendantActiveWorkCounts(db, companyId, pipelineIds),
       pipelineIds.length > 0
@@ -927,11 +927,20 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         .where(inArray(pipelineStages.pipelineId, pipelineIds))
         .orderBy(asc(pipelineStages.position), asc(pipelineStages.createdAt))
         : Promise.resolve([]),
+      // Open items per stage, so the list can show where work sits without one request per pipeline.
+      pipelineIds.length > 0
+        ? db
+        .select({ stageId: pipelineCases.stageId, count: sql<number>`count(*)::int` })
+        .from(pipelineCases)
+        .where(and(inArray(pipelineCases.pipelineId, pipelineIds), isNull(pipelineCases.terminalKind)))
+        .groupBy(pipelineCases.stageId)
+        : Promise.resolve([]),
     ]);
-    const stagesByPipelineId = new Map<string, typeof stageRows>();
+    const openCountByStageId = new Map(stageCountRows.map((row) => [row.stageId, row.count]));
+    const stagesByPipelineId = new Map<string, Array<(typeof stageRows)[number] & { openCaseCount: number }>>();
     for (const stage of stageRows) {
       const stages = stagesByPipelineId.get(stage.pipelineId) ?? [];
-      stages.push(stage);
+      stages.push({ ...stage, openCaseCount: openCountByStageId.get(stage.id) ?? 0 });
       stagesByPipelineId.set(stage.pipelineId, stages);
     }
     res.json(rows.map((row) => ({
