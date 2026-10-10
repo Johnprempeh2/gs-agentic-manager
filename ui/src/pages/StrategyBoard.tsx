@@ -31,6 +31,17 @@ export function boardLede(counts: { red: number; amber: number; green: number; n
   return parts.join(" · ");
 }
 
+/** Why some red KPIs sent no alert, and what to do about it. */
+export function unsentAlertText(count: number, hasChair: boolean, mayManageMembers: boolean): string {
+  const kpis = count === 1 ? "1 KPI" : `${count} KPIs`;
+  if (hasChair) {
+    return `${kpis} turned red before the board had a chair, so no alert was sent for ${count === 1 ? "it" : "them"}. New red KPIs alert the chair.`;
+  }
+  return `${kpis} ${count === 1 ? "is" : "are"} red and the board has no chair, so no alert was sent. ${
+    mayManageMembers ? "Choose a chair below." : "Ask a company owner to choose a chair."
+  }`;
+}
+
 /**
  * Board control panel (GRE-1135, design view GRE-1134): exceptions first,
  * then the strategy at a glance, what changed since the last board pack,
@@ -93,10 +104,7 @@ export function StrategyBoard() {
       {board.unsentAlerts > 0 ? (
         <div role="alert" className="flex items-start gap-2 rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-warning" aria-hidden />
-          <span>
-            {board.unsentAlerts === 1 ? "1 KPI is red" : `${board.unsentAlerts} KPIs are red`} and the board has no chair, so no
-            alert was sent. {rights.mayManageMembers ? "Choose a chair below." : "Ask a company owner to choose a chair."}
-          </span>
+          <span>{unsentAlertText(board.unsentAlerts, board.hasChair, rights.mayManageMembers)}</span>
         </div>
       ) : null}
 

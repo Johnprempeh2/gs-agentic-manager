@@ -235,7 +235,7 @@ export function strategyBoardService(db: Db) {
 
   async function summary(companyId: string, viewer: StrategyBoardViewerRights): Promise<StrategyBoardSummary> {
     const today = todayIso();
-    const board = await buildBoard(companyId, today);
+    const [board, chairUserId] = await Promise.all([buildBoard(companyId, today), findChairUserId(companyId)]);
     return {
       companyId,
       asOf: today,
@@ -254,6 +254,7 @@ export function strategyBoardService(db: Db) {
       changes: board.lastPack ? board.kpis.filter((kpi) => kpi.changedSinceSnapshot) : [],
       kpis: board.kpis,
       unsentAlerts: board.unsentAlerts,
+      hasChair: chairUserId != null,
       viewer,
     };
   }

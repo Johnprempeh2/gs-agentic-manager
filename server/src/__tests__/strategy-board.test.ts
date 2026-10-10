@@ -196,6 +196,7 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     expect(spells).toEqual([expect.objectContaining({ recipientUserId: null, alertIssueId: null })]);
     const summary = await request(app(member.actor)).get(`/api/companies/${companyId}/strategy-board`);
     expect((summary.body as StrategyBoardSummary).unsentAlerts).toBe(1);
+    expect((summary.body as StrategyBoardSummary).hasChair).toBe(false);
   });
 
   it("sends no alert with the switch off", async () => {

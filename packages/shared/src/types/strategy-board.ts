@@ -78,8 +78,10 @@ export interface StrategyBoardSummary {
   changes: StrategyBoardKpi[];
   /** Every KPI on the plan, for the board pack and the full list. */
   kpis: StrategyBoardKpi[];
-  /** Red KPIs whose alert had no chair to go to. */
+  /** Red KPIs whose alert had no chair to go to (the spell opened before a chair was set). */
   unsentAlerts: number;
+  /** True when the board has a chair to receive slippage alerts. */
+  hasChair: boolean;
   viewer: StrategyBoardViewerRights;
 }
 

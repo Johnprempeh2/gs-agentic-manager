@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { StrategyBoardKpi } from "@greatstone/shared";
 import { AttentionQueue, ChangesSinceSnapshot, changeText } from "./StrategyBoardViews";
-import { boardLede } from "@/pages/StrategyBoard";
+import { boardLede, unsentAlertText } from "@/pages/StrategyBoard";
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (
@@ -85,5 +85,13 @@ describe("boardLede", () => {
     expect(boardLede({ red: 1, amber: 1, green: 2, noStatus: 1 }, [RETENTION, LAUNCH])).toBe(
       "On course 2 · Watch 1 · Off course 1 · 1 with no status · 1 on weak evidence",
     );
+  });
+});
+
+describe("unsentAlertText", () => {
+  it("tells owners to choose a chair, and says old spells stay unsent once a chair is set", () => {
+    expect(unsentAlertText(2, false, true)).toBe("2 KPIs are red and the board has no chair, so no alert was sent. Choose a chair below.");
+    expect(unsentAlertText(1, false, false)).toBe("1 KPI is red and the board has no chair, so no alert was sent. Ask a company owner to choose a chair.");
+    expect(unsentAlertText(2, true, true)).toBe("2 KPIs turned red before the board had a chair, so no alert was sent for them. New red KPIs alert the chair.");
   });
 });
