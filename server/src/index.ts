@@ -114,6 +114,8 @@ import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.
 import { localAiLoginService } from "./services/local-ai-login.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
 import { runScheduledStrategyBoardAlerts } from "./services/strategy-board.js";
+import { runScheduledStrategyBoardEmails } from "./services/strategy-board-email.js";
+import { emailChannelService } from "./services/email-channels.js";
 import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
@@ -1304,6 +1306,9 @@ async function startServerWithDatabaseTeardown(
     }
   };
   const executionControlSweepsInFlight = new Set<string>();
+  // GRE-1187: board emails are only queued here; the app's email service
+  // (started in app.ts) delivers them on its own tick.
+  const boardEmailSender = emailChannelService(db, { heartbeat: { wakeup: async () => null } });
   // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
   const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
@@ -1323,6 +1328,8 @@ async function startServerWithDatabaseTeardown(
     ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
     // GRE-1135: hourly KPI slippage check (a deadline can pass with no new reading).
     ["strategy_board_alerts", () => runScheduledStrategyBoardAlerts(db)],
+    // GRE-1187: meeting reminders, slippage alerts and "Why?" requests by email.
+    ["strategy_board_emails", () => runScheduledStrategyBoardEmails(db, { sender: boardEmailSender, publicBaseUrl: config.authPublicBaseUrl ?? null })],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;
