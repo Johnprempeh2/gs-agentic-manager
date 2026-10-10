@@ -546,6 +546,15 @@ function stageHasParticipant(stage: IssueExecutionStage, participant: IssueExecu
   return stage.participants.some((candidate) => principalsEqual(candidate, participant));
 }
 
+/**
+ * Issue statuses a pending stage may sit in. `blocked` lets the participant
+ * wait on a dependency without giving up the stage (GRE-1179); the drift
+ * repair must not pull it back to `in_review`.
+ */
+function statusHoldsPendingStage(status: string): boolean {
+  return status === "in_review" || status === "blocked";
+}
+
 function patchForPrincipal(principal: IssueExecutionStagePrincipal | null) {
   if (!principal) {
     return { assigneeAgentId: null, assigneeUserId: null };
@@ -781,7 +790,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         throw unprocessable("Only the escalated reviewer can advance the current execution stage");
       }
       const holdDrifted =
-        input.issue.status !== "in_review" ||
+        !statusHoldsPendingStage(input.issue.status) ||
         !principalsEqual(currentAssignee, currentParticipant);
       if (holdDrifted) {
         patch.status = "in_review";
@@ -892,6 +901,17 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         return { patch };
       }
 
+      // Blocking on a dependency is not a verdict: no decision, no round, and
+      // the participant keeps the stage so the blockers-resolved wake reaches
+      // them. Counting it as changes-requested escalated GRE-1087 to the
+      // human at the round cap (GRE-1179).
+      if (requestedStatus === "blocked") {
+        if (!principalsEqual(currentAssignee, currentParticipant) || requestedAssigneePatchProvided) {
+          Object.assign(patch, patchForPrincipal(currentParticipant));
+        }
+        return { patch };
+      }
+
       if (requestedStatus && requestedStatus !== "in_review") {
         if (!input.commentBody?.trim()) {
           throw unprocessable(`Requesting changes requires a comment. ${STAGE_DECISION_COMMENT_HINT}`);
@@ -951,7 +971,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       (requestedStatus !== undefined && requestedStatus !== "in_review") ||
       (requestedAssigneePatchProvided && !principalsEqual(explicitAssignee, currentParticipant));
     const stageStateDrifted =
-      input.issue.status !== "in_review" ||
+      !statusHoldsPendingStage(input.issue.status) ||
       !principalsEqual(currentAssignee, currentParticipant) ||
       !principalsEqual(existingState?.currentParticipant ?? null, currentParticipant);
 
