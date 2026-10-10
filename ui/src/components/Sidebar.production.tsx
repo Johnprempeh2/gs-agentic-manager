@@ -25,6 +25,7 @@ import {
   UserCheck,
   FileCheck2,
   Brain,
+  Workflow,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -181,6 +182,7 @@ export function Sidebar() {
             <SidebarNavItem to="/deep-dive" label="Deep Dive" icon={Microscope} textBadge="beta" />
           ) : null}
           <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
+          <SidebarNavItem to="/workflows" label="Workflows" icon={Workflow} />
           {showPipelines ? (
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
           ) : null}

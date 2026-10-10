@@ -49,6 +49,7 @@ import { RoutineDetail } from "./pages/RoutineDetail";
 import { UserProfile } from "./pages/UserProfile";
 import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
+import { WorkflowTemplates } from "./pages/WorkflowTemplates";
 import { Releases } from "./pages/Releases";
 import { Artifacts } from "./pages/Artifacts";
 import { Deliverables } from "./pages/Deliverables";
@@ -397,6 +398,7 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         </Route>
       </Route>
       <Route path="goals" element={<Goals />} />
+      <Route path="workflows" element={<WorkflowTemplates />} />
       <Route element={<HiddenSettingsPageGate pageKey="instance.releases" redirectTo="/dashboard" />}>
         <Route path="releases" element={<Releases />} />
       </Route>
@@ -807,6 +809,7 @@ export function App() {
           <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
           <Route path="routines" element={<UnprefixedBoardRedirect />} />
           <Route path="routines/:routineId" element={<UnprefixedBoardRedirect />} />
+          <Route path="workflows" element={<UnprefixedBoardRedirect />} />
           <Route path="review-queue" element={<UnprefixedBoardRedirect />} />
           <Route path="learnings" element={<UnprefixedBoardRedirect />} />
           <Route path="cases" element={<UnprefixedBoardRedirect />} />

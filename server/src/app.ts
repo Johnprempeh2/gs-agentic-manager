@@ -89,6 +89,7 @@ import { environmentRoutes } from "./routes/environments.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
 import { strategyBoardRoutes } from "./routes/strategy-board.js";
+import { workflowTemplateRoutes } from "./routes/workflow-templates.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
@@ -822,6 +823,7 @@ export async function createApp(
   api.use(emailRoutes(db, emailChannels));
   api.use(goalRoutes(db));
   api.use(strategyBoardRoutes(db));
+  api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(agentTeamRoutes(db));
   const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));

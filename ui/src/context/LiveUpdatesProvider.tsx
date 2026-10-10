@@ -860,6 +860,10 @@ const ISSUE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
   "issue.document_annotation_thread_reopened",
   "issue.document_annotation_remapped",
 ]);
+const ISSUE_DOCUMENT_EVIDENCE_ACTIVITY_ACTIONS = new Set([
+  "issue.document_evidence_updated",
+  "issue.document_evidence_removed",
+]);
 const ROUTINE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
   "routine.document_annotation_thread_created",
   "routine.document_annotation_comment_added",
@@ -1397,6 +1401,15 @@ function invalidateActivityQueries(
             queryKey: documentKey
               ? ["issues", "document-annotations", ref, documentKey]
               : ["issues", "document-annotations", ref],
+            ...invalidationOptions,
+          });
+        }
+        if (action && ISSUE_DOCUMENT_EVIDENCE_ACTIVITY_ACTIONS.has(action)) {
+          const documentKey = readString(details?.key);
+          queryClient.invalidateQueries({
+            queryKey: documentKey
+              ? queryKeys.issues.documentEvidence(ref, documentKey)
+              : ["issues", "document-evidence", ref],
             ...invalidationOptions,
           });
         }

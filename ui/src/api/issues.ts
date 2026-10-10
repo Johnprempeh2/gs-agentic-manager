@@ -5,6 +5,7 @@ import type {
   Approval,
   CompactIssue,
   CreateIssueTreeHold,
+  DocumentEvidenceView,
   DocumentRevision,
   FeedbackTargetType,
   FeedbackTrace,
@@ -560,6 +561,10 @@ export const issuesApi = {
     api.post<IssueDocument>(
       `/issues/${id}/documents/${encodeURIComponent(key)}/unlock`,
       {},
+    ),
+  getDocumentEvidence: (id: string, key: string) =>
+    api.get<DocumentEvidenceView>(
+      `/issues/${id}/documents/${encodeURIComponent(key)}/evidence`,
     ),
   listDocumentRevisions: (id: string, key: string) =>
     api.get<DocumentRevision[]>(

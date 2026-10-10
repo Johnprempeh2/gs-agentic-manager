@@ -27,6 +27,7 @@ import {
   Rocket,
   FileCheck2,
   Brain,
+  Workflow,
 } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -168,6 +169,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     <SidebarNavItem to="/strategy-board" label="Board" icon={Landmark} />
   ) : null;
   const routinesItem = <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />;
+  const workflowsItem = <SidebarNavItem to="/workflows" label="Workflows" icon={Workflow} />;
   const artifactsItem = <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />;
   const casesItem = showCases ? (
     <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
@@ -288,6 +290,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
               <SidebarStarredProjects />
               {routinesItem}
+              {workflowsItem}
               {pipelinesItem}
               {workspacesItem}
               {artifactsItem}
@@ -311,6 +314,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
             {tasksItem}
             {routinesItem}
+            {workflowsItem}
             {artifactsItem}
             {casesItem}
             {deepDiveItem}

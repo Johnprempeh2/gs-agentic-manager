@@ -369,6 +369,8 @@ export const queryKeys = {
       ["issues", "document", issueId, key] as const,
     documentRevisions: (issueId: string, key: string) =>
       ["issues", "document-revisions", issueId, key] as const,
+    documentEvidence: (issueId: string, key: string) =>
+      ["issues", "document-evidence", issueId, key] as const,
     documentAnnotations: (
       issueId: string,
       key: string,
@@ -564,6 +566,9 @@ export const queryKeys = {
   clientVersion: (companyId: string) => ["client-version", companyId] as const,
   agentTeams: {
     list: (companyId: string) => ["agent-teams", companyId] as const,
+  },
+  workflowTemplates: {
+    list: (companyId: string) => ["workflow-templates", companyId] as const,
   },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
