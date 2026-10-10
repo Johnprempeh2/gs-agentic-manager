@@ -2203,8 +2203,15 @@
     {
       "idx": 316,
       "version": "7",
-      "when": 1791633151263,
-      "tag": "0316_strategy_board_pack_drafts",
+      "when": 1791658557790,
+      "tag": "0316_deliverable_comment_anchors",
+      "breakpoints": true
+    },
+    {
+      "idx": 317,
+      "version": "7",
+      "when": 1791663906103,
+      "tag": "0317_strategy_board_pack_drafts",
       "breakpoints": true
     }
   ]

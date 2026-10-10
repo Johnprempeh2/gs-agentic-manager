@@ -20,6 +20,7 @@ import {
 } from "../services/cloud-instance.js";
 import { getCloudRuntimeIdentity } from "../services/cloud-runtime-identity.js";
 import { getHiddenSettings } from "../services/settings-visibility.js";
+import { getPartnerBranding } from "../services/partner-branding.js";
 import {
   inspectDatabaseBackupHealth,
   type DatabaseBackupHealthStatus,
@@ -267,6 +268,9 @@ export function healthRoutes(
     // fuller-detail fetch. Omitted entirely when nothing is hidden, so
     // deployments without the env var keep today's byte-identical responses.
     const hiddenSettings = [...getHiddenSettings(runtimeEnv)];
+    // Partner branding rides every response too, the redacted one included:
+    // the sign-in page shows it before anyone is logged in. Omitted when unset.
+    const branding = getPartnerBranding(runtimeEnv);
     // serverInfo (git SHA + process start) rides on the full-details responses
     // only, so it reaches board/agent actors in authenticated mode or any caller
     // in local_trusted dev — never anonymous authenticated callers. The
@@ -303,6 +307,7 @@ export function healthRoutes(
               serverInfo,
               ...(cloud ? { cloud } : {}),
               ...(hiddenSettings.length ? { hiddenSettings } : {}),
+              ...(branding ? { branding } : {}),
             }
           : {
               status: healthStatus,
@@ -310,6 +315,7 @@ export function healthRoutes(
               commit,
               ...(cloud ? { cloud } : {}),
               ...(hiddenSettings.length ? { hiddenSettings } : {}),
+              ...(branding ? { branding } : {}),
             },
       );
       return;
@@ -431,6 +437,7 @@ export function healthRoutes(
         ...(workspaceReadiness ? { workspace: workspaceReadiness } : {}),
         ...(cloud ? { cloud } : {}),
         ...(hiddenSettings.length ? { hiddenSettings } : {}),
+        ...(branding ? { branding } : {}),
       });
       return;
     }
@@ -458,6 +465,7 @@ export function healthRoutes(
       ...(workspaceReadiness ? { workspace: workspaceReadiness } : {}),
       ...(cloud ? { cloud } : {}),
       ...(hiddenSettings.length ? { hiddenSettings } : {}),
+      ...(branding ? { branding } : {}),
     });
   });
 

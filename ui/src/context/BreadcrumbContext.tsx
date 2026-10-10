@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode, type MouseEventHandler } from "react";
+import { getProductName } from "../lib/partner-branding";
 
 export interface Breadcrumb {
   label: string;
@@ -72,7 +73,7 @@ export function buildDocumentTitle(breadcrumbs: Breadcrumb[], companyName?: stri
   const company = companyName?.trim();
   // A page whose breadcrumbs already name the company should not repeat it.
   const companyPart = company && !pageParts.some((part) => part.trim() === company) ? [company] : [];
-  const parts = [...pageParts, ...companyPart, "GS Agentic Manager"];
+  const parts = [...pageParts, ...companyPart, getProductName()];
   return parts.join(" • ");
 }
 

@@ -459,7 +459,7 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
   }
 
   /** An email that came into a board thread, as the email service retains it. */
-  async function reply(thread: { companyId: string; input: EmailSendInput; conversationId: string }, from: string, text: string) {
+  async function reply(thread: { companyId: string; input: EmailSendInput; conversationId: string }, from: string, text: string, senderAuthenticated = true) {
     const providerMessageId = `reply-${randomUUID()}`;
     await ctx.db.insert(emailMessages).values({
       companyId: thread.companyId,
@@ -471,7 +471,7 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
       direction: "inbound",
       timestamp: new Date(),
     });
-    const input = { companyId: thread.companyId, conversationId: thread.conversationId, providerMessageId };
+    const input = { companyId: thread.companyId, conversationId: thread.conversationId, providerMessageId, senderAuthenticated };
     return { input, result: await storeBoardEmailReply(ctx.db, input) };
   }
 
@@ -552,6 +552,29 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
     );
   });
 
+  it("does not store a reply whose From matches the owner when AgentMail did not report DMARC pass (GRE-1215)", async () => {
+    const { companyId, actor: owner, chair } = await seedBoardWithChair("Forged");
+    const ama = await addPerson(companyId, "operator", "ama");
+    const kpi = await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId });
+    const asked = await request(app(chair.actor)).post(`/api/goals/${kpi.id}/why-requests`).send({ question: "Why?" });
+    await configure(owner, companyId, { nextMeetingDate: dayOffset(3) });
+    const sender = threadingSender();
+    await sweep(sender);
+    const whyThread = sender.sent.find((s) => s.input.subject === "The board asks why: Revenue")!;
+    const reminderThread = sender.sent.find((s) => s.input.subject?.startsWith("Board meeting on"))!;
+
+    // A forged From header that matches the owner exactly.
+    expect((await reply(whyThread, `Ama <${ama.email}>`, "Because.", false)).result).toEqual({ stored: "nothing", reason: "sender_not_authenticated" });
+    expect((await reply(reminderThread, ama.email!, "K1: 500", false)).result).toEqual({ stored: "nothing", reason: "sender_not_authenticated" });
+    expect((await ctx.db.select().from(goalWhyRequests).where(eq(goalWhyRequests.id, asked.body.id)))[0].status).toBe("open");
+    expect((await issueService(ctx.db).getById(asked.body.ownerIssueId))?.status).not.toBe("done");
+    expect(await ctx.db.select().from(goalKpiReadings).where(eq(goalKpiReadings.goalId, kpi.id))).toHaveLength(0);
+    expect((await threadComments(whyThread.issueId)).some((n) => n.startsWith("Not stored on the plan: the email system could not confirm"))).toBe(true);
+
+    // The owner's authenticated reply on the same thread is still stored.
+    expect((await reply(whyThread, ama.email!, "Two clients paid late.")).result).toEqual({ stored: "why_answer" });
+  });
+
   it("stores nothing, without failing, for a reply with no reading lines, a slippage alert reply, or with the board switched off", async () => {
     const { companyId, actor: owner, chair } = await seedBoardWithChair("Quiet");
     const ama = await addPerson(companyId, "operator", "ama");
@@ -573,7 +596,7 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
 
     expect(await ctx.db.select().from(goalKpiReadings).where(eq(goalKpiReadings.goalId, kpi.id))).toHaveLength(before.length);
     // An email thread the board did not send is not touched.
-    expect(await storeBoardEmailReply(ctx.db, { companyId, conversationId: randomUUID(), providerMessageId: "x" })).toEqual({ stored: "nothing", reason: "not_board_thread" });
+    expect(await storeBoardEmailReply(ctx.db, { companyId, conversationId: randomUUID(), providerMessageId: "x", senderAuthenticated: true })).toEqual({ stored: "nothing", reason: "not_board_thread" });
   });
 
   it("reads reading lines and the reply text above the quoted email", () => {

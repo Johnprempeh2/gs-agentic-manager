@@ -17,6 +17,7 @@ import {
 vi.setConfig({ testTimeout: 30000 });
 
 const mockWakeup = vi.hoisted(() => vi.fn(async () => undefined));
+const mockReconcileResolvedDependencyWakes = vi.hoisted(() => vi.fn(async () => ({ healed: 0 })));
 const mockFindExistingIssueBlockersResolvedWakeForReadyState = vi.hoisted(() => vi.fn(async () => null));
 const mockIssueService = vi.hoisted(() => ({
   getAncestors: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock("../services/index.js", () => ({
   }),
   heartbeatService: () => ({
     wakeup: mockWakeup,
+    reconcileResolvedDependencyWakes: mockReconcileResolvedDependencyWakes,
     reportRunActivity: vi.fn(async () => undefined),
   }),
   getIssueContinuationSummaryDocument: vi.fn(async () => null),
@@ -185,6 +187,44 @@ describe("issue dependency wakeups in issue routes", () => {
     });
     mockIssueService.listWakeableBlockedDependents.mockResolvedValue([]);
     mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
+  });
+
+  it("rechecks the issue and its dependents for cleared blockers when blockedByIssueIds is patched", async () => {
+    const issue = {
+      id: "issue-1",
+      companyId: "company-1",
+      identifier: "PAP-101",
+      title: "Dependent",
+      description: null,
+      status: "in_progress",
+      priority: "medium",
+      parentId: null,
+      assigneeAgentId: "agent-1",
+      assigneeUserId: null,
+      createdByAgentId: null,
+      createdByUserId: null,
+      executionWorkspaceId: null,
+      labels: [],
+      labelIds: [],
+    };
+    mockIssueService.getById.mockResolvedValue(issue);
+    mockIssueService.update.mockResolvedValue(issue);
+    mockIssueService.listOpenBlockedDependents.mockResolvedValue([{ id: "issue-9" }] as never);
+
+    const res = await request(await createApp()).patch("/api/issues/issue-1").send({ blockedByIssueIds: [] });
+    mockIssueService.listOpenBlockedDependents.mockResolvedValue([]);
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(mockReconcileResolvedDependencyWakes).toHaveBeenCalledWith({
+        companyId: "company-1",
+        issueIds: ["issue-1", "issue-9"],
+      });
+    });
+
+    mockReconcileResolvedDependencyWakes.mockClear();
+    await request(await createApp()).patch("/api/issues/issue-1").send({ title: "Renamed" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mockReconcileResolvedDependencyWakes).not.toHaveBeenCalled();
   });
 
   it("wakes dependents when the final blocker transitions to done", async () => {

@@ -1,5 +1,5 @@
 {
-  "id": "9a086976-a241-430d-8eeb-cc451e9a5644",
+  "id": "e86ce250-8f0d-4cb4-b36b-a32f2e00c773",
   "prevId": "926f203f-2363-4ba7-aad5-0cbc7247744b",
   "version": "7",
   "dialect": "postgresql",
@@ -17925,6 +17925,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "anchor_kind": {
+          "name": "anchor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'text'"
+        },
         "quote": {
           "name": "quote",
           "type": "text",
@@ -17946,6 +17953,12 @@
         "text_start": {
           "name": "text_start",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "locator": {
+          "name": "locator",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -46605,31 +46618,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "created_by_agent_id": {
-          "name": "created_by_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'accepted'"
-        },
-        "accepted_by_user_id": {
-          "name": "accepted_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "accepted_at": {
-          "name": "accepted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "snapshot": {
           "name": "snapshot",
           "type": "jsonb",
@@ -46686,30 +46674,12 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "strategy_board_packs_created_by_agent_id_agents_id_fk": {
-          "name": "strategy_board_packs_created_by_agent_id_agents_id_fk",
-          "tableFrom": "strategy_board_packs",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "created_by_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "strategy_board_packs_status_check": {
-          "name": "strategy_board_packs_status_check",
-          "value": "\"strategy_board_packs\".\"status\" in ('draft', 'accepted')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.strategy_board_settings": {

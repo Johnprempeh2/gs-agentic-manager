@@ -21258,6 +21258,7 @@ export function heartbeatService(
   async function reconcileResolvedDependencyWakes(opts?: {
     runId?: string | null;
     companyId?: string | null;
+    issueIds?: string[] | null;
   }) {
     return recovery.reconcileResolvedDependencyWakeBackstop(opts);
   }
