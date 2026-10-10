@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
-import type { KpiRagStatus, StrategyBoardArea, StrategyBoardKpi } from "@greatstone/shared";
+import type { KpiRagStatus, StrategyBoardAction, StrategyBoardArea, StrategyBoardKpi } from "@greatstone/shared";
 import { GOAL_KIND_LABELS } from "@greatstone/shared";
-import { ArrowRight, CircleHelp, ShieldAlert, ShieldCheck, Shield } from "lucide-react";
+import { ArrowRight, CalendarClock, CircleHelp, ShieldAlert, ShieldCheck, Shield } from "lucide-react";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -108,6 +108,62 @@ export function AttentionQueue({
         );
       })}
     </ol>
+  );
+}
+
+/** "1 day overdue" or "5 days overdue". */
+export function overdueText(days: number): string {
+  return days === 1 ? "1 day overdue" : `${days} days overdue`;
+}
+
+/** Overdue plan actions (GRE-1188), grouped by objective; the server sends them in objective then owner order. */
+export function OverdueActions({ actions }: { actions: readonly StrategyBoardAction[] }) {
+  if (actions.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+        No plan action is past its due date.
+      </p>
+    );
+  }
+  const groups: Array<{ objectiveId: string; objectiveTitle: string; areaTitle: string | null; actions: StrategyBoardAction[] }> = [];
+  for (const action of actions) {
+    const last = groups[groups.length - 1];
+    if (last && last.objectiveId === action.objectiveId) last.actions.push(action);
+    else groups.push({ objectiveId: action.objectiveId, objectiveTitle: action.objectiveTitle, areaTitle: action.areaTitle, actions: [action] });
+  }
+  return (
+    <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+      {groups.map((group) => (
+        <section key={group.objectiveId} className="space-y-2 px-4 py-3" aria-label={group.objectiveTitle} data-testid="overdue-group">
+          <div className="min-w-0">
+            {group.areaTitle ? <p className="text-xs text-muted-foreground">{group.areaTitle}</p> : null}
+            <Link to={`/goals/${group.objectiveId}`} className="text-sm font-semibold hover:underline">{group.objectiveTitle}</Link>
+          </div>
+          <ul className="space-y-1.5">
+            {group.actions.map((action) => (
+              <li key={action.issueId} className="flex flex-col gap-0.5 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3" data-testid="overdue-row">
+                <Link to={`/issues/${action.identifier ?? action.issueId}`} className="min-w-0 break-words hover:underline">
+                  {action.identifier ? <span className="mr-1.5 font-mono text-xs text-muted-foreground">{action.identifier}</span> : null}
+                  {action.title}
+                </Link>
+                <span className="flex shrink-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>{boardOwnerName(action.owner)}</span>
+                  <span aria-hidden>·</span>
+                  <span>Due {action.dueDate}</span>
+                  <span
+                    className={CHIP}
+                    style={{ "--sc": "var(--status-danger)" } as CSSProperties}
+                  >
+                    <CalendarClock className="size-3" aria-hidden />
+                    {overdueText(action.daysOverdue)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
   );
 }
 

@@ -155,6 +155,7 @@ import {
 } from "./issue-goal-fallback.js";
 import { getRunLogStore } from "./run-log-store.js";
 import { getDefaultCompanyGoal } from "./goals.js";
+import { assertDueDateOnPlan, resolveNextDueDate } from "./issue-due-date.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import {
   CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
@@ -5037,6 +5038,7 @@ const issueListSelect = {
   tabledUntil: issues.tabledUntil,
   tabledByUserId: issues.tabledByUserId,
   tabledFromStatus: issues.tabledFromStatus,
+  dueDate: issues.dueDate,
   createdAt: issues.createdAt,
   updatedAt: issues.updatedAt,
 };
@@ -10347,6 +10349,9 @@ export function issueService(db: Db) {
           issueNumber,
           identifier,
         } as typeof issues.$inferInsert;
+        if (values.dueDate) {
+          await assertDueDateOnPlan(tx, companyId, values.goalId ?? null);
+        }
         if (values.status === "in_progress" && !values.startedAt) {
           values.startedAt = new Date();
         }
@@ -11150,6 +11155,13 @@ export function issueService(db: Db) {
           projectGoalId: nextProjectGoalId,
           defaultGoalId: defaultCompanyGoal?.id ?? null,
         });
+        const nextDueDate = await resolveNextDueDate(tx, existing.companyId, {
+          currentDueDate: existing.dueDate,
+          currentGoalId: existing.goalId,
+          dueDate: issueData.dueDate,
+          goalId: patch.goalId ?? null,
+        });
+        if (nextDueDate !== undefined) patch.dueDate = nextDueDate;
         // Ownership changes invalidate observed handoff versions even if status
         // stays the same, including an A -> B -> A assignment race.
         if ((issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== receiptExisting.assigneeAgentId)

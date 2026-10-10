@@ -1,5 +1,5 @@
 {
-  "id": "285b6658-be93-49d5-8a80-dbb150d134f3",
+  "id": "9ccaa83b-e672-4e79-81db-4b8a1f2fa316",
   "prevId": "b2d11666-655b-4853-af0b-f948d3540869",
   "version": "7",
   "dialect": "postgresql",
@@ -32886,6 +32886,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "due_date": {
+          "name": "due_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -33195,6 +33201,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "issues_company_due_date_idx": {
+          "name": "issues_company_due_date_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "due_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"issues\".\"due_date\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -46324,218 +46352,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.strategy_board_emails": {
-      "name": "strategy_board_emails",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dedupe_key": {
-          "name": "dedupe_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recipient_user_id": {
-          "name": "recipient_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recipient_email": {
-          "name": "recipient_email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "endpoint_id": {
-          "name": "endpoint_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "alert_id": {
-          "name": "alert_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "why_request_id": {
-          "name": "why_request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "meeting_date": {
-          "name": "meeting_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kpi_codes": {
-          "name": "kpi_codes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "publication_id": {
-          "name": "publication_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'queued'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "strategy_board_emails_dedupe_idx": {
-          "name": "strategy_board_emails_dedupe_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "dedupe_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "strategy_board_emails_publication_idx": {
-          "name": "strategy_board_emails_publication_idx",
-          "columns": [
-            {
-              "expression": "publication_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "strategy_board_emails_company_id_companies_id_fk": {
-          "name": "strategy_board_emails_company_id_companies_id_fk",
-          "tableFrom": "strategy_board_emails",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "strategy_board_emails_endpoint_id_chat_endpoints_id_fk": {
-          "name": "strategy_board_emails_endpoint_id_chat_endpoints_id_fk",
-          "tableFrom": "strategy_board_emails",
-          "tableTo": "chat_endpoints",
-          "columnsFrom": [
-            "endpoint_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "strategy_board_emails_alert_id_goal_kpi_alerts_id_fk": {
-          "name": "strategy_board_emails_alert_id_goal_kpi_alerts_id_fk",
-          "tableFrom": "strategy_board_emails",
-          "tableTo": "goal_kpi_alerts",
-          "columnsFrom": [
-            "alert_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "strategy_board_emails_why_request_id_goal_why_requests_id_fk": {
-          "name": "strategy_board_emails_why_request_id_goal_why_requests_id_fk",
-          "tableFrom": "strategy_board_emails",
-          "tableTo": "goal_why_requests",
-          "columnsFrom": [
-            "why_request_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "strategy_board_emails_kind_check": {
-          "name": "strategy_board_emails_kind_check",
-          "value": "\"strategy_board_emails\".\"kind\" in ('meeting_reminder', 'slippage_alert', 'why_request')"
-        },
-        "strategy_board_emails_status_check": {
-          "name": "strategy_board_emails_status_check",
-          "value": "\"strategy_board_emails\".\"status\" in ('queued', 'failed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.strategy_board_packs": {
       "name": "strategy_board_packs",
       "schema": "",
@@ -46632,78 +46448,6 @@
             "id"
           ],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.strategy_board_settings": {
-      "name": "strategy_board_settings",
-      "schema": "",
-      "columns": {
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "secretary_endpoint_id": {
-          "name": "secretary_endpoint_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "next_meeting_date": {
-          "name": "next_meeting_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reminder_lead_days": {
-          "name": "reminder_lead_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 7
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "strategy_board_settings_company_id_companies_id_fk": {
-          "name": "strategy_board_settings_company_id_companies_id_fk",
-          "tableFrom": "strategy_board_settings",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "strategy_board_settings_secretary_endpoint_id_chat_endpoints_id_fk": {
-          "name": "strategy_board_settings_secretary_endpoint_id_chat_endpoints_id_fk",
-          "tableFrom": "strategy_board_settings",
-          "tableTo": "chat_endpoints",
-          "columnsFrom": [
-            "secretary_endpoint_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

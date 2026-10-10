@@ -860,6 +860,7 @@ export type {
 export type {
   GoalKpiAlert,
   GoalWhyRequest,
+  StrategyBoardAction,
   StrategyBoardArea,
   StrategyBoardKpi,
   StrategyBoardMember,

@@ -115,6 +115,7 @@ import {
 } from "./helpers";
 import { PropertyPicker } from "./property-picker";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
+import { IssueDueDateRow } from "./IssueDueDateRow";
 import {
   buildWorkspaceSelectionUpdate,
   currentWorkspaceSelection,
@@ -2497,6 +2498,14 @@ export function IssueProperties({
         >
           {assigneeContent}
         </PropertyPicker>
+
+        <IssueDueDateRow
+          companyId={issue.companyId}
+          goalId={issue.goalId}
+          dueDate={issue.dueDate}
+          status={issue.status}
+          onUpdate={onUpdate}
+        />
 
         {issueTeam ? (
           <PropertyRow label="Team">

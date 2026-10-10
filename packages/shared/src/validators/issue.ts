@@ -679,6 +679,15 @@ function withCreateIssueStatusDefault<T extends z.ZodRawShape>(
   }, schema);
 }
 
+/** A real calendar day, "YYYY-MM-DD" (GRE-1188 due dates). */
+const issueDueDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date in YYYY-MM-DD form")
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }, "Not a real calendar date");
+
 const createIssueBaseSchema = z.object({
   projectId: z.string().guid().optional().nullable(),
   projectWorkspaceId: z.string().guid().optional().nullable(),
@@ -712,6 +721,11 @@ const createIssueBaseSchema = z.object({
    * team lead; a team with no lead is refused. `null` clears the team.
    */
   teamId: z.string().guid().optional().nullable(),
+  /**
+   * Deadline of a plan action (GRE-1188). Accepted only when the task's goal
+   * is a plan objective or sits under one; `null` clears it.
+   */
+  dueDate: issueDueDateSchema.optional().nullable(),
   requestDepth: issueRequestDepthInputSchema.optional().default(0),
   createdByUserId: z.string().optional().nullable(),
   responsibleUserId: z.string().optional().nullable(),

@@ -11,7 +11,7 @@ import { boardAssurance } from "@/lib/strategy-board";
 import { ErrorState } from "@/components/ErrorState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
-import { AttentionQueue, ChangesSinceSnapshot, StrategyAtAGlance } from "@/components/strategy-board/StrategyBoardViews";
+import { AttentionQueue, ChangesSinceSnapshot, OverdueActions, StrategyAtAGlance } from "@/components/strategy-board/StrategyBoardViews";
 import { AskWhyDialog, BoardMembersCard, BoardPackViewer, MakeBoardPackDialog } from "@/components/strategy-board/StrategyBoardDialogs";
 import { BoardEmailCard } from "@/components/strategy-board/BoardEmailCard";
 
@@ -112,6 +112,11 @@ export function StrategyBoard() {
       <section className="space-y-2" aria-labelledby="attention-heading">
         <SectionHeading id="attention-heading">Needs board attention</SectionHeading>
         <AttentionQueue kpis={board.attention} canAskWhy={rights.mayAskWhy} onAskWhy={setAskKpi} />
+      </section>
+
+      <section className="space-y-2" aria-labelledby="overdue-heading">
+        <SectionHeading id="overdue-heading">Overdue actions</SectionHeading>
+        <OverdueActions actions={board.overdueActions} />
       </section>
 
       <section className="space-y-2" aria-labelledby="glance-heading">
