@@ -369,6 +369,8 @@ export const queryKeys = {
       ["issues", "document", issueId, key] as const,
     documentRevisions: (issueId: string, key: string) =>
       ["issues", "document-revisions", issueId, key] as const,
+    documentEvidence: (issueId: string, key: string) =>
+      ["issues", "document-evidence", issueId, key] as const,
     documentAnnotations: (
       issueId: string,
       key: string,
