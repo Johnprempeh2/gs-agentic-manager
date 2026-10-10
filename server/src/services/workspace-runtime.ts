@@ -6710,7 +6710,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
         // in the operation log is what made PAP-17254 undiagnosable (PAP-17256).
         const code = provisioned.status.lastError ?? "unknown error";
         throw new Error(
-          `HTTPS exposure failed: ${code}${provisioned.errorDetail ? ` — ${provisioned.errorDetail}` : ""}`,
+          `HTTPS exposure failed: ${code}${provisioned.errorDetail ? ` (${provisioned.errorDetail})` : ""}`,
         );
       }
     }

@@ -2525,7 +2525,7 @@ function readToolActionContinuationContext(interaction: {
       decision: "rejected",
       executionStatus: "rejected",
       ...(declineReason ? { declineReason } : {}),
-      instructions: `the action was declined${declineReason ? `: ${declineReason}` : ""}; do not retry the same call — adjust your approach or mark the task blocked/in_review with the decline reason.`,
+      instructions: `the action was declined${declineReason ? `: ${declineReason}` : ""}; do not retry the same call. Adjust your approach or mark the task blocked/in_review with the decline reason.`,
     };
   }
 
@@ -2542,7 +2542,7 @@ function readToolActionContinuationContext(interaction: {
       decision: "accepted",
       executionStatus,
       ...(resultSummary ? { resultSummary } : {}),
-      instructions: `the approved ${toolName} action already ran — do not call the tool again; continue with this result.`,
+      instructions: `the approved ${toolName} action already ran. Do not call the tool again; continue with this result.`,
     };
   }
 
@@ -2554,7 +2554,7 @@ function readToolActionContinuationContext(interaction: {
       decision: "accepted",
       executionStatus,
       ...(error ? { error } : {}),
-      instructions: `the approved action ran and failed with ${failureMessage}; adjust your approach — a fresh call will open a new approval.`,
+      instructions: `the approved action ran and failed with ${failureMessage}; adjust your approach, as a fresh call will open a new approval.`,
     };
   }
 
@@ -7608,7 +7608,7 @@ export function issueRoutes(
     if (!ancestor) return;
     throw conflict(
       `Delegation cycle: ${ancestor.identifier ?? "an ancestor issue"} in this chain was created by the agent this child would be assigned to. ` +
-        "Complete the remaining work in your own issue, leave the child unassigned, or escalate to a board operator — do not delegate the work back to the agent that delegated it to you.",
+        "Complete the remaining work in your own issue, leave the child unassigned, or escalate to a board operator. Do not delegate the work back to the agent that delegated it to you.",
       {
         code: "delegation_cycle",
         ancestorIssueId: ancestor.id,

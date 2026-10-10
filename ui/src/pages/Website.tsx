@@ -52,7 +52,7 @@ export function formatPosition(value: number): string {
 const dayLabel = (day: string) => formatCalendarDay(day);
 
 export function formatRange(range: WebsiteDateRange): string {
-  return `${dayLabel(range.startDate)} – ${formatCalendarDay(range.endDate, { includeYear: true })}`;
+  return `${dayLabel(range.startDate)} to ${formatCalendarDay(range.endDate, { includeYear: true })}`;
 }
 
 const ERROR_SOURCE_LABELS: Record<WebsitePullError["source"], string> = {

@@ -115,7 +115,7 @@ export function decisionRoutes(db: Db, options: DecisionServiceOptions) {
           attentionArchive: entry,
         } satisfies AttentionArchiveTargetSnapshot,
       ]));
-      const body = manifest.map((entry) => `- **${entry.sourceKind}:${entry.sourceId}** — ${entry.reason}`).join("\n");
+      const body = manifest.map((entry) => `- **${entry.sourceKind}:${entry.sourceId}**: ${entry.reason}`).join("\n");
       const created = await svc.create({
         companyId,
         actor: req.actor,

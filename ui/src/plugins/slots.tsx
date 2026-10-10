@@ -539,7 +539,7 @@ async function loadPluginModule(contribution: PluginUiContribution): Promise<voi
           registerPluginWebComponent(pluginKey, exportName, exported);
         } else {
           console.warn(
-            `Plugin "${pluginKey}" export "${exportName}" is neither a function nor a string tag name — skipping.`,
+            `Plugin "${pluginKey}" export "${exportName}" is neither a function nor a string tag name; skipping.`,
           );
         }
       }

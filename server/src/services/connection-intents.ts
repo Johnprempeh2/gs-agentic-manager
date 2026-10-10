@@ -522,7 +522,9 @@ export function connectionIntentService(db: Db) {
     const route = parseAggregatorRoute(selected);
     if (!route || expected.id !== `connection-provider:${route.targetService}`) return null;
     const providerName = AGGREGATOR_NAMES[route.provider];
-    if (option?.label !== providerName && option?.label !== `${providerName} — Recommended`) return null;
+    // The label used an em dash before the house-style change; answers stored then stay valid.
+    const labels = [providerName, `${providerName} (Recommended)`, `${providerName} \u2014 Recommended`];
+    if (!labels.includes(option?.label ?? "")) return null;
     // Eligibility is checked separately. A changed recommendation order must not
     // erase the human's choice or silently replace it with another provider.
     return selected;

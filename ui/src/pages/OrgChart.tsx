@@ -983,9 +983,9 @@ function AgentPanel({
       "Spend this month",
       agent
         ? `${formatCents(agent.spentMonthlyCents)}${agent.budgetMonthlyCents > 0 ? ` of ${formatCents(agent.budgetMonthlyCents)}` : ""}`
-        : "—",
+        : "n/a",
     ],
-    ["Runs on", agent ? getAdapterLabel(agent.adapterType) : "—"],
+    ["Runs on", agent ? getAdapterLabel(agent.adapterType) : "n/a"],
     ["Reports to", managerName ?? "No one"],
     ["Direct reports", String(reportCount)],
     [

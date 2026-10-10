@@ -118,7 +118,7 @@ export function StrategyCascadeView({
                   <span className="flex items-center gap-3">
                     <GoalOwner goal={goal} agentsById={agentsById} usersById={usersById} />
                     <span className="ml-auto w-10 text-right text-xs tabular-nums text-muted-foreground sm:ml-0">
-                      {goal.progress.percent == null ? "–" : `${goal.progress.percent}%`}
+                      {goal.progress.percent == null ? "n/a" : `${goal.progress.percent}%`}
                     </span>
                     <CascadeStatus goal={goal} />
                   </span>

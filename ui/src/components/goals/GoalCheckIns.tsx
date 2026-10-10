@@ -92,7 +92,7 @@ export function GoalCheckIns({
               <li key={checkIn.id} className="grid grid-cols-(--gtc-67) gap-3 py-3.5">
                 <div>
                   <p className="font-bold tabular-nums">
-                    {checkIn.progressPercent != null ? `${checkIn.progressPercent}%` : "–"}
+                    {checkIn.progressPercent != null ? `${checkIn.progressPercent}%` : "n/a"}
                   </p>
                   <p className="text-xs text-subtle-foreground" title={formatDateTime(checkIn.createdAt)}>
                     {formatShortDate(checkIn.createdAt)}

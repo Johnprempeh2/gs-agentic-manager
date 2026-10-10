@@ -1157,7 +1157,7 @@ export function githubChatReviewService(db: Db, fetchImpl = fetch) {
               ? ` · [Review history](${board}/apps/chat/${source.endpoint.id}/reviews)`
               : "";
             const summary = projectSafeChatPublicationText(
-              `## GS Agentic Manager Review — ${assessment.complete ? `${assessment.score}/5` : "Incomplete"}\n\n${assessment.summary}\n\n${assessment.rationale}\n\nReviewed commit: \`${review.headSha}\`\n\nCoverage: ${assessment.coverage.reviewedPaths.length} files.\n${assessment.coverage.limitations.join("\n")}\n\nTask: ${taskLink} · ${runLink}${historyLink}`,
+              `## GS Agentic Manager Review: ${assessment.complete ? `${assessment.score}/5` : "Incomplete"}\n\n${assessment.summary}\n\n${assessment.rationale}\n\nReviewed commit: \`${review.headSha}\`\n\nCoverage: ${assessment.coverage.reviewedPaths.length} files.\n${assessment.coverage.limitations.join("\n")}\n\nTask: ${taskLink} · ${runLink}${historyLink}`,
             );
             const summaryMarker = marker(
               "review",

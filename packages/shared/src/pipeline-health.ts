@@ -242,7 +242,7 @@ export function computePipelineHealth(input: PipelineHealthInput): PipelineHealt
       warnings.push({
         ...anchor,
         code: "stage_no_automation",
-        message: `Nothing runs here automatically — items will sit until a person moves them. Add an agent to run this step, or make it a review step if a person should decide.`,
+        message: `Nothing runs here automatically. Items will sit until a person moves them. Add an agent to run this step, or make it a review step if a person should decide.`,
       });
     }
 

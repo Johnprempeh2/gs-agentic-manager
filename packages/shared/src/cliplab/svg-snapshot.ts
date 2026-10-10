@@ -141,5 +141,5 @@ export function snapshotSvg(snapshot: Snapshot, prefix = `cliplab-${crypto.rando
     .replace(/\bid="([^"]+)"/g, (_, id: string) => `id="${prefix}${id}"`)
     .replace(/url\(#([^)]+)\)/g, (_, id: string) => `url(#${prefix}${id})`)
     .replace(/href="#([^"]+)"/g, (_, id: string) => `href="#${prefix}${id}"`)
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img"><title>${xml(character.name)} — ClipLab snapshot</title><metadata>${xml(JSON.stringify(metadata))}</metadata>${artwork}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img"><title>${xml(character.name)}: ClipLab snapshot</title><metadata>${xml(JSON.stringify(metadata))}</metadata>${artwork}</svg>`
 }

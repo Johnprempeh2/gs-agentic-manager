@@ -501,13 +501,13 @@ export function AddConnectionDialog({
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   <div>
                     <p className="text-lg font-semibold tabular-nums text-foreground">
-                      {probeResult.toolCount ?? "—"}
+                      {probeResult.toolCount ?? "n/a"}
                     </p>
                     <p className="text-xs text-muted-foreground">tools discovered</p>
                   </div>
                   <div>
                     <p className="text-lg font-semibold tabular-nums text-foreground">
-                      {probeResult.latencyMs != null ? `${probeResult.latencyMs}ms` : "—"}
+                      {probeResult.latencyMs != null ? `${probeResult.latencyMs}ms` : "n/a"}
                     </p>
                     <p className="text-xs text-muted-foreground">probe latency</p>
                   </div>

@@ -473,7 +473,7 @@ export function DesignGuide() {
   const [inlineText, setInlineText] = useState("Click to edit this text");
   const [inlineTitle, setInlineTitle] = useState("Editable Title");
   const [inlineDesc, setInlineDesc] = useState(
-    "This is an editable description. Click to edit it — the textarea auto-sizes to fit the content without layout shift."
+    "This is an editable description. Click to edit it; the textarea auto-sizes to fit the content without layout shift."
   );
   const [filters, setFilters] = useState<FilterValue[]>([
     { key: "status", label: "Status", value: "Active" },
@@ -699,25 +699,25 @@ export function DesignGuide() {
 
       <Section title="Typography">
         <div className="space-y-3">
-          <h2 className="text-xl font-bold">Page Title — text-xl font-bold</h2>
-          <h2 className="text-lg font-semibold">Section Title — text-lg font-semibold</h2>
+          <h2 className="text-xl font-bold">Page Title: text-xl font-bold</h2>
+          <h2 className="text-lg font-semibold">Section Title: text-lg font-semibold</h2>
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Section Heading — text-sm font-semibold uppercase tracking-wide
+            Section Heading: text-sm font-semibold uppercase tracking-wide
           </h3>
-          <p className="text-sm font-medium">Card Title — text-sm font-medium</p>
-          <p className="text-sm font-semibold">Card Title Alt — text-sm font-semibold</p>
-          <p className="text-sm">Body text — text-sm</p>
+          <p className="text-sm font-medium">Card Title: text-sm font-medium</p>
+          <p className="text-sm font-semibold">Card Title Alt: text-sm font-semibold</p>
+          <p className="text-sm">Body text: text-sm</p>
           <p className="text-sm text-muted-foreground">
-            Muted description — text-sm text-muted-foreground
+            Muted description: text-sm text-muted-foreground
           </p>
           <p className="text-xs text-muted-foreground">
-            Tiny label — text-xs text-muted-foreground
+            Tiny label: text-xs text-muted-foreground
           </p>
           <p className="text-sm font-mono text-muted-foreground">
-            Mono identifier — text-sm font-mono text-muted-foreground
+            Mono identifier: text-sm font-mono text-muted-foreground
           </p>
-          <p className="text-2xl font-bold">Large stat — text-2xl font-bold</p>
-          <p className="font-mono text-xs">Log/code text — font-mono text-xs</p>
+          <p className="text-2xl font-bold">Large stat: text-2xl font-bold</p>
+          <p className="font-mono text-xs">Log/code text: font-mono text-xs</p>
         </div>
       </Section>
 
@@ -827,7 +827,7 @@ export function DesignGuide() {
           </div>
         </SubSection>
 
-        <SubSection title="IssueStatusBadge (brand chip + glyph — PAP-75)">
+        <SubSection title="IssueStatusBadge (brand chip + glyph, PAP-75)">
           <div className="flex items-center gap-2 flex-wrap">
             {["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"].map(
               (s) => (
@@ -906,14 +906,14 @@ export function DesignGuide() {
 
         <SubSection title="IssueReferencePill">
           <p className="text-xs text-muted-foreground">
-            Used wherever a task is referenced — in markdown, the Related Work tab, and activity summaries.
+            Used wherever a task is referenced: in markdown, the Related Work tab, and activity summaries.
             Pass <code className="font-mono">status</code> to show the target issue&apos;s state at a glance.
             Use <code className="font-mono">variant="property"</code> for compact badges with direct navigation.
             Pass <code className="font-mono">onRemove</code> for a separate blocker removal control with reserved space.
             Use <code className="font-mono">strikethrough</code> for &quot;removed&quot; contexts.
           </p>
           <div className="flex items-center gap-2 flex-wrap">
-            <IssueReferencePill issue={{ id: "demo-1", identifier: "PAP-123", title: "Identifier only — no status yet" }} />
+            <IssueReferencePill issue={{ id: "demo-1", identifier: "PAP-123", title: "Identifier only, no status yet" }} />
             <IssueReferencePill issue={{ id: "demo-2", identifier: "PAP-456", title: "With in_progress status", status: "in_progress" }} />
             <IssueReferencePill issue={{ id: "demo-3", identifier: "PAP-789", title: "Done status", status: "done" }} />
             <IssueReferencePill issue={{ id: "demo-4", identifier: "PAP-101", title: "Blocked status", status: "blocked" }} />
@@ -2110,23 +2110,23 @@ export function DesignGuide() {
       {/*  TOOLS & ACCESS (PAP-10389)                                   */}
       {/* ============================================================ */}
       <Section title="Tools & Access">
-        <SubSection title="EnforcementBanner — default / denied-detected">
+        <SubSection title="EnforcementBanner: default / denied-detected">
           <div className="space-y-3">
             <EnforcementBanner companyId="" forceVariant="default" recentDenialCount={0} />
             <EnforcementBanner companyId="" forceVariant="denied-detected" recentDenialCount={3} />
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
             Persistent at the top of the Tools &amp; Access surface. Tints to <code>denied-detected</code> when
-            governed tool calls were denied or failed in the last hour. Observability only — enforcement lives
+            governed tool calls were denied or failed in the last hour. Observability only; enforcement lives
             in the tool gateway.
           </p>
         </SubSection>
 
-        <SubSection title="EnforcementBanner — presentational tones (info / warning / error)">
+        <SubSection title="EnforcementBanner: presentational tones (info / warning / error)">
           <div className="space-y-3">
             <EnforcementBanner
               tone="info"
-              title="Effective access — server resolved."
+              title="Effective access: server resolved."
               body="This is exactly what the tool gateway will accept. Profile and policy edits reflect within ~5s; the prompt cannot expand it."
             />
             <EnforcementBanner
@@ -2147,7 +2147,7 @@ export function DesignGuide() {
           </p>
         </SubSection>
 
-        <SubSection title="Action approval card — pending / stale (surfaces 11/12)">
+        <SubSection title="Action approval card: pending / stale (surfaces 11/12)">
           <div className="grid gap-4 lg:grid-cols-2">
             <ActionCard
               toolName="slack.post_message"
@@ -2192,7 +2192,7 @@ export function DesignGuide() {
           </p>
         </SubSection>
 
-        <SubSection title="Action approval card — mobile (390×844, surface 99)">
+        <SubSection title="Action approval card: mobile (390×844, surface 99)">
           <div className="w-(--sz-390px) max-w-full rounded-xl border border-border bg-background p-3">
             <ActionCardMobile
               toolName="slack.post_message"

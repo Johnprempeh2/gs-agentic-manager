@@ -312,7 +312,7 @@ function ConnectFlowPreview({
             title={done ? "Connected" : "Connect a model"}
             lede={
               done
-                ? "The step advances straight to Review — there is no success screen."
+                ? "The step advances straight to Review; there is no success screen."
                 : `${CLIENT_BRAND_NAME} works with your existing subscription or API keys.`
             }
           />

@@ -1237,9 +1237,9 @@ describeEmbeddedPostgres("question response delivery", () => {
       [
         "Answered questions",
         "",
-        "- Purpose — What is it for?: Internal API",
-        "- Runtime — Which runtime?: Node.js",
-        "- Features — Which features?: Health check, Request logs, Metrics",
+        "- Purpose (What is it for?): Internal API",
+        "- Runtime (Which runtime?): Node.js",
+        "- Features (Which features?): Health check, Request logs, Metrics",
       ].join("\n"),
     );
   });

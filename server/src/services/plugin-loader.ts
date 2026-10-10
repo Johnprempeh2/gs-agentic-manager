@@ -1849,7 +1849,7 @@ export function pluginLoader(
       if (escalated.length > 0) {
         log.warn(
           { pluginId, escalated, oldVersion: oldManifest.version, newVersion: newManifest.version },
-          "plugin-loader: upgrade introduces new capabilities — requires admin approval",
+          "plugin-loader: upgrade introduces new capabilities; requires admin approval",
         );
         throw new Error(
           `Upgrade for "${pluginId}" introduces new capabilities that require approval: ${escalated.join(", ")}. ` +
@@ -2404,7 +2404,7 @@ export function pluginLoader(
           if (code === PLUGIN_RPC_ERROR_CODES.CROSS_TENANT_CONFIG) {
             log.warn(
               details,
-              "plugin-loader: startup config delivery rejected — single-tenant plugin configured for multiple companies",
+              "plugin-loader: startup config delivery rejected: single-tenant plugin configured for multiple companies",
             );
           } else {
             log.debug(details, "plugin-loader: startup config delivery skipped for company");

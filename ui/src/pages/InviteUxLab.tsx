@@ -69,7 +69,7 @@ const inviteHistory = [
     email: "board24@paperclip.local",
     createdAt: "Apr 24, 2026, 8:15 AM",
     action: "Inactive",
-    relatedLabel: "—",
+    relatedLabel: "None",
   },
   {
     id: "invite-revoked",
@@ -79,7 +79,7 @@ const inviteHistory = [
     email: "board20@paperclip.local",
     createdAt: "Apr 20, 2026, 2:45 PM",
     action: "Inactive",
-    relatedLabel: "—",
+    relatedLabel: "None",
   },
   {
     id: "invite-expired",
@@ -89,7 +89,7 @@ const inviteHistory = [
     email: "board19@paperclip.local",
     createdAt: "Apr 19, 2026, 7:10 PM",
     action: "Inactive",
-    relatedLabel: "—",
+    relatedLabel: "None",
   },
 ] as const;
 
@@ -430,7 +430,7 @@ function InviteResultPreview({
               </a>
             </div>
             <p className="text-xs text-zinc-500">
-              Refresh this page after you&apos;ve been approved — you&apos;ll be redirected automatically.
+              Refresh this page after you&apos;ve been approved; you&apos;ll be redirected automatically.
             </p>
           </>
         )}

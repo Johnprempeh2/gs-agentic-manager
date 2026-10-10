@@ -144,7 +144,7 @@ export function createHttpLogger(baseLogger: Logger) {
       if (
         isSecretSensitiveHttpRequest(req.method, requestClassificationUrl(req))
       ) {
-        return `${req.method} ${requestLogUrl(req)} ${res.statusCode} — request failed`;
+        return `${req.method} ${requestLogUrl(req)} ${res.statusCode}: request failed`;
       }
       const ctx = (res as any).__errorContext;
       const errMsg =
@@ -152,7 +152,7 @@ export function createHttpLogger(baseLogger: Logger) {
         err?.message ||
         (res as any).err?.message ||
         "unknown error";
-      return `${req.method} ${stripSecretBearingUrlParts(req.url ?? "")} ${res.statusCode} — ${errMsg}`;
+      return `${req.method} ${stripSecretBearingUrlParts(req.url ?? "")} ${res.statusCode}: ${errMsg}`;
     },
     customErrorObject(req, _res, _err, value) {
       // pino-http serializes res.err independently of customProps/errorContext.

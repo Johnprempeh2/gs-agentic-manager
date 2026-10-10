@@ -244,7 +244,7 @@ export function githubReviewPrompt(
     "Use this task's GitHub bot tools. The connection, permitted repository, publication policy, and check conclusion are enforced by GS Agentic Manager. Never substitute personal credentials.",
     policy.prompts[context.event],
     policy.instructions,
-    "Assessment rubric (0–5):",
+    "Assessment rubric (0 to 5):",
     ...GITHUB_REVIEW_RUBRIC,
     "Call begin_review with the current reviewed commit before assessing a requested review; metadata reads and ordinary discussion do not change a check. Report incomplete analysis honestly. Provide rationale, reviewed paths, omissions, and limitations. Coverage paths must name only allowed changed files; describe other inspected context in the rationale. If submission validation fails, correct the indicated fields and retry submit_review; a plain comment does not complete a review or update its check. Formal approval is a separate explicitly permitted tool action.",
     `Ignored paths (do not read or review): ${JSON.stringify(policy.ignoredPaths)}`,

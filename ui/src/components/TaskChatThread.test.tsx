@@ -2188,7 +2188,7 @@ describe("TaskChatThread runtime transcript selection", () => {
             authorType: "agent",
             authorAgentId: "agent-1",
             authorUserId: null,
-            body: "Run completed. Agent did not post a summary comment this run (transcript withheld — see run log).",
+            body: "Run completed. Agent did not post a summary comment this run (transcript withheld; see run log).",
             presentation: null,
             metadata: null,
             runId: "native-question",

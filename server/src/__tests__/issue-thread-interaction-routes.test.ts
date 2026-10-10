@@ -1289,7 +1289,7 @@ describe.sequential("issue thread interaction routes", () => {
       decision: "accepted",
       executionStatus: "executed",
       resultSummary: "Added row 42",
-      instructions: "the approved google_sheets_add_row action already ran — do not call the tool again; continue with this result.",
+      instructions: "the approved google_sheets_add_row action already ran. Do not call the tool again; continue with this result.",
     };
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
       ASSIGNEE_AGENT_ID,
@@ -1343,7 +1343,7 @@ describe.sequential("issue thread interaction routes", () => {
             decision: "accepted",
             executionStatus: "failed",
             error: "Connector timed out",
-            instructions: "the approved action ran and failed with Connector timed out; adjust your approach — a fresh call will open a new approval.",
+            instructions: "the approved action ran and failed with Connector timed out; adjust your approach, as a fresh call will open a new approval.",
           },
         }),
       }),
@@ -2392,7 +2392,7 @@ describe.sequential("issue thread interaction routes", () => {
       decision: "rejected",
       executionStatus: "rejected",
       declineReason: "Use the sandbox sheet instead",
-      instructions: "the action was declined: Use the sandbox sheet instead; do not retry the same call — adjust your approach or mark the task blocked/in_review with the decline reason.",
+      instructions: "the action was declined: Use the sandbox sheet instead; do not retry the same call. Adjust your approach or mark the task blocked/in_review with the decline reason.",
     };
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
       ASSIGNEE_AGENT_ID,

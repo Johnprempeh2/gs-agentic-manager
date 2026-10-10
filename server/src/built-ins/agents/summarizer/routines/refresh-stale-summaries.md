@@ -1,7 +1,7 @@
 ---
 routineKey: refresh-stale-summaries
 title: Refresh stale summary slots
-description: Bounded, paused-by-default sweep that regenerates summary slots whose underlying scope has changed since the last revision. Spends no tokens until an operator enables its schedule or runs it manually. Read-and-report only — it never mutates issues, workspaces, or code.
+description: Bounded, paused-by-default sweep that regenerates summary slots whose underlying scope has changed since the last revision. Spends no tokens until an operator enables its schedule or runs it manually. Read-and-report only: it never mutates issues, workspaces, or code.
 assigneeRef:
   resourceKind: agent
   resourceKey: summarizer
@@ -53,11 +53,11 @@ This routine is **paused by default** and spends no tokens until an operator ena
 
 1. Select summary slots whose scope has changed since their last revision and whose `lastGeneratedAt` is older than `{{staleAfterHours}}` hours. Restrict to `{{scopeKinds}}` when a specific kind is chosen. Cap the set at `{{maxSlots}}`, most-stale first.
 2. For each selected slot, run the `summarize-status` skill as the operating procedure: read the current revision, read the company-scoped state you need to understand where things are, and write one new Markdown revision back to the slot.
-3. Skip slots with no meaningful change since their last revision — do not spend tokens rewriting an unchanged summary.
+3. Skip slots with no meaningful change since their last revision; do not spend tokens rewriting an unchanged summary.
 
 ## Hard limits for this routine
 
-- Read-and-report only. This routine must never change issues, workspaces, code, or agent configuration — its only write is the summary revision.
+- Read-and-report only. This routine must never change issues, workspaces, code, or agent configuration; its only write is the summary revision.
 - Keep every read company-scoped. Do not cross company boundaries.
 - Keep each summary short.
 - Never fabricate status and never surface secrets from issue bodies or configs.
