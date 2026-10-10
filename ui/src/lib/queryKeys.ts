@@ -565,6 +565,9 @@ export const queryKeys = {
   agentTeams: {
     list: (companyId: string) => ["agent-teams", companyId] as const,
   },
+  workflowTemplates: {
+    list: (companyId: string) => ["workflow-templates", companyId] as const,
+  },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
