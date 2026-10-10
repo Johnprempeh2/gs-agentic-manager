@@ -21,6 +21,7 @@ import { errorHandler } from "../middleware/index.js";
 import { agentRoutes } from "../routes/agents.js";
 import { companyRoutes } from "../routes/companies.js";
 import { goalRoutes } from "../routes/goals.js";
+import { issueRoutes } from "../routes/issues.js";
 import { strategyBoardRoutes } from "../routes/strategy-board.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { runScheduledStrategyBoardAlerts } from "../services/strategy-board.js";
@@ -123,7 +124,7 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
   }
 
   function app(actor: BoardActor) {
-    return routeApp(ctx.db, actor, goalRoutes, strategyBoardRoutes);
+    return routeApp(ctx.db, actor, goalRoutes, strategyBoardRoutes, issueRoutes);
   }
 
   async function postReading(actor: BoardActor, goalId: string, value: number, readingDate = TODAY) {
@@ -399,6 +400,79 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     expect((await request(app(other.actor)).get(`/api/strategy-board/packs/${pack.id}`)).status).toBe(404);
     expect((await request(app(other.actor)).get(`/api/companies/${companyId}/strategy-board`)).status).toBe(403);
     expect((await request(app(other.actor)).post(`/api/goals/${kpi.id}/why-requests`).send({ question: "?" })).status).toBe(404);
+  });
+
+  // ---- Due dates on plan actions (GRE-1188) ----
+
+  it("a task under a plan objective takes a due date; overdue ones show on the board and in the pack; off-plan tasks do not change", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "DueDates");
+    const doer = await addMember(companyId, "operator", "doer");
+    const { csf, objective } = await seedPlan(companyId);
+    const [initiative] = await ctx.db
+      .insert(goals)
+      .values({ companyId, title: "Open two branches", kind: "initiative", level: "team", status: "active", parentId: objective.id })
+      .returning();
+    const createTask = (body: Record<string, unknown>) =>
+      request(app(owner)).post(`/api/companies/${companyId}/issues`).send({ status: "backlog", ...body });
+
+    // Set a due date on a task under the objective (through an initiative), then change it.
+    const created = await createTask({ title: "Sign the lease", goalId: initiative.id, assigneeUserId: doer.userId, dueDate: dayOffset(-2) });
+    expect(created.status).toBe(201);
+    expect(created.body.dueDate).toBe(dayOffset(-2));
+    const changed = await request(app(owner)).patch(`/api/issues/${created.body.id}`).send({ dueDate: dayOffset(-5) });
+    expect(changed.status).toBe(200);
+    expect(changed.body.dueDate).toBe(dayOffset(-5));
+    expect((await request(app(owner)).get(`/api/issues/${created.body.id}`)).body.dueDate).toBe(dayOffset(-5));
+
+    // Not overdue: due later, or done.
+    expect((await createTask({ title: "Hire branch staff", goalId: objective.id, dueDate: dayOffset(7) })).status).toBe(201);
+    const done = await createTask({ title: "Pick the towns", goalId: objective.id, dueDate: dayOffset(-9) });
+    expect((await request(app(owner)).patch(`/api/issues/${done.body.id}`).send({ status: "done" })).status).toBe(200);
+
+    // A task not on the plan cannot take a due date, and stays as it was.
+    const offPlan = await createTask({ title: "Fix the printer" });
+    expect(offPlan.status).toBe(201);
+    expect(offPlan.body.dueDate ?? null).toBeNull();
+    const refused = await request(app(owner)).patch(`/api/issues/${offPlan.body.id}`).send({ dueDate: dayOffset(-1) });
+    expect(refused.status).toBe(422);
+    expect(JSON.stringify(refused.body)).toContain("due_date_needs_plan_objective");
+    expect((await createTask({ title: "Area only", goalId: csf.id, dueDate: dayOffset(-1) })).status).toBe(422);
+    const [offPlanRow] = await ctx.db.select().from(issues).where(eq(issues.id, offPlan.body.id));
+    expect(offPlanRow.dueDate).toBeNull();
+
+    // The board lists the overdue action under its objective and owner.
+    const board = (await request(app(owner)).get(`/api/companies/${companyId}/strategy-board`)).body as StrategyBoardSummary;
+    expect(board.overdueActions).toEqual([
+      expect.objectContaining({
+        issueId: created.body.id,
+        title: "Sign the lease",
+        dueDate: dayOffset(-5),
+        daysOverdue: 5,
+        objectiveId: objective.id,
+        objectiveTitle: "Win new clients",
+        areaTitle: "Grow revenue",
+        owner: { type: "user", id: doer.userId, name: null },
+      }),
+    ]);
+
+    // The board pack records it.
+    const pack = (await request(app(owner))
+      .post(`/api/companies/${companyId}/strategy-board/packs`)
+      .send({ periodStart: dayOffset(-30), periodEnd: TODAY })).body as StrategyBoardPack;
+    expect(pack.snapshot.overdueActions).toHaveLength(1);
+    expect(pack.body).toContain("## Overdue actions");
+    expect(pack.body).toContain(`| Win new clients | A person | ${created.body.identifier} Sign the lease | ${dayOffset(-5)} | 5 |`);
+    expect(pack.body).not.toContain("Fix the printer");
+
+    // Moving the task off the plan clears its due date; null clears it too.
+    const moved = await request(app(owner)).patch(`/api/issues/${created.body.id}`).send({ goalId: csf.id });
+    expect(moved.status).toBe(200);
+    expect(moved.body.dueDate).toBeNull();
+    const later = await createTask({ title: "Agree rent", goalId: objective.id, dueDate: dayOffset(3) });
+    const cleared = await request(app(owner)).patch(`/api/issues/${later.body.id}`).send({ dueDate: null });
+    expect(cleared.body.dueDate).toBeNull();
+    const empty = (await request(app(owner)).get(`/api/companies/${companyId}/strategy-board`)).body as StrategyBoardSummary;
+    expect(empty.overdueActions).toEqual([]);
   });
 
   // ---- Board secretary drafts (GRE-1200) ----

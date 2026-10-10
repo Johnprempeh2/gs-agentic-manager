@@ -2,8 +2,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { StrategyBoardKpi } from "@greatstone/shared";
-import { AttentionQueue, ChangesSinceSnapshot, changeText } from "./StrategyBoardViews";
+import type { StrategyBoardAction, StrategyBoardKpi } from "@greatstone/shared";
+import { AttentionQueue, ChangesSinceSnapshot, OverdueActions, changeText, overdueText } from "./StrategyBoardViews";
 import { boardLede, unsentAlertText } from "@/pages/StrategyBoard";
 
 vi.mock("@/lib/router", () => ({
@@ -93,5 +93,50 @@ describe("unsentAlertText", () => {
     expect(unsentAlertText(2, false, true)).toBe("2 KPIs are red and the board has no chair, so no alert was sent. Choose a chair below.");
     expect(unsentAlertText(1, false, false)).toBe("1 KPI is red and the board has no chair, so no alert was sent. Ask a company owner to choose a chair.");
     expect(unsentAlertText(2, true, true)).toBe("2 KPIs turned red before the board had a chair, so no alert was sent for them. New red KPIs alert the chair.");
+  });
+});
+
+function action(values: Partial<StrategyBoardAction> & Pick<StrategyBoardAction, "issueId" | "title">): StrategyBoardAction {
+  return {
+    identifier: null,
+    status: "todo",
+    dueDate: "2026-10-05",
+    daysOverdue: 5,
+    objectiveId: "obj-retain",
+    objectiveTitle: "Keep our people",
+    areaId: "csf",
+    areaTitle: "Employer of choice",
+    owner: { type: "user", id: "u1", name: "Ama Mensah" },
+    ...values,
+  };
+}
+
+describe("overdue actions (GRE-1188)", () => {
+  it("groups overdue actions under their objective with owner, due date and days overdue", () => {
+    const html = renderToStaticMarkup(
+      <OverdueActions
+        actions={[
+          action({ issueId: "i1", identifier: "GRE-2", title: "Run stay interviews" }),
+          action({ issueId: "i2", title: "Publish the hiring plan", daysOverdue: 1, dueDate: "2026-10-09", owner: { type: "agent", id: "a1", name: "HR agent" } }),
+          action({ issueId: "i3", title: "Open the Accra branch", objectiveId: "obj-grow", objectiveTitle: "Grow the network", areaTitle: null, owner: null }),
+        ]}
+      />,
+    );
+    expect(html.match(/data-testid="overdue-group"/g)).toHaveLength(2);
+    expect(html.match(/data-testid="overdue-row"/g)).toHaveLength(3);
+    expect(html).toContain('href="/goals/obj-retain"');
+    expect(html).toContain('href="/issues/GRE-2"');
+    expect(html).toContain('href="/issues/i2"');
+    expect(html).toContain("Ama Mensah");
+    expect(html).toContain("Due 2026-10-05");
+    expect(html).toContain("5 days overdue");
+    expect(html).toContain("1 day overdue");
+    expect(html).toContain("No owner");
+    expect(html.indexOf("Keep our people")).toBeLessThan(html.indexOf("Grow the network"));
+  });
+
+  it("says when no action is overdue", () => {
+    expect(renderToStaticMarkup(<OverdueActions actions={[]} />)).toContain("No plan action is past its due date.");
+    expect(overdueText(2)).toBe("2 days overdue");
   });
 });

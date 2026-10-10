@@ -47,6 +47,26 @@ export interface StrategyBoardKpi {
   openWhyRequests: number;
 }
 
+/**
+ * A task under a plan objective whose due date has passed and which is not
+ * done or cancelled (GRE-1188). The owner is the task's assignee.
+ */
+export interface StrategyBoardAction {
+  issueId: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+  /** "YYYY-MM-DD" */
+  dueDate: string;
+  daysOverdue: number;
+  objectiveId: string;
+  objectiveTitle: string;
+  /** The pillar or CSF above the objective; null when it is not under one. */
+  areaId: string | null;
+  areaTitle: string | null;
+  owner: StrategyBoardOwner | null;
+}
+
 /** A pillar or CSF with its objectives. */
 export interface StrategyBoardArea {
   goalId: string;
@@ -74,6 +94,8 @@ export interface StrategyBoardSummary {
   /** Red then amber KPIs, biggest slippage first. */
   attention: StrategyBoardKpi[];
   areas: StrategyBoardArea[];
+  /** Overdue plan actions, grouped by objective then owner, most overdue first. */
+  overdueActions: StrategyBoardAction[];
   /** KPIs whose status changed since the last board pack. Empty when there is no pack. */
   changes: StrategyBoardKpi[];
   /** Every KPI on the plan, for the board pack and the full list. */
@@ -151,6 +173,8 @@ export interface StrategyBoardPackSnapshot {
   counts: StrategyBoardSummary["counts"];
   areas: StrategyBoardArea[];
   kpis: StrategyBoardKpi[];
+  /** Overdue plan actions on the day the pack was made. Absent in packs made before GRE-1188. */
+  overdueActions?: StrategyBoardAction[];
   /** Readings dated inside the period, by KPI, newest first. */
   readings: Array<{
     goalId: string;

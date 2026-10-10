@@ -1,5 +1,5 @@
 {
-  "id": "daf7f46f-ff23-4ccd-8aa8-018f29b0d4db",
+  "id": "9ccaa83b-e672-4e79-81db-4b8a1f2fa316",
   "prevId": "b2d11666-655b-4853-af0b-f948d3540869",
   "version": "7",
   "dialect": "postgresql",
@@ -32886,6 +32886,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "due_date": {
+          "name": "due_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -33195,6 +33201,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "issues_company_due_date_idx": {
+          "name": "issues_company_due_date_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "due_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"issues\".\"due_date\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -46365,31 +46393,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "created_by_agent_id": {
-          "name": "created_by_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'accepted'"
-        },
-        "accepted_by_user_id": {
-          "name": "accepted_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "accepted_at": {
-          "name": "accepted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "snapshot": {
           "name": "snapshot",
           "type": "jsonb",
@@ -46446,30 +46449,12 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
-        },
-        "strategy_board_packs_created_by_agent_id_agents_id_fk": {
-          "name": "strategy_board_packs_created_by_agent_id_agents_id_fk",
-          "tableFrom": "strategy_board_packs",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "created_by_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "strategy_board_packs_status_check": {
-          "name": "strategy_board_packs_status_check",
-          "value": "\"strategy_board_packs\".\"status\" in ('draft', 'accepted')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.summary_slots": {

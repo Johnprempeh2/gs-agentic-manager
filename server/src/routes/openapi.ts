@@ -5712,7 +5712,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/strategy-board",
   tags: ["strategy-board"],
-  summary: "The board's view: KPI counts, slippages biggest first, areas, changes since the last board pack, and the caller's board rights",
+  summary: "The board's view: KPI counts, slippages biggest first, areas, overdue plan actions (tasks under an objective past their due date), changes since the last board pack, and the caller's board rights",
   request: { params: companyParams },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
