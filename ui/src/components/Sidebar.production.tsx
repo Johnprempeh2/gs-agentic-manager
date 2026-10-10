@@ -35,6 +35,7 @@ import { SidebarNavItem } from "./SidebarNavItem.production";
 import { SidebarAgents } from "./SidebarAgents.production";
 import { SidebarProjects } from "./SidebarProjects";
 import { SidebarStarredProjects } from "./SidebarStarredProjects.production";
+import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -189,6 +190,7 @@ export function Sidebar() {
           {showPipelines ? (
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
           ) : null}
+          <SidebarStarredPipelines />
           {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           {/* GRE-1135: board control panel, behind enableStrategyBoard. */}

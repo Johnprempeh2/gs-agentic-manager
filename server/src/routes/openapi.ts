@@ -1424,6 +1424,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/companies/{companyId}/resource-memberships/me",
   "PUT /api/companies/{companyId}/resource-memberships/me/agents/{agentId}",
   "PUT /api/companies/{companyId}/resource-memberships/me/documents/{documentId}",
+  "PUT /api/companies/{companyId}/resource-memberships/me/pipelines/{pipelineId}",
   "PUT /api/companies/{companyId}/resource-memberships/me/projects/{projectId}",
   "GET /api/companies/{companyId}/secret-provider-configs",
   "POST /api/companies/{companyId}/secret-provider-configs",
@@ -11178,6 +11179,14 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/resource-memberships/me/documents/{documentId}",
   tags: ["resource-memberships"],
   summary: "Star or unstar a document resource",
+  body: updateDocumentResourceMembershipSchema,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/resource-memberships/me/pipelines/{pipelineId}",
+  tags: ["resource-memberships"],
+  summary: "Pin or unpin a pipeline in the sidebar",
   body: updateDocumentResourceMembershipSchema,
 });
 

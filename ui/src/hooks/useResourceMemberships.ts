@@ -9,7 +9,7 @@ import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 
 type MutationVariables = {
-  resourceType: JoinableResourceType;
+  resourceType: JoinableResourceType | StarOnlyResourceType;
   resourceId: string;
   resourceName: string;
   /** Join / leave transition. Omit to only change the starred flag. */
@@ -19,6 +19,8 @@ type MutationVariables = {
 };
 
 type JoinableResourceType = Exclude<ResourceMembershipResourceType, "document">;
+/** Pipelines are star only (no join/leave); the starred flag is all they carry. */
+type StarOnlyResourceType = "pipeline";
 
 function emptyMemberships(): ResourceMemberships {
   return {
@@ -30,6 +32,8 @@ function emptyMemberships(): ResourceMemberships {
     projectStarredAt: {},
     agentStarredAt: {},
     documentStarredAt: {},
+    starredPipelineIds: [],
+    pipelineStarredAt: {},
     updatedAt: null,
   };
 }
@@ -49,11 +53,27 @@ function starKeys(resourceType: JoinableResourceType) {
  */
 function applyMembershipChange(
   current: ResourceMemberships | undefined,
-  resourceType: JoinableResourceType,
+  resourceType: JoinableResourceType | StarOnlyResourceType,
   resourceId: string,
   change: { state?: ResourceMembershipState; starred?: boolean },
 ): ResourceMemberships {
   const base = current ?? emptyMemberships();
+  if (resourceType === "pipeline") {
+    if (change.starred === undefined) return base;
+    const ids = (base.starredPipelineIds ?? []).filter((id) => id !== resourceId);
+    const at = { ...(base.pipelineStarredAt ?? {}) };
+    if (change.starred) {
+      at[resourceId] = at[resourceId] ?? new Date().toISOString();
+    } else {
+      delete at[resourceId];
+    }
+    return {
+      ...base,
+      starredPipelineIds: change.starred ? [resourceId, ...ids] : ids,
+      pipelineStarredAt: at,
+      updatedAt: new Date(),
+    };
+  }
   const keys = starKeys(resourceType);
 
   // Resolve next join/leave state (starring implies joined).
@@ -119,7 +139,9 @@ export function isStarred(
     ? memberships?.starredProjectIds
     : resourceType === "agent"
       ? memberships?.starredAgentIds
-      : memberships?.starredDocumentIds;
+      : resourceType === "pipeline"
+        ? memberships?.starredPipelineIds
+        : memberships?.starredDocumentIds;
   return Array.isArray(ids) && ids.includes(resourceId);
 }
 
@@ -132,7 +154,9 @@ export function starredResourceIds(
     ? memberships?.starredProjectIds
     : resourceType === "agent"
       ? memberships?.starredAgentIds
-      : memberships?.starredDocumentIds;
+      : resourceType === "pipeline"
+        ? memberships?.starredPipelineIds
+        : memberships?.starredDocumentIds;
   return Array.isArray(ids) ? ids : [];
 }
 
@@ -153,6 +177,11 @@ export function useResourceMembershipMutation(companyId: string | null | undefin
     mutationFn: (variables: MutationVariables) => {
       if (!companyId) throw new Error("Select an organization first.");
       const body = { state: variables.state, starred: variables.starred };
+      if (variables.resourceType === "pipeline") {
+        return resourceMembershipsApi.updatePipeline(companyId, variables.resourceId, {
+          starred: variables.starred === true,
+        });
+      }
       return variables.resourceType === "project"
         ? resourceMembershipsApi.updateProject(companyId, variables.resourceId, body)
         : resourceMembershipsApi.updateAgent(companyId, variables.resourceId, body);

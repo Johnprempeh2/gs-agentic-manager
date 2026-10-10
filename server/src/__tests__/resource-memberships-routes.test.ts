@@ -11,6 +11,8 @@ import {
   createDb,
   documentMemberships,
   documents,
+  pipelineMemberships,
+  pipelines,
   projectMemberships,
   projects,
 } from "@greatstone/db";
@@ -21,6 +23,7 @@ import {
 import { resourceMembershipRoutes } from "../routes/resource-memberships.js";
 import { errorHandler } from "../middleware/index.js";
 import { resourceMembershipService } from "../services/resource-memberships.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -66,6 +69,8 @@ describeEmbeddedPostgres("resource membership routes", () => {
   afterEach(async () => {
     await db.delete(activityLog);
     await db.delete(documentMemberships);
+    await db.delete(pipelineMemberships);
+    await db.delete(pipelines);
     await db.delete(projectMemberships);
     await db.delete(agentMemberships);
     await db.delete(documents);
@@ -149,6 +154,7 @@ describeEmbeddedPostgres("resource membership routes", () => {
     ]);
     return {
       archivedProjectId,
+      otherCompanyId,
       companyId,
       documentId,
       otherAgentId,
@@ -176,6 +182,8 @@ describeEmbeddedPostgres("resource membership routes", () => {
       projectStarredAt: {},
       agentStarredAt: {},
       documentStarredAt: {},
+      starredPipelineIds: [],
+      pipelineStarredAt: {},
       updatedAt: null,
     });
   });
@@ -485,5 +493,69 @@ describeEmbeddedPostgres("resource membership routes", () => {
     expect(response.status).toBe(404);
     expect(response.body.error).toBe("Document not found");
     await expect(db.select().from(documentMemberships)).resolves.toHaveLength(0);
+  });
+
+  it("pins pipelines per user, lists only live pipelines in the company, and logs the change", async () => {
+    const { companyId, otherCompanyId } = await seed();
+    await instanceSettingsService(db).updateExperimental({ enablePipelines: true });
+    const pipelineId = randomUUID();
+    const archivedPipelineId = randomUUID();
+    const otherPipelineId = randomUUID();
+    await db.insert(pipelines).values([
+      { id: pipelineId, companyId, key: "sales", name: "Sales" },
+      { id: archivedPipelineId, companyId, key: "old", name: "Old" },
+      { id: otherPipelineId, companyId: otherCompanyId, key: "other", name: "Other" },
+    ]);
+    const app = createApp(db, boardActor(companyId));
+    const put = (id: string, starred: boolean) =>
+      request(app).put(`/api/companies/${companyId}/resource-memberships/me/pipelines/${id}`).send({ starred });
+
+    const first = await put(pipelineId, true);
+    const repeat = await put(pipelineId, true);
+    await put(archivedPipelineId, true).expect(200);
+    await db.update(pipelines).set({ archivedAt: new Date() }).where(eq(pipelines.id, archivedPipelineId));
+
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ resourceType: "pipeline", resourceId: pipelineId, starredAt: expect.any(String) });
+    expect(repeat.body.starredAt).toBe(first.body.starredAt);
+    const list = await request(app).get(`/api/companies/${companyId}/resource-memberships/me`);
+    expect(list.body.starredPipelineIds).toEqual([pipelineId]);
+    expect(list.body.pipelineStarredAt[pipelineId]).toBe(first.body.starredAt);
+
+    // Another user's pins stay theirs.
+    const otherUser = createApp(db, { ...boardActor(companyId), userId: "user-2" });
+    const otherList = await request(otherUser).get(`/api/companies/${companyId}/resource-memberships/me`);
+    expect(otherList.body.starredPipelineIds).toEqual([]);
+
+    // Cross-company and archived pipelines cannot be pinned.
+    expect((await put(otherPipelineId, true)).status).toBe(404);
+    expect((await put(archivedPipelineId, true)).status).toBe(404);
+
+    await put(pipelineId, false).expect(200);
+    const after = await request(app).get(`/api/companies/${companyId}/resource-memberships/me`);
+    expect(after.body.starredPipelineIds).toEqual([]);
+
+    const activity = await db.select().from(activityLog);
+    expect(activity.filter((entry) => entry.entityId === pipelineId).map((entry) => entry.action)).toEqual([
+      "resource_membership.starred",
+      "resource_membership.unstarred",
+    ]);
+    expect(activity[0]).toMatchObject({ entityType: "pipeline" });
+  });
+
+  it("refuses pipeline pins while enablePipelines is off", async () => {
+    const { companyId } = await seed();
+    await instanceSettingsService(db).updateExperimental({ enablePipelines: false });
+    const pipelineId = randomUUID();
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    const app = createApp(db, boardActor(companyId));
+
+    const response = await request(app)
+      .put(`/api/companies/${companyId}/resource-memberships/me/pipelines/${pipelineId}`)
+      .send({ starred: true });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe("not_entitled");
+    await expect(db.select().from(pipelineMemberships)).resolves.toHaveLength(0);
   });
 });

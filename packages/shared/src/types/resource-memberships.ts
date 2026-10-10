@@ -1,7 +1,7 @@
 export const RESOURCE_MEMBERSHIP_STATES = ["joined", "left"] as const;
 
 export type ResourceMembershipState = (typeof RESOURCE_MEMBERSHIP_STATES)[number];
-export type ResourceMembershipResourceType = "project" | "agent" | "document";
+export type ResourceMembershipResourceType = "project" | "agent" | "document" | "pipeline";
 
 export interface ResourceMemberships {
   projectMemberships: Record<string, ResourceMembershipState>;
@@ -9,9 +9,12 @@ export interface ResourceMemberships {
   starredProjectIds?: string[];
   starredAgentIds?: string[];
   starredDocumentIds: string[];
+  /** Pinned pipelines, newest star first; archived pipelines are left out. */
+  starredPipelineIds?: string[];
   projectStarredAt?: Record<string, Date>;
   agentStarredAt?: Record<string, Date>;
   documentStarredAt: Record<string, string>;
+  pipelineStarredAt?: Record<string, string>;
   updatedAt: Date | null;
 }
 
