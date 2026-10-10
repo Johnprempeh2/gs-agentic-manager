@@ -5,6 +5,7 @@ import {
   createGoalWhyRequestSchema,
   createStrategyBoardPackSchema,
   setStrategyBoardMembersSchema,
+  updateStrategyBoardSettingsSchema,
   type StrategyBoardViewerRights,
 } from "@greatstone/shared";
 import { forbidden, notFound } from "../errors.js";
@@ -13,6 +14,7 @@ import { goalService, logActivity } from "../services/index.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { boardViewerRights, strategyBoardService } from "../services/strategy-board.js";
+import { strategyBoardEmailService } from "../services/strategy-board-email.js";
 import {
   assertCompanyAccess,
   getAccessibleResource,
@@ -51,6 +53,7 @@ export function strategyBoardRoutes(db: Db) {
   const router = Router();
   const svc = strategyBoardService(db);
   const goals = goalService(db);
+  const email = strategyBoardEmailService(db);
 
   router.use(STRATEGY_BOARD_ROUTE_PREFIXES, requireEntitlement(db, "enableStrategyBoard"));
 
@@ -118,6 +121,41 @@ export function strategyBoardRoutes(db: Db) {
       },
     });
     res.json(members);
+  });
+
+  // Board email (GRE-1187): owners and admins read the settings and the log;
+  // only company owners choose the meeting date and the secretary inbox.
+  router.get("/companies/:companyId/strategy-board/settings", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!hasCompanyOwnerOrAdminRole(req, companyId)) throw forbidden("Only company owners and admins may see board email settings", { code: "board_settings_forbidden" });
+    res.json(await email.getSettings(companyId));
+  });
+
+  router.patch("/companies/:companyId/strategy-board/settings", validate(updateStrategyBoardSettingsSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!hasCompanyBoardRole(req, companyId)) throw forbidden("Only company owners may change board email settings", { code: "board_layer_required" });
+    const settings = await email.updateSettings(companyId, req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "strategy_board.settings_updated",
+      entityType: "company",
+      entityId: companyId,
+      details: { ...settings },
+    });
+    res.json(settings);
+  });
+
+  router.get("/companies/:companyId/strategy-board/emails", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!hasCompanyOwnerOrAdminRole(req, companyId)) throw forbidden("Only company owners and admins may see board emails", { code: "board_settings_forbidden" });
+    res.json(await email.listEmails(companyId));
   });
 
   router.get("/companies/:companyId/strategy-board/packs", async (req, res) => {

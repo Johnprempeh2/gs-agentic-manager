@@ -7,6 +7,7 @@ import {
   DEFAULT_BACKUP_RETENTION,
   TEAM_CATALOG_ADD_MODES,
   TEAM_CATALOG_FILTERS,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
 } from "../types/instance.js";
 import { feedbackDataSharingPreferenceSchema } from "./feedback.js";
 import { aiAccessRouteSchema } from "../ai-connections.js";
@@ -34,6 +35,12 @@ export const runAdmissionSettingsSchema = z.object({
   minFreeDiskGb: z.number().int().min(0).max(100_000).optional(),
 }).strict();
 
+export const strategyBoardEmailSettingsSchema = z.object({
+  meetingReminders: z.boolean().default(true),
+  slippageAlerts: z.boolean().default(true),
+  whyRequests: z.boolean().default(true),
+}).strict();
+
 export const instanceGeneralSettingsSchema = z.object({
   censorUsernameInLogs: z.boolean().default(false),
   keyboardShortcuts: z.boolean().default(false),
@@ -56,6 +63,9 @@ export const instanceGeneralSettingsSchema = z.object({
   // "request" (default) asks Greatstone through a board approval card instead
   // of installing; "install" installs directly, for our own instance.
   teamCatalogAddMode: z.enum(TEAM_CATALOG_ADD_MODES).default("request"),
+  // Which board emails go out (GRE-1187). Nothing is sent while
+  // enableStrategyBoard is off or a company has no secretary inbox.
+  strategyBoardEmail: strategyBoardEmailSettingsSchema.default(DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = z

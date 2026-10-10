@@ -14,6 +14,7 @@ export type InstanceSettingsWriteDb = Pick<
 import {
   DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
   GSAM_CLOUD_MANAGED_BY,
   instanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
@@ -218,6 +219,7 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       ...(parsed.data.aiAccessRoute ? { aiAccessRoute: parsed.data.aiAccessRoute } : {}),
       teamCatalogFilter: parsed.data.teamCatalogFilter ?? "greatstone",
       teamCatalogAddMode: parsed.data.teamCatalogAddMode ?? "request",
+      strategyBoardEmail: parsed.data.strategyBoardEmail ?? DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
     };
   }
   return {
@@ -227,6 +229,7 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
     backupRetention: DEFAULT_BACKUP_RETENTION,
     teamCatalogFilter: "greatstone",
     teamCatalogAddMode: "request",
+    strategyBoardEmail: DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
   };
 }
 

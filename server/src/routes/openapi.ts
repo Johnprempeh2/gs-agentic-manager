@@ -126,6 +126,7 @@ import {
   answerGoalWhyRequestSchema,
   createStrategyBoardPackSchema,
   setStrategyBoardMembersSchema,
+  updateStrategyBoardSettingsSchema,
   updateGoalSchema,
   // Secret
   createSecretSchema,
@@ -5742,6 +5743,33 @@ registry.registerPath({
   summary: "Set the board: viewers become board members, one member or owner is chair (company owners only)",
   request: { params: companyParams, body: jsonBody(setStrategyBoardMembersSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/settings",
+  tags: ["strategy-board"],
+  summary: "Board email settings: next board meeting, reminder lead days and the board secretary inbox (owners and admins)",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/strategy-board/settings",
+  tags: ["strategy-board"],
+  summary: "Change board email settings; the secretary inbox must be one of the company's email inboxes (company owners only)",
+  request: { params: companyParams, body: jsonBody(updateStrategyBoardSettingsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/emails",
+  tags: ["strategy-board"],
+  summary: "Board emails sent: meeting reminders, slippage alerts and \"Why?\" requests, newest first (owners and admins)",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
