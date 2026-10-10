@@ -4,13 +4,15 @@ import {
   answerGoalWhyRequestSchema,
   createGoalWhyRequestSchema,
   createStrategyBoardPackSchema,
+  setStrategyBoardMemberAgentsSchema,
   setStrategyBoardMembersSchema,
   updateStrategyBoardSettingsSchema,
   type StrategyBoardViewerRights,
 } from "@greatstone/shared";
 import { forbidden, notFound } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { goalService, logActivity } from "../services/index.js";
+import { goalService, issueService, logActivity } from "../services/index.js";
+import { BOARD_QUESTION_ORIGIN_KIND, isBoardQuestionChat, strategyBoardChatService } from "../services/strategy-board-chat.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { boardViewerRights, strategyBoardService } from "../services/strategy-board.js";
 import { strategyBoardEmailService } from "../services/strategy-board-email.js";
@@ -46,6 +48,8 @@ export function strategyBoardRoutes(db: Db) {
   const router = Router();
   const svc = strategyBoardService(db);
   const goals = goalService(db);
+  const chats = strategyBoardChatService(db);
+  const issuesSvc = issueService(db);
   const email = strategyBoardEmailService(db);
 
   router.use(STRATEGY_BOARD_ROUTE_PREFIXES, requireEntitlement(db, "enableStrategyBoard"));
@@ -115,6 +119,97 @@ export function strategyBoardRoutes(db: Db) {
     });
     res.json(members);
   });
+
+  /** Owners choose which agents one board member may ask (GRE-1186). */
+  router.put(
+    "/companies/:companyId/strategy-board/members/:userId/agents",
+    validate(setStrategyBoardMemberAgentsSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const userId = req.params.userId as string;
+      assertCompanyAccess(req, companyId);
+      if (!hasCompanyBoardRole(req, companyId)) throw forbidden("Only company owners may choose the board", { code: "board_layer_required" });
+      const agentIds = await chats.setMemberAgents(companyId, userId, req.body.agentIds);
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "strategy_board.member_agents_set",
+        entityType: "company",
+        entityId: companyId,
+        details: { boardMemberUserId: userId, agentIds },
+      });
+      res.json({ userId, agentIds });
+    },
+  );
+
+  /** The agents the signed-in board member may ask. Empty for everyone else. */
+  router.get("/companies/:companyId/strategy-board/agents", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type !== "board" || !req.actor.userId) {
+      res.json([]);
+      return;
+    }
+    res.json(await chats.listAgents(companyId, req.actor.userId));
+  });
+
+  /**
+   * A board member's chat with one of their agents (GRE-1186). GET returns the
+   * chat or null; POST opens it on the first message. Only board members, and
+   * only with an agent set for them. The chat is in Ask mode and questions only.
+   */
+  for (const method of ["get", "post"] as const) {
+    router[method]("/companies/:companyId/strategy-board/chats/:agentId", async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const agentId = req.params.agentId as string;
+      if (!hasCompanyAccess(req, companyId)) {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      const userId = req.actor.type === "board" ? req.actor.userId : null;
+      if (!userId || !(await chats.mayChat(companyId, userId, agentId))) {
+        throw forbidden("You can ask only the agents set for you on the board", { code: "board_agent_not_allowed" });
+      }
+      const existing = await issuesSvc.getConversation(companyId, agentId, userId);
+      if (existing) {
+        if (!isBoardQuestionChat(existing)) {
+          // An older chat from before this person sat on the board: it stays
+          // theirs, but from now on it is a questions-only board chat.
+          if (method === "get") { res.json(null); return; }
+          res.status(409).json({ error: "You already have a chat with this agent from before you joined the board. Ask a company owner to close it first.", code: "board_chat_conflict" });
+          return;
+        }
+        res.json(existing);
+        return;
+      }
+      if (method === "get") { res.json(null); return; }
+      const agent = (await chats.listAgents(companyId, userId)).find((item) => item.id === agentId)!;
+      const issue = await issuesSvc.create(companyId, {
+        title: `Board questions for ${agent.name}`,
+        assigneeAgentId: agentId,
+        conversationAgentId: agentId,
+        conversationUserId: userId,
+        conversationState: "waiting",
+        status: "in_review",
+        workMode: "ask",
+        originKind: BOARD_QUESTION_ORIGIN_KIND,
+        createdByUserId: userId,
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: "user",
+        actorId: userId,
+        action: "issue.conversation_opened",
+        entityType: "issue",
+        entityId: issue.id,
+        details: { agentId, boardQuestion: true },
+      });
+      res.status(201).json(issue);
+    });
+  }
 
   // Board email (GRE-1187): owners and admins read the settings and the log;
   // only company owners choose the meeting date and the secretary inbox.

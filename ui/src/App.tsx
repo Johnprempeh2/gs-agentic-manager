@@ -59,6 +59,7 @@ import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
 import { GoalDetail } from "./pages/GoalDetail";
 import { StrategyBoard } from "./pages/StrategyBoard";
+import { BoardAgentChat } from "./pages/BoardAgentChat";
 import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
 import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
@@ -407,6 +408,10 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route
         path="strategy-board"
         element={<StrategyBoardExperimentalGate><StrategyBoard /></StrategyBoardExperimentalGate>}
+      />
+      <Route
+        path="strategy-board/ask/:agentId"
+        element={<StrategyBoardExperimentalGate><BoardAgentChat /></StrategyBoardExperimentalGate>}
       />
       <Route path="deliverables" element={<Deliverables />} />
       <Route path="website" element={<Website />} />

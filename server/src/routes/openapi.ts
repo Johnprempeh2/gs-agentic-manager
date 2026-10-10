@@ -126,6 +126,7 @@ import {
   answerGoalWhyRequestSchema,
   createStrategyBoardPackSchema,
   setStrategyBoardMembersSchema,
+  setStrategyBoardMemberAgentsSchema,
   updateStrategyBoardSettingsSchema,
   updateGoalSchema,
   // Secret
@@ -5744,6 +5745,37 @@ registry.registerPath({
   request: { params: companyParams, body: jsonBody(setStrategyBoardMembersSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
 });
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/strategy-board/members/{userId}/agents",
+  tags: ["strategy-board"],
+  summary: "Set the agents one board member may ask about performance (company owners only)",
+  request: { params: z.object({ companyId: z.string(), userId: z.string() }), body: jsonBody(setStrategyBoardMemberAgentsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/agents",
+  tags: ["strategy-board"],
+  summary: "The agents the signed-in board member may ask; empty for everyone else",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+for (const method of ["get", "post"] as const) {
+  registry.registerPath({
+    method,
+    path: "/api/companies/{companyId}/strategy-board/chats/{agentId}",
+    tags: ["strategy-board"],
+    summary: method === "get"
+      ? "The board member's questions-only chat with one of their agents, or null"
+      : "Open the board member's questions-only chat with one of their agents (Ask mode)",
+    request: { params: z.object({ companyId: z.string(), agentId: z.string() }) },
+    responses: { 200: r.ok(), 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+  });
+}
 
 registry.registerPath({
   method: "get",

@@ -116,6 +116,8 @@ type IssueDetailChatTabProps = {
   onLoadOlderComments: () => void;
   onRefreshLatestComments: () => Promise<unknown> | void;
   onWorkModeChange?: (workMode: IssueWorkMode) => Promise<void> | void;
+  /** A board question chat (GRE-1186): no attachments and no mode picker. */
+  questionsOnly?: boolean;
   composerRef: Ref<IssueChatComposerHandle>;
   /** Optional node rendered inline directly above the reply composer (e.g. the monitor strip). */
   composerAccessory?: ReactNode;
@@ -256,6 +258,7 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
   onLoadOlderComments,
   onRefreshLatestComments,
   onWorkModeChange,
+  questionsOnly = false,
   composerRef,
   composerAccessory,
   threadHeader,
@@ -1329,8 +1332,8 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
             onVote={onVote}
             onAdd={onAdd}
             onReviewConversation={onReviewConversation}
-            imageUploadHandler={onImageUpload}
-            onAttachImage={onAttachImage}
+            imageUploadHandler={questionsOnly ? undefined : onImageUpload}
+            onAttachImage={questionsOnly ? undefined : onAttachImage}
             onInterruptQueued={onInterruptQueued}
             queuedCommentQueue={effectiveQueuedCommentQueue}
             onEditQueuedComment={editQueuedComment}
@@ -1364,6 +1367,7 @@ export const IssueDetailChatTab = memo(function IssueDetailChatTab({
             onSubmitInteractionVerdicts={onSubmitInteractionVerdicts}
             issueWorkMode={issueWorkMode}
             onWorkModeChange={onWorkModeChange}
+            questionsOnly={questionsOnly}
             stopPending={stopResponsePending}
             onCancelRun={
               interruptibleIssueRun && onStopResponse

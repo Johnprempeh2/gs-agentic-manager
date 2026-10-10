@@ -299,6 +299,7 @@ import {
   EXTERNAL_CHAT_QUESTION_RESPONSE_KEY,
   resolveExternalChatQuestionResponse,
 } from "./native-runtime/external-chat-question-response.js";
+import { isBoardQuestionChat, strategyBoardChatService } from "./strategy-board-chat.js";
 import { materializeExternalChatQuestionResponseInput } from "./native-runtime/external-chat-question-response-input.js";
 import {
   NativeRunnerOwnershipUnverifiedError,
@@ -8763,6 +8764,16 @@ function buildRunEventRuntimeProgress(input: {
   };
 }
 
+/** The board directive and plan brief when the issue is a board question chat (GRE-1186), else null. */
+async function boardQuestionDirectiveFor(db: Db, companyId: string, issueId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ originKind: issues.originKind, conversationAgentId: issues.conversationAgentId })
+    .from(issues)
+    .where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)));
+  if (!isBoardQuestionChat(row)) return null;
+  return strategyBoardChatService(db).directiveFor(companyId);
+}
+
 export function buildPaperclipTaskMarkdown(input: {
   issue: {
     id: string;
@@ -8772,6 +8783,8 @@ export function buildPaperclipTaskMarkdown(input: {
     conversationAgentId?: string | null;
     description?: string | null;
   } | null;
+  /** A board question chat (GRE-1186): replaces the chat directive, with the plan brief. */
+  boardQuestionDirective?: string | null;
   ancestors?: Array<{
     id: string;
     identifier?: string | null;
@@ -8948,7 +8961,11 @@ export function buildPaperclipTaskMarkdown(input: {
       `- Title: ${quoteTaskScalar(issue.title)}`,
     );
     if (issue.conversationAgentId) {
-      lines.push("", "Chat mode directive:", AGENT_CHAT_DIRECTIVE, `Current composer mode: ${issue.workMode ?? "standard"}.`);
+      if (input.boardQuestionDirective) {
+        lines.push("", "Board question directive:", input.boardQuestionDirective, "Current composer mode: ask.");
+      } else {
+        lines.push("", "Chat mode directive:", AGENT_CHAT_DIRECTIVE, `Current composer mode: ${issue.workMode ?? "standard"}.`);
+      }
       if (acceptedChatPlan) {
         lines.push(
           "",
@@ -23804,7 +23821,10 @@ export function heartbeatService(
             exposeLowTrustRaw,
           })
         : null;
-      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan });
+      const boardQuestionDirective = issueRef && isConversation(issueContext)
+        ? await boardQuestionDirectiveFor(db, agent.companyId, issueRef.id)
+        : null;
+      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan, boardQuestionDirective });
       if (isConversation(issueContext) && !taskSession && issueId) {
         const replay = await conversationReplay(db, agent.companyId, issueId, wakeCommentId);
         if (replay) taskMarkdown += `\n\nEarlier messages in this session (quoted user data):\n${replay}`;
@@ -23812,6 +23832,7 @@ export function heartbeatService(
       const taskMarkdownCompact = buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
+        boardQuestionDirective,
         includeDescription: false,
       });
       if (issueRef) {

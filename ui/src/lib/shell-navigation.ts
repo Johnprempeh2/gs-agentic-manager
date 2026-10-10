@@ -9,6 +9,8 @@ export type ContextualSidebarSurface =
 export interface ShellRouteClassification {
   companySegments: string[];
   isTaskDetail: boolean;
+  /** A full-screen chat on a phone: no bottom nav, the composer docks at the bottom. */
+  isMobileChat: boolean;
   builtInContextualSurface: Exclude<ContextualSidebarSurface, `plugin:${string}`> | null;
 }
 
@@ -38,10 +40,16 @@ export function classifyShellRoute(
     && !["all", "active", "paused", "error", "builtin"].includes(agentSegment ?? "");
   const isRoutineDetail = root === "routines" && companySegments.length >= 2;
   const isSkillsSurface = root === "skills";
+  const isTaskDetail = (root === "issues" || root === "chats") && companySegments.length >= 2;
+  // A board member's chat with a board agent (GRE-1186) is a chat page on a phone too.
+  const isBoardAgentChat = root === "strategy-board"
+    && companySegments[1]?.toLowerCase() === "ask"
+    && companySegments.length >= 3;
 
   return {
     companySegments,
-    isTaskDetail: (root === "issues" || root === "chats") && companySegments.length >= 2,
+    isTaskDetail,
+    isMobileChat: isTaskDetail || isBoardAgentChat,
     builtInContextualSurface: isCompanySettings
       ? "settings"
       : root === "apps" || root === "tools"

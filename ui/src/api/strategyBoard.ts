@@ -1,6 +1,8 @@
 import type {
   GoalKpiAlert,
   GoalWhyRequest,
+  Issue,
+  StrategyBoardAgent,
   StrategyBoardEmail,
   StrategyBoardMember,
   StrategyBoardPack,
@@ -29,4 +31,13 @@ export const strategyBoardApi = {
   listWhyRequests: (goalId: string) => api.get<GoalWhyRequest[]>(`/goals/${goalId}/why-requests`),
   askWhy: (goalId: string, question: string) => api.post<GoalWhyRequest>(`/goals/${goalId}/why-requests`, { question }),
   answerWhy: (id: string, answer: string) => api.post<GoalWhyRequest>(`/why-requests/${id}/answer`, { answer }),
+  /** Board agent chat (GRE-1186): the agents the signed-in board member may ask. */
+  agents: (companyId: string) => api.get<StrategyBoardAgent[]>(`/companies/${companyId}/strategy-board/agents`),
+  setMemberAgents: (companyId: string, userId: string, agentIds: string[]) =>
+    api.put<{ userId: string; agentIds: string[] }>(
+      `/companies/${companyId}/strategy-board/members/${encodeURIComponent(userId)}/agents`,
+      { agentIds },
+    ),
+  getChat: (companyId: string, agentId: string) => api.get<Issue | null>(`/companies/${companyId}/strategy-board/chats/${agentId}`),
+  openChat: (companyId: string, agentId: string) => api.post<Issue>(`/companies/${companyId}/strategy-board/chats/${agentId}`, {}),
 };

@@ -25,6 +25,7 @@ import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
+import { boardQuestionRunGuard } from "./middleware/board-question-run-guard.js";
 import {
   privateHostnameGuard,
   resolvePrivateHostnameAllowSet,
@@ -687,6 +688,8 @@ export async function createApp(
   const agentAvatars = agentAvatarRoutes();
   api.use(agentAvatars.router);
   api.use(boardMutationGuard());
+  // Board question chats are questions only (GRE-1186).
+  api.use(boardQuestionRunGuard(db));
   // Password re-check for release, rollback and promote (GRE-133). After the
   // mutation guard so a cross-site page cannot post a password.
   api.use(releaseReauthRoutes(db));
