@@ -12392,15 +12392,21 @@ export function issueService(db: Db) {
         await dbOrTx.select({ id: issues.id }).from(issues).where(eq(issues.id, issueId)).for(REFERENCED_ROW_LOCK);
       }
       const issue = await dbOrTx
-        .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId })
+        .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId, originKind: issues.originKind })
         .from(issues)
         .where(eq(issues.id, issueId))
-        .then((rows: Array<{ companyId: string; conversationAgentId: string | null }>) => rows[0] ?? null);
+        .then((rows: Array<{ companyId: string; conversationAgentId: string | null; originKind: string }>) => rows[0] ?? null);
 
       if (!issue) throw notFound("Issue not found");
 
-      if (issue.conversationAgentId && actor.userId && !(await instanceSettingsService(dbOrTx).getExperimental()).enableAgentChat) {
-        throw unprocessable("Agent Chat is disabled in Experimental settings");
+      if (issue.conversationAgentId && actor.userId) {
+        // A board question chat (GRE-1186) runs under the Strategy Board switch, not Agent Chat.
+        const experimental = await instanceSettingsService(dbOrTx).getExperimental();
+        if (issue.originKind === "strategy_board_question") {
+          if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
+        } else if (!experimental.enableAgentChat) {
+          throw unprocessable("Agent Chat is disabled in Experimental settings");
+        }
       }
       const currentUserRedactionOptions = {
         // Keep every read on the caller's transaction connection. Re-entering

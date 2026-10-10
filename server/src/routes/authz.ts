@@ -76,7 +76,12 @@ export function assertInstanceAdmin(req: Request) {
   throw forbidden("Instance admin access required");
 }
 
-export function assertCompanyAccess(req: Request, companyId: string) {
+/**
+ * `boardChatWrite`: the caller has proved this write is a message on a board
+ * question chat (GRE-1186) by the board member who owns it, or the reply of
+ * its agent. Only then may a viewer (or an agent acting for one) write.
+ */
+export function assertCompanyAccess(req: Request, companyId: string, opts: { boardChatWrite?: boolean } = {}) {
   assertAuthenticated(req);
   if (req.actor.type === "agent" && req.actor.companyId !== companyId) {
     throw forbidden("Agent key cannot access another company");
@@ -96,7 +101,7 @@ export function assertCompanyAccess(req: Request, companyId: string) {
     }
     const method = typeof req.method === "string" ? req.method.toUpperCase() : "GET";
     const isSafeMethod = ["GET", "HEAD", "OPTIONS"].includes(method);
-    if (!isSafeMethod && membership.membershipRole === "viewer") {
+    if (!isSafeMethod && membership.membershipRole === "viewer" && !opts.boardChatWrite) {
       throwOrShadowResponsibleUserCompanyAccessDeny(
         req,
         companyId,
@@ -117,7 +122,7 @@ export function assertCompanyAccess(req: Request, companyId: string) {
       if (!membership || membership.status !== "active") {
         throw forbidden("User does not have active company access");
       }
-      if (membership.membershipRole === "viewer") {
+      if (membership.membershipRole === "viewer" && !opts.boardChatWrite) {
         throw forbidden("Viewer access is read-only");
       }
     }
@@ -230,13 +235,14 @@ export async function getAccessibleResource<T extends { companyId: string }>(
   res: Response,
   resource: T | null | undefined | Promise<T | null | undefined>,
   notFoundMessage: string,
+  opts: { boardChatWrite?: boolean } = {},
 ): Promise<T | null> {
   const resolved = await resource;
   if (!resolved || !hasCompanyAccess(req, resolved.companyId)) {
     res.status(404).json({ error: notFoundMessage });
     return null;
   }
-  assertCompanyAccess(req, resolved.companyId);
+  assertCompanyAccess(req, resolved.companyId, opts);
   return resolved;
 }
 
