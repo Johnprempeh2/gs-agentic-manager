@@ -43,7 +43,7 @@ export { projectGoals } from "./project_goals.js";
 export { goals } from "./goals.js";
 export { goalCheckIns } from "./goal_check_ins.js";
 export { goalKpiReadings } from "./goal_kpi_readings.js";
-export { goalWhyRequests, goalKpiAlerts, strategyBoardPacks } from "./strategy_board.js";
+export { goalWhyRequests, goalKpiAlerts, strategyBoardPacks, strategyBoardSettings, strategyBoardEmails } from "./strategy_board.js";
 export { folders } from "./folders.js";
 export { issues } from "./issues.js";
 export { issueWatchdogs } from "./issue_watchdogs.js";

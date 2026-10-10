@@ -579,6 +579,8 @@ export const queryKeys = {
   strategyBoard: {
     summary: (companyId: string) => ["strategy-board", companyId] as const,
     members: (companyId: string) => ["strategy-board", companyId, "members"] as const,
+    settings: (companyId: string) => ["strategy-board", companyId, "settings"] as const,
+    emails: (companyId: string) => ["strategy-board", companyId, "emails"] as const,
     packs: (companyId: string) => ["strategy-board", companyId, "packs"] as const,
     pack: (id: string) => ["strategy-board", "pack", id] as const,
     whyRequests: (goalId: string) => ["strategy-board", "why-requests", goalId] as const,

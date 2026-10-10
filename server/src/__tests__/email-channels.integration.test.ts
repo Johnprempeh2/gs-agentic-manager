@@ -533,6 +533,38 @@ describe("AgentMail durable email pipeline", () => {
     });
   });
 
+  it("sends a board email as the system with no run, leaves no work for the agent, and stops when the agent is paused (GRE-1187)", async () => {
+    const f = await fixture();
+    const parent = await issueService(db).create(f.companyId, { title: "KPI turned red", status: "todo" });
+    const input = emailSendSchema.parse({
+      endpointId: f.endpointId,
+      parentIssueId: parent.id,
+      to: ["chair@example.test"],
+      subject: "KPI turned red: Revenue",
+      text: "Revenue is off track.",
+      idempotencyKey: randomUUID(),
+    });
+    const queued = await f.service.queueBoardSend(f.companyId, input);
+    expect(queued.outcome).toBe("queued");
+    const child = await issueService(db).getById(queued.issueId);
+    expect(child).toMatchObject({ parentId: parent.id, status: "done", assigneeAgentId: f.agentId });
+    expect(await f.service.queueBoardSend(f.companyId, input)).toEqual(queued);
+    await expect(f.service.queueBoardSend(randomUUID(), { ...input, idempotencyKey: randomUUID() })).rejects.toThrow(/not found/i);
+    await f.service.tick();
+    expect(f.sends).toHaveLength(1);
+    expect(f.sends[0].body.to).toEqual(["chair@example.test"]);
+    expect(f.wakeup).not.toHaveBeenCalled();
+
+    // A paused secretary agent: the next board email fails without calling AgentMail.
+    await db.update(agents).set({ status: "paused" }).where(eq(agents.id, f.agentId));
+    const second = await f.service.queueBoardSend(f.companyId, { ...input, idempotencyKey: randomUUID() }).catch((err: Error) => err);
+    expect(second).toBeInstanceOf(Error);
+    expect((second as Error).message).toMatch(/not available to send email/);
+    await f.service.tick();
+    expect(f.sends).toHaveLength(1);
+    await db.update(agents).set({ status: "idle" }).where(eq(agents.id, f.agentId));
+  });
+
   it("imports attachments once, bounds intake, and validates stored attachments before sending", async () => {
     const objects = new Map<string, Buffer>();
     const storage = createStorageService({
