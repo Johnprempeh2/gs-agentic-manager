@@ -3,6 +3,7 @@ import type { GoalRagRollup, KpiStatus } from "./goal-kpi-status.js";
 import type {
   StrategyBoardAction,
   StrategyBoardArea,
+  StrategyBoardBrief,
   StrategyBoardKpi,
   StrategyBoardOwner,
   StrategyBoardPackSnapshot,
@@ -380,5 +381,78 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
   }
 
   lines.push("---", "", "This pack is a frozen record of what the board saw. Later corrections are new readings; they do not change this pack.", "");
+  return lines.join("\n");
+}
+
+/**
+ * How far the board can trust a number, in the words the board agent uses
+ * (GRE-1186): a reading the owner typed in is weaker than one an agent
+ * checked or one taken from a system.
+ */
+export function boardEvidenceTrust(source: KpiReadingSource | null): "owner-reported" | "agent-checked" | "system" | "no reading" {
+  if (source === "owner_reported") return "owner-reported";
+  if (source === "agent_verified") return "agent-checked";
+  if (source === "system") return "system";
+  return "no reading";
+}
+
+function ageWords(days: number | null): string {
+  if (days == null) return "no reading";
+  if (days === 0) return "taken today";
+  return days === 1 ? "1 day old" : `${days} days old`;
+}
+
+function oneLine(text: string, max = 400): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/**
+ * The plan as the board agent sees it (GRE-1186). Every KPI line carries its
+ * reading source, date and age, so each answer can say where a number comes
+ * from and how far to trust it. Plain text: it goes into the agent's prompt.
+ */
+export function renderStrategyBoardBrief(brief: StrategyBoardBrief): string {
+  const lines: string[] = [];
+  lines.push(`Plan of ${brief.companyName}, status as of ${brief.asOf}.`, "");
+  const titles = new Map(brief.kpis.map((kpi) => [kpi.goalId, kpi.title]));
+  lines.push("KPIs:");
+  if (brief.kpis.length === 0) lines.push("- None on the plan.");
+  for (const kpi of brief.kpis) {
+    const where = [kpi.areaTitle, kpi.objectiveTitle].filter(Boolean).join(" > ");
+    const reading = kpi.latestReadingDate
+      ? `latest ${num(kpi.latestValue, kpi.unit)} on ${kpi.latestReadingDate} (source: ${boardEvidenceTrust(kpi.latestReadingSource)}; age: ${ageWords(kpi.readingAgeDays)})`
+      : "no reading yet (source: no reading; age: no reading)";
+    lines.push(
+      `- KPI "${kpi.title}" [id ${kpi.goalId}]${where ? ` under ${where}` : ""}: ${ragWord(kpi.status)}` +
+        `${kpi.gapPercent ? `, ${kpi.gapPercent}% behind plan` : ""}; ${reading}; plan today ${num(kpi.plannedValue, kpi.unit)}; ` +
+        `target ${num(kpi.targetValue, kpi.unit)}${kpi.targetDate ? ` due ${kpi.targetDate}` : ""}; owner ${ownerName(kpi.owner)}` +
+        `${kpi.openWhyRequests ? `; ${kpi.openWhyRequests} open "Why?" request${kpi.openWhyRequests === 1 ? "" : "s"}` : ""}.`,
+    );
+  }
+  lines.push("", "Open actions (tasks under plan goals):");
+  if (brief.actions.length === 0) lines.push("- None.");
+  for (const action of brief.actions) {
+    const goal = titles.get(action.goalId);
+    lines.push(
+      `- Task ${action.identifier ?? "(no id)"} "${oneLine(action.title, 200)}": ${action.status}; assignee ${action.assigneeName ?? "nobody"}${goal ? `; for KPI "${goal}"` : ""}.`,
+    );
+  }
+  lines.push("", "Latest check-ins:");
+  if (brief.checkIns.length === 0) lines.push("- None.");
+  for (const checkIn of brief.checkIns) {
+    const goal = titles.get(checkIn.goalId);
+    lines.push(
+      `- ${checkIn.date} by ${checkIn.authorName ?? "someone"}${goal ? ` on KPI "${goal}"` : ""}${checkIn.progressPercent != null ? ` (${checkIn.progressPercent}% done)` : ""}: ${oneLine(checkIn.body)}`,
+    );
+  }
+  lines.push("", "\"Why?\" requests and answers:");
+  if (brief.whyRequests.length === 0) lines.push("- None.");
+  for (const request of brief.whyRequests) {
+    lines.push(
+      `- On KPI "${titles.get(request.goalId) ?? "a KPI"}", asked ${request.askedAt}: ${oneLine(request.question, 200)} → ` +
+        (request.answer ? `answer: ${oneLine(request.answer)}` : `no answer yet (${request.status})`),
+    );
+  }
   return lines.join("\n");
 }

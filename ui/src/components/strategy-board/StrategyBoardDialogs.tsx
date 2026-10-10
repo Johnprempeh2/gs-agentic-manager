@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { StrategyBoardKpi, StrategyBoardMember, StrategyBoardPack } from "@greatstone/shared";
 import { Check, Download, Printer } from "lucide-react";
+import { agentsApi } from "@/api/agents";
 import { strategyBoardApi } from "@/api/strategyBoard";
 import { useToastActions } from "@/context/ToastContext";
 import { queryKeys } from "@/lib/queryKeys";
@@ -23,16 +24,19 @@ function invalidateBoard(queryClient: ReturnType<typeof useQueryClient>, company
 export function AskWhyDialog({
   companyId,
   kpi,
+  initialQuestion = "",
   onClose,
 }: {
   companyId: string;
   kpi: StrategyBoardKpi | null;
+  /** Filled in when the board agent offered the question (GRE-1186); the board member still confirms it. */
+  initialQuestion?: string;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
-  const [question, setQuestion] = useState("");
-  useEffect(() => setQuestion(""), [kpi?.goalId]);
+  const [question, setQuestion] = useState(initialQuestion);
+  useEffect(() => setQuestion(initialQuestion), [kpi?.goalId, initialQuestion]);
   const ask = useMutation({
     mutationFn: () => strategyBoardApi.askWhy(kpi!.goalId, question.trim()),
     onSuccess: () => {
@@ -309,6 +313,132 @@ export function BoardMembersCard({ companyId }: { companyId: string }) {
         </NativeSelect>
       </div>
       <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save board"}</Button>
+      <BoardMemberAgents companyId={companyId} members={(members ?? []).filter((m) => m.isBoardMember)} label={label} />
     </div>
+  );
+}
+
+/**
+ * Which agents each board member can ask about performance (GRE-1186), for
+ * example the board secretary and the evidence agents for the CSFs they
+ * follow. A board member cannot chat with any other agent.
+ */
+function BoardMemberAgents({
+  companyId,
+  members,
+  label,
+}: {
+  companyId: string;
+  members: StrategyBoardMember[];
+  label: (member: StrategyBoardMember) => string;
+}) {
+  const [editing, setEditing] = useState<StrategyBoardMember | null>(null);
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
+    enabled: members.length > 0,
+  });
+  if (members.length === 0) return null;
+  const names = new Map((agents ?? []).map((agent) => [agent.id, agent.name]));
+  return (
+    <div className="space-y-2 border-t border-border pt-3">
+      <p className="text-sm font-medium">Agents each board member can ask</p>
+      <p className="text-sm text-muted-foreground">
+        A board member can ask these agents about the plan from “Ask the board agent”. The agents answer questions only;
+        they cannot be told to do work from that chat.
+      </p>
+      <ul className="divide-y divide-border rounded-lg border border-border">
+        {members.map((member) => (
+          <li key={member.userId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+            <span className="min-w-0">
+              <span className="font-medium">{label(member)}</span>
+              <span className="block text-xs text-muted-foreground">
+                {member.agentIds.length
+                  ? member.agentIds.map((id) => names.get(id) ?? "Unknown agent").join(", ")
+                  : "No agents yet"}
+              </span>
+            </span>
+            <Button size="sm" variant="outline" onClick={() => setEditing(member)}>
+              Choose agents
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {editing ? (
+        <BoardMemberAgentsDialog
+          companyId={companyId}
+          member={editing}
+          memberLabel={label(editing)}
+          agents={(agents ?? []).filter((agent) => agent.status !== "terminated")}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function BoardMemberAgentsDialog({
+  companyId,
+  member,
+  memberLabel,
+  agents,
+  onClose,
+}: {
+  companyId: string;
+  member: StrategyBoardMember;
+  memberLabel: string;
+  agents: Array<{ id: string; name: string; title: string | null }>;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
+  const [chosen, setChosen] = useState<string[]>(member.agentIds);
+  const save = useMutation({
+    mutationFn: () => strategyBoardApi.setMemberAgents(companyId, member.userId, chosen),
+    onSuccess: () => {
+      invalidateBoard(queryClient, companyId);
+      pushToast({ title: "Board agents saved", tone: "success" });
+      onClose();
+    },
+    onError: (err: Error) => pushToast({ title: "Board agents not saved", body: err.message, tone: "error" }),
+  });
+  return (
+    <Dialog open onOpenChange={(open) => (!open ? onClose() : undefined)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Agents {memberLabel} can ask</DialogTitle>
+          <DialogDescription>They can ask these agents about KPIs, owners, actions and “why” answers. Nothing else.</DialogDescription>
+        </DialogHeader>
+        {agents.length === 0 ? (
+          <p className="text-sm text-muted-foreground">This company has no agents yet.</p>
+        ) : (
+          <ul className="max-h-72 space-y-1.5 overflow-y-auto">
+            {agents.map((agent) => (
+              <li key={agent.id}>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={chosen.includes(agent.id)}
+                    onCheckedChange={(checked) =>
+                      setChosen((current) =>
+                        checked === true ? [...current, agent.id] : current.filter((id) => id !== agent.id),
+                      )
+                    }
+                    aria-label={`${memberLabel} can ask ${agent.name}`}
+                  />
+                  <span className="font-medium">{agent.name}</span>
+                  {agent.title ? <span className="text-xs text-muted-foreground">{agent.title}</span> : null}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

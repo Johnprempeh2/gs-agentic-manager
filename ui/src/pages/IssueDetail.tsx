@@ -109,10 +109,12 @@ export function IssueDetail({ tasksTab }: { tasksTab?: TaskSidePanelProps["tasks
 /** One controller and surface for both task URLs and agent conversations. */
 export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskSidePanelProps["tasksTab"]; conversation?: {
   agent: Agent; issue: Issue | null; ensureIssue: () => Promise<Issue>;
+  /** A board question chat (GRE-1186): Ask mode only, under the Strategy Board switch. */
+  questionsOnly?: boolean;
 } }) {
   const { issueId: routeIssueId, companyPrefix } = useParams<{ issueId: string; companyPrefix: string }>();
   const issueId = conversation ? conversation.issue?.id : routeIssueId;
-  const [draftWorkMode, setDraftWorkMode] = useState<IssueWorkMode>("standard");
+  const [draftWorkMode, setDraftWorkMode] = useState<IssueWorkMode>(conversation?.questionsOnly ? "ask" : "standard");
   const draftIssue = useMemo(() => conversation ? agentChatDraft(conversation.agent, draftWorkMode) : undefined, [conversation?.agent, draftWorkMode]);
   const pendingDraftWorkMode = useRef<IssueWorkMode | null>(null);
   const { companies, selectedCompanyId } = useCompany();

@@ -1,9 +1,13 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   authUsers,
+  chatConversations,
   chatEndpoints,
+  chatPublications,
   companies,
+  emailMessages,
   goalKpiAlerts,
+  goalKpiReadings,
   goalWhyRequests,
   strategyBoardEmails,
   strategyBoardSettings,
@@ -21,10 +25,12 @@ import type {
 } from "@greatstone/shared";
 import { unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
+import { logActivity } from "./activity-log.js";
 import { isEntitled } from "./entitlements.js";
 import { goalService } from "./goals.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { issueService } from "./issues.js";
+import { strategyBoardService } from "./strategy-board.js";
 
 /**
  * Board email (GRE-1187). Owners rarely log in, so the board secretary's
@@ -507,4 +513,153 @@ export async function runScheduledStrategyBoardEmails(
     }
   }
   return results;
+}
+
+/**
+ * Lines like "K1: 12500" or "k2 = 1,250.5" in an owner's reply. Quoted lines
+ * (the reminder itself starts each KPI with "- K1") never match. When a code
+ * is given twice, the last line wins.
+ */
+export function parseReadingLines(text: string): Array<{ code: string; value: number }> {
+  const byCode = new Map<string, number>();
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s*(K\d{1,3})\s*[:=]\s*(-?\d[\d,]*(?:\.\d+)?)(?:\s.*)?$/i);
+    if (!match) continue;
+    const value = Number(match[2].replace(/,/g, ""));
+    if (Number.isFinite(value)) byCode.set(match[1].toUpperCase(), value);
+  }
+  return [...byCode.entries()].map(([code, value]) => ({ code, value }));
+}
+
+/** The reply without the quoted email below it, for when the provider sent no extracted text. */
+export function replyBody(text: string): string {
+  const lines: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (/^\s*On .+wrote:\s*$/.test(line) || /^\s*-{2,}\s*Original Message/i.test(line)) break;
+    if (/^\s*>/.test(line)) continue;
+    lines.push(line);
+  }
+  return lines.join("\n").trim();
+}
+
+function emailAddress(value: string): string {
+  return (value.match(/<([^>]+)>/)?.[1] ?? value).trim().toLowerCase();
+}
+
+export interface BoardReplyResult {
+  stored: "why_answer" | "readings" | "nothing";
+  reason?: "not_board_thread" | "switch_off" | "unknown_sender" | "already_answered" | "no_answer" | "no_readings" | "not_stored_kind";
+  readings?: number;
+}
+
+/**
+ * GRE-1196: an email that came into a thread the board sent. A reply from the
+ * person the board emailed is stored on the plan: the answer to a "Why?"
+ * request, or owner-reported readings from a meeting reminder. Anything else
+ * stays in the email thread only. Safe to call again for the same message.
+ */
+export async function storeBoardEmailReply(
+  db: Db,
+  input: { companyId: string; conversationId: string; providerMessageId: string },
+): Promise<BoardReplyResult> {
+  const [sent] = await db
+    .select({ email: strategyBoardEmails, threadIssueId: chatConversations.issueId })
+    .from(strategyBoardEmails)
+    .innerJoin(chatPublications, eq(chatPublications.id, strategyBoardEmails.publicationId))
+    .innerJoin(chatConversations, eq(chatConversations.id, chatPublications.conversationId))
+    .where(and(eq(strategyBoardEmails.companyId, input.companyId), eq(chatPublications.conversationId, input.conversationId)))
+    .limit(1);
+  if (!sent) return { stored: "nothing", reason: "not_board_thread" };
+  if (!(await isEntitled(db, "enableStrategyBoard"))) return { stored: "nothing", reason: "switch_off" };
+  const [message] = await db
+    .select()
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.companyId, input.companyId),
+        eq(emailMessages.conversationId, input.conversationId),
+        eq(emailMessages.providerMessageId, input.providerMessageId),
+      ),
+    );
+  if (!message || message.direction !== "inbound") return { stored: "nothing", reason: "not_board_thread" };
+  const { email } = sent;
+  if (email.kind === "slippage_alert") return { stored: "nothing", reason: "not_stored_kind" };
+  const note = (body: string) => issueService(db).addComment(sent.threadIssueId, body, {}, { authorType: "system" });
+  if (emailAddress(message.envelope.from) !== emailAddress(email.recipientEmail)) {
+    await note("Not stored on the plan: this reply did not come from the person the board emailed, so it stays in this email thread only.");
+    return { stored: "nothing", reason: "unknown_sender" };
+  }
+  const board = strategyBoardService(db);
+  const text = replyBody(message.text);
+
+  if (email.kind === "why_request") {
+    const request = email.whyRequestId ? await board.getWhyRequest(email.whyRequestId) : null;
+    if (!request || request.status !== "open") {
+      await note("Not stored on the plan: this \"Why?\" request has been answered already.");
+      return { stored: "nothing", reason: "already_answered" };
+    }
+    if (!text) return { stored: "nothing", reason: "no_answer" };
+    const answered = await board.answerWhyRequest(request, text, { userId: email.recipientUserId, agentId: null });
+    if (!answered) return { stored: "nothing", reason: "already_answered" };
+    await logActivity(db, {
+      companyId: input.companyId,
+      actorType: "system",
+      actorId: "strategy_board_email",
+      action: "goal.why_answered",
+      entityType: "goal",
+      entityId: request.goalId,
+      details: { whyRequestId: request.id, via: "email", answeredByUserId: email.recipientUserId },
+    });
+    await note("Stored on the plan: this reply is the answer to the board's \"Why?\" request.");
+    return { stored: "why_answer" };
+  }
+
+  // A meeting reminder: "K1: 12500" lines become owner-reported readings.
+  const codes = email.kpiCodes ?? {};
+  const lines = parseReadingLines(text).filter((line) => codes[line.code]);
+  if (lines.length === 0) return { stored: "nothing", reason: "no_readings" };
+  const goalsSvc = goalService(db);
+  const readingDate = message.timestamp.toISOString().slice(0, 10);
+  const readingNote = `Email reply to the board meeting reminder${email.meetingDate ? ` for ${email.meetingDate}` : ""}`;
+  const stored: string[] = [];
+  for (const line of lines) {
+    const goal = await goalsSvc.getById(codes[line.code]);
+    if (!goal || goal.companyId !== input.companyId || goal.kind !== "kpi") continue;
+    // A retried delivery finds the reading already there.
+    const [existing] = await db
+      .select({ id: goalKpiReadings.id })
+      .from(goalKpiReadings)
+      .where(
+        and(
+          eq(goalKpiReadings.goalId, goal.id),
+          eq(goalKpiReadings.readingDate, readingDate),
+          eq(goalKpiReadings.source, "owner_reported"),
+          eq(goalKpiReadings.recordedByUserId, email.recipientUserId),
+          eq(goalKpiReadings.value, line.value),
+          eq(goalKpiReadings.note, readingNote),
+        ),
+      );
+    if (existing) continue;
+    const reading = await goalsSvc.createReading(
+      goal,
+      { value: line.value, readingDate, note: readingNote, source: "owner_reported" },
+      { agentId: null, userId: email.recipientUserId },
+    );
+    await logActivity(db, {
+      companyId: input.companyId,
+      actorType: "system",
+      actorId: "strategy_board_email",
+      action: "goal.kpi_reading_recorded",
+      entityType: "goal",
+      entityId: goal.id,
+      details: { readingId: reading.id, value: reading.value, readingDate, source: reading.source, via: "email", recordedByUserId: email.recipientUserId },
+    });
+    await board.evaluateAlerts(input.companyId, { goalIds: [goal.id], readingId: reading.id }).catch((err: unknown) =>
+      logger.error({ err, companyId: input.companyId, goalId: goal.id }, "strategy board: KPI alert check failed; the hourly sweep will retry"),
+    );
+    stored.push(`- ${line.code} ${goal.title}: ${line.value}${goal.unit ? ` ${goal.unit}` : ""}`);
+  }
+  if (stored.length === 0) return { stored: "nothing", reason: "no_readings" };
+  await note(`Stored on the plan as owner-reported readings for ${readingDate}:\n\n${stored.join("\n")}`);
+  return { stored: "readings", readings: stored.length };
 }

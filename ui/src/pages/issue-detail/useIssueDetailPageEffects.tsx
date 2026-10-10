@@ -39,7 +39,7 @@ import type { UseMutationResult } from "@tanstack/react-query";
 import type { SidePanelContentMode } from "@/components/side-panel/types";
 
 export type UseIssueDetailPageEffectsInput = {
-  conversation: { agent: Agent; issue: Issue | null; ensureIssue: () => Promise<Issue>; } | undefined;
+  conversation: { agent: Agent; issue: Issue | null; ensureIssue: () => Promise<Issue>; questionsOnly?: boolean } | undefined;
   agents: Agent[] | undefined;
   issue: Issue | undefined;
   setBreadcrumbs: (crumbs: Breadcrumb[]) => void;
@@ -159,6 +159,8 @@ export function useIssueDetailPageEffects({
   setPendingCommentComposerFocusKey,
   setFileViewerPromptOpen,
 }: UseIssueDetailPageEffectsInput) {
+  // A board question chat (GRE-1186) is a plain conversation: no task side panel or artifacts rail.
+  const questionsOnly = Boolean(conversation?.questionsOnly || issue?.originKind === "strategy_board_question");
   const conversationAgent = conversation?.agent ?? agents?.find(agent => agent.id === issue?.conversationAgentId);
   useEffect(() => {
     if (conversationAgent) {
@@ -195,7 +197,7 @@ export function useIssueDetailPageEffects({
   ]);
 
   useEffect(() => {
-    if (!streamlinedTaskDetailEnabled || !taskChatShellEnabled || !issue?.id) {
+    if (!streamlinedTaskDetailEnabled || !taskChatShellEnabled || !issue?.id || questionsOnly) {
       setBreadcrumbPanelControl(null);
       return;
     }
@@ -209,6 +211,7 @@ export function useIssueDetailPageEffects({
   }, [
     issue?.id,
     panelVisible,
+    questionsOnly,
     setBreadcrumbPanelControl,
     streamlinedTaskDetailEnabled,
     suppressPanelUntilPlan,
@@ -221,6 +224,7 @@ export function useIssueDetailPageEffects({
       taskChatShellEnabled &&
       !streamlinedTaskDetailEnabled &&
       !isMobile &&
+      !questionsOnly &&
       Boolean(issue?.id) &&
       (!panelVisible || suppressPanelUntilPlan);
 
@@ -243,6 +247,7 @@ export function useIssueDetailPageEffects({
     issue?.id,
     openTaskSidePanel,
     panelVisible,
+    questionsOnly,
     setBreadcrumbToolbar,
     streamlinedTaskDetailEnabled,
     suppressPanelUntilPlan,
@@ -419,7 +424,7 @@ export function useIssueDetailPageEffects({
   );
 
   useLayoutEffect(() => {
-    if (!panelIssue || suppressPanelUntilPlan || (conversation && !conversation.issue)) {
+    if (!panelIssue || suppressPanelUntilPlan || (conversation && !conversation.issue) || questionsOnly) {
       closePanel();
       return;
     }
@@ -490,6 +495,7 @@ export function useIssueDetailPageEffects({
     handleSkillOpened,
     panelChildIssues,
     panelIssue,
+    questionsOnly,
     suppressPanelUntilPlan,
     relationIssueLinkState,
     streamlinedTaskDetailEnabled,

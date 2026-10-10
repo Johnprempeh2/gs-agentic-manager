@@ -91,6 +91,12 @@ function toPack(row: PackRow): StrategyBoardPack {
 /** Who makes a pack: a board member (accepted at once) or the board secretary agent (a draft). */
 export type BoardPackMaker = { kind: "user"; userId: string | null } | { kind: "secretary"; agentId: string };
 
+/** The agents a board member may ask, kept on their board member grant as `scope.agentIds` (GRE-1186). */
+export function boardAgentIdsFromScope(scope: Record<string, unknown> | null | undefined): string[] {
+  const ids = scope?.agentIds;
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+}
+
 function standingFrom(role: string | null, keys: ReadonlySet<string>): BoardStanding {
   const isBoardMember = role === "viewer" && keys.has(BOARD_MEMBER_PERMISSION);
   const isChair = keys.has(BOARD_CHAIR_PERMISSION) && (isBoardMember || role === "owner");
@@ -591,7 +597,7 @@ export function strategyBoardService(db: Db) {
       )
       .orderBy(asc(companyMemberships.createdAt));
     const grants = await db
-      .select({ userId: principalPermissionGrants.principalId, key: principalPermissionGrants.permissionKey })
+      .select({ userId: principalPermissionGrants.principalId, key: principalPermissionGrants.permissionKey, scope: principalPermissionGrants.scope })
       .from(principalPermissionGrants)
       .where(
         and(
@@ -601,10 +607,12 @@ export function strategyBoardService(db: Db) {
         ),
       );
     const keysByUser = new Map<string, Set<string>>();
+    const agentIdsByUser = new Map<string, string[]>();
     for (const grant of grants) {
       const keys = keysByUser.get(grant.userId) ?? new Set<string>();
       keys.add(grant.key);
       keysByUser.set(grant.userId, keys);
+      if (grant.key === BOARD_MEMBER_PERMISSION) agentIdsByUser.set(grant.userId, boardAgentIdsFromScope(grant.scope));
     }
     return memberships.map((member) => {
       const standing = standingFrom(member.role, keysByUser.get(member.userId) ?? new Set());
@@ -615,6 +623,7 @@ export function strategyBoardService(db: Db) {
         role: member.role ?? "operator",
         isBoardMember: standing.isBoardMember,
         isChair: standing.isChair,
+        agentIds: standing.isBoardMember ? agentIdsByUser.get(member.userId) ?? [] : [],
       };
     });
   }
@@ -641,6 +650,7 @@ export function strategyBoardService(db: Db) {
         );
       }
     }
+    const keptScope = new Map(members.filter((member) => member.isBoardMember).map((member) => [member.userId, member.agentIds]));
     await db.transaction(async (tx) => {
       await tx
         .delete(principalPermissionGrants)
@@ -657,12 +667,14 @@ export function strategyBoardService(db: Db) {
           ...(role === "viewer" ? [BOARD_MEMBER_PERMISSION] : []),
           ...(entry.chair ? [BOARD_CHAIR_PERMISSION] : []),
         ];
+        // A member who stays on the board keeps the agents they may ask (GRE-1186).
+        const agentIds = keptScope.get(entry.userId) ?? [];
         return keys.map((permissionKey) => ({
           companyId,
           principalType: "user",
           principalId: entry.userId,
           permissionKey,
-          scope: null,
+          scope: permissionKey === BOARD_MEMBER_PERMISSION && agentIds.length ? { agentIds } : null,
           grantedByUserId,
         }));
       });
@@ -674,6 +686,8 @@ export function strategyBoardService(db: Db) {
   return {
     getStanding,
     findChairUserId,
+    buildBoard,
+    companyLink,
     summary,
     evaluateAlerts,
     listAlerts,

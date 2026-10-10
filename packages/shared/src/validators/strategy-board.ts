@@ -45,6 +45,14 @@ export const setStrategyBoardMembersSchema = z
   });
 export type SetStrategyBoardMembers = z.infer<typeof setStrategyBoardMembersSchema>;
 
+/** The agents one board member may ask about performance (GRE-1186). Replaces the list. */
+export const setStrategyBoardMemberAgentsSchema = z
+  .object({ agentIds: z.array(z.string().uuid()).max(50) })
+  .refine((value) => new Set(value.agentIds).size === value.agentIds.length, {
+    message: "Each agent is listed once",
+    path: ["agentIds"],
+  });
+export type SetStrategyBoardMemberAgents = z.infer<typeof setStrategyBoardMemberAgentsSchema>;
 /** Board email settings (GRE-1187). Leave a field out to keep it. */
 export const updateStrategyBoardSettingsSchema = z
   .object({

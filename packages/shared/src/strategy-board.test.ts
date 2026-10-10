@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeKpiStatus, rollUpKpiStatus, type KpiStatus } from "./goal-kpi-status.js";
 import {
+  boardEvidenceTrust,
   buildStrategyBoardAreas,
   buildStrategyBoardKpis,
   buildStrategyBoardOverdueActions,
@@ -8,6 +9,7 @@ import {
   findPlanObjective,
   kpiAlertAction,
   rankStrategyBoardAttention,
+  renderStrategyBoardBrief,
   renderStrategyBoardPackMarkdown,
   type StrategyBoardActionTask,
   type StrategyBoardGoal,
@@ -236,6 +238,44 @@ describe("renderStrategyBoardPackMarkdown (board pack from fixture data)", () =>
     expect(empty).toContain("No KPI is red or amber.");
     expect(empty).toContain("No \"Why?\" requests in this period.");
     expect(empty).toContain("No readings dated in this period.");
+  });
+});
+
+describe("renderStrategyBoardBrief (what the board agent answers from, GRE-1186)", () => {
+  const brief = renderStrategyBoardBrief({
+    companyName: "Pilot Co",
+    issuePrefix: "PIL",
+    asOf: TODAY,
+    kpis: boardKpis(null),
+    actions: [{ identifier: "PIL-12", title: "Run exit interviews", status: "in_progress", goalId: "kpi-retention", assigneeName: "HR evidence agent" }],
+    checkIns: [{ goalId: "kpi-hiring", body: "Two offers out,\nboth due back Friday.", progressPercent: 60, date: "2026-10-07", authorName: "Ama Mensah" }],
+    whyRequests: [{ goalId: "kpi-retention", question: "Why is retention down?", status: "answered", answer: "Two leavers in Q3.", askedAt: "2026-10-02" }],
+  });
+
+  it("gives every KPI with a reading its value, source and age", () => {
+    expect(brief).toContain('KPI "Staff retention" [id kpi-retention] under Employer of choice > Keep our people: Red, 35% behind plan; latest 70 % on 2026-10-08 (source: agent-checked; age: 2 days old)');
+    expect(brief).toContain('KPI "Roles filled" [id kpi-hiring]');
+    expect(brief).toContain("latest 30 on 2026-09-20 (source: owner-reported; age: 20 days old)");
+    expect(brief).toContain("(source: system; age: 9 days old)");
+  });
+
+  it("says when a KPI has no reading, and gives the owner, due date and open why requests", () => {
+    expect(brief).toContain('KPI "Countries live" [id kpi-launch] under Market expansion: No status; no reading yet (source: no reading; age: no reading)');
+    expect(brief).toContain("target 90 % due 2026-12-31; owner Ama Mensah; 1 open \"Why?\" request.");
+    expect(brief).toContain("owner HR evidence agent");
+  });
+
+  it("cites tasks, check-ins and why answers against their KPI", () => {
+    expect(brief).toContain('Task PIL-12 "Run exit interviews": in_progress; assignee HR evidence agent; for KPI "Staff retention".');
+    expect(brief).toContain('2026-10-07 by Ama Mensah on KPI "Roles filled" (60% done): Two offers out, both due back Friday.');
+    expect(brief).toContain('On KPI "Staff retention", asked 2026-10-02: Why is retention down? → answer: Two leavers in Q3.');
+  });
+
+  it("names trust in the board's words", () => {
+    expect(boardEvidenceTrust("owner_reported")).toBe("owner-reported");
+    expect(boardEvidenceTrust("agent_verified")).toBe("agent-checked");
+    expect(boardEvidenceTrust("system")).toBe("system");
+    expect(boardEvidenceTrust(null)).toBe("no reading");
   });
 });
 

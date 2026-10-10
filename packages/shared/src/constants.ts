@@ -370,6 +370,8 @@ export const ISSUE_ORIGIN_KINDS = [
   // Board control panel (GRE-1135). originId: the KPI alert id / the "Why?" request id.
   "strategy_board_kpi_alert",
   "strategy_board_why_request",
+  // A board member's questions-only chat with an agent set for them (GRE-1186).
+  "strategy_board_question",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;

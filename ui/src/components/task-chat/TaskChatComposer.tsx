@@ -111,6 +111,8 @@ interface TaskChatComposerProps {
   stopScope?: "leaf" | "subtree";
   workMode: IssueWorkMode;
   onWorkModeChange?: (mode: IssueWorkMode) => Promise<void> | void;
+  /** A board question chat (GRE-1186): a plain "Questions only" cue replaces the mode picker. */
+  questionsOnly?: boolean;
   disabled?: boolean;
   disabledReason?: string | null;
   placeholder?: string;
@@ -385,6 +387,7 @@ export function TaskChatComposer({
   stopPending = false,
   workMode,
   onWorkModeChange,
+  questionsOnly = false,
   disabled = false,
   disabledReason,
   placeholder,
@@ -1438,6 +1441,13 @@ export function TaskChatComposer({
                 {queuedEdit.stale
                   ? "Queued message changed"
                   : "Editing queued message"}
+              </span>
+            ) : questionsOnly ? (
+              <span
+                className="px-1 text-xs font-medium text-muted-foreground"
+                data-testid="task-chat-composer-questions-only"
+              >
+                Questions only
               </span>
             ) : (
               <DropdownMenu>

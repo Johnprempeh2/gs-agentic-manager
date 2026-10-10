@@ -1,5 +1,6 @@
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
+import { isBoardQuestionChat, strategyBoardChatService } from "../services/strategy-board-chat.js";
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
 import {
@@ -245,6 +246,7 @@ import {
   assertCompanyAccess,
   getAccessibleResource,
   getActorInfo,
+  hasCompanyAccess,
 } from "./authz.js";
 import {
   assertNoAgentHostWorkspaceCommandMutation,
@@ -3752,6 +3754,7 @@ export function issueRoutes(
     opts.searchRateLimiter ?? defaultCompanySearchRateLimiter;
   const instanceSettings = instanceSettingsService(db);
   const agentsSvc = agentService(db);
+  const boardChats = strategyBoardChatService(db);
   // GRE-1090: refuse these feature routes while their managed switch is off,
   // before validation. Agent Chat on existing conversations checks per route.
   router.use(
@@ -6781,6 +6784,31 @@ export function issueRoutes(
         ],
       },
     });
+    return false;
+  }
+
+  /**
+   * True when this comment is a message on a board question chat (GRE-1186):
+   * from the board member who owns it while they may still ask that agent, or
+   * the reply of its agent from a run that serves this chat. Lets the write
+   * past the viewer rule; nothing else on the chat is opened up.
+   */
+  async function boardChatWriteAllowed(
+    req: Request,
+    issue: { id: string; companyId: string; originKind?: string | null; conversationAgentId: string | null; conversationUserId: string | null },
+  ) {
+    if (!isBoardQuestionChat(issue) || !hasCompanyAccess(req, issue.companyId)) return false;
+    if (!(await isEntitled(instanceSettings, "enableStrategyBoard"))) return false;
+    if (req.actor.type === "board") {
+      const userId = req.actor.userId;
+      return Boolean(userId && userId === issue.conversationUserId
+        && (await boardChats.mayChat(issue.companyId, userId, issue.conversationAgentId!)));
+    }
+    if (req.actor.type === "agent") {
+      if (!req.actor.agentId || req.actor.agentId !== issue.conversationAgentId || !req.actor.runId) return false;
+      const chat = await boardChats.boardChatForRun(issue.companyId, req.actor.agentId, req.actor.runId);
+      return chat?.id === issue.id;
+    }
     return false;
   }
 
@@ -18082,15 +18110,18 @@ export function issueRoutes(
     validate(addIssueCommentSchema),
     async (req, res) => {
       const id = req.params.id as string;
+      const found = await svc.getById(id);
+      const boardChatWrite = found ? await boardChatWriteAllowed(req, found) : false;
       const issue = await getAccessibleResource(
         req,
         res,
-        svc.getById(id),
+        found,
         "Issue not found",
+        { boardChatWrite },
       );
       if (!issue) return;
       if (issue.conversationAgentId && req.actor.type === "board") {
-        await assertEntitled(instanceSettings, "enableAgentChat");
+        await assertEntitled(instanceSettings, isBoardQuestionChat(issue) ? "enableStrategyBoard" : "enableAgentChat");
         if (!req.actor.userId) throw forbidden("Board user access required");
         if (req.actor.userId !== issue.conversationUserId) throw forbidden("Only the conversation owner can send messages or start a new session");
         if (!req.body.clientRequestId) throw unprocessable("Chat messages require a clientRequestId for safe retries");
@@ -18139,11 +18170,11 @@ export function issueRoutes(
         );
         return;
       }
-      const commentAccessDecision = await assertAgentIssueCommentAllowed(
-        req,
-        res,
-        issue,
-      );
+      // The agent of a board question chat replies on it while acting for a
+      // viewer; boardChatWriteAllowed proved this is that reply (GRE-1186).
+      const commentAccessDecision = boardChatWrite
+        ? true
+        : await assertAgentIssueCommentAllowed(req, res, issue);
       if (!commentAccessDecision) return;
       if (!(await assertBoardCommentNotPaused(req, res, issue))) return;
       const commentAuthorizationReason = issueWriteAuthorizationReason(
