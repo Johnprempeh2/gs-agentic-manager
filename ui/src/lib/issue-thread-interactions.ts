@@ -309,7 +309,7 @@ export function buildAnsweredQuestionsDeliveryText(
     if (answer.otherText?.trim()) values.push(answer.otherText.trim());
     const prompt = canonical?.prompt ?? legacy?.prompt ?? answer.questionId;
     const label = canonical?.header && canonical.header !== prompt
-      ? `${canonical.header} — ${prompt}`
+      ? `${canonical.header} (${prompt})`
       : prompt;
     return `- ${label}: ${values.join(", ") || "No answer"}`;
   });

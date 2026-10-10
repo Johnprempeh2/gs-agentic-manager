@@ -268,7 +268,7 @@ function isNativePaperclipRunnerRun(
   );
 }
 const LEGACY_WITHHELD_RUN_COMMENT =
-  "Run completed. Agent did not post a summary comment this run (transcript withheld — see run log).";
+  "Run completed. Agent did not post a summary comment this run (transcript withheld; see run log).";
 
 function acceptedSemanticResult(
   value: unknown,

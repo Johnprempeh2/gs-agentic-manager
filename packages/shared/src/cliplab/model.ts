@@ -299,7 +299,7 @@ export function parseProject(value: unknown): Project {
   if (!charactersRaw.length || charactersRaw.length > 30 || !v.expressions.length || v.expressions.length > 100 || !v.animations.length || v.animations.length > 100) throw new Error('The project has an unsupported number of characters or sequences.')
   const expressions = v.expressions.map((item, index): Expression => {
     const e = obj(item)
-    if (!Array.isArray(e.beats) || !e.beats.length || e.beats.length > 32) throw new Error('Each expression needs 1–32 beats.')
+    if (!Array.isArray(e.beats) || !e.beats.length || e.beats.length > 32) throw new Error('Each expression needs 1 to 32 beats.')
     return { id: str(e.id, `expression-${index}`), name: str(e.name, 'Expression'), description: str(e.description, '', 160), ...(typeof e.poseExpressionId === 'string' && e.poseExpressionId ? { poseExpressionId: e.poseExpressionId } : {}), beats: e.beats.map(parseBeat) }
   })
   if (new Set(expressions.map(e => e.id)).size !== expressions.length) throw new Error('Expression names in the file must have unique IDs.')
@@ -315,7 +315,7 @@ export function parseProject(value: unknown): Project {
   }
   const animations = v.animations.map((item, index): Animation => {
     const a = obj(item)
-    if (!Array.isArray(a.steps) || !a.steps.length || a.steps.length > 64) throw new Error('Each animation needs 1–64 steps.')
+    if (!Array.isArray(a.steps) || !a.steps.length || a.steps.length > 64) throw new Error('Each animation needs 1 to 64 steps.')
     return { id: str(a.id, `animation-${index}`), name: str(a.name, 'Animation'), loop: boolean(a.loop, true), steps: a.steps.map((item, i) => { const s = obj(item); if (!expressions.some(e => e.id === s.expressionId)) throw new Error('An animation refers to a missing expression.'); return { id: str(s.id, `step-${i}`), expressionId: s.expressionId as string, duration: num(s.duration, 3, .2, 30) } }) }
   })
   const characters = charactersRaw.map(parseCharacter)

@@ -920,7 +920,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
           throw conflict("Import transfer apply is in progress; retry after it settles");
         }
         await removeImportTransferPart(importTransferSpoolRoot, run.id, partIndex);
-        res.status(410).json({ error: "Import transfer expired — re-create it" });
+        res.status(410).json({ error: "Import transfer expired; re-create it" });
         return;
       }
       res.json({ ok: true, index: partIndex, alreadyCompleted: false } satisfies CompanyImportTransferPartUploadResult);
@@ -981,7 +981,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
     if (run.status === "cancelled") {
       // The abandoned-spool sweep cancelled the run and deleted its parts —
       // same contract as the part-upload route: the caller re-creates it.
-      res.status(410).json({ error: "Import transfer expired — re-create it" });
+      res.status(410).json({ error: "Import transfer expired; re-create it" });
       return null;
     }
     const manifest = storedImportTransferManifest(run);
@@ -1036,7 +1036,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
         throw conflict("Import transfer apply is in progress; retry after it settles");
       }
       if (current?.status === "cancelled") {
-        res.status(410).json({ error: "Import transfer expired — re-create it" });
+        res.status(410).json({ error: "Import transfer expired; re-create it" });
         return null;
       }
       throw error;

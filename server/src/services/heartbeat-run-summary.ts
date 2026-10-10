@@ -118,7 +118,7 @@ const NARRATION_OPENERS =
   /^(let me\b|i['’]ll\b|i['’]m going\b|i need to\b|i can see\b|now i['’]ll\b|next,? i['’]ll\b|looking at\b|fetching\b|checking\b|first,)/i;
 
 export const LEGACY_WITHHELD_RUN_COMMENT =
-  "Run completed. Agent did not post a summary comment this run (transcript withheld — see run log).";
+  "Run completed. Agent did not post a summary comment this run (transcript withheld; see run log).";
 
 export const RUN_PRESENTATION_RESOLVER_VERSION = "1";
 export const CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON =

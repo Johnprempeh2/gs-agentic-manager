@@ -140,9 +140,9 @@ describe("issue thread interaction helpers", () => {
     expect(buildAnsweredQuestionsDeliveryText(interaction)).toBe([
       "Answered questions",
       "",
-      "- Purpose — What is it for?: Internal API",
-      "- Runtime — Which runtime?: Node.js",
-      "- Features — Which features?: Request logs, Metrics",
+      "- Purpose (What is it for?): Internal API",
+      "- Runtime (Which runtime?): Node.js",
+      "- Features (Which features?): Request logs, Metrics",
     ].join("\n"));
   });
 

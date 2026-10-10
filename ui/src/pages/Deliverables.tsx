@@ -42,7 +42,7 @@ const SEARCH_DEBOUNCE_MS = 150;
 export const DELIVERABLE_SORT_OPTIONS: { value: DeliverableSort; label: string }[] = [
   { value: "newest", label: "Newest" },
   { value: "recently_opened", label: "Recently opened" },
-  { value: "title", label: "A–Z" },
+  { value: "title", label: "A to Z" },
 ];
 
 type GroupBy = "none" | "project" | "month";
@@ -502,7 +502,7 @@ export function Deliverables() {
             <EmptyState
               icon={FileCheck2}
               title="No deliverables yet"
-              message="When you ask an agent for a finished document — a report, brief, plan or deck — it lands here, ready to preview, share and download."
+              message="When you ask an agent for a finished document (a report, brief, plan or deck), it lands here, ready to preview, share and download."
             />
             <div className="w-full max-w-lg rounded-lg border border-border bg-muted/40 p-4 text-left">
               <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Try asking</p>

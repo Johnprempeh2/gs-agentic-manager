@@ -2827,7 +2827,7 @@ export function recoveryService(
       {
         authorType: "system",
         presentation: compactRecoveryPresentation(
-          "Recovery: recovery attempt failed — remains blocked",
+          "Recovery: recovery attempt failed; remains blocked",
         ),
         metadata: {
           version: 1,
@@ -3006,14 +3006,14 @@ export function recoveryService(
     await issuesSvc.addComment(
       issue.id,
       `This task is waiting on ${waitingOn} to finish. ` +
-        "It will continue automatically when that work is done — there's nothing you need to do. " +
+        "It will continue automatically when that work is done, and there's nothing you need to do. " +
         "(It was paused because the latest run reported it was waiting for review/approval; " +
         "GS Agentic Manager turned that into a normal dependency wait instead of flagging it as stuck.)",
       {},
       {
         authorType: "system",
         presentation: compactRecoveryPresentation(
-          "Recovery: waiting on dependencies — moved to blocked",
+          "Recovery: waiting on dependencies; moved to blocked",
         ),
         metadata: {
           version: 1,

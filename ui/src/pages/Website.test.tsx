@@ -243,6 +243,6 @@ describe("Website page", () => {
 
 describe("formatRange", () => {
   it("reads the dates as calendar days", () => {
-    expect(formatRange(range)).toBe("11 Sept – 8 Oct 2026");
+    expect(formatRange(range)).toBe("11 Sept to 8 Oct 2026");
   });
 });

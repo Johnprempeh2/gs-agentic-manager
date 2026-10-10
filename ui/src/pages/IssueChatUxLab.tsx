@@ -220,7 +220,7 @@ export function IssueChatUxLab() {
           </div>
           <div className="rounded-xl border border-border/60 bg-accent/10 p-4">
             <div className="mb-2 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-caps) text-muted-foreground">
-              Fast interval (1s) — stress test
+              Fast interval (1s): stress test
             </div>
             <RotatingReasoningDemo intervalMs={1000} />
           </div>
@@ -237,7 +237,7 @@ export function IssueChatUxLab() {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-border/60 bg-accent/10 p-4">
             <div className="mb-3 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-caps) text-muted-foreground">
-              Active run — shimmer
+              Active run: shimmer
             </div>
             <div className="flex items-center gap-2.5 rounded-lg px-1 py-2">
               <span className="inline-flex items-center gap-2 text-sm font-medium text-foreground/80">
@@ -249,7 +249,7 @@ export function IssueChatUxLab() {
           </div>
           <div className="rounded-xl border border-border/60 bg-accent/10 p-4">
             <div className="mb-3 text-(length:--text-nano) font-semibold uppercase tracking-(--tracking-caps) text-muted-foreground">
-              Completed run — static
+              Completed run: static
             </div>
             <div className="flex items-center gap-2.5 rounded-lg px-1 py-2">
               <span className="inline-flex items-center gap-2 text-sm font-medium text-foreground/80">

@@ -4752,7 +4752,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       createdByRunId: runId,
-      body: "Agent failed to resume after approval: `adapter_failed` — retrying (attempt 1/2)",
+      body: "Agent failed to resume after approval: `adapter_failed`, retrying (attempt 1/2)",
     });
 
     const interaction = await db
@@ -5303,7 +5303,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       body: expect.stringContaining(
-        "Agent failed to resume after approval: `adapter_failed` — needs attention",
+        "Agent failed to resume after approval: `adapter_failed`, needs attention",
       ),
     });
 
@@ -5404,7 +5404,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       body: expect.stringContaining(
-        "Agent failed to resume after approval: `adapter_failed` — needs attention",
+        "Agent failed to resume after approval: `adapter_failed`, needs attention",
       ),
     });
     expect(
@@ -5559,7 +5559,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments).toHaveLength(1);
     expect(comments[0]).toMatchObject({
       authorType: "system",
-      body: "Agent failed to resume after approval: `process_lost` — retrying (attempt 1/2)",
+      body: "Agent failed to resume after approval: `process_lost`, retrying (attempt 1/2)",
     });
 
     const interaction = await db
@@ -6703,7 +6703,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]?.presentation).toMatchObject({
       kind: "system_notice",
       tone: "warning",
-      title: "Recovery: waiting on dependencies — moved to blocked",
+      title: "Recovery: waiting on dependencies; moved to blocked",
       density: "compact",
     });
     expect(comments[0]?.metadata).toMatchObject({
@@ -11062,7 +11062,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]?.presentation).toMatchObject({
       kind: "system_notice",
       tone: "warning",
-      title: "Recovery: recovery attempt failed — remains blocked",
+      title: "Recovery: recovery attempt failed; remains blocked",
       density: "compact",
     });
     expect(comments[0]?.metadata).toMatchObject({ version: 1 });

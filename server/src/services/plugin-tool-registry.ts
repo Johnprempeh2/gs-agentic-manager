@@ -408,7 +408,7 @@ export function createPluginToolRegistry(
       // 3. Verify the worker manager is available
       if (!workerManager) {
         throw new Error(
-          `Cannot execute tool "${namespacedName}" — no worker manager configured. ` +
+          `Cannot execute tool "${namespacedName}": no worker manager configured. ` +
           `Tool execution requires a PluginWorkerManager.`,
         );
       }
@@ -417,7 +417,7 @@ export function createPluginToolRegistry(
       const dbId = tool.pluginDbId;
       if (!workerManager.isRunning(dbId)) {
         throw new Error(
-          `Cannot execute tool "${namespacedName}" — ` +
+          `Cannot execute tool "${namespacedName}": ` +
           `worker for plugin "${pluginId}" is not running.`,
         );
       }

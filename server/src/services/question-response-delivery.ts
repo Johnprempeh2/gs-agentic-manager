@@ -212,7 +212,7 @@ function questionAnswerLines(
     const prompt = compactLine(question.prompt);
     const label =
       header && prompt && header !== prompt
-        ? `${header} — ${prompt}`
+        ? `${header} (${prompt})`
         : (header ?? prompt ?? question.id);
     lines.push(`- ${label}: ${values.join(", ") || "No answer"}`);
   }

@@ -220,9 +220,9 @@ describe("renderStrategyBoardPackMarkdown (board pack from fixture data)", () =>
   });
 
   it("includes owner explanations and open requests", () => {
-    expect(markdown).toContain("**Staff retention** — asked 2026-09-16: Why did retention fall?");
+    expect(markdown).toContain("**Staff retention** (asked 2026-09-16): Why did retention fall?");
     expect(markdown).toContain("> Two teams left after the merger.\n> We start stay interviews in October.");
-    expect(markdown).toContain("— Ama Mensah, 2026-09-18");
+    expect(markdown).toContain("Answered by Ama Mensah, 2026-09-18");
     expect(markdown).toContain("_No answer yet from HR evidence agent._");
   });
 

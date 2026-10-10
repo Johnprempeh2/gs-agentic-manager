@@ -98,7 +98,7 @@ export function buildAlreadyImportedMessage(
   // "landed in", not "created": a completed transfer may have created a new
   // company or merged into an existing one, and the caller cannot tell which.
   const location = company
-    ? ` The earlier import landed in the company "${company.name ?? company.id}"${company.issuePrefix ? ` (${company.issuePrefix})` : ""} — open it from the company switcher.`
+    ? ` The earlier import landed in the company "${company.name ?? company.id}"${company.issuePrefix ? ` (${company.issuePrefix})` : ""}. Open it from the company switcher.`
     : "";
   return `This exact package was already imported by a completed transfer.${location} Re-export the package to import it again.`;
 }

@@ -167,7 +167,7 @@ async function validateAndResolveFetchUrl(urlString: string): Promise<ValidatedF
 
   if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) {
     throw new Error(
-      `Disallowed protocol "${parsed.protocol}" — only http: and https: are permitted`,
+      `Disallowed protocol "${parsed.protocol}": only http: and https: are permitted`,
     );
   }
 
@@ -3381,7 +3381,7 @@ export function buildHostServices(
           const timeoutTimer = setTimeout(() => {
             logger.warn(
               { pluginId, pluginKey, runId: run.id },
-              "session event subscription timed out — forcing cleanup",
+              "session event subscription timed out; forcing cleanup",
             );
             cleanup();
           }, SESSION_EVENT_SUBSCRIPTION_TIMEOUT_MS);

@@ -111,13 +111,13 @@ export function createPluginJobCoordinator(
    */
   async function onPluginLoaded(payload: { pluginId: string; pluginKey: string }): Promise<void> {
     const { pluginId, pluginKey } = payload;
-    log.info({ pluginId, pluginKey }, "plugin loaded — syncing jobs and registering with scheduler");
+    log.info({ pluginId, pluginKey }, "plugin loaded; syncing jobs and registering with scheduler");
 
     try {
       // Get the manifest from the registry
       const plugin = await registry.getById(pluginId);
       if (!plugin?.manifestJson) {
-        log.warn({ pluginId, pluginKey }, "plugin loaded but no manifest found — skipping job sync");
+        log.warn({ pluginId, pluginKey }, "plugin loaded but no manifest found; skipping job sync");
         return;
       }
 
@@ -159,7 +159,7 @@ export function createPluginJobCoordinator(
     const { pluginId, pluginKey, reason } = payload;
     log.info(
       { pluginId, pluginKey, reason },
-      "plugin disabled — unregistering from scheduler",
+      "plugin disabled; unregistering from scheduler",
     );
 
     try {
@@ -187,7 +187,7 @@ export function createPluginJobCoordinator(
     const { pluginId, pluginKey, removeData } = payload;
     log.info(
       { pluginId, pluginKey, removeData },
-      "plugin unloaded — unregistering from scheduler",
+      "plugin unloaded; unregistering from scheduler",
     );
 
     try {
@@ -243,7 +243,7 @@ export function createPluginJobCoordinator(
       lifecycle.on("plugin.disabled", boundOnDisabled);
       lifecycle.on("plugin.unloaded", boundOnUnloaded);
 
-      log.info("plugin job coordinator started — listening to lifecycle events");
+      log.info("plugin job coordinator started; listening to lifecycle events");
     },
 
     stop(): void {

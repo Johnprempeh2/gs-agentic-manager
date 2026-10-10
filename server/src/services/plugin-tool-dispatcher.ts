@@ -253,7 +253,7 @@ export function createPluginToolDispatcher(
     if (!db) {
       log.warn(
         { pluginId },
-        "cannot register tools from DB — no database connection configured",
+        "cannot register tools from DB: no database connection configured",
       );
       return;
     }
@@ -293,7 +293,7 @@ export function createPluginToolDispatcher(
   // -----------------------------------------------------------------------
 
   function handlePluginEnabled(payload: { pluginId: string; pluginKey: string }): void {
-    log.debug({ pluginId: payload.pluginId, pluginKey: payload.pluginKey }, "plugin enabled — registering tools");
+    log.debug({ pluginId: payload.pluginId, pluginKey: payload.pluginKey }, "plugin enabled; registering tools");
     // Async registration from DB — we fire-and-forget since the lifecycle
     // event handler must be synchronous. Any errors are logged.
     void registerFromDb(payload.pluginId).catch((err) => {
@@ -305,12 +305,12 @@ export function createPluginToolDispatcher(
   }
 
   function handlePluginDisabled(payload: { pluginId: string; pluginKey: string; reason?: string }): void {
-    log.debug({ pluginId: payload.pluginId, pluginKey: payload.pluginKey }, "plugin disabled — unregistering tools");
+    log.debug({ pluginId: payload.pluginId, pluginKey: payload.pluginKey }, "plugin disabled; unregistering tools");
     registry.unregisterPlugin(payload.pluginKey);
   }
 
   function handlePluginUnloaded(payload: { pluginId: string; pluginKey: string; removeData: boolean }): void {
-    log.debug({ pluginId: payload.pluginId, pluginKey: payload.pluginKey }, "plugin unloaded — unregistering tools");
+    log.debug({ pluginId: payload.pluginId, pluginKey: payload.pluginKey }, "plugin unloaded; unregistering tools");
     registry.unregisterPlugin(payload.pluginKey);
   }
 
@@ -359,7 +359,7 @@ export function createPluginToolDispatcher(
 
         log.debug("subscribed to lifecycle events");
       } else {
-        log.warn("no lifecycle manager provided — tools will not auto-update on plugin state changes");
+        log.warn("no lifecycle manager provided; tools will not auto-update on plugin state changes");
       }
 
       initialized = true;

@@ -121,7 +121,7 @@ function MockAgentBubble({ agentName, body }: { agentName: string; body: string 
 }
 
 const checklist = [
-  "One container per system notice — no nested chat bubble",
+  "One container per system notice, no nested chat bubble",
   "Tone communicated by icon + label, never color alone",
   "Operational evidence hidden behind Details, expanded only on demand",
   "Issue, agent, and run metadata render as typed link rows, not raw markdown",
@@ -162,7 +162,7 @@ export function SystemNoticeUxLab() {
                 PAP-3525 plan
               </Badge>
               <Badge variant="outline" className="rounded-full px-3 py-1 text-(length:--text-nano) uppercase tracking-(--tracking-caps)">
-                phase 1 — UX
+                phase 1: UX
               </Badge>
               <Badge variant="outline" className="rounded-full px-3 py-1 text-(length:--text-nano) uppercase tracking-(--tracking-caps)">
                 tones: warning · danger · neutral
@@ -225,7 +225,7 @@ export function SystemNoticeUxLab() {
         id="hierarchy"
         eyebrow="Hierarchy in thread"
         title="Distinct from user and agent comments"
-        description="Side-by-side with adjacent comment types so reviewers can confirm the system row reads as a system row — full width, no avatar gutter, no chat bubble — while user and agent comments keep their existing rounded bubbles."
+        description="Side-by-side with adjacent comment types so reviewers can confirm the system row reads as a system row (full width, no avatar gutter, no chat bubble) while user and agent comments keep their existing rounded bubbles."
         accentClassName="bg-[linear-gradient(180deg,rgba(8,145,178,0.05),transparent_28%),var(--background)]"
       >
         <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-4">
@@ -279,7 +279,7 @@ export function SystemNoticeUxLab() {
           />
           <MockUserBubble
             authorName="Riley Board"
-            body="Thanks — assigning the recovery owner now."
+            body="Thanks, assigning the recovery owner now."
             alignEnd
           />
         </div>
@@ -374,7 +374,7 @@ export function SystemNoticeUxLab() {
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">authorType === &quot;system&quot;</code>{" "}
             or{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">presentation.kind === &quot;system_notice&quot;</code>{" "}
-            should render as a SystemNotice row at full content width — never inside an{" "}
+            should render as a SystemNotice row at full content width, never inside an{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">IssueChatUserMessage</code>{" "}
             or assistant bubble.
           </div>

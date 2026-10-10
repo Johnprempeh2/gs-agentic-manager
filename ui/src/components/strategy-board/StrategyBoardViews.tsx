@@ -40,11 +40,11 @@ export function changeText(kpi: StrategyBoardKpi): string | null {
 }
 
 function slipText(kpi: StrategyBoardKpi): string {
-  const latest = kpi.latestValue != null ? formatKpiValue(kpi.latestValue, kpi.unit) : "–";
+  const latest = kpi.latestValue != null ? formatKpiValue(kpi.latestValue, kpi.unit) : "n/a";
   if (kpi.reason === "deadline_missed") {
-    return `Deadline passed: ${latest} against a target of ${kpi.targetValue != null ? formatKpiValue(kpi.targetValue, kpi.unit) : "–"}`;
+    return `Deadline passed: ${latest} against a target of ${kpi.targetValue != null ? formatKpiValue(kpi.targetValue, kpi.unit) : "n/a"}`;
   }
-  const plan = kpi.plannedValue != null ? formatKpiValue(Math.round(kpi.plannedValue * 100) / 100, kpi.unit) : "–";
+  const plan = kpi.plannedValue != null ? formatKpiValue(Math.round(kpi.plannedValue * 100) / 100, kpi.unit) : "n/a";
   return `${kpi.gapPercent ?? 0}% behind plan: ${latest} against ${plan}`;
 }
 

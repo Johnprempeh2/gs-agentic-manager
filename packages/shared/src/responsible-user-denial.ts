@@ -73,7 +73,7 @@ export function describeResponsibleUserDenial(
       description:
         `This run acts on behalf of ${who}, but that account was removed or ` +
         `deactivated, so its permissions can no longer be evaluated. The agent's ` +
-        `own permissions are not enough on their own — every action still requires ` +
+        `own permissions are not enough on their own: every action still requires ` +
         `an active responsible user.`,
       recommendedAction:
         `Mark the work blocked and reassign a responsible user (or reactivate the ` +
@@ -86,8 +86,8 @@ export function describeResponsibleUserDenial(
     tone: "unauthorized",
     title: "Responsible user not authorized",
     description:
-      `This action was denied because ${who} — the user this run acts on behalf ` +
-      `of — does not have permission to perform it. The agent may be allowed, but ` +
+      `This action was denied because ${who} (the user this run acts on behalf ` +
+      `of) does not have permission to perform it. The agent may be allowed, but ` +
       `a run can never exceed the permissions of the user it acts for, so the ` +
       `action is blocked.`,
     recommendedAction:

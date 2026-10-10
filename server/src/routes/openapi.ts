@@ -763,7 +763,7 @@ const importRequestBody = (schema: z.ZodTypeAny) => ({
             description:
               "JSON-encoded import fields (include, target, collisionStrategy, and, for " +
               "the apply route, nameOverrides / selectedFiles / adapterOverrides / " +
-              "pauseAutomations). A `source` here is ignored — the source is the zip.",
+              "pauseAutomations). A `source` here is ignored: the source is the zip.",
           },
         },
         required: ["package"],
@@ -2673,7 +2673,7 @@ registry.registerPath({
   tags: ["chat-channels"],
   summary: "List chat endpoint delivery and publication activity",
   description:
-    "Returns the endpoint's recent redacted inbound-delivery and outbound-publication ledger, including whether a failed item can be replayed. Supply limit (1–100) for a page object and follow nextCursor for older activity. Requests without pagination parameters retain the legacy recent-100 array.",
+    "Returns the endpoint's recent redacted inbound-delivery and outbound-publication ledger, including whether a failed item can be replayed. Supply limit (1 to 100) for a page object and follow nextCursor for older activity. Requests without pagination parameters retain the legacy recent-100 array.",
   request: { params: z.object({ endpointId: z.string().uuid() }), query: z.object({ limit: z.coerce.number().int().min(1).max(100).optional(), cursor: z.string().max(256).optional() }) },
   responses: {
     200: r.ok(z.union([z.array(chatActivityResponseSchema), z.object({ items: z.array(chatActivityResponseSchema), nextCursor: z.string().nullable() })])),
@@ -5920,7 +5920,7 @@ registry.registerPath({
   path: "/api/companies/{companyId}/secrets/catalog",
   tags: ["secrets"],
   summary:
-    "List secret metadata (id, name, key, status) — accessible to agents",
+    "List secret metadata (id, name, key, status), accessible to agents",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
@@ -9695,7 +9695,7 @@ registry.registerPath({
   path: "/api/environments/{id}/secret-refs",
   tags: ["environments"],
   summary:
-    "Describe an environment's config secret refs (name, status, owning company — never values)",
+    "Describe an environment's config secret refs (name, status, owning company; never values)",
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: r.ok(),
@@ -10459,7 +10459,7 @@ registry.registerPath({
   path: "/api/issues",
   tags: ["issues"],
   summary:
-    "Legacy — returns error directing to /api/companies/{companyId}/issues",
+    "Legacy: returns error directing to /api/companies/{companyId}/issues",
   responses: { 400: r.badRequest },
 });
 
@@ -10575,7 +10575,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/issues",
   tags: ["companies"],
-  summary: "Legacy — returns error directing to correct issues path",
+  summary: "Legacy: returns error directing to correct issues path",
   responses: { 400: r.badRequest },
 });
 
@@ -10632,7 +10632,7 @@ registry.registerPath({
     "JSON `meta` field, or a bare `application/zip` body with the `meta` JSON in the `meta` " +
     "query parameter); the zip is unzipped server-side into the same import bundle. " +
     "Callers can opt into asynchronous processing: trusted Cloud tenants set the " +
-    "`x-paperclip-cloud-async-import: 1` header (browsers cannot — the Cloud harness proxy " +
+    "`x-paperclip-cloud-async-import: 1` header (browsers cannot, because the Cloud harness proxy " +
     "strips inbound `x-paperclip-cloud-*` headers), while board sessions use the proxy-safe " +
     "`?async=1` query parameter. Either way the server responds 202 with a job id and status " +
     "URL instead of holding the connection open for the whole import. While a board actor " +
@@ -10681,7 +10681,7 @@ registry.registerPath({
   description:
     "Raw part bytes as the request body. The upload is verified against the declared byte size " +
     "and sha256 before it is spooled; re-uploading an already completed part is a no-op success. " +
-    "Uploading against a transfer the abandoned-spool sweep has expired returns 410 — the client " +
+    "Uploading against a transfer the abandoned-spool sweep has expired returns 410, and the client " +
     "re-creates the transfer.",
   request: {
     params: z.object({ transferId: z.string(), partIndex: z.string() }),
@@ -10760,7 +10760,7 @@ registry.registerPath({
   description:
     "Assembles the spooled parts back into the original zip, verifies the whole file against " +
     "the declared hash fail-closed, and runs it through the same import pipeline as the " +
-    "single-shot upload — including the async import job machinery via the proxy-safe " +
+    "single-shot upload, including the async import job machinery via the proxy-safe " +
     "`?async=1` query parameter. The JSON body carries the same import fields as the multipart " +
     "route's `meta` field (include, target, collisionStrategy, ...). Overlapping applies of " +
     "the same transfer are serialized: exactly one proceeds, the rest get 409.",
@@ -11078,7 +11078,7 @@ registry.registerPath({
   tags: ["companies"],
   summary: "Get company import job status",
   description:
-    "A job is readable only by the actor that created it — the board user or the trusted Cloud " +
+    "A job is readable only by the actor that created it: the board user or the trusted Cloud " +
     "tenant identity from the async import submission. Any other caller gets the same 404 as an " +
     "unknown id. Jobs are held in memory: they are dropped a few minutes after finishing and do " +
     "not survive a server restart.",

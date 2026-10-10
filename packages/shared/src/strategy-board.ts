@@ -264,7 +264,7 @@ function ragWord(status: KpiRagStatus | null): string {
 }
 
 function num(value: number | null, unit: string | null): string {
-  if (value == null) return "–";
+  if (value == null) return "n/a";
   const rounded = Math.round(value * 100) / 100;
   return unit ? `${rounded} ${unit}` : String(rounded);
 }
@@ -350,10 +350,10 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
   } else {
     const titles = new Map(pack.kpis.map((kpi) => [kpi.goalId, kpi.title]));
     for (const request of pack.whyRequests) {
-      lines.push(`**${titles.get(request.goalId) ?? "KPI"}** — asked ${request.askedAt.slice(0, 10)}: ${request.question}`, "");
+      lines.push(`**${titles.get(request.goalId) ?? "KPI"}** (asked ${request.askedAt.slice(0, 10)}): ${request.question}`, "");
       if (request.answer) {
         lines.push(`> ${request.answer.replace(/\r?\n/g, "\n> ")}`, "");
-        lines.push(`— ${request.ownerName ?? "The owner"}, ${request.answeredAt?.slice(0, 10) ?? ""}`, "");
+        lines.push(`Answered by ${request.ownerName ?? "the owner"}, ${request.answeredAt?.slice(0, 10) ?? ""}`, "");
       } else {
         lines.push(`_No answer yet from ${request.ownerName ?? "the owner"}._`, "");
       }

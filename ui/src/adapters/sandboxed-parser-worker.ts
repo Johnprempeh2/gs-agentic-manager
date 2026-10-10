@@ -112,7 +112,7 @@ self.onmessage = function (e) {
       );
       factory(exports, module, _undefined, _undefined);
 
-      // Resolve exports — try module.exports first (CJS), then named exports.
+      // Resolve exports: try module.exports first (CJS), then named exports.
       const resolved = module.exports && typeof module.exports === "object" && Object.keys(module.exports).length > 0
         ? module.exports
         : exports;

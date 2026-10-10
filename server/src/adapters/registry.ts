@@ -1112,12 +1112,12 @@ export function setOverridePaused(type: string, paused: boolean): boolean {
   const wasPaused = pausedOverrides.has(type);
   if (paused && !wasPaused) {
     pausedOverrides.add(type);
-    console.log(`[gsam] Override paused for "${type}" — builtin adapter restored`);
+    console.log(`[gsam] Override paused for "${type}": builtin adapter restored`);
     return true;
   }
   if (!paused && wasPaused) {
     pausedOverrides.delete(type);
-    console.log(`[gsam] Override resumed for "${type}" — external adapter active`);
+    console.log(`[gsam] Override resumed for "${type}": external adapter active`);
     return true;
   }
   return false;
