@@ -43,7 +43,11 @@ const clientJourney: PipelineListItem = {
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
-function render(pipelines: PipelineListItem[], search = "") {
+function render(
+  pipelines: PipelineListItem[],
+  search = "",
+  stars?: { starredIds: Set<string>; onToggleStar: (pipeline: PipelineListItem, next: boolean) => void },
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -57,6 +61,8 @@ function render(pipelines: PipelineListItem[], search = "") {
           connectionsAvailable={false}
           search={search}
           onSearchChange={() => {}}
+          starredIds={stars?.starredIds}
+          onToggleStar={stars?.onToggleStar}
         />
       </MemoryRouter>,
     );
@@ -97,5 +103,24 @@ describe("PipelinesIndexTable", () => {
     expect(html.textContent).toContain("Nothing waiting");
     expect(html.querySelector('a[href="/GRE/pipelines/p1"]')).toBeNull();
     expect(html.querySelector('a[href="/GRE/pipelines/p2"]')).not.toBeNull();
+  });
+
+  it("pins a pipeline from its row without opening it, and shows pinned ones as starred", () => {
+    const onToggleStar = vi.fn();
+    const other = { ...clientJourney, id: "p2", name: "Content" };
+    const html = render([clientJourney, other], "", { starredIds: new Set(["p2"]), onToggleStar });
+
+    const pin = html.querySelector<HTMLButtonElement>('button[aria-label="Star Client journey"]')!;
+    expect(pin.getAttribute("aria-pressed")).toBe("false");
+    flushSync(() => pin.click());
+    expect(onToggleStar).toHaveBeenCalledWith(clientJourney, true);
+
+    const pinned = html.querySelector<HTMLButtonElement>('button[aria-label="Unstar Content"]')!;
+    expect(pinned.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("hides the pin star when no handler is given", () => {
+    const html = render([clientJourney]);
+    expect(html.querySelector('button[aria-label^="Star "]')).toBeNull();
   });
 });

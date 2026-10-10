@@ -37,6 +37,7 @@ import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarAgents } from "./SidebarAgents";
 import { SidebarProjects } from "./SidebarProjects";
 import { SidebarStarredProjects } from "./SidebarStarredProjects";
+import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { SidebarAgentChats } from "./SidebarAgentChats";
 import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { SidebarRecentTasks } from "./SidebarRecentTasks";
@@ -298,6 +299,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               {routinesItem}
               {workflowsItem}
               {pipelinesItem}
+              <SidebarStarredPipelines />
               {workspacesItem}
               {artifactsItem}
               {casesItem}
@@ -326,6 +328,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             {casesItem}
             {deepDiveItem}
             {pipelinesItem}
+            <SidebarStarredPipelines />
             {goalsItem}
             {boardItem}
             {workspacesItem}

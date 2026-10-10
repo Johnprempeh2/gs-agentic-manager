@@ -96,6 +96,12 @@ import {
   readCardSummary,
 } from "../lib/client-case";
 import { EmptyState } from "../components/EmptyState";
+import { StarToggle } from "../components/StarToggle";
+import {
+  starredResourceIds,
+  useResourceMembershipMutation,
+  useResourceMemberships,
+} from "../hooks/useResourceMemberships";
 import { IssueChatThread } from "../components/IssueChatThread";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -664,6 +670,11 @@ interface PipelinesIndexTableProps {
   connectionsAvailable: boolean;
   search: string;
   onSearchChange: (search: string) => void;
+  /** Pipelines the viewer has pinned to the sidebar. */
+  starredIds?: ReadonlySet<string>;
+  /** Omit to hide the pin star (e.g. read-only previews). */
+  onToggleStar?: (pipeline: PipelineListItem, nextStarred: boolean) => void;
+  starPendingId?: string | null;
 }
 
 export function PipelinesIndexTable({
@@ -673,6 +684,9 @@ export function PipelinesIndexTable({
   connectionsAvailable,
   search,
   onSearchChange,
+  starredIds,
+  onToggleStar,
+  starPendingId = null,
 }: PipelinesIndexTableProps) {
   const [collapsedPipelineIds, setCollapsedPipelineIds] = useState<Set<string>>(() => new Set());
   const [sortField, setSortField] = useState<PipelineSortField>("name");
@@ -814,7 +828,7 @@ export function PipelinesIndexTable({
                 <li
                   key={row.pipeline.id}
                   className={cn(
-                    "relative rounded-lg border border-border p-4 transition-colors hover:bg-accent/40 lg:rounded-none lg:border-x-0 lg:border-t-0 lg:px-3 lg:py-3",
+                    "group relative rounded-lg border border-border p-4 transition-colors hover:bg-accent/40 lg:rounded-none lg:border-x-0 lg:border-t-0 lg:px-3 lg:py-3",
                     PIPELINE_ROW_GRID,
                   )}
                 >
@@ -832,13 +846,25 @@ export function PipelinesIndexTable({
                       <span className="h-6 w-6 shrink-0" aria-hidden="true" />
                     ) : null}
                     <div className="min-w-0 flex-1">
-                      <Link
-                        to={`/pipelines/${row.pipeline.id}`}
-                        title={row.pipeline.description || undefined}
-                        className="block truncate text-sm font-semibold leading-6 text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring lg:after:rounded-none"
-                      >
-                        {row.pipeline.name}
-                      </Link>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <Link
+                          to={`/pipelines/${row.pipeline.id}`}
+                          title={row.pipeline.description || undefined}
+                          className="block min-w-0 truncate text-sm font-semibold leading-6 text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring lg:after:rounded-none"
+                        >
+                          {row.pipeline.name}
+                        </Link>
+                        {onToggleStar && !row.pipeline.archivedAt ? (
+                          <StarToggle
+                            size="row"
+                            className="relative z-raised"
+                            starred={starredIds?.has(row.pipeline.id) ?? false}
+                            pending={starPendingId === row.pipeline.id}
+                            resourceName={row.pipeline.name}
+                            onToggle={(next) => onToggleStar(row.pipeline, next)}
+                          />
+                        ) : null}
+                      </div>
                       {row.parentPipelineName ? (
                         <p className="truncate text-xs text-muted-foreground">Fed by {row.parentPipelineName}</p>
                       ) : null}
@@ -967,6 +993,26 @@ export function pipelineKeyFromName(name: string) {
   return slug || "pipeline";
 }
 
+/** The viewer's pinned pipelines (sidebar), via the shared resource membership stars. */
+function usePipelineStars(companyId: string | null | undefined) {
+  const memberships = useResourceMemberships(companyId);
+  const mutation = useResourceMembershipMutation(companyId);
+  const starredIds = useMemo(() => new Set(starredResourceIds(memberships.data, "pipeline")), [memberships.data]);
+  const toggle = useCallback(
+    (pipeline: Pick<PipelineListItem, "id" | "name">, nextStarred: boolean) =>
+      mutation.mutate({
+        resourceType: "pipeline",
+        resourceId: pipeline.id,
+        resourceName: pipeline.name,
+        starred: nextStarred,
+      }),
+    [mutation],
+  );
+  const pendingId =
+    mutation.isPending && mutation.variables?.resourceType === "pipeline" ? mutation.variables.resourceId : null;
+  return { starredIds, toggle, pendingId };
+}
+
 function PipelinesIndex() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -976,6 +1022,8 @@ function PipelinesIndex() {
   const [viewMode, setViewMode] = useState<PipelineViewMode>("nested");
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
   const { canCreatePipelines, rightsError } = usePipelineAdminRights(selectedCompanyId);
+  const { starredIds: starredPipelineIds, toggle: togglePipelineStar, pendingId: pipelineStarPendingId } =
+    usePipelineStars(selectedCompanyId);
 
   useEffect(() => setBreadcrumbs([{ label: "Pipelines" }]), [setBreadcrumbs]);
 
@@ -1062,6 +1110,9 @@ function PipelinesIndex() {
           connectionsAvailable={connectionsAvailable}
           search={search}
           onSearchChange={setSearch}
+          starredIds={starredPipelineIds}
+          onToggleStar={togglePipelineStar}
+          starPendingId={pipelineStarPendingId}
         />
       )}
 
@@ -1530,6 +1581,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
   const { selectedCompanyId } = useCompany();
+  const pipelineStars = usePipelineStars(selectedCompanyId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
@@ -1836,7 +1888,18 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Pipeline</p>
-          <h1 className="text-2xl font-semibold text-foreground">{pipeline.name}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-semibold text-foreground">{pipeline.name}</h1>
+            {pipeline.archivedAt ? null : (
+              <StarToggle
+                size="button"
+                starred={pipelineStars.starredIds.has(pipeline.id)}
+                pending={pipelineStars.pendingId === pipeline.id}
+                resourceName={pipeline.name}
+                onToggle={(next) => pipelineStars.toggle(pipeline, next)}
+              />
+            )}
+          </div>
           {pipeline.description ? <p className="mt-1 text-sm text-muted-foreground">{pipeline.description}</p> : null}
           <p className="mt-1 text-xs text-muted-foreground">{cases.length} total item{cases.length === 1 ? "" : "s"}</p>
           {fedByPipelines.length > 0 ? (

@@ -7,6 +7,7 @@ import {
 import { validate } from "../middleware/validate.js";
 import { getActorInfo } from "./authz.js";
 import { logActivity, resourceMembershipService } from "../services/index.js";
+import { assertEntitled } from "../services/entitlements.js";
 
 function requireBoardUserId(req: Request, res: Response): string | null {
   if (req.actor.type !== "board" || !req.actor.userId) {
@@ -22,7 +23,7 @@ async function logMembershipChange(
   input: {
     companyId: string;
     userId: string;
-    resourceType: "project" | "agent" | "document";
+    resourceType: "project" | "agent" | "document" | "pipeline";
     resourceId: string;
     state: "joined" | "left";
     starredAt: Date | null;
@@ -151,6 +152,40 @@ export function resourceMembershipRoutes(db: Db) {
           userId,
           resourceType: "document",
           resourceId: documentId,
+          state: result.state,
+          starredAt: result.starredAt,
+          changeKind: result.changeKind,
+          policySource: result.policySource,
+        });
+      }
+      const { changed: _changed, changeKind: _changeKind, policySource: _policySource, ...response } = result;
+      res.json(response);
+    },
+  );
+
+  // Pinned pipelines (sidebar). Star only, and refused while enablePipelines is off.
+  router.put(
+    "/companies/:companyId/resource-memberships/me/pipelines/:pipelineId",
+    validate(updateDocumentResourceMembershipSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const pipelineId = req.params.pipelineId as string;
+      const userId = requireBoardUserId(req, res);
+      if (!userId) return;
+      await assertEntitled(db, "enablePipelines");
+      const result = await svc.updatePipeline({
+        companyId,
+        pipelineId,
+        userId,
+        starred: req.body.starred,
+        actor: req.actor,
+      });
+      if (result.changed && result.changeKind) {
+        await logMembershipChange(db, req, {
+          companyId,
+          userId,
+          resourceType: "pipeline",
+          resourceId: pipelineId,
           state: result.state,
           starredAt: result.starredAt,
           changeKind: result.changeKind,

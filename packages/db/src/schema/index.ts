@@ -70,6 +70,7 @@ export {
 export { issueRelations } from "./issue_relations.js";
 export { routines, routineRevisions, routineTriggers, routineWebhookTestReceipts, routineRuns } from "./routines.js";
 export { pipelines, pipelineStages, pipelineTransitions, pipelineFieldDefinitions } from "./pipelines.js";
+export { pipelineMemberships } from "./pipeline_memberships.js";
 export {
   cases,
   caseAttachments,
