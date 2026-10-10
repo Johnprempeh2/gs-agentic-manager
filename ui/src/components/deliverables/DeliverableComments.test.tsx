@@ -4,28 +4,31 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DeliverableComment } from "../../api/deliverables";
+import type { CreateDeliverableCommentInput, DeliverableComment } from "../../api/deliverables";
 import { DeliverableCommentsPanel, DeliverableReviewFrame, useDeliverableReview } from "./DeliverableComments";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 // GRE-982: select a passage, draft a note, edit, delete, then send them all.
+// GRE-1223: pick an element or draw an area and comment on it the same way.
 
 const store = vi.hoisted(() => ({ comments: [] as DeliverableComment[], next: 1 }));
 
 const deliverablesApiMock = vi.hoisted(() => ({
   reviewContentPath: (companyId: string, id: string) => `/api/companies/${companyId}/deliverables/${id}/review-content`,
   listComments: vi.fn(async () => ({ comments: store.comments.map((comment) => ({ ...comment })) })),
-  createComment: vi.fn(async (_companyId: string, id: string, input: { quote: string; prefix: string | null; suffix: string | null; textStart: number | null; body: string }) => {
+  createComment: vi.fn(async (_companyId: string, id: string, input: CreateDeliverableCommentInput) => {
     const comment: DeliverableComment = {
       id: `c-${store.next++}`,
       companyId: "company-1",
       deliverableId: id,
       issueId: "issue-1",
+      anchorKind: input.anchorKind ?? "text",
       quote: input.quote,
-      prefix: input.prefix,
-      suffix: input.suffix,
-      textStart: input.textStart,
+      prefix: input.prefix ?? null,
+      suffix: input.suffix ?? null,
+      textStart: input.textStart ?? null,
+      locator: input.locator ? { ...input.locator, label: input.locator.label ?? null, box: input.locator.box ?? null } : null,
       body: input.body,
       status: "draft",
       authorUserId: "user-1",
@@ -125,7 +128,7 @@ describe("DeliverableCommentsPanel", () => {
     await click(button("Add comment"));
   }
 
-  it("drafts two notes on different passages, edits one, deletes one, then sends", async () => {
+  function render() {
     root = createRoot(container);
     act(() => {
       root.render(
@@ -134,6 +137,90 @@ describe("DeliverableCommentsPanel", () => {
         </QueryClientProvider>,
       );
     });
+  }
+
+  const lastMessage = (postMessage: { mock: { calls: unknown[][] } }, type: string) =>
+    postMessage.mock.calls.map(([message]) => message as Record<string, unknown>)
+      .filter((message) => message.type === type).at(-1);
+
+  it("picks an image, a chart and an area, comments on each, and tells the frame where to draw boxes", async () => {
+    render();
+    await flush();
+    const postMessage = vi.spyOn(frame().contentWindow!, "postMessage");
+    await fromFrame({ type: "ready" });
+    expect(lastMessage(postMessage, "pickMode")).toMatchObject({ on: false });
+
+    const pick = container.querySelector<HTMLButtonElement>("[data-testid='deliverable-comments-pick']")!;
+    expect(pick.getAttribute("aria-pressed")).toBe("false");
+    await click(pick);
+    expect(pick.getAttribute("aria-pressed")).toBe("true");
+    expect(lastMessage(postMessage, "pickMode")).toMatchObject({ on: true });
+    expect(container.textContent).toContain("drag a box over an area");
+
+    const imageLocator = { path: "body > figure:nth-of-type(1) > img:nth-of-type(1)", tag: "img", label: "Image: Q3 revenue chart", box: null };
+    await fromFrame({ type: "selection", kind: "element", quote: "Image: Q3 revenue chart", locator: imageLocator });
+    // A pick ends pick mode, and the note form names what was picked.
+    expect(lastMessage(postMessage, "pickMode")).toMatchObject({ on: false });
+    expect(container.textContent).toContain("Image: Q3 revenue chart");
+    await type(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='Comment on the picked element']")!, "Use the new colours.");
+    await click(button("Add comment"));
+    expect(deliverablesApiMock.createComment).toHaveBeenLastCalledWith("company-1", "d-1", {
+      anchorKind: "element",
+      quote: "Image: Q3 revenue chart",
+      locator: imageLocator,
+      body: "Use the new colours.",
+    });
+
+    // Alt+click works without pick mode.
+    const chartLocator = { path: "body > svg:nth-of-type(1)", tag: "svg", label: "Graphic: Costs by region", box: null };
+    await fromFrame({ type: "selection", kind: "element", quote: "Graphic: Costs by region", locator: chartLocator });
+    await type(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='Comment on the picked element']")!, "Label the axis.");
+    await click(button("Add comment"));
+
+    const areaLocator = { path: "body > section:nth-of-type(2)", tag: "section", label: "Block: Slide 2", box: { x: 0.1, y: 0.5, width: 0.25, height: 0.2 } };
+    await fromFrame({ type: "selection", kind: "region", quote: "Area on Block: Slide 2", locator: areaLocator });
+    await type(container.querySelector<HTMLTextAreaElement>("textarea[aria-label='Comment on the picked area']")!, "Too empty.");
+    await click(button("Add comment"));
+    expect(deliverablesApiMock.createComment).toHaveBeenLastCalledWith("company-1", "d-1", expect.objectContaining({
+      anchorKind: "region",
+      locator: areaLocator,
+    }));
+
+    expect(items().map((item) => item.textContent)).toEqual([
+      expect.stringContaining("Image: Q3 revenue chart"),
+      expect.stringContaining("Graphic: Costs by region"),
+      expect.stringContaining("Area on Block: Slide 2"),
+    ]);
+    const marks = lastMessage(postMessage, "marks")!.marks;
+    expect(marks).toEqual([
+      expect.objectContaining({ id: "c-1", n: 1, kind: "element", locator: imageLocator }),
+      expect.objectContaining({ id: "c-2", n: 2, kind: "element", locator: chartLocator }),
+      expect.objectContaining({ id: "c-3", n: 3, kind: "region", locator: areaLocator }),
+    ]);
+    expect(JSON.stringify(marks)).not.toContain("Use the new colours.");
+
+    // Clicking a comment scrolls the frame to its element.
+    await click(button("Show comment 2 in the document"));
+    expect(lastMessage(postMessage, "scrollTo")).toMatchObject({ id: "c-2" });
+  });
+
+  it("ignores a pick without a usable locator, and Esc in the frame stops pick mode", async () => {
+    render();
+    await flush();
+    await fromFrame({ type: "ready" });
+    await fromFrame({ type: "selection", kind: "element", quote: "Image: Logo", locator: { path: "", tag: "img" } });
+    await fromFrame({ type: "selection", kind: "region", quote: "Area on Page", locator: { path: "body", tag: "body", label: "Page" } });
+    expect(container.querySelector("textarea")).toBeNull();
+
+    const pick = container.querySelector<HTMLButtonElement>("[data-testid='deliverable-comments-pick']")!;
+    await click(pick);
+    expect(pick.getAttribute("aria-pressed")).toBe("true");
+    await fromFrame({ type: "pickCancel" });
+    expect(container.querySelector("[data-testid='deliverable-comments-pick']")!.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("drafts two notes on different passages, edits one, deletes one, then sends", async () => {
+    render();
     await flush();
 
     expect(frame().getAttribute("src")).toBe("/api/companies/company-1/deliverables/d-1/review-content");

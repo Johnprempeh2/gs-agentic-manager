@@ -162,4 +162,6 @@ export const updateDeliverableCommentSchema = z.object({
 });
 
 export type CreateDeliverableComment = z.infer<typeof createDeliverableCommentSchema>;
+/** The create body as a client sends it: `anchorKind` may be left out for text. */
+export type CreateDeliverableCommentInput = z.input<typeof createDeliverableCommentSchema>;
 export type UpdateDeliverableComment = z.infer<typeof updateDeliverableCommentSchema>;
