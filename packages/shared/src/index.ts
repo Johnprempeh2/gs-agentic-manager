@@ -47,6 +47,8 @@ export {
 export {
   buildStrategyBoardAreas,
   buildStrategyBoardKpis,
+  buildStrategyBoardOverdueActions,
+  findPlanObjective,
   countStrategyBoardKpis,
   kpiAlertAction,
   rankStrategyBoardAttention,
@@ -56,6 +58,7 @@ export {
   strategyBoardOwner,
   type StrategyBoardGoal,
   type StrategyBoardKpiInput,
+  type StrategyBoardActionTask,
 } from "./strategy-board.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
@@ -1379,6 +1382,7 @@ export type {
   GoalKpiAlert,
   GoalWhyRequest,
   StrategyBoardAgent,
+  StrategyBoardAction,
   StrategyBoardArea,
   StrategyBoardBrief,
   StrategyBoardBriefAction,

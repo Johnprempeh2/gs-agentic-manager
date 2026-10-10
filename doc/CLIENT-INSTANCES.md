@@ -164,6 +164,40 @@ Settings.
 
 It stops with an error if any check fails; the instance stays up so you can look.
 
+### Add board, Exco and owner log-ins (GRE-1189)
+
+`create` makes one client log-in, and invites stay hidden for clients. To add
+the rest (about 35 for a Strategy Board client), write a list and run `users`
+on the running instance:
+
+```sh
+# list.csv: keep it off the app, issues and pull requests; delete it when done
+name,email,role
+Ada Board,ada@example.test,board
+"Kofi, Exco",kofi@example.test,exco
+Ola Owner,ola@example.test,owner
+
+scripts/client-instance.sh users --root <root> --file list.csv --dry-run   # what it would do
+scripts/client-instance.sh users --root <root> --file list.csv
+```
+
+| role | company role | board right (GRE-1135) |
+| --- | --- | --- |
+| `board` | Viewer | `strategy:board_member`: reads the strategy, asks "Why?", makes board packs; cannot edit goals, run agents or change settings |
+| `exco` (or `admin`) | Admin | acts on the board through the Admin role |
+| `owner` | Owner | acts on the board through the Owner role; chooses the board and the chair |
+
+- The whole list is checked first. With any bad row (no name, bad email,
+  unknown role, an email listed twice) it prints each one and writes nothing.
+- It makes a backup (`pre-users-*`) before the first change.
+- Safe to run again: a log-in that is already as the list says is `unchanged`.
+  A log-in with the membership but without a right gets the right (`added`).
+- It never changes a role. A log-in that has another role, or a membership that
+  is not active, is `REFUSED`; the exit code is then 1. Change that role in the
+  app (owners do it in Company settings > Members).
+- New log-ins get a random password, printed **once** to the terminal. Give
+  them to John. The chair is chosen in the app by an owner.
+
 ## Start, stop, status
 
 ```sh

@@ -859,6 +859,7 @@ export type {
   GoalKpiAlert,
   GoalWhyRequest,
   StrategyBoardAgent,
+  StrategyBoardAction,
   StrategyBoardArea,
   StrategyBoardBrief,
   StrategyBoardBriefAction,

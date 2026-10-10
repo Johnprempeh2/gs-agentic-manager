@@ -9,6 +9,8 @@
 //   scripts/client-instance.sh limits --root <dir> [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
 //   scripts/client-instance.sh ai-route --root <dir> [--ai-route R]
 //   scripts/client-instance.sh start|stop|status|backup --root <dir>
+//   scripts/client-instance.sh users --root <dir> --file <list.csv> [--dry-run]
+//                                     (board, Exco and owner log-ins from a name,email,role list; GRE-1189)
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
 //   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
 //   scripts/client-instance.sh restore <dir> <backup file>
@@ -121,7 +123,11 @@ const USAGE = `usage:
   limits --root <dir> [limit flags]        show or change the install limits (used at the next start)
   ai-route --root <dir> [--ai-route R]     show or change the AI access route (used at the next start)
   start|stop|status|backup --root <dir>
-  verify --root <dir>                      (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+  users --root <dir> --file <list.csv> [--dry-run]
+                                           add board, Exco and owner log-ins from a list of
+                                           name,email,role (role: board, exco, admin or owner).
+                                           Safe to run again; prints new passwords once
+  verify --root <dir>                     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
   upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
   restore <dir> <backup file>
   releases <instances dir> [--releases <dir>]
@@ -197,6 +203,9 @@ function die(message: string): never {
   process.exit(1);
 }
 
+/** Flags that take no value. */
+const SWITCH_FLAGS = new Set(["dry-run"]);
+
 function parseArgs(argv: string[]) {
   const [command, ...rest] = argv;
   const opts: Record<string, string> = {};
@@ -205,6 +214,10 @@ function parseArgs(argv: string[]) {
     const arg = rest[i]!;
     if (!arg.startsWith("--")) {
       positional.push(arg);
+      continue;
+    }
+    if (SWITCH_FLAGS.has(arg.slice(2))) {
+      opts[arg.slice(2)] = "true";
       continue;
     }
     const value = rest[i + 1];
@@ -1316,6 +1329,69 @@ async function cmdVerify(root: string, state: InstanceState) {
 }
 
 /**
+ * users --root <dir> --file <list> [--dry-run] (GRE-1189): board, Exco and
+ * owner log-ins for the instance's one company. The whole list is checked
+ * first; with any bad row nothing is written. A backup is made before the
+ * first change. Passwords of new log-ins are printed once and never stored.
+ */
+async function cmdUsers(root: string, state: InstanceState, opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => !["root", "file", "dry-run"].includes(flag));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (!opts.file) die("--file <list.csv> is required (one name,email,role per line)");
+  const file = path.resolve(opts.file);
+  if (!existsSync(file)) die(`${file} not found`);
+  const dryRun = opts["dry-run"] === "true";
+  const { addClientUsers, parseClientUserList } = await import("../../server/src/services/client-users.js");
+  const { rows, problems } = parseClientUserList(readFileSync(file, "utf8"));
+  if (problems.length > 0) {
+    for (const p of problems) say(`BAD line ${p.line}: ${p.message}`);
+    die(`${plural(problems.length, "bad row", "bad rows")} in ${file}; nothing changed. Fix the list and run again.`);
+  }
+  if (rows.length === 0) die(`${file} lists nobody`);
+  if (!readPid(root)) die("the instance is not running; start it first");
+
+  const db = await import("../../packages/db/src/index.js");
+  const url = db.resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
+  let results: Awaited<ReturnType<typeof addClientUsers>>;
+  try {
+    const conn = db.createDb(url);
+    const companyRows = await conn.select({ id: db.companies.id }).from(db.companies);
+    if (companyRows.length !== 1) die(`the instance has ${companyRows.length} companies; users needs exactly one`);
+    const input = { companyId: companyRows[0]!.id, rows, makePassword: newPassword };
+    const plan = await addClientUsers(conn, { ...input, dryRun: true });
+    const changes = plan.some((r) => r.outcome === "created" || r.outcome === "added");
+    if (dryRun || !changes) {
+      results = plan;
+    } else {
+      say(`backup written: ${backupNow(root, state, "pre-users")}`);
+      results = await addClientUsers(conn, input);
+    }
+  } finally {
+    await db.closeRegisteredClients(url);
+  }
+
+  for (const r of results) say(`${r.outcome === "refused" ? "REFUSED" : r.outcome} line ${r.line} ${r.email} (${r.role}): ${r.detail}`);
+  const count = (outcome: string) => results.filter((r) => r.outcome === outcome).length;
+  say(
+    `${dryRun ? "dry run, nothing written: " : ""}${count("created")} created, ${count("added")} added to, ${count("unchanged")} unchanged, ${count("refused")} refused`,
+  );
+  const made = results.filter((r) => r.password);
+  if (made.length > 0) {
+    // Printed once. Not written to any file or log.
+    process.stdout.write(
+      [
+        "",
+        "New log-ins (shown once; give them to John, do not store them in the app, issues or logs):",
+        `  URL: ${baseUrl(state)}`,
+        ...made.map((r) => `  ${r.email} / ${r.password}   (${r.role})`),
+        "",
+      ].join("\n"),
+    );
+  }
+  if (count("refused") > 0) process.exit(1);
+}
+
+/**
  * The two edition values as KEY=VALUE lines (a `docker run --env-file`). Each
  * value is one line. Needs no instance: the Stable image check (GRE-138)
  * starts the image with the same values a client instance gets.
@@ -1492,6 +1568,8 @@ async function main() {
       return;
     case "verify":
       return cmdVerify(root, state);
+    case "users":
+      return cmdUsers(root, state, opts);
     case "limits":
       return cmdLimits(root, state, opts);
     case "offsite-init":

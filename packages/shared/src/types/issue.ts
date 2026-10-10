@@ -846,6 +846,11 @@ export interface Issue {
   tabledByUserId?: string | null;
   /** Status the task returns to when it comes back. */
   tabledFromStatus?: IssueStatus | null;
+  /**
+   * Deadline "YYYY-MM-DD" of a plan action (GRE-1188). Only tasks under a
+   * plan objective carry one; the board lists the overdue ones.
+   */
+  dueDate?: string | null;
   sourceTrust?: SourceTrustMetadata | null;
   labelIds?: string[];
   labels?: IssueLabel[];

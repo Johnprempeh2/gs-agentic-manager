@@ -4,11 +4,14 @@ import {
   boardEvidenceTrust,
   buildStrategyBoardAreas,
   buildStrategyBoardKpis,
+  buildStrategyBoardOverdueActions,
   countStrategyBoardKpis,
+  findPlanObjective,
   kpiAlertAction,
   rankStrategyBoardAttention,
   renderStrategyBoardBrief,
   renderStrategyBoardPackMarkdown,
+  type StrategyBoardActionTask,
   type StrategyBoardGoal,
 } from "./strategy-board.js";
 import type { StrategyBoardPackSnapshot } from "./types/strategy-board.js";
@@ -178,6 +181,23 @@ describe("renderStrategyBoardPackMarkdown (board pack from fixture data)", () =>
     ],
   };
   const markdown = renderStrategyBoardPackMarkdown(pack);
+  const withActions = renderStrategyBoardPackMarkdown({ ...pack, overdueActions: overdueActions() });
+
+  it("lists overdue actions under their objective and owner (GRE-1188)", () => {
+    expect(withActions).toContain("## Overdue actions");
+    expect(withActions).toContain("| Objective | Owner | Action | Due | Days overdue |");
+    const first = withActions.indexOf("| Keep our people | Ama Mensah | GRE-2 Run stay interviews | 2026-09-30 | 10 |");
+    const second = withActions.indexOf("| Keep our people | HR evidence agent | GRE-1 Publish the hiring plan | 2026-10-01 | 9 |");
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(first);
+    expect(withActions).not.toContain("Fix the printer");
+    const none = renderStrategyBoardPackMarkdown({ ...pack, overdueActions: [] });
+    expect(none).toContain("No plan action is past its due date.");
+  });
+
+  it("leaves the overdue section out of packs made before due dates existed", () => {
+    expect(markdown).not.toContain("## Overdue actions");
+  });
 
   it("has the title, period and KPI counts", () => {
     expect(markdown).toContain("# Q3 2026 board pack");
@@ -256,5 +276,71 @@ describe("renderStrategyBoardBrief (what the board agent answers from, GRE-1186)
     expect(boardEvidenceTrust("agent_verified")).toBe("agent-checked");
     expect(boardEvidenceTrust("system")).toBe("system");
     expect(boardEvidenceTrust(null)).toBe("no reading");
+  });
+});
+
+/** Plan actions: tasks linked to an objective, an initiative under it, a KPI, or nothing on the plan. */
+const ACTION_GOALS: StrategyBoardGoal[] = [
+  ...GOALS,
+  goal({ id: "init-stay", title: "Stay interviews", kind: "initiative", parentId: "obj-retain" }),
+  goal({ id: "company", title: "Company goal" }),
+];
+
+function task(values: Partial<StrategyBoardActionTask> & Pick<StrategyBoardActionTask, "id" | "title">): StrategyBoardActionTask {
+  return { identifier: null, status: "todo", goalId: null, dueDate: null, assigneeUserId: null, assigneeAgentId: null, ...values };
+}
+
+const TASKS: StrategyBoardActionTask[] = [
+  task({ id: "t-hiring", identifier: "GRE-1", title: "Publish the hiring plan", goalId: "obj-retain", dueDate: "2026-10-01", assigneeAgentId: "a-hr" }),
+  task({ id: "t-stay", identifier: "GRE-2", title: "Run stay interviews", goalId: "init-stay", dueDate: "2026-09-30", assigneeUserId: "u-coo" }),
+  task({ id: "t-kpi", identifier: "GRE-3", title: "Check the retention data", goalId: "kpi-retention", dueDate: "2026-10-05", assigneeUserId: "u-coo" }),
+  task({ id: "t-today", title: "Due today", goalId: "obj-retain", dueDate: TODAY }),
+  task({ id: "t-later", title: "Due later", goalId: "obj-retain", dueDate: "2026-11-01" }),
+  task({ id: "t-done", title: "Done late", goalId: "obj-retain", dueDate: "2026-09-01", status: "done" }),
+  task({ id: "t-cancelled", title: "Cancelled late", goalId: "obj-retain", dueDate: "2026-09-01", status: "cancelled" }),
+  task({ id: "t-off-plan", title: "Fix the printer", goalId: "company", dueDate: "2026-09-01" }),
+  task({ id: "t-no-goal", title: "No goal", dueDate: "2026-09-01" }),
+  task({ id: "t-area", title: "Under a CSF only", goalId: "csf-market", dueDate: "2026-09-01" }),
+];
+
+function overdueActions() {
+  return buildStrategyBoardOverdueActions({ goals: ACTION_GOALS, tasks: TASKS, ownerNames: NAMES, today: TODAY });
+}
+
+describe("overdue plan actions (GRE-1188)", () => {
+  it("finds the plan objective of a goal: itself, or the nearest objective above it", () => {
+    const byId = new Map(ACTION_GOALS.map((g) => [g.id, g]));
+    expect(findPlanObjective("obj-retain", byId)?.id).toBe("obj-retain");
+    expect(findPlanObjective("init-stay", byId)?.id).toBe("obj-retain");
+    expect(findPlanObjective("kpi-retention", byId)?.id).toBe("obj-retain");
+    expect(findPlanObjective("csf-people", byId)).toBeNull();
+    expect(findPlanObjective("company", byId)).toBeNull();
+    expect(findPlanObjective(null, byId)).toBeNull();
+    const cancelled = new Map(byId);
+    cancelled.set("obj-retain", { ...byId.get("obj-retain")!, status: "cancelled" });
+    expect(findPlanObjective("init-stay", cancelled)).toBeNull();
+  });
+
+  it("lists open plan tasks past their due date, under objective and owner, most overdue first", () => {
+    const actions = overdueActions();
+    expect(actions.map((a) => a.issueId)).toEqual(["t-stay", "t-kpi", "t-hiring"]);
+    expect(actions[0]).toMatchObject({
+      identifier: "GRE-2",
+      dueDate: "2026-09-30",
+      daysOverdue: 10,
+      objectiveId: "obj-retain",
+      objectiveTitle: "Keep our people",
+      areaId: "csf-people",
+      areaTitle: "Employer of choice",
+      owner: { type: "user", id: "u-coo", name: "Ama Mensah" },
+    });
+    expect(actions[2].owner).toEqual({ type: "agent", id: "a-hr", name: "HR evidence agent" });
+  });
+
+  it("leaves out tasks not on the plan, not yet due, done or cancelled", () => {
+    const ids = overdueActions().map((a) => a.issueId);
+    for (const id of ["t-today", "t-later", "t-done", "t-cancelled", "t-off-plan", "t-no-goal", "t-area"]) {
+      expect(ids).not.toContain(id);
+    }
   });
 });
