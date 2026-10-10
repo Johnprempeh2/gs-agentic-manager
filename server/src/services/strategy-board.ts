@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, or } from "drizzle-orm";
 import {
   agents,
   authUsers,
@@ -8,6 +8,7 @@ import {
   goalKpiReadings,
   goals,
   goalWhyRequests,
+  issues,
   principalPermissionGrants,
   strategyBoardPacks,
   type Db,
@@ -15,6 +16,7 @@ import {
 import {
   buildStrategyBoardAreas,
   buildStrategyBoardKpis,
+  buildStrategyBoardOverdueActions,
   countStrategyBoardKpis,
   kpiAlertAction,
   rankStrategyBoardAttention,
@@ -27,6 +29,7 @@ import {
   type KpiReadingSource,
   type KpiStatus,
   type SetStrategyBoardMembers,
+  type StrategyBoardActionTask,
   type StrategyBoardMember,
   type StrategyBoardPack,
   type StrategyBoardPackListItem,
@@ -158,9 +161,13 @@ export function strategyBoardService(db: Db) {
     return null;
   }
 
-  async function loadOwnerNames(companyGoals: readonly GoalWithProgress[]) {
-    const userIds = [...new Set(companyGoals.map((goal) => goal.ownerUserId).filter((id): id is string => !!id))];
-    const agentIds = [...new Set(companyGoals.map((goal) => goal.ownerAgentId).filter((id): id is string => !!id))];
+  async function loadOwnerNames(companyGoals: readonly GoalWithProgress[], tasks: readonly StrategyBoardActionTask[] = []) {
+    const userIds = [
+      ...new Set([...companyGoals.map((goal) => goal.ownerUserId), ...tasks.map((task) => task.assigneeUserId)].filter((id): id is string => !!id)),
+    ];
+    const agentIds = [
+      ...new Set([...companyGoals.map((goal) => goal.ownerAgentId), ...tasks.map((task) => task.assigneeAgentId)].filter((id): id is string => !!id)),
+    ];
     const [userRows, agentRows] = await Promise.all([
       userIds.length ? db.select({ id: authUsers.id, name: authUsers.name }).from(authUsers).where(inArray(authUsers.id, userIds)) : [],
       agentIds.length ? db.select({ id: agents.id, name: agents.name }).from(agents).where(inArray(agents.id, agentIds)) : [],
@@ -191,11 +198,36 @@ export function strategyBoardService(db: Db) {
     return counts;
   }
 
+  /** Open, visible tasks with a due date before `today` (GRE-1188); the builder keeps those on the plan. */
+  async function pastDueTasks(companyId: string, today: string): Promise<StrategyBoardActionTask[]> {
+    return db
+      .select({
+        id: issues.id,
+        identifier: issues.identifier,
+        title: issues.title,
+        status: issues.status,
+        goalId: issues.goalId,
+        dueDate: issues.dueDate,
+        assigneeUserId: issues.assigneeUserId,
+        assigneeAgentId: issues.assigneeAgentId,
+      })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, companyId),
+          isNotNull(issues.dueDate),
+          lt(issues.dueDate, today),
+          notInArray(issues.status, ["done", "cancelled"]),
+          isNull(issues.hiddenAt),
+        ),
+      );
+  }
+
   /** The board's picture of the plan today, compared with the last board pack. */
   async function buildBoard(companyId: string, today = todayIso()) {
-    const companyGoals = await goalsSvc.listWithProgress(companyId);
+    const [companyGoals, dueTasks] = await Promise.all([goalsSvc.listWithProgress(companyId), pastDueTasks(companyId, today)]);
     const [ownerNames, lastPack, openWhy, unsentAlerts] = await Promise.all([
-      loadOwnerNames(companyGoals),
+      loadOwnerNames(companyGoals, dueTasks),
       latestPackRow(companyId),
       openWhyCounts(companyId),
       db
@@ -226,6 +258,7 @@ export function strategyBoardService(db: Db) {
     });
     return {
       kpis,
+      overdueActions: buildStrategyBoardOverdueActions({ goals: companyGoals, tasks: dueTasks, ownerNames, today }),
       areas: buildStrategyBoardAreas(companyGoals, rollup, ownerNames),
       lastPack,
       unsentAlerts,
@@ -251,6 +284,7 @@ export function strategyBoardService(db: Db) {
       counts: countStrategyBoardKpis(board.kpis),
       attention: rankStrategyBoardAttention(board.kpis),
       areas: board.areas,
+      overdueActions: board.overdueActions,
       changes: board.lastPack ? board.kpis.filter((kpi) => kpi.changedSinceSnapshot) : [],
       kpis: board.kpis,
       unsentAlerts: board.unsentAlerts,
@@ -484,6 +518,7 @@ export function strategyBoardService(db: Db) {
       counts: countStrategyBoardKpis(board.kpis),
       areas: board.areas,
       kpis: board.kpis,
+      overdueActions: board.overdueActions,
       readings: readings.map((reading) => ({
         goalId: reading.goalId,
         value: reading.value,

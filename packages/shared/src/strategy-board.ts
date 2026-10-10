@@ -1,6 +1,7 @@
 import { GOAL_KIND_LABELS, KPI_READING_SOURCE_LABELS, type GoalKind, type KpiRagStatus, type KpiReadingSource } from "./constants.js";
 import type { GoalRagRollup, KpiStatus } from "./goal-kpi-status.js";
 import type {
+  StrategyBoardAction,
   StrategyBoardArea,
   StrategyBoardKpi,
   StrategyBoardOwner,
@@ -108,6 +109,88 @@ export function buildStrategyBoardKpis(input: StrategyBoardKpiInput): StrategyBo
     });
   }
   return out;
+}
+
+/**
+ * The plan objective a goal belongs to: the goal itself when it is an
+ * objective, else its nearest objective ancestor. Null when the goal is not
+ * under a live objective (GRE-1188: only such tasks carry a due date).
+ */
+export function findPlanObjective(
+  goalId: string | null,
+  byId: ReadonlyMap<string, StrategyBoardGoal>,
+): StrategyBoardGoal | null {
+  const goal = goalId ? byId.get(goalId) ?? null : null;
+  if (!goal) return null;
+  const objective = goal.kind === "objective" ? goal : ancestorsOf(goal, byId).objective;
+  if (!objective || objective.status === "cancelled" || objective.status === "draft") return null;
+  return objective;
+}
+
+/** A task with a due date, as the board reads it. */
+export interface StrategyBoardActionTask {
+  id: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+  goalId: string | null;
+  dueDate: string | null;
+  assigneeUserId: string | null;
+  assigneeAgentId: string | null;
+}
+
+const CLOSED_TASK_STATUSES: ReadonlySet<string> = new Set(["done", "cancelled"]);
+
+function ownerSortName(owner: StrategyBoardOwner | null): string {
+  return owner ? owner.name ?? "\uffff" : "\uffff\uffff";
+}
+
+/**
+ * Overdue plan actions (GRE-1188): open tasks under a plan objective whose
+ * due date is before `today`. Tasks not under the plan are left out. Ordered
+ * by objective in plan order, then owner, then most overdue first.
+ */
+export function buildStrategyBoardOverdueActions(input: {
+  goals: readonly StrategyBoardGoal[];
+  tasks: readonly StrategyBoardActionTask[];
+  ownerNames: StrategyBoardKpiInput["ownerNames"];
+  /** "YYYY-MM-DD" */
+  today: string;
+}): StrategyBoardAction[] {
+  const byId = new Map(input.goals.map((goal) => [goal.id, goal]));
+  const planOrder = new Map(input.goals.map((goal, index) => [goal.id, index]));
+  const todayDay = dayNumber(input.today);
+  const out: StrategyBoardAction[] = [];
+  for (const task of input.tasks) {
+    if (!task.dueDate || CLOSED_TASK_STATUSES.has(task.status)) continue;
+    const daysOverdue = todayDay - dayNumber(task.dueDate);
+    if (daysOverdue <= 0) continue;
+    const objective = findPlanObjective(task.goalId, byId);
+    if (!objective) continue;
+    const { area } = ancestorsOf(objective, byId);
+    out.push({
+      issueId: task.id,
+      identifier: task.identifier,
+      title: task.title,
+      status: task.status,
+      dueDate: task.dueDate.slice(0, 10),
+      daysOverdue,
+      objectiveId: objective.id,
+      objectiveTitle: objective.title,
+      areaId: area?.id ?? null,
+      areaTitle: area?.title ?? null,
+      owner: task.assigneeUserId
+        ? { type: "user", id: task.assigneeUserId, name: input.ownerNames.users.get(task.assigneeUserId) ?? null }
+        : task.assigneeAgentId
+          ? { type: "agent", id: task.assigneeAgentId, name: input.ownerNames.agents.get(task.assigneeAgentId) ?? null }
+          : null,
+    });
+  }
+  return out.sort((a, b) =>
+    (planOrder.get(a.objectiveId) ?? 0) - (planOrder.get(b.objectiveId) ?? 0)
+    || ownerSortName(a.owner).localeCompare(ownerSortName(b.owner))
+    || b.daysOverdue - a.daysOverdue
+    || a.title.localeCompare(b.title));
 }
 
 const STATUS_WEIGHT: Record<KpiRagStatus, number> = { red: 0, amber: 1, green: 2 };
@@ -241,6 +324,23 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
       );
     }
     lines.push("");
+  }
+
+  // Packs made before GRE-1188 have no overdue actions recorded.
+  if (pack.overdueActions) {
+    lines.push("## Overdue actions", "");
+    if (pack.overdueActions.length === 0) {
+      lines.push("No plan action is past its due date.", "");
+    } else {
+      lines.push("| Objective | Owner | Action | Due | Days overdue |", "| --- | --- | --- | --- | --- |");
+      for (const action of pack.overdueActions) {
+        const label = action.identifier ? `${action.identifier} ${action.title}` : action.title;
+        lines.push(
+          `| ${cell(action.objectiveTitle)} | ${cell(ownerName(action.owner))} | ${cell(label)} | ${action.dueDate} | ${action.daysOverdue} |`,
+        );
+      }
+      lines.push("");
+    }
   }
 
   lines.push("## Owner explanations", "");
