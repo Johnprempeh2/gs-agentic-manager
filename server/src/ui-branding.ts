@@ -1,3 +1,6 @@
+import type { PartnerBranding } from "@greatstone/shared";
+import { getPartnerBranding } from "./services/partner-branding.js";
+
 const FAVICON_BLOCK_START = "<!-- GSAM_FAVICON_START -->";
 const FAVICON_BLOCK_END = "<!-- GSAM_FAVICON_END -->";
 const RUNTIME_BRANDING_BLOCK_START = "<!-- GSAM_RUNTIME_BRANDING_START -->";
@@ -231,13 +234,121 @@ function replaceMarkedBlock(html: string, startMarker: string, endMarker: string
   return `${before}${indentedContent}${after}`;
 }
 
+const DEFAULT_PRODUCT_NAME = "GS Agentic Manager";
+
+function escapeHtmlText(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+/** A double-quoted JS string literal that is also safe inside an inline <script>. */
+function jsStringLiteral(value: string): string {
+  return JSON.stringify(value).replaceAll("<", "\\u003c");
+}
+
+export const PARTNER_BRANDING_META_NAME = "gsam-partner-branding";
+
+/**
+ * Partner branding in the HTML head: the brand as JSON in a meta tag (the UI
+ * reads it synchronously, so the Greatstone brand never flashes before
+ * `/api/health` loads) and theme overrides. The selectors outrank the
+ * stylesheet's `:root` and `.dark` blocks whatever order they load in, and
+ * each mode is set only when the colour passed that mode's contrast check.
+ */
+export function renderPartnerBrandingHead(branding: PartnerBranding | null): string {
+  if (!branding) return "";
+  const tags = [
+    `<meta name="${PARTNER_BRANDING_META_NAME}" content="${escapeHtmlAttribute(JSON.stringify(branding))}" />`,
+  ];
+  const blocks: string[] = [];
+  for (const [mode, selector] of [["light", "html:root:not(.dark)"], ["dark", "html.dark"]] as const) {
+    const color = branding.colors[mode];
+    if (!color) continue;
+    blocks.push(
+      `${selector}{--primary:${color.primary};--primary-foreground:${color.primaryForeground};` +
+        `--sidebar-primary:${color.primary};--sidebar-primary-foreground:${color.primaryForeground};` +
+        `--ring:${color.primary};}`,
+    );
+  }
+  if (blocks.length) tags.push(`<style id="gsam-partner-theme">${blocks.join("")}</style>`);
+  return tags.join("\n");
+}
+
+/**
+ * Swap the product name in the HTML shell (tab title, phone install title and
+ * the startup notice) so the partner name shows before the app's JS loads.
+ */
+export function applyPartnerProductName(html: string, name: string | null): string {
+  if (!name) return html;
+  return html
+    .replace(`<title>${DEFAULT_PRODUCT_NAME}</title>`, `<title>${escapeHtmlText(name)}</title>`)
+    .replace(
+      `<meta name="apple-mobile-web-app-title" content="${DEFAULT_PRODUCT_NAME}" />`,
+      `<meta name="apple-mobile-web-app-title" content="${escapeHtmlAttribute(name)}" />`,
+    )
+    .replaceAll(`>${DEFAULT_PRODUCT_NAME} couldn’t start<`, `>${escapeHtmlText(name)} couldn’t start<`)
+    .replace(
+      new RegExp(`"${DEFAULT_PRODUCT_NAME} (couldn’t start|is taking longer to load)"`, "g"),
+      (_match, rest: string) => jsStringLiteral(`${name} ${rest}`),
+    );
+}
+
+function renderPartnerFaviconLinks(logoUrl: string): string {
+  return `<link rel="icon" href="${escapeHtmlAttribute(logoUrl)}" />`;
+}
+
 export function applyUiBranding(html: string, env: NodeJS.ProcessEnv = process.env): string {
   const branding = getWorktreeUiBranding(env);
-  const withFavicon = replaceMarkedBlock(html, FAVICON_BLOCK_START, FAVICON_BLOCK_END, renderFaviconLinks(branding));
-  return replaceMarkedBlock(
+  const partner = getPartnerBranding(env);
+  // A worktree preview keeps its own coloured favicon so it is never mistaken
+  // for the instance it was copied from.
+  const faviconLinks = !branding.enabled && partner?.logoUrl
+    ? renderPartnerFaviconLinks(partner.logoUrl)
+    : renderFaviconLinks(branding);
+  const withFavicon = replaceMarkedBlock(html, FAVICON_BLOCK_START, FAVICON_BLOCK_END, faviconLinks);
+  const runtimeBlock = [renderRuntimeBrandingMeta(branding), renderPartnerBrandingHead(partner)]
+    .filter(Boolean)
+    .join("\n");
+  const withRuntime = replaceMarkedBlock(
     withFavicon,
     RUNTIME_BRANDING_BLOCK_START,
     RUNTIME_BRANDING_BLOCK_END,
-    renderRuntimeBrandingMeta(branding),
+    runtimeBlock,
   );
+  const withTouchIcon = partner?.logoUrl
+    ? withRuntime.replace(
+      '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />',
+      `<link rel="apple-touch-icon" href="${escapeHtmlAttribute(partner.logoUrl)}" />`,
+    )
+    : withRuntime;
+  return applyPartnerProductName(withTouchIcon, partner?.name ?? null);
+}
+
+const DEFAULT_MANIFEST_ICONS = [
+  { src: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png" },
+  { src: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png" },
+  { src: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+];
+
+/**
+ * The web app manifest (the name and icon a phone uses when the app is added
+ * to the home screen) for a partner-branded instance. Null when the partner
+ * set neither a name nor a logo, so the static `ui/public/site.webmanifest`
+ * is served unchanged.
+ */
+export function renderPartnerWebManifest(partner: PartnerBranding | null): string | null {
+  if (!partner || (!partner.name && !partner.logoUrl)) return null;
+  const name = partner.name ?? DEFAULT_PRODUCT_NAME;
+  return JSON.stringify({
+    id: "/",
+    name,
+    short_name: partner.name ?? "GS Agents",
+    description: "Run teams of AI agents: goals, tasks, budgets and approvals in one place.",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    orientation: "portrait",
+    theme_color: "#121212",
+    background_color: "#121212",
+    icons: partner.logoUrl ? [{ src: partner.logoUrl, sizes: "any" }] : DEFAULT_MANIFEST_ICONS,
+  }, null, 2);
 }

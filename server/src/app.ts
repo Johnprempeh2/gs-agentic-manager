@@ -155,7 +155,8 @@ import { remoteAgentProfileRoutes } from "./routes/remote-agent-profiles.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { readBrandedStaticIndexHtml } from "./static-index-html.js";
 import { staticUiCacheControl } from "./static-ui-cache.js";
-import { applyUiBranding } from "./ui-branding.js";
+import { applyUiBranding, renderPartnerWebManifest } from "./ui-branding.js";
+import { getPartnerBranding } from "./services/partner-branding.js";
 import { logger } from "./middleware/logger.js";
 import {
   DEFAULT_LOCAL_PLUGIN_DIR,
@@ -1033,6 +1034,17 @@ export async function createApp(
       localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
     }),
   );
+
+  // Partner branding: parsed here at startup so a rejected value (a bad logo
+  // URL, a colour that fails contrast) is warned about at boot, not on the
+  // first page view. A branded instance serves its own phone manifest; an
+  // unbranded one falls through to the static file.
+  const partnerManifest = renderPartnerWebManifest(getPartnerBranding());
+  if (partnerManifest) {
+    app.get("/site.webmanifest", (_req, res) => {
+      res.type("application/manifest+json").set("Cache-Control", "no-cache").send(partnerManifest);
+    });
+  }
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   if (opts.uiMode === "static") {
