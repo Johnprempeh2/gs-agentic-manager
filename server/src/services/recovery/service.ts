@@ -239,6 +239,8 @@ type ResolvedDependencyWakeBackstopOptions = {
   runId?: string | null;
   companyId?: string | null;
   blockerIssueId?: string | null;
+  /** Limit both passes to these dependent issues (event path after a blocker change). */
+  issueIds?: string[] | null;
   source?: ResolvedDependencyWakeBackstopSource;
 };
 
@@ -5972,7 +5974,9 @@ export function recoveryService(
       source === "workspace.finalize"
         ? "workspace_finalize_reconciliation"
         : "issue_graph_liveness_reconciliation";
-    const useCursor = !opts?.blockerIssueId;
+    const scopedIssueIds = opts?.issueIds ?? null;
+    if (scopedIssueIds && scopedIssueIds.length === 0) return result;
+    const useCursor = !opts?.blockerIssueId && !scopedIssueIds;
 
     const queryCandidates = (afterIssueId: string | null) => {
       const filters = [
@@ -5982,6 +5986,7 @@ export function recoveryService(
         sql`${issues.assigneeAgentId} is not null`,
       ];
       if (opts?.companyId) filters.push(eq(issues.companyId, opts.companyId));
+      if (scopedIssueIds) filters.push(inArray(issues.id, scopedIssueIds));
       if (afterIssueId) filters.push(gt(issues.id, afterIssueId));
 
       if (opts?.blockerIssueId) {
@@ -6219,6 +6224,167 @@ export function recoveryService(
       );
     }
 
+    if (!opts?.blockerIssueId) {
+      const cleared = await reconcileClearedDependencyWakes({
+        companyId: opts?.companyId ?? null,
+        issueIds: scopedIssueIds,
+        runId: opts?.runId ?? null,
+      });
+      result.checked += cleared.checked;
+      result.healed += cleared.healed;
+      result.issueIds.push(...cleared.issueIds);
+    }
+
+    return result;
+  }
+
+  // GRE-1082: a run cancelled (or a retry suppressed) because dependencies were
+  // still blocked promises to wake the assignee when blockers resolve. Only a
+  // blocker reaching `done` used to keep that promise, so a blocker that stopped
+  // counting any other way (relation removed, blockedByIssueIds edited, blocker
+  // deleted) stranded the issue. This keys on the promise itself: the latest
+  // run on the issue was cancelled for blocked dependencies and the issue is now
+  // dependency ready. The idempotency key is per cancelled run, so each
+  // cancellation earns exactly one wake; the next run clears the condition.
+  async function reconcileClearedDependencyWakes(opts: {
+    companyId: string | null;
+    issueIds: string[] | null;
+    runId: string | null;
+  }) {
+    const result = { checked: 0, healed: 0, issueIds: [] as string[] };
+    const filters = [
+      inArray(issues.status, ["todo", "in_progress", "blocked"]),
+      isNull(issues.conversationAgentId),
+      visibleIssueCondition(),
+      sql`${issues.assigneeAgentId} is not null`,
+      isNull(issues.monitorNextCheckAt),
+      // Cheap pre-filter: the newest run on the issue is a dependency cancel.
+      sql`(
+        select ${heartbeatRuns.errorCode} from ${heartbeatRuns}
+        where ${heartbeatRuns.companyId} = ${issues.companyId}
+          and ${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issues.id}::text
+        order by ${heartbeatRuns.createdAt} desc limit 1
+      ) = 'issue_dependencies_blocked'`,
+    ];
+    if (opts.companyId) filters.push(eq(issues.companyId, opts.companyId));
+    if (opts.issueIds) filters.push(inArray(issues.id, opts.issueIds));
+    // ponytail: no cursor; the pre-filter keeps this set tiny. Page it if it ever is not.
+    const candidates = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        assigneeAgentId: issues.assigneeAgentId,
+      })
+      .from(issues)
+      .where(and(...filters))
+      .orderBy(asc(issues.id))
+      .limit(RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT);
+    result.checked = candidates.length;
+
+    for (const candidate of candidates) {
+      const agentId = candidate.assigneeAgentId;
+      if (!agentId) continue;
+      const companyId = candidate.companyId;
+      const readiness = (
+        await issuesSvc.listDependencyReadiness(companyId, [candidate.id])
+      ).get(candidate.id);
+      if (readiness && !readiness.isDependencyReady) continue;
+      const blockerIssueIds = readiness?.blockerIssueIds ?? [];
+
+      const cancelledRun = await db
+        .select({
+          id: heartbeatRuns.id,
+          errorCode: heartbeatRuns.errorCode,
+          createdAt: heartbeatRuns.createdAt,
+        })
+        .from(heartbeatRuns)
+        .where(
+          and(
+            eq(heartbeatRuns.companyId, companyId),
+            sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${candidate.id}`,
+          ),
+        )
+        .orderBy(desc(heartbeatRuns.createdAt))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (cancelledRun?.errorCode !== "issue_dependencies_blocked") continue;
+
+      // The cancelled run's creation time stamps this transition, so one
+      // cancellation maps to one key and a later cancellation earns a new wake.
+      const keyInput = {
+        dependentIssueId: candidate.id,
+        blockerIssueIds,
+        blockedTransitionAt: cancelledRun.createdAt,
+      };
+      const idempotencyKey = buildIssueBlockersResolvedWakeStateKey(keyInput);
+      if (
+        (await findExistingIssueBlockersResolvedWakeForReadyState(db, {
+          companyId,
+          ...keyInput,
+        })) ||
+        (await hasActiveExecutionPath(companyId, candidate.id, agentId)) ||
+        (await hasQueuedIssueWake(companyId, candidate.id, agentId)) ||
+        (await hasPendingWakeInteraction(companyId, candidate.id)) ||
+        (await isAutomaticRecoverySuppressedByPauseHold(
+          db,
+          companyId,
+          candidate.id,
+          treeControlSvc,
+        ))
+      ) {
+        continue;
+      }
+
+      try {
+        const wake = await deps.enqueueWakeup(agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+          payload: {
+            issueId: candidate.id,
+            resolvedBlockerIssueId: blockerIssueIds[0] ?? null,
+            blockerIssueIds,
+            cancelledRunId: cancelledRun.id,
+            backstop: "dependency_blockers_cleared",
+          },
+          idempotencyKey,
+          requestedByActorType: "system",
+          requestedByActorId: "issue_graph_liveness_backstop",
+          contextSnapshot: {
+            issueId: candidate.id,
+            taskId: candidate.id,
+            wakeReason: ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+            source: "issue.blockers_cleared",
+            blockerIssueIds,
+          },
+        });
+        if (!wake) continue;
+        result.healed += 1;
+        result.issueIds.push(candidate.id);
+        await logActivity(db, {
+          companyId,
+          actorType: "system",
+          actorId: "issue_graph_liveness_backstop",
+          agentId,
+          runId: opts.runId,
+          action: "issue.blockers_resolved_wake_emitted",
+          entityType: "issue",
+          entityId: candidate.id,
+          details: {
+            source: "issue.blockers_cleared",
+            wakeupRunId: wake.id,
+            idempotencyKey,
+            cancelledRunId: cancelledRun.id,
+            blockerIssueIds,
+          },
+        });
+      } catch (err) {
+        logger.warn(
+          { err, issueId: candidate.id, agentId, idempotencyKey },
+          "failed to enqueue dependency wake after blockers cleared",
+        );
+      }
+    }
     return result;
   }
 

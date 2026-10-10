@@ -15691,8 +15691,9 @@ export function issueRoutes(
           }
         }
 
+        const wakeDeliveries: Promise<unknown>[] = [];
         for (const { agentId, wakeup } of wakeups.values()) {
-          heartbeat
+          wakeDeliveries.push(heartbeat
             .wakeup(agentId, wakeup)
             .then((wakeRun) => {
               if (wakeup.reason !== ISSUE_BLOCKERS_RESOLVED_WAKE_REASON) return;
@@ -15733,7 +15734,22 @@ export function issueRoutes(
                 { err, issueId: issue.id, agentId },
                 "failed to wake agent on issue update",
               ),
-            );
+            ));
+        }
+
+        // GRE-1082: a blocker can stop counting without reaching `done`
+        // (blockedByIssueIds edited, blocker status changed). Wake any issue on
+        // either side of this edit whose dependency cancel is now cleared. Runs
+        // after the wakes above so a blocker completion is never woken twice.
+        if (
+          Array.isArray(req.body.blockedByIssueIds) ||
+          existing.status !== issue.status
+        ) {
+          await Promise.allSettled(wakeDeliveries);
+          await wakeIssuesWithClearedBlockers(issue.companyId, [
+            issue.id,
+            ...(await listDependentIssueIds(issue.companyId, issue.id)),
+          ]);
         }
       })();
 
@@ -15754,6 +15770,25 @@ export function issueRoutes(
     },
   );
 
+  async function listDependentIssueIds(companyId: string, blockerIssueId: string) {
+    try {
+      const dependents = await svc.listOpenBlockedDependents(companyId, blockerIssueId);
+      return (dependents ?? []).map((dependent: { id: string }) => dependent.id);
+    } catch (err) {
+      logger.warn({ err, blockerIssueId }, "failed to list dependents of blocker");
+      return [];
+    }
+  }
+
+  async function wakeIssuesWithClearedBlockers(companyId: string, issueIds: string[]) {
+    if (issueIds.length === 0) return;
+    try {
+      await heartbeat.reconcileResolvedDependencyWakes({ companyId, issueIds });
+    } catch (err) {
+      logger.warn({ err, issueIds }, "failed to wake issues whose blockers cleared");
+    }
+  }
+
   router.delete("/issues/:id", async (req, res) => {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(
@@ -15765,12 +15800,15 @@ export function issueRoutes(
     if (!existing) return;
     if (!(await assertAgentIssueMutationAllowed(req, res, existing))) return;
     const attachments = await svc.listAttachments(id);
+    const dependentIssueIds = await listDependentIssueIds(existing.companyId, id);
 
     const issue = await svc.remove(id);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
     }
+    // GRE-1082: deleting a blocker removes its relations by cascade.
+    void wakeIssuesWithClearedBlockers(issue.companyId, dependentIssueIds);
 
     for (const attachment of attachments) {
       try {
