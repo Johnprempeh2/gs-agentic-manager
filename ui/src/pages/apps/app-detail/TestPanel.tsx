@@ -146,7 +146,7 @@ export function ActionTestDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-2xl">
+      <DialogContent scrollBody className="max-h-(--sz-85vh) sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Test {title}</DialogTitle>
           <DialogDescription>

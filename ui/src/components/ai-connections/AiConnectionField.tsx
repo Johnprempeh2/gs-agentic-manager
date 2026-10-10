@@ -113,7 +113,7 @@ export function AiConnectionField({
           if (!open) setPendingAdoption(undefined);
         }}
       >
-        <DialogContent className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-2xl" onCloseAutoFocus={restoreFocus}>
+        <DialogContent scrollBody className="max-h-(--sz-85vh) sm:max-w-2xl" onCloseAutoFocus={restoreFocus}>
           <DialogHeader>
             <DialogTitle>Adopt Connections for {agentName}</DialogTitle>
             <DialogDescription>
@@ -152,7 +152,7 @@ export function AiConnectionField({
         </DialogContent>
       </Dialog>
       <Dialog open={connecting} onOpenChange={setConnecting}>
-        <DialogContent className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-2xl" onCloseAutoFocus={restoreFocus}>
+        <DialogContent scrollBody className="max-h-(--sz-85vh) sm:max-w-2xl" onCloseAutoFocus={restoreFocus}>
           <DialogHeader>
             <DialogTitle>Connect account</DialogTitle>
           </DialogHeader>
