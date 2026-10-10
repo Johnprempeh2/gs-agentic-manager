@@ -38,7 +38,7 @@ export function ProjectRepositories({ project }: { project: Project }) {
       {draft && <Button type="button" variant="ghost" disabled={save.isPending} onClick={() => { setDraft(null); save.reset(); }}>Discard changes</Button>}
       <Button type="button" disabled={!draft || save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save changes"}</Button>
     </div>
-    <Dialog open={connecting} onOpenChange={setConnecting}><DialogContent showCloseButton={false} aria-describedby={undefined} className="max-h-(--sz-calc-18) overflow-y-auto sm:max-w-2xl">
+    <Dialog open={connecting} onOpenChange={setConnecting}><DialogContent scrollBody showCloseButton={false} aria-describedby={undefined} className="max-h-(--sz-calc-18) sm:max-w-2xl">
       <DialogTitle className="sr-only">Connect GitHub</DialogTitle>
       <ConnectionSetupFlow host="dialog" serviceSlug="github" forceNewConnection onCancel={() => setConnecting(false)} onComplete={() => {
         void client.invalidateQueries({ queryKey: repositoryOptionsKey(project.companyId) });
