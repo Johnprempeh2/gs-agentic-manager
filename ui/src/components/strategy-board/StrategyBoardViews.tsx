@@ -159,11 +159,14 @@ export function ChangesSinceSnapshot({ kpis, hasSnapshot }: { kpis: readonly Str
   return (
     <ul className="space-y-1.5">
       {kpis.map((kpi) => (
-        <li key={kpi.goalId} className="flex flex-wrap items-center gap-2 text-sm">
-          <Link to={`/goals/${kpi.goalId}`} className="font-medium hover:underline">{kpi.title}</Link>
-          {kpi.previousStatus ? <KpiStatusPill status={kpi.previousStatus} /> : <span className="text-xs text-muted-foreground">new</span>}
-          <ArrowRight className="size-3.5 text-muted-foreground" aria-label="now" />
-          <KpiStatusPill status={kpi.status} />
+        <li key={kpi.goalId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm" data-testid="change-row">
+          <Link to={`/goals/${kpi.goalId}`} className="min-w-0 flex-[1_1_10rem] font-medium break-words hover:underline">{kpi.title}</Link>
+          {/* Old and new status move as one unit: beside the title when it fits, else on the next line. */}
+          <span className="flex shrink-0 items-center gap-1.5">
+            {kpi.previousStatus ? <KpiStatusPill status={kpi.previousStatus} /> : <span className="text-xs text-muted-foreground">new</span>}
+            <ArrowRight className="size-3.5 text-muted-foreground" aria-label="now" />
+            <KpiStatusPill status={kpi.status} />
+          </span>
         </li>
       ))}
     </ul>

@@ -155,32 +155,33 @@ export function BoardPackViewer({ packId, onClose }: { packId: string | null; on
   });
   return (
     <Dialog open={packId != null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+      {/* The body scrolls, not the dialog: the glass rim of a scrolling dialog moves with the text. */}
+      <DialogContent className="max-h-[90vh] grid-rows-[auto_minmax(0,1fr)] sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{pack?.title ?? "Board pack"}</DialogTitle>
           <DialogDescription>
             {pack ? `${pack.periodStart} to ${pack.periodEnd} · made ${new Date(pack.createdAt).toLocaleDateString()}` : "Loading…"}
           </DialogDescription>
         </DialogHeader>
-        {isLoading ? <p className="text-sm text-muted-foreground">Loading the pack…</p> : null}
-        {error ? <p className="text-sm text-status-danger">Could not load the pack: {(error as Error).message}</p> : null}
-        {pack ? (
-          <>
-            <div className="flex flex-wrap gap-2 print:hidden">
-              <Button size="sm" variant="outline" onClick={() => downloadMarkdown(packFileName(pack.title), pack.body)}>
-                <Download className="size-3.5" />
-                Download
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => window.print()}>
-                <Printer className="size-3.5" />
-                Print or save as PDF
-              </Button>
-            </div>
-            <div className="overflow-x-auto">
+        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6" data-testid="board-pack-body">
+          {isLoading ? <p className="text-sm text-muted-foreground">Loading the pack…</p> : null}
+          {error ? <p className="text-sm text-status-danger">Could not load the pack: {(error as Error).message}</p> : null}
+          {pack ? (
+            <>
+              <div className="flex flex-wrap gap-2 print:hidden">
+                <Button size="sm" variant="outline" onClick={() => downloadMarkdown(packFileName(pack.title), pack.body)}>
+                  <Download className="size-3.5" />
+                  Download
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => window.print()}>
+                  <Printer className="size-3.5" />
+                  Print or save as PDF
+                </Button>
+              </div>
               <MarkdownBody>{pack.body.replace(/^# .*\n+/, "")}</MarkdownBody>
-            </div>
-          </>
-        ) : null}
+            </>
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
