@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { goalHealth } from "@/lib/goal-journey";
 import type { StrategyCascade } from "@/lib/goal-cascade";
 import { GoalHealthPill } from "./GoalHealth";
+import { KpiStatusPill, rollupSummary } from "./KpiReadings";
 import { GoalOwner, type UsersById } from "./GoalOwner";
 import type { AgentsById } from "./GoalScoreboard";
 
@@ -48,6 +49,25 @@ function BoardColumn({
       ))}
     </div>
   );
+}
+
+/**
+ * Same rule as the goal page (GRE-1133): a KPI shows its reading against plan,
+ * a goal with KPIs under it shows their worst status, and only a goal with no
+ * KPIs falls back to task progress.
+ */
+export function CascadeStatus({ goal }: { goal: GoalWithProgress }) {
+  if (goal.kind === "kpi") return <KpiStatusPill status={goal.kpiStatus?.status ?? null} />;
+  const rollup = rollupSummary(goal.ragRollup);
+  if (rollup) {
+    return (
+      <span title={rollup} data-testid="cascade-rag-rollup">
+        <KpiStatusPill status={goal.ragRollup.status} />
+        <span className="sr-only">{rollup}</span>
+      </span>
+    );
+  }
+  return <GoalHealthPill health={goalHealth(goal)} />;
 }
 
 /**
@@ -100,7 +120,7 @@ export function StrategyCascadeView({
                     <span className="ml-auto w-10 text-right text-xs tabular-nums text-muted-foreground sm:ml-0">
                       {goal.progress.percent == null ? "–" : `${goal.progress.percent}%`}
                     </span>
-                    <GoalHealthPill health={goalHealth(goal)} />
+                    <CascadeStatus goal={goal} />
                   </span>
                 </Link>
               </li>
