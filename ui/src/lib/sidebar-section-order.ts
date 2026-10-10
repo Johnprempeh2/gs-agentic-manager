@@ -24,3 +24,13 @@ export function moveSection(order: readonly string[], id: string, delta: -1 | 1)
   [next[from], next[to]] = [next[to]!, next[from]!];
   return next;
 }
+
+/** Drop `activeId` where `overId` sits; unknown ids or a drop on itself change nothing. */
+export function dropSection(order: readonly string[], activeId: string, overId: string | null | undefined): string[] {
+  const from = order.indexOf(activeId);
+  const to = overId ? order.indexOf(overId) : -1;
+  if (from < 0 || to < 0 || from === to) return [...order];
+  const next = [...order];
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}

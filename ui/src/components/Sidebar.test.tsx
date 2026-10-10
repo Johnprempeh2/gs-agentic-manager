@@ -295,6 +295,22 @@ describe("Sidebar", () => {
     });
   });
 
+  it("gives each section a drag grip and a rearrange menu, separate from the nav links", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+    const root = await renderSidebar();
+
+    for (const label of ["Work", "Team", "Build", "Company"]) {
+      const grip = container.querySelector(`button[aria-label="Drag to move the ${label} section"]`);
+      expect(grip).not.toBeNull();
+      expect(grip?.closest("a")).toBeNull();
+      expect(container.querySelector(`button[aria-label="Rearrange ${label} section"]`)).not.toBeNull();
+    }
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("shows Search as a nav item instead of a header icon", async () => {
     // The header's spare width goes to the workspace name (which otherwise
     // truncates at ~78px), so search lives in the nav list — still

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeSectionOrder, moveSection } from "./sidebar-section-order";
+import { dropSection, mergeSectionOrder, moveSection } from "./sidebar-section-order";
 
 const DEFAULTS = ["work", "team", "build", "company"];
 
@@ -27,5 +27,18 @@ describe("moveSection", () => {
     expect(moveSection(DEFAULTS, "team", -1)).toEqual(["team", "work", "build", "company"]);
     expect(moveSection(DEFAULTS, "work", -1)).toEqual(DEFAULTS);
     expect(moveSection(DEFAULTS, "company", 1)).toEqual(DEFAULTS);
+  });
+});
+
+describe("dropSection", () => {
+  it("moves the dragged section to the drop target in either direction", () => {
+    expect(dropSection(DEFAULTS, "company", "work")).toEqual(["company", "work", "team", "build"]);
+    expect(dropSection(DEFAULTS, "work", "build")).toEqual(["team", "build", "work", "company"]);
+  });
+
+  it("ignores drops outside the list or on itself", () => {
+    expect(dropSection(DEFAULTS, "team", null)).toEqual(DEFAULTS);
+    expect(dropSection(DEFAULTS, "team", "team")).toEqual(DEFAULTS);
+    expect(dropSection(DEFAULTS, "gone", "work")).toEqual(DEFAULTS);
   });
 });

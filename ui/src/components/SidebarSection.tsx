@@ -61,14 +61,17 @@ interface SidebarSectionProps {
   };
   menu?: SidebarSectionMenu;
   headerAction?: SidebarSectionHeaderAction;
+  /** A drag handle for rearranging sections, shown at the end of the header. */
+  dragHandle?: ReactNode;
 }
 
 function SidebarSectionHeader({
   collapsible,
+  dragHandle,
   headerAction,
   label,
   menu,
-}: Pick<SidebarSectionProps, "collapsible" | "headerAction" | "label" | "menu">) {
+}: Pick<SidebarSectionProps, "collapsible" | "dragHandle" | "headerAction" | "label" | "menu">) {
   const { isMobile } = useSidebar();
   const [menuOpen, setMenuOpen] = useState(false);
   const hasMenu = Boolean(
@@ -178,6 +181,7 @@ function SidebarSectionHeader({
             <HeaderActionIcon className="h-3.5 w-3.5" />
           </Button>
         ) : null}
+        {dragHandle ? <span className={cn("ml-auto flex", headerControlVisibilityClassName)}>{dragHandle}</span> : null}
       </div>
     </div>
   );
@@ -189,6 +193,7 @@ export function SidebarSection({
   collapsible,
   menu,
   headerAction,
+  dragHandle,
 }: SidebarSectionProps) {
   const { collapsed, peeking } = useSidebar();
   const forceExpanded = useSidebarNavExpanded();
@@ -226,6 +231,7 @@ export function SidebarSection({
           collapsible={collapsible}
           menu={menu}
           headerAction={headerAction}
+          dragHandle={dragHandle}
         />
         <CollapsibleContent>{content}</CollapsibleContent>
       </Collapsible>
@@ -234,7 +240,7 @@ export function SidebarSection({
 
   return (
     <div>
-      <SidebarSectionHeader label={label} menu={menu} headerAction={headerAction} />
+      <SidebarSectionHeader label={label} menu={menu} headerAction={headerAction} dragHandle={dragHandle} />
       {content}
     </div>
   );

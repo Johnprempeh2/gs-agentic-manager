@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SidebarOrderPreference } from "@greatstone/shared";
 import { authApi } from "../api/auth";
 import { sidebarPreferencesApi } from "../api/sidebarPreferences";
-import { mergeSectionOrder, moveSection } from "../lib/sidebar-section-order";
+import { dropSection, mergeSectionOrder, moveSection } from "../lib/sidebar-section-order";
 import { queryKeys } from "../lib/queryKeys";
 
 /**
@@ -45,6 +45,7 @@ export function useSidebarSectionOrder(defaults: readonly string[]) {
   return {
     order,
     move: (id: string, delta: -1 | 1) => save(moveSection(order, id, delta)),
+    drop: (activeId: string, overId: string | null | undefined) => save(dropSection(order, activeId, overId)),
     reset: () => save([]),
   };
 }
