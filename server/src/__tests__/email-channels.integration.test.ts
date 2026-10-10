@@ -38,6 +38,9 @@ import {
   emailEndpoints,
   emailMessages,
   emailSends,
+  goalKpiReadings,
+  goals,
+  strategyBoardEmails,
   issueComments,
   heartbeatRuns,
   issues,
@@ -563,6 +566,47 @@ describe("AgentMail durable email pipeline", () => {
     await f.service.tick();
     expect(f.sends).toHaveLength(1);
     await db.update(agents).set({ status: "idle" }).where(eq(agents.id, f.agentId));
+  });
+
+  it("stores the owner's reply to a board reminder on the plan, but not a stranger's (GRE-1196)", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableStrategyBoard: true });
+    const f = await fixture();
+    const [kpi] = await db
+      .insert(goals)
+      .values({ companyId: f.companyId, title: "Revenue", kind: "kpi", level: "task", status: "active", ownerUserId: "email-board" })
+      .returning();
+    const parent = await issueService(db).create(f.companyId, { title: "Board meeting", status: "done" });
+    const input = emailSendSchema.parse({
+      endpointId: f.endpointId,
+      parentIssueId: parent.id,
+      to: ["owner@example.test"],
+      subject: "Board meeting: your readings",
+      text: "- K1 Revenue: no reading yet.",
+      idempotencyKey: randomUUID(),
+    });
+    await db.insert(strategyBoardEmails).values({
+      id: input.idempotencyKey,
+      companyId: f.companyId,
+      kind: "meeting_reminder",
+      dedupeKey: `reminder:test:${input.idempotencyKey}`,
+      recipientUserId: "email-board",
+      recipientEmail: "owner@example.test",
+      endpointId: f.endpointId,
+      kpiCodes: { K1: kpi.id },
+      publicationId: input.idempotencyKey,
+    });
+    await f.service.queueBoardSend(f.companyId, input);
+    await f.service.tick();
+    const sent = f.messages.get(`sent-${input.idempotencyKey}`)!;
+
+    await f.receive(f.message("stranger-reply", sent.thread_id, { from: "someone@else.test", text: "K1: 999" }));
+    await f.receive(f.message("owner-reply", sent.thread_id, { from: "Owner <owner@example.test>", text: "K1: 321" }));
+    await f.receive(f.message("owner-reply", sent.thread_id, { from: "Owner <owner@example.test>", text: "K1: 321" }));
+    const readings = await db.select().from(goalKpiReadings).where(eq(goalKpiReadings.goalId, kpi.id));
+    expect(readings.map((r) => [r.value, r.source, r.recordedByUserId])).toEqual([[321, "owner_reported", "email-board"]]);
+    // The secretary still sees both replies in the thread.
+    expect(f.wakeup).toHaveBeenCalledTimes(2);
+    await instanceSettingsService(db).updateExperimental({ enableStrategyBoard: false });
   });
 
   it("imports attachments once, bounds intake, and validates stored attachments before sending", async () => {
