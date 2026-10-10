@@ -200,6 +200,37 @@ fails.
 `company.invites` also return 403 since GRE-107. `verify` proves they are
 hidden; it does not yet send a change request to each of them.
 
+## Copy a drafted plan to the client (GRE-1190)
+
+The strategy plan is drafted in the practice (workshop) instance. This step
+copies it to the client's instance. Both instances must be running. Add the
+client's users first (F11), so that owners can be matched.
+
+```sh
+scripts/client-instance.sh plan-copy --from <practice root> --to <client root>              # report only
+scripts/client-instance.sh plan-copy --from <practice root> --to <client root> --apply on   # copy
+```
+
+- What moves: every goal with a strategy kind (vision, value, CSF, pillar,
+  objective, KPI, initiative) with its plan fields: KPI target, baseline,
+  direction and thresholds, due dates, done-when, initiative budget, benchmark
+  note. Nothing else moves: no plain goals, issues, comments, check-ins, KPI
+  readings, agents, secrets or research-pack links.
+- Owners: a person owner is matched by email to an active member of the client
+  company. An owner with no match, and every agent owner, is listed; the goal
+  moves without that owner. Add the user, then run again.
+- `--apply on` backs up the client instance first (`pre-plan-copy-*`), then
+  writes the whole plan in one transaction.
+- Run it again after a workshop change: each goal keeps its id, so a re-run
+  updates the copied goals and makes no duplicates. It never deletes a goal in
+  the client instance, and it does not clear an owner set there.
+- The practice instance needs `--from-company <id>` when it has more than one
+  company. The client instance must have exactly one company.
+- Owner emails are printed to the terminal only. Do not paste them into issues.
+
+The company export/import is not used: it does not carry goals, and a client
+edition refuses import.
+
 ## Back up
 
 ```sh

@@ -21,6 +21,8 @@
 //                                     (off-host backups with restic, GRE-666)
 //   scripts/client-instance.sh watch --root <dir> --watch-config <file> [--public-url https://<host>]
 //                                     (host watch: health, backups, disk, memory, AI access, public URL; GRE-666)
+//   scripts/client-instance.sh plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
+//                                     (copy the strategy plan; without --apply on it only reports; GRE-1190)
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
 //                                      Stable image: scripts/greatstone-stable-image.sh)
@@ -46,6 +48,7 @@ import { AI_ACCESS_ROUTES, type AiAccessRoute } from "../../packages/shared/src/
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
+import { copyPlan, companyIds, planCopyLines } from "./plan-copy.js";
 import { choosePorts, siblingPortClaims } from "./ports.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor, releaseFolderLines, releaseFolders } from "./releases.js";
 import {
@@ -139,6 +142,10 @@ const USAGE = `usage:
   watch --root <dir> --watch-config <file> [--public-url https://<host>]
                                            host watch (every 5 min): health, backups, restore-check, disk,
                                            memory, AI access, public URL; pings the dead-man check, mails on failure
+  plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
+                                           copy the strategy plan (vision to initiatives, with targets and
+                                           due dates) to the client instance; owners matched by email.
+                                           Without --apply on it only reports. Both instances must run.
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -1426,6 +1433,51 @@ function cmdReleases(instancesDir: string, opts: Record<string, string>) {
   for (const line of releaseFolderLines(folders)) say(line);
 }
 
+/**
+ * plan-copy (GRE-1190): copy the drafted strategy plan from the practice
+ * instance to the client instance. Only the plan moves; see plan-copy.ts.
+ * The client instance is backed up first. Owner e-mails are printed to this
+ * terminal only.
+ */
+async function cmdPlanCopy(opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => !["from", "to", "from-company", "apply"].includes(flag));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (opts.apply !== undefined && opts.apply !== "on") die("--apply takes only: on");
+  const apply = opts.apply === "on";
+  if (!opts.from || !opts.to) die("usage: plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]");
+  const fromRoot = resolveRoot(opts.from);
+  const toRoot = resolveRoot(opts.to);
+  if (realpathSync(fromRoot) === realpathSync(toRoot)) die("--from and --to are the same instance");
+  const fromState = readState(fromRoot);
+  const toState = readState(toRoot);
+  // The embedded database runs only with its server.
+  if (!readPid(fromRoot)) die(`the practice instance at ${fromRoot} is not running; start it first`);
+  if (!readPid(toRoot)) die(`the client instance at ${toRoot} is not running; start it first`);
+
+  const { createDb, closeRegisteredClients, resolveEmbeddedPostgresConnectionString } = await import("../../packages/db/src/index.js");
+  const fromUrl = resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(fromRoot), "db"), port: fromState.dbPort });
+  const toUrl = resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(toRoot), "db"), port: toState.dbPort });
+  try {
+    const source = createDb(fromUrl).$client;
+    const target = createDb(toUrl).$client;
+    const fromCompanies = await companyIds(source);
+    const fromCompany = opts["from-company"] ?? (fromCompanies.length === 1 ? fromCompanies[0]!.id : undefined);
+    if (!fromCompany || !fromCompanies.some((c) => c.id === fromCompany)) {
+      die(`pick the practice company with --from-company <id>: ${fromCompanies.map((c) => c.id).join(", ") || "none"}`);
+    }
+    const toCompanies = await companyIds(target);
+    if (toCompanies.length !== 1) die(`the client instance must have exactly one company (found ${toCompanies.length})`);
+
+    if (apply) say(`backup of the client instance first: ${backupNow(toRoot, toState, "pre-plan-copy")}`);
+    const report = await copyPlan(source, target, { sourceCompanyId: fromCompany, targetCompanyId: toCompanies[0]!.id, apply });
+    say(`${apply ? "copied" : "dry run (nothing written; add --apply on to copy)"}: ${fromRoot} -> ${toRoot}`);
+    for (const line of planCopyLines(report)) say(line);
+  } finally {
+    await closeRegisteredClients(fromUrl);
+    await closeRegisteredClients(toUrl);
+  }
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === "help" || argv.includes("--help") || argv.includes("-h")) {
@@ -1436,6 +1488,10 @@ async function main() {
   if (command === "create") return cmdCreate(opts);
   if (command === "edition-env") return cmdEditionEnv(opts);
   if (command === "offsite-check") return cmdOffsiteCheck(opts);
+  if (command === "plan-copy") {
+    if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
+    return cmdPlanCopy(opts);
+  }
   if (command === "upgrade" || command === "restore") {
     const [rootArg, second, ...extra] = positional;
     if (extra.length > 0 || (opts.root && rootArg && second)) die(`too many arguments for ${command}`);
