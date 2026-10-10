@@ -112,6 +112,7 @@ import {
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
+import { runScheduledStrategyBoardAlerts } from "./services/strategy-board.js";
 import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
@@ -1319,6 +1320,8 @@ async function startServerWithDatabaseTeardown(
     ["memory_retention", () => runScheduledMemoryRetention(db)],
     // GRE-1079: deliver the memory ingest outbox (the retry queue) and report what fails.
     ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
+    // GRE-1135: hourly KPI slippage check (a deadline can pass with no new reading).
+    ["strategy_board_alerts", () => runScheduledStrategyBoardAlerts(db)],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;

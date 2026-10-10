@@ -88,6 +88,7 @@ import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
+import { strategyBoardRoutes } from "./routes/strategy-board.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
@@ -820,6 +821,7 @@ export async function createApp(
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(emailRoutes(db, emailChannels));
   api.use(goalRoutes(db));
+  api.use(strategyBoardRoutes(db));
   api.use(agentTeamRoutes(db));
   const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));

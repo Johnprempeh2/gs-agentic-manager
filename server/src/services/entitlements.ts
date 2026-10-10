@@ -125,6 +125,19 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     kind: "api",
     probes: [{ method: "get", path: `/issues/${ID}/accepted-plan-decompositions` }],
   },
+  enableStrategyBoard: {
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/strategy-board` },
+      { method: "get", path: `${COMPANY}/strategy-board/packs` },
+      { method: "post", path: `${COMPANY}/strategy-board/packs`, body: { periodStart: "2026-07-01", periodEnd: "2026-09-30" } },
+      { method: "put", path: `${COMPANY}/strategy-board/members`, body: { members: [] } },
+      { method: "get", path: `/strategy-board/packs/${ID}` },
+      { method: "get", path: `/goals/${ID}/why-requests` },
+      { method: "post", path: `/goals/${ID}/why-requests`, body: { question: "Why?" } },
+      { method: "post", path: `/why-requests/${ID}/answer`, body: { answer: "Because" } },
+    ],
+  },
   enableDeepDive: {
     kind: "api",
     probes: [

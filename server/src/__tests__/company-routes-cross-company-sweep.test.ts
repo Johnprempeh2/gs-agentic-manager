@@ -9,7 +9,7 @@ import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
   companyMemberships, companySecretProviderConfigs, companySecrets, decisions, decisionTrainingExamples,
   environmentLeases, environments, executionWorkspaces, feedbackExports, feedbackVotes, goals, heartbeatRuns,
-  invites, issueAttachments, issues,
+  invites, issueAttachments, issues, goalWhyRequests, strategyBoardPacks,
   issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
   statusCards, toolActionRequests, toolApplications, toolConnections, toolGatewaySessions, toolInvocations,
   toolMcpGateways, toolMcpGatewayTokens, toolProfileEntries, toolProfiles, toolRuntimeSlots, workspaceOperations,
@@ -276,7 +276,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       enablePipelines: true, enableCases: true, enableDeepDive: true, enableAgentChat: true,
       enableConferenceRoomChat: true, enableIssuePlanDecompositions: true, enableExternalObjects: true,
       enableSmokeLab: true, enableBuiltInAgents: true, enableBetaSkills: true, enableSummaries: true,
-      enableStatusCards: true,
+      enableStatusCards: true, enableStrategyBoard: true,
     });
 
     await ctx.db.insert(companies).values([
@@ -322,6 +322,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const operationId = id(), leaseId = id();
     const profileEntryId = id(), intentId = id(), voteId = id(), traceId = id(), trainingId = id();
     const inviteId = id(), decisionId = id();
+    const boardPackId = id(), whyRequestId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -407,6 +408,12 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       // The id routes check the company before they read the spec or snapshots.
       expiresAt: new Date(Date.now() + 86_400_000), signedSpec: "sweep", targetSnapshots: {},
     });
+    // GRE-1135: board packs and "Why?" requests.
+    await ctx.db.insert(strategyBoardPacks).values({
+      ...A, id: boardPackId, title: "Company A pack", periodStart: "2026-07-01", periodEnd: "2026-09-30",
+      snapshot: {}, body: "Company A pack",
+    });
+    await ctx.db.insert(goalWhyRequests).values({ ...A, id: whyRequestId, goalId, question: "Why?", askedByUserId: ownerAId });
 
     const byPrefix: Record<string, string> = {
       "/api/issues/:id": issueId, "/api/issues/:issueId": issueId,
@@ -430,6 +437,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/tool-profile-entries/:entryId": profileEntryId, "/api/connection-intents/:interactionId": intentId,
       "/api/feedback-traces/:traceId": traceId, "/api/decision-training/:id": trainingId,
       "/api/invites/:inviteId": inviteId, "/api/decisions/:id": decisionId,
+      "/api/strategy-board/packs/:id": boardPackId, "/api/why-requests/:id": whyRequestId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),
