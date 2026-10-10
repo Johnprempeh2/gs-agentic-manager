@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { BrandTideHero } from "@/components/BrandTideHero";
 import { BrandLoading } from "@/components/BrandLoading";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { BrandLockup } from "../components/BrandLockup";
+import { BrandLockup, PoweredByGreatstone } from "../components/BrandLockup";
+import { getPartnerBranding, getProductName } from "../lib/partner-branding";
 
 type AuthMode = "sign_in" | "sign_up";
 
@@ -67,6 +68,9 @@ export function AuthPage() {
     },
   });
 
+  const productName = getProductName();
+  const partnerBranded = getPartnerBranding() !== null;
+
   const canSubmit =
     email.trim().length > 0 &&
     password.trim().length > 0 &&
@@ -83,17 +87,19 @@ export function AuthPage() {
   return (
     <div className="gs-onboarding-ground fixed inset-0 flex">
       <div className="absolute top-4 right-4 z-raised">
-        <ThemeToggle />
+        {/* On a partner panel the toggle sits on the partner colour (md and up). */}
+        <ThemeToggle className={partnerBranded ? "md:text-primary-foreground" : undefined} />
       </div>
       {/* Left half — form */}
       <div className="w-full md:w-1/2 flex flex-col overflow-y-auto">
         <div className="w-full max-w-md mx-auto my-auto px-8 py-12">
-          <div className="mb-8">
+          <div className={partnerBranded ? "mb-8 flex flex-col items-start gap-1.5" : "mb-8"}>
             <BrandLockup className="h-5 text-base" />
+            <PoweredByGreatstone />
           </div>
 
           <h1 className="text-xl font-semibold">
-            {mode === "sign_in" ? "Sign in to GS Agentic Manager" : "Create your GS Agentic Manager account"}
+            {mode === "sign_in" ? `Sign in to ${productName}` : `Create your ${productName} account`}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {mode === "sign_in"
@@ -201,9 +207,10 @@ export function AuthPage() {
         </div>
       </div>
 
-      {/* Right half: the Greatstone tide with the stone (hidden on mobile) */}
+      {/* Right half: the Greatstone tide with the stone (hidden on mobile). A
+          partner-branded instance gets a plain panel in its own colour. */}
       <div className="hidden md:block w-1/2 overflow-hidden">
-        <BrandTideHero />
+        {partnerBranded ? <div className="h-full w-full bg-primary" data-slot="partner-auth-panel" /> : <BrandTideHero />}
       </div>
     </div>
   );

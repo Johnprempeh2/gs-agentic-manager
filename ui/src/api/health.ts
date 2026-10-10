@@ -1,4 +1,4 @@
-import type { ServerInfoSnapshot } from "@greatstone/shared";
+import type { PartnerBranding, ServerInfoSnapshot } from "@greatstone/shared";
 import { tenantSessionRecovery } from "@/lib/tenant-session-recovery";
 
 export type DevServerHealthStatus = {
@@ -43,6 +43,12 @@ export type HealthStatus = {
    * settings-visibility registry). Absent when nothing is hidden.
    */
   hiddenSettings?: string[];
+  /**
+   * Partner branding from the GSAM_BRAND_* env vars. Absent on an unbranded
+   * instance. The UI reads the same object from the HTML head
+   * (`lib/partner-branding`) so it is known on first paint.
+   */
+  branding?: PartnerBranding;
 };
 
 /**
