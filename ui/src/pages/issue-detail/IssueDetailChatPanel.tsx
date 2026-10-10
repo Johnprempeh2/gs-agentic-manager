@@ -480,6 +480,7 @@ export function IssueDetailChatPanel({
               : undefined
           }
           runFinalizationActions={runFinalizationActions}
+          questionsOnly={questionsOnly}
           onWorkModeChange={questionsOnly ? undefined : (nextMode) => {
             const currentMode: IssueWorkMode =
               issue.workMode ?? "standard";
