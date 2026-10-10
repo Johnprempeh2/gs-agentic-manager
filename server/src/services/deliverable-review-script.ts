@@ -7,16 +7,34 @@
 // document's own scripts share this frame and could read anything sent here.
 //
 // Messages carry `gsamReview: 1`. Frame to app: "ready", "selection" (quote,
-// prefix, suffix, textStart, or quote null when cleared), "focus" (id). App to
-// frame: "marks" (list of anchors), "scrollTo" (id), "clearSelection".
+// prefix, suffix, textStart, or quote null when cleared; or for a picked
+// element or drawn area, kind "element" | "region", a label as the quote and
+// a locator), "focus" (id), "pickCancel" (Escape in pick mode). App to frame:
+// "marks" (list of anchors), "scrollTo" (id), "clearSelection", "pickMode" (on).
+//
+// Picking (GRE-1223): in pick mode, or with Alt/Option held, a click picks the
+// element under the pointer (an image, chart, table or the nearest block) and
+// a drag draws an area. Element and area markers are boxes in a layer outside
+// the document body, so they never change the document's own layout or text.
 
 const REVIEW_SCRIPT = String.raw`(function () {
   if (window.__gsamReview) return;
-  window.__gsamReview = true;
   var SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, TEXTAREA: 1 };
   var QUOTE_MAX = 1000;
   var CONTEXT = 48;
+  var LABEL_MAX = 120;
+  var DRAG_MIN = 8;
+  var KINDS = {
+    IMG: "Image", PICTURE: "Image", SVG: "Graphic", CANVAS: "Chart", VIDEO: "Video", AUDIO: "Audio",
+    IFRAME: "Embed", OBJECT: "Embed", EMBED: "Embed", TABLE: "Table", FIGURE: "Figure",
+    BUTTON: "Button", A: "Link", UL: "List", OL: "List", FORM: "Form", INPUT: "Field", SELECT: "Field"
+  };
   var lastSent = "";
+  var pickMode = false;
+  // True while a picked element or area is the current selection, so a
+  // collapsed text selection does not clear it.
+  var holdPick = false;
+  var lastMarks = [];
 
   function post(message) {
     message.gsamReview = 1;
@@ -96,6 +114,8 @@ const REVIEW_SCRIPT = String.raw`(function () {
 
   function reportSelection() {
     var found = readSelection();
+    if (!found && holdPick) return;
+    if (found) holdPick = false;
     var key = found ? found.textStart + ":" + found.quote : "";
     if (key === lastSent) return;
     lastSent = key;
@@ -111,6 +131,293 @@ const REVIEW_SCRIPT = String.raw`(function () {
   document.addEventListener("mouseup", scheduleReport);
   document.addEventListener("touchend", scheduleReport);
   document.addEventListener("keyup", scheduleReport);
+
+  function tagOf(el) { return String(el.localName || el.tagName || "").toLowerCase(); }
+
+  function squash(text) { return String(text || "").replace(/\s+/g, " ").trim(); }
+
+  function clip(text, max) { return text.length > max ? text.slice(0, max - 1) + "\u2026" : text; }
+
+  // Our own layer and badges are never picked.
+  function isOurs(el) {
+    for (; el && el.nodeType === 1; el = el.parentNode) {
+      if (el.hasAttribute("data-gsam-review-layer") || el.hasAttribute("data-gsam-review-badge")) return true;
+    }
+    return false;
+  }
+
+  // Visible text of el, without scripts, styles or our badges.
+  function textOf(el) {
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: accept });
+    var text = "", node;
+    while ((node = walker.nextNode()) && text.length < 4 * LABEL_MAX) text += node.data + " ";
+    return text;
+  }
+
+  function childText(el, tag) {
+    for (var c = el.firstElementChild; c; c = c.nextElementSibling) if (tagOf(c) === tag) return textOf(c);
+    return "";
+  }
+
+  // What a click on target picks: the outermost SVG, else the table it is
+  // in, else the nearest image, media or control, else the nearest block.
+  function pickable(target) {
+    var el = target && target.nodeType === 1 ? target : target && target.parentNode;
+    if (!el || el.nodeType !== 1 || isOurs(el) || !document.body || !document.body.contains(el)) return null;
+    var svg = null, table = null;
+    for (var p = el; p && p !== document.body; p = p.parentNode) {
+      var tag = tagOf(p);
+      if (tag === "svg") svg = p;
+      else if (tag === "table" && !table) table = p;
+    }
+    if (svg) return svg;
+    if (table) return table;
+    for (var q = el; q && q !== document.body; q = q.parentNode) {
+      if (KINDS[tagOf(q).toUpperCase()]) return q;
+      var display = window.getComputedStyle ? window.getComputedStyle(q).display : "block";
+      if (display && display !== "inline" && display !== "contents") return q;
+    }
+    return document.body;
+  }
+
+  // A readable label such as "Image: Q3 revenue chart".
+  function describe(el) {
+    if (el === document.body) return "Page";
+    var tag = tagOf(el);
+    var kind = KINDS[tag.toUpperCase()] || (/^h[1-6]$/.test(tag) ? "Heading" : "Block");
+    var name = el.getAttribute("aria-label") || el.getAttribute("alt") || el.getAttribute("title") || "";
+    if (!name && tag === "svg") name = childText(el, "title");
+    if (!name && tag === "table") name = childText(el, "caption");
+    if (!name && tag === "figure") name = childText(el, "figcaption");
+    if (!name && el.parentNode && el.parentNode.nodeType === 1 && tagOf(el.parentNode) === "figure") name = childText(el.parentNode, "figcaption");
+    if (!name && tag === "img") name = String(el.getAttribute("src") || "").split(/[?#]/)[0].split("/").pop();
+    if (!name && tag !== "img") name = textOf(el);
+    name = squash(name);
+    return clip(name ? kind + ": " + name : kind, LABEL_MAX);
+  }
+
+  // body > tag:nth-of-type(n) > ... from the body down to el.
+  function pathOf(el) {
+    var steps = [];
+    for (var p = el; p && p.nodeType === 1 && p !== document.body; p = p.parentNode) {
+      var tag = tagOf(p), n = 1;
+      for (var s = p.previousElementSibling; s; s = s.previousElementSibling) if (tagOf(s) === tag) n++;
+      steps.unshift(tag + ":nth-of-type(" + n + ")");
+    }
+    steps.unshift("body");
+    return steps.join(" > ");
+  }
+
+  // The element a locator names: its path when the tag and label still
+  // match, else the first element of that tag with the same label, else the
+  // element at the path if its tag matches.
+  function findElement(locator) {
+    if (!locator || typeof locator.path !== "string" || !document.body) return null;
+    var tag = String(locator.tag || "").toLowerCase();
+    var atPath = null;
+    try { atPath = locator.path === "body" ? document.body : document.body.parentNode.querySelector(locator.path); } catch (e) {}
+    if (atPath && tagOf(atPath) !== tag) atPath = null;
+    if (atPath && (!locator.label || describe(atPath) === locator.label)) return atPath;
+    if (locator.label && tag) {
+      var all = document.body.getElementsByTagName(tag);
+      for (var i = 0; i < all.length; i++) {
+        if (!isOurs(all[i]) && describe(all[i]) === locator.label) return all[i];
+      }
+    }
+    return atPath;
+  }
+
+  function locatorFor(el, box) {
+    return { path: pathOf(el), tag: tagOf(el), label: describe(el), box: box || null };
+  }
+
+  function clamp(value) { return Math.max(0, Math.min(1, value)); }
+
+  function round(value) { return Math.round(value * 10000) / 10000; }
+
+  // The smallest block that holds the whole drawn rectangle (viewport pixels).
+  function regionContainer(rect) {
+    var a = document.elementFromPoint ? document.elementFromPoint(rect.left + 1, rect.top + 1) : null;
+    var b = document.elementFromPoint ? document.elementFromPoint(rect.right - 1, rect.bottom - 1) : null;
+    var el = a || b || document.body;
+    if (!document.body.contains(el)) el = document.body;
+    while (el && el !== document.body && (isOurs(el) || (b && !el.contains(b)))) el = el.parentNode;
+    for (; el && el !== document.body; el = el.parentNode) {
+      if (el.nodeType !== 1) continue;
+      var r = el.getBoundingClientRect();
+      var display = window.getComputedStyle ? window.getComputedStyle(el).display : "block";
+      if (display !== "inline" && display !== "contents" && r.width > 0 && r.height > 0 &&
+        r.left <= rect.left + 1 && r.top <= rect.top + 1 && r.right >= rect.right - 1 && r.bottom >= rect.bottom - 1) return el;
+    }
+    return document.body;
+  }
+
+  // The drawn rectangle as fractions of its container.
+  function regionLocator(rect) {
+    var el = regionContainer(rect);
+    var r = el.getBoundingClientRect();
+    var width = r.width || 1, height = r.height || 1;
+    var x = clamp((rect.left - r.left) / width), y = clamp((rect.top - r.top) / height);
+    var box = {
+      x: round(x),
+      y: round(y),
+      width: round(clamp((rect.right - r.left) / width) - x),
+      height: round(clamp((rect.bottom - r.top) / height) - y)
+    };
+    return locatorFor(el, box);
+  }
+
+  function reportPick(kind, locator) {
+    holdPick = true;
+    lastSent = "pick";
+    var selection = window.getSelection && window.getSelection();
+    if (selection) selection.removeAllRanges();
+    var quote = kind === "region" ? clip("Area on " + locator.label, LABEL_MAX) : locator.label;
+    post({ type: "selection", kind: kind, quote: quote, locator: locator });
+  }
+
+  // The layer for element and area markers, the hover outline and the drag box.
+  var layer = null;
+  function getLayer() {
+    if (layer && layer.parentNode) return layer;
+    layer = document.createElement("div");
+    layer.setAttribute("data-gsam-review-layer", "");
+    layer.setAttribute("aria-hidden", "true");
+    document.documentElement.appendChild(layer);
+    return layer;
+  }
+
+  function placeBox(div, rect) {
+    div.style.left = (rect.left + window.scrollX) + "px";
+    div.style.top = (rect.top + window.scrollY) + "px";
+    div.style.width = Math.max(rect.width, 4) + "px";
+    div.style.height = Math.max(rect.height, 4) + "px";
+  }
+
+  function anchorRect(anchor) {
+    var el = findElement(anchor.locator);
+    if (!el) return null;
+    var r = el.getBoundingClientRect();
+    var box = anchor.kind === "region" ? anchor.locator.box : null;
+    if (!box) return { left: r.left, top: r.top, width: r.width, height: r.height };
+    return { left: r.left + box.x * r.width, top: r.top + box.y * r.height, width: box.width * r.width, height: box.height * r.height };
+  }
+
+  function drawBoxes() {
+    var host = getLayer();
+    var old = host.querySelectorAll("[data-gsam-review-box],[data-gsam-review-badge]");
+    for (var i = 0; i < old.length; i++) host.removeChild(old[i]);
+    for (var j = 0; j < lastMarks.length; j++) {
+      var anchor = lastMarks[j];
+      if (anchor.kind !== "element" && anchor.kind !== "region") continue;
+      var rect = anchorRect(anchor);
+      if (!rect) continue;
+      var div = document.createElement("div");
+      div.setAttribute("data-gsam-review-box", anchor.id);
+      div.setAttribute("data-gsam-state", anchor.sent ? "sent" : "draft");
+      if (anchor.active) div.setAttribute("data-gsam-active", "true");
+      placeBox(div, rect);
+      host.appendChild(div);
+      var badge = document.createElement("span");
+      badge.setAttribute("data-gsam-review-badge", anchor.id);
+      badge.textContent = String(anchor.n);
+      badge.style.left = Math.max(0, rect.left + window.scrollX - 8) + "px";
+      badge.style.top = Math.max(0, rect.top + window.scrollY - 8) + "px";
+      host.appendChild(badge);
+    }
+  }
+
+  var hoverBox = null, dragBox = null;
+  function showHover(el) {
+    if (!el) { if (hoverBox) hoverBox.style.display = "none"; return; }
+    if (!hoverBox) {
+      hoverBox = document.createElement("div");
+      hoverBox.setAttribute("data-gsam-review-hover", "");
+      getLayer().appendChild(hoverBox);
+    }
+    hoverBox.setAttribute("data-label", describe(el));
+    placeBox(hoverBox, el.getBoundingClientRect());
+    hoverBox.style.display = "block";
+  }
+
+  function dragRect(start, x, y) {
+    var left = Math.min(start.x, x), top = Math.min(start.y, y);
+    var width = Math.abs(x - start.x), height = Math.abs(y - start.y);
+    return { left: left, top: top, right: left + width, bottom: top + height, width: width, height: height };
+  }
+
+  function showDrag(rect) {
+    if (!rect) { if (dragBox) dragBox.style.display = "none"; return; }
+    if (!dragBox) {
+      dragBox = document.createElement("div");
+      dragBox.setAttribute("data-gsam-review-drag", "");
+      getLayer().appendChild(dragBox);
+    }
+    placeBox(dragBox, rect);
+    dragBox.style.display = "block";
+  }
+
+  var press = null, swallowClick = false;
+  function picking(event) { return pickMode || event.altKey; }
+
+  window.addEventListener("mousedown", function (event) {
+    if (event.button !== 0 || !picking(event) || isOurs(event.target)) return;
+    press = { x: event.clientX, y: event.clientY, target: event.target, dragging: false };
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+
+  window.addEventListener("mousemove", function (event) {
+    if (press) {
+      if (!press.dragging && Math.abs(event.clientX - press.x) + Math.abs(event.clientY - press.y) >= DRAG_MIN) press.dragging = true;
+      if (press.dragging) { showHover(null); showDrag(dragRect(press, event.clientX, event.clientY)); }
+      event.preventDefault();
+      return;
+    }
+    showHover(picking(event) && !isOurs(event.target) ? pickable(event.target) : null);
+  }, true);
+
+  window.addEventListener("mouseup", function (event) {
+    if (!press) return;
+    var done = press;
+    press = null;
+    showDrag(null);
+    swallowClick = true;
+    setTimeout(function () { swallowClick = false; }, 0);
+    event.preventDefault();
+    event.stopPropagation();
+    if (done.dragging) {
+      var rect = dragRect(done, event.clientX, event.clientY);
+      if (rect.width >= DRAG_MIN && rect.height >= DRAG_MIN) reportPick("region", regionLocator(rect));
+      return;
+    }
+    var el = pickable(done.target);
+    if (el) reportPick("element", locatorFor(el, null));
+  }, true);
+
+  // In pick mode a click picks; it must not also follow a link or press a button.
+  window.addEventListener("click", function (event) {
+    if (isOurs(event.target)) return;
+    if (swallowClick || picking(event)) { event.preventDefault(); event.stopPropagation(); }
+  }, true);
+
+  window.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && pickMode) { showHover(null); post({ type: "pickCancel" }); }
+  }, true);
+  window.addEventListener("keyup", function (event) {
+    if (event.key === "Alt" && !pickMode) showHover(null);
+  }, true);
+
+  var relayout = null;
+  function scheduleRelayout() {
+    if (relayout) clearTimeout(relayout);
+    relayout = setTimeout(drawBoxes, 100);
+  }
+  window.addEventListener("resize", scheduleRelayout);
+  window.addEventListener("load", scheduleRelayout);
+  document.addEventListener("load", scheduleRelayout, true);
+
+  window.__gsamReview = { pathOf: pathOf, describe: describe, pickable: pickable, findElement: findElement, regionLocator: regionLocator };
 
   function locate(m, anchor) {
     var quote = anchor.quote;
@@ -171,12 +478,15 @@ const REVIEW_SCRIPT = String.raw`(function () {
 
   function applyMarks(list) {
     clearMarks();
+    lastMarks = list;
     for (var i = 0; i < list.length; i++) {
+      if (list[i].kind === "element" || list[i].kind === "region") continue;
       var m = model();
       var at = locate(m, list[i]);
       if (at < 0) continue;
       wrap(m, list[i], m.raw[at], m.raw[at + list[i].quote.length - 1] + 1);
     }
+    drawBoxes();
   }
 
   var style = document.createElement("style");
@@ -184,7 +494,17 @@ const REVIEW_SCRIPT = String.raw`(function () {
     "mark[data-gsam-review]{background:rgba(250,204,21,.45)!important;color:inherit!important;border-radius:2px;cursor:pointer;padding:0!important}" +
     "mark[data-gsam-review][data-gsam-state=sent]{background:rgba(59,130,246,.22)!important}" +
     "mark[data-gsam-review][data-gsam-active=true]{outline:2px solid rgba(217,119,6,.9);outline-offset:1px}" +
-    "sup[data-gsam-review-badge]{display:inline-block;min-width:1.4em;margin:0 2px;padding:0 4px;border-radius:9px;background:#d97706;color:#fff!important;font:600 11px/1.4 system-ui,sans-serif!important;text-align:center;vertical-align:super;cursor:pointer;user-select:none}";
+    "sup[data-gsam-review-badge]{display:inline-block;min-width:1.4em;margin:0 2px;padding:0 4px;border-radius:9px;background:#d97706;color:#fff!important;font:600 11px/1.4 system-ui,sans-serif!important;text-align:center;vertical-align:super;cursor:pointer;user-select:none}" +
+    "div[data-gsam-review-layer]{position:absolute!important;top:0!important;left:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483647!important;pointer-events:none!important}" +
+    "div[data-gsam-review-layer]>*{position:absolute;box-sizing:border-box;pointer-events:none}" +
+    "div[data-gsam-review-box]{border:2px solid rgba(217,119,6,.9);background:rgba(250,204,21,.14);border-radius:3px}" +
+    "div[data-gsam-review-box][data-gsam-state=sent]{border-color:rgba(59,130,246,.8);background:rgba(59,130,246,.08)}" +
+    "div[data-gsam-review-box][data-gsam-active=true]{border-width:3px;box-shadow:0 0 0 3px rgba(217,119,6,.35)}" +
+    "div[data-gsam-review-layer]>span[data-gsam-review-badge]{min-width:1.4em;padding:0 4px;border-radius:9px;background:#d97706;color:#fff;font:600 11px/1.4 system-ui,sans-serif;text-align:center;cursor:pointer;user-select:none;pointer-events:auto}" +
+    "div[data-gsam-review-hover]{border:2px dashed #2563eb;background:rgba(37,99,235,.08);border-radius:3px}" +
+    "div[data-gsam-review-hover]::after{content:attr(data-label);position:absolute;left:-2px;bottom:100%;max-width:320px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:1px 6px;border-radius:3px 3px 0 0;background:#2563eb;color:#fff;font:500 11px/1.5 system-ui,sans-serif}" +
+    "div[data-gsam-review-drag]{border:2px dashed #2563eb;background:rgba(37,99,235,.12)}" +
+    "html[data-gsam-picking],html[data-gsam-picking] *{cursor:crosshair!important}";
   (document.head || document.documentElement).appendChild(style);
 
   document.addEventListener("click", function (event) {
@@ -202,12 +522,19 @@ const REVIEW_SCRIPT = String.raw`(function () {
     if (!data || data.gsamReview !== 1) return;
     if (data.type === "marks" && Array.isArray(data.marks)) applyMarks(data.marks);
     else if (data.type === "scrollTo") {
-      var target = root().querySelector('mark[data-gsam-review="' + String(data.id).replace(/[^a-zA-Z0-9-]/g, "") + '"]');
+      var id = String(data.id).replace(/[^a-zA-Z0-9-]/g, "");
+      var target = root().querySelector('mark[data-gsam-review="' + id + '"]') ||
+        getLayer().querySelector('div[data-gsam-review-box="' + id + '"]');
       if (target && target.scrollIntoView) target.scrollIntoView({ block: "center", behavior: "smooth" });
     } else if (data.type === "clearSelection") {
       var selection = window.getSelection && window.getSelection();
       if (selection) selection.removeAllRanges();
       lastSent = "";
+      holdPick = false;
+    } else if (data.type === "pickMode") {
+      pickMode = data.on === true;
+      if (pickMode) document.documentElement.setAttribute("data-gsam-picking", "");
+      else { document.documentElement.removeAttribute("data-gsam-picking"); showHover(null); }
     }
   });
 
