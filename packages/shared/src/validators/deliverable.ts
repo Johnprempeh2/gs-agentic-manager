@@ -109,14 +109,51 @@ export type DeliverablesQuery = z.infer<typeof deliverablesQuerySchema>;
 export const DELIVERABLE_COMMENT_QUOTE_MAX = 1_000;
 export const DELIVERABLE_COMMENT_CONTEXT_MAX = 64;
 export const DELIVERABLE_COMMENT_BODY_MAX = 4_000;
+export const DELIVERABLE_COMMENT_PATH_MAX = 1_000;
+export const DELIVERABLE_COMMENT_LABEL_MAX = 200;
 
-/** POST /api/companies/:companyId/deliverables/:id/comments — a draft note on a passage. */
+const fraction = z.number().min(0).max(1);
+
+export const deliverableCommentBoxSchema = z.object({
+  x: fraction,
+  y: fraction,
+  width: fraction,
+  height: fraction,
+});
+
+export const deliverableCommentLocatorSchema = z.object({
+  // Only `tag:nth-of-type(n)` steps joined by " > ", so it is safe to show and query.
+  path: z.string().trim().min(1).max(DELIVERABLE_COMMENT_PATH_MAX).regex(/^[a-zA-Z0-9:()> -]+$/),
+  tag: z.string().trim().min(1).max(32).regex(/^[a-z][a-z0-9-]*$/i),
+  label: z.string().trim().max(DELIVERABLE_COMMENT_LABEL_MAX).optional().nullable(),
+  box: deliverableCommentBoxSchema.optional().nullable(),
+});
+
+/**
+ * POST /api/companies/:companyId/deliverables/:id/comments — a draft note on a
+ * passage (`anchorKind` "text", the default), an element or a region. Element
+ * and region notes need a `locator`; a region also needs its `box`.
+ */
 export const createDeliverableCommentSchema = z.object({
+  anchorKind: z.enum(["text", "element", "region"]).optional().default("text"),
   quote: z.string().trim().min(1).max(DELIVERABLE_COMMENT_QUOTE_MAX),
   prefix: z.string().max(DELIVERABLE_COMMENT_CONTEXT_MAX).optional().nullable(),
   suffix: z.string().max(DELIVERABLE_COMMENT_CONTEXT_MAX).optional().nullable(),
   textStart: z.number().int().min(0).optional().nullable(),
+  locator: deliverableCommentLocatorSchema.optional().nullable(),
   body: z.string().trim().min(1).max(DELIVERABLE_COMMENT_BODY_MAX),
+}).superRefine((value, ctx) => {
+  if (value.anchorKind === "text") {
+    if (value.locator) ctx.addIssue({ code: "custom", path: ["locator"], message: "A text comment has no locator" });
+    return;
+  }
+  if (!value.locator) {
+    ctx.addIssue({ code: "custom", path: ["locator"], message: "An element or region comment needs a locator" });
+  } else if (value.anchorKind === "region" && !value.locator.box) {
+    ctx.addIssue({ code: "custom", path: ["locator", "box"], message: "A region comment needs its box" });
+  } else if (value.anchorKind === "element" && value.locator.box) {
+    ctx.addIssue({ code: "custom", path: ["locator", "box"], message: "An element comment has no box" });
+  }
 });
 
 /** PATCH /api/companies/:companyId/deliverables/:id/comments/:commentId — edit a draft's note. */
