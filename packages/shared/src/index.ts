@@ -39,6 +39,11 @@ export {
   type KpiStatusReason,
   type RollupGoal,
 } from "./goal-kpi-status.js";
+export {
+  isPackReferenceSection,
+  suggestKpiDraftsFromPack,
+  type KpiDraftSuggestion,
+} from "./goal-kpi-drafts.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   CONNECTION_INTENT_AGENT_GUIDANCE,
@@ -2259,10 +2264,14 @@ export {
   updateGoalSchema,
   createGoalCheckInSchema,
   createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  kpiDraftRowSchema,
   type CreateGoal,
   type UpdateGoal,
   type CreateGoalCheckIn,
   type CreateGoalKpiReading,
+  type CreateKpiDraftsFromPack,
+  type KpiDraftRow,
   applyOnboardingSeedSchema,
   type ApplyOnboardingSeed,
   createApprovalSchema,

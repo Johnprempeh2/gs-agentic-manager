@@ -42,6 +42,8 @@ export const createGoalSchema = z.object({
     .regex(/^[A-Z]{3}$/, "Expected a three-letter currency code, e.g. USD")
     .optional()
     .nullable(),
+  /** Peer benchmark as context; never the target. */
+  benchmarkNote: z.string().trim().max(5_000).optional().nullable(),
 });
 
 export type CreateGoal = z.infer<typeof createGoalSchema>;
@@ -67,3 +69,39 @@ export const createGoalKpiReadingSchema = z.object({
 });
 
 export type CreateGoalKpiReading = z.infer<typeof createGoalKpiReadingSchema>;
+
+/** One slide-5 reference point to turn into a draft KPI (GRE-1161). */
+export const kpiDraftRowSchema = z.object({
+  /** Bold ID of the slide-5 bullet in the pack document, e.g. "B2". */
+  bulletId: z.string().trim().min(1).max(32),
+  title: z.string().trim().min(1).max(500),
+  /** The client's own starting value. Peer figures go in benchmarkNote, not here. */
+  baselineValue: z.number().finite(),
+  baselineDate: calendarDateSchema,
+  unit: z.string().trim().max(64).optional().nullable(),
+  kpiDirection: z.enum(KPI_DIRECTIONS).optional().nullable(),
+  /** Peer benchmark with source, year and segment. Context, not a target. */
+  benchmarkNote: z.string().trim().max(5_000).optional().nullable(),
+});
+
+export type KpiDraftRow = z.infer<typeof kpiDraftRowSchema>;
+
+/**
+ * Pre-fill draft KPIs under one goal from the slide-5 rows of a research pack
+ * document. All rows are created in one transaction or none are.
+ */
+export const createKpiDraftsFromPackSchema = z.object({
+  /** The issue that holds the pack document (the synthesis step). */
+  sourceIssueId: z.string().guid(),
+  documentKey: z.string().trim().min(1).max(64).optional().default("pre-read"),
+  rows: z
+    .array(kpiDraftRowSchema)
+    .min(1, "Pick at least one row")
+    .max(20, "At most 20 rows at a time")
+    .refine(
+      (rows) => new Set(rows.map((row) => row.bulletId)).size === rows.length,
+      "Each bullet can be used once",
+    ),
+});
+
+export type CreateKpiDraftsFromPack = z.infer<typeof createKpiDraftsFromPackSchema>;

@@ -598,7 +598,11 @@ export const STRATEGIC_WORK_GOAL_KINDS = ["objective", "initiative"] as const sa
 export const ISSUE_WORK_FILTERS = ["strategic", "day_to_day"] as const;
 export type IssueWorkFilter = (typeof ISSUE_WORK_FILTERS)[number];
 
-export const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const;
+/**
+ * `draft` (GRE-1161): a KPI pre-filled from a research pack. It is not live and
+ * has no RAG status until a person sets its target and moves it out of draft.
+ */
+export const GOAL_STATUSES = ["draft", "planned", "active", "achieved", "cancelled"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
 /** Which way is good for a KPI: "up" (revenue) or "down" (churn, cost). */
