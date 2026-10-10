@@ -34,9 +34,10 @@ export function normaliseComment(body) {
 
 // A repair note: a diagnosis of a stopped run written for the agent and posted
 // under John's name (by John, or by a helper acting for him), usually ending in
-// "please continue". Counted under Unstick.
+// "please continue" or "please pick this up again". Counted under Unstick.
+// One word may sit between "your" and "run" ("your earlier run", GRE-1181).
 export const REPAIR_RULE =
-  /\byour (last )?(run|runs|wake)\b.{0,80}\b(failed|hung|ended|stopped)\b|\bsetup (kept )?fail(ed|ing)?\b|\b(connection|token) (is|was) (fixed|expired)\b|\bplease (continue|retry|re-?run)\b/i;
+  /\byour (\w+ )?(run|runs|wake)\b.{0,80}\b(failed|hung|ended|stopped)\b|\bsetup (kept )?fail(ed|ing)?\b|\b(connection|token) (is|was) (fixed|expired)\b|\bplease (continue|retry|re-?run)\b|\bpick (this|it) up again\b/i;
 
 // Unstick, short form: the whole comment is a nudge to start, continue or
 // retry. Only comments of at most UNSTICK_MAX_WORDS words count, so an
@@ -54,7 +55,8 @@ export const UNSTICK_ANY_RULE =
 export const CHASE_RULE = new RegExp(
   [
     String.raw`\bhow(?:'s| is| are)\b.{0,40}\bgoing\b`,
-    String.raw`\b(any|an) (update|news|progress)\b`,
+    // "update when there is an update" is a request, not a chase (GRE-1181).
+    String.raw`(?<!\b(?:when|once|if) there(?:'s| is) )\b(any|an) (update|news|progress)\b`,
     String.raw`\b(is|are) (everything|it|this|things|all) (ok|okay|fine|alright|good)\b`,
     String.raw`\bwhat do you need\b`,
     String.raw`\bwhat'?s (wrong|happening|going on|the status)\b`,
@@ -62,13 +64,18 @@ export const CHASE_RULE = new RegExp(
     String.raw`\b(are )?you (still )?working\s*\?`,
     String.raw`\bare you (there|receiving|awake|alive|on it)\b`,
     String.raw`\bhow long\b.{0,40}\b(take|left|until)\b`,
-    String.raw`\bwhy (is|are|was|has|hasn't|isn't|did|didn't|does|doesn't|do|don't)\b.{0,60}\b(blocked|stuck|fail\w*|slow|taking|long|stopped|waiting|access|done|working|running)\b`,
+    String.raw`\bwhy (is|are|was|has|hasn't|isn't|did|didn't|does|doesn't|do|don't)\b.{0,60}\b(blocked|stuck|fail\w*|slow|taking|long|stop|stopped|waiting|access|done|working|running)\b`,
     String.raw`\bwhat (caused|cased|made)\b.{0,40}\b(fail|stop|block|hang|hung)`,
     String.raw`\bis (this|it) (done|stuck|blocked|finished)\b`,
     String.raw`\bstill (working|running|waiting|blocked|stuck)\b`,
+    String.raw`\b(have been|has been|keeps?|kept) (stopping|failing|crashing|hanging|stalling)\b.{0,80}\b(can|could) you (just |please )?(check|look)\b`,
   ].join("|"),
   "i",
 );
+
+// Not a chase even when a chase rule matches: a feature request about starting
+// or restarting something from the UI (GRE-1181).
+export const NOT_CHASE_RULE = /\bshould be able to (start|restart)\b/i;
 
 // One class per comment, first match wins: short nudge, repair, restart
 // agents, chase, other. A short nudge comes first so "please retry" on its own
@@ -79,7 +86,7 @@ export function classifyJohnComment(body) {
   if (wordCount(text) <= UNSTICK_MAX_WORDS && UNSTICK_SHORT_RULE.test(text)) return "unstick";
   if (REPAIR_RULE.test(text)) return "repair";
   if (UNSTICK_ANY_RULE.test(text)) return "unstick";
-  if (CHASE_RULE.test(text)) return "chase";
+  if (CHASE_RULE.test(text) && !NOT_CHASE_RULE.test(text)) return "chase";
   return "other";
 }
 

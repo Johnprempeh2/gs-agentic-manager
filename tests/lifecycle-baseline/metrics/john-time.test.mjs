@@ -20,6 +20,12 @@ const SAMPLES = {
     "Hey are you receiving this?",
     "Why doesn’t mica have access to GitHub?",
     "any update on this?",
+    // GRE-1181 audit misses (3 to 9 Oct), synthetic text.
+    "why did you stop",
+    "Why did you stop halfway through the review?",
+    "I see runs have been stopping randomly today. Can you check that it is only a one-off?",
+    "the agents keep failing on setup, could you look into it",
+    "is there an update?",
   ],
   unstick: [
     "continue",
@@ -42,6 +48,9 @@ const SAMPLES = {
     "The Claude connection is fixed (your last runs failed because its token had expired, not because of your work). Please continue: run the tests.",
     "Your last wake failed while creating the worktree: git's config lock collided. Nothing was lost.",
     "Setup failed at 21:46 on a stale git lock in the shared worktree; it is gone now.",
+    // GRE-1181 audit misses, synthetic text.
+    "Your earlier run failed because the board account was retired. It is active again now, so please pick this up again.",
+    "Your previous run stopped on a lock. Pick it up again from the last commit.",
   ],
   other: [
     "the phone UI keeps flickering please fix it",
@@ -53,6 +62,10 @@ const SAMPLES = {
     "I like the meeting insights one",
     "Let’s work on this once we setup on the desktop",
     "stop this run",
+    // GRE-1181 false chase: a feature request, synthetic text.
+    "We should be able to start and restart it from the dashboard and update the card when there is an update",
+    "We should be able to restart the preview from the settings page. Any update on the layout can wait.",
+    "please let me know once there's an update",
     "![Screenshot.png](/api/attachments/abc/content)",
     "",
   ],
