@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
@@ -42,10 +42,12 @@ import {
   type NewKpiReading,
 } from "../components/goals/KpiReadings";
 import { InitiativeBudgetForm, KpiPlanForm } from "../components/goals/KpiPlanForm";
-import { GOAL_KIND_LABELS } from "@greatstone/shared";
+import { PackKpiDraftsDialog } from "../components/goals/PackKpiDraftsDialog";
+import { KpiDraftNotice } from "../components/goals/KpiDraftNotice";
+import { GOAL_KIND_LABELS, GOAL_KIND_PARENTS } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, SlidersHorizontal } from "lucide-react";
+import { FileText, Plus, SlidersHorizontal } from "lucide-react";
 import { ErrorState } from "../components/ErrorState";
 
 interface GoalPropertiesToggleButtonProps {
@@ -81,6 +83,7 @@ export function GoalDetail() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
+  const [packDialogOpen, setPackDialogOpen] = useState(false);
 
   const {
     data: goal,
@@ -314,6 +317,10 @@ export function GoalDetail() {
         />
       </section>
 
+      {goal.kind === "kpi" && (goal.status === "draft" || goal.benchmarkNote || goal.sourceIssueId) ? (
+        <KpiDraftNotice goal={goal} onAccept={() => updateGoal.mutate({ status: "active" })} pending={updateGoal.isPending} />
+      ) : null}
+
       {goal.kind === "kpi" ? (
         <section className="space-y-3" aria-labelledby="kpi-readings-heading">
           <h3 id="kpi-readings-heading" className="text-sm font-semibold">
@@ -397,6 +404,12 @@ export function GoalDetail() {
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Sub Goal
             </Button>
+            {goal.kind && GOAL_KIND_PARENTS.kpi?.includes(goal.kind) ? (
+              <Button size="sm" variant="outline" className="ml-2" onClick={() => setPackDialogOpen(true)}>
+                <FileText className="h-3.5 w-3.5 mr-1.5" />
+                KPIs from research pack
+              </Button>
+            ) : null}
           </div>
           {childGoals.length === 0 ? (
             <p className="text-sm text-muted-foreground">No sub-goals.</p>
@@ -423,9 +436,13 @@ export function GoalDetail() {
           )}
         </TabsContent>
       </Tabs>
+      {goal.kind && GOAL_KIND_PARENTS.kpi?.includes(goal.kind) ? (
+        <PackKpiDraftsDialog goal={goal} open={packDialogOpen} onOpenChange={setPackDialogOpen} />
+      ) : null}
     </div>
   );
 }
+
 
 /** "12 days to go" or "3 days late". */
 export function daysHint(days: number | null): string | null {

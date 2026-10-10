@@ -1,4 +1,4 @@
-import type { Goal, GoalCheckIn, GoalDetail, GoalKpiReading, GoalWithProgress } from "@greatstone/shared";
+import type { Goal, GoalCheckIn, GoalDetail, GoalKpiReading, GoalWithProgress, KpiDraftRow } from "@greatstone/shared";
 import { api } from "./client";
 
 export const goalsApi = {
@@ -10,6 +10,9 @@ export const goalsApi = {
   /** Board users may only post owner_reported; agents post agent_verified or system. */
   createReading: (id: string, data: { value: number; readingDate: string; note?: string | null }) =>
     api.post<GoalKpiReading>(`/goals/${id}/readings`, data),
+  /** Draft KPIs under this goal from slide-5 rows of a research pack document, in one transaction. */
+  createKpiDrafts: (id: string, data: { sourceIssueId: string; documentKey?: string; rows: KpiDraftRow[] }) =>
+    api.post<Goal[]>(`/goals/${id}/kpi-drafts`, data),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Goal>(`/companies/${companyId}/goals`, data),
   /** Creates the empty one-page strategic plan (vision, values, CSF, objective, KPI). Company owners only. */

@@ -70,6 +70,8 @@ export function kpiStatusSentence(status: KpiStatus, unit: string | null): strin
   const value = status.latestValue != null ? formatKpiValue(status.latestValue, unit) : null;
   const planned = status.plannedValue != null ? formatKpiValue(Math.round(status.plannedValue * 100) / 100, unit) : null;
   switch (status.reason) {
+    case "draft":
+      return "Draft KPI: no status until a person sets the target and accepts it.";
     case "no_plan":
       return "Set a target and a deadline to get a status.";
     case "no_reading":
