@@ -53,6 +53,7 @@ import { WorkflowTemplates } from "./pages/WorkflowTemplates";
 import { Releases } from "./pages/Releases";
 import { Artifacts } from "./pages/Artifacts";
 import { Deliverables } from "./pages/Deliverables";
+import { Website } from "./pages/Website";
 import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
@@ -408,6 +409,7 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         element={<StrategyBoardExperimentalGate><StrategyBoard /></StrategyBoardExperimentalGate>}
       />
       <Route path="deliverables" element={<Deliverables />} />
+      <Route path="website" element={<Website />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
@@ -827,6 +829,7 @@ export function App() {
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
+          <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />

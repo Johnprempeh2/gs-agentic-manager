@@ -28,6 +28,7 @@ import {
   FileCheck2,
   Brain,
   Workflow,
+  Globe,
 } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -109,6 +110,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   );
   const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
+  // Website view (GRE-1088): hidden while the managed switch is off.
+  const showWebsite = experimentalSettings?.enableWebsiteView === true;
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
@@ -179,6 +182,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   ) : null;
   const pipelinesItem = showPipelines ? (
     <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
+  ) : null;
+  const websiteItem = showWebsite ? (
+    <SidebarNavItem to="/website" label="Website" icon={Globe} />
   ) : null;
   const workspacesItem = showWorkspacesLink ? (
     <SidebarNavItem to="/workspaces" label="Workspaces" icon={GitBranch} />
@@ -305,6 +311,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             >
               <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
               <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
+              {websiteItem}
               <SidebarNavItem to="/activity" label="Audit" icon={History} />
               {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
               <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
@@ -341,6 +348,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             >
               <SidebarNavItem to="/org" label="Org" icon={Network} />
               <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
+              {websiteItem}
               <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
               <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
               <SidebarNavItem to="/activity" label="Activity" icon={History} />

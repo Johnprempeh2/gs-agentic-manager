@@ -99,6 +99,7 @@ import {
   toolAccessService,
   workspaceOperationService,
 } from "./services/index.js";
+import { websiteService } from "./services/website/index.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { deliverNativeQuestionResponse } from "./services/native-runtime/native-question-bridge.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
@@ -1475,6 +1476,7 @@ async function startServerWithDatabaseTeardown(
     const environmentCustomImages = environmentCustomImageService(db as any, { pluginWorkerManager });
     const routines = routineService(db as any, { pluginWorkerManager });
     const statusCards = statusCardService(db as any);
+    const website = websiteService(db as any);
     const issues = issueService(db as any);
     const mergedPullRequestConfirmations = issueThreadInteractionService(db as any, {
       wakeup: heartbeat.wakeup,
@@ -1964,6 +1966,21 @@ async function startServerWithDatabaseTeardown(
           }
         })().catch((err) => {
           logger.error({ err }, "status-card scheduler tick failed");
+        }));
+
+        if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork((async () => {
+          const experimental = await instanceSettingsService(db).getExperimental();
+          if (experimental.enableWebsiteView !== true) return;
+          const result = await website.tickDuePulls(new Date());
+          const failed = result.results.filter((entry) => entry.status === "failed" || entry.status === "error");
+          if (failed.length > 0) {
+            logger.warn({ failed }, "website daily pull failed for some properties; errors are on each property");
+          } else if (result.results.length > 0) {
+            logger.info({ pulled: result.results.length }, "website daily pull complete");
+          }
+        })().catch((err) => {
+          logger.error({ err }, "website daily pull tick failed");
         }));
 
         if (heartbeatSchedulerStopped) return;
