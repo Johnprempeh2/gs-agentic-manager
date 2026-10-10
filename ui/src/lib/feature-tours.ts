@@ -14,11 +14,16 @@ export interface TourDefinition {
   /** The feature switch the tour belongs to; no tour while it is off. */
   flag: keyof InstanceExperimentalSettings;
   label: string;
+  /** Name and one line for the Tutorials list. */
+  title: string;
+  description: string;
   steps: TourStep[];
 }
 
 export const PIPELINES_LIST_TOUR: TourDefinition = {
   id: "pipelines-list",
+  title: "Pipelines",
+  description: "What a pipeline is, its stages and counts, and how to pin one.",
   version: 1,
   flag: "enablePipelines",
   label: "Pipelines",
@@ -53,6 +58,8 @@ export const PIPELINES_LIST_TOUR: TourDefinition = {
 
 export const PIPELINE_BOARD_TOUR: TourDefinition = {
   id: "pipeline-board",
+  title: "A pipeline's board",
+  description: "Stages as columns, moving a case on, and adding items.",
   version: 1,
   flag: "enablePipelines",
   label: "this board",
@@ -87,6 +94,8 @@ export const PIPELINE_BOARD_TOUR: TourDefinition = {
 
 export const CLIENT_CASE_TOUR: TourDefinition = {
   id: "client-case",
+  title: "Client page",
+  description: "Where a client is in their journey, the next action and who you deal with.",
   version: 1,
   flag: "enablePipelines",
   label: "this client",
@@ -121,6 +130,8 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
 
 export const STRATEGY_BOARD_TOUR: TourDefinition = {
   id: "strategy-board",
+  title: "Board",
+  description: "Your plan on one page for directors, problems first, and board packs.",
   version: 1,
   flag: "enableStrategyBoard",
   label: "the Board",
@@ -155,6 +166,8 @@ export const STRATEGY_BOARD_TOUR: TourDefinition = {
 
 export const WEBSITE_TOUR: TourDefinition = {
   id: "website",
+  title: "Website",
+  description: "Visitors and Google Search in one place, and connecting Google.",
   version: 1,
   flag: "enableWebsiteView",
   label: "Website",
@@ -179,6 +192,8 @@ export const WEBSITE_TOUR: TourDefinition = {
 
 export const GITHUB_SHARE_TOUR: TourDefinition = {
   id: "github-share-with-agents",
+  title: "Share with agents",
+  description: "Letting agents use your GitHub for work they start themselves.",
   version: 1,
   flag: "enableApps",
   label: "sharing",
@@ -205,3 +220,13 @@ export const GITHUB_SHARE_TOUR: TourDefinition = {
     },
   ],
 };
+
+/** Every tour, in the order the Tutorials list shows them. */
+export const ALL_TOURS: TourDefinition[] = [
+  PIPELINES_LIST_TOUR,
+  PIPELINE_BOARD_TOUR,
+  CLIENT_CASE_TOUR,
+  STRATEGY_BOARD_TOUR,
+  WEBSITE_TOUR,
+  GITHUB_SHARE_TOUR,
+];

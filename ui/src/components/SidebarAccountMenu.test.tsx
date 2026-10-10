@@ -227,6 +227,7 @@ describe("SidebarAccountMenu", () => {
 
     expect(document.body.textContent).toContain("Edit profile");
     expect(document.body.textContent).toContain("Settings");
+    expect(document.body.querySelector('a[href$="/tutorials"]')?.textContent).toContain("Tutorials");
     expect(document.body.textContent).not.toContain("Instance settings");
     // The upstream docs link is gone; there is no Greatstone docs site yet.
     expect(document.body.textContent).not.toContain("Documentation");
