@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { StrategyBoardKpi } from "@greatstone/shared";
-import { AlertTriangle, FileText, Network } from "lucide-react";
+import { AlertTriangle, FileText, MessageSquare, Network } from "lucide-react";
 import { strategyBoardApi } from "@/api/strategyBoard";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
-import { Link } from "@/lib/router";
+import { Link, useNavigate, useSearchParams } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 import { boardAssurance } from "@/lib/strategy-board";
 import { ErrorState } from "@/components/ErrorState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AttentionQueue, ChangesSinceSnapshot, StrategyAtAGlance } from "@/components/strategy-board/StrategyBoardViews";
 import { AskWhyDialog, BoardMembersCard, BoardPackViewer, MakeBoardPackDialog } from "@/components/strategy-board/StrategyBoardDialogs";
 
@@ -48,10 +49,53 @@ export function unsentAlertText(count: number, hasChair: boolean, mayManageMembe
  * and the board packs. Read-mostly: the only board actions are "Ask why"
  * and "Make board pack".
  */
+/** "Ask the board agent": one agent opens its chat; several open a short menu. */
+export function AskBoardAgentButton({ companyId }: { companyId: string }) {
+  const navigate = useNavigate();
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.strategyBoard.agents(companyId),
+    queryFn: () => strategyBoardApi.agents(companyId),
+  });
+  if (!agents || agents.length === 0) return null;
+  const label = (
+    <>
+      <MessageSquare className="size-3.5" />
+      Ask the board agent
+    </>
+  );
+  if (agents.length === 1) {
+    return (
+      <Button size="sm" variant="outline" asChild>
+        <Link to={`/strategy-board/ask/${agents[0]!.id}`}>{label}</Link>
+      </Button>
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="outline">{label}</Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>Your board agents</DropdownMenuLabel>
+        {agents.map((agent) => (
+          <DropdownMenuItem key={agent.id} onSelect={() => navigate(`/strategy-board/ask/${agent.id}`)}>
+            <span className="flex flex-col">
+              <span>{agent.name}</span>
+              {agent.title ? <span className="text-xs text-muted-foreground">{agent.title}</span> : null}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function StrategyBoard() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [askKpi, setAskKpi] = useState<StrategyBoardKpi | null>(null);
+  const [askQuestion, setAskQuestion] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
   const [makingPack, setMakingPack] = useState(false);
   const [openPackId, setOpenPackId] = useState<string | null>(null);
 
@@ -70,6 +114,22 @@ export function StrategyBoard() {
     enabled: !!selectedCompanyId,
   });
 
+  // The board agent offers a "Why?" request as a link (GRE-1186). It opens the
+  // dialog filled in; nothing is sent until the board member presses Send.
+  const offeredGoalId = searchParams.get("askWhy");
+  useEffect(() => {
+    if (!offeredGoalId || !board) return;
+    const kpi = board.kpis.find((item) => item.goalId === offeredGoalId);
+    if (kpi && board.viewer.mayAskWhy) {
+      setAskQuestion(searchParams.get("question") ?? "");
+      setAskKpi(kpi);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("askWhy");
+    next.delete("question");
+    setSearchParams(next, { replace: true });
+  }, [offeredGoalId, board, searchParams, setSearchParams]);
+
   if (isLoading) return <PageSkeleton variant="list" />;
   if (error || !board) return <ErrorState error={error} onRetry={() => void refetch()} />;
 
@@ -86,6 +146,7 @@ export function StrategyBoard() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <AskBoardAgentButton companyId={selectedCompanyId!} />
           <Button size="sm" variant="outline" asChild>
             <Link to="/goals">
               <Network className="size-3.5" />
@@ -154,7 +215,15 @@ export function StrategyBoard() {
         </section>
       ) : null}
 
-      <AskWhyDialog companyId={selectedCompanyId!} kpi={askKpi} onClose={() => setAskKpi(null)} />
+      <AskWhyDialog
+        companyId={selectedCompanyId!}
+        kpi={askKpi}
+        initialQuestion={askQuestion}
+        onClose={() => {
+          setAskKpi(null);
+          setAskQuestion("");
+        }}
+      />
       {makingPack ? (
         <MakeBoardPackDialog
           companyId={selectedCompanyId!}
