@@ -42,6 +42,15 @@ export interface Goal {
   budgetSpentCents: number | null;
   /** ISO 4217 code, e.g. "USD". */
   budgetCurrency: string | null;
+  /**
+   * Peer benchmark from a research pack (GRE-1161). Context for whoever sets
+   * the target, never the target itself.
+   */
+  benchmarkNote: string | null;
+  /** The research pack document a pre-filled KPI came from: issue, document key and bullet ID. */
+  sourceIssueId: string | null;
+  sourceDocumentKey: string | null;
+  sourceBulletId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

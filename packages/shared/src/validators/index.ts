@@ -627,10 +627,14 @@ export {
   updateGoalSchema,
   createGoalCheckInSchema,
   createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  kpiDraftRowSchema,
   type CreateGoal,
   type UpdateGoal,
   type CreateGoalCheckIn,
   type CreateGoalKpiReading,
+  type CreateKpiDraftsFromPack,
+  type KpiDraftRow,
 } from "./goal.js";
 export {
   createGoalWhyRequestSchema,

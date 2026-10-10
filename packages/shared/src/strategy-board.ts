@@ -68,12 +68,15 @@ function ancestorsOf(goal: StrategyBoardGoal, byId: ReadonlyMap<string, Strategy
   return { area, objective };
 }
 
-/** Every live KPI on the plan, as the board sees it. Cancelled KPIs are left out. */
+/**
+ * Every live KPI on the plan, as the board sees it. Cancelled KPIs are left
+ * out, and so are draft KPIs (GRE-1161): they are not live until a person accepts them.
+ */
 export function buildStrategyBoardKpis(input: StrategyBoardKpiInput): StrategyBoardKpi[] {
   const byId = new Map(input.goals.map((goal) => [goal.id, goal]));
   const out: StrategyBoardKpi[] = [];
   for (const goal of input.goals) {
-    if (goal.kind !== "kpi" || goal.status === "cancelled") continue;
+    if (goal.kind !== "kpi" || goal.status === "cancelled" || goal.status === "draft") continue;
     const status = input.statusById.get(goal.id) ?? null;
     const latest = input.latestReadingById.get(goal.id) ?? null;
     const previous = input.snapshotById?.get(goal.id) ?? null;

@@ -2296,6 +2296,10 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           budgetPlannedCents: null,
           budgetSpentCents: null,
           budgetCurrency: null,
+          benchmarkNote: null,
+          sourceIssueId: null,
+          sourceDocumentKey: null,
+          sourceBulletId: null,
           createdAt: now,
           updatedAt: now,
         };

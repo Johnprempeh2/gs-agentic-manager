@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
+import { issues } from "./issues.js";
 
 export const goals = pgTable(
   "goals",
@@ -43,6 +44,12 @@ export const goals = pgTable(
     budgetPlannedCents: bigint("budget_planned_cents", { mode: "number" }),
     budgetSpentCents: bigint("budget_spent_cents", { mode: "number" }),
     budgetCurrency: text("budget_currency"),
+    /** Peer benchmark from a research pack (GRE-1161): context for the target, never the target. */
+    benchmarkNote: text("benchmark_note"),
+    /** Research pack document a pre-filled KPI came from: issue, document key and bullet ID. */
+    sourceIssueId: uuid("source_issue_id").references((): AnyPgColumn => issues.id, { onDelete: "set null" }),
+    sourceDocumentKey: text("source_document_key"),
+    sourceBulletId: text("source_bullet_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

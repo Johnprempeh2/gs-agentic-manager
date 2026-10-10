@@ -89,6 +89,16 @@ describe("computeKpiStatus", () => {
     // One reading only: it is the baseline, so it is on plan.
     expect(computeKpiStatus(noBaseline, reading(140), reading(140), MID_YEAR).status).toBe("green");
   });
+
+  it("gives a draft KPI no status, even with a target and a reading (GRE-1161)", () => {
+    const draft = { ...plan, status: "draft" };
+    expect(computeKpiStatus(draft, reading(100), reading(100), MID_YEAR)).toMatchObject({
+      status: null,
+      reason: "draft",
+      latestValue: 100,
+    });
+    expect(computeKpiStatus({ ...draft, targetValue: null, targetDate: null }, null, null, MID_YEAR).reason).toBe("draft");
+  });
 });
 
 describe("rollUpKpiStatus", () => {
@@ -127,6 +137,13 @@ describe("rollUpKpiStatus", () => {
     const rollup = rollUpKpiStatus(goals, new Map([["kpi1", "green" as const]]));
     expect(rollup.get("objB")?.status).toBeNull();
     expect(rollup.get("pillar")).toMatchObject({ status: "green", green: 1, noStatus: 3 });
+  });
+
+  it("leaves draft KPIs out until a person accepts them (GRE-1161)", () => {
+    const withDraft = [...goals, { id: "draft1", parentId: "objA", kind: "kpi", status: "draft" }];
+    const rollup = rollUpKpiStatus(withDraft, new Map([...statuses, ["draft1", "red" as const]]));
+    expect(rollup.get("draft1")).toEqual({ status: null, red: 0, amber: 0, green: 0, noStatus: 0 });
+    expect(rollup.get("objA")).toEqual({ status: "amber", red: 0, amber: 1, green: 1, noStatus: 0 });
   });
 
   it("survives a parent cycle in old data", () => {

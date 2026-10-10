@@ -121,6 +121,7 @@ import {
   createGoalSchema,
   createGoalCheckInSchema,
   createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
   createGoalWhyRequestSchema,
   answerGoalWhyRequestSchema,
   createStrategyBoardPackSchema,
@@ -5795,6 +5796,21 @@ registry.registerPath({
   summary: "Answer a \"Why?\" request (the KPI owner, the lead agent, or a company owner or admin); logged on the KPI",
   request: { params: idParams, body: jsonBody(answerGoalWhyRequestSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/goals/{id}/kpi-drafts",
+  tags: ["goals"],
+  summary:
+    "Pre-fill draft KPIs under this goal from slide-5 rows of a research pack document, in one transaction. " +
+    "Each draft keeps baseline, unit, benchmark note and a link to its bullet; target stays empty and status is draft " +
+    "(no RAG status) until a person sets the target and accepts it. First reading: system (agent) or owner_reported (person).",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(createKpiDraftsFromPackSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({

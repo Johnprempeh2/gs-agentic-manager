@@ -20,6 +20,8 @@ import {
  * - Past the deadline the plan is the target: met is green, not met is red.
  * - No baseline: the first reading is the baseline. No target or no deadline:
  *   there is no path, so no status. No reading: no status.
+ * - A draft KPI (pre-filled from a research pack, GRE-1161) is not live: no
+ *   status, even with a target, until a person moves it out of draft.
  */
 
 export type KpiStatusReason =
@@ -28,7 +30,8 @@ export type KpiStatusReason =
   | "target_met"
   | "deadline_missed"
   | "no_reading"
-  | "no_plan";
+  | "no_plan"
+  | "draft";
 
 export interface KpiStatus {
   /** null when there is nothing to judge (no reading or no plan). */
@@ -54,6 +57,8 @@ export interface KpiPlan {
   amberThresholdPct: number | null;
   redThresholdPct: number | null;
   createdAt: Date | string;
+  /** Goal status; a "draft" KPI has no status. */
+  status?: string | null;
 }
 
 export interface KpiReadingPoint {
@@ -101,6 +106,7 @@ export function computeKpiStatus(
   today: string,
 ): KpiStatus {
   const empty = { plannedValue: null, gapPercent: null, latestValue: latest?.value ?? null, latestDate: latest?.readingDate ?? null };
+  if (plan.status === "draft") return { status: null, reason: "draft", ...empty };
   if (plan.targetValue == null || !plan.targetDate) return { status: null, reason: "no_plan", ...empty };
   if (!latest) return { status: null, reason: "no_reading", ...empty };
 
@@ -171,12 +177,16 @@ export interface RollupGoal {
 
 const EMPTY_ROLLUP: GoalRagRollup = { status: null, red: 0, amber: 0, green: 0, noStatus: 0 };
 
+/** Goals left out of the roll-up with their branches: cancelled, and drafts that are not live yet. */
+const NOT_LIVE_STATUSES = new Set(["cancelled", "draft"]);
+
 /**
  * Rolls KPI status up the goal tree (KPI → objective → pillar / CSF → vision):
  * worst child wins, so one red KPI makes its objective and pillar red. Counts
  * say how many KPIs sit under each goal in each colour. A KPI with no status
  * does not hide a red or amber; a branch with only unread KPIs has no status.
- * Cancelled goals and their branches are left out, as in the progress roll-up.
+ * Cancelled goals and their branches are left out, as in the progress roll-up;
+ * so are draft KPIs, which are not live until a person accepts them.
  */
 export function rollUpKpiStatus(
   goals: readonly RollupGoal[],
@@ -184,7 +194,7 @@ export function rollUpKpiStatus(
 ): Map<string, GoalRagRollup> {
   const children = new Map<string, RollupGoal[]>();
   for (const goal of goals) {
-    if (!goal.parentId || goal.status === "cancelled") continue;
+    if (!goal.parentId || NOT_LIVE_STATUSES.has(goal.status)) continue;
     const list = children.get(goal.parentId) ?? [];
     list.push(goal);
     children.set(goal.parentId, list);
@@ -199,7 +209,7 @@ export function rollUpKpiStatus(
     if (visiting.has(goal.id)) return EMPTY_ROLLUP;
     visiting.add(goal.id);
     const counts = { red: 0, amber: 0, green: 0, noStatus: 0 };
-    if (goal.kind === "kpi") {
+    if (goal.kind === "kpi" && goal.status !== "draft") {
       const own = kpiStatusById.get(goal.id) ?? null;
       if (own) counts[own] += 1;
       else counts.noStatus += 1;

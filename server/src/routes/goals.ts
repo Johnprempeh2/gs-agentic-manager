@@ -4,6 +4,7 @@ import {
   createGoalCheckInSchema,
   createGoalKpiReadingSchema,
   createGoalSchema,
+  createKpiDraftsFromPackSchema,
   isBoardGoalKind,
   updateGoalSchema,
   type KpiReadingSource,
@@ -12,6 +13,7 @@ import { trackGoalCreated } from "@greatstone/shared/telemetry";
 import { forbidden, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
+import { isAcceptingDraftKpi } from "../services/goals.js";
 import { isEntitled } from "../services/entitlements.js";
 import { strategyBoardService } from "../services/strategy-board.js";
 import { logger } from "../middleware/logger.js";
@@ -164,6 +166,38 @@ export function goalRoutes(db: Db) {
     res.status(201).json(reading);
   });
 
+  /**
+   * Pre-fills draft KPIs under this goal from slide-5 rows of a research pack
+   * document (GRE-1161), in one transaction. Drafts have a baseline and a
+   * benchmark note but no target and no status until a person accepts them.
+   */
+  router.post("/goals/:id/kpi-drafts", validate(createKpiDraftsFromPackSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const parent = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
+    if (!parent) return;
+    const actor = getActorInfo(req);
+    const created = await svc.createKpiDraftsFromPack(parent, req.body, {
+      agentId: actor.agentId,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    await logActivity(db, {
+      companyId: parent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "goal.kpi_drafts_created",
+      entityType: "goal",
+      entityId: parent.id,
+      details: {
+        goalIds: created.map((goal) => goal.id),
+        sourceIssueId: req.body.sourceIssueId,
+        documentKey: req.body.documentKey,
+        bulletIds: created.map((goal) => goal.sourceBulletId),
+      },
+    });
+    res.status(201).json(created);
+  });
+
   router.post("/companies/:companyId/goals", validate(createGoalSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -213,6 +247,10 @@ export function goalRoutes(db: Db) {
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!existing) return;
     assertMayEditGoalKinds(req, existing.companyId, existing.kind, req.body.kind);
+    // A person accepts a draft KPI; an agent may fill it in but not make it live.
+    if (isAcceptingDraftKpi(existing, req.body.status) && getActorInfo(req).actorType !== "user") {
+      throw forbidden("Only a person may accept a draft KPI", { code: "kpi_draft_accept_person_only" });
+    }
     const goal = await svc.update(id, req.body);
     if (!goal) {
       res.status(404).json({ error: "Goal not found" });

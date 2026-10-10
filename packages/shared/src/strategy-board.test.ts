@@ -38,6 +38,7 @@ const GOALS: StrategyBoardGoal[] = [
   goal({ id: "csf-market", title: "Market expansion", kind: "csf" }),
   goal({ id: "kpi-launch", title: "Countries live", kind: "kpi", parentId: "csf-market", targetValue: 3, targetDate: "2027-06-30" }),
   goal({ id: "kpi-old", title: "Old KPI", kind: "kpi", parentId: "csf-market", status: "cancelled", targetValue: 1, targetDate: "2026-12-31" }),
+  goal({ id: "kpi-draft", title: "Peer share (draft)", kind: "kpi", parentId: "csf-market", status: "draft" }),
 ];
 
 function status(values: Partial<KpiStatus>): KpiStatus {
@@ -73,7 +74,7 @@ function boardKpis(snapshotById: Map<string, { status: "red" | "amber" | "green"
 }
 
 describe("strategy board KPIs", () => {
-  it("places each KPI under its area and objective, with owner, source and age, and leaves cancelled KPIs out", () => {
+  it("places each KPI under its area and objective, with owner, source and age, and leaves cancelled and draft KPIs out", () => {
     const kpis = boardKpis(null);
     expect(kpis.map((kpi) => kpi.goalId)).toEqual(["kpi-retention", "kpi-hiring", "kpi-training", "kpi-launch"]);
     expect(kpis[0]).toMatchObject({

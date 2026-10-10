@@ -40,6 +40,11 @@ export {
   type RollupGoal,
 } from "./goal-kpi-status.js";
 export {
+  isPackReferenceSection,
+  suggestKpiDraftsFromPack,
+  type KpiDraftSuggestion,
+} from "./goal-kpi-drafts.js";
+export {
   buildStrategyBoardAreas,
   buildStrategyBoardKpis,
   countStrategyBoardKpis,
@@ -2284,10 +2289,14 @@ export {
   updateGoalSchema,
   createGoalCheckInSchema,
   createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  kpiDraftRowSchema,
   type CreateGoal,
   type UpdateGoal,
   type CreateGoalCheckIn,
   type CreateGoalKpiReading,
+  type CreateKpiDraftsFromPack,
+  type KpiDraftRow,
   createGoalWhyRequestSchema,
   answerGoalWhyRequestSchema,
   createStrategyBoardPackSchema,
