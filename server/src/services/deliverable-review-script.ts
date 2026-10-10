@@ -191,6 +191,10 @@ const REVIEW_SCRIPT = String.raw`(function () {
     if (!name && tag === "figure") name = childText(el, "figcaption");
     if (!name && el.parentNode && el.parentNode.nodeType === 1 && tagOf(el.parentNode) === "figure") name = childText(el.parentNode, "figcaption");
     if (!name && tag === "img") name = String(el.getAttribute("src") || "").split(/[?#]/)[0].split("/").pop();
+    if (!name && kind === "Block") {
+      var heading = el.querySelector("h1,h2,h3,h4,h5,h6");
+      if (heading && !isOurs(heading)) name = textOf(heading);
+    }
     if (!name && tag !== "img") name = textOf(el);
     name = squash(name);
     return clip(name ? kind + ": " + name : kind, LABEL_MAX);

@@ -217,6 +217,17 @@ describe("DeliverableCommentsPanel", () => {
     expect(pick.getAttribute("aria-pressed")).toBe("true");
     await fromFrame({ type: "pickCancel" });
     expect(container.querySelector("[data-testid='deliverable-comments-pick']")!.getAttribute("aria-pressed")).toBe("false");
+
+    // Esc in the app also stops picking, and does not reach the dialog behind it.
+    await click(pick);
+    const behind = vi.fn();
+    document.addEventListener("keydown", behind);
+    await act(async () => {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    document.removeEventListener("keydown", behind);
+    expect(behind).not.toHaveBeenCalled();
+    expect(pick.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("drafts two notes on different passages, edits one, deletes one, then sends", async () => {

@@ -175,6 +175,19 @@ export function useDeliverableReview(companyId: string, deliverableId: string, e
     postToFrame({ type: "pickMode", on: picking });
   }, [frameLoads, picking, postToFrame]);
 
+  // Esc while picking stops picking; it must not also close the preview.
+  useEffect(() => {
+    if (!picking) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPicking(false);
+    }
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [picking]);
+
   const focusComment = useCallback((id: string) => {
     setActiveId(id);
     postToFrame({ type: "scrollTo", id });
@@ -430,7 +443,7 @@ export function DeliverableCommentsPanel({ review }: { review: DeliverableReview
             <SquareDashedMousePointer /> {picking ? "Stop picking" : "Pick element or area"}
           </Button>
           {!picking ? (
-            <p className="text-xs text-muted-foreground">Tip: hold Alt (Option on a Mac) and click or drag in the document.</p>
+            <p className="hidden text-xs text-muted-foreground sm:block">Tip: hold Alt (Option on a Mac) and click or drag in the document.</p>
           ) : null}
         </div>
       )}

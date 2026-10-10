@@ -66,6 +66,9 @@ describe("deliverable review script: picking", () => {
     expect(api.describe(document.querySelector("section")!)).toBe("Block: Slide two");
     expect(api.describe(document.body)).toBe("Page");
 
+    const slide = load("<html><body><section><h2>Slide 2: Next steps</h2><p>Hire two analysts.</p></section></body></html>");
+    expect(slide.api.describe(slide.document.querySelector("section")!)).toBe("Block: Slide 2: Next steps");
+
     const unnamed = load("<html><body><img src='/a/b/logo.svg#x'><p>x</p></body></html>");
     expect(unnamed.api.describe(unnamed.document.querySelector("img")!)).toBe("Image: logo.svg");
   });
