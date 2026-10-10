@@ -1,0 +1,7 @@
+{
+  "access_token": "fixture-access-token",
+  "expires_in": 3599,
+  "refresh_token": "fixture-refresh-token",
+  "scope": "https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/webmasters.readonly",
+  "token_type": "Bearer"
+}

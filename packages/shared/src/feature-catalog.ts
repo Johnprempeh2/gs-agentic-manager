@@ -161,6 +161,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableWebsiteView: {
+    title: "Website view",
+    description:
+      "Read-only Website page built from Google Analytics 4 and Search Console: Google sign-in with read-only scopes, a daily pull stored in this instance, and the report API. Off answers every Website route with 403 not_entitled.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableAgentChat: {
     title: "Agent Chat",
     description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatDateTime, formatShortDate, formatTime } from "./utils";
+import { formatCalendarDay, formatDate, formatDateTime, formatShortDate, formatTime } from "./utils";
 
 describe("formatDateTime", () => {
   // Local construction avoids assuming the test runner's timezone.
@@ -46,5 +46,12 @@ describe("formatTime", () => {
   it("formats serialized server timestamps identically to Date values", () => {
     const timestamp = new Date(2026, 8, 7, 9, 4, 1);
     expect(formatTime(timestamp.toISOString())).toBe(formatTime(timestamp));
+  });
+});
+
+describe("formatCalendarDay", () => {
+  it("reads YYYY-MM-DD as the same calendar day in every time zone", () => {
+    expect(formatCalendarDay("2026-10-01")).toBe("1 Oct");
+    expect(formatCalendarDay("2026-12-31", { includeYear: true })).toBe("31 Dec 2026");
   });
 });

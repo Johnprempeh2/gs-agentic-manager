@@ -79,6 +79,9 @@
     "enableStrategyBoard": [
       "server/src/__tests__/strategy-board.test.ts"
     ],
+    "enableWebsiteView": [
+      "server/src/__tests__/website-routes.test.ts"
+    ],
     "enableAgentChat": [
       "server/src/__tests__/agent-conversations.test.ts"
     ],

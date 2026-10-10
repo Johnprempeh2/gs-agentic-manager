@@ -126,6 +126,8 @@ export interface InstanceExperimentalSettings {
   enableDeepDive: boolean;
   /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). */
   enableStrategyBoard: boolean;
+  /** Greatstone: the read-only Website view (GA4 and Search Console). Off = `403 not_entitled`. */
+  enableWebsiteView: boolean;
   enableAgentChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;

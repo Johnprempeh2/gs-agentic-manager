@@ -1,0 +1,45 @@
+{
+  "_about": "Search Console urlInspection.index.inspect responses, keyed by URL path; '*' is every other path.",
+  "*": {
+    "inspectionResult": {
+      "inspectionResultLink": "https://search.google.com/search-console/inspect",
+      "indexStatusResult": {
+        "verdict": "PASS",
+        "coverageState": "Submitted and indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-10-05T03:12:44Z",
+        "pageFetchState": "SUCCESSFUL",
+        "crawledAs": "MOBILE"
+      }
+    }
+  },
+  "/insights/old-announcement": {
+    "inspectionResult": {
+      "inspectionResultLink": "https://search.google.com/search-console/inspect",
+      "indexStatusResult": {
+        "verdict": "NEUTRAL",
+        "coverageState": "Crawled - currently not indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": "2026-09-20T11:02:10Z",
+        "pageFetchState": "SUCCESSFUL",
+        "crawledAs": "MOBILE"
+      }
+    }
+  },
+  "/contact": {
+    "inspectionResult": {
+      "inspectionResultLink": "https://search.google.com/search-console/inspect",
+      "indexStatusResult": {
+        "verdict": "NEUTRAL",
+        "coverageState": "Discovered - currently not indexed",
+        "robotsTxtState": "ALLOWED",
+        "indexingState": "INDEXING_ALLOWED",
+        "lastCrawlTime": null,
+        "pageFetchState": "SUCCESSFUL",
+        "crawledAs": "MOBILE"
+      }
+    }
+  }
+}
