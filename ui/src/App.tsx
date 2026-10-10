@@ -56,6 +56,8 @@ import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
 import { GoalDetail } from "./pages/GoalDetail";
+import { StrategyBoard } from "./pages/StrategyBoard";
+import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
 import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { CompanyActivity } from "./pages/audit/CompanyActivity";
@@ -399,6 +401,10 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         <Route path="releases" element={<Releases />} />
       </Route>
       <Route path="goals/:goalId" element={<GoalDetail />} />
+      <Route
+        path="strategy-board"
+        element={<StrategyBoardExperimentalGate><StrategyBoard /></StrategyBoardExperimentalGate>}
+      />
       <Route path="deliverables" element={<Deliverables />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />

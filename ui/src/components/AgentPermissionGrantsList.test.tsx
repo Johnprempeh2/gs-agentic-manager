@@ -9,7 +9,7 @@ import { AgentPermissionGrantsList } from "./AgentPermissionGrantsList";
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 // Pipeline keys have their own control (GRE-1072), so the read-only list skips them.
-const READ_ONLY_KEYS = PERMISSION_KEYS.filter((key) => !key.startsWith("pipelines:"));
+const READ_ONLY_KEYS = PERMISSION_KEYS.filter((key) => !key.startsWith("pipelines:") && !key.startsWith("strategy:"));
 
 describe("AgentPermissionGrantsList", () => {
   let container: HTMLDivElement;
@@ -66,6 +66,15 @@ describe("AgentPermissionGrantsList", () => {
 
     expect(rowFor("pipelines:write")).toBeNull();
     expect(rowFor("pipelines:cases")).toBeNull();
+  });
+
+  it("leaves board keys out: they are for people, set on the Board page (GRE-1135)", () => {
+    act(() => {
+      root.render(<AgentPermissionGrantsList grants={[]} />);
+    });
+
+    expect(rowFor("strategy:board_member")).toBeNull();
+    expect(rowFor("strategy:board_chair")).toBeNull();
   });
 
   it("has no edit controls", () => {

@@ -711,6 +711,24 @@ describe("Sidebar", () => {
     });
   });
 
+  it("shows the Board link after Goals only while the board control panel is on (GRE-1135)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStrategyBoard: true });
+    let root = await renderSidebar();
+    const link = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Board");
+    expect(link?.getAttribute("href")).toBe("/strategy-board");
+    expect(sectionLabels("Work").slice(-2)).toEqual(["Goals", "Board"]);
+    flushSync(() => {
+      root.unmount();
+    });
+
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStrategyBoard: false });
+    root = await renderSidebar();
+    expect([...container.querySelectorAll("a")].some((anchor) => anchor.textContent === "Board")).toBe(false);
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("always shows the Goals nav item, even with the old experimental setting off (GRE-191)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,

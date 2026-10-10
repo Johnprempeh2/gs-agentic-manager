@@ -3,6 +3,7 @@ import {
   ListChecks,
   CircleDot,
   Target,
+  Landmark,
   LayoutDashboard,
   DollarSign,
   History,
@@ -185,6 +186,10 @@ export function Sidebar() {
           ) : null}
           {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
+          {/* GRE-1135: board control panel, behind enableStrategyBoard. */}
+          {experimentalSettings?.enableStrategyBoard === true ? (
+            <SidebarNavItem to="/strategy-board" label="Board" icon={Landmark} />
+          ) : null}
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (
