@@ -22,6 +22,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn, relativeTime } from "../lib/utils";
 import { FoldCurtain } from "./FoldCurtain";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "./IssueDocumentAnnotations";
+import { IssueDocumentEvidence } from "./IssueDocumentEvidence";
 import type { DocumentAnnotationTarget } from "@/api/document-annotations";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
 import { MarkdownEditor, type MentionOption } from "./MarkdownEditor";
@@ -1328,6 +1329,13 @@ export function IssueDocumentsSection({
                       ) : renderedDocumentBody;
                     })()}
                   </div>
+                  {documentSubject.annotations && !isSystemIssueDocumentKey(doc.key) && !isHistoricalPreview ? (
+                    <IssueDocumentEvidence
+                      issueId={documentSubject.annotations.issueId}
+                      documentKey={doc.key}
+                      revisionNumber={doc.latestRevisionNumber}
+                    />
+                  ) : null}
                   <div className="flex min-h-4 items-center justify-end px-1">
                     <span
                       className={`text-(length:--text-micro) transition-opacity duration-150 ${

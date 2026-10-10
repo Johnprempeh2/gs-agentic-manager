@@ -81,6 +81,8 @@ import {
   checkoutIssueSchema,
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
+  documentEvidenceBulletIdSchema,
+  upsertDocumentEvidenceSchema,
   createChildIssueSchema,
   createIssueSchema,
   resolveCreateIssueStatusDefault,
@@ -199,6 +201,7 @@ import {
   type QueuedCommentIssueContext,
 } from "../modules/wake-queue/index.js";
 import { artifactReviewDocumentService } from "../services/artifact-review-documents.js";
+import { documentEvidenceService } from "../services/document-evidence.js";
 import { assertCanResolveProposal } from "../services/secret-proposal-authorization.js";
 import {
   buildDocumentReviewContext,
@@ -3774,6 +3777,7 @@ export function issueRoutes(
   const artifactReviewDocumentsSvc = artifactReviewDocumentService(db, storage);
   const companySkillsSvc = companySkillService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
+  const documentEvidenceSvc = documentEvidenceService(db);
   const decisionTrainingSvc = decisionTrainingService(db);
   const issueReferencesSvc = issueReferenceService(db);
   const issueThreadInteractionsSvc = issueThreadInteractionService(db);
@@ -10202,6 +10206,140 @@ export function issueRoutes(
         },
       );
     res.json({ ...doc, annotations });
+  });
+
+  // Evidence trail (GRE-1146): source links and labels per document bullet,
+  // the missing-label check, and the notes export for the deck builder.
+  function parseDocumentKeyParam(req: Request, res: Response): string | null {
+    const keyParsed = issueDocumentKeySchema.safeParse(
+      String(req.params.key ?? "")
+        .trim()
+        .toLowerCase(),
+    );
+    if (!keyParsed.success) {
+      res.status(400).json({
+        error: "Invalid document key",
+        details: keyParsed.error.issues,
+      });
+      return null;
+    }
+    return keyParsed.data;
+  }
+
+  async function readableIssueForEvidence(req: Request, res: Response) {
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      getIssueById(req, req.params.id as string),
+      "Issue not found",
+    );
+    if (!issue) return null;
+    if (!(await assertIssueReadAllowed(req, res, issue))) return null;
+    return issue;
+  }
+
+  async function writableIssueForEvidence(req: Request, res: Response) {
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(req.params.id as string),
+      "Issue not found",
+    );
+    if (!issue) return null;
+    if (
+      !(await assertAgentIssueMutationAllowed(req, res, issue, {
+        allowVisibleIssueWrite: true,
+      }))
+    )
+      return null;
+    return issue;
+  }
+
+  router.get("/issues/:id/documents/:key/evidence", async (req, res) => {
+    const issue = await readableIssueForEvidence(req, res);
+    if (!issue) return;
+    const key = parseDocumentKeyParam(req, res);
+    if (!key) return;
+    res.json(await documentEvidenceSvc.getView(issue, key));
+  });
+
+  router.get("/issues/:id/documents/:key/evidence/export", async (req, res) => {
+    const issue = await readableIssueForEvidence(req, res);
+    if (!issue) return;
+    const key = parseDocumentKeyParam(req, res);
+    if (!key) return;
+    const exported = await documentEvidenceSvc.exportForDeck(issue, key);
+    if (req.query.format === "markdown") {
+      res.type("text/markdown").send(exported.markdown);
+      return;
+    }
+    res.json(exported);
+  });
+
+  router.put(
+    "/issues/:id/documents/:key/evidence",
+    validate(upsertDocumentEvidenceSchema),
+    async (req, res) => {
+      const issue = await writableIssueForEvidence(req, res);
+      if (!issue) return;
+      const key = parseDocumentKeyParam(req, res);
+      if (!key) return;
+      const { actor, annotationActor } = annotationActorInput(req);
+      const view = await documentEvidenceSvc.upsert(issue, key, req.body, {
+        agentId: annotationActor.agentId,
+        userId: annotationActor.userId,
+      });
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.document_evidence_updated",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          key: view.documentKey,
+          documentId: view.documentId,
+          revisionNumber: view.revisionNumber,
+          bulletIds: (req.body as { bullets: { bulletId: string }[] }).bullets.map((bullet) => bullet.bulletId),
+          check: view.check.totals,
+        },
+      });
+      res.json(view);
+    },
+  );
+
+  router.delete("/issues/:id/documents/:key/evidence/:bulletId", async (req, res) => {
+    const issue = await writableIssueForEvidence(req, res);
+    if (!issue) return;
+    const key = parseDocumentKeyParam(req, res);
+    if (!key) return;
+    const bulletId = documentEvidenceBulletIdSchema.safeParse(req.params.bulletId);
+    if (!bulletId.success) {
+      res.status(400).json({ error: "Invalid bullet ID", details: bulletId.error.issues });
+      return;
+    }
+    const removed = await documentEvidenceSvc.remove(issue, key, bulletId.data);
+    if (!removed) {
+      res.status(404).json({ error: "No evidence for this bullet" });
+      return;
+    }
+    const { actor } = annotationActorInput(req);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "issue.document_evidence_removed",
+      entityType: "issue",
+      entityId: issue.id,
+      details: { key, bulletId: bulletId.data },
+    });
+    res.json({ ok: true });
   });
 
   router.get("/issues/:id/documents/:key/annotations", async (req, res) => {

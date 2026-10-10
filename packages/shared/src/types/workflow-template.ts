@@ -111,7 +111,8 @@ export const RESEARCH_PACK_WORKFLOW_TEMPLATE_PRESET: {
       {
         key: "synthesis",
         title: "Synthesis",
-        description: "Write the five slides from the step documents only. Each bullet carries claim IDs and its labels (type, geography, freshness, inference).",
+        description: "Write the five slides from the step documents only. Start each bullet with its bold ID (e.g. **S1**), then record its claim IDs and labels " +
+          "(type, geography, freshness, inference, suggested judgement) with PUT /api/issues/{this issue}/documents/pre-read/evidence.",
         assigneeAgentId: null,
         documents: [{ key: "pre-read", title: "Pre-read" }],
         blockedBy: ["records", "analogues", "environment", "benchmarks"],
@@ -119,7 +120,8 @@ export const RESEARCH_PACK_WORKFLOW_TEMPLATE_PRESET: {
       {
         key: "check",
         title: "Check",
-        description: "Check each bullet against its source and sort each flag: fail, label missing, or judgement.",
+        description: "Check each bullet against its source and sort each flag: fail, label missing, or judgement. " +
+          "Start from GET /api/issues/{synthesis issue}/documents/pre-read/evidence: it lists bullets with no source or a missing label.",
         assigneeAgentId: null,
         documents: [{ key: "check-report", title: "Check report" }],
         blockedBy: ["synthesis"],
@@ -127,7 +129,8 @@ export const RESEARCH_PACK_WORKFLOW_TEMPLATE_PRESET: {
       {
         key: "deck",
         title: "Build the deck",
-        description: "Apply the five-slide template and attach the evidence file.",
+        description: "Apply the five-slide template and attach the evidence file. Put each slide's source notes in its notes field from " +
+          "GET /api/issues/{synthesis issue}/documents/pre-read/evidence/export (sections[].notes; sources for the appendix).",
         assigneeAgentId: null,
         documents: [],
         blockedBy: ["check"],

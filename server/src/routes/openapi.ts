@@ -234,6 +234,8 @@ import {
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
   updateDocumentAnnotationThreadSchema,
+  // Document evidence trail
+  upsertDocumentEvidenceSchema,
   // Issue recovery and decomposition
   createAcceptedPlanDecompositionSchema,
   resolveIssueRecoveryActionSchema,
@@ -11210,6 +11212,47 @@ registerCurrentRoute({
   tags: ["issues"],
   summary: "Update a document annotation thread",
   body: updateDocumentAnnotationThreadSchema,
+});
+
+// GRE-1146: evidence trail on issue documents.
+for (const route of [
+  [
+    "get",
+    "/api/issues/{id}/documents/{key}/evidence",
+    "List a document's bullets with their source links and the missing-label check",
+  ],
+  [
+    "get",
+    "/api/issues/{id}/documents/{key}/evidence/export",
+    "Export evidence notes, footnotes and source appendix for the deck (format=markdown for text)",
+  ],
+  [
+    "delete",
+    "/api/issues/{id}/documents/{key}/evidence/{bulletId}",
+    "Remove one bullet's source links",
+  ],
+] as const) {
+  registerCurrentRoute({
+    method: route[0],
+    path: route[1],
+    tags: ["issues"],
+    summary: route[2],
+  });
+}
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/issues/{id}/documents/{key}/evidence",
+  tags: ["issues"],
+  summary: "Set source links and labels for document bullets, by bullet ID",
+  body: upsertDocumentEvidenceSchema,
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    404: r.notFound,
+    422: r.unprocessable,
+  },
 });
 
 for (const route of [
