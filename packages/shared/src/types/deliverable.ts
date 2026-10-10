@@ -83,19 +83,50 @@ export interface DeliverablesResponse {
 export type DeliverableCommentStatus = "draft" | "sent";
 
 /**
- * A note pinned to a passage of one deliverable version (GRE-982). The anchor
- * is the quoted text plus a little context on each side, so the viewer can
- * find the passage again; `textStart` breaks ties when the quote repeats.
+ * What a comment is pinned to (GRE-1223): a passage of text, one element such
+ * as an image, chart or table, or a box drawn over part of the page.
+ */
+export type DeliverableCommentAnchorKind = "text" | "element" | "region";
+
+/** A box as fractions (0 to 1) of the element it was drawn on. */
+export interface DeliverableCommentBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * How to find a picked element again. `path` is a CSS path of
+ * `tag:nth-of-type(n)` steps from `body`; `tag` and `label` let the viewer
+ * re-find it by name when the path no longer matches. For a region, the path
+ * names the element the box was drawn on and `box` is the box inside it.
+ */
+export interface DeliverableCommentLocator {
+  path: string;
+  tag: string;
+  label: string | null;
+  box: DeliverableCommentBox | null;
+}
+
+/**
+ * A note pinned to a passage of one deliverable version (GRE-982). A text
+ * anchor is the quoted text plus a little context on each side, so the viewer
+ * can find the passage again; `textStart` breaks ties when the quote repeats.
+ * An element or region anchor has a `locator` instead, and `quote` holds a
+ * readable label such as "Image: Q3 revenue chart".
  */
 export interface DeliverableComment {
   id: string;
   companyId: string;
   deliverableId: string;
   issueId: string;
+  anchorKind: DeliverableCommentAnchorKind;
   quote: string;
   prefix: string | null;
   suffix: string | null;
   textStart: number | null;
+  locator: DeliverableCommentLocator | null;
   body: string;
   status: DeliverableCommentStatus;
   authorUserId: string;

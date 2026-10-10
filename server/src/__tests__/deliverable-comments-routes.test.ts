@@ -84,6 +84,39 @@ describe("deliverable comment helpers", () => {
     expect(body).toContain("**2.**\n> Line one\n> Line two\n\nMerge these.");
     expect(body).toContain("key `q3-board-pack`");
   });
+
+  it("names a picked element or area and where to find it", () => {
+    const body = buildDeliverableCommentsBody({
+      deliverable: { title: "Q3 board pack", version: 1, key: "q3-board-pack" },
+      comments: [
+        {
+          anchorKind: "element",
+          quote: "Image: Q3 revenue chart",
+          locator: { path: "body > figure:nth-of-type(1) > img:nth-of-type(1)", tag: "img", label: "Image: Q3 revenue chart", box: null },
+          body: "Use the new colours.",
+        },
+        {
+          anchorKind: "region",
+          quote: "Area on Block: Slide 2",
+          locator: { path: "body > section:nth-of-type(2)", tag: "section", label: "Block: Slide 2", box: { x: 0.1, y: 0.5, width: 0.25, height: 0.2 } },
+          body: "Too empty here.",
+        },
+        { anchorKind: "text", quote: "Revenue grew.", locator: null, body: "Fine." },
+      ],
+    });
+    expect(body).toContain([
+      "**1.**",
+      "> Image: Q3 revenue chart",
+      "",
+      "- Picked: the `<img>` element",
+      "- Locator: `body > figure:nth-of-type(1) > img:nth-of-type(1)`",
+      "",
+      "Use the new colours.",
+    ].join("\n"));
+    expect(body).toContain("- Picked: an area drawn on the `<section>` element");
+    expect(body).toContain("- Area: from 10% across and 50% down, 25% wide and 20% high");
+    expect(body).toContain("**3.**\n> Revenue grew.\n\nFine.");
+  });
 });
 
 describeEmbeddedPostgres("deliverable comments", () => {
@@ -250,6 +283,62 @@ describeEmbeddedPostgres("deliverable comments", () => {
     expect(afterSend.body.comments).toHaveLength(2);
     expect(afterSend.body.comments.every((c: { status: string; sentCommentId: string }) =>
       c.status === "sent" && c.sentCommentId === sent.body.commentId)).toBe(true);
+  });
+
+  it("creates element and region comments, and old-style text comments default to text", async () => {
+    await seed();
+    const deliverableId = await registerVersion("v1.html");
+    const board = boardApp();
+    const locator = { path: "body > table:nth-of-type(1)", tag: "TABLE", label: "Table: Costs by region" };
+
+    const element = await request(board).post(commentsPath(deliverableId)).send({
+      anchorKind: "element",
+      quote: "Table: Costs by region",
+      locator,
+      body: "Add a total row.",
+    });
+    expect(element.status).toBe(201);
+    expect(element.body).toMatchObject({
+      anchorKind: "element",
+      quote: "Table: Costs by region",
+      prefix: null,
+      textStart: null,
+      locator: { path: "body > table:nth-of-type(1)", tag: "table", label: "Table: Costs by region", box: null },
+    });
+
+    const region = await request(board).post(commentsPath(deliverableId)).send({
+      anchorKind: "region",
+      quote: "Area on Page",
+      locator: { path: "body", tag: "body", label: "Page", box: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 } },
+      body: "Fill this gap.",
+    });
+    expect(region.status).toBe(201);
+    expect(region.body.locator.box).toEqual({ x: 0.1, y: 0.2, width: 0.3, height: 0.4 });
+
+    const text = await request(board).post(commentsPath(deliverableId)).send({ quote: "Q3 board pack", body: "Retitle" });
+    expect(text.body).toMatchObject({ anchorKind: "text", locator: null });
+
+    const listed = await request(board).get(commentsPath(deliverableId));
+    expect(listed.body.comments.map((c: { anchorKind: string }) => c.anchorKind)).toEqual(["element", "region", "text"]);
+
+    await request(board).post(`${commentsPath(deliverableId)}/send`);
+    const [taskComment] = await db.select().from(issueComments);
+    expect(taskComment!.body).toContain("> Table: Costs by region\n\n- Picked: the `<table>` element\n- Locator: `body > table:nth-of-type(1)`");
+    expect(taskComment!.body).toContain("- Area: from 10% across and 20% down, 30% wide and 40% high");
+  });
+
+  it("rejects element anchors without a usable locator", async () => {
+    await seed();
+    const deliverableId = await registerVersion("v1.html");
+    const post = (payload: Record<string, unknown>) =>
+      request(boardApp()).post(commentsPath(deliverableId)).send({ quote: "Image: Logo", body: "x", ...payload });
+    expect((await post({ anchorKind: "element" })).status).toBe(400);
+    expect((await post({ anchorKind: "region", locator: { path: "body", tag: "body" } })).status).toBe(400);
+    expect((await post({ anchorKind: "element", locator: { path: "body > img:nth-of-type(1)", tag: "img", box: { x: 0, y: 0, width: 1, height: 1 } } })).status).toBe(400);
+    expect((await post({ anchorKind: "element", locator: { path: "body > img[src=`x`]", tag: "img" } })).status).toBe(400);
+    expect((await post({ anchorKind: "region", locator: { path: "body", tag: "body", box: { x: 0, y: 0, width: 2, height: 1 } } })).status).toBe(400);
+    expect((await post({ locator: { path: "body", tag: "body" } })).status).toBe(400);
+    expect(await db.select().from(deliverableComments)).toHaveLength(0);
   });
 
   it("starts a new version with no comments and keeps the old version's", async () => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, MessageSquareText, Pencil, Send, Trash2, X } from "lucide-react";
-import { deliverablesApi, type DeliverableComment } from "@/api/deliverables";
+import { CheckCircle2, MessageSquareText, Pencil, Send, SquareDashed, SquareDashedMousePointer, Trash2, X } from "lucide-react";
+import { deliverablesApi, type DeliverableComment, type DeliverableCommentLocator } from "@/api/deliverables";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,25 +14,86 @@ import { DELIVERABLE_IFRAME_SANDBOX } from "./DeliverableDocument";
  * mode: the server adds a small script to the HTML that tells us what the
  * reader selects and draws numbered markers we ask for. We talk to it only by
  * postMessage, and send it quotes and numbers, never the notes themselves.
+ *
+ * Since GRE-1223 the reader can also pick an element (an image, chart, table
+ * or block) or draw an area, in pick mode or with Alt/Option held. The frame
+ * then sends a readable label and a locator instead of a text quote.
  */
 
-export type ReviewSelection = {
-  quote: string;
-  prefix: string | null;
-  suffix: string | null;
-  textStart: number | null;
-};
+export type ReviewSelection =
+  | {
+    kind: "text";
+    quote: string;
+    prefix: string | null;
+    suffix: string | null;
+    textStart: number | null;
+  }
+  | {
+    kind: "element" | "region";
+    quote: string;
+    locator: DeliverableCommentLocator;
+  };
 
 type FrameMessage =
   | { gsamReview: 1; type: "ready" }
-  | { gsamReview: 1; type: "selection"; quote: string | null; prefix?: string; suffix?: string; textStart?: number }
-  | { gsamReview: 1; type: "focus"; id: string };
+  | {
+    gsamReview: 1;
+    type: "selection";
+    kind?: string;
+    quote: string | null;
+    prefix?: string;
+    suffix?: string;
+    textStart?: number;
+    locator?: unknown;
+  }
+  | { gsamReview: 1; type: "focus"; id: string }
+  | { gsamReview: 1; type: "pickCancel" };
 
 function readFrameMessage(data: unknown): FrameMessage | null {
   if (!data || typeof data !== "object") return null;
   const message = data as Record<string, unknown>;
   if (message.gsamReview !== 1 || typeof message.type !== "string") return null;
   return message as FrameMessage;
+}
+
+function finite(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** The locator the frame sent, or null when it is not one. The server checks it again. */
+function readLocator(value: unknown, region: boolean): DeliverableCommentLocator | null {
+  if (!value || typeof value !== "object") return null;
+  const locator = value as Record<string, unknown>;
+  if (typeof locator.path !== "string" || !locator.path || typeof locator.tag !== "string" || !locator.tag) return null;
+  let box: DeliverableCommentLocator["box"] = null;
+  if (region) {
+    const raw = locator.box && typeof locator.box === "object" ? locator.box as Record<string, unknown> : {};
+    const [x, y, width, height] = [finite(raw.x), finite(raw.y), finite(raw.width), finite(raw.height)];
+    if (x === null || y === null || width === null || height === null) return null;
+    box = { x, y, width, height };
+  }
+  return {
+    path: locator.path,
+    tag: locator.tag,
+    label: typeof locator.label === "string" ? locator.label : null,
+    box,
+  };
+}
+
+function readSelection(message: Extract<FrameMessage, { type: "selection" }>): ReviewSelection | null {
+  const quote = typeof message.quote === "string" ? message.quote.trim() : "";
+  if (!quote) return null;
+  if (message.kind === "element" || message.kind === "region") {
+    const locator = readLocator(message.locator, message.kind === "region");
+    return locator ? { kind: message.kind, quote, locator } : null;
+  }
+  return {
+    kind: "text",
+    quote,
+    prefix: typeof message.prefix === "string" ? message.prefix : null,
+    suffix: typeof message.suffix === "string" ? message.suffix : null,
+    textStart: typeof message.textStart === "number" ? message.textStart : null,
+  };
 }
 
 function errorMessage(error: unknown) {
@@ -47,6 +108,8 @@ export function useDeliverableReview(companyId: string, deliverableId: string, e
   const [frameLoads, setFrameLoads] = useState(0);
   const [selection, setSelection] = useState<ReviewSelection | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Pick mode: a click in the document picks an element, a drag draws an area.
+  const [picking, setPicking] = useState(false);
   const queryKey = queryKeys.deliverables.comments(companyId, deliverableId);
 
   const commentsQuery = useQuery({
@@ -60,6 +123,7 @@ export function useDeliverableReview(companyId: string, deliverableId: string, e
     setFrameLoads(0);
     setSelection(null);
     setActiveId(null);
+    setPicking(false);
   }, [deliverableId]);
 
   const postToFrame = useCallback((message: Record<string, unknown>) => {
@@ -75,16 +139,12 @@ export function useDeliverableReview(companyId: string, deliverableId: string, e
       if (!message) return;
       if (message.type === "ready") setFrameLoads((count) => count + 1);
       else if (message.type === "focus") setActiveId(message.id);
+      else if (message.type === "pickCancel") setPicking(false);
       else if (message.type === "selection") {
-        const quote = typeof message.quote === "string" ? message.quote.trim() : "";
-        setSelection(quote
-          ? {
-            quote,
-            prefix: typeof message.prefix === "string" ? message.prefix : null,
-            suffix: typeof message.suffix === "string" ? message.suffix : null,
-            textStart: typeof message.textStart === "number" ? message.textStart : null,
-          }
-          : null);
+        const next = readSelection(message);
+        setSelection(next);
+        // One pick at a time: once something is picked, the note comes next.
+        if (next && next.kind !== "text") setPicking(false);
       }
     }
     window.addEventListener("message", onMessage);
@@ -98,6 +158,8 @@ export function useDeliverableReview(companyId: string, deliverableId: string, e
       marks: comments.map((comment, index) => ({
         id: comment.id,
         n: index + 1,
+        kind: comment.anchorKind,
+        locator: comment.locator,
         quote: comment.quote,
         prefix: comment.prefix,
         suffix: comment.suffix,
@@ -107,6 +169,24 @@ export function useDeliverableReview(companyId: string, deliverableId: string, e
       })),
     });
   }, [frameLoads, comments, activeId, postToFrame]);
+
+  useEffect(() => {
+    if (frameLoads === 0) return;
+    postToFrame({ type: "pickMode", on: picking });
+  }, [frameLoads, picking, postToFrame]);
+
+  // Esc while picking stops picking; it must not also close the preview.
+  useEffect(() => {
+    if (!picking) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPicking(false);
+    }
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [picking]);
 
   const focusComment = useCallback((id: string) => {
     setActiveId(id);
@@ -121,7 +201,10 @@ export function useDeliverableReview(companyId: string, deliverableId: string, e
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const create = useMutation({
-    mutationFn: (input: ReviewSelection & { body: string }) => deliverablesApi.createComment(companyId, deliverableId, input),
+    mutationFn: ({ body, selection: picked }: { selection: ReviewSelection; body: string }) =>
+      deliverablesApi.createComment(companyId, deliverableId, picked.kind === "text"
+        ? { quote: picked.quote, prefix: picked.prefix, suffix: picked.suffix, textStart: picked.textStart, body }
+        : { anchorKind: picked.kind, quote: picked.quote, locator: picked.locator, body }),
     onSuccess: () => {
       clearSelection();
       void invalidate();
@@ -153,6 +236,8 @@ export function useDeliverableReview(companyId: string, deliverableId: string, e
     comments,
     selection,
     activeId,
+    picking,
+    setPicking,
     focusComment,
     clearSelection,
     create,
@@ -176,6 +261,23 @@ export function DeliverableReviewFrame({ review, title }: { review: DeliverableR
       data-testid="deliverable-review-frame"
       className="h-full w-full border-0 bg-white"
     />
+  );
+}
+
+/** The quoted passage, or the label of a picked element or area. */
+function AnchorLabel({ kind, quote, className }: { kind: DeliverableComment["anchorKind"]; quote: string; className?: string }) {
+  if (kind === "text") {
+    return (
+      <span className={cn("line-clamp-3 border-l-2 pl-2 text-xs italic text-muted-foreground", className)}>
+        {quote}
+      </span>
+    );
+  }
+  return (
+    <span className={cn("flex min-w-0 items-start gap-1.5 border-l-2 pl-2 text-xs text-muted-foreground", className)}>
+      <SquareDashed className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span className="line-clamp-2">{quote}</span>
+    </span>
   );
 }
 
@@ -219,9 +321,7 @@ function CommentItem({
         <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-micro font-semibold text-primary-foreground">
           {number}
         </span>
-        <span className="line-clamp-3 border-l-2 border-border pl-2 text-xs italic text-muted-foreground">
-          {comment.quote}
-        </span>
+        <AnchorLabel kind={comment.anchorKind} quote={comment.quote} className="border-border" />
       </button>
       {editing ? (
         <div className="flex flex-col gap-2">
@@ -274,7 +374,7 @@ function CommentItem({
 
 export function DeliverableCommentsPanel({ review }: { review: DeliverableReviewState }) {
   const [note, setNote] = useState("");
-  const { selection, comments, commentsQuery } = review;
+  const { selection, comments, commentsQuery, picking } = review;
   const drafts = comments.filter((comment) => comment.status === "draft");
   const sentResult = review.send.data;
 
@@ -302,13 +402,11 @@ export function DeliverableCommentsPanel({ review }: { review: DeliverableReview
             event.preventDefault();
             const body = note.trim();
             if (!body) return;
-            review.create.mutate({ ...selection, body });
+            review.create.mutate({ selection, body });
           }}
         >
           <div className="flex items-start justify-between gap-2">
-            <span className="line-clamp-3 border-l-2 border-primary/60 pl-2 text-xs italic text-muted-foreground">
-              {selection.quote}
-            </span>
+            <AnchorLabel kind={selection.kind} quote={selection.quote} className="border-primary/60" />
             <Button type="button" size="icon-sm" variant="ghost" aria-label="Cancel comment" onClick={review.clearSelection}>
               <X />
             </Button>
@@ -316,8 +414,10 @@ export function DeliverableCommentsPanel({ review }: { review: DeliverableReview
           <Textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="Your note on this passage"
-            aria-label="Comment on the selected text"
+            placeholder={selection.kind === "text" ? "Your note on this passage" : `Your note on this ${selection.kind === "region" ? "area" : "element"}`}
+            aria-label={selection.kind === "text"
+              ? "Comment on the selected text"
+              : selection.kind === "region" ? "Comment on the picked area" : "Comment on the picked element"}
             autoFocus
           />
           <Button type="submit" size="sm" disabled={!note.trim() || review.create.isPending}>
@@ -325,9 +425,27 @@ export function DeliverableCommentsPanel({ review }: { review: DeliverableReview
           </Button>
         </form>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          Select text in the document to comment on it.
-        </p>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground" role="status">
+            {picking
+              ? "Click an image, chart, table or block, or drag a box over an area. Press Esc to stop."
+              : "Select text in the document to comment on it. Or pick an image, chart, table or area."}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant={picking ? "default" : "outline"}
+            aria-pressed={picking}
+            onClick={() => review.setPicking(!picking)}
+            data-testid="deliverable-comments-pick"
+            className="self-start"
+          >
+            <SquareDashedMousePointer /> {picking ? "Stop picking" : "Pick element or area"}
+          </Button>
+          {!picking ? (
+            <p className="hidden text-xs text-muted-foreground sm:block">Tip: hold Alt (Option on a Mac) and click or drag in the document.</p>
+          ) : null}
+        </div>
       )}
 
       {error ? (

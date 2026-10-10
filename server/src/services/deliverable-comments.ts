@@ -21,10 +21,12 @@ export function toDeliverableComment(row: CommentRow): DeliverableComment {
     companyId: row.companyId,
     deliverableId: row.workProductId,
     issueId: row.issueId,
+    anchorKind: row.anchorKind === "element" || row.anchorKind === "region" ? row.anchorKind : "text",
     quote: row.quote,
     prefix: row.prefix ?? null,
     suffix: row.suffix ?? null,
     textStart: row.textStart ?? null,
+    locator: row.locator ?? null,
     body: row.body,
     status: row.status === "sent" ? "sent" : "draft",
     authorUserId: row.authorUserId,
@@ -44,18 +46,46 @@ function blockquote(text: string) {
     .join("\n");
 }
 
+function percent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+/**
+ * For an element or region note, the lines that tell the agent what was
+ * picked and where to find it in the HTML (GRE-1223).
+ */
+function anchorLines(comment: Pick<DeliverableComment, "anchorKind" | "locator">) {
+  const { locator } = comment;
+  if (comment.anchorKind === "text" || !locator) return [];
+  const lines = [
+    comment.anchorKind === "region"
+      ? `Picked: an area drawn on the \`<${locator.tag}>\` element`
+      : `Picked: the \`<${locator.tag}>\` element`,
+    `Locator: \`${locator.path}\``,
+  ];
+  if (comment.anchorKind === "region" && locator.box) {
+    const { x, y, width, height } = locator.box;
+    lines.push(`Area: from ${percent(x)} across and ${percent(y)} down, ${percent(width)} wide and ${percent(height)} high`);
+  }
+  return lines;
+}
+
 /** The one task comment that carries every sent note, quote first. */
 export function buildDeliverableCommentsBody(input: {
   deliverable: { title: string; version: number; key: string };
-  comments: Array<Pick<DeliverableComment, "quote" | "body">>;
+  comments: Array<Pick<DeliverableComment, "quote" | "body"> & Partial<Pick<DeliverableComment, "anchorKind" | "locator">>>;
 }) {
   const { deliverable, comments } = input;
-  const sections = comments.map((comment, index) => [
-    `**${index + 1}.**`,
-    blockquote(comment.quote),
-    "",
-    comment.body.trim(),
-  ].join("\n"));
+  const sections = comments.map((comment, index) => {
+    const anchor = anchorLines({ anchorKind: comment.anchorKind ?? "text", locator: comment.locator ?? null });
+    return [
+      `**${index + 1}.**`,
+      blockquote(comment.quote),
+      ...(anchor.length > 0 ? ["", ...anchor.map((line) => `- ${line}`)] : []),
+      "",
+      comment.body.trim(),
+    ].join("\n");
+  });
   return [
     `**Comments on the deliverable "${deliverable.title}" (v${deliverable.version})**`,
     "",
@@ -117,10 +147,19 @@ export function deliverableCommentService(db: Db) {
           companyId: input.companyId,
           workProductId: input.deliverable.id,
           issueId: input.deliverable.issueId,
+          anchorKind: fields.anchorKind ?? "text",
           quote: fields.quote,
           prefix: fields.prefix ?? null,
           suffix: fields.suffix ?? null,
           textStart: fields.textStart ?? null,
+          locator: fields.locator
+            ? {
+              path: fields.locator.path,
+              tag: fields.locator.tag.toLowerCase(),
+              label: fields.locator.label ?? null,
+              box: fields.locator.box ?? null,
+            }
+            : null,
           body: fields.body,
           status: "draft",
           authorUserId: input.userId,
