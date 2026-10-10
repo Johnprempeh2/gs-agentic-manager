@@ -1,4 +1,4 @@
-import type { StrategyBoardKpi, StrategyBoardOwner } from "@greatstone/shared";
+import type { StrategyBoardKpi, StrategyBoardOwner, StrategyBoardPackListItem } from "@greatstone/shared";
 
 /**
  * How far the board can trust a KPI's number, shown apart from its colour
@@ -65,4 +65,17 @@ export function downloadMarkdown(fileName: string, body: string) {
 export function packFileName(title: string): string {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return `${slug || "board-pack"}.md`;
+}
+
+/**
+ * The meeting's pack (GRE-1200): the newest accepted pack. A draft from the
+ * board secretary agent never counts until a board member accepts it.
+ */
+export function meetingPackId(packs: readonly Pick<StrategyBoardPackListItem, "id" | "status" | "createdAt">[]): string | null {
+  let best: (typeof packs)[number] | null = null;
+  for (const pack of packs) {
+    if (pack.status !== "accepted") continue;
+    if (!best || new Date(pack.createdAt).getTime() > new Date(best.createdAt).getTime()) best = pack;
+  }
+  return best?.id ?? null;
 }

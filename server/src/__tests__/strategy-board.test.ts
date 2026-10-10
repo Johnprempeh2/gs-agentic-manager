@@ -475,13 +475,109 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     expect(empty.overdueActions).toEqual([]);
   });
 
+  // ---- Board secretary drafts (GRE-1200) ----
+
+  function agentActor(agentId: string, companyId: string) {
+    return { type: "agent", agentId, companyId, runId: null, source: "agent_key" } as never;
+  }
+
+  async function setSecretary(agentId: string | null) {
+    await instanceSettingsService(ctx.db).updateExperimental({ strategyBoardSecretaryAgentId: agentId });
+  }
+
+  it("the board secretary agent makes a draft pack; other agents get 403; a board member's pack is accepted as today", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "Secretary");
+    const board = await addMember(companyId, "viewer", "board");
+    await setBoard(owner, companyId, [{ userId: board.userId }]);
+    const secretary = await seedAgent(companyId, "Board secretary");
+    const other = await seedAgent(companyId, "Other agent");
+    await seedPlan(companyId);
+    await setSecretary(secretary.id);
+    const body = { periodStart: dayOffset(-30), periodEnd: TODAY };
+
+    const draft = await request(app(agentActor(secretary.id, companyId))).post(`/api/companies/${companyId}/strategy-board/packs`).send(body);
+    expect(draft.status).toBe(201);
+    expect(draft.body).toMatchObject({ status: "draft", createdByAgentId: secretary.id, createdByUserId: null, acceptedByUserId: null, acceptedAt: null });
+
+    const refused = await request(app(agentActor(other.id, companyId))).post(`/api/companies/${companyId}/strategy-board/packs`).send(body);
+    expect(refused.status).toBe(403);
+    expect(JSON.stringify(refused.body)).toContain("board_secretary_required");
+
+    // A draft is not the meeting's pack.
+    const summary = (await request(app(board.actor)).get(`/api/companies/${companyId}/strategy-board`)).body as StrategyBoardSummary;
+    expect(summary.lastSnapshot).toBeNull();
+
+    const human = await request(app(board.actor)).post(`/api/companies/${companyId}/strategy-board/packs`).send(body);
+    expect(human.status).toBe(201);
+    expect(human.body).toMatchObject({ status: "accepted", createdByUserId: board.userId, createdByAgentId: null, acceptedByUserId: board.userId });
+
+    const list = (await request(app(board.actor)).get(`/api/companies/${companyId}/strategy-board/packs`)).body as StrategyBoardPack[];
+    expect(list.map((p) => [p.id, p.status])).toEqual([[human.body.id, "accepted"], [draft.body.id, "draft"]]);
+
+    const created = await ctx.db.select().from(activityLog).where(eq(activityLog.action, "strategy_board.pack_created"));
+    expect(created.map((row) => row.details)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ packId: draft.body.id, status: "draft", createdByAgentId: secretary.id }),
+      expect.objectContaining({ packId: human.body.id, status: "accepted", createdByUserId: board.userId }),
+    ]));
+  });
+
+  it("the secretary agent of another company cannot make this company's pack", async () => {
+    const { companyId } = await seedCompanyWithBoardAccess(ctx.db, "SecretaryHome");
+    const other = await seedCompanyWithBoardAccess(ctx.db, "SecretaryAway");
+    const secretary = await seedAgent(other.companyId, "Board secretary");
+    await setSecretary(secretary.id);
+    const res = await request(app(agentActor(secretary.id, other.companyId)))
+      .post(`/api/companies/${companyId}/strategy-board/packs`)
+      .send({ periodStart: TODAY, periodEnd: TODAY });
+    expect(res.status).toBe(404);
+  });
+
+  it("a board member accepts the draft and it becomes the meeting's pack; the secretary and non-board users cannot accept", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "Accept");
+    const board = await addMember(companyId, "viewer", "board");
+    const viewer = await addMember(companyId, "viewer", "viewer");
+    const operator = await addMember(companyId, "operator", "operator");
+    await setBoard(owner, companyId, [{ userId: board.userId }]);
+    const secretary = await seedAgent(companyId, "Board secretary");
+    await seedPlan(companyId);
+    await setSecretary(secretary.id);
+    const draft = (await request(app(agentActor(secretary.id, companyId)))
+      .post(`/api/companies/${companyId}/strategy-board/packs`)
+      .send({ periodStart: dayOffset(-30), periodEnd: TODAY, title: "Q4 draft" })).body as StrategyBoardPack;
+
+    for (const actor of [agentActor(secretary.id, companyId), viewer.actor, operator.actor]) {
+      expect((await request(app(actor)).post(`/api/strategy-board/packs/${draft.id}/accept`)).status).toBe(403);
+    }
+    const otherCompany = await seedCompanyWithBoardAccess(ctx.db, "AcceptOther");
+    expect((await request(app(otherCompany.actor)).post(`/api/strategy-board/packs/${draft.id}/accept`)).status).toBe(404);
+
+    const accepted = await request(app(board.actor)).post(`/api/strategy-board/packs/${draft.id}/accept`);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body).toMatchObject({ status: "accepted", createdByAgentId: secretary.id, acceptedByUserId: board.userId });
+    expect(accepted.body.acceptedAt).not.toBeNull();
+    expect((await request(app(board.actor)).post(`/api/strategy-board/packs/${draft.id}/accept`)).status).toBe(409);
+
+    const summary = (await request(app(board.actor)).get(`/api/companies/${companyId}/strategy-board`)).body as StrategyBoardSummary;
+    expect(summary.lastSnapshot).toMatchObject({ packId: draft.id, title: "Q4 draft" });
+    const [logged] = await ctx.db.select().from(activityLog).where(eq(activityLog.action, "strategy_board.pack_accepted"));
+    expect(logged).toMatchObject({ actorId: board.userId, details: expect.objectContaining({ packId: draft.id, createdByAgentId: secretary.id, acceptedByUserId: board.userId }) });
+  });
+
   // ---- Switch off ----
 
   it("with the switch off, nothing of the board answers", async () => {
     const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "Off");
     const { kpi } = await seedPlan(companyId);
+    const secretary = await seedAgent(companyId, "Board secretary");
+    await setSecretary(secretary.id);
+    const [pack] = await ctx.db
+      .insert(strategyBoardPacks)
+      .values({ companyId, title: "Draft", periodStart: TODAY, periodEnd: TODAY, status: "draft", createdByAgentId: secretary.id, snapshot: {}, body: "" })
+      .returning();
     await setSwitch(false);
     const calls = [
+      request(app(agentActor(secretary.id, companyId))).post(`/api/companies/${companyId}/strategy-board/packs`).send({ periodStart: TODAY, periodEnd: TODAY }),
+      request(app(owner)).post(`/api/strategy-board/packs/${pack.id}/accept`),
       request(app(owner)).get(`/api/companies/${companyId}/strategy-board`),
       request(app(owner)).get(`/api/companies/${companyId}/strategy-board/packs`),
       request(app(owner)).post(`/api/companies/${companyId}/strategy-board/packs`).send({ periodStart: TODAY, periodEnd: TODAY }),

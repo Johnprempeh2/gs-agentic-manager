@@ -95,6 +95,9 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableDeepDive: z.boolean().default(false),
   // Greatstone: board control panel (GRE-1135). Off by default; set per instance.
   enableStrategyBoard: z.boolean().default(false),
+  // Greatstone: the board secretary agent (GRE-1200). It may make draft board
+  // packs that a board member accepts. One per instance; null = none.
+  strategyBoardSecretaryAgentId: z.string().uuid().nullable().default(null),
   // Greatstone: read-only Website view (GA4 and Search Console), GRE-1085.
   enableWebsiteView: z.boolean().default(false),
   enableAgentChat: z.boolean().default(false),

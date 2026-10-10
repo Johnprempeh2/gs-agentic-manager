@@ -34,6 +34,7 @@ import {
   type StrategyBoardPack,
   type StrategyBoardPackListItem,
   type StrategyBoardPackSnapshot,
+  type StrategyBoardPackStatus,
   type StrategyBoardSummary,
   type StrategyBoardViewerRights,
 } from "@greatstone/shared";
@@ -84,8 +85,11 @@ function toAlert(row: AlertRow): GoalKpiAlert {
 }
 
 function toPack(row: PackRow): StrategyBoardPack {
-  return { ...row, snapshot: row.snapshot as unknown as StrategyBoardPackSnapshot };
+  return { ...row, status: row.status as StrategyBoardPackStatus, snapshot: row.snapshot as unknown as StrategyBoardPackSnapshot };
 }
+
+/** Who makes a pack: a board member (accepted at once) or the board secretary agent (a draft). */
+export type BoardPackMaker = { kind: "user"; userId: string | null } | { kind: "secretary"; agentId: string };
 
 /** The agents a board member may ask, kept on their board member grant as `scope.agentIds` (GRE-1186). */
 export function boardAgentIdsFromScope(scope: Record<string, unknown> | null | undefined): string[] {
@@ -184,11 +188,12 @@ export function strategyBoardService(db: Db) {
     };
   }
 
+  /** The meeting's pack: the newest accepted one. Drafts never count. */
   async function latestPackRow(companyId: string): Promise<PackRow | null> {
     return db
       .select()
       .from(strategyBoardPacks)
-      .where(eq(strategyBoardPacks.companyId, companyId))
+      .where(and(eq(strategyBoardPacks.companyId, companyId), eq(strategyBoardPacks.status, "accepted")))
       .orderBy(desc(strategyBoardPacks.createdAt), desc(strategyBoardPacks.id))
       .limit(1)
       .then((rows) => rows[0] ?? null);
@@ -475,7 +480,7 @@ export function strategyBoardService(db: Db) {
     return toWhyRequest(row);
   }
 
-  async function createPack(companyId: string, input: CreateStrategyBoardPack, userId: string | null): Promise<StrategyBoardPack> {
+  async function createPack(companyId: string, input: CreateStrategyBoardPack, maker: BoardPackMaker): Promise<StrategyBoardPack> {
     const today = todayIso();
     const board = await buildBoard(companyId, today);
     const kpiIds = board.kpis.map((kpi) => kpi.goalId);
@@ -558,12 +563,24 @@ export function strategyBoardService(db: Db) {
         title,
         periodStart: input.periodStart,
         periodEnd: input.periodEnd,
-        createdByUserId: userId,
+        ...(maker.kind === "secretary"
+          ? { status: "draft", createdByUserId: null, createdByAgentId: maker.agentId }
+          : { status: "accepted", createdByUserId: maker.userId, acceptedByUserId: maker.userId, acceptedAt: new Date() }),
         snapshot: JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>,
         body: renderStrategyBoardPackMarkdown(snapshot),
       })
       .returning();
     return toPack(row);
+  }
+
+  /** A board member accepts a draft. Null when the pack is not a draft any more. */
+  async function acceptPack(packId: string, userId: string | null): Promise<StrategyBoardPack | null> {
+    const [row] = await db
+      .update(strategyBoardPacks)
+      .set({ status: "accepted", acceptedByUserId: userId, acceptedAt: new Date() })
+      .where(and(eq(strategyBoardPacks.id, packId), eq(strategyBoardPacks.status, "draft")))
+      .returning();
+    return row ? toPack(row) : null;
   }
 
   async function listMembers(companyId: string): Promise<StrategyBoardMember[]> {
@@ -690,6 +707,7 @@ export function strategyBoardService(db: Db) {
         .orderBy(desc(goalWhyRequests.createdAt), desc(goalWhyRequests.id))
         .then((rows) => rows.map(toWhyRequest)),
     createPack,
+    acceptPack,
     listPacks: (companyId: string): Promise<StrategyBoardPackListItem[]> =>
       db
         .select({
@@ -698,12 +716,17 @@ export function strategyBoardService(db: Db) {
           title: strategyBoardPacks.title,
           periodStart: strategyBoardPacks.periodStart,
           periodEnd: strategyBoardPacks.periodEnd,
+          status: strategyBoardPacks.status,
           createdByUserId: strategyBoardPacks.createdByUserId,
+          createdByAgentId: strategyBoardPacks.createdByAgentId,
+          acceptedByUserId: strategyBoardPacks.acceptedByUserId,
+          acceptedAt: strategyBoardPacks.acceptedAt,
           createdAt: strategyBoardPacks.createdAt,
         })
         .from(strategyBoardPacks)
         .where(eq(strategyBoardPacks.companyId, companyId))
-        .orderBy(desc(strategyBoardPacks.createdAt), desc(strategyBoardPacks.id)),
+        .orderBy(desc(strategyBoardPacks.createdAt), desc(strategyBoardPacks.id))
+        .then((rows) => rows.map((row) => ({ ...row, status: row.status as StrategyBoardPackStatus }))),
     getPack: (id: string) =>
       db
         .select()
