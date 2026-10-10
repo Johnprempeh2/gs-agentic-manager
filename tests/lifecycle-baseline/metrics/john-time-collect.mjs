@@ -6,6 +6,12 @@
 //
 //   pnpm metrics:john-time [--database-url URL] [--company ID] [--now ISO] [--john-user-ids a,b] [--json]
 //
+// The database password is read from $GSAM_HOME (default ~/.gsam). In an agent
+// run $HOME is a sandbox, so set GSAM_HOME to the live data directory, or the
+// connection fails with a password error (GRE-1181):
+//
+//   GSAM_HOME=/Users/johnprempeh/GSAM/data pnpm metrics:john-time --company ID --now ISO --json
+//
 // John's user ids default to every signed-in user plus the `local-board`
 // sentinel (this is a one-person board); pass --john-user-ids to narrow it.
 // Only loopback hosts are accepted: this never reads a shared or production
