@@ -128,6 +128,10 @@ vi.mock("./SidebarStarredProjects.production", () => ({
   SidebarStarredProjects: () => <div data-testid="sidebar-starred-projects" />,
 }));
 
+vi.mock("./SidebarStarredPipelines", () => ({
+  SidebarStarredPipelines: () => null,
+}));
+
 vi.mock("./SidebarProjects", () => ({
   SidebarProjects: () => <div data-testid="sidebar-projects">Classic projects</div>,
 }));

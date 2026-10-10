@@ -12,3 +12,8 @@ export const upsertSidebarOrderPreferenceSchema = z.object({
 });
 
 export type UpsertSidebarOrderPreference = z.infer<typeof upsertSidebarOrderPreferenceSchema>;
+
+/** Sidebar section keys ("work", "team"...): short slugs, not database ids. */
+export const upsertSidebarSectionOrderSchema = z.object({
+  orderedIds: z.array(z.string().regex(/^[a-z][a-z0-9-]{0,39}$/)).max(50),
+});

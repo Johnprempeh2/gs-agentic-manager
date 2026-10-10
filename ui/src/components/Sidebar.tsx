@@ -29,10 +29,14 @@ import {
   Brain,
   Workflow,
   Globe,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
 } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { SidebarSection } from "./SidebarSection";
+import { SidebarSection, type SidebarSectionMenuAction } from "./SidebarSection";
+import { useSidebarSectionOrder } from "../hooks/useSidebarSectionOrder";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarAgents } from "./SidebarAgents";
 import { SidebarProjects } from "./SidebarProjects";
@@ -81,6 +85,9 @@ function useStoredSectionOpen(section: string, initial: boolean) {
   }, [key]);
   return [open, update] as const;
 }
+
+// Default order of the streamlined sections; each user may rearrange them.
+const SECTION_IDS = ["work", "team", "build", "company"] as const;
 
 export function Sidebar({ children }: { children?: ReactNode }) {
   const { openNewIssue } = useDialogActions();
@@ -208,6 +215,87 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     </>
   );
   const showAgentChats = agentChatEnabled && !children;
+  const sectionOrder = useSidebarSectionOrder(SECTION_IDS);
+  const sectionMenu = (id: string, label: string) => {
+    const index = sectionOrder.order.indexOf(id);
+    const actions: SidebarSectionMenuAction[] = [];
+    if (index > 0) {
+      actions.push({ type: "item", label: "Move up", icon: ArrowUp, onSelect: () => sectionOrder.move(id, -1) });
+    }
+    if (index < sectionOrder.order.length - 1) {
+      actions.push({ type: "item", label: "Move down", icon: ArrowDown, onSelect: () => sectionOrder.move(id, 1) });
+    }
+    actions.push(
+      { type: "separator" },
+      { type: "item", label: "Reset to default order", icon: RotateCcw, onSelect: sectionOrder.reset },
+    );
+    return { actions, ariaLabel: `Rearrange ${label} section` };
+  };
+  const streamlinedSections: Record<string, ReactNode> = {
+    work: (
+      <SidebarSection
+        key="work"
+        label="Work"
+        collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}
+        menu={sectionMenu("work", "Work")}
+      >
+        {dashboardItem}
+        {inboxItem}
+        {myTasksItem}
+        {decisionsItem}
+        {tasksItem}
+        {goalsItem}
+        {boardItem}
+      </SidebarSection>
+    ),
+    team: (
+      <SidebarSection
+        key="team"
+        label="Team"
+        collapsible={{ open: teamOpen, onOpenChange: setTeamOpen }}
+        menu={sectionMenu("team", "Team")}
+      >
+        <SidebarNavItem to="/agents" label="Agents" icon={Users} />
+        {conferenceRoomItem}
+        {statusItem}
+      </SidebarSection>
+    ),
+    build: (
+      <SidebarSection
+        key="build"
+        label="Build"
+        collapsible={{ open: buildOpen, onOpenChange: setBuildOpen }}
+        menu={sectionMenu("build", "Build")}
+      >
+        <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
+        <SidebarStarredProjects />
+        {routinesItem}
+        {workflowsItem}
+        {pipelinesItem}
+        <SidebarStarredPipelines />
+        {workspacesItem}
+        {artifactsItem}
+        {casesItem}
+        {deepDiveItem}
+        {pluginNavOutlets}
+      </SidebarSection>
+    ),
+    company: (
+      <SidebarSection
+        key="company"
+        label="Company"
+        collapsible={{ open: organizationOpen, onOpenChange: setOrganizationOpen }}
+        menu={sectionMenu("company", "Company")}
+      >
+        <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
+        <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
+        {websiteItem}
+        <SidebarNavItem to="/activity" label="Audit" icon={History} />
+        {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
+        <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
+      </SidebarSection>
+    ),
+  };
 
   return (
     <aside
@@ -276,49 +364,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         </div>
 
         {streamlinedUiEnabled ? (
-          <>
-            <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
-              {dashboardItem}
-              {inboxItem}
-              {myTasksItem}
-              {decisionsItem}
-              {tasksItem}
-              {goalsItem}
-              {boardItem}
-            </SidebarSection>
-
-            <SidebarSection label="Team" collapsible={{ open: teamOpen, onOpenChange: setTeamOpen }}>
-              <SidebarNavItem to="/agents" label="Agents" icon={Users} />
-              {conferenceRoomItem}
-              {statusItem}
-            </SidebarSection>
-
-            <SidebarSection label="Build" collapsible={{ open: buildOpen, onOpenChange: setBuildOpen }}>
-              <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
-              <SidebarStarredProjects />
-              {routinesItem}
-              {workflowsItem}
-              {pipelinesItem}
-              <SidebarStarredPipelines />
-              {workspacesItem}
-              {artifactsItem}
-              {casesItem}
-              {deepDiveItem}
-              {pluginNavOutlets}
-            </SidebarSection>
-
-            <SidebarSection
-              label="Company"
-              collapsible={{ open: organizationOpen, onOpenChange: setOrganizationOpen }}
-            >
-              <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-              <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
-              {websiteItem}
-              <SidebarNavItem to="/activity" label="Audit" icon={History} />
-              {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
-              <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
-            </SidebarSection>
-          </>
+          sectionOrder.order.map((id) => streamlinedSections[id])
         ) : (
           <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
             {tasksItem}

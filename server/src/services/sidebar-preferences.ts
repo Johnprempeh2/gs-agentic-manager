@@ -58,6 +58,27 @@ export function sidebarPreferenceService(db: Db) {
       return toPreference(row?.companyOrder ?? normalized, row?.updatedAt ?? now);
     },
 
+    async getSectionOrder(userId: string): Promise<SidebarOrderPreference> {
+      const row = await db.query.userSidebarPreferences.findFirst({
+        where: eq(userSidebarPreferences.userId, userId),
+      });
+      return toPreference(row?.sectionOrder ?? [], row?.updatedAt ?? null);
+    },
+
+    async upsertSectionOrder(userId: string, orderedIds: string[]): Promise<SidebarOrderPreference> {
+      const now = new Date();
+      const normalized = normalizeOrderedIds(orderedIds);
+      const [row] = await db
+        .insert(userSidebarPreferences)
+        .values({ userId, sectionOrder: normalized, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [userSidebarPreferences.userId],
+          set: { sectionOrder: normalized, updatedAt: now },
+        })
+        .returning();
+      return toPreference(row?.sectionOrder ?? normalized, row?.updatedAt ?? now);
+    },
+
     async getProjectOrder(companyId: string, userId: string): Promise<SidebarOrderPreference> {
       const row = await db.query.companyUserSidebarPreferences.findFirst({
         where: and(

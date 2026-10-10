@@ -130,6 +130,7 @@ export {
 export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
+  upsertSidebarSectionOrderSchema,
   type UpsertSidebarOrderPreference,
 } from "./sidebar-preferences.js";
 export {
