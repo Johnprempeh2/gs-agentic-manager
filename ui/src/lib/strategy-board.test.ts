@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardAssurance, packFileName, previousQuarter, readingAgeText } from "./strategy-board";
+import { boardAssurance, meetingPackId, packFileName, previousQuarter, readingAgeText } from "./strategy-board";
 
 describe("boardAssurance", () => {
   it("is strong only for a fresh checked or system reading", () => {
@@ -29,5 +29,20 @@ describe("text helpers", () => {
     expect(readingAgeText(1)).toBe("1 day old");
     expect(readingAgeText(18)).toBe("18 days old");
     expect(packFileName("Q3 2026 board pack!")).toBe("q3-2026-board-pack.md");
+  });
+});
+
+describe("meetingPackId", () => {
+  it("is the newest accepted pack; a newer draft does not replace it", () => {
+    expect(meetingPackId([
+      { id: "draft", status: "draft", createdAt: new Date("2026-10-09") },
+      { id: "q3", status: "accepted", createdAt: new Date("2026-10-01") },
+      { id: "q2", status: "accepted", createdAt: new Date("2026-07-01") },
+    ])).toBe("q3");
+  });
+
+  it("is null when there are only drafts or no packs", () => {
+    expect(meetingPackId([{ id: "draft", status: "draft", createdAt: new Date("2026-10-09") }])).toBeNull();
+    expect(meetingPackId([])).toBeNull();
   });
 });

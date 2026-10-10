@@ -2199,6 +2199,13 @@
       "when": 1791632177311,
       "tag": "0315_strategy_board_email",
       "breakpoints": true
+    },
+    {
+      "idx": 316,
+      "version": "7",
+      "when": 1791633151263,
+      "tag": "0316_strategy_board_pack_drafts",
+      "breakpoints": true
     }
   ]
 }

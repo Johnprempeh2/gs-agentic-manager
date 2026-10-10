@@ -5817,7 +5817,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/strategy-board/packs",
   tags: ["strategy-board"],
-  summary: "Make a board pack for a period: a frozen snapshot and a Markdown document (board members, owners, admins)",
+  summary: "Make a board pack for a period: a frozen snapshot and a Markdown document (board members, owners, admins; the board secretary agent makes a draft)",
   request: { params: companyParams, body: jsonBody(createStrategyBoardPackSchema) },
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
@@ -5829,6 +5829,15 @@ registry.registerPath({
   summary: "Get a board pack with its snapshot and Markdown body",
   request: { params: idParams },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/strategy-board/packs/{id}/accept",
+  tags: ["strategy-board"],
+  summary: "Accept the board secretary's draft pack as the meeting's pack (board members, owners, admins)",
+  request: { params: idParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({
