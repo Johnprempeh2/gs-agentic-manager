@@ -209,3 +209,36 @@ export interface StrategyBoardPack {
 }
 
 export type StrategyBoardPackListItem = Omit<StrategyBoardPack, "body" | "snapshot">;
+
+/** The board emails that can be sent (GRE-1187). */
+export type StrategyBoardEmailKind = "meeting_reminder" | "slippage_alert" | "why_request";
+
+/** Per-company board email settings: the next meeting and the secretary's inbox. */
+export interface StrategyBoardSettings {
+  companyId: string;
+  /** The AgentMail inbox the board secretary sends from; null = no board email. */
+  secretaryEndpointId: string | null;
+  /** "YYYY-MM-DD" of the next board meeting. */
+  nextMeetingDate: string | null;
+  /** Owners get their reminder this many days before the meeting. */
+  reminderLeadDays: number;
+}
+
+/** One board email to one person. */
+export interface StrategyBoardEmail {
+  id: string;
+  companyId: string;
+  kind: StrategyBoardEmailKind;
+  recipientUserId: string;
+  recipientEmail: string;
+  alertId: string | null;
+  whyRequestId: string | null;
+  meetingDate: string | null;
+  /** Meeting reminders: the reply code ("K1") for each KPI goal id. */
+  kpiCodes: Record<string, string> | null;
+  publicationId: string | null;
+  status: "queued" | "failed";
+  attempts: number;
+  lastError: string | null;
+  createdAt: Date;
+}

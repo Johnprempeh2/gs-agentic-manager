@@ -2192,6 +2192,13 @@
       "when": 1791630201750,
       "tag": "0314_issue_due_date",
       "breakpoints": true
+    },
+    {
+      "idx": 315,
+      "version": "7",
+      "when": 1791632177311,
+      "tag": "0315_strategy_board_email",
+      "breakpoints": true
     }
   ]
 }

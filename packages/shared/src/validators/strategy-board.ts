@@ -44,3 +44,13 @@ export const setStrategyBoardMembersSchema = z
     path: ["members"],
   });
 export type SetStrategyBoardMembers = z.infer<typeof setStrategyBoardMembersSchema>;
+
+/** Board email settings (GRE-1187). Leave a field out to keep it. */
+export const updateStrategyBoardSettingsSchema = z
+  .object({
+    secretaryEndpointId: z.string().uuid().nullable().optional(),
+    nextMeetingDate: calendarDateSchema.nullable().optional(),
+    reminderLeadDays: z.number().int().min(0).max(60).optional(),
+  })
+  .strict();
+export type UpdateStrategyBoardSettings = z.infer<typeof updateStrategyBoardSettingsSchema>;

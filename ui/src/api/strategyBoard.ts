@@ -1,10 +1,13 @@
 import type {
   GoalKpiAlert,
   GoalWhyRequest,
+  StrategyBoardEmail,
   StrategyBoardMember,
   StrategyBoardPack,
   StrategyBoardPackListItem,
+  StrategyBoardSettings,
   StrategyBoardSummary,
+  UpdateStrategyBoardSettings,
 } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -15,6 +18,10 @@ export const strategyBoardApi = {
   members: (companyId: string) => api.get<StrategyBoardMember[]>(`/companies/${companyId}/strategy-board/members`),
   setMembers: (companyId: string, members: Array<{ userId: string; chair: boolean }>) =>
     api.put<StrategyBoardMember[]>(`/companies/${companyId}/strategy-board/members`, { members }),
+  settings: (companyId: string) => api.get<StrategyBoardSettings>(`/companies/${companyId}/strategy-board/settings`),
+  updateSettings: (companyId: string, patch: UpdateStrategyBoardSettings) =>
+    api.patch<StrategyBoardSettings>(`/companies/${companyId}/strategy-board/settings`, patch),
+  emails: (companyId: string) => api.get<StrategyBoardEmail[]>(`/companies/${companyId}/strategy-board/emails`),
   listPacks: (companyId: string) => api.get<StrategyBoardPackListItem[]>(`/companies/${companyId}/strategy-board/packs`),
   createPack: (companyId: string, data: { periodStart: string; periodEnd: string; title?: string }) =>
     api.post<StrategyBoardPack>(`/companies/${companyId}/strategy-board/packs`, data),
