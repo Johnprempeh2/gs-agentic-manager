@@ -5,8 +5,11 @@ import {
   activityLog,
   agents,
   authUsers,
+  chatConversations,
   chatEndpoints,
+  chatPublications,
   companyMemberships,
+  emailMessages,
   goalCheckIns,
   goalKpiAlerts,
   goalKpiReadings,
@@ -26,7 +29,15 @@ import { beforeEach, expect, it } from "vitest";
 import { goalRoutes } from "../routes/goals.js";
 import { strategyBoardRoutes } from "../routes/strategy-board.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
-import { BOARD_EMAIL_MAX_ATTEMPTS, meetingReminderDue, runScheduledStrategyBoardEmails } from "../services/strategy-board-email.js";
+import { issueService } from "../services/issues.js";
+import {
+  BOARD_EMAIL_MAX_ATTEMPTS,
+  meetingReminderDue,
+  parseReadingLines,
+  replyBody,
+  runScheduledStrategyBoardEmails,
+  storeBoardEmailReply,
+} from "../services/strategy-board-email.js";
 import {
   describeEmbeddedPostgres,
   resetCompanyIssueFixtures,
@@ -62,6 +73,9 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
   const ctx = useEmbeddedPostgres("gsam-strategy-board-email-", {
     resetEach: async (db) => {
       await db.delete(activityLog);
+      await db.delete(emailMessages);
+      await db.delete(chatPublications);
+      await db.delete(chatConversations);
       await db.delete(strategyBoardEmails);
       await db.delete(strategyBoardSettings);
       await db.delete(strategyBoardPacks);
@@ -411,5 +425,164 @@ describeEmbeddedPostgres("board email (GRE-1187)", () => {
     expect((await request(app(owner)).get(`/api/companies/${companyId}/strategy-board/settings`)).status).toBe(403);
     const rows = await ctx.db.select().from(strategyBoardSettings).where(inArray(strategyBoardSettings.companyId, [companyId, other.companyId]));
     expect(rows).toHaveLength(1);
+  });
+
+  // ---- Replies stored on the plan (GRE-1196) ----
+
+  /**
+   * Stands in for the email service: each board email gets its own task,
+   * thread and send, as `queueBoardSend` makes them.
+   */
+  function threadingSender() {
+    const sent: Array<{ companyId: string; input: EmailSendInput; conversationId: string; issueId: string }> = [];
+    return {
+      sent,
+      async queueBoardSend(companyId: string, input: EmailSendInput) {
+        const task = await issueService(ctx.db).create(companyId, { title: input.subject!, parentId: input.parentIssueId, status: "done", priority: "medium" });
+        const [conversation] = await ctx.db
+          .insert(chatConversations)
+          .values({ companyId, endpointId: input.endpointId, issueId: task.id, externalConversationId: "secretary", externalThreadId: `thread-${input.idempotencyKey}`, externalLabel: input.subject!, isDirectMessage: true })
+          .returning();
+        await ctx.db.insert(chatPublications).values({
+          id: input.idempotencyKey,
+          companyId,
+          endpointId: input.endpointId,
+          conversationId: conversation.id,
+          issueId: task.id,
+          idempotencyKey: `email:${input.idempotencyKey}`,
+          payload: { text: input.text },
+        });
+        sent.push({ companyId, input, conversationId: conversation.id, issueId: task.id });
+        return { id: input.idempotencyKey, issueId: task.id, conversationId: conversation.id, outcome: "queued", error: null, providerMessageId: null };
+      },
+    };
+  }
+
+  /** An email that came into a board thread, as the email service retains it. */
+  async function reply(thread: { companyId: string; input: EmailSendInput; conversationId: string }, from: string, text: string) {
+    const providerMessageId = `reply-${randomUUID()}`;
+    await ctx.db.insert(emailMessages).values({
+      companyId: thread.companyId,
+      endpointId: thread.input.endpointId,
+      conversationId: thread.conversationId,
+      providerMessageId,
+      envelope: { from, to: ["secretary@agentmail.test"], cc: [], bcc: [], replyTo: [], subject: `Re: ${thread.input.subject}` },
+      text,
+      direction: "inbound",
+      timestamp: new Date(),
+    });
+    const input = { companyId: thread.companyId, conversationId: thread.conversationId, providerMessageId };
+    return { input, result: await storeBoardEmailReply(ctx.db, input) };
+  }
+
+  async function threadComments(issueId: string) {
+    return (await ctx.db.select().from(issueComments).where(eq(issueComments.issueId, issueId))).map((c) => c.body);
+  }
+
+  it("stores the owner's reply to a \"Why?\" email as the answer and closes the owner's task", async () => {
+    const { companyId, chair } = await seedBoardWithChair("WhyReply");
+    const ama = await addPerson(companyId, "operator", "ama");
+    const kpi = await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId });
+    const asked = await request(app(chair.actor)).post(`/api/goals/${kpi.id}/why-requests`).send({ question: "Why is revenue behind?" });
+    expect(asked.status).toBe(201);
+    const sender = threadingSender();
+    await sweep(sender);
+    const thread = sender.sent.find((s) => s.input.subject === "The board asks why: Revenue")!;
+
+    const { input, result } = await reply(thread, `Ama <${ama.email!.toUpperCase()}>`, "Two clients paid late.\nIt is back on plan in May.\n\nOn Mon, Board secretary wrote:\n> A board member asks you");
+    expect(result).toEqual({ stored: "why_answer" });
+    const [why] = await ctx.db.select().from(goalWhyRequests).where(eq(goalWhyRequests.id, asked.body.id));
+    expect(why).toMatchObject({ status: "answered", answer: "Two clients paid late.\nIt is back on plan in May.", answeredByUserId: ama.userId });
+    expect((await issueService(ctx.db).getById(asked.body.ownerIssueId))?.status).toBe("done");
+    expect(await threadComments(thread.issueId)).toContain("Stored on the plan: this reply is the answer to the board's \"Why?\" request.");
+
+    // The same message again (a retried delivery) changes nothing.
+    expect(await storeBoardEmailReply(ctx.db, input)).toEqual({ stored: "nothing", reason: "already_answered" });
+    expect((await ctx.db.select().from(goalWhyRequests).where(eq(goalWhyRequests.id, asked.body.id)))[0].answer).toBe(why.answer);
+  });
+
+  it("stores \"K1: 12500\" lines in a reminder reply as owner-reported readings on the KPI the reminder named", async () => {
+    const { companyId, actor: owner } = await seedBoardWithChair("Readings");
+    const ama = await addPerson(companyId, "operator", "ama");
+    const revenue = await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId });
+    const clients = await seedKpi(companyId, "Clients", { ownerUserId: ama.userId });
+    await configure(owner, companyId, { nextMeetingDate: dayOffset(3) });
+    const sender = threadingSender();
+    await sweep(sender);
+    const thread = sender.sent.find((s) => s.input.to?.[0] === ama.email)!;
+    // K1 is Clients and K2 is Revenue (sorted by title).
+    expect(thread.input.text).toContain("- K1 Clients");
+
+    const text = "Here you go:\nK1: 42\nk2 = 12,500.5 k\nK9: 7\nK1 is up because of the Accra office.\n> - K1 Clients: no reading yet.";
+    const { input, result } = await reply(thread, ama.email!, text);
+    expect(result).toEqual({ stored: "readings", readings: 2 });
+    const readings = await ctx.db.select().from(goalKpiReadings).where(inArray(goalKpiReadings.goalId, [revenue.id, clients.id]));
+    expect(readings.map((r) => [r.goalId, r.value, r.source, r.recordedByUserId, r.readingDate]).sort()).toEqual(
+      [
+        [clients.id, 42, "owner_reported", ama.userId, TODAY],
+        [revenue.id, 12500.5, "owner_reported", ama.userId, TODAY],
+      ].sort(),
+    );
+    expect((await ctx.db.select().from(goals).where(eq(goals.id, revenue.id)))[0].currentValue).toBe(12500.5);
+    const notes = await threadComments(thread.issueId);
+    expect(notes.find((n) => n.startsWith("Stored on the plan as owner-reported readings"))).toContain("- K2 Revenue: 12500.5 k");
+
+    // A retried delivery does not add the readings twice.
+    expect(await storeBoardEmailReply(ctx.db, input)).toEqual({ stored: "nothing", reason: "no_readings" });
+    expect(await ctx.db.select().from(goalKpiReadings).where(inArray(goalKpiReadings.goalId, [revenue.id, clients.id]))).toHaveLength(2);
+  });
+
+  it("does not store a reply from anyone but the person the board emailed", async () => {
+    const { companyId, actor: owner, chair } = await seedBoardWithChair("Stranger");
+    const ama = await addPerson(companyId, "operator", "ama");
+    const kpi = await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId });
+    const asked = await request(app(chair.actor)).post(`/api/goals/${kpi.id}/why-requests`).send({ question: "Why?" });
+    await configure(owner, companyId, { nextMeetingDate: dayOffset(3) });
+    const sender = threadingSender();
+    await sweep(sender);
+    const whyThread = sender.sent.find((s) => s.input.subject === "The board asks why: Revenue")!;
+    const reminderThread = sender.sent.find((s) => s.input.subject?.startsWith("Board meeting on"))!;
+
+    expect((await reply(whyThread, "someone@else.test", "Because.")).result).toEqual({ stored: "nothing", reason: "unknown_sender" });
+    expect((await reply(reminderThread, `Ama <ama@else.test>`, "K1: 500")).result).toEqual({ stored: "nothing", reason: "unknown_sender" });
+    expect((await ctx.db.select().from(goalWhyRequests).where(eq(goalWhyRequests.id, asked.body.id)))[0].status).toBe("open");
+    expect(await ctx.db.select().from(goalKpiReadings).where(eq(goalKpiReadings.goalId, kpi.id))).toHaveLength(0);
+    expect(await threadComments(whyThread.issueId)).toContain(
+      "Not stored on the plan: this reply did not come from the person the board emailed, so it stays in this email thread only.",
+    );
+  });
+
+  it("stores nothing, without failing, for a reply with no reading lines, a slippage alert reply, or with the board switched off", async () => {
+    const { companyId, actor: owner, chair } = await seedBoardWithChair("Quiet");
+    const ama = await addPerson(companyId, "operator", "ama");
+    const kpi = await seedKpi(companyId, "Revenue", { ownerUserId: ama.userId });
+    await postReading(owner, kpi.id, 100);
+    await configure(owner, companyId, { nextMeetingDate: dayOffset(3) });
+    const sender = threadingSender();
+    await sweep(sender);
+    const reminderThread = sender.sent.find((s) => s.input.subject?.startsWith("Board meeting on"))!;
+    const alertThread = sender.sent.find((s) => s.input.subject === "KPI turned red: Revenue")!;
+    const before = await ctx.db.select().from(goalKpiReadings).where(eq(goalKpiReadings.goalId, kpi.id));
+
+    expect((await reply(reminderThread, ama.email!, "Thanks, I will send the numbers on Friday.")).result).toEqual({ stored: "nothing", reason: "no_readings" });
+    expect((await reply(reminderThread, ama.email!, "")).result).toEqual({ stored: "nothing", reason: "no_readings" });
+    expect((await reply(alertThread, chair.email!, "K1: 999")).result).toEqual({ stored: "nothing", reason: "not_stored_kind" });
+    await instanceSettingsService(ctx.db).updateExperimental({ enableStrategyBoard: false });
+    expect((await reply(reminderThread, ama.email!, "K1: 120")).result).toEqual({ stored: "nothing", reason: "switch_off" });
+    await instanceSettingsService(ctx.db).updateExperimental({ enableStrategyBoard: true });
+
+    expect(await ctx.db.select().from(goalKpiReadings).where(eq(goalKpiReadings.goalId, kpi.id))).toHaveLength(before.length);
+    // An email thread the board did not send is not touched.
+    expect(await storeBoardEmailReply(ctx.db, { companyId, conversationId: randomUUID(), providerMessageId: "x" })).toEqual({ stored: "nothing", reason: "not_board_thread" });
+  });
+
+  it("reads reading lines and the reply text above the quoted email", () => {
+    expect(parseReadingLines("K1: 12500\nk2=1,250.75 clients\n - K3 Revenue: 5\n> K4: 9\nK5: soon\nK1: 13000")).toEqual([
+      { code: "K1", value: 13000 },
+      { code: "K2", value: 1250.75 },
+    ]);
+    expect(parseReadingLines("")).toEqual([]);
+    expect(replyBody("Late payments.\n\n-----Original Message-----\nHello")).toBe("Late payments.");
+    expect(replyBody("> quoted only")).toBe("");
   });
 });

@@ -44,6 +44,7 @@ import { secretService } from "./secrets.js";
 import { authorizationService } from "./authorization.js";
 import { issueService } from "./issues.js";
 import { supportQueueService } from "./support-queue.js";
+import { storeBoardEmailReply } from "./strategy-board-email.js";
 import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { instanceSettingsService } from "./instance-settings.js";
@@ -1231,6 +1232,8 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       wakePending?: boolean;
       admissionToWakeMs?: number;
       supportReceivedAt?: string;
+      boardReplyPending?: boolean;
+      conversationId?: string;
     };
     if (event.inbox_id !== endpoint.botExternalId)
       throw forbidden("Email delivery inbox mismatch");
@@ -1445,6 +1448,12 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           task.status !== "cancelled" &&
           !isAutomaticEmail(message) &&
           !message.labels.includes("sent");
+        // A reply on a Strategy Board thread may be stored on the plan (GRE-1196).
+        event.conversationId = conversation.id;
+        event.boardReplyPending =
+          !alreadyRetained &&
+          !isAutomaticEmail(message) &&
+          !message.labels.includes("sent");
         await tx
           .update(chatDeliveries)
           .set({
@@ -1470,6 +1479,18 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
         .catch((err: unknown) =>
           logger.warn({ err, issueId: event.issueId }, "support ticket intake failed; the clock sweep will repair it"),
         );
+    // Idempotent, and never blocks the wake: the email stays in the thread either way.
+    if (event.boardReplyPending && event.conversationId)
+      await storeBoardEmailReply(db, {
+        companyId: endpoint.companyId,
+        conversationId: event.conversationId,
+        providerMessageId: event.message_id,
+      }).catch((err: unknown) =>
+        logger.warn(
+          { err, issueId: event.issueId },
+          "strategy board: an email reply could not be stored on the plan; it stays in the email thread. Enter it on the KPI page.",
+        ),
+      );
     if (event.wakePending && event.issueId) {
       await active(endpoint);
       await options.heartbeat.wakeup(endpoint.assignedAgentId, {
@@ -1510,7 +1531,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       .set({
         state: "processed",
         processedAt: new Date(),
-        normalizedEvent: { ...event, wakePending: false },
+        normalizedEvent: { ...event, wakePending: false, boardReplyPending: false },
       })
       .where(eq(chatDeliveries.id, delivery.id));
   }
