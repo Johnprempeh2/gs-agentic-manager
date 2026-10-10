@@ -128,6 +128,10 @@ vi.mock("./SidebarStarredProjects.production", () => ({
   SidebarStarredProjects: () => <div data-testid="sidebar-starred-projects" />,
 }));
 
+vi.mock("./SidebarStarredPipelines", () => ({
+  SidebarStarredPipelines: () => null,
+}));
+
 vi.mock("./SidebarProjects", () => ({
   SidebarProjects: () => <div data-testid="sidebar-projects">Classic projects</div>,
 }));
@@ -285,6 +289,22 @@ describe("Sidebar", () => {
     const dashboardLink = [...container.querySelectorAll("nav a")]
       .find((anchor) => anchor.getAttribute("href") === "/dashboard");
     expect(dashboardLink?.textContent).toContain("2 live");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("gives each section a drag grip and a rearrange menu, separate from the nav links", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+    const root = await renderSidebar();
+
+    for (const label of ["Work", "Team", "Build", "Company"]) {
+      const grip = container.querySelector(`button[aria-label="Drag to move the ${label} section"]`);
+      expect(grip).not.toBeNull();
+      expect(grip?.closest("a")).toBeNull();
+      expect(container.querySelector(`button[aria-label="Rearrange ${label} section"]`)).not.toBeNull();
+    }
 
     flushSync(() => {
       root.unmount();

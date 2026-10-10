@@ -154,6 +154,7 @@ import {
   resolveBudgetIncidentSchema,
   // Sidebar
   upsertSidebarOrderPreferenceSchema,
+  upsertSidebarSectionOrderSchema,
   // Announcements
   announcementIdSchema,
   announcementSchema,
@@ -7327,6 +7328,23 @@ registry.registerPath({
   tags: ["sidebar"],
   summary: "Update current user sidebar preferences",
   request: { body: jsonBody(upsertSidebarOrderPreferenceSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/sidebar-preferences/me/sections",
+  tags: ["sidebar"],
+  summary: "Get the current user's sidebar section order",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/sidebar-preferences/me/sections",
+  tags: ["sidebar"],
+  summary: "Update the current user's sidebar section order",
+  request: { body: jsonBody(upsertSidebarSectionOrderSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 

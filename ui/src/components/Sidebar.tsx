@@ -29,10 +29,31 @@ import {
   Brain,
   Workflow,
   Globe,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
+  GripVertical,
 } from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { SidebarSection } from "./SidebarSection";
+import { SidebarSection, type SidebarSectionMenuAction } from "./SidebarSection";
+import { useSidebarSectionOrder } from "../hooks/useSidebarSectionOrder";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarAgents } from "./SidebarAgents";
 import { SidebarProjects } from "./SidebarProjects";
@@ -80,6 +101,53 @@ function useStoredSectionOpen(section: string, initial: boolean) {
     }
   }, [key]);
   return [open, update] as const;
+}
+
+// Default order of the streamlined sections; each user may rearrange them.
+const SECTION_IDS = ["work", "team", "build", "company"] as const;
+const SECTION_LABELS: Record<string, string> = { work: "Work", team: "Team", build: "Build", company: "Company" };
+
+function SortableSidebarSection({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: (dragHandle: ReactNode) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+  const handle = (
+    <button
+      type="button"
+      ref={setActivatorNodeRef}
+      data-slot="icon-button"
+      {...attributes}
+      {...listeners}
+      aria-label={`Drag to move the ${label} section`}
+      className="flex h-5 w-5 cursor-grab touch-manipulation items-center justify-center rounded-sm text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+    >
+      <GripVertical className="h-3.5 w-3.5" aria-hidden="true" />
+    </button>
+  );
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        // Translate only: sections differ in height, so a scale would squash them.
+        transform: CSS.Translate.toString(transform),
+        transition,
+        zIndex: isDragging ? "var(--z-index-raised)" : undefined,
+      }}
+      className={cn(
+        "relative rounded-lg",
+        isDragging && "bg-sidebar-accent ring-2 ring-ring shadow-lg",
+      )}
+    >
+      {children(handle)}
+    </div>
+  );
 }
 
 export function Sidebar({ children }: { children?: ReactNode }) {
@@ -208,6 +276,94 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     </>
   );
   const showAgentChats = agentChatEnabled && !children;
+  const sectionOrder = useSidebarSectionOrder(SECTION_IDS);
+  // Drag starts only from the grip. Touch waits a moment so a swipe still
+  // scrolls the sidebar; the keyboard sensor lets the grip move with arrows.
+  const sectionSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const sectionMenu = (id: string, label: string) => {
+    const index = sectionOrder.order.indexOf(id);
+    const actions: SidebarSectionMenuAction[] = [];
+    if (index > 0) {
+      actions.push({ type: "item", label: "Move up", icon: ArrowUp, onSelect: () => sectionOrder.move(id, -1) });
+    }
+    if (index < sectionOrder.order.length - 1) {
+      actions.push({ type: "item", label: "Move down", icon: ArrowDown, onSelect: () => sectionOrder.move(id, 1) });
+    }
+    actions.push(
+      { type: "separator" },
+      { type: "item", label: "Reset to default order", icon: RotateCcw, onSelect: sectionOrder.reset },
+    );
+    return { actions, ariaLabel: `Rearrange ${label} section` };
+  };
+  const streamlinedSections: Record<string, (dragHandle: ReactNode) => ReactNode> = {
+    work: (dragHandle) => (
+      <SidebarSection
+        dragHandle={dragHandle}
+        label="Work"
+        collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}
+        menu={sectionMenu("work", "Work")}
+      >
+        {dashboardItem}
+        {inboxItem}
+        {myTasksItem}
+        {decisionsItem}
+        {tasksItem}
+        {goalsItem}
+        {boardItem}
+      </SidebarSection>
+    ),
+    team: (dragHandle) => (
+      <SidebarSection
+        dragHandle={dragHandle}
+        label="Team"
+        collapsible={{ open: teamOpen, onOpenChange: setTeamOpen }}
+        menu={sectionMenu("team", "Team")}
+      >
+        <SidebarNavItem to="/agents" label="Agents" icon={Users} />
+        {conferenceRoomItem}
+        {statusItem}
+      </SidebarSection>
+    ),
+    build: (dragHandle) => (
+      <SidebarSection
+        dragHandle={dragHandle}
+        label="Build"
+        collapsible={{ open: buildOpen, onOpenChange: setBuildOpen }}
+        menu={sectionMenu("build", "Build")}
+      >
+        <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
+        <SidebarStarredProjects />
+        {routinesItem}
+        {workflowsItem}
+        {pipelinesItem}
+        <SidebarStarredPipelines />
+        {workspacesItem}
+        {artifactsItem}
+        {casesItem}
+        {deepDiveItem}
+        {pluginNavOutlets}
+      </SidebarSection>
+    ),
+    company: (dragHandle) => (
+      <SidebarSection
+        dragHandle={dragHandle}
+        label="Company"
+        collapsible={{ open: organizationOpen, onOpenChange: setOrganizationOpen }}
+        menu={sectionMenu("company", "Company")}
+      >
+        <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
+        <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
+        {websiteItem}
+        <SidebarNavItem to="/activity" label="Audit" icon={History} />
+        {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
+        <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
+      </SidebarSection>
+    ),
+  };
 
   return (
     <aside
@@ -276,49 +432,21 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         </div>
 
         {streamlinedUiEnabled ? (
-          <>
-            <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
-              {dashboardItem}
-              {inboxItem}
-              {myTasksItem}
-              {decisionsItem}
-              {tasksItem}
-              {goalsItem}
-              {boardItem}
-            </SidebarSection>
-
-            <SidebarSection label="Team" collapsible={{ open: teamOpen, onOpenChange: setTeamOpen }}>
-              <SidebarNavItem to="/agents" label="Agents" icon={Users} />
-              {conferenceRoomItem}
-              {statusItem}
-            </SidebarSection>
-
-            <SidebarSection label="Build" collapsible={{ open: buildOpen, onOpenChange: setBuildOpen }}>
-              <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
-              <SidebarStarredProjects />
-              {routinesItem}
-              {workflowsItem}
-              {pipelinesItem}
-              <SidebarStarredPipelines />
-              {workspacesItem}
-              {artifactsItem}
-              {casesItem}
-              {deepDiveItem}
-              {pluginNavOutlets}
-            </SidebarSection>
-
-            <SidebarSection
-              label="Company"
-              collapsible={{ open: organizationOpen, onOpenChange: setOrganizationOpen }}
-            >
-              <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
-              <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
-              {websiteItem}
-              <SidebarNavItem to="/activity" label="Audit" icon={History} />
-              {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
-              <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
-            </SidebarSection>
-          </>
+          <DndContext
+            sensors={sectionSensors}
+            collisionDetection={closestCenter}
+            onDragEnd={({ active, over }) => {
+              if (over && active.id !== over.id) sectionOrder.drop(String(active.id), String(over.id));
+            }}
+          >
+            <SortableContext items={sectionOrder.order} strategy={verticalListSortingStrategy}>
+              {sectionOrder.order.map((id) => (
+                <SortableSidebarSection key={id} id={id} label={SECTION_LABELS[id] ?? id}>
+                  {streamlinedSections[id]}
+                </SortableSidebarSection>
+              ))}
+            </SortableContext>
+          </DndContext>
         ) : (
           <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
             {tasksItem}

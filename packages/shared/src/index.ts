@@ -1890,6 +1890,7 @@ export {
 export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
+  upsertSidebarSectionOrderSchema,
   type UpsertSidebarOrderPreference,
 } from "./validators/sidebar-preferences.js";
 export {
