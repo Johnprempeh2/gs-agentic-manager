@@ -73,6 +73,12 @@ export const strategyBoardPacks = pgTable(
     periodStart: date("period_start").notNull(),
     periodEnd: date("period_end").notNull(),
     createdByUserId: text("created_by_user_id"),
+    /** The board secretary agent that made a draft (GRE-1200); null when a person made it. */
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    /** draft | accepted. Only an accepted pack is the meeting's pack (GRE-1200). */
+    status: text("status").notNull().default("accepted"),
+    acceptedByUserId: text("accepted_by_user_id"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     /** StrategyBoardPackSnapshot (shared types). */
     snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
     /** The pack as Markdown. */
@@ -81,5 +87,6 @@ export const strategyBoardPacks = pgTable(
   },
   (table) => ({
     companyCreatedIdx: index("strategy_board_packs_company_created_idx").on(table.companyId, table.createdAt),
+    statusCheck: check("strategy_board_packs_status_check", sql`${table.status} in ('draft', 'accepted')`),
   }),
 );

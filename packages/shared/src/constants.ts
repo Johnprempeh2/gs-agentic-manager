@@ -633,6 +633,10 @@ export type KpiRagStatus = (typeof KPI_RAG_STATUSES)[number];
 export const GOAL_WHY_REQUEST_STATUSES = ["open", "answered"] as const;
 export type GoalWhyRequestStatus = (typeof GOAL_WHY_REQUEST_STATUSES)[number];
 
+/** A board pack made by the board secretary agent is a draft until a board member accepts it (GRE-1200). */
+export const STRATEGY_BOARD_PACK_STATUSES = ["draft", "accepted"] as const;
+export type StrategyBoardPackStatus = (typeof STRATEGY_BOARD_PACK_STATUSES)[number];
+
 /** Default slippage lines, in percent off the planned path. */
 export const DEFAULT_KPI_AMBER_THRESHOLD_PCT = 10;
 export const DEFAULT_KPI_RED_THRESHOLD_PCT = 20;

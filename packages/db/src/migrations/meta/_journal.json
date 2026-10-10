@@ -2185,6 +2185,13 @@
       "when": 1791620604678,
       "tag": "0313_website_view",
       "breakpoints": true
+    },
+    {
+      "idx": 314,
+      "version": "7",
+      "when": 1791631476905,
+      "tag": "0314_strategy_board_pack_drafts",
+      "breakpoints": true
     }
   ]
 }

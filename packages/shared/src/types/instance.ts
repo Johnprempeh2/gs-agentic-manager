@@ -126,6 +126,11 @@ export interface InstanceExperimentalSettings {
   enableDeepDive: boolean;
   /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). */
   enableStrategyBoard: boolean;
+  /**
+   * Greatstone: the board secretary agent (GRE-1200), one per instance. It may
+   * make draft board packs; a board member accepts them. Null = none.
+   */
+  strategyBoardSecretaryAgentId: string | null;
   /** Greatstone: the read-only Website view (GA4 and Search Console). Off = `403 not_entitled`. */
   enableWebsiteView: boolean;
   enableAgentChat: boolean;

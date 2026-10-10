@@ -1,4 +1,4 @@
-import type { GoalKind, GoalWhyRequestStatus, KpiRagStatus, KpiReadingSource } from "../constants.js";
+import type { GoalKind, GoalWhyRequestStatus, KpiRagStatus, KpiReadingSource, StrategyBoardPackStatus } from "../constants.js";
 import type { GoalRagRollup, KpiStatusReason } from "../goal-kpi-status.js";
 
 /**
@@ -68,7 +68,7 @@ export interface StrategyBoardSummary {
   companyId: string;
   /** "YYYY-MM-DD" the statuses are judged on. */
   asOf: string;
-  /** The last board pack, which "changed since" compares against. */
+  /** The last accepted board pack, which "changed since" compares against. Drafts never count. */
   lastSnapshot: StrategyBoardSnapshotRef | null;
   counts: { red: number; amber: number; green: number; noStatus: number };
   /** Red then amber KPIs, biggest slippage first. */
@@ -177,7 +177,13 @@ export interface StrategyBoardPack {
   title: string;
   periodStart: string;
   periodEnd: string;
+  /** "draft" when the board secretary agent made it; only an accepted pack is the meeting's pack. */
+  status: StrategyBoardPackStatus;
   createdByUserId: string | null;
+  /** The board secretary agent that made the draft. */
+  createdByAgentId: string | null;
+  acceptedByUserId: string | null;
+  acceptedAt: Date | null;
   createdAt: Date;
   /** The pack as a Markdown document. */
   body: string;
