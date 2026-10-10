@@ -5,6 +5,8 @@ import { toolsApi } from "@/api/tools";
 import { queryKeys } from "@/lib/queryKeys";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { FeatureTour } from "@/components/FeatureTour";
+import { GITHUB_SHARE_TOUR } from "@/lib/feature-tours";
 
 /**
  * Lets the owner of a personal GitHub grant share it with agents for work no
@@ -41,8 +43,11 @@ export function ShareWithAgentsSection({ connectionId, grant, agents }: {
   const busy = mutation.isPending || bulk.isPending;
   const error = bulk.error ?? mutation.error;
   return <section className="space-y-3" aria-labelledby={`${id}-title`}>
-    <div className="space-y-1">
-      <h2 id={`${id}-title`} className="text-lg font-semibold">Share with agents</h2>
+    <div className="space-y-1" data-tour="share-intro">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id={`${id}-title`} className="text-lg font-semibold">Share with agents</h2>
+        <FeatureTour tour={GITHUB_SHARE_TOUR} />
+      </div>
       <p className="text-sm text-muted-foreground">
         Agents you tick can use your GitHub for work they start themselves. Their commits and pull requests appear as you.
         Work someone asks for still uses that person's own GitHub.
@@ -54,14 +59,14 @@ export function ShareWithAgentsSection({ connectionId, grant, agents }: {
         ? <p className="text-sm text-muted-foreground">There are no agents to share with yet.</p>
         : <>
           <div className="flex flex-wrap gap-2">
-            {unshared.length > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={() => bulk.mutate(true)}>
+            {unshared.length > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={() => bulk.mutate(true)} data-tour="share-all">
               {bulk.isPending && bulk.variables ? "Sharing..." : "Share with all agents"}
             </Button>}
-            {delegations.length > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={() => bulk.mutate(false)}>
+            {delegations.length > 0 && <Button size="sm" variant="outline" disabled={busy} onClick={() => bulk.mutate(false)} data-tour="share-stop">
               {bulk.isPending && !bulk.variables ? "Stopping..." : "Stop sharing with all"}
             </Button>}
           </div>
-          <ul className="space-y-2">
+          <ul className="space-y-2" data-tour="share-list">
             {liveAgents.map((agent) => {
               const checked = delegations.some((delegation) => delegation.agentId === agent.id);
               return <li key={agent.id} className="flex items-center gap-2">

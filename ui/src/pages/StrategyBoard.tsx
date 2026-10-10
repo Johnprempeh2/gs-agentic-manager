@@ -16,6 +16,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { AttentionQueue, ChangesSinceSnapshot, OverdueActions, StrategyAtAGlance } from "@/components/strategy-board/StrategyBoardViews";
 import { AskWhyDialog, BoardMembersCard, BoardPackViewer, MakeBoardPackDialog } from "@/components/strategy-board/StrategyBoardDialogs";
 import { BoardEmailCard } from "@/components/strategy-board/BoardEmailCard";
+import { FeatureTour } from "@/components/FeatureTour";
+import { STRATEGY_BOARD_TOUR } from "@/lib/feature-tours";
 
 function SectionHeading({ id, children }: { id: string; children: string }) {
   return (
@@ -140,7 +142,7 @@ export function StrategyBoard() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
+        <div className="min-w-0" data-tour="board-panel-header">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Board control panel</p>
           <h1 className="text-xl font-bold">Are we on course?</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -149,6 +151,7 @@ export function StrategyBoard() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <FeatureTour tour={STRATEGY_BOARD_TOUR} />
           <AskBoardAgentButton companyId={selectedCompanyId!} />
           <Button size="sm" variant="outline" asChild>
             <Link to="/goals">
@@ -157,7 +160,7 @@ export function StrategyBoard() {
             </Link>
           </Button>
           {rights.mayMakeBoardPack ? (
-            <Button size="sm" onClick={() => setMakingPack(true)}>
+            <Button size="sm" onClick={() => setMakingPack(true)} data-tour="board-make-pack">
               <FileText className="size-3.5" />
               Make board pack
             </Button>
@@ -172,7 +175,7 @@ export function StrategyBoard() {
         </div>
       ) : null}
 
-      <section className="space-y-2" aria-labelledby="attention-heading">
+      <section className="space-y-2" aria-labelledby="attention-heading" data-tour="board-attention">
         <SectionHeading id="attention-heading">Needs board attention</SectionHeading>
         <AttentionQueue kpis={board.attention} canAskWhy={rights.mayAskWhy} onAskWhy={setAskKpi} />
       </section>
@@ -182,7 +185,7 @@ export function StrategyBoard() {
         <OverdueActions actions={board.overdueActions} />
       </section>
 
-      <section className="space-y-2" aria-labelledby="glance-heading">
+      <section className="space-y-2" aria-labelledby="glance-heading" data-tour="board-plan">
         <SectionHeading id="glance-heading">Strategy at a glance</SectionHeading>
         <StrategyAtAGlance areas={board.areas} />
       </section>
@@ -193,7 +196,7 @@ export function StrategyBoard() {
           <ChangesSinceSnapshot kpis={board.changes} hasSnapshot={board.lastSnapshot != null} />
         </section>
 
-        <section className="space-y-2" aria-labelledby="packs-heading">
+        <section className="space-y-2" aria-labelledby="packs-heading" data-tour="board-packs">
           <SectionHeading id="packs-heading">Board packs</SectionHeading>
           {packs && packs.length > 0 ? (
             <ul className="divide-y divide-border rounded-lg border border-border">

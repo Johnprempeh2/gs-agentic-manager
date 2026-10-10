@@ -3536,3 +3536,9 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 @media (max-width: 767px) {
   .plugin-app-shell-overlays { bottom: var(--plugin-shell-mobile-bottom); }
 }
+
+/* Feature tour spotlight (FeatureTour.tsx): ring the element the current step points at. */
+[data-tour-active] {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+}

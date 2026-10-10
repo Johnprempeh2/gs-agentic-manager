@@ -97,6 +97,8 @@ import {
 } from "../lib/client-case";
 import { EmptyState } from "../components/EmptyState";
 import { StarToggle } from "../components/StarToggle";
+import { FeatureTour } from "../components/FeatureTour";
+import { CLIENT_CASE_TOUR, PIPELINE_BOARD_TOUR, PIPELINES_LIST_TOUR } from "../lib/feature-tours";
 import {
   starredResourceIds,
   useResourceMembershipMutation,
@@ -625,7 +627,7 @@ export function PipelineStageDistribution({ pipeline }: { pipeline: Pick<Pipelin
   const shown = occupied.slice(0, STAGE_CHIP_LIMIT);
   const hidden = occupied.slice(STAGE_CHIP_LIMIT);
   return (
-    <div className="mt-2 space-y-1.5">
+    <div className="mt-2 space-y-1.5" data-tour="pipelines-stages">
       <div className="flex max-w-(--sz-420px) gap-0.5" aria-hidden="true">
         {stages.map((stage) => (
           <span
@@ -855,14 +857,16 @@ export function PipelinesIndexTable({
                           {row.pipeline.name}
                         </Link>
                         {onToggleStar && !row.pipeline.archivedAt ? (
-                          <StarToggle
-                            size="row"
-                            className="relative z-raised"
-                            starred={starredIds?.has(row.pipeline.id) ?? false}
-                            pending={starPendingId === row.pipeline.id}
-                            resourceName={row.pipeline.name}
-                            onToggle={(next) => onToggleStar(row.pipeline, next)}
-                          />
+                          <span className="inline-flex" data-tour="pipelines-pin">
+                            <StarToggle
+                              size="row"
+                              className="relative z-raised"
+                              starred={starredIds?.has(row.pipeline.id) ?? false}
+                              pending={starPendingId === row.pipeline.id}
+                              resourceName={row.pipeline.name}
+                              onToggle={(next) => onToggleStar(row.pipeline, next)}
+                            />
+                          </span>
                         ) : null}
                       </div>
                       {row.parentPipelineName ? (
@@ -877,7 +881,7 @@ export function PipelinesIndexTable({
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm lg:contents">
-                    <div className="leading-6">
+                    <div className="leading-6" data-tour="pipelines-attention">
                       {attentionCount > 0 ? (
                         <Link
                           to="/review-queue"
@@ -1071,19 +1075,22 @@ function PipelinesIndex() {
   return (
     <div className="w-full max-w-6xl px-6 py-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div data-tour="pipelines-title">
           <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Work</p>
           <h1 className="text-2xl font-semibold text-foreground">Pipelines</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {formatNumber(pipelines.length)} pipeline{pipelines.length === 1 ? "" : "s"}. Connected ones are grouped from upstream work into downstream work.
           </p>
         </div>
-        {canCreatePipelines ? (
-          <Button onClick={() => setNewPipelineOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            New pipeline
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          <FeatureTour tour={PIPELINES_LIST_TOUR} />
+          {canCreatePipelines ? (
+            <Button onClick={() => setNewPipelineOpen(true)} data-tour="pipelines-new">
+              <Plus className="mr-2 h-4 w-4" />
+              New pipeline
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {pipelinesQuery.error ? (
@@ -1374,6 +1381,7 @@ function PipelineCaseCard({
       style={style}
       {...attributes}
       {...listeners}
+      data-tour={isOverlay ? undefined : "pipeline-card"}
       className={`block px-3 py-2 text-sm ${
         isDragging && !isOverlay ? "opacity-40" : ""
       } ${isOverlay ? "shadow-lg ring-1 ring-primary/20" : "hover:shadow-sm"}`}
@@ -1919,6 +1927,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <FeatureTour tour={PIPELINE_BOARD_TOUR} />
           <Select value={groupBy} onValueChange={handleGroupByChange}>
             <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
               <Layers className="h-4 w-4 text-muted-foreground" />
@@ -1929,13 +1938,13 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               <SelectItem value="builtFor">Built for</SelectItem>
             </SelectContent>
           </Select>
-          <Button asChild>
+          <Button asChild data-tour="board-add">
             <Link to={`/pipelines/${pipelineId}/add`}>
               <Plus className="mr-2 h-4 w-4" />
               Add items
             </Link>
           </Button>
-          <Button variant="outline" size="icon" asChild>
+          <Button variant="outline" size="icon" asChild data-tour="board-settings">
             <Link to={`/pipelines/${pipelineId}/settings`} aria-label="Pipeline settings" title="Pipeline settings">
               <Settings className="h-4 w-4" />
             </Link>
@@ -1954,7 +1963,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         onDragEnd={handleDragEnd}
         sensors={sensors}
       >
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-tour="board-columns">
           <div className="flex items-start gap-3 pb-3">
             {boardColumns.columns.map((stage) => {
               const items = boardColumns.byStage.get(stage.id) ?? [];
@@ -3017,6 +3026,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         </div>
         <div className="flex w-full flex-col gap-5">
           <div className="flex items-center gap-2 lg:justify-end">
+            {isClientCase ? <FeatureTour tour={CLIENT_CASE_TOUR} /> : null}
             {primaryAction}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -3555,7 +3565,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
           {reviewPanel}
 
           {/* Client cases show Projects inside the overview on narrow screens. */}
-          <div className={isClientCase ? "hidden lg:block" : undefined}>
+          <div className={isClientCase ? "hidden lg:block" : undefined} data-tour="client-projects">
             <DetailSection title="Projects">{projectsPanel}</DetailSection>
           </div>
 

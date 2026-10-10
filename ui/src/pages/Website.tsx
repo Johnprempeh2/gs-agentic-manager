@@ -30,6 +30,8 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorState, errorStateMessage } from "../components/ErrorState";
 import { MetricCard } from "../components/MetricCard";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { FeatureTour } from "../components/FeatureTour";
+import { WEBSITE_TOUR } from "../lib/feature-tours";
 import { Button } from "@/components/ui/button";
 import { useSearchParams } from "@/lib/router";
 import { cn, formatCalendarDay, formatDateTime, relativeTime } from "@/lib/utils";
@@ -341,7 +343,7 @@ function PullStatusBar({ report }: { report: WebsiteReport }) {
   const status = lastPull ? PULL_STATUS[lastPull.status] : null;
   const pulledAt = lastPull?.finishedAt ?? lastPull?.startedAt ?? property.lastPullAt;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" data-testid="website-pull-status">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" data-testid="website-pull-status" data-tour="website-pull">
       {status ? (
         <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 font-medium", status.className)}>
           {status.label}
@@ -432,14 +434,14 @@ function ConnectGoogle({
   if (property.connectionStatus === "connected") return null;
   if (!signInAvailable) {
     return (
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-tour="website-connect">
         <Lock className="h-3.5 w-3.5" aria-hidden="true" />
         Google sign-in is not set up on this instance.
       </p>
     );
   }
   return (
-    <div className="flex flex-col items-start gap-1 sm:items-end">
+    <div className="flex flex-col items-start gap-1 sm:items-end" data-tour="website-connect">
       <Button onClick={() => connect.mutate()} disabled={connect.isPending}>
         {property.connectionStatus === "needs_reconnect" ? "Reconnect Google" : "Connect Google"}
       </Button>
@@ -475,7 +477,7 @@ function PropertyReport({ companyId, property, signInAvailable, notice }: {
 
   const header = (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0 space-y-1" data-tour="website-header">
         <h1 className="text-xl font-bold">Website</h1>
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{property.name}</span>{" "}
@@ -483,7 +485,10 @@ function PropertyReport({ companyId, property, signInAvailable, notice }: {
         </p>
         {reportQuery.data ? <PullStatusBar report={reportQuery.data} /> : null}
       </div>
-      <ConnectGoogle companyId={companyId} property={property} signInAvailable={signInAvailable} />
+      <div className="flex flex-wrap items-start gap-2">
+        {reportQuery.data ? <FeatureTour tour={WEBSITE_TOUR} /> : null}
+        <ConnectGoogle companyId={companyId} property={property} signInAvailable={signInAvailable} />
+      </div>
     </header>
   );
 
