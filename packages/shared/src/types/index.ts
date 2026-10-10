@@ -161,6 +161,8 @@ export {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+  type StrategyBoardEmailSettings,
   GSAM_CLOUD_MANAGED_BY,
   GREATSTONE_TEAM_TAG,
   TEAM_CATALOG_ADD_MODES,
@@ -868,6 +870,9 @@ export type {
   StrategyBoardSnapshotRef,
   StrategyBoardSummary,
   StrategyBoardViewerRights,
+  StrategyBoardEmail,
+  StrategyBoardEmailKind,
+  StrategyBoardSettings,
 } from "./strategy-board.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {

@@ -40,6 +40,7 @@ export {
 export {
   instanceSettingsSchema,
   instanceGeneralSettingsSchema,
+  strategyBoardEmailSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
   type PatchInstanceGeneralSettings,
@@ -645,6 +646,8 @@ export {
   type AnswerGoalWhyRequest,
   type CreateStrategyBoardPack,
   type SetStrategyBoardMembers,
+  updateStrategyBoardSettingsSchema,
+  type UpdateStrategyBoardSettings,
 } from "./strategy-board.js";
 
 export {
