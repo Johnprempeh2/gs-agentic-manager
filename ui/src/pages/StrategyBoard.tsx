@@ -13,6 +13,7 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { AttentionQueue, ChangesSinceSnapshot, StrategyAtAGlance } from "@/components/strategy-board/StrategyBoardViews";
 import { AskWhyDialog, BoardMembersCard, BoardPackViewer, MakeBoardPackDialog } from "@/components/strategy-board/StrategyBoardDialogs";
+import { BoardEmailCard } from "@/components/strategy-board/BoardEmailCard";
 
 function SectionHeading({ id, children }: { id: string; children: string }) {
   return (
@@ -151,6 +152,13 @@ export function StrategyBoard() {
         <section className="space-y-2" aria-labelledby="members-heading">
           <SectionHeading id="members-heading">Board members</SectionHeading>
           <BoardMembersCard companyId={selectedCompanyId!} />
+        </section>
+      ) : null}
+
+      {rights.mayManageMembers ? (
+        <section className="space-y-2" aria-labelledby="board-email-heading">
+          <SectionHeading id="board-email-heading">Board email</SectionHeading>
+          <BoardEmailCard companyId={selectedCompanyId!} />
         </section>
       ) : null}
 
